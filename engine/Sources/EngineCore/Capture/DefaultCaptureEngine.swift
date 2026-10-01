@@ -8,11 +8,11 @@ import Logging
 import Synchronization
 
 /// Default `CaptureEngine`: one device, one DSP thread, N channels, spectrum ladder, taps.
-public actor DefaultCaptureEngine: CaptureEngine {
-    public nonisolated let id: CaptureID
+package actor DefaultCaptureEngine: CaptureEngine {
+    package nonisolated let id: CaptureID
     private nonisolated let deviceIDBox: LockedValue<DeviceID>
     /// Hot-path core (ring, tables, DSP thread). Exposed for tests and the S2 harness.
-    public nonisolated let core: CaptureDSPCore
+    package nonisolated let core: CaptureDSPCore
 
     private var device: any RadioDevice
     private var centerHz: UInt64
@@ -25,7 +25,7 @@ public actor DefaultCaptureEngine: CaptureEngine {
     private var tapTable: [any CaptureTap] = []
     private static let logger = Logger(label: "leyline.capture")
 
-    public init(id: CaptureID = CaptureID(), device: any RadioDevice, centerHz: UInt64, sampleRate: UInt64) {
+    package init(id: CaptureID = CaptureID(), device: any RadioDevice, centerHz: UInt64, sampleRate: UInt64) {
         self.id = id
         self.device = device
         self.centerHz = centerHz
@@ -34,14 +34,14 @@ public actor DefaultCaptureEngine: CaptureEngine {
         core = CaptureDSPCore(captureID: id, sampleRate: sampleRate, centerHz: centerHz)
     }
 
-    public nonisolated var deviceID: DeviceID { deviceIDBox.value }
-    public nonisolated var spectrum: any SpectrumLadder { core.ladder }
+    package nonisolated var deviceID: DeviceID { deviceIDBox.value }
+    package nonisolated var spectrum: any SpectrumLadder { core.ladder }
     /// Anchors published so far and to come (first block, rate change, rebound). Single consumer.
-    public nonisolated var anchorEvents: AsyncStream<CaptureAnchor> { core.anchorEvents }
+    package nonisolated var anchorEvents: AsyncStream<CaptureAnchor> { core.anchorEvents }
     /// Ring/DSP counters.
-    public nonisolated var stats: CaptureStats { core.stats }
+    package nonisolated var stats: CaptureStats { core.stats }
 
-    public var snapshot: CaptureSnapshot {
+    package var snapshot: CaptureSnapshot {
         CaptureSnapshot(centerHz: centerHz, sampleRate: sampleRate, detached: detached, anchor: core.anchor, gains: device.gains)
     }
 
@@ -51,7 +51,7 @@ public actor DefaultCaptureEngine: CaptureEngine {
     ///
     /// A failure after `open()` unwinds completely (stream stopped, DSP thread joined, device closed)
     /// so the device can be handed out again and a later `start()` begins from scratch.
-    public func start() async throws {
+    package func start() async throws {
         guard !started else { return }
         try await device.open()
         // Marked started as soon as the device is open, before the awaits below: a `stop()` that
@@ -73,7 +73,7 @@ public actor DefaultCaptureEngine: CaptureEngine {
                 await device.stopStreaming()
                 streaming = false
             }
-            core.stopThread()
+            await stopDSPThread()
             await device.close()
             started = false
             throw error
@@ -81,7 +81,7 @@ public actor DefaultCaptureEngine: CaptureEngine {
     }
 
     /// Stops streaming, closes the device, joins the DSP thread, closes channels and taps.
-    public func stop() async {
+    package func stop() async {
         if streaming {
             await device.stopStreaming()
             streaming = false
@@ -90,7 +90,7 @@ public actor DefaultCaptureEngine: CaptureEngine {
         started = false
         core.setChannels([])
         core.setTaps([])
-        core.stopThread()
+        await stopDSPThread()
         for id in channelOrder {
             await channelTable[id]?.close()
         }
@@ -100,6 +100,13 @@ public actor DefaultCaptureEngine: CaptureEngine {
         tapTable = []
         for t in taps { await t.closeTap() }
         core.finish()
+    }
+
+    /// Joins the DSP thread on a dedicated thread (`BlockingWork`): the join lasts until the loop
+    /// finishes the block in hand and its next ring wait times out, and an actor must not park a
+    /// cooperative-pool thread for that long.
+    private func stopDSPThread() async {
+        try? await BlockingWork.run { [core] in core.stopThread() }
     }
 
     private func beginStreaming() async throws {
@@ -129,7 +136,7 @@ public actor DefaultCaptureEngine: CaptureEngine {
     // MARK: Device control
 
     /// Retunes the device without restarting the stream; channels keep their absolute frequency.
-    public func retune(centerHz: UInt64) async throws {
+    package func retune(centerHz: UInt64) async throws {
         guard !detached else { throw EngineError.deviceDetached(deviceID.description) }
         try await device.tune(centerHz: centerHz)
         self.centerHz = centerHz
@@ -142,7 +149,7 @@ public actor DefaultCaptureEngine: CaptureEngine {
     /// Restarts the stream at a new rate: the ring backlog is drained, the sample index continues
     /// (the core rebases the device's restarted index), a new anchor is published, and every
     /// channel is re-planned.
-    public func setSampleRate(_ hz: UInt64) async throws {
+    package func setSampleRate(_ hz: UInt64) async throws {
         guard !detached else { throw EngineError.deviceDetached(deviceID.description) }
         let wasStreaming = streaming
         if wasStreaming {
@@ -184,7 +191,7 @@ public actor DefaultCaptureEngine: CaptureEngine {
         }
     }
 
-    public func setGain(element: String, value: GainValue) async throws {
+    package func setGain(element: String, value: GainValue) async throws {
         guard !detached else { throw EngineError.deviceDetached(deviceID.description) }
         try await device.setGain(element: element, value: value)
     }
@@ -193,7 +200,7 @@ public actor DefaultCaptureEngine: CaptureEngine {
 
     /// Creates a channel at the current rate/centre and registers its slot with the DSP thread.
     /// - Throws: `OFFSET_OUT_OF_CAPTURE`, `INVALID_ARGUMENT`, `MODE_UNSUPPORTED`.
-    public func addChannel(_ config: ChannelConfig) async throws -> any ChannelEngine {
+    package func addChannel(_ config: ChannelConfig) async throws -> any ChannelEngine {
         let engine = try DefaultChannelEngine(captureID: id, captureRate: sampleRate, centerHz: centerHz, config: config,
                                               floor: core.floor)
         channelTable[engine.id] = engine
@@ -202,16 +209,16 @@ public actor DefaultCaptureEngine: CaptureEngine {
         return engine
     }
 
-    public func removeChannel(_ id: ChannelID) async {
+    package func removeChannel(_ id: ChannelID) async {
         guard let engine = channelTable.removeValue(forKey: id) else { return }
         channelOrder.removeAll { $0 == id }
         publishChannels()
         await engine.close()
     }
 
-    public func channel(id: ChannelID) async -> (any ChannelEngine)? { channelTable[id] }
+    package func channel(id: ChannelID) async -> (any ChannelEngine)? { channelTable[id] }
 
-    public var channels: [any ChannelEngine] { channelOrder.compactMap { channelTable[$0] } }
+    package var channels: [any ChannelEngine] { channelOrder.compactMap { channelTable[$0] } }
 
     private func publishChannels() {
         core.setChannels(channelOrder.compactMap { channelTable[$0]?.slot })
@@ -219,12 +226,12 @@ public actor DefaultCaptureEngine: CaptureEngine {
 
     // MARK: Taps
 
-    public func addTap(_ tap: any CaptureTap) async {
+    package func addTap(_ tap: any CaptureTap) async {
         tapTable.append(tap)
         core.setTaps(tapTable)
     }
 
-    public func removeTap(id: StreamID) async {
+    package func removeTap(id: StreamID) async {
         guard let i = tapTable.firstIndex(where: { $0.id == id }) else { return }
         let tap = tapTable.remove(at: i)
         core.setTaps(tapTable)
@@ -234,7 +241,7 @@ public actor DefaultCaptureEngine: CaptureEngine {
     // MARK: Device loss
 
     /// The device vanished: mark detached and stop the (dead) stream. Channels and index are kept.
-    public func deviceLost() async {
+    package func deviceLost() async {
         detached = true
         if streaming {
             await device.stopStreaming()
@@ -244,7 +251,7 @@ public actor DefaultCaptureEngine: CaptureEngine {
 
     /// A matching device came back: adopt it, restore centre/rate, restart the stream with a new
     /// anchor. The `CaptureID` and sample index continue.
-    public func deviceRebound(_ newDevice: any RadioDevice) async throws {
+    package func deviceRebound(_ newDevice: any RadioDevice) async throws {
         device = newDevice
         deviceIDBox.value = newDevice.descriptor.id
         try await newDevice.open()
@@ -262,15 +269,15 @@ public actor DefaultCaptureEngine: CaptureEngine {
     }
 }
 
-/// A tiny lock-guarded box for values read from nonisolated accessors.
-public final class LockedValue<T>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stored: T
+/// A mutex-guarded box for values read from nonisolated accessors. A class, not a bare `Mutex`, so
+/// closures and other objects can share one by reference.
+package final class LockedValue<T: Sendable>: Sendable {
+    private let stored: Mutex<T>
 
-    public init(_ value: T) { stored = value }
+    package init(_ value: T) { stored = Mutex(value) }
 
-    public var value: T {
-        get { lock.lock(); defer { lock.unlock() }; return stored }
-        set { lock.lock(); stored = newValue; lock.unlock() }
+    package var value: T {
+        get { stored.withLock { $0 } }
+        set { stored.withLock { $0 = newValue } }
     }
 }

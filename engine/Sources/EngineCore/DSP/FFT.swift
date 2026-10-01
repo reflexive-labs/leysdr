@@ -9,9 +9,9 @@ import Accelerate
 #endif
 
 /// Forward complex DFT of a fixed power-of-two size on split-complex data (unnormalised).
-public final class FFTPlan {
-    public let size: Int
-    public let log2Size: Int
+package final class FFTPlan {
+    package let size: Int
+    package let log2Size: Int
 
     #if canImport(Accelerate)
     private let setup: vDSP_DFT_Setup
@@ -22,7 +22,7 @@ public final class FFTPlan {
     #endif
 
     /// - Precondition: `size` is a power of two ≥ 8.
-    public init(size: Int) {
+    package init(size: Int) {
         precondition(size >= 8 && size & (size - 1) == 0, "FFT size must be a power of two ≥ 8")
         self.size = size
         log2Size = size.trailingZeroBitCount
@@ -54,7 +54,7 @@ public final class FFTPlan {
     }
 
     /// `out = DFT(in)`; input and output must not alias. All buffers hold `size` floats.
-    public func forward(inRe: UnsafePointer<Float>, inIm: UnsafePointer<Float>,
+    package func forward(inRe: UnsafePointer<Float>, inIm: UnsafePointer<Float>,
                         outRe: UnsafeMutablePointer<Float>, outIm: UnsafeMutablePointer<Float>) {
         #if canImport(Accelerate)
         vDSP_DFT_Execute(setup, inRe, inIm, outRe, outIm)
@@ -94,13 +94,13 @@ public final class FFTPlan {
 /// Windowed power spectrum in dBFS from an interleaved cf32 block (docs: "Spectrum ladder").
 /// Scaling: `10·log10(|X|² / (Σw)²)` so a full-scale complex tone reads ≈ 0 dBFS at its bin.
 /// Rows are fft-shifted: index 0 is `−Fs/2`, index `size/2` is DC.
-public final class SpectrumAnalyzer {
-    public let size: Int
+package final class SpectrumAnalyzer {
+    package let size: Int
     private let plan: FFTPlan
     private let window, re, im, fRe, fIm, mag: UnsafeMutablePointer<Float>
     private let offsetDB: Float
 
-    public init(size: Int) {
+    package init(size: Int) {
         self.size = size
         plan = FFTPlan(size: size)
         func alloc() -> UnsafeMutablePointer<Float> {
@@ -119,7 +119,7 @@ public final class SpectrumAnalyzer {
 
     /// Compute one row from the first `size` samples of `block` (`block.count ≥ size`, cf32) into
     /// `row` (`row.count ≥ size`). Hot path: no allocation.
-    public func analyze(_ block: SampleBuffer, into row: UnsafeMutableBufferPointer<Float>) {
+    package func analyze(_ block: SampleBuffer, into row: UnsafeMutableBufferPointer<Float>) {
         precondition(block.format == .cf32 && block.count >= size && row.count >= size)
         let sp = Signpost.begin(.fft)
         defer { Signpost.end(.fft, sp) }

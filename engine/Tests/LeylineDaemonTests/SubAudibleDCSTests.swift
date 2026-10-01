@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// DCS on the wire: the daemon playing the owner's handheld sending DCS 023 publishes a
-// `SubAudible` with `kind = SUB_AUDIBLE_DCS`, the code, the polarity and the sample time the lock
-// was first reached (docs/plans/signal-views.md, SV-7). The take is 230 MB and gitignored, so the
-// test runs only where `LEYLINE_CAPTURES` names the directory holding it; the decoder's own tests
-// run from the committed tap everywhere.
+// DCS on the wire: the daemon playing a real handheld sending DCS 023 publishes a `SubAudible` with
+// `kind = SUB_AUDIBLE_DCS`, the code, the polarity and the sample time the lock was first reached
+// (docs/design/signal-views.md, "DCS"). The take is 230 MB and gitignored, so the test runs only
+// where `LEYLINE_CAPTURES` names the directory holding it; the decoder's own tests run from the
+// committed tap everywhere.
 
 import EngineCore
 import Foundation
-@testable import LeylineDaemon
+@testable import LeylineServer
 import LeylineProto
 import XCTest
 

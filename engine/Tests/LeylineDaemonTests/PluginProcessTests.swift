@@ -5,7 +5,7 @@
 
 import EngineCore
 import Foundation
-@testable import LeylineDaemon
+@testable import LeylineServer
 import LeylineProto
 import XCTest
 
@@ -77,11 +77,11 @@ final class PluginProcessTests: XCTestCase {
     }
 
     func testAFrameAfterStopIsDroppedNotACrash() async throws {
-        // Cancelling a decode job closes the plugin's stdin while the drain may still be handing
-        // it a frame. The write used to ask the closed NSFileHandle for its descriptor, which
-        // raises an Objective-C exception Swift cannot catch and took the daemon down (DEC-22).
-        // Now a frame after stop is a drop, the same result as a plugin that stopped reading,
-        // and a second stop is a no-op rather than a second close.
+        // Cancelling a decode job closes the plugin's stdin while the drain may still be handing it
+        // a frame. Asking the closed NSFileHandle for its descriptor raises an Objective-C
+        // exception Swift cannot catch, which takes the daemon down, so a frame after stop must be
+        // a drop, the same result as a plugin that stopped reading, and a second stop a no-op
+        // rather than a second close.
         let plugin = PluginProcess(name: "fake", executable: fakeDecoderPath(), args: [],
                                    directory: NSTemporaryDirectory())
         try plugin.start(descriptor: descriptor())
@@ -96,9 +96,9 @@ final class PluginProcessTests: XCTestCase {
     func testWritesRacingStopNeverTouchTheClosedHandle() async throws {
         // The race itself: frames written from one task while stop runs on another. Every write
         // must come back as a PluginWrite or a thrown error; the process must still be here. On
-        // Darwin the old code raised out of the closed NSFileHandle and this test process died with
-        // it; swift-corelibs-foundation returns -1 instead, so on Linux the first test is the one
-        // that tells the old code from the new.
+        // Darwin a write through the closed NSFileHandle raises and this test process dies with it;
+        // swift-corelibs-foundation returns -1 instead, so on Linux the first test is the one that
+        // catches a write through the handle.
         let plugin = PluginProcess(name: "fake", executable: fakeDecoderPath(), args: [],
                                    directory: NSTemporaryDirectory())
         try plugin.start(descriptor: descriptor())

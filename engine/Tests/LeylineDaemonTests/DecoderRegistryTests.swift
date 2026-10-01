@@ -5,7 +5,7 @@
 
 import EngineCore
 import Foundation
-@testable import LeylineDaemon
+@testable import LeylineServer
 import LeylineProto
 import XCTest
 

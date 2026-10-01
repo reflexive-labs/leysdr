@@ -57,6 +57,7 @@ final class RingsTests: XCTestCase {
         let ring = FloatRing(capacity: 1024)
         let total = 200_000
         let done = DispatchSemaphore(value: 0)
+        /// Unchecked Sendable: the consumer thread writes it, and the test reads it only after `done` is signalled.
         final class Box: @unchecked Sendable { var received: [Float] = [] }
         let box = Box()
         box.received.reserveCapacity(total)

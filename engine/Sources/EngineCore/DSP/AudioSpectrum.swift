@@ -17,40 +17,41 @@ import Synchronization
 /// and a row is emitted whenever the window has advanced by `rate / rowsPerSecond` samples --
 /// windows overlap when rows come faster than the window is long, and skip samples when they come
 /// slower. Each row is the newest window, not an average of the samples since the last row.
-public final class AudioSpectrumSink: AudioSink, @unchecked Sendable {
+/// Unchecked Sendable: the window state and transform buffers belong to the DSP thread that calls `write`; `closed` is atomic.
+package final class AudioSpectrumSink: AudioSink, @unchecked Sendable {
     /// Fastest rows served. A row is a whole transform of a window several tens of milliseconds
     /// long; a meter updating faster than 20 times a second shows nothing extra.
-    public static let maxRowsPerSecond: Double = 20
+    package static let maxRowsPerSecond: Double = 20
 
     /// Rows served where the request named no rate, the same number a capture-sourced FFT answers.
-    public static let defaultRowsPerSecond: Double = 10
+    package static let defaultRowsPerSecond: Double = 10
 
     /// Widest row served. Every subscription on a tap runs its own transform, and at 48 kHz a
     /// 4096-bin row is already 5 Hz a bin over a 171 ms window, finer than a meter display needs.
     /// Larger transforms cost DSP-thread time for no visible gain.
-    public static let maxBins = 4096
+    package static let maxBins = 4096
 
     /// Round a request to a size the ladder also serves, so every FFT reader's row layout holds;
     /// a request past the cap comes back at the cap.
-    public static func roundBins(_ bins: Int) -> Int {
+    package static func roundBins(_ bins: Int) -> Int {
         Swift.min(DefaultSpectrumLadder.roundBins(bins), maxBins)
     }
 
     /// Clamp a requested row rate. Non-finite or non-positive means "the default".
-    public static func roundRate(_ rowsPerSecond: Double) -> Double {
+    package static func roundRate(_ rowsPerSecond: Double) -> Double {
         guard rowsPerSecond.isFinite, rowsPerSecond > 0 else { return defaultRowsPerSecond }
         return Swift.min(Swift.max(rowsPerSecond, DefaultSpectrumLadder.minRowsPerSecond), maxRowsPerSecond)
     }
 
-    public let id: SinkID
-    public let tap: AudioTap
+    package let id: SinkID
+    package let tap: AudioTap
     /// Bins served: the row length, covering 0 Hz to half the audio rate.
-    public let bins: Int
-    public let rowsPerSecond: Double
-    public let audioRate: UInt32
+    package let bins: Int
+    package let rowsPerSecond: Double
+    package let audioRate: UInt32
     /// What the row's frequency axis means, in the terms every FFT reader already understands.
-    public let centerHz: UInt64
-    public let spanHz: UInt64
+    package let centerHz: UInt64
+    package let spanHz: UInt64
 
     private let sink: any SpectrumSink
     private let plan: FFTPlan
@@ -73,7 +74,7 @@ public final class AudioSpectrumSink: AudioSink, @unchecked Sendable {
     ///   - audioRate: the channel's audio rate, which is also the tapped rate, and must be
     ///     positive -- a channel whose chain is not built yet reports zero, and the subscribe path
     ///     refuses that with `INVALID_ARGUMENT` rather than building a sink with no timebase.
-    public init(id: SinkID = SinkID(), tap: AudioTap, bins: Int, rowsPerSecond: Double,
+    package init(id: SinkID = SinkID(), tap: AudioTap, bins: Int, rowsPerSecond: Double,
                 audioRate: UInt32, sink: any SpectrumSink)
     {
         self.id = id
@@ -112,7 +113,7 @@ public final class AudioSpectrumSink: AudioSink, @unchecked Sendable {
     /// window -- not the start of the block it was emitted from: one block can hold several
     /// hops, and rows that all named the block's first sample would be the same moment on the
     /// wire, which is not a timebase.
-    public func write(_ audio: SampleBuffer, at time: SampleTime) {
+    package func write(_ audio: SampleBuffer, at time: SampleTime) {
         guard !closed.load(ordering: .relaxed), audio.format == .f32, audio.count > 0 else { return }
         let sp = Signpost.begin(.audioWrite)
         defer { Signpost.end(.audioWrite, sp) }
@@ -136,10 +137,10 @@ public final class AudioSpectrumSink: AudioSink, @unchecked Sendable {
         }
     }
 
-    public func flush() async {}
+    package func flush() async {}
 
     /// Stops delivery; any `write` after this returns immediately.
-    public func closeSink() async { closed.store(true, ordering: .relaxed) }
+    package func closeSink() async { closed.store(true, ordering: .relaxed) }
 
     private func append(_ src: UnsafePointer<Float>, _ count: Int) {
         var offset = 0

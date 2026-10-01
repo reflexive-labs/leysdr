@@ -22,6 +22,7 @@ func sleepNanoseconds(_ ns: UInt64) {
 
 /// Synthetic 20 MSPS-class source: a −20 dBFS NFM carrier plus white noise, cycled from a
 /// pre-rendered buffer so generation cost does not pollute the measurement.
+/// Unchecked Sendable: `thread` is set by start and cleared by stop on the caller's side of the join; `nextIndex` belongs to the generator thread.
 final class SyntheticDevice: RadioDevice, @unchecked Sendable {
     static let blockSize = 16384
     let rate: UInt64

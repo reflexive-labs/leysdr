@@ -87,9 +87,8 @@ let dieAfter: UInt64 = {
     return 0
 }()
 
-/// `--deaf-after=N` reads and answers N frames, then stops reading its input, the way a plugin
-/// that has wedged does. The daemon's non-blocking write must drop-and-gap rather than stall
-/// (docs/plans/decoders.md, DEC-16).
+/// `--deaf-after=N` reads and answers N frames, then stops reading its input, the way a plugin that
+/// has wedged does. The daemon's non-blocking write must drop-and-gap rather than stall.
 let deafAfter: UInt64 = {
     for arg in CommandLine.arguments.dropFirst() where arg.hasPrefix("--deaf-after=") {
         return UInt64(arg.dropFirst("--deaf-after=".count)) ?? 0

@@ -18,37 +18,37 @@ import Foundation
 ///   run above the threshold: that width is not a property of the signal, it grows with SNR.
 /// - A candidate whose mirror image about the capture centre is 20 dB stronger is the R820T's IQ
 ///   image, not a carrier.
-public enum SpectrumDetect {
+package enum SpectrumDetect {
     /// Reference bins either side of the bin under test, past the guard.
-    public static let referenceBins = 96
+    package static let referenceBins = 96
     /// Bins either side of the bin under test that are excluded from its own floor estimate, so a
     /// wide signal does not raise the floor it is measured against. 96 bins is 225 kHz at
     /// 2.4 MSPS over 1024 bins, which clears a 200 kHz WFM signal.
-    public static let guardBins = 96
+    package static let guardBins = 96
     /// Runs separated by no more than this are one signal: a notch in the middle of a wide carrier
     /// is not two carriers.
-    public static let joinGap = 2
+    package static let joinGap = 2
     /// A candidate is the mirror of a real signal when the bin reflected about the capture centre
     /// is at least this much stronger. The R820T rejects its image by 30-40 dB, so 20 is
     /// conservative in the direction of keeping signals.
-    public static let imageMarginDB: Float = 20
+    package static let imageMarginDB: Float = 20
     /// Second central moment of a periodic Hann window, in bins squared. Subtracted from a
     /// signal's measured moment because convolution adds variances.
-    public static let windowMomentBins2 = 0.3333
+    package static let windowMomentBins2 = 0.3333
 
     /// One thing found in one row.
-    public struct Hit: Sendable, Hashable {
+    package struct Hit: Sendable, Hashable {
         /// Power-weighted centroid, in absolute Hz.
-        public var centerHz: UInt64
+        package var centerHz: UInt64
         /// Equivalent rectangular width: the width a flat spectrum with the same second moment
         /// would have. Zero when the signal is narrower than the analysis can resolve.
-        public var bandwidthHz: UInt32
+        package var bandwidthHz: UInt32
         /// Peak bin over the local floor, in dB.
-        public var snrDB: Double
+        package var snrDB: Double
         /// The local floor the SNR was measured against, dBFS per bin.
-        public var floorDBFS: Double
+        package var floorDBFS: Double
         /// Index of the loudest bin, for the mirror test and for debugging.
-        public var peakBin: Int
+        package var peakBin: Int
     }
 
     /// Threshold over the measured floor, as a power ratio, for a row of `looks` averaged
@@ -59,7 +59,7 @@ public enum SpectrumDetect {
     /// (the same expression at z = 0) is what lets the floor estimator return a median while the
     /// model is about the mean -- neither has to be converted. At one look this reproduces the
     /// exact exponential answer to within 0.2 dB, erring high.
-    public static func thresholdRatio(looks: Int, pFalse: Double) -> Double {
+    package static func thresholdRatio(looks: Int, pFalse: Double) -> Double {
         let m = Double(Swift.max(1, looks))
         let p = Swift.min(Swift.max(pFalse, 1e-15), 0.49)
         func wh(_ z: Double) -> Double {
@@ -72,7 +72,7 @@ public enum SpectrumDetect {
 
     /// The per-bin false-alarm probability that spends a whole sweep's budget: `expected` false
     /// detections spread over every bin of every row of every step.
-    public static func sweepPFalse(expected: Double, bins: Int, rowsPerStep: Int, steps: Int) -> Double {
+    package static func sweepPFalse(expected: Double, bins: Int, rowsPerStep: Int, steps: Int) -> Double {
         let opportunities = Double(Swift.max(1, bins)) * Double(Swift.max(1, rowsPerStep)) * Double(Swift.max(1, steps))
         return Swift.max(expected / opportunities, 1e-15)
     }
@@ -84,7 +84,7 @@ public enum SpectrumDetect {
     /// this allocates nothing. It does not run on the DSP thread: it is roughly
     /// bins x 2 x referenceBins operations, which is fine on a sweep task and is not fine in a
     /// `SpectrumSink.write`.
-    public static func localFloor(power: UnsafePointer<Float>, count: Int,
+    package static func localFloor(power: UnsafePointer<Float>, count: Int,
                                   into floor: UnsafeMutablePointer<Float>,
                                   scratch: UnsafeMutablePointer<Float>)
     {
@@ -135,7 +135,7 @@ public enum SpectrumDetect {
     ///
     /// `power`, `floor` and `scratch` are caller-owned working buffers of at least `count`,
     /// `count` and `2 * referenceBins` floats, so a sweep allocates once and not per row.
-    public static func detect(rowDB: UnsafePointer<Float>, count: Int,
+    package static func detect(rowDB: UnsafePointer<Float>, count: Int,
                               centerHz: UInt64, spanHz: UInt64, looks: Int, pFalse: Double,
                               believe: ClosedRange<UInt64>,
                               power: UnsafeMutablePointer<Float>,
@@ -224,7 +224,7 @@ public enum SpectrumDetect {
     /// and a scan that only reports a floor where it found a signal cannot give it.
     ///
     /// `floor` is the buffer `detect` filled, so this must be called after it.
-    public static func windowFloorDBFS(floor: UnsafeMutablePointer<Float>, count: Int,
+    package static func windowFloorDBFS(floor: UnsafeMutablePointer<Float>, count: Int,
                                        centerHz: UInt64, spanHz: UInt64,
                                        believe: ClosedRange<UInt64>,
                                        scratch: UnsafeMutablePointer<Float>) -> Double

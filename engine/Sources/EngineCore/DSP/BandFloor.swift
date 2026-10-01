@@ -15,19 +15,20 @@ import Synchronization
 /// clients (`SpectrumFold.channelFloorDB`, `session.measureSquelch`): the bin count cancels, so
 /// the daemon can take a smaller transform than they do and land on the same number.
 ///
-/// The floor was the channel's own running minimum until 2026-09-19, and on a carrier that
-/// never stops the minimum is the carrier, so a -12 dBFS signal read `0 dB over noise`
-/// (`docs/plans/app.md`, APP-3). The band's median is not raised by a steady carrier, because a
-/// carrier occupies a few bins of the band and the median ignores them.
-public final class BandFloor: @unchecked Sendable {
+/// The floor is the band's, not the channel's: a channel's own running minimum on a carrier that
+/// never stops is the carrier, so a -12 dBFS signal would read `0 dB over noise`. The band's median
+/// is not raised by a steady carrier, because a carrier occupies a few bins of the band and the
+/// median ignores them.
+/// Unchecked Sendable: the analyzer and row belong to the DSP thread; other threads touch only the atomics.
+package final class BandFloor: @unchecked Sendable {
     /// Bins in the transform the floor is read from. The density does not depend on the count
     /// (per-bin noise power scales with bin width, and the density divides it back out), so the
     /// smallest size that leaves a -20 dBFS tone's leakage well short of half the row is enough.
-    public static let bins = 1024
+    package static let bins = 1024
     /// Rows per second. A meter is stamped ten times a second; a floor that moves four times a
     /// second follows a gain change within a meter or two, and costs one 1024-point transform and
     /// one selection per row.
-    public static let rowsPerSecond: UInt64 = 4
+    package static let rowsPerSecond: UInt64 = 4
 
     private let analyzer: SpectrumAnalyzer
     private let row: UnsafeMutableBufferPointer<Float>
@@ -40,7 +41,7 @@ public final class BandFloor: @unchecked Sendable {
     /// Sample index at or after which the next row is due. DSP thread only.
     private var nextDue: UInt64 = 0
 
-    public init() {
+    package init() {
         analyzer = SpectrumAnalyzer(size: Self.bins)
         row = UnsafeMutableBufferPointer<Float>.allocate(capacity: Self.bins)
         row.initialize(repeating: 0)
@@ -50,20 +51,20 @@ public final class BandFloor: @unchecked Sendable {
 
     /// The band's floor in dBFS per hertz, or NaN until a row has been read. Safe from any
     /// thread: one relaxed load.
-    public var densityDBFS: Float {
+    package var densityDBFS: Float {
         Float(bitPattern: densityBits.load(ordering: .relaxed))
     }
 
     /// The floor at `bandwidthHz`, in dBFS: what a channel that wide holds when nothing is on it.
     /// NaN until a row has been read.
-    public func floorDBFS(bandwidthHz: UInt32) -> Float {
+    package func floorDBFS(bandwidthHz: UInt32) -> Float {
         densityDBFS + 10 * log10f(Float(bandwidthHz))
     }
 
     /// Forget the floor: the next block read is measured at once. Control plane, at a stream
     /// restart, for the reason `ChannelDSPCore.reset` gives: the samples either side of a gap
     /// are not the same air.
-    public func reset() {
+    package func reset() {
         densityBits.store(Float.nan.bitPattern, ordering: .relaxed)
         restart.store(true, ordering: .relaxed)
     }
@@ -71,7 +72,7 @@ public final class BandFloor: @unchecked Sendable {
     /// Hot path (DSP thread): read one row from `block` when a row is due. Allocation-free and
     /// lock-free; the transform and the selection run on this thread because they happen four
     /// times a second, not once per block, and the row buffer is this object's own.
-    public func observe(_ block: SampleBuffer, at time: SampleTime, spanHz: UInt64) {
+    package func observe(_ block: SampleBuffer, at time: SampleTime, spanHz: UInt64) {
         guard spanHz > 0, block.count >= Self.bins else { return }
         let now = time.sampleIndex
         let interval = Swift.max(1 as UInt64, spanHz / Self.rowsPerSecond)

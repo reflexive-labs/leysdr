@@ -6,6 +6,7 @@ import XCTest
 @testable import EngineCore
 
 /// A device that delivers `blocks` cf32 blocks from its own thread as fast as the ring accepts.
+/// Unchecked Sendable: `index` belongs to the delivering thread; `thread` is touched only by start and stop, which the engine calls in order.
 final class BurstDevice: RadioDevice, @unchecked Sendable {
     let descriptor = DeviceDescriptor(id: DeviceID(), driver: "test", model: "burst", serial: "b",
                                       tuningRanges: [FrequencyRange(minHz: 0, maxHz: 1_000_000_000)],
@@ -57,6 +58,7 @@ final class BurstDevice: RadioDevice, @unchecked Sendable {
     func stopStreaming() async { done.wait() }
 }
 
+/// Unchecked Sendable: mutable state is read and written only under `lock`.
 final class RecordingTap: CaptureTap, @unchecked Sendable {
     let id = StreamID()
     private let lock = NSLock()
@@ -168,6 +170,7 @@ final class CaptureTests: XCTestCase {
 
 /// A device whose `startStreaming` / `setSampleRate` throw `DEVICE_IO` while the matching flag is
 /// set. Counts lifecycle calls so tests can assert the engine unwound (or restored) properly.
+/// Unchecked Sendable: every mutable field is a `LockedValue`.
 final class FailingDevice: RadioDevice, @unchecked Sendable {
     let descriptor = DeviceDescriptor(id: DeviceID(), driver: "test", model: "failing", serial: "f",
                                       tuningRanges: [FrequencyRange(minHz: 0, maxHz: 1_000_000_000)],
@@ -371,7 +374,7 @@ final class CaptureDeviceLossTests: XCTestCase {
 
 /// A device whose `setSampleRate` parks after the first call, so a test can run another actor method
 /// while the capture engine is suspended inside it. Counts the streams it was asked to start.
-final class GatedRateDevice: RadioDevice, @unchecked Sendable {
+final class GatedRateDevice: RadioDevice, Sendable {
     let descriptor = DeviceDescriptor(id: DeviceID(), driver: "test", model: "gated", serial: "g",
                                       tuningRanges: [FrequencyRange(minHz: 0, maxHz: 1_000_000_000)],
                                       sampleRates: [2_400_000, 1_200_000], nativeFormat: .cf32)

@@ -4,6 +4,7 @@
 
 import Foundation
 import TestSupport
+import Synchronization
 import XCTest
 @testable import EngineCore
 #if canImport(Glibc)
@@ -27,6 +28,7 @@ func cmd(_ op: UInt8, _ arg: UInt32) -> [UInt8] {
 }
 
 /// Collects delivered blocks from the I/O thread (copies out; the buffer is a borrow).
+/// Unchecked Sendable: mutable state is read and written only under `lock`.
 final class BlockCollector: @unchecked Sendable {
     private let lock = NSLock()
     private var _blocks: [(index: UInt64, count: Int, format: SampleFormat, bytes: [UInt8])] = []
@@ -220,6 +222,46 @@ final class RTLTCPDeviceTests: XCTestCase {
         await dev.close() // no-op
         await assertCode("DEVICE_IO") { try await dev.startStreaming(captureID: CaptureID()) { _, _ in } }
         await assertCode("DEVICE_IO") { try await dev.tune(centerHz: 100_000_000) }
+    }
+
+    /// close() joins the reader, which can be inside a slow `deliver`. That join must wait on a
+    /// thread of its own: more stuck closes than the cooperative pool has threads would otherwise
+    /// park every one of them, and nothing else in the process could run until the reader let go.
+    func testCloseWhileDeliverIsStuckLeavesTheCooperativePoolFree() async throws {
+        let n = ProcessInfo.processInfo.activeProcessorCount + 2
+        let release = DispatchSemaphore(value: 0)
+        let inDeliver = DeliverCount()
+        var servers: [FakeRTLTCPServer] = []
+        var devices: [RTLTCPDevice] = []
+        defer { servers.forEach { $0.stop() } }
+        for _ in 0..<n {
+            let server = try FakeRTLTCPServer()
+            servers.append(server)
+            let dev = RTLTCPDevice(host: "127.0.0.1", port: server.port)
+            try await dev.open()
+            let entered = ManagedAtomicFlag()
+            try await dev.startStreaming(captureID: CaptureID()) { _, _ in
+                if entered.enteredOnce() { return }
+                inDeliver.count.add(1, ordering: .relaxed)
+                release.wait()
+            }
+            devices.append(dev)
+        }
+        XCTAssertTrue(waitUntil { inDeliver.count.load(ordering: .relaxed) == n }, "every reader is inside deliver")
+        // A plain thread, not a task, lets the readers go: if the closes did park the whole pool,
+        // no task could.
+        let releaser = Thread {
+            Thread.sleep(forTimeInterval: 3)
+            for _ in 0..<n { release.signal() }
+        }
+        releaser.start()
+        let t0 = Date()
+        let closes = devices.map { dev in Task.detached { await dev.close() } }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        await Task.detached { }.value
+        XCTAssertLessThan(Date().timeIntervalSince(t0), 2, "other tasks waited for the stuck closes")
+        for c in closes { await c.value }
+        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(t0), 2.5, "close returned before its reader left deliver")
     }
 
     func testServerDropBecomesDisconnected() async throws {
@@ -418,7 +460,13 @@ final class RTLTCPDeviceTests: XCTestCase {
     }
 }
 
+/// How many readers are inside `deliver`.
+private final class DeliverCount: Sendable {
+    let count = Atomic<Int>(0)
+}
+
 /// Tiny lock-guarded flags for the in-flight deliver test.
+/// Unchecked Sendable: mutable state is read and written only under `lock`.
 private final class ManagedAtomicFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var entered = false

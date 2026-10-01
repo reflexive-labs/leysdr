@@ -5,6 +5,7 @@ import Foundation
 import XCTest
 @testable import EngineCore
 
+/// Unchecked Sendable: mutable state is read and written only under `lock`.
 final class MockHackRFLibrary: HackRFLibrary, @unchecked Sendable {
     private let lock = NSLock()
     var probes: [HackRFProbe] = []
@@ -99,6 +100,7 @@ final class MockHackRFLibrary: HackRFLibrary, @unchecked Sendable {
     }
 }
 
+/// Unchecked Sendable: mutable state is read and written only under `lock`.
 private final class HackRFDeliveryLog: @unchecked Sendable {
     private let lock = NSLock()
     private(set) var formats: [SampleFormat] = []

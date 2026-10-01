@@ -8,7 +8,7 @@ import EngineCore
 import Foundation
 import GRPCCore
 import GRPCNIOTransportHTTP2
-@testable import LeylineDaemon
+@testable import LeylineServer
 import LeylineProto
 import XCTest
 
@@ -218,9 +218,9 @@ final class DecodeJobTests: XCTestCase {
         }
     }
 
-    /// A running job reports how many records it has produced (DEC-23): the first record at once,
-    /// the count afterwards on the liveness timer, so `ley jobs` tells a working decoder from a
-    /// silent one without anyone subscribing to its records.
+    /// A running job reports how many records it has produced: the first record at once, the count
+    /// afterwards on the liveness timer, so `ley jobs` tells a working decoder from a silent one
+    /// without anyone subscribing to its records.
     func testARunningJobSaysHowMuchItHasHeard() async throws {
         let plugins = try makeTempDir("decoders")
         defer { try? FileManager.default.removeItem(atPath: plugins) }
@@ -254,10 +254,9 @@ final class DecodeJobTests: XCTestCase {
         return Int(rest.prefix { $0.isNumber })
     }
 
-    /// A kept job outlives the daemon, not just its client (DEC-11): the next daemon on the same
-    /// store brings it back as the same job, its records appending to the same file with the
-    /// sequence carrying on, and the old records keeping the wall time of the capture that made
-    /// them.
+    /// A kept job outlives the daemon, not just its client: the next daemon on the same store
+    /// brings it back as the same job, its records appending to the same file with the sequence
+    /// carrying on, and the old records keeping the wall time of the capture that made them.
     func testAKeptJobComesBackAfterARestart() async throws {
         let dir = try makeTempDir("restart")
         defer { try? FileManager.default.removeItem(atPath: dir) }
@@ -325,7 +324,7 @@ final class DecodeJobTests: XCTestCase {
     }
 
     func testAPluginThatStopsReadingDoesNotWedgeTheDrain() async throws {
-        // A decoder that reads three frames then stops reading is the DEC-16 hang: the daemon's
+        // A decoder that reads three frames then stops reading is a wedged plugin: the daemon's
         // write is non-blocking, so the drain drops and gaps rather than parking on a full pipe,
         // the job stays RUNNING (silence is not failure -- the plugin never exited), and cancel
         // still hands the radio back promptly rather than blocking on a wedged writer.

@@ -7,16 +7,16 @@
 import Foundation
 
 /// Windowed-sinc (Blackman) low-pass design.
-public enum FIRDesign {
+package enum FIRDesign {
     /// Largest tap count the designer will return.
-    public static let maxTaps = 1023
+    package static let maxTaps = 1023
 
     /// Largest tap count for a non-decimating selectivity filter at the audio rate (≈ 48 kHz), where
     /// the extra taps buy stopband width for CW/narrow SSB at a fraction of the stage-1/2 cost.
-    public static let maxSelectivityTaps = 2047
+    package static let maxSelectivityTaps = 2047
 
     /// Number of taps for a transition width: `≈ 4·rate/transition`, forced odd, clamped to `3...maxTaps`.
-    public static func tapCount(rate: Double, transitionHz: Double, maxTaps: Int = maxTaps) -> Int {
+    package static func tapCount(rate: Double, transitionHz: Double, maxTaps: Int = maxTaps) -> Int {
         guard rate > 0, transitionHz > 0 else { return maxTaps }
         var n = Int((4 * rate / transitionHz).rounded(.up))
         if n % 2 == 0 { n += 1 }
@@ -24,7 +24,7 @@ public enum FIRDesign {
     }
 
     /// Low-pass taps with unity DC gain. `cutoffHz` is the −6 dB point; `taps` must be odd.
-    public static func lowPass(cutoffHz: Double, rate: Double, taps: Int) -> [Float] {
+    package static func lowPass(cutoffHz: Double, rate: Double, taps: Int) -> [Float] {
         precondition(taps >= 1 && taps % 2 == 1, "taps must be odd")
         let fc = Swift.min(0.5, Swift.max(0, cutoffHz / rate)) // cycles/sample
         let m = taps - 1
@@ -42,19 +42,19 @@ public enum FIRDesign {
     }
 
     /// Convenience: design from cutoff + transition width.
-    public static func lowPass(cutoffHz: Double, rate: Double, transitionHz: Double, maxTaps: Int = maxTaps) -> [Float] {
+    package static func lowPass(cutoffHz: Double, rate: Double, transitionHz: Double, maxTaps: Int = maxTaps) -> [Float] {
         lowPass(cutoffHz: cutoffHz, rate: rate, taps: tapCount(rate: rate, transitionHz: transitionHz, maxTaps: maxTaps))
     }
 }
 
 /// Complex (split re/im) FIR + integer decimator with continuous history across blocks.
-public final class FIRDecimator {
-    public let taps: [Float]
-    public let decimation: Int
+package final class FIRDecimator {
+    package let taps: [Float]
+    package let decimation: Int
     /// Largest input block `process` accepts.
-    public let maxBlock: Int
+    package let maxBlock: Int
     /// Upper bound on outputs per `process` call: `ceil((maxBlock + decimation − 1) / decimation)`.
-    public var maxOutput: Int { (maxBlock + decimation - 1) / decimation }
+    package var maxOutput: Int { (maxBlock + decimation - 1) / decimation }
 
     private let tapPtr: UnsafeMutablePointer<Float>
     private let workRe: UnsafeMutablePointer<Float>
@@ -63,7 +63,7 @@ public final class FIRDecimator {
     /// Samples currently held in `work` (history + not-yet-consumed input).
     private var pending = 0
 
-    public init(taps: [Float], decimation: Int, maxBlock: Int) {
+    package init(taps: [Float], decimation: Int, maxBlock: Int) {
         // A decimation step wider than the filter would consume more samples than `process`
         // holds, walking `pending` negative and writing before the work buffer; every design
         // path yields taps ≥ 4·decimation, so this only pins the contract.
@@ -88,7 +88,7 @@ public final class FIRDecimator {
 
     /// Clear history (prime with `taps−1` zeros so the first output aligns with a one-shot filter
     /// that had zero history).
-    public func reset() {
+    package func reset() {
         pending = taps.count - 1
         Kernels.clear(workRe, count: workCapacity)
         Kernels.clear(workIm, count: workCapacity)
@@ -97,7 +97,7 @@ public final class FIRDecimator {
     /// Filter + decimate `count ≤ maxBlock` samples. Returns outputs written to `outRe`/`outIm`
     /// (capacity ≥ `maxOutput`). Hot path: no allocation.
     @discardableResult
-    public func process(re: UnsafePointer<Float>, im: UnsafePointer<Float>, count: Int,
+    package func process(re: UnsafePointer<Float>, im: UnsafePointer<Float>, count: Int,
                         outRe: UnsafeMutablePointer<Float>, outIm: UnsafeMutablePointer<Float>) -> Int {
         precondition(count <= maxBlock)
         let nTaps = taps.count
@@ -122,18 +122,18 @@ public final class FIRDecimator {
 }
 
 /// Real FIR + integer decimator with continuous history (WFM audio decimation).
-public final class RealFIRDecimator {
-    public let taps: [Float]
-    public let decimation: Int
-    public let maxBlock: Int
-    public var maxOutput: Int { (maxBlock + decimation - 1) / decimation }
+package final class RealFIRDecimator {
+    package let taps: [Float]
+    package let decimation: Int
+    package let maxBlock: Int
+    package var maxOutput: Int { (maxBlock + decimation - 1) / decimation }
 
     private let tapPtr: UnsafeMutablePointer<Float>
     private let work: UnsafeMutablePointer<Float>
     private let workCapacity: Int
     private var pending = 0
 
-    public init(taps: [Float], decimation: Int, maxBlock: Int) {
+    package init(taps: [Float], decimation: Int, maxBlock: Int) {
         // A decimation step wider than the filter would consume more samples than `process`
         // holds, walking `pending` negative and writing before the work buffer; every design
         // path yields taps ≥ 4·decimation, so this only pins the contract.
@@ -155,14 +155,14 @@ public final class RealFIRDecimator {
     }
 
     /// Clear history.
-    public func reset() {
+    package func reset() {
         pending = taps.count - 1
         Kernels.clear(work, count: workCapacity)
     }
 
     /// Filter + decimate `count ≤ maxBlock` samples into `out` (capacity ≥ `maxOutput`). Returns outputs.
     @discardableResult
-    public func process(_ src: UnsafePointer<Float>, count: Int, out: UnsafeMutablePointer<Float>) -> Int {
+    package func process(_ src: UnsafePointer<Float>, count: Int, out: UnsafeMutablePointer<Float>) -> Int {
         precondition(count <= maxBlock)
         let nTaps = taps.count
         (work + pending).update(from: src, count: count)

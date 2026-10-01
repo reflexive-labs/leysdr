@@ -11,16 +11,17 @@ import Synchronization
 /// SPSC ring of `Float`. Producer calls `push`, consumer calls `pop`. When the ring is full,
 /// `push` drops the excess (LATEST is *not* preserved — the writer's tail is dropped, keeping the
 /// stream continuous from the consumer's point of view) and counts it in `dropped`.
-public final class FloatRing: @unchecked Sendable {
+/// Unchecked Sendable: one producer and one consumer, ordered by the head and tail atomics; each side touches only its own end of the storage.
+package final class FloatRing: @unchecked Sendable {
     /// Number of floats the ring can hold.
-    public let capacity: Int
+    package let capacity: Int
     private let storage: UnsafeMutablePointer<Float>
     private let head = Atomic<Int>(0) // consumer position (monotonic)
     private let tail = Atomic<Int>(0) // producer position (monotonic)
     private let droppedCount = Atomic<Int>(0)
     private let flushRequested = Atomic<Bool>(false)
 
-    public init(capacity: Int) {
+    package init(capacity: Int) {
         precondition(capacity > 0)
         self.capacity = capacity
         storage = UnsafeMutablePointer<Float>.allocate(capacity: capacity)
@@ -30,19 +31,19 @@ public final class FloatRing: @unchecked Sendable {
     deinit { storage.deallocate() }
 
     /// Floats currently readable.
-    public var available: Int {
+    package var available: Int {
         tail.load(ordering: .acquiring) - head.load(ordering: .acquiring)
     }
 
     /// Floats currently writable.
-    public var free: Int { capacity - available }
+    package var free: Int { capacity - available }
 
     /// Total floats dropped because the ring was full.
-    public var dropped: Int { droppedCount.load(ordering: .relaxed) }
+    package var dropped: Int { droppedCount.load(ordering: .relaxed) }
 
     /// Append as many of `samples` as fit. Returns the count written; the remainder is dropped.
     @discardableResult
-    public func push(_ samples: UnsafeBufferPointer<Float>) -> Int {
+    package func push(_ samples: UnsafeBufferPointer<Float>) -> Int {
         guard let src = samples.baseAddress, samples.count > 0 else { return 0 }
         let t = tail.load(ordering: .relaxed)
         let h = head.load(ordering: .acquiring)
@@ -66,7 +67,7 @@ public final class FloatRing: @unchecked Sendable {
 
     /// Fill `out` with up to `out.count` floats. Returns the count read (may be 0).
     @discardableResult
-    public func pop(into out: UnsafeMutableBufferPointer<Float>) -> Int {
+    package func pop(into out: UnsafeMutableBufferPointer<Float>) -> Int {
         guard let dst = out.baseAddress, out.count > 0 else { return 0 }
         if flushRequested.exchange(false, ordering: .acquiringAndReleasing) {
             // Honour a control-plane flush here, on the consumer thread, so `head` has one writer.
@@ -91,13 +92,13 @@ public final class FloatRing: @unchecked Sendable {
     /// Discard everything buffered. **Consumer-thread only**: it stores `head`, which `pop` also
     /// writes, so calling it from any other thread races the consumer. Other threads use
     /// `requestFlush()`.
-    public func clear() {
+    package func clear() {
         head.store(tail.load(ordering: .acquiring), ordering: .releasing)
     }
 
     /// Ask the consumer to discard everything buffered at its next `pop`. Safe from any thread;
     /// the flush takes effect on the consumer side so `head` keeps a single writer.
-    public func requestFlush() {
+    package func requestFlush() {
         flushRequested.store(true, ordering: .releasing)
     }
 }
@@ -110,11 +111,12 @@ public final class FloatRing: @unchecked Sendable {
 ///
 /// Consumer (DSP thread): `wait(timeoutMs:)` blocks on a semaphore until a block is committed,
 /// `peek()` borrows the oldest committed block, `release()` frees it. Exactly one of each side.
-public final class BlockRing: @unchecked Sendable {
+/// Unchecked Sendable: one producer and one consumer, ordered by the head and tail atomics; `acquired` and the slot being filled are the producer's alone.
+package final class BlockRing: @unchecked Sendable {
     /// Slots in the ring.
-    public let slots: Int
+    package let slots: Int
     /// Complex samples per slot.
-    public let blockCapacity: Int
+    package let blockCapacity: Int
 
     private let storage: [SampleStorage]
     private let counts: UnsafeMutablePointer<Int>
@@ -125,7 +127,7 @@ public final class BlockRing: @unchecked Sendable {
     private let semaphore = DispatchSemaphore(value: 0)
     private var acquired = false
 
-    public init(slots: Int, blockCapacity: Int) {
+    package init(slots: Int, blockCapacity: Int) {
         precondition(slots > 0 && blockCapacity > 0)
         self.slots = slots
         self.blockCapacity = blockCapacity
@@ -143,18 +145,18 @@ public final class BlockRing: @unchecked Sendable {
     }
 
     /// Committed blocks not yet released.
-    public var available: Int {
+    package var available: Int {
         tail.load(ordering: .acquiring) - head.load(ordering: .acquiring)
     }
 
     /// Blocks dropped by the producer because the ring was full.
-    public var overruns: Int { overrunCount.load(ordering: .relaxed) }
+    package var overruns: Int { overrunCount.load(ordering: .relaxed) }
 
     // MARK: Producer
 
     /// Borrow the next free slot. Returns `nil` (and counts an overrun) when the ring is full.
     /// The returned buffer has `count == blockCapacity`; fill up to that and `commit` the real count.
-    public func acquire() -> (buffer: SampleBuffer, index: Int)? {
+    package func acquire() -> (buffer: SampleBuffer, index: Int)? {
         precondition(!acquired, "BlockRing.acquire called twice without commit")
         let t = tail.load(ordering: .relaxed)
         let h = head.load(ordering: .acquiring)
@@ -169,7 +171,7 @@ public final class BlockRing: @unchecked Sendable {
     }
 
     /// Publish the slot borrowed by `acquire`. `count` is the number of complex samples written.
-    public func commit(index: Int, count: Int, time: SampleTime) {
+    package func commit(index: Int, count: Int, time: SampleTime) {
         precondition(acquired && index == tail.load(ordering: .relaxed) % slots, "commit without matching acquire")
         precondition(count >= 0 && count <= blockCapacity)
         counts[index] = count
@@ -180,7 +182,7 @@ public final class BlockRing: @unchecked Sendable {
     }
 
     /// Record a producer-side drop that happened before `acquire` (e.g. conversion failure).
-    public func noteOverrun() {
+    package func noteOverrun() {
         overrunCount.wrappingAdd(1, ordering: .relaxed)
         Signpost.event(.ringOverrun)
     }
@@ -189,14 +191,14 @@ public final class BlockRing: @unchecked Sendable {
 
     /// Block until a block is committed or `timeoutMs` elapses. Returns true if a block is available.
     /// Consumer-only; the DSP thread is allowed to block here (it has nothing else to do).
-    public func wait(timeoutMs: Int) -> Bool {
+    package func wait(timeoutMs: Int) -> Bool {
         // One signal per commit; a spurious extra wake-up only yields a `nil` peek, which is harmless.
         if semaphore.wait(timeout: .now() + .milliseconds(max(0, timeoutMs))) == .success { return true }
         return available > 0
     }
 
     /// Borrow the oldest committed block, or `nil` if none. Valid until `release()`.
-    public func peek() -> (buffer: SampleBuffer, time: SampleTime)? {
+    package func peek() -> (buffer: SampleBuffer, time: SampleTime)? {
         let h = head.load(ordering: .relaxed)
         let t = tail.load(ordering: .acquiring)
         guard t > h else { return nil }
@@ -205,7 +207,7 @@ public final class BlockRing: @unchecked Sendable {
     }
 
     /// Free the block returned by the last `peek`. No-op if nothing is pending.
-    public func release() {
+    package func release() {
         let h = head.load(ordering: .relaxed)
         let t = tail.load(ordering: .acquiring)
         guard t > h else { return }

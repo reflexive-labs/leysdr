@@ -2,7 +2,7 @@
 
 import Foundation
 import XCTest
-@testable import LeylineDaemon
+@testable import LeylineServer
 
 /// FrameRing is latest-wins: a full ring evicts the oldest frame and the writer-side seq exposes the gap.
 final class FrameRingTests: XCTestCase {

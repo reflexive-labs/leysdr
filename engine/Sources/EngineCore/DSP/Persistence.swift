@@ -17,13 +17,14 @@ import Foundation
 /// (`PersistenceFrameSink`) calls `add` and `snapshot` back to back from the same `write`, itself
 /// invoked from the DSP thread, so the lock guards a histogram that one thread both folds into and
 /// reads: uncontended, and cheap enough that the safety is worth the pair of atomics.
-public final class PersistenceAccumulator: @unchecked Sendable {
-    public let bins: Int
-    public let levels: Int
-    public let floorDB: Double
-    public let rangeDB: Double
+/// Unchecked Sendable: the counts and row counters are read and written only under `lock`.
+package final class PersistenceAccumulator: @unchecked Sendable {
+    package let bins: Int
+    package let levels: Int
+    package let floorDB: Double
+    package let rangeDB: Double
     /// Rows after which every count is halved.
-    public let rowsPerHalfLife: Int
+    package let rowsPerHalfLife: Int
 
     private let counts: UnsafeMutablePointer<UInt16>
     private let lock = NSLock()
@@ -32,7 +33,7 @@ public final class PersistenceAccumulator: @unchecked Sendable {
 
     /// `halfLifeRows` is how many accumulated rows halve the counts. A half-life in seconds is the
     /// caller's to convert, because only it knows the row rate the ladder settled on.
-    public init(bins: Int, levels: Int, floorDB: Double, rangeDB: Double, halfLifeRows: Int) {
+    package init(bins: Int, levels: Int, floorDB: Double, rangeDB: Double, halfLifeRows: Int) {
         precondition(bins > 0 && levels > 0 && rangeDB > 0 && halfLifeRows > 0)
         self.bins = bins
         self.levels = levels
@@ -46,14 +47,14 @@ public final class PersistenceAccumulator: @unchecked Sendable {
     deinit { counts.deallocate() }
 
     /// Rows folded in so far.
-    public var rows: UInt64 {
+    package var rows: UInt64 {
         lock.lock(); defer { lock.unlock() }
         return rowsSeen
     }
 
     /// Fold one FFT row in. `row` is dB, one value per bin; a row of a different length is folded
     /// by nearest bin so the ladder's size and the histogram's need not match.
-    public func add(row: UnsafeBufferPointer<Float>) {
+    package func add(row: UnsafeBufferPointer<Float>) {
         guard let src = row.baseAddress, row.count > 0 else { return }
         let sp = Signpost.begin(.persistenceAdd)
         defer { Signpost.end(.persistenceAdd, sp) }
@@ -85,7 +86,7 @@ public final class PersistenceAccumulator: @unchecked Sendable {
     /// Copy the histogram out as little-endian uint16, bin-major. `into` must hold
     /// `bins * levels * 2` bytes; returns the bytes written.
     @discardableResult
-    public func snapshot(into out: UnsafeMutableRawBufferPointer) -> Int {
+    package func snapshot(into out: UnsafeMutableRawBufferPointer) -> Int {
         let need = bins * levels * 2
         guard out.count >= need, let base = out.baseAddress else { return 0 }
         lock.lock()
@@ -100,7 +101,7 @@ public final class PersistenceAccumulator: @unchecked Sendable {
     }
 
     /// Largest count in the histogram, which is what a renderer normalises against.
-    public var peak: UInt16 {
+    package var peak: UInt16 {
         lock.lock(); defer { lock.unlock() }
         var m: UInt16 = 0
         for i in 0 ..< (bins * levels) where counts[i] > m { m = counts[i] }

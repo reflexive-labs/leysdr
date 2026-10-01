@@ -4,7 +4,7 @@
 // "Predicates and delivery"): every operator, numeric vs text, CONTAINS on a FIPS list, geo in and
 // out, the empty predicate, and a field that is not there.
 
-@testable import LeylineDaemon
+@testable import LeylineServer
 import LeylineProto
 import XCTest
 

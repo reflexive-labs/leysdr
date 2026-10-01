@@ -7,9 +7,10 @@
 //   CHackRF         optional runtime loader for libhackrf
 //   EngineCore     hand-written engine: devices, capture, DSP, sinks (proto-free)
 //   TestSupport    fakes shared by both test suites (test-only; no product depends on it)
-//   LeylineDaemon  the `leylined` executable: gRPC over UDS; ProtoMapping renders engine values
-//                  to proto, and the session and job stores hold proto messages as their own
-//                  record type
+//   LeylineServer  the daemon as a library: gRPC over UDS, the session and job stores, the
+//                  services; ProtoMapping renders engine values to proto, and the session and job
+//                  stores hold proto messages as their own record type
+//   LeylineDaemon  the `leylined` executable: argument parsing and `main`, nothing else
 //
 // The generated leyline.v1 contract is not a target here: it is the `swift/LeylineProto` package
 // this one depends on, so the Apache-2.0 contract sits outside the GPL directory
@@ -25,11 +26,10 @@ let package = Package(
     name: "Leyline",
     platforms: [.macOS("26.0")],
     products: [
+        // The daemon is the one thing this package ships. EngineCore and LeylineServer are not
+        // products: their declarations are `package`, visible to the targets here and to nothing
+        // outside (the app links LeylineProto only; `make license-check`).
         .executable(name: "leylined", targets: ["LeylineDaemon"]),
-        .executable(name: "s2-throughput", targets: ["S2Throughput"]),
-        // A decoder plugin that decodes nothing, for the daemon's decode-job tests (DEC-4).
-        .executable(name: "leyline-fake-decoder", targets: ["FakeDecoder"]),
-        .library(name: "EngineCore", targets: ["EngineCore"]),
     ],
     dependencies: [
         .package(name: "LeylineProto", path: "../swift/LeylineProto"),
@@ -62,29 +62,45 @@ let package = Package(
             ],
             path: "Sources/EngineCore"
         ),
-        .executableTarget(
-            name: "LeylineDaemon",
+        .target(
+            name: "LeylineServer",
             dependencies: [
                 "EngineCore",
                 .product(name: "LeylineProto", package: "LeylineProto"),
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
                 .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
+                .product(name: "Logging", package: "swift-log"),
+            ],
+            path: "Sources/LeylineServer"
+        ),
+        .executableTarget(
+            name: "LeylineDaemon",
+            dependencies: [
+                "EngineCore",
+                "LeylineServer",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "Logging", package: "swift-log"),
             ],
             path: "Sources/LeylineDaemon"
         ),
+        // The two executables below are not products: they are a test fixture and a spike harness,
+        // not something this package ships. SwiftPM still builds an executable target in the root
+        // package under the target's name, so the names are the binaries' names, which
+        // DaemonTestHarness, scripts/hot-path-allocations.sh and docs/decisions/S2-throughput.md use.
+        //
+        // A decoder plugin that decodes nothing, for the daemon's decode-job tests.
         .executableTarget(
-            name: "FakeDecoder",
+            name: "leyline-fake-decoder",
             dependencies: [
                 .product(name: "LeylineProto", package: "LeylineProto"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
             ],
             path: "Sources/FakeDecoder"
         ),
+        // The S2 throughput harness (docs/decisions/S2-throughput.md).
         .executableTarget(
-            name: "S2Throughput",
+            name: "s2-throughput",
             dependencies: ["EngineCore"],
             path: "Sources/S2Throughput"
         ),
@@ -105,7 +121,7 @@ let package = Package(
         .testTarget(
             name: "LeylineDaemonTests",
             dependencies: [
-                "LeylineDaemon",
+                "LeylineServer",
                 "EngineCore",
                 .product(name: "LeylineProto", package: "LeylineProto"),
                 "TestSupport",

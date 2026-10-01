@@ -16,9 +16,9 @@ import os
 ///     Signpost.end(.blockIngest, s)
 ///
 /// The interval names are the ones the S1/S2 spike measurements key on; keep them stable.
-public enum Signpost {
+package enum Signpost {
     /// Interval/event names used on the sample path.
-    public enum Name: CaseIterable {
+    package enum Name: CaseIterable {
         /// One device block converted and pushed into the block ring.
         case blockIngest
         /// One channel's NCO → FIR → demod → sinks pass for one block.
@@ -59,7 +59,7 @@ public enum Signpost {
     /// Opaque token returned by `begin`, consumed by `end`. Holds a value-type `OSSignpostID`: the
     /// `OSSignposter.beginInterval` API is avoided because its `OSSignpostIntervalState`
     /// is a class instance, i.e. a heap allocation per interval while recording.
-    public struct Token {
+    package struct Token {
         #if canImport(os)
         @usableFromInline let id: OSSignpostID
         @usableFromInline let active: Bool
@@ -71,7 +71,7 @@ public enum Signpost {
     #endif
 
     /// Whether signposts are being recorded. On non-Darwin this is always false.
-    public static var isEnabled: Bool {
+    package static var isEnabled: Bool {
         #if canImport(os)
         return log.signpostsEnabled
         #else
@@ -81,7 +81,7 @@ public enum Signpost {
 
     /// Begin an interval. Returns a token that must be passed to `end` with the same name.
     @inline(__always)
-    public static func begin(_ name: Name) -> Token {
+    package static func begin(_ name: Name) -> Token {
         #if canImport(os)
         guard log.signpostsEnabled else { return Token(id: .null, active: false) }
         let id = OSSignpostID(log: log)
@@ -94,7 +94,7 @@ public enum Signpost {
 
     /// End an interval started with `begin`.
     @inline(__always)
-    public static func end(_ name: Name, _ token: Token) {
+    package static func end(_ name: Name, _ token: Token) {
         #if canImport(os)
         guard token.active else { return }
         os_signpost(.end, log: log, name: name.staticName, signpostID: token.id)
@@ -103,7 +103,7 @@ public enum Signpost {
 
     /// Emit a point event (e.g. a ring overrun).
     @inline(__always)
-    public static func event(_ name: Name) {
+    package static func event(_ name: Name) {
         #if canImport(os)
         guard log.signpostsEnabled else { return }
         os_signpost(.event, log: log, name: name.staticName)

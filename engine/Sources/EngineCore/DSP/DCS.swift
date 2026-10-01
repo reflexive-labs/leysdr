@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // DCS (digital-coded squelch) decoding over the sub-audible tap (docs/design/signal-views.md,
-// "DCS"; docs/plans/signal-views.md, SV-7).
+// "DCS").
 //
-// Everything this file assumes about the format was read off two real takes on 2026-09-23
-// (`rf-captures/ht-dcs-023.cf32` and `ht-dcs-754.cf32`, the SV-7 entry "Recorded and read
-// 2026-09-23"): a 23-bit word repeated without a gap at 134.4 bit/s; in received order, with
-// positive deviation as a one, nine code bits low bit first, the fixed bits `001` and eleven
-// parity bits; the word a Golay(23,12) codeword under g(x) = x^11 + x^9 + x^7 + x^6 + x^5 + x + 1
-// with the first received bit as the coefficient of x^22. The decoder runs in the channel's
-// detached sub-audible task beside the CTCSS detector, never on the DSP thread.
+// Everything this file assumes about the format was read off two real takes of a handheld recorded
+// on 2026-09-23 (`rf-captures/ht-dcs-023.cf32` and `ht-dcs-754.cf32`, gitignored with the rest of
+// `rf-captures/`): a 23-bit word repeated without a gap at 134.4 bit/s; in received order, with
+// positive deviation as a one, nine code bits low bit first, the fixed bits `001` and eleven parity
+// bits; the word a Golay(23,12) codeword under g(x) = x^11 + x^9 + x^7 + x^6 + x^5 + x + 1 with the
+// first received bit as the coefficient of x^22. The decoder runs in the channel's detached
+// sub-audible task beside the CTCSS detector, never on the DSP thread.
 
 import Foundation
 
@@ -17,13 +17,13 @@ import Foundation
 ///
 /// A word is held in the low 23 bits of a `UInt32` with the first received bit at bit 22, so the
 /// integer is the codeword polynomial with that bit as the coefficient of x^22.
-public enum DCS {
+package enum DCS {
     /// Bits a second, from the word's autocorrelation on both takes (134.44 measured).
-    public static let bitRateHz = 134.4
-    public static let wordBits = 23
+    package static let bitRateHz = 134.4
+    package static let wordBits = 23
     /// g(x) = x^11 + x^9 + x^7 + x^6 + x^5 + x + 1. Both takes divide exactly under it in every
     /// rotation and in both polarities, as a cyclic code containing the all-ones word does.
-    public static let generator: UInt32 = 0xAE3
+    package static let generator: UInt32 = 0xAE3
     static let wordMask: UInt32 = (1 << 23) - 1
 
     /// The 104 codes radios offer, octal. Checked on 2026-09-24 against the RadioReference wiki's
@@ -33,7 +33,7 @@ public enum DCS {
     /// list is what frames the word: the fixed bits alone do not, because every rotation of a
     /// codeword is a codeword and several rotations carry `001` in place (the 754 word also reads
     /// as 076 and 203).
-    public static let standardCodes: [Int] = [
+    package static let standardCodes: [Int] = [
         0o023, 0o025, 0o026, 0o031, 0o032, 0o036, 0o043, 0o047, 0o051, 0o053, 0o054, 0o065,
         0o071, 0o072, 0o073, 0o074, 0o114, 0o115, 0o116, 0o122, 0o125, 0o131, 0o132, 0o134,
         0o143, 0o145, 0o152, 0o155, 0o156, 0o162, 0o165, 0o172, 0o174, 0o205, 0o212, 0o223,
@@ -46,7 +46,7 @@ public enum DCS {
     ]
 
     /// The remainder of `word` divided by the generator; 0 for a codeword.
-    public static func syndrome(_ word: UInt32) -> UInt32 {
+    package static func syndrome(_ word: UInt32) -> UInt32 {
         var v = word & wordMask
         var i = 22
         while i >= 11 {
@@ -56,11 +56,11 @@ public enum DCS {
         return v
     }
 
-    public static func isCodeword(_ word: UInt32) -> Bool { syndrome(word) == 0 }
+    package static func isCodeword(_ word: UInt32) -> Bool { syndrome(word) == 0 }
 
     /// The word a transmitter sends for `code` (0...511, the nine bits of the three octal digits),
     /// in received order: code bits low first, `001`, then the parity that makes it a codeword.
-    public static func encode(code: Int) -> UInt32 {
+    package static func encode(code: Int) -> UInt32 {
         precondition((0 ..< 512).contains(code))
         var data: UInt32 = 0
         for j in 0 ..< 9 where (code >> j) & 1 == 1 { data |= 1 << UInt32(22 - j) }
@@ -69,7 +69,7 @@ public enum DCS {
     }
 
     /// `word` rotated so that the bit received `k` places later comes first.
-    public static func rotate(_ word: UInt32, by k: Int) -> UInt32 {
+    package static func rotate(_ word: UInt32, by k: Int) -> UInt32 {
         let k = UInt32(((k % wordBits) + wordBits) % wordBits)
         guard k > 0 else { return word & wordMask }
         return ((word << k) | (word >> (UInt32(wordBits) - k))) & wordMask
@@ -87,41 +87,41 @@ public enum DCS {
 
     /// The octal digits of `code` read as a decimal number, the contract's convention for
     /// `dcs_code` (023 -> 23).
-    public static func octalAsDecimal(_ code: Int) -> Int {
+    package static func octalAsDecimal(_ code: Int) -> Int {
         (code >> 6 & 7) * 100 + (code >> 3 & 7) * 10 + (code & 7)
     }
 }
 
 /// What the DCS decoder concluded at one hop.
-public struct DCSResult: Sendable, Equatable {
+package struct DCSResult: Sendable, Equatable {
     /// Whether three consecutive words at one bit phase read as one listed code.
-    public var detected: Bool = false
+    package var detected: Bool = false
     /// The code, as the octal digits read in decimal (023 -> 23, the contract's convention); 0
     /// unless `detected`. The decoder never reports the nearest listed code to a word that is not
     /// one (invariant 12).
-    public var code: Int = 0
+    package var code: Int = 0
     /// True when the code was read from the complemented stream. With the standard list this is
     /// never the case: the list is closed under complement (023 inverted is on the air as 047
     /// normal, bit for bit), so the received polarity always finds a listed code first.
-    public var inverted: Bool = false
+    package var inverted: Bool = false
     /// Mean magnitude of the sliced samples at the chosen phase, Hz. NaN before the history holds
     /// three words.
-    public var deviationHz: Double = .nan
+    package var deviationHz: Double = .nan
     /// Bits corrected to reach a codeword. Always 0: this version accepts exact codewords only.
-    public var bitErrors: Int = 0
+    package var bitErrors: Int = 0
     /// Consecutive words, newest back and at most three, that read as the same listed code at the
     /// best phase.
-    public var wordsAgreeing: Int = 0
+    package var wordsAgreeing: Int = 0
     /// Mean |sample| over the standard deviation of |sample| at the sliced bit centres: how open
     /// the eye is. NaN before the history holds three words.
-    public var eye: Double = .nan
+    package var eye: Double = .nan
     /// A stated score, not a probability: see `DCSDecoder.confidence(wordsAgreeing:eye:)`.
-    public var confidence: Double = 0
+    package var confidence: Double = 0
     /// The newest word at the best phase, received polarity, first bit at bit 22. For the log when
     /// nothing is claimed; never interpreted beyond that.
-    public var rawWord: UInt32 = 0
+    package var rawWord: UInt32 = 0
 
-    public init() {}
+    package init() {}
 }
 
 /// Slices the sub-audible tap into DCS bits and reads the code.
@@ -131,18 +131,18 @@ public struct DCSResult: Sendable, Equatable {
 /// three words give one listed code; a transmitter's clock is steady enough over three words
 /// (0.51 s) that the best of eight phases sits within a sixteenth of a bit of the centre. Every
 /// buffer is allocated in `init`; `analyse` allocates nothing.
-public final class DCSDecoder {
-    public let rate: Double
-    public let samplesPerBit: Double
+package final class DCSDecoder {
+    package let rate: Double
+    package let samplesPerBit: Double
     /// Starting points tried within one bit. At 7.44 samples a bit, eight puts the best within
     /// half a sample of the bit centre.
-    public static let phases = 8
+    package static let phases = 8
     /// Consecutive identical words a lock needs, as receivers do.
-    public static let wordsForLock = 3
+    package static let wordsForLock = 3
     /// The tuning-error tracker's time constant. Long against a word (171 ms) so the bits do not
     /// move it, which a window mean would: a run of ones pulls a short mean up and shrinks every
     /// one in it.
-    public static let trackerSeconds = 1.0
+    package static let trackerSeconds = 1.0
 
     private let bitsKept = DCSDecoder.wordsForLock * DCS.wordBits
     /// The oldest sample the slicer can reach, plus interpolation's one extra.
@@ -159,7 +159,7 @@ public final class DCSDecoder {
 
     /// `codes` is the list a lock must land on, as nine-bit values (octal literals); tests narrow it
     /// to reach the complemented-polarity branch, which the standard list never takes.
-    public init(rate: Double, codes: [Int] = DCS.standardCodes) {
+    package init(rate: Double, codes: [Int] = DCS.standardCodes) {
         precondition(rate > 0)
         self.rate = rate
         samplesPerBit = rate / DCS.bitRateHz
@@ -174,7 +174,7 @@ public final class DCSDecoder {
 
     /// Forget the history and the tracker. Called when the squelch closes: the next transmission
     /// has its own tuning error and its own bit clock.
-    public func reset() {
+    package func reset() {
         head = 0
         filled = 0
         trackerSeeded = false
@@ -183,7 +183,7 @@ public final class DCSDecoder {
 
     /// Take the next samples of the tap (±1.0 is `fullScaleDeviationHz`) and decode over the
     /// history so far. Call it once per hop with the samples that arrived since the last call.
-    public func analyse(_ samples: [Float], fullScaleDeviationHz: Double) -> DCSResult {
+    package func analyse(_ samples: [Float], fullScaleDeviationHz: Double) -> DCSResult {
         if !samples.isEmpty, !trackerSeeded {
             // Start the tracker at the first hop's mean rather than at zero, so a channel created
             // mid-transmission is not sliced for a second against a zero the carrier is nowhere
@@ -269,10 +269,9 @@ public final class DCSDecoder {
     ///
     /// where `eye` is mean |sample| over the standard deviation of |sample| at the sliced bit
     /// centres. At an eye of 2 about one sample in 44 lands on the wrong side under Gaussian
-    /// scatter, and 8 or more is a clean eye. The two real takes read 30 to 68 from the first lock
-    /// (docs/plans/signal-views.md, SV-7, "Landed (engine)"), so the score separates a weak or
-    /// noisy lock from a clean one and does not rank clean ones.
-    public static func confidence(wordsAgreeing: Int, eye: Double) -> Double {
+    /// scatter, and 8 or more is a clean eye. The two real takes read 30 to 68 from the first lock,
+    /// so the score separates a weak or noisy lock from a clean one and does not rank clean ones.
+    package static func confidence(wordsAgreeing: Int, eye: Double) -> Double {
         let words = Double(Swift.min(Swift.max(wordsAgreeing, 0), wordsForLock)) / Double(wordsForLock)
         guard eye.isFinite else { return words }
         return words * Swift.min(1, Swift.max(0, (eye - 2) / 6))
