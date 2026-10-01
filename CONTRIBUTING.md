@@ -1,83 +1,87 @@
-# Contributing to Leyline
+# Contributing to Leyline SDR
 
-Leyline is a macOS SDR engine (`leylined`, Swift) with a Go CLI (`ley`) as its first client. The
-two halves meet at one generated contract, `proto/leyline/v1`. This page is the short version of
-how to work on it; the long version is `docs/dev/setup.md` (building),
-`docs/dev/engine-internals.md` (the engine's implementation contract) and `docs/dev/cli-style.md`
-(`ley`'s output style). `docs/README.md` is the map of everything under `docs/`, by reader.
+Leyline SDR is a receive-only SDR for macOS: a Swift daemon (`leylined`) that owns the radio and
+does the signal processing, and clients (`ley`, the Mac app, scripts, agents) that drive it over
+one gRPC contract.
 
-## Before you change anything
+## Build and test
 
-Read `AGENTS.md`. It is written as instructions to an agent, but it is also the review checklist:
-thirteen invariants, each with a rationale in `docs/design/*.md`. A change that breaks one needs a
-design-doc change first, not a workaround. The ones people trip on:
+[`docs/dev/setup.md`](docs/dev/setup.md) has the full setup. In short, on a Mac:
 
-- **All DSP runs in the daemon.** Clients render. If a feature only works from Swift, or only from
-  Go, it is not done.
-- **The hot path allocates nothing.** `Demodulator.process`, `AudioSink.write` and ring writes: no
-  allocation, no locks held across calls, no `async`.
-- **Events carry the whole object, never a delta.** Reconnect is `GetState` plus resume from `seq`.
-- **The wire contract is generated; the engine contract is not.** Never hand-edit `go/gen` or
-  `swift/LeylineProto` (run `make proto`); never generate
-  `engine/Sources/EngineCore/CoreProtocols.swift`.
-- **Proto changes are additive within v1.** New fields get new numbers; reserved numbers stay
-  reserved; nothing is renamed or retyped.
+```sh
+make go swift-release fixtures   # ley, leylined, the IQ fixtures
+make check                       # what CI runs: generated code, Go tests, lint, engine, e2e, app
+```
 
-## The gate
+No radio is needed. The tests play generated IQ fixtures through the whole pipeline, and the `ley`
+tests run against an in-memory fake of the daemon (`go/internal/fakedaemon`).
 
-`make check` is what CI runs: generated-code drift, Go tests, lint (`golangci-lint` + `gofumpt`,
-pinned), the engine build and tests, and the cross-language e2e suite that drives a locally built
-`leylined` with `ley` over a Unix socket. Run it on a Mac before opening a pull request; the Linux
-job tests the Go half and the portable engine core, but only macOS compiles the Accelerate kernels
-and the audio sink, and the product ships only on macOS.
+Linux can build and test the Go half and most of the engine, including the end-to-end tests. The
+Mac app's views, the Accelerate DSP kernels and audio output need a Mac.
 
-Every DSP change must pass the fixture round-trips (`make fixtures` generates them; `docs/reference/iq-files.md`
-describes each signal). Anything on the sample path gets `os_signpost` instrumentation.
-Hardware-in-the-loop checks are manual: `docs/dev/release-checklist.md`.
+## Where things live
 
-## Tests without hardware
+| path | what |
+|---|---|
+| `proto/leyline/v1` | the contract |
+| `engine/` | the daemon and its DSP (Swift) |
+| `app/` | the Mac app (SwiftUI) |
+| `go/` | `ley`, the Go client library, the decoders, test tools |
+| `decoders/` | decoder manifests |
+| `docs/` | the [docs map](docs/README.md): guides, reference, design, contributor contracts, plans |
 
-`FilePlaybackDevice` plays IQ fixtures through the whole pipeline, so the engine tests and the e2e
-suite need no radio. `go/internal/fakedaemon` is an in-memory implementation of the contract that
-the `ley` tests run against; when you change what the daemon does, change the fake to match and
-add the test that proves `ley` handles it, then confirm against the real daemon with `make e2e`.
+## Proposing a change
 
-## Commits and pull requests
+- **Open an issue first for anything large** (a new feature, a contract change, a new
+  dependency), so the approach is agreed before the code is written. Small fixes can go straight
+  to a pull request.
+- **Keep pull requests small, and one concern per commit.** A commit carries its tests and its
+  documentation. The subject is `area: what changed`, under 72 characters (`engine:`, `ley:`,
+  `app:`, `proto:`, `docs:`); the body says why.
+- **`make check` and `make lint` are green** before you ask for review.
+- **Proto changes are additive.** New fields get new numbers; nothing is renamed, retyped or
+  renumbered. Never hand-edit generated code (`go/gen`, `swift/LeylineProto`); run `make proto`.
+- **Signal processing stays in the daemon.** Clients only render, so a feature works the same
+  from `ley`, the app and an agent.
 
-One change per commit, with its tests. Subject line `area: what changed` in the imperative and under
-72 characters (`engine:`, `ley:`, `proto:`, `docs:`, `fix(scan):` are all in use); the body explains
-why, in plain prose. Sign off every commit (`git commit -s`), which adds a `Signed-off-by:` line and
-certifies, in the sense of the Developer Certificate of Origin (developercertificate.org), that you
-wrote the change or have the right to submit it under the terms below; `git config core.hooksPath
-scripts/git-hooks` makes the line automatic for this clone. Larger work starts from a plan in
-`docs/plans/` with `[ ]` work items, and a design decision starts from a `docs/design/*.md` change.
+## Sign-off
 
-## Documentation
+Every commit carries a `Signed-off-by:` line (`git commit -s`). It certifies the
+[Developer Certificate of Origin](https://developercertificate.org): you wrote the change or have
+the right to submit it under the terms below. `git config core.hooksPath scripts/git-hooks` adds
+the line automatically in this clone.
 
-Prose follows `docs/writing-guide.md`: the voice, the words, and which kind of page goes in which
-directory. `docs/README.md` shows where a new page belongs and lists every page, so a page that is
-added, moved or retired changes the index too. A moved page takes every `docs/` reference in the
-repository with it, code comments and tests included; two documents are parsed by tests (the error
-table in `docs/dev/engine-internals.md` and the help goldens) and keep their shape.
+## Licensing
 
-## The licence of your contribution
+You keep the copyright in your contribution and license it to the project under Apache-2.0,
+whichever directory it lands in. The project distributes it under the licence of that directory:
 
-By opening a pull request you license your contribution to the project under the Apache License
-2.0, whichever directory it lands in. The project then distributes it under the licence of that
-directory: Apache-2.0 for the contract, the generated code, the client library, `ley` and
-everything else; GPL-3.0-or-later for the engine under `engine/`, which links librtlsdr
-(`docs/decisions/D2-licensing.md` explains why the engine is GPL and nothing else is). This inbound
-permissive, outbound copyleft split asks nothing of you beyond the terms your code
-would carry anywhere outside the engine, and it leaves the engine's licence the owner's to change
-later (a commercial licence for a partnership, say) without finding every contributor first. You
-keep your copyright; nothing is assigned.
+- **The engine (`engine/`, `leylined`) ships as GPL-3.0-or-later**, because it links librtlsdr,
+  which is GPL.
+- **Everything else is Apache-2.0**: the contract, the generated code, the client library, `ley`,
+  the decoders and the app.
 
-New source files carry `SPDX-License-Identifier: Apache-2.0`, or `GPL-3.0-or-later` under `engine/`.
-`scripts/check-licenses.sh --fix` adds the line; `make license-check` (part of `make check` and CI)
-refuses a file without one, a dependency missing from `third_party/licenses/MANIFEST.txt`, and any
-copyleft dependency outside the engine. When you add a dependency, add its row to the manifest with
-its licence text beside it and name it in `NOTICE`.
+Because contributions come in under Apache-2.0, Reflexive Labs, LLC, the copyright holder, may also
+offer the engine under other licences. [`docs/decisions/D2-licensing.md`](docs/decisions/D2-licensing.md)
+records the decision.
 
-## Where to ask
+New source files carry an `SPDX-License-Identifier` line (`scripts/check-licenses.sh --fix` adds
+it). A new dependency needs a row in `third_party/licenses/MANIFEST.txt`, its licence text, and an
+entry in `NOTICE`; `make license-check` tells you what is missing.
 
-Open an issue on the repository. If it is a security matter, read `SECURITY.md` first.
+## Style
+
+- [Writing guide](docs/writing-guide.md): documentation, help texts, error messages, comments and
+  commit messages.
+- [Swift style](docs/dev/swift-style.md): Swift in the engine and the app.
+- [CLI style](docs/dev/cli-style.md): anything a `ley` user sees.
+
+## AI-assisted contributions
+
+They are welcome. The person who submits the change is responsible for it, as for any other.
+[`AGENTS.md`](AGENTS.md) is the condensed rule list for coding agents working on this repository.
+
+## Questions and security
+
+Open an issue for questions. For a security problem, read [`SECURITY.md`](SECURITY.md) and report
+it privately.
