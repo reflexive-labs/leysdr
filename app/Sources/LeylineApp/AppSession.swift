@@ -43,13 +43,9 @@ final class AppSession {
     /// field showing a frequency nothing is tuned to until the next event, and a quiet daemon
     /// sends none.
     private var requestedExpiry: Task<Void, Never>?
-    /// A centre write not yet confirmed by the capture's event; clicks in the meantime are
-    /// computed against it rather than the mirror's old centre.
-    private var centreInFlight: Int64?
-    /// A centre move asked for while one was in flight. The last one wins, and `retune` performs
-    /// it when the move it is waiting on confirms: two moves at once leave the coalescer holding
-    /// only the last centre, and the first offset written against a centre that never applied.
-    private var nextRetune: (centre: Int64, offset: Int64, capture: String, channel: String)?
+    /// The centre write not yet confirmed by the capture's event, and the move waiting behind
+    /// it (`RetuneQueue`). No view reads it, so it is not observed.
+    private let retunes = RetuneQueue()
     private var creatingChannel = false
     private var lastPan = Date.distantPast
     /// Where a rail drag is taking the centre, until the capture's event carries it: the rail
@@ -1188,7 +1184,7 @@ final class AppSession {
     /// release's move (`askedFirst`), Cancel puts the pill back where the radio is.
     func pan(centreTo centre: Int64, ended: Bool, askedFirst: Bool = false) {
         guard let cap = capture, let ch = channel, let writes else { return }
-        guard panCentre != nil || centreInFlight == nil else { return }
+        guard panCentre != nil || retunes.centreInFlight == nil else { return }
         let span = Int64(cap.sampleRate)
         var newCentre = clampCentre(centre, span: span)
         if let b = band {
@@ -1212,7 +1208,7 @@ final class AppSession {
         let station = Int64(displayHz ?? cap.centerHz)
         let held = min(max(station, newCentre - bound), newCentre + bound)
         panCentre = newCentre
-        centreInFlight = newCentre
+        retunes.hold(centre: newCentre)
         request(UInt64(max(0, held)))
         spectrum.resetFolds()
         let want = UInt64(max(0, newCentre))
@@ -1228,7 +1224,7 @@ final class AppSession {
                 await confirmed { self.capture?.centerHz == want }
                 if panCentre == newCentre {
                     panCentre = nil
-                    centreInFlight = nil
+                    retunes.release()
                 }
             }
         }
@@ -1237,11 +1233,11 @@ final class AppSession {
     /// After a cancelled pan: the centre the drag last wrote, if one, is still in flight, and is
     /// released once the capture's event carries it, as the release of a drag releases it.
     private func releaseCentreInFlight() {
-        guard let written = centreInFlight else { return }
+        guard let written = retunes.centreInFlight else { return }
         let want = UInt64(max(0, written))
         Task {
             await confirmed { self.capture?.centerHz == want }
-            if panCentre == nil, centreInFlight == written { centreInFlight = nil }
+            if panCentre == nil { retunes.release(ifCentre: written) }
         }
     }
 
@@ -1261,7 +1257,7 @@ final class AppSession {
         }
         let span = Int64(cap.sampleRate)
         let margin = Int64(ch.bandwidthHz)
-        let centre = centreInFlight ?? Int64(cap.centerHz)
+        let centre = retunes.centreInFlight ?? Int64(cap.centerHz)
         let lo = centre - span / 2 + margin
         let hi = centre + span / 2 - margin
         var target = Int64(hz)
@@ -1269,18 +1265,17 @@ final class AppSession {
             if dragging {
                 target = min(max(target, lo), hi)
                 if Date().timeIntervalSince(lastPan) > Self.panRateLimitSeconds,
-                    centreInFlight == nil
+                    retunes.centreInFlight == nil
                 {
                     lastPan = Date()
                     let newCentre = clampCentre(
                         target < lo ? centre - span / 8 : centre + span / 8, span: span)
                     request(UInt64(max(0, target)))
                     log("tune", "pan \(centre) -> \(newCentre) Hz under a drag at \(target) Hz")
-                    Task {
-                        await retune(
-                            centre: newCentre, offset: target - newCentre, capture: cap.captureID,
-                            channel: ch.channelID)
-                    }
+                    let move = RetuneQueue.Move(
+                        centre: newCentre, offset: target - newCentre, captureID: cap.captureID,
+                        channelID: ch.channelID)
+                    Task { await retune(move) }
                     followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
                     return
                 }
@@ -1290,28 +1285,22 @@ final class AppSession {
                         ? target + span * Self.edgeInsetEighths / 8
                         : target - span * Self.edgeInsetEighths / 8, span: span)
                 request(UInt64(max(0, target)))
-                // One move at a time: while one is in flight the new one waits in the slot and
-                // `retune` performs it next, because two of them leave the coalescer holding
-                // only the last centre and the first offset written against a centre that
-                // never applied.
-                if centreInFlight != nil {
-                    if let waiting = nextRetune {
-                        log("tune", "centre \(waiting.centre) Hz superseded before it ran")
+                // One move at a time: while one is in flight the new one waits and `retune`
+                // performs it next (`RetuneQueue`).
+                let move = RetuneQueue.Move(
+                    centre: newCentre, offset: target - newCentre, captureID: cap.captureID,
+                    channelID: ch.channelID)
+                switch retunes.request(move) {
+                case .queued(let superseded):
+                    if let superseded {
+                        log("tune", "centre \(superseded.centre) Hz superseded before it ran")
                     }
                     log(
                         "tune",
                         "centre \(newCentre) Hz for \(target) Hz waits on the move in flight")
-                    nextRetune = (
-                        centre: newCentre, offset: target - newCentre, capture: cap.captureID,
-                        channel: ch.channelID
-                    )
-                } else {
+                case .start:
                     log("tune", "centre \(centre) -> \(newCentre) Hz for \(target) Hz")
-                    Task {
-                        await retune(
-                            centre: newCentre, offset: target - newCentre, capture: cap.captureID,
-                            channel: ch.channelID)
-                    }
+                    Task { await retune(move) }
                 }
                 followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
                 return
@@ -1340,32 +1329,28 @@ final class AppSession {
         return min(max(centre, Int64(r.minHz) + span / 2), Int64(r.maxHz) - span / 2)
     }
 
-    /// The centre write, the wait for its event, then the offset — and then whatever move was
-    /// asked for in the meantime, before `centreInFlight` is cleared, so a second request never
-    /// starts a second one of these. A superseded move's offset is not written: the centre it
-    /// belonged to is already on its way somewhere else.
-    private func retune(centre: Int64, offset: Int64, capture: String, channel: String) async {
+    /// The centre write, the wait for its event, then the offset, and then whatever move was
+    /// asked for in the meantime (`RetuneQueue.perform`).
+    private func retune(_ first: RetuneQueue.Move) async {
         guard let writes else { return }
-        var move = (centre: centre, offset: offset, capture: capture, channel: channel)
-        while true {
-            centreInFlight = move.centre
-            spectrum.resetFolds()
-            let want = UInt64(max(0, move.centre))
-            writes.centerHz(want, capture: move.capture)
-            await confirmed { self.capture?.centerHz == want }
-            if self.capture?.centerHz != want {
-                log(
-                    "tune",
-                    "centre \(move.centre) not confirmed; capture is at \(self.capture?.centerHz ?? 0)"
-                )
-            }
-            if nextRetune == nil { writes.offsetHz(move.offset, channel: move.channel) }
-            guard let next = nextRetune else { break }
-            nextRetune = nil
-            log("tune", "centre \(move.centre) -> \(next.centre) Hz, the move that was waiting")
-            move = next
-        }
-        centreInFlight = nil
+        await retunes.perform(
+            first,
+            moveCentre: { move in
+                spectrum.resetFolds()
+                let want = UInt64(max(0, move.centre))
+                writes.centerHz(want, capture: move.captureID)
+                await confirmed { self.capture?.centerHz == want }
+                if self.capture?.centerHz != want {
+                    log(
+                        "tune",
+                        "centre \(move.centre) not confirmed; capture is at \(self.capture?.centerHz ?? 0)"
+                    )
+                }
+            },
+            writeOffset: { move in writes.offsetHz(move.offset, channel: move.channelID) },
+            onNext: { move, next in
+                log("tune", "centre \(move.centre) -> \(next.centre) Hz, the move that was waiting")
+            })
     }
 
     /// No channel yet (a capture adopted from another client, or the first click): the centre
@@ -1391,10 +1376,10 @@ final class AppSession {
             log(
                 "tune",
                 "centre \(cap.centerHz) -> \(centre) Hz for \(target) Hz, before the first channel")
-            centreInFlight = centre
+            retunes.hold(centre: centre)
             writes.centerHz(UInt64(max(0, centre)), capture: cap.captureID)
             await confirmed { self.capture?.centerHz == UInt64(max(0, centre)) }
-            centreInFlight = nil
+            retunes.release()
         }
         request(hz)
         do {
@@ -1935,7 +1920,7 @@ final class AppSession {
     /// (`retuneQuestion`); Move anyway sets it (`askedFirst`), Cancel leaves the width.
     func setSampleRate(_ rate: UInt64, askedFirst: Bool = false) {
         guard let cap = capture, let writes, rate != cap.sampleRate else { return }
-        guard centreInFlight == nil else {
+        guard retunes.centreInFlight == nil else {
             log("rate", "\(rate) S/s refused: a centre move is in flight")
             return
         }
@@ -1955,7 +1940,7 @@ final class AppSession {
         let want = UInt64(max(0, centre))
         let narrowing = rate < cap.sampleRate
         UserDefaults.standard.set(Int(rate), forKey: Self.sampleRateKey)
-        centreInFlight = Int64(want)
+        retunes.hold(centre: Int64(want))
         spectrum.resetFolds()
         log(
             "rate",
@@ -1972,7 +1957,7 @@ final class AppSession {
             await confirmed(within: 2) {
                 self.capture?.centerHz == want && self.capture?.sampleRate == rate
             }
-            if centreInFlight == Int64(want) { centreInFlight = nil }
+            retunes.release(ifCentre: Int64(want))
         }
     }
 
@@ -2035,7 +2020,7 @@ final class AppSession {
     /// written: the daemon keeps the channel at its absolute frequency and recomputes the offset.
     func tuneInside() {
         guard let cap = capture, let ch = channel, let hz = tunedHz, let writes else { return }
-        guard centreInFlight == nil else {
+        guard retunes.centreInFlight == nil else {
             log("tune", "tune inside refused: a centre move is in flight")
             return
         }
@@ -2046,13 +2031,13 @@ final class AppSession {
         }
         let want = UInt64(max(0, placedCentre(for: ch, at: hz, rate: cap.sampleRate)))
         guard want != cap.centerHz else { return }
-        centreInFlight = Int64(want)
+        retunes.hold(centre: Int64(want))
         spectrum.resetFolds()
         log("tune", "tune inside: centre \(cap.centerHz) -> \(want) Hz for \(hz) Hz")
         writes.centerHz(want, capture: cap.captureID)
         Task {
             await confirmed { self.capture?.centerHz == want }
-            if centreInFlight == Int64(want) { centreInFlight = nil }
+            retunes.release(ifCentre: Int64(want))
         }
     }
 
