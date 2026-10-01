@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# One-shot macOS setup: selected SDR driver, Go clients, release daemon, fixtures. See docs/dev/setup.md.
+# One-shot macOS setup: selected SDR driver, Go clients, release daemon, fixtures, decoders. See docs/dev/setup.md.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -33,6 +33,9 @@ make swift-release
 
 echo "==> IQ fixtures -> fixtures/"
 make fixtures
+
+echo "==> decoders (APRS, SAME, AIS, iqstat) -> ~/Library/Application Support/Leyline/decoders"
+make install-decoders
 
 cat <<MSG
 

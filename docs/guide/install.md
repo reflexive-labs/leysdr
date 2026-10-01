@@ -19,13 +19,15 @@ brew install librtlsdr                 # local RTL-SDR support
 brew install hackrf                    # local HackRF support; either driver is optional
 git clone https://github.com/reflexive-labs/leysdr.git && cd leysdr
 make go swift-release fixtures       # go/bin/ley + leyfix, engine/.build/release/leylined, IQ fixtures
+make install-decoders                # the APRS, SAME and AIS decoders ("Decoders" below)
 export PATH=$PWD/go/bin:$PATH
 ley daemon start --bin $PWD/engine/.build/release/leylined
 ```
 
 `scripts/bootstrap-mac.sh` runs the same steps; `--rtl-only` or `--hackrf-only` limits it to one
 driver. `make go` builds the Go clients, `make swift-release` the daemon, and `make fixtures` the IQ
-recordings the "Without a radio" section and the test suites use. The native libraries are loaded
+recordings the "Without a radio" section and the test suites use; `make install-decoders` puts the
+decoder plugins where the daemon looks for them. The native libraries are loaded
 at daemon startup, independently: neither is needed to build, and a missing one does not disable
 the other, `rtl_tcp`, or file playback. Restart the daemon after installing a driver.
 
@@ -117,12 +119,13 @@ the same pipeline as a radio, and you should hear a 1 kHz tone. The whole test s
 ## Decoders
 
 `ley decode`, `ley records` and `ley watch` need decoder plugins installed where the daemon looks
-for them. `make reload` installs the two that ship (APRS and SAME weather alerts) as part of the
-rebuild; to install them without a full reload:
+for them. Four ship in `decoders/`: APRS, SAME weather alerts, marine AIS, and `iqstat`, a test
+decoder that reports the block power of a capture's IQ and is used to check the IQ input path.
+`make reload` installs all four as part of the rebuild; to install them without a full reload:
 
 ```sh
-make install-decoders   # copies decoders/*/ into ~/Library/Application Support/Leyline/decoders/
-ley daemon start        # a running daemon picks them up on its next start
+make install-decoders                 # copies decoders/*/ into ~/Library/Application Support/Leyline/decoders/
+ley daemon stop && ley daemon start   # the daemon reads the decoder directory when it starts
 ```
 
 `ley decoders` lists what is installed and prints the directory it searched. A fresh daemon with no
