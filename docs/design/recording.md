@@ -556,8 +556,8 @@ case where the file is local anyway, because a headless daemon is usually the on
   `FilePlaybackDevice` plays it), so only the write side is missing. And the re-quantising is not
   a loss on the radio this targets: the capture converts cu8 to cf32 as `(u-127.5)/127.5`, a pure
   affine map with nothing applied in between, and inverting it recovers every one of the 256
-  levels exactly -- 0 mismatches over all 256 levels and over 8,000,000 real samples of
-  `rf-captures/ht-narrow.cu8`. Storing cf32 from an 8-bit dongle is 8 bytes carrying 2 bytes of
+  levels exactly -- 0 mismatches over all 256 levels and over 8,000,000 real samples of a
+  real-radio capture (not in the repository). Storing cf32 from an 8-bit dongle is 8 bytes carrying 2 bytes of
   information: 69 GB an hour where 17 GB would do, and a 20 GiB cap that holds 18 minutes instead
   of 70. The additive change is `iq_format`, and the accurate value is *the device's native
   format* (`DeviceDescriptor.nativeFormat` already carries it), which is exact for a cs8 or cs16
@@ -602,8 +602,8 @@ case where the file is local anyway, because a headless daemon is usually the on
   (decided 2026-09-17). 500 ms covers the squelch's own attack and a syllable. The hang has to
   outlast the pause between overs, because a part is an exchange; on a repeater the repeater's
   own tail holds the carrier up through part of that pause, on simplex nothing does, and 5 s is
-  the guess for both. `--hang` overrides it. Measure against `fixtures/hardware/ht-narrow.cu8`
-  (R-21) for the pre-roll and a day of real use for the hang, and write the numbers here.
+  the guess for both. `--hang` overrides it. Measure against a real-radio capture
+  (not in the repository) for the pre-roll and a day of real use for the hang, and write the numbers here.
 - **The store cap's number.** A fixed cap in one flag is decided (2026-09-17): predictable, and
   the same shape as the kept-records store. 20 GiB is the guess; a fraction of free space and
   separate IQ and audio caps were considered and set aside until a machine shows the fixed
