@@ -9,35 +9,35 @@ import Synchronization
 /// The handle a capture's DSP thread reads each block: the channel's current core, or nil while
 /// the channel is out of capture. Lock held only for the reference copy.
 /// Unchecked Sendable: `core` is read and written only under `lock`; `transmission` is a constant.
-public final class ChannelSlot: @unchecked Sendable {
+package final class ChannelSlot: @unchecked Sendable {
     private let lock = NSLock()
     private var core: ChannelDSPCore?
     /// The channel's transmission, for the DSP thread to end on a block where there is no core.
-    public let transmission: ChannelTransmission?
+    package let transmission: ChannelTransmission?
 
-    public init(core: ChannelDSPCore?, transmission: ChannelTransmission? = nil) {
+    package init(core: ChannelDSPCore?, transmission: ChannelTransmission? = nil) {
         self.core = core
         self.transmission = transmission
     }
 
     /// Hot path: copy the reference under the lock, release, return.
-    public func load() -> ChannelDSPCore? {
+    package func load() -> ChannelDSPCore? {
         lock.lock(); defer { lock.unlock() }
         return core
     }
 
     /// Control plane: swap in a new core (or nil to pause).
-    public func store(_ newCore: ChannelDSPCore?) {
+    package func store(_ newCore: ChannelDSPCore?) {
         lock.lock(); core = newCore; lock.unlock()
     }
 }
 
 /// Default `ChannelEngine`. Created by `DefaultCaptureEngine.addChannel`; the capture owns the slot.
-public actor DefaultChannelEngine: ChannelEngine {
-    public nonisolated let id: ChannelID
-    public nonisolated let captureID: CaptureID
+package actor DefaultChannelEngine: ChannelEngine {
+    package nonisolated let id: ChannelID
+    package nonisolated let captureID: CaptureID
     /// Read by the capture's DSP thread.
-    public nonisolated let slot: ChannelSlot
+    package nonisolated let slot: ChannelSlot
     private nonisolated let audioRateBox = Atomic<UInt32>(0)
     /// Internal so tests can overflow the ring directly; production pushes come from `ChannelDSPCore`.
     nonisolated let telemetryQueue = ChannelTelemetryQueue()
@@ -61,7 +61,7 @@ public actor DefaultChannelEngine: ChannelEngine {
 
     /// Builds the first core synchronously; the capture engine registers `slot` afterwards.
     /// - Throws: `INVALID_ARGUMENT`, `OFFSET_OUT_OF_CAPTURE`, `MODE_UNSUPPORTED`.
-    public init(id: ChannelID = ChannelID(), captureID: CaptureID, captureRate: UInt64, centerHz: UInt64, config: ChannelConfig,
+    package init(id: ChannelID = ChannelID(), captureID: CaptureID, captureRate: UInt64, centerHz: UInt64, config: ChannelConfig,
                 floor: BandFloor? = nil) throws {
         self.id = id
         self.captureID = captureID
@@ -169,18 +169,18 @@ public actor DefaultChannelEngine: ChannelEngine {
         }
     }
 
-    public nonisolated var audioRate: UInt32 { audioRateBox.load(ordering: .relaxed) }
-    public var config: ChannelConfig { currentConfig }
-    public var state: ChannelState { currentState }
-    public var sinks: [any AudioSink] { sinkTable }
+    package nonisolated var audioRate: UInt32 { audioRateBox.load(ordering: .relaxed) }
+    package var config: ChannelConfig { currentConfig }
+    package var state: ChannelState { currentState }
+    package var sinks: [any AudioSink] { sinkTable }
     /// Blocks processed by the current core (0 while out of capture).
-    public var blocksProcessed: UInt64 { slot.load()?.blocks ?? 0 }
+    package var blocksProcessed: UInt64 { slot.load()?.blocks ?? 0 }
 
     /// Applies a new configuration. Squelch/AGC-only changes adjust the running core in place;
     /// anything structural builds a new core and swaps it (one block of filter warm-up). While the
     /// channel is `.outOfCapture`, every write that leaves the offset alone is stored for the rebuild
     /// on re-entry; only an offset change is validated against the capture right away.
-    public func update(_ config: ChannelConfig) async throws {
+    package func update(_ config: ChannelConfig) async throws {
         guard !closed else { throw EngineError.channelNotFound(id.description) }
         let old = currentConfig
         let structural = old.offsetHz != config.offsetHz || old.bandwidthHz != config.bandwidthHz || old.mode != config.mode
@@ -230,7 +230,7 @@ public actor DefaultChannelEngine: ChannelEngine {
         try rebuild(offsetHz: offset)
     }
 
-    public func attach(_ sink: any AudioSink) async throws {
+    package func attach(_ sink: any AudioSink) async throws {
         guard !closed else { throw EngineError.channelNotFound(id.description) }
         // A raw-IQ channel hands cf32 blocks to its sinks; a PCM-only sink cannot take them.
         if sink is PCMOnlyAudioSink, currentConfig.mode == .rawIQ {
@@ -244,7 +244,7 @@ public actor DefaultChannelEngine: ChannelEngine {
         slot.load()?.setSinks(sinkTable)
     }
 
-    public func detach(_ id: SinkID) async {
+    package func detach(_ id: SinkID) async {
         guard let i = sinkTable.firstIndex(where: { $0.id == id }) else { return }
         let sink = sinkTable.remove(at: i)
         slot.load()?.setSinks(sinkTable)
@@ -255,7 +255,7 @@ public actor DefaultChannelEngine: ChannelEngine {
     /// longer fits, it goes `.outOfCapture` (core removed, sinks kept); it resumes when it fits again.
     /// Either way an open squelch closes: the rebuilt core's first block ends the transmission, and
     /// with no core the DSP thread ends it on the next block (`ChannelTransmission`).
-    public func captureMoved(newCenterHz: UInt64) async {
+    package func captureMoved(newCenterHz: UInt64) async {
         centerHz = newCenterHz
         let offset = absoluteHz - Int64(newCenterHz)
         // The reported offset follows the absolute frequency even when the channel no longer fits,
@@ -277,27 +277,27 @@ public actor DefaultChannelEngine: ChannelEngine {
     /// The capture's stream restarted: the samples either side of the gap are not continuous, so the
     /// core starts clean instead of filtering the first blocks against pre-gap history and testing
     /// them against a noise floor measured on the old stream.
-    public func captureStreamRestarted() async {
+    package func captureStreamRestarted() async {
         slot.load()?.reset()
     }
 
     /// The capture's sample rate changed: re-plan the chain at the new rate.
-    public func captureRateChanged(_ rate: UInt64) async {
+    package func captureRateChanged(_ rate: UInt64) async {
         captureRate = rate
         await captureMoved(newCenterHz: centerHz)
     }
 
     /// Fan-out stream of meter/squelch telemetry, plus this subscriber's fan-out drop counter (see
     /// `ChannelTelemetrySubscription`). Ends when the channel is removed.
-    public nonisolated func telemetrySubscription() -> ChannelTelemetrySubscription {
+    package nonisolated func telemetrySubscription() -> ChannelTelemetrySubscription {
         hub.subscribe()
     }
 
     /// Records evicted from the telemetry ring because the drain task fell behind (drop-oldest).
-    public nonisolated var telemetryDropped: Int { telemetryQueue.dropped }
+    package nonisolated var telemetryDropped: Int { telemetryQueue.dropped }
 
     /// Tears down: pauses processing, closes sinks, ends telemetry streams.
-    public func close() async {
+    package func close() async {
         guard !closed else { return }
         closed = true
         slot.store(nil)
@@ -330,8 +330,8 @@ public actor DefaultChannelEngine: ChannelEngine {
 /// fan-out buffer (drop-oldest, `TelemetryHub.capacity` slots) discarded because this subscriber fell
 /// behind. Together with `ChannelEngine.telemetryDropped` (ring evictions) it accounts for every
 /// record the subscriber never saw, so a consumer can widen its sequence gap by the same amount.
-public final class ChannelTelemetrySubscription: Sendable {
-    public let stream: AsyncStream<ChannelTelemetry>
+package final class ChannelTelemetrySubscription: Sendable {
+    package let stream: AsyncStream<ChannelTelemetry>
     private let droppedCount = Atomic<Int>(0)
 
     init(stream: AsyncStream<ChannelTelemetry>) {
@@ -339,7 +339,7 @@ public final class ChannelTelemetrySubscription: Sendable {
     }
 
     /// Cumulative records this subscriber lost to its own fan-out buffer overflowing.
-    public var dropped: Int { droppedCount.load(ordering: .relaxed) }
+    package var dropped: Int { droppedCount.load(ordering: .relaxed) }
 
     fileprivate func countDrop() {
         droppedCount.add(1, ordering: .relaxed)

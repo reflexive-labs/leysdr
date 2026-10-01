@@ -23,60 +23,60 @@ import Foundation
 /// This costs twice as many steps as a naive sweep, and gives complete coverage plus the spur
 /// cross-check. A sweep that skipped 10% of every span while reporting the band as covered would
 /// violate the honesty invariants.
-public struct SweepPlan: Sendable, Equatable {
+package struct SweepPlan: Sendable, Equatable {
     /// A half-open span of frequency the detector analyses.
-    public struct Window: Sendable, Equatable {
-        public var lowHz: UInt64
-        public var highHz: UInt64
-        public init(lowHz: UInt64, highHz: UInt64) {
+    package struct Window: Sendable, Equatable {
+        package var lowHz: UInt64
+        package var highHz: UInt64
+        package init(lowHz: UInt64, highHz: UInt64) {
             self.lowHz = lowHz
             self.highHz = highHz
         }
 
-        public func contains(_ hz: UInt64) -> Bool { hz >= lowHz && hz < highHz }
+        package func contains(_ hz: UInt64) -> Bool { hz >= lowHz && hz < highHz }
 
         /// The part of this window also inside `other`; empty when they do not overlap.
-        public func clamped(to other: Window) -> Window {
+        package func clamped(to other: Window) -> Window {
             Window(lowHz: Swift.max(lowHz, other.lowHz), highHz: Swift.min(highHz, other.highHz))
         }
     }
 
     /// One tuner position, and the two windows of it the detector analyses.
-    public struct Step: Sendable, Equatable {
-        public var centerHz: UInt64
+    package struct Step: Sendable, Equatable {
+        package var centerHz: UInt64
         /// Below centre, above the DC guard.
-        public var low: Window
+        package var low: Window
         /// Above centre, above the DC guard.
-        public var high: Window
+        package var high: Window
     }
 
     /// The steps, in tuning order.
-    public var steps: [Step]
+    package var steps: [Step]
     /// The capture sample rate every step runs at. A sweep never changes rate: `setSampleRate`
     /// stops the stream, drains the ring and republishes the anchor, where a retune does none of
     /// those things.
-    public var sampleRateHz: UInt64
+    package var sampleRateHz: UInt64
     /// What the plan actually covers, which is the requested range intersected with what the
     /// radio can tune. Never wider than the request.
-    public var covered: Window
+    package var covered: Window
     /// Set when the request was wider than the radio, so a caller can say so rather than
     /// silently returning less than was asked for.
-    public var clipped: Bool
+    package var clipped: Bool
 
     /// Fraction of the span either side of centre that the DC artefact is assumed to reach.
     /// A Hann mainlobe is 2 bins wide, so the spike itself is far narrower than this; the margin
     /// covers the LO leakage skirt, which is not a single bin.
-    public static let guardFraction = 0.05
+    package static let guardFraction = 0.05
     /// Outer limit of the usable span, as a fraction either side of centre. 0.45 of 2.4 MSPS
     /// leaves 120 kHz of roll-off unanalysed at each edge.
-    public static let edgeFraction = 0.45
+    package static let edgeFraction = 0.45
 
     /// Builds the plan, or nil when the range and the radio do not overlap at all.
     ///
     /// `tuningRanges` are the device's; centres are kept inside them, which is what stops
     /// `rtlsdr_set_center_freq`'s unchecked `UInt32(truncatingIfNeeded:)` from ever seeing a
     /// value the descriptor would have rejected.
-    public static func plan(minHz: UInt64, maxHz: UInt64, sampleRateHz: UInt64,
+    package static func plan(minHz: UInt64, maxHz: UInt64, sampleRateHz: UInt64,
                             tuningRanges: [FrequencyRange]) -> SweepPlan?
     {
         guard maxHz > minHz, sampleRateHz > 0 else { return nil }
@@ -155,7 +155,7 @@ public struct SweepPlan: Sendable, Equatable {
     /// request falls inside one step's DC guard: a radio with a single tuning point (a file
     /// device) has no neighbouring step to cover its hole, so a request within 5% of that point is
     /// a range the sweep cannot analyse. Reporting "nothing found" there would be wrong.
-    public var analysedHz: UInt64 {
+    package var analysedHz: UInt64 {
         var spans: [(UInt64, UInt64)] = []
         for s in steps {
             for w in [s.low, s.high] {
@@ -179,7 +179,7 @@ public struct SweepPlan: Sendable, Equatable {
     /// How many of the plan's analysis windows contain `hz`. The geometry is supposed to
     /// guarantee at least one everywhere inside `covered`, and two almost everywhere; this is
     /// what the test checks.
-    public func looks(at hz: UInt64) -> Int {
+    package func looks(at hz: UInt64) -> Int {
         steps.reduce(0) { $0 + ($1.low.contains(hz) ? 1 : 0) + ($1.high.contains(hz) ? 1 : 0) }
     }
 }

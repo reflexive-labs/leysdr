@@ -9,33 +9,33 @@ import Foundation
 import Synchronization
 
 /// One telemetry record produced on the DSP thread and drained by the control plane.
-public struct ChannelTelemetryRecord: Sendable {
-    public enum Kind: UInt8, Sendable { case meter, squelch }
-    public var kind: Kind
-    public var time: SampleTime
-    public var powerDBFS: Float
-    public var snrDB: Float
-    public var squelchOpen: Bool
+package struct ChannelTelemetryRecord: Sendable {
+    package enum Kind: UInt8, Sendable { case meter, squelch }
+    package var kind: Kind
+    package var time: SampleTime
+    package var powerDBFS: Float
+    package var snrDB: Float
+    package var squelchOpen: Bool
     /// Summary of the transmission that just ended. Set on the close edge of a squelch record only;
     /// zero and NaN otherwise, because a transmission still in progress has neither a duration nor a
     /// final peak. Plain-old-data like the rest of the record: the ring copies it by value and a
     /// torn read is discarded, so no reference type may ever appear here.
-    public var openSamples: UInt64 = 0
-    public var peakSNRDB: Float = .nan
-    public var peakPowerDBFS: Float = .nan
+    package var openSamples: UInt64 = 0
+    package var peakSNRDB: Float = .nan
+    package var peakPowerDBFS: Float = .nan
     /// Audio output level over the meter interval, measured on the demodulated block rather
     /// than on the channel IQ: a strong unmodulated carrier is loud in `powerDBFS` and quiet here.
     /// NaN on a squelch record and before the first block; a raw-IQ channel has no audio and leaves
     /// both NaN.
-    public var audioDBFS: Float = .nan
-    public var audioPeakDBFS: Float = .nan
+    package var audioDBFS: Float = .nan
+    package var audioPeakDBFS: Float = .nan
     /// The FM discriminator over the meter interval, read ahead of de-emphasis and the high-pass:
     /// its largest excursion from its DC is the peak deviation, and its DC is the tuning error,
     /// positive when the transmitter sits above the channel. NaN for every other mode, on a
     /// squelch record and before the first block; `freqErrorHz` is NaN while the squelch is
     /// closed as well, because noise has no tuning error.
-    public var deviationHz: Float = .nan
-    public var freqErrorHz: Float = .nan
+    package var deviationHz: Float = .nan
+    package var freqErrorHz: Float = .nan
 }
 
 /// Fixed-capacity telemetry ring plus a "poke" stream that wakes the drain task.
@@ -48,8 +48,8 @@ public struct ChannelTelemetryRecord: Sendable {
 /// written) so the consumer can detect a slot overwritten underneath it and retry; records are
 /// plain-old-data, so a torn copy is harmless and simply discarded.
 /// Unchecked Sendable: one producer (the DSP thread) and one consumer; each slot is guarded by its seqlock version.
-public final class ChannelTelemetryQueue: @unchecked Sendable {
-    public let capacity: Int
+package final class ChannelTelemetryQueue: @unchecked Sendable {
+    package let capacity: Int
     private let slots: UnsafeMutablePointer<ChannelTelemetryRecord>
     /// Per-slot seqlock versions: even = stable, odd = the producer is writing.
     private let versions: UnsafeMutablePointer<Atomic<UInt64>>
@@ -57,10 +57,10 @@ public final class ChannelTelemetryQueue: @unchecked Sendable {
     private let tail = Atomic<Int>(0)    // next slot to write (monotonic); producer-owned
     private let droppedCount = Atomic<Int>(0)
     /// Yields once per push (buffering newest 1): the consumer drains everything on each wake.
-    public let poke: AsyncStream<Void>
+    package let poke: AsyncStream<Void>
     private let pokeContinuation: AsyncStream<Void>.Continuation
 
-    public init(capacity: Int = 64) {
+    package init(capacity: Int = 64) {
         precondition(capacity > 0)
         self.capacity = capacity
         slots = UnsafeMutablePointer<ChannelTelemetryRecord>.allocate(capacity: capacity)
@@ -80,11 +80,11 @@ public final class ChannelTelemetryQueue: @unchecked Sendable {
     }
 
     /// Cumulative count of records evicted (oldest first) because the queue was full.
-    public var dropped: Int { droppedCount.load(ordering: .relaxed) }
+    package var dropped: Int { droppedCount.load(ordering: .relaxed) }
 
     /// Producer side (DSP thread). Never allocates; evicts the oldest record when full. The poke at
     /// the end is the one lock it takes: `yield` holds the stream's internal lock for the hand-off.
-    public func push(_ record: ChannelTelemetryRecord) {
+    package func push(_ record: ChannelTelemetryRecord) {
         let t = tail.load(ordering: .relaxed)
         while true {
             let h = head.load(ordering: .acquiring)
@@ -104,7 +104,7 @@ public final class ChannelTelemetryQueue: @unchecked Sendable {
     }
 
     /// Consumer side. Returns nil when empty. Retries when the producer evicts the slot mid-read.
-    public func pop() -> ChannelTelemetryRecord? {
+    package func pop() -> ChannelTelemetryRecord? {
         while true {
             let h = head.load(ordering: .relaxed)
             let t = tail.load(ordering: .acquiring)
@@ -124,7 +124,7 @@ public final class ChannelTelemetryQueue: @unchecked Sendable {
     }
 
     /// Ends the poke stream; the drain task exits after its final sweep.
-    public func finish() { pokeContinuation.finish() }
+    package func finish() { pokeContinuation.finish() }
 }
 
 /// The transmission a channel has announced and not yet ended, shared by every core the channel
@@ -137,7 +137,7 @@ public final class ChannelTelemetryQueue: @unchecked Sendable {
 /// `process(block:at:)`, the slot touches it only on a block where the channel has no core, and
 /// `ChannelDSPCore.reset()` only while no block is in flight. That single owner is what makes
 /// `@unchecked Sendable` safe, and it is also the telemetry queue's single producer.
-public final class ChannelTransmission: @unchecked Sendable {
+package final class ChannelTransmission: @unchecked Sendable {
     private let telemetry: ChannelTelemetryQueue
     /// An open edge went out and its close has not.
     var announced = false
@@ -152,7 +152,7 @@ public final class ChannelTransmission: @unchecked Sendable {
     /// while the channel has no core.
     var owner: UInt64 = 0
 
-    public init(telemetry: ChannelTelemetryQueue) {
+    package init(telemetry: ChannelTelemetryQueue) {
         self.telemetry = telemetry
     }
 
@@ -185,7 +185,7 @@ public final class ChannelTransmission: @unchecked Sendable {
     /// A block went by while the channel had no core (it is out of capture): the transmission it
     /// announced is over, and ends here rather than when the channel next fits. One compare on
     /// every later block. DSP thread only.
-    public func noCore() {
+    package func noCore() {
         guard owner != 0 else { return }
         owner = 0
         end()
@@ -196,15 +196,15 @@ public final class ChannelTransmission: @unchecked Sendable {
 /// thread. Squelch threshold and AGC are adjustable in place through atomics; anything else
 /// (offset, bandwidth, mode, capture rate) requires a new core.
 /// Unchecked Sendable: built on the control plane and then run only by the DSP thread; the settings shared with the control plane are atomics.
-public final class ChannelDSPCore: @unchecked Sendable {
-    public let captureRate: UInt64
-    public let config: ChannelConfig
-    public let channelizer: Channelizer
-    public let demodulator: any Demodulator
+package final class ChannelDSPCore: @unchecked Sendable {
+    package let captureRate: UInt64
+    package let config: ChannelConfig
+    package let channelizer: Channelizer
+    package let demodulator: any Demodulator
     private let amDemodulator: AMDemodulator?
     private let ssbDemodulator: SSBDemodulator?
     /// Rate of the audio handed to sinks (channelizer output rate, or WFM's decimated rate).
-    public let audioRate: UInt32
+    package let audioRate: UInt32
     private let iqOut: SampleStorage
     private let audioOut: SampleStorage
     /// Where the demodulator writes its raw stage for `.demod` sinks. Allocated with everything
@@ -248,7 +248,7 @@ public final class ChannelDSPCore: @unchecked Sendable {
     ///
     /// `transmission` is the channel's, shared by every core it builds so a swap can end what the
     /// last core announced; a core built alone gets one of its own.
-    public init(captureRate: UInt64, config: ChannelConfig, telemetry: ChannelTelemetryQueue, maxBlock: Int = 16384,
+    package init(captureRate: UInt64, config: ChannelConfig, telemetry: ChannelTelemetryQueue, maxBlock: Int = 16384,
                 floor: BandFloor? = nil, transmission: ChannelTransmission? = nil) throws {
         self.transmission = transmission ?? ChannelTransmission(telemetry: telemetry)
         generation = Self.generations.wrappingAdd(1, ordering: .relaxed).newValue
@@ -289,9 +289,9 @@ public final class ChannelDSPCore: @unchecked Sendable {
 
     /// The sub-audible tap, when this channel asked for one. Read by the slow detection task; the
     /// DSP thread writes it through the demodulator and never looks at these.
-    public private(set) var subAudibleTap: FloatRing?
-    public private(set) var subAudibleRate: Double = 0
-    public private(set) var subAudibleFullScale: Double = 0
+    package private(set) var subAudibleTap: FloatRing?
+    package private(set) var subAudibleRate: Double = 0
+    package private(set) var subAudibleFullScale: Double = 0
 
     /// Audio energy accumulated since the last meter record, owned by the DSP thread alone. The sum
     /// is a Double because a 100 ms interval at 48 kHz is 4800 squares and Float would drift.
@@ -305,35 +305,35 @@ public final class ChannelDSPCore: @unchecked Sendable {
     // are the loudest values seen in that interval. Reset on every open edge, drained on the close.
 
     /// Blocks processed so far.
-    public var blocks: UInt64 { blocksProcessed.load(ordering: .relaxed) }
+    package var blocks: UInt64 { blocksProcessed.load(ordering: .relaxed) }
 
     /// How many transmissions have ended: one per squelch close edge. The sub-audible task watches
     /// this to learn that the signal it has been measuring has ended and its phase history is
     /// stale. A count rather than a flag because a whole transmission can
     /// come and go between two of that task's 50 ms polls.
-    public var squelchCloseCount: UInt64 { squelchCloses.load(ordering: .relaxed) }
+    package var squelchCloseCount: UInt64 { squelchCloses.load(ordering: .relaxed) }
 
     /// The capture sample index just past the last block this core processed; 0 before the first.
-    public var sampleIndexEnd: UInt64 { sampleEnd.load(ordering: .relaxed) }
+    package var sampleIndexEnd: UInt64 { sampleEnd.load(ordering: .relaxed) }
 
     /// Capture samples per sub-audible tap sample, for converting what is still unread in the tap
     /// into capture time. 0 when there is no tap.
-    public var captureSamplesPerTapSample: Double {
+    package var captureSamplesPerTapSample: Double {
         subAudibleRate > 0 ? Double(captureRate) / subAudibleRate : 0
     }
 
     /// Adjust the squelch threshold (dBFS, NaN = off) without rebuilding. Takes effect next block.
-    public func setSquelch(thresholdDB: Double) {
+    package func setSquelch(thresholdDB: Double) {
         squelchBits.store(Float(thresholdDB).bitPattern, ordering: .relaxed)
     }
 
     /// Adjust AGC without rebuilding (AM and SSB/CW honour it; FM modes ignore it). Takes effect next block.
-    public func setAGC(_ mode: GainMode) {
+    package func setAGC(_ mode: GainMode) {
         agcAuto.store(mode == .auto, ordering: .relaxed)
     }
 
     /// Replace the sink table. The DSP thread copies the array reference under the lock once per block.
-    public func setSinks(_ newSinks: [any AudioSink]) {
+    package func setSinks(_ newSinks: [any AudioSink]) {
         sinkLock.lock()
         sinks = newSinks
         hasDemodSink = rawOut != nil && newSinks.contains { $0.tap == .demod }
@@ -341,7 +341,7 @@ public final class ChannelDSPCore: @unchecked Sendable {
     }
 
     /// Current sinks.
-    public var currentSinks: [any AudioSink] {
+    package var currentSinks: [any AudioSink] {
         sinkLock.lock(); defer { sinkLock.unlock() }
         return sinks
     }
@@ -350,7 +350,7 @@ public final class ChannelDSPCore: @unchecked Sendable {
     /// start. Channelizes, demodulates, zeros the conditioned block while the squelch is closed and
     /// writes it to the `.audio` sinks, hands the demodulator's raw block to the `.demod` sinks
     /// unzeroed, and pushes meter/squelch telemetry. No allocation, no lock held across calls.
-    public func process(block: SampleBuffer, at time: SampleTime) {
+    package func process(block: SampleBuffer, at time: SampleTime) {
         let sp = Signpost.begin(.channelProcess)
         defer { Signpost.end(.channelProcess, sp) }
         let tx = transmission
@@ -472,7 +472,7 @@ public final class ChannelDSPCore: @unchecked Sendable {
     /// describe the stream before the gap, and a duration that spans the gap would be wrong. Call
     /// it only while no block is in flight (the device is stopped and the DSP thread drained); the
     /// state it touches belongs to the DSP thread.
-    public func reset() {
+    package func reset() {
         // A squelch that was open ends here rather than silently: the fresh squelch below starts
         // closed, so without this record the close edge never reaches anyone and every watcher of
         // the edge -- the transmission summary, the sub-audible task's phase history -- would carry

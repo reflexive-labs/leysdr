@@ -24,34 +24,34 @@ import Foundation
 
 /// Sample-indexed time within one timeline. The engine's only clock in signal paths.
 /// `captureID` scopes the timeline; comparison is only meaningful within one timeline.
-public struct SampleTime: Hashable, Comparable, Sendable {
-    public var captureID: CaptureID
-    public var sampleIndex: UInt64
+package struct SampleTime: Hashable, Comparable, Sendable {
+    package var captureID: CaptureID
+    package var sampleIndex: UInt64
 
-    public init(captureID: CaptureID, sampleIndex: UInt64) {
+    package init(captureID: CaptureID, sampleIndex: UInt64) {
         self.captureID = captureID
         self.sampleIndex = sampleIndex
     }
 
-    public static func < (lhs: Self, rhs: Self) -> Bool { lhs.sampleIndex < rhs.sampleIndex }
+    package static func < (lhs: Self, rhs: Self) -> Bool { lhs.sampleIndex < rhs.sampleIndex }
 }
 
 /// One per capture: maps sample 0 to host time. Wall clock is derived from this, never carried per-frame.
-public struct CaptureAnchor: Hashable, Sendable {
+package struct CaptureAnchor: Hashable, Sendable {
     /// CLOCK_REALTIME nanoseconds at sample index 0.
-    public var hostTimeNsAtSampleZero: Int64
-    public var sampleRate: UInt64
+    package var hostTimeNsAtSampleZero: Int64
+    package var sampleRate: UInt64
     /// Measured drift; 0 if unknown.
-    public var driftPPM: Double
+    package var driftPPM: Double
 
-    public init(hostTimeNsAtSampleZero: Int64, sampleRate: UInt64, driftPPM: Double = 0) {
+    package init(hostTimeNsAtSampleZero: Int64, sampleRate: UInt64, driftPPM: Double = 0) {
         self.hostTimeNsAtSampleZero = hostTimeNsAtSampleZero
         self.sampleRate = sampleRate
         self.driftPPM = driftPPM
     }
 
     /// Derived wall clock for a sample index on this anchor's timeline.
-    public func hostTimeNs(at sampleIndex: UInt64) -> Int64 {
+    package func hostTimeNs(at sampleIndex: UInt64) -> Int64 {
         guard sampleRate > 0 else { return hostTimeNsAtSampleZero }
         let ns = (Double(sampleIndex) / Double(sampleRate)) * 1e9 * (1 + driftPPM * 1e-6)
         return hostTimeNsAtSampleZero + Int64(ns)
@@ -64,7 +64,7 @@ public struct CaptureAnchor: Hashable, Sendable {
 /// HackRFDevice, AirspyDevice, SDRplayDevice, CompositeDevice (coherent rigs presented as one).
 /// TX, when it arrives, is a separate `TransmitCapableDevice` protocol composed onto devices that
 /// support it — never widen RadioDevice with TX methods (AGENTS.md invariant 11).
-public protocol RadioDevice: AnyObject, Sendable {
+package protocol RadioDevice: AnyObject, Sendable {
     var descriptor: DeviceDescriptor { get }
     /// Current setting of every gain element, in descriptor order.
     var gains: [GainState] { get }
@@ -107,7 +107,7 @@ public protocol RadioDevice: AnyObject, Sendable {
     func settledGainDB(element: String) async -> Double?
 }
 
-public extension RadioDevice {
+package extension RadioDevice {
     /// Devices with no driver queue -- file playback, synthetic sources -- deliver what they are
     /// asked for when they are asked for it.
     var inFlightSamples: UInt64 { 0 }
@@ -121,7 +121,7 @@ public extension RadioDevice {
 
 /// Discovers devices, tracks hot-plug, maps serials to stable DeviceIDs across replug.
 /// Also hosts virtual devices (file playback, rtl_tcp), which appear and disappear like hot-plugged hardware.
-public protocol DeviceRegistry: AnyObject, Sendable {
+package protocol DeviceRegistry: AnyObject, Sendable {
     var devices: [DeviceDescriptor] { get async }
     func device(id: DeviceID) async -> (any RadioDevice)?
     /// Every subscriber gets every event from the moment of subscription.
@@ -139,7 +139,7 @@ public protocol DeviceRegistry: AnyObject, Sendable {
 /// by `--rtltcp` is operator configuration and outlives every client, while one attached over the
 /// protocol is the client's to detach. Attaching a flag-hosted endpoint over the protocol makes it
 /// `client`, so it persists once the flag goes.
-public enum VirtualDeviceOrigin: Sendable {
+package enum VirtualDeviceOrigin: Sendable {
     /// Named on the daemon's command line (or its environment).
     case operatorFlag
     /// Attached over the protocol, or hosted on a client's behalf (file playback).
@@ -150,17 +150,17 @@ public enum VirtualDeviceOrigin: Sendable {
 /// was already hosted. An identity attached twice -- the same rtl_tcp endpoint named twice on the
 /// command line -- keeps the first device and closes the second, so a caller that announces every
 /// attach needs to know which of the two happened.
-public struct VirtualAttachment: Sendable {
-    public let descriptor: DeviceDescriptor
-    public let alreadyHosted: Bool
+package struct VirtualAttachment: Sendable {
+    package let descriptor: DeviceDescriptor
+    package let alreadyHosted: Bool
 
-    public init(descriptor: DeviceDescriptor, alreadyHosted: Bool) {
+    package init(descriptor: DeviceDescriptor, alreadyHosted: Bool) {
         self.descriptor = descriptor
         self.alreadyHosted = alreadyHosted
     }
 }
 
-public enum DeviceEvent: Sendable {
+package enum DeviceEvent: Sendable {
     case arrived(DeviceDescriptor)
     case removed(DeviceID)
     case changed(DeviceDescriptor)
@@ -170,7 +170,7 @@ public enum DeviceEvent: Sendable {
 
 /// Owns one open device stream: the fan-out point for channels, the FFT ladder, and capture-level taps.
 /// One device per capture (invariant 10). State transitions: created -> active -> (detached <-> active) -> stopped.
-public protocol CaptureEngine: AnyObject, Sendable {
+package protocol CaptureEngine: AnyObject, Sendable {
     var id: CaptureID { get }
     var deviceID: DeviceID { get }
     var snapshot: CaptureSnapshot { get async }
@@ -200,14 +200,14 @@ public protocol CaptureEngine: AnyObject, Sendable {
     func deviceRebound(_ device: any RadioDevice) async throws
 }
 
-public struct CaptureSnapshot: Hashable, Sendable {
-    public var centerHz: UInt64
-    public var sampleRate: UInt64
-    public var detached: Bool
-    public var anchor: CaptureAnchor
-    public var gains: [GainState]
+package struct CaptureSnapshot: Hashable, Sendable {
+    package var centerHz: UInt64
+    package var sampleRate: UInt64
+    package var detached: Bool
+    package var anchor: CaptureAnchor
+    package var gains: [GainState]
 
-    public init(centerHz: UInt64, sampleRate: UInt64, detached: Bool, anchor: CaptureAnchor, gains: [GainState]) {
+    package init(centerHz: UInt64, sampleRate: UInt64, detached: Bool, anchor: CaptureAnchor, gains: [GainState]) {
         self.centerHz = centerHz
         self.sampleRate = sampleRate
         self.detached = detached
@@ -217,31 +217,31 @@ public struct CaptureSnapshot: Hashable, Sendable {
 }
 
 /// Receives the capture's full-rate stream as interleaved cf32. Hot path.
-public protocol CaptureTap: AnyObject, Sendable {
+package protocol CaptureTap: AnyObject, Sendable {
     var id: StreamID { get }
     /// `iq` is interleaved cf32 (format == .cf32). Copy-or-consume; never block.
     func write(iq: SampleBuffer, at time: SampleTime)
     func closeTap() async
 }
 
-public struct ChannelConfig: Hashable, Sendable {
+package struct ChannelConfig: Hashable, Sendable {
     /// Offset from capture center; absolute frequency = center + offset.
-    public var offsetHz: Int64
-    public var bandwidthHz: UInt32
-    public var mode: DemodMode
+    package var offsetHz: Int64
+    package var bandwidthHz: UInt32
+    package var mode: DemodMode
     /// dBFS threshold; NaN = squelch off.
-    public var squelchDB: Double
-    public var agc: GainMode
+    package var squelchDB: Double
+    package var agc: GainMode
     /// Survives owner disconnect; jobs set this.
-    public var persistent: Bool
+    package var persistent: Bool
     /// Set by jobs: rebind target when OUT_OF_CAPTURE.
-    public var requiredHz: UInt64?
+    package var requiredHz: UInt64?
     /// Watch for a sub-audible tone (CTCSS/PL). NFM only; ignored for every other mode. It never
     /// gates audio: tone squelch is a separate, later decision, because a false negative there is
     /// silence the user cannot diagnose.
-    public var subAudibleDetect: Bool
+    package var subAudibleDetect: Bool
 
-    public init(offsetHz: Int64, bandwidthHz: UInt32, mode: DemodMode, squelchDB: Double = .nan,
+    package init(offsetHz: Int64, bandwidthHz: UInt32, mode: DemodMode, squelchDB: Double = .nan,
                 agc: GainMode = .auto, persistent: Bool = false, requiredHz: UInt64? = nil,
                 subAudibleDetect: Bool = false) {
         self.offsetHz = offsetHz
@@ -255,13 +255,13 @@ public struct ChannelConfig: Hashable, Sendable {
     }
 
     // NaN-aware equality so squelch-off compares equal to squelch-off.
-    public static func == (lhs: Self, rhs: Self) -> Bool {
+    package static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.offsetHz == rhs.offsetHz && lhs.bandwidthHz == rhs.bandwidthHz && lhs.mode == rhs.mode
             && (lhs.squelchDB == rhs.squelchDB || (lhs.squelchDB.isNaN && rhs.squelchDB.isNaN))
             && lhs.agc == rhs.agc && lhs.persistent == rhs.persistent && lhs.requiredHz == rhs.requiredHz
     }
 
-    public func hash(into hasher: inout Hasher) {
+    package func hash(into hasher: inout Hasher) {
         hasher.combine(offsetHz); hasher.combine(bandwidthHz); hasher.combine(mode)
         hasher.combine(squelchDB.isNaN ? 0 : squelchDB.bitPattern)
         hasher.combine(agc); hasher.combine(persistent); hasher.combine(requiredHz)
@@ -271,7 +271,7 @@ public struct ChannelConfig: Hashable, Sendable {
 // MARK: - Channels & DSP
 
 /// One demod chain inside a capture: translate -> filter -> demodulate -> distribute to sinks.
-public protocol ChannelEngine: AnyObject, Sendable {
+package protocol ChannelEngine: AnyObject, Sendable {
     var id: ChannelID { get }
     var captureID: CaptureID { get }
     var config: ChannelConfig { get async }
@@ -298,12 +298,12 @@ public protocol ChannelEngine: AnyObject, Sendable {
     var telemetryDropped: Int { get }
 }
 
-public enum ChannelState: Hashable, Sendable {
+package enum ChannelState: Hashable, Sendable {
     case active
     case outOfCapture
 }
 
-public enum ChannelTelemetry: Sendable {
+package enum ChannelTelemetry: Sendable {
     /// `audioDBFS`/`audioPeakDBFS` are the audio output level over the meter interval, measured on
     /// the demodulated block; NaN when there is no audio to measure (a raw-IQ channel, or before the
     /// first block). NaN means "not measured" and is not the same as 0 dBFS, which is very loud.
@@ -327,7 +327,7 @@ public enum ChannelTelemetry: Sendable {
 /// The tap is set once when the channel is built and never changes for the life of the DSP core, so
 /// the hot path reads a reference nobody is writing. Everything the tap does is decimation into a
 /// ring; every decision about what the samples mean happens in a slow task draining it.
-public protocol SubAudibleSource: AnyObject {
+package protocol SubAudibleSource: AnyObject {
     /// Deviation in Hz that maps to ±1.0 in the discriminator output (5 kHz NFM, 75 kHz WFM).
     var fullScaleDeviationHz: Double { get }
     /// Where to write decimated discriminator output. nil (the default) costs the hot path a single
@@ -339,7 +339,7 @@ public protocol SubAudibleSource: AnyObject {
 
 /// A demodulator stage. Implementations per DemodMode, all vDSP-backed on macOS.
 /// `process` is the hot path: synchronous, allocation-free, called from the capture's DSP thread.
-public protocol Demodulator: AnyObject {
+package protocol Demodulator: AnyObject {
     var mode: DemodMode { get }
     /// `inputRate` is the channel (post-decimation) rate; output audio rate equals `inputRate` unless
     /// `outputRate` says otherwise (WFM decimates internally).
@@ -367,7 +367,7 @@ public protocol Demodulator: AnyObject {
     func reset()
 }
 
-public extension Demodulator {
+package extension Demodulator {
     /// Audio alone, for the callers -- tests, one-shot conversions -- that have no raw tap to fill.
     func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer) -> Int {
         var raw: SampleBuffer?
@@ -377,7 +377,7 @@ public extension Demodulator {
 
 /// The shared FFT ladder: fixed power-of-two sizes, one pass per size per tick, fanned to all
 /// subscribers. Subscribers get the nearest size the ladder computes and at most the rate they ask for.
-public protocol SpectrumLadder: AnyObject, Sendable {
+package protocol SpectrumLadder: AnyObject, Sendable {
     /// Requested `bins`/`rowsPerSecond` may be downgraded, never upgraded; the returned subscription is authoritative.
     func subscribe(bins: Int, rowsPerSecond: Double, accumulation: SpectrumAccumulation,
                    policy: DeliveryPolicy, sink: any SpectrumSink) async -> SpectrumSubscription
@@ -385,7 +385,7 @@ public protocol SpectrumLadder: AnyObject, Sendable {
 }
 
 /// How a spectrum row is built from the samples it covers.
-public enum SpectrumAccumulation: Sendable, Hashable {
+package enum SpectrumAccumulation: Sendable, Hashable {
     /// One periodogram per row, from whichever block crossed the row boundary. At 2.4 MSPS a
     /// 1024-point FFT covers 0.17% of a 250 ms row, so a burst shorter than a row shows up only
     /// sometimes. Right for a live band chart, wrong for anything reading duty cycle.
@@ -397,15 +397,15 @@ public enum SpectrumAccumulation: Sendable, Hashable {
     case max
 }
 
-public struct SpectrumSubscription: Hashable, Sendable {
-    public var id: StreamID
-    public var actualBins: Int
-    public var actualRate: Double
-    public var accumulation: SpectrumAccumulation
+package struct SpectrumSubscription: Hashable, Sendable {
+    package var id: StreamID
+    package var actualBins: Int
+    package var actualRate: Double
+    package var accumulation: SpectrumAccumulation
     /// Looks the ladder takes per row. Always 1 under `.snapshot`.
-    public var looksPerRow: Int
+    package var looksPerRow: Int
 
-    public init(id: StreamID, actualBins: Int, actualRate: Double,
+    package init(id: StreamID, actualBins: Int, actualRate: Double,
                 accumulation: SpectrumAccumulation = .snapshot, looksPerRow: Int = 1) {
         self.id = id
         self.actualBins = actualBins
@@ -416,7 +416,7 @@ public struct SpectrumSubscription: Hashable, Sendable {
 }
 
 /// Receives FFT rows. Hot path (DSP thread): copy-or-consume, never block.
-public protocol SpectrumSink: AnyObject, Sendable {
+package protocol SpectrumSink: AnyObject, Sendable {
     /// `row` is `bins` dBFS values, DC-centered (fft-shifted), lowest frequency first.
     ///
     /// `looks` is how many periodograms were averaged into this row: 1 under `.snapshot`, and
@@ -427,7 +427,7 @@ public protocol SpectrumSink: AnyObject, Sendable {
     func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz: UInt64, spanHz: UInt64, looks: Int)
 }
 
-public enum DeliveryPolicy: Hashable, Sendable {
+package enum DeliveryPolicy: Hashable, Sendable {
     case latestWins
     case gapMarked
 }
@@ -436,7 +436,7 @@ public enum DeliveryPolicy: Hashable, Sendable {
 
 /// Where demodulated audio goes. Implementations: CoreAudioSink, StreamAudioSink (bulk plane),
 /// FileRecorderSink, NullSink. Lossless delivery exists only in FileRecorderSink.
-public protocol AudioSink: AnyObject, Sendable {
+package protocol AudioSink: AnyObject, Sendable {
     var id: SinkID { get }
     /// Which stage of the channel's chain this sink is fed. Anything that plays or records audio
     /// takes `.audio`; `.demod` is the detector's output before conditioning, and a sink asking for
@@ -452,7 +452,7 @@ public protocol AudioSink: AnyObject, Sendable {
     func closeSink() async
 }
 
-public extension AudioSink {
+package extension AudioSink {
     /// A sink that does not override `tap` receives `.audio`.
     var tap: AudioTap { .audio }
 }
@@ -463,7 +463,7 @@ public extension AudioSink {
 /// while the squelch is closed. `.demod` is the detector's own output before any of that -- a
 /// CTCSS tone under NFM voice, the carrier as DC under AM -- and it keeps flowing while the squelch
 /// is closed. `AudioTap` in `bulk.proto` documents what that is for.
-public enum AudioTap: Hashable, Sendable {
+package enum AudioTap: Hashable, Sendable {
     case audio
     case demod
 }
@@ -472,21 +472,21 @@ public enum AudioTap: Hashable, Sendable {
 
 /// v0: energy detection over the FFT ladder. Noise-floor estimation, threshold crossing,
 /// carrier/bandwidth/SNR estimation, persistence tracking across sweep passes.
-public protocol Detector: AnyObject, Sendable {
+package protocol Detector: AnyObject, Sendable {
     func observe(fftRow: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz: UInt64, spanHz: UInt64)
     func detections() -> AsyncStream<Detection>
     func snapshotDetections() async -> [Detection]
 }
 
-public struct Detection: Hashable, Sendable {
-    public var centerHz: UInt64
-    public var bandwidthHz: UInt32
-    public var snrDB: Double
-    public var firstSeen: SampleTime
-    public var lastSeen: SampleTime
+package struct Detection: Hashable, Sendable {
+    package var centerHz: UInt64
+    package var bandwidthHz: UInt32
+    package var snrDB: Double
+    package var firstSeen: SampleTime
+    package var lastSeen: SampleTime
     /// Empty or cheap-heuristic only, with stated confidence (invariant 12).
-    public var modulationGuess: String?
-    public var guessConfidence: Double
+    package var modulationGuess: String?
+    package var guessConfidence: Double
 }
 
 // MARK: - Jobs
@@ -496,21 +496,21 @@ public struct Detection: Hashable, Sendable {
 ///
 /// This is the Milestone D.15 contract (docs/plans/build-order.md) for the watch job; there is no
 /// implementation yet, and the scan job (`ScanRunner`) does not go through it.
-public protocol JobRunner: AnyObject, Sendable {
+package protocol JobRunner: AnyObject, Sendable {
     var id: JobID { get }
     func start(context: JobContext) async throws
     func cancel() async
     func status() async -> JobStatus
 }
 
-public struct JobContext: Sendable {
+package struct JobContext: Sendable {
     // Part of the Milestone D.15 contract; empty until a JobRunner conformance exists to fill it
     // in with the store, the capture allocator (don't-disturb policy lives here), and a telemetry
     // outlet.
-    public init() {}
+    package init() {}
 }
 
-public enum JobStatus: Sendable {
+package enum JobStatus: Sendable {
     case running
     case degraded(String)
     case completed
@@ -525,22 +525,22 @@ public enum JobStatus: Sendable {
 /// sweep needs a whole radio to itself for several seconds, which a channel cannot provide: a
 /// channel's offset is bounded by the sample rate, and a sweep covers megahertz. So the allocator
 /// gives a sweep a *lease*, the only way a job can retune a radio.
-public protocol CaptureAllocator: Sendable {
+package protocol CaptureAllocator: Sendable {
     func allocate(_ request: AllocationRequest, for job: JobID) async -> AllocationResult
 }
 
 /// A gain a job asks for on the radio it is allocated: one element (the device's first when the
 /// name is empty) set to a level or to auto.
-public struct GainRequest: Sendable, Hashable {
-    public let element: String
-    public let value: GainValue
-    public init(element: String, value: GainValue) {
+package struct GainRequest: Sendable, Hashable {
+    package let element: String
+    package let value: GainValue
+    package init(element: String, value: GainValue) {
         self.element = element
         self.value = value
     }
 }
 
-public enum AllocationRequest: Sendable {
+package enum AllocationRequest: Sendable {
     /// One demod chain at a frequency, inside any capture that covers it. A decode job (and, from
     /// D.15, a watch job) asks for this: it needs one demodulated channel from any radio.
     /// `deviceID` nil means the allocator picks; `takeOver` retunes a capture somebody is using.
@@ -562,7 +562,7 @@ public enum AllocationRequest: Sendable {
     case exclusiveCapture(rangeHz: ClosedRange<UInt64>, deviceID: DeviceID?, takeOver: Bool, gains: [GainRequest] = [])
 }
 
-public enum AllocationResult: Sendable {
+package enum AllocationResult: Sendable {
     case channel(any ChannelLease)
     case capture(any CaptureLease)
     case captureIQ(any CaptureIQLease)
@@ -574,7 +574,7 @@ public enum AllocationResult: Sendable {
 /// destroys the channel, and the capture too when the lease created it -- a job that borrowed
 /// somebody's radio leaves it as it found it (docs/design/decoders.md, "Decisions": "A decode job
 /// is a job").
-public protocol ChannelLease: AnyObject, Sendable {
+package protocol ChannelLease: AnyObject, Sendable {
     var channelID: ChannelID { get }
     var captureID: CaptureID { get }
     var engine: any ChannelEngine { get }
@@ -585,7 +585,7 @@ public protocol ChannelLease: AnyObject, Sendable {
 /// "Multiplexing"; DecoderSignal SIGNAL_IQ). Unlike `ChannelLease` there is no channel: the decoder
 /// taps the whole capture band. Releasing destroys the capture only when the lease created it, so a
 /// job that borrowed a capture leaves it as it found it.
-public protocol CaptureIQLease: AnyObject, Sendable {
+package protocol CaptureIQLease: AnyObject, Sendable {
     var captureID: CaptureID { get }
     var sampleRateHz: UInt64 { get }
     var centerHz: UInt64 { get async }
@@ -596,7 +596,7 @@ public protocol CaptureIQLease: AnyObject, Sendable {
 /// A job's exclusive hold on one capture. Retuning through the lease bypasses the write coalescer,
 /// because that path keeps last-value-per-parameter on a 20 ms tick and would silently drop
 /// sweep steps.
-public protocol CaptureLease: AnyObject, Sendable {
+package protocol CaptureLease: AnyObject, Sendable {
     var captureID: CaptureID { get }
     var sampleRateHz: UInt64 { get }
     var centerHz: UInt64 { get async }
@@ -628,25 +628,25 @@ public protocol CaptureLease: AnyObject, Sendable {
 ///
 /// This is the Milestone D.15 contract (docs/plans/build-order.md); no implementation exists yet, and it
 /// declares the shape jobs will persist their outputs through.
-public protocol ResourceStore: AnyObject, Sendable {
+package protocol ResourceStore: AnyObject, Sendable {
     func create(kind: ResourceKind, metadata: [String: String]) async throws -> ResourceHandle
     func find(kind: ResourceKind?, matching: [String: String]) async -> [ResourceRecord]
     func localPath(uri: String) async -> URL?
 }
 
-public enum ResourceKind: String, Hashable, Sendable {
+package enum ResourceKind: String, Hashable, Sendable {
     case recording, scan, snapshot, transcript
 }
 
-public struct ResourceHandle: Sendable {
-    public var uri: String
-    public var writeURL: URL
+package struct ResourceHandle: Sendable {
+    package var uri: String
+    package var writeURL: URL
 }
 
-public struct ResourceRecord: Sendable {
-    public var uri: String
-    public var kind: ResourceKind
-    public var createdAt: Date
-    public var sizeBytes: UInt64
-    public var metadata: [String: String]
+package struct ResourceRecord: Sendable {
+    package var uri: String
+    package var kind: ResourceKind
+    package var createdAt: Date
+    package var sizeBytes: UInt64
+    package var metadata: [String: String]
 }

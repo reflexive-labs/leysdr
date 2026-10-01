@@ -10,13 +10,13 @@ import Synchronization
 /// Marker for sinks that only accept demodulated mono f32 audio (system audio output). The channel
 /// engine refuses to attach one to a raw-IQ channel and refuses to switch a channel to raw IQ while
 /// one is attached, so the cf32 channelized stream never reaches a PCM-only `write`.
-public protocol PCMOnlyAudioSink: AudioSink {}
+package protocol PCMOnlyAudioSink: AudioSink {}
 
 /// Builds platform audio sinks.
-public enum SinkFactory {
+package enum SinkFactory {
     /// A sink that plays mono float32 audio at `rate` on the default (or `deviceUID`) output device.
     /// - Throws: `PLATFORM_UNSUPPORTED` where AVFoundation is unavailable; `DEVICE_IO` if the engine fails to start.
-    public static func systemAudio(rate: UInt32, volume: Double, deviceUID: String?) throws -> any AudioSink {
+    package static func systemAudio(rate: UInt32, volume: Double, deviceUID: String?) throws -> any AudioSink {
         #if canImport(AVFoundation)
         return try CoreAudioSink(rate: rate, volume: volume, deviceUID: deviceUID)
         #else
@@ -44,9 +44,9 @@ private final class UnderrunCounter: Sendable {
 /// Plays a channel's audio through CoreAudio. `write` pushes into a `FloatRing` (never blocks);
 /// the render callback drains it and fills with zeros on underrun.
 /// Unchecked Sendable: `write` touches only the SPSC ring; the audio engine is set up in init and stopped in `closeSink`.
-public final class CoreAudioSink: PCMOnlyAudioSink, @unchecked Sendable {
-    public let id: SinkID
-    public let rate: UInt32
+package final class CoreAudioSink: PCMOnlyAudioSink, @unchecked Sendable {
+    package let id: SinkID
+    package let rate: UInt32
     private let ring: FloatRing
     private let engine = AVAudioEngine()
     private let source: AVAudioSourceNode
@@ -56,7 +56,7 @@ public final class CoreAudioSink: PCMOnlyAudioSink, @unchecked Sendable {
     ///   - rate: the channel's audio rate; AVAudioEngine converts to the device rate.
     ///   - volume: 0...1 applied at `mainMixerNode.outputVolume`.
     ///   - deviceUID: optional CoreAudio output device UID, applied best-effort.
-    public init(id: SinkID = SinkID(), rate: UInt32, volume: Double, deviceUID: String?) throws {
+    package init(id: SinkID = SinkID(), rate: UInt32, volume: Double, deviceUID: String?) throws {
         self.id = id
         self.rate = rate
         // ~0.5 s of buffering keeps the render callback fed across scheduling jitter.
@@ -90,17 +90,17 @@ public final class CoreAudioSink: PCMOnlyAudioSink, @unchecked Sendable {
     }
 
     /// Render-callback underruns so far.
-    public var underruns: UInt64 { underrunBox.value.load(ordering: .relaxed) }
+    package var underruns: UInt64 { underrunBox.value.load(ordering: .relaxed) }
 
     /// Output volume 0...1.
-    public var volume: Double {
+    package var volume: Double {
         get { Double(engine.mainMixerNode.outputVolume) }
         set { engine.mainMixerNode.outputVolume = Float(max(0, min(1, newValue))) }
     }
 
     /// Hot path: one ring push; excess is dropped and counted by the ring. Non-f32 blocks (a raw-IQ
     /// channel that slipped past the attach guard) are ignored rather than trapping the DSP thread.
-    public func write(_ audio: SampleBuffer, at time: SampleTime) {
+    package func write(_ audio: SampleBuffer, at time: SampleTime) {
         guard audio.format == .f32 else { return }
         let sp = Signpost.begin(.audioWrite)
         defer { Signpost.end(.audioWrite, sp) }
@@ -110,9 +110,9 @@ public final class CoreAudioSink: PCMOnlyAudioSink, @unchecked Sendable {
 
     /// Drops buffered audio. The ring is consumer-flushed from the render callback so this never
     /// races it (`FloatRing.clear` is consumer-thread only).
-    public func flush() async { ring.requestFlush() }
+    package func flush() async { ring.requestFlush() }
 
-    public func closeSink() async {
+    package func closeSink() async {
         engine.stop()
         engine.detach(source)
     }

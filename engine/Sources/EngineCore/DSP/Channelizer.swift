@@ -6,26 +6,26 @@
 import Foundation
 
 /// Decimation plan for a channel at a given capture rate and mode.
-public struct ChannelPlan: Hashable, Sendable {
+package struct ChannelPlan: Hashable, Sendable {
     /// Stage-1 decimation (`max(1, floor(Fs / 240 kHz))`).
-    public var d1: Int
+    package var d1: Int
     /// Stage-1 output rate `Fs / d1` (≥ 240 kHz).
-    public var r1: Double
+    package var r1: Double
     /// Stage-2 decimation (`round(r1 / 48 kHz)`, ≥ 1). WFM demodulates at `r1` and applies `d2` to audio.
-    public var d2: Int
+    package var d2: Int
     /// Stage-2 output rate `r1 / d2` (≈ 48 kHz).
-    public var r2: Double
+    package var r2: Double
     /// Stage-1 low-pass cutoff (Hz).
-    public var stage1CutoffHz: Double
+    package var stage1CutoffHz: Double
     /// Stage-2 anti-alias cutoff (Hz) for the `r1 → r2` decimation: `0.45·r2`.
-    public var antiAliasCutoffHz: Double
+    package var antiAliasCutoffHz: Double
     /// Selectivity low-pass cutoff (Hz) at `r2` — this filter *is* the channel bandwidth (`bw/2`).
-    public var stage2CutoffHz: Double
+    package var stage2CutoffHz: Double
     /// Whether the channelizer runs stage 2 (false for WFM).
-    public var usesStage2: Bool
+    package var usesStage2: Bool
 
     /// Rate the channelizer emits: `r2` for narrow modes, `r1` for WFM.
-    public var outputRate: Double { usesStage2 ? r2 : r1 }
+    package var outputRate: Double { usesStage2 ? r2 : r1 }
 
     /// The decimation ladder for a capture rate: stage 1 down to at least 240 kHz, stage 2 to about
     /// 48 kHz. The one copy of this arithmetic, so the bandwidth the accessor advertises and the
@@ -39,18 +39,18 @@ public struct ChannelPlan: Hashable, Sendable {
     }
 
     /// Largest bandwidth a narrow (stage-2) mode can carry at `r2`: `0.9·r2` (≈ 43 kHz at 2.4 MSPS).
-    public static func maxNarrowBandwidthHz(captureRate: UInt64) -> Double {
+    package static func maxNarrowBandwidthHz(captureRate: UInt64) -> Double {
         0.9 * rates(captureRate: captureRate).r2
     }
 
     /// Highest capture rate a plan is computed for (100 MSPS). Above it the decimator ratios stop
     /// being meaningful; anything larger is a malformed sidecar or device descriptor.
-    public static let maxCaptureRate: UInt64 = 100_000_000
+    package static let maxCaptureRate: UInt64 = 100_000_000
 
     /// - Throws: `INVALID_ARGUMENT` when `captureRate` exceeds `maxCaptureRate`, or when a narrow
     ///   mode asks for more than `maxNarrowBandwidthHz` (the channel would silently be filtered
     ///   narrower than it reports).
-    public static func plan(captureRate: UInt64, mode: DemodMode, bandwidthHz: UInt32) throws -> ChannelPlan {
+    package static func plan(captureRate: UInt64, mode: DemodMode, bandwidthHz: UInt32) throws -> ChannelPlan {
         guard captureRate <= maxCaptureRate else {
             throw EngineError.invalidArgument("capture rate \(captureRate) S/s exceeds \(maxCaptureRate) S/s")
         }
@@ -69,19 +69,19 @@ public struct ChannelPlan: Hashable, Sendable {
 }
 
 /// Mixes a channel to baseband and decimates it to the demodulator rate.
-public final class Channelizer {
-    public let captureRate: UInt64
-    public let mode: DemodMode
-    public let bandwidthHz: UInt32
-    public let plan: ChannelPlan
+package final class Channelizer {
+    package let captureRate: UInt64
+    package let mode: DemodMode
+    package let bandwidthHz: UInt32
+    package let plan: ChannelPlan
     /// Largest input block (complex samples) `process` accepts.
-    public let maxBlock: Int
+    package let maxBlock: Int
     /// Upper bound on output samples per `process` call.
-    public let maxOutput: Int
+    package let maxOutput: Int
     /// Output rate rounded to the wire type; `outputRateHz` is exact.
-    public var outputRate: UInt32 { UInt32(outputRateHz.rounded()) }
-    public var outputRateHz: Double { plan.outputRate }
-    public private(set) var offsetHz: Int64
+    package var outputRate: UInt32 { UInt32(outputRateHz.rounded()) }
+    package var outputRateHz: Double { plan.outputRate }
+    package private(set) var offsetHz: Int64
 
     private let nco: NCO
     private let stage1: FIRDecimator
@@ -93,7 +93,7 @@ public final class Channelizer {
 
     /// - Throws: `INVALID_ARGUMENT` for a zero/oversize bandwidth or block; `OFFSET_OUT_OF_CAPTURE`
     ///   when the channel does not fit inside ±Fs/2.
-    public init(captureRate: UInt64, offsetHz: Int64, bandwidthHz: UInt32, mode: DemodMode, maxBlock: Int) throws {
+    package init(captureRate: UInt64, offsetHz: Int64, bandwidthHz: UInt32, mode: DemodMode, maxBlock: Int) throws {
         guard captureRate > 0 else { throw EngineError.invalidArgument("capture rate must be > 0") }
         guard bandwidthHz > 0, UInt64(bandwidthHz) <= captureRate else {
             throw EngineError.invalidArgument("bandwidth \(bandwidthHz) Hz must be in 1...\(captureRate)")
@@ -151,7 +151,7 @@ public final class Channelizer {
     /// NCO frequency for a channel: `−offset`, shifted by `−bw/2` (USB) / `+bw/2` (LSB) so the
     /// wanted sideband is centred at DC for the stage-2 low-pass. CW keeps the carrier at DC; the
     /// demodulator moves it to the 700 Hz BFO.
-    public static func ncoFrequency(offsetHz: Int64, bandwidthHz: UInt32, mode: DemodMode) -> Double {
+    package static func ncoFrequency(offsetHz: Int64, bandwidthHz: UInt32, mode: DemodMode) -> Double {
         let half = Double(bandwidthHz) / 2
         switch mode {
         case .usb: return -(Double(offsetHz) + half)
@@ -162,7 +162,7 @@ public final class Channelizer {
 
     /// Check that a channel of `bandwidthHz` at `offsetHz` fits inside ±captureRate/2.
     /// - Throws: `OFFSET_OUT_OF_CAPTURE`.
-    public static func checkOffset(_ offsetHz: Int64, bandwidthHz: UInt32, captureRate: UInt64) throws {
+    package static func checkOffset(_ offsetHz: Int64, bandwidthHz: UInt32, captureRate: UInt64) throws {
         let half = Double(captureRate) / 2
         let edge = Double(bandwidthHz) / 2
         if Double(offsetHz) - edge < -half || Double(offsetHz) + edge > half {
@@ -173,13 +173,13 @@ public final class Channelizer {
     /// Move the channel within the capture. Phase-continuous; filters keep their history.
     /// Validation (`checkOffset`) is the caller's job — the Channel layer reports
     /// `OFFSET_OUT_OF_CAPTURE` before calling this.
-    public func retune(offsetHz: Int64) {
+    package func retune(offsetHz: Int64) {
         self.offsetHz = offsetHz
         nco.retune(frequencyHz: Channelizer.ncoFrequency(offsetHz: offsetHz, bandwidthHz: bandwidthHz, mode: mode))
     }
 
     /// Clear filter history and oscillator phase.
-    public func reset() {
+    package func reset() {
         nco.reset()
         stage1.reset()
         stage2?.reset()
@@ -190,7 +190,7 @@ public final class Channelizer {
     /// `output` is interleaved cf32 with capacity ≥ `maxOutput`. Returns samples written.
     /// Hot path: no allocation, no locks.
     @discardableResult
-    public func process(input: SampleBuffer, output: inout SampleBuffer) -> Int {
+    package func process(input: SampleBuffer, output: inout SampleBuffer) -> Int {
         precondition(input.format == .cf32 && output.format == .cf32)
         precondition(input.count <= maxBlock && output.count >= maxOutput)
         let n = input.count

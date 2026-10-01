@@ -11,20 +11,20 @@ import Foundation
 import Synchronization
 
 /// One interval of the capture's level: a quarter of a second of samples, by the capture's rate.
-public struct CaptureLevelReading: Hashable, Sendable {
+package struct CaptureLevelReading: Hashable, Sendable {
     /// Capture-timeline index one past the interval's last sample.
-    public var sampleIndex: UInt64
+    package var sampleIndex: UInt64
     /// Complex samples with I or Q at the converter's rails. Samples, not components: a sample
     /// with both at a rail is one clipped sample, and the fraction against `totalSamples` is then
     /// a fraction of time.
-    public var clippedSamples: UInt64
+    package var clippedSamples: UInt64
     /// Samples in the interval. A little over a quarter second's worth, since a block is never
     /// split to end an interval on the boundary.
-    public var totalSamples: UInt64
+    package var totalSamples: UInt64
     /// The largest component magnitude in the interval, 1 at full scale.
-    public var peak: Float
+    package var peak: Float
 
-    public init(sampleIndex: UInt64, clippedSamples: UInt64, totalSamples: UInt64, peak: Float) {
+    package init(sampleIndex: UInt64, clippedSamples: UInt64, totalSamples: UInt64, peak: Float) {
         self.sampleIndex = sampleIndex
         self.clippedSamples = clippedSamples
         self.totalSamples = totalSamples
@@ -32,18 +32,18 @@ public struct CaptureLevelReading: Hashable, Sendable {
     }
 
     /// `peak` against full scale; -inf when the interval was digitally silent.
-    public var peakDBFS: Double { peak > 0 ? 20 * log10(Double(peak)) : -.infinity }
+    package var peakDBFS: Double { peak > 0 ? 20 * log10(Double(peak)) : -.infinity }
 }
 
 /// Accumulates one capture's rail counts and peak on the device thread and publishes a reading
 /// per interval in a seqlock: a reader from any thread copies four words and retries if a write
 /// overlapped. Allocation-free and lock-free on both sides (invariant 4).
 /// Unchecked Sendable: the accumulators belong to the device thread; the published reading is a seqlock of atomics.
-public final class CaptureLevelMeter: @unchecked Sendable {
+package final class CaptureLevelMeter: @unchecked Sendable {
     /// Readings per second, the `BandFloor` cadence: fast enough to follow a gain change within
     /// a meter or two, slow enough that the fraction is measured over hundreds of thousands of
     /// samples rather than a block.
-    public static let readingsPerSecond: UInt64 = 4
+    package static let readingsPerSecond: UInt64 = 4
 
     // Device thread only.
     private var clipped: UInt64 = 0
@@ -62,12 +62,12 @@ public final class CaptureLevelMeter: @unchecked Sendable {
     private let outTotal = Atomic<UInt64>(0)
     private let outPeakBits = Atomic<UInt32>(0)
 
-    public init() {}
+    package init() {}
 
     /// Hot path (device thread): fold one block's count and peak in, and publish once the
     /// interval holds `sampleRate / readingsPerSecond` samples. `end` is the capture-timeline
     /// index one past the block's last sample.
-    public func observe(clipped n: Int, peak p: Float, count: Int, endingAt end: UInt64, sampleRate: UInt64) {
+    package func observe(clipped n: Int, peak p: Float, count: Int, endingAt end: UInt64, sampleRate: UInt64) {
         if restart.exchange(false, ordering: .relaxed) {
             clipped = 0; total = 0; peak = 0
         }
@@ -87,14 +87,14 @@ public final class CaptureLevelMeter: @unchecked Sendable {
 
     /// Forget the interval in progress. Control plane, at a stream restart, for the reason
     /// `BandFloor.reset` gives: the samples either side of a gap are not the same air.
-    public func reset() {
+    package func reset() {
         restart.store(true, ordering: .relaxed)
     }
 
     /// The latest reading and its generation (1 for the first reading published), or nil before
     /// any. Safe from any thread; a caller sending readings on keeps the last generation it sent
     /// so a reading goes out once and never twice.
-    public func read() -> (reading: CaptureLevelReading, generation: UInt64)? {
+    package func read() -> (reading: CaptureLevelReading, generation: UInt64)? {
         while true {
             let before = seq.load(ordering: .sequentiallyConsistent)
             guard before != 0 else { return nil }

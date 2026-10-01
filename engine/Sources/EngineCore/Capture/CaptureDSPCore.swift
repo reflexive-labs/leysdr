@@ -11,17 +11,17 @@ import Glibc
 import Synchronization
 
 /// Counters exposed by a capture for diagnostics and the S2 harness.
-public struct CaptureStats: Hashable, Sendable {
+package struct CaptureStats: Hashable, Sendable {
     /// Blocks handed to `deliver` by the device.
-    public var blocksReceived: UInt64
+    package var blocksReceived: UInt64
     /// Blocks the DSP thread has processed.
-    public var blocksProcessed: UInt64
+    package var blocksProcessed: UInt64
     /// Samples the DSP thread has processed.
-    public var samplesProcessed: UInt64
+    package var samplesProcessed: UInt64
     /// Blocks dropped because the ring was full.
-    public var overruns: Int
+    package var overruns: Int
     /// Blocks refused because the device handed the capture a format a capture cannot carry.
-    public var unsupportedBlocks: UInt64
+    package var unsupportedBlocks: UInt64
 }
 
 /// CLOCK_REALTIME in nanoseconds.
@@ -34,20 +34,20 @@ func realtimeNowNs() -> Int64 {
 
 /// Owns the block ring, the immutable channel/tap tables and the DSP thread for one capture.
 /// Unchecked Sendable: the tables are swapped under `tableLock`, the counters are atomics, and everything else belongs to the device or DSP thread.
-public final class CaptureDSPCore: @unchecked Sendable {
-    public static let blockSize = 16384
-    public static let ringSlots = 64
+package final class CaptureDSPCore: @unchecked Sendable {
+    package static let blockSize = 16384
+    package static let ringSlots = 64
 
-    public let captureID: CaptureID
-    public let ring: BlockRing
-    public let ladder = DefaultSpectrumLadder()
+    package let captureID: CaptureID
+    package let ring: BlockRing
+    package let ladder = DefaultSpectrumLadder()
     /// The band's noise floor, read from this capture's own spectrum four times a second and
     /// handed to every channel so its meter's `snrDB` is measured against the band, not itself.
-    public let floor = BandFloor()
+    package let floor = BandFloor()
     /// The capture's raw level: samples at the converter's rails and the peak, counted on the
     /// device thread as each block arrives and published a quarter second at a time. The clipping
     /// authority; the spectrum is not one.
-    public let level = CaptureLevelMeter()
+    package let level = CaptureLevelMeter()
     private let sampleRateBox: Atomic<UInt64>
     private let centerHzBox: Atomic<UInt64>
     private let tableLock = NSLock()
@@ -73,12 +73,12 @@ public final class CaptureDSPCore: @unchecked Sendable {
     private let joined = DispatchSemaphore(value: 0)
     private let anchorContinuation: AsyncStream<CaptureAnchor>.Continuation
     /// Every anchor published (first block after start, sample-rate change, rebound).
-    public let anchorEvents: AsyncStream<CaptureAnchor>
+    package let anchorEvents: AsyncStream<CaptureAnchor>
     private let anchorLock = NSLock()
     private var currentAnchor: CaptureAnchor
     private let log = Logger(label: "leyline.capture")
 
-    public init(captureID: CaptureID, sampleRate: UInt64, centerHz: UInt64) {
+    package init(captureID: CaptureID, sampleRate: UInt64, centerHz: UInt64) {
         self.captureID = captureID
         sampleRateBox = Atomic(sampleRate)
         centerHzBox = Atomic(centerHz)
@@ -87,23 +87,23 @@ public final class CaptureDSPCore: @unchecked Sendable {
         (anchorEvents, anchorContinuation) = AsyncStream<CaptureAnchor>.makeStream(bufferingPolicy: .bufferingNewest(8))
     }
 
-    public var sampleRate: UInt64 {
+    package var sampleRate: UInt64 {
         get { sampleRateBox.load(ordering: .relaxed) }
         set { sampleRateBox.store(newValue, ordering: .relaxed) }
     }
 
-    public var centerHz: UInt64 {
+    package var centerHz: UInt64 {
         get { centerHzBox.load(ordering: .relaxed) }
         set { centerHzBox.store(newValue, ordering: .relaxed) }
     }
 
     /// Latest published anchor (zero host time until the first block).
-    public var anchor: CaptureAnchor {
+    package var anchor: CaptureAnchor {
         anchorLock.lock(); defer { anchorLock.unlock() }
         return currentAnchor
     }
 
-    public var stats: CaptureStats {
+    package var stats: CaptureStats {
         CaptureStats(blocksReceived: blocksReceived.load(ordering: .relaxed),
                      blocksProcessed: blocksProcessed.load(ordering: .relaxed),
                      samplesProcessed: samplesProcessed.load(ordering: .relaxed),
@@ -114,7 +114,7 @@ public final class CaptureDSPCore: @unchecked Sendable {
     /// Ask for a fresh anchor on the next delivered block (stream restart, rebound). That block
     /// also starts a new device epoch: its device index is rebased onto the capture timeline so
     /// committed `SampleTime`s keep increasing across the restart.
-    public func expectNewAnchor() {
+    package func expectNewAnchor() {
         needsAnchor.store(true, ordering: .relaxed)
         // The floor and the level go with the stream they were read from, for the reason the
         // channels reset.
@@ -123,14 +123,14 @@ public final class CaptureDSPCore: @unchecked Sendable {
     }
 
     /// Capture-timeline index one past the last delivered sample. Diagnostics/tests.
-    public var deliveredEnd: UInt64 { lastDeliveredEnd.load(ordering: .relaxed) }
+    package var deliveredEnd: UInt64 { lastDeliveredEnd.load(ordering: .relaxed) }
 
     /// Waits until the DSP thread has released every block committed before the call. Control
     /// plane only: used between `stopStreaming` and a new plan (sample-rate change) so blocks
     /// captured under the old rate are never processed under the new one. Returns `false` if the
     /// backlog did not clear within `timeoutMs` (or no DSP thread is running to clear it).
     @discardableResult
-    public func drainPending(timeoutMs: Int = 500) async -> Bool {
+    package func drainPending(timeoutMs: Int = 500) async -> Bool {
         let deadline = DispatchTime.now().uptimeNanoseconds + UInt64(max(0, timeoutMs)) * 1_000_000
         while ring.available > 0 {
             guard isRunning, DispatchTime.now().uptimeNanoseconds < deadline else { return false }
@@ -140,16 +140,16 @@ public final class CaptureDSPCore: @unchecked Sendable {
     }
 
     /// Replace the channel table (control plane).
-    public func setChannels(_ slots: [ChannelSlot]) {
+    package func setChannels(_ slots: [ChannelSlot]) {
         tableLock.lock(); channelSlots = slots; tableLock.unlock()
     }
 
     /// Replace the tap table (control plane).
-    public func setTaps(_ newTaps: [any CaptureTap]) {
+    package func setTaps(_ newTaps: [any CaptureTap]) {
         tableLock.lock(); taps = newTaps; tableLock.unlock()
     }
 
-    public var currentTaps: [any CaptureTap] {
+    package var currentTaps: [any CaptureTap] {
         tableLock.lock(); defer { tableLock.unlock() }
         return taps
     }
@@ -158,7 +158,7 @@ public final class CaptureDSPCore: @unchecked Sendable {
 
     /// Device-thread entry: convert the native block to cf32 into the next ring slot and commit.
     /// Oversized blocks are split across slots; a full ring drops and counts. Never blocks.
-    public func deliver(_ buffer: SampleBuffer, at time: SampleTime) {
+    package func deliver(_ buffer: SampleBuffer, at time: SampleTime) {
         let sp = Signpost.begin(.blockIngest)
         defer { Signpost.end(.blockIngest, sp) }
         guard buffer.format != .f32 else {
@@ -252,7 +252,7 @@ public final class CaptureDSPCore: @unchecked Sendable {
     // MARK: DSP thread
 
     /// Starts the DSP thread (`leyline.dsp.<id>`, user-interactive QoS). Idempotent.
-    public func startThread() {
+    package func startThread() {
         guard !running.exchange(true, ordering: .acquiringAndReleasing) else { return }
         threadStarts.wrappingAdd(1, ordering: .relaxed)
         let t = Thread { [self] in
@@ -267,20 +267,20 @@ public final class CaptureDSPCore: @unchecked Sendable {
 
     /// Stops and joins the DSP thread. Blocks the caller for up to one block's processing plus one
     /// ring wait (50 ms), so a caller in Swift concurrency runs it through `BlockingWork`.
-    public func stopThread() {
+    package func stopThread() {
         guard running.exchange(false, ordering: .acquiringAndReleasing) else { return }
         joined.wait()
         thread = nil
     }
 
-    public var isRunning: Bool { running.load(ordering: .relaxed) }
+    package var isRunning: Bool { running.load(ordering: .relaxed) }
 
     /// Number of times a DSP thread has been spawned for this core. Lets tests assert that a device
     /// rebind reuses the running thread instead of respawning it.
-    public var threadStartCount: Int { threadStarts.load(ordering: .relaxed) }
+    package var threadStartCount: Int { threadStarts.load(ordering: .relaxed) }
 
     /// Finishes the anchor stream. Call once at teardown.
-    public func finish() {
+    package func finish() {
         anchorContinuation.finish()
     }
 

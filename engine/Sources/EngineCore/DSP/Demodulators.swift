@@ -79,7 +79,7 @@ let demodulatorMaxBlock = 16384
 /// and the channelizer mixes the channel's offset down to zero, so a transmitter above the channel
 /// reads a positive DC. `ChannelTests.testMeterReadsTuningErrorAndDeviationOffTheDiscriminator`
 /// holds that against a channel placed 1 kHz above a fixture's carrier.
-public struct DiscriminatorInterval {
+package struct DiscriminatorInterval {
     /// Hertz per unit of the discriminator's output, fixed by `configure`; 0 until then.
     var hertzPerUnit: Double = 0
     private var sum: Double = 0
@@ -119,7 +119,7 @@ public struct DiscriminatorInterval {
 /// A demodulator whose raw stage is frequency, so its DC is a tuning error and its excursion a
 /// deviation: the FM modes, and nothing else. The channel core takes the interval when it stamps
 /// a meter; a demodulator without this conformance leaves both meter fields NaN.
-public protocol DiscriminatorSource: AnyObject {
+package protocol DiscriminatorSource: AnyObject {
     /// Take and reset the accumulated interval. DSP thread only, allocation-free.
     func takeDiscriminatorInterval() -> (freqErrorHz: Double, deviationHz: Double)?
 }
@@ -127,23 +127,23 @@ public protocol DiscriminatorSource: AnyObject {
 /// Narrow-band FM: discriminator (full-scale deviation → ±1.0), 300 Hz two-pole high-pass (removes
 /// CTCSS/PL tones and any DC offset), 6 dB/octave de-emphasis above 300 Hz (τ ≈ 530 µs, the TIA-603
 /// voice response; transmitters pre-emphasize) with ×2 make-up gain, 1-pole LPF ≈ 4 kHz, output clipped to ±1.
-public final class NFMDemodulator: Demodulator, SubAudibleSource, DiscriminatorSource {
-    public let mode: DemodMode = .nfm
-    public private(set) var outputRate: UInt32 = 0
+package final class NFMDemodulator: Demodulator, SubAudibleSource, DiscriminatorSource {
+    package let mode: DemodMode = .nfm
+    package private(set) var outputRate: UInt32 = 0
     /// Full scale is what the channel itself can carry, not one fixed number: a 12.5 kHz channel
     /// holds ±2.5 kHz of deviation and a 25 kHz one the ±5 kHz a wide NFM transmitter sends, so a
     /// narrow radio fills the trace and plays as loudly as a wide one instead of sitting at a
     /// quarter scale. Clamped either side because a channel narrower or wider than the pair of
     /// standard spacings is still listened to as one of them.
-    public static func fullScaleDeviation(bandwidthHz: UInt32) -> Double {
+    package static func fullScaleDeviation(bandwidthHz: UInt32) -> Double {
         Swift.min(5000, Swift.max(2500, Double(bandwidthHz) / 5))
     }
 
     /// The deviation `discriminate` puts at ±1.0. Set from the channel's bandwidth by `configure`.
-    public private(set) var fullScaleDeviationHz: Double = 5000
+    package private(set) var fullScaleDeviationHz: Double = 5000
     /// Set once when the channel is built, before any block is processed.
-    public var subAudibleTap: FloatRing?
-    public private(set) var subAudibleRate: Double = 0
+    package var subAudibleTap: FloatRing?
+    package private(set) var subAudibleRate: Double = 0
     /// Two decimation stages from the channel rate down to roughly 1 kHz. Two rather than one
     /// boxcar: nothing anti-aliases a boxcar, so voice near 1.3 kHz folds straight into the
     /// 60-300 Hz band at about -13 dB and fabricates tone energy out of speech.
@@ -152,7 +152,7 @@ public final class NFMDemodulator: Demodulator, SubAudibleSource, DiscriminatorS
     private var subScratch1: UnsafeMutablePointer<Float>?
     private var subScratch2: UnsafeMutablePointer<Float>?
     private var subCapacity = 0
-    public let maxBlock = demodulatorMaxBlock
+    package let maxBlock = demodulatorMaxBlock
     private var scratch: DemodScratch?
     private var scale: Float = 0
     private var lpfCoefficient: Float = 1
@@ -168,9 +168,9 @@ public final class NFMDemodulator: Demodulator, SubAudibleSource, DiscriminatorS
     /// The meter's view of the discriminator, in the same units the tap and `rawOut` carry.
     private var interval = DiscriminatorInterval()
 
-    public init() {}
+    package init() {}
 
-    public func takeDiscriminatorInterval() -> (freqErrorHz: Double, deviationHz: Double)? {
+    package func takeDiscriminatorInterval() -> (freqErrorHz: Double, deviationHz: Double)? {
         interval.take()
     }
 
@@ -179,7 +179,7 @@ public final class NFMDemodulator: Demodulator, SubAudibleSource, DiscriminatorS
         subScratch2?.deallocate()
     }
 
-    public func configure(inputRate: UInt32, bandwidthHz: UInt32) throws {
+    package func configure(inputRate: UInt32, bandwidthHz: UInt32) throws {
         guard inputRate > 0 else { throw EngineError.invalidArgument("inputRate must be > 0") }
         outputRate = inputRate
         fullScaleDeviationHz = Self.fullScaleDeviation(bandwidthHz: bandwidthHz)
@@ -244,7 +244,7 @@ public final class NFMDemodulator: Demodulator, SubAudibleSource, DiscriminatorS
         }
     }
 
-    public func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int {
+    package func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int {
         guard let s = scratch, input.count > 0 else { rawOut?.count = 0; return 0 }
         precondition(input.format == .cf32 && output.format == .f32 && input.count <= maxBlock && output.count >= input.count)
         let n = s.load(input)
@@ -282,7 +282,7 @@ public final class NFMDemodulator: Demodulator, SubAudibleSource, DiscriminatorS
         hpfPrevOut = (po0, po1)
     }
 
-    public func reset() {
+    package func reset() {
         scratch?.reset()
         lpfState = 0
         hpfPrevIn = (0, 0)
@@ -296,15 +296,15 @@ public final class NFMDemodulator: Demodulator, SubAudibleSource, DiscriminatorS
 
 /// Wide-band FM (mono): discriminator at `r1` (±75 kHz → ±0.5), 75 µs de-emphasis,
 /// FIR LPF 15 kHz + decimate by `round(r1 / 48 kHz)`, output clipped to ±1.
-public final class WFMDemodulator: Demodulator, DiscriminatorSource {
-    public let mode: DemodMode = .wfm
-    public private(set) var outputRate: UInt32 = 0
-    public let maxBlock = demodulatorMaxBlock
+package final class WFMDemodulator: Demodulator, DiscriminatorSource {
+    package let mode: DemodMode = .wfm
+    package private(set) var outputRate: UInt32 = 0
+    package let maxBlock = demodulatorMaxBlock
     /// Audio decimation factor chosen at configure time.
-    public private(set) var decimation = 1
+    package private(set) var decimation = 1
     /// Broadcast FM is ±75 kHz by regulation, so full scale does not follow the channel the way
     /// NFM's does.
-    public static let fullScaleDeviationHz: Double = 75_000
+    package static let fullScaleDeviationHz: Double = 75_000
     private var scratch: DemodScratch?
     private var audioFilter: RealFIRDecimator?
     /// Decimation for the raw tap, which keeps everything the audio filter throws away above
@@ -319,13 +319,13 @@ public final class WFMDemodulator: Demodulator, DiscriminatorSource {
     /// The meter's view of the discriminator at `r1`, before the tap's decimation and its ×2.
     private var interval = DiscriminatorInterval()
 
-    public init() {}
+    package init() {}
 
-    public func takeDiscriminatorInterval() -> (freqErrorHz: Double, deviationHz: Double)? {
+    package func takeDiscriminatorInterval() -> (freqErrorHz: Double, deviationHz: Double)? {
         interval.take()
     }
 
-    public func configure(inputRate: UInt32, bandwidthHz: UInt32) throws {
+    package func configure(inputRate: UInt32, bandwidthHz: UInt32) throws {
         guard inputRate > 0 else { throw EngineError.invalidArgument("inputRate must be > 0") }
         let rate = Double(inputRate)
         decimation = max(1, Int((rate / 48_000).rounded()))
@@ -345,7 +345,7 @@ public final class WFMDemodulator: Demodulator, DiscriminatorSource {
         reset()
     }
 
-    public func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int {
+    package func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int {
         guard let s = scratch, let filter = audioFilter, input.count > 0 else { rawOut?.count = 0; return 0 }
         precondition(input.format == .cf32 && output.format == .f32 && input.count <= maxBlock)
         precondition(output.count >= (input.count + decimation - 1) / decimation)
@@ -380,7 +380,7 @@ public final class WFMDemodulator: Demodulator, DiscriminatorSource {
         rawOut?.count = produced
     }
 
-    public func reset() {
+    package func reset() {
         scratch?.reset()
         audioFilter?.reset()
         rawFilter?.reset()
@@ -393,27 +393,27 @@ public final class WFMDemodulator: Demodulator, DiscriminatorSource {
 /// Slow-envelope AGC shared by AM and SSB/CW (channel `agc == .auto`): tracks a per-block level with a
 /// fast attack (half-way per block) and slow release (≈ 80 ms), and returns the gain that brings the
 /// envelope to `target`, clamped to 1000 so silence does not explode. Allocation-free.
-public struct EnvelopeAGC {
+package struct EnvelopeAGC {
     /// Target level after AGC (linear, relative to full scale).
-    public var target: Float = 0.5
+    package var target: Float = 0.5
     /// Maximum gain applied (linear).
-    public var maxGain: Float = 1_000
+    package var maxGain: Float = 1_000
     private var releaseCoefficient: Float = 1
     private var envelope: Float = 0
 
-    public init() {}
+    package init() {}
 
     /// Set the release time constant (`cutoffHz` ≈ 2 Hz → ≈ 80 ms) for `rate` samples per second.
-    public mutating func configure(rate: Double, releaseCutoffHz: Double = 2) {
+    package mutating func configure(rate: Double, releaseCutoffHz: Double = 2) {
         releaseCoefficient = Kernels.onePoleCoefficient(cutoffHz: releaseCutoffHz, rate: rate)
         envelope = 0
     }
 
-    public mutating func reset() { envelope = 0 }
+    package mutating func reset() { envelope = 0 }
 
     /// Update the envelope with one block's measured `level` (`count` samples) and return the gain to apply.
     @inline(__always)
-    public mutating func gain(level: Float, count: Int) -> Float {
+    package mutating func gain(level: Float, count: Int) -> Float {
         let a: Float = level > envelope ? 0.5 : min(1, releaseCoefficient * Float(count))
         envelope += a * (level - envelope)
         return envelope > 1e-4 ? min(target / envelope, maxGain) : 1
@@ -421,14 +421,14 @@ public struct EnvelopeAGC {
 }
 
 /// AM envelope detector: `|x|`, DC block (1-pole HPF ≈ 50 Hz), audio LPF ≈ 5 kHz, slow-envelope AGC.
-public final class AMDemodulator: Demodulator {
-    public let mode: DemodMode = .am
-    public private(set) var outputRate: UInt32 = 0
-    public let maxBlock = demodulatorMaxBlock
+package final class AMDemodulator: Demodulator {
+    package let mode: DemodMode = .am
+    package private(set) var outputRate: UInt32 = 0
+    package let maxBlock = demodulatorMaxBlock
     /// Normalise output by a slow envelope of the carrier level (channel `agc == .auto`).
-    public var agcEnabled = true
+    package var agcEnabled = true
     /// Target carrier level after AGC (linear, relative to full scale).
-    public var agcTarget: Float {
+    package var agcTarget: Float {
         get { agc.target }
         set { agc.target = newValue }
     }
@@ -439,9 +439,9 @@ public final class AMDemodulator: Demodulator {
     private var lpfCoefficient: Float = 1
     private var lpfState: Float = 0
 
-    public init() {}
+    package init() {}
 
-    public func configure(inputRate: UInt32, bandwidthHz: UInt32) throws {
+    package func configure(inputRate: UInt32, bandwidthHz: UInt32) throws {
         guard inputRate > 0 else { throw EngineError.invalidArgument("inputRate must be > 0") }
         outputRate = inputRate
         let rate = Double(inputRate)
@@ -452,7 +452,7 @@ public final class AMDemodulator: Demodulator {
         reset()
     }
 
-    public func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int {
+    package func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int {
         guard let s = scratch, input.count > 0 else { rawOut?.count = 0; return 0 }
         precondition(input.format == .cf32 && output.format == .f32 && input.count <= maxBlock && output.count >= input.count)
         let n = s.load(input)
@@ -470,7 +470,7 @@ public final class AMDemodulator: Demodulator {
         return n
     }
 
-    public func reset() {
+    package func reset() {
         scratch?.reset()
         dcState = 0; lpfState = 0
         agc.reset()
@@ -480,16 +480,16 @@ public final class AMDemodulator: Demodulator {
 /// Product detector for USB/LSB/CW. The channelizer centres the wanted sideband at DC; this mixes
 /// it back by `∓bw/2` (CW: to a 700 Hz BFO), takes the real part, and (channel `agc == .auto`)
 /// normalises by a slow envelope of the channel IQ magnitude — the same AGC shape as AM.
-public final class SSBDemodulator: Demodulator {
+package final class SSBDemodulator: Demodulator {
     /// CW beat-frequency oscillator.
-    public static let cwBFOHz: Double = 700
-    public let mode: DemodMode
-    public private(set) var outputRate: UInt32 = 0
-    public let maxBlock = demodulatorMaxBlock
+    package static let cwBFOHz: Double = 700
+    package let mode: DemodMode
+    package private(set) var outputRate: UInt32 = 0
+    package let maxBlock = demodulatorMaxBlock
     /// Normalise output by a slow envelope of the signal level (channel `agc == .auto`).
-    public var agcEnabled = true
+    package var agcEnabled = true
     /// Target audio level after AGC (linear, relative to full scale).
-    public var agcTarget: Float {
+    package var agcTarget: Float {
         get { agc.target }
         set { agc.target = newValue }
     }
@@ -498,7 +498,7 @@ public final class SSBDemodulator: Demodulator {
     private var bfo: NCO?
     private var oscRe, oscIm: UnsafeMutablePointer<Float>
 
-    public init(mode: DemodMode) {
+    package init(mode: DemodMode) {
         precondition(mode == .usb || mode == .lsb || mode == .cw)
         self.mode = mode
         oscRe = UnsafeMutablePointer<Float>.allocate(capacity: demodulatorMaxBlock)
@@ -508,7 +508,7 @@ public final class SSBDemodulator: Demodulator {
     deinit { oscRe.deallocate(); oscIm.deallocate() }
 
     /// Mix-back frequency for the mode: `+bw/2` (USB), `−bw/2` (LSB), `+700` (CW).
-    public static func mixFrequency(mode: DemodMode, bandwidthHz: UInt32) -> Double {
+    package static func mixFrequency(mode: DemodMode, bandwidthHz: UInt32) -> Double {
         switch mode {
         case .usb: return Double(bandwidthHz) / 2
         case .lsb: return -Double(bandwidthHz) / 2
@@ -516,7 +516,7 @@ public final class SSBDemodulator: Demodulator {
         }
     }
 
-    public func configure(inputRate: UInt32, bandwidthHz: UInt32) throws {
+    package func configure(inputRate: UInt32, bandwidthHz: UInt32) throws {
         guard inputRate > 0 else { throw EngineError.invalidArgument("inputRate must be > 0") }
         outputRate = inputRate
         bfo = NCO(rate: Double(inputRate), frequencyHz: SSBDemodulator.mixFrequency(mode: mode, bandwidthHz: bandwidthHz), maxBlock: maxBlock)
@@ -525,7 +525,7 @@ public final class SSBDemodulator: Demodulator {
         reset()
     }
 
-    public func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int {
+    package func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int {
         guard let s = scratch, let bfo, input.count > 0 else { rawOut?.count = 0; return 0 }
         precondition(input.format == .cf32 && output.format == .f32 && input.count <= maxBlock && output.count >= input.count)
         let n = s.load(input)
@@ -550,7 +550,7 @@ public final class SSBDemodulator: Demodulator {
         return n
     }
 
-    public func reset() {
+    package func reset() {
         scratch?.reset()
         bfo?.reset()
         agc.reset()
@@ -558,28 +558,28 @@ public final class SSBDemodulator: Demodulator {
 }
 
 /// No demodulation: channel IQ goes to taps/stream sinks only. `process` produces no audio.
-public final class RawIQDemodulator: Demodulator {
-    public let mode: DemodMode = .rawIQ
-    public private(set) var outputRate: UInt32 = 0
-    public let maxBlock = demodulatorMaxBlock
-    public init() {}
-    public func configure(inputRate: UInt32, bandwidthHz: UInt32) throws { outputRate = inputRate }
+package final class RawIQDemodulator: Demodulator {
+    package let mode: DemodMode = .rawIQ
+    package private(set) var outputRate: UInt32 = 0
+    package let maxBlock = demodulatorMaxBlock
+    package init() {}
+    package func configure(inputRate: UInt32, bandwidthHz: UInt32) throws { outputRate = inputRate }
     /// No detector, so no raw stage either: `rawOut` comes back empty rather than stale.
-    public func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int {
+    package func process(iq input: SampleBuffer, audioOut output: inout SampleBuffer, rawOut: inout SampleBuffer?) -> Int {
         rawOut?.count = 0
         return 0
     }
 
-    public func reset() {}
+    package func reset() {}
 }
 
 /// Builds the demodulator for a mode. Every `DemodMode` is available.
-public enum DemodulatorFactory {
+package enum DemodulatorFactory {
     /// What ±1.0 on a demodulated sample stands for, in hertz of deviation, for the FM modes;
     /// 0 for the amplitude modes, whose samples are a level rather than a frequency. The daemon
     /// answers this in the audio descriptor so a client reads hertz off a tap without hard-coding
     /// a full scale of its own.
-    public static func fullScaleDeviationHz(mode: DemodMode, bandwidthHz: UInt32) -> Double {
+    package static func fullScaleDeviationHz(mode: DemodMode, bandwidthHz: UInt32) -> Double {
         switch mode {
         case .nfm: return NFMDemodulator.fullScaleDeviation(bandwidthHz: bandwidthHz)
         case .wfm: return WFMDemodulator.fullScaleDeviationHz
@@ -587,7 +587,7 @@ public enum DemodulatorFactory {
         }
     }
 
-    public static func make(mode: DemodMode) -> any Demodulator {
+    package static func make(mode: DemodMode) -> any Demodulator {
         switch mode {
         case .nfm: return NFMDemodulator()
         case .wfm: return WFMDemodulator()
@@ -601,15 +601,15 @@ public enum DemodulatorFactory {
 /// Per-block power meter: mean power of a cf32 block in dBFS. The floor a block is judged against
 /// is the capture's (`BandFloor`), not this meter's: until 2026-09-19 it kept a running minimum
 /// of its own block power, which on a carrier that never stops is the carrier.
-public struct PowerMeter {
+package struct PowerMeter {
     /// Most recent block power (dBFS); NaN before the first block.
-    public private(set) var powerDBFS: Float = .nan
+    package private(set) var powerDBFS: Float = .nan
 
-    public init() {}
+    package init() {}
 
     /// Measure one interleaved cf32 block. Allocation-free. Returns the block power in dBFS.
     @discardableResult
-    public mutating func measure(_ block: SampleBuffer) -> Float {
+    package mutating func measure(_ block: SampleBuffer) -> Float {
         precondition(block.format == .cf32)
         let n = block.count
         guard n > 0 else { return powerDBFS }
@@ -622,26 +622,26 @@ public struct PowerMeter {
         return db
     }
 
-    public mutating func reset() {
+    package mutating func reset() {
         powerDBFS = .nan
     }
 }
 
 /// Squelch with 2 dB hysteresis: opens when power > threshold, closes when power < threshold − 2 dB.
 /// A NaN threshold means "always open".
-public struct Squelch: Hashable, Sendable {
-    public static let hysteresisDB: Float = 2
-    public var thresholdDB: Float
-    public private(set) var isOpen: Bool
+package struct Squelch: Hashable, Sendable {
+    package static let hysteresisDB: Float = 2
+    package var thresholdDB: Float
+    package private(set) var isOpen: Bool
 
-    public init(thresholdDB: Float) {
+    package init(thresholdDB: Float) {
         self.thresholdDB = thresholdDB
         isOpen = thresholdDB.isNaN
     }
 
     /// Feed one block's power. Returns true if the open/closed state changed.
     @discardableResult
-    public mutating func update(powerDB: Float) -> Bool {
+    package mutating func update(powerDB: Float) -> Bool {
         let was = isOpen
         if thresholdDB.isNaN {
             isOpen = true

@@ -39,7 +39,7 @@ final class DeviceEventHub: Sendable {
 
 /// Registry-side hooks every hosted virtual device implements: the registry assigns the stable id,
 /// records externally decided `.inUse`/`.available` state and installs the state-change hook.
-public protocol VirtualDevice: RadioDevice {
+package protocol VirtualDevice: RadioDevice {
     func assignID(_ id: DeviceID)
     func setState(_ state: DeviceState)
     func setOnStateChange(_ hook: (@Sendable (DeviceState) -> Void)?)
@@ -56,7 +56,7 @@ struct DeviceIDMap: Codable {
 /// Identity: a device key is `(serial, manufacturer, product)`. Two dongles with identical strings
 /// (Nooelec's `00000001`) are disambiguated by enumeration order (`#1`, `#2`, ...) and flagged with
 /// `features["serial_collision"] = true` — their ids are stable only while both stay plugged in.
-public actor DefaultDeviceRegistry: DeviceRegistry {
+package actor DefaultDeviceRegistry: DeviceRegistry {
     private struct Entry {
         var descriptor: DeviceDescriptor
         var device: any RadioDevice
@@ -76,11 +76,11 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
         var isVirtual: Bool { !isPhysical }
     }
 
-    public let persistPath: String?
-    public let pollIntervalMs: Int
+    package let persistPath: String?
+    package let pollIntervalMs: Int
     /// Whether the registry looks for USB dongles at all. Off, it hosts only what is attached to
     /// it (file devices, rtl_tcp servers): a daemon that must see nothing but its test radios.
-    public let enumerateHardware: Bool
+    package let enumerateHardware: Bool
 
     private let hub = DeviceEventHub()
     /// Every write bumps `tableGeneration`, which is how `poll` knows the table it diffed against
@@ -108,15 +108,15 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     /// `rtlsdr_open` may be tried and the current delay (ms), doubling from `probeBackoffMinMs` to
     /// `probeBackoffMaxMs`. A failed open makes librtlsdr print to stderr, so once a second is too often.
     private var probeBackoff: [DeviceID: (retryAtTick: Int, delayMs: Int)] = [:]
-    public static let probeBackoffMinMs = 2_000
-    public static let probeBackoffMaxMs = 60_000
+    package static let probeBackoffMinMs = 2_000
+    package static let probeBackoffMaxMs = 60_000
 
     /// - Parameters:
     ///   - persistPath: JSON file that keeps the identity → id map across daemon restarts. nil = memory only.
     ///   - pollIntervalMs: hot-plug enumeration period (docs: 1 s while idle).
     ///   - enumerateHardware: false never runs the enumeration loop; the machine's dongles stay
     ///     invisible to this daemon.
-    public init(persistPath: String? = nil, pollIntervalMs: Int = 1000, enumerateHardware: Bool = true) {
+    package init(persistPath: String? = nil, pollIntervalMs: Int = 1000, enumerateHardware: Bool = true) {
         self.persistPath = persistPath
         self.pollIntervalMs = max(10, pollIntervalMs)
         self.enumerateHardware = enumerateHardware
@@ -162,13 +162,13 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
 
     // MARK: DeviceRegistry
 
-    public var devices: [DeviceDescriptor] {
+    package var devices: [DeviceDescriptor] {
         entries.values.map(\.descriptor).sorted { $0.id.string < $1.id.string }
     }
 
-    public func device(id: DeviceID) -> (any RadioDevice)? { entries[id]?.device }
+    package func device(id: DeviceID) -> (any RadioDevice)? { entries[id]?.device }
 
-    public nonisolated func events() -> AsyncStream<DeviceEvent> { hub.subscribe() }
+    package nonisolated func events() -> AsyncStream<DeviceEvent> { hub.subscribe() }
 
     private func publish(_ event: DeviceEvent) { hub.publish(event) }
 
@@ -176,12 +176,12 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
 
     /// Hosts a `FilePlaybackDevice` for `path`. The id is stable per absolute path. Attaching a path
     /// that is already attached returns the existing descriptor.
-    public func attachFileDevice(path: String, loop: Bool) throws -> DeviceDescriptor {
+    package func attachFileDevice(path: String, loop: Bool) throws -> DeviceDescriptor {
         try attachFileDevice(path: path, loop: loop, realtime: true)
     }
 
     /// `attachFileDevice` with pacing control (`realtime: false` is for tests and internal tooling).
-    public func attachFileDevice(path: String, loop: Bool, realtime: Bool) throws -> DeviceDescriptor {
+    package func attachFileDevice(path: String, loop: Bool, realtime: Bool) throws -> DeviceDescriptor {
         let device = try FilePlaybackDevice(path: path, loop: loop, realtime: realtime)
         let provisional = device.descriptor
         let key = DefaultDeviceRegistry.identityKey(serial: provisional.serial, manufacturer: "file", product: provisional.model)
@@ -205,7 +205,7 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     /// (no physical-driver identity). A file the daemon plays and a radio served by rtl_tcp are both hosted and
     /// both leave the same way; a dongle leaves when someone pulls it. Non-mutating, so callers can
     /// reject a request before touching any capture.
-    public func isDetachableVirtualDevice(id: DeviceID) -> Bool {
+    package func isDetachableVirtualDevice(id: DeviceID) -> Bool {
         guard let entry = entries[id] else { return false }
         return entry.isVirtual
     }
@@ -213,13 +213,13 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     /// How a hosted virtual device arrived, or nil for an id that is not hosted (a dongle, or no
     /// such device). A caller deciding whether a client may detach it needs both this and
     /// `isDetachableVirtualDevice`.
-    public func virtualDeviceOrigin(id: DeviceID) -> VirtualDeviceOrigin? {
+    package func virtualDeviceOrigin(id: DeviceID) -> VirtualDeviceOrigin? {
         guard let entry = entries[id], entry.isVirtual else { return nil }
         return entry.origin
     }
 
     /// Detaches any hosted virtual device (file playback or `attachVirtualDevice`).
-    public func detachVirtualDevice(id: DeviceID) async throws {
+    package func detachVirtualDevice(id: DeviceID) async throws {
         guard let entry = entries[id], entry.isVirtual else { throw EngineError.deviceNotFound(id.string) }
         entries[id] = nil
         await entry.device.close()
@@ -235,7 +235,7 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     /// own `.disconnected` transitions publish `changed` like an unplug. `origin` records who asked
     /// for it; a client attaching an endpoint the operator's flag already hosts takes ownership of
     /// it, so the radio stays when the flag goes.
-    public func attachVirtualDevice(_ device: any RadioDevice, origin: VirtualDeviceOrigin = .client) async throws -> VirtualAttachment {
+    package func attachVirtualDevice(_ device: any RadioDevice, origin: VirtualDeviceOrigin = .client) async throws -> VirtualAttachment {
         let provisional = device.descriptor
         let key = DefaultDeviceRegistry.virtualIdentityKey(serial: provisional.serial, driver: provisional.driver)
         if let (id, existing) = entries.first(where: { $0.value.key == key && $0.value.isVirtual }) {
@@ -263,7 +263,7 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     /// Records that a client now owns a hosted virtual device the operator's command line brought
     /// up, so it stays when the flag goes and the client may detach it. Anything else -- a dongle, a
     /// device a client already owns -- is unchanged.
-    public func claimVirtualDevice(id: DeviceID) {
+    package func claimVirtualDevice(id: DeviceID) {
         guard let entry = entries[id], entry.isVirtual, entry.origin == .operatorFlag else { return }
         entries[id]?.origin = .client
     }
@@ -280,7 +280,7 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     /// Marks a device `.inUse` (a capture holds it) or back to `.available`; publishes `changed`.
     /// A capture that opens a dongle reported as held by another program proves the hold is over,
     /// so the external-hold flag and its re-probe schedule are cleared here too.
-    public func markInUse(id: DeviceID, _ inUse: Bool) throws {
+    package func markInUse(id: DeviceID, _ inUse: Bool) throws {
         guard var entry = entries[id] else { throw EngineError.deviceNotFound(id.string) }
         guard entry.descriptor.state != .disconnected else { throw EngineError.deviceDetached(id.string) }
         let state: DeviceState = inUse ? .inUse : .available
@@ -301,7 +301,7 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
 
     /// Starts the enumeration loop (one pass immediately, then every `pollIntervalMs`), unless
     /// hardware enumeration is off, in which case the registry only hosts what is attached to it.
-    public func start() {
+    package func start() {
         guard !started else { return }
         started = true
         guard enumerateHardware else { return }
@@ -317,7 +317,7 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     /// Stops polling and ends every `events()` subscription; hosted devices stay registered.
     /// Finishing the streams is the shutdown contract: a consumer may wait for its stream to end
     /// rather than relying on its own task being cancelled.
-    public func stop() {
+    package func stop() {
         pollTask?.cancel()
         pollTask = nil
         started = false
@@ -329,7 +329,7 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     /// successfully: known dongles keep their cached probe, so idle dongles are not re-initialised
     /// every second and the poll never contends with a capture's own open. A dongle whose probe
     /// open fails (another program holds it) is reported `.inUse` and re-probed with backoff.
-    public func poll() async {
+    package func poll() async {
         if !reportedMissingBackends {
             reportedMissingBackends = true
             if !RTLSDRDevice.backendAvailable {
@@ -439,7 +439,7 @@ public actor DefaultDeviceRegistry: DeviceRegistry {
     /// (`RTLSDRDevice.open` threw DEVICE_BUSY): the same outcome as a failed probe, so the dongle
     /// reads `IN_USE` with `held_externally` and is re-probed with backoff until it opens again.
     /// No-op for virtual devices and for dongles one of our captures already holds.
-    public func markHeldExternally(id: DeviceID) {
+    package func markHeldExternally(id: DeviceID) {
         guard var entry = entries[id], entry.isPhysical,
               entry.descriptor.state != .disconnected,
               !(entry.descriptor.state == .inUse && !entry.heldExternally) else { return }

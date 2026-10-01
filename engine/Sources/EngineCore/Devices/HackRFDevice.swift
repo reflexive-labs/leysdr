@@ -10,13 +10,13 @@ import Logging
 /// Result of enumerating one HackRF. Discovery opens an unclaimed device briefly to distinguish a
 /// HackRF Pro from the USB-compatible HackRF One; a skipped probe keeps `probed == false` so the
 /// registry can retain the descriptor it already has.
-public struct HackRFProbe: Hashable, Sendable {
-    public var serial: String
-    public var model: String
-    public var probed: Bool
-    public var openError: Int32?
+package struct HackRFProbe: Hashable, Sendable {
+    package var serial: String
+    package var model: String
+    package var probed: Bool
+    package var openError: Int32?
 
-    public init(serial: String, model: String, probed: Bool = true, openError: Int32? = nil) {
+    package init(serial: String, model: String, probed: Bool = true, openError: Int32? = nil) {
         self.serial = serial
         self.model = model
         self.probed = probed
@@ -114,24 +114,24 @@ final class SystemHackRFLibrary: HackRFLibrary, Sendable {
 /// A HackRF in libhackrf's backwards-compatible 8-bit receive mode. `deliver` runs on libhackrf's
 /// transfer thread and receives the library-owned buffer as native signed 8-bit interleaved IQ.
 /// Unchecked Sendable: control state is read and written under `lock`; `deliver`, `captureID` and `runningIndex` are set before `hackrf_start_rx` and read only by its transfer thread until `hackrf_stop_rx` joins it.
-public final class HackRFDevice: RadioDevice, @unchecked Sendable {
-    public static let driverName = "hackrf"
+package final class HackRFDevice: RadioDevice, @unchecked Sendable {
+    package static let driverName = "hackrf"
     /// A missing native library disables only this backend; the daemon and other drivers remain usable.
-    public static var backendAvailable: Bool { leyline_hackrf_available() != 0 }
-    public static var backendLoadError: String? {
+    package static var backendAvailable: Bool { leyline_hackrf_available() != 0 }
+    package static var backendLoadError: String? {
         leyline_hackrf_load_error().map { String(cString: $0) }
     }
 
-    public static let sampleRates: [UInt64] = [
+    package static let sampleRates: [UInt64] = [
         2_000_000, 2_400_000, 4_000_000, 8_000_000, 10_000_000, 12_500_000, 16_000_000, 20_000_000,
     ]
     /// libhackrf 2026.01 uses four 262144-byte transfers, two bytes per complex sample.
-    public static let queuedSamples: UInt64 = 4 * 262_144 / 2
+    package static let queuedSamples: UInt64 = 4 * 262_144 / 2
 
     private static let logger = Logger(label: "leyline.hackrf")
     private let lock = NSLock()
     private let library: any HackRFLibrary
-    public private(set) var probe: HackRFProbe
+    package private(set) var probe: HackRFProbe
     private var _descriptor: DeviceDescriptor
     private var device: OpaquePointer?
     private var streaming = false
@@ -148,7 +148,7 @@ public final class HackRFDevice: RadioDevice, @unchecked Sendable {
     private var captureID = CaptureID()
     private var runningIndex: UInt64 = 0
 
-    public init(probe: HackRFProbe, id: DeviceID) {
+    package init(probe: HackRFProbe, id: DeviceID) {
         self.probe = probe
         library = SystemHackRFLibrary.shared
         _descriptor = Self.makeDescriptor(probe: probe, id: id)
@@ -162,7 +162,7 @@ public final class HackRFDevice: RadioDevice, @unchecked Sendable {
         centerHz = _descriptor.tuningRanges.first?.minHz ?? 1_000_000
     }
 
-    public static func makeDescriptor(probe: HackRFProbe, id: DeviceID) -> DeviceDescriptor {
+    package static func makeDescriptor(probe: HackRFProbe, id: DeviceID) -> DeviceDescriptor {
         let isPro = probe.model == "HackRF Pro"
         let minHz: UInt64 = isPro ? 100_000 : 1_000_000
         return DeviceDescriptor(
@@ -189,7 +189,7 @@ public final class HackRFDevice: RadioDevice, @unchecked Sendable {
         )
     }
 
-    public static func enumerate(claimed: Set<String> = [],
+    package static func enumerate(claimed: Set<String> = [],
                                  shouldOpen: @Sendable (HackRFProbe) -> Bool = { _ in true }) throws -> [HackRFProbe] {
         try enumerate(claimed: claimed, shouldOpen: shouldOpen, library: SystemHackRFLibrary.shared)
     }
@@ -204,18 +204,18 @@ public final class HackRFDevice: RadioDevice, @unchecked Sendable {
         return try library.enumerate(claimed: claimed, shouldOpen: shouldOpen)
     }
 
-    public var descriptor: DeviceDescriptor { withLock { _descriptor } }
-    public var gains: [GainState] {
+    package var descriptor: DeviceDescriptor { withLock { _descriptor } }
+    package var gains: [GainState] {
         withLock {
             _descriptor.gainElements.map { GainState(element: $0.name, value: gainValues[$0.name] ?? .db(0)) }
         }
     }
-    public var inFlightSamples: UInt64 { Self.queuedSamples }
+    package var inFlightSamples: UInt64 { Self.queuedSamples }
 
-    public func setState(_ state: DeviceState) { withLock { _descriptor.state = state } }
-    public func setOnStateChange(_ hook: (@Sendable (DeviceState) -> Void)?) { withLock { _onStateChange = hook } }
+    package func setState(_ state: DeviceState) { withLock { _descriptor.state = state } }
+    package func setOnStateChange(_ hook: (@Sendable (DeviceState) -> Void)?) { withLock { _onStateChange = hook } }
 
-    public func updateProbe(_ newProbe: HackRFProbe) {
+    package func updateProbe(_ newProbe: HackRFProbe) {
         withLock {
             let state = _descriptor.state
             probe = newProbe
@@ -240,7 +240,7 @@ public final class HackRFDevice: RadioDevice, @unchecked Sendable {
         throw EngineError.deviceIO("\(call) failed: \(library.errorName(rc)) (\(rc))", target: _descriptor.id.string)
     }
 
-    public func open() async throws {
+    package func open() async throws {
         try await BlockingWork.run { [self] in
             try withLock {
                 guard device == nil else { return }
@@ -266,7 +266,7 @@ public final class HackRFDevice: RadioDevice, @unchecked Sendable {
         }
     }
 
-    public func close() async {
+    package func close() async {
         await stopStreaming()
         try? await BlockingWork.run { [self] in
             withLock {
@@ -282,7 +282,7 @@ public final class HackRFDevice: RadioDevice, @unchecked Sendable {
         }
     }
 
-    public func tune(centerHz hz: UInt64) async throws {
+    package func tune(centerHz hz: UInt64) async throws {
         try withLock {
             guard _descriptor.canTune(hz) else { throw EngineError.freqOutOfRange(hz, target: _descriptor.id.string) }
             let device = try requireDevice()
@@ -291,7 +291,7 @@ public final class HackRFDevice: RadioDevice, @unchecked Sendable {
         }
     }
 
-    public func setSampleRate(_ hz: UInt64) async throws {
+    package func setSampleRate(_ hz: UInt64) async throws {
         guard Self.sampleRates.contains(hz) else { throw EngineError.rateUnsupported(hz, target: descriptor.id.string) }
         try withLock {
             if streaming { throw EngineError.deviceBusy(_descriptor.id.string) }
@@ -344,7 +344,7 @@ public final class HackRFDevice: RadioDevice, @unchecked Sendable {
         }
     }
 
-    public func setGain(element: String, value: GainValue) async throws {
+    package func setGain(element: String, value: GainValue) async throws {
         try withLock {
             guard let descriptor = _descriptor.gainElement(named: element) else {
                 throw EngineError.gainElementUnknown(element, target: _descriptor.id.string)
@@ -379,7 +379,7 @@ public final class HackRFDevice: RadioDevice, @unchecked Sendable {
         return nil
     }
 
-    public func startStreaming(captureID: CaptureID,
+    package func startStreaming(captureID: CaptureID,
                                deliver: @escaping @Sendable (SampleBuffer, SampleTime) -> Void) async throws {
         try await BlockingWork.run { [self] in
             try withLock {
@@ -400,7 +400,7 @@ public final class HackRFDevice: RadioDevice, @unchecked Sendable {
         }
     }
 
-    public func stopStreaming() async {
+    package func stopStreaming() async {
         let opened: OpaquePointer? = withLock {
             guard streaming else { return nil }
             // Prevent new delivery immediately. libhackrf joins the callback thread before

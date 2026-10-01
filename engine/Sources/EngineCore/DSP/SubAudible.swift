@@ -13,8 +13,8 @@ import Foundation
 /// The spacing is what makes this hard: 67.0 and 69.3 are 2.3 Hz apart, so a detector whose
 /// resolution is one bin width cannot tell them apart, and one that snaps to the nearest standard
 /// tone will confidently name the wrong one. Naming the wrong tone is worse than naming none.
-public enum CTCSS {
-    public static let tones: [Double] = [
+package enum CTCSS {
+    package static let tones: [Double] = [
         67.0, 69.3, 71.9, 74.4, 77.0, 79.7, 82.5, 85.4, 88.5, 91.5,
         94.8, 97.4, 100.0, 103.5, 107.2, 110.9, 114.8, 118.8, 123.0, 127.3,
         131.8, 136.5, 141.3, 146.2, 151.4, 156.7, 162.2, 167.9, 173.8, 179.9,
@@ -47,51 +47,51 @@ public enum CTCSS {
     /// A transmitter sends CTCSS at roughly 10-25% of full deviation. Energy far under this band is
     /// hum -- 50 Hz mains lands on exactly 100.0 Hz, which is also one of the commonest PL tones --
     /// and energy far over it is not a sub-audible tone at all.
-    public static let minDeviationHz: Double = 200
-    public static let maxDeviationHz: Double = 1500
+    package static let minDeviationHz: Double = 200
+    package static let maxDeviationHz: Double = 1500
 }
 
 /// Which sub-audible signalling a result claims.
-public enum SubAudibleKind: Sendable, Equatable {
+package enum SubAudibleKind: Sendable, Equatable {
     case none, ctcss, dcs
 }
 
 /// What the sub-audible detectors concluded about one window: the CTCSS detector's measurements,
 /// and the DCS decoder's lock when it has one.
-public struct SubAudibleResult: Sendable, Equatable {
+package struct SubAudibleResult: Sendable, Equatable {
     /// Measured tone frequency, Hz. NaN when nothing was measured.
-    public var toneHz: Double = .nan
+    package var toneHz: Double = .nan
     /// The standard tone `toneHz` unambiguously is, or 0 when it is not classifiable. Reporting a
     /// measurement without a classification is correct; snapping to a 2.3 Hz ladder is a guess.
-    public var standardToneHz: Double = 0
+    package var standardToneHz: Double = 0
     /// Peak deviation the tone was sent at, Hz.
-    public var deviationHz: Double = .nan
+    package var deviationHz: Double = .nan
     /// The tone against the rest of the 60-260 Hz band, dB.
-    public var toneSNRDB: Double = .nan
+    package var toneSNRDB: Double = .nan
     /// A stated score, not a probability: see `confidence(...)`.
-    public var confidence: Double = 0
+    package var confidence: Double = 0
     /// Whether the CTCSS detector is willing to report a tone at all. False whenever `dcs` is set.
-    public var detected: Bool = false
+    package var detected: Bool = false
     /// Why nothing was reported, for the log. Empty when `detected`.
-    public var reason: String = ""
+    package var reason: String = ""
     /// The DCS decoder's lock, or nil. When set, the result claims DCS and no tone: `toneHz` is NaN,
     /// `standardToneHz` 0, and `deviationHz` and `confidence` are the decoder's.
-    public var dcs: DCSResult?
+    package var dcs: DCSResult?
     /// The sample time of the hop at which the current claim (this kind, and this tone or this
     /// code and polarity) was first made; nil while nothing is claimed. Set by the channel's
     /// sub-audible task, which knows the time, never by a detector.
-    public var firstSeen: SampleTime?
+    package var firstSeen: SampleTime?
 
-    public init() {}
+    package init() {}
 
-    public var kind: SubAudibleKind {
+    package var kind: SubAudibleKind {
         if dcs != nil { return .dcs }
         return detected ? .ctcss : .none
     }
 
     /// Whether `other` claims the same thing: the same kind, and the same standard tone or the same
     /// code and polarity. What the task treats as an edge.
-    public func sameClaim(as other: SubAudibleResult) -> Bool {
+    package func sameClaim(as other: SubAudibleResult) -> Bool {
         guard kind == other.kind else { return false }
         switch kind {
         case .none: return true
@@ -103,7 +103,7 @@ public struct SubAudibleResult: Sendable, Equatable {
     /// One hop's answer from both detectors. A DCS lock suppresses the CTCSS claim, because the
     /// code's broadband sub-audible energy feeds the Goertzel bank (docs/design/signal-views.md,
     /// "DCS"); without a lock the CTCSS result stands as it is.
-    public static func merged(ctcss: SubAudibleResult, dcs: DCSResult) -> SubAudibleResult {
+    package static func merged(ctcss: SubAudibleResult, dcs: DCSResult) -> SubAudibleResult {
         guard dcs.detected else { return ctcss }
         var out = SubAudibleResult()
         out.dcs = dcs
@@ -121,14 +121,14 @@ public struct SubAudibleResult: Sendable, Equatable {
 /// ladder is spaced as tightly as 2.3 Hz, so the winning bin narrows the field to a candidate and
 /// supplies the tone-to-band ratio; the frequency itself comes from the phase advance between
 /// windows, which is not limited by bin width.
-public final class SubAudibleDetector {
+package final class SubAudibleDetector {
     /// Window length in samples. At ~1 kHz this is about half a second, which is what it takes to
     /// separate tones 2.3 Hz apart.
-    public let windowSize: Int
+    package let windowSize: Int
     /// Samples between windows. Overlapping means an answer every hop rather than every window, and
     /// gives consecutive windows a phase relationship to measure.
-    public let hop: Int
-    public let rate: Double
+    package let hop: Int
+    package let rate: Double
 
     private var window: [Float]
     private var prevPhase: [Double]
@@ -139,7 +139,7 @@ public final class SubAudibleDetector {
     private var recent: [Double] = []
     private var recentDeviation: [Double] = []
 
-    public init(rate: Double, windowSize: Int = 512, hop: Int = 128) {
+    package init(rate: Double, windowSize: Int = 512, hop: Int = 128) {
         precondition(rate > 0 && windowSize > 0 && hop > 0)
         self.rate = rate
         self.windowSize = windowSize
@@ -152,7 +152,7 @@ public final class SubAudibleDetector {
 
     /// Forget the phase history. Called when the squelch closes: the next transmission is a
     /// different one, and carrying phase across it would fabricate a stable estimate.
-    public func reset() {
+    package func reset() {
         recentDeviation.removeAll(keepingCapacity: true)
         for i in havePrev.indices { havePrev[i] = false }
         recent.removeAll(keepingCapacity: true)
@@ -160,7 +160,7 @@ public final class SubAudibleDetector {
 
     /// Analyse one window of decimated discriminator output. `samples` must be `windowSize` long
     /// and in units where ±1.0 is `fullScaleDeviationHz`.
-    public func analyse(_ samples: [Float], fullScaleDeviationHz: Double) -> SubAudibleResult {
+    package func analyse(_ samples: [Float], fullScaleDeviationHz: Double) -> SubAudibleResult {
         precondition(samples.count == windowSize)
         var out = SubAudibleResult()
 
@@ -273,24 +273,24 @@ public final class SubAudibleDetector {
     /// The least a tone may stand over the rest of the sub-audible band. Measured on synthesised
     /// NFM: a real tone clears its nearest rival by 7.5 dB or more even at 2% deviation, and voice
     /// alone never managed more than 2.
-    public static let minSNRDB: Double = 6
+    package static let minSNRDB: Double = 6
     /// The most the estimate may drift across the horizon.
-    public static let maxSpreadHz: Double = 0.5
+    package static let maxSpreadHz: Double = 0.5
     /// How many hops the estimate and the deviation must hold for before a tone is claimed: at the
     /// tap's 1 kHz and a 128-sample hop, about a second. Measured 2026-09-14 on real captures: over
     /// three hops the synthesised NOAA announcer (`noaa-wx2-auto`) was named a tone on 5 of 90 hops
     /// and the handheld's real 100 Hz PL (`ht-narrow`) on 48 of 75, once as 110.9; over eight hops
     /// the announcer is named on none and the handheld on 42, every one of them 100.0.
-    public static let stabilityHops = 8
+    package static let stabilityHops = 8
     /// The most the deviation may vary across the horizon, as a ratio of loudest to quietest hop.
     /// The handheld's PL measured 258 to 314 Hz over 47 hops (a ratio of 1.22); the announcer's
     /// fundamental swung from 201 to 345 Hz within the hops it was claimed on.
-    public static let maxDeviationRatio: Double = 1.5
+    package static let maxDeviationRatio: Double = 1.5
 
     /// The standard tone `measured` unambiguously is, or 0. A measurement that two tones could both
     /// explain is reported as a measurement only. Snapping to the nearer one on a 2.3 Hz ladder
     /// would report a guess as a reading.
-    public static func classify(_ measured: Double) -> Double {
+    package static func classify(_ measured: Double) -> Double {
         var candidates: [Int] = []
         for (i, t) in CTCSS.tones.enumerated() {
             let tol = CTCSS.tolerance(i)
@@ -303,7 +303,7 @@ public final class SubAudibleDetector {
     /// real off-air recordings we do not have, and an uncalibrated one would present a guess as a
     /// measurement, which the honesty invariant forbids. The formula is the contract. A client that
     /// wants its own judgement has toneSNRDB, deviationHz and the hop count.
-    public static func confidence(snrDB: Double, measured: Double, standard: Double, hops: Int) -> Double {
+    package static func confidence(snrDB: Double, measured: Double, standard: Double, hops: Int) -> Double {
         guard standard > 0 else { return 0 }
         let snr = clamp01((snrDB - minSNRDB) / 14)
         let tol = Swift.max(1e-9, CTCSS.tolerance(forStandard: standard))

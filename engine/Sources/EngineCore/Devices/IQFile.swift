@@ -6,13 +6,13 @@
 import Foundation
 
 /// The JSON sidecar next to an IQ file (`<name>.json`). Field names mirror docs/reference/iq-files.md exactly.
-public struct IQSidecar: Codable, Hashable, Sendable {
+package struct IQSidecar: Codable, Hashable, Sendable {
     /// Wall clock anchor of sample 0 (recordings); zeros for synthetic fixtures.
-    public struct Anchor: Codable, Hashable, Sendable {
-        public var hostTimeNs: Int64
-        public var driftPpm: Double
+    package struct Anchor: Codable, Hashable, Sendable {
+        package var hostTimeNs: Int64
+        package var driftPpm: Double
 
-        public init(hostTimeNs: Int64 = 0, driftPpm: Double = 0) {
+        package init(hostTimeNs: Int64 = 0, driftPpm: Double = 0) {
             self.hostTimeNs = hostTimeNs
             self.driftPpm = driftPpm
         }
@@ -24,12 +24,12 @@ public struct IQSidecar: Codable, Hashable, Sendable {
     }
 
     /// One acceptance expectation: a channel to create and what its output must satisfy.
-    public struct Expectation: Codable, Hashable, Sendable {
-        public struct Audio: Codable, Hashable, Sendable {
-            public var toneHz: Double?
-            public var minSnrDb: Double?
+    package struct Expectation: Codable, Hashable, Sendable {
+        package struct Audio: Codable, Hashable, Sendable {
+            package var toneHz: Double?
+            package var minSnrDb: Double?
 
-            public init(toneHz: Double? = nil, minSnrDb: Double? = nil) {
+            package init(toneHz: Double? = nil, minSnrDb: Double? = nil) {
                 self.toneHz = toneHz
                 self.minSnrDb = minSnrDb
             }
@@ -40,11 +40,11 @@ public struct IQSidecar: Codable, Hashable, Sendable {
             }
         }
 
-        public struct Meter: Codable, Hashable, Sendable {
-            public var powerDbfsMin: Double?
-            public var squelchOpen: Bool?
+        package struct Meter: Codable, Hashable, Sendable {
+            package var powerDbfsMin: Double?
+            package var squelchOpen: Bool?
 
-            public init(powerDbfsMin: Double? = nil, squelchOpen: Bool? = nil) {
+            package init(powerDbfsMin: Double? = nil, squelchOpen: Bool? = nil) {
                 self.powerDbfsMin = powerDbfsMin
                 self.squelchOpen = squelchOpen
             }
@@ -55,13 +55,13 @@ public struct IQSidecar: Codable, Hashable, Sendable {
             }
         }
 
-        public var mode: String
-        public var offsetHz: Int64
-        public var bandwidthHz: UInt32?
-        public var audio: Audio?
-        public var meter: Meter?
+        package var mode: String
+        package var offsetHz: Int64
+        package var bandwidthHz: UInt32?
+        package var audio: Audio?
+        package var meter: Meter?
 
-        public init(mode: String, offsetHz: Int64, bandwidthHz: UInt32? = nil, audio: Audio? = nil, meter: Meter? = nil) {
+        package init(mode: String, offsetHz: Int64, bandwidthHz: UInt32? = nil, audio: Audio? = nil, meter: Meter? = nil) {
             self.mode = mode
             self.offsetHz = offsetHz
             self.bandwidthHz = bandwidthHz
@@ -78,19 +78,19 @@ public struct IQSidecar: Codable, Hashable, Sendable {
     }
 
     /// "cf32" or "cu8".
-    public var format: String
-    public var sampleRate: UInt64
-    public var centerHz: UInt64
-    public var samples: UInt64?
-    public var createdAtNs: Int64?
-    public var anchor: Anchor?
-    public var description: String?
+    package var format: String
+    package var sampleRate: UInt64
+    package var centerHz: UInt64
+    package var samples: UInt64?
+    package var createdAtNs: Int64?
+    package var anchor: Anchor?
+    package var description: String?
     /// Opaque generator record (`leyfix` provenance); preserved verbatim on round trip.
-    public var generator: JSONValue?
-    public var expect: [Expectation]?
-    public var metadata: [String: String]?
+    package var generator: JSONValue?
+    package var expect: [Expectation]?
+    package var metadata: [String: String]?
 
-    public init(format: String = "cf32", sampleRate: UInt64, centerHz: UInt64, samples: UInt64? = nil,
+    package init(format: String = "cf32", sampleRate: UInt64, centerHz: UInt64, samples: UInt64? = nil,
                 createdAtNs: Int64? = nil, anchor: Anchor? = nil, description: String? = nil,
                 generator: JSONValue? = nil, expect: [Expectation]? = nil, metadata: [String: String]? = nil) {
         self.format = format
@@ -115,7 +115,7 @@ public struct IQSidecar: Codable, Hashable, Sendable {
     }
 
     /// Native sample format named by `format`; nil for anything but cf32/cu8.
-    public var sampleFormat: SampleFormat? {
+    package var sampleFormat: SampleFormat? {
         switch format.lowercased() {
         case "cf32": return .cf32
         case "cu8": return .cu8
@@ -125,13 +125,13 @@ public struct IQSidecar: Codable, Hashable, Sendable {
 
     /// Sample rates the engine accepts from a sidecar (1 kSPS ... 100 MSPS). Anything outside is a
     /// malformed file: a zero rate divides by zero downstream, an absurd one overflows plans.
-    public static let validSampleRates: ClosedRange<UInt64> = 1_000...100_000_000
+    package static let validSampleRates: ClosedRange<UInt64> = 1_000...100_000_000
 
     /// Largest sidecar the loader reads; real sidecars are a few hundred bytes.
-    public static let maxSidecarBytes: UInt64 = 1 << 20
+    package static let maxSidecarBytes: UInt64 = 1 << 20
 
     /// - Throws: `INVALID_ARGUMENT` when `sampleRate` is outside `validSampleRates`.
-    public func validate(target: String = "") throws {
+    package func validate(target: String = "") throws {
         guard IQSidecar.validSampleRates.contains(sampleRate) else {
             throw EngineError.invalidArgument(
                 "sample_rate \(sampleRate) is outside \(IQSidecar.validSampleRates.lowerBound)...\(IQSidecar.validSampleRates.upperBound)",
@@ -143,7 +143,7 @@ public struct IQSidecar: Codable, Hashable, Sendable {
     /// - Throws: `INVALID_ARGUMENT` when the sidecar is not a regular file, exceeds
     ///   `maxSidecarBytes`, fails to decode or carries an out-of-range `sample_rate`;
     ///   `DEVICE_IO` when it cannot be read.
-    public static func load(path: String) throws -> IQSidecar {
+    package static func load(path: String) throws -> IQSidecar {
         let path = IQFilePaths.sidecarPath(path)
         let size = try IQFilePaths.requireRegularFile(path, what: "sidecar")
         guard size <= maxSidecarBytes else {
@@ -163,7 +163,7 @@ public struct IQSidecar: Codable, Hashable, Sendable {
     }
 
     /// Encode to a sidecar file (pretty-printed, sorted keys for stable diffs).
-    public func save(path: String) throws {
+    package func save(path: String) throws {
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try enc.encode(self)
@@ -174,7 +174,7 @@ public struct IQSidecar: Codable, Hashable, Sendable {
 }
 
 /// Opaque JSON tree, used for sidecar fields the engine preserves but does not interpret.
-public indirect enum JSONValue: Codable, Hashable, Sendable {
+package indirect enum JSONValue: Codable, Hashable, Sendable {
     case null
     case bool(Bool)
     case number(Double)
@@ -182,7 +182,7 @@ public indirect enum JSONValue: Codable, Hashable, Sendable {
     case array([JSONValue])
     case object([String: JSONValue])
 
-    public init(from decoder: Decoder) throws {
+    package init(from decoder: Decoder) throws {
         let c = try decoder.singleValueContainer()
         if c.decodeNil() { self = .null }
         else if let b = try? c.decode(Bool.self) { self = .bool(b) }
@@ -193,7 +193,7 @@ public indirect enum JSONValue: Codable, Hashable, Sendable {
         else { throw DecodingError.dataCorruptedError(in: c, debugDescription: "unsupported JSON value") }
     }
 
-    public func encode(to encoder: Encoder) throws {
+    package func encode(to encoder: Encoder) throws {
         var c = encoder.singleValueContainer()
         switch self {
         case .null: try c.encodeNil()
@@ -210,9 +210,9 @@ public indirect enum JSONValue: Codable, Hashable, Sendable {
 // MARK: - Paths
 
 /// Path helpers for the `<name>.cf32|.cu8` + `<name>.json` pair.
-public enum IQFilePaths {
+package enum IQFilePaths {
     /// Strips a trailing `.cf32`, `.cu8` or `.json` from `path`, returning the shared stem.
-    public static func stem(_ path: String) -> String {
+    package static func stem(_ path: String) -> String {
         for ext in [".cf32", ".cu8", ".json"] where path.hasSuffix(ext) {
             return String(path.dropLast(ext.count))
         }
@@ -220,11 +220,11 @@ public enum IQFilePaths {
     }
 
     /// Sidecar path for any member of the pair.
-    public static func sidecarPath(_ path: String) -> String { stem(path) + ".json" }
+    package static func sidecarPath(_ path: String) -> String { stem(path) + ".json" }
 
     /// Samples path for any member of the pair. When given the sidecar, prefers an existing `.cf32`,
     /// then `.cu8`, defaulting to `.cf32`.
-    public static func samplesPath(_ path: String) -> String {
+    package static func samplesPath(_ path: String) -> String {
         if path.hasSuffix(".cf32") || path.hasSuffix(".cu8") { return path }
         let s = stem(path)
         let fm = FileManager.default
@@ -234,7 +234,7 @@ public enum IQFilePaths {
     }
 
     /// Native format implied by the samples path extension; nil if unrecognised.
-    public static func format(ofSamplesPath path: String) -> SampleFormat? {
+    package static func format(ofSamplesPath path: String) -> SampleFormat? {
         if path.hasSuffix(".cf32") { return .cf32 }
         if path.hasSuffix(".cu8") { return .cu8 }
         return nil
@@ -280,13 +280,13 @@ public enum IQFilePaths {
 /// converted on the fly through a fixed scratch buffer sized at init; reads never allocate.
 /// Not thread-safe: one reader belongs to one I/O thread.
 /// Unchecked Sendable: one thread uses a reader at a time; Sendable only so it can be handed to that thread.
-public final class IQFileReader: @unchecked Sendable {
-    public let samplesPath: String
-    public let sidecar: IQSidecar
+package final class IQFileReader: @unchecked Sendable {
+    package let samplesPath: String
+    package let sidecar: IQSidecar
     /// Format of the bytes on disk.
-    public let sourceFormat: SampleFormat
+    package let sourceFormat: SampleFormat
     /// Total complex samples in the file (from the file size, not the sidecar).
-    public let sampleCount: UInt64
+    package let sampleCount: UInt64
 
     private let handle: FileHandle
     private let fd: Int32
@@ -295,7 +295,7 @@ public final class IQFileReader: @unchecked Sendable {
     private let scratch: UnsafeMutableRawPointer
 
     /// Opens `path` (samples or sidecar path). `maxBlock` bounds a single `read` call.
-    public init(path: String, maxBlock: Int = 16384) throws {
+    package init(path: String, maxBlock: Int = 16384) throws {
         // Whatever the caller named must be a regular file (or absent, in which case the pair
         // lookup below reports the missing member): a FIFO or directory is rejected up front.
         var st = stat()
@@ -325,14 +325,14 @@ public final class IQFileReader: @unchecked Sendable {
     }
 
     /// Sample index of the next read.
-    public var sampleIndex: UInt64 { position }
+    package var sampleIndex: UInt64 { position }
 
     /// Sample rate and centre from the sidecar.
-    public var sampleRate: UInt64 { sidecar.sampleRate }
-    public var centerHz: UInt64 { sidecar.centerHz }
+    package var sampleRate: UInt64 { sidecar.sampleRate }
+    package var centerHz: UInt64 { sidecar.centerHz }
 
     /// Rewind to sample 0.
-    public func rewind() throws {
+    package func rewind() throws {
         guard lseek(fd, 0, SEEK_SET) == 0 else { throw EngineError.deviceIO("lseek failed", target: samplesPath) }
         position = 0
     }
@@ -350,7 +350,7 @@ public final class IQFileReader: @unchecked Sendable {
 
     /// Reads up to `into.count` complex samples (capped at the reader's `maxBlock`) as cf32 into `into`.
     /// Returns the number of samples read; 0 at EOF. Hot path: no allocation.
-    public func read(into: SampleBuffer) throws -> Int {
+    package func read(into: SampleBuffer) throws -> Int {
         precondition(into.format == .cf32, "IQFileReader reads into cf32 buffers")
         let want = min(into.count, scratchCapacity)
         guard want > 0 else { return 0 }
@@ -394,18 +394,18 @@ public final class IQFileReader: @unchecked Sendable {
 /// Writes cf32 samples plus a sidecar. `write` appends raw bytes without allocation; `finish`
 /// stamps `samples` and saves the sidecar. Not thread-safe: one writer per sink thread.
 /// Unchecked Sendable: one thread uses a writer at a time; Sendable only so it can be handed to that thread.
-public final class IQFileWriter: @unchecked Sendable {
-    public let samplesPath: String
-    public let sidecarPath: String
-    public private(set) var sidecar: IQSidecar
-    public private(set) var samplesWritten: UInt64 = 0
+package final class IQFileWriter: @unchecked Sendable {
+    package let samplesPath: String
+    package let sidecarPath: String
+    package private(set) var sidecar: IQSidecar
+    package private(set) var samplesWritten: UInt64 = 0
 
     private let handle: FileHandle
     private let fd: Int32
     private var finished = false
 
     /// Creates (truncating) `<stem>.cf32` and remembers the sidecar to write on `finish`.
-    public init(path: String, sidecar: IQSidecar) throws {
+    package init(path: String, sidecar: IQSidecar) throws {
         let stem = IQFilePaths.stem(path)
         samplesPath = stem + ".cf32"
         sidecarPath = stem + ".json"
@@ -423,7 +423,7 @@ public final class IQFileWriter: @unchecked Sendable {
     deinit { if !finished { try? handle.close() } }
 
     /// Appends cf32 samples. Hot path: no allocation; a short write throws DEVICE_IO.
-    public func write(_ buffer: SampleBuffer) throws {
+    package func write(_ buffer: SampleBuffer) throws {
         precondition(buffer.format == .cf32, "IQFileWriter writes cf32 only")
         var done = 0
         let total = buffer.byteCount
@@ -439,7 +439,7 @@ public final class IQFileWriter: @unchecked Sendable {
     }
 
     /// Closes the samples file and writes the sidecar with the final sample count.
-    public func finish() throws {
+    package func finish() throws {
         guard !finished else { return }
         finished = true
         try? handle.close()

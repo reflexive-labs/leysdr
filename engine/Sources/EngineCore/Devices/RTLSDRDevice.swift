@@ -9,23 +9,23 @@ import Foundation
 import Logging
 
 /// Result of enumerating one RTL-SDR dongle without claiming it for streaming.
-public struct RTLSDRProbe: Hashable, Sendable {
-    public var index: UInt32
-    public var name: String
-    public var manufacturer: String
-    public var product: String
-    public var serial: String
+package struct RTLSDRProbe: Hashable, Sendable {
+    package var index: UInt32
+    package var name: String
+    package var manufacturer: String
+    package var product: String
+    package var serial: String
     /// Tuner name ("R820T", "E4000", ...); "unknown" when the device could not be opened.
-    public var tuner: String
+    package var tuner: String
     /// Tuner gain table in dB (empty if unknown).
-    public var gainsDB: [Double]
-    public var tuningRanges: [FrequencyRange]
+    package var gainsDB: [Double]
+    package var tuningRanges: [FrequencyRange]
     /// `rtlsdr_open` return code when the probe tried to open the dongle and failed (typically the
     /// USB interface is claimed by another program: rtl_tcp, SDR++, GQRX). nil when the open
     /// succeeded or was skipped.
-    public var openError: Int32?
+    package var openError: Int32?
 
-    public init(index: UInt32, name: String, manufacturer: String, product: String, serial: String,
+    package init(index: UInt32, name: String, manufacturer: String, product: String, serial: String,
                 tuner: String, gainsDB: [Double], tuningRanges: [FrequencyRange], openError: Int32? = nil) {
         self.index = index
         self.name = name
@@ -41,10 +41,10 @@ public struct RTLSDRProbe: Hashable, Sendable {
 
 /// One RTL2832U dongle. Control methods run on the control plane; `deliver` runs on the USB thread.
 /// Unchecked Sendable: control state is read and written under `lock`; `deliver`, `captureID` and `runningIndex` are set before the USB thread starts and read only by it until it is joined.
-public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
+package final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
     /// A missing native library disables only this backend; the daemon and other drivers remain usable.
-    public static var backendAvailable: Bool { leyline_rtlsdr_available() != 0 }
-    public static var backendLoadError: String? {
+    package static var backendAvailable: Bool { leyline_rtlsdr_available() != 0 }
+    package static var backendLoadError: String? {
         leyline_rtlsdr_load_error().map { String(cString: $0) }
     }
 
@@ -56,7 +56,7 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
 
     /// `rtlsdr_get_tuner_gain` answers in tenths of a dB and works in auto mode, which is the
     /// whole point: it is the only way to learn where the tuner's own AGC settled.
-    public func settledGainDB(element: String) async -> Double? {
+    package func settledGainDB(element: String) async -> Double? {
         guard element == "TUNER" else { return nil }
         return try? withLock {
             let d = try requireDev()
@@ -71,20 +71,20 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
         }
     }
 
-    public var inFlightSamples: UInt64 {
+    package var inFlightSamples: UInt64 {
         UInt64(Self.usbBuffers) * UInt64(Self.usbBufferBytes) / 2
     }
 
     /// Sample rates librtlsdr accepts without warnings (docs/dev/engine-internals.md).
-    public static let sampleRates: [UInt64] = [
+    package static let sampleRates: [UInt64] = [
         250_000, 1_024_000, 1_536_000, 1_800_000, 1_920_000, 2_048_000, 2_400_000, 2_560_000, 2_880_000, 3_200_000,
     ]
 
     /// Current librtlsdr enumeration index; shifts when a lower-index dongle is unplugged.
-    public private(set) var index: UInt32
+    package private(set) var index: UInt32
     /// The enumeration probe this device was built from (refreshed via `updateProbe` once a degraded
     /// probe — tuner "unknown", no gain table — is replaced by a successful one).
-    public private(set) var probe: RTLSDRProbe
+    package private(set) var probe: RTLSDRProbe
 
     private let lock = NSLock()
     private var _descriptor: DeviceDescriptor
@@ -110,7 +110,7 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
     private var runningIndex: UInt64 = 0
 
     /// Builds a device for an enumerated dongle. `id` is the registry's stable id for this serial.
-    public init(probe: RTLSDRProbe, id: DeviceID) {
+    package init(probe: RTLSDRProbe, id: DeviceID) {
         index = probe.index
         self.probe = probe
         centerHz = probe.tuningRanges.first?.minHz ?? 100_000_000
@@ -126,7 +126,7 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
     }
 
     /// Descriptor for a probe (shared with the registry so unopened devices advertise the same shape).
-    public static func makeDescriptor(probe: RTLSDRProbe, id: DeviceID, features: [String: FeatureValue]) -> DeviceDescriptor {
+    package static func makeDescriptor(probe: RTLSDRProbe, id: DeviceID, features: [String: FeatureValue]) -> DeviceDescriptor {
         let gains = probe.gainsDB
         let element = GainElement(
             name: "TUNER",
@@ -152,25 +152,25 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
         )
     }
 
-    public var descriptor: DeviceDescriptor {
+    package var descriptor: DeviceDescriptor {
         lock.lock(); defer { lock.unlock() }
         return _descriptor
     }
 
-    public var gains: [GainState] {
+    package var gains: [GainState] {
         lock.lock(); defer { lock.unlock() }
         return [GainState(element: "TUNER", value: gain)]
     }
 
     /// Updates the published state (registry use: `.inUse`, `.disconnected`) without firing the
     /// state-change hook — the registry already knows.
-    public func setState(_ state: DeviceState) {
+    package func setState(_ state: DeviceState) {
         lock.lock(); _descriptor.state = state; lock.unlock()
     }
 
     /// Called (from the USB thread) when the device flips state on its own, e.g. `.disconnected`
     /// when `rtlsdr_read_async` dies. The registry installs this to publish `changed`.
-    public func setOnStateChange(_ hook: (@Sendable (DeviceState) -> Void)?) {
+    package func setOnStateChange(_ hook: (@Sendable (DeviceState) -> Void)?) {
         lock.lock(); _onStateChange = hook; lock.unlock()
     }
 
@@ -185,13 +185,13 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
     }
 
     /// Registry use: re-points a not-yet-open device at its new enumeration index.
-    public func setIndex(_ i: UInt32) {
+    package func setIndex(_ i: UInt32) {
         lock.lock(); index = i; lock.unlock()
     }
 
     /// Registry use: replaces a degraded discovery probe (device was busy when first seen) with a
     /// successful one and rebuilds the descriptor — tuner, gain table, tuning ranges — keeping state.
-    public func updateProbe(_ p: RTLSDRProbe) {
+    package func updateProbe(_ p: RTLSDRProbe) {
         withLock {
             probe = p
             index = p.index
@@ -270,7 +270,7 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
     /// device rather than once per poll and never races a capture's own `rtlsdr_open`). Skipped
     /// devices are reported with `tuner == "unknown"` and the caller reuses its cached probe. Never
     /// throws: an unreadable device is likewise reported with `tuner == "unknown"`.
-    public static func enumerate(claimed: Set<UInt32> = [], shouldOpen: (RTLSDRProbe) -> Bool = { _ in true }) -> [RTLSDRProbe] {
+    package static func enumerate(claimed: Set<UInt32> = [], shouldOpen: (RTLSDRProbe) -> Bool = { _ in true }) -> [RTLSDRProbe] {
         guard backendAvailable else { return [] }
         let count = rtlsdr_get_device_count()
         var out: [RTLSDRProbe] = []
@@ -314,12 +314,12 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
 
     /// `rtlsdr_open` return codes that mean another process owns the USB interface:
     /// LIBUSB_ERROR_ACCESS (-3, macOS exclusive access) and LIBUSB_ERROR_BUSY (-6).
-    public static func isClaimFailure(_ rc: Int32) -> Bool { rc == -3 || rc == -6 }
+    package static func isClaimFailure(_ rc: Int32) -> Bool { rc == -3 || rc == -6 }
 
     /// Claims the dongle. `rtlsdr_open` blocks for up to hundreds of ms (USB interface claim, EEPROM
     /// read, plus the retry sleep), so the whole sequence runs on a dedicated thread via
     /// `BlockingWork.run` rather than parking a cooperative-pool thread (docs/dev/engine-internals.md).
-    public func open() async throws {
+    package func open() async throws {
         try await BlockingWork.run { [self] in
             try withLock {
                 guard dev == nil else { return }
@@ -356,7 +356,7 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
         }
     }
 
-    public func close() async {
+    package func close() async {
         await stopStreaming()
         // `descriptor` is one of the accessors that takes `lock`, which is why it is read here and
         // not below: the lock is not recursive, so an accessor called from inside a `withLock` body
@@ -390,7 +390,7 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
         return d
     }
 
-    public func tune(centerHz hz: UInt64) async throws {
+    package func tune(centerHz hz: UInt64) async throws {
         try withLock {
             guard _descriptor.canTune(hz) else { throw EngineError.freqOutOfRange(hz, target: _descriptor.id.string) }
             let d = try requireDev()
@@ -401,7 +401,7 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
         }
     }
 
-    public func setSampleRate(_ hz: UInt64) async throws {
+    package func setSampleRate(_ hz: UInt64) async throws {
         guard RTLSDRDevice.sampleRates.contains(hz) else {
             throw EngineError.rateUnsupported(hz, target: descriptor.id.string)
         }
@@ -419,7 +419,7 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
         }
     }
 
-    public func setGain(element: String, value: GainValue) async throws {
+    package func setGain(element: String, value: GainValue) async throws {
         try withLock {
             guard element == "TUNER", let el = _descriptor.gainElement(named: element) else {
                 throw EngineError.gainElementUnknown(element, target: _descriptor.id.string)
@@ -440,7 +440,7 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
 
     /// Applies one of the descriptor's settable features (`bias_tee`, `direct_sampling`,
     /// `ppm_correction`, `rtl_agc`). `tuner` is read-only. Unknown names → INVALID_ARGUMENT.
-    public func setFeature(_ name: String, _ value: FeatureValue) async throws {
+    package func setFeature(_ name: String, _ value: FeatureValue) async throws {
         try withLock {
             let d = try requireDev()
             switch (name, value) {
@@ -467,7 +467,7 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
 
     // MARK: Streaming
 
-    public func startStreaming(captureID: CaptureID, deliver: @escaping @Sendable (SampleBuffer, SampleTime) -> Void) async throws {
+    package func startStreaming(captureID: CaptureID, deliver: @escaping @Sendable (SampleBuffer, SampleTime) -> Void) async throws {
         let d: OpaquePointer = try withLock {
             if streaming || thread != nil { throw EngineError.deviceBusy(_descriptor.id.string) }
             let d = try requireDev()
@@ -518,7 +518,7 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
     }
 
     /// The error that ended the last stream unexpectedly, if any (cleared by `startStreaming`).
-    public var streamError: EngineError? { withLock { _streamError } }
+    package var streamError: EngineError? { withLock { _streamError } }
     private var _streamError: EngineError?
 
     /// Writes `_streamError` from inside an existing critical section. Callers must already hold
@@ -529,7 +529,7 @@ public final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
     /// Cancels the USB stream and joins its thread. The wait for the thread to start, the cancel
     /// loop and the bounded join together can take about 4 s, so they run on a dedicated thread
     /// (`BlockingWork`) rather than parking a cooperative-pool thread every actor shares.
-    public func stopStreaming() async {
+    package func stopStreaming() async {
         let (d, wasStreaming): (OpaquePointer?, Bool) = withLock {
             guard thread != nil, let d = dev else { return (nil, false) }
             cancelRequested = true

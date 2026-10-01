@@ -9,8 +9,8 @@ import Synchronization
 
 /// A 128-bit ULID (https://github.com/ulid/spec): 48-bit millisecond timestamp + 80 random bits.
 /// Lexicographic order of the string form equals creation order within a millisecond resolution.
-public struct ULID: Hashable, Comparable, Codable, Sendable, CustomStringConvertible {
-    public var bytes: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+package struct ULID: Hashable, Comparable, Codable, Sendable, CustomStringConvertible {
+    package var bytes: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8)
 
     private static let alphabet: [Character] = Array("0123456789ABCDEFGHJKMNPQRSTVWXYZ")
@@ -36,7 +36,7 @@ public struct ULID: Hashable, Comparable, Codable, Sendable, CustomStringConvert
     }
 
     /// New ULID from the current time and the system RNG, monotonic within a millisecond.
-    public init() {
+    package init() {
         let now = UInt64(Date().timeIntervalSince1970 * 1000)
         let (ms, hi, lo) = ULID.monotonic.withLock { st -> (UInt64, UInt64, UInt64) in
             if now > st.lastMs {
@@ -63,14 +63,14 @@ public struct ULID: Hashable, Comparable, Codable, Sendable, CustomStringConvert
         )
     }
 
-    public init(bytes: [UInt8]) {
+    package init(bytes: [UInt8]) {
         precondition(bytes.count == 16, "ULID needs 16 bytes")
         self.bytes = (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
                       bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15])
     }
 
     /// Parses the 26-character Crockford base32 form. Case-insensitive; rejects overflow (first char > '7').
-    public init?(string: String) {
+    package init?(string: String) {
         let chars = Array(string)
         guard chars.count == 26 else { return nil }
         var value: (UInt64, UInt64) = (0, 0) // (high 64, low 64)
@@ -89,20 +89,20 @@ public struct ULID: Hashable, Comparable, Codable, Sendable, CustomStringConvert
         self.init(bytes: out)
     }
 
-    public var byteArray: [UInt8] {
+    package var byteArray: [UInt8] {
         [bytes.0, bytes.1, bytes.2, bytes.3, bytes.4, bytes.5, bytes.6, bytes.7,
          bytes.8, bytes.9, bytes.10, bytes.11, bytes.12, bytes.13, bytes.14, bytes.15]
     }
 
     /// Millisecond timestamp encoded in the ULID.
-    public var timestampMs: UInt64 {
+    package var timestampMs: UInt64 {
         var t: UInt64 = 0
         for b in byteArray.prefix(6) { t = (t << 8) | UInt64(b) }
         return t
     }
 
     /// 26-character Crockford base32 string.
-    public var string: String {
+    package var string: String {
         let b = byteArray
         var hi: UInt64 = 0, lo: UInt64 = 0
         for i in 0..<8 { hi = (hi << 8) | UInt64(b[i]) }
@@ -117,7 +117,7 @@ public struct ULID: Hashable, Comparable, Codable, Sendable, CustomStringConvert
         return String(out)
     }
 
-    public var description: String { string }
+    package var description: String { string }
 
     /// The 128 bits as two big-endian halves. Comparison, ordering and hashing go through these
     /// rather than `byteArray`: these ids key the control plane's dictionaries, and a 16-element
@@ -132,21 +132,21 @@ public struct ULID: Hashable, Comparable, Codable, Sendable, CustomStringConvert
         return (hi, lo)
     }
 
-    public static func == (lhs: ULID, rhs: ULID) -> Bool { lhs.halves == rhs.halves }
+    package static func == (lhs: ULID, rhs: ULID) -> Bool { lhs.halves == rhs.halves }
 
     /// Big-endian halves order exactly as the bytes do, which is the string order too.
-    public static func < (lhs: ULID, rhs: ULID) -> Bool {
+    package static func < (lhs: ULID, rhs: ULID) -> Bool {
         let l = lhs.halves, r = rhs.halves
         return l.hi == r.hi ? l.lo < r.lo : l.hi < r.hi
     }
 
-    public func hash(into hasher: inout Hasher) {
+    package func hash(into hasher: inout Hasher) {
         let h = halves
         hasher.combine(h.hi)
         hasher.combine(h.lo)
     }
 
-    public init(from decoder: Decoder) throws {
+    package init(from decoder: Decoder) throws {
         let s = try decoder.singleValueContainer().decode(String.self)
         guard let u = ULID(string: s) else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "invalid ULID \(s)"))
@@ -154,33 +154,33 @@ public struct ULID: Hashable, Comparable, Codable, Sendable, CustomStringConvert
         self = u
     }
 
-    public func encode(to encoder: Encoder) throws {
+    package func encode(to encoder: Encoder) throws {
         var c = encoder.singleValueContainer()
         try c.encode(string)
     }
 }
 
 /// A ULID with a fixed kind prefix. All engine identifiers are one of these.
-public protocol PrefixedID: Hashable, Codable, Sendable, CustomStringConvertible {
+package protocol PrefixedID: Hashable, Codable, Sendable, CustomStringConvertible {
     static var prefix: String { get }
     var ulid: ULID { get }
     init(ulid: ULID)
 }
 
 extension PrefixedID {
-    public init() { self.init(ulid: ULID()) }
+    package init() { self.init(ulid: ULID()) }
 
     /// Parses `<prefix>_<ulid>`; nil on wrong prefix or malformed ULID.
-    public init?(string: String) {
+    package init?(string: String) {
         let p = Self.prefix + "_"
         guard string.hasPrefix(p), let u = ULID(string: String(string.dropFirst(p.count))) else { return nil }
         self.init(ulid: u)
     }
 
-    public var string: String { Self.prefix + "_" + ulid.string }
-    public var description: String { string }
+    package var string: String { Self.prefix + "_" + ulid.string }
+    package var description: String { string }
 
-    public init(from decoder: Decoder) throws {
+    package init(from decoder: Decoder) throws {
         let s = try decoder.singleValueContainer().decode(String.self)
         guard let v = Self(string: s) else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "invalid \(Self.prefix) id \(s)"))
@@ -188,20 +188,20 @@ extension PrefixedID {
         self = v
     }
 
-    public func encode(to encoder: Encoder) throws {
+    package func encode(to encoder: Encoder) throws {
         var c = encoder.singleValueContainer()
         try c.encode(string)
     }
 }
 
-public struct DeviceID: PrefixedID { public static let prefix = "dev"; public var ulid: ULID; public init(ulid: ULID) { self.ulid = ulid } }
-public struct CaptureID: PrefixedID { public static let prefix = "cap"; public var ulid: ULID; public init(ulid: ULID) { self.ulid = ulid } }
-public struct ChannelID: PrefixedID { public static let prefix = "chan"; public var ulid: ULID; public init(ulid: ULID) { self.ulid = ulid } }
-public struct SinkID: PrefixedID { public static let prefix = "sink"; public var ulid: ULID; public init(ulid: ULID) { self.ulid = ulid } }
-public struct JobID: PrefixedID { public static let prefix = "job"; public var ulid: ULID; public init(ulid: ULID) { self.ulid = ulid } }
-public struct ScanID: PrefixedID { public static let prefix = "scan"; public var ulid: ULID; public init(ulid: ULID) { self.ulid = ulid } }
-public struct StreamID: PrefixedID { public static let prefix = "strm"; public var ulid: ULID; public init(ulid: ULID) { self.ulid = ulid } }
+package struct DeviceID: PrefixedID { package static let prefix = "dev"; package var ulid: ULID; package init(ulid: ULID) { self.ulid = ulid } }
+package struct CaptureID: PrefixedID { package static let prefix = "cap"; package var ulid: ULID; package init(ulid: ULID) { self.ulid = ulid } }
+package struct ChannelID: PrefixedID { package static let prefix = "chan"; package var ulid: ULID; package init(ulid: ULID) { self.ulid = ulid } }
+package struct SinkID: PrefixedID { package static let prefix = "sink"; package var ulid: ULID; package init(ulid: ULID) { self.ulid = ulid } }
+package struct JobID: PrefixedID { package static let prefix = "job"; package var ulid: ULID; package init(ulid: ULID) { self.ulid = ulid } }
+package struct ScanID: PrefixedID { package static let prefix = "scan"; package var ulid: ULID; package init(ulid: ULID) { self.ulid = ulid } }
+package struct StreamID: PrefixedID { package static let prefix = "strm"; package var ulid: ULID; package init(ulid: ULID) { self.ulid = ulid } }
 /// Daemon-assigned per connection; used for attribution on events.
-public struct ClientID: PrefixedID { public static let prefix = "cli"; public var ulid: ULID; public init(ulid: ULID) { self.ulid = ulid } }
+package struct ClientID: PrefixedID { package static let prefix = "cli"; package var ulid: ULID; package init(ulid: ULID) { self.ulid = ulid } }
 /// A recording the daemon is playing through its own audio device (docs/design/recording.md).
-public struct PlaybackID: PrefixedID { public static let prefix = "pb"; public var ulid: ULID; public init(ulid: ULID) { self.ulid = ulid } }
+package struct PlaybackID: PrefixedID { package static let prefix = "pb"; package var ulid: ULID; package init(ulid: ULID) { self.ulid = ulid } }

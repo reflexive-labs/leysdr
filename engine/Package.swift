@@ -26,8 +26,10 @@ let package = Package(
     name: "Leyline",
     platforms: [.macOS("26.0")],
     products: [
+        // The daemon is the one thing this package ships. EngineCore and LeylineServer are not
+        // products: their declarations are `package`, visible to the targets here and to nothing
+        // outside (the app links LeylineProto only; `make license-check`).
         .executable(name: "leylined", targets: ["LeylineDaemon"]),
-        .library(name: "EngineCore", targets: ["EngineCore"]),
     ],
     dependencies: [
         .package(name: "LeylineProto", path: "../swift/LeylineProto"),

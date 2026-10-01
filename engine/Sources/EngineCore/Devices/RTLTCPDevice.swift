@@ -18,22 +18,22 @@ import Darwin
 #endif
 
 /// Unchecked Sendable: mutable state is read and written under `lock`; `storage` belongs to the reader thread.
-public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
+package final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
     /// The rtl_tcp server runs librtlsdr with the same async queue this side would, so a retune
     /// has at least that much already-captured air behind it, plus whatever the socket and the
     /// network hold -- which is not knowable from here. A bound, and an optimistic one.
-    public var inFlightSamples: UInt64 {
+    package var inFlightSamples: UInt64 {
         UInt64(RTLSDRDevice.usbBuffers) * UInt64(RTLSDRDevice.usbBufferBytes) / 2
     }
 
     /// `DeviceDescriptor.driver` for every radio reached over rtl_tcp.
-    public static let driverName = "rtltcp"
+    package static let driverName = "rtltcp"
     /// Samples per delivered block (docs/dev/engine-internals.md "Block size"); 32768 bytes of cu8.
-    public static let blockSize = 16384
+    package static let blockSize = 16384
     /// Same list as `RTLSDRDevice` — the remote end is librtlsdr.
-    public static let sampleRates = RTLSDRDevice.sampleRates
+    package static let sampleRates = RTLSDRDevice.sampleRates
     /// Connect and per-read timeout. A server that stops sending for this long is `.disconnected`.
-    public static let timeoutSeconds: Int32 = 5
+    package static let timeoutSeconds: Int32 = 5
 
     /// rtl_tcp opcodes (rtl_tcp.c `command` switch).
     enum Op: UInt8 {
@@ -42,8 +42,8 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
         case setGainByIndex = 0x0d, setBiasTee = 0x0e
     }
 
-    public let host: String
-    public let port: UInt16
+    package let host: String
+    package let port: UInt16
 
     private static let logger = Logger(label: "leyline.rtltcp")
     /// Device lock; a condition so `stopStreaming` can wait for the reader to leave `deliver`.
@@ -69,10 +69,10 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
     /// The one block buffer the reader thread fills; allocated once here, never on the I/O thread.
     private let storage = SampleStorage(capacity: RTLTCPDevice.blockSize, format: .cu8)
     /// From the server header (valid after open()).
-    public private(set) var tunerName = "unknown"
-    public private(set) var tunerGainCount: UInt32 = 0
+    package private(set) var tunerName = "unknown"
+    package private(set) var tunerGainCount: UInt32 = 0
 
-    public init(host: String, port: UInt16, sampleRate: UInt64 = 2_400_000) {
+    package init(host: String, port: UInt16, sampleRate: UInt64 = 2_400_000) {
         self.host = host
         self.port = port
         self.sampleRate = sampleRate
@@ -125,28 +125,28 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
         )
     }
 
-    public var descriptor: DeviceDescriptor {
+    package var descriptor: DeviceDescriptor {
         lock.lock(); defer { lock.unlock() }
         return _descriptor
     }
 
-    public var gains: [GainState] {
+    package var gains: [GainState] {
         lock.lock(); defer { lock.unlock() }
         return [GainState(element: "TUNER", value: gain)]
     }
 
     // MARK: Registry hooks (VirtualDevice)
 
-    public func setOnStateChange(_ hook: (@Sendable (DeviceState) -> Void)?) {
+    package func setOnStateChange(_ hook: (@Sendable (DeviceState) -> Void)?) {
         lock.lock(); _onStateChange = hook; lock.unlock()
     }
 
-    public func assignID(_ id: DeviceID) {
+    package func assignID(_ id: DeviceID) {
         lock.lock(); _descriptor.id = id; lock.unlock()
     }
 
     /// Registry use: records `.inUse` / `.available` without firing the hook.
-    public func setState(_ state: DeviceState) {
+    package func setState(_ state: DeviceState) {
         lock.lock(); _descriptor.state = state; lock.unlock()
     }
 
@@ -318,7 +318,7 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
     /// The connect and header read block for up to `timeoutSeconds` each, so they run on a
     /// dedicated thread via `BlockingWork.run` (as `RTLSDRDevice.open` does) rather than parking a
     /// cooperative-pool thread — the registry's reconnect poll calls this for every dead link.
-    public func open() async throws {
+    package func open() async throws {
         guard withLock({ fd < 0 }) else { return }
         // Connect and read the header with the lock released: `descriptor`/`gains` must stay
         // responsive meanwhile.
@@ -363,7 +363,7 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
     /// The shutdown makes the reader's `recv` return at once, but the reader may be inside a
     /// `deliver` call, so the join waits on a dedicated thread (`BlockingWork`) rather than a
     /// cooperative-pool thread every actor shares.
-    public func close() async {
+    package func close() async {
         let (sock, t): (Int32, Thread?) = withLock {
             closing = true
             streaming = false
@@ -379,7 +379,7 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
         }
     }
 
-    public func tune(centerHz hz: UInt64) async throws {
+    package func tune(centerHz hz: UInt64) async throws {
         try withLock {
             guard _descriptor.canTune(hz) else { throw EngineError.freqOutOfRange(hz, target: _descriptor.id.string) }
             try sendCommand(.setFrequency, UInt32(clamping: hz))
@@ -389,7 +389,7 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
 
     /// Sent live; rtl_tcp applies it to the running dongle, so no restart is needed. The block
     /// count per second changes, the sample index does not reset.
-    public func setSampleRate(_ hz: UInt64) async throws {
+    package func setSampleRate(_ hz: UInt64) async throws {
         try withLock {
             guard RTLTCPDevice.sampleRates.contains(hz) else { throw EngineError.rateUnsupported(hz, target: _descriptor.id.string) }
             try sendCommand(.setSampleRate, UInt32(clamping: hz))
@@ -397,7 +397,7 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
         }
     }
 
-    public func setGain(element: String, value: GainValue) async throws {
+    package func setGain(element: String, value: GainValue) async throws {
         try withLock {
             guard element == "TUNER", let el = _descriptor.gainElement(named: element) else {
                 throw EngineError.gainElementUnknown(element, target: _descriptor.id.string)
@@ -417,7 +417,7 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
 
     /// Applies one of the descriptor's settable features (`bias_tee`, `direct_sampling`,
     /// `ppm_correction`, `rtl_agc`). `tuner` and `remote` are read-only. Unknown → INVALID_ARGUMENT.
-    public func setFeature(_ name: String, _ value: FeatureValue) async throws {
+    package func setFeature(_ name: String, _ value: FeatureValue) async throws {
         try withLock {
             switch (name, value) {
             case ("bias_tee", .flag(let on)):
@@ -442,7 +442,7 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
     // MARK: Streaming
 
     /// The socket is already flowing; this only arms delivery. Sample index restarts at 0.
-    public func startStreaming(captureID: CaptureID, deliver: @escaping @Sendable (SampleBuffer, SampleTime) -> Void) async throws {
+    package func startStreaming(captureID: CaptureID, deliver: @escaping @Sendable (SampleBuffer, SampleTime) -> Void) async throws {
         try withLock {
             if streaming { throw EngineError.deviceBusy(_descriptor.id.string) }
             if _descriptor.state == .disconnected { throw EngineError.deviceDetached(_descriptor.id.string) }
@@ -457,7 +457,7 @@ public final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
     /// Disarms delivery; the connection stays up (the reader keeps draining so the server does not
     /// drop us). Returns once the reader can no longer be inside `deliver`; that wait runs on a
     /// dedicated thread (`BlockingWork`), because it lasts as long as the `deliver` in flight.
-    public func stopStreaming() async {
+    package func stopStreaming() async {
         try? await BlockingWork.run { [self] in disarmAndWaitForReader() }
     }
 

@@ -7,20 +7,20 @@ import Foundation
 
 /// Complex oscillator `e^{jφ[n]}`, φ advancing by `2π·frequency/rate` per sample.
 /// `fill` writes `cos` (real) and `sin` (imaginary) into caller buffers sized ≥ `maxBlock`.
-public final class NCO {
-    public let rate: Double
+package final class NCO {
+    package let rate: Double
     /// Largest block `fill` accepts.
-    public let maxBlock: Int
+    package let maxBlock: Int
     /// Current frequency in Hz (negative allowed).
-    public private(set) var frequencyHz: Double
+    package private(set) var frequencyHz: Double
     /// Current phase in radians, `[0, 2π)`.
-    public private(set) var phase: Double = 0
+    package private(set) var phase: Double = 0
 
     private var incrementF: Float = 0
     private var increment: Double = 0
     private let phases: UnsafeMutablePointer<Float>
 
-    public init(rate: Double, frequencyHz: Double, maxBlock: Int) {
+    package init(rate: Double, frequencyHz: Double, maxBlock: Int) {
         precondition(rate > 0 && maxBlock >= 1)
         self.rate = rate
         self.maxBlock = maxBlock
@@ -33,10 +33,10 @@ public final class NCO {
     deinit { phases.deallocate() }
 
     /// Change frequency without a phase discontinuity.
-    public func retune(frequencyHz: Double) { setFrequency(frequencyHz) }
+    package func retune(frequencyHz: Double) { setFrequency(frequencyHz) }
 
     /// Reset phase to zero (frequency unchanged).
-    public func reset() { phase = 0 }
+    package func reset() { phase = 0 }
 
     private func setFrequency(_ f: Double) {
         frequencyHz = f
@@ -47,7 +47,7 @@ public final class NCO {
     /// Generate `count ≤ maxBlock` samples: `cosOut[n] = cos φ[n]`, `sinOut[n] = sin φ[n]`.
     /// Phase is accumulated in Double per block and rebuilt as a Float ramp per block, so error
     /// does not grow with time.
-    public func fill(cosOut: UnsafeMutablePointer<Float>, sinOut: UnsafeMutablePointer<Float>, count: Int) {
+    package func fill(cosOut: UnsafeMutablePointer<Float>, sinOut: UnsafeMutablePointer<Float>, count: Int) {
         precondition(count <= maxBlock)
         guard count > 0 else { return }
         // Build the ramp in Double-accurate chunks: restart from the exact Double phase every

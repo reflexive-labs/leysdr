@@ -8,18 +8,18 @@ import Logging
 
 /// Replays `<name>.cf32|.cu8` + sidecar as a `RadioDevice`. See docs/dev/engine-internals.md "Devices".
 /// Unchecked Sendable: mutable state is read and written under `lock`; the reader and the sample index belong to the I/O thread.
-public final class FilePlaybackDevice: VirtualDevice, @unchecked Sendable {
+package final class FilePlaybackDevice: VirtualDevice, @unchecked Sendable {
     /// Samples per delivered block (docs/dev/engine-internals.md "Block size").
-    public static let blockSize = 16384
+    package static let blockSize = 16384
     /// `DeviceDescriptor.driver` value every file-playback device reports.
-    public static let driverName = "file"
+    package static let driverName = "file"
 
-    public let path: String
-    public let loop: Bool
-    public let realtime: Bool
-    public let sidecar: IQSidecar
+    package let path: String
+    package let loop: Bool
+    package let realtime: Bool
+    package let sidecar: IQSidecar
     /// Total complex samples in the file.
-    public let sampleCount: UInt64
+    package let sampleCount: UInt64
 
     private static let logger = Logger(label: "leyline.file")
     /// Device lock; a condition so the pacing wait wakes the moment `stopStreaming` cancels.
@@ -34,7 +34,7 @@ public final class FilePlaybackDevice: VirtualDevice, @unchecked Sendable {
     private var runningIndex: UInt64 = 0
 
     /// Opens the file pair at `path` (samples or sidecar path). Throws DEVICE_IO / INVALID_ARGUMENT.
-    public init(path: String, loop: Bool, realtime: Bool = true) throws {
+    package init(path: String, loop: Bool, realtime: Bool = true) throws {
         let abs = URL(fileURLWithPath: path).standardizedFileURL.path
         let reader = try IQFileReader(path: abs, maxBlock: 1)
         self.path = abs
@@ -75,27 +75,27 @@ public final class FilePlaybackDevice: VirtualDevice, @unchecked Sendable {
         return String(h, radix: 16).leftPadded(to: 16)
     }
 
-    public var descriptor: DeviceDescriptor {
+    package var descriptor: DeviceDescriptor {
         lock.lock(); defer { lock.unlock() }
         return _descriptor
     }
 
-    public var gains: [GainState] { [] }
+    package var gains: [GainState] { [] }
 
     /// Called (from the I/O thread) whenever the device's state flips, e.g. `.disconnected` at EOF.
     /// The registry installs this to publish `changed`/`removed`.
-    public func setOnStateChange(_ hook: (@Sendable (DeviceState) -> Void)?) {
+    package func setOnStateChange(_ hook: (@Sendable (DeviceState) -> Void)?) {
         lock.lock(); _onStateChange = hook; lock.unlock()
     }
 
     /// Assigns the registry-issued stable id (replaces the provisional one from init).
-    public func assignID(_ id: DeviceID) {
+    package func assignID(_ id: DeviceID) {
         lock.lock(); _descriptor.id = id; lock.unlock()
     }
 
     /// Registry use: records an externally decided state (`.inUse` / `.available`) without firing
     /// the hook — the registry already knows. Safe from any thread.
-    public func setState(_ state: DeviceState) {
+    package func setState(_ state: DeviceState) {
         lock.lock(); _descriptor.state = state; lock.unlock()
     }
 
@@ -109,33 +109,33 @@ public final class FilePlaybackDevice: VirtualDevice, @unchecked Sendable {
         if changed { hook?(state) }
     }
 
-    public func open() async throws {
+    package func open() async throws {
         guard FileManager.default.isReadableFile(atPath: path) else {
             throw EngineError.deviceIO("IQ file is not readable", target: path)
         }
     }
 
-    public func close() async { await stopStreaming() }
+    package func close() async { await stopStreaming() }
 
-    public func tune(centerHz: UInt64) async throws {
+    package func tune(centerHz: UInt64) async throws {
         guard descriptor.canTune(centerHz) else {
             throw EngineError.freqOutOfRange(centerHz, target: descriptor.id.string)
         }
     }
 
-    public func setSampleRate(_ hz: UInt64) async throws {
+    package func setSampleRate(_ hz: UInt64) async throws {
         guard descriptor.sampleRates.contains(hz) else {
             throw EngineError.rateUnsupported(hz, target: descriptor.id.string)
         }
     }
 
-    public func setGain(element: String, value: GainValue) async throws {
+    package func setGain(element: String, value: GainValue) async throws {
         throw EngineError.gainElementUnknown(element, target: descriptor.id.string)
     }
 
     // MARK: Streaming
 
-    public func startStreaming(captureID: CaptureID, deliver: @escaping @Sendable (SampleBuffer, SampleTime) -> Void) async throws {
+    package func startStreaming(captureID: CaptureID, deliver: @escaping @Sendable (SampleBuffer, SampleTime) -> Void) async throws {
         try beginStreaming()
         // The reader and scratch are created here, on the control plane, never on the I/O thread.
         let reader: IQFileReader
@@ -168,7 +168,7 @@ public final class FilePlaybackDevice: VirtualDevice, @unchecked Sendable {
 
     /// Cancels playback and returns once the I/O thread is gone. Both waits run on a dedicated
     /// thread: a cooperative-pool thread parked for the length of a block starves every other actor.
-    public func stopStreaming() async {
+    package func stopStreaming() async {
         enum Next { case idle, join, awaitJoiner }
         let next: Next = withLock {
             guard streaming else { return Next.idle }

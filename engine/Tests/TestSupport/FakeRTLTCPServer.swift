@@ -15,8 +15,8 @@ import Darwin
 /// Minimal fake rtl_tcp server: accepts one client, sends the 12-byte header, streams a running
 /// byte counter (`byte k == UInt8(k)`) and records every 5-byte command it receives.
 /// Unchecked Sendable: mutable state is read and written only under `lock`.
-public final class FakeRTLTCPServer: @unchecked Sendable {
-    public let port: UInt16
+package final class FakeRTLTCPServer: @unchecked Sendable {
+    package let port: UInt16
     private let listener: Int32
     private let lock = NSLock()
     private var client: Int32 = -1
@@ -34,7 +34,7 @@ public final class FakeRTLTCPServer: @unchecked Sendable {
     private var senderRunning = false
 
     /// - Parameter port: 0 picks an ephemeral port; pass a previous server's `port` to "restart" it.
-    public init(tuner: UInt32 = 5, gainCount: UInt32 = 29, port: UInt16 = 0) throws {
+    package init(tuner: UInt32 = 5, gainCount: UInt32 = 29, port: UInt16 = 0) throws {
         self.tuner = tuner
         self.gainCount = gainCount
         #if os(Linux)
@@ -60,11 +60,11 @@ public final class FakeRTLTCPServer: @unchecked Sendable {
         t.start()
     }
 
-    public var commands: [[UInt8]] { lock.lock(); defer { lock.unlock() }; return _commands }
-    public var clientGone: Bool { lock.lock(); defer { lock.unlock() }; return _clientGone }
+    package var commands: [[UInt8]] { lock.lock(); defer { lock.unlock() }; return _commands }
+    package var clientGone: Bool { lock.lock(); defer { lock.unlock() }; return _clientGone }
 
     /// Ephemeral port that is currently closed (for connection-refused tests).
-    public static func closedPort() throws -> UInt16 {
+    package static func closedPort() throws -> UInt16 {
         let s = try FakeRTLTCPServer()
         let p = s.port
         s.stop()
@@ -145,7 +145,7 @@ public final class FakeRTLTCPServer: @unchecked Sendable {
     /// Server-side drop of the client connection (simulates rtl_tcp dying). `shutdown` wakes the
     /// sender and the command reader; both are joined before the descriptor is closed, so neither
     /// can touch the number once it is back in the pool.
-    public func closeClient() {
+    package func closeClient() {
         lock.lock()
         let c = client
         client = -1
@@ -159,7 +159,7 @@ public final class FakeRTLTCPServer: @unchecked Sendable {
         close(c)
     }
 
-    public func stop() {
+    package func stop() {
         lock.lock(); let already = stopped; stopped = true; lock.unlock()
         guard !already else { return }
         closeClient()

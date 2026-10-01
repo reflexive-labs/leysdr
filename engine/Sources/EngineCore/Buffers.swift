@@ -6,7 +6,7 @@ import Foundation
 
 /// Sample formats carried by `SampleBuffer`. The wire enum (leyline.v1.SampleFormat) has only
 /// CS8/CS16/CF32; `.cu8` (RTL-SDR native offset-binary) and `.f32` (real mono audio) are engine-internal.
-public enum SampleFormat: Hashable, Sendable {
+package enum SampleFormat: Hashable, Sendable {
     /// Unsigned 8-bit interleaved I/Q, offset-binary (value - 127.5 is the sample). RTL-SDR native.
     case cu8
     /// Signed 8-bit interleaved I/Q.
@@ -19,7 +19,7 @@ public enum SampleFormat: Hashable, Sendable {
     case f32
 
     /// Bytes per sample (one complex sample for I/Q formats, one frame for `.f32`).
-    public var bytesPerSample: Int {
+    package var bytesPerSample: Int {
         switch self {
         case .cu8, .cs8: return 2
         case .cs16: return 4
@@ -28,45 +28,45 @@ public enum SampleFormat: Hashable, Sendable {
         }
     }
 
-    public var isComplex: Bool { self != .f32 }
+    package var isComplex: Bool { self != .f32 }
 }
 
 /// A borrowed view of samples. It never escapes the call it is passed to; whoever owns `base`
 /// guarantees it stays valid and unaliased for the duration of that call.
-public struct SampleBuffer {
-    public var base: UnsafeMutableRawPointer
+package struct SampleBuffer {
+    package var base: UnsafeMutableRawPointer
     /// Number of samples (complex samples for I/Q formats, frames for `.f32`).
-    public var count: Int
-    public var format: SampleFormat
+    package var count: Int
+    package var format: SampleFormat
 
-    public init(base: UnsafeMutableRawPointer, count: Int, format: SampleFormat) {
+    package init(base: UnsafeMutableRawPointer, count: Int, format: SampleFormat) {
         self.base = base
         self.count = count
         self.format = format
     }
 
-    public var byteCount: Int { count * format.bytesPerSample }
+    package var byteCount: Int { count * format.bytesPerSample }
 
     /// Typed view for float formats (`.cf32` has 2 floats per sample, `.f32` has 1).
-    public var floats: UnsafeMutableBufferPointer<Float> {
+    package var floats: UnsafeMutableBufferPointer<Float> {
         precondition(format == .cf32 || format == .f32, "not a float buffer")
         let n = format == .cf32 ? count * 2 : count
         return UnsafeMutableBufferPointer(start: base.assumingMemoryBound(to: Float.self), count: n)
     }
 
-    public var bytes: UnsafeMutableRawBufferPointer {
+    package var bytes: UnsafeMutableRawBufferPointer {
         UnsafeMutableRawBufferPointer(start: base, count: byteCount)
     }
 }
 
 /// Owned, preallocated, 16-byte aligned sample storage. Hand out `SampleBuffer` borrows with `view`.
 /// Unchecked Sendable: the memory is shared by design; which thread may write it when is the protocol of the ring or core that owns it.
-public final class SampleStorage: @unchecked Sendable {
-    public let capacity: Int
-    public let format: SampleFormat
-    public let base: UnsafeMutableRawPointer
+package final class SampleStorage: @unchecked Sendable {
+    package let capacity: Int
+    package let format: SampleFormat
+    package let base: UnsafeMutableRawPointer
 
-    public init(capacity: Int, format: SampleFormat) {
+    package init(capacity: Int, format: SampleFormat) {
         self.capacity = capacity
         self.format = format
         let bytes = max(1, capacity * format.bytesPerSample)
@@ -77,7 +77,7 @@ public final class SampleStorage: @unchecked Sendable {
     deinit { base.deallocate() }
 
     /// Borrow the first `count` samples (defaults to full capacity).
-    public func view(count: Int? = nil) -> SampleBuffer {
+    package func view(count: Int? = nil) -> SampleBuffer {
         let n = count ?? capacity
         precondition(n <= capacity)
         return SampleBuffer(base: base, count: n, format: format)

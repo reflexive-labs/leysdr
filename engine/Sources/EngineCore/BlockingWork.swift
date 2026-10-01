@@ -16,9 +16,9 @@ import Foundation
 /// nothing and would have to answer what happens when a call never returns; a thread that leaks is
 /// one thread. Anything more frequent than that belongs somewhere else.
 /// Cancellation is not propagated — the body always runs to completion once started.
-public enum BlockingWork {
+package enum BlockingWork {
     /// Executes `body` on a new thread and resumes the caller with its result or thrown error.
-    public static func run<T: Sendable>(_ body: @escaping @Sendable () throws -> T) async throws -> T {
+    package static func run<T: Sendable>(_ body: @escaping @Sendable () throws -> T) async throws -> T {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<T, any Error>) in
             let thread = Thread {
                 cont.resume(with: Result { try body() })

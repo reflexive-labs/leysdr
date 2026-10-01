@@ -7,24 +7,24 @@ import Foundation
 
 /// Ladder of fixed FFT sizes fanned out to rate-limited subscribers.
 /// Unchecked Sendable: the subscriber table is swapped under `lock`; the transform scratch belongs to the DSP thread.
-public final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
+package final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
     /// Sizes the ladder computes.
-    public static let sizes = [256, 512, 1024, 2048, 4096, 8192, 16384]
+    package static let sizes = [256, 512, 1024, 2048, 4096, 8192, 16384]
     /// Highest row rate any subscriber receives.
-    public static let maxRowsPerSecond: Double = 30
+    package static let maxRowsPerSecond: Double = 30
 
     /// Round a request to the nearest ladder size ≥ `bins`, capped at 16384.
-    public static func roundBins(_ bins: Int) -> Int {
+    package static func roundBins(_ bins: Int) -> Int {
         sizes.first { $0 >= bins } ?? sizes.last!
     }
 
     /// Lowest row rate any subscriber receives; requests below it are clamped up so the row
     /// interval stays representable and rows keep arriving.
-    public static let minRowsPerSecond: Double = 0.1
+    package static let minRowsPerSecond: Double = 0.1
 
     /// Clamp a requested rate to `[minRowsPerSecond, maxRowsPerSecond]`. Non-finite or
     /// non-positive requests mean "as fast as allowed".
-    public static func roundRate(_ rowsPerSecond: Double) -> Double {
+    package static func roundRate(_ rowsPerSecond: Double) -> Double {
         guard rowsPerSecond.isFinite, rowsPerSecond > 0 else { return maxRowsPerSecond }
         return min(max(rowsPerSecond, minRowsPerSecond), maxRowsPerSecond)
     }
@@ -32,7 +32,7 @@ public final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
     /// Most looks the ladder will take for one row. It bounds the FFT cost of a very slow row rate;
     /// looks are spread evenly across the row rather than taken back to back, so capping them
     /// thins the sampling instead of covering only the start of the row.
-    public static let maxLooksPerRow = 64
+    package static let maxLooksPerRow = 64
 
     final class Entry {
         let subscription: SpectrumSubscription
@@ -93,7 +93,7 @@ public final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
     private let rows: [UnsafeMutableBufferPointer<Float>]
     private var computed: [Bool]
 
-    public init() {
+    package init() {
         analyzers = DefaultSpectrumLadder.sizes.map { SpectrumAnalyzer(size: $0) }
         rows = DefaultSpectrumLadder.sizes.map { size in
             let row = UnsafeMutableBufferPointer<Float>.allocate(capacity: size)
@@ -106,12 +106,12 @@ public final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
     deinit { for row in rows { row.deallocate() } }
 
     /// Active subscriptions.
-    public var subscriberCount: Int {
+    package var subscriberCount: Int {
         lock.lock(); defer { lock.unlock() }
         return table.count
     }
 
-    public func subscribe(bins: Int, rowsPerSecond: Double, accumulation: SpectrumAccumulation,
+    package func subscribe(bins: Int, rowsPerSecond: Double, accumulation: SpectrumAccumulation,
                           policy: DeliveryPolicy, sink: any SpectrumSink) async -> SpectrumSubscription {
         let size = DefaultSpectrumLadder.roundBins(bins)
         let rate = DefaultSpectrumLadder.roundRate(rowsPerSecond)
@@ -125,7 +125,7 @@ public final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
         return sub
     }
 
-    public func cancel(_ subscription: SpectrumSubscription) async {
+    package func cancel(_ subscription: SpectrumSubscription) async {
         lock.lock()
         table = table.filter { $0.subscription.id != subscription.id }
         lock.unlock()
@@ -133,7 +133,7 @@ public final class DefaultSpectrumLadder: SpectrumLadder, @unchecked Sendable {
 
     /// One ladder pass over the most recent block. `spanHz` is the capture sample rate.
     /// Hot path: lock held only to copy the table reference; each size computed at most once.
-    public func process(block: SampleBuffer, at time: SampleTime, centerHz: UInt64, spanHz: UInt64) {
+    package func process(block: SampleBuffer, at time: SampleTime, centerHz: UInt64, spanHz: UInt64) {
         lock.lock()
         let entries = table
         lock.unlock()
