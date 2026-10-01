@@ -796,8 +796,8 @@ line per record. `ley decoders` lists what is installed and where each one liste
 $ ley decoders
 NAME  FREQUENCY         MODE        OUTPUTS            VERSION
 aprs  144.390 MHz (+1)  NFM 15 kHz  records, entities  0.1.0
-looked in /workspace/decoders, /home/dpup/.local/share/leyline/decoders
-kept records in /home/dpup/.local/share/leyline/store, 2 GiB or 90 days, whichever comes first
+looked in /Users/you/Library/Application Support/Leyline/decoders
+kept records in /Users/you/Library/Application Support/Leyline/store, 2 GiB or 90 days, whichever comes first
 ```
 
 A decoder carries its own recipe (the frequency, the mode, the bandwidth), so `decode` takes no
