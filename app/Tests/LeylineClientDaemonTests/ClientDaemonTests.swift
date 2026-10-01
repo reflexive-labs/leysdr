@@ -108,7 +108,7 @@ final class ClientDaemonTests: XCTestCase {
         let writes = WriteCoalescer(connection: app, tick: .milliseconds(50))
         // A drag: a burst of offsets inside one tick. Only the last should be applied.
         for hz: Int64 in [110_000, 120_000, 130_000, 140_000, 150_000] {
-            await writes.offsetHz(hz, channel: channel.channelID)
+            writes.offsetHz(hz, channel: channel.channelID)
         }
         await assertEventually("the last offset never arrived") {
             mirror.state.channel(channel.channelID)?.offsetHz == 150_000
@@ -117,7 +117,7 @@ final class ClientDaemonTests: XCTestCase {
             mirror.state.frequencyHz(of: mirror.state.channel(channel.channelID)!), 146_670_000)
 
         // Out of the capture (2.4 MSPS spans ±1.2 MHz): refused, and the refusal carries the tag.
-        let tag = await writes.offsetHz(5_000_000, channel: channel.channelID)
+        let tag = writes.offsetHz(5_000_000, channel: channel.channelID)
         await assertEventually("no WriteRejected for the bad offset") {
             mirror.state.rejections.contains { $0.tag == tag }
         }
@@ -128,8 +128,8 @@ final class ClientDaemonTests: XCTestCase {
             "the refused write changed nothing")
 
         await writes.stop()
-        let summary = await writes.lastSummary
-        let streamError = await writes.lastError
+        let summary = writes.lastSummary
+        let streamError = writes.lastError
         XCTAssertNotNil(
             summary, "the stream ends with the daemon's summary: \(String(describing: streamError))"
         )

@@ -109,7 +109,7 @@ enum Harness {
         _ db: Double, channel: String, via c: DaemonConnection, mirror: DaemonMirror
     ) async throws {
         let writes = WriteCoalescer(connection: c, tick: .milliseconds(50))
-        await writes.squelchDb(db, channel: channel)
+        writes.squelchDb(db, channel: channel)
         await writes.stop()
         let landed = await eventually(.seconds(5)) {
             let got = mirror.state.channel(channel)?.squelchDb ?? .nan
@@ -117,7 +117,7 @@ enum Harness {
         }
         if !landed {
             throw HarnessError(
-                "the squelch write never reached the mirror: \(String(describing: await writes.lastError))"
+                "the squelch write never reached the mirror: \(String(describing: writes.lastError))"
             )
         }
     }

@@ -1044,7 +1044,7 @@ final class AppSession {
         if var cap = capture, cap.deviceID == dev.deviceID {
             // The rate is not written here: it is the radio's setting and only the device
             // menu's picker moves it. A band change moves the centre alone.
-            if cap.centerHz != centerHz { await writes.centerHz(centerHz, capture: cap.captureID) }
+            if cap.centerHz != centerHz { writes.centerHz(centerHz, capture: cap.captureID) }
             cap.centerHz = centerHz
             return cap
         }
@@ -1064,7 +1064,7 @@ final class AppSession {
                 "gain",
                 "\(g.element) \(g.auto ? "auto" : String(format: "%.1f dB", g.db)), remembered for this radio"
             )
-            await writes.gain(g, capture: cap.captureID)
+            writes.gain(g, capture: cap.captureID)
         }
         captureID = cap.captureID
         captureSeen = false
@@ -1080,7 +1080,7 @@ final class AppSession {
         guard let daemon, let writes else { throw LeylineError.notDialled }
         if var ch = channel, ch.captureID == cap.captureID {
             await apply(mode: mode, bandwidthHz: bandwidthHz, to: ch)
-            if ch.offsetHz != offsetHz { await writes.offsetHz(offsetHz, channel: ch.channelID) }
+            if ch.offsetHz != offsetHz { writes.offsetHz(offsetHz, channel: ch.channelID) }
             ch.mode = mode
             ch.bandwidthHz = bandwidthHz
             ch.offsetHz = offsetHz
@@ -1142,7 +1142,7 @@ final class AppSession {
         let (threshold, floor) = SpectrumFold.autoSquelch(
             spectrum.latest, sampleRate: sampleRate, bandwidthHz: bandwidthHz)
         guard threshold.isFinite else { return }
-        await writes.squelchDb(threshold, channel: ch.channelID)
+        writes.squelchDb(threshold, channel: ch.channelID)
         log("session", "auto squelch \(threshold) dBFS from floor \(floor)")
     }
 
@@ -1233,10 +1233,8 @@ final class AppSession {
         request(UInt64(max(0, held)))
         spectrum.resetFolds()
         let want = UInt64(max(0, newCentre))
-        Task {
-            await writes.centerHz(want, capture: cap.captureID)
-            await writes.offsetHz(held - newCentre, channel: ch.channelID)
-        }
+        writes.centerHz(want, capture: cap.captureID)
+        writes.offsetHz(held - newCentre, channel: ch.channelID)
         if ended {
             log(
                 "tune",
@@ -1338,7 +1336,7 @@ final class AppSession {
         }
         let offset = target - centre
         request(UInt64(max(0, target)))
-        Task { await writes.offsetHz(offset, channel: ch.channelID) }
+        writes.offsetHz(offset, channel: ch.channelID)
         if !quiet {
             log(
                 "tune",
@@ -1370,7 +1368,7 @@ final class AppSession {
             centreInFlight = move.centre
             spectrum.resetFolds()
             let want = UInt64(max(0, move.centre))
-            await writes.centerHz(want, capture: move.capture)
+            writes.centerHz(want, capture: move.capture)
             await confirmed { self.capture?.centerHz == want }
             if self.capture?.centerHz != want {
                 log(
@@ -1378,7 +1376,7 @@ final class AppSession {
                     "centre \(move.centre) not confirmed; capture is at \(self.capture?.centerHz ?? 0)"
                 )
             }
-            if nextRetune == nil { await writes.offsetHz(move.offset, channel: move.channel) }
+            if nextRetune == nil { writes.offsetHz(move.offset, channel: move.channel) }
             guard let next = nextRetune else { break }
             nextRetune = nil
             log("tune", "centre \(move.centre) -> \(next.centre) Hz, the move that was waiting")
@@ -1411,7 +1409,7 @@ final class AppSession {
                 "tune",
                 "centre \(cap.centerHz) -> \(centre) Hz for \(target) Hz, before the first channel")
             centreInFlight = centre
-            await writes.centerHz(UInt64(max(0, centre)), capture: cap.captureID)
+            writes.centerHz(UInt64(max(0, centre)), capture: cap.captureID)
             await confirmed { self.capture?.centerHz == UInt64(max(0, centre)) }
             centreInFlight = nil
         }
@@ -1460,20 +1458,20 @@ final class AppSession {
         let id = ch.channelID
         await widenCapture(for: bandwidthHz)
         if ch.mode == mode {
-            if ch.bandwidthHz != bandwidthHz { await writes.bandwidthHz(bandwidthHz, channel: id) }
+            if ch.bandwidthHz != bandwidthHz { writes.bandwidthHz(bandwidthHz, channel: id) }
             return
         }
         let widthFirst = bandwidthHz < ch.bandwidthHz
         for attempt in 0..<2 {
             let first = (attempt == 0) == widthFirst
             if first {
-                await writes.bandwidthHz(bandwidthHz, channel: id)
+                writes.bandwidthHz(bandwidthHz, channel: id)
                 await confirmed { self.channel?.bandwidthHz == bandwidthHz }
-                await writes.mode(mode, channel: id)
+                writes.mode(mode, channel: id)
             } else {
-                await writes.mode(mode, channel: id)
+                writes.mode(mode, channel: id)
                 await confirmed { self.channel?.mode == mode }
-                await writes.bandwidthHz(bandwidthHz, channel: id)
+                writes.bandwidthHz(bandwidthHz, channel: id)
             }
             await confirmed {
                 self.channel?.mode == mode && self.channel?.bandwidthHz == bandwidthHz
@@ -1503,7 +1501,7 @@ final class AppSession {
             rate > cap.sampleRate
         else { return }
         log("tune", "capture \(cap.sampleRate) -> \(rate) S/s to hold \(bandwidthHz) Hz")
-        _ = await writes.set(.captureSampleRate(rate), target: cap.captureID)
+        writes.set(.captureSampleRate(rate), target: cap.captureID)
         spectrum.resetFolds()
         await confirmed { self.capture?.sampleRate == rate }
     }
@@ -1539,18 +1537,18 @@ final class AppSession {
         log("tune", "width \(hz) Hz chosen")
         Task {
             await widenCapture(for: hz)
-            await writes.bandwidthHz(hz, channel: ch.channelID)
+            writes.bandwidthHz(hz, channel: ch.channelID)
         }
     }
 
     func setSquelch(_ db: Double) {
         guard let ch = channel, let writes else { return }
-        Task { await writes.squelchDb(db, channel: ch.channelID) }
+        writes.squelchDb(db, channel: ch.channelID)
     }
 
     func setVolume(_ v: Double) {
         guard let s = sink, let writes else { return }
-        Task { await writes.volume(v.clamped(to: 0...1), sink: s.sinkID) }
+        writes.volume(v.clamped(to: 0...1), sink: s.sinkID)
     }
 
     /// Mute detaches the sink and unmute attaches one; the channel and its squelch stay, and so
@@ -1941,7 +1939,7 @@ final class AppSession {
         w.element = element.name
         fill(&w)
         log("gain", "\(element.name) \(words)")
-        Task { await writes.gain(w, capture: cap.captureID) }
+        writes.gain(w, capture: cap.captureID)
     }
 
     /// A new capture width. The daemon keeps the centre where it was, so a station off-centre
@@ -1980,14 +1978,14 @@ final class AppSession {
             "rate",
             "\(cap.sampleRate) -> \(rate) S/s, remembered; centre \(cap.centerHz) -> \(want) Hz\(tunedHz.map { " for \($0) Hz" } ?? "")"
         )
+        if narrowing, want != cap.centerHz {
+            writes.centerHz(want, capture: cap.captureID)
+        }
+        writes.set(.captureSampleRate(rate), target: cap.captureID)
+        if !narrowing, want != cap.centerHz {
+            writes.centerHz(want, capture: cap.captureID)
+        }
         Task {
-            if narrowing, want != cap.centerHz {
-                await writes.centerHz(want, capture: cap.captureID)
-            }
-            _ = await writes.set(.captureSampleRate(rate), target: cap.captureID)
-            if !narrowing, want != cap.centerHz {
-                await writes.centerHz(want, capture: cap.captureID)
-            }
             await confirmed(within: 2) {
                 self.capture?.centerHz == want && self.capture?.sampleRate == rate
             }
@@ -2068,8 +2066,8 @@ final class AppSession {
         centreInFlight = Int64(want)
         spectrum.resetFolds()
         log("tune", "tune inside: centre \(cap.centerHz) -> \(want) Hz for \(hz) Hz")
+        writes.centerHz(want, capture: cap.captureID)
         Task {
-            await writes.centerHz(want, capture: cap.captureID)
             await confirmed { self.capture?.centerHz == want }
             if centreInFlight == Int64(want) { centreInFlight = nil }
         }
