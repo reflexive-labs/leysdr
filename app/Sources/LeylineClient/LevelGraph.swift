@@ -4,7 +4,7 @@
 // of RMS level. The window is local, as `ley recordings show` is, so the file is read through the
 // path `Resources.ResolveLocalPath` returns for the part's URI; a remote daemon's path does not
 // exist here and the column stays empty. The file is the one shape `PartWriter` writes, PCM S16
-// mono; the chunk walk is the engine's `WAVReader` (engine/Sources/LeylineDaemon/Recording/
+// mono; the chunk walk is the engine's `WAVReader` (engine/Sources/LeylineServer/Recording/
 // PlaybackEngine.swift), reimplemented because the app never links the engine (AGENTS.md,
 // Conventions).
 

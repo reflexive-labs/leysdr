@@ -4,7 +4,7 @@
 // rule that says which part holds a transmission (a kept row of the log), the frequency form of
 // `RecordConfig` the switch starts, the switch's state and status line, and the question asked
 // before the window moves the radio out from under a recording. The manifest is the file format the
-// daemon writes (docs/design/recording.md, "The manifest"; `engine/Sources/LeylineDaemon/Recording/
+// daemon writes (docs/design/recording.md, "The manifest"; `engine/Sources/LeylineServer/Recording/
 // RecordingManifest.swift`), read from disk through `Resources.ResolveLocalPath` because the window
 // is local, as `ley recordings show` is. Every position is a sample on a capture's timeline and
 // wall clock comes only from the manifest's anchors and the job's `created_at_ns` (invariant 5).

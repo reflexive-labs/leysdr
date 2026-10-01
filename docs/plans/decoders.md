@@ -79,7 +79,7 @@ DEC-5 can run a decoder in-process (a `FilePlaybackDevice` capture, the channel,
 
 ## DEC-4 `[x]` Registry, plugin process and record store (Swift lane, first half)
 
-All in `engine/Sources/LeylineDaemon/Decoders/`, GPL-3.0-or-later, proto types allowed (the
+All in `engine/Sources/LeylineServer/Decoders/`, GPL-3.0-or-later, proto types allowed (the
 daemon target already holds proto messages as its record type).
 
 - `DecoderRegistry` (struct, `Sendable`): `init(searchPath: [String])`; `scan() -> [Installed]`
