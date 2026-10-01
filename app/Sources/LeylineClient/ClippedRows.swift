@@ -8,9 +8,9 @@
 // rows whose index lies in its interval; the raw per-interval fraction decides, not
 // `FailureHold`'s state, because the mark records when the radio clipped and the hold only keeps
 // the chip steady. The same indices place the waterfall's kept bars: `keptRuns` answers which
-// held rows a recording's parts hold, as runs of row ages, and the time gutter draws them
-// (docs/design/app-design-handoff-m3.md, "In every screen"). Nothing about a recording is stored
-// per row, so a manifest read again redraws the bars and leaves no stale flag behind.
+// held rows a recording's parts hold, as runs of row ages, and the time gutter draws them. Nothing
+// about a recording is stored per row, so a manifest read again redraws the bars and leaves no
+// stale flag behind.
 
 import Foundation
 import LeylineProto

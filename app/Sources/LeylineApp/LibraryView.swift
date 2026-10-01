@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The Library, the window's second place (docs/design/app-design-handoff-m3.md, "Decided
-// 2026-09-25: the Library"): what has been kept, in place of the whole body under the toolbar.
-// A 236 pt sidebar with the search field, the channels and the store footer; the channel page in
-// the centre (`RecordingsPage.swift`, 10a); in the inspector the part (`PartInspector.swift`) or,
-// with none selected, the channel's lines; and the player in the transport bar's place
-// (`PlayerBar.swift`). The live radio keeps running underneath: its capture, channel and feeds
-// are the session's, and a part that plays holds the live channel silent until it ends
-// (`AppSession.play(partURI:)`). Nothing here is state of its own beyond the delete alert's:
+// The Library, the window's second place (decided 2026-09-25): what has been kept, in place of the
+// whole body under the toolbar. A 236 pt sidebar with the search field, the channels and the store
+// footer; the channel page in the centre (`RecordingsPage.swift`); in the inspector the part
+// (`PartInspector.swift`) or, with none selected, the channel's lines; and the player in the
+// transport bar's place (`PlayerBar.swift`). The live radio keeps running underneath: its capture,
+// channel and feeds are the session's, and a part that plays holds the live channel silent until it
+// ends (`AppSession.play(partURI:)`). Nothing here is state of its own beyond the delete alert's:
 // the selection, the query and the opened days are the session's.
 
 import LeylineClient
@@ -38,10 +37,10 @@ struct LibraryBody: View {
 }
 
 /// The search field at the top, one row per frequency under it with no section header
-/// (`Recordings.channels`, running ones first and then by most recent activity; 10a: a mode or
-/// width change does not split a channel), and the store footer at the foot. A click selects a
-/// row and shows its page; a click on the selected row keeps it, so the centre is never blank.
-/// With nothing kept the body is one sentence.
+/// (`Recordings.channels`, running ones first and then by most recent activity; a mode or width
+/// change does not split a channel), and the store footer at the foot. A click selects a row and
+/// shows its page; a click on the selected row keeps it, so the centre is never blank. With nothing
+/// kept the body is one sentence.
 struct LibrarySidebar: View {
     @Environment(AppSession.self) private var session
 
@@ -85,8 +84,8 @@ struct LibrarySidebar: View {
         .background(Theme.panel)
     }
 
-    /// `⌕ Search recordings` on `ground` with a `border` (8c): matches a channel's name, its
-    /// frequency and the days its recordings started (`RecordingChannel.matches`).
+    /// `⌕ Search recordings` on `ground` with a `border`: matches a channel's name, its frequency
+    /// and the days its recordings started (`RecordingChannel.matches`).
     private var search: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass").font(.system(size: 10))
@@ -105,7 +104,7 @@ struct LibrarySidebar: View {
     }
 }
 
-/// The Library's inspector: the selected or playing part (`PartInspector`, 8c), else the selected
+/// The Library's inspector: the selected or playing part (`PartInspector`), else the selected
 /// channel's lines (`ChannelSummary`), else the panel's ground.
 struct LibraryInspector: View {
     @Environment(AppSession.self) private var session
@@ -160,8 +159,8 @@ struct ChannelSummary: View {
 
 /// `GMRS CH3` over `19 recordings · today`: the title in `label`, a bookmark's name or the
 /// frequency in mono; the subtitle in `footnote` `inkFaint`; a 6 pt `accentRec` dot at the right
-/// while one of its recordings runs; `raised` ground when selected (M3 handoff, 8c, kept by the
-/// Library). The tooltip gives the frequency and mode a name hides.
+/// while one of its recordings runs; `raised` ground when selected. The tooltip gives the frequency
+/// and mode a name hides.
 struct RecordingChannelRow: View {
     let channel: RecordingChannel
     let selected: Bool
@@ -192,12 +191,11 @@ struct RecordingChannelRow: View {
     }
 }
 
-/// The store footer at the Library sidebar's foot (M3 handoff, "In every screen", moved to the
-/// Library by "Decided 2026-09-25: the Library", where it is about the thing listed): a 3 pt bar,
-/// `border` track and `inkTertiary` fill for the used fraction, then `3.3 GB of 20 GB · oldest go
-/// first` in `footnote` `inkFaint`. Used is the listing's sizes summed; the cap is the daemon's
-/// (`DaemonInfo.recordings_cap_bytes`). Read-only: the cap is `leylined --recordings-cap`.
-/// Without a cap the bar has no fill and the line no `of …` clause.
+/// The store footer at the Library sidebar's foot, where it is about the thing listed (moved there
+/// 2026-09-25): a 3 pt bar, `border` track and `inkTertiary` fill for the used fraction, then `3.3
+/// GB of 20 GB · oldest go first` in `footnote` `inkFaint`. Used is the listing's sizes summed; the
+/// cap is the daemon's (`DaemonInfo.recordings_cap_bytes`). Read-only: the cap is `leylined
+/// --recordings-cap`. Without a cap the bar has no fill and the line no `of …` clause.
 struct StoreFooter: View {
     @Environment(AppSession.self) private var session
 

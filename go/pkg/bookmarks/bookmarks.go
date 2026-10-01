@@ -3,7 +3,7 @@
 // Package bookmarks is the client-side store of the frequencies a person wants to come back to.
 // A bookmark is user data, not daemon state: the daemon never sees bookmarks, because a user's
 // choice of frequencies cannot be derived from captures and channels
-// (docs/design/app-design-handoff.md, "Bands and bookmarks are files"). Both clients share the
+// (docs/design/channels.md, "Bands and bookmarks are files"). Both clients share the
 // file -- `ley bookmarks` writes it and the Mac app's sidebar reads it -- so a bookmark added
 // from a terminal appears in the window. go/pkg/labels uses the same pattern.
 package bookmarks

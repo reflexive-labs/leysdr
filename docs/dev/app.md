@@ -171,25 +171,24 @@ clears. The window's own rate change never causes out of capture, because `setSa
 re-places the centre for the tuned frequency at the new width and writes centre and rate in one
 tick.
 
-**The inspector** (`InspectorView.swift`, `InspectorGroups.swift`; the design is
-`../design/app-design-handoff-m2.md`). The panel on the window's right describes the tuned signal
-in words, and every word is a presentation of a number the daemon measured: signal from
-`AppSession.overNoiseDB` through `SignalWord`, tuning and deviation from the meter's
-`freq_error_hz` and `deviation_hz` through `TuningWord` and `DeviationWord` (`Reading.swift`,
-where the thresholds live and are tested), time on air and the log of recent transmissions from
-`ChannelTelemetryFeed`, which subscribes one channel's meter, squelch edges and sub-audible
-reports and folds the last two into the tuned frequency's `TransmissionLog` in the façade's
-`TransmissionLogs`, switching logs when `ChannelFrequencyWatch` reads a new frequency or the
-channel's mode changes. The number is one click away
+**The inspector** (`InspectorView.swift`, `InspectorGroups.swift`). The panel on the window's
+right describes the tuned signal in words, and every word is a presentation of a number the
+daemon measured: signal from `AppSession.overNoiseDB` through `SignalWord`, tuning and deviation
+from the meter's `freq_error_hz` and `deviation_hz` through `TuningWord` and `DeviationWord`
+(`Reading.swift`, where the thresholds live and are tested), time on air and the log of recent
+transmissions from `ChannelTelemetryFeed`, which subscribes one channel's meter, squelch edges
+and sub-audible reports and folds the last two into the tuned frequency's `TransmissionLog` in the
+façade's `TransmissionLogs`, switching logs when `ChannelFrequencyWatch` reads a new frequency or
+the channel's mode changes. The number is one click away
 under each word, and a row whose measurement is NaN is hidden rather than dashed. Wall clock in
 the log comes through `SampleClock` from the capture's anchor and is relative otherwise. The panel
 keeps no state of its own; its one write is a bookmark's name, through `BookmarkStore`. The
 failure strip read here from M2-3 until M2-6 retired it, and the transport bar's signal readout
-left when the panel arrived, the M1 handoff's one named exception to "nothing moves".
+left when the panel arrived, the one exception to the rule that no milestone moves a control an
+earlier one introduced.
 
 **Recording** (`Recordings.swift`; `AppSession`'s "Recording" and "Moving the radio over a
-recording" sections; the design is `../design/app-design-handoff-m3.md`, 8a and 8b, as its
-"Decided 2026-09-24" reads it against the code). A recording is a record job's output
+recording" sections). A recording is a record job's output
 (`../design/recording.md`), and one rule decides every surface: a transmission is heard, a
 recording is kept, and nothing offers to play what is not on disk. The log's head row is the
 Record transmissions switch. On starts `Jobs.StartJob` in the frequency form of `RecordConfig`,
@@ -241,26 +240,25 @@ it runs on a Mac (`../plans/app.md`, APP-5); the façade's rules are tested in `
 `ClippedRowsTests`, and against the daemon's own manifest by the daemon-backed suite.
 
 **Two places: the Radio and the Library** (`MainWindow.swift`, `LibraryView.swift`,
-`PlayerBar.swift`; `../design/app-design-handoff-m3.md`, "Decided 2026-09-25: the Library").
-The toolbar's leading edge has a `Radio | Library` switch (`PlaceSwitch`, two plain buttons on
-the toolbar's `chrome` inside a 1 pt `border` stroke, styled as 10a's segmented control beside
-the traffic lights: the place showing raised on a `border` ground 2 pt inside the stroke in
-`ink`, the other on none in `inkTertiary`; View ▸ Radio ⌘1 and Library ⌘2), which sets `AppSession.place`, remembered
-in the defaults. `MainWindow` switches its whole body under the toolbar on it: `RadioBody` is the
-window above, with the sidebar holding only bands and bookmarks, and `LibraryBody` is what has
-been kept. The radio runs the same in both, because the capture, the channel, the sink and the
-feeds are the session's; the Radio's Metal view is made again on the way back and draws the
-feed's rows, and the audio ladder unsubscribes while the Library shows. The Library's sidebar
-(`LibrarySidebar`, 236 pt) is a search field, one row per frequency with no section header
-(`Recordings.channels` over `AppSession.recordings`, the `ListResources(RECORDING)` listing
-re-read on every record job change and on adoption; since 10a a mode or width change does not
-split a channel, and the row takes the newest recording's mode), titled by the matching bookmark
-or the frequency, running rows first and then by most recent activity, and the store footer,
-which draws the used fraction of the daemon's cap (`DaemonInfo.recordings_cap_bytes`) and `3.3
-GB of 20 GB · oldest go first` (`Recordings.storeWords`). With nothing kept its body is one
-sentence. The first row is selected on arrival and whenever the listing arrives with none
+`PlayerBar.swift`; decided 2026-09-25). The toolbar's leading edge has a `Radio | Library`
+switch (`PlaceSwitch`, two plain buttons on the toolbar's `chrome` inside a 1 pt `border`
+stroke, styled as a segmented control: the place showing raised on a `border` ground 2 pt inside
+the stroke in `ink`, the other on none in `inkTertiary`; View ▸ Radio ⌘1 and Library ⌘2), which
+sets `AppSession.place`, remembered in the defaults. `MainWindow` switches its whole body under
+the toolbar on it: `RadioBody` is the window above, with the sidebar holding only bands and
+bookmarks, and `LibraryBody` is what has been kept. The radio runs the same in both, because the
+capture, the channel, the sink and the feeds are the session's; the Radio's Metal view is made again
+on the way back and draws the feed's rows, and the audio ladder unsubscribes while the Library
+shows. The Library's sidebar (`LibrarySidebar`, 236 pt) is a search field, one row per frequency
+with no section header (`Recordings.channels` over `AppSession.recordings`, the
+`ListResources(RECORDING)` listing re-read on every record job change and on adoption; a mode or
+width change does not split a channel, and the row takes the newest recording's mode), titled by the
+matching bookmark or the frequency, running rows first and then by most recent activity, and the
+store footer, which draws the used fraction of the daemon's cap (`DaemonInfo.recordings_cap_bytes`)
+and `3.3 GB of 20 GB · oldest go first` (`Recordings.storeWords`). With nothing kept its body is
+one sentence. The first row is selected on arrival and whenever the listing arrives with none
 selected, and a click on a row always selects it, so the centre is never blank. The centre is
-that channel's page (`RecordingsPage`, 10a): a header with a Record transmissions switch on the
+that channel's page (`RecordingsPage`): a header with a Record transmissions switch on the
 page's frequency and mode (one job state with the log's switch, the click in flight keyed by
 frequency and mode) and Tune, which goes to the Radio by the bookmark path; then the parts as
 rows by the day each started (`Recordings.dayRows`): `today`, `yesterday` and the day before by
@@ -298,14 +296,109 @@ typed into gets the key back (`TextFieldKeys`). Unverified until the Mac (`../pl
 APP-5b and APP-5c); the façade's rules are tested in `RecordingPagesTests` and against the
 daemon's manifest in the daemon-backed suite.
 
-**The audio ladder** (`AudioLevelsView.swift`, `AudioLevelsFeed`; the handoff's "Region 3b:
-audio"). Between the reading and the log, the panel draws the meter `ley levels --watch` draws:
+**The audio ladder** (`AudioLevelsView.swift`, `AudioLevelsFeed`). Between the reading and the
+log, the panel draws the meter `ley levels --watch` draws:
 the demod tap's spectrum at 1024 bins and 20 rows a second, one subscription per channel and only
 while the panel is shown, summed into nine octave bands by the façade's `BandLevels` and moved by
 `LevelBar`'s ballistics on the capture's sample clock. Its rms and peak are the meter's
 `audio_dbfs` and `audio_peak_dbfs`, and a closed squelch leaves every bar unlit, because the
 demod tap carries the discriminator's noise between transmissions. The view was written in the
 container and is unverified until it runs on a Mac (`../plans/app.md`, M2-7).
+
+## Palette and type
+
+Every value below is in `Theme.swift`, under the names given here, and a view uses no colour or
+font that is not one of them.
+
+### Palette
+
+| token | value | used for |
+|---|---|---|
+| `ground` | `#0B0D0F` | the window's ground, spectrum and waterfall backing |
+| `chrome` | `#17191C` | titlebar and transport bar |
+| `panel` | `#101315` | the sidebar |
+| `panelHeader` | `#0E1113` | the band rail, and any strip that labels a panel |
+| `raised` | `#14181B` | a control's ground inside the chrome; a selected row's ground |
+| `selected` | `#1A1E21` | a selected sidebar row |
+| `hairline` | `#1C2125` | a divider inside a panel |
+| `border` | `#23282C` | a divider between regions, a control's edge; a pop-up's ground inside the chrome (2026-09-19) |
+| `borderStrong` | `#2A3034` | a control that accepts a drag; a popover's ground edge |
+| `borderFocus` | `#3A4044` | the tuning field, an open popover |
+| `ink` | `#E7E9EA` | primary text, the tuned frequency |
+| `inkSecondary` | `#C5CACD` | a row's label |
+| `inkTertiary` | `#9BA1A6` | a value beside a label, a descriptive clause |
+| `inkMuted` | `#7A8185` | a unit, a subtitle |
+| `inkFaint` | `#6B7276` | a section header |
+| `inkFaintest` | `#5F656A` | a footnote under a control |
+| `inkDisabled` | `#4A5054` | the sub-kHz digits of the tuning field |
+| `accent` | `#E8814A` | the tuned channel, and nothing else |
+| `good` | `#2FB6A3` | squelch open, a connected device, a bookmarked frequency |
+| `caution` | `#C9C06A` | off tune, overdeviating, the radio clipping, a channel outside the capture; the ramp's fourth stop (2026-09-20) |
+| `recording` | `#B8483C` | the radio clipping: the waterfall's clipped-row marks, the gain slider's knob (M2-8) |
+| `accentRec` | `#E5484D` | what is being kept: the Record transmissions switch, the live row's dot, a recording bookmark's dot, the time gutter's kept bars (2026-09-24) |
+
+`recording` and `accentRec` are never on one element, so red on a control always means kept and
+red on the waterfall's edge always means clipped.
+
+The level ramp keeps the terminal's hue order (`cli-style.md`, "3a. The level ramp") and runs
+cold to hot for the app's dark ground, six stops from near-black to cream:
+
+```
+#10262B  #14555A  #2FB6A3  #C9C06A  #E8814A  #F6E6DA
+ cold end                          cold end + 40 dB
+```
+
+**The hot end is 40 dB over the cold end, fixed** (decided 2026-09-23, replacing the
+2026-09-19 rule that it was the loudest level on the band, held and let go at 1 dB a second).
+Every row on screen is coloured with the current ramp on every frame, so a hot end that moved
+recoloured the whole history: a transmission already drawn dimmed when something louder keyed
+up anywhere in the capture, off screen included, and brightened again as the peak decayed after
+it. With a fixed reach a row keeps its colour while it scrolls, and only a squelch change
+recolours it. Six stops over 40 dB is about 8 dB a stop; anything 40 dB over the cold end is
+cream. The cost is that a weak band no longer stretches to reach the last stop.
+
+**The ramp's cold end is the squelch** (decided 2026-09-19): the channel's threshold converted
+to a level per bin (`squelch − 10·log10(bandwidth / bin width)`, the auto squelch's scaling in
+reverse), so dragging the marker up darkens the noise and only signals above the squelch have
+colour. Under the squelch the waterfall fades from the first stop to `ground` over 6 dB and
+stays there (decided 2026-09-19): bins below the squelch go almost black, a clip rather than a
+rescaled ramp, so the scale above the squelch is unchanged. With the squelch off, or before a
+floor is known, the cold end is the floor plus 6 dB (`SpectrumFeed.noiseHeadroomDB`): noise
+spreads a few dB either side of the median, and with the cold end on the median half of it had
+colour and the picture was a teal haze. The floor is held (`HeldFloor`): it falls as soon as the
+smoothed median is 4 dB under it, rises only after the median has stayed 4 dB over it for 5 s on
+the capture's clock (decided 2026-09-23), and is re-taken at once after a retune or a gain
+change. The rise waits because a keyed handheld that clips the radio lifts the whole band's
+median with overload spurs for as long as it transmits, and a floor that followed it recoloured
+every row on screen at each press of PTT.
+
+`accent` and the ramp's fifth stop are the same orange, so the tuned channel matches the top of
+the ramp. As a result **nothing else in the window may use orange**, or the tuned channel becomes
+hard to find. Check on a real waterfall that a strong signal inside the tuned band is still
+visibly inside it before treating the value as final; if the fill does not show it, the band's
+1 pt edges must.
+
+### Type
+
+SF for the interface and SF Mono for anything a person compares digit by digit. **No font is
+bundled**: Space Mono and Space Grotesk are not on macOS, and bundling a font for one small role
+costs a package resource and a licence entry, so section headers are SF Mono and the channel's
+name is SF, each at the size and tracking the role calls for.
+
+| role | token | face | size | notes |
+|---|---|---|---|---|
+| tuned frequency | `frequency` | SF Mono | 29 | tabular figures, `-0.02em` tracking |
+| the channel's name in the inspector | `name` | SF | 21 medium | `-0.015em` tracking (2026-09-20) |
+| signal readout | | SF Mono | 21 | tabular |
+| body, control labels | `body`, `label` | SF | 12.5–13 | |
+| a value beside a label | `value`, `valueSmall` | SF Mono | 10.5–11.5 | tabular wherever it changes |
+| section header | `section` | SF Mono | 9.5 | uppercase, `0.14em` tracking (was `0.16em`; a step down, 2026-09-19) |
+| a table's column head | `columnHead` | SF Mono | 8.5 | the inspector's log (2026-09-20) |
+| a clause under a sentence | `aside` | SF | 11.5 | (2026-09-20) |
+| footnote under a control | `footnote` | SF | 10.5 | |
+
+Every number that changes while you watch it uses tabular figures, without exception, so a
+frequency does not change width while tuning.
 
 ## Brand
 
@@ -412,19 +505,18 @@ fixture stands in for the radio. Nothing in the app's suites may need hardware.
 - **Signposts on the render path from the first row.** S1 is measured antenna to pixels with
   `os_signpost` on both ends (`../plans/build-order.md`, spike S1); a waterfall without them
   cannot be measured later without being rewritten.
-- **Colours and type come from `Theme.swift`** and nowhere else, so the design handoff is one
-  file's worth of edits. The tokens and the six-stop ramp are the handoff's
-  (`../design/app-design-handoff.md`, "Palette"); `cli-style.md` shares hue order with it and
-  nothing else.
+- **Colours and type come from `Theme.swift`** and nowhere else, so a design change is one
+  file's worth of edits. The tokens and the six-stop ramp are listed under "Palette and type"
+  above; `cli-style.md` shares hue order with the ramp and nothing else.
 - **The band table is Go's; the app reads a generated copy.** `bands.json` under
   `LeylineClient/Resources` is `ley bands --json` checked in, `make bands-json` regenerates it
   and a Go test fails when the two drift. Never edit it by hand, and never add a band in Swift.
 - **Bookmarks are a file both clients own.** `bookmarks.json` beside `labels.json`, the shape in
-  the handoff ("Bands and bookmarks are files"): `{name, hz, mode, bandwidth_hz, updated_ns}` per
-  entry, plus `tone`, `note`, `tags`, `offset_hz` and `duplex` on the entries that have them,
-  and any key a client does not know kept as it was read. The app and `ley bookmarks` read and
-  write the same file, a bookmark that only one of them can see is a bug, and a tone is
-  validated by the same rule in both (`leyline.ParseTone`, `Tone.parse`), refused with the same
-  sentence.
+  `../design/channels.md`, "Bands and bookmarks are files": `{name, hz, mode, bandwidth_hz,
+  updated_ns}` per entry, plus `tone`, `note`, `tags`, `offset_hz` and `duplex` on the entries
+  that have them, and any key a client does not know kept as it was read. The app and `ley
+  bookmarks` read and write the same file, a bookmark that only one of them can see is a bug, and a
+  tone is validated by the same rule in both (`leyline.ParseTone`, `Tone.parse`), refused with the
+  same sentence.
 - **Prose in the window follows `../writing-guide.md`**: the daemon, a radio, a capture, a
   channel; "the daemon is not running" and what to type, never a spinner with no words.

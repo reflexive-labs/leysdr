@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Region 5: the transport bar, in its final layout from the first release (docs/design/
-// app-design-handoff.md, and the design's footer). Every block is a header on one line with
-// its control under it: play, the only editable frequency in the window, mode, width, a
-// divider, the squelch track with its label, and volume with the output's name. The signal
-// readout stood between the divider and the squelch in M1 and moved to M2's inspector, which
-// shows the same thing in words (the only exception the M1 handoff names to "nothing moves");
-// the slot went back to the squelch track. Permanently absent: gain, elapsed time, recording,
-// sample rate.
+// The transport bar, in its final layout from the first release. Every block is a header on one
+// line with its control under it: play, the only editable frequency in the window, mode, width, a
+// divider, the squelch track with its label, and volume with the output's name. The signal readout
+// stood between the divider and the squelch in M1 and moved to M2's inspector, which shows the same
+// thing in words (the one exception to the rule that no milestone moves a control an earlier one
+// introduced); the slot went back to the squelch track. Permanently absent: gain, elapsed time,
+// recording, sample rate.
 
 import LeylineClient
 import LeylineProto
@@ -585,13 +584,12 @@ struct SquelchTrack: View {
     }
 }
 
-/// The sink's volume, and under it a caption that says what is heard (docs/design/
-/// app-design-handoff-m3.md, "In every screen"): `playing GMRS CH3` (the bookmark's name, else
-/// the frequency) while the live sink is attached, `muted · GMRS CH3` while it is detached, and
-/// `playing a part · GMRS CH3 held` while a kept part plays and the live channel is held silent.
-/// In the Library's player (`library`) the live channel heard between parts reads `GMRS CH3 ·
-/// live` ("Decided 2026-09-25: the Library", "The player"), and a part playing or paused there
-/// `live radio held while this plays` (10a). The output device's name is the caption's tooltip.
+/// The sink's volume, and under it a caption that says what is heard: `playing GMRS CH3` (the
+/// bookmark's name, else the frequency) while the live sink is attached, `muted · GMRS CH3` while
+/// it is detached, and `playing a part · GMRS CH3 held` while a kept part plays and the live
+/// channel is held silent. In the Library's player (`library`) the live channel heard between parts
+/// reads `GMRS CH3 · live`, and a part playing or paused there `live radio held while this plays`.
+/// The output device's name is the caption's tooltip.
 struct VolumeControl: View {
     @Environment(AppSession.self) private var session
     var library = false

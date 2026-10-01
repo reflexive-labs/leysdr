@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The band table, read from the seed file `ley bands --json` generates (docs/design/
-// app-design-handoff.md, "Bands and bookmarks are files"). The table is Go's; this is a copy
-// checked in as a resource and drift-tested from Go, so the app and `ley` name the same bands
-// with the same defaults and neither has a table of its own. A band holds its range, the
-// default mode and bandwidth for a newcomer, and the step the arrow keys tune by. A band may
-// also carry its channel plan (docs/design/channels.md, "The plan is data in the band table"):
-// a list, never `min_hz + n × step_hz`, because CB skips and reorders, marine pairs ship and
-// coast, and GMRS numbers across both halves, which is why a group's plan hangs off the group.
-// `Plans` holds the lookups both clients answer the same way, mirroring `go/pkg/leyline`.
+// The band table, read from the seed file `ley bands --json` generates (docs/design/channels.md,
+// "Bands and bookmarks are files"). The table is Go's; this is a copy checked in as a resource and
+// drift-tested from Go, so the app and `ley` name the same bands with the same defaults and neither
+// has a table of its own. A band holds its range, the default mode and bandwidth for a newcomer,
+// and the step the arrow keys tune by. A band may also carry its channel plan
+// (docs/design/channels.md, "The plan is data in the band table"): a list, never `min_hz + n ×
+// step_hz`, because CB skips and reorders, marine pairs ship and coast, and GMRS numbers across
+// both halves, which is why a group's plan hangs off the group. `Plans` holds the lookups both
+// clients answer the same way, mirroring `go/pkg/leyline`.
 
 import Foundation
 import LeylineProto
@@ -365,8 +365,7 @@ extension Leyline_V1_DemodMode {
         }
     }
 
-    /// The widths the transport bar offers for the mode, the default first
-    /// (docs/design/app-design-handoff.md, "Region 5", Width).
+    /// The widths the transport bar offers for the mode, the default first.
     public var offeredBandwidthsHz: [UInt32] {
         switch self {
         case .nfm: [12_500, 25_000, 6_250]

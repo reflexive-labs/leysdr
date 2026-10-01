@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The window's regions (docs/design/app-design-handoff.md, "The window"): chrome above and
-// below a body of two panels, and a third on the right since M2, the inspector (docs/design/
-// app-design-handoff-m2.md, "The panel"). The sidebar, the inspector and the transport bar are
-// fixed; the waterfall takes what is left. The inspector can be closed, and the window works
-// without it. Two places share the toolbar (docs/design/app-design-handoff-m3.md, "Decided
-// 2026-09-25: the Library"): the Radio is that window, and the Library replaces the whole body
-// under the toolbar with what has been kept (`LibraryView.swift`) while the radio keeps running,
-// because the capture, the channel and the feeds are the session's, not the body's. The first
-// window opens under a splash (APP-8, `SplashView.swift`) that clears into it, its mark landing
-// on the toolbar's.
+// The window's regions: chrome above and below a body of two panels, and a third on the right since
+// M2, the inspector. The sidebar, the inspector and the transport bar are fixed; the waterfall
+// takes what is left. The inspector can be closed, and the window works without it. Two places
+// share the toolbar (decided 2026-09-25): the Radio is that window, and the Library replaces the
+// whole body under the toolbar with what has been kept (`LibraryView.swift`) while the radio keeps
+// running, because the capture, the channel and the feeds are the session's, not the body's. The
+// first window opens under a splash (APP-8, `SplashView.swift`) that clears into it, its mark
+// landing on the toolbar's.
 
 import LeylineClient
 import SwiftUI
@@ -85,9 +83,9 @@ struct MainWindow: View {
         )
         .preferredColorScheme(.dark)
         // Before a band switch, a rail drag's release or a narrower width moves the radio off a
-        // running recording (docs/design/app-design-handoff-m3.md, 8b). The buttons answer it;
-        // the binding's setter does nothing, because SwiftUI may set it before or after the
-        // button's action runs, and an answer given there would pre-empt Move anyway.
+        // running recording. The buttons answer it; the binding's setter does nothing, because
+        // SwiftUI may set it before or after the button's action runs, and an answer given there
+        // would pre-empt Move anyway.
         .alert(
             "Move the radio?",
             isPresented: Binding(get: { session.retuneQuestion != nil }, set: { _ in }),
@@ -162,9 +160,9 @@ extension View {
     }
 }
 
-/// The Radio: bands and bookmarks, the canvas, the inspector and the transport bar, as M1 and
-/// M2 built them with 8a and 8b. Switching to the Library and back makes the Metal view again;
-/// the waterfall's rows are the feed's, so it comes back with its history.
+/// The Radio: bands and bookmarks, the canvas, the inspector and the transport bar, as M1 and M2
+/// built them, with the recording switch and kept rows. Switching to the Library and back makes the
+/// Metal view again; the waterfall's rows are the feed's, so it comes back with its history.
 struct RadioBody: View {
     @Environment(AppSession.self) private var session
 
@@ -235,15 +233,14 @@ struct RadioBody: View {
 }
 
 /// The toolbar's `Radio | Library` switch, a segmented control beside the traffic lights at the
-/// toolbar's `navigation` placement (M3 handoff, "Decided 2026-09-25: the Library", restyled by
-/// "10a · The Library, revised", which follows 9a): two segments in `label` on the toolbar's own
-/// dark ground (`chrome`) inside a 1 pt `border` stroke with 6 pt corners. The place showing is
-/// raised on a `border` ground `placeSwitchInset` inside the stroke, in `ink`; the other has no
-/// ground and `inkTertiary` text. Until the owner's second run (2026-09-25) the whole control
-/// sat on `border`, so the unselected segment was as light as the selected one and only the ink
-/// told them apart. ⌘1 and ⌘2 are the View menu's. Two plain buttons rather than a segmented
-/// `Picker`, because the system draws a segmented control's selected segment and its text in
-/// its own colours, which `Theme`'s inks cannot set.
+/// toolbar's `navigation` placement (decided 2026-09-25, restyled the same day): two segments in
+/// `label` on the toolbar's own dark ground (`chrome`) inside a 1 pt `border` stroke with 6 pt
+/// corners. The place showing is raised on a `border` ground `placeSwitchInset` inside the stroke,
+/// in `ink`; the other has no ground and `inkTertiary` text. Until the owner's second run
+/// (2026-09-25) the whole control sat on `border`, so the unselected segment was as light as the
+/// selected one and only the ink told them apart. ⌘1 and ⌘2 are the View menu's. Two plain buttons
+/// rather than a segmented `Picker`, because the system draws a segmented control's selected
+/// segment and its text in its own colours, which `Theme`'s inks cannot set.
 struct PlaceSwitch: View {
     @Environment(AppSession.self) private var session
 

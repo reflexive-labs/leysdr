@@ -2,10 +2,10 @@
 
 // The FFT stream as the window sees it: the latest row for the spectrum, the max-hold fold, the
 // noise floor the ramp is keyed from, and a ring of rows the waterfall's texture is filled from.
-// One subscription per capture at 2048 bins and 30 rows a second (docs/design/
-// app-design-handoff.md, Region 4); the frequency axis is the mirror's capture, never the
-// descriptor's, because the descriptor is a snapshot at subscribe time and rows keep flowing
-// across a retune. Signposts from a row's arrival to its draw are S1's client half.
+// One subscription per capture at 2048 bins and 30 rows a second; the frequency axis is the
+// mirror's capture, never the descriptor's, because the descriptor is a snapshot at subscribe time
+// and rows keep flowing across a retune. Signposts from a row's arrival to its draw are S1's client
+// half.
 
 import Foundation
 import LeylineClient
@@ -17,7 +17,7 @@ let signposter = OSSignposter(subsystem: "com.leysdr.app", category: "waterfall"
 /// Rows as the waterfall's texture wants them: DB_U8 bytes, newest last, in a ring the renderer
 /// copies from by row count, and beside it each row's sample index and which rows were captured
 /// while the radio clipped (plans/app.md, M2-8), in `ClippedRows`; the indices also place the
-/// time gutter's kept bars (docs/design/app-design-handoff-m3.md, "In every screen"). Main-actor only: the renderer draws on the main thread.
+/// time gutter's kept bars. Main-actor only: the renderer draws on the main thread.
 @MainActor
 final class WaterfallBuffer {
     nonisolated static let capacity = 2048
@@ -213,15 +213,14 @@ final class SpectrumFeed {
 
 /// One channel's telemetry: the meter ten times a second for the squelch track and the
 /// inspector's readings, and the squelch edges and sub-audible reports folded into a
-/// `TransmissionLog` for the inspector's log and its time on air (docs/design/
-/// app-design-handoff-m2.md, Regions 3 and 4). One subscription per channel, reset with it. The
-/// logs are kept per frequency and mode for the session (`TransmissionLogs`), and the one shown
-/// is the tuned frequency's: the window retunes by writing the same channel's offset, so a
-/// retune switches logs (`ChannelFrequencyWatch`), and coming back finds the rows heard there
-/// before. Until the owner's second run (plans/app.md, APP-5, "Fixed 2026-09-25 (second run)")
-/// a retune emptied the one log, and switching channel lost the transmissions. The capture
-/// rate is `duration_samples`' unit and comes from the session's capture, which can change under
-/// a live subscription, so it is taken on every `follow` and not only at subscribe time.
+/// `TransmissionLog` for the inspector's log and its time on air. One subscription per channel,
+/// reset with it. The logs are kept per frequency and mode for the session (`TransmissionLogs`),
+/// and the one shown is the tuned frequency's: the window retunes by writing the same channel's
+/// offset, so a retune switches logs (`ChannelFrequencyWatch`), and coming back finds the rows
+/// heard there before. Until the owner's second run (plans/app.md, APP-5, "Fixed 2026-09-25 (second
+/// run)") a retune emptied the one log, and switching channel lost the transmissions. The capture
+/// rate is `duration_samples`' unit and comes from the session's capture, which can change under a
+/// live subscription, so it is taken on every `follow` and not only at subscribe time.
 @MainActor
 @Observable
 final class ChannelTelemetryFeed {
@@ -447,12 +446,11 @@ final class CaptureLevelFeed {
 }
 
 /// The tuned channel's audio ladder: the spectrum of its demod tap folded into octave bands and
-/// their ballistics (`BandLevels`, `LevelBar`), for the inspector's audio region
-/// (docs/design/app-design-handoff-m2.md, "Region 3b: audio"). One subscription per channel at
-/// 1024 bins and 20 rows a second, `ley levels`' request, latest-wins because a meter wants the
-/// newest row and nothing older; reset with the channel, and stopped while the inspector is
-/// hidden, since nothing draws it, and for a raw-IQ channel, which has no audio and which the
-/// daemon refuses. The pair at the right, rms and peak, is the meter's `audio_dbfs` and
+/// their ballistics (`BandLevels`, `LevelBar`), for the inspector's audio region. One subscription
+/// per channel at 1024 bins and 20 rows a second, `ley levels`' request, latest-wins because a
+/// meter wants the newest row and nothing older; reset with the channel, and stopped while the
+/// inspector is hidden, since nothing draws it, and for a raw-IQ channel, which has no audio and
+/// which the daemon refuses. The pair at the right, rms and peak, is the meter's `audio_dbfs` and
 /// `audio_peak_dbfs`, never a row's, as in `ley levels`, so two clients print the same numbers.
 /// While the meter says the squelch is closed the bars are reset and draw unlit: the demod tap
 /// carries the discriminator's noise between transmissions, and a lit bar would show it as audio.

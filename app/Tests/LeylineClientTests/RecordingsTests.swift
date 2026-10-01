@@ -4,8 +4,7 @@
 // docs/design/recording.md, "The manifest" gives, parsed; the containment rule that makes a live
 // transmission a kept row; a listing's summary from a resource's metadata; the record job the
 // switch starts and the job that is its state; the status line under the switch; and the
-// question asked before the window moves the radio off a recording
-// (docs/design/app-design-handoff-m3.md, 8a and 8b).
+// question asked before the window moves the radio off a recording.
 
 import Foundation
 import LeylineProto
@@ -544,7 +543,7 @@ final class RecordingsTests: XCTestCase {
         let rows = Recordings.channels(recordings, bookmarks: bookmarks, jobs: jobs)
         XCTAssertEqual(
             rows.map(\.title), ["462.5625", "GMRS CH3", "2 m calling"],
-            "running first, then newest end; AM and NFM on 146.52 are one channel (10a)")
+            "running first, then newest end; AM and NFM on 146.52 are one channel")
         XCTAssertEqual(rows.map(\.running), [true, false, false])
         XCTAssertEqual(rows[1].recordings.map(\.jobID), ["job_a", "job_b"], "newest first")
         XCTAssertEqual(rows[2].recordings.map(\.jobID), ["job_c", "job_d"])

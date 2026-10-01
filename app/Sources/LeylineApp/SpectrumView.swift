@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Region 3: the spectrum. A live trace, a max-hold trace, a 10×4 grid whose rows are dB over the
-// held floor, the floor as a dashed rule, and the tuned channel as a vertical band. It is a peak
-// display but carries no label saying so, because that label would be the detector's word
-// (invariant 12). Every column is the loudest bin under it, so a carrier one bin wide is never
-// lost between two pixels. The mouse works here as on the
-// waterfall, through the same `ChartMouse`, and the pointer's hairline shows on both.
+// The spectrum. A live trace, a max-hold trace, a 10×4 grid whose rows are dB over the held floor,
+// the floor as a dashed rule, and the tuned channel as a vertical band. It is a peak display but
+// carries no label saying so, because that label would be the detector's word (invariant 12). Every
+// column is the loudest bin under it, so a carrier one bin wide is never lost between two pixels.
+// The mouse works here as on the waterfall, through the same `ChartMouse`, and the pointer's
+// hairline shows on both.
 
 import LeylineClient
 import LeylineProto

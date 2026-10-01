@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Folds over FFT rows the window needs, each the same rule `ley` applies so the two clients
-// report the same bin and land on the same squelch (docs/design/app-design-handoff.md, Region 3
-// "Max hold", Region 4 "Centre on Strongest Signal", Region 1 "the squelch is measured").
-// Presentation only: a median is a fold over one row, the spectrum itself is the daemon's
-// (invariant 2), and nothing here is a detector (invariant 12).
+// report the same bin and land on the same squelch: max hold, Centre on Strongest Signal, and the
+// measured squelch. Presentation only: a median is a fold over one row, the spectrum itself is the
+// daemon's (invariant 2), and nothing here is a detector (invariant 12).
 
 import Foundation
 
@@ -92,9 +91,8 @@ public enum SpectrumFold {
 
     /// The pointer badge's level clause: `−52 dBFS · 26 dB over the floor`, whole dB with a
     /// real minus sign (U+2212) and no plus, and `— dBFS · — dB over the floor` without a level
-    /// or before a floor is held (docs/design/app-design-handoff.md, "Region 3: the
-    /// spectrum"). The margin is the difference of the two rounded numbers, so it agrees with
-    /// the level beside it and with the rule's `floor −78` label.
+    /// or before a floor is held. The margin is the difference of the two rounded numbers, so it
+    /// agrees with the level beside it and with the rule's `floor −78` label.
     public static func levelWords(levelDB: Float, floorDB: Float) -> String {
         guard levelDB.isFinite, floorDB.isFinite else {
             return "\(Reading.absent) dBFS · \(Reading.absent) dB over the floor"
@@ -143,10 +141,10 @@ public struct MaxHold: Sendable {
 /// floor, so a floor that moved recoloured rows already drawn; a keyed handheld that clips the
 /// radio lifts the whole band's median with overload spurs for as long as it transmits, and a
 /// floor that followed at once recoloured the history on every press of PTT
-/// (docs/design/app-design-handoff.md, "Palette"). A real change,
-/// a retune or a gain move, resets the fold, so the floor is re-taken at once after one. The
-/// time is the rows' `SampleTime` and the capture's rate, never the wall clock (AGENTS.md,
-/// invariant 5); with the rate unknown the floor does not rise.
+/// (docs/dev/app.md, "Palette and type"). A real change, a retune or a gain move, resets the fold,
+/// so the floor is re-taken at once after one. The time is the rows' `SampleTime` and the capture's
+/// rate, never the wall clock (AGENTS.md, invariant 5); with the rate unknown the floor does not
+/// rise.
 public struct HeldFloor: Sendable, Equatable {
     /// How far the median may drift from the floor before the floor follows it.
     public static let slackDB: Float = 4

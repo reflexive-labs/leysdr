@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The Library's recordings as data (docs/design/app-design-handoff-m3.md, 8c, revised by "10a ·
-// The Library, revised"): one `RecordingGroup` per recording with its parts in order, the page's
-// header words, the player's words, the recording's table words, the delete line and the order
-// Play all plays the parts in; the page's rows and the inspector's words are `LibraryRows.swift`.
-// Everything is computed from a listing's `RecordingSummary` and the recording's
-// `recording.json`, read through `ResolveLocalPath` as `Recordings.swift` reads it; a wall-clock
-// time comes only from the manifest's anchors or its `started_at_ns`/`ended_at_ns` (invariant 5).
-// No Observation here, so the Linux tests cover every rule the Library draws.
+// The Library's recordings as data: one `RecordingGroup` per recording with its parts in order, the
+// page's header words, the player's words, the recording's table words, the delete line and the
+// order Play all plays the parts in; the page's rows and the inspector's words are
+// `LibraryRows.swift`. Everything is computed from a listing's `RecordingSummary` and the
+// recording's `recording.json`, read through `ResolveLocalPath` as `Recordings.swift` reads it; a
+// wall-clock time comes only from the manifest's anchors or its `started_at_ns`/`ended_at_ns`
+// (invariant 5). No Observation here, so the Linux tests cover every rule the Library draws.
 
 import Foundation
 import LeylineProto
@@ -100,9 +99,8 @@ public struct RecordingPartRef: Sendable, Equatable {
     public var recordingURI: String { "ley://recordings/\(jobID)" }
 }
 
-/// The Library's player's words for one part (docs/design/app-design-handoff-m3.md, "10a · The
-/// Library, revised", "The player"): two lines beside the play button and the two ends of its
-/// progress track.
+/// The Library's player's words for one part: two lines beside the play button and the two ends of
+/// its progress track.
 public struct PlayerWords: Sendable, Equatable {
     /// `GMRS CH3 · Today`: the channel and the day the part started.
     public var title: String
@@ -117,9 +115,9 @@ public struct PlayerWords: Sendable, Equatable {
     public var fraction: Double
 }
 
-/// Play all's and Play day's queue (8c, "Playing"; 10a): parts in order, started one at a time,
-/// the next when the previous playback's tombstone arrives. Client side, because the daemon plays
-/// one part per `StartPlayback`; a stop, a row's click or a failed start clears it.
+/// Play all's and Play day's queue: parts in order, started one at a time, the next when the
+/// previous playback's tombstone arrives. Client side, because the daemon plays one part per
+/// `StartPlayback`; a stop, a row's click or a failed start clears it.
 public struct PlayQueue: Sendable, Equatable {
     /// The recording a Play all walks; nil for Play day, which walks a day's parts across
     /// recordings, and for an empty queue.
@@ -225,8 +223,8 @@ extension Recordings {
         }
     }
 
-    /// Days older than this many calendar days are EARLIER, one line each until opened: the
-    /// handoff's guess, "Two days before cards collapse" in its "Open" list, kept by 10a.
+    /// Days older than this many calendar days are EARLIER, one line each until opened: a guess
+    /// from the design, unmeasured.
     public static let collapseAfterDays = 2
 
     /// `4 recordings · 13.1 MB`: the page header's clause after the frequency, mode and width.
@@ -324,8 +322,8 @@ extension Recordings {
         return "\(m.parts.count) \(kind) · \(sizeWords(m.bytes))"
     }
 
-    /// The line under Delete recording…: `Deletes all 4 parts.` (10a), because
-    /// `DeleteResource` refuses one part (docs/design/recording.md, "The wire").
+    /// The line under Delete recording…: `Deletes all 4 parts.`, because `DeleteResource` refuses
+    /// one part (docs/design/recording.md, "The wire").
     public static func deleteWords(parts: Int) -> String {
         parts == 1 ? "Deletes its one part." : "Deletes all \(parts) parts."
     }

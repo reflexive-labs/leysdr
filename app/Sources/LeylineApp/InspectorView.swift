@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The inspector: the tuned channel as a thing with an identity and a reading, on the window's
-// right (docs/design/app-design-handoff-m2.md, "The panel"). Six regions and no scroll view: a
-// header that says `Channel`, the identity, the reading, the audio ladder, the log of recent
-// transmissions and the disclosure groups; the ladder is in AudioLevelsView.swift, the last two
-// in InspectorGroups.swift and the reading's meter in MeterTrack.swift. Every word label here is
-// derived from a number the daemon measured, and the number is printed beside it, which is how
-// the app meets invariant 12. The panel keeps no radio state of its own: it renders the
-// session's copy of the mirror, the feeds and the session's steadied reading, and writes one
-// kind of thing, a bookmark's name, tone and note, through the store both clients own
-// (`AppSession.renameTuned`, `editTunedBookmark`).
+// right. Six regions and no scroll view: a header that says `Channel`, the identity, the reading,
+// the audio ladder, the log of recent transmissions and the disclosure groups; the ladder is in
+// AudioLevelsView.swift, the last two in InspectorGroups.swift and the reading's meter in
+// MeterTrack.swift. Every word label here is derived from a number the daemon measured, and the
+// number is printed beside it, which is how the app meets invariant 12. The panel keeps no radio
+// state of its own: it renders the session's copy of the mirror, the feeds and the session's
+// steadied reading, and writes one kind of thing, a bookmark's name, tone and note, through the
+// store both clients own (`AppSession.renameTuned`, `editTunedBookmark`).
 
 import AppKit
 import LeylineClient
@@ -37,7 +36,7 @@ struct InspectorToggle: View {
 }
 
 /// The Radio's inspector, the Channel panel. The Library has its own (`LibraryInspector`, the
-/// part or the channel's lines; M3 handoff, "Decided 2026-09-25: the Library").
+/// part or the channel's lines; decided 2026-09-25).
 struct InspectorView: View {
     var body: some View {
         ChannelPanel()
@@ -69,9 +68,8 @@ struct ChannelPanel: View {
 /// The word `Channel`, nothing else: no tabs, and no close control, because the toolbar's
 /// toggle beside it already hides the panel. The tab strip (`Channel` / `Processors` / `＋`) is
 /// M4's and appears when there is a second tab to put in it; a one-tab tab bar now would
-/// advertise tabs that do not exist until M4 (M2 handoff, "The panel"). The Record pill that sat
-/// here from APP-5's first build is gone: recording is switched on in the log, beside the
-/// transmissions it keeps (docs/design/app-design-handoff-m3.md, "What this replaces").
+/// advertise tabs that do not exist until M4. The Record pill that sat here from APP-5's first
+/// build is gone: recording is switched on in the log, beside the transmissions it keeps.
 struct InspectorHeader: View {
     var body: some View {
         HStack {
@@ -85,7 +83,7 @@ struct InspectorHeader: View {
 }
 
 /// The `accentRec` dot: at the right of the log's `now` row while a part is being written, and
-/// on a sidebar bookmark whose frequency and mode are recording (M3 handoff, 8b).
+/// on a sidebar bookmark whose frequency and mode are recording.
 struct RecordingDot: View {
     var size: CGFloat = Theme.Layout.recordingDot
 
@@ -94,7 +92,7 @@ struct RecordingDot: View {
     }
 }
 
-/// Region 1: the channel's name first and the frequency demoted to a mono line, because the
+/// The identity: the channel's name first and the frequency demoted to a mono line, because the
 /// frequency is edited in the transport bar and this panel identifies the channel. The name is
 /// the bookmark's; without one it is the band's, and naming it with the pencil creates the
 /// bookmark. A bookmark's tags are words under the name, and its tone and note are edited in
@@ -382,25 +380,23 @@ struct BookmarkField: View {
     }
 }
 
-/// Region 3: the reading, four rows in four fixed columns (label, meter, word, number), so a
-/// word that changes never moves a meter or a number. The number sits beside its word rather
-/// than one click away in a popover, and the sentence explaining it is the row's tooltip
-/// (decided 2026-09-23, docs/design/app-design-handoff-m2.md). Rows draw from
-/// `AppSession.channelReading`, the meter steadied with ballistics and hysteresis
-/// (`ChannelReading`), and the raw numbers stay in Measurements. Tuning and Deviation show for
-/// the FM modes, which are the only modes that measure them. While the squelch is closed the
-/// two rows stay and hold the last transmission's values dimmed, so the panel does not change
-/// height with every transmission, and you can still see how the last one was tuned.
+/// The reading: four rows in four fixed columns (label, meter, word, number), so a word that
+/// changes never moves a meter or a number. The number sits beside its word rather than one click
+/// away in a popover, and the sentence explaining it is the row's tooltip (decided 2026-09-23).
+/// Rows draw from `AppSession.channelReading`, the meter steadied with ballistics and hysteresis
+/// (`ChannelReading`), and the raw numbers stay in Measurements. Tuning and Deviation show for the
+/// FM modes, which are the only modes that measure them. While the squelch is closed the two rows
+/// stay and hold the last transmission's values dimmed, so the panel does not change height with
+/// every transmission, and you can still see how the last one was tuned.
 struct ReadingsView: View {
     @Environment(AppSession.self) private var session
 
-    /// The signal bar's reach: 0 to 40 dB over the noise (M2 handoff, "Signal"), so `Strong`
-    /// (`SignalWord.thresholdsDB` last) begins past the middle and a repeater at full quieting
-    /// reaches the cream end.
+    /// The signal bar's reach: 0 to 40 dB over the noise, so `Strong` (`SignalWord.thresholdsDB`
+    /// last) begins past the middle and a repeater at full quieting reaches the cream end.
     static let signalBarRangeDB: Double = 40
     /// The design's copy in the Signal tooltip ("Voice is fully readable above about 12 dB"),
-    /// asserted from listening and not measured (M2 handoff, "Open for the owner"); the words'
-    /// own steps are `SignalWord.thresholdsDB`.
+    /// asserted from listening and not measured; the words' own steps are
+    /// `SignalWord.thresholdsDB`.
     static let readableDB: Double = 12
     /// The deviation meter's span, in nominals: the nominal tick sits at two thirds.
     static let deviationSpanNominals: Double = 1.5

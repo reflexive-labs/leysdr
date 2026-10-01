@@ -453,7 +453,7 @@ final class ClientDaemonTests: XCTestCase {
         await assertEventually("the second job never ended") {
             mirror.state.jobs.first { $0.jobID == again.jobID }?.isActive == false
         }
-        // The Library's rows and the inspector on that part, from the daemon's own files (10a).
+        // The Library's rows and the inspector on that part, from the daemon's own files.
         // The fixture never reaches the rails, so no part carries `clipped_ms`.
         XCTAssertTrue(
             manifest.parts.allSatisfy { $0.clippedMs == nil },
@@ -536,10 +536,10 @@ final class ClientDaemonTests: XCTestCase {
         XCTAssertFalse(after.resources.contains { $0.uri == summary.uri }, "deleted, still listed")
     }
 
-    /// The player's ⏸ (10a, engine ask 3): `SetPlaybackPaused` holds the position and the
-    /// mirror's playback carries `paused`, which the row, the player and the space key read; a
-    /// resume moves on. A daemon on a host with no audio output (the Linux container) refuses
-    /// `StartPlayback` with `PLATFORM_UNSUPPORTED`, and the check is then left to the Mac.
+    /// The player's ⏸: `SetPlaybackPaused` holds the position and the mirror's playback carries
+    /// `paused`, which the row, the player and the space key read; a resume moves on. A daemon on a
+    /// host with no audio output (the Linux container) refuses `StartPlayback` with
+    /// `PLATFORM_UNSUPPORTED`, and the check is then left to the Mac.
     @MainActor
     private static func pauseHoldsThePosition(
         of uri: String, app: DaemonConnection, mirror: DaemonMirror

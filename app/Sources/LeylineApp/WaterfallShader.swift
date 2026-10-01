@@ -11,10 +11,9 @@
 // column that covers several bins takes the loudest, so a carrier one bin wide is never lost
 // between two pixels. A row captured while the radio clipped has its first two pixels in
 // `recording`, from a byte a ring slot beside the uniforms (plans/app.md, M2-8). What a
-// recording kept is not the shader's: the time gutter beside the waterfall draws it in SwiftUI
-// (docs/design/app-design-handoff-m3.md, "In every screen"). The uniforms are scalars only and
-// `WaterfallUniforms` in WaterfallView.swift lists the same fields in the same order: change both
-// together.
+// recording kept is not the shader's: the time gutter beside the waterfall draws it in SwiftUI. The
+// uniforms are scalars only and `WaterfallUniforms` in WaterfallView.swift lists the same fields in
+// the same order: change both together.
 
 enum WaterfallShader {
     static let source = """

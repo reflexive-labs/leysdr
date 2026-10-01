@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Region 2: the band rail (docs/design/app-design-handoff.md). The rail shows one band at a
-// time: the band's name, its neighbours named at the end caps, a track from one edge
-// of the band to the other with the bounds numbered beneath the caps, a pill for the slice on
-// screen, the tuned frequency as an accent tick, every bookmark in the band as a `good` one, the
-// last sweep's hits in the band as `sweepTick` ones beside them (the design's "Scan the band")
-// and a short plan's channels as fainter ticks under them (docs/design/channels.md, R15).
-// A click tunes; a drag moves the region inside the band and leaves the station where it is
-// unless the edge pushes it; clicking a neighbour's name switches to that band. The only number
-// the rail reports is the width one spectrum column covers.
+// The band rail. It shows one band at a time: the band's name, its neighbours named at the end
+// caps, a track from one edge of the band to the other with the bounds numbered beneath the caps, a
+// pill for the slice on screen, the tuned frequency as an accent tick, every bookmark in the band
+// as a `good` one, the last sweep's hits in the band as `sweepTick` ones beside them (the design's
+// "Scan the band") and a short plan's channels as fainter ticks under them
+// (docs/design/channels.md, R15). A click tunes; a drag moves the region inside the band and leaves
+// the station where it is unless the edge pushes it; clicking a neighbour's name switches to that
+// band. The only number the rail reports is the width one spectrum column covers.
 
 import LeylineClient
 import SwiftUI

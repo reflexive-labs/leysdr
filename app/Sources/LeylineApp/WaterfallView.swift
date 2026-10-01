@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Region 4: the waterfall. The Metal view draws rows from the feed's ring, newest at the top,
-// one row per display pixel at 30 rows a second; SwiftUI draws what sits over it: the tuned
-// channel, the pointer's hairline and badge. Every gesture is handled by the Metal view (it
-// handles the mouse, through `ChartMouse` like the spectrum) and lands in
-// `AppSession.tune(to:)`. Beside it, not over it, the time gutter: seconds down a `panel` column
-// and the tuned channel's kept bars (`WaterfallGutter`; docs/design/app-design-handoff-m3.md,
-// "In every screen"). `MainWindow` lays the gutter out, because the spectrum above narrows by
-// the same width.
+// The waterfall. The Metal view draws rows from the feed's ring, newest at the top, one row per
+// display pixel at 30 rows a second; SwiftUI draws what sits over it: the tuned channel, the
+// pointer's hairline and badge. Every gesture is handled by the Metal view (it handles the mouse,
+// through `ChartMouse` like the spectrum) and lands in `AppSession.tune(to:)`. Beside it, not over
+// it, the time gutter: seconds down a `panel` column and the tuned channel's kept bars
+// (`WaterfallGutter`). `MainWindow` lays the gutter out, because the spectrum above narrows by the
+// same width.
 
 import Foundation
 import LeylineClient
@@ -88,13 +87,13 @@ struct WaterfallView: View {
     }
 }
 
-/// The waterfall's time gutter (M3 handoff, "In every screen"): `now` at the top and a tick every
-/// `Theme.Layout.gutterTickSeconds` down it, relative only, in `valueSmall` `inkFaint`, and the
-/// kept bars at its left edge. A row is one device pixel (the shader's `rowsPerPixel`), so ten
-/// seconds are `10 × rowsPerSecond / displayScale` points. Nothing is drawn but the ground while
-/// there is no capture, since the rows would be nobody's. The ticks are the rows' nominal rate;
-/// the bars are placed by each held row's own sample index, so a row the daemon dropped
-/// (latest-wins) moves the bars with the rows rather than off them.
+/// The waterfall's time gutter: `now` at the top and a tick every `Theme.Layout.gutterTickSeconds`
+/// down it, relative only, in `valueSmall` `inkFaint`, and the kept bars at its left edge. A row is
+/// one device pixel (the shader's `rowsPerPixel`), so ten seconds are `10 × rowsPerSecond /
+/// displayScale` points. Nothing is drawn but the ground while there is no capture, since the rows
+/// would be nobody's. The ticks are the rows' nominal rate; the bars are placed by each held row's
+/// own sample index, so a row the daemon dropped (latest-wins) moves the bars with the rows rather
+/// than off them.
 struct WaterfallGutter: View {
     @Environment(AppSession.self) private var session
     @Environment(\.displayScale) private var displayScale

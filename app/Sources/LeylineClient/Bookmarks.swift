@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Bookmarks: saved stations, in a file both clients own (docs/design/
-// app-design-handoff.md, "Bands and bookmarks are files"). Interpretation state, client-side,
-// on the pattern `go/pkg/labels` set and `go/pkg/bookmarks` mirrors: one JSON file beside
-// `labels.json`, a map keyed by id so a write of one entry leaves the rest untouched, read
-// whole and written whole. The daemon never sees bookmarks.
+// Bookmarks: saved stations, in a file both clients own (docs/design/channels.md, "Bands and
+// bookmarks are files"). Interpretation state, client-side, on the pattern `go/pkg/labels` set and
+// `go/pkg/bookmarks` mirrors: one JSON file beside `labels.json`, a map keyed by id so a write of
+// one entry leaves the rest untouched, read whole and written whole. The daemon never sees
+// bookmarks.
 
 import Foundation
 import LeylineProto

@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The Library's channel page and the inspector on a part as 10a draws them (docs/design/
-// app-design-handoff-m3.md, "10a · The Library, revised"), as data: rows are parts, grouped by
-// the day each part started, a recording of several parts bracketed in the gutter and separated
-// from the next by a gap, each day with its head words, its 24-hour strip and its play order;
-// days older than two are EARLIER, one line each. Built from the recordings' manifests
-// (`RecordingGroup`), with wall clock only through the manifests' anchors (invariant 5). No
-// Observation here, so the Linux tests cover every rule the page draws.
+// The Library's channel page and the inspector on a part as the design draws them, as data: rows
+// are parts, grouped by the day each part started, a recording of several parts bracketed in the
+// gutter and separated from the next by a gap, each day with its head words, its 24-hour strip and
+// its play order; days older than two are EARLIER, one line each. Built from the recordings'
+// manifests (`RecordingGroup`), with wall clock only through the manifests' anchors (invariant 5).
+// No Observation here, so the Linux tests cover every rule the page draws.
 
 import Foundation
 import LeylineProto
@@ -99,14 +98,14 @@ public struct DayRows: Sendable, Equatable, Identifiable {
     }
 }
 
-/// The inspector on a part (10a): the part's own lines, then its recording's.
+/// The inspector on a part: the part's own lines, then its recording's.
 public struct PartInspectorWords: Sendable, Equatable {
     /// `PART 4 OF 4`.
     public var heading: String
     /// `14:03:20 · 5.8 s`.
     public var time: String
     /// Peak, Mean and Overs; Overs is left out when the squelch never opened (a continuous
-    /// recording), as 8c did.
+    /// recording), as the first build did.
     public var levels: [PartTableRow]
     /// The Peak row reads `0.0 dBFS · clipped` and is drawn in `accentRec`.
     public var clipped: Bool
@@ -130,14 +129,14 @@ public struct PartTableRow: Sendable, Equatable, Identifiable {
 }
 
 extension Recordings {
-    /// The page's days (10a), newest first: every part of every recording in `groups` whose
-    /// manifest has been read, as a row under the day its part started. A recording with no
-    /// part never shows (the daemon discards one at job end, but a listing can lag), and neither
-    /// does one whose manifest is not read yet. `today`, `yesterday` and the day before by name
-    /// are open; older days are EARLIER, one line each; parts no anchor dates, nor the job's
-    /// start, go last under EARLIER as `undated`. Within a day, recordings newest first by
-    /// their first part there, and a recording's parts in part order, so its bracket reads down
-    /// the way it was heard; a recording that ran past midnight is on both days.
+    /// The page's days, newest first: every part of every recording in `groups` whose manifest has
+    /// been read, as a row under the day its part started. A recording with no part never shows
+    /// (the daemon discards one at job end, but a listing can lag), and neither does one whose
+    /// manifest is not read yet. `today`, `yesterday` and the day before by name are open; older
+    /// days are EARLIER, one line each; parts no anchor dates, nor the job's start, go last under
+    /// EARLIER as `undated`. Within a day, recordings newest first by their first part there, and a
+    /// recording's parts in part order, so its bracket reads down the way it was heard; a recording
+    /// that ran past midnight is on both days.
     public static func dayRows(
         _ groups: [RecordingGroup], now: Date, calendar: Calendar = .current
     ) -> [DayRows] {
@@ -238,10 +237,10 @@ extension Recordings {
     /// The id and title of the day that holds parts nothing dates.
     static let undatedID = "undated"
 
-    /// The inspector's words on `part` of `manifest` (10a): the part's place, time and length,
-    /// its levels and overs, the clipped sentence from `clipped_ms`, then the recording's table,
-    /// Play all's label and the line under Delete. `running` is the recording's job still
-    /// writing: Ended reads `Recording` and the span runs to `now`.
+    /// The inspector's words on `part` of `manifest`: the part's place, time and length, its levels
+    /// and overs, the clipped sentence from `clipped_ms`, then the recording's table, Play all's
+    /// label and the line under Delete. `running` is the recording's job still writing: Ended reads
+    /// `Recording` and the span runs to `now`.
     public static func partInspectorWords(
         part: RecordingPart, of manifest: RecordingManifest, running: Bool,
         timeZone: TimeZone = .current

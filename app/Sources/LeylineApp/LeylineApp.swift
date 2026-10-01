@@ -2,11 +2,9 @@
 
 // The Mac app: a peer client of the daemon (AGENTS.md invariant 1). It renders what the mirror
 // holds and writes through the coalescer; nothing here is authoritative (invariant 7). The window
-// is M1 of docs/design/app-design-handoff.md: sidebar, spectrum, waterfall, transport bar, the
-// device menu, and a Tune menu that lists every gesture (docs/plans/app.md, "The M1 cut"), plus
-// M2's inspector on the right (docs/design/app-design-handoff-m2.md) and the Library, the
-// window's second place, with its own menu (docs/design/app-design-handoff-m3.md, "Decided
-// 2026-09-25: the Library").
+// is M1: sidebar, spectrum, waterfall, transport bar, the device menu, and a Tune menu that lists
+// every gesture (docs/plans/app.md, "The M1 cut"), plus M2's inspector on the right and the
+// Library, the window's second place, with its own menu (decided 2026-09-25).
 
 import AppKit
 import LeylineClient
@@ -48,8 +46,7 @@ final class Activation: NSObject, NSApplicationDelegate {
     }
 }
 
-/// The menu bar is the reference for every tuning gesture: the canvas shows no gesture hints
-/// (docs/design/app-design-handoff.md, "Tuning").
+/// The menu bar is the reference for every tuning gesture: the canvas shows no gesture hints.
 struct TuneCommands: Commands {
     let session: AppSession
 
@@ -136,17 +133,16 @@ struct TuneCommands: Commands {
     static let modes: [Leyline_V1_DemodMode] = [.am, .nfm, .wfm, .usb, .lsb, .cw]
 }
 
-/// The Library menu (docs/design/app-design-handoff-m3.md, "Decided 2026-09-25: the Library",
-/// "The player", and 10a): the player's three controls on space, ← and →, the keys the Tune menu
-/// takes in the Radio, and Stop with no key. Space pauses and resumes while a part plays (10a's
-/// ⏸) and plays otherwise. Stop ends the part and a Play all or Play day, which the player's
-/// circle no longer does, so a paused part is not left holding the live channel silent. They are
-/// enabled only in the Library, and the Tune menu's are disabled there; each action goes through
-/// `pressSpace`/`pressArrow`, which act for the place showing, so a stale enabled state (a
-/// Commands body is not guaranteed to re-evaluate) still does the right thing. Previous and Next
-/// are not disabled at a recording's ends for the same reason: a stale disabled item would
-/// swallow the key after the selection moved; at an end they do nothing, and the player's buttons
-/// show the ends. A text field being typed into keeps the keys (`TextFieldKeys`).
+/// The Library menu (decided 2026-09-25): the player's three controls on space, ← and →, the keys
+/// the Tune menu takes in the Radio, and Stop with no key. Space pauses and resumes while a part
+/// plays (the player's ⏸) and plays otherwise. Stop ends the part and a Play all or Play day, which
+/// the player's circle no longer does, so a paused part is not left holding the live channel
+/// silent. They are enabled only in the Library, and the Tune menu's are disabled there; each
+/// action goes through `pressSpace`/`pressArrow`, which act for the place showing, so a stale
+/// enabled state (a Commands body is not guaranteed to re-evaluate) still does the right thing.
+/// Previous and Next are not disabled at a recording's ends for the same reason: a stale disabled
+/// item would swallow the key after the selection moved; at an end they do nothing, and the
+/// player's buttons show the ends. A text field being typed into keeps the keys (`TextFieldKeys`).
 struct LibraryCommands: Commands {
     let session: AppSession
 
@@ -191,14 +187,13 @@ enum TextFieldKeys {
     }
 }
 
-/// File ▸ the recording items (plans/app.md, APP-5, revised by docs/design/
-/// app-design-handoff-m3.md) and `Import CHIRP…` (docs/design/channels.md, "CHIRP import").
-/// `Record Transmissions` (⌘R) is the log's switch: checked while a
-/// record job runs on the tuned channel, and choosing it flips the switch. Its precondition is
-/// checked in the session, which says what is missing in a notice, rather than the item being
-/// disabled: a Commands body is not guaranteed to re-evaluate when the session changes, so a
-/// disabled item could stay stale, and the check mark can lag the same way; the switch in the
-/// log is the live one, as the toolbar's toggle is for the inspector.
+/// File ▸ the recording items (plans/app.md, APP-5) and `Import CHIRP…` (docs/design/channels.md,
+/// "CHIRP import"). `Record Transmissions` (⌘R) is the log's switch: checked while a record job
+/// runs on the tuned channel, and choosing it flips the switch. Its precondition is checked in the
+/// session, which says what is missing in a notice, rather than the item being disabled: a Commands
+/// body is not guaranteed to re-evaluate when the session changes, so a disabled item could stay
+/// stale, and the check mark can lag the same way; the switch in the log is the live one, as the
+/// toolbar's toggle is for the inspector.
 struct RecordCommands: Commands {
     let session: AppSession
 

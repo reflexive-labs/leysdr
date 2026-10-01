@@ -118,8 +118,8 @@ open-and-close of the squelch inside the part, on the same timeline; a continuou
 with no gate has none.
 
 `clipped_ms` is how long inside the part the radio clipped (added 2026-09-25 for the Library's
-inspector, `app-design-handoff-m3.md`, "10a · The Library, revised"). It comes from the capture's
-`CaptureLevel` readings, the same count the window's clipping marks and `ley tune`'s warning use:
+inspector). It comes from the capture's `CaptureLevel` readings, the same count the window's
+clipping marks and `ley tune`'s warning use:
 a reading is a quarter second of capture samples, it counts when at least 1e-4 of its samples
 were at a converter rail, and the part is charged the stretch of each counting reading that lies
 inside `start_sample` … `end_sample`. The key is absent when nothing clipped, and on a part a

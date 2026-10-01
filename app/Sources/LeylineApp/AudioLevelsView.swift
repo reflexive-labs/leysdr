@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The inspector's audio ladder (docs/design/app-design-handoff-m2.md, "Region 3b: audio"): the
-// meter `ley levels --watch` draws in the terminal (docs/design/audio-meters.md), in the panel
-// between the reading and the log. Nine octave bands off the channel's demod tap, then a gap,
-// then the meter's rms and peak as two more bars, on `ley levels`' scale: 6 dB a step from 0 to
-// −24 and 10 dB a step to −60, held, so a bar of a given height is always the same dB. The
-// levels and their ballistics are `AudioLevelsFeed`'s; this view draws them in one Canvas and
-// keeps nothing. No OVER: clipping is the radio's, and it is shown on the device chip (M2-6).
+// The inspector's audio ladder: the meter `ley levels --watch` draws in the terminal
+// (docs/design/audio-meters.md), in the panel between the reading and the log. Nine octave bands
+// off the channel's demod tap, then a gap, then the meter's rms and peak as two more bars, on `ley
+// levels`' scale: 6 dB a step from 0 to −24 and 10 dB a step to −60, held, so a bar of a given
+// height is always the same dB. The levels and their ballistics are `AudioLevelsFeed`'s; this view
+// draws them in one Canvas and keeps nothing. No OVER: clipping is the radio's, and it is shown on
+// the device chip (M2-6).
 
 import LeylineClient
 import SwiftUI

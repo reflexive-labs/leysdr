@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The Library without a daemon (docs/design/app-design-handoff-m3.md, 8c and "10a · The Library,
-// revised"): recordings built from a listing and a hand-written manifest, the page's day rows
-// with their brackets, gaps, strip marks and EARLIER lines, a row's words, the level graph read
-// from a written WAV, the inspector's words on a clipped part, the ended and delete words, Play
-// all's and Play day's order, and the player's words.
+// The Library without a daemon: recordings built from a listing and a hand-written manifest, the
+// page's day rows with their brackets, gaps, strip marks and EARLIER lines, a row's words, the
+// level graph read from a written WAV, the inspector's words on a clipped part, the ended and
+// delete words, Play all's and Play day's order, and the player's words.
 
 import Foundation
 import LeylineProto
@@ -129,7 +128,7 @@ final class RecordingPagesTests: XCTestCase {
         XCTAssertEqual(early.startedAt, m.startedAt, "the job's start, from the listing")
     }
 
-    func testTheCollapseRuleIsTheHandoffsTwoDays() {
+    func testTheCollapseRuleIsTwoDays() {
         XCTAssertEqual(Recordings.collapseAfterDays, 2)
     }
 
@@ -296,9 +295,9 @@ final class RecordingPagesTests: XCTestCase {
         XCTAssertNil(RecordingPartRef(uri: "ley://recordings/job_a/x"))
     }
 
-    // MARK: The page's rows (10a)
+    // MARK: The page's rows
 
-    /// The written store of the 10a tests: today a four-part recording whose last part clipped
+    /// The written store of the page's tests: today a four-part recording whose last part clipped
     /// for 0.4 s and a one-part recording before it; yesterday a two-part recording; Monday two
     /// recordings; and today a recording that heard nothing, which the page leaves out. Each is
     /// written to disk and read back through `RecordingManifest.read(at:)`, as the window reads
@@ -434,7 +433,7 @@ final class RecordingPagesTests: XCTestCase {
         XCTAssertTrue(q.isEmpty)
     }
 
-    // MARK: The inspector on a part (10a)
+    // MARK: The inspector on a part
 
     func testTheInspectorsWordsOnAClippedPart() throws {
         let a = try store().first { $0.jobID == "job_a" }

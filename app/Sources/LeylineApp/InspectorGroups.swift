@@ -1,33 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The inspector's lower half (docs/design/app-design-handoff-m2.md, Regions 4 and 5): the log
-// of recent transmissions on the tuned channel, straight from the façade's `TransmissionLog`,
-// with the Record transmissions switch at its head (docs/design/app-design-handoff-m3.md, 8a and
-// 8b), and the Measurements group holding the raw levels the reading rows do not print. A row is
-// not clickable (the shared selection with the waterfall is M3's, and a clickable row that
-// highlights nothing would be misleading); the switch and a kept row's ▶ are the only controls.
+// The inspector's lower half: the log of recent transmissions on the tuned channel, straight from
+// the façade's `TransmissionLog`, with the Record transmissions switch at its head, and the
+// Measurements group holding the raw levels the reading rows do not print. A row is not clickable
+// (the shared selection with the waterfall is M3's, and a clickable row that highlights nothing
+// would be misleading); the switch and a kept row's ▶ are the only controls.
 
 import Foundation
 import LeylineClient
 import LeylineProto
 import SwiftUI
 
-/// Region 4: `TRANSMISSIONS` with the newest row's day at the right, the Record transmissions
+/// The log: `TRANSMISSIONS` with the newest row's day at the right, the Record transmissions
 /// switch and its line, then the rows, newest first, the open one on `raised` ground with `now`
-/// in `accent`; no column head and no count, as the recording handoff's screens draw it
-/// (docs/design/app-design-handoff-m3.md, "In every screen"). The log takes the height the panel
-/// leaves it and shows as many rows as fit, five at least, which is the handoff's count at its
-/// 820 pt window. Time is wall clock when the anchor covers it and relative (`−2:14`) when it
-/// does not; both formats can appear in one list, because the alternative is a timestamp nobody
-/// measured. Tone is not a column: a CTCSS tone the daemon reported is appended to that row's
-/// signal cell in `good`, and a row without one leaves the tone blank. Every row is a transmission heard live; the log never back-fills from a
-/// recording (M3 handoff, "The rule"). The rows are the tuned frequency's log, which is kept
-/// for the session and comes back when the frequency is tuned again (`TransmissionLogs`). A row
-/// whose transmission lies inside a part of any recording on the tuned channel is kept: its time
-/// and length in `ink`, ▶ in a ring at its right, and Show in Finder in its context menu. A heard
-/// row's time and length are `inkTertiary` and it has no ▶, because nothing of it is on disk.
-/// Several rows can lie in one part; only the row whose ▶ was clicked shows ■ and the progress
-/// line (`AppSession.playingRowStart`), and the others keep their ▶.
+/// in `accent`; no column head and no count, as the recording design draws it. The log takes the
+/// height the panel leaves it and shows as many rows as fit, five at least, which is the design's
+/// count at its 820 pt window. Time is wall clock when the anchor covers it and relative (`−2:14`)
+/// when it does not; both formats can appear in one list, because the alternative is a timestamp
+/// nobody measured. Tone is not a column: a CTCSS tone the daemon reported is appended to that
+/// row's signal cell in `good`, and a row without one leaves the tone blank. Every row is a
+/// transmission heard live; the log never back-fills from a recording: a transmission is heard, a
+/// recording is kept. The rows are the tuned frequency's log, which is kept for the session and
+/// comes back when the frequency is tuned again (`TransmissionLogs`). A row whose transmission lies
+/// inside a part of any recording on the tuned channel is kept: its time and length in `ink`, ▶ in
+/// a ring at its right, and Show in Finder in its context menu. A heard row's time and length are
+/// `inkTertiary` and it has no ▶, because nothing of it is on disk. Several rows can lie in one
+/// part; only the row whose ▶ was clicked shows ■ and the progress line
+/// (`AppSession.playingRowStart`), and the others keep their ▶.
 struct RecentLog: View {
     @Environment(AppSession.self) private var session
 
@@ -147,13 +146,13 @@ struct RecentLog: View {
     }
 }
 
-/// The head of the log (M3 handoff, 8a and 8b): `Record transmissions` and a switch, then one
-/// line. Off, the line says what switching on does, and it is the region's only explanatory
-/// copy. On, it is the recording's status: since when, its parts and bytes from the manifest,
-/// and that it outlives a retune; while the job is degraded, the daemon's `status_detail` in
-/// `caution`. The switch shows the record job on the tuned channel's frequency and mode, whoever
-/// started it (`AppSession.recordingJob`), and remembers nothing of its own clicks; between a
-/// click and the job's event it shows the click (`AppSession.recordSwitchOn`).
+/// The head of the log: `Record transmissions` and a switch, then one line. Off, the line says what
+/// switching on does, and it is the region's only explanatory copy. On, it is the recording's
+/// status: since when, its parts and bytes from the manifest, and that it outlives a retune; while
+/// the job is degraded, the daemon's `status_detail` in `caution`. The switch shows the record job
+/// on the tuned channel's frequency and mode, whoever started it (`AppSession.recordingJob`), and
+/// remembers nothing of its own clicks; between a click and the job's event it shows the click
+/// (`AppSession.recordSwitchOn`).
 struct RecordSwitch: View {
     @Environment(AppSession.self) private var session
 
@@ -314,15 +313,15 @@ struct LogRow: View {
     }
 }
 
-/// Region 5. Nothing in these groups is required for anything above them to work: the M1
-/// handoff's sentence, kept findable here as the M2 handoff asks. Measurements holds the raw
+/// The disclosure groups. Nothing in these groups is required for anything above them to work,
+/// and what is in them is kept findable here. Measurements holds the raw
 /// levels the reading rows do not print. Collapsed by default and remembered, per group, in the
 /// defaults.
 struct DisclosureSection: View {
     @Environment(AppSession.self) private var session
     @AppStorage("inspector.measurementsOpen") private var measurementsOpen = false
 
-    // One group, not the handoff's three: the demodulator's values are the transport bar's and
+    // One group, not the design's three: the demodulator's values are the transport bar's and
     // the device and gain are the header's chip, and showing either twice meant two places to
     // look (the owner, 2026-09-21).
     var body: some View {

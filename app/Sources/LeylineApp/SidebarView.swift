@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Region 1 of the Radio: the bands as one list in frequency order, each row opening to what is
-// inside it (docs/design/channels.md, "Bands are the spine of the sidebar"; docs/design/
-// app-design-handoff.md). A click on a band tunes it as it always has, and the tuned row is
-// the open one because selection reflects state rather than causing it; the chevron opens a
-// row without tuning. A group (`GMRS`, `MURS`) is one row standing for its parts. Open, a row
-// shows its range line, a compact strip for Scan band and `Channels…`, then the sweep's words
-// or hits and its bookmarks (the design's "Scan the band"); `Channels…` opens the plan picker
-// (`PlanPickerView.swift`). The bands the radio cannot tune fold to one dim line at the top, a
-// bookmark in no band goes under `Other`, and the filter field flattens everything into one
-// list. Every rule here is `LeylineClient`'s (`Sidebar.swift`) and the session's; the views
-// read them.
+// The Radio's sidebar: the bands as one list in frequency order, each row opening to what is inside
+// it (docs/design/channels.md, "Bands are the spine of the sidebar"). A click on a band tunes it as
+// it always has, and the tuned row is the open one because selection reflects state rather than
+// causing it; the chevron opens a row without tuning. A group (`GMRS`, `MURS`) is one row standing
+// for its parts. Open, a row shows its range line, a compact strip for Scan band and `Channels…`,
+// then the sweep's words or hits and its bookmarks (the design's "Scan the band"); `Channels…`
+// opens the plan picker (`PlanPickerView.swift`). The bands the radio cannot tune fold to one dim
+// line at the top, a bookmark in no band goes under `Other`, and the filter field flattens
+// everything into one list. Every rule here is `LeylineClient`'s (`Sidebar.swift`) and the
+// session's; the views read them.
 
 import AppKit
 import LeylineClient
@@ -39,9 +38,9 @@ struct SidebarView: View {
         .background(Theme.panel)
     }
 
-    /// The filter field in the Library search field's shape (8c), with `＋` beside it. Return
-    /// tunes the first row the radio can tune, Escape clears the field and lets it go, and
-    /// `Go to…` (⌘G) gives it focus through the session.
+    /// The filter field in the Library search field's shape, with `＋` beside it. Return tunes the
+    /// first row the radio can tune, Escape clears the field and lets it go, and `Go to…` (⌘G)
+    /// gives it focus through the session.
     private var filter: some View {
         @Bindable var session = session
         return HStack(spacing: 8) {
@@ -408,10 +407,10 @@ struct OutOfRangeLine: View {
 /// as one; the owner, 2026-09-21). `changed` in `caution` where the frequency was, when the
 /// bookmark's settings and the channel's disagree. While a record job runs on the bookmark's
 /// frequency and mode, tuned or not and whoever started it, a 6 pt `accentRec` dot sits 6 pt
-/// left of the frequency, whose ink does not change (M3 handoff, 8b). The row is an editor while
-/// `editing`. A bookmark on a plan channel shows the channel's name in the frequency's place
-/// (`ch17`, `WX3`), what `ley monitor` prints in its CHANNEL column (R16). The row sits in from
-/// the band's name by `sidebarIndent`, under its band.
+/// left of the frequency, whose ink does not change. The row is an editor while `editing`. A
+/// bookmark on a plan channel shows the channel's name in the frequency's place (`ch17`, `WX3`),
+/// what `ley monitor` prints in its CHANNEL column (R16). The row sits in from the band's name by
+/// `sidebarIndent`, under its band.
 struct BookmarkRow: View {
     let bookmark: Bookmark
     let selected: Bool
@@ -432,7 +431,7 @@ struct BookmarkRow: View {
                     .foregroundStyle(selected ? Theme.ink : Theme.inkSecondary).lineLimit(1)
             }
             Spacer()
-            // The dot sits against the frequency, 6 pt from it, not against the name (8b).
+            // The dot sits against the frequency, 6 pt from it, not against the name.
             HStack(spacing: Theme.Layout.bookmarkDotGap) {
                 if recording {
                     RecordingDot(size: Theme.Layout.sidebarDot)

@@ -2,9 +2,8 @@
 
 // The waterfall's clipping marks on numbers (plans/app.md, M2-8): which held rows a reading
 // flags, that a new row in a reused slot starts unflagged, and the floor the reading must reach.
-// And the rows the time gutter's kept bars stand against (docs/design/app-design-handoff-m3.md,
-// "In every screen"): which held rows a recording's parts hold, on their own capture only, as
-// runs of row age that move down as rows arrive.
+// And the rows the time gutter's kept bars stand against: which held rows a recording's parts hold,
+// on their own capture only, as runs of row age that move down as rows arrive.
 
 import LeylineProto
 import XCTest

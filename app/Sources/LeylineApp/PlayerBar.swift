@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The Library's player, in the transport bar's place and at its 88 pt, with the bar's layout
-// rule (docs/design/app-design-handoff-m3.md, "Decided 2026-09-25: the Library", "The player",
-// revised by "10a · The Library, revised"): ⏮, the 44 pt `accent` circle with ⏸ while a part
-// plays and ▶ otherwise, ⏭, the part's two lines (`GMRS CH3 · Today`, `14:03:20 · part 4 of 4`),
-// a progress track, and the volume with its caption. ⏸ is a pause (`Control.SetPlaybackPaused`,
-// the position held), not 8c's stop. The track is display only: there is no seeking in v1. The
-// part is `AppSession.player` (the one playing, else the selected part, else the page's first
-// row); the words are the façade's (`Recordings.playerWords`), so the Linux tests hold them; the
-// position and the pause are the mirror's playback, which the daemon publishes four times a
-// second while a part plays and once on each pause and resume. Space, ← and → are the Library
-// menu's (`LeylineApp.swift`).
+// rule (decided 2026-09-25): ⏮, the 44 pt `accent` circle with ⏸ while a part plays and ▶
+// otherwise, ⏭, the part's two lines (`GMRS CH3 · Today`, `14:03:20 · part 4 of 4`), a progress
+// track, and the volume with its caption. ⏸ is a pause (`Control.SetPlaybackPaused`, the position
+// held), not the first build's stop. The track is display only: there is no seeking in v1. The part
+// is `AppSession.player` (the one playing, else the selected part, else the page's first row); the
+// words are the façade's (`Recordings.playerWords`), so the Linux tests hold them; the position and
+// the pause are the mirror's playback, which the daemon publishes four times a second while a part
+// plays and once on each pause and resume. Space, ← and → are the Library menu's
+// (`LeylineApp.swift`).
 
 import LeylineClient
 import LeylineProto
@@ -79,8 +78,8 @@ struct PlayerBar: View {
     }
 }
 
-/// The player's ⏸ and ▶ in the transport bar's 44 pt `accent` circle (10a): ⏸ while a part
-/// sounds pauses it, ▶ resumes a paused one or, with no playback, plays the player's part
+/// The player's ⏸ and ▶ in the transport bar's 44 pt `accent` circle: ⏸ while a part sounds pauses
+/// it, ▶ resumes a paused one or, with no playback, plays the player's part
 /// (`AppSession.togglePlayer`).
 struct PlayerButton: View {
     /// A playback exists and is not paused.
@@ -107,8 +106,8 @@ struct PlayerButton: View {
     }
 }
 
-/// ⏮ or ⏭ beside the circle, as 10a draws them: a bare glyph in `inkTertiary`, `inkDisabled` at
-/// the recording's ends, where it is disabled.
+/// ⏮ or ⏭ beside the circle, as the design draws them: a bare glyph in `inkTertiary`, `inkDisabled`
+/// at the recording's ends, where it is disabled.
 struct PartStepButton: View {
     let symbol: String
     let enabled: Bool

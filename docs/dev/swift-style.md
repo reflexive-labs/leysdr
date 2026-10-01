@@ -35,8 +35,8 @@ judgement, and says "prefer".
    (`app/Sources/LeylineApp/AppSession.swift:350`, `:902`).
 6. **Colours, fonts and fixed dimensions come from `Theme`.** No `Color(red:)`, no
    `.font(.system(size:))` on text (an SF Symbol's glyph size is the one inline size allowed),
-   no system or white colours: the window owns a dark ground, and the handoff is meant to be
-   one file's worth of edits.
+   no system or white colours: the window owns a dark ground, and a design change is meant to
+   be one file's worth of edits.
 7. **Only `Sendable` values cross into `MainActor.assumeIsolated`.** An `NSEvent` is not
    `Sendable`; the scalars it yields are, and are extracted first
    (`app/Sources/LeylineApp/TransportBarView.swift:308`).
@@ -248,10 +248,9 @@ does not.
 `cli-style.md`, "Layout rules" states for the terminal, for the same reason: filling under a
 flat noise floor makes a mass with no shape.
 
-**Colour and type come from `Theme` only**, using the handoff's tokens
-(`../design/app-design-handoff.md`, "Palette"). A line between two panels is `Theme.border`; a
-divider inside a panel is `Theme.hairline`. A control takes the token the handoff names for it,
-not the nearest-looking one.
+**Colour and type come from `Theme` only**, using the tokens in `app.md`, "Palette and type". A
+line between two panels is `Theme.border`; a divider inside a panel is `Theme.hairline`. A
+control takes the token that table names for its role, not the nearest-looking one.
 
 Prefer a separate `View` struct over a computed property when the extracted piece has
 dependencies of its own, so it becomes its own invalidation boundary.

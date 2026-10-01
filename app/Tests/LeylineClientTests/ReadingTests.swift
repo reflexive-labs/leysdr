@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The reading's words on numbers, without a daemon: every band edge in the handoff's tables
-// (docs/design/app-design-handoff-m2.md, Region 3), the tuning sign, the nominal table and the
-// two time forms, each against the exact string the panel prints.
+// The reading's words on numbers, without a daemon: every band edge in the design's tables, the
+// tuning sign, the nominal table and the two time forms, each against the exact string the panel
+// prints.
 
 import LeylineProto
 import XCTest

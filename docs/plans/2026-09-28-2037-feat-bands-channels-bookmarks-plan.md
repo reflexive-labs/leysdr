@@ -167,7 +167,7 @@ cannot deliver it. The design doc has the full context and the decisions.
 - R25. Every unit that changes `ley`'s output re-records its goldens, updates
   `docs/reference/cli.md`, `docs/guide/using-ley.md` where it names presets, and the
   `## Unreleased` bullet in `CHANGELOG.md`; the bookmark shape in
-  `docs/design/app-design-handoff.md` and `docs/dev/app.md` follows the file.
+  the M1 design handoff and `docs/dev/app.md` follows the file.
 - R26. Every unit that touches `app/Sources/LeylineApp` ends with the by-eye checklist from
   `docs/dev/swift-style.md` section 12 applied to the diff and a Mac checklist appended under
   APP-9 in `app.md`; the run continues to the next unit without waiting for it.
@@ -223,8 +223,8 @@ cannot deliver it. The design doc has the full context and the decisions.
 ### Sources
 
 - `docs/design/channels.md`: every decision above.
-- `docs/design/app-design-handoff.md`, "Bands and bookmarks are files" and "Decided 2026-09-21:
-  the sidebar": the file layer and the selection rule the units keep.
+- The M1 design handoff, "Bands and bookmarks are files" (now in `docs/design/channels.md`) and
+  "Decided 2026-09-21: the sidebar": the file layer and the selection rule the units keep.
 - `docs/design/scan.md`, "Don't-disturb" and "Geometry": what a sweep does to the radio.
 - `engine/Sources/LeylineDaemon/Jobs/SessionCaptureAllocator.swift`: the reuse step borrows the
   window's capture on its own id and restores it on release; `DEVICE_SWEEPING` refuses writes
@@ -639,7 +639,7 @@ import writes the fields U6 defines. No unit is parallel with another; each is o
   ToneTests.swift`, `BookmarksTests.swift`; `app/Sources/LeylineApp/InspectorView.swift` (tone
   and note editors, the heard tone beside, tags as words), `AppSession.swift` (`heardTone` from
   the current log's on-air transmission, else the newest since the tune); `docs/reference/
-  cli.md`, `docs/design/app-design-handoff.md`, `docs/dev/app.md`, `CHANGELOG.md`.
+  cli.md`, the M1 design handoff, `docs/dev/app.md`, `CHANGELOG.md`.
 - **Approach:** the fields become known keys in both stores (U2's extra map drops them on
   load); the validator refuses anything but CHIRP's spellings with the sentence `tone must be a
   CTCSS tone such as 100.0 or a DCS code such as D023N`; the inspector shows `PL 100.0` and, in

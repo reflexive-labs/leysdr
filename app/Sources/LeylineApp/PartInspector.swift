@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The inspector on a part (docs/design/app-design-handoff-m3.md, "10a · The Library, revised",
-// "The inspector stops repeating the transport"): the Library's inspector while a part is
-// selected or playing (`AppSession.inspectedPart`). The part's place in its recording, its time
-// and length, its levels and overs, and when the capture clipped during it one sentence on what
-// to do next; then the recording it belongs to, with Play all, its span, how it ended and what it
-// was recorded with; then the two things that can be done to a recording from here: its file
+// The inspector on a part, which does not repeat the transport: the Library's inspector while a
+// part is selected or playing (`AppSession.inspectedPart`). The part's place in its recording, its
+// time and length, its levels and overs, and when the capture clipped during it one sentence on
+// what to do next; then the recording it belongs to, with Play all, its span, how it ended and what
+// it was recorded with; then the two things that can be done to a recording from here: its file
 // shown in Finder, and the whole recording deleted. No progress bar: the player has it. Every word
 // is the façade's (`Recordings.partInspectorWords`), so the Linux tests hold them.
 

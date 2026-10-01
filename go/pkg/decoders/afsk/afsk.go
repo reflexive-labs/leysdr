@@ -27,7 +27,7 @@
 //
 // Against the owner's 144.39 MHz captures (rf-captures/aprs_144390_auto.s16 and
 // aprs_144390_g40.s16, 180 s each, 2026-09-12) it recovers the one packet the
-// auto-gain file contains, a N0CALL-1 position beacon, and none from the
+// auto-gain file contains, one station's position beacon, and none from the
 // fixed-gain file, which a tone scan shows carries none. 144.39 is quiet where
 // the capture was made, so the count reflects channel traffic, not decoder
 // sensitivity.

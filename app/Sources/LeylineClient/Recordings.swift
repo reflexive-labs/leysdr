@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Recordings as the window reads them (docs/plans/app.md, APP-5; docs/design/
-// app-design-handoff-m3.md, 8a and 8b): `recording.json` decoded, the rule that says which part
-// holds a transmission (a kept row of the log), the frequency form of `RecordConfig` the switch
-// starts, the switch's state and status line, and the question asked before the window moves the
-// radio out from under a recording. The manifest is the file format the daemon writes
-// (docs/design/recording.md, "The manifest"; `engine/Sources/LeylineDaemon/Recording/
+// Recordings as the window reads them (docs/plans/app.md, APP-5): `recording.json` decoded, the
+// rule that says which part holds a transmission (a kept row of the log), the frequency form of
+// `RecordConfig` the switch starts, the switch's state and status line, and the question asked
+// before the window moves the radio out from under a recording. The manifest is the file format the
+// daemon writes (docs/design/recording.md, "The manifest"; `engine/Sources/LeylineDaemon/Recording/
 // RecordingManifest.swift`), read from disk through `Resources.ResolveLocalPath` because the window
 // is local, as `ley recordings show` is. Every position is a sample on a capture's timeline and
 // wall clock comes only from the manifest's anchors and the job's `created_at_ns` (invariant 5).
@@ -388,9 +387,9 @@ public struct RecordingPart: Sendable, Equatable, Codable {
 public enum RecordingParts {
     /// The part a transmission lies inside, or nil: the same capture, the part's start at or
     /// before the transmission's start, and the transmission's end at or before the part's end.
-    /// A part whose capture is unknown matches nothing. A transmission with a part is a kept row
-    /// of the log, one without is a heard row (docs/design/app-design-handoff-m3.md, "The rule").
-    /// `parts` are one recording's, in order.
+    /// A part whose capture is unknown matches nothing. A transmission with a part is a kept row of
+    /// the log, one without is a heard row: a transmission is heard, a recording is kept. `parts`
+    /// are one recording's, in order.
     ///
     /// A piece a recording's switch cut (`TransmissionLog.mark`) is timed by the newest
     /// telemetry when the job's event arrives, which is not the sample the recording's gate
@@ -439,7 +438,7 @@ public enum RecordingParts {
 /// A recording as `Resources.ListResources(RECORDING)` lists it, read from the resource's frozen
 /// metadata keys (`proto/leyline/v1/jobs.proto`, `Resource.metadata`). The sidebar's Recordings
 /// source groups these into channels (`Recordings.channels`) and its store footer sums their
-/// sizes (docs/design/app-design-handoff-m3.md, "In every screen" and 8c).
+/// sizes.
 public struct RecordingSummary: Sendable, Equatable, Identifiable {
     public var uri: String
     public var jobID: String
@@ -498,10 +497,9 @@ public struct RecordingSummary: Sendable, Equatable, Identifiable {
     public var lastActivity: Date? { endedAt ?? startedAt }
 }
 
-/// One row of the Library's sidebar: every recording on one frequency, never one row per
-/// recording (docs/design/app-design-handoff-m3.md, 8c), and since 10a never one row per mode, so
-/// a width or mode change does not split a channel. Titled by the bookmark on that frequency and
-/// the channel's mode when there is one, else by the frequency.
+/// One row of the Library's sidebar: every recording on one frequency, never one row per recording,
+/// and never one row per mode, so a width or mode change does not split a channel. Titled by the
+/// bookmark on that frequency and the channel's mode when there is one, else by the frequency.
 public struct RecordingChannel: Sendable, Equatable, Identifiable {
     public var frequencyHz: UInt64
     /// The newest recording's mode: what Tune and the page's switch use.
@@ -523,7 +521,7 @@ public struct RecordingChannel: Sendable, Equatable, Identifiable {
     public var title: String { bookmarkName ?? frequencyText }
 
     /// `19 recordings · today`, `· now` while one runs, else the newest one's day
-    /// (`Recordings.shortDayWords`), as 10a draws it; 8c's `latest` is gone.
+    /// (`Recordings.shortDayWords`), as the design draws it; the first build's `latest` is gone.
     public func subtitle(now: Date, calendar: Calendar = .current) -> String {
         let count = recordings.count == 1 ? "1 recording" : "\(recordings.count) recordings"
         guard let when = latestWords(now: now, calendar: calendar) else { return count }
@@ -668,10 +666,10 @@ public enum Recordings {
     /// copied at the start, so the job owns its channel and outlives the window, a retune and a
     /// quit (docs/plans/app.md, APP-5). Gated by squelch, because the daemon's gate cuts a part
     /// at dead air and a channel that never goes quiet is one long part; an ungated recording is
-    /// `ley record` without `--gate` (docs/design/app-design-handoff-m3.md, 8a). Pre-roll and hang
-    /// are the window's (`windowPreRollMs`, `windowHangMs`), so each transmission is its own
-    /// part; part length is the daemon's default, with no duration and no stop after quiet. A
-    /// squelch that is off (NaN) is sent as NaN, which the daemon reads as the channel default.
+    /// `ley record` without `--gate`. Pre-roll and hang are the window's (`windowPreRollMs`,
+    /// `windowHangMs`), so each transmission is its own part; part length is the daemon's default,
+    /// with no duration and no stop after quiet. A squelch that is off (NaN) is sent as NaN, which
+    /// the daemon reads as the channel default.
     public static func config(
         frequencyHz: UInt64, mode: Leyline_V1_DemodMode, bandwidthHz: UInt32, squelchDBFS: Double
     ) -> Leyline_V1_RecordConfig {
@@ -807,12 +805,11 @@ public enum Recordings {
         return min(1, Double(usedBytes) / Double(capBytes))
     }
 
-    /// The Library sidebar's rows: `recordings` grouped by frequency (10a: one `GMRS CH3` row
-    /// whatever the mode and width), the mode the newest recording's, each titled by the first
-    /// bookmark on that frequency whose mode is the channel's (a bookmark or a recording without
-    /// a mode matches any), running when one of its recordings' jobs is active in `jobs`, sorted
-    /// by most recent activity: running rows first, then the newest end or start, then
-    /// frequency.
+    /// The Library sidebar's rows: `recordings` grouped by frequency (one `GMRS CH3` row whatever
+    /// the mode and width), the mode the newest recording's, each titled by the first bookmark on
+    /// that frequency whose mode is the channel's (a bookmark or a recording without a mode matches
+    /// any), running when one of its recordings' jobs is active in `jobs`, sorted by most recent
+    /// activity: running rows first, then the newest end or start, then frequency.
     public static func channels(
         _ recordings: [RecordingSummary], bookmarks: [Bookmark], jobs: [Leyline_V1_Job]
     ) -> [RecordingChannel] {
@@ -857,8 +854,7 @@ public enum Recordings {
     }
 
     /// `today`, `yesterday`, `Wednesday` for the six days before, `12 Sep` before that: the day
-    /// of `date` in `calendar`'s zone, for the Transmissions header (M3 handoff, "In every
-    /// screen").
+    /// of `date` in `calendar`'s zone, for the Transmissions header.
     public static func dayWords(_ date: Date, now: Date, calendar: Calendar = .current) -> String {
         let days = daysBefore(date, now: now, calendar: calendar)
         if days == 0 { return "today" }

@@ -1,22 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The Library row's LEVEL column (docs/design/app-design-handoff-m3.md, "10a · The Library,
-// revised"): one pass over a part's WAV, client side, into a few dozen columns of RMS level. The
-// window is local, as `ley recordings show` is, so the file is read through the path
-// `Resources.ResolveLocalPath` returns for the part's URI; a remote daemon's path does not exist
-// here and the column stays empty. The file is the one shape `PartWriter` writes, PCM S16 mono;
-// the chunk walk is the engine's `WAVReader` (engine/Sources/LeylineDaemon/Recording/
+// The Library row's LEVEL column: one pass over a part's WAV, client side, into a few dozen columns
+// of RMS level. The window is local, as `ley recordings show` is, so the file is read through the
+// path `Resources.ResolveLocalPath` returns for the part's URI; a remote daemon's path does not
+// exist here and the column stays empty. The file is the one shape `PartWriter` writes, PCM S16
+// mono; the chunk walk is the engine's `WAVReader` (engine/Sources/LeylineDaemon/Recording/
 // PlaybackEngine.swift), reimplemented because the app never links the engine (AGENTS.md,
 // Conventions).
 
 import Foundation
 
 public enum LevelGraph {
-    /// The most columns a part draws: 10a's "about 40".
+    /// The most columns a part draws: the design's "about 40".
     public static let maxColumns = 40
     /// Columns a second, so a bar is the same width on every row and a longer part draws a
-    /// longer graph, as the screen does (a 4 s part about 7 bars, a 25 s part about 40). Read
-    /// off `tmp/library.png`; a guess until the Mac.
+    /// longer graph, as the design does (a 4 s part about 7 bars, a 25 s part about 40). Read
+    /// off the design's picture; a guess until the Mac.
     public static let columnsPerSecond = 1.6
     /// The dBFS the graph's floor stands for; 0 dBFS is the top.
     public static let floorDBFS: Float = -60

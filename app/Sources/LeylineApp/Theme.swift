@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The app's colour and type tokens: every value in docs/design/app-design-handoff.md ("Palette",
-// "Type") and the inspector's few from docs/design/app-design-handoff-m2.md ("Decided
-// 2026-09-20"), and nothing a view invents. The names are the handoffs', so the design and the
-// code use the same names. The level ramp shares hue order with the terminal's
-// (docs/dev/cli-style.md, "3a. The level ramp") and nothing else: this one runs from near-black
-// to cream and assumes the app's own dark ground.
+// The app's colour and type tokens: every value in docs/dev/app.md ("Palette and type"), and
+// nothing a view invents. The names are the ones that section uses, so the doc and the code use the
+// same names. The level ramp shares hue order with the terminal's (docs/dev/cli-style.md, "3a. The
+// level ramp") and nothing else: this one runs from near-black to cream and assumes the app's own
+// dark ground.
 
 import SwiftUI
 
@@ -34,7 +33,7 @@ enum Theme {
     static let inkDisabled = Color(hex: 0x4A5054)
     /// A plan channel's tick on the band rail: fainter than a bookmark's `good` and than the
     /// tuned `accent`, so a plan reads as a grid under the marks and never as marks (R15). No
-    /// handoff token is dimmer than `inkFaint` without being the disabled ink, so it is
+    /// palette token is dimmer than `inkFaint` without being the disabled ink, so it is
     /// `inkFaint` at half strength; a guess until the Mac.
     static let planTick = inkFaint.opacity(0.5)
     /// A sweep hit's tick on the band rail (docs/design/channels.md, "Scan the band"): a mark,
@@ -51,15 +50,14 @@ enum Theme {
     /// The device dot for an unplugged radio or no daemon; the waterfall's clipped-row marks and
     /// the gain slider's knob while the radio clips (plans/app.md, M2-8). The name is older than
     /// `accentRec`, which is the recording's colour; the two are never on one element
-    /// (docs/design/app-design-handoff-m3.md, "Decided 2026-09-24").
+    /// (docs/dev/app.md, "Palette and type").
     static let recordingHex: UInt32 = 0xB8483C
     static let recording = Color(hex: recordingHex)
     /// `recording` as an RGB triple in [0, 1], for the waterfall shader's row marks.
     static var recordingRGB: SIMD3<Float> { rgb(recordingHex) }
     /// `accent-rec`, what is being kept: the Record transmissions switch's track while on, the
     /// log's live-row dot while a part is written, a recording bookmark's dot, the time gutter's
-    /// kept bars and the Library rows' running dot (M3 handoff, 8a to 8c). Nothing else, so
-    /// red always means kept.
+    /// kept bars and the Library rows' running dot. Nothing else, so red always means kept.
     static let accentRecHex: UInt32 = 0xE5484D
     static let accentRec = Color(hex: accentRecHex)
     /// A reading that needs attention but is not an alarm: off tune, overdeviating, the radio
@@ -105,13 +103,13 @@ enum Theme {
             .monospacedDigit()
         /// The channel's name at the top of the inspector: the only text in the window that is
         /// a name rather than a number, tracked by `Theme.nameTracking`. The M2 design set it
-        /// in Space Grotesk; no font is bundled (M1 handoff, "Type"), so it is SF at the same
-        /// size and weight.
+        /// in Space Grotesk; no font is bundled (docs/dev/app.md, "Palette and type"), so it is
+        /// SF at the same size and weight.
         static let name = SwiftUI.Font.system(size: 21, weight: .medium)
         static let body = SwiftUI.Font.system(size: 13)
         static let label = SwiftUI.Font.system(size: 12.5)
         /// `label` in mono: a frequency standing where a name would, the Library's title
-        /// for a channel with no bookmark (M3 handoff, 8c).
+        /// for a channel with no bookmark.
         static let labelMono = SwiftUI.Font.system(size: 12.5, design: .monospaced)
             .monospacedDigit()
         /// A view's own headline: the band rail's band name, the empty-state headline.
@@ -135,7 +133,7 @@ enum Theme {
         static let glyph = SwiftUI.Font.system(size: 8, weight: .semibold)
         /// The glyph in the transport bar's 44 pt circle: the player's ▶ and ⏸.
         static let transportGlyph = SwiftUI.Font.system(size: 16, weight: .bold)
-        /// ⏸ or ▶ in the Library's playing row's 28 pt circle (10a).
+        /// ⏸ or ▶ in the Library's playing row's 28 pt circle.
         static let playingGlyph = SwiftUI.Font.system(size: 10, weight: .bold)
     }
 
@@ -146,7 +144,7 @@ enum Theme {
     /// `-0.015em` at 21 pt, the channel's name.
     static let nameTracking: CGFloat = 21 * -0.015
 
-    // Layout, from the handoff's window: ratios of a 1360×820 design, fixed where it says so.
+    // Layout, from the design's window: ratios of a 1360×820 design, fixed where it says so.
     enum Layout {
         static let sidebarWidth: CGFloat = 236
         static let bandRailHeight: CGFloat = 40
@@ -158,12 +156,11 @@ enum Theme {
         /// `Font.label` and `14:03:20 · part 11 of 11` in `Font.value` (a guess until the Mac); a
         /// longer title truncates.
         static let playerWordsWidth: CGFloat = 220
-        /// The inspector, fixed on the right (M2 handoff, "The panel"); the window works
-        /// without it.
+        /// The inspector, fixed on the right; the window works without it.
         static let inspectorWidth: CGFloat = 312
         static let inspectorHeaderHeight: CGFloat = 36
         /// The inspector's reading rows are four fixed columns (label, meter, word, number), so
-        /// no meter or number moves when a word beside it changes. The handoff's 74 pt label
+        /// no meter or number moves when a word beside it changes. The design's 74 pt label
         /// column came down to 62 on 2026-09-23 to make room for the number; `Deviation`, the
         /// longest label, is about 54 pt at `Font.label`.
         static let readingLabelWidth: CGFloat = 62
@@ -181,8 +178,7 @@ enum Theme {
         static let logLengthWidth: CGFloat = 40
         /// One log row, fixed so the log can count how many fit in the height it is given.
         static let logRowHeight: CGFloat = 19
-        /// The log's trailing column: a kept row's ring, the live row's dot, or nothing (M3
-        /// handoff, "In every screen").
+        /// The log's trailing column: a kept row's ring, the live row's dot, or nothing.
         static let logPlayWidth: CGFloat = 20
         /// The ring round a kept row's play or stop glyph.
         static let logRingSize: CGFloat = 18
@@ -196,7 +192,7 @@ enum Theme {
         static let recordingDot: CGFloat = 6
         /// A sidebar row's dot, the size the bookmark rows draw theirs.
         static let sidebarDot: CGFloat = 6
-        /// A recording bookmark's dot to the frequency beside it (M3 handoff, 8b).
+        /// A recording bookmark's dot to the frequency beside it.
         static let bookmarkDotGap: CGFloat = 6
         /// How far a band row's contents (its bookmarks, `Channels…`) sit in from the band's
         /// name (docs/design/channels.md, "Bands are the spine of the sidebar"); a guess until
@@ -214,26 +210,26 @@ enum Theme {
         static let pickerRows = 12
         /// A plan tick on the rail is 1 pt wide; the pointer gets this much either side of it.
         static let planTickHit: CGFloat = 7
-        /// The waterfall's time gutter at its right, on `panel` (M3 handoff, "In every
-        /// screen"), about 64 pt in the screens. The 1 pt hairline beside it is extra.
+        /// The waterfall's time gutter at its right, on `panel`, about 64 pt in the design. The
+        /// 1 pt hairline beside it is extra.
         static let waterfallGutterWidth: CGFloat = 64
         /// The kept bars at the gutter's left edge, and the tick spacing down it.
         static let keptBarWidth: CGFloat = 3
         static let gutterTickSeconds = 10
-        /// The store footer's bar at the sidebar's foot (M3 handoff, "In every screen").
+        /// The store footer's bar at the sidebar's foot.
         static let storeBarHeight: CGFloat = 3
-        /// The Library's channel page (M3 handoff, 8c): its header is 56 pt, as the
-        /// handoff specifies; the page's side and bottom inset and the gap above a day's head were
-        /// read off the 8c screen (`tmp/recordings3.png`, 1.31 device pixels a point there).
+        /// The Library's channel page: its header is 56 pt, as the design specifies; the page's
+        /// side and bottom inset and the gap above a day's head were read off the design's
+        /// picture (1.31 device pixels a point there).
         static let pageHeaderHeight: CGFloat = 56
         static let pageInset: CGFloat = 24
         static let pageDayGap: CGFloat = 20
-        /// The page's rows (M3 handoff, 10a). The handoff gives the ring (18 pt), the playing
-        /// circle (28 pt), the bracket's 12 pt column, the 10 pt gap between recordings, the
-        /// level graph's 14 pt, the strip's 6 pt track and its 2 pt marks; the row's height and
-        /// inset, the column widths, the bars' width and pitch and the strip's mark height are
-        /// read off `tmp/library.png` and are guesses until the Mac. The ring column is the
-        /// playing circle's width, so the times do not move when a row starts playing.
+        /// The page's rows. The design gives the ring (18 pt), the playing circle (28 pt), the
+        /// bracket's 12 pt column, the 10 pt gap between recordings, the level graph's 14 pt, the
+        /// strip's 6 pt track and its 2 pt marks; the row's height and inset, the column widths,
+        /// the bars' width and pitch and the strip's mark height are read off the design's picture
+        /// and are guesses until the Mac. The ring column is the playing circle's width, so the
+        /// times do not move when a row starts playing.
         static let partRowHeight: CGFloat = 30
         static let partRowInset: CGFloat = 8
         static let partRowRadius: CGFloat = 6
@@ -271,15 +267,14 @@ enum Theme {
         /// rows' 62 pt so the two panels line up.
         static let partProgressHeight: CGFloat = 3
         static let partTableLabelWidth: CGFloat = readingLabelWidth
-        /// The place switch (10a): the control's 6 pt corners, and how far inside its stroke the
-        /// selected segment's ground sits, its corners smaller by the same amount so the two
-        /// curves stay parallel and the segment reads as raised.
+        /// The place switch: the control's 6 pt corners, and how far inside its stroke the selected
+        /// segment's ground sits, its corners smaller by the same amount so the two curves stay
+        /// parallel and the segment reads as raised.
         static let placeSwitchRadius: CGFloat = 6
         static let placeSwitchInset: CGFloat = 2
-        /// The inspector's audio ladder (M2 handoff, "Region 3b: audio"): a 64 pt plot beside a
-        /// 22 pt dB gutter, eleven 14 pt bars in 22 pt slots with a gap before rms and peak,
-        /// 272 pt in all inside the panel's 280. The rows under the plot are the labels and the
-        /// meter's two numbers.
+        /// The inspector's audio ladder: a 64 pt plot beside a 22 pt dB gutter, eleven 14 pt bars
+        /// in 22 pt slots with a gap before rms and peak, 272 pt in all inside the panel's 280. The
+        /// rows under the plot are the labels and the meter's two numbers.
         static let audioPlotHeight: CGFloat = 64
         static let audioGutterWidth: CGFloat = 22
         static let audioBarWidth: CGFloat = 14
@@ -300,7 +295,7 @@ extension Color {
     }
 }
 
-/// A section header in the handoff's style: uppercase, small, tracked, faint.
+/// A section header in the design's style: uppercase, small, tracked, faint.
 struct SectionHeader: View {
     let text: String
     var body: some View {
@@ -315,7 +310,8 @@ struct SectionHeader: View {
 // by `BrandMark` and `SplashView`. Every size below is read off those SVGs.
 extension Theme.Font {
     /// `leyline` on the splash: Space Grotesk 62 medium in `leyline-splash.svg`, SF here because
-    /// no font is bundled (M1 handoff, "Type"), tracked by `Theme.wordmarkTracking`.
+    /// no font is bundled (docs/dev/app.md, "Palette and type"), tracked by
+    /// `Theme.wordmarkTracking`.
     static let wordmark = SwiftUI.Font.system(size: 62, weight: .medium)
     /// `SOFTWARE DEFINED RADIO` under it: Space Mono 11 in the SVG, SF Mono here, tracked by
     /// `Theme.taglineTracking`.

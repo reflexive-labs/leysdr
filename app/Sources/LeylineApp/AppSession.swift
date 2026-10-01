@@ -97,9 +97,9 @@ final class AppSession {
     var deviceMenuShown = false
     /// When the chip was clicked, until the menu appears: the open is timed into the log.
     @ObservationIgnored var deviceMenuAskedAt: Date?
-    /// Whether the inspector is on the window's right (M2 handoff, "The panel"). Remembered in
-    /// the defaults under `inspectorShownKey`, the way the last band is; shown until someone
-    /// closes it, because the default window is sized with it.
+    /// Whether the inspector is on the window's right. Remembered in the defaults under
+    /// `inspectorShownKey`, the way the last band is; shown until someone closes it, because the
+    /// default window is sized with it.
     var inspectorShown =
         UserDefaults.standard.object(forKey: AppSession.inspectorShownKey) as? Bool
         ?? true
@@ -110,12 +110,11 @@ final class AppSession {
             followAudioLevels()
         }
     }
-    /// Which of the window's two places shows, the toolbar's `Radio | Library` (docs/design/
-    /// app-design-handoff-m3.md, "Decided 2026-09-25: the Library"). The live radio keeps
-    /// running in the Library: its channel, sink and subscriptions are the session's, not the
-    /// Radio body's. Remembered in the defaults under `placeKey`, the way `inspectorShown` is.
-    /// Arriving in the Library selects its first channel when none is selected, so the centre
-    /// is never blank.
+    /// Which of the window's two places shows, the toolbar's `Radio | Library` (decided
+    /// 2026-09-25). The live radio keeps running in the Library: its channel, sink and
+    /// subscriptions are the session's, not the Radio body's. Remembered in the defaults under
+    /// `placeKey`, the way `inspectorShown` is. Arriving in the Library selects its first channel
+    /// when none is selected, so the centre is never blank.
     var place =
         UserDefaults.standard.string(forKey: AppSession.placeKey)
         .flatMap(WindowPlace.init(rawValue:)) ?? .radio
@@ -210,10 +209,9 @@ final class AppSession {
     private var busy = false
     private var rejectionsSeen = 0
 
-    // Recording (plans/app.md, APP-5; docs/design/app-design-handoff-m3.md, 8a and 8b). The
-    // jobs and the playbacks are the mirror's; what is here is the store's listing, the
-    // manifests of the recordings the window shows as read from disk, and the switch's click
-    // until its job's event arrives.
+    // Recording (plans/app.md, APP-5). The jobs and the playbacks are the mirror's; what is here is
+    // the store's listing, the manifests of the recordings the window shows as read from disk, and
+    // the switch's click until its job's event arrives.
     /// The recordings the daemon holds, newest first, from `ListResources(RECORDING)`: re-read on
     /// every change to a record job and once on adoption. The Library's sidebar and the
     /// store footer render it.
@@ -240,11 +238,10 @@ final class AppSession {
     /// there (`Recordings.failureNotice`).
     @ObservationIgnored private var switchStartedJobs: Set<String> = []
     /// Manifests by job id, read through `ResolveLocalPath`: every recording of the channel page's
-    /// channel (docs/design/app-design-handoff-m3.md, 8c) and every recording on the tuned
-    /// frequency and mode, whose parts the log's kept rows and the time gutter's bars come from
-    /// (`tunedManifests`). Each is kept while the listing holds the recording, read once, and read
-    /// again on each event of its job, which is how a running card grows and a new row is kept as
-    /// parts land.
+    /// channel and every recording on the tuned frequency and mode, whose parts the log's kept rows
+    /// and the time gutter's bars come from (`tunedManifests`). Each is kept while the listing
+    /// holds the recording, read once, and read again on each event of its job, which is how a
+    /// running card grows and a new row is kept as parts land.
     private(set) var manifests: [String: RecordingManifest] = [:]
     @ObservationIgnored private var manifestLoads: [String: Task<Void, Never>] = [:]
     /// Job ids whose manifest a job event made stale.
@@ -262,8 +259,7 @@ final class AppSession {
     /// tombstone of the one playing.
     private(set) var playQueue = PlayQueue()
     /// Each Library row's level graph (`LevelGraph.columns`), by part URI, once read: the part's
-    /// WAV through `ResolveLocalPath`, one pass, off the main actor (docs/design/
-    /// app-design-handoff-m3.md, "10a · The Library, revised"). An empty array is a part whose
+    /// WAV through `ResolveLocalPath`, one pass, off the main actor. An empty array is a part whose
     /// file could not be read here (a remote daemon, a file gone), not tried again.
     private(set) var levelGraphs: [String: [Float]] = [:]
     @ObservationIgnored private var levelGraphLoads: Set<String> = []
@@ -531,9 +527,9 @@ final class AppSession {
     }
 
     /// The band the sidebar highlights: the chosen one, else the one the tuned frequency lies in.
-    /// Selection reflects state rather than causing it (the M1 handoff, "Decided 2026-09-21"):
-    /// the band is the one the tuned frequency is in, and the clicked one only breaks a tie
-    /// between overlapping bands or stands in before anything is tuned.
+    /// Selection reflects state rather than causing it (decided 2026-09-21): the band is the one
+    /// the tuned frequency is in, and the clicked one only breaks a tie between overlapping bands
+    /// or stands in before anything is tuned.
     var band: Band? {
         let clicked = selectedBandID.flatMap { id in bands.first { $0.id == id } }
         guard let hz = tunedHz else { return clicked }
@@ -856,11 +852,11 @@ final class AppSession {
     // MARK: Bands
 
     /// The band's centre and rate on the radio, its mode and width on the channel, a sink for
-    /// audio, and a squelch measured from the floor. Creates what does not exist and writes
-    /// what does (docs/design/app-design-handoff.md, Region 1). With `hz`, the band arrives
-    /// tuned there rather than at its centre, and the capture sits where that frequency is
-    /// inside it: a drag past the rail's end cap lands on the neighbour's near edge. A switch
-    /// that would move the capture off a running recording asks first (`retuneQuestion`).
+    /// audio, and a squelch measured from the floor. Creates what does not exist and writes what
+    /// does. With `hz`, the band arrives tuned there rather than at its centre, and the capture
+    /// sits where that frequency is inside it: a drag past the rail's end cap lands on the
+    /// neighbour's near edge. A switch that would move the capture off a running recording asks
+    /// first (`retuneQuestion`).
     func select(band: Band, at hz: UInt64? = nil) async {
         let waited = waitForSweep("select band \(band.name)") {
             Task { await self.select(band: band, at: hz) }
@@ -2471,9 +2467,9 @@ final class AppSession {
     // MARK: Recording
 
     /// The record job on the tuned channel's frequency and mode, running or degraded, whoever
-    /// started it (`Recordings.activeJob`): the Record transmissions switch's state and its
-    /// status line (docs/design/app-design-handoff-m3.md, 8a and 8b). The switch remembers
-    /// nothing, so a job `ley record` or an agent started shows the same.
+    /// started it (`Recordings.activeJob`): the Record transmissions switch's state and its status
+    /// line. The switch remembers nothing, so a job `ley record` or an agent started shows the
+    /// same.
     var recordingJob: Leyline_V1_Job? {
         guard let hz = tunedHz, let ch = channel else { return nil }
         return Recordings.activeJob(in: state.jobs, frequencyHz: hz, mode: ch.mode)
@@ -2487,7 +2483,7 @@ final class AppSession {
 
     /// The channel page's switch: the record job on that channel's frequency and mode, whoever
     /// started it, or the click in flight. The log's switch shows the same when it is tuned
-    /// there, because both read the job (M3 handoff, 8c: "one state, two places").
+    /// there, because both read the job: one state, two places.
     func pageSwitchOn(for c: RecordingChannel) -> Bool {
         switchOn(frequencyHz: c.frequencyHz, mode: c.mode, job: activeRecordJob(for: c))
     }
@@ -2983,15 +2979,15 @@ final class AppSession {
         }
     }
 
-    /// The page's days for `c` (10a): every part of its recordings whose manifests have been
-    /// read, as rows by the day each started (`Recordings.dayRows`).
+    /// The page's days for `c`: every part of its recordings whose manifests have been read, as
+    /// rows by the day each started (`Recordings.dayRows`).
     func pageDays(for c: RecordingChannel) -> [DayRows] {
         Recordings.dayRows(pageGroups(for: c), now: Date())
     }
 
-    /// A row's click (10a): the part is selected, so the inspector and the player show it, and
-    /// plays; a click on the row playing pauses it, and on the row paused resumes it. Starting
-    /// another part ends a Play all or a Play day.
+    /// A row's click: the part is selected, so the inspector and the player show it, and plays; a
+    /// click on the row playing pauses it, and on the row paused resumes it. Starting another part
+    /// ends a Play all or a Play day.
     func clickRow(_ uri: String) async {
         selectedPartURI = uri
         if playingURI == uri, playback != nil {
@@ -3016,7 +3012,7 @@ final class AppSession {
     /// off the main actor into `LevelGraph.columnCount(seconds:)` columns, cached by URI. Called
     /// as a row appears; a row already read or being read costs nothing. A path that does not
     /// resolve, or a file that is not here, caches an empty graph and says nothing: the column is
-    /// empty, as 10a draws it for a remote daemon.
+    /// empty, as the design draws it for a remote daemon.
     func loadLevelGraph(_ row: PartRow) {
         let uri = row.uri
         guard levelGraphs[uri] == nil, !levelGraphLoads.contains(uri), let daemon else { return }
@@ -3042,9 +3038,9 @@ final class AppSession {
         }
     }
 
-    /// Play all: the recording's parts in part order, the next started on the tombstone of the
-    /// one before (`endPlayback`), each selected as it starts so the inspector follows. The
-    /// inspector's `Play all 4` (10a).
+    /// Play all: the recording's parts in part order, the next started on the tombstone of the one
+    /// before (`endPlayback`), each selected as it starts so the inspector follows. The inspector's
+    /// `Play all 4`.
     func playAll(_ group: RecordingGroup) async {
         var queue = PlayQueue()
         guard let first = queue.start(group) else { return }
@@ -3173,7 +3169,7 @@ final class AppSession {
         Task { await attachAfterPlayback() }
     }
 
-    /// `Resources.DeleteResource` on the whole recording (8c, "The inspector, on a part"): the
+    /// `Resources.DeleteResource` on the whole recording, from the inspector on a part: the
     /// daemon refuses one whose job runs and stops a playback of its parts first, so the clip's
     /// tombstone ends it here as a stop would. On success the listing is read again, which
     /// forgets the recording's manifest and clears the selection (`prunePage`).
@@ -3213,10 +3209,9 @@ final class AppSession {
 
     // MARK: The Library's player
 
-    /// The part the player shows and ▶ plays (docs/design/app-design-handoff-m3.md, "Decided
-    /// 2026-09-25: the Library", "The player"): the one playing, else the selected part, else
-    /// the page's first row, once the manifest that holds it has been read. nil leaves the
-    /// player with nothing to play.
+    /// The part the player shows and ▶ plays (decided 2026-09-25): the one playing, else the
+    /// selected part, else the page's first row, once the manifest that holds it has been read. nil
+    /// leaves the player with nothing to play.
     var player: (uri: String, manifest: RecordingManifest, part: RecordingPart)? {
         let uri: String
         if let u = playingURI ?? selectedPartURI {
@@ -3276,10 +3271,10 @@ final class AppSession {
         await play(partURI: n)
     }
 
-    /// The player's circle, and space in the Library (10a): while a playback exists, ⏸ pauses it
-    /// and ▶ resumes it (`SetPlaybackPaused`, the position held); with none, ▶ plays the
-    /// player's part and selects it. Between a part's `StartPlayback` and its answer there is a
-    /// part but no playback yet, and the click does nothing rather than start it twice.
+    /// The player's circle, and space in the Library: while a playback exists, ⏸ pauses it and ▶
+    /// resumes it (`SetPlaybackPaused`, the position held); with none, ▶ plays the player's part
+    /// and selects it. Between a part's `StartPlayback` and its answer there is a part but no
+    /// playback yet, and the click does nothing rather than start it twice.
     func togglePlayer() async {
         if playback != nil {
             await pausePlayback(!isPaused)
@@ -3415,9 +3410,8 @@ final class AppSession {
     // MARK: Moving the radio over a recording
 
     /// A move of the radio that would leave a record job's frequency outside the capture, until
-    /// it is answered (M3 handoff, 8b, "Tuning while recording"). The daemon never refuses the
-    /// move: it degrades the job and records the gap, so the window asks first, as `ley tune`
-    /// refuses without `--retune`.
+    /// it is answered. The daemon never refuses the move: it degrades the job and records the gap,
+    /// so the window asks first, as `ley tune` refuses without `--retune`.
     struct RetuneQuestion: Identifiable {
         let id = UUID()
         /// `Recordings.retuneWords`: the job named and the gap the move would leave.
@@ -3487,9 +3481,8 @@ extension LeylineError {
     static let notDialled = LeylineError(code: "UNAVAILABLE", message: "The daemon is not dialled")
 }
 
-/// The window's two places (docs/design/app-design-handoff-m3.md, "Decided 2026-09-25: the
-/// Library"): Radio is the live window, the Library what has been kept. Presentation only; the
-/// radio runs the same in both.
+/// The window's two places (decided 2026-09-25): Radio is the live window, the Library what has
+/// been kept. Presentation only; the radio runs the same in both.
 enum WindowPlace: String, CaseIterable, Identifiable {
     case radio
     case library

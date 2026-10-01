@@ -193,9 +193,9 @@ func TestPresetsTopicKeepsProse(t *testing.T) {
 }
 
 // The Mac app has no Go library, so its sidebar reads the band table from a checked-in copy of
-// what `ley bands --json` prints (docs/design/app-design-handoff.md, "Bands and bookmarks are
-// files"). This is the drift test the help goldens are: the resource is the exact bytes, and a
-// change to the table without a regeneration fails here rather than in a window.
+// what `ley bands --json` prints (docs/design/channels.md, "Bands and bookmarks are files"). This
+// is the drift test the help goldens are: the resource is the exact bytes, and a change to the
+// table without a regeneration fails here rather than in a window.
 func TestBandsJSONResource(t *testing.T) {
 	const resource = "../../../app/Sources/LeylineClient/Resources/bands.json"
 	want, err := os.ReadFile(resource)

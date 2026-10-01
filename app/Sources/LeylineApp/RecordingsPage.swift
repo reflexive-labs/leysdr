@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The channel page (docs/design/app-design-handoff-m3.md, 8c, revised by "10a · The Library,
-// revised"): the Library's centre column. A 56 pt header with the channel's name, what it is and
-// how much is kept, the same Record transmissions switch as the log's (one job state, read from
+// The channel page: the Library's centre column. A 56 pt header with the channel's name, what it is
+// and how much is kept, the same Record transmissions switch as the log's (one job state, read from
 // the mirror) and Tune; under it the parts as rows, by the day each started. A day opens with its
-// head (`TODAY  7 parts · 1 m 17 s`, `Play day`) and a 24-hour strip; a recording of several
-// parts is a bracket in the gutter and recordings are separated by a gap; days older than two are
+// head (`TODAY  7 parts · 1 m 17 s`, `Play day`) and a 24-hour strip; a recording of several parts
+// is a bracket in the gutter and recordings are separated by a gap; days older than two are
 // EARLIER, one line each, opening in place. A click on a row plays that part through the playback
 // path the log's ▶ uses and selects it for the inspector (`PartInspector`) and the player; a click
 // on the playing row pauses or resumes it. The page keeps no state of its own: the selection, the
 // opened days, the queue and the level graphs are the session's, and every row is built from the
-// listing and the manifests the session read (`Recordings.dayRows`). 8c's notice strip is gone
-// with 10a: a refusal is the session's notice, which the Radio shows over its canvas.
+// listing and the manifests the session read (`Recordings.dayRows`). The first build's notice strip
+// is gone: a refusal is the session's notice, which the Radio shows over its canvas.
 
 import LeylineClient
 import LeylineProto
@@ -72,7 +71,7 @@ struct RecordingsPage: View {
 
 /// `GMRS CH3` over `462.6125 MHz · NFM 12.5 kHz · 4 recordings · 13.1 MB`, and at the right
 /// `Record transmissions`, its switch, and a bordered `Tune`, which goes to the Radio and tunes
-/// there (8c, "The channel page").
+/// there.
 struct RecordingsPageHeader: View {
     let channel: RecordingChannel
     let groups: [RecordingGroup]
@@ -130,8 +129,8 @@ struct RecordingsPageHeader: View {
     }
 }
 
-/// A day of the page (10a): `TODAY` in `section` with `7 parts · 1 m 17 s` in `value` `inkMuted`
-/// and `Play day` in `accent` at the right, then the 24-hour strip, the column head and the rows.
+/// A day of the page: `TODAY` in `section` with `7 parts · 1 m 17 s` in `value` `inkMuted` and
+/// `Play day` in `accent` at the right, then the 24-hour strip, the column head and the rows.
 struct DaySection: View {
     let day: DayRows
 
@@ -187,9 +186,9 @@ struct DayBody: View {
     }
 }
 
-/// An EARLIER day (10a): `›  Monday  5 parts · 3 recordings` between hairlines; a click opens the
-/// day's strip and rows in place under the line, the chevron turned down, and a second click
-/// folds it. The session holds which are open (`openedDays`).
+/// An EARLIER day: `›  Monday  5 parts · 3 recordings` between hairlines; a click opens the day's
+/// strip and rows in place under the line, the chevron turned down, and a second click folds it.
+/// The session holds which are open (`openedDays`).
 struct EarlierDay: View {
     let day: DayRows
     let opened: Bool
@@ -221,10 +220,10 @@ struct EarlierDay: View {
     }
 }
 
-/// The day's 24-hour strip (10a): a `border` track `stripTrackHeight` tall, ticks at 00, 06, 12,
-/// 18 and 24 in `ground` with their labels under in `columnHead` `inkFaintest`, and a 2 pt mark
-/// at each part's start in `inkSecondary`, the playing part's in `accent` and drawn last, so it
-/// is never under another. A mark is placed by its fraction of the day and kept inside the track.
+/// The day's 24-hour strip: a `border` track `stripTrackHeight` tall, ticks at 00, 06, 12, 18 and
+/// 24 in `ground` with their labels under in `columnHead` `inkFaintest`, and a 2 pt mark at each
+/// part's start in `inkSecondary`, the playing part's in `accent` and drawn last, so it is never
+/// under another. A mark is placed by its fraction of the day and kept inside the track.
 struct DayStrip: View {
     let marks: [DayMark]
     let playingURI: String?
@@ -293,11 +292,11 @@ struct PartColumnHead: View {
     }
 }
 
-/// One part (10a): the ring, the gutter's bracket, `STARTS`, `LENGTH`, the level graph, `PEAK`
-/// and `SIZE`. The ring is 18 pt with ▶ in `inkSecondary`; the playing row's is a 28 pt `accent`
-/// circle with ⏸, or ▶ while paused, and the row sits on `raised`. The whole row is the button:
-/// a click plays the part, and on the playing row pauses or resumes it (`AppSession.clickRow`).
-/// The level graph is read as the row appears (`AppSession.loadLevelGraph`).
+/// One part: the ring, the gutter's bracket, `STARTS`, `LENGTH`, the level graph, `PEAK` and
+/// `SIZE`. The ring is 18 pt with ▶ in `inkSecondary`; the playing row's is a 28 pt `accent` circle
+/// with ⏸, or ▶ while paused, and the row sits on `raised`. The whole row is the button: a click
+/// plays the part, and on the playing row pauses or resumes it (`AppSession.clickRow`). The level
+/// graph is read as the row appears (`AppSession.loadLevelGraph`).
 struct PartRowView: View {
     let row: PartRow
     @Environment(AppSession.self) private var session
@@ -380,7 +379,7 @@ struct PartRowView: View {
     }
 }
 
-/// The part's level graph (10a): one bar a column (`LevelGraph`), `levelBarWidth` wide at
+/// The part's level graph: one bar a column (`LevelGraph`), `levelBarWidth` wide at
 /// `levelBarPitch`, centred on the row's middle, its height the column's level over the graph's
 /// height with `levelBarMinHeight` for the floor so silence still shows the part's length;
 /// `inkTertiary`, the playing part's `accent`. Empty while the file is read or when it cannot be.

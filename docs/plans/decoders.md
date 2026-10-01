@@ -309,7 +309,7 @@ What the second look found, 2026-09-12.
   and the daemon spent the run respawning. A channel's capture now opens at the default rate and
   the demodulator accepts up to 96 kHz (commit e789f34).
 - **144.39 MHz is quiet at the owner's location.** Two three-minute captures (auto gain and 40 dB;
-  `rf-captures/`, gitignored) held one decodable packet between them, `N0CALL-1` at 27.6 s of the
+  `rf-captures/`, gitignored) held one decodable packet between them, one station's position beacon at 27.6 s of the
   first, and `leydec-aprs` recovered it; a tone-energy scan of the same file found the same
   burst and no other of packet length. A live `ley decode aprs` on the dongle ran for the
   duration of the work without a packet. The guide's transcripts are therefore recorded against

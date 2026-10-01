@@ -53,8 +53,8 @@ type bookmarkFields struct {
 
 // newBookmarksCommand builds `ley bookmarks`, the third client-local table and the only one the
 // user edits. Both clients share one file: `ley` writes it here and the Mac app's sidebar reads
-// it, so a bookmark added from the terminal shows up in the app (docs/design/
-// app-design-handoff.md, "Bands and bookmarks are files").
+// it, so a bookmark added from the terminal shows up in the app (docs/design/channels.md, "Bands
+// and bookmarks are files").
 func newBookmarksCommand(app *App) *cobra.Command {
 	var tag string
 	cmd := &cobra.Command{
