@@ -54,7 +54,7 @@ final class AppSession {
 
     // Files both clients own. `bands` is the part table, which every lookup below keeps reading
     // (`band(containing:)`, `defaultMode`, `tune(bookmark:)`, the last-band adoption): none of
-    // them ever answers a group (the plan's KTD4). `sidebarRows` is the fold the sidebar and
+    // them ever answers a group. `sidebarRows` is the fold the sidebar and
     // the filter draw, a group in place of its parts (docs/design/channels.md, "Bands are the
     // spine of the sidebar").
     let bands: [Band] = Bands.plain
@@ -95,8 +95,7 @@ final class AppSession {
             followAudioLevels()
         }
     }
-    /// Which of the window's two places shows, the toolbar's `Radio | Library` (decided
-    /// 2026-09-25). The live radio keeps running in the Library: its channel, sink and
+    /// Which of the window's two places shows, the toolbar's `Radio | Library`. The live radio keeps running in the Library: its channel, sink and
     /// subscriptions are the session's, not the Radio body's. Remembered in the defaults under
     /// `placeKey`, the way `inspectorShown` is. Arriving in the Library selects its first channel
     /// when none is selected, so the centre is never blank.
@@ -152,7 +151,7 @@ final class AppSession {
         }
     }
     /// The picker's filter field: a case-insensitive prefix of a channel's name or alias, the
-    /// rule the sidebar's filter uses (the plan's KTD6). Typing puts the highlight back on the
+    /// rule the sidebar's filter uses. Typing puts the highlight back on the
     /// first row.
     var pickerQuery = "" {
         didSet { if pickerQuery != oldValue { pickerHighlight = 0 } }
@@ -180,8 +179,7 @@ final class AppSession {
     /// `failureHold` on every `CaptureLevel` reading and on every mirror change (the gains pick
     /// the words), and logged when it is raised and when it clears. While it holds the device
     /// chip's dot is `caution` with the sentence as its tooltip and the gain slider's knob is
-    /// `recording`; there is no close control, because it goes when the level clears
-    /// (plans/app.md, M2-6 and M2-8).
+    /// `recording`; there is no close control, because it goes when the level clears.
     private(set) var failure: FailureState?
     /// The hold on the capture's clock that keeps a burst of clipping from showing.
     @ObservationIgnored private var failureHold = FailureHold()
@@ -194,7 +192,7 @@ final class AppSession {
     private var busy = false
     private var rejectionsSeen = 0
 
-    // Recording (plans/app.md, APP-5). The jobs and the playbacks are the mirror's; what is here is
+    // Recording. The jobs and the playbacks are the mirror's; what is here is
     // the store's listing, the manifests of the recordings the window shows as read from disk, and
     // the switch's click until its job's event arrives.
     /// The recordings the daemon holds, newest first, from `ListResources(RECORDING)`: re-read on
@@ -213,7 +211,7 @@ final class AppSession {
     private var recordSwitchPending: RecordSwitchClick?
     @ObservationIgnored private var recordSwitchExpiry: Task<Void, Never>?
     /// The log's switch as last written to the log (`logRecordSwitch`), so a change is logged
-    /// once: the owner's third run saw the switch go grey and left nothing in the log to say why.
+    /// once and a switch seen grey can be explained from the log.
     @ObservationIgnored private var recordSwitchLogged: String?
     /// The tuned log's frequency and mode and the record job running there, as the last mirror
     /// change left them, so `markRecordToggles` cuts the log when the job starts or ends.
@@ -258,9 +256,9 @@ final class AppSession {
     private var listeningStopped = false
 
     private static let lastBandKey = "lastBand"
-    /// The capture rate the window opens a radio at: the plan's default, 2.4 MSPS, until the
-    /// device menu's picker sets another, which is remembered. The radio's setting, not the
-    /// band's: a band change never moves it (the owner, 2026-09-21), the way the width does.
+    /// The capture rate the window opens a radio at, 2.4 MSPS, until the device menu's picker
+    /// sets another, which is remembered. The radio's setting, not the band's: a band change
+    /// never moves it.
     static let defaultSampleRate: UInt64 = 2_400_000
     private static let sampleRateKey = "sampleRate"
     /// A one-stage radio keeps the app's established fixed first-use gain. Multi-stage radios keep
@@ -312,7 +310,7 @@ final class AppSession {
     var tunedHz: UInt64? { channel.flatMap { state.frequencyHz(of: $0) } }
     /// The frequency to show: the one asked for while it is in flight, else the daemon's.
     /// While a sweep borrows the radio there is no channel, and the field keeps showing the
-    /// frequency the window paused on rather than going blank (R18).
+    /// frequency the window paused on rather than going blank.
     var displayHz: UInt64? { requestedHz ?? tunedHz ?? (sweeping ? sweep?.paused?.hz : nil) }
     /// The transport bar's speaker: muted is no sink on the channel (the daemon has no mute), and
     /// the channel, its squelch and the meter carry on.
@@ -380,10 +378,9 @@ final class AppSession {
         return floor.isFinite ? floor : nil
     }
 
-    /// The channel's power over `channelFloorDB`. The meter's own `snr_db` was power over the
-    /// channel's running minimum, which on a carrier that never stops is the carrier itself and
-    /// read 0 (`docs/plans/app.md`, APP-3); the daemon now measures the same floor, and the
-    /// window still uses this value. Nil until the floor is known.
+    /// The channel's power over `channelFloorDB`, the band's floor at the channel's width, so a
+    /// carrier that never stops reads its level over the noise rather than over itself. Nil
+    /// until the floor is known.
     var overNoiseDB: Double? {
         guard let m = meter, m.powerDbfs.isFinite, let floor = channelFloorDB else { return nil }
         return m.powerDbfs - floor
@@ -474,7 +471,7 @@ final class AppSession {
     }
 
     /// What a tune into `row` closes: a row opened by its chevron elsewhere, the out-of-range
-    /// line's rows, and the last sweep's hits when they belong to another row (R19). The only
+    /// line's rows, and the last sweep's hits when they belong to another row. The only
     /// tune while `sweeping` holds is the resume after the sweep, which is nobody's tune
     /// elsewhere: it closes nothing, so a row opened by its chevron and swept keeps showing its
     /// hits when the radio goes back to the band it was on.
@@ -492,7 +489,7 @@ final class AppSession {
     var pickerRows: [PlanChannel] {
         guard let band = pickerBand else { return [] }
         let plan = band.plan()
-        // The sidebar filter's rule, from the library so the two agree (KTD6).
+        // The sidebar filter's rule, from the library so the two agree.
         let key = Plans.presetKey(pickerQuery)
         guard !key.isEmpty else { return plan }
         return plan.filter { channel in
@@ -502,7 +499,7 @@ final class AppSession {
     }
 
     /// The band the sidebar highlights: the chosen one, else the one the tuned frequency lies in.
-    /// Selection reflects state rather than causing it (decided 2026-09-21): the band is the one
+    /// Selection reflects state rather than causing it: the band is the one
     /// the tuned frequency is in, and the clicked one only breaks a tie between overlapping bands
     /// or stands in before anything is tuned.
     var band: Band? {
@@ -532,11 +529,11 @@ final class AppSession {
     /// the band's mode over the bookmark's: one write, the bookmark's.
     private var tuningBookmark = false
 
-    // Scan band (docs/design/channels.md, "Scan the band"; the plan's KTD5). The job is the
+    // Scan band (docs/design/channels.md, "Scan the band"). The job is the
     // mirror's; what is here is which job the row started, what the window was listening to
     // when it paused for it, and the outcome the row shows once the job has ended.
     /// The sweep the band row started, or nil. Kept after the job ends, with its outcome, until
-    /// the next sweep or the next tune into another row (R19), because the row shows the hits,
+    /// the next sweep or the next tune into another row, because the row shows the hits,
     /// the empty line or the failure from it; a cancelled sweep is dropped at once.
     private(set) var sweep: SweepState?
     /// The action asked for while a sweep ran (a tune, or another row's Scan band), run once
@@ -848,7 +845,7 @@ final class AppSession {
 
     /// A click on a sidebar row: the band tunes as it always has. A group row tunes through the
     /// part that holds the tuned frequency, else its first part, because `select(band:at:)`
-    /// takes a part and never a group (R11, the plan's KTD4).
+    /// takes a part and never a group.
     func tune(row: Band) {
         if waitForSweep("tune row \(row.name)", { self.tune(row: row) }) { return }
         let part = part(of: row, near: tunedHz)
@@ -1510,7 +1507,7 @@ final class AppSession {
     }
 
     /// Mute detaches the sink and unmute attaches one; the channel and its squelch stay, and so
-    /// does the radio (plans/app.md, APP-5: the button is the audio control).
+    /// does the radio: the button is the audio control.
     func toggleMute() async {
         guard let daemon, let ch = channel else { return }
         do {
@@ -1575,7 +1572,7 @@ final class AppSession {
 
     // MARK: Scan band
 
-    /// The band row's item (R17, R20): `ley scan --band`'s sweep on the window's own radio,
+    /// The band row's item: `ley scan --band`'s sweep on the window's own radio,
     /// with the window paused for it. On the row being swept it is Stop; on another row it
     /// stops that sweep and starts this one after its terminal event. A record job riding the
     /// window's capture would hear every hop, so the move alert asks first, Sweep anyway going
@@ -1618,7 +1615,7 @@ final class AppSession {
     }
 
     /// `＋` on a hit: a bookmark named as the row names the hit, the plan channel's name else
-    /// the frequency (R16, the plan's KTD7), with the band's mode and width there, and its row
+    /// the frequency, with the band's mode and width there, and its row
     /// opened as an editor as ⌘D opens one. The same name on the same frequency twice updates
     /// the bookmark in place (`BookmarkStore.add`).
     func bookmark(hit: SweepHit) {
@@ -1683,7 +1680,7 @@ final class AppSession {
         }
     }
 
-    /// The window lets go of the radio without releasing it (the plan's KTD5): the sink
+    /// The window lets go of the radio without releasing it: the sink
     /// detached as Mute detaches it and the channel destroyed as Stop listening destroys it,
     /// the capture kept so the allocator borrows it rather than a second radio. False, with
     /// the error shown, when the channel could not be removed; nothing starts then. A sink
@@ -1740,7 +1737,7 @@ final class AppSession {
     }
 
     /// While a sweep runs, a tune stops it and runs once the terminal event has put the radio
-    /// back, so no write reaches the swept capture (R20). True when the caller must return.
+    /// back, so no write reaches the swept capture. True when the caller must return.
     /// One action waits; the latest wins.
     private func waitForSweep(_ what: String, _ action: @escaping @MainActor () -> Void) -> Bool {
         guard sweeping else { return false }
@@ -1827,7 +1824,7 @@ final class AppSession {
         runAfterSweep()
     }
 
-    /// The radio back as it was (R18): the bookmark re-tuned with its saved settings, else the
+    /// The radio back as it was: the bookmark re-tuned with its saved settings, else the
     /// band select at the paused frequency, so the channel and sink come back the way a click
     /// makes them; with nothing paused, the swept row's part, as a bookmark click after Stop
     /// listening selects one. Through `moveToBand` and `open(bookmark:in:)` directly, because
@@ -2106,7 +2103,7 @@ final class AppSession {
     }
 
     /// `＋`: the tuned frequency becomes a bookmark named after the plan channel it sits on, else
-    /// after itself (`BookmarkNaming`, the plan's KTD7), and its row opens as an editor at once
+    /// after itself (`BookmarkNaming`), and its row opens as an editor at once
     /// so the name is typed where the bookmark appears.
     func bookmarkCurrent() {
         guard let ch = channel, let hz = tunedHz else { return }
@@ -2194,8 +2191,8 @@ final class AppSession {
     }
 
     /// The row's "Replace with …": the bookmark keeps its name and takes the tuned frequency
-    /// with the channel's current mode and width (the owner's choice over a match within the
-    /// channel's width, 2026-09-21; `ley bookmarks move` is the terminal's).
+    /// with the channel's current mode and width, exactly rather than within the channel's
+    /// width (`ley bookmarks move` is the terminal's).
     func replace(bookmark: Bookmark) {
         guard let ch = channel, let hz = tunedHz else { return }
         do {
@@ -2383,7 +2380,7 @@ final class AppSession {
     func clearError() { lastError = nil }
 
     /// Marks the waterfall's rows the newest reading covers, when it is over the clipping floor
-    /// and its capture is the one the waterfall's rows come from (plans/app.md, M2-8). The raw
+    /// and its capture is the one the waterfall's rows come from. The raw
     /// reading, not `failure`: the mark records every interval that clipped, the hold does not.
     private func markClippedRows() {
         guard let level = captureLevel.level, let time = captureLevel.time,
@@ -2761,7 +2758,7 @@ final class AppSession {
 
     /// The tuned channel's manifests: every recording on its frequency and mode, not only the
     /// newest, so a row an earlier recording kept stays kept after the switch goes off and on
-    /// again (plans/app.md, APP-5, "Fixed 2026-09-25 (second run)"). Each is read once and again
+    /// again. Each is read once and again
     /// when its job changes; the running one is the one whose job changes.
     private func followTunedRecordings() {
         for id in tunedRecordingIDs { readManifestIfNeeded(id) }
@@ -2817,7 +2814,7 @@ final class AppSession {
     var storeCapBytes: UInt64 { state.daemon.recordingsCapBytes }
 
     /// What the tuned channel is called where it is heard: the bookmark's name, else the plan
-    /// channel's (`ch5`, `WX3`; R16), else the frequency (`Frequency.format`); nil with no
+    /// channel's (`ch5`, `WX3`), else the frequency (`Frequency.format`); nil with no
     /// channel. The volume caption's name.
     var listeningName: String? {
         guard let hz = tunedHz else { return nil }
@@ -3149,7 +3146,7 @@ final class AppSession {
 
     // MARK: The Library's player
 
-    /// The part the player shows and ▶ plays (decided 2026-09-25): the one playing, else the
+    /// The part the player shows and ▶ plays: the one playing, else the
     /// selected part, else the page's first row, once the manifest that holds it has been read. nil
     /// leaves the player with nothing to play.
     var player: (uri: String, manifest: RecordingManifest, part: RecordingPart)? {
@@ -3356,7 +3353,7 @@ final class AppSession {
         /// `Recordings.retuneWords`: the job named and the gap the move would leave.
         let words: String
         /// The button that goes ahead: `Move anyway` before a move, `Sweep anyway` before Find
-        /// active, which hops the radio across the band (R20).
+        /// active, which hops the radio across the band.
         let proceedLabel: String
         let proceed: @MainActor () -> Void
         let cancel: @MainActor () -> Void
@@ -3420,7 +3417,7 @@ extension LeylineError {
     static let notDialled = LeylineError(code: "UNAVAILABLE", message: "The daemon is not dialled")
 }
 
-/// The window's two places (decided 2026-09-25): Radio is the live window, the Library what has
+/// The window's two places: Radio is the live window, the Library what has
 /// been kept. Presentation only; the radio runs the same in both.
 enum WindowPlace: String, CaseIterable, Identifiable {
     case radio
