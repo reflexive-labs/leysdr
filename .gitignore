@@ -50,3 +50,6 @@ evals/runs/
 # The app package's build products and the assembled bundle (scripts/bundle-app.sh)
 app/.build/
 app/dist/
+
+# Python bytecode from running scripts/check-docs.py
+__pycache__/
