@@ -45,8 +45,13 @@ public final class RetuneQueue {
     public init() {}
 
     /// A move asked for. It waits when a centre is in flight, replacing any move already waiting.
+    /// A started move holds the queue at once, so a second request made before `perform` runs
+    /// waits instead of starting a second loop.
     public func request(_ move: Move) -> Request {
-        guard centreInFlight != nil else { return .start }
+        guard centreInFlight != nil else {
+            centreInFlight = move.centre
+            return .start
+        }
         let superseded = waiting
         waiting = move
         return .queued(superseded: superseded)

@@ -85,3 +85,7 @@ public struct HeldObject<Object: Sendable>: Sendable {
         id.flatMap(lookup) ?? pending
     }
 }
+
+/// Equatable when the object is, so the session can fold a mirror state on a copy and store it
+/// back only when something changed.
+extension HeldObject: Equatable where Object: Equatable {}

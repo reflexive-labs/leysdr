@@ -20,6 +20,14 @@ final class RetuneQueueTests: XCTestCase {
         XCTAssertNil(q.waiting, "a started move does not wait")
     }
 
+    func testASecondRequestBeforePerformRunsWaits() {
+        let q = RetuneQueue()
+        XCTAssertEqual(q.request(move(100)), .start)
+        XCTAssertEqual(q.centreInFlight, 100, "a started move holds the queue before perform runs")
+        XCTAssertEqual(q.request(move(200)), .queued(superseded: nil))
+        XCTAssertEqual(q.waiting, move(200))
+    }
+
     func testMovesAskedForDuringOneWaitAndTheLastWins() async {
         let q = RetuneQueue()
         var centres: [Int64] = []

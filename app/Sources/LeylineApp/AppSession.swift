@@ -691,9 +691,13 @@ final class AppSession {
         // RPC's response and its event closes in milliseconds and an object evicted inside it
         // has no event coming.
         if let id = captureID {
-            let verdict = heldCapture.observe(
+            // Folded on a copy, so a mirror change that alters nothing here is not a change to
+            // anything a view reads.
+            var folded = heldCapture
+            let verdict = folded.observe(
                 inMirror: state.capture(id) != nil, now: Date(),
                 dropAfter: Self.neverSeenDropSeconds)
+            if folded != heldCapture { heldCapture = folded }
             switch verdict {
             case .lost:
                 log("session", "capture \(id) is gone; a new one will be made")
@@ -709,9 +713,13 @@ final class AppSession {
             }
         }
         if let id = channelID {
-            let verdict = heldChannel.observe(
+            // Folded on a copy, so a mirror change that alters nothing here is not a change to
+            // anything a view reads.
+            var folded = heldChannel
+            let verdict = folded.observe(
                 inMirror: state.channel(id) != nil, now: Date(),
                 dropAfter: Self.neverSeenDropSeconds)
+            if folded != heldChannel { heldChannel = folded }
             switch verdict {
             case .lost:
                 log("session", "channel \(id) is gone")
@@ -729,8 +737,12 @@ final class AppSession {
             if !adopted, !listeningStopped, !sweeping { adopt() }
         } else {
             adopted = false
-            heldCapture.disconnected()
-            heldChannel.disconnected()
+            var capturesCopy = heldCapture
+            var channelsCopy = heldChannel
+            capturesCopy.disconnected()
+            channelsCopy.disconnected()
+            if capturesCopy != heldCapture { heldCapture = capturesCopy }
+            if channelsCopy != heldChannel { heldChannel = channelsCopy }
         }
         spectrum.follow(capture, connection: daemon)
         telemetry.follow(

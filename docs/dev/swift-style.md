@@ -168,14 +168,14 @@ done.
 **The response arrives before the event, so hold what the RPC returned.** A capture or channel
 this app just made is kept beside the mirror until the mirror carries it, and an id is dropped
 only once the mirror *had* it and lost it — a "seen" flag, because an id never seen and an id
-deleted look identical otherwise (`pendingCapture`, `captureSeen`).
+deleted look identical otherwise (`HeldObject`).
 
 **Every wait has a deadline, and the deadline is in the doc comment.** An id never seen is
 released after three seconds, `requestedHz` expires after two, a busy device gets two, the auto
 squelch gives up after three and leaves the squelch off. `confirmed(within:_:)`
 is the one helper; use it rather than a bare sleep.
 
-**One move in flight at a time.** A second centre move waits in `nextRetune`
+**One move in flight at a time.** A second centre move waits in `RetuneQueue`
 rather than racing the first, because two at once leave the
 coalescer holding the last centre and the first offset written against a centre that never
 applied. A drag is rate-limited the same way: at most an eighth of a span every 300 ms.
@@ -212,8 +212,9 @@ thread; otherwise `assumeIsolated` traps.
 method captures `self` strongly and inherits the actor; the cycle ends when the round trip does
 (`Task { await select(band: b) }` in `AppSession`). Anything that outlives the call — a subscription, an expiry clock, the
 mirror's callback — takes `[weak self]` (the task in `SpectrumFeed.follow`, the expiry `AppSession.request(_:)` arms).
-Inside an `actor`, `Task {}` inherits that actor's isolation, which is why
-`WriteCoalescer.start()` calls back into itself without an `await`.
+Inside an `actor`, `Task {}` inherits that actor's isolation. `WriteCoalescer` is not an actor:
+it is a `Sendable` class whose state sits behind a `Mutex`, so its setters are synchronous and
+record writes in the order they are called.
 
 **A `Task` that owns a stream is paired with `continuation.onTermination`** so ending the
 consumer cancels the RPC (`DaemonConnection`, and the streams `BulkSubscription` hands out in `Streams.swift`). A stream left running after its reader is gone keeps a channel alive in the
