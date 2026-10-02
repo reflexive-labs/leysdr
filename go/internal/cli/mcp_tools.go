@@ -783,8 +783,12 @@ func subAudibleRank(sa *leylinev1.SubAudible) int {
 // own edges rather than from timing anything here; the mean is the meter's,
 // averaged over the blocks the squelch was open for.
 func summarise(ctx context.Context, s *verbSession, dur time.Duration) (*listenSummary, error) {
-	tctx, cancel := context.WithTimeout(ctx, dur)
+	// A local timer ends the listen, not a deadline on the RPC, which the daemon could act on a
+	// moment before this side does and turn the answer into an error.
+	tctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	listened := time.NewTimer(dur)
+	defer listened.Stop()
 	msgs, terrs, err := s.Client.WatchTelemetry(tctx, &leylinev1.TelemetrySubscription{
 		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: s.Channel.GetChannelId()},
 		Types: []leylinev1.TelemetryType{
@@ -801,6 +805,9 @@ func summarise(ctx context.Context, s *verbSession, dur time.Duration) (*listenS
 	sum := newListenSummary(s.Channel.GetSquelchDb(), leyline.ChannelCaptureRate(s.State, s.Channel))
 	for {
 		select {
+		case <-listened.C:
+			sum.finish()
+			return sum, nil
 		case <-tctx.Done():
 			sum.finish()
 			return sum, nil
@@ -1279,16 +1286,23 @@ func (srv *mcpServer) listEntities(ctx context.Context, _ *mcp.CallToolRequest, 
 	// The job's own scope replays what it retained (up to 256 records) before
 	// going live, so a decoder that has been running for a while answers at
 	// once and the wait only adds what arrives during it.
+	// The listen ends on a local timer rather than a deadline on the RPC: a deadline travels to
+	// the daemon, which can end the stream a moment before this side's clock does, and that end
+	// would read as a failure instead of the answer.
 	from := uint64(0)
-	sctx, stop := context.WithTimeout(ctx, dur)
+	sctx, stop := context.WithCancel(ctx)
 	defer stop()
 	recs, errs, err := c.SubscribeRecords(sctx, leyline.RecordScopeJob(job.GetJobId(), &from))
 	if err != nil {
 		return nil, nil, toolError(err)
 	}
+	listened := time.NewTimer(dur)
+	defer listened.Stop()
 fold:
 	for {
 		select {
+		case <-listened.C:
+			break fold
 		case <-sctx.Done():
 			break fold
 		case err := <-errs:
