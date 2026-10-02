@@ -18,17 +18,16 @@ jobs:
     name: proto validation + Go clients
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
       # Only protoc comes from outside the repo; scripts/gen-proto.sh installs the Go plugins from
       # go/go.mod's tool directives, so the drift check is against the pinned plugin versions.
-      - uses: arduino/setup-protoc@v3
+      - uses: ./.github/actions/setup-protoc
         with:
           version: "25.1"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: generated Go code is current
         run: |
           ./scripts/gen-proto.sh
@@ -60,11 +59,11 @@ jobs:
     name: engine on Linux (compile + portable DSP tests + contract e2e)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: swift-actions/setup-swift@v2
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-swift
         with:
-          swift-version: "6.2"
-      - uses: actions/setup-go@v5
+          version: "6.2.1"
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
@@ -74,18 +73,18 @@ jobs:
         run: make e2e
       # The app's client façade is plain Swift over the generated contract, so it builds and is
       # tested here too; the SwiftUI target is declared only on macOS.
-      - name: app façade (unit tests, then against the Linux-built leylined)
-        run: make app-test app-e2e
+      - name: app façade (format lint, unit tests, then against the Linux-built leylined)
+        run: make app-lint app-test app-e2e
 
   swift-macos:
     name: engine on macOS (the product)
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
-      - uses: maxim-lobanov/setup-xcode@v1
+      - uses: actions/checkout@v7
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
           xcode-version: latest-stable
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
@@ -104,10 +103,9 @@ jobs:
       # LeylineProto, so a proto change that only regenerated Go would otherwise pass. The script
       # builds the Swift plugins from swift/LeylineProto/Package.resolved and the Go ones from
       # go/go.mod.
-      - uses: arduino/setup-protoc@v3
+      - uses: ./.github/actions/setup-protoc
         with:
           version: "25.1"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: generated Swift code is current
         run: |
           REQUIRE_SWIFT=1 ./scripts/gen-proto.sh

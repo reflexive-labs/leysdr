@@ -179,7 +179,7 @@ app-lint:
 lint: $(TOOLS)/golangci-lint $(TOOLS)/gofumpt
 	cd go && $(TOOLS)/golangci-lint run ./... && test -z "$$($(TOOLS)/gofumpt -l .)"
 
-check: proto-check version-check license-check go-test race lint swift swift-test e2e app app-test app-e2e
+check: proto-check version-check license-check go-test race lint app-lint swift swift-test e2e app app-test app-e2e
 
 clean:
 	rm -rf go/bin engine/.build swift/LeylineProto/.build app/.build app/dist

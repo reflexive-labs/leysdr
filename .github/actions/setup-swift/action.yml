@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: Apache-2.0
+name: setup-swift
+description: >-
+  Install a Swift release for Ubuntu 24.04 from swift.org, verified against swift.org's signing
+  keys. A composite action, so it runs no JavaScript and does not depend on a Node runtime.
+inputs:
+  version:
+    description: Swift release, for example 6.2.1.
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        version='${{ inputs.version }}'
+        case "$(uname -m)" in
+          x86_64)  platform=ubuntu2404;         suffix= ;;
+          aarch64) platform=ubuntu2404-aarch64; suffix=-aarch64 ;;
+          *) echo "::error::no Swift build for $(uname -m)"; exit 1 ;;
+        esac
+        name="swift-$version-RELEASE-ubuntu24.04$suffix"
+        url="https://download.swift.org/swift-$version-release/$platform/swift-$version-RELEASE/$name.tar.gz"
+        work="$RUNNER_TEMP/swift-download"
+        mkdir -p "$work"
+        curl -fsSL --retry 3 -o "$work/swift.tar.gz" "$url"
+        curl -fsSL --retry 3 -o "$work/swift.tar.gz.sig" "$url.sig"
+        export GNUPGHOME="$work/gnupg"
+        mkdir -p -m 700 "$GNUPGHOME"
+        curl -fsSL --retry 3 https://www.swift.org/keys/all-keys.asc | gpg --batch --quiet --import
+        gpg --batch --verify "$work/swift.tar.gz.sig" "$work/swift.tar.gz"
+        dest="$RUNNER_TEMP/swift-$version"
+        mkdir -p "$dest"
+        tar -xzf "$work/swift.tar.gz" -C "$dest" --strip-components=1
+        rm -rf "$work"
+        echo "$dest/usr/bin" >> "$GITHUB_PATH"
+        "$dest/usr/bin/swift" --version
