@@ -2,7 +2,9 @@
 name: setup-swift
 description: >-
   Install a Swift release for Ubuntu 24.04 from swift.org, verified against swift.org's signing
-  keys. A composite action, so it runs no JavaScript and does not depend on a Node runtime.
+  keys. The keys are swift-keys.asc beside this file, a copy of swift.org's keys/all-keys.asc
+  (swiftlang/swift-org-website), so a run never depends on fetching them. A composite action, so
+  it runs no JavaScript and does not depend on a Node runtime.
 inputs:
   version:
     description: Swift release, for example 6.2.1.
@@ -23,11 +25,11 @@ runs:
         url="https://download.swift.org/swift-$version-release/$platform/swift-$version-RELEASE/$name.tar.gz"
         work="$RUNNER_TEMP/swift-download"
         mkdir -p "$work"
-        curl -fsSL --retry 3 -o "$work/swift.tar.gz" "$url"
-        curl -fsSL --retry 3 -o "$work/swift.tar.gz.sig" "$url.sig"
+        curl -fsSL --retry 5 --retry-all-errors -o "$work/swift.tar.gz" "$url"
+        curl -fsSL --retry 5 --retry-all-errors -o "$work/swift.tar.gz.sig" "$url.sig"
         export GNUPGHOME="$work/gnupg"
         mkdir -p -m 700 "$GNUPGHOME"
-        curl -fsSL --retry 3 https://www.swift.org/keys/all-keys.asc | gpg --batch --quiet --import
+        gpg --batch --quiet --import "${{ github.action_path }}/swift-keys.asc"
         gpg --batch --verify "$work/swift.tar.gz.sig" "$work/swift.tar.gz"
         dest="$RUNNER_TEMP/swift-$version"
         mkdir -p "$dest"

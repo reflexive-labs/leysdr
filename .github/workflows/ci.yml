@@ -28,9 +28,11 @@ jobs:
       - uses: ./.github/actions/setup-protoc
         with:
           version: "25.1"
+      # The runner image ships a Swift toolchain; this job checks Go only (the macOS job checks
+      # the Swift output), so Swift generation is skipped rather than built here.
       - name: generated Go code is current
         run: |
-          ./scripts/gen-proto.sh
+          SKIP_SWIFT=1 ./scripts/gen-proto.sh
           git diff --exit-code -- go/gen
       # Swift has no link-time -X, so the engine's version constant is generated and checked in.
       - name: the version is one number in three places

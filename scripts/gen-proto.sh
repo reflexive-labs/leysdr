@@ -8,8 +8,9 @@
 #   - protoc-gen-go, protoc-gen-go-grpc: `tool` directives in go/go.mod (`go install tool`)
 #   - protoc-gen-swift, protoc-gen-grpc-swift-2: products of the LeylineProto package's resolved
 #     dependencies (swift/LeylineProto/Package.resolved), built with `swift build` when a Swift
-#     toolchain is present
-# protoc: the system one (Homebrew, apt, arduino/setup-protoc in CI). Any current version produces the
+#     toolchain is present (SKIP_SWIFT=1 skips them and the Swift output; REQUIRE_SWIFT=1 fails
+#     when Swift is missing)
+# protoc: the system one (Homebrew, apt, .github/actions/setup-protoc in CI). Any current version produces the
 # same code for these proto3 files; the Go plugins stamp the protoc version into a header comment,
 # which this script normalises. Real drift (a different descriptor or plugin) still fails proto-check.
 set -euo pipefail
@@ -36,7 +37,9 @@ echo "installing pinned Go plugins -> .tools/$HOST/bin (go/go.mod tool directive
 
 # Swift plugins: rebuilt when missing or when the resolved package versions change.
 SWIFT_PLUGINS=0
-if command -v swift >/dev/null; then
+if [ "${SKIP_SWIFT:-0}" = "1" ]; then
+  echo "SKIP_SWIFT=1; skipping Swift generation" >&2
+elif command -v swift >/dev/null; then
   stamp="$(cksum swift/LeylineProto/Package.resolved | awk '{print $1}')"
   if [ ! -x "$TOOLS/protoc-gen-swift" ] || [ ! -x "$TOOLS/protoc-gen-grpc-swift-2" ] \
      || [ "$(cat "$ROOT/.tools/$HOST/swift-plugins.stamp" 2>/dev/null)" != "$stamp" ]; then
