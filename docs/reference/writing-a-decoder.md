@@ -136,8 +136,8 @@ bundled `leydec-aprs` (`go/cmd/leydec-aprs`, with the AFSK, AX.25 and APRS stage
 ## Wrapping an existing tool
 
 A mature C decoder — `rtl_433`, `dump1090`, `direwolf` — becomes a decoder by writing a thin adapter
-that speaks this wire on one side and drives the tool on the other: feed it the audio (or IQ, once
-IQ input lands) it expects, parse its native output, and emit records. The adapter is the decoder;
+that speaks this wire on one side and drives the tool on the other: feed it the audio or IQ samples
+it expects, parse its native output, and emit records. The adapter is the decoder;
 the tool is an implementation detail of it. The out-of-process contract exists partly so a decoder
 under a licence the engine could not link, or of uncertain provenance, stays the author's choice and
 not the project's.

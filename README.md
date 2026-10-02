@@ -173,8 +173,8 @@ detail is [`docs/plans/build-order.md`](docs/plans/build-order.md).
 | Bands, channel plans, bookmarks, CHIRP import | works | in `ley` and the app |
 | Decoders: APRS, SAME, AIS | works | more are planned (`docs/plans/decoders.md`) |
 | `ley watch` notifications | works | webhook, shell command or macOS notification |
-| MCP adapter (`ley mcp`) | partial | resource tools, signal identification and transcripts are planned (`docs/plans/mcp.md`) |
-| Mac app | partial | build from source; does not start the daemon itself yet; no settings inspector |
+| MCP adapter (`ley mcp`) | partial | signal identification and transcript tools are not implemented (`docs/plans/mcp.md`) |
+| Mac app | partial | build from source; does not start the daemon itself; the layer 2 parameter inspector is incomplete |
 | Signed app bundle and installer | planned | the bundle layout exists, signed for local use only |
 | Terminal dashboard | planned | |
 | Durable watch jobs | partial | kept decode jobs survive a daemon restart; other jobs do not |

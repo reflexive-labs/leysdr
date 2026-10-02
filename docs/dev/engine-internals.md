@@ -2,7 +2,7 @@
 
 Status: v0 implementation contract. Companion to `docs/design/control-plane.md` and `docs/design/data-planes.md`;
 the wire contract is `proto/leyline/v1`, the engine contract is `engine/Sources/EngineCore/CoreProtocols.swift`.
-AGENTS.md invariants apply throughout; this doc says *how* the engine keeps them.
+AGENTS.md invariants apply throughout; this document specifies their engine implementation.
 
 ## Module map
 
@@ -181,7 +181,7 @@ the transmission in progress all go, and the capture forgets its band floor (`Ba
 the first block of the new stream is read for a fresh one. The samples either side of the gap are not continuous, so filtering
 the first blocks against pre-gap history, judging them against a floor measured on the old stream,
 or reporting an open duration that spans the dead air would all report signal that was never received.
-A squelch that was open when the reset lands gets a close record stamped with the last block the
+A squelch that was open when the reset is applied gets a close record stamped with the last block the
 channel saw, so the transmission ends on the wire instead of vanishing and the sub-audible detector
 drops the phase history it had been building. The reset needs nothing in flight: the device is
 stopped and the ring drained first. That drain is bounded, and if it expires while the DSP thread is
@@ -284,7 +284,7 @@ it closed — which is what a meter wants, and the reason `accumulation` does no
 `bins` rounds to a ladder size so every FFT reader's row layout holds, capped at 4096 because every
 subscription on a tap runs its own transform, and rows are capped at 20 a second and default to 10
 — a row is a whole transform, and a meter is read by eye. Over the bulk plane this is `kind = FFT`
-with a `channel_id` source; the descriptor answers `center_hz = rate/4` and `span_hz = rate/2`,
+with a `channel_id` source; the descriptor returns `center_hz = rate/4` and `span_hz = rate/2`,
 `ROW_SNAPSHOT` with one look, and the tap it serves. A raw-IQ channel has no audio and refuses with
 `INVALID_ARGUMENT`, as does an unknown tap, an unknown `accumulation`, or a channel with no audio
 rate yet. Because the stream reads a channel tap, it ends exactly as a bulk audio stream does when
@@ -590,7 +590,7 @@ table is the contract: `ProtoMapping.statusCode(for:)` and `leyline.GRPCCode` ea
 on each side holds its switch against these rows, and the same tests assert that the two registries —
 `EngineError.Code.all` and `leyline.DaemonCodes` — are the same set. A consumer that reads the status
 rather than the trailer (a retry interceptor, a mesh policy, a client in a fourth language) then gets
-the same answer from `leylined` and from the fake daemon. `FAILED_PRECONDITION` is deliberate where
+the same result from `leylined` and from the fake daemon. `FAILED_PRECONDITION` is deliberate where
 `RESOURCE_EXHAUSTED` would read as natural: the latter is retriable under default gRPC retry policies,
 and a radio someone else is using must not be retried blind.
 
@@ -665,7 +665,7 @@ reader on the DSP ring.
 
 ### Bulk service
 
-`Subscribe` answers with an authoritative `StreamDescriptor`. v0 rules: transport is always
+`Subscribe` returns an authoritative `StreamDescriptor`. v0 rules: transport is always
 `grpc` (SHM_RING requests are downgraded — the ring is a later milestone); `start` must be `live`
 (`UNIMPLEMENTED` otherwise); policy defaults to `LATEST_WINS`, `GAP_MARKED` honoured by emitting `Gap`.
 FFT: bins/rate via the ladder; bin format `DB_F32` (little-endian f32) or `DB_U8`
@@ -772,7 +772,7 @@ which converts f32 to S16, accumulates peak and mean, and writes the files.
 
 The channel form borrows: `BorrowedChannelLease.release()` does nothing, so recording what
 somebody is listening to leaves their channel and their radio exactly as it found them, and the
-runner polls `SessionStore.channelEngine` so that the owner destroying the channel ends the job
+runner polls `SessionStore.channelEngine` so that deleting the borrowed channel ends the job
 `COMPLETED` rather than orphaning a sink. The frequency form takes a real lease from the
 allocator, which is what hands the radio back when the job ends.
 
@@ -819,7 +819,7 @@ departing client's playbacks beside its channels, which is what makes Ctrl-C in 
 the sound. An IQ part is refused `INVALID_ARGUMENT` (those are tuned), and a host with no
 AVFoundation returns `PLATFORM_UNSUPPORTED` exactly as `AttachSink(system_audio)` does.
 
-`Resources` is implemented over these manifests plus the kept-decode store: `ListResources` answers
+`Resources` is implemented over these manifests plus the kept-decode store: `ListResources` returns
 `RECORDING` and `RECORDS` from disk and `SCAN` from the jobs the daemon still remembers,
 `GetResource` the same shapes by URI, and `ResolveLocalPath` the recording's directory
 (`ley://recordings/<id>`) or one part's samples file (`ley://recordings/<id>/<part>`). Nothing is

@@ -1,21 +1,20 @@
 # Design: Signal Views — Waterfall, Channel View, Sub-Audible Tones
 
-Status: draft. Companion to `data-planes.md` (which owns the plane split this builds on) and
-`docs/dev/cli-style.md` (which owns how any of it is drawn). Covers three related features that all answer
-one question — *what is actually happening on this frequency* — and one shared standard for
-reporting only what was measured.
+Status: implemented for the shaded waterfall, channel measurements, FFT accumulation, CTCSS and
+DCS. Tone squelch and the audio sonogram are not implemented. Companion to `data-planes.md` and
+`docs/dev/cli-style.md`.
 
 ## Context
 
-`ley spectrum` answers "what is on the air **now**". Three things it cannot answer:
+One spectrum row shows current energy. The signal views add three observations:
 
 1. **Is that signal continuous, or did it start and stop?** A single frame cannot show duty cycle.
    A birdie and a two-minute transmission look identical in one frame.
-2. **What am I hearing, and how well?** Audio level, deviation, tuning error, and the history of
-   transmissions on this channel are not on the wire at all today.
+2. **What am I hearing, and how well?** Meter and squelch telemetry report audio level, deviation,
+   tuning error and transmission history.
 3. **Who is this repeater for?** A sub-audible CTCSS/PL tone is transmitted with almost every
-   analogue two-way transmission, and the NFM chain currently removes it one stage after the
-   discriminator.
+   analogue two-way transmission. The NFM speaker path removes it after the discriminator, so the
+   detector uses an earlier tap.
 
 These are one design because they share a plane, a timebase, and an honesty standard, and because
 two of the three are nearly free once the third's groundwork exists.
@@ -28,10 +27,9 @@ when, and it cannot show signal shape or separate 12.5 kHz neighbours. It is mos
 about 200 kHz span, and the header must state the per-column bandwidth so the user knows the
 resolution.
 
-The only thing it adds over `ley spectrum --watch` is **intermittency**; the max-hold trace already
-answers "birdie or real?". That is a narrow benefit, but a real one: in testing, a transmission that
-keyed up for four seconds was invisible in any single spectrum frame and unmistakable in the
-waterfall.
+The waterfall adds **intermittency** to `ley spectrum --watch`; max hold already distinguishes a
+constant peak from a changing one. In testing, a four-second transmission was absent from the
+sampled spectrum frames and visible in the waterfall.
 
 ## The snapshot problem
 
@@ -47,7 +45,7 @@ a rendering problem and cannot be fixed in the client.
 2.4 MSPS / 16384-sample blocks), capped at 64 looks per row, combined as max-of-looks.
 
 - Cost: 146 FFTs/s of size 1024 rather than 4 — about 7.5 Mflop/s on vDSP.
-- Guarantee: any burst lasting at least one block period lands in at least one look and is drawn at
+- Guarantee: any burst lasting at least one block period appears in at least one look and is drawn at
   full level. Sub-block bursts stay probabilistic, and the docs state this.
 - `MAX` raises the apparent noise floor by roughly 6 dB relative to `SNAPSHOT`, because the maximum
   of N exponential draws is biased upward. The renderer's floor estimate must be computed from the
@@ -161,7 +159,7 @@ A gate of "beat the next-best standard tone by at least 6 dB" separates cleanly 
 sides and did not false-alarm on voice. The bank costs about 19k multiply-adds per window and 2
 floats of state per tone.
 
-The bank is a **gate, not the answer**. Its bin width at N=512 is ~1.95 Hz and the EIA ladder is
+The bank is a candidate filter. Its bin width at N=512 is ~1.95 Hz and the EIA ladder is
 spaced as tightly as 2.3 Hz (67.0 / 69.3), so identity comes from a phase-slope frequency estimate
 at the winning bin, taken across hops. Voice is rejected by requiring that estimate to be *stable*
 for a whole second (eight hops at the tap's 1 kHz): a human pitch contour moves far more than 1 Hz
@@ -171,7 +169,7 @@ none). The deviation must hold too, within a ratio of 1.5 across the horizon: a 
 its tone at one level, while a voice fundamental's level rises and falls with every syllable. The
 numbers behind both, from the captures, are in `docs/plans/signal-views.md`.
 
-### What honest means here
+### Reporting limits
 
 This is invariant 12 applied to a second detector, and it is the easiest part to get wrong.
 
@@ -183,8 +181,8 @@ This is invariant 12 applied to a second detector, and it is the easiest part to
   populated so a client can threshold on them and ignore the score. Shipping a calibrated
   *P(correct)* would require a fixture corpus we do not have; without one, the calibration would
   itself be a guess presented as a measurement, which the invariant forbids.
-- **No lock claim before fixtures.** `fixtures/` gains NFM voice + 100.0 Hz PL, the 67.0/69.3
-  discrimination pair at 6/10/20 dB tone-to-band, mains hum with no PL, and PL with no voice.
+- **Fixture coverage.** The fixtures include NFM voice with 100.0 Hz PL, the 67.0/69.3 Hz
+  discrimination pair at 6/10/20 dB tone-to-band, mains hum without PL, and PL without voice.
 - **Documented false positive:** 50 Hz mains hum lands on exactly 100.0 Hz, is stable, and passes
   every frequency test; 100.0 Hz is also one of the most common real PL tones. Only the deviation
   plausibility window rejects it, imperfectly. 60 Hz mains lands at 120 Hz, which is not a standard
@@ -199,32 +197,32 @@ This is invariant 12 applied to a second detector, and it is the easiest part to
 
 ### DCS
 
-Not a tone: a 134.4 bps NRZ stream at about ±750 Hz deviation carrying a repeating Golay(23,12)
-codeword with a polarity variant. Same tap, same rate, same message with `kind = DCS`, a separate
-detector. Ships after CTCSS, with no schema change. A DCS lock must suppress the CTCSS claim, since
-its broadband sub-audible energy feeds the Goertzel bank.
+DCS is a 134.4 bps NRZ stream at about ±750 Hz deviation carrying a repeating Golay(23,12)
+codeword with a polarity variant. Its detector uses the same tap and reports the same message with
+`kind = DCS`. A DCS lock suppresses the CTCSS claim because its broadband sub-audible energy feeds
+the Goertzel bank.
 
 ### Deliberately deferred: tone squelch
 
-Gating audio on the detector is the main reason operators use CTCSS, and it is the next step. It
-ships only after the detector has a fixture record, because a false negative mutes the audio and the
-user cannot tell why. `Channel` field 13 is held for `subaudible_squelch_hz`.
+Gating audio on the detector is not implemented. A false negative would mute the audio without an
+observable cause, so it requires separate acceptance criteria. `Channel` field 13 is reserved for
+`subaudible_squelch_hz`.
 
-## Wire changes
+## Wire contract
 
 All additive within v1. Field numbers are settled here once, because a field number can never be
 reused once assigned.
 
 ```protobuf
 // ---- bulk.proto : FftParams (1-3 in use) ----
-FftAccumulation accumulation = 4;   // default SNAPSHOT = today's behaviour
-uint32 looks_per_row = 5;           // descriptor answer only; 0 in a request
+FftAccumulation accumulation = 4;   // default SNAPSHOT
+uint32 looks_per_row = 5;           // returned descriptor only; 0 in a request
 
 enum FftAccumulation {
   FFT_ACCUMULATION_UNSPECIFIED = 0;
-  SNAPSHOT = 1;   // one periodogram per row (current behaviour)
-  MEAN = 2;       // power mean over the row: stable floor, dilutes short bursts
-  MAX = 3;        // max over the row: catches bursts; floor sits ~6 dB high
+  ROW_SNAPSHOT = 1;   // one periodogram per row
+  ROW_MEAN = 2;       // power mean over the row: stable floor, dilutes short bursts
+  ROW_MAX = 3;        // max over the row: catches bursts; floor sits ~6 dB high
 }
 // No new StreamKind. FFT stays capture-scoped.
 
@@ -234,7 +232,7 @@ message TelemetryMsg { ...; SubAudible sub_audible = 7; }   // 3-6 in use
 
 message Meter {                     // 1-4 unchanged, still 10 Hz, still full state
   double audio_dbfs      = 5;   // demodulated level; NaN before the first block
-  double audio_peak_dbfs = 6;   // peak over the meter interval; floored at -120
+  double audio_peak_dbfs = 6;   // largest sample in the interval; -inf when silent
   double deviation_hz    = 7;   // FM only, from the calibrated discriminator
   double freq_error_hz   = 8;   // discriminator DC; FM and squelch-open only
 }
@@ -244,13 +242,13 @@ message SquelchTransition {         // 1-2 unchanged; 3-5 set on the close edge 
                                 // client knows; the channel's own rate is not on the wire
   double peak_snr_db      = 4;
   double peak_audio_dbfs  = 5;
-  reserved 6;                   // SubAudible tone, when CTCSS lands
+  reserved 6;                   // SubAudible is a separate telemetry message
 }
 
 message SubAudible {
   string channel_id       = 1;
-  SubAudibleKind kind     = 2;  // NONE | CTCSS | DCS
-  double tone_hz          = 3;  // measured; 0 unless CTCSS
+  SubAudibleKind kind     = 2;  // SUB_AUDIBLE_NONE | CTCSS | DCS
+  double tone_hz          = 3;  // measured; NaN when nothing was measured
   double standard_tone_hz = 4;  // classified; 0 = measured but not classifiable
   uint32 dcs_code         = 5;  // octal as decimal (023 -> 23); 0 unless DCS
   bool   dcs_inverted     = 6;
@@ -260,7 +258,12 @@ message SubAudible {
   SampleTime first_seen   = 10;
   uint32 hops_agreeing    = 11;
 }
-enum SubAudibleKind { SUB_AUDIBLE_KIND_UNSPECIFIED = 0; NONE = 1; CTCSS = 2; DCS = 3; }
+enum SubAudibleKind {
+  SUB_AUDIBLE_KIND_UNSPECIFIED = 0;
+  SUB_AUDIBLE_NONE = 1;
+  SUB_AUDIBLE_CTCSS = 2;
+  SUB_AUDIBLE_DCS = 3;
+}
 
 // ---- control.proto : Channel (1-11 in use) ----
 bool subaudible_detect = 12;    // NFM only; ignored for other modes
@@ -271,26 +274,8 @@ bool subaudible_detect = 12;    // NFM only; ignored for other modes
 held (the telemetry plane has no `GetState`), and carries full state on every message per
 invariant 6.
 
-Engine side: `ChannelTelemetryRecord.Kind` gains `.subAudible`; the POD record widens and carries
-floats only — no `String` on the hot path, labels are applied in the mapping layer.
+`ChannelTelemetryRecord.Kind.subAudible` carries numeric POD fields on the hot path. The mapping
+layer applies string labels after the record leaves that path.
 
-## Build order
-
-Each of 1, 2 and 4 is independently shippable and improves `ley` on its own.
-
-1. **`SquelchTransition` close-side summary + the transmission table.** Three fields the daemon
-   already has, two compares in the hot path, zero DSP. The cheapest useful item here.
-2. **`Meter` fields 5–8 + the two-bar channel view.** vDSP over data already in cache.
-3. **Ladder accumulation.** It has no user-visible output, so it is the item most likely to be
-   skipped. It must land *before* the waterfall, not after.
-4. **The scrolling shaded waterfall** (`ley waterfall`) and `ui.Glyphs.Shade`.
-5. **CTCSS fixtures**, then the detector, the `PL` line and `--json`.
-6. **DCS**, same message, no schema change.
-
-## Documentation debt this creates
-
-- `docs/plans/build-order.md` item 14 and `docs/plans/user-stories.md` say "braille-cell waterfall"; both become
-  "shaded-cell", with the reason (colour-off legibility) recorded here.
-- `data-planes.md` gains a note that the FFT ladder can integrate over a row, and what `MAX`
-  does to the apparent noise floor.
-- `docs/dev/cli-style.md` gains the `Shade` glyph row and the waterfall rules.
+`ley waterfall`, the transmission table, channel meters, CTCSS and DCS use this contract. The
+remaining audio sonogram uses the channel-audio FFT stream specified in `audio-meters.md`.

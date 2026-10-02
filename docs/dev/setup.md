@@ -158,7 +158,7 @@ exist — it was assumed by analogy with `vvlog10f`, which does. So:
   compiles the Accelerate path, and it also checks behaviour parity.
 - **Prefer an Accelerate symbol already used in the tree** (`grep -o 'vDSP_[a-zA-Z_]*'`). vForce is
   the risky family: only `vvatan2f` and `vvsincosf` are proven here.
-- **A scalar loop is a legitimate answer** when a kernel is off the hot path. `dbToPower` delegates
+- **A scalar loop is appropriate** when a kernel is off the hot path. `dbToPower` delegates
   to `PortableKernels` on both platforms, with a comment explaining why.
 - Two more things a Linux build gets wrong: the Glibc overlay has `Float` overloads of the math
   functions and Darwin's does not (use the `f`-suffixed forms — `powf`, `log10f`, `sinf`), and the

@@ -76,7 +76,7 @@ and the rest take it with `--device 2`. The daemon remembers it across restarts,
 once; `ley devices detach 2` removes it and stops it coming back. Attaching connects once, so a
 host that cannot be reached is an error on the spot and nothing is remembered — a radio never
 reached is usually a typo. A radio that drops later is not an error: it goes DISCONNECTED and the
-daemon reconnects when it answers again. Attaching an endpoint twice is not an error either; the
+daemon reconnects when it responds again. Attaching an endpoint twice is not an error either; the
 second time prints the radio the daemon already has.
 
 The daemon keeps running after you close the terminal; `ley daemon status` reports whether it is
@@ -287,7 +287,7 @@ stderr before giving up.
 
 ## 5. Find what is on a band
 
-`ley spectrum` draws a band and lists its loudest bins. `ley scan` answers the next question:
+`ley spectrum` draws a band and lists its loudest bins. `ley scan` searches a range:
 sweep a range, and list the carriers that are really there.
 
 ```console
@@ -328,8 +328,8 @@ everywhere else in `ley`. `--dwell 1000` looks longer at each stop and finds wea
 `--sort snr` puts the loudest first. `--json` prints one `Scan` object and nothing before it.
 
 A sweep belongs to the terminal that started it, so Ctrl-C there stops it and hands the radio back.
-From anywhere else, **`ley jobs`** lists what the daemon is working on -- today that means sweeps --
-and `ley jobs cancel 1` stops the job on that row (an id works too, which is what a script that
+From anywhere else, **`ley jobs`** lists active and recently finished scan, monitor, recording and
+decode jobs. `ley jobs cancel 1` stops the job on that row (an id works too, which is what a script that
 started a scan with `--json` has). The daemon keeps the last sixteen finished jobs, so `ley jobs` is
 also where to see how the last scan ended.
 
@@ -343,12 +343,11 @@ job_01JB2M3K4P5Q6R7S8T9V0WXYZA cancelled
 
 ## 6. Watch a band over time
 
-`spectrum` and `scan` both show what is on the band right now. Two more views show history
-instead, and answer different questions.
+`spectrum` and `scan` both show what is on the band right now. Two more views show different
+time scales.
 
 **`ley waterfall`** draws the band as a scrolling map: left to right is frequency, down the screen
-is time, newest row at the bottom, a denser cell for a stronger signal. It is the only view that
-answers *is that signal always there, or did it start and stop?* — a birdie draws a dead straight
+is time, newest row at the bottom, a denser cell for a stronger signal. A birdie draws a straight
 line, a transmission draws a block with a beginning and an end, a pager burst draws a dash, and none
 of the three can be told apart in a single `spectrum` frame. Each row covers the whole interval
 since the last one, not an instant: the daemon takes as many looks as the interval allows and each
@@ -366,7 +365,7 @@ $ ley waterfall 101.1 --count 40    # forty rows, then stop
 
 **`ley phosphor`** draws the band the way `spectrum` does — frequency across, level up — but shades
 each cell by how often that frequency has sat at that level, not by where it is right now. Bright
-means usual, faint means it happens but rarely. That answers *what is here that I keep missing*: a
+means usual, faint means it happens but rarely. This exposes intermittent activity: a
 signal that transmits for 80 ms once a minute is invisible on a live spectrum and obvious here,
 because the display accumulates over time instead of trying to catch the moment — a steady carrier
 piles into one thin line, noise spreads into a band, an intermittent burst leaves a faint mark
@@ -388,8 +387,8 @@ runs until Ctrl-C). Neither lists carriers the way `scan` does.
 ## 7. See the waveform
 
 `ley scope` draws the demodulator's output: one window of samples a frame, fitted to the signal top
-to bottom, redrawn where it stands. It answers two questions the level meter and the spectrum
-cannot, because both of those are measured before demodulation. The first is *what does this mode
+to bottom, redrawn where it stands. It shows two properties the level meter and spectrum cannot,
+because both are measured before demodulation. The first is *what does this mode
 actually do* — FM voice through the AM detector is a flat line with ripple, a carrier in CW is a
 sine, NFM voice looks like voice, and `ley set mode am` from another terminal changes the picture
 while you watch. The second needs the other tap.

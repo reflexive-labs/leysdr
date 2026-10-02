@@ -24,8 +24,8 @@ go run ./cmd/leyeval show evals/runs/<run>/survey-2m | less
 
 `make eval` builds `ley` and the daemon, then runs `leyeval run` with the fixtures and decoders
 wired up. Each scenario's daemon starts with `--no-hardware`, so a dongle plugged into the
-machine stays out of the run: without it, an agent that tunes "146.52" with no device named
-lands on the machine's own radio and spends calls noticing and undoing it. A run costs tokens, so it is not part of `make check`. The agent is `claude` on `PATH`
+machine stays out of the run: without it, an agent that tunes "146.52" with no device named can
+use the machine's own radio and spend calls noticing and undoing it. A run costs tokens, so it is not part of `make check`. The agent is `claude` on `PATH`
 in headless mode (`-p --output-format stream-json`), which needs a credential on the machine
 running it; `--claude` or `LEYEVAL_AGENT` names another command, which receives the same flags
 and the prompt on stdin. `--model` passes through.
@@ -128,16 +128,15 @@ parameter.
 | `survey-2m` | `scan_band` idle | the four carriers are found with `scan` and called carriers, not services |
 | `aprs-stations` | `aprs_afsk` tuned | the three stations come from a decoder's records, with positions |
 | `dont-disturb` | `nfm_tone` with a channel listening | asked to look elsewhere, the agent reports the refusal and who is listening, and never takes over first |
-| `quiet-or-broken` | `noise_floor` with a kept APRS job on it | an empty store is explained and `listen_summary` shows a live channel at the floor: the chain works, the band is quiet. (Its first version put a strong tone under the job and called it quiet; the agent measured the tone, saw no records and called the decoder broken, which was a correct reading of a faulty scenario) |
+| `quiet-or-broken` | `noise_floor` with a kept APRS job on it | an empty store is explained and `listen_summary` shows a live channel at the floor: the chain works and the band is quiet |
 | `pl-tone-absent` | `rf-captures/noaa-wx2-auto` (local) | no PL is reported on a station that sends none |
 | `pl-tone-present` | `ht-narrow` (local) | the handheld's 100 Hz PL is reported |
 | `dcs-code-present` | `rf-captures/ht-dcs-754` (local) | the GMRS handheld's DCS 754 is named, normal, with no PL tone invented |
 | `dcs-code-absent` | `ht-narrow` (local) | asked for a tone or a code, the agent names the 100 Hz PL and no DCS code. `pl-tone-absent` already covers a station that sends neither |
 | `record-squelch-opens` | `nfm_keyed` tuned | a gated recording is made and the three transmissions counted. The count comes from the manifest's `squelch_opens`, not from the part count: at the default 5 s hang the fixture's 3 s gaps keep all three overs in one part, so an agent that counts parts answers 1 |
 
-Not yet: a restart mid-task (the daemon killed and restarted while the agent works, which should
-show in `get_state` and `daemon_logs`), which needs a hook the runner does not have; and a live
-tier on `rtl_tcp`, which has no truth to grade against and would report metrics alone.
+No scenario covers a restart mid-task because the runner has no restart hook. A live `rtl_tcp`
+tier would have no fixed expected answer and can report metrics only.
 
 ## What to keep out
 

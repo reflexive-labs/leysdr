@@ -18,9 +18,9 @@ You have an RTL-SDR or a HackRF (or an IQ recording) and a Mac.
 | [MCP adapter](reference/mcp.md) | letting an agent drive the radio through `ley mcp`: the tools, their shapes, the trust it hands over, client configuration |
 | [Writing a decoder](reference/writing-a-decoder.md) | a plugin that turns a channel's audio into typed records |
 
-`ley help <topic>` carries the same facts at the prompt: `squelch`, `frequencies`, `modes`, `gain`,
-`presets`, `glossary`, `scripting`, `roadmap`. What works today and what is next is the "Where
-things stand" section of the [README](../README.md) and `ley help roadmap`;
+`ley help <topic>` contains the same facts at the prompt: `squelch`, `frequencies`, `modes`,
+`gain`, `presets`, `glossary`, `scripting`, `roadmap`. Current implementation status is in
+the "Where things stand" section of the [README](../README.md) and `ley help roadmap`;
 [`plans/build-order.md`](plans/build-order.md) is the order features arrive in.
 
 ## Working on Leyline
@@ -47,16 +47,16 @@ Contributors and coding agents. Read first, in this order:
 
 ### Why it is built this way (`design/`)
 
-Each design doc opens with a status line and the question it answers. A change that contradicts one
-changes the doc first.
+Each design document opens with its status and scope. Change the document before implementing
+behaviour that contradicts it.
 
 | doc | question | status |
 |---|---|---|
-| [Control plane](design/control-plane.md) | how clients discover, tune, share and arbitrate; gRPC over UDS; the session model | implemented |
-| [Data planes](design/data-planes.md) | telemetry and bulk: the sample timebase, latest-wins and gap-marked delivery, negotiation | implemented; the shared-memory ring is not built |
-| [Semantic tier](design/semantic-tier.md) | detections, scans, transcripts, jobs and resources; the MCP surface | partial: scan and the MCP adapter (`ley mcp`) implemented; durable jobs and transcripts not |
+| [Control plane](design/control-plane.md) | how clients discover, tune, share and arbitrate; gRPC over UDS; the session model | partial: local control is implemented; remote access and watch jobs are not |
+| [Data planes](design/data-planes.md) | telemetry and bulk: the sample timebase, latest-wins and gap-marked delivery, negotiation | partial: gRPC streams are implemented; shared memory and historical positions are not |
+| [Semantic tier](design/semantic-tier.md) | detections, scans, transcripts, jobs and resources; the MCP surface | partial: scans, recordings, monitor and decode jobs are implemented; watch jobs and transcripts are not |
 | [Scan](design/scan.md) | the sweep geometry and the detector, with every number measured | implemented |
-| [Signal views](design/signal-views.md) | the waterfall, the channel view, sub-audible (CTCSS) tones, and what honest means | implemented except the sonogram |
+| [Signal views](design/signal-views.md) | the waterfall, the channel view and sub-audible tones | implemented except tone squelch and the sonogram |
 | [Scope](design/scope.md) | the audio waveform and the demod tap under it | implemented (`ley scope`) |
 | [Audio meters](design/audio-meters.md) | `ley levels` and `ley waveform` as instruments | implemented |
 | [Band watching](design/band-watching.md) | persistence (`ley phosphor`), burst capture, occupancy | partial: persistence and `ley monitor` implemented; occupancy and burst capture not |
@@ -67,7 +67,7 @@ changes the doc first.
 
 ### Decisions (`decisions/`)
 
-One decision each, dated, with what it costs and what would reopen it.
+One current decision per document, dated, with its rationale, tradeoffs and reopening conditions.
 [D2 licensing](decisions/D2-licensing.md) (everything ships open; engine GPL-3.0-or-later, all else
 Apache-2.0), [S2 throughput](decisions/S2-throughput.md) (20 MSPS on one fifth of a core: the
 all-Swift engine stands) and [S3 USB posture](decisions/S3-usb-posture.md) (librtlsdr/libusb now,

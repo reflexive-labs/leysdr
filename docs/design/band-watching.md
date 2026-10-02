@@ -1,17 +1,15 @@
 # Design: Band Watching — Persistence, Burst Capture, Occupancy
 
-Status: draft. Companion to `signal-views.md` (which owns the spectrum, waterfall and channel
-views this builds on) and `data-planes.md` (which owns the plane split).
+Status: partial. Persistence (`ley phosphor`) and the stationary transmission log (`ley monitor`)
+are implemented. Channel-grid occupancy and burst capture are not. Companion to `signal-views.md`
+and `data-planes.md`.
 
 ## Context
 
-`ley spectrum` answers "what is on the air now" and `ley waterfall` answers "did it start and stop".
-Both are tuned for signals a person can hear: voice on a repeater, a broadcast carrier, something
-that lasts seconds. Watching an ISM band is a different job. The question that prompted this
-document was: *monitoring 910 MHz LoRa, is the waterfall all there is?*
-
-The short answer: the waterfall is the right display, but **ours cannot resolve the signal**. The
-reasons below set the rest of the design.
+`ley spectrum` shows current energy and `ley waterfall` shows changes at up to 30 rows per second.
+Those rates suit voice and broadcast carriers that last seconds. They cannot resolve the symbol
+shape of a short LoRa transmission. This design covers longer-term persistence, stationary
+monitoring and the retained high-resolution capture required for burst shape.
 
 ## What LoRa actually looks like, and why 30 rows a second is not enough
 
@@ -31,7 +29,7 @@ Symbol time is `2^SF / BW`:
 | 12 | 32.8 ms |
 
 `DefaultSpectrumLadder.maxRowsPerSecond` is **30**, so our fastest row is 33 ms. An entire SF7
-transmission lands in one or two rows: a bright smudge that shows something happened but loses the
+transmission appears in one or two rows: a bright smudge that shows something happened but loses the
 only feature that identifies it. Even SF12 gets roughly one row per symbol, which cannot
 show a slope.
 
@@ -75,9 +73,8 @@ bursts at a low duty cycle. On a live spectrum you see noise with occasional fli
 persistence display the occupied channels show as faint but clear plateaus, and the
 unoccupied ones stay flat.
 
-- **Where it runs.** Daemon-side, as an accumulator on the existing FFT ladder — the client must not
-  be handed rows to histogram itself (invariant 2), and a client that joins late should see the
-  history rather than starting from nothing.
+- **Where it runs.** `PersistenceAccumulator` runs in the daemon on the existing FFT ladder. Each
+  frame contains the full histogram, so a dropped frame does not lose accumulated state.
 - **Cost.** One `bins × levels` counter table. At 1024 bins and 64 levels of `uint16` that is
   128 KB, updated once per row.
 - **Decay.** A pure histogram never forgets, so a band that was busy an hour ago still looks busy.
@@ -105,11 +102,9 @@ full-rate IQ to the client so it can keep its own history is wrong for two reaso
   handoff, drained continuously. A retention ring is the same shape with the opposite policy: keep
   the last N seconds, overwrite the oldest. At 2.4 MSPS one second is 19 MB, so a 2 s ring is 38 MB,
   which is why this is opt-in per capture rather than always on.
-- **The trigger.** `Detection` exists in `CoreProtocols.swift` and in the proto, and **has no
-  implementation** — `DetectorEngine` is a declared interface and nothing conforms to it. So this
-  work item builds the v0 energy detector the proto already defines, or accepts an explicit
-  client-issued trigger, and should probably do both: an operator watching a waterfall wants to
-  press a key and keep what just happened.
+- **The trigger.** The scan and monitor detector can supply an energy trigger. Burst capture also
+  needs an explicit client trigger so an operator can retain the interval that just ended. Neither
+  trigger currently writes a retained IQ window.
 - **What comes back.** Not IQ. The daemon computes the high-resolution spectrogram (256-point FFTs,
   75% overlap, which at 2.4 MSPS is ~37,500 rows/s and is trivial offline) and serves *that* as an
   FFT stream with a `StreamPosition` other than LIVE. Invariant 2 holds, and the client renders.
@@ -146,28 +141,17 @@ This is also the only one of the three views that is useful left running for an 
   here should claim to identify a signal *as* LoRa; the operator reads the diagonals.
 - **Not a constellation or eye diagram.** Both are standard SDR views and both are meaningless for
   chirp spread spectrum, which has no symbol constellation. They belong with a linear digital
-  demodulator, if one ever lands.
+  demodulator, if one is added.
 - **Not a raised ladder rate cap.** 30 rows a second is the right cap for a scrolling display.
   Needing 4,000 calls for a different feature, not a higher cap.
 
-## Wire changes
+## Wire status
 
-Sketched, not settled — each work item pins its own field numbers when it lands, following the
-`signal-views.md` precedent of settling them in one place.
-
-- **Persistence**: a new `FftAccumulation` value is the wrong home (it changes what a row *is*).
-  Likely a separate `StreamKind` or a telemetry snapshot, since a late subscriber wants the whole
-  histogram, not a stream of deltas — and invariant 6 says events carry full state.
-- **Burst capture**: `SubscribeRequest.start` (`StreamPosition`) gains a non-LIVE meaning, plus a
-  capture-level retention setting and a trigger RPC or telemetry type.
-- **Occupancy**: a telemetry type carrying the per-channel counters, full state per message.
-
-## Build order
-
-1. **Persistence.** No new plane, no retention buffer, works at today's row rates, and it is the
-   view most likely to be used daily. It also proves the accumulator that occupancy reuses.
-2. **Channel occupancy.** Same accumulator plus a given channel grid; the highest value per line of
-   code for actually watching a band.
-3. **Burst capture.** The largest piece by far — retention ring, a detector that does not yet
-   exist, non-LIVE stream positions — and the only one that shows a chirp. Build it last, and only
-   if 1 and 2 have not already answered the question.
+- **Persistence is implemented** as `StreamKind.PERSISTENCE` with `PersistenceParams`; each frame
+  is a complete `bins × levels` histogram.
+- **Stationary monitoring is implemented** as `MonitorConfig`; detections use the existing
+  telemetry stream and `ley monitor` folds them over time.
+- **Burst capture is not implemented.** It requires a retained IQ window, a non-live
+  `StreamPosition`, trigger control and a stored spectrogram response.
+- **Channel-grid occupancy is not implemented.** It requires full per-channel counters, probably
+  as a telemetry snapshot rather than client-computed DSP state.

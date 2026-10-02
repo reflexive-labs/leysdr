@@ -1,10 +1,10 @@
 # App internals
 
-How the Mac app is put together and what it promises, for anyone changing it. The app is a
+How the Mac app is structured and tested, for anyone changing it. The app is a
 peer client of the daemon over the same contract `ley` speaks (`AGENTS.md`, invariant 1); this
 page is the contract for the Swift side of that, as `engine-internals.md` is for the daemon and
 `cli-style.md` for `ley`. The plan, with what is built and what is next, is
-`../plans/app.md`; the stories it answers to are V1a in `../plans/user-stories.md`.
+`../plans/app.md`; user-level acceptance criteria are in `../plans/user-stories.md`.
 
 ## Module map
 
@@ -107,8 +107,8 @@ frames, which is the plane's own latest-wins policy: a renderer that falls behin
 newest frame. `BulkDecode`
 holds the payload rules (`DB_U8` is `round((dB + 120) · 2)`; floats are little-endian; S16
 divides by 32768) and they match `go/pkg/leyline/bulk.go` bit for bit, tested on both sides.
-The shm ring is not built: the app draws over gRPC first and S1 decides
-(`../plans/build-order.md`, "Closing the core").
+The shared-memory ring is not implemented. The app reads bulk rows over gRPC and uses the returned
+`StreamDescriptor` as the transport authority.
 
 **Transmissions and the clock** (`Transmissions.swift`, `SampleClock.swift`). `TransmissionLog`
 is one channel's last fifty transmissions, newest first, folded from the telemetry plane's
@@ -491,8 +491,8 @@ rule and write order, the session's state machines, the decoders, the ULID, the 
 product: it builds `leylined`, generates the fixtures, and `LeylineClientDaemonTests` starts a
 `leylined --no-hardware` on a temp socket with `nfm_tone.cf32` attached as a looping file
 device. The suite covers the app's guarantees, one test each: a second client's capture and channel
-reach the mirror and its tombstone leaves it (the story "the CLI changes the tuning and the UI
-reflects it"); a burst of offsets in one tick lands as one confirmed value and an out-of-capture
+reach the mirror and its tombstone leaves it; a burst of offsets in one tick becomes one confirmed
+value and an out-of-capture
 offset comes back as a `WriteRejected` with its tag; an FFT subscription's rows decode against
 the answered descriptor with the fixture's tone in the upper half of the row; a daemon error
 keeps its code; a socket with no listener is `UNAVAILABLE` and the mirror keeps trying; and on
@@ -511,20 +511,20 @@ fixture stands in for the radio. Nothing in the app's suites may need hardware.
 
 ## Rules for new work
 
-- **Every contract addition ships with its `ley` mirror** (`../plans/build-order.md`, Milestone
-  E). A field the app reads that `ley --json` cannot show is not done.
+- **Every contract addition ships with its `ley` mirror.** A field the app reads that `ley
+  --json` cannot show is not done.
 - **The daemon is authoritative.** A view renders the mirror and previews its own writes until
   the event confirms them. No cached "my frequency" beside the daemon's.
-- **Signposts on the render path from the first row.** S1 is measured antenna to pixels with
-  `os_signpost` on both ends (`../plans/build-order.md`, spike S1); a waterfall without them
-  cannot be measured later without being rewritten.
+- **Signposts cover the render path from the first row.** Antenna-to-pixel latency uses
+  `os_signpost` at both ends; a waterfall without them cannot be measured later without being
+  rewritten.
 - **Colours and type come from `Theme.swift`** and nowhere else, so a design change is one
   file's worth of edits. The tokens and the six-stop ramp are listed under "Palette and type"
   above; `cli-style.md` shares hue order with the ramp and nothing else.
 - **The band table is Go's; the app reads a generated copy.** `bands.json` under
   `LeylineClient/Resources` is `ley bands --json` checked in, `make bands-json` regenerates it
   and a Go test fails when the two drift. Never edit it by hand, and never add a band in Swift.
-- **Bookmarks are a file both clients own.** `bookmarks.json` beside `labels.json`, the shape in
+- **The app and `ley` share the bookmarks file.** `bookmarks.json` beside `labels.json`, the shape in
   `../design/channels.md`, "Bands and bookmarks are files": `{name, hz, mode, bandwidth_hz,
   updated_ns}` per entry, plus `tone`, `note`, `tags`, `offset_hz` and `duplex` on the entries
   that have them, and any key a client does not know kept as it was read. The app and `ley

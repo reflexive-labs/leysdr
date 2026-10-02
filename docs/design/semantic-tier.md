@@ -1,83 +1,97 @@
-# Design: Semantic Tier
+# Design: Semantic tier
 
-Status: draft. Covers §4 of the planning doc. Companion to `control-plane.md` and `data-planes.md`.
+Status: partial. Detections, scans, monitor jobs, recording resources, decoder records and the MCP
+adapter are implemented. Watch jobs, durable transcripts, persisted spectrum snapshots, signal
+identification and identity lookup are not. Companion to `control-plane.md`, `data-planes.md` and
+`decoders.md`.
 
 ## Context
 
-The layer that turns samples into things an agent — or a script, or a future UI feature — can reason about. It lives partly in the daemon (anything computed from signals, shared by all clients) and partly in adapters (anything that is presentation). The MCP surface and CLI are two renderings of the same contract.
+The semantic tier turns daemon measurements into objects that a script or agent can inspect. The
+daemon computes measurements shared by every client. Client libraries and adapters format those
+measurements for a terminal, app or tool call.
 
-## Principles
+## State boundary
 
-**Persistence follows intent.** Jobs are declared intents; their outputs are durable resources. Interactive actions are ephemeral unless explicitly kept. This one rule answers scans (job scans persist, ad-hoc don't), transcripts (watch jobs produce them, casual monitoring doesn't), and snapshots (kept only when requested).
+**Persistence follows intent.** A recording and a decode job marked `keep` produce durable
+resources. Interactive tuning, one-time scans, monitor jobs and unkept decode jobs are ephemeral.
+An ad-hoc scan remains available only while the daemon retains its finished job in memory.
 
-**The engine computes signal truth; adapters render presentation.** Detections, segments, and measurements come from the daemon so every client sees the same answer. Images, prose summaries, and format conversions happen in the adapter that needs them — the daemon never links an image library.
+**The daemon computes measurements.** Detections, levels and sample times come from the daemon.
+Adapters may render images, apply band-plan labels or produce concise summaries; they do not run
+signal detection or demodulation.
 
-**One contract, three consumers.** MCP tool schemas and CLI verbs are mapped one-to-one from the same protos as the app's client library. An agent, a shell script, and the UI can each do anything the others can.
+**Every client uses the contract.** MCP tools, `ley` verbs and the app call the same gRPC services.
+A contract addition required by one client also has a `ley` representation.
 
-## Derived products
+## Current products
 
-**Detection** — the basic unit of the tier: center frequency, bandwidth, SNR, first/last seen (sample timebase), optional modulation guess. Streamed on telemetry; aggregated into scans and watch results.
+**Detection** — a centre frequency, bandwidth, SNR, floor, look count and sample time. The daemon
+emits detections during scans and monitor jobs. `modulation_guess` remains empty unless a measured
+heuristic can support it.
 
-**Scan** — a sweep's aggregated detections plus sweep metadata (range, resolution, dwell, noise floor per segment). Job scans persist as `ley://scans/<id>`; ad-hoc scans return the same shape inline and are gone when the client is.
+**Scan** — detections aggregated over a sweep, with its requested and covered ranges, resolution,
+noise floors and gains. `ley scan` and the MCP `scan` tool start a one-time job and return the same
+shape. The scan URI is valid while that job remains in the daemon's bounded finished-job table.
 
-**Activity segment** — a contiguous interval where a watched channel's squelch was open: start/end timestamps, peak/mean signal, and optionally a recorded audio clip. The building block of transcripts.
+**Monitor result** — detections folded over time while a capture remains stationary. `ley monitor`
+reports first seen, held time, on-air fraction and peak SNR. It does not create a durable resource.
 
-**Transcript** — a watch job's rolling log: ordered activity segments with clip references. `ley://watches/<id>/transcript`. "Watch 146.52 and log anything heard" produces exactly this. Speech-to-text is explicitly not the engine's job — a transcript is what the radio observed, not what was said. (Apple's Speech framework in the adapter or app is a candidate later; flagged in open questions.)
+**Recording** — a record job writes audio or IQ parts, a manifest and metadata under
+`ley://recordings/<job_id>`. The `Resources` service lists recordings, returns their manifests,
+resolves local paths and deletes whole recordings.
 
-**Snapshot** — a spectrum capture at a moment: binned FFT data plus capture context. The daemon produces the data; the MCP adapter renders PNG when an agent wants to look at it. Persisted only on request: `ley://snapshots/<id>`.
+**Decoder records** — a decode job emits typed records. A job marked `keep` writes records under
+`ley://records/<job_id>`, survives daemon restart and resumes with the same id. Client libraries
+fold records into protocol-specific entity tables such as APRS stations and AIS vessels.
 
-**Recording** — already defined as a sink; here it gains queryable metadata (frequency, mode, timebase anchor, duration, originating job if any) so agents can find and fetch by description rather than filename.
+**Snapshot result** — the MCP `snapshot` tool subscribes to one FFT row and returns its numeric
+shape with an adapter-rendered PNG. It does not create a `ley://snapshots/` resource.
 
-## The v0 detector
+## Missing products
 
-Scope is narrow: energy detection over the FFT ladder. Noise-floor estimation per segment, threshold crossing, carrier center and bandwidth estimation, SNR, persistence tracking (merge across sweep passes, assign first/last seen). Modulation classification ships as a guess field that v0 populates only with cheap heuristics (bandwidth class, carrier presence) or leaves empty — a real classifier is a later, isolated improvement that slots into the existing field. The detector runs daemon-side and feeds both the telemetry stream and scan/watch aggregation.
+**Activity segment and transcript** — a watch job would record squelch-open intervals, levels,
+coverage gaps and optional clips under `ley://watches/<id>/transcript`. The `WatchConfig` and URI
+shape are reserved, but the job runner and transcript store are not implemented. The MCP adapter
+therefore does not register `get_transcript`; use `listen_summary` for one bounded observation.
+
+**Persisted snapshot** — the contract reserves snapshot resource URIs, but no service stores an FFT
+row as a resource. Use the MCP `snapshot` tool or `ley spectrum --json` for a current row.
+
+**Signal identity** — the detector reports measured energy and never assigns a protocol or station
+identity. `identify_signal`, `lookup_identity` and `whats_out_there` are not registered MCP tools.
 
 ## Jobs
 
-Three job types at v0, each a typed config payload on the small job API from the control-plane doc:
+The daemon implements four job configurations:
 
-- **watch** — required frequency/mode, optional clip recording, optional end time. Owns a persistent channel; produces a transcript; logs coverage gaps when `out-of-capture`.
-- **scan** — range, step/resolution, dwell, schedule (once or recurring). Produces persisted scans. Respects don't-disturb: uses an idle device or declines with a stated reason.
-- **record** — frequency/mode/window. Produces a recording with full metadata.
+- **Scan** sweeps once and stores its result in memory.
+- **Monitor** observes one stationary span for a bounded duration.
+- **Record** writes a recording resource and ends on duration, quiet, cancellation or restart.
+- **Decode** runs a decoder. `keep` persists its records and restarts the job after a daemon restart.
 
-Results flow twice: live as telemetry/events while running, and durable as resources. An agent that started a watch and disconnected queries the transcript later; an agent that stays connected streams segments as they happen.
+Recurring scans and watch jobs require a general durable job store and are refused. The jobs API
+supports start, list, inspect and cancel; it is not a workflow engine.
 
 ## MCP surface
 
-The build plan -- where the MCP server runs and the order the tools land -- is
-`docs/plans/mcp.md`, and the tools the daemon can back are implemented as `ley mcp` (the reference
-is `docs/reference/mcp.md`). Of the table below, `start_job` exists as `start_decode_job`, since
-decode is the one job an agent can start today (watch configs wait on the durable job store);
-`get_transcript` waits on the same store, and `find_recordings` exists; the decoder
-tools the plan added (`list_decoders`, `query_records`, `list_entities`) are in the reference. Tools
-map one-to-one onto RPCs (names indicative):
+`ley mcp` maps tools to the same calls used by `ley`. Orientation tools list devices and state;
+radio tools tune, scan, listen and take snapshots; decoder tools list decoders, query records, list
+entities and start decode jobs; recording tools create, find, inspect and delete recordings; job
+tools list, inspect and cancel jobs. `daemon_logs` reads the configured daemon log because the
+socket cannot report why a process exited.
 
-| Tool | Maps to | Notes |
-|---|---|---|
-| `list_devices` | Control.ListDevices | descriptors with capability detail |
-| `get_state` | Control.GetState | orientation: captures, channels, activity |
-| `tune` | CreateCapture/CreateChannel/WriteParams | refuses to retune active captures (don't-disturb) unless `override: true`; returns refusal reason |
-| `listen_summary` | Telemetry.Subscribe (bounded) | subscribes for `duration_s`, returns activity segments observed |
-| `scan` | Jobs.StartJob(ScanConfig{once}) + Jobs.GetScan | inline results, ephemeral: the job dies with the client that started it. Recurring scans need the durable store and are refused |
-| `snapshot` | Bulk.Subscribe(FFT, one row) | returns PNG (adapter-rendered) + binned data |
-| `start_job` / `list_jobs` / `get_job` / `cancel_job` | Jobs service | watch, scan, record configs as typed payloads |
-| `get_transcript` | Jobs.GetTranscript | segments + coverage gaps; adapter adds waterfall thumbnails |
-| `find_recordings` | Resources.ListResources | metadata-filtered; returns `ley://` URIs |
+`docs/reference/mcp.md`, "Tools", is the complete tool schema. Each tool documents its `ley` mirror
+and underlying RPC. The adapter may shorten text or render a PNG, but its structured result uses
+the contract or the documented `ley --json` shape.
 
-Resources map one-to-one onto `ley://` URIs. The adapter's value-adds beyond proto transcription: PNG rendering for snapshots, waterfall thumbnails for transcripts, and compact text summaries of scans (band-plan labels applied to detections) so agents spend context on reasoning rather than JSON.
-
-The don't-disturb default from the control-plane doc is enforced adapter-side as refusal-with-reason, and daemon-side as policy. It is enforced in both places because not every MCP client honours a refusal.
-
-## CLI mirror
-
-Every tool above has a verb: `ley devices`, `ley tune`, `ley scan`, `ley watch`, `ley jobs`, `ley recordings`. `--json` output is the proto's JSON mapping, so a shell script and an agent parse identical shapes. The CLI adds nothing the protocol doesn't have — it is the reference client and the compatibility test.
+The capture allocator enforces the don't-disturb policy for jobs. The adapter also refuses an
+implicit retune before issuing a write, so the agent receives the affected channel ids and the
+`take_over` alternative.
 
 ## Open questions
 
-- Modulation classification — how far to take the guess field before it needs real DSP or a model. Defer until detections exist in practice.
-- Speech-to-text on transcripts via Apple's Speech framework — app-side feature candidate, not engine scope. Decide when transcripts are real.
-- Store retention — clips and scans accumulate; need a policy (size cap + age, user-visible). Decide before v1b ships, not before it's built.
-
-## Phase exit
-
-With the two companion docs, the contract is fully specified in prose. §5 transcribes: proto files (control, telemetry, bulk, jobs, resources), Swift protocols, MCP manifest, CLI tree.
+- How far modulation classification can go before it requires a dedicated classifier rather than
+  a measured detector heuristic.
+- Whether speech-to-text belongs in the app or an adapter once watch transcripts exist.
+- What retention policy a general durable job store should apply to scans, clips and transcripts.

@@ -10,7 +10,7 @@ Four things are not here because they have their own page. Prose — comments an
 included — follows [`../writing-guide.md`](../writing-guide.md). The engine's threads, hot path
 and daemon lifecycle are [`engine-internals.md`](engine-internals.md), "Hot-path rules (invariant
 4, enforced)" and after; nothing here relaxes them. Anything a `ley` user sees is
-[`cli-style.md`](cli-style.md). The app's module map, what the façade promises and how to build
+[`cli-style.md`](cli-style.md). The app's module map, the façade contract and build instructions
 it are [`app.md`](app.md); this page is how the Swift inside it is written, not what it does.
 
 ## 1. The short list
@@ -124,11 +124,11 @@ that already decided it — because an unsourced number cannot be checked (`../w
 "Voice"). `SpectrumFeed` defines every threshold as a documented `static let`.
 
 **A comment states what is true and why; it does not narrate history.** No dates of decisions,
-no plan item ids (`APP-5`, `SV-7`, `DEC-1`), no "the owner", no review rounds. A rule that comes
+plan item ids, owner attribution or review rounds. A rule that comes
 from a document cites the document by path and heading. A fact only the Mac could have produced
 says so and what was observed ("Xcode refuses a four-term shift chain here"), because a Linux
-build cannot rediscover it. History belongs in the commit message, `docs/decisions/` and
-`docs/plans/` (`../writing-guide.md`, "Commit messages and comments").
+build cannot rediscover it. Work history belongs in the commit message and `docs/plans/`
+(`../writing-guide.md`, "Commit messages and comments").
 
 **A comment cites code by symbol, never by `file:line`.** Line numbers go stale with the next
 edit above them; `AppSession.request(_:)` stays right until the function is renamed, and then a
@@ -241,8 +241,8 @@ for any escaping closure that renders.
 `@Environment(AppSession.self)` object (`SidebarView`, `DeviceMenuView`).
 
 **`.offset` does not contribute to layout.** A `ZStack` whose children are positioned by offset
-must be framed `alignment: .topLeading`, or the frame centres whatever is left and the content
-lands somewhere else entirely (`BandRail`).
+must be framed `alignment: .topLeading`, or the frame centres the remaining layout and places the
+content at the wrong coordinate (`BandRail`).
 
 **Overlay first, offset second.** An `.overlay` added after `.offset` is placed on the un-shifted
 frame (`TunedBand` in `ChartMouse.swift`).
@@ -354,9 +354,8 @@ a `press.key` that no longer existed? Does every `guard let` binding get used? I
 AppKit closure carry only `Sendable` values? Then check the layout rules: offset against frame
 alignment, overlay before offset, and what a hosted view covers.
 
-**Say what was not compiled.** Name the files and the behaviours that are unverified — layout,
-gestures, the shader — in the hand-off message and in the commit body. The repo's own follow-up
-fixes ("from the Mac", "the first run on the Mac") came from leaving that out.
+**State what was not compiled.** Name the files and unverified behaviours, including layout,
+gestures and shaders, in the handoff message and commit body.
 
 **Small diffs, and only the change that was asked for.** No speculative abstraction: a layer
 added for a use that does not exist yet costs the next reader time for no benefit. No reformatting
@@ -370,15 +369,3 @@ on.
 
 Commit subjects, bodies and sign-off are in AGENTS.md and `../writing-guide.md`, "Commit messages
 and comments", not here.
-
-## 13. To fix
-
-Recorded here so they are not forgotten. None of these is urgent; each is a small
-commit of its own.
-
-- **Two of the four affine maps remain separate.** `SquelchTrack` and `GainSlider` mapped a
-  clamped `Double` both ways and now share `Scale.swift`. `SpectrumView`'s `Columns.x(of:)`/
-  `hz(atX:)` and `BandRailView`'s `BandRail.x(of:)`/`hz(atX:)` map a `UInt64` frequency instead,
-  do not clamp the forward direction, and `BandRail.hz(atX:)` snaps its result to the band
-  afterward; folding them into `Scale` would mean adding a clamp neither one has today, which is
-  a behaviour change and needs its own review, not a mechanical rename.

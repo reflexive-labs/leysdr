@@ -31,7 +31,7 @@ decoder plugins where the daemon looks for them. The native libraries are loaded
 at daemon startup, independently: neither is needed to build, and a missing one does not disable
 the other, `rtl_tcp`, or file playback. Restart the daemon after installing a driver.
 
-Check that the daemon answers and can see your radio. The output below was recorded against the
+Check that the daemon responds and can see your radio. The output below was recorded against the
 contract's fake daemon, so your socket path, model and version will differ:
 
 ```console
@@ -95,7 +95,7 @@ leylined --rtltcp pi.local:1234            # repeatable: --rtltcp a:1234 --rtltc
 LEYLINE_RTLTCP=pi.local:1234,shack:1234 leylined   # same thing via the environment
 ```
 
-Attaching connects once (5 s timeout) and fails naming the endpoint if the server does not answer,
+Attaching connects once (5 s timeout) and fails naming the endpoint if the server does not respond,
 remembering nothing. A remembered or flag-given server that is unreachable at startup is logged and
 kept, so a dead remote never stops local dongles from working. Tune, gain, sample rate, bias tee,
 ppm and AGC all work the same as on a local dongle (they are sent as `rtl_tcp` commands). `rtl_tcp`
@@ -128,8 +128,8 @@ make install-decoders                 # copies decoders/*/ into ~/Library/Applic
 ley daemon stop && ley daemon start   # the daemon reads the decoder directory when it starts
 ```
 
-`ley decoders` lists what is installed and prints the directory it searched. A fresh daemon with no
-decoders installed answers `ley decode aprs` with `there is no decoder called "aprs"
+`ley decoders` lists what is installed and prints the directory it searched. On a fresh daemon with
+no decoders installed, `ley decode aprs` returns `there is no decoder called "aprs"
 [DECODER_NOT_FOUND]`; `make install-decoders` is the fix. Writing your own is
 [Writing a decoder](../reference/writing-a-decoder.md).
 

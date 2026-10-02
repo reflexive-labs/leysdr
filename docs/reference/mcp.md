@@ -36,9 +36,9 @@ is refused with exit 2: the whole conversation is JSON already.
 The socket has no authentication ([SECURITY.md](../../SECURITY.md), "What the daemon trusts"), and
 `ley mcp` hands that surface to whatever started it: an agent can tune, take a radio over, cancel
 another client's job. Over stdin and stdout this is the trust a local shell already has, because
-anything that can start `ley mcp` could run `ley`. There is no network transport, and none is
-planned without a bearer token at minimum; a remote agent waits on the remote-access milestone
-(`docs/design/control-plane.md`, "Auth for TCP remote access").
+anything that can start `ley mcp` could run `ley`. There is no network transport. Remote access
+requires an authenticated TCP control plane first (`docs/design/control-plane.md`, "Auth for TCP
+remote access").
 
 Two guards carry over from the designs. The don't-disturb default is enforced twice: the adapter
 refuses to move a radio somebody is listening on and names who, before anything is written, and the
@@ -142,10 +142,10 @@ Notes a table cell cannot hold:
   frequencies and their owners, and ends with the remedy (`take_over: true`, or stop what is
   listening). The refusal is made before any RPC that writes, so a refused call leaves the daemon
   as it found it.
-- **`scan`** takes the seconds a sweep takes, owns the radio meanwhile, and declines a radio
+- **`scan`** takes an exclusive radio lease for the duration of the sweep and declines a radio
   somebody is using with the daemon's sentence and the remedy (`take_over: true`). A detection is a
   carrier that rose above the measured noise floor, with the looks that saw it
-  (`looks`/`looksPossible`); it is never a protocol or a station, and the text says so, and names
+  (`looks`/`looksPossible`); it is never a protocol or a station, and the text states that and lists
   the detections fewer than half the looks saw, so an agent does not re-sweep a one-look blip to
   find out what it was. The text is `ley scan`'s table and summary line, band-plan labels included.
   `min_snr` trims the returned `Scan`'s detections the way `ley scan --min-snr` trims its rows,
@@ -163,7 +163,7 @@ Notes a table cell cannot hold:
   daemon's own close edge as an `ActivitySegment` (start and end on the capture's timeline,
   `peakDbfs` the loudest block, `meanDbfs` the mean of the meter readings while open), so the
   default squelch is `auto` for voice modes as `ley tune`'s is; with `squelch: off` there are no
-  edges and the meter statistics are the answer. A close edge with no open edge before it in the
+  edges and the meter statistics form the result. A close edge with no open edge before it in the
   window is the squelch having been open when listening began (a channel made with the squelch off
   starts open, and the threshold written a moment later closes it on the first quiet block), not a
   transmission this call observed: it is reported as `meter.open_at_start` and never as a segment. A
@@ -211,7 +211,7 @@ Notes a table cell cannot hold:
   the canonical decoder before the job starts, as `ley decode vessels` does.
 
 - **`record`** is the one tool that waits: it starts the job, waits for it and returns the finished
-  `Job`, so one call answers "record ten seconds and tell me what you got" instead of a start and a
+  `Job`, so one call completes a bounded recording instead of requiring a start and a
   poll. `duration_s` is required and bounded at an hour — what an agent starts must end without it,
   and a radio that records indefinitely is unavailable to anyone else. `gate: "squelch"` records
   only while something is on the air and writes one file per exchange, so a quiet band costs no

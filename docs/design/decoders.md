@@ -3,25 +3,23 @@
 Status: implemented for APRS, SAME and AIS (`docs/plans/decoders.md`). Companion to
 `control-plane.md`, `data-planes.md` and `semantic-tier.md`; this doc assumes their vocabulary
 (capture, channel, sink, job, resource, telemetry plane) and their invariants. The requirements are
-the first half; the second half, "Decisions", records what the first build chose where the
-requirements left a choice, and what it left for later.
+followed by the current transport, manifest, storage and lifecycle decisions.
 
 Scope: turning demodulated signal into typed records, and exposing those records to `ley`, the
-dashboard and agents. Covers the plugin contract, the record model, the state boundary,
+app and agents. Covers the plugin contract, the record model, the state boundary,
 predicates and the surfaces. Does not cover TX, encrypted traffic, or any one protocol's DSP.
 
 ## 1. Why this exists
 
-Audio is opaque to an agent; a stream of typed records is not. The decoder tier is what makes
-Leyline queryable: "which aircraft passed overnight", "has the greenhouse sensor reported since
-Tuesday", "did a weather alert fire for my county". Detections answered *something is
-transmitting*. Records answer *here is what it said*.
+Audio is opaque to an agent. Typed records support queries such as "which vessels passed
+overnight" and "did a weather alert include my county". A detection reports measured RF energy; a
+record contains data decoded from a transmission.
 
 ## 2. Design drivers
 
-Five reference use cases, chosen to differ from each other as much as possible. Every interface
-decision below traces to at least one; implementations must satisfy all five. A to C were the
-original pressure-test set; D and E were added later, and D is the first build.
+Five reference use cases exercise different constraints. Every interface decision below traces to
+at least one; implementations must satisfy all five. APRS, SAME and AIS are implemented. ADS-B,
+generic 433 MHz sensors and slot-aligned protocols such as FT8 are not.
 
 **A. ADS-B (1090 MHz).** High rate (hundreds of messages a second), fragmentary. A position message
 carries no callsign; a callsign message carries no altitude; CPR position decoding pairs even and
@@ -44,7 +42,7 @@ stamped with a time.
 state machine: NFM audio in, position, weather and telemetry records out. Callsign-SSID is the
 `device_id`, positions fill the promoted `position` field, and the entity and registry shapes
 defined for A and B apply unchanged. Mature GPL decoders exist (Direwolf, multimon-ng). Included
-because it exercises the contract end to end with no new concepts, which is why it is built first.
+because it exercises the contract end to end with no new concepts.
 
 **E. FT8 (HF; the WSPR/FT4/JS8 family).** Slot-synchronised weak-signal digital. Breaks an
 assumption the other drivers share: FT8 is aligned to 15-second UTC slots, and the decoder needs a
@@ -56,10 +54,9 @@ geographic and `validity` windows apply. The implementation is a slot-buffering 
 existing decoder (`ft8_lib`, MIT, is the cleanest target; WSJT-X and `ft8mon` are GPL
 alternatives).
 
-Contract consequence of E: the plugin manifest gains an input mode, continuous (the default) or
-slot-aligned with slot length and epoch alignment. The daemon buffers and delivers aligned windows
-rather than a continuous stream. The field exists from the first build; the buffering arrives with
-FT8, and FT4, WSPR and JS8 share it.
+Contract consequence of E: the plugin manifest has an input mode, continuous (the default) or
+slot-aligned with slot length and epoch alignment. The slot-aligned field is reserved, but the
+daemon does not yet buffer and deliver aligned windows. FT8, FT4, WSPR and JS8 can share that path.
 
 Together these force: multiple output shapes, open payloads, daemon-side predicates, notification
 as a delivery path, and two plugin input modes. A single use case would have revealed none of that.
@@ -79,16 +76,14 @@ does not keep interpretation state.**
   MCP adapter. Every client derives the same picture from the same stream; consistency comes from
   determinism, not from a central authority.
 
-Durability is already solved in principle: a decode **job** persists its records as a resource, so
-the log survives restarts. The fold over that log does not need to be running for the history to
-exist.
+A decode **job** marked `keep` persists its records as a resource and resumes after daemon
+restart. The client-side fold does not need to run continuously because it can read those records.
 
 The one carve-out: predicates that genuinely require track history ("alert when an aircraft
 descends below 3000 ft" needs a prior altitude) may use a plugin-declared aggregator hosted in the
 daemon, but only when a job explicitly asks for a stateful predicate. Opt-in and per job. The
-daemon never keeps entity tables by default. Caching the aircraft table in the daemon looks
-simpler but is rejected in review; if a feature seems to need it, use a client-side fold or an
-explicit stateful-predicate job.
+daemon never keeps entity tables by default. A feature that needs an entity table uses a
+client-side fold or an explicit stateful-predicate job.
 
 ## 4. Record model
 
@@ -170,22 +165,17 @@ there is no second mechanism.
 
 ## 7. Predicates and delivery
 
-Predicates are daemon-side filters evaluated on records before delivery. Required because a trigger
-must work with no client connected (driver C).
+`DecodeConfig.predicate` is a daemon-side filter evaluated before a record is published or stored.
+Field equality, inequality, substring, numeric comparison, geographic radius and county matching
+are implemented. `ley watch` builds these predicates from `--where`, `--near` and `--county`.
 
-- **Stateless predicates** (the default, and enough for SAME): field matches, set membership,
-  numeric comparison, geographic containment on `position`. Evaluated per record.
-- **Stateful predicates**: opt-in per job, backed by a plugin-declared aggregator. Only where
-  history is genuinely required.
-
-Delivery adds a **notification sink** beside the existing sink kinds (`system-audio`, `stream`,
-`file`). Targets: a macOS user notification, a webhook, a shell hook. A triggered alert is a
-channel output going to a sink, and a notifier is one more sink. There is no parallel delivery
-path.
+`DecodeConfig.notify` runs for each match. The daemon supports macOS notifications, HTTP webhooks
+and shell commands, so a kept watch can notify with no client attached. Stateful predicates that
+depend on prior records are not implemented.
 
 ## 8. Record store
 
-Records land in the resource store, indexed for query:
+Kept records are written to the resource store and can be queried:
 
 - by protocol, time range and `device_id`
 - by field values, using the schema hints for typing
@@ -193,9 +183,8 @@ Records land in the resource store, indexed for query:
   filter is required
 - validity-aware: "alerts currently in effect"
 
-A retention policy is required before this ships, because records accumulate faster than
-recordings: a size cap plus an age, user-visible, consistent with the store retention question
-the semantic-tier doc left open.
+The daemon applies the `--store-cap` size limit and `--store-age` age limit at startup and when a
+kept job starts.
 
 ## 9. Surfaces
 
@@ -204,36 +193,21 @@ the semantic-tier doc left open.
 ```
 ley decoders                                # the registry: installed plugins, recipes, output shapes
 ley decode <name> [--json] [--job]          # recipe-driven; --job keeps the records as a resource
-ley decode 433 --auto                       # every protocol the plugin recognises
-ley identify <freq>                         # characterise an unknown signal (see below)
 ley track aircraft | vessels | aprs         # live entity table, a client-side fold
-ley devices-seen [--protocol 433] [--quiet-since 48h]
-ley label <device-id> <name>
-ley records query --protocol adsb --since 1h [--near me --radius 10nm]
-ley watch same --county 06009 --notify      # predicate + notification sink, as a job
+ley devices-seen [--protocol aprs]          # transmitters folded from kept records
+ley label <device-id> <name>                # client-local name for a transmitter
+ley records --protocol aprs --since 1h      # query kept records
+ley watch same --county 06009 --notify      # daemon-side predicate and notifier
 ```
 
 `--json` everywhere, the standard proto3 JSON mapping, as with every other verb.
 
 ### MCP
 
-Four families, all reading from the record store rather than streaming packets:
-
-1. **`query_records`**: semantic queries over the store by protocol, time range, field filters,
-   spatial bounds and validity. The highest-value tool; agents are good at it.
-2. **`identify_signal`**: measured characteristics (bandwidth, burst timing, symbol rate estimate,
-   spectral shape, modulation guess with confidence) plus a snapshot image. The agent reasons
-   toward a candidate protocol and proposes a decoder. It must not claim more than was measured:
-   the honest-detector invariant applies.
-3. **Enrichment**: `lookup_identity` mapping ICAO hex to registration and type, MMSI to vessel,
-   callsign to licence, `device_id` to user label. External lookups happen adapter-side, never in
-   the daemon.
-4. **`start_decode_job`**: durable monitoring with a predicate, on the existing job machinery. The
-   agent supplies the predicate; the daemon keeps the job running.
-
-The composite tool: **`whats_out_there`** sweeps a range, detects, characterises, tries matching
-decoders and returns a labelled inventory. It is a new capability rather than a wrapper, and the
-project's main demonstration.
+`list_decoders`, `query_records`, `list_entities` and `start_decode_job` expose the registry,
+record store, client-side entity fold and decode jobs. `identify_signal`, `lookup_identity` and
+`whats_out_there` are not implemented because the daemon has no signal characteriser or external
+identity adapters.
 
 ## 10. Constraints and boundaries
 
@@ -258,24 +232,17 @@ project's main demonstration.
   remotes, car fobs, alarm sensors) are never transmittable. This belongs in the emission-lease
   design as a hard rule, not as a warning in a doc.
 
-## 11. Acceptance
+## 11. Current coverage
 
-The tier is done when all five drivers work end to end:
-
-- **A:** `ley track aircraft` shows a live, correctly merged aircraft table from a continuous
-  capture; `ley records query --protocol adsb --near me --radius 10nm --since 1h` returns
-  spatially filtered history; the daemon holds no aircraft table.
-- **B:** `ley decode 433 --auto` discovers heterogeneous devices across one wide capture;
-  `ley label` persists; `ley devices-seen --quiet-since 48h` correctly reports absence.
-- **C:** `ley watch same --county 06009 --notify` fires a macOS notification for a matching FIPS
-  code with no client attached, ignores non-matching counties, and the record carries a validity
-  window.
-- **D:** `ley decode aprs` produces position, weather and telemetry records from 144.39 MHz with
-  correct callsign-SSID identity; `ley track aprs` shows a live station table from the client-side
-  fold.
-- **E:** `ley decode ft8` produces several records per 15-second slot with callsign, grid and SNR;
-  slots are cut correctly against the capture anchor across a multi-hour run with no
-  drift-induced misalignment.
+- **APRS:** `ley decode aprs` produces position, weather and telemetry records from 144.39 MHz;
+  `ley track aprs` folds them into a live station table.
+- **SAME:** `ley watch same --county 06009 --notify --detach` filters by FIPS code in the daemon
+  and can notify without a client attached. Records carry their validity window.
+- **AIS:** `ley decode ais` produces vessel records and `ley track vessels` folds them by MMSI.
+- **Shared record surfaces:** spatial record queries, `ley devices-seen`, labels and the MCP record
+  tools work for any decoder that emits the corresponding fields.
+- **Not supplied:** ADS-B, generic 433 MHz and FT8 plugins. The generic entity and record surfaces
+  can serve them, but no bundled decoder provides those protocols.
 
 Plus: a decoder plugin crash restarts cleanly, logs a coverage gap, and leaves the daemon and the
 other decoders running.
@@ -291,8 +258,8 @@ other decoders running.
 
 ## Decisions
 
-What the first build chose. Each is additive on the wire and can be revisited
-without a schema change unless it says otherwise.
+These are the current implementation decisions. Each is additive on the wire and can be revisited
+without a schema change unless stated otherwise.
 
 **Transport: stdio.** The daemon spawns the plugin and writes to its stdin one varint-delimited
 `StreamDescriptor` followed by varint-delimited `Frame`s, the bulk plane's own messages, so a
@@ -317,13 +284,14 @@ makes a capture (a capture that already covers the frequency on any device, else
 else a capture nobody is using by the don't-disturb test, else it declines naming who has the
 radio unless `take_over`), adds a persistent channel the job owns with `required_hz` set, attaches
 the plugin as a sink, and spawns the process. This is the first use of
-`AllocationRequest.channel`, which the planned watch jobs will share. A channel that goes
+`AllocationRequest.channel`; the reserved `WatchConfig` runner can use the same allocation path.
+A channel that goes
 `OUT_OF_CAPTURE` puts the job in `DEGRADED` with a coverage gap; the daemon rebuilds it when the
 capture returns and the job goes back to `RUNNING`. Without `keep`, a decode job is ephemeral in
 exactly the way a scan is: it belongs to the client that started it and its records are the live
 stream and nothing else. With `keep`, the job outlives its client and its records are the
-resource `ley://records/<job_id>`. A kept job does not yet survive a daemon restart, because no
-job survives one; its records do.
+resource `ley://records/<job_id>`. The daemon writes kept decode jobs to `kept-jobs.json` and
+resumes them with the same id after restart.
 
 **Records reach clients on their own service.** `Decoders.SubscribeRecords` is the live stream,
 scoped to everything, one job or one protocol, drop-oldest with a `seq` per job and a retained
@@ -340,8 +308,8 @@ delimited `DecodeRecord`s appended as they arrive, beside `<job_id>.json` with t
 the decoder's name and version, and every `CaptureAnchor` that was in force while it ran. The
 store directory is `~/Library/Application Support/Leyline/store` on macOS and
 `$XDG_DATA_HOME/leyline/store` elsewhere (`--store` overrides). A query scans the files that
-match its protocol and time range and filters in memory; there is no index yet, and there will be
-a SQLite one when a query is measured to be slow, not before. Wall-clock filters are answered by
+match its protocol and time range and filters in memory. No index is maintained. Wall-clock
+filters are answered by
 the sidecar's anchors, and a `RecordPage` carries those anchors so a client derives wall time from
 sample time exactly as it does everywhere else; no record carries a clock of its own.
 
@@ -363,10 +331,8 @@ whole pipeline in the engine test suite. Direwolf decodes weak packets this one 
 Direwolf adapter is a second plugin, not a replacement, and the contract exists so both can sit
 side by side.
 
-**Deferred, and where.** Predicates and the notification sink (driver C), the registry fold and
-`ley label` / `ley devices-seen` (driver B), slot-aligned input (driver E), the MCP families,
-`ley identify`, and daemon-restart respawn of kept jobs are the later items of
-`docs/plans/decoders.md`; the manifest fields that carry them exist now so a plugin written today
-declares them.
+**Not implemented.** Stateful predicates, slot-aligned input, signal identification and external
+identity enrichment remain in `docs/plans/decoders.md`. The manifest reserves the fields needed by
+those decoder input and output shapes.
 
 The reference for writing one is [`docs/reference/writing-a-decoder.md`](../reference/writing-a-decoder.md).

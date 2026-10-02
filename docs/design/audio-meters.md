@@ -2,14 +2,13 @@
 
 Status: implemented. Companion to `scope.md` (the millisecond view, which stays), to
 `signal-views.md` (the spectrum, waterfall and channel views) and to `docs/dev/cli-style.md`, whose
-palette and layout rules every picture here follows. This document is mostly about the visual
-design, because an accurate meter that looks static does not get used.
+palette and layout rules apply to every picture here.
 
 ## Context
 
 The scope shows a few milliseconds and redraws twenty times a second: for a tone it is a still
-picture, for speech it flickers. Two other displays answer the usual questions about audio, and
-audio equipment standardised their look decades ago:
+picture, and for speech it flickers. Two other displays show frequency distribution and level over
+time using the established shapes of audio meters:
 
 1. **Level by frequency** — the spectrum-analyser display on a hi-fi or a rack unit: vertical
    bars per octave band, dancing, each with a peak cap that hangs and falls. "Is that voice or
@@ -21,12 +20,11 @@ Both are renderings over a stream of daemon-computed numbers. The first needs on
 
 ## The stream: audio spectrum rows
 
-`Bulk.Subscribe` with `kind = FFT` and a **channel** as the source (today FFT sources are
-captures). `FftParams` apply as they do for the radio: `bins` (256 … 4096, the design's cap for
-this path), `rows_per_second` (≤ 20), `bin_format`; a new additive `AudioTap tap` picks the audio
-or the demod tap, reusing the enum from `AudioParams`. The daemon computes a real FFT over a
+`Bulk.Subscribe` with `kind = FFT` accepts a capture or channel source. For a channel source,
+`FftParams.tap` selects the audio or demod tap; `bins` is 256 to 4096 and
+`rows_per_second` is at most 20. The daemon computes a real FFT over a
 Hann-windowed sliding window of the tap's samples (2048 at 48 kHz is 43 ms and 23 Hz per bin,
-enough to put a PL tone in its own band) and answers rows of dB per bin from 0 Hz to half the
+enough to put a PL tone in its own band) and returns rows of dB per bin from 0 Hz to half the
 audio rate; the descriptor's `center_hz` and `span_hz` are `rate/4` and `rate/2`, so the row
 layout every FFT client already understands holds. Allocation-free like the ladder: scratch sized
 at subscribe, one transform per row, no per-block work for channels nobody is listening to this
@@ -144,11 +142,3 @@ before drawing (the scope shows it; the editor's view would only shift the clip 
 line), and the header notes it.
 
 Flags as `scope`, with `--seconds 2..120` in place of `--window` and no trigger.
-
-## What it costs
-
-Engine M (the channel-sourced FFT stream: sliding window, real FFT, dB rows, tap selection,
-refusal on `rawIQ`), proto S (a channel as an FFT source, the tap on `FftParams`, comments), fake S,
-`ley levels` M (the ladder renderer, ballistics, band summing, tests with goldens in both
-alphabets), `ley waveform` S–M (envelope renderer over the audio stream the scope already uses),
-docs S. The sonogram afterwards is S over the same stream.

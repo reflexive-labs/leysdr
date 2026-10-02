@@ -1,18 +1,24 @@
 # Design: Control Plane
 
-Status: draft. Covers §2 of the planning doc — capability model, protocol, session model. Telemetry and bulk planes get their own docs.
+Status: partial. The gRPC control plane, capability model and session lifecycle are implemented.
+Watch jobs, recurring scans and remote access are not. Companion to `data-planes.md`.
 
 ## Context
 
 The engine is a launchd daemon that owns SDR hardware. The Mac app, CLI, MCP adapter, and any third-party client are peers speaking one protocol. The control plane carries everything low-rate and stateful: discovery, tuning, session lifecycle, jobs. It does not carry samples, FFT rows, audio, or meter readings — those belong to the bulk and telemetry planes.
 
-Decisions already made that constrain this design: all-Swift engine, daemon-side DSP, one protocol everywhere (no XPC), open source, Mac-only.
+The all-Swift engine, daemon-side DSP, one protocol, open-source distribution and macOS target
+constrain this design.
 
 ## Protocol
 
-Proposal: gRPC (grpc-swift) over UDS locally, TCP for remote. Protobuf is the single source of truth — the CLI, app client library, and MCP tool schemas are generated from it.
+The daemon serves gRPC over a Unix-domain socket. It has no TCP listener. Protobuf is the single
+source of truth for the CLI, app client library and MCP tool schemas.
 
-Why not custom framing: we would reinvent streaming, backpressure, versioning, and deadlines, and third-party clients would have to implement our invention. gRPC's cost is dependency weight in the daemon, which we accept once. The local shared-memory ring for the waterfall is the one documented bypass — negotiated over the control plane, transported outside it.
+Custom framing would require separate implementations of streaming, backpressure, versioning and
+deadlines in every client. gRPC supplies those mechanisms. The contract reserves a local
+shared-memory transport for bulk streams, negotiated over the control plane, but the daemon
+currently returns gRPC for every subscription.
 
 Server-streaming RPCs carry event subscriptions. Client-streaming carries coalesced parameter writes (below). No bidirectional streams in v0 — they complicate clients for no current story.
 
@@ -39,7 +45,10 @@ Three levels, matching the pressure-test findings:
 
 **Channel** — a demod chain inside a capture: offset from center, bandwidth, mode, filter, squelch, AGC. A capture fans out to N channels. Channels are cheap; clients create them freely. Each channel is owned by the client that created it and dies with that client's last connection unless marked persistent (jobs create persistent channels).
 
-**Sink** — where a channel's output goes: `system-audio` (daemon plays via CoreAudio), `stream` (client pulls over the bulk plane), `file` (daemon records with metadata). A channel supports multiple sinks. Recording is a sink, not a feature.
+**Sink** — where a channel's output goes: `system-audio` (the daemon plays via CoreAudio) or
+`stream` (a client subscribes over the bulk plane). A channel supports multiple sinks. The file
+sink kind identifies a recording job's internal sink in state; `Control.AttachSink` refuses it.
+Clients create recordings with `Jobs.StartJob(RecordConfig)`.
 
 State lives in the daemon only. Clients are renderers of state they subscribe to. Every mutation produces an event on the capture's event stream; a client's own writes are confirmed the same way as everyone else's — there is no "my state" versus "their state."
 
@@ -69,18 +78,25 @@ Device removal does not destroy the capture: it enters `detached`, channels paus
 
 ## Jobs
 
-A job is a daemon-owned persistent intent: watch, scheduled record, scan-and-log. Jobs own persistent channels and sinks, survive client disconnect and daemon restart (respawned from the store), and write results as resources. The job API is deliberately small — create, list, inspect, cancel — with job-type-specific config as typed payloads. This is a table of watches, not a workflow engine; there is no retry DAG, no replay. A watch that was down while the daemon was down simply missed that time.
+A job is daemon-managed work with typed configuration. Scan and monitor jobs run for one client
+session. Record jobs write recording resources and end on duration, quiet, cancellation or daemon
+restart. Decode jobs may be marked `keep`; those jobs survive client disconnect and daemon restart,
+and append records to the same resource. Watch jobs, recurring scans and a general durable job
+store are not implemented. The API supports start, list, inspect and cancel; it has no retry graph.
 
 ## Resources
 
-Recordings, spectrum snapshots, and job results are addressable: `ley://recordings/<id>`, with metadata queries over the control plane and content retrieval over the bulk plane (or direct file paths locally — the daemon's store is a plain directory the Finder can see). MCP resource URIs map onto these one-to-one.
+Recordings are addressable as `ley://recordings/<id>` and kept decoder records as
+`ley://records/<job_id>`. The `Resources` service lists metadata and resolves local recording
+paths; the daemon's recording store is a directory Finder can open. Scan URIs remain valid only
+while the daemon retains the finished job in memory. Snapshot and transcript resources are not
+implemented.
 
 ## Open questions
 
 - Multi-device captures — **decided:** a capture references exactly one device. Coherent multi-SDR rigs, if ever supported, are absorbed by the device abstraction (a composite device presenting N synchronized SDRs as one descriptor). The session model never changes.
-- Auth for TCP remote access — **decided for v0:** UDS-only; no TCP listener ships. Local UDS trusts the user account. Remote access becomes its own milestone with auth designed properly (and Bonjour discovery alongside it). This decision is deferred; the protos reserve nothing for it yet, so field numbers for auth are not guaranteed to be free when that milestone lands.
+- Auth for TCP remote access — **decided for v0:** UDS-only; no TCP listener ships. Local UDS trusts the user account. Remote access requires authentication and Bonjour discovery. The protos reserve no fields for it.
 - TX forward-compatibility — **direction set (implementation later):** TX is expected eventually and arrives as a sibling concept, not a retrofit. A `Transmission` (device + modulator + audio/IQ source + emission constraints) sits alongside `Capture`; channels and sinks stay RX-only. Transmissions own their own timeline (`SampleTime` scopes by ID string, so `tx_` IDs fit without schema change). Devices advertise `tx_capable` and `full_duplex` in the feature map; half-duplex devices (HackRF) suspend capture to emit, and that arbitration is device-level. Emitting requires an emission lease — a real lease, unlike tuning, because RF emission carries regulatory weight (license, band limits, power). All additive; nothing in v1 protos changes shape.
 
-## Phase exit
-
-This doc plus the telemetry/bulk doc feed directly into the proto files and Swift protocol definitions in §5.
+The implemented contract is in `proto/leyline/v1`; `docs/dev/engine-internals.md` specifies the
+daemon implementation.

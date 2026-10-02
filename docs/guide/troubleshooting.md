@@ -7,7 +7,7 @@ follows in brackets (`[DEVICE_BUSY]`). The exit status says which kind of failur
 | exit | meaning |
 |---|---|
 | 0 | success, including a Ctrl-C that ends a live session |
-| 1 | the daemon refused or failed; the line keeps the daemon's code in brackets |
+| 1 | the daemon refused or failed; the line includes the daemon's code in brackets |
 | 2 | usage: a bad flag, argument, value or preset; nothing was sent to the daemon |
 | 3 | the daemon is not running |
 | 130 | interrupted before the live phase began |

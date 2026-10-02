@@ -1,13 +1,12 @@
 # Design: Scope — the audio waveform, and what sits under it
 
-Status: implemented (`ley scope`). Companion to `signal-views.md` (which owns the spectrum, waterfall
-and channel views) and `docs/dev/cli-style.md` (which owns how anything is drawn).
+Status: implemented (`ley scope`). Companion to `signal-views.md` for signal measurements and
+`docs/dev/cli-style.md` for terminal rendering.
 
 ## Context
 
-`ley spectrum` and `ley waterfall` show what is on the air; `ley listen` hands a script the audio
-samples; nothing shows a person what the demodulator produced. Two questions come up that only a
-waveform answers:
+`ley spectrum` and `ley waterfall` show RF energy; `ley listen` streams audio samples. A waveform
+shows two properties of the demodulator output:
 
 1. **What does the mode actually do?** The level meter and the spectrum are the same in every
    mode, because both are measured before demodulation. The difference is in the waveform: an FM
@@ -27,7 +26,7 @@ So the view needs two taps; the second is the main reason to build it.
 - **`demod`** — the detector's own output before any audio conditioning. For NFM that is the
   discriminator: the voice, the PL tone riding under it, and a DC offset that is the tuning error
   in hertz, read against the channel's own full-scale deviation (±2.5 kHz ≙ ±1.0 on a 12.5 kHz
-  channel), which the audio descriptor answers. For AM it is the envelope, carrier level included
+  channel), which the audio descriptor reports. For AM it is the envelope, carrier level included
   as DC. For USB/LSB and CW it is the product detector before AGC. For WFM it is the discriminator
   before the 15 kHz audio low-pass, so the 19 kHz stereo pilot is visible at 48 kHz. When the
   squelch is closed the `audio` tap is zeros, as it is for the speaker; the `demod` tap keeps
@@ -56,7 +55,7 @@ already uses to drive `SUB_AUDIBLE` telemetry, so the CLI view is testable.
 
 - One window of samples per frame, drawn as a trace across the terminal width; the vertical axis is
   a fraction of full scale, which on the `demod` tap of an FM mode is the deviation the daemon
-  answers in the audio descriptor (±2.5 kHz on a 12.5 kHz NFM channel, ±75 kHz on WFM) and which the
+  reports in the audio descriptor (±2.5 kHz on a 12.5 kHz NFM channel, ±75 kHz on WFM) and which the
   header shows. Braille cells (2 × 4 dots) on terminals that have them; the `--ascii` set draws with
   three levels per cell. Up to 20 frames a second; `--count` bounds it for scripts.
 - `--window` defaults to 40 ms: a syllable of voice, two cycles of 50 Hz, four of a 100 Hz tone.
@@ -68,7 +67,7 @@ already uses to drive `SUB_AUDIBLE` telemetry, so the CLI view is testable.
   hertz for FM modes. When the daemon's sub-audible detector has a tone it prints `PL 100.0 Hz
   (measured 100.02 Hz, 18 dB, confidence 0.9)` from the `SUB_AUDIBLE` telemetry. **The number always
   comes from the daemon; the view never estimates the tone itself** (invariant 2 and the
-  detector-stays-honest rule). The trace shows the raw signal and the header shows the daemon's
+  reporting limit in invariant 12). The trace shows the raw signal and the header shows the daemon's
   measurement; they can disagree, and the trace lets you check the measurement.
 - `--json` prints one object per frame, `{seq, sample_index, sample_rate, tap, window_ms,
   peak_dbfs, rms_dbfs, dc, tone_hz}`, with no samples: the samples are `ley listen --format json`.
@@ -84,17 +83,10 @@ already uses to drive `SUB_AUDIBLE` telemetry, so the CLI view is testable.
   remains. The trace sits above or below centre by the tuning error.
 - A broadcast station in WFM on the `demod` tap: the 19 kHz pilot as fine hash on the trace.
 
-## Later, not now
+## Not implemented
 
 An **audio spectrogram** (`ley sonogram`): a daemon-side FFT ladder over the audio or demod tap,
 rendered like the waterfall. It shows a PL tone as a line at 100 Hz, voice as formants, a 1750 Hz
 tone burst, DTMF, and the tones of digital modes. It is the right tool for "which sub-audible
 frequencies", and it belongs in the daemon (invariant 2: no FFTs client-side). The scope is the
 cheaper half and stands on its own.
-
-## Cost
-
-Engine M (a second output on the demodulator protocol, which is hand-written and may change;
-routing in the channel core; fixture tests that the NFM `demod` tap carries the PL fixture's tone),
-proto S, daemon and fake S, CLI M (the trace renderer, trigger, header, tests), docs S. About the
-size of `ley phosphor`.

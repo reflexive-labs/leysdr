@@ -79,7 +79,7 @@ Six roles. Use the role, never a colour name, at the call site.
 | `Err` | red | `DISCONNECTED`, `CAPTURE_DETACHED`, the `ley:` error prefix, a rejected write |
 | `Cmd` | cyan | commands the reader is meant to copy and run |
 
-Plain (no role) is the default and carries the primary answer: the frequency, the mode,
+Plain (no role) is the default and carries the primary result: the frequency, the mode,
 the number the screen exists to report. Emphasis helps the reader find it.
 
 Rules:
@@ -159,7 +159,7 @@ Ranges read `24.000 MHz to 1.766 GHz`, never with a dash, so a dash always means
 
 - **Tables** keep ALL-CAPS headers, two-space gutters and `tabwriter`. Headers are
   `Label`. Columns carry units in the header (`OFFSET (kHz)`), never per cell.
-- **The answer leads.** The first column is what the verb was asked about (model,
+- **The result leads.** The first column is what the verb was asked about (model,
   frequency, name), not the id. Ids move right or behind `--wide`. A column that would read
   the absent glyph on every row is left out (`hideEmpty` on the column), because a column of
   dashes wastes width. An empty table keeps every header, so it still shows what a row holds.

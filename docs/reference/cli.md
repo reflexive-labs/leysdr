@@ -119,7 +119,7 @@ explains the scale. Bandwidth: a bare number is kHz. Volume: `0..1` or `50%`. Mo
 band table's plans, each named by one plan-prefixed word that resolves without a band (`wx1..wx7`,
 `marine16`, `cb19`, `murs1`, `calling`, `aprs`, `guard`, and GMRS by number `ch1..ch22`; `noaa`,
 `noaa1..7`, `weather` and `marine` keep resolving as older aliases; the repeater outputs
-`ch15..ch22` also answer to their repeater-slot names `rpt1..rpt8`, the channel-numbered
+`ch15..ch22` also resolve from their repeater-slot names `rpt1..rpt8`, the channel-numbered
 `15rp..22rp`, and Baofeng's `ch23..ch30`). The plans are NOAA WX1 to WX7, GMRS 1 to 22, MURS 1 to
 5, the ITU marine plan with the US `A` variants and a ship and a coast entry per duplex channel
 (`24`, `24 coast`; `87B` and `88B` are AIS 1 and 2), CB 1 to 40, 2 m calling and APRS, and airband
@@ -137,7 +137,7 @@ These are presentation over the same RPCs: the CLI adds no capability the protoc
 
 **`--json`** is the canonical proto3 JSON mapping (lowerCamelCase keys, e.g. `captureId`,
 `centerHz`; 64-bit integers as strings; NDJSON for streams). Everything meant for a person goes
-to stderr, so stdout is parseable. Every verb either answers the flag or refuses it: a verb whose
+to stderr, so stdout is parseable. Every verb either supports the flag or refuses it: a verb whose
 output is a shell script, a file or a launchd action — `ley help`, `ley completion` (and its shells),
 `ley daemon install|uninstall|logs`, and `ley mcp`, whose stdout is the MCP conversation — exits 2 with `<verb> has no --json output; drop the flag
 (<what to run instead>)`. None ignores it, because a flag that silently does nothing hands a
@@ -195,12 +195,12 @@ an array of `{name, aliases, hz, mode, bandwidth_hz, note, decoder}` in the serv
 `name` as the radios print it, `aliases[0]` the word that resolves without a band, `mode` and
 `bandwidth_hz` only where they differ from the band's, `note` always, and `decoder` the daemon
 decoder for a data channel: `aprs`, `ais`, `same`). `ley bands <frequency|preset|band>
---json` is the one place a client-local table answers with a **single object** instead:
+`--json` is the one place a client-local table returns a **single object** instead:
 `{hz, band, mode, bandwidth_hz, reason}`, where `band` is one of those entries or `null` and `mode`
 is resolved for that frequency, so it is `lsb` or `usb` rather than `usb/lsb`. `band` being `null`
-does not null the answer -- `mode`, `bandwidth_hz` and `reason` are what a script needs to predict
+does not null the result -- `mode`, `bandwidth_hz` and `reason` are what a script needs to predict
 what `tune` would do, and they are always present. Neither verb dials the daemon; `ley help
-presets` is the same data in prose, and `ley presets` (the verb) owns the bare name. `ley
+presets` is the same data in prose, and `ley presets` (the verb) defines the bare name. `ley
 bookmarks --json` is the third such table and the only one a client writes: an array of
 `{id, name, hz, mode, bandwidth_hz, updated_ns}` ordered by frequency and then name, which are the
 fields of `bookmarks.json` itself (`$LEYLINE_BOOKMARKS`, else beside `labels.json` in
@@ -291,7 +291,7 @@ went. A range positional (`462.5M..462.75M`) or a band name (`gmrs-462`, `2m`) r
 refused with its halves named. `--for` sets how long to watch (`30s`, `2m`; `0` watches
 until Ctrl-C); it becomes `MonitorConfig.duration_ms`. The watch is `Jobs.StartJob(MonitorConfig)`
 and its detections stream on the telemetry plane (type `DETECTION`, daemon-wide) the same as a
-scan's; the client folds them into the log. It runs daemon-side and owns the radio for the duration,
+scan's; the client folds them into the log. It runs daemon-side with an exclusive radio lease for the duration,
 declining a radio somebody is using with the same don't-disturb rule as a scan (`--take-over`
 overrides). A band wider than one capture can watch is refused with `INVALID_ARGUMENT`; `scan` sweeps
 a span that wide. There is no `--gain`: a watch runs at the gain the radio is on, and `scan --gain` is
@@ -315,7 +315,7 @@ hidden carrier never reads as a quiet band. Full design: `docs/design/band-watch
 occupancy view of which this is the first cut.
 
 **`ley scan --json`** prints exactly one `Scan` object when the sweep finishes, and nothing before
-it: the answer is the whole scan, not the steps it took to get there, and progress belongs on
+it: the result is the whole scan rather than the intermediate steps, and progress belongs on
 stderr where a person can see it. Each `Detection` in it carries `looks` and `looksPossible` -- the
 spectrum rows in which it cleared the threshold, out of the rows that covered that frequency -- and
 `floor_dbfs`, the local noise floor its `snr_db` was measured against. Those counts are reported,
@@ -367,11 +367,11 @@ is silent
 stays `RUNNING`, because silence is not failure.
 `ley jobs --json` prints a `ListJobsResponse` with the jobs in id order, which for ULIDs is the
 order they were started, so the row numbers the table prints are the same from one call to the
-next. `ley jobs cancel <job> --json` prints the `Job` the daemon answers with: cancelling a job
+next. `ley jobs cancel <job> --json` prints the `Job` returned by the daemon: cancelling a job
 that has already finished is not an error, and the state in that `Job` is the one it ended in.
 
 Destructive verbs echo nothing stale: `ley stop`, `ley stop --all` and `ley devices detach` print
-the daemon's `Empty` answer (`{}`) under `--json` — one line for the whole action — and the exit
+the daemon's `Empty` response (`{}`) under `--json` — one line for the whole action — and the exit
 status carries success; when `stop --all` finds nothing running it prints nothing (the sentence is
 stderr prose without `--json`) and exits 0. `ley set --json` prints the confirming or rejecting
 Event and exits 1 on a `WriteRejected` with nothing on stderr. `ley devices --watch --json` prints
@@ -448,7 +448,7 @@ terminal with a position until Ctrl-C stops it — the same shape as every other
 When stdin is a terminal, space pauses and resumes it (`Control.SetPlaybackPaused`): the hint
 line reads `Space pauses, Ctrl-C stops.` and the position line `0:02 / 0:05, paused; space
 resumes`, and a pause another client made shows there too. A pipe on stdin takes no keys. A
-daemon with no audio device answers `PLATFORM_UNSUPPORTED` and `ley` then hands the file to this
+daemon with no audio device returns `PLATFORM_UNSUPPORTED` and `ley` then hands the file to this
 machine's own player (`$LEYLINE_PLAYER` when set — `afplay`, `mpv`, `vlc` — else `open` on macOS
 and `xdg-open` elsewhere), saying which happened. Under `--json` nothing is played at all and the
 `LocalPath` is printed instead: a script wants the path, not a sound.
@@ -525,7 +525,7 @@ uses `KeepAlive.SuccessfulExit=false`, so a clean stop stays stopped while a cra
 devices, what is playing, and the next commands chosen from the state; exit 0 in every state,
 300 ms dial timeout. Piped it prints the same block unstyled (`ley --help` is the verb list);
 `--json` prints exactly what `ley state --json` prints, including its failure when no daemon
-answers. This screen is the placeholder the planned terminal dashboard replaces on a TTY
+responds. This screen remains until the terminal dashboard replaces it on a TTY
 (`docs/plans/user-stories.md`); its renderer (`renderOrientation` in `go/internal/cli`) is the one
 function the dashboard reuses for its no-daemon and no-device states, so the words stay the same.
 
@@ -538,10 +538,8 @@ snapshot, and every client would have to repeat it. The recorded follow-up is an
 daemon-side relative squelch — `ParamWrite.squelch_relative_db`, "mute at noise floor + N dB"
 tracked by the daemon — after which `auto` becomes a one-field write. Not in v0.
 
-**Roadmap stubs.** There are none: every verb `ley` knows reaches the daemon. The mechanism stays
-(a hidden verb that exits 2 naming its milestone and what to use today, listed by `ley help
-roadmap`), because a newcomer who types a planned verb should learn what is coming rather than see
-Cobra's "unknown command". `watch` is the record-watch verb (a decode job with a predicate and a
-notifier); the planned audio-transcript watch will take another name.
+**Roadmap stubs.** There are none: every verb `ley` knows reaches the daemon. `ley help roadmap`
+lists unavailable features and their current alternatives. `watch` is the record-watch verb (a
+decode job with a predicate and a notifier); an audio-transcript watch will require another name.
 
 Deliberate omissions at v0: no remote flags (UDS-only) and no TX verbs.

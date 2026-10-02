@@ -1,18 +1,17 @@
 # Writing a client
 
-`ley` is one client of the daemon, not the only way in. Anything that speaks the `leyline.v1`
-contract over the daemon's Unix socket is a peer of the CLI: a script, an agent, a future app. This
-page is what a client author needs to know before the first RPC. The rules come from the design
-docs; this is the short form, with the common mistakes first.
+`ley` is one client of the daemon. The app, scripts, agents and third-party programs are peers
+when they speak the `leyline.v1` contract over the daemon's Unix socket. This page contains the
+requirements a client author needs before the first RPC.
 
 ## The contract
 
 `proto/leyline/v1` is the whole contract, one file per plane plus jobs and the shared types:
 `control.proto` (discovery, captures, channels, sinks, events), `telemetry.proto` (meters, squelch
-transitions, detections), `bulk.proto` (IQ, FFT rows, audio), `jobs.proto` (scan today; watch and
-record later) and `common.proto` (`SampleTime`, `CaptureAnchor`, `Gap`, `ErrorDetail`). Changes
-within v1 are additive only: new fields get new numbers, nothing is renamed or retyped, and reserved numbers stay
-reserved, so a client built against today's protos keeps working.
+transitions, detections), `bulk.proto` (IQ, FFT rows, audio), `jobs.proto` (scan, monitor,
+recording and decoder jobs, with watch reserved) and `common.proto` (`SampleTime`,
+`CaptureAnchor`, `Gap`, `ErrorDetail`). Changes within v1 are additive only: new fields get
+new numbers, nothing is renamed or retyped, and reserved numbers stay reserved.
 
 Ids are prefixed ULIDs (`dev_`, `cap_`, `chan_`, `job_`); resources are `ley://<kind>/<id>` URIs.
 Every frame and telemetry message carries a `SampleTime`, and wall clock is derived from the
@@ -74,7 +73,6 @@ the client-local tables).
 
 ## Not yet
 
-There is no TCP listener and no remote access; that milestone arrives with authentication designed
-for it, and `ley mcp` ([MCP adapter reference](mcp.md)) serves stdin and stdout only until then. The
-tools the daemon cannot back yet -- recordings, transcripts, signal identification, identity
-lookups -- are listed there with the milestone each waits on.
+There is no TCP listener or remote access. `ley mcp` ([MCP adapter reference](mcp.md)) serves stdin
+and stdout only. Watch jobs and transcripts, signal identification and identity lookups are not
+implemented; the MCP reference lists the unavailable tools and current alternatives.

@@ -1,9 +1,7 @@
 # Design: Recording
 
-Status: implemented. Companion to `data-planes.md` (which owns the rule that lossless output
-is a daemon-side sink), `semantic-tier.md` (which owns "persistence follows intent" and the
-activity segment) and `decoders.md` (whose kept-records store is the pattern the recording store
-copies).
+Status: implemented. Companion to `data-planes.md` for lossless daemon-side output,
+`semantic-tier.md` for persistence and `decoders.md` for the kept-records store pattern.
 
 ## The story
 
@@ -349,8 +347,8 @@ honoured by degrading, not refusing. A device detach is the same story through t
 `detached` state. A daemon restart does not resume a recording: the next daemon finds the job in
 `kept-jobs.json`, repairs the last part's WAV header from the file length, closes the manifest
 with `ended_by = restart`, and marks the job `COMPLETED` with "ended by a daemon restart". A
-recording is a bounded artefact; whoever wanted a longer one starts another, and the open-ended
-"record everything while I am away" intent is the planned watch job, which will resume.
+recording is a bounded artefact; whoever wanted a longer one starts another. The reserved
+`WatchConfig` contract covers open-ended capture, but no watch runner is implemented.
 
 **Don't-disturb.** A record job that created its capture holds it as a scan does, so the
 allocator's `inUse` refuses another job the radio without `take_over`. An interactive client is
@@ -405,9 +403,7 @@ ley jobs cancel <id>
   only with `--retune`. The daemon itself degrades the job and records the gap ("The daemon").
 - **`ley play` takes a URI.** `ley play ley://recordings/<id>` plays part 1 and, when there are
   more, prints a note pointing to `--part`. Playing a part is playing a file; the reader is
-  unchanged. The sidecar's `metadata.mode` seeds the channel as it does for a fixture today.
-- **The stub goes.** `record` leaves `Stubs` and `ley help roadmap`; the help golden is
-  rewritten, and `docs/reference/cli.md` and `docs/guide/using-ley.md` get their sections.
+  unchanged. The sidecar's `metadata.mode` seeds the channel as it does for a fixture.
 
 ## MCP
 
@@ -420,9 +416,8 @@ Four tools and one resource, each with the `ley` mirror above and the same proto
 | `get_recording` | `Resources.GetResource` + `ResolveLocalPath` | the manifest with each part's local path, so an agent hands a file to another tool by path |
 | `delete_recording` | `Resources.DeleteResource` | returns the `DeletedResource`; refused while the job runs, with `cancel_job` named |
 
-The resource `ley://recordings/<id>` returns the manifest as JSON. Samples are never returned
-through MCP; a file path is. `find_recordings` leaves the "not registered" list in
-`docs/reference/mcp.md` when it lands, and one eval scenario (below) grades a recording task.
+The resource `ley://recordings/<id>` returns the manifest as JSON. MCP returns local paths rather
+than sample data. The `record-squelch-opens` eval scenario verifies a recording task.
 
 ## Testing without hardware
 
@@ -533,18 +528,17 @@ space when stdin is a terminal, and its progress line reads `0:02 / 0:05, paused
 that client goes, which is what makes Ctrl-C in `ley play` stop the sound. There is no `persistent`
 form, because nobody has asked to keep a recording playing after the client exits.
 
-**It is the one place the daemon reads a file for audio.** The reader is `WAVReader` (PCM S16
+**Playback audio path.** The reader is `WAVReader` (PCM S16
 mono, the only shape `PartWriter` writes), paced against the file's own rate into the same
 `CoreAudioSink` a channel's audio goes to; the sink's ring absorbs the jitter, exactly as it does
 for a channel. Nothing new runs on the DSP thread -- there is no DSP thread in this path at all.
 An IQ part is refused with `INVALID_ARGUMENT`: `ley play` tunes those, and the daemon playing raw
 baseband as sound would be noise.
 
-**A host with no audio still answers**: `PLATFORM_UNSUPPORTED`, as `AttachSink(system_audio)`
-already does, and `ley` then falls back to handing the file to the local player -- which is the
-case where the file is local anyway, because a headless daemon is usually the one on this machine.
+**A host with no audio returns `PLATFORM_UNSUPPORTED`**, as `AttachSink(system_audio)` does. `ley`
+then passes the local file to the configured player.
 
-## Deliberately not in v1
+## Not implemented
 
 - **A smaller IQ format.** Deferred, but measurement has since removed the reason for deferring
   it (2026-09-18): both readers already take cu8 (`IQFile.swift`, `go/pkg/iqfile`, and
@@ -556,11 +550,12 @@ case where the file is local anyway, because a headless daemon is usually the on
   information: 69 GB an hour where 17 GB would do, and a 20 GiB cap that holds 18 minutes instead
   of 70. The additive change is `iq_format`, and the accurate value is *the device's native
   format* (`DeviceDescriptor.nativeFormat` already carries it), which is exact for a cs8 or cs16
-  radio too rather than a special case for the RTL-SDR. **This is the first thing to reopen when
-  the store's size becomes a problem**, ahead of anything about the audio format.
-- **Gating IQ.** It needs either a named channel's squelch or the detector. The first is the
-  likely answer and is one additive field (`gate_channel_id`) when someone asks for it.
-- **Resuming a recording after a restart.** The planned watch job will resume; a recording ends.
+  radio too rather than a special case for the RTL-SDR. Reconsider this before compressed audio if
+  the recording store reaches its size cap in normal use.
+- **Gating IQ.** It needs either a named channel's squelch or the detector. A channel gate would be
+  one additive field (`gate_channel_id`).
+- **Resuming a recording after a restart.** A recording ends. The reserved `WatchConfig` contract
+  has restart semantics, but no watch runner is implemented.
 - **Scheduled starts.** `start_at_ns` is refused; a schedule is a feature of the durable job store.
 - **Streaming a recording's samples** over MCP or gRPC. `ResolveLocalPath` and `ley play` are
   the two ways in, and the data-planes doc's "no lossless network stream" holds. A playback moves
@@ -602,11 +597,3 @@ case where the file is local anyway, because a headless daemon is usually the on
   the same shape as the kept-records store. 20 GiB is the guess; a fraction of free space and
   separate IQ and audio caps were considered and set aside until a machine shows the fixed
   number wrong.
-
-## Cost
-
-Engine M (the sink and part writer, the gate machine, the runner, the manifest, retention,
-restart repair; no DSP), proto S, daemon S beyond the runner (`Resources`, the allocator's
-channel-borrow form), fake M (real files, a scheduled gate), CLI M (`record`, `recordings`,
-`play` on a URI, goldens, reference and guide sections), MCP S, fixture S, tests M. About the
-size of the decoder tier's first lane, and larger than `ley scope`.

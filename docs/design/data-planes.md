@@ -1,6 +1,8 @@
 # Design: Telemetry & Bulk Planes
 
-Status: draft. Covers §3 of the planning doc. Companion to `control-plane.md`.
+Status: partial. Telemetry, gRPC bulk streams, FFT accumulation, channel-audio FFT and persistence
+frames are implemented. The shared-memory transport, historical stream positions and decoded-byte
+subscriptions are not. Companion to `control-plane.md`.
 
 ## Context
 
@@ -12,7 +14,7 @@ Every frame on both planes carries a sample-indexed timestamp: `(capture_id, sam
 
 - Alignment across streams is exact by construction — an FFT row, a detection, and an audio block from the same capture can be placed on one timeline without clock math in clients.
 - Wall-clock is derived, never carried per-frame. Clients that want it apply the anchor.
-- Recordings store the anchor in metadata, so replayed captures keep an accurate timeline. This is the foundation the V2 DVR and terrain views stand on.
+- Recordings store the anchor in metadata, so replayed captures keep an accurate timeline.
 
 ## Delivery policy
 
@@ -21,18 +23,27 @@ Per-stream, declared at subscription, two policies only:
 - **latest-wins** — daemon drops oldest under backpressure; sequence numbers expose gaps. Default for everything a human is looking at: display FFT, meters, monitor audio.
 - **gap-marked** — daemon still drops under sustained backpressure but never silently: a gap record with the missing sample range precedes the next frame. For clients doing external processing on IQ or decoded bytes.
 
-There is no reliable/lossless network stream. Anything that must be lossless (recording, job results) runs as a daemon-side sink and lands in the store. This single rule keeps backpressure trivial: the network never owes anyone perfect delivery.
+There is no reliable or lossless network stream. Lossless work, including recording, writes to a
+daemon-side store. Network backpressure can therefore discard bulk frames according to the
+subscription's delivery policy.
 
 ## Bulk plane
 
 ### Transports
 
-- **Local fast path: shared-memory ring.** One ring per subscribed stream, single producer (daemon), multiple readers. Layout: fixed header (magic, version, stream descriptor, slot size/count, monotonic write sequence) followed by slots of (sequence, sample timestamp, payload length, payload). Readers chase the write sequence; a reader that falls behind detects overrun by sequence check and resynchronizes — latest-wins by construction. Ring creation and teardown are negotiated over the control plane; the ring itself carries no control information.
-- **Everything else: gRPC server-streams.** Frames are a thin protobuf envelope (stream id, sequence, timestamp, gap record if any) with payload as opaque bytes — samples are never protobuf-encoded per element. Remote full-rate IQ is possible but discouraged by defaults; the negotiation exists precisely so remote clients take decimated or derived streams instead.
+- **Shared-memory ring, reserved but not implemented.** The contract defines one ring per stream,
+  with one daemon writer and multiple readers. A request for `SHM_RING` currently receives a gRPC
+  descriptor. Clients must use the descriptor's transport rather than assuming the request was
+  accepted.
+- **gRPC server streams.** Every current subscription uses a protobuf frame containing the stream
+  id, sequence, sample time, optional gap and opaque payload. Samples are not encoded as individual
+  protobuf fields.
 
 ### Negotiation
 
-Subscription is an offer/answer over the control plane. The client states stream type, desired rate/resolution/format, and delivery policy; the daemon answers with what it will actually provide (it may downgrade, never upgrade). The answer is authoritative and appears in the stream descriptor, so a client can always interpret frames without out-of-band knowledge.
+A subscription request specifies the stream type, requested rate, resolution, format and delivery
+policy. The returned `StreamDescriptor` is authoritative and contains the parameters required to
+interpret each frame. The daemon may downgrade a request but never upgrades it.
 
 ### Stream types and formats
 
@@ -40,7 +51,8 @@ Subscription is an offer/answer over the control plane. The client states stream
   - *v0 contract:* the daemon serves cf32 at the capture's native rate only. `Bulk.Subscribe(IQ)` validates the request instead of overriding it — `format` must be `UNSPECIFIED` or `CF32`, `sample_rate` must be `0` or the capture rate — and refuses anything else with `INVALID_ARGUMENT` ("downgrade, never upgrade" honoured by refusing). cs8/cs16 and decimated IQ are a v1 addition.
 - **FFT rows** — (bins, bin format db-u8 or db-f32, row rate, window id, center, span). Resolution and rate are negotiated per subscriber; the daemon computes from a shared internal ladder of sizes so N subscribers don't mean N FFT passes at arbitrary sizes.
 - **Audio** — demodulated output of a channel: negotiated rate (8/16/48 kHz), s16 or f32, mono. Compression (Opus) is an open question, gated until a remote-audio story demands it.
-- **Decoded bytes** — framed output of digital decoders when those arrive; the envelope is the same, payload semantics come from the channel's mode.
+- **Decoded bytes** — reserved in `StreamKind`; current decoders exchange frames with the daemon's
+  plugin runner and expose typed records through the decoder service instead.
 
 ### Seek shape
 
@@ -65,6 +77,5 @@ Rationale for a separate plane rather than folding into control events: control 
 - Opus for remote audio — deferred; now tied to the remote-access milestone (see control plane doc: v0 is UDS-only).
 - Detections as resources — **decided:** job-initiated scans persist as addressable resources (`ley://scans/<id>`); ad-hoc CLI/UI scans are stream-only and ephemeral. Details in the §4 semantic-tier doc.
 
-## Phase exit
-
-With `control-plane.md`, this completes the protocol surface. Next: §4 semantic tier doc, then the §5 proto files and Swift protocols fall out of the three docs.
+The implemented wire shape is in `proto/leyline/v1/bulk.proto` and
+`proto/leyline/v1/telemetry.proto`.

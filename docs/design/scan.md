@@ -1,38 +1,24 @@
 # Design: Scan
 
-Status: implemented. Companion to `semantic-tier.md`, which
-introduced the detector and the scan resource in prose; this doc is the version with numbers in it.
+Status: implemented. Companion to `semantic-tier.md`, which describes how scans fit the semantic
+tier. This page specifies the sweep geometry, detector and job behavior.
 
-## The story
+## Operator result
 
 > As an operator, I can `ley scan 144M..148M` and get a list of detected carriers with frequency,
 > bandwidth, and SNR.
 
-The build order puts this — "Detector (energy detection, noise floor, persistence tracking);
-telemetry plane; `ley scan`" — ahead of the durable job store. The wire contract for it has been
-sitting in `jobs.proto` and `telemetry.proto` since the protos were written, unimplemented:
-`ScanConfig`, `Scan`, `NoiseFloorSegment`, `Detection`, `TelemetryType.DETECTION`, and a `Detector`
-protocol in `CoreProtocols.swift` with exactly the signature a spectrum sink needs. This work fills
-them in rather than inventing a shape beside them.
+`ScanConfig`, `Scan`, `NoiseFloorSegment`, `Detection` and `TelemetryType.DETECTION` define the wire
+contract. The daemon's `Detector` consumes the existing FFT ladder through `SpectrumSink`.
 
 ## What a scan is
 
 A sweep points the radio at a series of centre frequencies, looks at the spectrum at each one, and
 reports the carriers it is confident about. The hard part is deciding which carriers are real.
 
-The failure mode this design exists to prevent has already happened twice in this repo. The spectrum
-chart's peak list once used a 6 dB threshold and four of five "loudest bins" were random noise
-quoted like carriers. The ISM occupancy measurement compared each channel's loudest bin against the
-band's median and reported quiet channels as 99% busy, because the maximum of N noise draws sits
-about 8 dB above their median by chance alone. `docs/plans/archive/cli-papercuts.md` recorded the general
-form of the bug and reserved the fix for exactly this work:
-
-> The honest quantity scales with bin count, because the maximum of N noise bins grows with ln N …
-> If `scan` ever wants real detection it needs the scaled form, and that is a design change rather
-> than a papercut.
-
-So the detector below is specified by its false-alarm rate, and every number in it was measured by
-Monte Carlo before it was written down.
+A fixed threshold above a band's median is invalid: the maximum of N noise bins grows with ln N.
+It can report quiet channels as occupied and random noise as carriers. The detector is therefore
+specified by its false-alarm rate, with its constants checked by Monte Carlo simulation.
 
 ## The sweep
 
@@ -80,7 +66,7 @@ straddling a hop are mislabelled in both directions — energy attributed to a f
 not listening to. A scan must not produce silently wrong results like this.
 
 The fix is to ask the device how much it has in flight. `RadioDevice` gains `inFlightSamples`, which
-RTL-SDR answers from its own buffer geometry and a file device answers 0, and the sweep discards
+RTL-SDR reports its buffer geometry and a file device reports 0, and the sweep discards
 every row whose samples begin before `hopIndex + inFlightSamples + ringDepth + margin`. The sample
 timeline is monotonic across a retune (the anchor is not republished and the index does not reset),
 so this arithmetic is exact rather than a guess about wall-clock timing.
@@ -103,9 +89,8 @@ fall about 3 dB for every dB of attenuation while real signals fall 1 dB, so a s
 
 ## The detector
 
-Daemon-side, as an accumulator on the existing FFT ladder (invariant 2). It implements the
-`Detector` protocol that has been declared and unimplemented since the protos were written, and
-taps the ladder through `SpectrumSink` the way `PersistenceFrameSink` already does.
+The detector is a daemon-side accumulator on the existing FFT ladder (invariant 2). It implements
+the `Detector` protocol and receives rows through `SpectrumSink`, as `PersistenceFrameSink` does.
 
 ### What a row is
 
@@ -116,8 +101,8 @@ row.
 
 As a result, a row can only catch a burst during the fraction of the row interval it analysed. A
 1024-point FFT covers 1024 of every 16384-sample block, so a scan sees about 6% of the dwell. A
-carrier that is on throughout the dwell is found; a 200 ms packet may or may not be. **Scan answers
-"what is sitting on this band", not "what transmitted during these four seconds".** Duty cycle is
+carrier that is on throughout the dwell is found; a 200 ms packet may or may not be. **Scan reports
+what persisted while each step was sampled.** Duty cycle is
 what `ley phosphor` and the band-watching accumulator are for.
 
 ### M, and the bug that was nearly shipped
@@ -250,7 +235,7 @@ the same second moment would have. Measured:
 ```
 
 SNR-independent, correct across a sixteen-fold range of widths, and it returns approximately zero
-for a tone rather than an invented number. When it lands below one bin the CLI prints
+for a tone rather than an invented number. When it measures below one bin the CLI prints
 `under 2.344 kHz` rather than a figure, because a width smaller than the resolution is not a
 measurement.
 
@@ -285,36 +270,30 @@ the LO, fails to reappear at the same frequency.
 The one artefact this does not catch is a spur at a fixed absolute frequency — the 28.8 MHz
 reference oscillator's harmonics, for example, which put the fifth at exactly 144.000 MHz. Those do
 not move with the LO, so no amount of cross-checking distinguishes them from a carrier. `ley scan`
-annotates a detection that lands within a bin of a reference-clock harmonic, client-side and
+annotates a detection that falls within a bin of a reference-clock harmonic, client-side and
 labelled as a possibility rather than a verdict, and this doc states that measurement cannot tell
 it apart from a carrier.
 
 ## The wire
 
-Everything goes through the messages that already exist, plus eight additive fields, each justified
-below: two that make job state observable, three on `Detection`, one on `Scan`, and two on
-`ScanConfig`.
+The scan uses the jobs, event and telemetry messages in `leyline.v1`.
 
 `ley scan` is `Jobs.StartJob(ScanConfig{once})`. The job runs the sweep, emits `Detection` messages
 live on the telemetry plane, accumulates a `Scan`, and reaches `COMPLETED`. `Jobs.GetScan` returns
 the aggregate. `Jobs.CancelJob` stops it.
 
-**Two additive fields make job state observable**, because today `Event.body` has no `Job` member
-and `GetStateResponse` no jobs, so a client could only poll:
+Job state is observable through these fields:
 
 ```
 Event.body:          Job job = 9;
 GetStateResponse:    repeated Job jobs = 7;
 ```
 
-A job is daemon state, and invariant 7 says clients render daemon state by subscription rather than
-by asking repeatedly. `Job` is already a full-object message, so invariant 6 holds unchanged and
-reconnect stays `GetState` plus resume-from-seq. The alternative — a bespoke `Sweep` streaming RPC —
-was rejected because it creates a second authoritative state channel beside `WatchEvents`, orphans
-the `ScanConfig`/`Scan`/`GetScan` triple the protos already define, and would have to be replaced
-when the durable job store lands.
+A job is daemon state, so clients receive full `Job` objects through `WatchEvents` and recover them
+through `GetState`. A separate `Sweep` stream would create another authoritative state channel
+beside `WatchEvents`.
 
-**Three additive fields on `Detection`** carry the evidence the design depends on:
+`Detection` carries the evidence the design depends on:
 
 ```
 uint32 looks = 10;            // sub-blocks in which this cleared the threshold
@@ -325,19 +304,16 @@ double floor_dbfs = 12;       // the local floor its SNR was measured against
 Without them a carrier seen eight times out of eight and a single burst are indistinguishable on the
 wire, and a per-row floor cannot describe a local one.
 
-**One additive field on `Scan`**: `repeated GainState gains = 7`, the gain the sweep pinned.
+`Scan.gains` records every gain stage pinned during the sweep. `Scan.resolution_hz` records the
+analysis bin width and `Scan.covered` records the range actually measured.
 
-`ScanConfig` also gains `bool take_over = 6` for the don't-disturb override below, and
-`GainWrite gain = 8`: where to pin. A sweep asked for a level pins its element there
-(the first element when the write names none); one asked for `auto` sets the element to auto, lets
-the driver settle, and pins where it settled; one asked for nothing pins whatever the radio is on,
-which is what the last client left. An agent surveying a band through `ley mcp` found two sweeps of
-the same 250 kHz reading floors 6 dB apart because the tune before each had left the tuner at 19.7
-and then 15.7 dB; it could not ask for a sensitive sweep, and could not tell a quiet band from a
-receiver with too little gain. A gain the radio cannot set fails the job (`GAIN_ELEMENT_UNKNOWN`, or
-a file device's refusal) rather than sweeping at a different level while reporting the requested
-one. `GainWrite` moved from `control.proto` to `common.proto` for this, since `control.proto`
-imports `jobs.proto`; the package and the wire are unchanged.
+`ScanConfig.take_over` is the don't-disturb override below, and `device_id` selects a radio.
+`gain` selects one stage; `gains` selects several stages in order and takes precedence. A sweep
+asked for a level pins that element there. A sweep asked for `auto` lets the driver settle and then
+pins the settled value. With neither field set, it pins the radio's current gain. In a 250 kHz
+survey, changing the inherited tuner gain from 19.7 to 15.7 dB moved the measured floor by 6 dB,
+so the result must report the pinned values. A gain the radio cannot set fails the job with
+`GAIN_ELEMENT_UNKNOWN` or the device's stable refusal code.
 
 ### Lifetime
 
@@ -353,9 +329,8 @@ keep anything.
 
 The daemon keeps the last sixteen finished jobs and their scans in memory so a `--json` consumer can
 re-read one, and loses them on restart. `result_uris` carries `ley://scans/<id>`, which names the
-scan and is resolved by `Jobs.GetScan`. It is deliberately **not** a Resource yet: nothing lists it
-and `ResolveLocalPath` has no file for it, because there is no file. Durable scans arrive with the
-durable job store, and the URI is the same one.
+scan and is resolved by `Jobs.GetScan`. It is **not** a Resource: nothing lists it and
+`ResolveLocalPath` has no file for it.
 
 `ScanConfig.recurring` is rejected with `INVALID_ARGUMENT`. A schedule needs the job table that
 survives a restart, which is not built; accepting the field and silently ignoring it would mislead

@@ -1523,6 +1523,12 @@ once and files fixes as new items.
 
 ## Backlog
 
+- **Two frequency affine maps remain separate.** `SquelchTrack` and `GainSlider` share
+  `Scale.swift`, but `SpectrumView.Columns` and `BandRailView.BandRail` map `UInt64`
+  frequencies without clamping the forward direction. `BandRail.hz(atX:)` also snaps to the band.
+  Folding them into `Scale` would add a clamp and is a behaviour change rather than a mechanical
+  rename.
+
 - **The band rail's scrubber at a wide capture** (seen 2026-09-25). When the radio's sample rate
   spans more than the band (20 MSPS on GMRS, say), the rail draws the band's region over the
   whole capture and the scrubber's scale no longer matches the waterfall's: GMRS CH2 and CH3 sit

@@ -1,3 +1,7 @@
-`leyline-mark.svg` is the mark (a 13-unit ring and dot) and `leyline-splash.svg` the splash's 512×200 composition, both supplied as finished drawings.
-Neither is loaded by the app: both are drawn in code, the mark by `BrandMark` and the splash by `SplashView` (`app/Sources/LeylineApp`), with the SVGs' sizes as `Theme` tokens.
-The icon is drawn at bundle time by `scripts/render-icon.swift` (CoreGraphics, macOS only), which `scripts/bundle-app.sh` runs; its 1024 px `AppIcon.iconset/icon_512x512@2x.png` is to be checked in here as `leyline-icon.png` after the first run on a Mac.
+`leyline-mark.svg` is the mark (a 13-unit ring and dot), and `leyline-splash.svg` is the splash's
+512 × 200 composition. The app draws both in code: `BrandMark` draws the mark and `SplashView`
+draws the splash, using sizes from `Theme`.
+
+`scripts/render-icon.swift` draws the app icon with CoreGraphics on macOS.
+`scripts/bundle-app.sh` runs it and places the generated `AppIcon.icns` in the bundle. Generated
+icon files are build outputs and are not checked in.
