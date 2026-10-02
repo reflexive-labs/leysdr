@@ -29,7 +29,7 @@ fixture. [App internals](app.md) is the page for working on it.
 `make check` never skips silently: `swift-test` depends on `fixtures` so the fixture round-trips run,
 and `make e2e` builds `ley` and `leylined` and drives the daemon over UDS (`go/internal/e2e`, which
 skips itself when `LEYLINED_BIN`/`LEY_BIN` are unset — the Makefile target is the only place it
-runs). `FIXTURE_DURATION=0.5` shortens the fixtures for a quick pass (CI uses that).
+runs). `FIXTURE_DURATION=0.5` shortens the fixtures for a quick pass; the record end-to-end tests expect the default 1 s, so CI and `make check` use that.
 
 ### The edit-build-try loop
 

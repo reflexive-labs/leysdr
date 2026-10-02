@@ -59,8 +59,6 @@ jobs:
   swift-linux:
     name: engine on Linux (compile + portable DSP tests + contract e2e)
     runs-on: ubuntu-24.04
-    env:
-      FIXTURE_DURATION: "0.5"   # make fixtures / swift-test / e2e: short fixtures, same catalog
     steps:
       - uses: actions/checkout@v4
       - uses: swift-actions/setup-swift@v2
@@ -82,8 +80,6 @@ jobs:
   swift-macos:
     name: engine on macOS (the product)
     runs-on: macos-26
-    env:
-      FIXTURE_DURATION: "0.5"
     steps:
       - uses: actions/checkout@v4
       - uses: maxim-lobanov/setup-xcode@v1

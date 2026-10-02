@@ -145,10 +145,12 @@ extension RecordingJobTests {
             let clipped = try XCTUnwrap(manifest.parts[0].clippedMs, "a part recorded at the rails says it clipped")
             // Every reading clipped, so the part is charged all of it but the reading still being
             // measured when it closed (at most a quarter second) and whatever the first reading
-            // spent before the part opened. The part can run a few milliseconds past the asked-for
-            // 1500 on a slow machine, so the bound is the part's own length.
+            // spent before the part opened. The bound is the part's own length, which can run past
+            // the asked-for 1500 on a slow machine. Clipped time is counted on the capture's
+            // readings and the length from the part's audio samples rounded down, so the two can
+            // differ by a few milliseconds.
             XCTAssertGreaterThan(clipped, 1000, "\(clipped) ms of \(manifest.durationMs)")
-            XCTAssertLessThanOrEqual(clipped, manifest.durationMs)
+            XCTAssertLessThanOrEqual(clipped, manifest.durationMs + 10)
         }
     }
 
