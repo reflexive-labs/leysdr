@@ -4,6 +4,19 @@ Nothing has been released yet. This file starts with everything that exists on `
 
 ## Unreleased
 
+- The Go client library is split by purpose. `pkg/leyline` is the client (transport, errors,
+  selectors, subscriptions); the band plan and presets moved to `pkg/bandplan` (the plan entry
+  is `bandplan.Channel`), frequency and unit parsing to `pkg/units` (`ParseFrequency` reads a
+  bare number as MHz, `ParseHz` as Hz), and the CTCSS/DCS tone to `pkg/bookmarks`.
+  `RtlTcpSource` is now `RtlTCPSource`.
+- A client-side deadline with no gRPC status now reports `DEADLINE_EXCEEDED` rather than
+  `UNKNOWN`.
+- Closing an `rtl_tcp` or RTL-SDR device, and stopping a capture's DSP thread, no longer block a
+  thread of the daemon's async pool, so a stuck device cannot stall other work.
+- The retune refusal reads "2 jobs are recording", not "2 job iss recording".
+- The quick start and `bootstrap-mac.sh` install the decoders, so `ley decode aprs` works after a
+  fresh build.
+
 - The Mac app's expanded band rows group `Scan band` and `Channels…` in a compact action strip
   distinct from bookmark rows. Scan band sweeps the band on the window's own radio, the
   way `ley scan --band` does, while the row counts the steps, then lists what it found strongest
