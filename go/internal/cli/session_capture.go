@@ -191,8 +191,9 @@ func (s *verbSession) refuseRetuneOverRecording(captureID string, retune bool) e
 		hint = "Add --retune to move it anyway (the recording logs the gap), or stop it with: " +
 			st.Cmd("ley jobs cancel "+ids[0])
 	}
-	return fmt.Errorf("%s recording on this radio (%s); retuning would leave a gap in %s. %s",
-		words.Count(len(recs), "job is"), strings.Join(ids, ", "), words.Pick(len(recs), "it", "them"), hint)
+	return fmt.Errorf("%s %s recording on this radio (%s); retuning would leave a gap in %s. %s",
+		words.Count(len(recs), "job"), words.Pick(len(recs), "is", "are"), strings.Join(ids, ", "),
+		words.Pick(len(recs), "it", "them"), hint)
 }
 
 // activeChannels counts the ACTIVE channels riding on a capture in the mirror.
