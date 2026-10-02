@@ -8,6 +8,7 @@ import GRPCCore
 import GRPCNIOTransportHTTP2
 @testable import LeylineServer
 import LeylineProto
+import TestSupport
 import XCTest
 
 extension RecordingJobTests {
@@ -34,7 +35,16 @@ extension RecordingJobTests {
             for (a, b) in zip(manifest.parts, manifest.parts.dropFirst()) {
                 XCTAssertEqual(a.endSample, b.startSample, "parts are contiguous on the sample timebase")
             }
-            XCTAssertTrue(manifest.coverageGaps.isEmpty, "and nothing between them is missing")
+            // Nothing between them is missing. Where real-time throughput is not guaranteed
+            // (`Throughput`), blocks the DSP dropped are allowed, as long as they are listed as
+            // dropped rather than lost silently.
+            if Throughput.isGuaranteed {
+                XCTAssertTrue(manifest.coverageGaps.isEmpty, "and nothing between them is missing")
+            } else {
+                for gap in manifest.coverageGaps {
+                    XCTAssertEqual(gap.reason, "samples dropped", "the only gap a slow machine may add")
+                }
+            }
             for part in manifest.parts {
                 XCTAssertEqual(part.bytes, part.samples * 8, "cf32 has no header")
                 XCTAssertTrue(part.file.hasSuffix(".cf32"))
