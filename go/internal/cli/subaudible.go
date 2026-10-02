@@ -57,11 +57,11 @@ func (t *subAudibleTracker) line(sa *leylinev1.SubAudible, st ui.Style) (string,
 	case leylinev1.SubAudibleKind_SUB_AUDIBLE_CTCSS:
 		b.WriteString(st.Label("PL"))
 		if std := sa.StandardToneHz; std > 0 {
-			b.WriteString(fmt.Sprintf("  %.1f Hz", std))
+			fmt.Fprintf(&b, "  %.1f Hz", std)
 		} else {
 			// Measured but not classifiable: two standard tones could both explain
 			// it, and naming one would be a guess. Report the measurement.
-			b.WriteString(fmt.Sprintf("  %.1f Hz", sa.ToneHz))
+			fmt.Fprintf(&b, "  %.1f Hz", sa.ToneHz)
 			b.WriteString("  " + st.Warn("between two standard tones"))
 		}
 	case leylinev1.SubAudibleKind_SUB_AUDIBLE_DCS:

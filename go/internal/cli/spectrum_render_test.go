@@ -743,7 +743,7 @@ func TestSpectrumDrawsOnlyTheTopEdge(t *testing.T) {
 	for c := 0; c < len(rows[0]); c++ {
 		seen := false
 		for _, r := range rows {
-			if c >= len(([]rune(r))) {
+			if c >= len([]rune(r)) {
 				continue
 			}
 			ch := []rune(r)[c]

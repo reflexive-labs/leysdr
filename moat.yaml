@@ -17,7 +17,7 @@ grants:
   - claude         # the agent's own credential
 
 dependencies:
-  - go@1.25
+  - go@1.27
   - protobuf         # protoc for `make proto` and `make proto-check`
   - golangci-lint    # `make lint`
   - go-extras        # gofumpt

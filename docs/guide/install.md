@@ -7,7 +7,7 @@ so this is a build from source.
 ## Requirements
 
 - macOS 26 with Xcode 26 (the Swift 6.2 toolchain).
-- Homebrew, Go 1.25 or later.
+- Homebrew, Go 1.27 or later.
 - An RTL-SDR (RTL2832U) or a HackRF One / HackRF Pro.
   No radio? See "Without a radio" below.
 

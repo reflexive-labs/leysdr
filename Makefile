@@ -46,10 +46,9 @@ GO_LDFLAGS := -X github.com/reflexive-labs/leysdr/go/internal/cli.Version=$(BUIL
 # not hand one host the other's binaries). scripts/gen-proto.sh keeps the protoc plugins here too.
 HOST := $(shell uname -s | tr '[:upper:]' '[:lower:]')-$(shell uname -m)
 TOOLS := $(CURDIR)/.tools/$(HOST)/bin
-GOLANGCI_LINT_VERSION := v2.8.0
-GOFUMPT_VERSION := v0.9.2
-# govulncheck v1.8 needs Go 1.26; the module is on 1.25.
-GOVULNCHECK_VERSION := v1.7.0
+GOLANGCI_LINT_VERSION := v2.14.0
+GOFUMPT_VERSION := v0.12.0
+GOVULNCHECK_VERSION := v1.8.0
 ACTIONLINT_VERSION := v1.7.12
 
 .PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders
@@ -135,11 +134,20 @@ reload: go swift-release install-decoders
 	$(GOBIN)/ley daemon install --bin $(CURDIR)/engine/.build/release/leylined
 	@$(GOBIN)/ley daemon status || { echo "--- leylined log (last 20 lines)" >&2; $(GOBIN)/ley daemon logs | tail -20 >&2; exit 1; }
 
-$(TOOLS)/golangci-lint:
-	cd go && GOBIN=$(TOOLS) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+# Each tool's file name carries its version and the Go toolchain it was built with, so bumping
+# either (here or in go/go.mod) reinstalls it: golangci-lint refuses to lint code for a newer Go
+# than built it.
+GO_TOOLCHAIN := $(shell cd $(CURDIR)/go && go env GOVERSION 2>/dev/null)
+GOLANGCI_LINT := $(TOOLS)/golangci-lint-$(GOLANGCI_LINT_VERSION)-$(GO_TOOLCHAIN)
+GOFUMPT := $(TOOLS)/gofumpt-$(GOFUMPT_VERSION)-$(GO_TOOLCHAIN)
 
-$(TOOLS)/gofumpt:
+$(GOLANGCI_LINT):
+	cd go && GOBIN=$(TOOLS) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	mv $(TOOLS)/golangci-lint $@
+
+$(GOFUMPT):
 	cd go && GOBIN=$(TOOLS) go install mvdan.cc/gofumpt@$(GOFUMPT_VERSION)
+	mv $(TOOLS)/gofumpt $@
 
 # Every source file names its licence and every dependency is in third_party/licenses/MANIFEST.txt
 # with terms the code that pulls it in may use (docs/decisions/D2-licensing.md). `--fix` adds headers.
@@ -199,8 +207,8 @@ app-format:
 app-lint:
 	cd app && swift format lint --strict --recursive Sources Tests Package.swift
 
-lint: $(TOOLS)/golangci-lint $(TOOLS)/gofumpt
-	cd go && $(TOOLS)/golangci-lint run ./... && test -z "$$($(TOOLS)/gofumpt -l .)"
+lint: $(GOLANGCI_LINT) $(GOFUMPT)
+	cd go && $(GOLANGCI_LINT) run ./... && test -z "$$($(GOFUMPT) -l .)"
 
 check: proto-check version-check license-check docs-check go-test race lint app-lint swift swift-test e2e app app-test app-e2e
 

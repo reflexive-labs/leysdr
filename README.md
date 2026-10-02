@@ -9,7 +9,7 @@ transmits.
 
 **Status:** pre-release. There are no binaries yet; you build it from source.
 
-**Requirements:** macOS 26 with Xcode 26 (the Swift 6.2 toolchain), Homebrew, and Go 1.25 or
+**Requirements:** macOS 26 with Xcode 26 (the Swift 6.2 toolchain), Homebrew, and Go 1.27 or
 later. A radio is optional: an IQ recording plays through the same pipeline.
 
 <!-- screenshot: app window -->

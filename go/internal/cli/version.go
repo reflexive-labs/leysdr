@@ -32,7 +32,7 @@ from; only a build of the tagged commit prints the bare number.
 
 --json prints {"version","go","os","arch"}: a client-local document, not a
 proto message.`,
-		Example: `  ley version              # ley 0.1.0+3-gd34db33 (go1.25 darwin/arm64)
+		Example: `  ley version              # ley 0.1.0+3-gd34db33 (go1.27 darwin/arm64)
   ley version --json       # {"version": ..., "go": ..., "os": ..., "arch": ...}`,
 		GroupID: GroupDaemon,
 		Args:    cobra.NoArgs,

@@ -5,7 +5,7 @@ Everything meets at the checked-in generated code for `leyline.v1`.
 
 ## macOS host (the real thing — needed to talk to an RTL-SDR or HackRF)
 
-Requirements: macOS 26+, Xcode 26 or later (Swift 6.2 toolchain), Homebrew, Go 1.25+. [Installing Leyline](../guide/install.md) is
+Requirements: macOS 26+, Xcode 26 or later (Swift 6.2 toolchain), Homebrew, Go 1.27+. [Installing Leyline](../guide/install.md) is
 the user's version of this section: the same build, plus the LaunchAgent, a remote dongle over
 `rtl_tcp`, and where the daemon keeps its files.
 
