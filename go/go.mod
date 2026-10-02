@@ -2,6 +2,8 @@ module github.com/reflexive-labs/leysdr/go
 
 go 1.25.0
 
+toolchain go1.25.14
+
 require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/google/jsonschema-go v0.4.3
