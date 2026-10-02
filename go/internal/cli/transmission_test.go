@@ -260,18 +260,30 @@ func TestTransmissionRenderStamp(t *testing.T) {
 // open edge it saw.
 func TestTuneDatesATransmissionAndCountsTimeOnAir(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
-	_, errOut := liveTune(t, sock, "transmission", "tune", "146.52", "--no-audio", "--squelch", "-50")
-	stamped := regexp.MustCompile(`(?m)^\d\d:\d\d:\d\d  transmission  `)
-	if !stamped.MatchString(errOut) {
-		t.Errorf("the closed line leads with the start the anchor dates:\n%s", errOut)
+	_, errBuf, cancel, done := startTune(t, sock, "transmission", "tune", "146.52", "--no-audio", "--squelch", "-50")
+	// The fake's swell is open for two seconds of every four, on the wall clock, so a tune that
+	// starts while it is open never sees that transmission's open edge and meters it as audio.
+	// The second transmission is the first one seen whole.
+	deadline := time.Now().Add(10 * time.Second)
+	for strings.Count(errBuf.String(), "  transmission  ") < 2 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
 	}
-	// The squelch is open for two of the fake's four-second swell, and the
-	// meter repeats itself once a second off a terminal, so a meter tick lands
-	// while the squelch is open before the close edge does.
-	if !strings.Contains(errOut, "on air ") {
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("tune returned error on cancel: %v\n%s", err, errBuf.String())
+	}
+	errOut := errBuf.String()
+	stamped := regexp.MustCompile(`(?m)^\d\d:\d\d:\d\d  transmission  `)
+	if n := len(stamped.FindAllString(errOut, -1)); n < 2 {
+		t.Fatalf("want two closed lines, each leading with the start the anchor dates; got %d:\n%s", n, errOut)
+	}
+	// Between the first close and the second, the meter repeats itself once a second off a
+	// terminal while the squelch is open, and the open edge has been seen.
+	whole := errOut[stamped.FindStringIndex(errOut)[1]:]
+	if !strings.Contains(whole, "on air ") {
 		t.Errorf("the meter counts time on air while the squelch is open:\n%s", errOut)
 	}
-	if strings.Contains(errOut, "dBFS  audio") {
+	if strings.Contains(whole, "dBFS  audio") {
 		t.Errorf("with the open edge seen, the meter says on air, not audio:\n%s", errOut)
 	}
 }
