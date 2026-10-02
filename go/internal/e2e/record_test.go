@@ -106,9 +106,17 @@ func TestRecordAgainstRealDaemon(t *testing.T) {
 		}
 	}
 
-	// An audio recording is a WAV, not a radio: ley play says so and names the path.
-	if _, err := e.run("play", uri); err == nil || !strings.Contains(err.Error(), "audio recording") {
-		t.Errorf("ley play on an audio recording: %v", err)
+	// An audio recording is a WAV, not a radio: ley play hands the file to a player rather than
+	// attaching it as a file device. Which player depends on the machine (the daemon's audio
+	// device, else this machine's), so the test asks with --json, which names the file and starts
+	// nothing anywhere.
+	played, err := e.run("play", uri, "--json")
+	if err != nil {
+		t.Fatalf("ley play --json on an audio recording: %v", err)
+	}
+	first := strings.TrimSpace(e.mustRun("recordings", "path", jobID, "--part", "1"))
+	if got := parseJSON(t, played)["path"]; got != first {
+		t.Errorf("ley play --json names %v, want the first part %q", got, first)
 	}
 }
 
