@@ -4,7 +4,7 @@
 // daemon (AGENTS.md invariant 7); this is a render of it, and this client's own writes show up
 // here the way everyone else's do: as the event that confirmed them.
 //
-// The fold is the one `ley` does (`go/internal/cli/session.go`): every event carries the whole
+// The fold is the one `ley` does (`go/internal/session/session.go`): every event carries the whole
 // object (invariant 6), so folding is a replace by id, and an object whose `state` is unset is the
 // tombstone — the only signal that it is gone (`Capture.state` in control.proto). Reconnect is
 // `GetState` then `WatchEvents(since_seq)`; a gap in `seq` means the snapshot fell out of the

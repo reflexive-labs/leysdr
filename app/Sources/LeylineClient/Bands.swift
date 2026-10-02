@@ -148,7 +148,7 @@ public struct Band: Sendable, Hashable, Codable, Identifiable {
     /// The band whose plan answers for this one: itself, or the group it is a part of when it
     /// has no plan of its own, because GMRS's numbering spans both halves and the plan hangs off
     /// the group (docs/design/channels.md, "The plan is data in the band table"). Go's
-    /// `planOwner` in `go/pkg/leyline/bands.go`.
+    /// `planOwner` in `go/pkg/bandplan/bands.go`.
     func planOwner(in bands: [Band]) -> Band {
         guard channels.isEmpty, let alias = aliases.first else { return self }
         return bands.first { $0.isGroup && $0.parts.contains(alias) } ?? self
@@ -203,7 +203,7 @@ public enum Bands {
     }
 
     /// The default mode at `hz`: the band's, sideband by frequency on HF, NFM when no
-    /// band is recognised. `ley tune`'s rule (`go/pkg/leyline/bands.go`, `DefaultMode`).
+    /// band is recognised. `ley tune`'s rule (`go/pkg/bandplan/bands.go`, `DefaultMode`).
     public static func defaultMode(at hz: UInt64, in bands: [Band] = builtIn)
         -> Leyline_V1_DemodMode
     {
@@ -223,7 +223,7 @@ public enum Bands {
 public enum Plans {
     /// How far a frequency may sit from a plan channel and still be "on" it: the one tolerance
     /// the two lookups share, chosen so CB's 10 kHz spacing and GMRS's 12.5 kHz both resolve to
-    /// the nearer channel (`channelTolerance` in `go/pkg/leyline/bands.go`).
+    /// the nearer channel (`channelTolerance` in `go/pkg/bandplan/bands.go`).
     public static let toleranceHz: UInt64 = 6_000
 
     /// A plan drawn as ticks on the band rail has at most this many channels: NOAA, GMRS, MURS
@@ -277,7 +277,7 @@ public enum Plans {
     /// A name typed with no band: a channel's name or alias, case-insensitive, across every
     /// plan, with the band or group that holds it. Bare digits never resolve here, so `16` is
     /// never ambiguous and never a frequency (`ResolvePreset`'s rule in
-    /// `go/pkg/leyline/presets.go`); they resolve in band context through `resolve(_:in:)`.
+    /// `go/pkg/bandplan/presets.go`); they resolve in band context through `resolve(_:in:)`.
     public static func resolveGlobal(_ name: String, in bands: [Band] = Bands.builtIn) -> (
         band: Band, channel: PlanChannel
     )? {

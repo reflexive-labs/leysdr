@@ -2,7 +2,7 @@
 
 // A bookmark's tone as the file spells it (docs/design/channels.md, "Bookmarks gain three
 // fields"): a CTCSS tone or a DCS code with its polarity, in CHIRP's spelling and only that
-// one. The file is shared with `ley bookmarks`, so this is `go/pkg/leyline/tone.go` in Swift,
+// one. The file is shared with `ley bookmarks`, so this is `go/pkg/bookmarks/tone.go` in Swift,
 // case for case: both clients accept the same strings and refuse the rest with one sentence,
 // because a tone written two ways would be two tones. What the daemon hears on the air is
 // `SubAudibleTone` (Transmissions.swift), which carries a measurement; this is what a person

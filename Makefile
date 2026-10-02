@@ -70,7 +70,7 @@ go:
 go-test:
 	cd go && go test ./...
 
-# bands.json is the app's seed layer: the band table lives in Go (go/pkg/leyline/bands.go), the
+# bands.json is the app's seed layer: the band table lives in Go (go/pkg/bandplan/bands.go), the
 # app has no Go library, so the sidebar's bands come from the exact bytes `ley bands --json`
 # prints, checked in as a resource of the LeylineClient target. TestBandsJSONResource fails when
 # the two drift and names this target; the app never edits the file.

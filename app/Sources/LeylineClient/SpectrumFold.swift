@@ -66,8 +66,8 @@ public enum SpectrumFold {
 
     /// A squelch from one row: the median bin is the floor per bin, scaled to the channel width
     /// by 10·log10(bandwidth / bin width), and the threshold is 10 dB above that, rounded.
-    /// `ley tune`'s auto squelch (`go/internal/cli/session.go`, `measureSquelch`). Returns the
-    /// threshold and the scaled floor; both NaN on an empty row.
+    /// `ley tune`'s auto squelch (`go/internal/cli/session_level.go`, `measureSquelch`). Returns
+    /// the threshold and the scaled floor; both NaN on an empty row.
     public static func autoSquelch(_ bins: [Float], sampleRate: UInt64, bandwidthHz: UInt32) -> (
         thresholdDB: Double, floorDB: Double
     ) {

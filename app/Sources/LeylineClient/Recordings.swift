@@ -891,7 +891,8 @@ public enum Recordings {
     /// The running or degraded record jobs whose channel rides `captureID`: the channel form's
     /// channel on it, or the frequency form's own channel (owned by a job, `required_hz` the
     /// job's frequency) on it. The same rule as `ley`'s `recordingsOn`
-    /// (`go/internal/cli/session.go`), so the window and the terminal ask about the same jobs.
+    /// (`go/internal/cli/session_capture.go`), so the window and the terminal ask about the same
+    /// jobs.
     public static func jobs(riding captureID: String, in state: MirrorState) -> [Leyline_V1_Job] {
         state.jobs.filter { j in
             guard j.isActive, let r = j.recordConfig else { return false }
