@@ -19,31 +19,31 @@ Three readers, in this order of priority:
 3. **A contributor.** A person doing the same work, with the same needs and less patience for
    repetition.
 
-The reader is told where they are by the directory a page lives in (`guide/`, `reference/`,
-`design/`, `dev/`, `plans/`), not by a preamble. A page for the first reader never assumes the
-vocabulary of the third; a page for the third never re-explains the first's.
+The directory identifies the audience (`guide/`, `reference/`, `design/`, `dev/`, `plans/`), so
+a page does not need an audience preamble. A page for the first reader never assumes the vocabulary
+of the third; a page for the third never re-explains the first's.
 
 ## Voice
 
-**Say what it does, and why, in the same breath.** Give the reason with the rule; without it the
-next person will break the rule. The reason is usually one clause.
+**State the behaviour and its reason.** Put the reason in the same sentence when it directly
+explains the behaviour. The reason is usually one clause.
 
 | avoid | prefer |
 |---|---|
-| Use `--retune` to move the capture. | `tune` refuses to retune a capture other channels ride on, because moving it would silence them; `--retune` says you meant to. |
+| Use `--retune` to move the capture. | `tune` refuses to retune a capture used by other channels because moving it would silence them. Pass `--retune` to confirm that interruption. |
 | Clients should not ping on every data frame. | The daemon drops a connection that sends more than 200 control frames in 30 s, so a client that pings on every data frame loses every busy stream after about a second. |
 
-**Say what does not exist yet.** Name what is not implemented and what to use instead; a page
-may link the plan that tracks it. A reader who hits an undocumented gap stops trusting the docs.
+**State what is unavailable.** Name what is not implemented and what to use instead. Link the
+plan when it helps a contributor find the remaining work.
 
 | avoid | prefer |
 |---|---|
 | Recording from the app is coming soon. | The Mac app cannot record yet: use `ley record`. |
-| The waterfall shows LoRa packets. | The waterfall is the right instrument, and ours cannot resolve the signal: a symbol is shorter than a row. |
+| The waterfall shows LoRa packets. | Leyline's waterfall cannot resolve a LoRa symbol shorter than one row. |
 
-**Numbers are measured, and say where.** Every number in a design doc was measured before it was
-written down, and the doc says how (a fixture, a Monte Carlo run, a real handheld on a date). An
-unmeasured number is labelled as a guess.
+**Report how numbers were obtained.** Every number in a design doc includes its measurement method,
+such as a fixture, a Monte Carlo run or a real handheld on a stated date. Label an unmeasured number
+as a guess.
 
 | avoid | prefer |
 |---|---|
@@ -51,21 +51,20 @@ unmeasured number is labelled as a guess.
 | The detector is accurate. | At M = 16 looks the threshold is 4.17 dB over the local floor, and against Gaussian noise through the real FFT and floor estimator it produced 0 false detections in 60 sweeps. |
 
 **Never call a peak a signal.** Invariant 12 limits what the detector may claim. A local maximum
-of one row is a *peak*, presentation only; a *detection* is what the detector reports with its
-floor, its SNR and how many looks saw it; a *carrier* is what a person concludes. An early "loudest bins"
-table reported noise as carriers; these three words exist to prevent that.
+of one row is a *peak*, used for presentation. A *detection* includes the floor, SNR and look count
+reported by the detector. A person may identify a *carrier* from that evidence.
 
-**Tell the reader what to type next.** Every error line ends with a command; every guide section
-ends with the next thing to try; every "not yet" names what to use today.
+**Provide the next action.** Every error line ends with a command. Every guide section ends with
+the next command to try. Every unavailable feature names the current alternative.
 
-**Transcripts are recorded.** A transcript in a code block was produced by running the command, against
-the contract's fake daemon or a real radio, and the page says which. Ids, model names and levels
-differ on the reader's machine; say so once per page. Never hand-edit a transcript into a shape
-the renderer does not print.
+**Transcripts are recorded.** A transcript in a code block was produced by running the command
+against the contract's fake daemon or a real radio. State which one. Ids, model names and levels
+differ on the reader's machine; state that once per page. Never hand-edit a transcript into a
+shape the renderer does not print.
 
-**Plain words, active voice, no sales.** The daemon *drops* the oldest row; it does not "may drop"
-it. Nothing here is seamless, powerful, robust, simple, easy, elegant, blazing or magical; say
-what it does. Do not compare with other SDR software; describe Leyline's approach and stop.
+**Plain words, active voice, no sales.** Write "the daemon drops the oldest row" when that behaviour
+is unconditional. Nothing here is seamless, powerful, robust, simple, easy, elegant, blazing or
+magical. Describe the behaviour without comparing Leyline with other SDR software.
 
 **No literary register.** The readers are hams and RF hackers; write the way a good datasheet or
 application note reads. Use the standard RF and DSP term (LO, decimation, noise floor, FFT bin,
@@ -78,26 +77,31 @@ USB transfer queue) rather than a metaphor for it. Specifically:
 - No "X, not Y" or chiasmus unless the reader would otherwise assume Y.
 - No dramatic framing: "This is the point", "That is the trap", "on purpose", "without apology",
   bold or italics for emphasis rather than lookup.
+- No workflow metaphors such as work that "lands", a document that "owns" work or a change that
+  "unlocks" another change. Use `implements`, `specifies`, `depends on` or `enables` as
+  appropriate.
 - Prefer the precise verb over "says" and "names": prints, shows, specifies, lists, returns.
 - A sentence that needs two reads is two sentences in normal word order.
 
-**Say what is true and why; do not narrate history.** Documents and comments describe the
-system as it is. They do not name "the owner", date an internal decision, cite an internal plan
-item id (`APP-5`, `M2-6`, `R-23`, `D.15`, `SV-7`, `DEC-1`, `MCP-1`), or recount review rounds and
-"the second run". This holds for `reference/`, `guide/`, `design/` and `dev/` pages, `README.md`,
-`CONTRIBUTING.md`, `SECURITY.md`, code comments and help texts; `CHANGELOG.md` entries stay
-factual. History belongs in commit messages, `decisions/` and `plans/`, which exist to keep it. A
-date that belongs to a measurement ("a real handheld on a date") is a fact about the number, not
-history, and stays.
+**Describe the current system.** Every document outside `plans/` is evergreen. It describes the
+current behaviour and remains accurate when a work session ends. It does not name "the owner",
+cite an internal plan item id (`APP-5`, `M2-6`, `R-23`, `D.15`, `SV-7`, `DEC-1`, `MCP-1`) or
+recount review rounds. A decision record includes its decision date, rationale and current status.
+A measurement may include its date because the date identifies the test conditions.
+
+Plans may retain implementation history, but only when it helps complete or verify the remaining
+work. Record item status, completion dates, test results and findings that changed later steps. Do
+not narrate working sessions, attribute preferences to "the owner" or preserve review chronology.
+Commit messages and the version-control history contain that detail.
 
 | avoid | prefer |
 |---|---|
 | The owner decided on 2026-09-17 that the cap is 20 GiB (R-21). | The cap is 20 GiB, a guess until a day of real use measures it. |
 | The second run showed the hang was too short, so APP-5 raised it. | The hang is 5 s: a simplex exchange pauses longer than the squelch's 500 ms tail. |
 
-**Open with the reader's question.** A section's first sentence names what it answers:
-"`ley spectrum` answers *what is on the air now*. Three things it cannot answer:". A design doc's
-Context section is the question that prompted it.
+**Open with the scope or result.** The first sentence states what the section covers or what the
+reader will accomplish. A design document's Context section states the problem that prompted the
+design.
 
 ## Words
 
@@ -154,13 +158,13 @@ because in `ley`'s tables a dash means "no value". Shorten an id with an ellipsi
 
 ## Which document, and what goes in it
 
-| kind | lives in | answers | opens with | the test |
+| kind | lives in | purpose | opens with | verification |
 |---|---|---|---|---|
 | **guide** | `guide/` | how do I…? | the outcome, then the steps as recorded transcripts | a newcomer follows it start to finish and gets the result |
 | **reference** | `reference/` | what exactly? | one sentence of scope, then everything, organised for lookup | any option is found in ten seconds; the wording is frozen (`dev/cli-style.md`, "Frozen contracts") |
 | **design** | `design/` | why this way, and what did we measure? | `Status:` and companions; Context; the numbers; "Deliberately not"; open questions | remove the code blocks and it still reads; the doc changes before code that contradicts it |
-| **decision** | `decisions/` | what was decided, when, and what would reopen it | `Status: decided <date>`, the decision in bold, then why and what it costs | one decision per file, named after the item it resolves (`D2-`, `S3-`) |
-| **plan** | `plans/` | what lands, in what order, and what each step found | the design it implements, a status legend, items in build order | every item says how it is verified; a closing section records what the second look found |
+| **decision** | `decisions/` | the current decision, its rationale and what would reopen it | `Status: decided <date>`, the decision in bold, then its rationale and tradeoffs | one current decision per file, named after the item it resolves (`D2-`, `S3-`) |
+| **plan** | `plans/` | implementation order, status and verification | the design it implements, a status legend, items in build order | every item states its verification; unresolved findings remain open items |
 | **contract** | `dev/` | the engine's implementation contract; how `ley` looks | the contract's scope and who must read it | code comments cite it by heading; tests parse the parts they can |
 
 Plan items carry an id (`SV-8`, `BW-2`, `R-4`) and a box: `[ ]` pending, `[x]` done, `[-]` dropped
@@ -168,7 +172,7 @@ with the reason, `[d]` waiting on a decision. An item is ticked only when its te
 gate is green. A plan whose items are all closed moves to `plans/archive/`; commit messages cite
 item ids, so the file is kept and never rewritten.
 
-The root files have fixed jobs: `README.md` is a new reader's first page and its "Where things
+Each root file has a defined purpose. `README.md` is a new reader's first page and its "Where things
 stand" section must agree with `plans/build-order.md` (the release checklist checks);
 `CONTRIBUTING.md` is how a person builds, tests and proposes a change; `SECURITY.md` says what the daemon
 trusts; `CHANGELOG.md` is dated sections of what changed for a user; `AGENTS.md` is the
@@ -182,7 +186,7 @@ is never committed.
   A design doc is `# Design: <subject>`, a plan `# Plan: <subject>`, a decision `# <id>: <subject>`.
 - **Status line.** Design and plan docs open with `Status: draft`, `partial` or `implemented`;
   a decision opens with `Status: decided <date>`. Each names its companions: "Companion to
-  `data-planes.md`, which owns the plane split this builds on." A plan may date its items; a
+  `data-planes.md`, which defines the plane split used here." A plan may date its items; a
   design doc carries no dates beyond its measurements.
 - **Headings** in sentence case, short, never skipping a level. Number sections only when the
   order is the point, as the guide does.
@@ -198,8 +202,7 @@ is never committed.
   Markdown links, and cite a section by its heading in quotes: `docs/dev/engine-internals.md`,
   "Error codes". A code comment cites a doc the same way. From a page under `docs/<section>/`,
   a sibling section is `../<section>/`, the root is `../../`.
-- **No callout boxes.** A warning is a sentence that says what happens and what to do; it needs
-  no label.
+- **No callout boxes.** A warning states what happens and what to do; it needs no label.
 - **Dashes.** An em dash is allowed where a comma would be wrong; a sentence that wants two is
   two sentences. A dash never stands in for "because".
 
@@ -208,8 +211,8 @@ is never committed.
 Every user reads the CLI's output, so it follows the tightest rules:
 
 - An error line reads `ley: <what went wrong>. <what to do next>`, with the daemon's stable code
-  in brackets when there is one (`[DEVICE_BUSY]`). The sentence is the verb's own words and is
-  never rewritten for colour (`dev/cli-style.md`, "Frozen contracts").
+  in brackets when there is one (`[DEVICE_BUSY]`). The verb defines this text, and colour output
+  does not rewrite it (`dev/cli-style.md`, "Frozen contracts").
 - Everything meant for a person goes to stderr; stdout is for tables, ids, JSON and rows, so a
   pipe always gets something parseable.
 - A banner states the decisions the verb made and why (`using NFM: 2 m amateur band default`,
@@ -225,22 +228,25 @@ Every user reads the CLI's output, so it follows the tightest rules:
 A subject line is `area: what changed`, imperative, under 72 characters, and reads as a sentence
 about behaviour: `engine: NFM full scale follows the channel's bandwidth`, not
 `engine: update demod`. Areas in use: `engine`, `ley`, `app`, `proto`, `go`, `docs`, `test`, `build`, and
-`fix(<area>)` or `feat(<area>)` when the kind of change matters more than where it landed.
-The body says why, in prose; the tests say what. Every commit is signed off (`git commit -s`).
+`fix(<area>)` or `feat(<area>)` when the kind of change matters more than the affected area.
+The body explains why in prose; tests verify the behaviour. Every commit is signed off
+(`git commit -s`).
 
-A code comment says why, and cites the document that owns the rule by path and heading; the code
-says what. It cites code by symbol name, never by `file:line`, because line numbers go stale. It
-follows "Say what is true and why; do not narrate history" above: no dates, no plan item ids, no
+A code comment explains why and cites the document that specifies the rule by path and heading.
+The code implements the behaviour. Cite code by symbol name, never by `file:line`, because line
+numbers change. Follow "Describe the current system" above: no dates, no plan item ids and no
 "the owner". A comment that describes behaviour the code does not have is a bug, so a comment
 changes in the same commit as the code it describes.
 
-## Before a documentation change lands
+## Before committing documentation
 
 - The page is in the directory for its reader, and [`docs/README.md`](README.md) lists it if it is
   new, moved or retired.
+- Every page outside `plans/` describes the current system. A decision record states whether its
+  decision is still current.
 - What is not implemented is named, with what to use instead.
-- Nothing narrates history: no "the owner", no internal decision dates, no plan item ids outside
-  `plans/` and `decisions/`.
+- Nothing outside `plans/` narrates work history: no "the owner", review chronology or plan item
+  ids. Decision and measurement dates remain when they identify the current decision or test.
 - Every transcript came from a run, and the page says against what.
 - Every number says where it was measured.
 - Every `docs/` path in the repository still resolves (`grep -rn 'docs/' --include='*.md'
