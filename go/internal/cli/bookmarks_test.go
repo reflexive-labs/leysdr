@@ -67,7 +67,7 @@ func TestBookmarksRoundTrip(t *testing.T) {
 	if out := mustBookmarks(t, path, "bookmarks", "add", "121.5", "--name", "Guard"); !strings.Contains(out, " am ") {
 		t.Fatalf("the airband default is AM:\n%s", out)
 	}
-	// Under --band the positional is a channel of that band's plan (the plan's KTD8).
+	// Under --band the positional is a channel of that band's plan.
 	if out := mustBookmarks(t, path, "bookmarks", "add", "5", "--band", "gmrs", "--name", "x"); !strings.Contains(out, "462.6625 MHz") || !strings.Contains(out, "preset ch5") {
 		t.Fatalf("5 under --band gmrs is GMRS channel 5:\n%s", out)
 	}

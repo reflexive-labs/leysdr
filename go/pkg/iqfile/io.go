@@ -5,6 +5,7 @@ package iqfile
 import (
 	"bufio"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -127,7 +128,7 @@ func (r *Reader) Read(dst []complex64) (int, error) {
 	n, err := io.ReadFull(r.r, raw)
 	n /= r.bps
 	if n == 0 {
-		if err == io.ErrUnexpectedEOF || err == io.EOF {
+		if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
 			return 0, io.EOF
 		}
 		return 0, err
@@ -164,7 +165,7 @@ func ReadAll(path, format string) ([]complex64, error) {
 		if n > 0 {
 			out = append(out, buf[:n]...)
 		}
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return out, nil
 		}
 		if err != nil {

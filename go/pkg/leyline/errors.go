@@ -130,8 +130,11 @@ func FromStatusWithTrailer(err error, trailer metadata.MD) *Error {
 	}
 	st, ok := status.FromError(err)
 	if !ok {
-		if errors.Is(err, context.Canceled) {
-			return &Error{Code: "CANCELED", Message: err.Error(), Status: status.New(codes.Canceled, err.Error()), cause: err}
+		switch {
+		case errors.Is(err, context.Canceled):
+			return &Error{Code: CodeCanceled, Message: err.Error(), Status: status.New(codes.Canceled, err.Error()), cause: err}
+		case errors.Is(err, context.DeadlineExceeded):
+			return &Error{Code: CodeDeadlineExceeded, Message: err.Error(), Status: status.New(codes.DeadlineExceeded, err.Error()), cause: err}
 		}
 		return &Error{Code: CodeUnknown, Message: err.Error(), Status: status.New(codes.Unknown, err.Error()), cause: err}
 	}

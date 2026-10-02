@@ -5,6 +5,7 @@ package leyline
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -93,10 +94,10 @@ type Client struct {
 
 // Dial connects to the daemon's UDS at socketPath (DefaultSocketPath() if empty).
 // The connection is lazy; the first RPC fails with an UNAVAILABLE Error if no
-// daemon is listening. ctx is not consulted — there is no connect-time work to
-// bound — but stays in the signature so an eager-connect option can honour it
-// without breaking callers.
-func Dial(ctx context.Context, socketPath string, opts ...Option) (*Client, error) {
+// daemon is listening. The context is not consulted, because there is no
+// connect-time work to bound; it stays in the signature so an eager-connect
+// option can honour it without breaking callers.
+func Dial(_ context.Context, socketPath string, opts ...Option) (*Client, error) {
 	if socketPath == "" {
 		socketPath = DefaultSocketPath()
 	}
@@ -175,7 +176,7 @@ func (c *Client) streamInterceptor(ctx context.Context, desc *grpc.StreamDesc, c
 type errStream struct{ grpc.ClientStream }
 
 func (s *errStream) mapErr(err error) error {
-	if err == nil || err == io.EOF {
+	if err == nil || errors.Is(err, io.EOF) {
 		return err
 	}
 	return FromStatusWithTrailer(err, s.Trailer())
@@ -216,9 +217,9 @@ func FindCapture(state *leylinev1.GetStateResponse, deviceID string) *leylinev1.
 	if state == nil {
 		return nil
 	}
-	for _, cap := range state.Captures {
-		if deviceID == "" || cap.DeviceId == deviceID {
-			return cap
+	for _, capture := range state.Captures {
+		if deviceID == "" || capture.DeviceId == deviceID {
+			return capture
 		}
 	}
 	return nil
@@ -231,13 +232,13 @@ func CurrentChannel(state *leylinev1.GetStateResponse, clientID string) *leyline
 	if state == nil {
 		return nil
 	}
-	var mine, any *leylinev1.Channel
+	var mine, found *leylinev1.Channel
 	for _, ch := range state.Channels {
 		if ch.State != leylinev1.ChannelState_CHANNEL_ACTIVE {
 			continue
 		}
-		if any == nil || ch.ChannelId > any.ChannelId {
-			any = ch
+		if found == nil || ch.ChannelId > found.ChannelId {
+			found = ch
 		}
 		if clientID != "" && ch.Owner != nil && ch.Owner.ClientId == clientID {
 			if mine == nil || ch.ChannelId > mine.ChannelId {
@@ -248,7 +249,7 @@ func CurrentChannel(state *leylinev1.GetStateResponse, clientID string) *leyline
 	if mine != nil {
 		return mine
 	}
-	return any
+	return found
 }
 
 // Event is one WatchEvents message.
@@ -320,7 +321,7 @@ func pump[T any](ctx context.Context, recv func() (T, error), buffer int) (<-cha
 			m, err := recv()
 			if err != nil {
 				switch {
-				case err == io.EOF:
+				case errors.Is(err, io.EOF):
 					errs <- nil
 				case ctx.Err() != nil:
 					errs <- ctx.Err()
@@ -350,7 +351,7 @@ func (c *Client) WriteParams(ctx context.Context, writes ...*leylinev1.ParamWrit
 	}
 	for _, w := range writes {
 		if err := stream.Send(w); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break // server closed early; CloseAndRecv returns the real status
 			}
 			return nil, err
@@ -384,8 +385,8 @@ func FileSource(path string, loop bool) *leylinev1.DeviceSource {
 	return &leylinev1.DeviceSource{Source: &leylinev1.DeviceSource_File{File: &leylinev1.FileSource{Path: path, Loop: loop}}}
 }
 
-// RtlTcpSource names a dongle served by rtl_tcp on another machine.
-func RtlTcpSource(host string, port uint32) *leylinev1.DeviceSource {
+// RtlTCPSource names a dongle served by rtl_tcp on another machine.
+func RtlTCPSource(host string, port uint32) *leylinev1.DeviceSource {
 	return &leylinev1.DeviceSource{Source: &leylinev1.DeviceSource_RtlTcp{RtlTcp: &leylinev1.RtlTcpSource{Host: host, Port: port}}}
 }
 
@@ -442,7 +443,9 @@ func (s *Subscription) Err() error {
 	}
 }
 
-// Close cancels the frame pump and unsubscribes on the daemon.
+// Close cancels the frame pump and unsubscribes on the daemon. The unsubscribe
+// gets a context of its own: Close is usually called because the caller's
+// context has ended, and the daemon should still free the stream.
 func (s *Subscription) Close() error {
 	s.cancel()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

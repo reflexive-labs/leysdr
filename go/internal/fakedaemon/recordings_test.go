@@ -34,6 +34,18 @@ func awaitJob(t *testing.T, c *leyline.Client, id string) *leylinev1.Job {
 	return nil
 }
 
+// eventually polls cond until it holds, failing the test after five seconds.
+func eventually(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 func record(t *testing.T, c *leyline.Client, cfg *leylinev1.RecordConfig) *leylinev1.Job {
 	t.Helper()
 	job, err := c.StartRecord(t.Context(), cfg)
@@ -46,6 +58,7 @@ func record(t *testing.T, c *leyline.Client, cfg *leylinev1.RecordConfig) *leyli
 // A part recorded while the capture's CaptureLevel is over the clipping floor carries
 // clipped_ms; one recorded on a clean radio leaves the key out of the manifest.
 func TestARecordingWhileClippingSaysForHowLong(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	var clean atomic.Bool
 	c, _ := harness(t, fakedaemon.Options{RecordingsDir: dir, Clipping: func(string) (uint64, uint64, float64) {
@@ -77,13 +90,18 @@ func TestARecordingWhileClippingSaysForHowLong(t *testing.T) {
 // A gated recording whose squelch never opens writes no part: the fake discards it as the
 // daemon does, the job ends COMPLETED saying nothing was heard, and the URI finds nothing.
 func TestARecordingThatHeardNothingIsDiscarded(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	// The squelch opens an hour in: never, for a test.
 	c, _ := harness(t, fakedaemon.Options{RecordingsDir: dir, RecordGateAt: []int64{3_600_000}})
 	job := record(t, c, &leylinev1.RecordConfig{
 		FrequencyHz: 146_520_000, Mode: leylinev1.DemodMode_NFM, Gate: leylinev1.RecordGate_SQUELCH,
 	})
-	time.Sleep(200 * time.Millisecond)
+	// The job has run once it reports what it is recording.
+	eventually(t, "the job to start recording", func() bool {
+		j, err := c.Jobs.GetJob(t.Context(), &leylinev1.JobRef{JobId: job.GetJobId()})
+		return err == nil && strings.HasPrefix(j.GetStatusDetail(), "recording ")
+	})
 	done, err := c.Jobs.CancelJob(t.Context(), &leylinev1.JobRef{JobId: job.GetJobId()})
 	if err != nil {
 		t.Fatal(err)
@@ -121,7 +139,10 @@ func TestPausingAPlaybackHoldsItsPosition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(200 * time.Millisecond)
+	eventually(t, "the playback to move", func() bool {
+		ps := mustState(t, c).GetPlaybacks()
+		return len(ps) == 1 && ps[0].GetPosition() > 0
+	})
 	paused, err := c.SetPlaybackPaused(t.Context(), pb.GetPlaybackId(), true)
 	if err != nil {
 		t.Fatal(err)
@@ -137,11 +158,10 @@ func TestPausingAPlaybackHoldsItsPosition(t *testing.T) {
 	if _, err := c.SetPlaybackPaused(t.Context(), pb.GetPlaybackId(), false); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(300 * time.Millisecond)
-	st = mustState(t, c)
-	if len(st.GetPlaybacks()) != 1 || st.GetPlaybacks()[0].GetPosition() <= paused.GetPosition() {
-		t.Fatalf("resuming did not move it on: %v", st.GetPlaybacks())
-	}
+	eventually(t, "the resumed playback to move on", func() bool {
+		st = mustState(t, c)
+		return len(st.GetPlaybacks()) == 1 && st.GetPlaybacks()[0].GetPosition() > paused.GetPosition()
+	})
 	if moved := st.GetPlaybacks()[0].GetPosition() - paused.GetPosition(); moved > 48000*6/10 {
 		t.Errorf("the pause was paid back as a jump of %d frames", moved)
 	}

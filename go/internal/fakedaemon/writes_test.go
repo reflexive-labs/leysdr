@@ -17,17 +17,18 @@ import (
 // rejected, and take effect when the capture retunes back over the channel.
 // Only the offset-independent bound (0 < bandwidth <= capture rate) is checked.
 func TestStoredWritesWhileOutOfCapture(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st := mustState(t, c)
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
+	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// +1 MHz fits a 2.4 MSPS capture (|offset| + bw/2 <= Fs/2) but not a 1.024 MSPS one.
 	// The fake keeps offsets relative to the centre across retunes, so the rate is the
 	// lever that moves a channel out of (and back into) the capture here.
-	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, OffsetHz: 1_000_000, Mode: leylinev1.DemodMode_NFM})
+	ch, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cp.CaptureId, OffsetHz: 1_000_000, Mode: leylinev1.DemodMode_NFM})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +52,7 @@ func TestStoredWritesWhileOutOfCapture(t *testing.T) {
 	}
 
 	// Narrow the capture: the channel goes OUT_OF_CAPTURE.
-	if n := write(&leylinev1.ParamWrite{TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_CaptureSampleRate{CaptureSampleRate: 1_024_000}}); n != 1 {
+	if n := write(&leylinev1.ParamWrite{TargetId: cp.CaptureId, Param: &leylinev1.ParamWrite_CaptureSampleRate{CaptureSampleRate: 1_024_000}}); n != 1 {
 		t.Fatalf("rate change applied = %d", n)
 	}
 	if got := channel(); got.State != leylinev1.ChannelState_OUT_OF_CAPTURE {
@@ -89,7 +90,7 @@ func TestStoredWritesWhileOutOfCapture(t *testing.T) {
 	}
 
 	// Widen the capture again: active with the stored bandwidth/mode/squelch.
-	if n := write(&leylinev1.ParamWrite{TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_CaptureSampleRate{CaptureSampleRate: 2_400_000}}); n != 1 {
+	if n := write(&leylinev1.ParamWrite{TargetId: cp.CaptureId, Param: &leylinev1.ParamWrite_CaptureSampleRate{CaptureSampleRate: 2_400_000}}); n != 1 {
 		t.Fatalf("rate restore applied = %d", n)
 	}
 	got = channel()
@@ -101,11 +102,11 @@ func TestStoredWritesWhileOutOfCapture(t *testing.T) {
 // gainOf returns the capture's state for one gain element.
 func gainOf(t *testing.T, c *leyline.Client, capID, element string) *leylinev1.GainState {
 	t.Helper()
-	for _, cap := range mustState(t, c).Captures {
-		if cap.CaptureId != capID {
+	for _, cp := range mustState(t, c).Captures {
+		if cp.CaptureId != capID {
 			continue
 		}
-		for _, g := range cap.Gains {
+		for _, g := range cp.Gains {
 			if g.Element == element {
 				return g
 			}
@@ -119,23 +120,24 @@ func gainOf(t *testing.T, c *leyline.Client, capID, element string) *leylinev1.G
 // the level the client last set by hand; an element nothing has ever set lands mid-range rather
 // than at the minimum, which would deafen the radio.
 func TestGainAutoOffRestoresTheManualLevel(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st := mustState(t, c)
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
+	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
 	if err != nil {
 		t.Fatal(err)
 	}
 	el := st.Devices[0].GainElements[0]
 	gain := func(g *leylinev1.GainWrite) *leylinev1.ParamWrite {
 		g.Element = el.Name
-		return &leylinev1.ParamWrite{TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_Gain{Gain: g}}
+		return &leylinev1.ParamWrite{TargetId: cp.CaptureId, Param: &leylinev1.ParamWrite_Gain{Gain: g}}
 	}
 	// Nothing set by hand yet: off means mid-range.
 	if _, err := c.WriteParams(ctx, gain(&leylinev1.GainWrite{Value: &leylinev1.GainWrite_Auto{Auto: false}})); err != nil {
 		t.Fatal(err)
 	}
-	got := gainOf(t, c, cap.CaptureId, el.Name)
+	got := gainOf(t, c, cp.CaptureId, el.Name)
 	mid := el.ValidDb[len(el.ValidDb)/2]
 	if got.Auto || got.Db != mid {
 		t.Errorf("auto off with no manual level = %v, want %g dB manual", got, mid)
@@ -148,13 +150,13 @@ func TestGainAutoOffRestoresTheManualLevel(t *testing.T) {
 	if _, err := c.WriteParams(ctx, gain(&leylinev1.GainWrite{Value: &leylinev1.GainWrite_Auto{Auto: true}})); err != nil {
 		t.Fatal(err)
 	}
-	if got := gainOf(t, c, cap.CaptureId, el.Name); !got.Auto {
+	if got := gainOf(t, c, cp.CaptureId, el.Name); !got.Auto {
 		t.Fatalf("auto on = %v", got)
 	}
 	if _, err := c.WriteParams(ctx, gain(&leylinev1.GainWrite{Value: &leylinev1.GainWrite_Auto{Auto: false}})); err != nil {
 		t.Fatal(err)
 	}
-	if got := gainOf(t, c, cap.CaptureId, el.Name); got.Auto || got.Db != manual {
+	if got := gainOf(t, c, cp.CaptureId, el.Name); got.Auto || got.Db != manual {
 		t.Errorf("auto off after a manual level = %v, want %g dB", got, manual)
 	}
 }
@@ -162,23 +164,24 @@ func TestGainAutoOffRestoresTheManualLevel(t *testing.T) {
 // A GainWrite with neither a level nor an auto flag says nothing: the element exists, so the
 // refusal is about the argument's shape rather than the name.
 func TestGainWriteNeedsAValue(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st := mustState(t, c)
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
+	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
 	if err != nil {
 		t.Fatal(err)
 	}
 	el := st.Devices[0].GainElements[0]
-	before := gainOf(t, c, cap.CaptureId, el.Name)
+	before := gainOf(t, c, cp.CaptureId, el.Name)
 	evCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	start := mustState(t, c)
-	events, _, err := c.Events(evCtx, leyline.ScopeSince(leyline.CaptureScope(cap.CaptureId), start.EventSeq))
+	events, _, err := c.Events(evCtx, leyline.ScopeSince(leyline.CaptureScope(cp.CaptureId), start.EventSeq))
 	if err != nil {
 		t.Fatal(err)
 	}
-	sum, err := c.WriteParams(ctx, &leylinev1.ParamWrite{Tag: 3, TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_Gain{
+	sum, err := c.WriteParams(ctx, &leylinev1.ParamWrite{Tag: 3, TargetId: cp.CaptureId, Param: &leylinev1.ParamWrite_Gain{
 		Gain: &leylinev1.GainWrite{Element: el.Name},
 	}})
 	if err != nil {
@@ -198,7 +201,7 @@ func TestGainWriteNeedsAValue(t *testing.T) {
 			if r.Error.GetCode() != leyline.CodeInvalidArgument || r.Error.GetMessage() != "gain value is required" {
 				t.Errorf("rejection = %v", r.Error)
 			}
-			if got := gainOf(t, c, cap.CaptureId, el.Name); got.Auto != before.Auto || got.Db != before.Db {
+			if got := gainOf(t, c, cp.CaptureId, el.Name); got.Auto != before.Auto || got.Db != before.Db {
 				t.Errorf("gain moved on a refused write: %v", got)
 			}
 			return
@@ -211,16 +214,17 @@ func TestGainWriteNeedsAValue(t *testing.T) {
 // A write that names no element lands on the first the device lists, the rule the contract states
 // and the daemon applies; the confirmed state comes back under that element's name.
 func TestGainWriteWithAnEmptyElementIsTheFirst(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st := mustState(t, c)
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
+	cp, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 100_000_000})
 	if err != nil {
 		t.Fatal(err)
 	}
 	el := st.Devices[0].GainElements[0]
 	level := el.ValidDb[3]
-	w := &leylinev1.ParamWrite{TargetId: cap.CaptureId, Param: &leylinev1.ParamWrite_Gain{Gain: &leylinev1.GainWrite{Value: &leylinev1.GainWrite_Db{Db: level}}}}
+	w := &leylinev1.ParamWrite{TargetId: cp.CaptureId, Param: &leylinev1.ParamWrite_Gain{Gain: &leylinev1.GainWrite{Value: &leylinev1.GainWrite_Db{Db: level}}}}
 	sum, err := c.WriteParams(ctx, w)
 	if err != nil {
 		t.Fatal(err)
@@ -228,7 +232,7 @@ func TestGainWriteWithAnEmptyElementIsTheFirst(t *testing.T) {
 	if sum.WritesApplied != 1 {
 		t.Fatalf("applied %d writes, want 1", sum.WritesApplied)
 	}
-	if got := gainOf(t, c, cap.CaptureId, el.Name); got.Auto || got.Db != level {
+	if got := gainOf(t, c, cp.CaptureId, el.Name); got.Auto || got.Db != level {
 		t.Errorf("empty element = %v, want %s at %g dB manual", got, el.Name, level)
 	}
 }

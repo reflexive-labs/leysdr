@@ -7,10 +7,10 @@ import (
 )
 
 // Clipping comes in bursts of half a second to two seconds (a keyed handheld,
-// an FM peak), and the daemon reports a CaptureLevel four times a second. On
-// 2026-09-24 a handheld a metre from a HackRF printed the clipping line seven
-// times across one 9 s transmission, each with its own count
-// (plans/app.md, M2-10). clipHold is the app's FailureHold
+// an FM peak), and the daemon reports a CaptureLevel four times a second, so a
+// line per reading repeats itself: a handheld a metre from a HackRF printed
+// the clipping line seven times across one 9 s transmission, each with its own
+// count. clipHold is the app's FailureHold
 // (app/Sources/LeylineClient/FailureState.swift) for `ley tune`: clipping is
 // raised after the fraction has been at or over clippingFloor for
 // clipRaiseSeconds and cleared after it has been under clipExitFraction for

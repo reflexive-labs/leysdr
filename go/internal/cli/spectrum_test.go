@@ -3,7 +3,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"math"
 	"regexp"
@@ -13,12 +12,13 @@ import (
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
-	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // The fake daemon renders a -100 dB floor with a -40 dB peak at every channel
 // offset, so a channel at the capture centre gives a known loudest bin.
 func TestSpectrumRenderAndJSON(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	listening(t, c)
 
@@ -57,10 +57,10 @@ func TestSpectrumRenderAndJSON(t *testing.T) {
 	}
 
 	text := mustRun(t, sock, "spectrum", "--bins", "256", "--width", "60")
-	if !strings.HasPrefix(text, "146.520 MHz  span "+leyline.FormatFrequency(typed.SpanHz)) || !strings.Contains(text, "256 bins of") || !strings.Contains(text, "floor -") {
+	if !strings.HasPrefix(text, "146.520 MHz  span "+units.FormatFrequency(typed.SpanHz)) || !strings.Contains(text, "256 bins of") || !strings.Contains(text, "floor -") {
 		t.Fatalf("header:\n%s", text)
 	}
-	wantPeak := "peak    " + leyline.FormatFrequency(top.CenterHz) + "  -40 dBFS"
+	wantPeak := "peak    " + units.FormatFrequency(top.CenterHz) + "  -40 dBFS"
 	if !strings.Contains(text, wantPeak) {
 		t.Fatalf("want %q in:\n%s", wantPeak, text)
 	}
@@ -82,16 +82,16 @@ func TestSpectrumRenderAndJSON(t *testing.T) {
 	if !strings.ContainsAny(text, ".:-=+*#%") {
 		t.Fatalf("no bars drawn:\n%s", text)
 	}
-	if _, _, err := run(t, context.Background(), sock, "spectrum", "--bins", "256", "--width", "60"); err != nil {
+	if _, _, err := run(t, t.Context(), sock, "spectrum", "--bins", "256", "--width", "60"); err != nil {
 		t.Fatalf("second run must not have torn down the daemon's capture: %v", err)
 	}
 	// A frequency outside the band while a channel listens: refused with the
 	// fix, exit 1, and the capture stays where it was; --retune moves it.
-	_, _, err := run(t, context.Background(), sock, "spectrum", "101.1", "--bins", "256")
+	_, _, err := run(t, t.Context(), sock, "spectrum", "101.1", "--bins", "256")
 	if exitCode(err) != 1 || !strings.Contains(err.Error(), "the radio is on 146.520 MHz with 1 channel listening") || !strings.Contains(err.Error(), "--retune") {
 		t.Fatalf("shared capture: exit %d %v", exitCode(err), err)
 	}
-	st, _ := c.State(context.Background())
+	st, _ := c.State(t.Context())
 	if st.Captures[0].CenterHz != 146_520_000 {
 		t.Fatalf("refusal moved the capture: %v", st.Captures[0])
 	}
@@ -99,20 +99,21 @@ func TestSpectrumRenderAndJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &typed); err != nil || typed.CenterHz != 101_100_000 {
 		t.Fatalf("--retune row: %v %+v", err, typed)
 	}
-	st, _ = c.State(context.Background())
+	st, _ = c.State(t.Context())
 	if st.Captures[0].CenterHz != 101_100_000 || len(st.Channels) != 1 {
 		t.Fatalf("--retune should move the shared capture and keep the channel: %v %v", st.Captures, st.Channels)
 	}
 	// A comma is rejected once, without a doubled "frequency:" prefix.
-	_, _, err = run(t, context.Background(), sock, "spectrum", "101,1")
+	_, _, err = run(t, t.Context(), sock, "spectrum", "101,1")
 	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "comma") || strings.Contains(err.Error(), "frequency: frequency:") {
 		t.Fatalf("comma error: %v", err)
 	}
 }
 
 func TestSpectrumWatchCountAndCapture(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	// No capture and no frequency: a usage error that shows the fix.
 	_, _, err := run(t, ctx, sock, "spectrum")
 	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "ley spectrum 101.1") {
@@ -169,8 +170,9 @@ func TestSpectrumWatchCountAndCapture(t *testing.T) {
 // the radio supports (with a note on stderr); an existing capture at a
 // different width is refused with exit 2 rather than ignored.
 func TestSpectrumSpan(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	out, errOut, err := run(t, ctx, sock, "--json", "spectrum", "101.1", "--span", "200k", "--bins", "256")
 	if err != nil {
 		t.Fatalf("fresh capture with --span 200k: %v\n%s", err, errOut)
@@ -219,6 +221,7 @@ func TestSpectrumSpan(t *testing.T) {
 // enough gets the chart in a box with its levels coloured, and the same run
 // piped is the bare lines a script already reads.
 func TestSpectrumFrameOnATerminal(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	listening(t, c)
 	app := ttyApp(sock)
@@ -278,8 +281,9 @@ func framed(screen string) bool {
 // frequency other than the one that was asked for. spectrum prints the
 // capture's centre on stderr and says what it covers.
 func TestSpectrumSaysWhenTheCaptureIsOffCentre(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	st, err := c.State(ctx)
 	if err != nil {
 		t.Fatal(err)

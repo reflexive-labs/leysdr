@@ -17,15 +17,19 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/words"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 	"github.com/reflexive-labs/leysdr/go/pkg/records"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
-// The tool table of docs/plans/mcp.md, in the order an agent reads it: orient,
+// The tool table (docs/reference/mcp.md, "Tools"), in the order an agent reads it: orient,
 // control, observe, decode, record, jobs. Each tool names the RPC it maps onto
 // and the `ley` verb that mirrors it, and returns that verb's `--json` shape.
-// The blocked tools of the plan (get_transcript, identify_signal,
+// The tools the daemon cannot back yet (get_transcript, identify_signal,
 // lookup_identity, whats_out_there) are not registered: a tool that only
 // refuses wastes an agent's context, and the server's instructions list what
 // is not here yet.
@@ -148,7 +152,7 @@ func (srv *mcpServer) registerTools() {
 // gainSchema is the input schema the SDK would infer for a tool's arguments, with the gain field
 // described by gainHelp and the tool's own default after it. A struct tag cannot name a constant,
 // and the four tools that take a gain (tune, listen_summary, record, scan) describe it in the same
-// sentence as every --gain (plans/v1-release.md, R-23).
+// sentence as every --gain.
 func gainSchema[T any](tail string) *jsonschema.Schema {
 	sch, err := jsonschema.For[T](&jsonschema.ForOptions{})
 	if err != nil {
@@ -258,7 +262,7 @@ func (srv *mcpServer) daemonLogs(ctx context.Context, _ *mcp.CallToolRequest, in
 		return nil, nil, fileMissing(path, "the daemon writes it once started with 'ley daemon start'; a daemon started by hand with another --log writes elsewhere")
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("cannot read the log %s: %v", path, err)
+		return nil, nil, fmt.Errorf("cannot read the log %s: %w", path, err)
 	}
 	all := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
 	if len(all) == 1 && all[0] == "" {
@@ -295,7 +299,7 @@ func (srv *mcpServer) daemonLogs(ctx context.Context, _ *mcp.CallToolRequest, in
 	}
 	fmt.Fprintf(&b, "%s, last %d of %d daemon lines", path, len(lines), len(all))
 	if driver > 0 {
-		fmt.Fprintf(&b, " (%s from the radio driver left out; include_driver: true shows them)", plural(driver, "line"))
+		fmt.Fprintf(&b, " (%s from the radio driver left out; include_driver: true shows them)", words.Count(driver, "line"))
 	}
 	b.WriteString(":\n")
 	for _, l := range lines {
@@ -353,10 +357,10 @@ func (srv *mcpServer) tune(ctx context.Context, _ *mcp.CallToolRequest, in tuneA
 	// The session is closed, not torn down: the channel it made stays up on
 	// the presence this server holds (keepPresence), and a kept one is
 	// persistent on the daemon and does not depend on this server.
-	defer s.close()
+	defer s.Close()
 	s.proseToStderr = true
 	s.takeOverHint = takeOverHint
-	if s.device, err = pickDevice(s.state, o.device); err != nil {
+	if s.device, err = pickDevice(s.State, o.device); err != nil {
 		return nil, nil, toolError(err)
 	}
 	if err := refuseRetune(s, o.freq, o.bw, o.retune); err != nil {
@@ -372,19 +376,19 @@ func (srv *mcpServer) tune(ctx context.Context, _ *mcp.CallToolRequest, in tuneA
 		fmt.Fprintln(app.Stderr, s.failureNote)
 	}
 	fmt.Fprintf(app.Stdout, "listening to %s (%s) on %s: channel %s on capture %s.\n",
-		leyline.FormatFrequency(o.freq), strings.ToUpper(leyline.ModeName(o.mode)), deviceName(s.device),
-		s.channel.GetChannelId(), s.capture.GetCaptureId())
+		units.FormatFrequency(o.freq), strings.ToUpper(leyline.ModeName(o.mode)), deviceName(s.device),
+		s.Channel.GetChannelId(), s.Capture.GetCaptureId())
 	switch {
 	case in.Keep:
 		fmt.Fprintln(app.Stdout, "kept: it runs on after this server exits; cancel it with 'ley stop'.")
 	default:
 		fmt.Fprintln(app.Stdout, "it ends when this server exits; keep: true would leave it running.")
 	}
-	raw, err := composite(map[string]any{"capture": s.capture, "channel": s.channel, "sink": sinkOrNil(s.sink)})
+	raw, err := composite(map[string]any{"capture": s.Capture, "channel": s.Channel, "sink": sinkOrNil(s.Sink)})
 	if err != nil {
 		return nil, nil, err
 	}
-	srv.touched(s.capture.GetCaptureId())
+	srv.touched(s.Capture.GetCaptureId())
 	return jsonResult(errb.String()+out.String(), raw), nil, nil
 }
 
@@ -406,28 +410,28 @@ const takeOverHint = "Call again with take_over: true to move it anyway, or stop
 // is tuned somewhere the frequency does not fit and channels are listening
 // on it, refuse and name them before anything is written. ensureCapture
 // refuses again with the daemon's picture if this one is stale.
-func refuseRetune(s *session, freq uint64, bw uint32, takeOver bool) error {
+func refuseRetune(s *verbSession, freq uint64, bw uint32, takeOver bool) error {
 	if takeOver || s.device == nil {
 		return nil
 	}
-	cap := leyline.FindCapture(s.state, s.device.DeviceId)
-	if cap == nil || covers(cap, freq, bw) {
+	capture := leyline.FindCapture(s.State, s.device.DeviceId)
+	if capture == nil || covers(capture, freq, bw) {
 		return nil
 	}
 	var who []string
-	for _, ch := range s.state.GetChannels() {
-		if ch.GetCaptureId() != cap.GetCaptureId() || ch.GetState() != leylinev1.ChannelState_CHANNEL_ACTIVE {
+	for _, ch := range s.State.GetChannels() {
+		if ch.GetCaptureId() != capture.GetCaptureId() || ch.GetState() != leylinev1.ChannelState_CHANNEL_ACTIVE {
 			continue
 		}
-		hz := uint64(int64(cap.GetCenterHz()) + ch.GetOffsetHz())
-		who = append(who, fmt.Sprintf("%s (%s, %s)", ch.GetChannelId(), leyline.FormatFrequency(hz), clientLabel(ch.GetOwner())))
+		hz := uint64(int64(capture.GetCenterHz()) + ch.GetOffsetHz())
+		who = append(who, fmt.Sprintf("%s (%s, %s)", ch.GetChannelId(), units.FormatFrequency(hz), clientLabel(ch.GetOwner())))
 	}
 	if len(who) == 0 {
 		return nil
 	}
 	return fmt.Errorf("the radio is on %s with %s listening: %s. Retuning to %s would silence %s. %s",
-		leyline.FormatFrequency(cap.GetCenterHz()), plural(len(who), "channel"), strings.Join(who, ", "),
-		leyline.FormatFrequency(freq), themOrIt(len(who)), takeOverHint)
+		units.FormatFrequency(capture.GetCenterHz()), words.Count(len(who), "channel"), strings.Join(who, ", "),
+		units.FormatFrequency(freq), words.Pick(len(who), "it", "them"), takeOverHint)
 }
 
 // ---------- observe ----------
@@ -444,36 +448,36 @@ type scanArgs struct {
 func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanArgs) (*mcp.CallToolResult, any, error) {
 	o := scanOptions{dwellMs: in.DwellMs, minSNR: in.MinSNR, takeOver: in.TakeOver, device: in.Device, gain: in.Gain}
 	if in.Gain != "" {
-		if _, err := leyline.ParseGains(in.Gain); err != nil {
-			return nil, nil, fmt.Errorf("gain %v", err)
+		if _, err := units.ParseGains(in.Gain); err != nil {
+			return nil, nil, fmt.Errorf("gain %w", err)
 		}
 	}
-	if lo, hi, rerr := leyline.ParseUserRange(in.Range); rerr == nil {
+	if lo, hi, rerr := parseRange(in.Range); rerr == nil {
 		o.minHz, o.maxHz, o.rangeInput = lo, hi, in.Range
-	} else if b, berr := leyline.ResolveBand(in.Range); berr == nil {
+	} else if b, berr := bandplan.ResolveBand(in.Range); berr == nil {
 		o.minHz, o.maxHz, o.rangeInput, o.bandName = b.MinHz, b.MaxHz, b.Name, b.Name
 	} else {
-		return nil, nil, fmt.Errorf("%v, and no band called %q; list_devices says what the radio tunes and ley bands the band names", rerr, in.Range)
+		return nil, nil, fmt.Errorf("%w, and no band called %q; list_devices says what the radio tunes and ley bands the band names", rerr, in.Range)
 	}
 	app, out, errb := srv.toolApp()
 	s, err := openSession(ctx, app)
 	if err != nil {
 		return nil, nil, toolError(err)
 	}
-	defer s.close()
+	defer s.Close()
 	s.proseToStderr = true
 	if o.device != "" {
-		d, derr := pickDevice(s.state, o.device)
+		d, derr := pickDevice(s.State, o.device)
 		if derr != nil {
 			return nil, nil, toolError(derr)
 		}
 		o.deviceID = d.DeviceId
 	}
-	if err := gainlessRadio(s.state, o.deviceID, in.Gain); err != nil {
+	if err := gainlessRadio(s.State, o.deviceID, in.Gain); err != nil {
 		return nil, nil, err
 	}
 	var note string
-	if !o.takeOver && srv.ownGrace(s.state, o.deviceID) {
+	if !o.takeOver && srv.ownGrace(s.State, o.deviceID) {
 		o.takeOver, note = true, ownGraceNote
 	}
 	scan, _, err := s.sweep(ctx, o)
@@ -484,7 +488,7 @@ func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanA
 		return nil, nil, errors.New(strings.TrimSpace(errb.String()))
 	}
 	errb.Reset()
-	printScan(app, scan, o, scanGainElements(s.state, o.deviceID, scan))
+	printScan(app, scan, o, scanGainElements(s.State, o.deviceID, scan))
 	text := note + out.String() + errb.String()
 	// min_snr trims the Scan the way `ley scan --min-snr` trims its rows: the message is still a
 	// Scan, with fewer detections. A 20 MHz sweep is hundreds of detections and more JSON than
@@ -501,7 +505,7 @@ func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanA
 		}
 		if hidden := len(scan.Detections) - len(kept.Detections); hidden > 0 {
 			text += fmt.Sprintf("%s under %.0f dB left out of the result; ley://scans/%s carries all %d.\n",
-				plural(hidden, "detection"), o.minSNR, scan.GetScanId(), len(scan.Detections))
+				words.Count(hidden, "detection"), o.minSNR, scan.GetScanId(), len(scan.Detections))
 		}
 		scan = kept
 	}
@@ -558,7 +562,7 @@ type listenSummaryArgs struct {
 }
 
 // listenMaxSeconds bounds a listen_summary, because a tool call that runs for
-// an hour blocks the agent; a long watch is a job (Milestone D.15).
+// an hour blocks the agent; a long watch is a job.
 const listenMaxSeconds = 300
 
 // meterStats is the listen_summary's reading of the meter: a client-side
@@ -633,11 +637,11 @@ func (srv *mcpServer) listenSummary(ctx context.Context, _ *mcp.CallToolRequest,
 	if err != nil {
 		return nil, nil, toolError(err)
 	}
-	defer s.close()
+	defer s.Close()
 	s.proseToStderr = true
 	s.takeOverHint = takeOverHint
 	if o != nil {
-		if s.device, err = pickDevice(s.state, o.device); err != nil {
+		if s.device, err = pickDevice(s.State, o.device); err != nil {
 			return nil, nil, toolError(err)
 		}
 		if err := refuseRetune(s, o.freq, o.bw, o.retune); err != nil {
@@ -649,17 +653,17 @@ func (srv *mcpServer) listenSummary(ctx context.Context, _ *mcp.CallToolRequest,
 		return nil, nil, toolError(err)
 	}
 	defer stop()
-	sum, err := s.summarise(ctx, dur)
+	sum, err := summarise(ctx, s, dur)
 	if err != nil {
 		return nil, nil, toolError(err)
 	}
 	raw, err := composite(map[string]any{
-		"channel": s.channel, "transcript": sum.transcript, "meter": sum.meter, "tone": subAudibleOrNil(sum.tone),
+		"channel": s.Channel, "transcript": sum.transcript, "meter": sum.meter, "tone": subAudibleOrNil(sum.tone),
 	})
 	if err != nil {
 		return nil, nil, err
 	}
-	srv.touched(s.capture.GetCaptureId())
+	srv.touched(s.Capture.GetCaptureId())
 	return jsonResult(errb.String()+sum.text(s, dur), raw), nil, nil
 }
 
@@ -750,8 +754,8 @@ func (sum *listenSummary) apply(m *leylinev1.TelemetryMsg) {
 		sum.transcript.Segments = append(sum.transcript.Segments, seg)
 	case *leylinev1.TelemetryMsg_SubAudible:
 		// A report that found a code beats one that found nothing, and DCS beats CTCSS: the
-		// daemon suppresses the CTCSS claim while DCS is locked (docs/plans/signal-views.md,
-		// SV-7), so a CTCSS report next to a DCS one is from before the lock or after it, and
+		// daemon suppresses the CTCSS claim while DCS is locked (docs/design/signal-views.md,
+		// "DCS"), so a CTCSS report next to a DCS one is from before the lock or after it, and
 		// the code is the answer. Among reports of one kind the latest wins.
 		if subAudibleRank(b.SubAudible) >= subAudibleRank(sum.tone) {
 			sum.tone = b.SubAudible
@@ -778,11 +782,11 @@ func subAudibleRank(sa *leylinev1.SubAudible) int {
 // transmission's length and peaks, so the segments come from the daemon's
 // own edges rather than from timing anything here; the mean is the meter's,
 // averaged over the blocks the squelch was open for.
-func (s *session) summarise(ctx context.Context, dur time.Duration) (*listenSummary, error) {
+func summarise(ctx context.Context, s *verbSession, dur time.Duration) (*listenSummary, error) {
 	tctx, cancel := context.WithTimeout(ctx, dur)
 	defer cancel()
-	msgs, terrs, err := s.client.WatchTelemetry(tctx, &leylinev1.TelemetrySubscription{
-		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: s.channel.GetChannelId()},
+	msgs, terrs, err := s.Client.WatchTelemetry(tctx, &leylinev1.TelemetrySubscription{
+		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: s.Channel.GetChannelId()},
 		Types: []leylinev1.TelemetryType{
 			leylinev1.TelemetryType_METER,
 			leylinev1.TelemetryType_SQUELCH_TRANSITION,
@@ -792,9 +796,9 @@ func (s *session) summarise(ctx context.Context, dur time.Duration) (*listenSumm
 	if err != nil {
 		return nil, err
 	}
-	stopDrain := s.drainEvents()
+	stopDrain := s.DrainEvents()
 	defer stopDrain()
-	sum := newListenSummary(s.channel.GetSquelchDb(), leyline.ChannelCaptureRate(s.state, s.channel))
+	sum := newListenSummary(s.Channel.GetSquelchDb(), leyline.ChannelCaptureRate(s.State, s.Channel))
 	for {
 		select {
 		case <-tctx.Done():
@@ -827,7 +831,7 @@ func (sum *listenSummary) finish() {
 		sum.meter.SquelchOpenFraction /= float64(n)
 	}
 	sum.meter.OpenAtEnd = sum.open
-	if leyline.SquelchOff(sum.meter.SquelchDb) {
+	if units.SquelchOff(sum.meter.SquelchDb) {
 		sum.meter.SquelchOpenFraction = math.NaN()
 		sum.meter.OpenAtEnd, sum.meter.OpenAtStart = false, false
 	}
@@ -836,11 +840,11 @@ func (sum *listenSummary) finish() {
 // text is the summary in words: how many transmissions, the longest and
 // loudest, the level range, the tone. Numbers an agent reads off the JSON
 // too; the sentence is for reasoning, not parsing.
-func (sum *listenSummary) text(s *session, dur time.Duration) string {
+func (sum *listenSummary) text(s *verbSession, dur time.Duration) string {
 	var b strings.Builder
 	what := audioWhat(s)
 	segs := sum.transcript.GetSegments()
-	fmt.Fprintf(&b, "%s for %s: %s", what, fmtDuration(dur.Seconds()), plural(len(segs), "transmission"))
+	fmt.Fprintf(&b, "%s for %s: %s", what, fmtDuration(dur.Seconds()), words.Count(len(segs), "transmission"))
 	if len(segs) > 0 {
 		longest, loudest := math.NaN(), math.NaN()
 		for _, seg := range segs {
@@ -871,13 +875,13 @@ func (sum *listenSummary) text(s *session, dur time.Duration) string {
 	// A squelch that never opened while the level sat just under it is the 10 dB margin of the
 	// auto squelch excluding a weak, steady signal, not silence: say so, or the agent reads
 	// "0 transmissions" as an empty channel and listens again to find out.
-	if m.Samples > 0 && !leyline.SquelchOff(m.SquelchDb) && m.SquelchOpenFraction == 0 && !math.IsNaN(m.MaxPowerDbfs) &&
+	if m.Samples > 0 && !units.SquelchOff(m.SquelchDb) && m.SquelchOpenFraction == 0 && !math.IsNaN(m.MaxPowerDbfs) &&
 		m.SquelchDb-m.MaxPowerDbfs <= squelchNearMissDb {
 		fmt.Fprintf(&b, " The squelch never opened, but the level reached %.0f dBFS against a threshold of %.0f: a steady signal just under the margin, not an empty channel. squelch: off (or a lower squelch) hears it.",
 			m.MaxPowerDbfs, m.SquelchDb)
 	}
 	switch {
-	case m.Samples > 0 && leyline.SquelchOff(m.SquelchDb):
+	case m.Samples > 0 && units.SquelchOff(m.SquelchDb):
 		fmt.Fprintf(&b, "\nsignal %.0f to %.0f dBFS (mean %.0f), squelch off: the level range is the whole story.",
 			m.MinPowerDbfs, m.MaxPowerDbfs, m.MeanPowerDbfs)
 	case m.Samples > 0:
@@ -925,16 +929,16 @@ func (srv *mcpServer) snapshot(ctx context.Context, _ *mcp.CallToolRequest, in s
 		if in.Frequency != "" {
 			return nil, nil, errors.New("give frequency or band, not both: a band is a range and a frequency is a point")
 		}
-		b, err := leyline.ResolveBand(in.Band)
+		b, err := bandplan.ResolveBand(in.Band)
 		if err != nil {
 			return nil, nil, toolError(err)
 		}
 		bo.band = &b
 	}
 	if in.Span != "" {
-		v, err := leyline.ParseUserFrequency(in.Span)
+		v, err := units.ParseFrequency(in.Span)
 		if err != nil {
-			return nil, nil, fmt.Errorf("span %v; for example 2.4M or 200k", err)
+			return nil, nil, fmt.Errorf("span %w; for example 2.4M or 200k", err)
 		}
 		bo.span = v
 	}
@@ -947,10 +951,10 @@ func (srv *mcpServer) snapshot(ctx context.Context, _ *mcp.CallToolRequest, in s
 	if err != nil {
 		return nil, nil, toolError(err)
 	}
-	defer s.close()
+	defer s.Close()
 	s.proseToStderr = true
 	s.takeOverHint = takeOverHint
-	if s.device, err = pickDevice(s.state, bo.device); err != nil {
+	if s.device, err = pickDevice(s.State, bo.device); err != nil {
 		return nil, nil, toolError(err)
 	}
 	if bo.freq != 0 {
@@ -962,9 +966,9 @@ func (srv *mcpServer) snapshot(ctx context.Context, _ *mcp.CallToolRequest, in s
 		return nil, nil, toolError(err)
 	}
 	if s.createdCapture {
-		defer s.teardown()
+		defer s.teardown(ctx)
 	}
-	row, err := s.oneRow(ctx, bins)
+	row, err := oneRow(ctx, s, bins)
 	if err != nil {
 		return nil, nil, toolError(err)
 	}
@@ -986,8 +990,8 @@ func (srv *mcpServer) snapshot(ctx context.Context, _ *mcp.CallToolRequest, in s
 	if b := bo.band; b != nil && row.SpanHz < b.WidthHz() {
 		lo, hi := row.CenterHz-row.SpanHz/2, row.CenterHz+row.SpanHz/2
 		text += fmt.Sprintf("this row covers %s to %s of the %s band's %s to %s: %s of it. A radio that captures wider shows more at once; scan sweeps the rest.\n",
-			leyline.FormatFrequency(lo), leyline.FormatFrequency(hi), b.Name,
-			leyline.FormatFrequency(b.MinHz), leyline.FormatFrequency(b.MaxHz),
+			units.FormatFrequency(lo), units.FormatFrequency(hi), b.Name,
+			units.FormatFrequency(b.MinHz), units.FormatFrequency(b.MaxHz),
 			fmt.Sprintf("%.0f%%", 100*float64(row.SpanHz)/float64(b.WidthHz())))
 	}
 	res := jsonResult(text, raw)
@@ -998,21 +1002,21 @@ func (srv *mcpServer) snapshot(ctx context.Context, _ *mcp.CallToolRequest, in s
 		}
 		res.Content = append(res.Content, &mcp.ImageContent{Data: png, MIMEType: "image/png"})
 	}
-	srv.touched(s.capture.GetCaptureId())
+	srv.touched(s.Capture.GetCaptureId())
 	return res, nil, nil
 }
 
 // oneRow subscribes to the capture's FFT and returns the first row as the
 // `ley spectrum --json` shape, with the same floor and the same peaks.
-func (s *session) oneRow(ctx context.Context, bins uint32) (*SpectrumRow, error) {
+func oneRow(ctx context.Context, s *verbSession, bins uint32) (*SpectrumRow, error) {
 	sctx, cancel := context.WithTimeout(ctx, snapshotFirstRow)
 	defer cancel()
-	sub, err := s.client.SubscribeFFT(sctx, s.capture.GetCaptureId(), bins, 2, leylinev1.FftBinFormat_DB_F32)
+	sub, err := s.Client.SubscribeFFT(sctx, s.Capture.GetCaptureId(), bins, 2, leylinev1.FftBinFormat_DB_F32)
 	if err != nil {
 		return nil, err
 	}
 	defer sub.Close()
-	stopDrain := s.drainEvents()
+	stopDrain := s.DrainEvents()
 	defer stopDrain()
 	desc := sub.Descriptor
 	for {
@@ -1045,10 +1049,10 @@ func (s *session) oneRow(ctx context.Context, bins uint32) (*SpectrumRow, error)
 
 // snapshotText names what the picture shows: the span, the floor, and the
 // loudest bins with the caveat the terminal view carries.
-func snapshotText(row *SpectrumRow, s *session) string {
+func snapshotText(row *SpectrumRow, s *verbSession) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s wide around %s on %s, %d bins, noise floor %.0f dBFS (the row's median bin).\n",
-		leyline.FormatFrequency(row.SpanHz), leyline.FormatFrequency(row.CenterHz), deviceName(s.device), len(row.Bins), row.FloorDb)
+		units.FormatFrequency(row.SpanHz), units.FormatFrequency(row.CenterHz), deviceName(s.device), len(row.Bins), row.FloorDb)
 	if len(row.Peaks) == 0 {
 		fmt.Fprintf(&b, "nothing above the floor by %d dB: no bin stands out.\n", peakAboveFloorDb)
 		return b.String()
@@ -1056,10 +1060,10 @@ func snapshotText(row *SpectrumRow, s *session) string {
 	b.WriteString("loudest bins (local maxima, presentation only, never called signals):\n")
 	for _, p := range row.Peaks {
 		var band string
-		if bd := leyline.BandFor(p.CenterHz); bd != nil {
+		if bd := bandplan.BandFor(p.CenterHz); bd != nil {
 			band = "  " + bd.Name
 		}
-		fmt.Fprintf(&b, "  %s  %.0f dBFS  (%.0f dB over the floor)%s\n", leyline.FormatFrequency(p.CenterHz), p.Db, p.Db-row.FloorDb, band)
+		fmt.Fprintf(&b, "  %s  %.0f dBFS  (%.0f dB over the floor)%s\n", units.FormatFrequency(p.CenterHz), p.Db, p.Db-row.FloorDb, band)
 	}
 	return b.String()
 }
@@ -1095,7 +1099,7 @@ func levelAtText(row *SpectrumRow, freq uint64) string {
 		return ""
 	}
 	return fmt.Sprintf("at %s the row reads %.0f dBFS, %.0f dB over the floor (the loudest bin within %s).\n",
-		leyline.FormatFrequency(freq), loudest, loudest-row.FloorDb, leyline.FormatFrequency(levelAtHalfWidth))
+		units.FormatFrequency(freq), loudest, loudest-row.FloorDb, units.FormatFrequency(levelAtHalfWidth))
 }
 
 // ---------- decoders ----------
@@ -1130,14 +1134,14 @@ func (srv *mcpServer) queryRecords(ctx context.Context, _ *mcp.CallToolRequest, 
 	if in.Near != "" {
 		near, err := parseLatLon(in.Near)
 		if err != nil {
-			return nil, nil, fmt.Errorf("near %v", err)
+			return nil, nil, fmt.Errorf("near %w", err)
 		}
 		q.Near = near
 	}
 	if in.Radius != "" {
 		r, err := parseDistance(in.Radius)
 		if err != nil {
-			return nil, nil, fmt.Errorf("radius %v", err)
+			return nil, nil, fmt.Errorf("radius %w", err)
 		}
 		q.RadiusM = r
 	}
@@ -1208,34 +1212,12 @@ func (srv *mcpServer) emptyPageReason(ctx context.Context, q *leylinev1.RecordQu
 	switch {
 	case len(kept) > 0:
 		return fmt.Sprintf("no records: the kept %s for %s (%s) %s written none%s. The band may be quiet, or the decoder may hear nothing: listen_summary on the job's channel says whether audio is flowing, and get_job whether the decoder is still up.",
-			noun(len(kept), "job"), what, strings.Join(kept, ", "), hasOrHave(len(kept)), narrowed)
+			words.Noun(len(kept), "job"), what, strings.Join(kept, ", "), words.Pick(len(kept), "has", "have"), narrowed)
 	case len(unkept) > 0:
 		return fmt.Sprintf("no records: the %s for %s (%s) %s started without keep, so records stay on the live stream and never reach the store. list_entities folds a running job's records; start_decode_job with keep: true stores them.",
-			noun(len(unkept), "decode job"), what, strings.Join(unkept, ", "), wasOrWere(len(unkept)))
+			words.Noun(len(unkept), "decode job"), what, strings.Join(unkept, ", "), words.Pick(len(unkept), "was", "were"))
 	}
 	return fmt.Sprintf("no records: no kept decode job for %s has run, so the store has nothing to search (the daemon lists the last sixteen finished jobs; a restart forgets them). start_decode_job with keep: true stores what it hears.", what)
-}
-
-// noun is the word alone, pluralised: "job", "jobs".
-func noun(n int, word string) string {
-	if n == 1 {
-		return word
-	}
-	return word + "s"
-}
-
-func hasOrHave(n int) string {
-	if n == 1 {
-		return "has"
-	}
-	return "have"
-}
-
-func wasOrWere(n int) string {
-	if n == 1 {
-		return "was"
-	}
-	return "were"
 }
 
 type listEntitiesArgs struct {
@@ -1283,7 +1265,7 @@ func (srv *mcpServer) listEntities(ctx context.Context, _ *mcp.CallToolRequest, 
 		}
 		started = true
 		defer func() {
-			cctx, cancel := context.WithTimeout(context.Background(), confirmTimeout)
+			cctx, cancel := session.CleanupContext(ctx, confirmTimeout)
 			defer cancel()
 			_, _ = c.Jobs.CancelJob(cctx, &leylinev1.JobRef{JobId: job.GetJobId()})
 		}()
@@ -1323,7 +1305,7 @@ fold:
 	}
 	table.Expire(time.Now(), silence)
 	app, out, _ := srv.toolApp()
-	how := fmt.Sprintf("%s, %s", protocol, plural(table.Len(), "transmitter"))
+	how := fmt.Sprintf("%s, %s", protocol, words.Count(table.Len(), "transmitter"))
 	if started {
 		how += fmt.Sprintf(" heard in %s (a decoder was started for this call and stopped after it)", fmtDuration(dur.Seconds()))
 	} else {
@@ -1353,9 +1335,9 @@ func (srv *mcpServer) startDecodeJob(ctx context.Context, _ *mcp.CallToolRequest
 		cfg.Decoder = name
 	}
 	if in.Frequency != "" {
-		hz, err := leyline.ParseUserFrequency(in.Frequency)
+		hz, err := units.ParseFrequency(in.Frequency)
 		if err != nil {
-			return nil, nil, fmt.Errorf("frequency %v", err)
+			return nil, nil, fmt.Errorf("frequency %w", err)
 		}
 		cfg.FrequencyHz = hz
 	}

@@ -17,9 +17,10 @@ import (
 // TestAttachRTLTCPDevice: a remote radio joins the device list looking like the one
 // RTLTCPDevice builds from an rtl_tcp header, and the endpoint is what identifies it.
 func TestAttachRTLTCPDevice(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
-	dev, err := c.AttachDevice(ctx, leyline.RtlTcpSource("pi.local", 1234))
+	ctx := t.Context()
+	dev, err := c.AttachDevice(ctx, leyline.RtlTCPSource("pi.local", 1234))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,13 +56,14 @@ func TestAttachRTLTCPDevice(t *testing.T) {
 
 // TestAttachRTLTCPDuplicate: one endpoint is one radio, however many times a client asks.
 func TestAttachRTLTCPDuplicate(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
-	first, err := c.AttachDevice(ctx, leyline.RtlTcpSource("pi.local", 1234))
+	ctx := t.Context()
+	first, err := c.AttachDevice(ctx, leyline.RtlTCPSource("pi.local", 1234))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := c.AttachDevice(ctx, leyline.RtlTcpSource("pi.local", 1234))
+	second, err := c.AttachDevice(ctx, leyline.RtlTCPSource("pi.local", 1234))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,9 +84,10 @@ func TestAttachRTLTCPDuplicate(t *testing.T) {
 // TestAttachRTLTCPUnreachable: attach connects once, and an endpoint it cannot reach is a typo,
 // not a radio to remember. The refusal names the endpoint so the typo is visible.
 func TestAttachRTLTCPUnreachable(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
-	_, err := c.AttachDevice(ctx, leyline.RtlTcpSource("nosuch.invalid", 1234))
+	ctx := t.Context()
+	_, err := c.AttachDevice(ctx, leyline.RtlTCPSource("nosuch.invalid", 1234))
 	if leyline.Code(err) != leyline.CodeDeviceIO {
 		t.Fatalf("unreachable host: want DEVICE_IO, got %v", err)
 	}
@@ -97,10 +100,10 @@ func TestAttachRTLTCPUnreachable(t *testing.T) {
 		}
 	}
 	// A port outside 1...65535 never reaches a socket.
-	if _, err := c.AttachDevice(ctx, leyline.RtlTcpSource("pi.local", 0)); leyline.Code(err) != leyline.CodeInvalidArgument {
+	if _, err := c.AttachDevice(ctx, leyline.RtlTCPSource("pi.local", 0)); leyline.Code(err) != leyline.CodeInvalidArgument {
 		t.Errorf("port 0: want INVALID_ARGUMENT, got %v", err)
 	}
-	if _, err := c.AttachDevice(ctx, leyline.RtlTcpSource("", 1234)); leyline.Code(err) != leyline.CodeInvalidArgument {
+	if _, err := c.AttachDevice(ctx, leyline.RtlTCPSource("", 1234)); leyline.Code(err) != leyline.CodeInvalidArgument {
 		t.Errorf("empty host: want INVALID_ARGUMENT, got %v", err)
 	}
 }
@@ -108,13 +111,14 @@ func TestAttachRTLTCPUnreachable(t *testing.T) {
 // TestDetachRTLTCPDevice: detaching a remote radio takes its capture with it and announces both,
 // and the device list forgets it.
 func TestDetachRTLTCPDevice(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
-	dev, err := c.AttachDevice(ctx, leyline.RtlTcpSource("pi.local", 1234))
+	ctx := t.Context()
+	dev, err := c.AttachDevice(ctx, leyline.RtlTCPSource("pi.local", 1234))
 	if err != nil {
 		t.Fatal(err)
 	}
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: dev.DeviceId, CenterHz: 146_520_000})
+	capt, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: dev.DeviceId, CenterHz: 146_520_000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +141,7 @@ func TestDetachRTLTCPDevice(t *testing.T) {
 			if d := ev.GetDevice(); d != nil && d.DeviceId == dev.DeviceId && d.State == leylinev1.DeviceState_DISCONNECTED {
 				sawDev = true
 			}
-			if cp := ev.GetCapture(); cp != nil && cp.CaptureId == cap.CaptureId {
+			if cp := ev.GetCapture(); cp != nil && cp.CaptureId == capt.CaptureId {
 				sawCap = true
 			}
 		case <-timeout:
@@ -161,8 +165,9 @@ func TestDetachRTLTCPDevice(t *testing.T) {
 // TestAttachDeviceFileSource: AttachFileDevice is sugar, so a file source goes through
 // AttachDevice to the same playback device, and DetachDevice takes any hosted device away.
 func TestAttachDeviceFileSource(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	path := writeRecording(t, t.TempDir(), "clip", 4096, `{"sample_rate": 100000, "center_hz": 146520000}`)
 	dev, err := c.AttachDevice(ctx, leyline.FileSource(path, true))
 	if err != nil {
@@ -190,8 +195,9 @@ func TestAttachDeviceFileSource(t *testing.T) {
 
 // TestDetachDeviceRefusesUSB: a client cannot remove a dongle in this machine's USB port.
 func TestDetachDeviceRefusesUSB(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx := context.Background()
+	ctx := t.Context()
 	var usb string
 	for _, d := range mustState(t, c).Devices {
 		if d.Driver == "rtlsdr" {

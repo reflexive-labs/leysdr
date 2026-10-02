@@ -9,8 +9,9 @@ import (
 	"testing"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
-	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 )
 
 // liveStyles are the two renders every screen is compared in: the same
@@ -21,7 +22,7 @@ func liveStyles() (plain, styled ui.Style) {
 
 // liveState is a channel on a capture, as the daemon would report it.
 func liveState(squelch float64, mode leylinev1.DemodMode) (*leylinev1.GetStateResponse, *leylinev1.Channel, *leylinev1.Capture) {
-	cap := &leylinev1.Capture{
+	capture := &leylinev1.Capture{
 		CaptureId: "cap_01M2257VDP6ZQQV9R1YPQPBWBE",
 		DeviceId:  "dev_01M2257AN365W1XNJGZ8YJM4P6",
 		CenterHz:  146_520_000,
@@ -29,7 +30,7 @@ func liveState(squelch float64, mode leylinev1.DemodMode) (*leylinev1.GetStateRe
 	}
 	ch := &leylinev1.Channel{
 		ChannelId:   "chan_01M225GXKWABV4EK85ENCD6T9N",
-		CaptureId:   cap.CaptureId,
+		CaptureId:   capture.CaptureId,
 		OffsetHz:    100_000,
 		Mode:        mode,
 		BandwidthHz: 12_500,
@@ -37,11 +38,11 @@ func liveState(squelch float64, mode leylinev1.DemodMode) (*leylinev1.GetStateRe
 		State:       leylinev1.ChannelState_CHANNEL_ACTIVE,
 	}
 	st := &leylinev1.GetStateResponse{
-		Devices:  []*leylinev1.DeviceDescriptor{{DeviceId: cap.DeviceId, Model: "Generic RTL2832U (R820T)"}},
-		Captures: []*leylinev1.Capture{cap},
+		Devices:  []*leylinev1.DeviceDescriptor{{DeviceId: capture.DeviceId, Model: "Generic RTL2832U (R820T)"}},
+		Captures: []*leylinev1.Capture{capture},
 		Channels: []*leylinev1.Channel{ch},
 	}
-	return st, ch, cap
+	return st, ch, capture
 }
 
 // TestBannerSurvivesColourOff renders the live banner twice: the words, the
@@ -50,13 +51,13 @@ func liveState(squelch float64, mode leylinev1.DemodMode) (*leylinev1.GetStateRe
 func TestBannerSurvivesColourOff(t *testing.T) {
 	plain, styled := liveStyles()
 	render := func(st ui.Style, note string) string {
-		s := &session{
+		s := &verbSession{
+			Session:     &session.Session{Capture: &leylinev1.Capture{Gains: []*leylinev1.GainState{{Element: "TUNER", Auto: true}}}},
 			app:         &App{Style: st},
 			device:      &leylinev1.DeviceDescriptor{Model: "Generic RTL2832U (R820T)"},
-			capture:     &leylinev1.Capture{Gains: []*leylinev1.GainState{{Element: "TUNER", Auto: true}}},
 			squelchNote: note,
 		}
-		o := &tuneOptions{freq: 146_520_000, mode: leylinev1.DemodMode_NFM, band: leyline.BandFor(146_520_000), squelch: math.NaN()}
+		o := &tuneOptions{freq: 146_520_000, mode: leylinev1.DemodMode_NFM, band: bandplan.BandFor(146_520_000), squelch: math.NaN()}
 		return s.banner(o)
 	}
 	for _, note := range []string{"", "Squelch auto → -80 dBFS (10 dB above the band's noise floor, -90 dBFS)."} {
@@ -91,11 +92,11 @@ func TestBannerSurvivesColourOff(t *testing.T) {
 func TestConfirmLineSurvivesColourOff(t *testing.T) {
 	plain, styled := liveStyles()
 	// The pre-write channel had no squelch; the state carries the new one.
-	st, ch, cap := liveState(-40, leylinev1.DemodMode_NFM)
+	st, ch, capture := liveState(-40, leylinev1.DemodMode_NFM)
 	before := &leylinev1.Channel{ChannelId: ch.ChannelId, CaptureId: ch.CaptureId, OffsetHz: ch.OffsetHz, Mode: ch.Mode, BandwidthHz: ch.BandwidthHz, SquelchDb: math.NaN()}
 	ev := &leylinev1.Event{}
-	want := confirmLine(plain, st, "squelch", nil, ev, before, cap)
-	got := confirmLine(styled, st, "squelch", nil, ev, before, cap)
+	want := confirmLine(plain, st, "squelch", nil, ev, before, capture)
+	got := confirmLine(styled, st, "squelch", nil, ev, before, capture)
 	if got == want {
 		t.Fatal("a coloured style left the confirmation unstyled")
 	}
@@ -109,12 +110,12 @@ func TestConfirmLineSurvivesColourOff(t *testing.T) {
 		t.Errorf("the channel id is not repeated in a confirmation: %q", want)
 	}
 	// gain is the radio's, whichever channel the command addressed.
-	gain := confirmLine(plain, st, "gain", nil, ev, ch, cap)
+	gain := confirmLine(plain, st, "gain", nil, ev, ch, capture)
 	if w := "gain 7.7 dB on the radio (TUNER)"; !strings.Contains(gain, "on the radio (TUNER)") || strings.Contains(gain, "channel") {
 		t.Errorf("gain confirmation = %q, want the radio scope like %q", gain, w)
 	}
 	// An unknown or unchanged previous value falls back to today's shape.
-	same := confirmLine(plain, st, "mode", nil, ev, ch, cap)
+	same := confirmLine(plain, st, "mode", nil, ev, ch, capture)
 	if !strings.HasPrefix(same, "mode → NFM on ") {
 		t.Errorf("unchanged value should not print an arrow from itself: %q", same)
 	}
@@ -126,9 +127,9 @@ func TestSettingsViewSurvivesColourOff(t *testing.T) {
 	plain, styled := liveStyles()
 	render := func(sty ui.Style) string {
 		buf := &bytes.Buffer{}
-		st, ch, cap := liveState(math.NaN(), leylinev1.DemodMode_NFM)
-		s := &session{app: &App{Stdout: buf, Style: sty}, state: st}
-		if err := showSettings(s, ch, cap); err != nil {
+		st, ch, capture := liveState(math.NaN(), leylinev1.DemodMode_NFM)
+		s := &verbSession{Session: &session.Session{State: st}, app: &App{Stdout: buf, Style: sty}}
+		if err := showSettings(s, ch, capture); err != nil {
 			t.Fatal(err)
 		}
 		return buf.String()

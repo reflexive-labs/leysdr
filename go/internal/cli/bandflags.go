@@ -6,7 +6,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
-	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // bandFlags holds the command-line flags of a band view. `ley spectrum`, `ley
@@ -15,7 +16,7 @@ import (
 // of copying them.
 type bandFlags struct {
 	bandName     string
-	band         *leyline.Band
+	band         *bandplan.Band
 	freq, span   uint64
 	freqInput    string
 	bins         uint32
@@ -68,14 +69,14 @@ func (f *bandFlags) parse(app *App, args []string, span string, u bandUsage) err
 		if f.freqInput != "" {
 			return usageErrorf("give a frequency or --band, not both: %s %s --band %s", u.verb, f.freqInput, f.bandName)
 		}
-		b, err := leyline.ResolveBand(f.bandName)
+		b, err := bandplan.ResolveBand(f.bandName)
 		if err != nil {
 			return usageError(err)
 		}
 		f.band = &b
 	}
 	if span != "" {
-		v, err := leyline.ParseUserFrequency(span)
+		v, err := units.ParseFrequency(span)
 		if err != nil {
 			return usageErrorf("--span %v; for example %s", err, u.spanHint)
 		}

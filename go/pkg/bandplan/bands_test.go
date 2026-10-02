@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package leyline
+package bandplan
 
 import (
 	"slices"
@@ -115,8 +115,8 @@ func TestResolveBandGMRS(t *testing.T) {
 	if len(parts) != 2 || parts[0].Name != "GMRS 462 MHz" || parts[1].Name != "GMRS 467 MHz" {
 		t.Errorf("BandsWithin(the group) = %v", parts)
 	}
-	if !slices.Contains(BandAliases(), "gmrs") {
-		t.Errorf("BandAliases lacks the group: %v", BandAliases())
+	if !slices.Contains(bandAliases(), "gmrs") {
+		t.Errorf("BandAliases lacks the group: %v", bandAliases())
 	}
 }
 
@@ -272,8 +272,7 @@ func TestPlansMatchTheirListings(t *testing.T) {
 }
 
 // One tolerance for "on a channel", the nearest within 6 kHz, and a tie goes to the earlier
-// entry in plan order: the US variant entered before the ITU entry that shares its frequency
-// (the plan's KTD2).
+// entry in plan order: the US variant entered before the ITU entry that shares its frequency.
 func TestChannelAt(t *testing.T) {
 	for _, tc := range []struct {
 		hz   uint64
@@ -345,5 +344,38 @@ func TestResolvePlanChannel(t *testing.T) {
 	murs, _ := ResolveBand("murs")
 	if p, ok := ResolvePlanChannel(murs, "1"); !ok || p.BandwidthHz != 11_250 || p.Mode != leylinev1.DemodMode_NFM {
 		t.Errorf("MURS 1 carries its own width: %+v", p)
+	}
+}
+
+func TestResolveMode(t *testing.T) {
+	cases := []struct {
+		name   string
+		hz     uint64
+		want   leylinev1.DemodMode
+		reason bool
+	}{
+		{"fm", 101_100_000, leylinev1.DemodMode_WFM, true},
+		{"fm", 146_520_000, leylinev1.DemodMode_NFM, true},
+		{"FM", 87_500_000, leylinev1.DemodMode_WFM, true},
+		{"fm", 108_000_001, leylinev1.DemodMode_NFM, true},
+		{"ssb", 7_100_000, leylinev1.DemodMode_LSB, true},
+		{"ssb", 14_200_000, leylinev1.DemodMode_USB, true},
+		{"ssb", 10_000_000, leylinev1.DemodMode_USB, true},
+		{"nbfm", 101_100_000, leylinev1.DemodMode_NFM, false},
+		{"wbfm", 146_520_000, leylinev1.DemodMode_WFM, false},
+		{"nfm", 101_100_000, leylinev1.DemodMode_NFM, false},
+		{"wfm", 146_520_000, leylinev1.DemodMode_WFM, false},
+		{"AM", 118_000_000, leylinev1.DemodMode_AM, false},
+		{"usb", 7_100_000, leylinev1.DemodMode_USB, false},
+		{"raw_iq", 1, leylinev1.DemodMode_RAW_IQ, false},
+	}
+	for _, c := range cases {
+		got, reason, err := ResolveMode(c.name, c.hz)
+		if err != nil || got != c.want || (reason != "") != c.reason {
+			t.Errorf("ResolveMode(%q, %d) = %v %q %v; want %v reason=%v", c.name, c.hz, got, reason, err, c.want, c.reason)
+		}
+	}
+	if _, _, err := ResolveMode("dsb", 1); err == nil || !strings.Contains(err.Error(), "ssb") {
+		t.Errorf("ResolveMode(dsb) = %v, want error mentioning aliases", err)
 	}
 }

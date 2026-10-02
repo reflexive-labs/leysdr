@@ -12,8 +12,10 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 	"github.com/reflexive-labs/leysdr/go/pkg/records"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 type decodeOptions struct {
@@ -69,7 +71,7 @@ reads; 'ley jobs cancel' is how to stop one.
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.decoder = args[0]
 			if freq != "" {
-				hz, err := leyline.ParseUserFrequency(freq)
+				hz, err := units.ParseFrequency(freq)
 				if err != nil {
 					return usageErrorf("--freq %v", err)
 				}
@@ -79,9 +81,9 @@ reads; 'ley jobs cancel' is how to stop one.
 			if err != nil {
 				return err
 			}
-			defer s.close()
+			defer s.Close()
 			if o.device != "" {
-				d, derr := pickDevice(s.state, o.device)
+				d, derr := pickDevice(s.State, o.device)
 				if derr != nil {
 					return derr
 				}
@@ -102,10 +104,10 @@ reads; 'ley jobs cancel' is how to stop one.
 
 // runDecode starts the job, subscribes from the beginning of its records and prints them until
 // --count, Ctrl-C or the end of the stream.
-func runDecode(ctx context.Context, s *session, o decodeOptions) error {
+func runDecode(ctx context.Context, s *verbSession, o decodeOptions) error {
 	// A friendly name (vessels -> ais) becomes the canonical decoder before anything starts, so the
 	// job, the records and the banner all use the canonical name.
-	if name, _, err := s.client.ResolveDecoder(ctx, o.decoder); err == nil {
+	if name, _, err := s.Client.ResolveDecoder(ctx, o.decoder); err == nil {
 		o.decoder = name
 	}
 	cfg := &leylinev1.DecodeConfig{
@@ -115,7 +117,7 @@ func runDecode(ctx context.Context, s *session, o decodeOptions) error {
 		TakeOver:    o.takeOver,
 		Keep:        o.keep,
 	}
-	job, err := s.client.StartDecode(ctx, cfg)
+	job, err := s.Client.StartDecode(ctx, cfg)
 	if err != nil {
 		return decodeFailure(s, o, err)
 	}
@@ -124,38 +126,38 @@ func runDecode(ctx context.Context, s *session, o decodeOptions) error {
 	from := uint64(0)
 	sctx, stop := context.WithCancel(ctx)
 	defer stop()
-	recs, errs, err := s.client.SubscribeRecords(sctx, leyline.RecordScopeJob(job.GetJobId(), &from))
+	recs, errs, err := s.Client.SubscribeRecords(sctx, leyline.RecordScopeJob(job.GetJobId(), &from))
 	if err != nil {
 		return err
 	}
-	s.say("%s\n", decodeBanner(s, job, o))
+	s.say("%s\n", decodeBanner(ctx, s, job, o))
 	n := 0
 	for {
 		select {
 		case <-ctx.Done():
-			return decodeStopped(s, job, o)
+			return decodeStopped(ctx, s, job, o)
 		case err := <-errs:
 			if err != nil && ctx.Err() == nil {
 				return err
 			}
-			return decodeStopped(s, job, o)
+			return decodeStopped(ctx, s, job, o)
 		case rec, ok := <-recs:
 			if !ok {
-				return decodeStopped(s, job, o)
+				return decodeStopped(ctx, s, job, o)
 			}
 			if err := printRecord(s, rec); err != nil {
 				return err
 			}
 			n++
 			if o.count > 0 && n >= o.count {
-				return decodeStopped(s, job, o)
+				return decodeStopped(ctx, s, job, o)
 			}
 		}
 	}
 }
 
 // decodeFailure turns the daemon's refusal into an error that says what to do next.
-func decodeFailure(s *session, o decodeOptions, err error) error {
+func decodeFailure(s *verbSession, o decodeOptions, err error) error {
 	st := s.app.ErrStyle
 	switch leyline.Code(err) {
 	case leyline.CodeDecoderNotFound:
@@ -183,14 +185,14 @@ func leylineMessage(err error, fallback string) string {
 // decodeBanner prints what the job was given: the decoder, where it is listening, and the channel
 // and capture the daemon allocated, because a decoder tuned to the wrong frequency decodes
 // nothing.
-func decodeBanner(s *session, job *leylinev1.Job, o decodeOptions) string {
+func decodeBanner(ctx context.Context, s *verbSession, job *leylinev1.Job, o decodeOptions) string {
 	st := s.app.ErrStyle
 	where := ""
-	if hz := decodeFrequency(s, job); hz > 0 {
-		where = " on " + leyline.FormatFrequency(hz)
+	if hz := decodeFrequency(ctx, s, job); hz > 0 {
+		where = " on " + units.FormatFrequency(hz)
 	}
 	line := fmt.Sprintf("decoding %s%s", o.decoder, where)
-	if ch := decodeChannel(s); ch != nil {
+	if ch := decodeChannel(ctx, s); ch != nil {
 		line += ", " + st.Muted(ch.GetChannelId()+" on "+ch.GetCaptureId())
 	}
 	if o.keep {
@@ -201,11 +203,11 @@ func decodeBanner(s *session, job *leylinev1.Job, o decodeOptions) string {
 
 // decodeFrequency is where the job is listening: what was asked for, else the channel the daemon
 // made, so the banner never quotes a frequency nobody tuned.
-func decodeFrequency(s *session, job *leylinev1.Job) uint64 {
+func decodeFrequency(ctx context.Context, s *verbSession, job *leylinev1.Job) uint64 {
 	if hz := job.GetDecode().GetFrequencyHz(); hz > 0 {
 		return hz
 	}
-	if ch := decodeChannel(s); ch != nil {
+	if ch := decodeChannel(ctx, s); ch != nil {
 		return ch.GetRequiredHz()
 	}
 	return 0
@@ -213,10 +215,10 @@ func decodeFrequency(s *session, job *leylinev1.Job) uint64 {
 
 // decodeChannel finds the channel the job owns in a fresh snapshot: the daemon allocated it, and
 // the Job message names a job's work rather than its plumbing.
-func decodeChannel(s *session) *leylinev1.Channel {
-	ctx, cancel := context.WithTimeout(context.Background(), confirmTimeout)
+func decodeChannel(ctx context.Context, s *verbSession) *leylinev1.Channel {
+	ctx, cancel := session.CleanupContext(ctx, confirmTimeout)
 	defer cancel()
-	st, err := s.client.State(ctx)
+	st, err := s.Client.State(ctx)
 	if err != nil {
 		return nil
 	}
@@ -233,7 +235,7 @@ func decodeChannel(s *session) *leylinev1.Channel {
 	if best != nil {
 		for _, c := range st.GetCaptures() {
 			if c.GetCaptureId() == best.GetCaptureId() {
-				s.capture = c
+				s.Capture = c
 			}
 		}
 	}
@@ -243,7 +245,7 @@ func decodeChannel(s *session) *leylinev1.Channel {
 // printRecord writes one record: the time it arrived, the sender, the record kind and its
 // content. A fixed layout rather than a table, because the rows arrive one at a time and a table
 // that re-laid itself on every packet would be unreadable.
-func printRecord(s *session, rec *leylinev1.DecodeRecord) error {
+func printRecord(s *verbSession, rec *leylinev1.DecodeRecord) error {
 	if s.app.JSON {
 		return s.app.printJSON(rec)
 	}
@@ -261,8 +263,8 @@ func printRecord(s *session, rec *leylinev1.DecodeRecord) error {
 // recordClock is the record's wall time, derived from the capture's anchor as every other
 // timestamp in ley is (AGENTS.md invariant 5). A record on a capture whose anchor ley has not
 // seen prints the time it arrived here instead of inventing one.
-func recordClock(s *session, rec *leylinev1.DecodeRecord) string {
-	if a := s.capture.GetAnchor(); a != nil && a.GetCaptureId() == rec.GetTime().GetCaptureId() {
+func recordClock(s *verbSession, rec *leylinev1.DecodeRecord) string {
+	if a := s.Capture.GetAnchor(); a != nil && a.GetCaptureId() == rec.GetTime().GetCaptureId() {
 		if at, ok := leyline.AnchorWallTime(a, rec.GetTime().GetSampleIndex()); ok {
 			return at.Format("15:04:05")
 		}
@@ -273,26 +275,26 @@ func recordClock(s *session, rec *leylinev1.DecodeRecord) string {
 // decodeStopped ends the run: an ephemeral job is cancelled here, because the next thing
 // somebody does after Ctrl-C is usually tune, and a kept one is left running with the command
 // that stops it.
-func decodeStopped(s *session, job *leylinev1.Job, o decodeOptions) error {
+func decodeStopped(ctx context.Context, s *verbSession, job *leylinev1.Job, o decodeOptions) error {
 	st := s.app.ErrStyle
 	if o.keep {
-		s.say("left running; %s stops it\n", st.Cmd("ley jobs cancel "+jobRowName(s, job)))
+		s.say("left running; %s stops it\n", st.Cmd("ley jobs cancel "+jobRowName(ctx, s, job)))
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), confirmTimeout)
+	ctx, cancel := session.CleanupContext(ctx, confirmTimeout)
 	defer cancel()
-	if _, err := s.client.Jobs.CancelJob(ctx, &leylinev1.JobRef{JobId: job.GetJobId()}); err != nil {
-		s.say("the job is still running: %s stops it\n", st.Cmd("ley jobs cancel "+jobRowName(s, job)))
+	if _, err := s.Client.Jobs.CancelJob(ctx, &leylinev1.JobRef{JobId: job.GetJobId()}); err != nil {
+		s.say("the job is still running: %s stops it\n", st.Cmd("ley jobs cancel "+jobRowName(ctx, s, job)))
 	}
 	return nil
 }
 
 // jobRowName is how to name this job to `ley jobs cancel`: its row number when ley can see the
 // list, else its id, which always works.
-func jobRowName(s *session, job *leylinev1.Job) string {
-	ctx, cancel := context.WithTimeout(context.Background(), confirmTimeout)
+func jobRowName(ctx context.Context, s *verbSession, job *leylinev1.Job) string {
+	ctx, cancel := session.CleanupContext(ctx, confirmTimeout)
 	defer cancel()
-	jobs, err := s.client.ListJobs(ctx)
+	jobs, err := s.Client.ListJobs(ctx)
 	if err != nil {
 		return job.GetJobId()
 	}

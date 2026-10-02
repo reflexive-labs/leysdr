@@ -14,6 +14,7 @@ import (
 // where to put the radio. Passing both is a usage error rather than a silent
 // precedence rule.
 func TestBandFlagRefusesAPositionalToo(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	for _, verb := range []string{"spectrum", "waterfall", "phosphor"} {
 		_, _, err := runApp(t, &App{Socket: sock}, verb, "101.1", "--band", "2m")
@@ -33,6 +34,7 @@ func TestBandFlagRefusesAPositionalToo(t *testing.T) {
 // A band group the radio cannot capture whole is refused with its parts named: centring a
 // picture between two halves 5 MHz apart would show neither.
 func TestBandFlagRefusesAGroupThatDoesNotFit(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	for _, verb := range []string{"spectrum", "waterfall", "phosphor"} {
 		_, _, err := runApp(t, &App{Socket: sock}, verb, "--band", "gmrs")
@@ -54,6 +56,7 @@ func TestBandFlagRefusesAGroupThatDoesNotFit(t *testing.T) {
 }
 
 func TestBandFlagUnknownName(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	_, _, err := runApp(t, &App{Socket: sock}, "spectrum", "--band", "2mm")
 	if err == nil {
@@ -70,6 +73,7 @@ func TestBandFlagUnknownName(t *testing.T) {
 // A band narrower than the radio's rates is shown whole: the capture centres on
 // the band and takes the smallest rate that covers it.
 func TestBandFlagFittingBandSetsTheCapture(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	out, errOut, err := runApp(t, &App{Socket: sock}, "spectrum", "--band", "noaa", "--width", "80")
 	if err != nil {
@@ -90,6 +94,7 @@ func TestBandFlagFittingBandSetsTheCapture(t *testing.T) {
 // how much of the band is shown. Without that note the chart would cover a
 // quarter of the band with no warning.
 func TestBandFlagWideBandSaysWhatItShows(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	out, errOut, err := runApp(t, &App{Socket: sock}, "spectrum", "--band", "2m", "--width", "80")
 	if err != nil {
@@ -108,6 +113,7 @@ func TestBandFlagWideBandSaysWhatItShows(t *testing.T) {
 // An explicit --span wins over the band's width. The output notes when the
 // span shows less than the whole band.
 func TestBandFlagExplicitSpanWins(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	out, errOut, err := runApp(t, &App{Socket: sock}, "spectrum", "--band", "2m", "--span", "250k", "--width", "80")
 	if err != nil {
@@ -125,6 +131,7 @@ func TestBandFlagExplicitSpanWins(t *testing.T) {
 // The four band views share one --rate rule, so a nonsense rate is a usage
 // error before the daemon is asked for a stream that would never tick.
 func TestBandFlagRefusesANonPositiveRate(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	for _, verb := range []string{"spectrum", "waterfall", "phosphor", "fft"} {
 		_, _, err := runApp(t, &App{Socket: sock}, verb, "--rate", "0")

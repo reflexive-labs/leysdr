@@ -185,7 +185,10 @@ func prepKeptDecode(t *testing.T, _ string, c *leyline.Client) []string {
 	t.Cleanup(func() {
 		_, _ = c.Jobs.CancelJob(context.Background(), &leylinev1.JobRef{JobId: job.JobId})
 	})
-	time.Sleep(2 * fakedaemon.RecordInterval)
+	waitFor(t, "two records in the store", func() bool {
+		page, err := c.QueryRecords(t.Context(), &leylinev1.RecordQuery{Protocol: "aprs"})
+		return err == nil && len(page.GetRecords()) >= 2
+	})
 	return nil
 }
 
@@ -227,6 +230,7 @@ func prepPlaybackDevice(t *testing.T, sock string, c *leyline.Client) []string {
 // --json and exits 0 hands a script unparseable text with no way to tell that
 // anything went wrong.
 func TestEveryVerbAnswersOrRefusesJSON(t *testing.T) {
+	t.Parallel()
 	for _, c := range jsonVerbs {
 		t.Run(c.path, func(t *testing.T) {
 			sock := testutil.SocketPath(t, "gone.sock")
@@ -242,7 +246,7 @@ func TestEveryVerbAnswersOrRefusesJSON(t *testing.T) {
 			// stops it, by cancelling: a deadline reaches the daemon as
 			// DEADLINE_EXCEEDED, which is a real error rather than the
 			// clean exit this checks for.
-			ctx := context.Background()
+			ctx := t.Context()
 			if c.timeout > 0 {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)
@@ -271,8 +275,8 @@ func TestEveryVerbAnswersOrRefusesJSON(t *testing.T) {
 				t.Fatalf("ley %v printed nothing on stdout; stderr:\n%s", args, errOut)
 			}
 			for _, l := range lines {
-				var any any
-				if err := json.Unmarshal([]byte(l), &any); err != nil {
+				var found any
+				if err := json.Unmarshal([]byte(l), &found); err != nil {
 					t.Fatalf("ley %v: stdout is not NDJSON (%v): %q", args, err, l)
 				}
 			}

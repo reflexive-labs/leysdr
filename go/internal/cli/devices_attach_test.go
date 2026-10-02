@@ -3,7 +3,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -14,12 +13,13 @@ import (
 // TestDevicesAttachRTLTCP: the id is machine output on stdout, the sentence about it is prose on
 // stderr, and the sentence says both that the daemon keeps the radio and how to get rid of it.
 func TestDevicesAttachRTLTCP(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{NoDevice: true})
-	out, errOut, err := run(t, context.Background(), sock, "devices", "attach", "rtltcp", "pi.local:1234")
+	out, errOut, err := run(t, t.Context(), sock, "devices", "attach", "rtltcp", "pi.local:1234")
 	if err != nil {
 		t.Fatalf("attach: %v stderr=%q", err, errOut)
 	}
-	st, serr := c.State(context.Background())
+	st, serr := c.State(t.Context())
 	if serr != nil {
 		t.Fatal(serr)
 	}
@@ -43,8 +43,9 @@ func TestDevicesAttachRTLTCP(t *testing.T) {
 
 // TestDevicesAttachJSON: --json is the descriptor and nothing else, so a script can read the id.
 func TestDevicesAttachJSON(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{NoDevice: true})
-	out, errOut, err := run(t, context.Background(), sock, "--json", "devices", "attach", "rtltcp", "10.0.0.5:1234")
+	out, errOut, err := run(t, t.Context(), sock, "--json", "devices", "attach", "rtltcp", "10.0.0.5:1234")
 	if err != nil {
 		t.Fatalf("attach --json: %v stderr=%q", err, errOut)
 	}
@@ -64,9 +65,10 @@ func TestDevicesAttachJSON(t *testing.T) {
 // TestDevicesAttachDuplicate: one endpoint is one radio, so attaching it twice is not an error --
 // the second run hands back the same id and says the daemon already has it.
 func TestDevicesAttachDuplicate(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{NoDevice: true})
 	first := mustRun(t, sock, "devices", "attach", "rtltcp", "pi.local:1234")
-	out, errOut, err := run(t, context.Background(), sock, "devices", "attach", "rtltcp", "pi.local:1234")
+	out, errOut, err := run(t, t.Context(), sock, "devices", "attach", "rtltcp", "pi.local:1234")
 	if err != nil {
 		t.Fatalf("a duplicate attach must succeed: %v stderr=%q", err, errOut)
 	}
@@ -84,8 +86,9 @@ func TestDevicesAttachDuplicate(t *testing.T) {
 // TestDevicesAttachUnreachable: a radio never reached is usually a typo, so the daemon remembers
 // nothing and the failure is the daemon's own sentence, exit 1.
 func TestDevicesAttachUnreachable(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{NoDevice: true})
-	out, _, err := run(t, context.Background(), sock, "devices", "attach", "rtltcp", "nosuch.invalid:1234")
+	out, _, err := run(t, t.Context(), sock, "devices", "attach", "rtltcp", "nosuch.invalid:1234")
 	if exitCode(err) != 1 || err == nil {
 		t.Fatalf("unreachable host: exit %d (%v)", exitCode(err), err)
 	}
@@ -95,7 +98,7 @@ func TestDevicesAttachUnreachable(t *testing.T) {
 	if out != "" {
 		t.Errorf("nothing was attached, so stdout must be empty, got %q", out)
 	}
-	st, serr := c.State(context.Background())
+	st, serr := c.State(t.Context())
 	if serr != nil {
 		t.Fatal(serr)
 	}
@@ -107,6 +110,7 @@ func TestDevicesAttachUnreachable(t *testing.T) {
 // TestDevicesAttachUsage: the kind and the endpoint are the caller's to get right, so a mistake in
 // either is exit 2 with the shape spelled out, before anything reaches the daemon.
 func TestDevicesAttachUsage(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{NoDevice: true})
 	cases := []struct {
 		args []string
@@ -118,7 +122,7 @@ func TestDevicesAttachUsage(t *testing.T) {
 		{[]string{"devices", "attach", "rtltcp"}, "accepts 2 arg"},
 	}
 	for _, tc := range cases {
-		_, _, err := run(t, context.Background(), sock, tc.args...)
+		_, _, err := run(t, t.Context(), sock, tc.args...)
 		if exitCode(err) != ExitUsage || err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("ley %v: exit %d (%v), want %d saying %q", tc.args, exitCode(err), err, ExitUsage, tc.want)
 		}

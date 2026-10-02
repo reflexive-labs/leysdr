@@ -109,7 +109,7 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 	if err != nil {
 		return err
 	}
-	defer s.close()
+	defer s.Close()
 	if err := s.openBand(ctx, app, bandOptions{
 		freq: o.freq, span: o.span, freqInput: o.freqInput,
 		band: o.band, retune: o.retune, device: o.device, verb: "spectrum",
@@ -117,7 +117,7 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 		return err
 	}
 	if s.createdCapture {
-		defer s.teardown()
+		defer s.teardown(ctx)
 	}
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -125,14 +125,14 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 	if !o.watch {
 		rate = 2
 	}
-	sub, err := s.client.SubscribeFFT(sctx, s.capture.CaptureId, o.bins, rate, leylinev1.FftBinFormat_DB_F32)
+	sub, err := s.Client.SubscribeFFT(sctx, s.Capture.CaptureId, o.bins, rate, leylinev1.FftBinFormat_DB_F32)
 	if err != nil {
 		return err
 	}
 	defer sub.Close()
 	// Keep the event stream flowing (and the mirror current) while rows render;
 	// stopped before teardown reads the mirror.
-	stopDrain := s.drainEvents()
+	stopDrain := s.DrainEvents()
 	defer stopDrain()
 	desc := sub.Descriptor
 	binFormat := desc.GetFft().GetBinFormat()
@@ -143,28 +143,24 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 	view := newSpectrumView(app.Style, o.width, o.freq, o.watch, app.IsTTY())
 	w := newChartWriter(app, out, o.watch, rate)
 	defer w.finish()
-	tick := time.NewTicker(chartTickInterval)
-	defer tick.Stop()
 	n := 0
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-tick.C:
-			// A row every so often is normal; no row at all is the failure the
-			// status line and the stderr note exist to make visible. A one-shot
-			// gives up rather than hanging for ever with nothing on screen;
-			// --watch keeps waiting, and says so.
-			w.idle()
+	return liveLoop{
+		w: w,
+		// A row every so often is normal; no row at all is the failure the
+		// status line and the stderr note exist to make visible. A one-shot
+		// gives up rather than hanging for ever with nothing on screen;
+		// --watch keeps waiting, and says so.
+		onTick: func() (bool, error) {
 			if !o.watch && n == 0 && time.Since(w.start) > chartFirstRow {
-				return fmt.Errorf("no spectrum row arrived in %.0f s, so there is nothing to draw. Check the radio is still capturing with: ley state", chartFirstRow.Seconds())
+				return true, fmt.Errorf("no spectrum row arrived in %.0f s, so there is nothing to draw. Check the radio is still capturing with: ley state", chartFirstRow.Seconds())
 			}
-		case fr, ok := <-sub.Frames:
-			if !ok {
-				return spectrumEnd(ctx, "spectrum", sub.Err(), n)
-			}
+			return false, nil
+		},
+		frames: sub.Frames,
+		end:    func() error { return spectrumEnd(ctx, "spectrum", sub.Err(), n) },
+		onFrame: func(fr *leylinev1.Frame) (bool, error) {
 			if len(fr.Payload) == 0 {
-				continue
+				return false, nil
 			}
 			bins := leyline.DecodeFFTBins(fr.Payload, binFormat)
 			floor := medianDb(bins)
@@ -177,7 +173,7 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 				}, Peaks: peaks}
 				b, err := json.Marshal(row)
 				if err != nil {
-					return err
+					return true, err
 				}
 				out.Write(b)
 				out.WriteByte('\n')
@@ -190,14 +186,12 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 				}
 			}
 			if err := out.Flush(); err != nil {
-				return err
+				return true, err
 			}
 			n++
-			if !o.watch || (o.count > 0 && n >= o.count) {
-				return nil
-			}
-		}
-	}
+			return !o.watch || (o.count > 0 && n >= o.count), nil
+		},
+	}.run(ctx)
 }
 
 // spectrumEnd turns the end of the FFT stream into an exit. A stream that

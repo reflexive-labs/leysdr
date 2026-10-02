@@ -14,6 +14,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // Env is where the runner finds what it drives.
@@ -73,7 +74,7 @@ func startDaemon(ctx context.Context, env Env, dir string) (*daemon, error) {
 	}
 	d.logBuf = f
 	// --no-hardware: the machine's own dongles stay out of the run. An agent that tunes "146.52"
-	// with no device named gets the fixture, not the owner's radio, and nothing on the air can
+	// with no device named gets the fixture, not the machine's radio, and nothing on the air can
 	// leak into a graded answer.
 	args := []string{"--socket", d.socket, "--store", d.store, "--log-level", "info", "--no-hardware"}
 	if env.Decoders != "" {
@@ -152,7 +153,7 @@ func (d *daemon) attach(ctx context.Context, f Fixture) error {
 		return fmt.Errorf("fixture %s: sidecar: %w", f.File, err)
 	}
 	if f.Center != "" {
-		hz, err := leyline.ParseUserFrequency(f.Center)
+		hz, err := units.ParseFrequency(f.Center)
 		if err != nil {
 			return fmt.Errorf("fixture %s: center: %w", f.File, err)
 		}
@@ -202,14 +203,14 @@ func (d *daemon) setup(ctx context.Context, steps []SetupStep) error {
 			cmd := exec.CommandContext(ctx, d.env.Ley, append([]string{"--socket", d.socket}, st.Ley...)...)
 			out, err := cmd.CombinedOutput()
 			if err != nil {
-				return fmt.Errorf("setup %d (ley %s): %v\n%s", i+1, strings.Join(st.Ley, " "), err, out)
+				return fmt.Errorf("setup %d (ley %s): %w\n%s", i+1, strings.Join(st.Ley, " "), err, out)
 			}
 		case st.Job != nil:
 			cfg := &leylinev1.DecodeConfig{Decoder: st.Job.Decoder, Keep: st.Job.Keep}
 			if st.Job.Frequency != "" {
-				hz, err := leyline.ParseUserFrequency(st.Job.Frequency)
+				hz, err := units.ParseFrequency(st.Job.Frequency)
 				if err != nil {
-					return fmt.Errorf("setup %d: frequency %v", i+1, err)
+					return fmt.Errorf("setup %d: frequency %w", i+1, err)
 				}
 				cfg.FrequencyHz = hz
 			}

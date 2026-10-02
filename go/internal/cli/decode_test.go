@@ -12,6 +12,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"github.com/reflexive-labs/leysdr/go/pkg/records"
 )
@@ -19,8 +20,9 @@ import (
 // The registry table leads with the name, because the name is what `ley decode` is given, and
 // says where the daemon looked on stderr, where it cannot reach a pipe.
 func TestDecodersTableAndJSON(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
-	out, errOut, err := run(t, context.Background(), sock, "decoders")
+	out, errOut, err := run(t, t.Context(), sock, "decoders")
 	if err != nil {
 		t.Fatalf("ley decoders: %v", err)
 	}
@@ -53,7 +55,7 @@ func TestDecodersTableAndJSON(t *testing.T) {
 // same records into NDJSON with nothing else in the pipe.
 func TestDecodePrintsRecords(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	out, errOut, err := run(t, ctx, sock, "decode", "aprs", "--count", "3")
 	if err != nil {
@@ -91,8 +93,9 @@ func TestDecodePrintsRecords(t *testing.T) {
 // A decoder nobody installed is a plain sentence with the next command, and the daemon's code
 // in brackets, as every error line is.
 func TestDecodeUnknownDecoder(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
-	_, _, err := run(t, context.Background(), sock, "decode", "nosuch")
+	_, _, err := run(t, t.Context(), sock, "decode", "nosuch")
 	if exitCode(err) != 1 || err == nil {
 		t.Fatalf("exit %d (%v), want 1", exitCode(err), err)
 	}
@@ -107,7 +110,7 @@ func TestDecodeUnknownDecoder(t *testing.T) {
 // runs and hands it back when it stops, channel and capture and all.
 func TestDecodeStopsAnEphemeralJob(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	if _, _, err := run(t, ctx, sock, "decode", "aprs", "--count", "2"); err != nil {
 		t.Fatalf("ley decode: %v", err)
@@ -132,7 +135,7 @@ func TestDecodeStopsAnEphemeralJob(t *testing.T) {
 // output says how to stop it.
 func TestDecodeJobOutlivesTheClient(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{PresenceGrace: 100 * time.Millisecond})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	out, errOut, err := run(t, ctx, sock, "decode", "aprs", "--job", "--count", "2")
 	if err != nil {
@@ -194,7 +197,7 @@ func TestDecodeScreensSurviveColourOff(t *testing.T) {
 		printDecoderTable(app, list)
 		printRecordTable(app, page)
 		out.WriteString(renderTrack(app, table, trackDefaultWindow))
-		s := &session{app: app}
+		s := &verbSession{Session: &session.Session{}, app: app}
 		for _, rec := range page.Records {
 			if err := printRecord(s, rec); err != nil {
 				t.Fatal(err)

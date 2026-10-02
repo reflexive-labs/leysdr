@@ -11,6 +11,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/words"
 )
 
 // The pieces every live chart is built from. A spectrum, a meter, a trace, a
@@ -304,7 +305,7 @@ func liveStreamEnd(ctx context.Context, err error, drawn int, stream, unit strin
 	if drawn == 0 {
 		return fmt.Errorf("the %s ended before a %s could be drawn. Check the channel is still running with: ley state", stream, unit)
 	}
-	return fmt.Errorf("the daemon ended the %s after %s: the channel it read was changed, stopped or destroyed. Check it with: ley state, then run the command again", stream, plural(drawn, unit))
+	return fmt.Errorf("the daemon ended the %s after %s: the channel it read was changed, stopped or destroyed. Check it with: ley state, then run the command again", stream, words.Count(drawn, unit))
 }
 
 // chartAxis is the timebase under a trace or a clip: the rule, then the

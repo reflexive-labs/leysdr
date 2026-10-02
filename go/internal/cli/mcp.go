@@ -22,7 +22,7 @@ import (
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
-// `ley mcp` is the MCP adapter of docs/plans/mcp.md: an MCP server an agent's
+// `ley mcp` is the MCP adapter (docs/reference/mcp.md): an MCP server an agent's
 // client spawns, speaking MCP on stdin and stdout and leyline.v1 to the
 // daemon over the same socket every other client uses. It is a client of the
 // daemon, not a second surface on it (AGENTS.md invariant 1), and every tool
@@ -142,24 +142,24 @@ const ownGraceSlack = 3 * time.Second
 func (srv *mcpServer) ownGrace(state *leylinev1.GetStateResponse, deviceID string) bool {
 	srv.recentMu.Lock()
 	defer srv.recentMu.Unlock()
-	for _, cap := range state.GetCaptures() {
-		if deviceID != "" && cap.GetDeviceId() != deviceID {
+	for _, capture := range state.GetCaptures() {
+		if deviceID != "" && capture.GetDeviceId() != deviceID {
 			continue
 		}
-		last := cap.GetActivity().GetLastInteractiveWriteNs()
-		if last == 0 || cap.GetActivity().GetLiveAudioSinks() > 0 {
+		last := capture.GetActivity().GetLastInteractiveWriteNs()
+		if last == 0 || capture.GetActivity().GetLiveAudioSinks() > 0 {
 			continue
 		}
 		listening := false
 		for _, ch := range state.GetChannels() {
-			if ch.GetCaptureId() == cap.GetCaptureId() && ch.GetState() == leylinev1.ChannelState_CHANNEL_ACTIVE {
+			if ch.GetCaptureId() == capture.GetCaptureId() && ch.GetState() == leylinev1.ChannelState_CHANNEL_ACTIVE {
 				listening = true
 			}
 		}
 		if listening {
 			continue
 		}
-		mine, ok := srv.recent[cap.GetCaptureId()]
+		mine, ok := srv.recent[capture.GetCaptureId()]
 		if !ok {
 			continue
 		}
@@ -225,10 +225,10 @@ func (srv *mcpServer) keepPresence(ctx context.Context) {
 	for {
 		events, errs, err := srv.client.Events(ctx, leyline.DaemonScope())
 		if err == nil {
-			for range events {
-				// The mirror is not kept: every tool reads a fresh snapshot,
-				// because two tools may run at once and a shared mirror would
-				// need a lock the session was not written for.
+			// The mirror is not kept: every tool reads a fresh snapshot,
+			// because two tools may run at once and a shared mirror would
+			// need a lock the session was not written for.
+			for range events { //nolint:revive // drained only to keep the stream, and so the presence, open
 			}
 			err = <-errs
 		}

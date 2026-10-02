@@ -9,6 +9,7 @@ import (
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // Changes made by other clients, rendered as sentences.
@@ -29,22 +30,22 @@ import (
 // beforeEvent returns the mirror's copy of the object ev names, from before
 // the event is folded in. It must be called before session.apply. A nil result
 // means this session had not seen the object yet.
-func (s *session) beforeEvent(ev *leylinev1.Event) any {
+func (s *verbSession) beforeEvent(ev *leylinev1.Event) any {
 	switch b := ev.Body.(type) {
 	case *leylinev1.Event_Capture:
-		if c := captureByID(s.state, b.Capture.CaptureId); c != nil {
+		if c := captureByID(s.State, b.Capture.CaptureId); c != nil {
 			return c
 		}
 	case *leylinev1.Event_Channel:
-		if c := channelByID(s.state, b.Channel.ChannelId); c != nil {
+		if c := channelByID(s.State, b.Channel.ChannelId); c != nil {
 			return c
 		}
 	case *leylinev1.Event_Sink:
-		if s.sink != nil && s.sink.SinkId == b.Sink.SinkId {
-			return s.sink
+		if s.Sink != nil && s.Sink.SinkId == b.Sink.SinkId {
+			return s.Sink
 		}
 	case *leylinev1.Event_Device:
-		if d := deviceByID(s.state, b.Device.DeviceId); d != nil {
+		if d := deviceByID(s.State, b.Device.DeviceId); d != nil {
 			return d
 		}
 	}
@@ -74,19 +75,19 @@ type change struct{ verb, what string }
 // the session's own channel is gone -- the one change a live verb cannot
 // continue past. An empty line with ended false means nothing worth reporting
 // moved.
-func (s *session) changeLine(before any, ev *leylinev1.Event) (line string, ended bool) {
+func (s *verbSession) changeLine(before any, ev *leylinev1.Event) (line string, ended bool) {
 	st := s.app.ErrStyle
 	var what []change
 	switch b := ev.Body.(type) {
 	case *leylinev1.Event_Capture:
 		was, _ := before.(*leylinev1.Capture)
-		what = captureChanges(was, b.Capture, s.capture, s.device.GetGainElements(), st)
+		what = captureChanges(was, b.Capture, s.Capture, s.device.GetGainElements(), st)
 	case *leylinev1.Event_Channel:
 		was, _ := before.(*leylinev1.Channel)
 		what, ended = s.channelChanges(was, b.Channel, st)
 	case *leylinev1.Event_Sink:
 		was, _ := before.(*leylinev1.Sink)
-		what = sinkChanges(was, b.Sink, s.sink, st)
+		what = sinkChanges(was, b.Sink, s.Sink, st)
 	case *leylinev1.Event_Device:
 		was, _ := before.(*leylinev1.DeviceDescriptor)
 		what = deviceChanges(was, b.Device, s.device, st)
@@ -160,10 +161,10 @@ func captureChanges(was, now, ours *leylinev1.Capture, els []*leylinev1.GainElem
 	}
 	var out []change
 	if was.CenterHz != now.CenterHz {
-		out = append(out, change{"retuned", "the radio to " + leyline.FormatFrequency(now.CenterHz)})
+		out = append(out, change{"retuned", "the radio to " + units.FormatFrequency(now.CenterHz)})
 	}
 	if was.SampleRate != now.SampleRate {
-		out = append(out, change{"set", "the sample rate to " + leyline.FormatFrequency(now.SampleRate)})
+		out = append(out, change{"set", "the sample rate to " + units.FormatFrequency(now.SampleRate)})
 	}
 	if g := gainChange(was.Gains, now.Gains, els); g != "" {
 		out = append(out, change{"set", g})
@@ -206,15 +207,15 @@ func gainChange(was, now []*leylinev1.GainState, els []*leylinev1.GainElement) s
 // channelChanges lists what moved on a channel. Only this session's own
 // channel is reported field by field. Other channels' settings are not
 // reported, but a channel joining or leaving the shared capture is.
-func (s *session) channelChanges(was, now *leylinev1.Channel, st ui.Style) ([]change, bool) {
-	ours := s.channel != nil && now.ChannelId == s.channel.ChannelId
+func (s *verbSession) channelChanges(was, now *leylinev1.Channel, st ui.Style) ([]change, bool) {
+	ours := s.Channel != nil && now.ChannelId == s.Channel.ChannelId
 	// The daemon marks a destroyed channel by emitting it one last time with
 	// its state unset (SessionStore.destroyChannel). That is the whole wire
 	// signal, so a renderer that prints the enum name says STATE_UNSPECIFIED
 	// where it means "gone".
 	gone := now.State == leylinev1.ChannelState_CHANNEL_STATE_UNSPECIFIED
 	if !ours {
-		return otherChannelChanges(s.state, was, now, gone), false
+		return otherChannelChanges(s.State, was, now, gone), false
 	}
 	if gone {
 		return []change{{"stopped", "this channel"}}, true
@@ -232,16 +233,16 @@ func (s *session) channelChanges(was, now *leylinev1.Channel, st ui.Style) ([]ch
 		}
 	}
 	if was.OffsetHz != now.OffsetHz {
-		out = append(out, change{"moved", "this channel to " + channelFreqLabel(s.state, now)})
+		out = append(out, change{"moved", "this channel to " + channelFreqLabel(s.State, now)})
 	}
 	if was.Mode != now.Mode {
 		out = append(out, change{"set", "the mode to " + strings.ToUpper(leyline.ModeName(now.Mode))})
 	}
 	if was.BandwidthHz != now.BandwidthHz {
-		out = append(out, change{"set", "the filter to " + leyline.FormatFrequency(uint64(now.BandwidthHz))})
+		out = append(out, change{"set", "the filter to " + units.FormatFrequency(uint64(now.BandwidthHz))})
 	}
 	if squelchMoved(was.SquelchDb, now.SquelchDb) {
-		if leyline.SquelchOff(now.SquelchDb) {
+		if units.SquelchOff(now.SquelchDb) {
 			out = append(out, change{"turned", "the squelch off"})
 		} else {
 			out = append(out, change{"set", fmt.Sprintf("the squelch to %.0f dBFS", now.SquelchDb)})
@@ -267,8 +268,8 @@ func otherChannelChanges(state *leylinev1.GetStateResponse, was, now *leylinev1.
 // NaN: a plain comparison would report a change on every event of an
 // unsquelched channel.
 func squelchMoved(was, now float64) bool {
-	if leyline.SquelchOff(was) || leyline.SquelchOff(now) {
-		return leyline.SquelchOff(was) != leyline.SquelchOff(now)
+	if units.SquelchOff(was) || units.SquelchOff(now) {
+		return units.SquelchOff(was) != units.SquelchOff(now)
 	}
 	return was != now
 }

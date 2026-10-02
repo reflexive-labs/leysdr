@@ -2,7 +2,7 @@
 
 // Package ax25 deframes and frames AX.25 over HDLC: flag detection, bit
 // stuffing, the X.25 FCS, and the address field. It is the layer between the
-// afsk bit stream and the aprs parser (docs/plans/decoders.md, DEC-2).
+// afsk bit stream and the aprs parser.
 package ax25
 
 import (
@@ -75,7 +75,7 @@ func (f *Frame) String() string {
 	return b.String()
 }
 
-// Path renders the digipeater list the way TNC2 does, for DecodeRecord.fields.
+// PathString renders the digipeater list the way TNC2 does, for DecodeRecord.fields.
 func (f *Frame) PathString() string {
 	parts := make([]string, 0, len(f.Path))
 	for _, d := range f.Path {

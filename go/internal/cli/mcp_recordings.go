@@ -15,7 +15,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/words"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // The recording tools (docs/design/recording.md, "MCP"): start one, find the
@@ -165,7 +167,7 @@ func (srv *mcpServer) findRecordings(ctx context.Context, _ *mcp.CallToolRequest
 	if in.Frequency != "" {
 		t, err := resolveDial(in.Frequency, "146.52 (MHz)", nil)
 		if err != nil {
-			return nil, nil, fmt.Errorf("frequency %v", err)
+			return nil, nil, fmt.Errorf("frequency %w", err)
 		}
 		filter["frequency_hz"] = strconv.FormatUint(t.Hz, 10)
 	}
@@ -197,7 +199,7 @@ func (srv *mcpServer) findRecordings(ctx context.Context, _ *mcp.CallToolRequest
 		m := r.GetMetadata()
 		hz, _ := strconv.ParseUint(m["frequency_hz"], 10, 64)
 		fmt.Fprintf(&b, "%s  %s %s  %s in %s parts  %s\n", r.GetOriginatingJobId(),
-			leyline.FormatFrequency(hz), strings.TrimSpace(m["mode"]+" "+m["kind"]),
+			units.FormatFrequency(hz), strings.TrimSpace(m["mode"]+" "+m["kind"]),
 			recordingLength(m["duration_ms"]), m["parts"], recordingSize(r.GetSizeBytes()))
 	}
 	return protoResult(&leylinev1.ListResourcesResponse{Resources: found}, b.String())
@@ -296,14 +298,14 @@ func recordingSummary(m *leyline.RecordingManifest) string {
 		what = m.Mode + " audio"
 	}
 	fmt.Fprintf(&b, "%s %s, %s of signal in %s, %s",
-		what, leyline.FormatFrequency(m.FrequencyHz),
+		what, units.FormatFrequency(m.FrequencyHz),
 		forPhrase(time.Duration(m.DurationMs())*time.Millisecond),
-		plural(len(m.Parts), "part"), recordingSize(m.Bytes))
+		words.Count(len(m.Parts), "part"), recordingSize(m.Bytes))
 	if m.Gate != nil {
-		fmt.Fprintf(&b, "; the squelch opened %s", plural(m.SquelchOpens(), "time"))
+		fmt.Fprintf(&b, "; the squelch opened %s", words.Count(m.SquelchOpens(), "time"))
 	}
 	if len(m.Gaps) > 0 {
-		fmt.Fprintf(&b, "; %s where nothing was recorded", plural(len(m.Gaps), "gap"))
+		fmt.Fprintf(&b, "; %s where nothing was recorded", words.Count(len(m.Gaps), "gap"))
 	}
 	if m.EndedBy != "" {
 		fmt.Fprintf(&b, "; ended by %s", m.EndedBy)

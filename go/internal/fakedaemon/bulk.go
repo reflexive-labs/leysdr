@@ -126,8 +126,8 @@ func audioSpectrumBins(bins uint32) uint32 {
 	return maxAudioSpectrumBins
 }
 
-// Subscribe implements Bulk: answers with the authoritative descriptor. v0
-// rules: GRPC only (SHM_RING downgraded), LIVE only, LATEST_WINS default.
+// Subscribe implements Bulk: answers with the authoritative descriptor. As in
+// the daemon: GRPC only (SHM_RING downgraded), LIVE only, LATEST_WINS default.
 func (b bulkSvc) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest) (*leylinev1.StreamDescriptor, error) {
 	d := b.d
 	d.touchUnary(clientFrom(ctx))
@@ -169,171 +169,205 @@ func (b bulkSvc) Subscribe(ctx context.Context, req *leylinev1.SubscribeRequest)
 			return nil, fail(ctx, errorf(leyline.CodeCaptureNotFound, ch.CaptureId, "channel has no capture"))
 		}
 		if req.GetKind() == leylinev1.StreamKind_AUDIO {
-			a := req.GetAudio()
-			rate := audioRate(c.GetSampleRate())
-			// No resampling in v0 (engine parity): only the channel's own rate is served.
-			if a.GetSampleRate() != 0 && a.GetSampleRate() != rate {
-				return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, ch.ChannelId,
-					fmt.Sprintf("audio sample_rate %d unavailable; channel produces %d Hz (request 0 to accept it)", a.GetSampleRate(), rate)))
+			if err := negotiateAudio(ctx, req, ch, c, desc); err != nil {
+				return nil, err
 			}
-			format := a.GetFormat()
-			if format == leylinev1.AudioSampleFormat_AUDIO_SAMPLE_FORMAT_UNSPECIFIED {
-				format = leylinev1.AudioSampleFormat_S16
-			}
-			tap := a.GetTap()
-			switch tap {
-			case leylinev1.AudioTap_TAP_AUDIO:
-			case leylinev1.AudioTap_TAP_DEMOD:
-				// A raw-IQ channel runs no detector, so there is no stage before the audio
-				// conditioning to tap; serving silence would look like a quiet band.
-				if ch.Mode == leylinev1.DemodMode_RAW_IQ {
-					return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, ch.ChannelId,
-						"the demod tap needs a demodulator; this channel is raw IQ"))
-				}
-			default:
-				return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, ch.ChannelId,
-					fmt.Sprintf("unknown AudioTap %d", tap)))
-			}
-			desc.Params = &leylinev1.StreamDescriptor_Audio{Audio: &leylinev1.AudioParams{
-				SampleRate: rate, Format: format, Tap: tap,
-				FullScaleDeviationHz: leyline.FullScaleDeviationHz(ch.Mode, ch.BandwidthHz),
-			}}
 		}
 	default:
 		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "", "source is required"))
 	}
 	s.captureID = c.CaptureId
 	desc.CenterHz, desc.SpanHz = c.CenterHz, c.SampleRate
+	var err error
 	switch req.GetKind() {
 	case leylinev1.StreamKind_FFT:
-		f := req.GetFft()
-		rows := defaultFFTRows
-		if f.GetRowsPerSecond() > 0 {
-			rows = roundRate(f.GetRowsPerSecond())
-		}
-		format := f.GetBinFormat()
-		if format == leylinev1.FftBinFormat_FFT_BIN_FORMAT_UNSPECIFIED {
-			format = leylinev1.FftBinFormat_DB_F32
-		}
-		// looks_per_row is an answer, never a request: a client asking for a look count would be
-		// asking the daemon to spend CPU it does not own.
-		if f.GetLooksPerRow() != 0 {
-			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "", "looks_per_row is answered by the daemon; leave it 0"))
-		}
-		// A channel source asks for the spectrum of that channel's audio rather than the radio's:
-		// one transform per row over 0 Hz to half the audio rate, which is where the descriptor's
-		// centre and span put the bins.
-		if s.channelID != "" {
-			ch := d.channels[s.channelID]
-			if ch.Mode == leylinev1.DemodMode_RAW_IQ {
-				return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, s.channelID,
-					"an audio spectrum needs a demodulator; this channel is raw IQ"))
-			}
-			tap := f.GetTap()
-			if tap != leylinev1.AudioTap_TAP_AUDIO && tap != leylinev1.AudioTap_TAP_DEMOD {
-				return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, s.channelID,
-					fmt.Sprintf("unknown AudioTap %d", tap)))
-			}
-			// A row is one transform of one window, so there is nothing to accumulate over -- but
-			// an enum value the daemon does not know is still a request it cannot answer.
-			switch a := f.GetAccumulation(); a {
-			case leylinev1.FftAccumulation_FFT_ACCUMULATION_UNSPECIFIED, leylinev1.FftAccumulation_ROW_SNAPSHOT,
-				leylinev1.FftAccumulation_ROW_MEAN, leylinev1.FftAccumulation_ROW_MAX:
-			default:
-				return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, s.channelID,
-					fmt.Sprintf("unknown FftAccumulation %d", a)))
-			}
-			rate := audioRate(c.GetSampleRate())
-			desc.CenterHz, desc.SpanHz = uint64(rate/4), uint64(rate/2)
-			desc.Params = &leylinev1.StreamDescriptor_Fft{Fft: &leylinev1.FftParams{
-				Bins: audioSpectrumBins(f.GetBins()), BinFormat: format,
-				RowsPerSecond: math.Min(rows, maxAudioSpectrumRows),
-				Accumulation:  leylinev1.FftAccumulation_ROW_SNAPSHOT,
-				LooksPerRow:   snapshotLooksPerRow, Tap: tap,
-			}}
-			break
-		}
-		acc := f.GetAccumulation()
-		switch acc {
-		case leylinev1.FftAccumulation_FFT_ACCUMULATION_UNSPECIFIED, leylinev1.FftAccumulation_ROW_SNAPSHOT:
-			acc = leylinev1.FftAccumulation_ROW_SNAPSHOT
-		case leylinev1.FftAccumulation_ROW_MEAN, leylinev1.FftAccumulation_ROW_MAX:
-		default:
-			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "", fmt.Sprintf("unknown FftAccumulation %d", acc)))
-		}
-		// A snapshot row is one periodogram; an accumulated row is however many the ladder can
-		// take across the interval, up to its cap, which is the number the descriptor states.
-		looks := uint32(snapshotLooksPerRow)
-		if acc != leylinev1.FftAccumulation_ROW_SNAPSHOT {
-			looks = accumulatedLooksPerRow
-		}
-		desc.Params = &leylinev1.StreamDescriptor_Fft{Fft: &leylinev1.FftParams{
-			Bins: nearestLadder(f.GetBins()), BinFormat: format, RowsPerSecond: rows,
-			Accumulation: acc, LooksPerRow: looks,
-		}}
+		err = d.negotiateFFT(ctx, req, s, c, desc)
 	case leylinev1.StreamKind_PERSISTENCE:
-		if s.channelID != "" {
-			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, s.channelID, "persistence streams are capture-scoped"))
-		}
-		pp := req.GetPersistence()
-		// The scale is the client's to state. A daemon-chosen one would have to appear in the
-		// descriptor before any row had arrived, and a histogram on the wrong scale is not
-		// obviously wrong to look at, so this is refused rather than defaulted.
-		if !(pp.GetRangeDb() > 0) {
-			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "",
-				"persistence needs range_db > 0 and a floor_db; take an FFT row first to find the floor"))
-		}
-		levels := int(pp.GetLevels())
-		if levels == 0 {
-			levels = defaultPersistLevels
-		}
-		if levels < 2 || levels > maxPersistLevels {
-			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "",
-				fmt.Sprintf("persistence levels must be 2...%d, got %d", maxPersistLevels, levels)))
-		}
-		wantBins := pp.GetBins()
-		if wantBins == 0 {
-			wantBins = defaultPersistBins
-		}
-		bins := nearestLadder(wantBins)
-		emitRows := defaultPersistRows
-		if pp.GetRowsPerSecond() > 0 {
-			emitRows = roundRate(pp.GetRowsPerSecond())
-		}
-		halfLife := defaultHalfLifeSecs
-		if pp.GetHalfLifeSeconds() > 0 {
-			halfLife = math.Min(math.Max(pp.GetHalfLifeSeconds(), minHalfLifeSeconds), maxHalfLifeSeconds)
-		}
-		desc.Params = &leylinev1.StreamDescriptor_Persistence{Persistence: &leylinev1.PersistenceParams{
-			Bins: bins, Levels: uint32(levels), FloorDb: pp.GetFloorDb(), RangeDb: pp.GetRangeDb(),
-			HalfLifeSeconds: halfLife, RowsPerSecond: emitRows,
-		}}
+		err = negotiatePersistence(ctx, req, s, desc)
 	case leylinev1.StreamKind_IQ:
-		// v0 IQ contract (engine parity with StreamRegistry.subscribe): raw CF32 at the capture's
-		// native rate only. Anything else is refused rather than silently overridden.
-		iq := req.GetIq()
-		if format := iq.GetFormat(); format != leylinev1.SampleFormat_SAMPLE_FORMAT_UNSPECIFIED && format != leylinev1.SampleFormat_CF32 {
-			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, c.CaptureId,
-				fmt.Sprintf("iq format %v unavailable; v0 serves CF32 only (request UNSPECIFIED or CF32)", format)))
-		}
-		if rate := iq.GetSampleRate(); rate != 0 && rate != c.SampleRate {
-			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, c.CaptureId,
-				fmt.Sprintf("iq sample_rate %d unavailable; capture runs at %d Hz (request 0 to accept it)", rate, c.SampleRate)))
-		}
-		desc.Params = &leylinev1.StreamDescriptor_Iq{Iq: &leylinev1.IqParams{SampleRate: c.SampleRate, Format: leylinev1.SampleFormat_CF32}}
+		err = negotiateIQ(ctx, req, c, desc)
 	case leylinev1.StreamKind_AUDIO:
 		if s.channelID == "" {
-			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, c.CaptureId, "audio streams are channel-scoped"))
+			err = fail(ctx, errorf(leyline.CodeInvalidArgument, c.CaptureId, "audio streams are channel-scoped"))
 		}
 	case leylinev1.StreamKind_DECODED:
-		return nil, fail(ctx, errorf(leyline.CodeUnimplemented, "", "decoded streams are not implemented in v0"))
+		err = fail(ctx, errorf(leyline.CodeUnimplemented, "", "decoded streams are not implemented in v0"))
 	default:
-		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "", "stream kind is required"))
+		err = fail(ctx, errorf(leyline.CodeInvalidArgument, "", "stream kind is required"))
+	}
+	if err != nil {
+		return nil, err
 	}
 	s.desc = desc
 	d.streams[s.id] = s
 	time.AfterFunc(readerReapWait, func() { d.reapStream(s.id) })
 	return proto.Clone(desc).(*leylinev1.StreamDescriptor), nil
+}
+
+// negotiateAudio answers an audio subscription on channel ch of capture c: the channel's own
+// rate, the requested format and tap. d.mu is held.
+func negotiateAudio(ctx context.Context, req *leylinev1.SubscribeRequest, ch *leylinev1.Channel, c *capture, desc *leylinev1.StreamDescriptor) error {
+	a := req.GetAudio()
+	rate := audioRate(c.GetSampleRate())
+	// No resampling, as in the engine: only the channel's own rate is served.
+	if a.GetSampleRate() != 0 && a.GetSampleRate() != rate {
+		return fail(ctx, errorf(leyline.CodeInvalidArgument, ch.ChannelId,
+			fmt.Sprintf("audio sample_rate %d unavailable; channel produces %d Hz (request 0 to accept it)", a.GetSampleRate(), rate)))
+	}
+	format := a.GetFormat()
+	if format == leylinev1.AudioSampleFormat_AUDIO_SAMPLE_FORMAT_UNSPECIFIED {
+		format = leylinev1.AudioSampleFormat_S16
+	}
+	tap := a.GetTap()
+	switch tap {
+	case leylinev1.AudioTap_TAP_AUDIO:
+	case leylinev1.AudioTap_TAP_DEMOD:
+		// A raw-IQ channel runs no detector, so there is no stage before the audio
+		// conditioning to tap; serving silence would look like a quiet band.
+		if ch.Mode == leylinev1.DemodMode_RAW_IQ {
+			return fail(ctx, errorf(leyline.CodeInvalidArgument, ch.ChannelId,
+				"the demod tap needs a demodulator; this channel is raw IQ"))
+		}
+	default:
+		return fail(ctx, errorf(leyline.CodeInvalidArgument, ch.ChannelId,
+			fmt.Sprintf("unknown AudioTap %d", tap)))
+	}
+	desc.Params = &leylinev1.StreamDescriptor_Audio{Audio: &leylinev1.AudioParams{
+		SampleRate: rate, Format: format, Tap: tap,
+		FullScaleDeviationHz: leyline.FullScaleDeviationHz(ch.Mode, ch.BandwidthHz),
+	}}
+	return nil
+}
+
+// negotiateFFT answers an FFT subscription: the capture's ladder, or the spectrum of a channel's
+// audio when the source is a channel. d.mu is held.
+func (d *Daemon) negotiateFFT(ctx context.Context, req *leylinev1.SubscribeRequest, s *stream, c *capture, desc *leylinev1.StreamDescriptor) error {
+	f := req.GetFft()
+	rows := defaultFFTRows
+	if f.GetRowsPerSecond() > 0 {
+		rows = roundRate(f.GetRowsPerSecond())
+	}
+	format := f.GetBinFormat()
+	if format == leylinev1.FftBinFormat_FFT_BIN_FORMAT_UNSPECIFIED {
+		format = leylinev1.FftBinFormat_DB_F32
+	}
+	// looks_per_row is an answer, never a request: a client asking for a look count would be
+	// asking the daemon to spend CPU it does not own.
+	if f.GetLooksPerRow() != 0 {
+		return fail(ctx, errorf(leyline.CodeInvalidArgument, "", "looks_per_row is answered by the daemon; leave it 0"))
+	}
+	// A channel source asks for the spectrum of that channel's audio rather than the radio's:
+	// one transform per row over 0 Hz to half the audio rate, which is where the descriptor's
+	// centre and span put the bins.
+	if s.channelID != "" {
+		ch := d.channels[s.channelID]
+		if ch.Mode == leylinev1.DemodMode_RAW_IQ {
+			return fail(ctx, errorf(leyline.CodeInvalidArgument, s.channelID,
+				"an audio spectrum needs a demodulator; this channel is raw IQ"))
+		}
+		tap := f.GetTap()
+		if tap != leylinev1.AudioTap_TAP_AUDIO && tap != leylinev1.AudioTap_TAP_DEMOD {
+			return fail(ctx, errorf(leyline.CodeInvalidArgument, s.channelID,
+				fmt.Sprintf("unknown AudioTap %d", tap)))
+		}
+		// A row is one transform of one window, so there is nothing to accumulate over -- but
+		// an enum value the daemon does not know is still a request it cannot answer.
+		switch a := f.GetAccumulation(); a {
+		case leylinev1.FftAccumulation_FFT_ACCUMULATION_UNSPECIFIED, leylinev1.FftAccumulation_ROW_SNAPSHOT,
+			leylinev1.FftAccumulation_ROW_MEAN, leylinev1.FftAccumulation_ROW_MAX:
+		default:
+			return fail(ctx, errorf(leyline.CodeInvalidArgument, s.channelID,
+				fmt.Sprintf("unknown FftAccumulation %d", a)))
+		}
+		rate := audioRate(c.GetSampleRate())
+		desc.CenterHz, desc.SpanHz = uint64(rate/4), uint64(rate/2)
+		desc.Params = &leylinev1.StreamDescriptor_Fft{Fft: &leylinev1.FftParams{
+			Bins: audioSpectrumBins(f.GetBins()), BinFormat: format,
+			RowsPerSecond: math.Min(rows, maxAudioSpectrumRows),
+			Accumulation:  leylinev1.FftAccumulation_ROW_SNAPSHOT,
+			LooksPerRow:   snapshotLooksPerRow, Tap: tap,
+		}}
+		return nil
+	}
+	acc := f.GetAccumulation()
+	switch acc {
+	case leylinev1.FftAccumulation_FFT_ACCUMULATION_UNSPECIFIED, leylinev1.FftAccumulation_ROW_SNAPSHOT:
+		acc = leylinev1.FftAccumulation_ROW_SNAPSHOT
+	case leylinev1.FftAccumulation_ROW_MEAN, leylinev1.FftAccumulation_ROW_MAX:
+	default:
+		return fail(ctx, errorf(leyline.CodeInvalidArgument, "", fmt.Sprintf("unknown FftAccumulation %d", acc)))
+	}
+	// A snapshot row is one periodogram; an accumulated row is however many the ladder can
+	// take across the interval, up to its cap, which is the number the descriptor states.
+	looks := uint32(snapshotLooksPerRow)
+	if acc != leylinev1.FftAccumulation_ROW_SNAPSHOT {
+		looks = accumulatedLooksPerRow
+	}
+	desc.Params = &leylinev1.StreamDescriptor_Fft{Fft: &leylinev1.FftParams{
+		Bins: nearestLadder(f.GetBins()), BinFormat: format, RowsPerSecond: rows,
+		Accumulation: acc, LooksPerRow: looks,
+	}}
+	return nil
+}
+
+// negotiatePersistence answers a persistence subscription, which is capture-scoped and needs
+// the client's scale. d.mu is held.
+func negotiatePersistence(ctx context.Context, req *leylinev1.SubscribeRequest, s *stream, desc *leylinev1.StreamDescriptor) error {
+	if s.channelID != "" {
+		return fail(ctx, errorf(leyline.CodeInvalidArgument, s.channelID, "persistence streams are capture-scoped"))
+	}
+	pp := req.GetPersistence()
+	// The scale is the client's to state. A daemon-chosen one would have to appear in the
+	// descriptor before any row had arrived, and a histogram on the wrong scale is not
+	// obviously wrong to look at, so this is refused rather than defaulted.
+	if !(pp.GetRangeDb() > 0) {
+		return fail(ctx, errorf(leyline.CodeInvalidArgument, "",
+			"persistence needs range_db > 0 and a floor_db; take an FFT row first to find the floor"))
+	}
+	levels := int(pp.GetLevels())
+	if levels == 0 {
+		levels = defaultPersistLevels
+	}
+	if levels < 2 || levels > maxPersistLevels {
+		return fail(ctx, errorf(leyline.CodeInvalidArgument, "",
+			fmt.Sprintf("persistence levels must be 2...%d, got %d", maxPersistLevels, levels)))
+	}
+	wantBins := pp.GetBins()
+	if wantBins == 0 {
+		wantBins = defaultPersistBins
+	}
+	bins := nearestLadder(wantBins)
+	emitRows := defaultPersistRows
+	if pp.GetRowsPerSecond() > 0 {
+		emitRows = roundRate(pp.GetRowsPerSecond())
+	}
+	halfLife := defaultHalfLifeSecs
+	if pp.GetHalfLifeSeconds() > 0 {
+		halfLife = math.Min(math.Max(pp.GetHalfLifeSeconds(), minHalfLifeSeconds), maxHalfLifeSeconds)
+	}
+	desc.Params = &leylinev1.StreamDescriptor_Persistence{Persistence: &leylinev1.PersistenceParams{
+		Bins: bins, Levels: uint32(levels), FloorDb: pp.GetFloorDb(), RangeDb: pp.GetRangeDb(),
+		HalfLifeSeconds: halfLife, RowsPerSecond: emitRows,
+	}}
+	return nil
+}
+
+// negotiateIQ answers an IQ subscription: raw CF32 at the capture's native rate only. d.mu is
+// held.
+func negotiateIQ(ctx context.Context, req *leylinev1.SubscribeRequest, c *capture, desc *leylinev1.StreamDescriptor) error {
+	// The engine's IQ contract (StreamRegistry.subscribe): anything else is refused rather than
+	// silently overridden.
+	iq := req.GetIq()
+	if format := iq.GetFormat(); format != leylinev1.SampleFormat_SAMPLE_FORMAT_UNSPECIFIED && format != leylinev1.SampleFormat_CF32 {
+		return fail(ctx, errorf(leyline.CodeInvalidArgument, c.CaptureId,
+			fmt.Sprintf("iq format %v unavailable; v0 serves CF32 only (request UNSPECIFIED or CF32)", format)))
+	}
+	if rate := iq.GetSampleRate(); rate != 0 && rate != c.SampleRate {
+		return fail(ctx, errorf(leyline.CodeInvalidArgument, c.CaptureId,
+			fmt.Sprintf("iq sample_rate %d unavailable; capture runs at %d Hz (request 0 to accept it)", rate, c.SampleRate)))
+	}
+	desc.Params = &leylinev1.StreamDescriptor_Iq{Iq: &leylinev1.IqParams{SampleRate: c.SampleRate, Format: leylinev1.SampleFormat_CF32}}
+	return nil
 }
 
 // reapStream drops a subscription nobody has started reading.

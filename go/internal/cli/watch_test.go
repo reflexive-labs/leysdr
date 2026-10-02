@@ -20,7 +20,7 @@ import (
 // streams only the matching records and its banner says what the filter is.
 func TestWatchFiltersByWhere(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	out, errOut, err := run(t, ctx, sock, "watch", "aprs", "--where", "device_id=LEYTST-1", "--count", "3")
 	if err != nil {
@@ -44,7 +44,7 @@ func TestWatchFiltersByWhere(t *testing.T) {
 // station whose FIPS list names the code and no other.
 func TestWatchCountyMatchesFips(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	out, errOut, err := run(t, ctx, sock, "watch", "aprs", "--county", "006001", "--count", "2")
 	if err != nil {
@@ -65,7 +65,7 @@ func TestWatchCountyMatchesFips(t *testing.T) {
 // the device ids to a file the test reads back.
 func TestWatchNotifyShellFires(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{PresenceGrace: 100 * time.Millisecond})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	hits := filepath.Join(t.TempDir(), "hits.txt")
 	cmd := fmt.Sprintf("printf '%%s\\n' \"$LEYLINE_DEVICE_ID\" >> %s", hits)
@@ -105,7 +105,7 @@ func TestWatchNotifyShellFires(t *testing.T) {
 // banner stays on stderr.
 func TestWatchJSON(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	out, errOut, err := run(t, ctx, sock, "--json", "watch", "aprs", "--where", "device_id=LEYTST-1", "--count", "2")
 	if err != nil {
@@ -129,7 +129,7 @@ func TestWatchJSON(t *testing.T) {
 // the presence grace, and prints how to stop it.
 func TestWatchDetachedLeavesJobRunning(t *testing.T) {
 	sock, c := harness(t, fakedaemon.Options{PresenceGrace: 100 * time.Millisecond})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	out, errOut, err := run(t, ctx, sock, "watch", "aprs", "--where", "device_id=LEYTST-1", "--detach")
 	if err != nil {
@@ -158,7 +158,7 @@ func TestWatchDetachedLeavesJobRunning(t *testing.T) {
 // everything) and the banner says so.
 func TestWatchNoFilterMatchesEverything(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	out, errOut, err := run(t, ctx, sock, "watch", "aprs", "--count", "3")
 	if err != nil {
@@ -174,8 +174,9 @@ func TestWatchNoFilterMatchesEverything(t *testing.T) {
 
 // A --where token with no operator is a usage error before the daemon is touched.
 func TestWatchBadWhere(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
-	_, _, err := run(t, context.Background(), sock, "watch", "aprs", "--where", "device_id")
+	_, _, err := run(t, t.Context(), sock, "watch", "aprs", "--where", "device_id")
 	if exitCode(err) != 2 {
 		t.Fatalf("exit %d (%v), want 2", exitCode(err), err)
 	}

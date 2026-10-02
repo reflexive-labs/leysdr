@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package aprs turns an AX.25 UI frame's information field into a
-// DecodeRecord. It covers the forms docs/plans/decoders.md (DEC-2) names:
+// DecodeRecord. It covers these forms:
 // uncompressed and compressed positions with and without a timestamp, Mic-E,
 // objects, items, weather in both its forms, telemetry, messages with their
 // acks and rejects, status, and a catch-all that keeps the text.

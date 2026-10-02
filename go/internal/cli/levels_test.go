@@ -3,7 +3,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"math"
 	"strconv"
@@ -284,6 +283,7 @@ func TestLevelsOverReadsTheCapture(t *testing.T) {
 // Against the daemon: the fake reports a clean radio unless told otherwise,
 // and a clipping one lights OVER on the still with the peak in the header.
 func TestLevelsOverAgainstTheDaemon(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "levels", "145.23", "--tap", "demod")
 	if strings.Contains(out, levelsOverWord) {
@@ -526,8 +526,9 @@ func TestLevelsWidthRules(t *testing.T) {
 // channel carries, and the header says what is being measured. The demod tap
 // has the sub-audible tone in the 125 Hz band, where a 100 Hz PL falls.
 func TestLevelsMetersTheDaemonsBands(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
-	out, errOut, err := run(t, context.Background(), sock, "levels", "145.23", "--tap", "demod")
+	out, errOut, err := run(t, t.Context(), sock, "levels", "145.23", "--tap", "demod")
 	if err != nil {
 		t.Fatalf("ley levels: %v\nstdout: %s\nstderr: %s", err, out, errOut)
 	}
@@ -554,8 +555,9 @@ func TestLevelsMetersTheDaemonsBands(t *testing.T) {
 // A carrier sending DCS puts the code in the header where a PL tone would go,
 // and no PL, because a DCS lock suppresses the CTCSS claim.
 func TestLevelsHeaderCarriesADCSCode(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{DCS: map[uint64]fakedaemon.DCSCode{145_230_000: {Code: 23, Inverted: true}}})
-	out, errOut, err := run(t, context.Background(), sock, "levels", "145.23", "--tap", "demod")
+	out, errOut, err := run(t, t.Context(), sock, "levels", "145.23", "--tap", "demod")
 	if err != nil {
 		t.Fatalf("ley levels: %v\nstdout: %s\nstderr: %s", err, out, errOut)
 	}
@@ -570,8 +572,9 @@ func TestLevelsHeaderCarriesADCSCode(t *testing.T) {
 // --watch is the meter itself: it keeps drawing until --count says stop, and
 // the prose says what is happening and how to end it.
 func TestLevelsWatchKeepsDrawing(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
-	out, errOut, err := run(t, context.Background(), sock, "levels", "145.23", "--watch", "--count", "3")
+	out, errOut, err := run(t, t.Context(), sock, "levels", "145.23", "--watch", "--count", "3")
 	if err != nil {
 		t.Fatalf("ley levels --watch: %v\nstdout: %s\nstderr: %s", err, out, errOut)
 	}
@@ -587,9 +590,10 @@ func TestLevelsWatchKeepsDrawing(t *testing.T) {
 // telemetry is minutes apart still draws bands at the row rate, with the
 // squelch line blank until the first meter says what it is doing.
 func TestLevelsWatchDrawsBeforeTheFirstMeter(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{MeterInterval: time.Minute})
 	start := time.Now()
-	out, _, err := run(t, context.Background(), sock, "levels", "145.23", "--watch", "--count", "3")
+	out, _, err := run(t, t.Context(), sock, "levels", "145.23", "--watch", "--count", "3")
 	if err != nil {
 		t.Fatalf("ley levels --watch: %v\nstdout: %s", err, out)
 	}
@@ -608,8 +612,9 @@ func TestLevelsWatchDrawsBeforeTheFirstMeter(t *testing.T) {
 // is unlit, because the spectrum still arriving behind a shut squelch never
 // reaches the audio output.
 func TestLevelsSquelchClosedAgainstTheDaemon(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
-	out, errOut, err := run(t, context.Background(), sock, "levels", "145.23", "--tap", "demod", "--squelch", "-10")
+	out, errOut, err := run(t, t.Context(), sock, "levels", "145.23", "--tap", "demod", "--squelch", "-10")
 	if err != nil {
 		t.Fatalf("ley levels --squelch -10: %v\nstdout: %s\nstderr: %s", err, out, errOut)
 	}
@@ -625,6 +630,7 @@ func TestLevelsSquelchClosedAgainstTheDaemon(t *testing.T) {
 // --json is the daemon's own numbers, one object per row, before any of the
 // ballistics that shape the bars.
 func TestLevelsJSONRows(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "--json", "levels", "145.23", "--tap", "demod", "--watch", "--count", "8")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
@@ -693,6 +699,7 @@ func TestLevelsJSONRows(t *testing.T) {
 // Every flag that takes a word or a range says what it accepts, and says it
 // before anything reaches the daemon.
 func TestLevelsUsageErrors(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	for _, tc := range []struct {
 		args []string
@@ -706,7 +713,7 @@ func TestLevelsUsageErrors(t *testing.T) {
 		{[]string{"levels", "chan_01J", "--mode", "am"}, "--mode cannot be used with a channel id"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
-			out, _, err := run(t, context.Background(), sock, tc.args...)
+			out, _, err := run(t, t.Context(), sock, tc.args...)
 			if exitCode(err) != ExitUsage || err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("ley %v: exit %d (%v), want exit %d saying %q", tc.args, exitCode(err), err, ExitUsage, tc.want)
 			}
@@ -720,8 +727,9 @@ func TestLevelsUsageErrors(t *testing.T) {
 // A raw-IQ channel has no audio at all, and the sentence a person reads is the
 // daemon's own.
 func TestLevelsRefusedOnRawIQ(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
-	out, _, err := run(t, context.Background(), sock, "levels", "146.52", "--mode", "raw", "--count", "1")
+	out, _, err := run(t, t.Context(), sock, "levels", "146.52", "--mode", "raw", "--count", "1")
 	if exitCode(err) != 1 {
 		t.Fatalf("ley levels --mode raw: exit %d (%v), want 1", exitCode(err), err)
 	}

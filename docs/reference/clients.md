@@ -48,10 +48,13 @@ capture's anchor, never carried per frame ([data planes](../design/data-planes.m
 
 ## The Go client library
 
-`go/pkg/leyline` (Apache-2.0) is what `ley` is built on and what the MCP adapter (`ley mcp`) shares: the
-dial with the right windows, the error-code registry, and the input tables the CLI uses (frequency
-and level parsing, presets, bands, selectors). A Go client should start there rather than at the
-generated stubs in `go/gen`.
+`go/pkg/leyline` (Apache-2.0) is what `ley` is built on and what the MCP adapter (`ley mcp`) shares:
+the dial with the right windows, the error-code registry, subscriptions, selectors (a device,
+capture or channel by id, id prefix, row number or frequency) and the recording and decoder
+helpers. A Go client should start there rather than at the generated stubs in `go/gen`. Two
+smaller packages beside it hold the tables `ley` reads its input with: `go/pkg/units` parses
+frequencies, squelch and gain levels, bandwidths and volumes the way a person types them, and
+`go/pkg/bandplan` is the band table, its channel plans and the presets drawn from them.
 
 ## Testing a client
 

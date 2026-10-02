@@ -321,7 +321,7 @@ scale, tone_hz}. The samples themselves are 'ley listen --format json'.`,
 			if err != nil {
 				return err
 			}
-			defer s.close()
+			defer s.Close()
 			s.proseToStderr = true
 			// Width comes from the resolved style, which has already applied
 			// --width, COLUMNS, the terminal's own size and the [40, 160]
@@ -330,7 +330,7 @@ scale, tone_hz}. The samples themselves are 'ley listen --format json'.`,
 				o.width = ui.DefaultWidth
 			}
 			if o.tune != nil {
-				if s.device, err = pickDevice(s.state, o.tune.device); err != nil {
+				if s.device, err = pickDevice(s.State, o.tune.device); err != nil {
 					return err
 				}
 			}
@@ -352,7 +352,7 @@ scale, tone_hz}. The samples themselves are 'ley listen --format json'.`,
 
 // runScope taps the channel, collects the stream into windows and draws one
 // every frame: the picture, the frame's statistics, and the daemon's tone.
-func runScope(ctx context.Context, s *session, o scopeOptions) error {
+func runScope(ctx context.Context, s *verbSession, o scopeOptions) error {
 	stop, err := s.openChannel(ctx, o.tune, o.channel)
 	if err != nil {
 		return err
@@ -363,7 +363,7 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 	// F32 because the trace is drawn in the units the tap is defined in: full
 	// scale is 1.0, and on the demod tap the DC offset is a small fraction of
 	// it that a 16-bit round trip would coarsen.
-	sub, err := s.client.SubscribeAudioTap(sctx, s.channel.ChannelId, 0,
+	sub, err := s.Client.SubscribeAudioTap(sctx, s.Channel.ChannelId, 0,
 		leylinev1.AudioSampleFormat_F32, o.tap)
 	if err != nil {
 		return err
@@ -371,13 +371,13 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 	defer sub.Close()
 	ap := sub.Descriptor.GetAudio()
 	rate, format, tap := ap.GetSampleRate(), ap.GetFormat(), ap.GetTap()
-	fullScaleHz := scopeFullScaleHz(ap, s.channel)
+	fullScaleHz := scopeFullScaleHz(ap, s.Channel)
 	// The tone and the squelch come from the daemon; the view only displays
 	// them. The stream's error is not read: both are optional extras, so a
 	// telemetry stream that ends removes the header's PL and its squelch line
 	// and leaves the trace running.
-	msgs, _, err := s.client.WatchTelemetry(sctx, &leylinev1.TelemetrySubscription{
-		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: s.channel.ChannelId},
+	msgs, _, err := s.Client.WatchTelemetry(sctx, &leylinev1.TelemetrySubscription{
+		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: s.Channel.ChannelId},
 		Types: []leylinev1.TelemetryType{
 			leylinev1.TelemetryType_SUB_AUDIBLE,
 			leylinev1.TelemetryType_METER,
@@ -388,11 +388,11 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 	}
 	what := audioWhat(s)
 	s.say("drawing %s: the %s tap at %d Hz, %d ms a frame. Ctrl-C stops. %s\n",
-		what, scopeTapName(tap), rate, o.windowMs, s.app.ErrStyle.Muted("from "+s.channel.ChannelId))
+		what, scopeTapName(tap), rate, o.windowMs, s.app.ErrStyle.Muted("from "+s.Channel.ChannelId))
 	// Keep the event stream flowing (and the mirror current) while frames are
 	// drawn; the drain owns the mirror, so it starts after the last read of it
 	// and stops before teardown.
-	stopDrain := s.drainEvents()
+	stopDrain := s.DrainEvents()
 	defer stopDrain()
 
 	view := newScopeView(s.app.Style, o.width, o.scale, s.app.IsTTY())
@@ -403,8 +403,6 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 		w = newChartWriter(s.app, out, true, o.rate)
 		defer w.finish()
 	}
-	tick := time.NewTicker(chartTickInterval)
-	defer tick.Stop()
 	window := o.windowMs * int(rate) / 1000
 	if window < 1 {
 		window = 1
@@ -422,18 +420,13 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 	meterHz := math.NaN()
 	scaler := newScopeScaler(o.scale, interval)
 	frames := 0
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-tick.C:
-			if w != nil {
-				w.idle()
-			}
-		case m, ok := <-msgs:
-			if !ok {
-				msgs, tone, muted, meterHz = nil, nil, false, math.NaN()
-				continue
+	return liveLoop{
+		w:         w,
+		telemetry: msgs,
+		onTelemetry: func(m *leylinev1.TelemetryMsg) (bool, error) {
+			if m == nil {
+				tone, muted, meterHz = nil, false, math.NaN()
+				return false, nil
 			}
 			switch b := m.Body.(type) {
 			case *leylinev1.TelemetryMsg_SubAudible:
@@ -442,16 +435,17 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 				muted = !b.Meter.GetSquelchOpen()
 				meterHz = b.Meter.GetFreqErrorHz()
 			}
-		case fr, ok := <-sub.Frames:
-			if !ok {
-				return scopeEnd(ctx, sub.Err(), frames)
-			}
+			return false, nil
+		},
+		frames: sub.Frames,
+		end:    func() error { return scopeEnd(ctx, sub.Err(), frames) },
+		onFrame: func(fr *leylinev1.Frame) (bool, error) {
 			buf = append(buf, leyline.DecodeAudio(fr.Payload, format)...)
 			if keep := 2 * window; len(buf) > keep {
 				buf = append(buf[:0], buf[len(buf)-keep:]...)
 			}
 			if len(buf) < window || time.Since(last) < interval {
-				continue
+				return false, nil
 			}
 			last = time.Now()
 			start := len(buf) - window
@@ -472,7 +466,7 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 				}
 				b, err := json.Marshal(row)
 				if err != nil {
-					return err
+					return true, err
 				}
 				out.Write(b)
 				out.WriteByte('\n')
@@ -487,14 +481,12 @@ func runScope(ctx context.Context, s *session, o scopeOptions) error {
 				}), "")
 			}
 			if err := out.Flush(); err != nil {
-				return err
+				return true, err
 			}
 			frames++
-			if o.count > 0 && frames >= o.count {
-				return nil
-			}
-		}
-	}
+			return o.count > 0 && frames >= o.count, nil
+		},
+	}.run(ctx)
 }
 
 // scopeEnd turns the end of the audio stream into what to do next, by the one

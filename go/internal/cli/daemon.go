@@ -134,12 +134,12 @@ func launchAgentInstalled() bool {
 	if runtime.GOOS != "darwin" {
 		return false
 	}
-	_, err := os.Stat(leyline.DefaultLaunchAgentPath())
+	_, err := os.Stat(defaultLaunchAgentPath())
 	return err == nil
 }
 
 func launchTarget() string {
-	return fmt.Sprintf("gui/%d/%s", os.Getuid(), leyline.LaunchAgentLabel)
+	return fmt.Sprintf("gui/%d/%s", os.Getuid(), launchAgentLabel)
 }
 
 // launchctl runs launchctl with args, surfacing its combined output on error.
@@ -175,7 +175,7 @@ func plist(bin, socket, logPath string) string {
 	<key>StandardErrorPath</key><string>%s</string>
 </dict>
 </plist>
-`, leyline.LaunchAgentLabel, bin, socket, logPath, logPath)
+`, launchAgentLabel, bin, socket, logPath, logPath)
 }
 
 // xmlEscape escapes s for use as XML character data.
@@ -205,7 +205,7 @@ func (a *App) daemonInstall(ctx context.Context, f *daemonFlags) error {
 	if err != nil {
 		return err
 	}
-	for _, p := range []string{leyline.DefaultLaunchAgentPath(), logPath, socket} {
+	for _, p := range []string{defaultLaunchAgentPath(), logPath, socket} {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			return err
 		}
@@ -220,7 +220,7 @@ func (a *App) daemonInstall(ctx context.Context, f *daemonFlags) error {
 	} else if info != nil {
 		return fmt.Errorf("another daemon is serving %s; stop it before installing", socket)
 	}
-	path := leyline.DefaultLaunchAgentPath()
+	path := defaultLaunchAgentPath()
 	if err := os.WriteFile(path, []byte(plist(bin, socket, logPath)), 0o644); err != nil {
 		return err
 	}
@@ -249,7 +249,7 @@ func (a *App) daemonUninstall(ctx context.Context, _ *daemonFlags) error {
 	if runtime.GOOS != "darwin" {
 		return errors.New("daemon uninstall needs launchd (macOS)")
 	}
-	path := leyline.DefaultLaunchAgentPath()
+	path := defaultLaunchAgentPath()
 	if _, err := os.Stat(path); err != nil {
 		return fmt.Errorf("not installed: %s", path)
 	}
@@ -541,7 +541,7 @@ const stopTimeout = 5 * time.Second
 // to exit, and removes the pidfile.
 func (a *App) stopPid(ctx context.Context, pid int) error {
 	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-		return fmt.Errorf("cannot signal the daemon (pid %d): %v. Check what that process is with: ps -p %d", pid, err, pid)
+		return fmt.Errorf("cannot signal the daemon (pid %d): %w. Check what that process is with: ps -p %d", pid, err, pid)
 	}
 	deadline := time.Now().Add(stopTimeout)
 	for i := 0; !processGone(ctx, pid, i%10 == 0); i++ {
@@ -641,7 +641,7 @@ func (a *App) daemonLogs(ctx context.Context, f *daemonFlags) error {
 		return fileMissing(path, "the daemon writes it once started with: ley daemon start (or pass the file it logs to with --log)")
 	}
 	if err != nil {
-		return fmt.Errorf("cannot read the log %s: %v", path, err)
+		return fmt.Errorf("cannot read the log %s: %w", path, err)
 	}
 	defer file.Close()
 	// Piped, the log is this daemon's own format passed through byte-for-byte
@@ -710,4 +710,18 @@ func (a *App) reportNotRunningForStop() {
 		}
 	}
 	fmt.Fprintln(out, "not running. Start it with: ley daemon start")
+}
+
+// launchAgentLabel is the launchd label of the daemon's LaunchAgent.
+const launchAgentLabel = "com.leysdr.daemon"
+
+// defaultLaunchAgentPath returns the path of the daemon's launchd plist
+// (~/Library/LaunchAgents/com.leysdr.daemon.plist). It is a macOS concept but
+// the path is computed on every platform so tooling can print it.
+func defaultLaunchAgentPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		home = os.TempDir()
+	}
+	return filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
 }

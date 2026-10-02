@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package leyline
+package units
 
 import (
 	"math"
@@ -11,7 +11,7 @@ import (
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
-func TestParseUserFrequency(t *testing.T) {
+func TestParseFrequency(t *testing.T) {
 	cases := []struct {
 		in   string
 		want uint64
@@ -37,15 +37,15 @@ func TestParseUserFrequency(t *testing.T) {
 		{"-5", 0, "cannot read"},
 	}
 	for _, c := range cases {
-		got, err := ParseUserFrequency(c.in)
+		got, err := ParseFrequency(c.in)
 		if c.err != "" {
 			if err == nil || !strings.Contains(err.Error(), c.err) {
-				t.Errorf("ParseUserFrequency(%q) err = %v, want containing %q", c.in, err, c.err)
+				t.Errorf("ParseFrequency(%q) err = %v, want containing %q", c.in, err, c.err)
 			}
 			continue
 		}
 		if err != nil || got != c.want {
-			t.Errorf("ParseUserFrequency(%q) = %d, %v; want %d", c.in, got, err, c.want)
+			t.Errorf("ParseFrequency(%q) = %d, %v; want %d", c.in, got, err, c.want)
 		}
 	}
 }
@@ -107,7 +107,7 @@ func TestParseGain(t *testing.T) {
 		{"", 0, false, "empty"},
 	}
 	for _, c := range cases {
-		db, auto, err := ParseGain(c.in)
+		db, auto, err := parseGain(c.in)
 		if c.err != "" {
 			if err == nil || !strings.Contains(err.Error(), c.err) {
 				t.Errorf("ParseGain(%q) err = %v, want containing %q", c.in, err, c.err)
@@ -199,39 +199,6 @@ func TestParseVolume(t *testing.T) {
 	}
 }
 
-func TestResolveMode(t *testing.T) {
-	cases := []struct {
-		name   string
-		hz     uint64
-		want   leylinev1.DemodMode
-		reason bool
-	}{
-		{"fm", 101_100_000, leylinev1.DemodMode_WFM, true},
-		{"fm", 146_520_000, leylinev1.DemodMode_NFM, true},
-		{"FM", 87_500_000, leylinev1.DemodMode_WFM, true},
-		{"fm", 108_000_001, leylinev1.DemodMode_NFM, true},
-		{"ssb", 7_100_000, leylinev1.DemodMode_LSB, true},
-		{"ssb", 14_200_000, leylinev1.DemodMode_USB, true},
-		{"ssb", 10_000_000, leylinev1.DemodMode_USB, true},
-		{"nbfm", 101_100_000, leylinev1.DemodMode_NFM, false},
-		{"wbfm", 146_520_000, leylinev1.DemodMode_WFM, false},
-		{"nfm", 101_100_000, leylinev1.DemodMode_NFM, false},
-		{"wfm", 146_520_000, leylinev1.DemodMode_WFM, false},
-		{"AM", 118_000_000, leylinev1.DemodMode_AM, false},
-		{"usb", 7_100_000, leylinev1.DemodMode_USB, false},
-		{"raw_iq", 1, leylinev1.DemodMode_RAW_IQ, false},
-	}
-	for _, c := range cases {
-		got, reason, err := ResolveMode(c.name, c.hz)
-		if err != nil || got != c.want || (reason != "") != c.reason {
-			t.Errorf("ResolveMode(%q, %d) = %v %q %v; want %v reason=%v", c.name, c.hz, got, reason, err, c.want, c.reason)
-		}
-	}
-	if _, _, err := ResolveMode("dsb", 1); err == nil || !strings.Contains(err.Error(), "ssb") {
-		t.Errorf("ResolveMode(dsb) = %v, want error mentioning aliases", err)
-	}
-}
-
 // The cases mirror EngineCore's GainElement.snapped: the R820T's discrete table,
 // a stepped element, and an element that quantises nowhere the client can see.
 func TestSnapGain(t *testing.T) {
@@ -275,7 +242,7 @@ func TestSnapGain(t *testing.T) {
 }
 
 // --gain takes a bare level for the first stage or stage=level pairs for several, and leaves the
-// names to the daemon (plans/app.md, M2-10).
+// names to the daemon.
 func TestParseGains(t *testing.T) {
 	cases := []struct {
 		in   string

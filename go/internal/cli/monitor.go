@@ -12,8 +12,12 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/words"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 type monitorOptions struct {
@@ -89,9 +93,9 @@ hid is tallied on stderr, because a hidden carrier is not a quiet band.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// A range (462.5M..462.75M) first; then a band name (gmrs, 2m), so
 			// `ley monitor gmrs` works, exactly as scan resolves its positional.
-			if lo, hi, rerr := leyline.ParseUserRange(args[0]); rerr == nil {
+			if lo, hi, rerr := parseRange(args[0]); rerr == nil {
 				o.minHz, o.maxHz, o.rangeInput = lo, hi, args[0]
-			} else if b, berr := leyline.ResolveBand(args[0]); berr == nil {
+			} else if b, berr := bandplan.ResolveBand(args[0]); berr == nil {
 				o.minHz, o.maxHz, o.rangeInput, o.parts = b.MinHz, b.MaxHz, b.Name, b.Parts
 			} else {
 				return usageErrorf("%v, and no band called %q; check with: ley bands", rerr, args[0])
@@ -105,9 +109,9 @@ hid is tallied on stderr, because a hidden carrier is not a quiet band.`,
 			if err != nil {
 				return err
 			}
-			defer s.close()
+			defer s.Close()
 			if o.device != "" {
-				dev, derr := pickDevice(s.state, o.device)
+				dev, derr := pickDevice(s.State, o.device)
 				if derr != nil {
 					return derr
 				}
@@ -222,14 +226,14 @@ const monitorDrain = 250 * time.Millisecond
 
 // runMonitor starts the watch, folds the detections on the telemetry plane into a transmission
 // log, and prints it when the watch ends (the duration elapsed, or the user hit Ctrl-C).
-func runMonitor(ctx context.Context, s *session, o monitorOptions) error {
+func runMonitor(ctx context.Context, s *verbSession, o monitorOptions) error {
 	cfg := &leylinev1.MonitorConfig{
 		Range:      &leylinev1.FrequencyRange{MinHz: o.minHz, MaxHz: o.maxHz},
 		DurationMs: o.forDur.Milliseconds(),
 		DeviceId:   o.deviceID,
 		TakeOver:   o.takeOver,
 	}
-	job, err := s.client.Jobs.StartJob(ctx, &leylinev1.StartJobRequest{Config: &leylinev1.StartJobRequest_Monitor{Monitor: cfg}})
+	job, err := s.Client.Jobs.StartJob(ctx, &leylinev1.StartJobRequest{Config: &leylinev1.StartJobRequest_Monitor{Monitor: cfg}})
 	if err != nil {
 		return err
 	}
@@ -237,16 +241,16 @@ func runMonitor(ctx context.Context, s *session, o monitorOptions) error {
 	// detections stream there just like a scan's, and the client folds them into the log.
 	tctx, tcancel := context.WithCancel(ctx)
 	defer tcancel()
-	msgs, terrs, err := s.client.WatchTelemetry(tctx, &leylinev1.TelemetrySubscription{
+	msgs, terrs, err := s.Client.WatchTelemetry(tctx, &leylinev1.TelemetrySubscription{
 		Types: []leylinev1.TelemetryType{leylinev1.TelemetryType_DETECTION},
 	})
 	if err != nil {
 		return err
 	}
 	if o.forDur > 0 {
-		s.say("watching %s to %s for %s\n", leyline.FormatFrequency(o.minHz), leyline.FormatFrequency(o.maxHz), forPhrase(o.forDur))
+		s.say("watching %s to %s for %s\n", units.FormatFrequency(o.minHz), units.FormatFrequency(o.maxHz), forPhrase(o.forDur))
 	} else {
-		s.say("watching %s to %s until you stop it (Ctrl-C)\n", leyline.FormatFrequency(o.minHz), leyline.FormatFrequency(o.maxHz))
+		s.say("watching %s to %s until you stop it (Ctrl-C)\n", units.FormatFrequency(o.minHz), units.FormatFrequency(o.maxHz))
 	}
 
 	carriers := map[string]*monitorCarrier{}
@@ -298,7 +302,7 @@ func runMonitor(ctx context.Context, s *session, o monitorOptions) error {
 	interrupted := false
 	poll := time.NewTicker(2 * time.Second)
 	defer poll.Stop()
-	events := s.events
+	events := s.Events()
 follow:
 	for last.State == leylinev1.JobState_RUNNING {
 		select {
@@ -308,7 +312,7 @@ follow:
 		case <-poll.C:
 			// A fallback: job state normally arrives on the event stream, but a stream
 			// can end cleanly or drop an event, and without this the watch would never return.
-			j, gerr := s.client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
+			j, gerr := s.Client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
 			if gerr != nil {
 				if ctx.Err() != nil {
 					interrupted = true
@@ -319,10 +323,10 @@ follow:
 			last = j
 		case ev, ok := <-events:
 			if !ok {
-				if e := <-s.eventErrs; e != nil {
+				if e := <-s.EventErrs(); e != nil {
 					return e
 				}
-				j, gerr := s.client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
+				j, gerr := s.Client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
 				if gerr != nil {
 					if ctx.Err() != nil {
 						interrupted = true
@@ -335,7 +339,7 @@ follow:
 			if b, isJob := ev.Body.(*leylinev1.Event_Job); isJob && b.Job.JobId == job.JobId {
 				last = b.Job
 			} else {
-				s.apply(ev)
+				s.Apply(ev)
 			}
 		case m, ok := <-msgs:
 			if !ok {
@@ -355,9 +359,9 @@ follow:
 	// Interrupted: stop the watch now rather than waiting out its duration -- the next thing the
 	// user does after Ctrl-C is usually tune -- and then print what it heard before it stopped.
 	if interrupted {
-		c, stop := context.WithTimeout(context.Background(), confirmTimeout)
+		c, stop := session.CleanupContext(ctx, confirmTimeout)
 		defer stop()
-		if j, cerr := s.client.Jobs.CancelJob(c, &leylinev1.JobRef{JobId: job.JobId}); cerr == nil {
+		if j, cerr := s.Client.Jobs.CancelJob(c, &leylinev1.JobRef{JobId: job.JobId}); cerr == nil {
 			last = j
 		}
 	} else {
@@ -552,7 +556,7 @@ func printMonitorReport(app *App, o monitorOptions, order []string, carriers map
 		if hidden.any() {
 			// Filtered carriers are not the same as an empty band, and the remedy differs: a
 			// longer watch will not bring back a carrier a filter left out.
-			fmt.Fprintf(app.Stderr, "%s heard, all filtered out (%s)\n", plural(hiddenTotal(hidden), "carrier"), hiddenReasons(hidden, o))
+			fmt.Fprintf(app.Stderr, "%s heard, all filtered out (%s)\n", words.Count(hiddenTotal(hidden), "carrier"), hiddenReasons(hidden, o))
 			fmt.Fprintf(app.Stderr, "drop the filters to see them: %s\n", st.Cmd("ley monitor "+monitorArg(o)+" --min-snr 0 --skirt-db 0"))
 			return
 		}
@@ -574,7 +578,7 @@ func printMonitorReport(app *App, o monitorOptions, order []string, carriers map
 	// in the headers (section 5), so the cells are numbers.
 	cols := []column{
 		{head: "TIME", cells: timeGutter(ts, rows)},
-		{head: "FREQUENCY", cells: mapCarrier(rows, func(c *monitorCarrier) string { return leyline.FormatFrequency(c.centerHz) })},
+		{head: "FREQUENCY", cells: mapCarrier(rows, func(c *monitorCarrier) string { return units.FormatFrequency(c.centerHz) })},
 	}
 	cols = append(cols,
 		// A band with no named channels, which is most of them, omits the column.
@@ -601,18 +605,18 @@ func printMonitorReport(app *App, o monitorOptions, order []string, carriers map
 	}
 	// A channel label gets the frequency beside it, since the label is what a radio shows and
 	// the number is what ley tune takes; a carrier with no label shows the frequency once.
-	label := leyline.FormatFrequency(best.centerHz)
+	label := units.FormatFrequency(best.centerHz)
 	if ch := monitorChannel(best.centerHz); ch != "-" {
 		label = ch + " (" + trimZeros(float64(best.centerHz)/1e6) + ")"
 	}
 	fmt.Fprintf(app.Stderr, "%s over %s; strongest %s at %s\n",
-		plural(len(rows), "carrier"), forPhrase(watched), label, snrInk(st, o.minSNR, best.peakSNR, fmt.Sprintf("%.0f dB", best.peakSNR)))
+		words.Count(len(rows), "carrier"), forPhrase(watched), label, snrInk(st, o.minSNR, best.peakSNR, fmt.Sprintf("%.0f dB", best.peakSNR)))
 	if note := refinedNote(rows); note != "" {
 		fmt.Fprintln(app.Stderr, st.Muted(note))
 	}
 	if hidden.any() {
 		fmt.Fprintf(app.Stderr, "%s not shown (%s); %s\n",
-			plural(hiddenTotal(hidden), "carrier"), hiddenReasons(hidden, o), st.Cmd("ley monitor "+monitorArg(o)+" --min-snr 0 --skirt-db 0"))
+			words.Count(hiddenTotal(hidden), "carrier"), hiddenReasons(hidden, o), st.Cmd("ley monitor "+monitorArg(o)+" --min-snr 0 --skirt-db 0"))
 	}
 }
 
@@ -630,7 +634,7 @@ func hiddenReasons(h monitorHidden, o monitorOptions) string {
 		parts = append(parts, fmt.Sprintf("%d held under %s", h.brief, forPhrase(o.minHold)))
 	}
 	if h.skirt > 0 {
-		parts = append(parts, fmt.Sprintf("%s of a stronger carrier", plural(h.skirt, "skirt")))
+		parts = append(parts, fmt.Sprintf("%s of a stronger carrier", words.Count(h.skirt, "skirt")))
 	}
 	return strings.Join(parts, ", ")
 }
@@ -639,7 +643,7 @@ func hiddenReasons(h monitorHidden, o monitorOptions) string {
 // a name, and how strong. The absent glyph is left out rather than printed, since "-" sitting
 // immediately left of a level reads as its sign.
 func liveLine(st ui.Style, o monitorOptions, now float64, c *monitorCarrier) string {
-	parts := []string{"  " + mmss(now), leyline.FormatFrequency(c.centerHz)}
+	parts := []string{"  " + mmss(now), units.FormatFrequency(c.centerHz)}
 	if ch := monitorChannel(c.centerHz); ch != "-" {
 		parts = append(parts, ch)
 	}

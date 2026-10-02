@@ -17,7 +17,7 @@ import (
 // that were delivered (a filtered record never takes one).
 func TestDecodePredicateFilters(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	pred := &leylinev1.Predicate{All: []*leylinev1.Clause{{Test: &leylinev1.Clause_Field{Field: &leylinev1.FieldTest{
 		Field: "device_id", Op: leylinev1.PredicateOp_PRED_EQ,
@@ -27,7 +27,7 @@ func TestDecodePredicateFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _, _ = c.Jobs.CancelJob(context.Background(), &leylinev1.JobRef{JobId: job.JobId}) }()
+	defer func() { _, _ = c.Jobs.CancelJob(t.Context(), &leylinev1.JobRef{JobId: job.JobId}) }()
 	recs, errs, err := c.SubscribeRecords(ctx, leyline.RecordScopeJob(job.JobId, nil))
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +53,7 @@ func TestDecodePredicateFilters(t *testing.T) {
 // FIPS list matches a code in it, and one that carries none does not.
 func TestDecodePredicateCountyContains(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	pred := &leylinev1.Predicate{All: []*leylinev1.Clause{{Test: &leylinev1.Clause_Field{Field: &leylinev1.FieldTest{
 		Field: "fips", Op: leylinev1.PredicateOp_PRED_CONTAINS,
@@ -63,7 +63,7 @@ func TestDecodePredicateCountyContains(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _, _ = c.Jobs.CancelJob(context.Background(), &leylinev1.JobRef{JobId: job.JobId}) }()
+	defer func() { _, _ = c.Jobs.CancelJob(t.Context(), &leylinev1.JobRef{JobId: job.JobId}) }()
 	recs, errs, err := c.SubscribeRecords(ctx, leyline.RecordScopeJob(job.JobId, nil))
 	if err != nil {
 		t.Fatal(err)

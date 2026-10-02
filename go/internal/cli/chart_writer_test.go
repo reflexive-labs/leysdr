@@ -21,6 +21,7 @@ import (
 // the top of the screen, so a block taller than the terminal strands its first
 // lines however good the arithmetic is. The block is 19 rows.
 func TestSpectrumWatchDrawsOneStatusLine(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	app := ttyApp(sock)
 	app.TermWidth = func() int { return 100 }
@@ -125,6 +126,7 @@ func replayANSI(s string) []string {
 // redraw compounds it, leaving two status lines counting different frame
 // numbers. A short terminal must scroll instead.
 func TestSpectrumWatchScrollsWhenTheChartIsTallerThanTheScreen(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	app := ttyApp(sock)
 	app.TermWidth = func() int { return 100 }
@@ -166,6 +168,7 @@ func TestSpectrumWatchScrollsWhenTheChartIsTallerThanTheScreen(t *testing.T) {
 // A terminal that will not report its height keeps the old behaviour: it is no
 // worse than before, and there is nothing better to do without the number.
 func TestSpectrumWatchRedrawsWhenHeightIsUnknown(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	app := ttyApp(sock)
 	app.TermWidth = func() int { return 100 }

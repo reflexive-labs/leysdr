@@ -11,7 +11,9 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // presetJSON and bandJSON are the `--json` shapes of `ley presets` and `ley
@@ -60,7 +62,7 @@ type bandJSON struct {
 }
 
 // bandRow is the --json shape of one band, plan included.
-func bandRow(b leyline.Band) bandJSON {
+func bandRow(b bandplan.Band) bandJSON {
 	row := bandJSON{
 		Name: b.Name, Aliases: b.Aliases, MinHz: b.MinHz, MaxHz: b.MaxHz,
 		Mode: bandModeName(b.Mode), BandwidthHz: b.BandwidthHz, StepHz: b.StepHz,
@@ -121,7 +123,7 @@ client-local data with no proto message, so it is not the proto3 JSON mapping.`,
 		GroupID: GroupLooking,
 		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			ps := leyline.Presets()
+			ps := bandplan.Presets()
 			if app.JSON {
 				out := make([]presetJSON, 0, len(ps))
 				for _, p := range ps {
@@ -183,7 +185,7 @@ same array from a checked-in bands.json (make bands-json).`,
 			}
 			// The groups come after the bands: the table stays frequency-ordered and
 			// disjoint, and a group is a name for a sweep rather than a place.
-			bs := append(leyline.Bands(), leyline.BandGroups()...)
+			bs := append(bandplan.Bands(), bandplan.BandGroups()...)
 			if app.JSON {
 				out := make([]bandJSON, 0, len(bs))
 				for _, b := range bs {
@@ -202,7 +204,7 @@ same array from a checked-in bands.json (make bands-json).`,
 // alone, since the band and the frequency are already on the screen, and the
 // aliases are Muted because they are the fallback spelling, not the one to
 // type. --json keeps every field, description and all.
-func printPresetTable(app *App, ps []leyline.Preset) error {
+func printPresetTable(app *App, ps []bandplan.Preset) error {
 	s := tableStyle(app)
 	keys := make([]string, len(ps))
 	for i, p := range ps {
@@ -222,7 +224,7 @@ func printPresetTable(app *App, ps []leyline.Preset) error {
 		if len(p.Aliases) > 0 {
 			aliases = s.Muted(strings.Join(p.Aliases, ", "))
 		}
-		add(cols, p.Name, leyline.FormatFrequency(p.Hz), leyline.ModeName(p.Mode), aliases, p.Note)
+		add(cols, p.Name, units.FormatFrequency(p.Hz), leyline.ModeName(p.Mode), aliases, p.Note)
 	}
 	_, err := printColumns(app.Stdout, s, cols, heads)
 	return err
@@ -238,7 +240,7 @@ func printPresetTable(app *App, ps []leyline.Preset) error {
 // is given its minimum, so an eighty-column terminal is truncating the note to
 // print them; another column would spend the rest of that note on a number
 // no `ley` verb tunes by yet (the app reads it from bands.json).
-func printBandTable(app *App, bs []leyline.Band) error {
+func printBandTable(app *App, bs []bandplan.Band) error {
 	s := tableStyle(app)
 	keys := make([]string, len(bs))
 	for i, b := range bs {
@@ -262,7 +264,7 @@ func printBandTable(app *App, bs []leyline.Band) error {
 	}
 	for _, i := range order {
 		b := bs[i]
-		rng := leyline.FormatFrequency(b.MinHz) + " to " + leyline.FormatFrequency(b.MaxHz)
+		rng := units.FormatFrequency(b.MinHz) + " to " + units.FormatFrequency(b.MaxHz)
 		alias := ""
 		if len(b.Aliases) > 0 {
 			alias = b.Aliases[0]
@@ -287,7 +289,7 @@ func add(cols []column, cells ...string) {
 
 // presetGroup is the sub-heading a preset sits under: the band or group whose
 // plan it is in, which is the same name `ley bands` prints.
-func presetGroup(p leyline.Preset) string {
+func presetGroup(p bandplan.Preset) string {
 	return p.Band
 }
 
@@ -295,7 +297,7 @@ func presetGroup(p leyline.Preset) string {
 // are the family worth collapsing; broadcast is the other one a newcomer
 // already has a word for; GMRS and MURS are each two halves and a group, so
 // the six rows read as one block; everything else is a service.
-func bandFamily(b leyline.Band) string {
+func bandFamily(b bandplan.Band) string {
 	switch {
 	case strings.HasPrefix(b.Note, "amateur radio"):
 		return "amateur radio"
@@ -346,14 +348,14 @@ func groupRows(keys []string) ([]int, []string) {
 // names, so here the name wins, and the output says which reading it used so
 // the user can retype for the other one.
 func runBandLookup(app *App, arg string) error {
-	if b, err := leyline.ResolveBand(arg); err == nil {
+	if b, err := bandplan.ResolveBand(arg); err == nil {
 		// Seven aliases are also valid frequencies (2m is 2 MHz), so when the
 		// argument reads both ways, say which one was taken. Picking silently
 		// would be the same quiet wrong answer that kept bands off the
 		// positional of every other verb.
-		if hz, ferr := leyline.ParseUserFrequency(arg); ferr == nil && hz != b.CenterHz() {
+		if hz, ferr := units.ParseFrequency(arg); ferr == nil && hz != b.CenterHz() {
 			fmt.Fprintf(app.Stderr, "%s\n", app.ErrStyle.Muted(fmt.Sprintf(
-				"reading %q as the band; for the frequency say %s", arg, leyline.FormatFrequency(hz))))
+				"reading %q as the band; for the frequency say %s", arg, units.FormatFrequency(hz))))
 		}
 		return printBandAnswer(app, b.CenterHz(), &b, "", true)
 	}
@@ -365,7 +367,7 @@ func runBandLookup(app *App, arg string) error {
 	if t.Preset != nil {
 		reason = "preset " + t.Preset.Name + ": " + t.Preset.Description
 	}
-	return printBandAnswer(app, t.Hz, leyline.BandFor(t.Hz), reason, false)
+	return printBandAnswer(app, t.Hz, bandplan.BandFor(t.Hz), reason, false)
 }
 
 // bandAnswerJSON is `ley bands <frequency> --json`: one object rather than the
@@ -382,9 +384,9 @@ type bandAnswerJSON struct {
 
 // printBandAnswer renders one band lookup. wholeBand says the argument named a
 // band rather than a point in one, which changes what the first line can claim.
-func printBandAnswer(app *App, hz uint64, b *leyline.Band, reason string, wholeBand bool) error {
-	mode, _ := leyline.DefaultMode(hz)
-	bw := leyline.BandwidthFor(hz, mode)
+func printBandAnswer(app *App, hz uint64, b *bandplan.Band, reason string, wholeBand bool) error {
+	mode, _ := bandplan.DefaultMode(hz)
+	bw := bandplan.BandwidthFor(hz, mode)
 	if reason == "" {
 		if b != nil {
 			reason = b.Name + " band default"
@@ -405,13 +407,13 @@ func printBandAnswer(app *App, hz uint64, b *leyline.Band, reason string, wholeB
 	var w strings.Builder
 	switch {
 	case b == nil:
-		fmt.Fprintf(&w, "%s is in no band ley knows\n", leyline.FormatFrequency(hz))
+		fmt.Fprintf(&w, "%s is in no band ley knows\n", units.FormatFrequency(hz))
 	case wholeBand:
 		fmt.Fprintf(&w, "%s is %s to %s\n", b.Name,
-			leyline.FormatFrequency(b.MinHz), leyline.FormatFrequency(b.MaxHz))
+			units.FormatFrequency(b.MinHz), units.FormatFrequency(b.MaxHz))
 	default:
-		fmt.Fprintf(&w, "%s is in %s (%s to %s)\n", leyline.FormatFrequency(hz), b.Name,
-			leyline.FormatFrequency(b.MinHz), leyline.FormatFrequency(b.MaxHz))
+		fmt.Fprintf(&w, "%s is in %s (%s to %s)\n", units.FormatFrequency(hz), b.Name,
+			units.FormatFrequency(b.MinHz), units.FormatFrequency(b.MaxHz))
 	}
 	// The mode is resolved for this frequency, so an HF band answers lsb or usb
 	// rather than the table's usb/lsb.
@@ -424,7 +426,7 @@ func printBandAnswer(app *App, hz uint64, b *leyline.Band, reason string, wholeB
 	}
 	row("mode", leyline.ModeName(mode), reason)
 	row("bandwidth", formatBandwidth(bw), "")
-	var plan []leyline.Channel
+	var plan []bandplan.Channel
 	if b != nil {
 		if note := strings.TrimPrefix(b.Note, bandFamily(*b)+", "); note != "" {
 			row("note", note, "")
@@ -458,7 +460,7 @@ func printBandAnswer(app *App, hz uint64, b *leyline.Band, reason string, wholeB
 // in the service's own order, with the name the radio prints, the frequency,
 // the word that tunes it without a band (PRESET), the other names it answers
 // to (Muted: fallback spellings), and the note.
-func printPlanTable(app *App, plan []leyline.Channel) error {
+func printPlanTable(app *App, plan []bandplan.Channel) error {
 	s := tableStyle(app)
 	cols := []column{
 		{head: "CHANNEL"},
@@ -472,7 +474,7 @@ func printPlanTable(app *App, plan []leyline.Channel) error {
 		if len(c.Aliases) > 1 {
 			also = s.Muted(strings.Join(c.Aliases[1:], ", "))
 		}
-		add(cols, c.Name, leyline.FormatFrequency(c.Hz), c.Aliases[0], also, c.Note)
+		add(cols, c.Name, units.FormatFrequency(c.Hz), c.Aliases[0], also, c.Note)
 	}
 	// The plan is indented under the answer's rows, the way a grouped table's
 	// rows sit under their heading.

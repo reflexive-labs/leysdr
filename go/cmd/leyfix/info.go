@@ -39,7 +39,7 @@ func runInfo(args []string, w io.Writer) error {
 			peak = math.Max(peak, p)
 		}
 		count += int64(n)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

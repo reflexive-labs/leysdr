@@ -114,8 +114,7 @@ func TestRecordAgainstRealDaemon(t *testing.T) {
 
 // A carrier that never stops holds the squelch open from before the recording starts, so no
 // transition arrives; the gate is seeded from the channel's meter and the recording is one part
-// as long as the recording. Until 2026-09-25 it wrote nothing (docs/design/recording.md, "The
-// gate").
+// as long as the recording (docs/design/recording.md, "The gate").
 func TestGatedRecordOfACarrierHoldsOnePart(t *testing.T) {
 	fixture, err := filepath.Abs("../../../fixtures/nfm_tone.cf32")
 	if err != nil {

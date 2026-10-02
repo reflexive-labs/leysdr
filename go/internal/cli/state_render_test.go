@@ -157,10 +157,10 @@ func TestStateTreeContent(t *testing.T) {
 		t.Fatalf("id %s not in:\n%s", id, out)
 		return 0
 	}
-	dev, cap, chn, snk := depth("dev_01M224S5ZRDDEGKRWJSCTABBRA"), depth("cap_01M224S5ZTB34335N7PM0PGZZA"),
+	dev, capture, chn, snk := depth("dev_01M224S5ZRDDEGKRWJSCTABBRA"), depth("cap_01M224S5ZTB34335N7PM0PGZZA"),
 		depth("chan_01M224S60EG37HPKYSEH0CQZZA"), depth("snk_01M224S60EG37HPKYSEH0CQZZA")
-	if dev >= cap || cap >= chn || chn >= snk {
-		t.Errorf("indentation must deepen device to capture to channel to sink (%d %d %d %d):\n%s", dev, cap, chn, snk, out)
+	if dev >= capture || capture >= chn || chn >= snk {
+		t.Errorf("indentation must deepen device to capture to channel to sink (%d %d %d %d):\n%s", dev, capture, chn, snk, out)
 	}
 }
 

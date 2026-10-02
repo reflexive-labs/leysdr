@@ -138,7 +138,7 @@ peak_dbfs, rms_dbfs, squelch_open}.`,
 			if err != nil {
 				return err
 			}
-			defer s.close()
+			defer s.Close()
 			s.proseToStderr = true
 			// Width comes from the resolved style, which has already applied
 			// --width, COLUMNS, the terminal's own size and the [40, 160]
@@ -147,7 +147,7 @@ peak_dbfs, rms_dbfs, squelch_open}.`,
 				o.width = ui.DefaultWidth
 			}
 			if o.tune != nil {
-				if s.device, err = pickDevice(s.state, o.tune.device); err != nil {
+				if s.device, err = pickDevice(s.State, o.tune.device); err != nil {
 					return err
 				}
 			}
@@ -222,7 +222,7 @@ func (a *waveformAcc) column(removeDC bool, seconds float64) waveformCol {
 // runWaveform taps the channel, folds the stream into one column of envelope
 // per slice of the window and draws the window every frame, newest at the
 // right.
-func runWaveform(ctx context.Context, s *session, o waveformOptions) error {
+func runWaveform(ctx context.Context, s *verbSession, o waveformOptions) error {
 	stop, err := s.openChannel(ctx, o.tune, o.channel)
 	if err != nil {
 		return err
@@ -233,7 +233,7 @@ func runWaveform(ctx context.Context, s *session, o waveformOptions) error {
 	// F32 for the reason the scope asks for it: on the demod tap the DC offset
 	// this view removes is a small fraction of full scale that a 16-bit round
 	// trip would coarsen.
-	sub, err := s.client.SubscribeAudioTap(sctx, s.channel.ChannelId, 0,
+	sub, err := s.Client.SubscribeAudioTap(sctx, s.Channel.ChannelId, 0,
 		leylinev1.AudioSampleFormat_F32, o.tap)
 	if err != nil {
 		return err
@@ -241,12 +241,12 @@ func runWaveform(ctx context.Context, s *session, o waveformOptions) error {
 	defer sub.Close()
 	ap := sub.Descriptor.GetAudio()
 	rate, format, tap := ap.GetSampleRate(), ap.GetFormat(), ap.GetTap()
-	fullScaleHz := scopeFullScaleHz(ap, s.channel)
+	fullScaleHz := scopeFullScaleHz(ap, s.Channel)
 	// The squelch state comes from the daemon; the view only draws with it.
 	// The stream's error is not read: if the telemetry stream ends, the clip
 	// keeps drawing and the loop below drops the squelch state as unknown.
-	msgs, _, err := s.client.WatchTelemetry(sctx, &leylinev1.TelemetrySubscription{
-		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: s.channel.ChannelId},
+	msgs, _, err := s.Client.WatchTelemetry(sctx, &leylinev1.TelemetrySubscription{
+		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: s.Channel.ChannelId},
 		Types: []leylinev1.TelemetryType{leylinev1.TelemetryType_METER},
 	})
 	if err != nil {
@@ -254,11 +254,11 @@ func runWaveform(ctx context.Context, s *session, o waveformOptions) error {
 	}
 	what := audioWhat(s)
 	s.say("drawing %s: the %s tap, %g seconds across. Ctrl-C stops. %s\n",
-		what, scopeTapName(tap), o.seconds, s.app.ErrStyle.Muted("from "+s.channel.ChannelId))
+		what, scopeTapName(tap), o.seconds, s.app.ErrStyle.Muted("from "+s.Channel.ChannelId))
 	// Keep the event stream flowing (and the mirror current) while frames are
 	// drawn; the drain owns the mirror, so it starts after the last read of it
 	// and stops before teardown.
-	stopDrain := s.drainEvents()
+	stopDrain := s.DrainEvents()
 	defer stopDrain()
 
 	view := newWaveformView(s.app.Style, o.width, o.seconds, o.scale, s.app.IsTTY())
@@ -269,8 +269,6 @@ func runWaveform(ctx context.Context, s *session, o waveformOptions) error {
 		w = newChartWriter(s.app, out, true, o.rate)
 		defer w.finish()
 	}
-	tick := time.NewTicker(chartTickInterval)
-	defer tick.Stop()
 	interval := time.Duration(float64(time.Second) / o.rate)
 	frame := waveformFrame{
 		cols: make([]waveformCol, view.cols()), tap: tap, what: what,
@@ -296,32 +294,27 @@ func runWaveform(ctx context.Context, s *session, o waveformOptions) error {
 		w.frame(view.render(frame, scaler.next(waveformPeak(frame.cols))), "")
 		return out.Flush()
 	}
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-tick.C:
-			if w != nil {
-				w.idle()
-			}
-		case m, ok := <-msgs:
-			if !ok {
+	return liveLoop{
+		w:         w,
+		telemetry: msgs,
+		onTelemetry: func(m *leylinev1.TelemetryMsg) (bool, error) {
+			if m == nil {
 				// The telemetry stream ended: a header that kept showing the
 				// squelch, and columns kept blank because of it, would be
 				// drawn from a stale reading (scope and levels forget theirs
 				// the same way).
-				msgs = nil
 				frame.forgetTelemetry()
-				continue
+				return false, nil
 			}
 			if b, is := m.Body.(*leylinev1.TelemetryMsg_Meter); is {
 				frame.squelchOpen, frame.squelchKnown = b.Meter.GetSquelchOpen(), true
 				acc.open = acc.open || frame.squelchOpen
 			}
-		case fr, ok := <-sub.Frames:
-			if !ok {
-				return waveformEnd(ctx, sub.Err(), cols)
-			}
+			return false, nil
+		},
+		frames: sub.Frames,
+		end:    func() error { return waveformEnd(ctx, sub.Err(), cols) },
+		onFrame: func(fr *leylinev1.Frame) (bool, error) {
 			index := fr.Time.GetSampleIndex()
 			for _, v := range leyline.DecodeAudio(fr.Payload, format) {
 				if acc.n == 0 {
@@ -346,26 +339,27 @@ func runWaveform(ctx context.Context, s *session, o waveformOptions) error {
 						RmsDbfs: col.rmsDbfs, SquelchOpen: col.open,
 					})
 					if err != nil {
-						return err
+						return true, err
 					}
 					out.Write(b)
 					out.WriteByte('\n')
 					if err := out.Flush(); err != nil {
-						return err
+						return true, err
 					}
 				}
 				cols++
 				if o.count > 0 && cols >= o.count {
-					return draw()
+					return true, draw()
 				}
 				if time.Since(last) >= interval {
 					if err := draw(); err != nil {
-						return err
+						return true, err
 					}
 				}
 			}
-		}
-	}
+			return false, nil
+		},
+	}.run(ctx)
 }
 
 // waveformEnd turns the end of the audio stream into what to do next, by the

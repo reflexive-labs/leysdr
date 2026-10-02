@@ -4,6 +4,7 @@ package fakedaemon_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,8 +16,9 @@ import (
 // The registry answers with the one manifest it has, the directories it looked in, and the
 // retention it applies -- the three things `ley decoders` prints.
 func TestListDecoders(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
-	resp, err := c.ListDecoders(context.Background())
+	resp, err := c.ListDecoders(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,8 +40,9 @@ func TestListDecoders(t *testing.T) {
 // A decoder nobody installed is DECODER_NOT_FOUND, the stable code `ley decode` turns into the
 // line telling the reader to run `ley decoders`.
 func TestStartDecodeUnknownDecoder(t *testing.T) {
+	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
-	_, err := c.StartDecode(context.Background(), &leylinev1.DecodeConfig{Decoder: "nosuch"})
+	_, err := c.StartDecode(t.Context(), &leylinev1.DecodeConfig{Decoder: "nosuch"})
 	if leyline.Code(err) != leyline.CodeDecoderNotFound {
 		t.Fatalf("code = %q (%v), want DECODER_NOT_FOUND", leyline.Code(err), err)
 	}
@@ -49,7 +52,7 @@ func TestStartDecodeUnknownDecoder(t *testing.T) {
 // numbers them 1, 2, 3 with no holes.
 func TestDecodeJobStampsAndNumbersRecords(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	job, err := c.StartDecode(ctx, &leylinev1.DecodeConfig{Decoder: "aprs"})
 	if err != nil {
@@ -108,14 +111,18 @@ func TestDecodeJobStampsAndNumbersRecords(t *testing.T) {
 // sees the records it missed, which is what makes "StartJob then Subscribe" safe.
 func TestSubscribeRecordsReplaysSinceSeq(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	job, err := c.StartDecode(ctx, &leylinev1.DecodeConfig{Decoder: "aprs"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _, _ = c.Jobs.CancelJob(context.Background(), &leylinev1.JobRef{JobId: job.JobId}) }()
-	time.Sleep(3 * fakedaemon.RecordInterval)
+	defer func() { _, _ = c.Jobs.CancelJob(t.Context(), &leylinev1.JobRef{JobId: job.JobId}) }()
+	// Records retained before the subscription opens are what the replay must deliver.
+	eventually(t, "the job's first record", func() bool {
+		j, err := c.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
+		return err == nil && strings.Contains(j.GetStatusDetail(), "last just now")
+	})
 
 	from := uint64(0)
 	recs, errs, err := c.SubscribeRecords(ctx, leyline.RecordScopeJob(job.JobId, &from))
@@ -138,22 +145,25 @@ func TestSubscribeRecordsReplaysSinceSeq(t *testing.T) {
 // sample time into wall clock with.
 func TestQueryRecordsReadsKeptJobs(t *testing.T) {
 	c, _ := harness(t, fakedaemon.Options{})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	job, err := c.StartDecode(ctx, &leylinev1.DecodeConfig{Decoder: "aprs", Keep: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _, _ = c.Jobs.CancelJob(context.Background(), &leylinev1.JobRef{JobId: job.JobId}) }()
+	defer func() { _, _ = c.Jobs.CancelJob(t.Context(), &leylinev1.JobRef{JobId: job.JobId}) }()
 	if uris := job.GetResultUris(); len(uris) != 1 || uris[0] != "ley://records/"+job.JobId {
 		t.Errorf("a kept job names its records as a resource: %v", uris)
 	}
-	time.Sleep(4 * fakedaemon.RecordInterval)
-
-	page, err := c.QueryRecords(ctx, &leylinev1.RecordQuery{Protocol: "aprs"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	var page *leylinev1.RecordPage
+	eventually(t, "three records in the store", func() bool {
+		p, err := c.QueryRecords(ctx, &leylinev1.RecordQuery{Protocol: "aprs"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		page = p
+		return len(page.Records) >= 3
+	})
 	if len(page.Records) < 3 || len(page.Anchors) != 1 {
 		t.Fatalf("page: %d records, %d anchors", len(page.Records), len(page.Anchors))
 	}

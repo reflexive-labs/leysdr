@@ -9,8 +9,7 @@ import (
 )
 
 // dcsLowPassHz is where the DCS bit stream is rolled off before it reaches the modulator, as a
-// transmitter's shaping does: the handheld's tap is 40 dB down above 300 Hz
-// (docs/plans/signal-views.md, SV-7, "Recorded and read 2026-09-23").
+// transmitter's shaping does: a recorded GMRS handheld's demod tap is 40 dB down above 300 Hz.
 const dcsLowPassHz = 300
 
 // dcsCode FM-modulates a DCS word under a voice tone: the 23-bit word repeated without a gap at

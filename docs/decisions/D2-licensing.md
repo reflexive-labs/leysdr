@@ -25,7 +25,7 @@ work.
 | Path | Licence | Why |
 |---|---|---|
 | `engine/` (leylined) | GPL-3.0-or-later | Forced: links librtlsdr (GPL-2.0-or-later). Must be v3, not v2-only, because the daemon also links Apache-2.0 Swift packages, which are incompatible with GPLv2-only. librtlsdr's "or later" permits this. |
-| `proto/`, generated code (`go/gen`, `swift/LeylineProto`), `go/pkg/leyline` | Apache-2.0 | The contract and client library. Must stay permissive so any consumer, including a future commercial one, can link them. |
+| `proto/`, generated code (`go/gen`, `swift/LeylineProto`), `go/pkg/leyline` and the other `go/pkg` packages | Apache-2.0 | The contract and client library. Must stay permissive so any consumer, including a future commercial one, can link them. |
 | `go/cmd/ley`, `go/internal/*` | Apache-2.0 | No copyleft dependencies. Permissive keeps R-13 (moving CLI behaviour into the client library) a file move rather than a relicensing exercise, and makes `ley` forkable as a starting point for third-party tools. |
 | MCP adapter | Apache-2.0 | Same repo, same terms. |
 | Mac app | Apache-2.0 | SwiftUI over the client library; zero GPL contact. |

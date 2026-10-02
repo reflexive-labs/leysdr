@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 )
 
 // A point on the dial is a frequency or a preset, and both work wherever one
@@ -93,9 +93,9 @@ func TestResolveDialTargetDoesNotAcceptBands(t *testing.T) {
 
 // With a band, the positional is a channel name in that band's plan and nothing else: the
 // numeric parse is not tried (a frequency needs no --band), and a miss names the band and its
-// plan rather than offering a frequency (docs/design/channels.md, "The CLI"; the plan's KTD8).
+// plan rather than offering a frequency (docs/design/channels.md, "The CLI").
 func TestResolveDialTargetInABand(t *testing.T) {
-	marine, err := leyline.ResolveBand("marine")
+	marine, err := bandplan.ResolveBand("marine")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestResolveDialTargetInABand(t *testing.T) {
 		t.Errorf("a miss under --band must not offer a frequency: %q", msg)
 	}
 	// A short plan is listed whole.
-	noaa, _ := leyline.ResolveBand("noaa")
+	noaa, _ := bandplan.ResolveBand("noaa")
 	_, err = resolveDialTarget("wx9", "tune", "ley tune wx3 --band noaa", "146.52 (MHz)", &noaa)
 	if err == nil || !strings.Contains(err.Error(), "WX1, WX2, WX3, WX4, WX5, WX6, WX7") {
 		t.Errorf("a short plan is listed in the error: %v", err)
@@ -132,7 +132,7 @@ func TestResolveDialTargetInABand(t *testing.T) {
 		t.Errorf("an empty argument under --band names the band: %v", err)
 	}
 	// A band without a plan points back to a frequency and the command that confirms it.
-	seventyCM, err := leyline.ResolveBand("70cm")
+	seventyCM, err := bandplan.ResolveBand("70cm")
 	if err != nil {
 		t.Fatal(err)
 	}

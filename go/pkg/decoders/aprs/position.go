@@ -134,11 +134,11 @@ func parseLatitude(s string) (float64, bool) {
 	if err != nil {
 		return 0, false
 	}
-	min, ok := ambiguousMinutes(s[2:4] + s[5:7])
+	lo, ok := ambiguousMinutes(s[2:4] + s[5:7])
 	if !ok {
 		return 0, false
 	}
-	v := float64(deg) + min/60
+	v := float64(deg) + lo/60
 	switch s[7] {
 	case 'N', 'n':
 	case 'S', 's':
@@ -158,11 +158,11 @@ func parseLongitude(s string) (float64, bool) {
 	if err != nil {
 		return 0, false
 	}
-	min, ok := ambiguousMinutes(s[3:5] + s[6:8])
+	lo, ok := ambiguousMinutes(s[3:5] + s[6:8])
 	if !ok {
 		return 0, false
 	}
-	v := float64(deg) + min/60
+	v := float64(deg) + lo/60
 	switch s[8] {
 	case 'W', 'w':
 		v = -v

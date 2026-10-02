@@ -13,6 +13,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // AudioRow is one JSON row of `ley listen --format json`. Bulk audio frames
@@ -105,10 +106,10 @@ here; with --format bin it is a usage error.`,
 			if err != nil {
 				return err
 			}
-			defer s.close()
+			defer s.Close()
 			s.proseToStderr = true
 			if o != nil {
-				if s.device, err = pickDevice(s.state, o.device); err != nil {
+				if s.device, err = pickDevice(s.State, o.device); err != nil {
 					return err
 				}
 			}
@@ -160,16 +161,16 @@ func tapTarget(cmd *cobra.Command, f *tuneFlags, verb, arg string, tuneFlagNames
 // one when the argument named it, or a fresh capture and channel made the way
 // tune makes them, minus the speakers. The returned stop removes whatever was
 // created and leaves a channel someone else owns alone.
-func (s *session) openChannel(ctx context.Context, o *tuneOptions, channelID string) (func(), error) {
+func (s *verbSession) openChannel(ctx context.Context, o *tuneOptions, channelID string) (func(), error) {
 	if channelID != "" {
-		ch, err := leyline.ResolveChannel(s.state, channelID)
+		ch, err := leyline.ResolveChannel(s.State, channelID)
 		if err != nil {
 			return nil, fmt.Errorf("%w. Run: ley state", err)
 		}
-		s.channel, s.capture = ch, captureByID(s.state, ch.CaptureId)
+		s.Channel, s.Capture = ch, captureByID(s.State, ch.CaptureId)
 		return func() {}, nil
 	}
-	if cap := leyline.FindCapture(s.state, s.device.DeviceId); cap == nil || !covers(cap, o.freq, o.bw) {
+	if capture := leyline.FindCapture(s.State, s.device.DeviceId); capture == nil || !covers(capture, o.freq, o.bw) {
 		if err := s.checkRange(o.input, o.freq); err != nil {
 			return nil, err
 		}
@@ -179,21 +180,21 @@ func (s *session) openChannel(ctx context.Context, o *tuneOptions, channelID str
 	}
 	if err := s.applyGain(ctx, o); err != nil {
 		if s.createdCapture {
-			s.teardown()
+			s.teardown(ctx)
 		}
 		return nil, err
 	}
 	if err := s.createChannel(ctx, o); err != nil {
-		s.teardown()
+		s.teardown(ctx)
 		return nil, err
 	}
-	return s.teardown, nil
+	return func() { s.teardown(ctx) }, nil
 }
 
 // runListen taps an existing channel or makes one like tune (minus the
 // speakers), then writes audio frames until --count, Ctrl-C or the end of the
 // stream, tearing down whatever it created.
-func runListen(ctx context.Context, s *session, o *tuneOptions, lo listenOptions) (err error) {
+func runListen(ctx context.Context, s *verbSession, o *tuneOptions, lo listenOptions) (err error) {
 	stop, err := s.openChannel(ctx, o, lo.channel)
 	if err != nil {
 		return err
@@ -201,10 +202,10 @@ func runListen(ctx context.Context, s *session, o *tuneOptions, lo listenOptions
 	defer stop()
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	// Rate 0 accepts the channel's own audio rate (v0 serves no other) and
+	// Rate 0 accepts the channel's own audio rate (the daemon serves no other) and
 	// UNSPECIFIED takes the daemon's default format; the descriptor says what
 	// it settled on and every row repeats it.
-	sub, err := s.client.SubscribeAudio(sctx, s.channel.ChannelId, 0, leylinev1.AudioSampleFormat_AUDIO_SAMPLE_FORMAT_UNSPECIFIED)
+	sub, err := s.Client.SubscribeAudio(sctx, s.Channel.ChannelId, 0, leylinev1.AudioSampleFormat_AUDIO_SAMPLE_FORMAT_UNSPECIFIED)
 	if err != nil {
 		return err
 	}
@@ -217,10 +218,10 @@ func runListen(ctx context.Context, s *session, o *tuneOptions, lo listenOptions
 	st := s.app.ErrStyle
 	// The note reads the mirror, so it is built while this goroutine still
 	// owns it -- before the drain below starts folding events into it.
-	s.say("streaming %s: %d Hz %s mono. Ctrl-C stops. %s\n", audioWhat(s), rate, name, st.Muted("from "+s.channel.ChannelId))
+	s.say("streaming %s: %d Hz %s mono. Ctrl-C stops. %s\n", audioWhat(s), rate, name, st.Muted("from "+s.Channel.ChannelId))
 	// Keep the event stream flowing (and the mirror current) while frames are
 	// written; stopped before teardown reads the mirror.
-	stopDrain := s.drainEvents()
+	stopDrain := s.DrainEvents()
 	defer stopDrain()
 	out := bufio.NewWriter(s.app.Stdout)
 	// A row buffered and never written is a truncated file with exit 0, so the
@@ -264,10 +265,10 @@ func runListen(ctx context.Context, s *session, o *tuneOptions, lo listenOptions
 
 // audioWhat names the channel being streamed for the stderr note: its
 // frequency and mode when the mirror knows the capture, else its mode alone.
-func audioWhat(s *session) string {
-	mode := strings.ToUpper(leyline.ModeName(s.channel.Mode))
-	if hz, ok := leyline.ChannelFrequency(s.state, s.channel); ok {
-		return leyline.FormatFrequency(hz) + " " + mode
+func audioWhat(s *verbSession) string {
+	mode := strings.ToUpper(leyline.ModeName(s.Channel.Mode))
+	if hz, ok := leyline.ChannelFrequency(s.State, s.Channel); ok {
+		return units.FormatFrequency(hz) + " " + mode
 	}
 	return mode
 }

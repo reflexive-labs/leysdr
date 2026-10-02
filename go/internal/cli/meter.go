@@ -11,6 +11,8 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // The live meter's bar spans meterFloorDbfs to 0 dBFS, the range a receiver
@@ -375,4 +377,24 @@ func meterCell(db float64, width int) (int, bool) {
 		i = width - 1
 	}
 	return i, true
+}
+
+// meterLine renders the in-place status line in plain words: the signal
+// level and whether audio is passing. OPEN/CLOSED live in --json only.
+func meterLine(freq uint64, mode leylinev1.DemodMode, m *leylinev1.Meter, air onAir) string {
+	return fmt.Sprintf("%s %s  signal %.0f dBFS  %s", units.FormatFrequency(freq), strings.ToUpper(leyline.ModeName(mode)), m.PowerDbfs, meterGate(m, air))
+}
+
+// meterGate is the meter line's last words: whether audio is passing and, when
+// the open edge was seen, for how long. The count is whole seconds because the
+// line redraws on every meter tick and tenths would only flicker.
+func meterGate(m *leylinev1.Meter, air onAir) string {
+	switch {
+	case !m.GetSquelchOpen():
+		return "muted, waiting for a signal"
+	case air.known:
+		return fmt.Sprintf("on air %d s", air.seconds)
+	default:
+		return "audio"
+	}
 }

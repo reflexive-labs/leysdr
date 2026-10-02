@@ -79,9 +79,8 @@ func TestFailureWords(t *testing.T) {
 
 // A HackRF's three stages as the daemon advertises them
 // (engine/Sources/EngineCore/Devices/HackRFDevice.swift): LNA and VGA in steps,
-// and the AMP a two-value switch that "the lowest gain" leaves out. The owner's
-// radio on 2026-09-24 was at LNA 8, VGA 20, AMP 0 and was told it was at its
-// lowest (plans/app.md, M2-10). The app's FailureStateTests hold the same cases.
+// and the AMP a two-value switch that "the lowest gain" leaves out: a HackRF
+// at LNA 8, VGA 20, AMP 0 is not at its lowest. The app's FailureStateTests hold the same cases.
 func TestFailureWordsOnAMultiStageRadio(t *testing.T) {
 	hackrf := []*leylinev1.GainElement{
 		{Name: "LNA", MinDb: 0, MaxDb: 40, StepDb: 8},
@@ -106,7 +105,7 @@ func TestFailureWordsOnAMultiStageRadio(t *testing.T) {
 		want  string
 	}{
 		{
-			"the owner's radio names both stages above their lowest", nil, level, set(8, 20, 0),
+			"a HackRF at LNA 8, VGA 20 names both stages above their lowest", nil, level, set(8, 20, 0),
 			"The radio is clipping: 35108 of 655360 samples (5.4 %) hit the converter's rails. Lower the LNA or VGA gain.",
 		},
 		{"one stage above its lowest is named", nil, level, set(0, 20, 0), "hit the converter's rails. Lower the VGA gain."},

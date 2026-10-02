@@ -178,7 +178,7 @@ octaves, on a terminal at least 100 columns wide.
 			if err != nil {
 				return err
 			}
-			defer s.close()
+			defer s.Close()
 			s.proseToStderr = true
 			// Width comes from the resolved style, which has already applied
 			// --width, COLUMNS, the terminal's own size and the [40, 160]
@@ -189,7 +189,7 @@ octaves, on a terminal at least 100 columns wide.
 			o.height = levelsFitHeight(o.height, app.Style.Height,
 				chartFramed(app.Style, o.width, app.IsTTY()))
 			if o.tune != nil {
-				if s.device, err = pickDevice(s.state, o.tune.device); err != nil {
+				if s.device, err = pickDevice(s.State, o.tune.device); err != nil {
 					return err
 				}
 			}
@@ -227,7 +227,7 @@ func levelsFitHeight(want, term int, framed bool) int {
 // runLevels taps the channel's audio spectrum, folds each row into bands and
 // draws the meter: the ladders under their ballistics, the master pair from
 // the daemon's own meter, and the numbers that are neither.
-func runLevels(ctx context.Context, s *session, o levelsOptions) error {
+func runLevels(ctx context.Context, s *verbSession, o levelsOptions) error {
 	stop, err := s.openChannel(ctx, o.tune, o.channel)
 	if err != nil {
 		return err
@@ -243,7 +243,7 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 	}
 	// DB_F32 because the bands are power sums: quantising every bin to a
 	// whole dB before adding them up would show in the total.
-	sub, err := s.client.SubscribeAudioSpectrum(sctx, s.channel.ChannelId, levelsBins, rate,
+	sub, err := s.Client.SubscribeAudioSpectrum(sctx, s.Channel.ChannelId, levelsBins, rate,
 		leylinev1.FftBinFormat_DB_F32, o.tap)
 	if err != nil {
 		return err
@@ -257,8 +257,8 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 	// two clients watching one channel report the same numbers. The stream's
 	// error is not read: a telemetry stream that ends takes the pair and the
 	// header's PL with it and leaves the bands drawing.
-	msgs, _, err := s.client.WatchTelemetry(sctx, &leylinev1.TelemetrySubscription{
-		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: s.channel.ChannelId},
+	msgs, _, err := s.Client.WatchTelemetry(sctx, &leylinev1.TelemetrySubscription{
+		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: s.Channel.ChannelId},
 		Types: []leylinev1.TelemetryType{
 			leylinev1.TelemetryType_SUB_AUDIBLE,
 			leylinev1.TelemetryType_METER,
@@ -270,22 +270,20 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 	// The capture's level drives OVER and the header's peak. It has its own
 	// subscription, scoped to the capture: the level is the radio's, not the
 	// channel's, and a channel-scoped stream carries none.
-	levels := s.watchLevel(sctx, s.channel.GetCaptureId())
+	levels := s.watchLevel(sctx, s.Channel.GetCaptureId())
 	what := audioWhat(s)
 	if o.watch {
 		s.say("metering %s: the %s tap, %g rows a second. Ctrl-C stops. %s\n",
-			what, scopeTapName(tap), fp.GetRowsPerSecond(), s.app.ErrStyle.Muted("from "+s.channel.ChannelId))
+			what, scopeTapName(tap), fp.GetRowsPerSecond(), s.app.ErrStyle.Muted("from "+s.Channel.ChannelId))
 	} else {
 		s.say("metering %s: the %s tap. %s\n",
-			what, scopeTapName(tap), s.app.ErrStyle.Muted("from "+s.channel.ChannelId))
+			what, scopeTapName(tap), s.app.ErrStyle.Muted("from "+s.Channel.ChannelId))
 	}
 	// Keep the event stream flowing (and the mirror current) while frames are
-	// drawn; the drain owns the mirror, so it starts after the last read of it
-	// and stops before teardown.
-	// The full scale is read from the channel before the drain starts: the drain owns the mirror
-	// from then on, and the race detector flagged a channel event folding in during this read.
-	fullScaleHz := scopeFullScaleHz(nil, s.channel)
-	stopDrain := s.drainEvents()
+	// drawn. The drain owns the mirror while it runs, so the full scale is read
+	// from the channel before it starts, and it stops before teardown.
+	fullScaleHz := scopeFullScaleHz(nil, s.Channel)
+	stopDrain := s.DrainEvents()
 	defer stopDrain()
 
 	view := newLevelsView(s.app.Style, o.width, o.height, o.third, s.app.IsTTY())
@@ -296,8 +294,6 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 		w = newChartWriter(s.app, out, o.watch, rate)
 		defer w.finish()
 	}
-	tick := time.NewTicker(chartTickInterval)
-	defer tick.Stop()
 	frame := levelsFrame{
 		bands: make([]levelsBar, len(view.bands)),
 		rms:   newLevelsBar(), peak: newLevelsBar(),
@@ -358,45 +354,50 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 	// not dropped, because a 300 ms playback part ends before the probe
 	// does, and a dropped frame would be the only one.
 	var held *leylinev1.Frame
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-tick.C:
-			if w != nil {
-				w.idle()
-			}
-			if held != nil && time.Since(start) >= levelProbeTimeout {
-				fr := held
-				held = nil
-				if done, err := emit(fr); done || err != nil {
-					return err
+	// release emits the held frame, if any.
+	release := func() (bool, error) {
+		if held == nil {
+			return false, nil
+		}
+		fr := held
+		held = nil
+		return emit(fr)
+	}
+	telemetryOpen, levelOpen := true, levels != nil
+	return liveLoop{
+		w: w,
+		onTick: func() (bool, error) {
+			if time.Since(start) >= levelProbeTimeout {
+				if done, err := release(); done || err != nil {
+					return done, err
 				}
 			}
 			// A snapshot draws one frame and exits; waiting for ever would
 			// leave a blank screen.
 			if !o.watch && rows == 0 && time.Since(start) > chartFirstRow {
-				return fmt.Errorf("no complete levels row arrived in %.0f s, so there is nothing to draw. Check the channel is still running with: ley state", chartFirstRow.Seconds())
+				return true, fmt.Errorf("no complete levels row arrived in %.0f s, so there is nothing to draw. Check the channel is still running with: ley state", chartFirstRow.Seconds())
 			}
-		case m, ok := <-levels:
-			if !ok {
-				levels, frame.level = nil, nil
+			return false, nil
+		},
+		level: levels,
+		onLevel: func(m *leylinev1.TelemetryMsg) (bool, error) {
+			if m == nil {
+				levelOpen, frame.level = false, nil
 			} else if b, ok := m.Body.(*leylinev1.TelemetryMsg_CaptureLevel); ok {
 				frame.level = b.CaptureLevel
 			}
 			// The level the still was waiting for, or the stream that was never
 			// going to send one: either way the held frame goes out now.
-			if held != nil && (frame.level != nil || levels == nil) {
-				fr := held
-				held = nil
-				if done, err := emit(fr); done || err != nil {
-					return err
-				}
+			if frame.level != nil || !levelOpen {
+				return release()
 			}
-		case m, ok := <-msgs:
-			if !ok {
-				msgs, frame.tone, frame.squelchKnown = nil, nil, false
-				continue
+			return false, nil
+		},
+		telemetry: msgs,
+		onTelemetry: func(m *leylinev1.TelemetryMsg) (bool, error) {
+			if m == nil {
+				telemetryOpen, frame.tone, frame.squelchKnown = false, nil, false
+				return false, nil
 			}
 			switch b := m.Body.(type) {
 			case *leylinev1.TelemetryMsg_SubAudible:
@@ -405,10 +406,11 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 				frame.squelchOpen, frame.squelchKnown = b.Meter.GetSquelchOpen(), true
 				frame.rmsDb, frame.peakDb = b.Meter.GetAudioDbfs(), b.Meter.GetAudioPeakDbfs()
 			}
-		case fr, ok := <-sub.Frames:
-			if !ok {
-				return levelsEnd(ctx, sub.Err(), rows)
-			}
+			return false, nil
+		},
+		frames: sub.Frames,
+		end:    func() error { return levelsEnd(ctx, sub.Err(), rows) },
+		onFrame: func(fr *leylinev1.Frame) (bool, error) {
 			// A still is complete once the daemon has also reported whether the
 			// squelch is open: a band level means something behind an open
 			// squelch and nothing behind a closed one, and a snapshot's only
@@ -417,21 +419,19 @@ func runLevels(ctx context.Context, s *session, o levelsOptions) error {
 			// not keep the bands off the screen. If the telemetry stream has
 			// ended the squelch state will never arrive, so the still is
 			// printed without it.
-			if !o.watch && rows == 0 && !frame.squelchKnown && msgs != nil {
-				continue
+			if !o.watch && rows == 0 && !frame.squelchKnown && telemetryOpen {
+				return false, nil
 			}
 			// The still's OVER is the capture's level, which is a quarter of a
 			// second away at most; a daemon that sends none (an older one) is
 			// waited on this long and then left to the bars' own rule.
-			if !o.watch && rows == 0 && frame.level == nil && levels != nil && time.Since(start) < levelProbeTimeout {
+			if !o.watch && rows == 0 && frame.level == nil && levelOpen && time.Since(start) < levelProbeTimeout {
 				held = fr
-				continue
+				return false, nil
 			}
-			if done, err := emit(fr); done || err != nil {
-				return err
-			}
-		}
-	}
+			return emit(fr)
+		},
+	}.run(ctx)
 }
 
 // levelsEnd turns the end of the spectrum stream into what to do next, by the

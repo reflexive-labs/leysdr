@@ -14,7 +14,9 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // tuneFlags holds the raw flag values before parsing.
@@ -74,14 +76,14 @@ type modeDefault struct {
 func (f *tuneFlags) parse(input string, freq uint64, def modeDefault) (*tuneOptions, error) {
 	o := &tuneOptions{freq: freq, input: input, device: f.device, rate: f.rate, noAudio: f.noAudio, persistent: f.persistent, squelch: math.NaN(), retune: f.retune, gain: f.gain}
 	if f.gain != "" {
-		if _, err := leyline.ParseGains(f.gain); err != nil {
+		if _, err := units.ParseGains(f.gain); err != nil {
 			return nil, usageError(fmt.Errorf("--gain %w", err))
 		}
 	}
-	o.band = leyline.BandFor(freq)
+	o.band = bandplan.BandFor(freq)
 	switch {
 	case f.mode != "":
-		m, reason, err := leyline.ResolveMode(f.mode, freq)
+		m, reason, err := bandplan.ResolveMode(f.mode, freq)
 		if err != nil {
 			return nil, usageError(fmt.Errorf("--mode %w", err))
 		}
@@ -89,7 +91,7 @@ func (f *tuneFlags) parse(input string, freq uint64, def modeDefault) (*tuneOpti
 	case def.mode != leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED:
 		o.mode, o.modeReason = def.mode, def.reason
 	default:
-		m, band := leyline.DefaultMode(freq)
+		m, band := bandplan.DefaultMode(freq)
 		o.mode = m
 		if band != nil {
 			o.modeReason = band.Name + " band default"
@@ -99,7 +101,7 @@ func (f *tuneFlags) parse(input string, freq uint64, def modeDefault) (*tuneOpti
 	}
 	switch {
 	case f.bw != "":
-		bw, err := leyline.ParseBandwidth(f.bw)
+		bw, err := units.ParseBandwidth(f.bw)
 		if err != nil {
 			return nil, usageError(fmt.Errorf("--bw %w (examples: 12.5, 12.5k, 200k, 12500)", err))
 		}
@@ -109,10 +111,10 @@ func (f *tuneFlags) parse(input string, freq uint64, def modeDefault) (*tuneOpti
 		// --mode the mode's own default applies, as it does for a band.
 		o.bw = def.bw
 	default:
-		o.bw = leyline.BandwidthFor(freq, o.mode)
+		o.bw = bandplan.BandwidthFor(freq, o.mode)
 	}
 	if f.squelch != "" {
-		db, auto, err := leyline.ParseSquelch(f.squelch)
+		db, auto, err := units.ParseSquelch(f.squelch)
 		if err != nil {
 			return nil, usageError(fmt.Errorf("--squelch %w (examples: -40, -40dB, off, auto)", err))
 		}
@@ -123,7 +125,7 @@ func (f *tuneFlags) parse(input string, freq uint64, def modeDefault) (*tuneOpti
 		// asks for it with --squelch off.
 		o.squelchAuto = true
 	}
-	v, err := leyline.ParseVolume(f.volume)
+	v, err := units.ParseVolume(f.volume)
 	if err != nil {
 		return nil, usageError(fmt.Errorf("--volume %w (examples: 0.5, 50%%)", err))
 	}
@@ -205,8 +207,8 @@ moves it anyway.`,
 			// because play prints its first line before runTune is reached. Ids
 			// stay on stdout in printCreated.
 			s.proseToStderr = true
-			defer s.close()
-			if s.device, err = pickDevice(s.state, o.device); err != nil {
+			defer s.Close()
+			if s.device, err = pickDevice(s.State, o.device); err != nil {
 				return err
 			}
 			return runTune(cmd.Context(), s, o)
@@ -218,7 +220,7 @@ moves it anyway.`,
 }
 
 // runTune performs the tune lifecycle on an open session whose device is set.
-func runTune(ctx context.Context, s *session, o *tuneOptions) error {
+func runTune(ctx context.Context, s *verbSession, o *tuneOptions) error {
 	if err := s.bringUp(ctx, o); err != nil {
 		return err
 	}
@@ -235,7 +237,7 @@ func runTune(ctx context.Context, s *session, o *tuneOptions) error {
 		return s.printCreated()
 	}
 	err := s.live(ctx, o)
-	s.teardown()
+	s.teardown(ctx)
 	if err == nil && (ctx.Err() != nil || s.channelGone) {
 		s.sayClosed()
 	}
@@ -248,14 +250,14 @@ func runTune(ctx context.Context, s *session, o *tuneOptions) error {
 // it created when a later step fails, so a caller that returns its error
 // leaves the radio as it found it. `ley tune` goes on to the live phase or
 // prints the ids; the MCP adapter's tune tool stops here.
-func (s *session) bringUp(ctx context.Context, o *tuneOptions) error {
+func (s *verbSession) bringUp(ctx context.Context, o *tuneOptions) error {
 	// An impossible frequency fails before any decision is announced, so the
 	// error is the only output. The capture centre is what the device tunes.
 	target := o.freq
 	if o.captureCenter != 0 {
 		target = o.captureCenter
 	}
-	if cap := leyline.FindCapture(s.state, s.device.DeviceId); cap == nil || !covers(cap, o.freq, o.bw) {
+	if capture := leyline.FindCapture(s.State, s.device.DeviceId); capture == nil || !covers(capture, o.freq, o.bw) {
 		if err := s.checkRange(o.input, target); err != nil {
 			return err
 		}
@@ -271,19 +273,19 @@ func (s *session) bringUp(ctx context.Context, o *tuneOptions) error {
 	}
 	if err := s.applyGain(ctx, o); err != nil {
 		if s.createdCapture {
-			s.teardown()
+			s.teardown(ctx)
 		}
 		return err
 	}
 	if err := s.createChannel(ctx, o); err != nil {
 		// The channel may exist already (a rejected initial squelch): remove
 		// what this tune created, the capture included when it was ours.
-		s.teardown()
+		s.teardown(ctx)
 		return err
 	}
 	if !o.noAudio {
 		if err := s.attachAudio(ctx, o); err != nil {
-			s.teardown()
+			s.teardown(ctx)
 			return err
 		}
 	}
@@ -293,7 +295,7 @@ func (s *session) bringUp(ctx context.Context, o *tuneOptions) error {
 // sayClosed is the one line an interrupted live session leaves behind: what
 // happened to the radio, on stderr because the run's stdout may be a
 // script's. Under --json the events already said it.
-func (s *session) sayClosed() {
+func (s *verbSession) sayClosed() {
 	if s.app.JSON {
 		return
 	}
@@ -321,11 +323,11 @@ func bandWarning(input string, hz uint64) string {
 		return ""
 	}
 	v, err := strconv.ParseFloat(input, 64)
-	if err != nil || v <= 0 || leyline.BandFor(hz) != nil {
+	if err != nil || v <= 0 || bandplan.BandFor(hz) != nil {
 		return ""
 	}
 	khz := uint64(math.Round(v * 1e3))
-	b := leyline.BandFor(khz)
+	b := bandplan.BandFor(khz)
 	if b == nil || khz == hz {
 		return ""
 	}
@@ -333,30 +335,30 @@ func bandWarning(input string, hz uint64) string {
 }
 
 // printCreated reports the created objects (persistent mode).
-func (s *session) printCreated() error {
+func (s *verbSession) printCreated() error {
 	if s.app.JSON {
-		if err := s.app.printJSON(s.capture); err != nil {
+		if err := s.app.printJSON(s.Capture); err != nil {
 			return err
 		}
-		if err := s.app.printJSON(s.channel); err != nil {
+		if err := s.app.printJSON(s.Channel); err != nil {
 			return err
 		}
-		if s.sink != nil {
-			return s.app.printJSON(s.sink)
+		if s.Sink != nil {
+			return s.app.printJSON(s.Sink)
 		}
 		return nil
 	}
-	fmt.Fprintf(s.app.Stdout, "capture %s\nchannel %s\n", s.capture.CaptureId, s.channel.ChannelId)
-	if s.sink != nil {
-		fmt.Fprintf(s.app.Stdout, "sink %s\n", s.sink.SinkId)
+	fmt.Fprintf(s.app.Stdout, "capture %s\nchannel %s\n", s.Capture.CaptureId, s.Channel.ChannelId)
+	if s.Sink != nil {
+		fmt.Fprintf(s.app.Stdout, "sink %s\n", s.Sink.SinkId)
 	}
-	fmt.Fprintf(s.app.Stdout, "adjust with: ley set squelch -40 --channel %s\n", s.channel.ChannelId)
+	fmt.Fprintf(s.app.Stdout, "adjust with: ley set squelch -40 --channel %s\n", s.Channel.ChannelId)
 	return nil
 }
 
 // banner is the first line of a live run: what is playing, on what, and how
 // to adjust it from another terminal.
-func (s *session) banner(o *tuneOptions) string {
+func (s *verbSession) banner(o *tuneOptions) string {
 	where := strings.ToUpper(leyline.ModeName(o.mode))
 	if o.band != nil {
 		where += ", " + o.band.Name
@@ -378,7 +380,7 @@ func (s *session) banner(o *tuneOptions) string {
 	// "Squelch <value>" and "<device>, gain auto" with single spaces; the
 	// leading word carries Label ink instead.
 	lines := []string{
-		leadLabel(st, "Listening to", fmt.Sprintf("%s (%s)", leyline.FormatFrequency(o.freq), where)),
+		leadLabel(st, "Listening to", fmt.Sprintf("%s (%s)", units.FormatFrequency(o.freq), where)),
 		s.bannerSource(st),
 		leadWord(st, squelch),
 	}
@@ -398,9 +400,9 @@ func (s *session) banner(o *tuneOptions) string {
 // bannerSource is the banner's second line: the radio, or what is being played
 // through it. A recording has no gain and no tuning range, so "Radio
 // FilePlaybackDevice, no gain control" would be a wasted line.
-func (s *session) bannerSource(st ui.Style) string {
+func (s *verbSession) bannerSource(st ui.Style) string {
 	if s.sourceLine == "" {
-		return leadLabel(st, "Radio", fmt.Sprintf("%s, %s", s.device.Model, stageGainWords(s.capture.GetGains(), s.device.GetGainElements())))
+		return leadLabel(st, "Radio", fmt.Sprintf("%s, %s", s.device.Model, stageGainWords(s.Capture.GetGains(), s.device.GetGainElements())))
 	}
 	// An unknown width is not a narrow one: piped, the line must arrive whole.
 	line := s.sourceLine
@@ -413,8 +415,8 @@ func (s *session) bannerSource(st ui.Style) string {
 // bannerSecondHint keeps the "from another terminal" line suggesting a command
 // that works. A file device refuses every gain write, so `ley set gain` there
 // would fail.
-func (s *session) bannerSecondHint() string {
-	if len(s.capture.GetGains()) == 0 {
+func (s *verbSession) bannerSecondHint() string {
+	if len(s.Capture.GetGains()) == 0 {
 		return "ley set mode am"
 	}
 	return "ley set gain 30"
@@ -438,13 +440,13 @@ func leadWord(st ui.Style, sentence string) string {
 // live holds the session open, refreshing the meter line in place and
 // printing events caused by other clients, until ctx is cancelled (Ctrl-C).
 // Under --json stdout carries NDJSON only; the banner goes to stderr.
-func (s *session) live(ctx context.Context, o *tuneOptions) error {
+func (s *verbSession) live(ctx context.Context, o *tuneOptions) error {
 	meter := &meterSink{w: s.app.Stderr, style: s.app.ErrStyle, tty: s.app.IsErrTTY()}
-	clear := meter.clear
+	clearLine := meter.clear
 	tctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	msgs, terrs, err := s.client.WatchTelemetry(tctx, &leylinev1.TelemetrySubscription{
-		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: s.channel.ChannelId},
+	msgs, terrs, err := s.Client.WatchTelemetry(tctx, &leylinev1.TelemetrySubscription{
+		Scope: &leylinev1.TelemetrySubscription_ChannelId{ChannelId: s.Channel.ChannelId},
 		Types: []leylinev1.TelemetryType{
 			leylinev1.TelemetryType_METER,
 			leylinev1.TelemetryType_SQUELCH_TRANSITION,
@@ -457,12 +459,12 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 	// The capture's level, for the clipping line: one more subscription,
 	// scoped to the capture, because the level is the capture's and not the
 	// channel's.
-	levels := s.watchLevel(tctx, s.channel.GetCaptureId())
+	levels := s.watchLevel(tctx, s.Channel.GetCaptureId())
 	// ended handles a stream's end: Ctrl-C and a daemon error are the
 	// caller's; a clean end (the daemon closed the stream, as it does when
 	// shutting down) is reported once on stderr and the run stops with exit 0.
 	ended := func(what string, err error) error {
-		clear()
+		clearLine()
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -480,7 +482,7 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 	for {
 		select {
 		case <-ctx.Done():
-			clear()
+			clearLine()
 			return nil
 		case m, ok := <-msgs:
 			if !ok {
@@ -494,14 +496,14 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 			}
 			switch b := m.Body.(type) {
 			case *leylinev1.TelemetryMsg_Meter:
-				hz, _ := leyline.ChannelFrequency(s.state, s.channel)
-				air := onAirSince(opened, m.Time, leyline.ChannelCaptureRate(s.state, s.channel))
-				meter.write(meter.line(hz, s.channel.Mode, b.Meter, s.channel.SquelchDb, air))
+				hz, _ := leyline.ChannelFrequency(s.State, s.Channel)
+				air := onAirSince(opened, m.Time, leyline.ChannelCaptureRate(s.State, s.Channel))
+				meter.write(meter.line(hz, s.Channel.Mode, b.Meter, s.Channel.SquelchDb, air))
 			case *leylinev1.TelemetryMsg_SubAudible:
 				// A tone that has appeared or changed is worth a line; the
 				// heartbeat that repeats it is not, so only a change prints.
 				if line, ok := s.subAudible.line(b.SubAudible, s.app.ErrStyle); ok {
-					clear()
+					clearLine()
 					fmt.Fprintln(s.app.Stderr, line)
 				}
 			case *leylinev1.TelemetryMsg_Squelch:
@@ -513,9 +515,9 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 					opened = m.Time
 					break
 				}
-				if t, ok := closedTransmission(b.Squelch, leyline.ChannelCaptureRate(s.state, s.channel)); ok {
-					t.start, _ = transmissionStart(b.Squelch, m.Time, captureAnchor(s.state, s.channel.GetCaptureId()))
-					clear()
+				if t, ok := closedTransmission(b.Squelch, leyline.ChannelCaptureRate(s.State, s.Channel)); ok {
+					t.start, _ = transmissionStart(b.Squelch, m.Time, captureAnchor(s.State, s.Channel.GetCaptureId()))
+					clearLine()
 					fmt.Fprintln(s.app.Stderr, t.render(s.app.ErrStyle))
 				}
 				opened = nil
@@ -537,26 +539,26 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 			}
 			// One line when the hold raises clipping, carrying the reading
 			// that raised it, and nothing when it clears: the transmission's
-			// own line already carries its peak (plans/app.md, M2-10).
-			if s.clip.fold(b.CaptureLevel, m.Time, leyline.ChannelCaptureRate(s.state, s.channel)) {
-				if note := clippingWords(b.CaptureLevel, s.capture.GetGains(), s.device.GetGainElements()); note != "" {
-					clear()
+			// own line already carries its peak.
+			if s.clip.fold(b.CaptureLevel, m.Time, leyline.ChannelCaptureRate(s.State, s.Channel)) {
+				if note := clippingWords(b.CaptureLevel, s.Capture.GetGains(), s.device.GetGainElements()); note != "" {
+					clearLine()
 					fmt.Fprintln(s.app.Stderr, leadWord(s.app.ErrStyle, note))
 				}
 			}
-		case ev, ok := <-s.events:
+		case ev, ok := <-s.Events():
 			if !ok {
-				return ended("event", <-s.eventErrs)
+				return ended("event", <-s.EventErrs())
 			}
 			// The mirror's copy of the object, before the event replaces it:
 			// what a person needs is which field moved, and the diff is the
 			// only place that answer exists (invariant 6 sends whole objects).
 			before := s.beforeEvent(ev)
-			if !s.apply(ev) {
+			if !s.Apply(ev) {
 				continue
 			}
 			line, ended := "", false
-			if !s.mine(ev) {
+			if !s.Mine(ev) {
 				line, ended = s.changeLine(before, ev)
 			}
 			switch {
@@ -565,7 +567,7 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 					return err
 				}
 			case line != "":
-				clear()
+				clearLine()
 				// Prose, and printed after meter.clear(), which only clears
 				// stderr: on stdout it would corrupt the redraw whenever the
 				// two streams point at different places.
@@ -574,7 +576,7 @@ func (s *session) live(ctx context.Context, o *tuneOptions) error {
 			if ended {
 				// The channel this session was listening to is gone. Carrying
 				// on would draw a meter for something that no longer exists.
-				clear()
+				clearLine()
 				s.channelGone = true
 				return nil
 			}

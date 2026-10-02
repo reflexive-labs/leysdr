@@ -27,6 +27,7 @@ func monitorOpts() fakedaemon.Options {
 // The report is the answer and goes to stdout, sorted by first appearance, with the channel
 // labels a GMRS radio shares; the live feed and the summary are the person's and go to stderr.
 func TestMonitorReportsTransmissions(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, monitorOpts())
 	out, errOut, err := run(t, t.Context(), sock, "monitor", "gmrs-462", "--for", "1s")
 	if err != nil {
@@ -55,6 +56,7 @@ func TestMonitorReportsTransmissions(t *testing.T) {
 
 // --json prints one snake_case object per carrier at the end, and nothing before it.
 func TestMonitorJSON(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, monitorOpts())
 	out := mustRun(t, sock, "--json", "monitor", "gmrs-462", "--for", "1s")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
@@ -87,6 +89,7 @@ func TestMonitorJSON(t *testing.T) {
 // --min-snr hides a carrier whose peak never cleared the threshold from the report, but a genuinely
 // heard weak carrier is not the same as an empty band.
 func TestMonitorMinSNR(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, monitorOpts())
 	all := mustRun(t, sock, "monitor", "gmrs-462", "--for", "1s")
 	if !strings.Contains(all, monWeak) {
@@ -106,6 +109,7 @@ func TestMonitorMinSNR(t *testing.T) {
 // spill, not its own transmission. By default it is folded into the strong carrier and left off the
 // log; --skirt-db 0 lists it again.
 func TestMonitorSkirtFold(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, monitorOpts())
 	out, errOut, err := run(t, t.Context(), sock, "monitor", "gmrs-462", "--for", "1s")
 	if err != nil {
@@ -165,6 +169,7 @@ func TestFilterMonitorCarriers(t *testing.T) {
 // HELD (a first-to-last span) is not. A carrier held down reads a high ON AIR; an intermittent one
 // reads low even when its span is wide.
 func TestMonitorOnAir(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, monitorOpts())
 	out := mustRun(t, sock, "--json", "monitor", "gmrs-462", "--for", "1s")
 	frac := map[string]float64{} // channel -> looks/looks_possible
@@ -223,6 +228,7 @@ func TestMonitorOnAirNeverExceedsHeld(t *testing.T) {
 // half. The whole service is two halves 5 MHz apart, wider than one capture, so `ley monitor
 // gmrs` is refused with the halves named rather than parked on the empty spectrum between them.
 func TestMonitorBandName(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, monitorOpts())
 	out := mustSay(t, sock, "monitor", "gmrs-462", "--for", "1s")
 	if !strings.Contains(out, "watching 462.5375 MHz to 462.7375 MHz") {
@@ -241,6 +247,7 @@ func TestMonitorBandName(t *testing.T) {
 
 // A quiet band says so rather than printing an empty table.
 func TestMonitorEmpty(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, monitorOpts())
 	out := mustSay(t, sock, "monitor", "462.700M..462.740M", "--for", "1s")
 	if !strings.Contains(out, "nothing heard on 462.700M..462.740M in") {

@@ -23,7 +23,7 @@ func TestSustainedAudioStream(t *testing.T) {
 	st := e.waitChannels(1)
 	chanID := list(st, "channels")[0].(map[string]any)["channelId"].(string)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	c, err := leyline.Dial(ctx, e.socket, leyline.WithLabel("e2e"))
 	if err != nil {

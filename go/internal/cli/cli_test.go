@@ -77,7 +77,7 @@ func runEnv(t *testing.T, ctx context.Context, sock string, env map[string]strin
 // stderr and its ids are on stdout, so "what a person saw" is both streams.
 func mustSay(t *testing.T, sock string, args ...string) string {
 	t.Helper()
-	out, errOut, err := run(t, context.Background(), sock, args...)
+	out, errOut, err := run(t, t.Context(), sock, args...)
 	if err != nil {
 		t.Fatalf("ley %v: %v\nstdout: %s\nstderr: %s", args, err, out, errOut)
 	}
@@ -86,7 +86,7 @@ func mustSay(t *testing.T, sock string, args ...string) string {
 
 func mustRun(t *testing.T, sock string, args ...string) string {
 	t.Helper()
-	out, errOut, err := run(t, context.Background(), sock, args...)
+	out, errOut, err := run(t, t.Context(), sock, args...)
 	if err != nil {
 		t.Fatalf("ley %v: %v\nstdout: %s\nstderr: %s", args, err, out, errOut)
 	}
@@ -94,6 +94,7 @@ func mustRun(t *testing.T, sock string, args ...string) string {
 }
 
 func TestDevicesTableAndJSON(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "devices")
 	// MODEL leads and STATE follows it: the ids and serials are behind --wide.
@@ -172,7 +173,7 @@ func TestDevicesTableAndJSON(t *testing.T) {
 // lines (never bare DeviceDescriptors).
 func TestDevicesWatchJSON(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 	defer cancel()
 	out, errOut, err := run(t, ctx, sock, "--json", "devices", "--watch")
 	if err != nil || errOut != "" {
@@ -206,7 +207,7 @@ func TestGainsStringUnknownTable(t *testing.T) {
 		{&leylinev1.GainElement{Name: "TUNER", ValidDb: []float64{0}}, "TUNER 0 dB"},
 		{&leylinev1.GainElement{Name: "LNA", MaxDb: 40, StepDb: 8}, "LNA 0–40 dB"},
 		{&leylinev1.GainElement{Name: "TUNER", MaxDb: 49.6, SupportsAuto: true, ValidDb: fakedaemon.R820TGains}, "TUNER 0–49.6 dB auto"},
-		// A switch lists the two levels --gain takes for off and on (plans/v1-release.md, R-23).
+		// A switch lists the two levels --gain takes for off and on.
 		{&leylinev1.GainElement{Name: "AMP", MaxDb: 11, ValidDb: []float64{0, 11}}, "AMP 0 or 11 dB"},
 	}
 	for _, c := range cases {
@@ -227,6 +228,7 @@ func TestGainsStringUnknownTable(t *testing.T) {
 }
 
 func TestState(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "state", "--wide")
 	// The fake reports leylined's default cap and holds no recordings.
@@ -257,7 +259,7 @@ func runApp(t *testing.T, app *App, args ...string) (string, string, error) {
 	if app.Socket != "" {
 		args = append([]string{"--socket", app.Socket}, args...)
 	}
-	err := Execute(context.Background(), app, args)
+	err := Execute(t.Context(), app, args)
 	return out.String(), errb.String(), err
 }
 
@@ -281,21 +283,22 @@ func exitCode(err error) int {
 // listening puts the fake daemon in the "one persistent channel" state.
 func listening(t *testing.T, c *leyline.Client) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	st, err := c.State(ctx)
 	if err != nil || len(st.Devices) == 0 {
 		t.Fatalf("state: %v", err)
 	}
-	cap, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_520_000})
+	capture, err := c.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: st.Devices[0].DeviceId, CenterHz: 146_520_000})
 	if err != nil {
 		t.Fatalf("create capture: %v", err)
 	}
-	if _, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: cap.CaptureId, Mode: leylinev1.DemodMode_NFM, BandwidthHz: 12_500, Persistent: true}); err != nil {
+	if _, err := c.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{CaptureId: capture.CaptureId, Mode: leylinev1.DemodMode_NFM, BandwidthHz: 12_500, Persistent: true}); err != nil {
 		t.Fatalf("create channel: %v", err)
 	}
 }
 
 func TestExitCodesUsage(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	dir := t.TempDir()
 	iq := filepath.Join(dir, "tone.cf32")
@@ -336,7 +339,7 @@ func TestExitCodesUsage(t *testing.T) {
 		{[]string{"play", missing}, "there is no file at " + missing},
 	}
 	for _, tc := range cases {
-		_, _, err := run(t, context.Background(), sock, tc.args...)
+		_, _, err := run(t, t.Context(), sock, tc.args...)
 		if exitCode(err) != ExitUsage {
 			t.Errorf("ley %v: exit %d (%v), want %d", tc.args, exitCode(err), err, ExitUsage)
 		}
@@ -345,18 +348,18 @@ func TestExitCodesUsage(t *testing.T) {
 		}
 	}
 	// Runtime errors from the daemon stay exit 1.
-	_, _, err := run(t, context.Background(), sock, "devices", "detach", "dev_nope")
+	_, _, err := run(t, t.Context(), sock, "devices", "detach", "dev_nope")
 	if exitCode(err) != 1 {
 		t.Errorf("runtime error: exit %d (%v), want 1", exitCode(err), err)
 	}
 	// A real radio is not a playback file: detach says how to free it instead.
-	_, _, err = run(t, context.Background(), sock, "devices", "detach", "1")
+	_, _, err = run(t, t.Context(), sock, "devices", "detach", "1")
 	if exitCode(err) != 1 || err == nil || !strings.Contains(err.Error(), "is a real radio") || !strings.Contains(err.Error(), "free it with: ley stop --all") || strings.Contains(err.Error(), "DEVICE_NOT_FOUND") {
 		t.Errorf("detach a real radio: exit %d (%v)", exitCode(err), err)
 	}
 	// A missing log file is said in plain words with the next step.
 	missing = filepath.Join(t.TempDir(), "none.log")
-	_, _, err = run(t, context.Background(), sock, "daemon", "logs", "--log", missing)
+	_, _, err = run(t, t.Context(), sock, "daemon", "logs", "--log", missing)
 	if exitCode(err) != 1 || err == nil || !strings.Contains(err.Error(), "there is no file at "+missing) || !strings.Contains(err.Error(), "ley daemon start") || strings.Contains(err.Error(), "no such file or directory") {
 		t.Errorf("daemon logs without a file: exit %d (%v)", exitCode(err), err)
 	}
@@ -374,10 +377,10 @@ func TestWithCode(t *testing.T) {
 	if wrapped.Error() != "the radio is busy; ley state shows who [DEVICE_BUSY]" {
 		t.Errorf("withCode(friendly) = %q", wrapped)
 	}
-	if e := usageErrorf("bad flag"); withCode(e) != e {
+	if e := usageErrorf("bad flag"); withCode(e) != e { //nolint:errorlint // the same value must come back
 		t.Errorf("withCode changed a usage error")
 	}
-	if e := errors.New("plain"); withCode(e) != e || withCode(nil) != nil {
+	if e := errors.New("plain"); withCode(e) != e || withCode(nil) != nil { //nolint:errorlint // the same value must come back
 		t.Errorf("withCode changed a plain error")
 	}
 }
@@ -385,7 +388,7 @@ func TestWithCode(t *testing.T) {
 func TestExitCodeNotRunning(t *testing.T) {
 	dead := testutil.SocketPath(t, "nobody.sock")
 	for _, args := range [][]string{{"state"}, {"devices"}, {"spectrum", "101.1"}, {"fft", "--freq", "101.1M"}, {"daemon", "status"}} {
-		_, _, err := run(t, context.Background(), dead, args...)
+		_, _, err := run(t, t.Context(), dead, args...)
 		if exitCode(err) != ExitNotRunning {
 			t.Errorf("ley %v: exit %d (%v), want %d", args, exitCode(err), err, ExitNotRunning)
 		}
@@ -401,15 +404,15 @@ func TestExitCodeNotRunning(t *testing.T) {
 	if err := os.WriteFile(stale, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := run(t, context.Background(), stale, "state")
+	_, _, err := run(t, t.Context(), stale, "state")
 	if exitCode(err) != ExitNotRunning || !strings.Contains(err.Error(), "stale socket "+stale) || !strings.Contains(err.Error(), "ley daemon stop && ley daemon start") {
 		t.Errorf("stale socket: exit %d, message %q", exitCode(err), err)
 	}
-	out, _, err := run(t, context.Background(), stale, "daemon", "status")
+	out, _, err := run(t, t.Context(), stale, "daemon", "status")
 	if exitCode(err) != ExitNotRunning || err.Error() != "" || !strings.Contains(out, "stale socket") {
 		t.Errorf("daemon status stale: %d %q out %q", exitCode(err), err, out)
 	}
-	out, _, err = run(t, context.Background(), stale, "daemon", "stop")
+	out, _, err = run(t, t.Context(), stale, "daemon", "stop")
 	if err != nil || !strings.Contains(out, "removed the stale socket") {
 		t.Errorf("daemon stop stale: %v out %q", err, out)
 	}
@@ -419,12 +422,13 @@ func TestExitCodeNotRunning(t *testing.T) {
 }
 
 func TestDevicesEmptyChecklist(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{NoDevice: true})
 	out, _, err := runApp(t, ttyApp(sock), "devices")
 	if err != nil || !strings.Contains(out, "rtl_test") || !strings.Contains(out, "ley daemon logs") {
 		t.Fatalf("tty checklist: %v\n%s", err, out)
 	}
-	out, _, err = run(t, context.Background(), sock, "devices")
+	out, _, err = run(t, t.Context(), sock, "devices")
 	if err != nil || strings.Contains(out, "rtl_test") {
 		t.Fatalf("piped output must not carry the checklist: %v\n%s", err, out)
 	}
@@ -435,6 +439,7 @@ func TestDevicesEmptyChecklist(t *testing.T) {
 }
 
 func TestOrientationPerState(t *testing.T) {
+	t.Parallel()
 	dead := testutil.SocketPath(t, "nobody.sock")
 	out, _, err := runApp(t, ttyApp(dead))
 	if err != nil || !strings.Contains(out, "Daemon    not running") || !strings.Contains(out, "ley daemon start") {
@@ -465,18 +470,18 @@ func TestOrientationPerState(t *testing.T) {
 	// Piped: the same orientation block, unstyled, so `ley | tee log` answers
 	// the question the Long text promises it answers. --json: the same
 	// snapshot `ley state --json` prints, because it is the same question.
-	out, _, err = run(t, context.Background(), sock)
+	out, _, err = run(t, t.Context(), sock)
 	if err != nil || !strings.Contains(out, "Playing   146.520 MHz NFM") || !strings.Contains(out, "Next:") {
 		t.Fatalf("piped: %v\n%s", err, out)
 	}
 	if strings.Contains(out, "Available Commands") || strings.Contains(out, "\x1b[") {
 		t.Fatalf("piped orientation must be the block, unstyled:\n%s", out)
 	}
-	out, errOut, err := run(t, context.Background(), sock, "--json")
+	out, errOut, err := run(t, t.Context(), sock, "--json")
 	if err != nil || errOut != "" {
 		t.Fatalf("--json: %v err %q", err, errOut)
 	}
-	stateOut, _, err := run(t, context.Background(), sock, "state", "--json")
+	stateOut, _, err := run(t, t.Context(), sock, "state", "--json")
 	if err != nil {
 		t.Fatalf("state --json: %v", err)
 	}
@@ -515,7 +520,7 @@ func TestRenderOrientationStates(t *testing.T) {
 // added later must still be hidden, and a verb that has shipped must not still be a stub.
 func TestStubsHiddenAndListed(t *testing.T) {
 	root := NewRootCommand(&App{})
-	for _, st := range Stubs {
+	for _, st := range stubs {
 		cmd, _, err := root.Find([]string{st.use})
 		if err != nil || cmd.Name() != st.use || !cmd.Hidden {
 			t.Errorf("stub %s: %v hidden=%v", st.use, err, cmd != nil && cmd.Hidden)
@@ -527,7 +532,7 @@ func TestStubsHiddenAndListed(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("--help: %v", err)
 	}
-	for _, st := range Stubs {
+	for _, st := range stubs {
 		if regexp.MustCompile(`(?m)^\s+(` + st.use + `)\s`).MatchString(out.String()) {
 			t.Errorf("stub %s must be hidden from --help:\n%s", st.use, out.String())
 		}
@@ -562,9 +567,10 @@ func TestPickDeviceSkipsExternallyHeld(t *testing.T) {
 // A radio on another machine is daemon state a client drives: attach adds it, detach removes it
 // and the daemon forgets it, so detach must not refuse a driver it did not attach itself.
 func TestDetachRemoteRadio(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{NoDevice: true})
-	ctx := context.Background()
-	dev, err := c.AttachDevice(ctx, leyline.RtlTcpSource("pi.local", 1234))
+	ctx := t.Context()
+	dev, err := c.AttachDevice(ctx, leyline.RtlTCPSource("pi.local", 1234))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,7 +5,6 @@ package plugin_test
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/binary"
 	"math"
 	"testing"
@@ -71,7 +70,7 @@ func TestRunReadsFramesAndWritesRecords(t *testing.T) {
 
 	var out bytes.Buffer
 	var dec *echoDecoder
-	err := plugin.RunStreams(context.Background(), &in, &out, func(rate uint32) plugin.Decoder {
+	err := plugin.RunStreams(t.Context(), &in, &out, func(rate uint32) plugin.Decoder {
 		dec = &echoDecoder{rate: rate}
 		return dec
 	})
@@ -119,7 +118,7 @@ func TestRunConvertsS16(t *testing.T) {
 
 	var dec *echoDecoder
 	var out bytes.Buffer
-	if err := plugin.RunStreams(context.Background(), &in, &out, func(rate uint32) plugin.Decoder {
+	if err := plugin.RunStreams(t.Context(), &in, &out, func(rate uint32) plugin.Decoder {
 		dec = &echoDecoder{rate: rate}
 		return dec
 	}); err != nil {
@@ -134,7 +133,7 @@ func TestRunConvertsS16(t *testing.T) {
 func TestRunRefusesADescriptorWithoutAudio(t *testing.T) {
 	var in bytes.Buffer
 	mustMarshal(t, &in, &leylinev1.StreamDescriptor{StreamId: "str_1", Kind: leylinev1.StreamKind_FFT})
-	err := plugin.RunStreams(context.Background(), &in, &bytes.Buffer{}, func(uint32) plugin.Decoder {
+	err := plugin.RunStreams(t.Context(), &in, &bytes.Buffer{}, func(uint32) plugin.Decoder {
 		t.Error("the decoder should not have been built")
 		return nil
 	})
@@ -146,7 +145,7 @@ func TestRunRefusesADescriptorWithoutAudio(t *testing.T) {
 func TestRunStopsAtEndOfInput(t *testing.T) {
 	var in bytes.Buffer
 	mustMarshal(t, &in, descriptor(leylinev1.AudioSampleFormat_F32))
-	if err := plugin.RunStreams(context.Background(), &in, &bytes.Buffer{}, func(rate uint32) plugin.Decoder {
+	if err := plugin.RunStreams(t.Context(), &in, &bytes.Buffer{}, func(rate uint32) plugin.Decoder {
 		return &echoDecoder{rate: rate}
 	}); err != nil {
 		t.Errorf("the daemon closing stdin is how a job ends, not a failure: %v", err)
@@ -240,7 +239,7 @@ func TestRunIQReadsFramesAndDecodesComplex(t *testing.T) {
 
 	var out bytes.Buffer
 	var dec *fakeIQDecoder
-	if err := plugin.RunIQStreams(context.Background(), &in, &out, func(rate uint32) plugin.IQDecoder {
+	if err := plugin.RunIQStreams(t.Context(), &in, &out, func(rate uint32) plugin.IQDecoder {
 		dec = &fakeIQDecoder{rate: rate}
 		return dec
 	}); err != nil {
@@ -298,7 +297,7 @@ func TestDecodeIQPayloadTruncatesARaggedFrame(t *testing.T) {
 	mustMarshal(t, &in, &leylinev1.Frame{StreamId: "str_iq", Seq: 1, Payload: payload})
 
 	var dec *fakeIQDecoder
-	if err := plugin.RunIQStreams(context.Background(), &in, &bytes.Buffer{}, func(rate uint32) plugin.IQDecoder {
+	if err := plugin.RunIQStreams(t.Context(), &in, &bytes.Buffer{}, func(rate uint32) plugin.IQDecoder {
 		dec = &fakeIQDecoder{rate: rate}
 		return dec
 	}); err != nil {
@@ -315,7 +314,7 @@ func TestDecodeIQPayloadTruncatesARaggedFrame(t *testing.T) {
 func TestRunIQRefusesAnAudioDescriptor(t *testing.T) {
 	var in bytes.Buffer
 	mustMarshal(t, &in, descriptor(leylinev1.AudioSampleFormat_F32))
-	err := plugin.RunIQStreams(context.Background(), &in, &bytes.Buffer{}, func(uint32) plugin.IQDecoder {
+	err := plugin.RunIQStreams(t.Context(), &in, &bytes.Buffer{}, func(uint32) plugin.IQDecoder {
 		t.Error("the IQ decoder should not have been built for an audio descriptor")
 		return nil
 	})
@@ -327,7 +326,7 @@ func TestRunIQRefusesAnAudioDescriptor(t *testing.T) {
 func TestRunStreamsRefusesAnIQDescriptor(t *testing.T) {
 	var in bytes.Buffer
 	mustMarshal(t, &in, iqDescriptor())
-	err := plugin.RunStreams(context.Background(), &in, &bytes.Buffer{}, func(uint32) plugin.Decoder {
+	err := plugin.RunStreams(t.Context(), &in, &bytes.Buffer{}, func(uint32) plugin.Decoder {
 		t.Error("the audio decoder should not have been built for an IQ descriptor")
 		return nil
 	})

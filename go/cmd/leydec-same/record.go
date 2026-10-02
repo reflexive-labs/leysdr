@@ -17,7 +17,7 @@ func text(s string) *leylinev1.FieldValue {
 // buildRecord turns a parsed SAME header into a DecodeRecord. device_id is the
 // sender's callsign, the validity window is the alert's, and the FIPS list is
 // joined with commas so a CONTAINS predicate can match a single county
-// (docs/plans/decoders.md, DEC-9b). The daemon fills the ids and levels.
+// The daemon fills the ids and levels.
 func buildRecord(m *same.Message) *leylinev1.DecodeRecord {
 	rec := &leylinev1.DecodeRecord{
 		Protocol: same.Protocol,

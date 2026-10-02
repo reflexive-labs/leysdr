@@ -92,7 +92,7 @@ func runPhosphor(ctx context.Context, app *App, o phosphorOptions) error {
 	if err != nil {
 		return err
 	}
-	defer s.close()
+	defer s.Close()
 	if err := s.openBand(ctx, app, bandOptions{
 		freq: o.freq, span: o.span, freqInput: o.freqInput,
 		band: o.band, retune: o.retune, device: o.device, verb: "phosphor",
@@ -100,7 +100,7 @@ func runPhosphor(ctx context.Context, app *App, o phosphorOptions) error {
 		return err
 	}
 	if s.createdCapture {
-		defer s.teardown()
+		defer s.teardown(ctx)
 	}
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -113,7 +113,7 @@ func runPhosphor(ctx context.Context, app *App, o phosphorOptions) error {
 	if err != nil {
 		return err
 	}
-	sub, err := s.client.SubscribePersistence(sctx, s.capture.CaptureId, o.bins, o.levels,
+	sub, err := s.Client.SubscribePersistence(sctx, s.Capture.CaptureId, o.bins, o.levels,
 		floor, phosphorRangeDb, o.halfLife, o.rate)
 	if err != nil {
 		return err
@@ -121,7 +121,7 @@ func runPhosphor(ctx context.Context, app *App, o phosphorOptions) error {
 	defer sub.Close()
 	// Keep the event stream flowing (and the mirror current) while frames render; the drain owns
 	// the mirror while it runs, so it starts after the last read of it and stops before teardown.
-	stopDrain := s.drainEvents()
+	stopDrain := s.DrainEvents()
 	defer stopDrain()
 
 	desc := sub.Descriptor
@@ -137,41 +137,32 @@ func runPhosphor(ctx context.Context, app *App, o phosphorOptions) error {
 	defer out.Flush()
 	w := newChartWriter(app, out, true, o.rate)
 	defer w.finish()
-	tick := time.NewTicker(chartTickInterval)
-	defer tick.Stop()
 	n := 0
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-tick.C:
-			w.idle()
-		case fr, ok := <-sub.Frames:
-			if !ok {
-				return spectrumEnd(ctx, "persistence", sub.Err(), n)
-			}
+	return liveLoop{
+		w:      w,
+		frames: sub.Frames,
+		end:    func() error { return spectrumEnd(ctx, "persistence", sub.Err(), n) },
+		onFrame: func(fr *leylinev1.Frame) (bool, error) {
 			h, ok := leyline.DecodePersistence(fr.Payload, int(p.GetBins()), int(p.GetLevels()))
 			if !ok {
-				continue
+				return false, nil
 			}
 			w.frame(view.render(h), "")
 			if err := out.Flush(); err != nil {
-				return err
+				return true, err
 			}
 			n++
-			if o.count > 0 && n >= o.count {
-				return nil
-			}
-		}
-	}
+			return o.count > 0 && n >= o.count, nil
+		},
+	}.run(ctx)
 }
 
 // firstFloorDb takes one FFT row and returns its median bin: the noise floor
 // the persistence histogram is anchored on.
-func (s *session) firstFloorDb(ctx context.Context, bins uint32) (float64, error) {
+func (s *verbSession) firstFloorDb(ctx context.Context, bins uint32) (float64, error) {
 	fctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	sub, err := s.client.SubscribeFFT(fctx, s.capture.CaptureId, bins, 4, leylinev1.FftBinFormat_DB_F32)
+	sub, err := s.Client.SubscribeFFT(fctx, s.Capture.CaptureId, bins, 4, leylinev1.FftBinFormat_DB_F32)
 	if err != nil {
 		return 0, err
 	}

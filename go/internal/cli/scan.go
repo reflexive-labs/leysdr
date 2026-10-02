@@ -15,8 +15,12 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/internal/words"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 type scanOptions struct {
@@ -86,15 +90,15 @@ goes to stderr, where a person can see it and a pipe cannot.`,
 			case len(args) == 1:
 				// A range (144M..148M) first; then a band name (gmrs, 2m), so `ley scan gmrs`
 				// works. A bare frequency is neither and stays an error -- a scan needs a span.
-				if lo, hi, rerr := leyline.ParseUserRange(args[0]); rerr == nil {
+				if lo, hi, rerr := parseRange(args[0]); rerr == nil {
 					o.minHz, o.maxHz, o.rangeInput = lo, hi, args[0]
-				} else if b, berr := leyline.ResolveBand(args[0]); berr == nil {
+				} else if b, berr := bandplan.ResolveBand(args[0]); berr == nil {
 					o.minHz, o.maxHz, o.rangeInput = b.MinHz, b.MaxHz, b.Name
 				} else {
 					return usageErrorf("%v, and no band called %q; check with: ley bands", rerr, args[0])
 				}
 			case o.bandName != "":
-				b, err := leyline.ResolveBand(o.bandName)
+				b, err := bandplan.ResolveBand(o.bandName)
 				if err != nil {
 					return usageErrorf("%v", err)
 				}
@@ -103,7 +107,7 @@ goes to stderr, where a person can see it and a pipe cannot.`,
 				return usageErrorf("scan needs a range: ley scan 144M..148M, or ley scan --band 2m; check with: ley bands")
 			}
 			if o.gain != "" {
-				if _, err := leyline.ParseGains(o.gain); err != nil {
+				if _, err := units.ParseGains(o.gain); err != nil {
 					return usageErrorf("--gain %v", err)
 				}
 			}
@@ -119,11 +123,11 @@ goes to stderr, where a person can see it and a pipe cannot.`,
 			if err != nil {
 				return err
 			}
-			defer s.close()
+			defer s.Close()
 			// The daemon takes a device id, not a row number or a prefix, so the selector is
 			// resolved here against the same list every other verb uses.
 			if o.device != "" {
-				d, derr := pickDevice(s.state, o.device)
+				d, derr := pickDevice(s.State, o.device)
 				if derr != nil {
 					return derr
 				}
@@ -145,7 +149,7 @@ goes to stderr, where a person can see it and a pipe cannot.`,
 }
 
 // runScan starts the sweep, follows it on the event stream, and prints what it found.
-func runScan(ctx context.Context, s *session, o scanOptions) error {
+func runScan(ctx context.Context, s *verbSession, o scanOptions) error {
 	scan, final, err := s.sweep(ctx, o)
 	if err != nil {
 		return err
@@ -160,7 +164,7 @@ func runScan(ctx context.Context, s *session, o scanOptions) error {
 	if s.app.JSON {
 		return s.app.printJSON(scan)
 	}
-	printScan(s.app, scan, o, scanGainElements(s.state, o.deviceID, scan))
+	printScan(s.app, scan, o, scanGainElements(s.State, o.deviceID, scan))
 	return nil
 }
 
@@ -168,7 +172,7 @@ func runScan(ctx context.Context, s *session, o scanOptions) error {
 // Scan with a nil error means the sweep ended with nothing to fetch and the reason was already
 // printed on stderr: an interrupted sweep the daemon could not report on in time, or a job that
 // named no scan. `ley scan` prints what comes back; the MCP adapter's scan tool returns it.
-func (s *session) sweep(ctx context.Context, o scanOptions) (*leylinev1.Scan, *leylinev1.Job, error) {
+func (s *verbSession) sweep(ctx context.Context, o scanOptions) (*leylinev1.Scan, *leylinev1.Job, error) {
 	cfg := &leylinev1.ScanConfig{
 		Range:    &leylinev1.FrequencyRange{MinHz: o.minHz, MaxHz: o.maxHz},
 		DwellMs:  o.dwellMs,
@@ -177,12 +181,12 @@ func (s *session) sweep(ctx context.Context, o scanOptions) (*leylinev1.Scan, *l
 		DeviceId: o.deviceID,
 		Gains:    gainWrites(o.gain),
 	}
-	job, err := s.client.Jobs.StartJob(ctx, &leylinev1.StartJobRequest{Config: &leylinev1.StartJobRequest_Scan{Scan: cfg}})
+	job, err := s.Client.Jobs.StartJob(ctx, &leylinev1.StartJobRequest{Config: &leylinev1.StartJobRequest_Scan{Scan: cfg}})
 	if err != nil {
 		return nil, nil, err
 	}
 	st := s.app.ErrStyle
-	s.say("sweeping %s to %s\n", leyline.FormatFrequency(o.minHz), leyline.FormatFrequency(o.maxHz))
+	s.say("sweeping %s to %s\n", units.FormatFrequency(o.minHz), units.FormatFrequency(o.maxHz))
 
 	progress := newScanProgress(s.app)
 	final, err := s.followJob(ctx, job, progress)
@@ -195,10 +199,10 @@ func (s *session) sweep(ctx context.Context, o scanOptions) (*leylinev1.Scan, *l
 	// An interrupted sweep still has valid measurements for the part that ran.
 	read := ctx
 	if ctx.Err() != nil {
-		c, stop := context.WithTimeout(context.Background(), confirmTimeout)
+		c, stop := session.CleanupContext(ctx, confirmTimeout)
 		defer stop()
 		read = c
-		if j, cerr := s.client.Jobs.CancelJob(c, &leylinev1.JobRef{JobId: job.JobId}); cerr == nil {
+		if j, cerr := s.Client.Jobs.CancelJob(c, &leylinev1.JobRef{JobId: job.JobId}); cerr == nil {
 			final = j
 		}
 	}
@@ -215,7 +219,7 @@ func (s *session) sweep(ctx context.Context, o scanOptions) (*leylinev1.Scan, *l
 		s.say("%s (%s)\n", final.StatusDetail, idErr)
 		return nil, final, nil
 	}
-	scan, err := s.client.Jobs.GetScan(read, &leylinev1.ScanRef{ScanId: id})
+	scan, err := s.Client.Jobs.GetScan(read, &leylinev1.ScanRef{ScanId: id})
 	if err != nil {
 		// Interrupted, and the daemon was still handing the radio back when we asked. Say so:
 		// exiting 0 with an empty screen reads as an empty band.
@@ -231,7 +235,7 @@ func (s *session) sweep(ctx context.Context, o scanOptions) (*leylinev1.Scan, *l
 
 // followJob renders progress until the job leaves RUNNING, and returns its last state. Job state
 // arrives on the event stream every client already drains -- there is no polling here.
-func (s *session) followJob(ctx context.Context, job *leylinev1.Job, progress *scanProgress) (*leylinev1.Job, error) {
+func (s *verbSession) followJob(ctx context.Context, job *leylinev1.Job, progress *scanProgress) (*leylinev1.Job, error) {
 	last := job
 	// A backstop, not the mechanism: job state arrives on the event stream. But a stream can end
 	// cleanly (a daemon reload) or drop an event (the fan-out buffer is bounded and says so), and
@@ -243,7 +247,7 @@ func (s *session) followJob(ctx context.Context, job *leylinev1.Job, progress *s
 		case <-ctx.Done():
 			return last, nil
 		case <-poll.C:
-			j, err := s.client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
+			j, err := s.Client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
 			if err != nil {
 				if ctx.Err() != nil {
 					return last, nil
@@ -257,14 +261,14 @@ func (s *session) followJob(ctx context.Context, job *leylinev1.Job, progress *s
 			if last.State != leylinev1.JobState_RUNNING {
 				return last, nil
 			}
-		case ev, ok := <-s.events:
+		case ev, ok := <-s.Events():
 			if !ok {
 				// The stream ended. pump reports a clean EOF as a nil error, so nothing here can
 				// distinguish "the daemon went away" from "the daemon finished with us" -- ask.
-				if err := <-s.eventErrs; err != nil {
+				if err := <-s.EventErrs(); err != nil {
 					return last, err
 				}
-				j, err := s.client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
+				j, err := s.Client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.JobId})
 				if err != nil {
 					if ctx.Err() != nil {
 						return last, nil
@@ -278,7 +282,7 @@ func (s *session) followJob(ctx context.Context, job *leylinev1.Job, progress *s
 			}
 			b, isJob := ev.Body.(*leylinev1.Event_Job)
 			if !isJob || b.Job.JobId != job.JobId {
-				s.apply(ev)
+				s.Apply(ev)
 				continue
 			}
 			last = b.Job
@@ -419,7 +423,7 @@ func printScan(app *App, scan *leylinev1.Scan, o scanOptions, els []*leylinev1.G
 		// remedy differs: a longer dwell will not bring back a row --min-snr filtered out.
 		if hidden := len(scan.Detections); hidden > 0 {
 			fmt.Fprintf(app.Stderr, "%s below %.0f dB, so nothing to show%s\n",
-				plural(hidden, "signal"), o.minSNR, floorPhrase(scan))
+				words.Count(hidden, "signal"), o.minSNR, floorPhrase(scan))
 			fmt.Fprintf(app.Stderr, "drop the filter to see them: %s\n", st.Cmd("ley scan "+scanArg(o)))
 			return
 		}
@@ -429,7 +433,7 @@ func printScan(app *App, scan *leylinev1.Scan, o scanOptions, els []*leylinev1.G
 		return
 	}
 	cols := []column{
-		{head: "FREQUENCY", cells: mapDet(rows, func(d *leylinev1.Detection) string { return leyline.FormatFrequency(d.CenterHz) })},
+		{head: "FREQUENCY", cells: mapDet(rows, func(d *leylinev1.Detection) string { return units.FormatFrequency(d.CenterHz) })},
 		{head: "WIDTH", cells: mapDet(rows, func(d *leylinev1.Detection) string { return widthCell(d, scan) })},
 		// The unit sits in the header (section 5) and the number takes the level ramp from
 		// --min-snr upward, as the peak list under ley spectrum does, so chart and table agree.
@@ -442,7 +446,7 @@ func printScan(app *App, scan *leylinev1.Scan, o scanOptions, els []*leylinev1.G
 	// tableStyle, not app.Style: off a terminal the width is unknown rather than 80, and fitting
 	// to 80 would silently drop the BAND column out of a piped table.
 	_, _ = printColumns(app.Stdout, tableStyle(app), cols, nil)
-	fmt.Fprintf(app.Stderr, "%s%s%s\n", plural(len(rows), "signal"), floorPhrase(scan), gainPhrase(scan, els))
+	fmt.Fprintf(app.Stderr, "%s%s%s\n", words.Count(len(rows), "signal"), floorPhrase(scan), gainPhrase(scan, els))
 	unconfirmedNote(app, rows)
 	coverageNote(app, scan, o)
 	if best := strongest(rows); best != nil {
@@ -463,8 +467,8 @@ func coverageNote(app *App, scan *leylinev1.Scan, o scanOptions) {
 		return
 	}
 	fmt.Fprintf(app.Stderr, "covered %s to %s of the %s to %s asked for\n",
-		leyline.FormatFrequency(c.MinHz), leyline.FormatFrequency(c.MaxHz),
-		leyline.FormatFrequency(o.minHz), leyline.FormatFrequency(o.maxHz))
+		units.FormatFrequency(c.MinHz), units.FormatFrequency(c.MaxHz),
+		units.FormatFrequency(o.minHz), units.FormatFrequency(o.maxHz))
 }
 
 func mapDet(rows []*leylinev1.Detection, f func(*leylinev1.Detection) string) []string {
@@ -480,12 +484,12 @@ func mapDet(rows []*leylinev1.Detection, f func(*leylinev1.Detection) string) []
 func widthCell(d *leylinev1.Detection, scan *leylinev1.Scan) string {
 	res := binWidth(scan)
 	if res > 0 && float64(d.BandwidthHz) < res {
-		return "under " + leyline.FormatFrequency(uint64(math.Round(res)))
+		return "under " + units.FormatFrequency(uint64(math.Round(res)))
 	}
 	if d.BandwidthHz == 0 {
 		return "-"
 	}
-	return leyline.FormatFrequency(uint64(d.BandwidthHz))
+	return units.FormatFrequency(uint64(d.BandwidthHz))
 }
 
 // binWidth is the analysis resolution: how finely the sweep looked, which is what every dB it
@@ -500,7 +504,7 @@ func unconfirmedNote(app *App, rows []*leylinev1.Detection) {
 	var weak []string
 	for _, d := range rows {
 		if d.LooksPossible > 1 && d.Looks*2 < d.LooksPossible {
-			weak = append(weak, fmt.Sprintf("%s (%s)", leyline.FormatFrequency(d.CenterHz), seenCell(d)))
+			weak = append(weak, fmt.Sprintf("%s (%s)", units.FormatFrequency(d.CenterHz), seenCell(d)))
 		}
 	}
 	if len(weak) == 0 {
@@ -522,7 +526,7 @@ func seenCell(d *leylinev1.Detection) string {
 // the same ones `ley bands` and `ley presets` print: presentation over the daemon's measurement.
 func bandCell(d *leylinev1.Detection) string {
 	var parts []string
-	if b := leyline.BandFor(d.CenterHz); b != nil {
+	if b := bandplan.BandFor(d.CenterHz); b != nil {
 		parts = append(parts, b.Name)
 	}
 	if p := presetAt(d.CenterHz); p != "" {
@@ -538,7 +542,7 @@ func bandCell(d *leylinev1.Detection) string {
 // marine16): the nearest within 6 kHz, a tie to the earlier plan entry, which is ChannelAt's rule
 // and the app's (the plan's KTD2). Empty when nothing sits there.
 func presetAt(hz uint64) string {
-	if _, c, ok := leyline.ChannelAt(hz); ok {
+	if _, c, ok := bandplan.ChannelAt(hz); ok {
 		return c.Aliases[0]
 	}
 	return ""
@@ -572,7 +576,7 @@ func floorPhrase(scan *leylinev1.Scan) string {
 	sort.Float64s(vals)
 	median := vals[len(vals)/2]
 	if bw := binWidth(scan); bw > 0 {
-		return fmt.Sprintf(", floor %.0f dBFS per %s bin", median, leyline.FormatFrequency(uint64(math.Round(bw))))
+		return fmt.Sprintf(", floor %.0f dBFS per %s bin", median, units.FormatFrequency(uint64(math.Round(bw))))
 	}
 	return fmt.Sprintf(", floor %.0f dBFS", median)
 }

@@ -70,8 +70,8 @@ const plSNRDB = 8
 
 func hz(v float64) string { return fmt.Sprintf("%.0f", v) }
 
-// dcsDeviationHz is the DCS deviation the owner's GMRS handheld sends, measured on both takes of
-// 2026-09-23 (docs/plans/signal-views.md, SV-7).
+// dcsDeviationHz is the DCS deviation a GMRS handheld was measured sending, on two recordings
+// (DCS 023 and DCS 754) made on 2026-09-23.
 const dcsDeviationHz = 550
 
 // dcsFixture is the voice tone of the pl fixtures with a DCS word under it in place of the CTCSS
@@ -242,8 +242,8 @@ var catalog = []fixture{
 		},
 	},
 	{
-		// DCS 023, the first code on every radio's list, at the ±550 Hz the owner's handheld
-		// sends (docs/plans/signal-views.md, SV-7). No CTCSS rides with it: a DCS lock suppresses
+		// DCS 023, the first code on every radio's list, at the ±550 Hz a GMRS handheld was
+		// measured sending (dcsDeviationHz). No CTCSS rides with it: a DCS lock suppresses
 		// the CTCSS claim, so tone_hz is 0 and detect is true for the code.
 		name: "nfm_dcs", centerHz: 146_520_000,
 		description: "NFM 1 kHz tone at +100 kHz with DCS 023 normal at 550 Hz deviation",
@@ -269,7 +269,7 @@ var catalog = []fixture{
 		},
 	},
 	{
-		// DCS 754, the owner's second take: its word also reads 076 and 203 with the fixed
+		// DCS 754, the second recorded code: its word also reads 076 and 203 with the fixed
 		// bits in place, so only the standard list names it.
 		name: "nfm_dcs_754", centerHz: 146_520_000,
 		description: "NFM 1 kHz tone at +100 kHz with DCS 754 normal at 550 Hz deviation; the word also reads 076 and 203",
@@ -468,7 +468,7 @@ func (f *fixture) fits(rate float64) bool {
 
 // aprsSource builds the aprs_afsk fixture's transmitter. The three frames are
 // a position, a weather report and a status, from three stations, which is the
-// set docs/plans/decoders.md (DEC-3) asks the sidecar to expect.
+// set the sidecar expects.
 func aprsSource(rate float64) *afskPacket {
 	return &afskPacket{
 		rate: rate, carrierHz: 0, devHz: 3500, dbfs: signalDBFS,

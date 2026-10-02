@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package leyline
+package bandplan
 
 import (
 	"strings"
@@ -68,22 +68,22 @@ func TestResolvePreset(t *testing.T) {
 
 func TestNearestPresetNames(t *testing.T) {
 	// An exact alias comes first, ahead of the names it is a prefix of.
-	if got := NearestPresetNames("noaa"); len(got) == 0 || got[0] != "noaa" {
+	if got := nearestPresetNames("noaa"); len(got) == 0 || got[0] != "noaa" {
 		t.Errorf("NearestPresetNames(noaa) = %v", got)
 	}
-	if got := NearestPresetNames("marine"); len(got) == 0 || got[0] != "marine" {
+	if got := nearestPresetNames("marine"); len(got) == 0 || got[0] != "marine" {
 		t.Errorf("NearestPresetNames(marine) = %v", got)
 	}
-	if got := NearestPresetNames("caling"); len(got) == 0 || got[0] != "calling" {
+	if got := nearestPresetNames("caling"); len(got) == 0 || got[0] != "calling" {
 		t.Errorf("NearestPresetNames(caling) = %v", got)
 	}
-	if got := NearestPresetNames("nooa"); len(got) == 0 || got[0] != "noaa" {
+	if got := nearestPresetNames("nooa"); len(got) == 0 || got[0] != "noaa" {
 		t.Errorf("NearestPresetNames(nooa) = %v, want the noaa alias first", got)
 	}
-	if got := NearestPresetNames("xyzxyz"); len(got) != 0 {
+	if got := nearestPresetNames("xyzxyz"); len(got) != 0 {
 		t.Errorf("NearestPresetNames(xyzxyz) = %v, want none", got)
 	}
-	if got := NearestPresetNames("n"); len(got) > 3 {
+	if got := nearestPresetNames("n"); len(got) > 3 {
 		t.Errorf("NearestPresetNames(n) returned %d names, want at most 3", len(got))
 	}
 }
@@ -124,11 +124,11 @@ func TestPresetsTable(t *testing.T) {
 	}
 }
 
-// TestPresetNamesOf20260928KeepResolving pins every name and alias the preset table carried on
-// 2026-09-28, the day the literal became a view over the band table's plans, to the frequency
-// and mode each stood for. Scripts and the MCP tool descriptions use these words, so the plans
-// must keep answering them (docs/design/channels.md, "The CLI"; the plan's R4).
-func TestPresetNamesOf20260928KeepResolving(t *testing.T) {
+// TestPresetNamesKeepResolving pins every name and alias the preset table carried before it
+// became a view over the band table's plans to the frequency and mode each stood for. Scripts
+// and the MCP tool descriptions use these words, so the plans must keep answering them
+// (docs/design/channels.md, "The CLI").
+func TestPresetNamesKeepResolving(t *testing.T) {
 	pinned := []struct {
 		name string
 		hz   uint64
@@ -218,7 +218,7 @@ func TestPresetNamesOf20260928KeepResolving(t *testing.T) {
 }
 
 // The preset table is a view over the plans: one preset per channel, named by the plan-prefixed
-// alias (the plan's KTD1), with the radio-printed name first among its aliases when it differs,
+// alias, with the radio-printed name first among its aliases when it differs,
 // the channel's own mode and width where it has them, and the description built from the band's
 // name and the channel's note.
 func TestPresetsAreAViewOverThePlans(t *testing.T) {

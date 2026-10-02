@@ -4,7 +4,6 @@ package cli
 
 import (
 	"bytes"
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -189,10 +188,10 @@ func TestDaemonLogsTerminalRelays(t *testing.T) {
 
 // A daemon whose pid is not a process at all has plainly gone.
 func TestProcessGone(t *testing.T) {
-	if !processGone(context.Background(), 0x7ffffff, true) {
+	if !processGone(t.Context(), 0x7ffffff, true) {
 		t.Error("an unused pid should read as gone")
 	}
-	if processGone(context.Background(), os.Getpid(), true) {
+	if processGone(t.Context(), os.Getpid(), true) {
 		t.Error("this test's own process should not read as gone")
 	}
 }
@@ -201,7 +200,7 @@ func TestProcessGone(t *testing.T) {
 // but is not yet reaped: kill(pid, 0) still finds it, so processGone must
 // recognize the zombie state as gone.
 func TestProcessGoneSeesAZombie(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cmd := exec.Command("/bin/sh", "-c", "exit 0")
 	if err := cmd.Start(); err != nil {
 		t.Skipf("cannot start a child here: %v", err)

@@ -12,6 +12,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 func newDecodersCommand(app *App) *cobra.Command {
@@ -98,7 +99,7 @@ func decoderFrequencies(m *leylinev1.DecoderManifest) string {
 	if len(hz) == 0 {
 		return "-"
 	}
-	out := leyline.FormatFrequency(hz[0])
+	out := units.FormatFrequency(hz[0])
 	if len(hz) > 1 {
 		out += fmt.Sprintf(" (+%d)", len(hz)-1)
 	}

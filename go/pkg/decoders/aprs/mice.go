@@ -81,12 +81,12 @@ func parseMicE(rec *leylinev1.DecodeRecord, dest, info string) {
 	case deg >= 190 && deg <= 199:
 		deg -= 190
 	}
-	min := int(info[1]) - 28
-	if min >= 60 {
-		min -= 60
+	lo := int(info[1]) - 28
+	if lo >= 60 {
+		lo -= 60
 	}
 	hun := int(info[2]) - 28
-	lon := float64(deg) + (float64(min)+float64(hun)/100)/60
+	lon := float64(deg) + (float64(lo)+float64(hun)/100)/60
 	if between(dest[5], 'P', 'Z') {
 		lon = -lon
 	}

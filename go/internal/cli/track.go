@@ -13,12 +13,13 @@ import (
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 	"github.com/reflexive-labs/leysdr/go/pkg/records"
 )
 
-// EntityRow is one row of `ley track --json`, and EntitySnapshot the object printed per redraw.
+// EntitySnapshot is the object `ley track --json` prints per redraw, one EntityRow per entity.
 // The entity table is a client-side fold with no proto message of its own -- the daemon serves
 // records, not entities -- so this shape (snake_case) is part of the documented exception to the
 // proto3 rule; see docs/reference/cli.md.
@@ -161,7 +162,7 @@ func runTrack(ctx context.Context, app *App, o trackOptions) error {
 		if id != "" {
 			// Free the radio as soon as track exits rather than waiting out the presence grace.
 			defer func() {
-				cctx, ccl := context.WithTimeout(context.Background(), 2*time.Second)
+				cctx, ccl := session.CleanupContext(ctx, 2*time.Second)
 				defer ccl()
 				_, _ = c.Jobs.CancelJob(cctx, &leylinev1.JobRef{JobId: id})
 			}()

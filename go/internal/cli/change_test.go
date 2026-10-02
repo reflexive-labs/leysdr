@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"google.golang.org/protobuf/proto"
 )
@@ -21,8 +22,8 @@ const (
 
 // liveSession is a session mid-listen: our own capture, channel and sink, with
 // the mirror holding all three.
-func liveSession() *session {
-	cap := &leylinev1.Capture{
+func liveSession() *verbSession {
+	capture := &leylinev1.Capture{
 		CaptureId: otherCap, DeviceId: otherDev, CenterHz: 146_620_000, SampleRate: 2_400_000,
 		State: leylinev1.CaptureState_CAPTURE_ACTIVE,
 		Gains: []*leylinev1.GainState{{Element: "TUNER", Auto: true}},
@@ -37,10 +38,10 @@ func liveSession() *session {
 	}
 	dev := &leylinev1.DeviceDescriptor{DeviceId: otherDev, Model: "R820T", State: leylinev1.DeviceState_IN_USE}
 	st := ui.Style{}
-	return &session{
+	return &verbSession{
+		Session: &session.Session{State: &leylinev1.GetStateResponse{Devices: []*leylinev1.DeviceDescriptor{dev}, Captures: []*leylinev1.Capture{capture}, Channels: []*leylinev1.Channel{ch}, Sinks: []*leylinev1.Sink{sk}}, Capture: capture, Channel: ch, Sink: sk},
 		app:     &App{Style: st, ErrStyle: st},
-		state:   &leylinev1.GetStateResponse{Devices: []*leylinev1.DeviceDescriptor{dev}, Captures: []*leylinev1.Capture{cap}, Channels: []*leylinev1.Channel{ch}, Sinks: []*leylinev1.Sink{sk}},
-		capture: cap, channel: ch, sink: sk, device: dev,
+		device:  dev,
 	}
 }
 
@@ -50,9 +51,10 @@ func byCLI() *leylinev1.ClientInfo {
 
 // say folds an event the way live() does -- previous copy first, then apply --
 // and returns the sentence and whether the session must end.
-func say(t *testing.T, s *session, body any) (string, bool) {
+func say(t *testing.T, s *verbSession, body any) (string, bool) {
 	t.Helper()
-	ev := &leylinev1.Event{Seq: s.seq + 1, CausedBy: byCLI()}
+	// Seq 0 is never stale, so every event the test sends is folded.
+	ev := &leylinev1.Event{CausedBy: byCLI()}
 	switch b := body.(type) {
 	case *leylinev1.Capture:
 		ev.Body = &leylinev1.Event_Capture{Capture: b}
@@ -66,7 +68,7 @@ func say(t *testing.T, s *session, body any) (string, bool) {
 		t.Fatalf("unhandled body %T", body)
 	}
 	before := s.beforeEvent(ev)
-	if !s.apply(ev) {
+	if !s.Apply(ev) {
 		t.Fatal("event was not folded")
 	}
 	return s.changeLine(before, ev)
@@ -80,7 +82,7 @@ func clone[T proto.Message](m T) T { return proto.Clone(m).(T) }
 // to print a full capture dump alongside the channel one.
 func TestAnActivityStampSaysNothing(t *testing.T) {
 	s := liveSession()
-	c := clone(s.capture)
+	c := clone(s.Capture)
 	c.Activity = &leylinev1.CaptureActivity{LastInteractiveWriteNs: 1234, LiveAudioSinks: 1}
 	if line, _ := say(t, s, c); line != "" {
 		t.Errorf("a listener cannot act on an activity clock: %q", line)
@@ -100,7 +102,7 @@ func TestCaptureChangesThatMatter(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := liveSession()
-			c := clone(s.capture)
+			c := clone(s.Capture)
 			tc.edit(c)
 			line, ended := say(t, s, c)
 			if line != tc.want {
@@ -127,7 +129,7 @@ func TestChannelChangesReadAsSentences(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := liveSession()
-			c := clone(s.channel)
+			c := clone(s.Channel)
 			tc.edit(c)
 			line, ended := say(t, s, c)
 			if line != tc.want {
@@ -143,14 +145,14 @@ func TestChannelChangesReadAsSentences(t *testing.T) {
 // Two knobs in one write is one sentence, not two lines.
 func TestSeveralChangesReadAsOneSentence(t *testing.T) {
 	s := liveSession()
-	c := clone(s.channel)
+	c := clone(s.Channel)
 	c.Mode, c.BandwidthHz = leylinev1.DemodMode_AM, 25000
 	line, _ := say(t, s, c)
 	if line != "another terminal set the mode to AM and the filter to 25.000 kHz" {
 		t.Errorf("got %q", line)
 	}
 	s = liveSession()
-	c = clone(s.channel)
+	c = clone(s.Channel)
 	c.Mode, c.BandwidthHz, c.SquelchDb = leylinev1.DemodMode_AM, 25000, -20
 	line, _ = say(t, s, c)
 	if want := "another terminal set the mode to AM, the filter to 25.000 kHz and the squelch to -20 dBFS"; line != want {
@@ -163,7 +165,7 @@ func TestSeveralChangesReadAsOneSentence(t *testing.T) {
 // carry on drawing a meter for it.
 func TestATombstoneEndsTheSession(t *testing.T) {
 	s := liveSession()
-	c := clone(s.channel)
+	c := clone(s.Channel)
 	c.State = leylinev1.ChannelState_CHANNEL_STATE_UNSPECIFIED
 	line, ended := say(t, s, c)
 	if line != "another terminal stopped this channel" {
@@ -179,7 +181,7 @@ func TestATombstoneEndsTheSession(t *testing.T) {
 
 func TestOutOfCaptureAndBack(t *testing.T) {
 	s := liveSession()
-	c := clone(s.channel)
+	c := clone(s.Channel)
 	c.State = leylinev1.ChannelState_OUT_OF_CAPTURE
 	line, ended := say(t, s, c)
 	if !strings.HasPrefix(line, "another terminal retuned the radio away from this channel") {
@@ -226,7 +228,7 @@ func TestOtherChannelsOnlyReportComingAndGoing(t *testing.T) {
 // could not tell that its audio had just been taken away.
 func TestTheSinkTombstoneIsTheOnlyWayToTellAudioStopped(t *testing.T) {
 	s := liveSession()
-	vol := clone(s.sink)
+	vol := clone(s.Sink)
 	vol.GetSystemAudio().Volume = proto.Float64(0.5)
 	if line, _ := say(t, s, vol); line != "another terminal set the volume to 0.50" {
 		t.Errorf("volume: got %q", line)
@@ -279,14 +281,14 @@ func TestWhoChangedNamesTheKind(t *testing.T) {
 func TestNoSentenceCarriesAnID(t *testing.T) {
 	s := liveSession()
 	for _, edit := range []func() any{
-		func() any { c := clone(s.capture); c.CenterHz = 146_700_000; return c },
-		func() any { c := clone(s.channel); c.Mode = leylinev1.DemodMode_AM; return c },
+		func() any { c := clone(s.Capture); c.CenterHz = 146_700_000; return c },
+		func() any { c := clone(s.Channel); c.Mode = leylinev1.DemodMode_AM; return c },
 		func() any {
-			c := clone(s.channel)
+			c := clone(s.Channel)
 			c.State = leylinev1.ChannelState_CHANNEL_STATE_UNSPECIFIED
 			return c
 		},
-		func() any { k := clone(s.sink); k.State = leylinev1.SinkState_SINK_STATE_UNSPECIFIED; return k },
+		func() any { k := clone(s.Sink); k.State = leylinev1.SinkState_SINK_STATE_UNSPECIFIED; return k },
 		func() any { d := clone(s.device); d.State = leylinev1.DeviceState_DISCONNECTED; return d },
 	} {
 		fresh := liveSession()
@@ -303,13 +305,13 @@ func TestNoSentenceCarriesAnID(t *testing.T) {
 // tombstone (state unset) leaves the mirror, and it is not a state to print.
 func TestACaptureTombstoneLeavesTheMirror(t *testing.T) {
 	s := liveSession()
-	lost := clone(s.capture)
+	lost := clone(s.Capture)
 	lost.State = leylinev1.CaptureState_CAPTURE_DETACHED
 	if line, _ := say(t, s, lost); line != "another terminal left the radio detached" {
 		t.Errorf("detached: got %q", line)
 	}
-	if len(s.state.Captures) != 1 {
-		t.Fatalf("a detached capture rebinds and stays in the mirror: %v", s.state.Captures)
+	if len(s.State.Captures) != 1 {
+		t.Fatalf("a detached capture rebinds and stays in the mirror: %v", s.State.Captures)
 	}
 	gone := clone(lost)
 	gone.State = leylinev1.CaptureState_CAPTURE_STATE_UNSPECIFIED
@@ -320,7 +322,7 @@ func TestACaptureTombstoneLeavesTheMirror(t *testing.T) {
 	if strings.Contains(line, "unspecified") {
 		t.Errorf("the enum name is not a sentence: %q", line)
 	}
-	if len(s.state.Captures) != 0 {
-		t.Errorf("a destroyed capture must leave the mirror: %v", s.state.Captures)
+	if len(s.State.Captures) != 0 {
+		t.Errorf("a destroyed capture must leave the mirror: %v", s.State.Captures)
 	}
 }

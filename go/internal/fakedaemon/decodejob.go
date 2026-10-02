@@ -12,6 +12,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // startDecode is Jobs.StartJob(decode) in the fake: look the decoder up, take a capture and a
@@ -44,7 +45,7 @@ func (d *Daemon) startDecode(ctx context.Context, cfg *leylinev1.DecodeConfig) (
 		CreatedAtNs:  time.Now().UnixNano(),
 		CreatedBy:    ci,
 		Config:       &leylinev1.Job_Decode{Decode: proto.Clone(cfg).(*leylinev1.DecodeConfig)},
-		StatusDetail: fmt.Sprintf("decoding %s on %s", man.GetName(), leyline.FormatFrequency(hz)),
+		StatusDetail: fmt.Sprintf("decoding %s on %s", man.GetName(), units.FormatFrequency(hz)),
 	}
 	if cfg.GetKeep() {
 		job.ResultUris = []string{"ley://records/" + job.JobId}
@@ -110,7 +111,7 @@ func (d *Daemon) leaseChannelLocked(ci *leylinev1.ClientInfo, cfg *leylinev1.Dec
 		dev := d.scanDevice(cfg.GetDeviceId(), &leylinev1.FrequencyRange{MinHz: hz, MaxHz: hz + 1})
 		if dev == nil {
 			return lease, errorf(leyline.CodeNoDevice, cfg.GetDeviceId(),
-				"no radio here can tune "+leyline.FormatFrequency(hz))
+				"no radio here can tune "+units.FormatFrequency(hz))
 		}
 		if !cfg.GetTakeOver() {
 			if why := d.busyReason(dev.DeviceId); why != "" {
@@ -159,7 +160,7 @@ func (d *Daemon) createJobCaptureLocked(dev *leylinev1.DeviceDescriptor, hz uint
 	}
 	if !inRange(dev, centre) {
 		return nil, errorf(leyline.CodeFreqOutOfRange, dev.DeviceId,
-			leyline.FormatFrequency(hz)+" is outside this radio's tuning range")
+			units.FormatFrequency(hz)+" is outside this radio's tuning range")
 	}
 	now := time.Now()
 	by := &leylinev1.ClientInfo{ClientId: "daemon", Kind: "job", Label: "decode"}
@@ -175,7 +176,7 @@ func (d *Daemon) createJobCaptureLocked(dev *leylinev1.DeviceDescriptor, hz uint
 	c.Anchor = &leylinev1.CaptureAnchor{CaptureId: c.CaptureId, HostTimeNs: now.UnixNano(), SampleRate: rate}
 	c.file = d.files[dev.DeviceId]
 	for _, el := range dev.GainElements {
-		c.Gains = append(c.Gains, &leylinev1.GainState{Element: el.Name, Auto: el.SupportsAuto, Db: leyline.SnapGain(el, el.MaxDb/2)})
+		c.Gains = append(c.Gains, &leylinev1.GainState{Element: el.Name, Auto: el.SupportsAuto, Db: units.SnapGain(el, el.MaxDb/2)})
 	}
 	d.captures[c.CaptureId] = c
 	dev.State = leylinev1.DeviceState_IN_USE
@@ -283,11 +284,11 @@ func (d *Daemon) runDecode(jobID string, man *leylinev1.DecoderManifest) {
 		j.seq++
 		rec.Seq = j.seq
 		d.publishRecord(j, rec)
-		// The liveness the daemon carries in status_detail (DEC-23): the count and the age of the
+		// The liveness the daemon carries in status_detail: the count and the age of the
 		// last record. The detail moves on every record; the Job event that carries it goes out
 		// for the first record and then every fifth, the daemon's timer at this record rate.
 		j.proto.StatusDetail = fmt.Sprintf("decoding %s on %s: %s, last just now", man.GetName(),
-			leyline.FormatFrequency(j.hz), pluralRecords(j.seq))
+			units.FormatFrequency(j.hz), pluralRecords(j.seq))
 		if j.seq == 1 || j.seq%5 == 0 {
 			d.emit(byDaemon(), proto.Clone(j.proto).(*leylinev1.Job))
 		}

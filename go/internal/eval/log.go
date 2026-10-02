@@ -313,7 +313,7 @@ func (l *Log) Answer() (map[string]any, error) {
 	}
 	var out map[string]any
 	if err := json.Unmarshal([]byte(matches[len(matches)-1][1]), &out); err != nil {
-		return nil, fmt.Errorf("the answer's JSON block does not parse: %v", err)
+		return nil, fmt.Errorf("the answer's JSON block does not parse: %w", err)
 	}
 	return out, nil
 }

@@ -2,8 +2,8 @@
 
 // Package dcs is the DCS (Digital-Coded Squelch) word: the code list, the encoder the fixture
 // generator uses, and the decoding rule the daemon applies, so the Go clients and the engine read
-// one bit stream the same way. The format was settled from two recordings of the owner's handheld
-// (docs/plans/signal-views.md, SV-7, "Recorded and read 2026-09-23"):
+// one bit stream the same way. The format was read off two recordings of a GMRS handheld sending
+// DCS 023 and DCS 754:
 //
 //   - 134.4 bit/s NRZ, a 23-bit word repeated with no gap while the transmitter is keyed;
 //   - in transmitted order, with positive deviation as a one: nine code bits (three octal digits,
@@ -191,10 +191,10 @@ func (w Word) Reads() []int {
 	return out
 }
 
-// Decode names the code a received word carries, by the daemon's rule
-// (docs/plans/signal-views.md, SV-7): of every rotation in the received polarity, the first whose
-// code is standard, with inverted false; failing that, the same in the complemented polarity, with
-// inverted true; failing both, ok is false and no code is named, rather than the nearest.
+// Decode names the code a received word carries, by the daemon's rule: of every rotation in the
+// received polarity, the first whose code is standard, with inverted false; failing that, the same
+// in the complemented polarity, with inverted true; failing both, ok is false and no code is named,
+// rather than the nearest.
 //
 // The standard list is closed under inversion: every code's complemented word reads as exactly one
 // other standard code (023 inverted reads 047, 754 inverted reads 116). Under this rule a standard

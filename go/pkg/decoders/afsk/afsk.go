@@ -25,8 +25,8 @@
 // 500-bit frame together, so this chain is about a decibel short of the
 // theoretical limit.
 //
-// Against the owner's 144.39 MHz captures (rf-captures/aprs_144390_auto.s16 and
-// aprs_144390_g40.s16, 180 s each, 2026-09-12) it recovers the one packet the
+// Against two real 144.39 MHz captures (180 s each, one at auto gain and one at
+// fixed gain, recorded 2026-09-12) it recovers the one packet the
 // auto-gain file contains, one station's position beacon, and none from the
 // fixed-gain file, which a tone scan shows carries none. 144.39 is quiet where
 // the capture was made, so the count reflects channel traffic, not decoder

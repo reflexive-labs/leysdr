@@ -12,7 +12,7 @@ import (
 // NOAA transmitter drives, so the same_alert fixture exercises the whole path
 // from IQ to DecodeRecord. Unlike the repeating afskPacket it plays the burst
 // once at the start and is silent after: a real alert is a single event, and
-// one header copy is all the decoder needs (docs/plans/decoders.md, DEC-9b).
+// one header copy is all the decoder needs.
 type samePacket struct {
 	rate, carrierHz, devHz, dbfs float64
 	header                       string

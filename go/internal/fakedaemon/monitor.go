@@ -12,6 +12,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // The fake monitor job: it parks on a band and emits synthetic Detection messages over the
@@ -88,7 +89,7 @@ func (d *Daemon) runMonitor(jobID string, mc *leylinev1.MonitorConfig, dev *leyl
 	// A band wider than one capture can watch is scan's job, not a monitor's.
 	if mc.Range.MaxHz-mc.Range.MinHz > rate {
 		d.failMonitor(jobID, leyline.CodeInvalidArgument, fmt.Sprintf(
-			"%s is wider than one capture can watch", leyline.FormatFrequency(mc.Range.MaxHz-mc.Range.MinHz)))
+			"%s is wider than one capture can watch", units.FormatFrequency(mc.Range.MaxHz-mc.Range.MinHz)))
 		return
 	}
 	d.mu.Lock()
@@ -195,7 +196,7 @@ func (d *Daemon) setMonitorRunning(jobID string, mc *leylinev1.MonitorConfig) {
 		return
 	}
 	j.proto.StatusDetail = fmt.Sprintf("watching %s to %s",
-		leyline.FormatFrequency(mc.Range.MinHz), leyline.FormatFrequency(mc.Range.MaxHz))
+		units.FormatFrequency(mc.Range.MinHz), units.FormatFrequency(mc.Range.MaxHz))
 	d.emit(byDaemon(), j.proto)
 }
 

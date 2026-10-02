@@ -16,8 +16,8 @@ import (
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
-// FFTMagic is the 4-byte magic that starts every binary FFT record.
-const FFTMagic = "LEYF"
+// fftMagic is the 4-byte magic that starts every binary FFT record.
+const fftMagic = "LEYF"
 
 // FFTRow is one JSON row of `ley fft --format json`.
 //
@@ -106,8 +106,8 @@ for the run (destroyed on exit).
 			if err != nil {
 				return err
 			}
-			defer s.close()
-			if s.device, err = pickDevice(s.state, device); err != nil {
+			defer s.Close()
+			if s.device, err = pickDevice(s.State, device); err != nil {
 				return err
 			}
 			return runFFT(cmd.Context(), s, fftOptions{bins: bins, rate: rate, bin: format == "bin", count: count, u8: u8, freq: hz})
@@ -133,19 +133,19 @@ type fftOptions struct {
 }
 
 // runFFT ensures a capture, subscribes and writes rows until count/cancel.
-func runFFT(ctx context.Context, s *session, o fftOptions) error {
-	if cap := leyline.FindCapture(s.state, s.device.DeviceId); cap != nil {
-		s.capture = cap
+func runFFT(ctx context.Context, s *verbSession, o fftOptions) error {
+	if capture := leyline.FindCapture(s.State, s.device.DeviceId); capture != nil {
+		s.Capture = capture
 	} else {
 		if o.freq == 0 {
 			return usageErrorf("the radio is idle; give a frequency: ley fft --freq 101.1 --count 1")
 		}
-		cap, err := s.client.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: s.device.DeviceId, CenterHz: o.freq})
+		capture, err := s.Client.Control.CreateCapture(ctx, &leylinev1.CreateCaptureRequest{DeviceId: s.device.DeviceId, CenterHz: o.freq})
 		if err != nil {
 			return err
 		}
-		s.capture, s.createdCapture = cap, true
-		defer s.teardown()
+		s.Capture, s.createdCapture = capture, true
+		defer s.teardown(ctx)
 	}
 	format := leylinev1.FftBinFormat_DB_F32
 	if o.u8 {
@@ -153,14 +153,14 @@ func runFFT(ctx context.Context, s *session, o fftOptions) error {
 	}
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	sub, err := s.client.SubscribeFFT(sctx, s.capture.CaptureId, o.bins, o.rate, format)
+	sub, err := s.Client.SubscribeFFT(sctx, s.Capture.CaptureId, o.bins, o.rate, format)
 	if err != nil {
 		return err
 	}
 	defer sub.Close()
 	// Keep the event stream flowing (and the mirror current) while rows are
 	// written; stopped before teardown reads the mirror.
-	stopDrain := s.drainEvents()
+	stopDrain := s.DrainEvents()
 	defer stopDrain()
 	desc := sub.Descriptor
 	nbins := desc.GetFft().GetBins()
@@ -218,7 +218,7 @@ func writeGap(w *bufio.Writer, g *leylinev1.Gap) error {
 // writeFFTRecord writes header (LEYF | u32 bins | u64 seq, little-endian) + payload.
 func writeFFTRecord(w *bufio.Writer, bins uint32, fr *leylinev1.Frame) error {
 	var hdr [16]byte
-	copy(hdr[:4], FFTMagic)
+	copy(hdr[:4], fftMagic)
 	binary.LittleEndian.PutUint32(hdr[4:8], bins)
 	binary.LittleEndian.PutUint64(hdr[8:16], fr.Seq)
 	if _, err := w.Write(hdr[:]); err != nil {
@@ -226,15 +226,6 @@ func writeFFTRecord(w *bufio.Writer, bins uint32, fr *leylinev1.Frame) error {
 	}
 	_, err := w.Write(fr.Payload)
 	return err
-}
-
-// ParseFFTRecord decodes one binary record header; it returns bins, seq and
-// the payload length implied by the header for the given bin format.
-func ParseFFTRecord(hdr []byte) (bins uint32, seq uint64, err error) {
-	if len(hdr) < 16 || string(hdr[:4]) != FFTMagic {
-		return 0, 0, fmt.Errorf("bad FFT record header")
-	}
-	return binary.LittleEndian.Uint32(hdr[4:8]), binary.LittleEndian.Uint64(hdr[8:16]), nil
 }
 
 // floorOf is medianDb with a value JSON can carry. medianDb answers NaN for an

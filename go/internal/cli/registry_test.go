@@ -44,6 +44,7 @@ func mustLabels(t *testing.T, sock, labelsPath string, args ...string) string {
 // removes it -- all against a temp store, because labels are user data in the client (docs/design/
 // decoders.md, "The state boundary").
 func TestLabelRoundTrips(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	path := filepath.Join(t.TempDir(), "labels.json")
 
@@ -78,6 +79,7 @@ func TestLabelRoundTrips(t *testing.T) {
 // TestDevicesSeenListsAndCounts: the registry is one row per transmitter the kept records heard,
 // with a count that grows as the fake emits (a record every RecordInterval), newest first.
 func TestDevicesSeenListsAndCounts(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	path := filepath.Join(t.TempDir(), "labels.json")
 
@@ -117,19 +119,17 @@ func TestDevicesSeenListsAndCounts(t *testing.T) {
 // time passes, a window shorter than the gap shows the transmitters, and one hour of quiet shows
 // none, because they were all heard within the hour.
 func TestDevicesSeenQuietSince(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	path := filepath.Join(t.TempDir(), "labels.json")
 	job := keptJob(t, sock, c, 6*fakedaemon.RecordInterval)
 	// Stop the job so nothing new is heard, then let the last-seen ages grow past the window.
-	if _, err := c.Jobs.CancelJob(context.Background(), &leylinev1.JobRef{JobId: job.JobId}); err != nil {
+	if _, err := c.Jobs.CancelJob(t.Context(), &leylinev1.JobRef{JobId: job.JobId}); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
-	time.Sleep(600 * time.Millisecond)
-
-	quiet := devicesSeenJSONArgs(t, sock, path, "--quiet-since", "300ms")
-	if len(quiet.Devices) == 0 {
-		t.Fatalf("transmitters silent longer than the window must appear under --quiet-since:\n%+v", quiet)
-	}
+	waitFor(t, "transmitters silent longer than the window to appear under --quiet-since", func() bool {
+		return len(devicesSeenJSONArgs(t, sock, path, "--quiet-since", "300ms").Devices) > 0
+	})
 	loud := devicesSeenJSONArgs(t, sock, path, "--quiet-since", "1h")
 	if len(loud.Devices) != 0 {
 		t.Errorf("nothing heard within the hour has gone quiet for an hour: %+v", loud.Devices)
@@ -143,6 +143,7 @@ func TestDevicesSeenQuietSince(t *testing.T) {
 // TestDevicesSeenShowsLabels: a labelled transmitter shows the name in the registry, the join the
 // verb makes between the fold and the labels store.
 func TestDevicesSeenShowsLabels(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	path := filepath.Join(t.TempDir(), "labels.json")
 	keptJob(t, sock, c, 6*fakedaemon.RecordInterval)
@@ -179,7 +180,7 @@ func devicesSeenJSONArgs(t *testing.T, sock, path string, args ...string) Device
 // "packets", so `ley decode packets` and `ley track packets` reach it and its records.
 func TestDecodeResolvesAnAlias(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	out, errOut, err := run(t, ctx, sock, "decode", "packets", "--json", "--count", "1")
 	if err != nil {
@@ -196,7 +197,7 @@ func TestDecodeResolvesAnAlias(t *testing.T) {
 
 func TestTrackResolvesAnAlias(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	out, errOut, err := run(t, ctx, sock, "track", "packets", "--count", "3")
 	if err != nil {
@@ -214,6 +215,7 @@ func TestTrackResolvesAnAlias(t *testing.T) {
 
 // The decoders table shows the friendly names beside the canonical one, so an alias is discoverable.
 func TestDecodersTableShowsAliases(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "decoders")
 	if !strings.Contains(out, "aprs") || !strings.Contains(out, "packets") {

@@ -34,8 +34,8 @@ func newDecoder(rate float64) *decoder {
 	return &decoder{dem: afsk.New(rate), def: ax25.NewDeframer(), rate: rate, capHz: rate}
 }
 
-// Start takes the capture rate from the descriptor, which is what SampleTime
-// counts in (docs/plans/decoders.md, DEC-1).
+// Start takes the capture rate from the descriptor (span_hz), which is what
+// SampleTime counts in.
 func (d *decoder) Start(desc *leylinev1.StreamDescriptor) {
 	if hz := float64(desc.GetSpanHz()); hz > 0 {
 		d.capHz = hz

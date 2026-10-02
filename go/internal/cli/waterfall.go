@@ -83,7 +83,7 @@ func runWaterfall(ctx context.Context, app *App, o waterfallOptions) error {
 	if err != nil {
 		return err
 	}
-	defer s.close()
+	defer s.Close()
 	if err := s.openBand(ctx, app, bandOptions{
 		freq: o.freq, span: o.span, freqInput: o.freqInput,
 		band: o.band, retune: o.retune, device: o.device, verb: "waterfall",
@@ -91,20 +91,20 @@ func runWaterfall(ctx context.Context, app *App, o waterfallOptions) error {
 		return err
 	}
 	if s.createdCapture {
-		defer s.teardown()
+		defer s.teardown(ctx)
 	}
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	// ROW_MAX, not the default: a row that samples one block of its interval
 	// misses most of what happens in it, and this view exists to show duty
 	// cycle. The daemon answers with the looks it actually took.
-	sub, err := s.client.SubscribeFFTAccumulated(sctx, s.capture.CaptureId, o.bins, o.rate,
+	sub, err := s.Client.SubscribeFFTAccumulated(sctx, s.Capture.CaptureId, o.bins, o.rate,
 		leylinev1.FftBinFormat_DB_F32, leylinev1.FftAccumulation_ROW_MAX)
 	if err != nil {
 		return err
 	}
 	defer sub.Close()
-	stopDrain := s.drainEvents()
+	stopDrain := s.DrainEvents()
 	defer stopDrain()
 
 	desc := sub.Descriptor

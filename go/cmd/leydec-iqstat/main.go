@@ -48,7 +48,7 @@ func newDecoder(rate uint32) *decoder {
 }
 
 // Start reads the capture rate and center from the descriptor: span_hz is what
-// SampleTime counts in (DEC-1) and center_hz is the band's center, which the
+// SampleTime counts in, and center_hz is the band's center, which the
 // record reports so a reader knows where the power was measured.
 func (d *decoder) Start(desc *leylinev1.StreamDescriptor) {
 	if hz := float64(desc.GetSpanHz()); hz > 0 {
@@ -76,7 +76,7 @@ func (d *decoder) FeedIQ(iq []complex64, at *leylinev1.SampleTime, gap *leylinev
 // flush emits one record for the block that just filled. offset is where the
 // block ends inside this frame, placed on the capture timeline via SampleTimeAt
 // (for capture IQ the rates are equal, so this is a 1:1 add; kept for
-// consistency with the audio path, DEC-1).
+// consistency with the audio path).
 func (d *decoder) flush(at *leylinev1.SampleTime, offset int, emit func(*leylinev1.DecodeRecord)) {
 	dbfs := floorDBFS
 	if d.count > 0 {

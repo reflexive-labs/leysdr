@@ -18,6 +18,7 @@ import (
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/pkg/bandplan"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
@@ -28,6 +29,7 @@ const (
 )
 
 func TestScanTable(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out, errOut, err := run(t, t.Context(), sock, "scan", "145M..147M")
 	if err != nil {
@@ -75,6 +77,7 @@ func TestScanNamesTheUnconfirmed(t *testing.T) {
 // SEEN is the evidence a reader needs to tell a carrier from a burst, and it is never used to
 // hide a row -- an intermittent signal is exactly what somebody might be scanning for.
 func TestScanShowsTheEvidence(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "scan", "145M..147M")
 	if !strings.Contains(out, "/") {
@@ -106,6 +109,7 @@ func TestScanShowsTheEvidence(t *testing.T) {
 }
 
 func TestScanJSONIsTheScanMessageAlone(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustRun(t, sock, "--json", "scan", "145M..147M")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
@@ -138,6 +142,7 @@ func TestScanJSONIsTheScanMessageAlone(t *testing.T) {
 }
 
 func TestScanSortsBySNR(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	byFreq := mustRun(t, sock, "scan", "145M..147M")
 	bySNR := mustRun(t, sock, "scan", "145M..147M", "--sort", "snr")
@@ -150,6 +155,7 @@ func TestScanSortsBySNR(t *testing.T) {
 }
 
 func TestScanMinSNRHides(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	all := mustRun(t, sock, "scan", "160M..163M")
 	if !strings.Contains(all, "162.400 MHz") {
@@ -179,6 +185,7 @@ func TestScanMinSNRHides(t *testing.T) {
 
 // A band is named with --band because "2m" is 2 MHz everywhere a frequency is accepted.
 func TestScanBandFlag(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	out := mustSay(t, sock, "scan", "--band", "2m")
 	if !strings.Contains(out, "144.000 MHz to 148.000 MHz") {
@@ -191,6 +198,7 @@ func TestScanBandFlag(t *testing.T) {
 
 // The daemon's refusal is a sentence with a way forward, not a code.
 func TestScanReportsWhoHasTheRadio(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	listening(t, c)
 	_, errOut, err := run(t, t.Context(), sock, "scan", "145M..147M")
@@ -234,6 +242,7 @@ func TestScanReportsWhoHasTheRadio(t *testing.T) {
 
 // Strip-to-plain: the styled screen must differ from the plain one in ink alone.
 func TestScanStripsToPlain(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	plain := mustSay(t, sock, "--color", "never", "scan", "145M..147M")
 	inked := mustSay(t, sock, "--color", "always", "scan", "145M..147M")
@@ -470,6 +479,7 @@ func waitForSweep(t *testing.T, c *leyline.Client, cancel context.CancelFunc, do
 // known gain can be compared. A gain that is not a gain is a usage error before
 // anything is sent; an element the radio lacks fails the job with the daemon's code.
 func TestScanRunsAtTheGainAskedFor(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	js := mustRun(t, sock, "--json", "scan", "145M..147M", "--gain", "30")
 	var scan struct {
@@ -491,33 +501,34 @@ func TestScanRunsAtTheGainAskedFor(t *testing.T) {
 	if len(scan.Config.Gains) != 1 || scan.Config.Gains[0]["db"] != 30.0 {
 		t.Errorf("the Scan's config should echo the gain asked for: %v", scan.Config.Gains)
 	}
-	_, errOut, err := run(t, context.Background(), sock, "scan", "145M..147M", "--gain", "auto")
+	_, errOut, err := run(t, t.Context(), sock, "scan", "145M..147M", "--gain", "auto")
 	if err != nil || !oneStageGain.MatchString(errOut) {
 		t.Errorf("--gain auto: %v\n%s", err, errOut)
 	}
-	if _, _, err := run(t, context.Background(), sock, "scan", "145M..147M", "--gain", "loud"); exitCode(err) != ExitUsage {
+	if _, _, err := run(t, t.Context(), sock, "scan", "145M..147M", "--gain", "loud"); exitCode(err) != ExitUsage {
 		t.Errorf("--gain loud should be a usage error, got %v", err)
 	}
 }
 
 // oneStageGain is a one-stage radio's gain as every screen prints it: the level alone, a decimal
-// only when it has one (plans/v1-release.md, R-23).
+// only when it has one.
 var oneStageGain = regexp.MustCompile(`, gain \d+(\.\d)? dB\n`)
 
 // --gain on a sweep takes the syntax every verb takes: stages by name, any case, in order, and
 // the summary names every stage the sweep ran at with a switch as on or off. A stage the radio
-// does not have fails the sweep with the ones it has (plans/v1-release.md, R-23).
+// does not have fails the sweep with the ones it has.
 func TestScanPinsEveryStageNamed(t *testing.T) {
+	t.Parallel()
 	hackrf := fakedaemon.HackRFPro()
 	sock, _ := harness(t, fakedaemon.Options{ExtraDevices: []*leylinev1.DeviceDescriptor{hackrf}})
-	_, errOut, err := run(t, context.Background(), sock, "scan", "145M..147M", "--device", hackrf.DeviceId, "--gain", "lna=0,VGA=20,amp=11")
+	_, errOut, err := run(t, t.Context(), sock, "scan", "145M..147M", "--device", hackrf.DeviceId, "--gain", "lna=0,VGA=20,amp=11")
 	if err != nil {
 		t.Fatalf("ley scan: %v\n%s", err, errOut)
 	}
 	if !strings.Contains(errOut, ", gain LNA 0 dB, VGA 20 dB, AMP on\n") {
 		t.Errorf("the summary should name every stage as the device spells it:\n%s", errOut)
 	}
-	_, errOut, err = run(t, context.Background(), sock, "scan", "145M..147M", "--device", hackrf.DeviceId, "--gain", "LNA=0,IF=0")
+	_, errOut, err = run(t, t.Context(), sock, "scan", "145M..147M", "--device", hackrf.DeviceId, "--gain", "LNA=0,IF=0")
 	if err == nil || !strings.Contains(err.Error(), "no gain element named IF; this radio's are LNA, VGA and AMP") {
 		t.Errorf("an unknown stage should fail the sweep with the stages the radio has, got %v\n%s", err, errOut)
 	}
@@ -526,8 +537,9 @@ func TestScanPinsEveryStageNamed(t *testing.T) {
 // Two scans are comparable only if taken at the same gain. The sweep pins the tuner for its
 // duration and reports where, so two scans of a band can be read against each other.
 func TestScanSaysWhatGainItRanAt(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
-	out, errOut, err := run(t, context.Background(), sock, "scan", "145M..147M")
+	out, errOut, err := run(t, t.Context(), sock, "scan", "145M..147M")
 	if err != nil {
 		t.Fatalf("ley scan: %v\n%s", err, errOut)
 	}
@@ -580,6 +592,7 @@ func TestScanSaysWhatGainItRanAt(t *testing.T) {
 // one tuning point and so no neighbouring step to cover the hole, which is where this happens:
 // the daemon refuses with BLIND_SPOT rather than reporting an empty band as a quiet one.
 func TestScanRefusesTheBlindSpot(t *testing.T) {
+	t.Parallel()
 	sock, c := harness(t, fakedaemon.Options{})
 	dir := t.TempDir()
 	iq := filepath.Join(dir, "tone.cf32")
@@ -590,11 +603,11 @@ func TestScanRefusesTheBlindSpot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "tone.json"), []byte(side), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	dev, err := c.Control.AttachFileDevice(context.Background(), &leylinev1.AttachFileDeviceRequest{Path: iq, Loop: true})
+	dev, err := c.Control.AttachFileDevice(t.Context(), &leylinev1.AttachFileDeviceRequest{Path: iq, Loop: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = run(t, context.Background(), sock, "scan", "146.45M..146.59M", "--device", dev.DeviceId)
+	_, _, err = run(t, t.Context(), sock, "scan", "146.45M..146.59M", "--device", dev.DeviceId)
 	if err == nil {
 		t.Fatal("a scan of nothing but the DC guard should fail")
 	}
@@ -609,6 +622,7 @@ func TestScanRefusesTheBlindSpot(t *testing.T) {
 // both halves and the 5 MHz between them, so a repeater's transmit is found whichever half it
 // sits in and however it is paired. A half answers to its own name.
 func TestScanResolvesABandName(t *testing.T) {
+	t.Parallel()
 	sock, _ := harness(t, fakedaemon.Options{})
 	_, errOut, err := run(t, t.Context(), sock, "scan", "gmrs")
 	if err != nil {
@@ -626,13 +640,13 @@ func TestScanResolvesABandName(t *testing.T) {
 // The scan labels every GMRS detection with its channel number (ch1..ch22), the numbering every
 // GMRS radio shares, so a row is unambiguous. The eight repeater outputs are ch15..ch22 (rpt1..8
 // still tune them). presetAt takes the nearest within 6 kHz, since the channels are only 12.5 kHz
-// apart, and a tie goes to the earlier plan entry (the plan's KTD2).
+// apart, and a tie goes to the earlier plan entry.
 func TestScanLabelsGMRSChannels(t *testing.T) {
 	cases := []struct {
 		hz    uint64
 		label string
 	}{
-		{462_625_000, "ch18"},      // the repeater output the owner found
+		{462_625_000, "ch18"},      // a repeater output heard off air
 		{462_562_500, "ch1"},       // a 462 interstitial
 		{462_600_000, "ch17"},      // RPT3's frequency, labelled by channel number
 		{467_562_500, "ch8"},       // a 467 interstitial (the inputs band)
@@ -652,10 +666,10 @@ func TestScanLabelsGMRSChannels(t *testing.T) {
 		}
 	}
 	// Marine channel 16 keeps its own name after ceding the bare "ch16" alias to GMRS.
-	if p, err := leyline.ResolvePreset("ch16"); err != nil || p.Hz != 462_575_000 {
+	if p, err := bandplan.ResolvePreset("ch16"); err != nil || p.Hz != 462_575_000 {
 		t.Errorf("ch16 should now be GMRS channel 16: %+v %v", p, err)
 	}
-	if p, err := leyline.ResolvePreset("marine16"); err != nil || p.Hz != 156_800_000 {
+	if p, err := bandplan.ResolvePreset("marine16"); err != nil || p.Hz != 156_800_000 {
 		t.Errorf("marine16 must still resolve: %+v %v", p, err)
 	}
 }

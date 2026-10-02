@@ -23,11 +23,13 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/internal/testutil"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
-// mcpToolNames is the tool table of docs/plans/mcp.md as `ley mcp` serves it,
+// mcpToolNames is the tool table as `ley mcp` serves it,
 // in the order it is registered. The reference page (docs/reference/mcp.md)
 // lists the same names; a tool added here is added there.
 var mcpToolNames = []string{
@@ -90,7 +92,7 @@ func newMCPHarnessWith(t *testing.T, opts fakedaemon.Options) *mcpHarness {
 // test, a tool error (IsError) is the caller's to inspect.
 func (h *mcpHarness) call(t *testing.T, name string, args map[string]any) *mcp.CallToolResult {
 	t.Helper()
-	res, err := h.cs.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+	res, err := h.cs.CallTool(t.Context(), &mcp.CallToolParams{Name: name, Arguments: args})
 	if err != nil {
 		t.Fatalf("%s: %v", name, err)
 	}
@@ -166,10 +168,11 @@ func structuredField(t *testing.T, res *mcp.CallToolResult, key string, m proto.
 	}
 }
 
-// MCP-1: an MCP client lists the server's tools, and the list is the table.
+// An MCP client lists the server's tools, and the list is the table.
 func TestMCPListsTheToolTable(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
-	res, err := h.cs.ListTools(context.Background(), nil)
+	res, err := h.cs.ListTools(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,8 +182,7 @@ func TestMCPListsTheToolTable(t *testing.T) {
 		if tool.Description == "" || tool.InputSchema == nil {
 			t.Errorf("%s: no description or input schema", tool.Name)
 		}
-		// Every tool that takes a gain describes it in the sentence every --gain uses
-		// (plans/v1-release.md, R-23).
+		// Every tool that takes a gain describes it in the sentence every --gain uses.
 		var schema struct {
 			Properties map[string]struct {
 				Description string `json:"description"`
@@ -201,7 +203,7 @@ func TestMCPListsTheToolTable(t *testing.T) {
 	if strings.Join(names, " ") != strings.Join(want, " ") {
 		t.Errorf("tools:\n got %v\nwant %v", names, want)
 	}
-	tmpl, err := h.cs.ListResourceTemplates(context.Background(), nil)
+	tmpl, err := h.cs.ListResourceTemplates(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,9 +220,10 @@ func TestMCPListsTheToolTable(t *testing.T) {
 	}
 }
 
-// MCP-1: the server's daemon connection is the shared client library's, with
+// The server's daemon connection is the shared client library's, with
 // the adapter's identity: what it creates is attributed to kind "mcp".
 func TestMCPIsTheSharedClientWithItsOwnIdentity(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	res := h.must(t, "tune", map[string]any{"frequency": "146.52"})
 	var ch leylinev1.Channel
@@ -240,8 +243,9 @@ func TestMCPIsTheSharedClientWithItsOwnIdentity(t *testing.T) {
 	}
 }
 
-// MCP-2: list_devices and get_state return exactly what the verbs print.
+// list_devices and get_state return exactly what the verbs print.
 func TestMCPOrientToolsMirrorTheVerbs(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	var got, want leylinev1.ListDevicesResponse
 	structured(t, h.must(t, "list_devices", nil), &got)
@@ -265,13 +269,14 @@ func TestMCPOrientToolsMirrorTheVerbs(t *testing.T) {
 	}
 }
 
-// MCP-2: tune refuses to move a radio somebody is listening on, names who,
+// tune refuses to move a radio somebody is listening on, names who,
 // and says how to insist; take_over moves it. The refusal is made before
 // anything is written, so the daemon's state is untouched by it.
 func TestMCPTuneRefusesAnActiveCaptureAndNamesWhy(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	listening(t, h.client)
-	before, _ := h.client.State(context.Background())
+	before, _ := h.client.State(t.Context())
 	res := h.call(t, "tune", map[string]any{"frequency": "150"})
 	if !res.IsError {
 		t.Fatalf("tune moved a radio somebody was listening on:\n%s", resultText(res))
@@ -285,19 +290,19 @@ func TestMCPTuneRefusesAnActiveCaptureAndNamesWhy(t *testing.T) {
 	if strings.Contains(text, "--retune") {
 		t.Errorf("an agent has no flags; the refusal names one:\n%s", text)
 	}
-	after, _ := h.client.State(context.Background())
+	after, _ := h.client.State(t.Context())
 	if after.EventSeq != before.EventSeq {
 		t.Errorf("a refusal changed the daemon: seq %d -> %d", before.EventSeq, after.EventSeq)
 	}
 	moved := h.must(t, "tune", map[string]any{"frequency": "150", "take_over": true})
-	var cap leylinev1.Capture
-	structuredField(t, moved, "capture", &cap)
-	if cap.GetCenterHz() != 150_000_000 {
-		t.Errorf("take_over did not move the radio: %v", &cap)
+	var capture leylinev1.Capture
+	structuredField(t, moved, "capture", &capture)
+	if capture.GetCenterHz() != 150_000_000 {
+		t.Errorf("take_over did not move the radio: %v", &capture)
 	}
 }
 
-// MCP-2: a channel tune makes ends when the server does; keep leaves it.
+// A channel tune makes ends when the server does; keep leaves it.
 func TestMCPTunedChannelsFollowTheServersPresence(t *testing.T) {
 	h := newMCPHarness(t)
 	var ephemeral, kept leylinev1.Channel
@@ -308,7 +313,7 @@ func TestMCPTunedChannelsFollowTheServersPresence(t *testing.T) {
 	}
 	// The tool's own session has closed by now; the channel is still there
 	// because the server's presence stream holds it.
-	st, _ := h.client.State(context.Background())
+	st, _ := h.client.State(t.Context())
 	if channelByID(st, ephemeral.GetChannelId()) == nil {
 		t.Fatal("the channel died with the tool's session; the server's presence should hold it")
 	}
@@ -316,7 +321,7 @@ func TestMCPTunedChannelsFollowTheServersPresence(t *testing.T) {
 	h.srv.close()
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		st, _ = h.client.State(context.Background())
+		st, _ = h.client.State(t.Context())
 		if channelByID(st, ephemeral.GetChannelId()) == nil || time.Now().After(deadline) {
 			break
 		}
@@ -330,8 +335,9 @@ func TestMCPTunedChannelsFollowTheServersPresence(t *testing.T) {
 	}
 }
 
-// MCP-3: scan returns the Scan the verb prints, with the fake's detections.
+// scan returns the Scan the verb prints, with the fake's detections.
 func TestMCPScanReturnsTheDetections(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	res := h.must(t, "scan", map[string]any{"range": "145M..147M"})
 	var scan leylinev1.Scan
@@ -354,7 +360,7 @@ func TestMCPScanReturnsTheDetections(t *testing.T) {
 		t.Errorf("the tool and the verb found different carriers: %v vs %v", got, exp)
 	}
 	text := resultText(res)
-	for _, want := range []string{"FREQUENCY", "SNR (dB)", "SEEN", leyline.FormatFrequency(scan.Detections[0].CenterHz)} {
+	for _, want := range []string{"FREQUENCY", "SNR (dB)", "SEEN", units.FormatFrequency(scan.Detections[0].CenterHz)} {
 		if !strings.Contains(text, want) {
 			t.Errorf("summary lacks %q:\n%s", want, text)
 		}
@@ -377,7 +383,7 @@ func TestMCPScanReturnsTheDetections(t *testing.T) {
 	}
 }
 
-// MCP-3: listen_summary folds the squelch edges and the meter for its window
+// listen_summary folds the squelch edges and the meter for its window
 // and leaves no channel behind.
 func TestMCPListenSummary(t *testing.T) {
 	h := newMCPHarness(t)
@@ -409,7 +415,7 @@ func TestMCPListenSummary(t *testing.T) {
 			t.Errorf("summary lacks %q:\n%s", want, text)
 		}
 	}
-	st, _ := h.client.State(context.Background())
+	st, _ := h.client.State(t.Context())
 	if len(st.Channels) != 0 {
 		t.Errorf("listen_summary left a channel behind: %v", st.Channels)
 	}
@@ -418,9 +424,10 @@ func TestMCPListenSummary(t *testing.T) {
 	}
 }
 
-// MCP-3 and MCP-6: snapshot returns the `ley spectrum --json` row and a PNG
+// snapshot returns the `ley spectrum --json` row and a PNG
 // whose plot is one pixel per negotiated bin.
 func TestMCPSnapshot(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	res := h.must(t, "snapshot", map[string]any{"frequency": "146.52", "bins": 256, "include_bins": true})
 	raw := resultJSON(res)
@@ -450,7 +457,7 @@ func TestMCPSnapshot(t *testing.T) {
 	if !strings.Contains(resultText(res), "noise floor") {
 		t.Errorf("text:\n%s", resultText(res))
 	}
-	st, _ := h.client.State(context.Background())
+	st, _ := h.client.State(t.Context())
 	if len(st.Captures) != 0 {
 		t.Errorf("snapshot left its capture behind: %v", st.Captures)
 	}
@@ -476,7 +483,7 @@ func TestMCPSnapshot(t *testing.T) {
 	}
 }
 
-// MCP-4 and MCP-5: the decoder and job tools over the DEC-6 fake.
+// The decoder and job tools over the fake's decoders.
 func TestMCPDecoderAndJobTools(t *testing.T) {
 	h := newMCPHarness(t)
 	var decs leylinev1.ListDecodersResponse
@@ -493,12 +500,11 @@ func TestMCPDecoderAndJobTools(t *testing.T) {
 	if r := h.call(t, "start_decode_job", map[string]any{"decoder": "morse"}); !r.IsError || !strings.Contains(resultText(r), "list_decoders") {
 		t.Errorf("an unknown decoder must be refused and point at list_decoders: %s", resultText(r))
 	}
-	// A running job says how much it has heard (DEC-23), so get_job tells a working decoder
+	// A running job says how much it has heard, so get_job tells a working decoder
 	// from a silent one without a subscription.
-	time.Sleep(3 * fakedaemon.RecordInterval)
-	if text := resultText(h.must(t, "get_job", map[string]any{"job": job.JobId})); !strings.Contains(text, "records, last") {
-		t.Errorf("get_job should carry the record count:\n%s", text)
-	}
+	waitFor(t, "get_job to carry the record count", func() bool {
+		return strings.Contains(resultText(h.must(t, "get_job", map[string]any{"job": job.JobId})), "records, last")
+	})
 	// list_entities folds the running job's records rather than starting a second decoder.
 	ent := h.must(t, "list_entities", map[string]any{"protocol": "aprs", "duration_s": 0.5})
 	raw := resultJSON(ent)
@@ -517,13 +523,12 @@ func TestMCPDecoderAndJobTools(t *testing.T) {
 	if len(kept.ResultUris) != 1 || kept.ResultUris[0] != "ley://records/"+kept.JobId {
 		t.Fatalf("kept job names no records resource: %v", &kept)
 	}
-	time.Sleep(3 * fakedaemon.RecordInterval)
 	var page leylinev1.RecordPage
-	structured(t, h.must(t, "query_records", map[string]any{"job_id": kept.JobId}), &page)
-	if len(page.Records) == 0 {
-		t.Fatal("the kept job's records are not in the store")
-	}
-	rr, err := h.cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: kept.ResultUris[0]})
+	waitFor(t, "the kept job's records in the store", func() bool {
+		structured(t, h.must(t, "query_records", map[string]any{"job_id": kept.JobId}), &page)
+		return len(page.Records) > 0
+	})
+	rr, err := h.cs.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: kept.ResultUris[0]})
 	if err != nil {
 		t.Fatalf("read resource: %v", err)
 	}
@@ -531,7 +536,7 @@ func TestMCPDecoderAndJobTools(t *testing.T) {
 	if err := protojson.Unmarshal([]byte(rr.Contents[0].Text), &viaResource); err != nil || len(viaResource.Records) == 0 {
 		t.Errorf("the resource is not the RecordPage (%v): %s", err, rr.Contents[0].Text)
 	}
-	if _, err := h.cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: "ley://records/job_nothing"}); err == nil {
+	if _, err := h.cs.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: "ley://records/job_nothing"}); err == nil {
 		t.Error("an unknown job's records resource must not be found")
 	}
 	if r := h.call(t, "query_records", map[string]any{"near": "37.76,-122.42"}); !r.IsError || !strings.Contains(resultText(r), "radius") {
@@ -566,6 +571,7 @@ func TestMCPDecoderAndJobTools(t *testing.T) {
 // front, which is how an agent learns that the daemon it is talking to is
 // not the one it started with.
 func TestMCPDaemonLogs(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	log := filepath.Join(t.TempDir(), "leylined.log")
 	line := func(n int, msg string) string {
@@ -606,6 +612,7 @@ func TestMCPDaemonLogs(t *testing.T) {
 // An empty page cannot tell a quiet band from a decoder that never stored, so
 // the text says which it was from the job list.
 func TestMCPQueryRecordsExplainsAnEmptyPage(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	text := resultText(h.must(t, "query_records", map[string]any{"protocol": "aprs"}))
 	if !strings.Contains(text, "no kept decode job for aprs has run") {
@@ -669,7 +676,7 @@ func TestListenSummaryKeepsDCSOverCTCSS(t *testing.T) {
 		t.Errorf("a tone is not forgotten for a later report that found nothing: %v", sum.tone)
 	}
 	sum.apply(dcs)
-	s := &session{capture: &leylinev1.Capture{CenterHz: 146_520_000}, channel: &leylinev1.Channel{Mode: leylinev1.DemodMode_NFM}}
+	s := &verbSession{Session: &session.Session{Capture: &leylinev1.Capture{CenterHz: 146_520_000}, Channel: &leylinev1.Channel{Mode: leylinev1.DemodMode_NFM}}}
 	if text := sum.text(s, 10*time.Second); !strings.Contains(text, "DCS  023") {
 		t.Errorf("the text names the code: %q", text)
 	}
@@ -714,7 +721,7 @@ func TestListenSummaryFold(t *testing.T) {
 	if sum.meter.Samples != 4 || math.Abs(sum.meter.SquelchOpenFraction-0.75) > 0.001 || sum.meter.OpenAtEnd {
 		t.Errorf("meter stats: %+v", sum.meter)
 	}
-	text := sum.text(&session{channel: &leylinev1.Channel{}, state: &leylinev1.GetStateResponse{}}, 3*time.Second)
+	text := sum.text(&verbSession{Session: &session.Session{Channel: &leylinev1.Channel{}, State: &leylinev1.GetStateResponse{}}}, 3*time.Second)
 	if !strings.Contains(text, "1 transmission") || !strings.Contains(text, "already open when listening began") {
 		t.Errorf("text:\n%s", text)
 	}
@@ -817,7 +824,7 @@ func TestScanToolFailureNamesTheTools(t *testing.T) {
 		t.Errorf("remedy: %v", err)
 	}
 	other := &ExitError{Message: "something else"}
-	if got := scanToolFailure(other); got != other {
+	if got := scanToolFailure(other); got != other { //nolint:errorlint // the same value must come back
 		t.Errorf("a message with no remedy to rewrite is returned as it is: %v", got)
 	}
 }
@@ -829,7 +836,7 @@ func TestListenSummaryNamesANearMiss(t *testing.T) {
 	meter := func(sum *listenSummary, db float64) {
 		sum.apply(&leylinev1.TelemetryMsg{Time: at(1), Body: &leylinev1.TelemetryMsg_Meter{Meter: &leylinev1.Meter{PowerDbfs: db}}})
 	}
-	sess := &session{channel: &leylinev1.Channel{}, state: &leylinev1.GetStateResponse{}}
+	sess := &verbSession{Session: &session.Session{Channel: &leylinev1.Channel{}, State: &leylinev1.GetStateResponse{}}}
 	near := newListenSummary(-23, 2_400_000)
 	meter(near, -27)
 	meter(near, -24)
@@ -861,7 +868,7 @@ func TestListenSummarySquelchOffReportsNoOpenFraction(t *testing.T) {
 	if err != nil || !strings.Contains(string(raw), `"squelch_open_fraction":null`) || !strings.Contains(string(raw), `"squelch_db":null`) {
 		t.Errorf("meter JSON: %s (%v)", raw, err)
 	}
-	text := sum.text(&session{channel: &leylinev1.Channel{}, state: &leylinev1.GetStateResponse{}}, 3*time.Second)
+	text := sum.text(&verbSession{Session: &session.Session{Channel: &leylinev1.Channel{}, State: &leylinev1.GetStateResponse{}}}, 3*time.Second)
 	if !strings.Contains(text, "squelch off") || strings.Contains(text, "% of the time") {
 		t.Errorf("text:\n%s", text)
 	}
@@ -869,6 +876,7 @@ func TestListenSummarySquelchOffReportsNoOpenFraction(t *testing.T) {
 
 // daemon_logs keeps the daemon's own lines and counts the driver's.
 func TestMCPDaemonLogsLeavesTheDriverOut(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	log := filepath.Join(t.TempDir(), "leylined.log")
 	body := "2026-09-17T10:00:00+0000 info leyline.daemon: [LeylineDaemon] listening\n" +
@@ -892,6 +900,7 @@ func TestMCPDaemonLogsLeavesTheDriverOut(t *testing.T) {
 // scan's min_snr trims the returned Scan as `ley scan --min-snr` trims its
 // rows, and the whole sweep stays readable as its ley://scans resource.
 func TestMCPScanMinSNRAndTheScansResource(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	var whole leylinev1.Scan
 	structured(t, h.must(t, "scan", map[string]any{"range": "145M..147M"}), &whole)
@@ -909,7 +918,7 @@ func TestMCPScanMinSNRAndTheScansResource(t *testing.T) {
 	if !strings.Contains(resultText(res), "ley://scans/"+trimmed.ScanId) {
 		t.Errorf("the text should name the whole scan's resource:\n%s", resultText(res))
 	}
-	rr, err := h.cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: "ley://scans/" + trimmed.ScanId})
+	rr, err := h.cs.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: "ley://scans/" + trimmed.ScanId})
 	if err != nil {
 		t.Fatalf("read the scan resource: %v", err)
 	}
@@ -917,10 +926,10 @@ func TestMCPScanMinSNRAndTheScansResource(t *testing.T) {
 	if err := protojson.Unmarshal([]byte(rr.Contents[0].Text), &viaResource); err != nil || len(viaResource.Detections) != len(whole.Detections) {
 		t.Errorf("the resource is not the whole scan (%v): %d detections", err, len(viaResource.Detections))
 	}
-	if _, err := h.cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: "ley://scans/scan_nothing"}); err == nil {
+	if _, err := h.cs.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: "ley://scans/scan_nothing"}); err == nil {
 		t.Error("an unknown scan must not be found")
 	}
-	tmpl, _ := h.cs.ListResourceTemplates(context.Background(), nil)
+	tmpl, _ := h.cs.ListResourceTemplates(t.Context(), nil)
 	if len(tmpl.ResourceTemplates) != 3 {
 		t.Errorf("resource templates: %+v", tmpl.ResourceTemplates)
 	}
@@ -929,6 +938,7 @@ func TestMCPScanMinSNRAndTheScansResource(t *testing.T) {
 // A band wider than the radio captures is shown in part, and the text says
 // how much. The fake's radio captures 2.4 MHz at most; the FM band is 20.
 func TestMCPSnapshotSaysHowMuchOfABandItCovers(t *testing.T) {
+	t.Parallel()
 	h := newMCPHarness(t)
 	res := h.must(t, "snapshot", map[string]any{"band": "fm", "no_image": true})
 	text := resultText(res)
@@ -943,7 +953,7 @@ func TestMCPSnapshotSaysHowMuchOfABandItCovers(t *testing.T) {
 func TestMCPNeedsADaemon(t *testing.T) {
 	sock := testutil.SocketPath(t, "gone.sock")
 	app := &App{Socket: sock, Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}, LookupEnv: func(string) (string, bool) { return "", false }}
-	_, err := newMCPServer(context.Background(), app)
+	_, err := newMCPServer(t.Context(), app)
 	if exitCode(err) != ExitNotRunning || !strings.Contains(err.Error(), "not running") {
 		t.Errorf("want the exit-3 not-running error, got %v", err)
 	}
@@ -962,7 +972,7 @@ func TestMCPHelpNamesEveryTool(t *testing.T) {
 	}
 }
 
-// MCP-6: the PNG is the row, one column per bin, with the level ramp on the
+// The PNG is the row, one column per bin, with the level ramp on the
 // columns above the floor and nothing drawn where the floor is.
 func TestRenderSpectrumPNG(t *testing.T) {
 	bins := make([]float64, 512)
@@ -1090,7 +1100,7 @@ func TestMCPRecordFindAndGet(t *testing.T) {
 	}
 
 	// The resource template serves the same manifest.
-	rr, err := h.cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: uri})
+	rr, err := h.cs.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: uri})
 	if err != nil {
 		t.Fatalf("read the recording resource: %v", err)
 	}
@@ -1098,7 +1108,7 @@ func TestMCPRecordFindAndGet(t *testing.T) {
 	if err := json.Unmarshal([]byte(rr.Contents[0].Text), &manifest); err != nil || manifest["job_id"] != job.GetJobId() {
 		t.Errorf("the resource is not the manifest (%v): %s", err, rr.Contents[0].Text)
 	}
-	if _, err := h.cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: "ley://recordings/job_nothing"}); err == nil {
+	if _, err := h.cs.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: "ley://recordings/job_nothing"}); err == nil {
 		t.Error("a recording nobody made must not be found")
 	}
 	if res := h.call(t, "get_recording", map[string]any{"id": "job_nothing"}); !res.IsError ||
@@ -1147,7 +1157,7 @@ func TestMCPDeleteRecording(t *testing.T) {
 	}
 
 	// A running recording: started through the client, since the record tool waits.
-	running, err := h.client.StartRecord(context.Background(), &leylinev1.RecordConfig{FrequencyHz: 146_520_000, Mode: leylinev1.DemodMode_NFM})
+	running, err := h.client.StartRecord(t.Context(), &leylinev1.RecordConfig{FrequencyHz: 146_520_000, Mode: leylinev1.DemodMode_NFM})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,8 +5,7 @@ package same
 import "math"
 
 // Modulator generates continuous-phase SAME AFSK, so the tests and the
-// same_alert fixture can make an alert burst without a transmitter
-// (docs/plans/decoders.md, DEC-9b).
+// same_alert fixture can make an alert burst without a transmitter.
 type Modulator struct {
 	rate      float64
 	amplitude float64
