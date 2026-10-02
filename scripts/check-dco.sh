@@ -3,7 +3,9 @@
 #
 # Every commit in a range carries the Developer Certificate of Origin sign-off of its author:
 # a "Signed-off-by: Name <email>" line that matches the commit's author (`git commit -s` writes
-# it). Merge commits are skipped. CONTRIBUTING.md says why the project asks for it.
+# it). Merge commits are skipped, and so are commits a GitHub bot authored (Dependabot's updates):
+# a bot cannot certify the DCO, and its sign-off names a different address from its author.
+# CONTRIBUTING.md says why the project asks for it.
 #
 #   scripts/check-dco.sh <base> <head>     # e.g. origin/main HEAD
 
@@ -17,6 +19,10 @@ fi
 missing=0
 while read -r sha; do
   author="$(git log -1 --format='%an <%ae>' "$sha")"
+  if [[ "$(git log -1 --format='%ae' "$sha")" == *"[bot]@users.noreply.github.com" ]]; then
+    echo "skipped $(git log -1 --format='%h' "$sha"): authored by $author"
+    continue
+  fi
   if ! git log -1 --format='%B' "$sha" | grep -qFx "Signed-off-by: $author"; then
     echo "$(git log -1 --format='%h %s' "$sha")"
     echo "  no \"Signed-off-by: $author\" line"
