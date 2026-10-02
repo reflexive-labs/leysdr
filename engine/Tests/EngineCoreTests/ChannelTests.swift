@@ -876,6 +876,12 @@ final class ChannelTests: XCTestCase {
         XCTAssertTrue(Self.engineThreadNames().contains { $0.hasPrefix("leyline.dsp") }, "DSP thread should be named leyline.dsp.<id>: \(Self.engineThreadNames())")
         await capture.stop()
         XCTAssertFalse(capture.core.isRunning)
+        // The DSP thread signals its join as the loop returns and exits a moment later, so allow
+        // it that moment rather than reading the thread list in the gap.
+        let deadline = Date().addingTimeInterval(1)
+        while !Self.engineThreadNames().isEmpty, Date() < deadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
         XCTAssertTrue(Self.engineThreadNames().isEmpty, "engine threads still alive: \(Self.engineThreadNames())")
         let channels = await capture.channels
         XCTAssertTrue(channels.isEmpty)
