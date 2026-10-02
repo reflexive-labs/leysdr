@@ -80,7 +80,6 @@ func startTune(t *testing.T, sock, want string, args ...string) (out, errOut *sy
 // one stderr line, not "ley: EOF" and exit 1; the teardown that then fails
 // says so and names the recovery.
 func TestTuneDaemonClosesStreams(t *testing.T) {
-	t.Parallel()
 	sock, _, stop := harnessStop(t, fakedaemon.Options{MeterInterval: 20 * time.Millisecond})
 	_, errOut, cancel, done := startTune(t, sock, " dBFS  ", "tune", "146.52", "--no-audio")
 	defer cancel()
