@@ -54,6 +54,12 @@ jobs:
         run: make race
       - name: lint (pinned golangci-lint + gofumpt)
         run: make lint
+      - name: known vulnerabilities in code ley calls (govulncheck)
+        run: make vulncheck
+      - name: docs point only at files that exist
+        run: make docs-check
+      - name: workflows (actionlint)
+        run: make workflow-lint
 
   swift-linux:
     name: engine on Linux (compile + portable DSP tests + contract e2e)
@@ -90,6 +96,10 @@ jobs:
           cache-dependency-path: go/go.sum
       - name: build + test without SDR host libraries (Accelerate kernels, optional-loader matrix, fixture round-trips)
         run: make swift swift-test
+      # Invariant 4: the sample path does not allocate per block. The count is a difference
+      # between a short and a long run, so a slow runner changes the timing, not the verdict.
+      - name: hot path allocates nothing per block (release S2 harness)
+        run: make hot-path
       # The Go clients and the UDS contract were proven only on Linux before this step; macOS is
       # the platform the product ships on, so `ley` and the cross-language e2e run here too.
       - name: Go clients, lint, and ley driving the macOS-built leylined
@@ -110,3 +120,18 @@ jobs:
         run: |
           REQUIRE_SWIFT=1 ./scripts/gen-proto.sh
           git diff --exit-code -- swift/LeylineProto/Sources go/gen
+
+  # CONTRIBUTING.md asks for a Developer Certificate of Origin sign-off on every commit.
+  dco:
+    name: commits are signed off (DCO)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: every commit carries its author's Signed-off-by
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: ./scripts/check-dco.sh "$BASE" "$HEAD"

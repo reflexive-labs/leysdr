@@ -38,7 +38,7 @@ Mac app's views, the Accelerate DSP kernels and audio output need a Mac.
 - **Keep pull requests small, and one concern per commit.** A commit carries its tests and its
   documentation. The subject is `area: what changed`, under 72 characters (`engine:`, `ley:`,
   `app:`, `proto:`, `docs:`); the body says why.
-- **`make check` and `make lint` are green** before you ask for review.
+- **`make check` is green** before you ask for review (it includes both lints and the docs check).
 - **Proto changes are additive.** New fields get new numbers; nothing is renamed, retyped or
   renumbered. Never hand-edit generated code (`go/gen`, `swift/LeylineProto`); run `make proto`.
 - **Signal processing stays in the daemon.** Clients only render, so a feature works the same
@@ -49,7 +49,8 @@ Mac app's views, the Accelerate DSP kernels and audio output need a Mac.
 Every commit carries a `Signed-off-by:` line (`git commit -s`). It certifies the
 [Developer Certificate of Origin](https://developercertificate.org): you wrote the change or have
 the right to submit it under the terms below. `git config core.hooksPath scripts/git-hooks` adds
-the line automatically in this clone.
+the line automatically in this clone. CI checks every commit in a pull request, and
+`git rebase --signoff origin/main` adds a missing line to each.
 
 ## Licensing
 

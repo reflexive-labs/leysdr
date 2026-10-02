@@ -23,7 +23,13 @@
 #   make reload     macOS: rebuild ley and leylined (release), stop the running daemon, reinstall the
 #                   LaunchAgent on the new binary and start it — the edit-build-try loop in one step
 #   make lint       golangci-lint + gofumpt (pinned versions, installed into .tools/<host>/bin)
-#   make check      everything CI runs on this platform (includes the fixture and e2e suites)
+#   make app-lint   swift-format over the app package
+#   make docs-check every relative link and backticked repository path in the docs resolves
+#   make vulncheck  govulncheck over the Go module: known vulnerabilities in code ley calls
+#   make workflow-lint  actionlint over .github/workflows
+#   make hot-path   macOS: allocations per block in the release S2 harness (invariant 4)
+#   make check      everything CI runs on this platform (includes the fixture and e2e suites);
+#                   vulncheck, workflow-lint and hot-path need the network or a Mac and run in CI
 SHELL := /bin/bash
 GOBIN := $(CURDIR)/go/bin
 SWIFT_CONFIG ?= debug
@@ -42,8 +48,11 @@ HOST := $(shell uname -s | tr '[:upper:]' '[:lower:]')-$(shell uname -m)
 TOOLS := $(CURDIR)/.tools/$(HOST)/bin
 GOLANGCI_LINT_VERSION := v2.8.0
 GOFUMPT_VERSION := v0.9.2
+# govulncheck v1.8 needs Go 1.26; the module is on 1.25.
+GOVULNCHECK_VERSION := v1.7.0
+ACTIONLINT_VERSION := v1.7.12
 
-.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval app app-test app-e2e app-run app-bundle lint check clean install-decoders
+.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders
 
 all: go swift app
 
@@ -137,6 +146,20 @@ $(TOOLS)/gofumpt:
 license-check:
 	./scripts/check-licenses.sh
 
+docs-check:
+	./scripts/check-docs.py
+
+vulncheck:
+	cd go && go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+
+workflow-lint:
+	go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION)
+
+# Invariant 4 as a number: the S2 harness in a release build, counted for allocations that scale
+# with blocks processed. macOS only (dyld interposition).
+hot-path: swift-release
+	./scripts/hot-path-allocations.sh
+
 # The agent evals (docs/dev/evals.md): a daemon per scenario playing fixtures, an agent on `ley
 # mcp` against it, graded. Costs tokens, so it is not in `check`; EVAL_ARGS passes scenario names
 # or flags through (`make eval EVAL_ARGS="survey-2m --mode shell"`).
@@ -179,7 +202,7 @@ app-lint:
 lint: $(TOOLS)/golangci-lint $(TOOLS)/gofumpt
 	cd go && $(TOOLS)/golangci-lint run ./... && test -z "$$($(TOOLS)/gofumpt -l .)"
 
-check: proto-check version-check license-check go-test race lint app-lint swift swift-test e2e app app-test app-e2e
+check: proto-check version-check license-check docs-check go-test race lint app-lint swift swift-test e2e app app-test app-e2e
 
 clean:
 	rm -rf go/bin engine/.build swift/LeylineProto/.build app/.build app/dist

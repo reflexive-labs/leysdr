@@ -13,7 +13,7 @@ the user's version of this section: the same build, plus the LaunchAgent, a remo
 brew install go
 brew install librtlsdr               # only if testing a local RTL-SDR
 brew install hackrf                  # only if testing a local HackRF
-git clone <this repo> leysdr && cd leysdr
+git clone https://github.com/reflexive-labs/leysdr.git && cd leysdr
 make go                              # → go/bin/ley, go/bin/leyfix
 make swift-release                   # → engine/.build/release/leylined
 make fixtures                        # IQ fixtures for hardware-free tests (make swift-test / make e2e need them)
@@ -30,6 +30,18 @@ fixture. [App internals](app.md) is the page for working on it.
 and `make e2e` builds `ley` and `leylined` and drives the daemon over UDS (`go/internal/e2e`, which
 skips itself when `LEYLINED_BIN`/`LEY_BIN` are unset — the Makefile target is the only place it
 runs). `FIXTURE_DURATION=0.5` shortens the fixtures for a quick pass; the record end-to-end tests expect the default 1 s, so CI and `make check` use that.
+
+CI runs a few checks that `make check` leaves out because they need the network or a Mac:
+`make vulncheck` (govulncheck: known vulnerabilities in code `ley` calls), `make workflow-lint`
+(actionlint over `.github/workflows`) and, on macOS, `make hot-path` (allocations per block in the
+release S2 harness; invariant 4). `make docs-check` is in `make check`: every relative link and
+backticked repository path in the docs must exist (plans and the changelog are exempt). Pull
+requests also run `scripts/check-dco.sh`, which needs every commit signed off (`git commit -s`).
+
+Dependabot opens one update pull request a week per ecosystem (actions, Go modules, SwiftPM). A
+protobuf or gRPC bump fails CI's drift check until `make proto` is run, and a Go module change
+fails `make license-check` until `third_party/licenses/MANIFEST.txt` and the vendored licence
+texts match.
 
 ### The edit-build-try loop
 
