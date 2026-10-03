@@ -1,0 +1,263 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The scenes `make shots` takes for leysdr.com (docs/plans/site-shots.md). go/cmd/leyshots reads
+# this file: one scene per published image, named by its asset. Paths are relative to this
+# directory. Every scene's alt text gets " Simulated signals." appended in shots.json.
+#
+# kind:
+#   app        the Mac app, staged from `stage` and cropped to `crop` (macOS only)
+#   terminal   `ley` in a tmux window of `terminal.cols` x `terminal.rows`, rendered as HTML and,
+#              on macOS, as a PNG
+#   table      a CSV drawn as a table in the terminal theme
+#   composite  an app shot and a terminal shot from one daemon, side by side
+#   screen     a region of the screen found at run time (macOS only, best effort)
+#   icon       scripts/render-icon.swift (macOS only)
+#
+# fixtures are leyfix catalog entries, attached with `ley play --persistent --loop` in order, so
+# the first one's channel is the one tuned when the app starts. rate and duration apply to a
+# fixture outside the scenes set. clock is leylined --wall-clock: only app scenes set it, because
+# `ley track --since` seeds from the real clock and a shifted daemon can open a track empty.
+# steps run after the fixtures and before the shot: `ley` with the scene's socket and bookmarks,
+# or `wait` seconds.
+
+repo: reflexive-labs/leysdr
+
+scenes:
+  - asset: app-radio-2m.png
+    kind: app
+    alt: >-
+      The Leyline window on the 2 m band: a voice transmission on 146.520 MHz with PL 100.0 in the
+      inspector, the band's carriers on the waterfall, and the 2 m bookmarks in the sidebar.
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: bookmarks-2m.csv
+    stage:
+      window: {width: 1440, height: 820}
+      place: radio
+      inspector: true
+      expanded_band: 2m
+      select_bookmark: Calling
+      settle: 12
+    crop: {regions: [window]}
+
+  - asset: sidebar-chirp-import.png
+    kind: app
+    alt: >-
+      The Leyline sidebar after importing a CHIRP export of about 100 memories, with the 2 m band
+      open and the import's counts in the notice.
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    stage:
+      window: {width: 1440, height: 820}
+      place: radio
+      inspector: false
+      expanded_band: 2m
+      import_chirp: chirp-100.csv
+      settle: 6
+    crop: {regions: [sidebar]}
+
+  - asset: chirp-csv-before.png
+    kind: table
+    alt: >-
+      The first rows of a CHIRP CSV export: memories across 2 m, 70 cm, GMRS, NOAA weather, MURS
+      and marine, with their offsets and tones.
+    table:
+      source: chirp-100.csv
+      rows: 24
+      columns: [Location, Name, Frequency, Duplex, Offset, Tone, rToneFreq, cToneFreq, DtcsCode, Mode, Comment]
+      width: 900
+
+  - asset: inspector-tone.png
+    kind: app
+    alt: >-
+      The Leyline inspector on the 146.940 MHz repeater output: the heard CTCSS tone, 127.3 Hz,
+      beside the bookmark's offset of -0.6 MHz and its tone.
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: bookmarks-2m.csv
+    stage:
+      window: {width: 1440, height: 820}
+      place: radio
+      inspector: true
+      expanded_band: 2m
+      select_bookmark: Club repeater
+      settle: 10
+    crop: {regions: [inspector]}
+
+  - asset: inspector-dcs.png
+    kind: app
+    alt: >-
+      The Leyline inspector on a net on 147.180 MHz: the heard DCS code, 023, beside the
+      bookmark's tone.
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: bookmarks-2m.csv
+    stage:
+      window: {width: 1440, height: 820}
+      place: radio
+      inspector: true
+      expanded_band: 2m
+      select_bookmark: Evening net
+      settle: 10
+    crop: {regions: [inspector]}
+
+  - asset: scan-2m.png
+    kind: terminal
+    alt: >-
+      ley scan 144M..148M in a terminal: a table of the carriers found on the 2 m band with their
+      frequency, width, level over the floor, and how many looks saw each one.
+    fixtures: [{name: scene_scan}]
+    # A sweep will not take a radio a channel is on, and ley play leaves one.
+    steps:
+      - ley: [stop, all]
+    terminal:
+      cols: 100
+      rows: 22
+      panes:
+        - command: ley scan 144M..148M
+    settle: 10
+
+  - asset: scan-app.png
+    kind: app
+    alt: >-
+      The Leyline sidebar's 2 m band row after a scan, with the carriers it found marked on the
+      band rail.
+    fixtures: [{name: scene_scan}]
+    clock: "19:42"
+    steps:
+      - ley: [stop, all]
+      - ley: [scan, 144M..148M]
+      - ley: [tune, "146.52", --persistent]
+    stage:
+      window: {width: 1440, height: 820}
+      place: radio
+      inspector: false
+      expanded_band: 2m
+      settle: 6
+    crop: {regions: [sidebar]}
+
+  - asset: library-net.png
+    kind: app
+    alt: >-
+      The Leyline Library on a net recorded on 147.180 MHz: one part per over, with a level graph
+      for each, and one part selected.
+    fixtures: [{name: scene_net}]
+    clock: "19:42"
+    steps:
+      - ley: [record, "147.18", --gate, squelch, --for, 75s, --detach]
+      - wait: 80
+    stage:
+      window: {width: 1440, height: 820}
+      place: library
+      select_part: 0
+      settle: 4
+    crop: {regions: [library]}
+
+  - asset: notification-same.png
+    kind: screen
+    alt: >-
+      A macOS notification from ley watch same: a Required Weekly Test from the National Weather
+      Service for a watched county.
+    fixtures: [{name: same_alert, rate: 960000, duration: 10}]
+    manual: >-
+      set a plain dark desktop picture and close other notifications before this scene: the
+      notification is captured with what is behind it
+    terminal:
+      cols: 100
+      rows: 10
+      panes:
+        - command: ley watch same --county 020103 --notify
+    settle: 12
+
+  - asset: aprs-track.png
+    kind: terminal
+    alt: >-
+      ley track aprs in a terminal: seven stations heard on 144.390 MHz with their positions,
+      symbols and comments.
+    fixtures: [{name: scene_aprs}]
+    terminal:
+      cols: 110
+      rows: 16
+      panes:
+        - command: ley track aprs
+    settle: 26
+
+  - asset: ais-track.png
+    kind: terminal
+    alt: >-
+      ley track ais in a terminal: five vessels heard on AIS channel 1, 161.975 MHz, with their
+      positions.
+    fixtures: [{name: scene_ais}]
+    terminal:
+      cols: 110
+      rows: 14
+      panes:
+        - command: ley track ais
+    settle: 25
+
+  - asset: ways-app.png
+    kind: app
+    alt: >-
+      Part of the Leyline window: the waterfall of a voice transmission on 146.520 MHz beside the
+      inspector's squelch and level.
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: bookmarks-2m.csv
+    stage:
+      window: {width: 1440, height: 820}
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 10
+    crop: {regions: [waterfall, inspector], size: {width: 480, height: 300}, anchor: top-right}
+
+  - asset: ways-terminal.png
+    kind: terminal
+    alt: >-
+      Two terminal panes: ley tune 146.52 showing the channel's meter, beside ley set squelch -45
+      changing the squelch on the same channel.
+    fixtures: [{name: scene_2m}]
+    # ley stop leaves the radio tuned with no channel, so ley tune makes the one channel ley set
+    # picks.
+    steps:
+      - ley: [stop]
+    terminal:
+      cols: 180
+      rows: 20
+      split: horizontal
+      panes:
+        - command: ley tune 146.52
+        - command: ley set squelch -45
+          delay: 4
+    settle: 8
+
+  - asset: ways-sync.png
+    kind: composite
+    alt: >-
+      The Leyline window and a terminal side by side on one daemon: the squelch set from ley
+      shows in the app's inspector.
+    fixtures: [{name: scene_2m}]
+    # As in ways-terminal, the first pane's ley tune is the one channel. It is typed before the app
+    # starts, so the app opens on it, and the squelch change is typed once the app is showing.
+    steps:
+      - ley: [stop]
+    stage:
+      window: {width: 1100, height: 700}
+      place: radio
+      inspector: true
+      expanded_band: 2m
+      settle: 10
+    crop: {regions: [window]}
+    terminal:
+      cols: 90
+      rows: 24
+      split: vertical
+      panes:
+        - command: ley tune 146.52
+        - command: ley set squelch -45
+          delay: 4
+    settle: 8
+
+  - asset: app-icon-1024.png
+    kind: icon
+    alt: The Leyline app icon.

@@ -1,0 +1,5 @@
+Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPolarity,RxDtcsCode,CrossMode,Mode,TStep,Skip,Power,Comment,URCALL,RPT1CALL,RPT2CALL,DVCODE
+0,Calling,146.520000,,0.000000,,88.5,88.5,023,NN,023,Tone->Tone,NFM,5.00,,5.0W,national simplex calling,,,,
+1,APRS,144.390000,,0.000000,,88.5,88.5,023,NN,023,Tone->Tone,NFM,5.00,,5.0W,APRS,,,,
+2,Evening net,147.180000,,0.000000,DTCS,88.5,88.5,023,NN,023,Tone->Tone,NFM,5.00,,5.0W,weekly net,,,,
+3,Club repeater,146.940000,-,0.600000,Tone,127.3,127.3,023,NN,023,Tone->Tone,FM,5.00,,50W,club repeater,,,,

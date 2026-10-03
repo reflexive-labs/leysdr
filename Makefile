@@ -4,7 +4,7 @@
 #
 #   make proto      regenerate leyline.v1 code (Go + Swift) from proto/
 #   make version    regenerate the engine's version constant from the root VERSION file
-#   make go         build the Go clients (ley, leyfix) into go/bin
+#   make go         build the Go clients and tools (ley, leyfix, leyshots) into go/bin
 #   make bands-json regenerate the app's seed copy of the band table from `ley bands --json`
 #   make go-test    Go unit + contract tests
 #   make race       Go tests that exercise goroutines, under the race detector
@@ -14,6 +14,11 @@
 #   make fixtures   generate IQ fixtures into fixtures/ with leyfix (FIXTURE_DURATION=0.5 for a quick set)
 #   make e2e        cross-language contract test: `ley` driving a locally built leylined over UDS
 #   make eval       the agent evals: an agent on `ley mcp` against fixtures, graded (costs tokens)
+#   make shots      the site's screenshots into tmp/shots (docs/plans/site-shots.md); ONLY=a,b takes
+#                   some scenes. The app and screen scenes need the Mac; elsewhere terminal scenes stop
+#                   at HTML
+#   make shots-publish  release the reviewed tmp/shots images as shots-YYYY-MM-DD, merged with the
+#                   latest shots-* release; ONLY=a,b refreshes some (SHOTS_ARGS=--dry-run to check)
 #   make app        build the Mac app package (app/): the app and the client façade on macOS, the
 #                   façade alone on Linux, where the SwiftUI target is not declared
 #   make app-test   the façade's unit tests (no daemon)
@@ -51,7 +56,7 @@ GOFUMPT_VERSION := v0.12.0
 GOVULNCHECK_VERSION := v1.8.0
 ACTIONLINT_VERSION := v1.7.12
 
-.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders
+.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval shots shots-publish app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders
 
 all: go swift app
 
@@ -175,6 +180,17 @@ eval: go swift fixtures
 	cd go && LEYLINED_BIN="$$(cd ../engine && swift build -c $(SWIFT_CONFIG) --show-bin-path)/leylined" LEY_BIN=$(GOBIN)/ley \
 		LEYLINE_FIXTURES=$(CURDIR)/fixtures LEYLINE_DECODERS=$(CURDIR)/decoders PATH="$(GOBIN):$$PATH" \
 		go run ./cmd/leyeval run --scenarios $(CURDIR)/evals/scenarios --out $(CURDIR)/evals/runs $(EVAL_ARGS)
+
+# The site's screenshots (docs/plans/site-shots.md): leyshots runs each scene in site/shots/scenes.yaml
+# against its own leylined --no-hardware playing a scene fixture it generates into the cache. On the
+# Mac the app is bundled first, because the app scenes launch app/dist/Leyline.app.
+shots: go swift
+	@if [ "$$(uname -s)" = Darwin ]; then ./scripts/bundle-app.sh; fi
+	LEYLINED_BIN="$$(cd engine && swift build -c $(SWIFT_CONFIG) --show-bin-path)/leylined" LEY_BIN=$(GOBIN)/ley \
+		LEYFIX_BIN=$(GOBIN)/leyfix $(GOBIN)/leyshots run $(if $(ONLY),--only $(ONLY))
+
+shots-publish: go
+	$(GOBIN)/leyshots publish $(if $(ONLY),--only $(ONLY)) $(SHOTS_ARGS)
 
 # The Mac app (docs/dev/app.md). One package at app/, depending on swift/LeylineProto for the
 # generated contract and on the engine package not at all. `swift test` in app/ would run the

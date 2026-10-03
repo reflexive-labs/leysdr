@@ -30,13 +30,18 @@ page covers each of its items.
 
 `go/cmd/leyshots` reads `site/shots/scenes.yaml`. For each scene it:
 
-1. generates the scene's fixtures into `~/Library/Caches/leyline-shots/iq/` with `leyfix`,
-   unless a copy with the same generator record is already there;
-2. starts its own `leylined --no-hardware` with a socket, store, recordings directory and log
-   under `tmp/shots/run/<scene>/`, and `--wall-clock` set when the scene gives a `clock`. One
-   daemon per scene, so no state carries from one shot to the next;
-3. points `LEYLINE_BOOKMARKS` at a copy of the scene's bookmarks, attaches each fixture with
-   `ley play --persistent`, and runs the scene's `ley` steps (tune, squelch, record, watch);
+1. generates the scene's fixtures into `~/Library/Caches/leyline-shots/iq/` with `leyfix`
+   (`$XDG_CACHE_HOME/leyline-shots/iq/` or `~/.cache/leyline-shots/iq/` elsewhere), unless a
+   copy there matches what `leyfix generate --dry-run` prints: the same format, rate, centre,
+   length, label and generator record, and a sample file of that size;
+2. starts its own `leylined --no-hardware` with a socket, pidfile, store, recordings directory
+   and log under `tmp/shots/run/<scene>/`, and `--wall-clock` set when the scene gives a `clock`.
+   One daemon per scene, so no state carries from one shot to the next. The start is
+   `go/internal/daemonrun`, which the agent evals use too;
+3. points `LEYLINE_BOOKMARKS` at `tmp/shots/run/<scene>/bookmarks.json`, imports the scene's
+   bookmarks into it with `ley bookmarks import` (a CHIRP CSV, `site/shots/bookmarks-2m.csv` for
+   the 2 m scenes), attaches each fixture with `ley play --persistent --loop`, and runs the
+   scene's `ley` steps (stop, scan, record), logging them to `steps.log`;
 4. waits the scene's `settle` time, so the waterfall has history and the logs have entries;
 5. takes the shot (see below), crops it, and writes `tmp/shots/<asset>.png` and its entry in
    `tmp/shots/shots.json`.
@@ -67,14 +72,22 @@ With `LEYLINE_APP_STAGE` set, the app:
   points, of `window`, `sidebar`, `inspector`, `toolbar`, `waterfall` and `library`.
 
 `leyshots` captures with `screencapture -o -x -l <window>` (no shadow, no sound; Retina gives 2×)
-and crops in Go from a region's frame × 2. With the variable unset, nothing in the app changes.
+and crops in Go from a region's frame × (image width ÷ window width in points). A crop is one
+region, the union of several, or a box of a given size at an anchor inside that union
+(`ways-app` is 480 × 300 pt at the top right of the waterfall and inspector). `leyshots` gives
+the app the scene's `settle` plus 30 s to write `regions.json`, then stops with the path of the
+app's log (`LEYLINE_APP_LOG`, `tmp/shots/run/<scene>/app.log`). With the variable unset, nothing
+in the app changes.
 
 ### Terminal shots
 
-Each terminal scene runs `ley` in its own tmux server (`tmux -L leyshots`) at a fixed size.
-A scene can split the window, as `ways-terminal` does. `leyshots` reads each pane with
-`tmux capture-pane -e -p` once the scene settles. `scripts/ansi2html.py` converts the panes, and
-they are laid out in the site's terminal theme:
+Each terminal scene runs `ley` in its own tmux server (`tmux -L leyshots`) at a fixed size,
+with no status line. Each pane is a `/bin/sh` with a `$ ` prompt, and the scene's commands are
+typed at it, so the shot shows the command line. A scene can split the window, as
+`ways-terminal` does. `leyshots` reads each pane with `tmux capture-pane -e -p` once the scene
+settles. `scripts/ansi2html.py --palette site` converts the panes, and they are laid out in
+character cells, with a 1 px rule in the column or row tmux leaves between two panes, in the
+site's terminal theme:
 
 | role | colour |
 |---|---|
@@ -83,9 +96,10 @@ they are laid out in the site's terminal theme:
 | bold | #E7E9EA |
 | green | #2FB6A3 |
 
-The font is SF Mono 13 (`ui-monospace`). A short Swift script, `scripts/render-html.swift`,
-draws the page in a WKWebView at 2× and writes the PNG. On Linux, `leyshots` stops at the HTML,
-which lets the terminal path be tested in CI.
+The font is SF Mono 13 (`ui-monospace`) on 16 px rows. A short Swift script,
+`scripts/render-html.swift`, draws the page in a WKWebView at 2× and writes the PNG, at a width
+of 0.6 em per column plus 16 pt either side. On Linux, `leyshots` stops at the HTML, which lets
+the terminal path be tested in CI.
 
 ## Scene fixtures
 
@@ -100,15 +114,40 @@ and its sidebands. All callsigns are N0CALL-n.
 |---|---|---|
 | `scene_2m` | 146.400 MHz | 146.520 simplex, PL 100.0, keyed in overs (the hero); 146.940 repeater output, PL 127.3; 147.180 net, DCS 023; 145.230 and 147.330 with short keyups. Labelled "NESDR SMArt v5". The loop is long enough that every carrier has at least three overs in it. |
 | `scene_net` | 147.180 MHz | One net: eight overs of 4–30 s separated by 6–8 s gaps, so a gated recording with the default 5 s hang cuts one part per over. |
-| `scene_scan` | as `ley scan 144M..148M` needs | Three to six carriers, one keyed so briefly that the scan sees it in 1 of 8 looks. |
-| `scene_aprs` | 144.390 MHz | AFSK packets from seven N0CALL stations with positions and comments, spread over the loop. |
-| `scene_ais` | 162.000 MHz | GMSK position reports from five vessels with made-up MMSIs. |
-| `same_alert` | 162.400 MHz | The existing weekly test. |
+| `scene_scan` | 146.000 MHz | 146.520 PL 100.0, 146.940 PL 127.3, 147.180 DCS 023 and 145.230 on the air throughout; 144.390 keyed for 25 ms in every 210 ms, so the scan sees it in 1 of 4 looks. |
+| `scene_aprs` | 144.390 MHz | AFSK packets from N0CALL-1 to N0CALL-7 with positions, symbols and comments, spread over the loop. |
+| `scene_ais` | 162.000 MHz | GMSK position reports from five vessels with made-up MMSIs, all on AIS 1 (161.975 MHz): a decode job listens on its recipe's first frequency only, so a report on AIS 2 would never be heard. |
+| `same_alert` | 162.400 MHz | The existing weekly test, generated by the scene at 960 kSPS for 10 s. |
 
-`ley scan 144M..148M` covers 4 MHz, and a file device cannot be retuned. Before building
-`scene_scan`, check whether a scan runs over one file device at a rate wide enough for the whole
-range (5 MSPS, cu8 to keep the file size down). If it does not, the scene scans the span
-`scene_2m` already covers, and the asset's command changes to match.
+Each scene fixture is cu8 at its own rate and length, on a -40 dBFS floor that spans a few
+8-bit steps. `leyfix check` passes every one (2 min 41 s for the set in the Linux container,
+2026-10-03).
+
+| fixture | rate | length | size |
+|---|---|---|---|
+| `scene_2m` | 2.88 MSPS | 50 s | 288 MB |
+| `scene_net` | 480 kSPS | 163 s | 156 MB |
+| `scene_scan` | 5 MSPS | 20 s | 200 MB |
+| `scene_aprs` | 960 kSPS | 21 s | 40 MB |
+| `scene_ais` | 960 kSPS | 20 s | 38 MB |
+| `same_alert` | 960 kSPS, cf32 | 10 s | 77 MB |
+
+`scene_2m` is 2.88 MSPS rather than 2.4 because 145.230 and 147.330 lie 1.17 MHz and 0.93 MHz
+from the centre, and a 2.4 MSPS capture analyses only 1.08 MHz either side.
+
+`ley scan 144M..148M` runs over one file device. A file device tunes only its recording's
+centre, so the sweep plan is a single step there, and at 5 MSPS that step's windows reach
+2.25 MHz either side of 146.000 MHz, covering the whole range. Its DC guard leaves 145.750 to
+146.250 MHz unanalysed, and no carrier sits there. A run in the Linux container on 2026-10-03
+found all five carriers, with 144.390 at `1/4` and the rest at `4/4`. The sweep refuses a radio
+that has a channel on it, so the scene runs `ley stop all` after `ley play` and before the
+scan. A default 250 ms dwell at 5 MSPS gives four looks, not eight; `--dwell 500` would give
+eight, at the cost of a longer command in the shot.
+
+Only app scenes set `clock`. `ley track --since` seeds its table from the real clock, so a
+daemon started with `--wall-clock` can open a track empty. `ways-sync` shares one daemon
+between an app shot and a terminal, so it leaves the clock unset as well, and `leyshots`
+refuses a `clock` on any scene that is not an app scene.
 
 ## Assets
 
@@ -135,18 +174,42 @@ The notification is captured from the NotificationCenter window's on-screen fram
 reminder to set one before that scene, and treats the shot as manual if the window is not found
 within 10 s.
 
+Some scenes need more than the stage and a tuned channel:
+
+- `scan-2m` and `scan-app` run `ley stop all` first, because a sweep refuses a radio a channel is
+  on. `scan-app` then runs `ley scan 144M..148M` and `ley tune 146.52 --persistent` before the app
+  starts. The stage has no key for the band row's Scan action, so whether the band rail shows the
+  hits of a scan a terminal ran is to be seen on the Mac.
+- `ways-terminal` and `ways-sync` run `ley stop`, which removes `ley play`'s channel and leaves the
+  radio tuned. `ley tune 146.52` in the first pane is then the only channel, the one
+  `ley set squelch -45` picks. In `ways-sync` that command is typed before the app starts, so the
+  app opens on its channel, and the squelch change is typed once the app shows.
+- `library-net` records with `ley record 147.18 --gate squelch --for 75s --detach` and waits
+  80 s. In the Linux container a 40 s recording of `scene_net` made 3 parts.
+
 ## `shots.json`
 
 Each entry has the asset name, pixel width and height, scale (2), alt text, the scene, the
 fixtures' generator records, the `ley --version` output and the commit that produced it, and the
-`shots-*` tag where the current image was first published.
+`shots-*` tag where the current image was first published. `leyshots run` writes the entries
+with no tag, and `leyshots publish` sets it on the images it refreshes.
+
+`make shots-publish SHOTS_ARGS=--dry-run` builds the release in `tmp/shots/publish/<tag>/`,
+compresses and checks it, and prints the `gh release create` it would run. A second release on
+one day is tagged `shots-YYYY-MM-DD-2`, then `-3`.
 
 ## Work items
 
-- [ ] **SHOT-1 (Go, testable on Linux).** The `scenes` set in `leyfix` and the `voice` source; the
+- [x] **SHOT-1 (Go, testable on Linux).** The `scenes` set in `leyfix` and the `voice` source; the
   configurable APRS station list; the `leyshots` driver with `scenes.yaml`, the per-scene
   hermetic daemon (shared with `go/internal/eval` rather than copied), the terminal path through
-  HTML, the manifest, `publish`, and the Makefile targets.
+  HTML, the manifest, `publish`, and the Makefile targets. Done 2026-10-03. Verified by the unit
+  tests in `go/cmd/leyfix` and `go/cmd/leyshots`, `leyfix check` over the generated set, and a
+  Linux run of `scan-2m`, `aprs-track`, `ais-track`, `ways-terminal` and `chirp-csv-before` to
+  HTML. The app capture, the composite, the notification, the icon, `render-html.swift` calls
+  and `publish` against GitHub are written and have not run; they are SHOT-4's first run.
+  The 2 m bookmarks are a CHIRP CSV imported per scene rather than a bookmarks file, so the
+  import path is the one a person uses.
 - [ ] **SHOT-2 (engine).** The sidecar `label` and `leylined --wall-clock`, each with a test.
 - [ ] **SHOT-3 (app; can only be checked on the Mac).** `LEYLINE_APP_STAGE` and `regions.json`.
   Written and not yet compiled on the Mac; `docs/dev/app.md`, "Staged runs" has the stage keys
