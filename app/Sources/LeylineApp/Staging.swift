@@ -99,6 +99,10 @@ final class Staging {
             session.importCHIRP(url: URL(fileURLWithPath: path))
         }
         if let id = stage.expandedBand { open(row: id, session) }
+        if let z = stage.zoom {
+            session.zoom = z
+            log("stage", "zoom \(z)")
+        }
         if let p = stage.place, let place = WindowPlace(rawValue: p.rawValue) {
             session.place = place
         }

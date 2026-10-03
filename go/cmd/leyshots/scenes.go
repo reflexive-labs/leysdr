@@ -88,6 +88,8 @@ type Stage struct {
 	Settle         float64 `yaml:"settle" json:"settle,omitempty"`
 	// OnAir holds the shot, after Settle, until the tuned channel's squelch is open.
 	OnAir bool `yaml:"on_air" json:"on_air,omitempty"`
+	// Zoom is the spectrum and waterfall's zoom, as the − and + buttons set it: 1, 2, 4 or 8.
+	Zoom int `yaml:"zoom" json:"zoom,omitempty"`
 }
 
 // Crop says which part of the window an app shot keeps: the union of Regions, or a box of Size

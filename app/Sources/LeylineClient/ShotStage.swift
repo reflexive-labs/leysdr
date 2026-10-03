@@ -54,9 +54,11 @@ public struct ShotStage: Sendable, Equatable, Codable {
     /// After `settle`, the regions wait for the tuned channel's squelch to be open, so the shot
     /// shows a station on the air.
     public var onAir: Bool
+    /// The spectrum and waterfall's zoom as the band rail's − and + set it: 1, 2, 4 or 8.
+    public var zoom: Int?
 
     enum CodingKeys: String, CodingKey {
-        case window, place, inspector, settle
+        case window, place, inspector, settle, zoom
         case onAir = "on_air"
         case expandedBand = "expanded_band"
         case selectBookmark = "select_bookmark"
@@ -67,7 +69,8 @@ public struct ShotStage: Sendable, Equatable, Codable {
     public init(
         window: WindowSize? = nil, place: Place? = nil, inspector: Bool? = nil,
         expandedBand: String? = nil, selectBookmark: String? = nil, selectPart: Int? = nil,
-        importCHIRP: String? = nil, settle: Double = 0, onAir: Bool = false
+        importCHIRP: String? = nil, settle: Double = 0, onAir: Bool = false,
+        zoom: Int? = nil
     ) {
         self.window = window
         self.place = place
@@ -78,6 +81,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
         self.importCHIRP = importCHIRP
         self.settle = settle
         self.onAir = onAir
+        self.zoom = zoom
     }
 
     public init(from decoder: Decoder) throws {
@@ -91,6 +95,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
         importCHIRP = try c.decodeIfPresent(String.self, forKey: .importCHIRP)
         settle = try c.decodeIfPresent(Double.self, forKey: .settle) ?? 0
         onAir = try c.decodeIfPresent(Bool.self, forKey: .onAir) ?? false
+        zoom = try c.decodeIfPresent(Int.self, forKey: .zoom)
     }
 
     /// The stage file's path from the environment, or nil when the run is not staged.
@@ -102,7 +107,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
     }
 
     /// Reads and decodes a stage file. A negative or non-finite `settle`, a window without a
-    /// positive size, and a negative part are refused here, so the app never sleeps or sizes on
+    /// positive size, a negative part and a zoom the band rail cannot set are refused here, so the app never sleeps or sizes on
     /// a value it cannot use.
     public static func read(at url: URL) throws -> ShotStage {
         let stage = try JSONDecoder().decode(ShotStage.self, from: Data(contentsOf: url))
@@ -116,6 +121,9 @@ public struct ShotStage: Sendable, Equatable, Codable {
         }
         if let p = stage.selectPart, p < 0 {
             throw ShotStageError.invalid("select_part must be 0 or more")
+        }
+        if let z = stage.zoom, ![1, 2, 4, 8].contains(z) {
+            throw ShotStageError.invalid("zoom must be 1, 2, 4 or 8")
         }
         return stage
     }

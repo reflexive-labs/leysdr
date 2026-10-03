@@ -27,7 +27,7 @@ final class ShotStageTests: XCTestCase {
             """
             {"window":{"width":1440,"height":820},"place":"library","inspector":true,
              "expanded_band":"2m","select_bookmark":"Calling","select_part":2,
-             "import_chirp":"/tmp/handheld.csv","settle":4.5,"on_air":true}
+             "import_chirp":"/tmp/handheld.csv","settle":4.5,"on_air":true,"zoom":2}
             """)
         let stage = try ShotStage.read(at: url)
         XCTAssertEqual(
@@ -35,7 +35,7 @@ final class ShotStageTests: XCTestCase {
             ShotStage(
                 window: .init(width: 1440, height: 820), place: .library, inspector: true,
                 expandedBand: "2m", selectBookmark: "Calling", selectPart: 2,
-                importCHIRP: "/tmp/handheld.csv", settle: 4.5, onAir: true))
+                importCHIRP: "/tmp/handheld.csv", settle: 4.5, onAir: true, zoom: 2))
     }
 
     func testAbsentKeysLeaveTheWindowAsLaunched() throws {
@@ -50,6 +50,7 @@ final class ShotStageTests: XCTestCase {
 
     func testUnusableNumbersAreRefused() throws {
         XCTAssertThrowsError(try ShotStage.read(at: try stageFile(#"{"settle":-1}"#)))
+        XCTAssertThrowsError(try ShotStage.read(at: try stageFile(#"{"zoom":3}"#)))
         XCTAssertThrowsError(
             try ShotStage.read(at: try stageFile(#"{"window":{"width":0,"height":820}}"#)))
         XCTAssertThrowsError(try ShotStage.read(at: try stageFile(#"{"select_part":-1}"#)))

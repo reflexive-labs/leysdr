@@ -480,6 +480,7 @@ that `ShotStage` decodes, and every key is optional:
 | `select_part` | selects this part of the Library's selected channel without playing it, counted from 0 down the page's recent days |
 | `settle` | the seconds the window keeps drawing after the stage is applied, before the regions are measured |
 | `on_air` | after `settle`, waits up to 30 s for the tuned channel's squelch to open, then 1.5 s more for the inspector's readings to fill. The scene needs a squelch level set |
+| `zoom` | the spectrum and waterfall's zoom, as the band rail's − and + set it: 1, 2, 4 or 8, centred on the tuned frequency |
 
 A staged run shows no splash, so its first frame is the window. It writes nothing to
 UserDefaults and does not reopen the last band, so a staged run neither changes nor depends on

@@ -42,6 +42,7 @@ scenes:
       select_bookmark: Calling
       settle: 40
       on_air: true
+      zoom: 2
     crop: {regions: [window]}
 
   - asset: sidebar-chirp-import.png
@@ -123,7 +124,7 @@ scenes:
     steps:
       - ley: [stop, all]
     terminal:
-      cols: 110
+      cols: 120
       rows: 22
       panes:
         - command: ley scan 144M..148M
