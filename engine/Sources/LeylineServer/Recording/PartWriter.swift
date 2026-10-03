@@ -420,7 +420,7 @@ actor PartWriter {
         if handle != nil { closePart(endSample: endSample) }
         closed = true
         manifest.endedBy = manifest.endedBy.isEmpty ? endedBy : manifest.endedBy
-        manifest.endedAtNs = realtimeNs()
+        manifest.endedAtNs = WallClock.nowNs()
         persist()
     }
 
@@ -449,7 +449,7 @@ actor PartWriter {
         // zone west of UTC. The times inside the files stay derived from the anchor (invariant 5);
         // only the name, which nothing parses, falls back to now.
         let derived = wallTime(at: startSample)
-        let when = Date(timeIntervalSince1970: Double(derived > Self.plausibleEpochNs ? derived : realtimeNs()) / 1e9)
+        let when = Date(timeIntervalSince1970: Double(derived > Self.plausibleEpochNs ? derived : WallClock.nowNs()) / 1e9)
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd_HH-mm-ss"
         let mhz = String(format: "%.3f", Double(manifest.frequencyHz) / 1e6)
@@ -466,7 +466,7 @@ actor PartWriter {
         for a in candidates where a.fromSample <= sample {
             if chosen == nil || a.fromSample >= chosen!.fromSample { chosen = a }
         }
-        guard let anchor = chosen ?? candidates.first else { return realtimeNs() }
+        guard let anchor = chosen ?? candidates.first else { return WallClock.nowNs() }
         return anchor.hostTime(at: sample)
     }
 

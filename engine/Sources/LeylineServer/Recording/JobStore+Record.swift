@@ -62,7 +62,7 @@ extension JobStore {
         var job = Leyline_V1_Job()
         job.jobID = id.string
         job.state = .running
-        job.createdAtNs = realtimeNs()
+        job.createdAtNs = WallClock.nowNs()
         job.createdBy = client.proto
         job.config = .record(config)
         job.statusDetail = "starting"
@@ -147,7 +147,7 @@ extension JobStore {
             device: await deviceInfo(lease.captureID), gains: gainInfo(snapshot),
             squelchDbfs: channelConfig.squelchDB,
             gate: gated ? RecordingGateInfo(kind: "squelch", preRollMs: preRollMs(config), hangMs: hangMs(config)) : nil,
-            partMs: config.partMs, startedAtNs: realtimeNs(),
+            partMs: config.partMs, startedAtNs: WallClock.nowNs(),
             createdBy: recordingClient(id), anchors: [anchor(snapshot, capture: lease.captureID)])
         let writer: PartWriter
         do {
@@ -217,7 +217,7 @@ extension JobStore {
             jobID: id.string, kind: "iq", frequencyHz: snapshot.centerHz, mode: "", bandwidthHz: 0,
             sampleRate: snapshot.sampleRate, format: "cf32",
             device: await deviceInfo(lease.captureID), gains: gainInfo(snapshot),
-            squelchDbfs: Double.nan, gate: nil, partMs: partMs, startedAtNs: realtimeNs(),
+            squelchDbfs: Double.nan, gate: nil, partMs: partMs, startedAtNs: WallClock.nowNs(),
             createdBy: recordingClient(id), anchors: [anchor(snapshot, capture: lease.captureID)])
         let writer: PartWriter
         do {

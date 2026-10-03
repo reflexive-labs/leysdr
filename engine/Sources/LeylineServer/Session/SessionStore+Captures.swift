@@ -180,7 +180,7 @@ extension SessionStore {
     /// Records interactive activity on a capture (writes from non-job clients).
     func touchActivity(_ id: CaptureID, by: ClientContext) {
         guard by.isInteractive, var entry = captures[id] else { return }
-        entry.meta.lastInteractiveWriteNs = realtimeNs()
+        entry.meta.lastInteractiveWriteNs = WallClock.realNowNs()
         captures[id] = entry
     }
 }

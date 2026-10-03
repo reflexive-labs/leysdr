@@ -148,7 +148,7 @@ actor RecordingStore {
                 manifest.bytes += bytes
             }
             manifest.endedBy = "restart"
-            manifest.endedAtNs = realtimeNs()
+            manifest.endedAtNs = WallClock.nowNs()
             // A recording that heard nothing before the last daemon went is discarded, as one
             // that ends under a running daemon is (docs/design/recording.md, "Nothing heard").
             if !manifest.parts.contains(where: { $0.samples > 0 }) {

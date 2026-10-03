@@ -53,7 +53,7 @@ extension RecordingJobTests {
 
             var scheduled = Leyline_V1_RecordConfig()
             scheduled.frequencyHz = recordFrequencyHz
-            scheduled.startAtNs = realtimeNs() + 60_000_000_000
+            scheduled.startAtNs = WallClock.realNowNs() + 60_000_000_000
             got = await refusal(scheduled)
             e = try XCTUnwrap(got)
             XCTAssertEqual(e.code, .unimplemented)

@@ -108,7 +108,7 @@ final class CaptureTests: XCTestCase {
         let capture = DefaultCaptureEngine(device: device, centerHz: 100_000_000, sampleRate: 2_400_000)
         let before = capture.core.anchor
         XCTAssertEqual(before.hostTimeNsAtSampleZero, 0)
-        let now = realtimeNowNs()
+        let now = WallClock.nowNs()
         try await capture.start()
         var anchor: CaptureAnchor?
         for await a in capture.anchorEvents { anchor = a; break }
@@ -119,6 +119,21 @@ final class CaptureTests: XCTestCase {
         XCTAssertLessThan(abs(a.hostTimeNsAtSampleZero - now), 1_000_000_000)
         let snap = await capture.snapshot
         XCTAssertEqual(snap.anchor, a)
+    }
+
+    func testAnchorIsDatedFromTheShiftedWallClock() async throws {
+        let shift: Int64 = -3 * 3_600_000_000_000
+        WallClock.setOffsetNs(shift)
+        defer { WallClock.setOffsetNs(0) }
+        let device = BurstDevice(blocks: 3)
+        let capture = DefaultCaptureEngine(device: device, centerHz: 100_000_000, sampleRate: 2_400_000)
+        let real = WallClock.realNowNs()
+        try await capture.start()
+        var anchor: CaptureAnchor?
+        for await a in capture.anchorEvents { anchor = a; break }
+        await capture.stop()
+        let a = try XCTUnwrap(anchor)
+        XCTAssertLessThan(abs(a.hostTimeNsAtSampleZero - (real + shift)), 1_000_000_000)
     }
 
     func testOverrunsCountedWhenRingNotDrained() {

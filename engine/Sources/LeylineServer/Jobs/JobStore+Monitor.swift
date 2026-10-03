@@ -28,7 +28,7 @@ extension JobStore {
         var job = Leyline_V1_Job()
         job.jobID = id.string
         job.state = .running
-        job.createdAtNs = realtimeNs()
+        job.createdAtNs = WallClock.nowNs()
         job.createdBy = client.proto
         job.config = .monitor(config)
         job.statusDetail = "starting"

@@ -24,14 +24,6 @@ package struct CaptureStats: Hashable, Sendable {
     package var unsupportedBlocks: UInt64
 }
 
-/// CLOCK_REALTIME in nanoseconds.
-@inline(__always)
-func realtimeNowNs() -> Int64 {
-    var ts = timespec()
-    clock_gettime(CLOCK_REALTIME, &ts)
-    return Int64(ts.tv_sec) * 1_000_000_000 + Int64(ts.tv_nsec)
-}
-
 /// Owns the block ring, the immutable channel/tap tables and the DSP thread for one capture.
 /// Unchecked Sendable: the tables are swapped under `tableLock`, the counters are atomics, and everything else belongs to the device or DSP thread.
 package final class CaptureDSPCore: @unchecked Sendable {
@@ -228,7 +220,7 @@ package final class CaptureDSPCore: @unchecked Sendable {
     /// internal lock in `yield` are each held for a copy, never across a call.
     private func publishAnchor(firstIndex: UInt64, count: Int) {
         let rate = sampleRate
-        let now = realtimeNowNs()
+        let now = WallClock.nowNs()
         let elapsed = rate > 0 ? Int64(Double(firstIndex &+ UInt64(count)) / Double(rate) * 1e9) : 0
         let anchor = CaptureAnchor(hostTimeNsAtSampleZero: now - elapsed, sampleRate: rate)
         anchorLock.lock(); currentAnchor = anchor; anchorLock.unlock()
@@ -241,7 +233,7 @@ package final class CaptureDSPCore: @unchecked Sendable {
     private func reportOverrunsIfDue() {
         let total = ring.overruns
         guard total != lastLoggedOverruns.load(ordering: .relaxed) else { return }
-        let now = realtimeNowNs()
+        let now = WallClock.realNowNs()
         let last = lastOverrunLogNs.load(ordering: .relaxed)
         guard now - last >= 1_000_000_000 else { return }
         lastOverrunLogNs.store(now, ordering: .relaxed)

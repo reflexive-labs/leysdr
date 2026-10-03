@@ -21,6 +21,7 @@ sidecar exists; the engine converts on the fly. Everything Leyline writes is `.c
   "created_at_ns": 0,
   "anchor": { "host_time_ns": 0, "drift_ppm": 0 },
   "description": "NFM 1 kHz tone at +100 kHz, 2.5 kHz deviation, -20 dBFS over a -60 dBFS floor",
+  "label": "NESDR SMArt v5",
   "generator": { "tool": "leyfix", "version": "0.1.0", "seed": 1, "signals": [ ... ], "noise_dbfs": -60 },
   "expect": [
     { "mode": "NFM", "offset_hz": 100000, "bandwidth_hz": 12500,
@@ -33,6 +34,8 @@ sidecar exists; the engine converts on the fly. Everything Leyline writes is `.c
 
 - `format`, `sample_rate`, `center_hz` are required; everything else is optional.
 - `anchor.host_time_ns` is the wall clock of sample 0 (recordings); 0 for synthetic fixtures.
+- `label` is the name a file device shows as its `model` in `ley devices` and the app, in place of
+  the samples file's name. An absent or empty `label` leaves the file name.
 - `expect` is what the engine's fixture tests assert. Each entry describes one channel to create on
   a capture of this file and what its demodulated audio / meters must satisfy. `audio.tone_hz` is
   checked as the dominant spectral peak of the demodulated audio; `min_snr_db` is peak power over

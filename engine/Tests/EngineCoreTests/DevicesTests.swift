@@ -34,7 +34,7 @@ final class DevicesIQFileTests: XCTestCase {
     func testSidecarCodableRoundTrip() throws {
         let json = """
         {"format":"cf32","sample_rate":2400000,"center_hz":146520000,"samples":2400000,"created_at_ns":0,
-         "anchor":{"host_time_ns":0,"drift_ppm":0},"description":"NFM tone",
+         "anchor":{"host_time_ns":0,"drift_ppm":0},"description":"NFM tone","label":"NESDR SMArt v5",
          "generator":{"tool":"leyfix","version":"0.1.0","seed":1,"signals":[{"kind":"nfm"}],"noise_dbfs":-60},
          "expect":[{"mode":"NFM","offset_hz":100000,"bandwidth_hz":12500,
                     "audio":{"tone_hz":1000,"min_snr_db":30},"meter":{"power_dbfs_min":-30,"squelch_open":true}}],
@@ -44,6 +44,7 @@ final class DevicesIQFileTests: XCTestCase {
         XCTAssertEqual(sc.sampleRate, 2_400_000)
         XCTAssertEqual(sc.centerHz, 146_520_000)
         XCTAssertEqual(sc.samples, 2_400_000)
+        XCTAssertEqual(sc.label, "NESDR SMArt v5")
         XCTAssertEqual(sc.expect?.first?.mode, "NFM")
         XCTAssertEqual(sc.expect?.first?.offsetHz, 100_000)
         XCTAssertEqual(sc.expect?.first?.audio?.toneHz, 1000)
@@ -60,6 +61,7 @@ final class DevicesIQFileTests: XCTestCase {
         let obj = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: dir + "/x.json"))) as? [String: Any]
         XCTAssertEqual(obj?["sample_rate"] as? Int, 2_400_000)
         XCTAssertEqual((obj?["anchor"] as? [String: Any])?["host_time_ns"] as? Int, 0)
+        XCTAssertEqual(obj?["label"] as? String, "NESDR SMArt v5")
     }
 
     func testPathHelpers() {
@@ -155,6 +157,19 @@ final class DevicesFilePlaybackTests: XCTestCase {
         XCTAssertEqual(d.features["duration_s"], .number(0.1))
         XCTAssertEqual(d.features["path"], .text(path))
         XCTAssertEqual(d.state, .available)
+    }
+
+    func testSidecarLabelIsTheModel() throws {
+        let dir = try DeviceFixtures.scratchDir()
+        let path = try DeviceFixtures.writeRamp(dir: dir, name: "labelled", samples: 100)
+        var sc = try IQSidecar.load(path: path)
+        sc.label = "NESDR SMArt v5"
+        try sc.save(path: dir + "/labelled.json")
+        XCTAssertEqual(try FilePlaybackDevice(path: path, loop: false, realtime: false).descriptor.model, "NESDR SMArt v5")
+        sc.label = ""
+        try sc.save(path: dir + "/labelled.json")
+        XCTAssertEqual(try FilePlaybackDevice(path: path, loop: false, realtime: false).descriptor.model, "labelled.cf32",
+                       "an empty label falls back to the filename")
     }
 
     func testControlErrors() async throws {

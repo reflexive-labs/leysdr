@@ -80,13 +80,6 @@ struct DaemonInfo: Sendable {
     }
 }
 
-/// Current CLOCK_REALTIME in nanoseconds.
-func realtimeNs() -> Int64 {
-    var ts = timespec()
-    clock_gettime(CLOCK_REALTIME, &ts)
-    return Int64(ts.tv_sec) * 1_000_000_000 + Int64(ts.tv_nsec)
-}
-
 /// One actor owns the session tables. See the file header.
 actor SessionStore {
     struct CaptureEntry {

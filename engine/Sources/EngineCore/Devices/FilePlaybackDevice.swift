@@ -48,7 +48,7 @@ package final class FilePlaybackDevice: VirtualDevice, @unchecked Sendable {
         _descriptor = DeviceDescriptor(
             id: DeviceID(),
             driver: FilePlaybackDevice.driverName,
-            model: URL(fileURLWithPath: reader.samplesPath).lastPathComponent,
+            model: FilePlaybackDevice.model(label: reader.sidecar.label, samplesPath: reader.samplesPath),
             serial: FilePlaybackDevice.stableHash(abs),
             usbLocation: "",
             state: .available,
@@ -63,6 +63,12 @@ package final class FilePlaybackDevice: VirtualDevice, @unchecked Sendable {
                 "path": .text(abs),
             ]
         )
+    }
+
+    /// The sidecar's `label` when it has one, else the samples file's name.
+    static func model(label: String?, samplesPath: String) -> String {
+        if let label, !label.isEmpty { return label }
+        return URL(fileURLWithPath: samplesPath).lastPathComponent
     }
 
     /// Stable 64-bit FNV-1a hash of the absolute path, rendered as 16 hex digits.

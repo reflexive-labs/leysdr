@@ -322,7 +322,7 @@ actor JobStore {
             e.proto.error = err
         }
         if state != .completed, var scan = e.scan {
-            scan.completedAtNs = realtimeNs()
+            scan.completedAtNs = WallClock.nowNs()
             e.scan = scan
         }
         entries[id] = e

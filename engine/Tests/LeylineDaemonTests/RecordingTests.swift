@@ -279,7 +279,7 @@ final class RecordingTests: XCTestCase {
         defer { try? FileManager.default.removeItem(atPath: dir) }
         let store = RecordingStore(directory: dir, capBytes: 1 << 30, ageDays: 1)
         let old = JobID(), fresh = JobID()
-        for (id, startedAt) in [(old, realtimeNs() - 3 * 86_400_000_000_000), (fresh, realtimeNs())] {
+        for (id, startedAt) in [(old, WallClock.nowNs() - 3 * 86_400_000_000_000), (fresh, WallClock.nowNs())] {
             var m = manifest(jobID: id.string)
             m.startedAtNs = startedAt
             let writer = try await store.open(job: id, manifest: m, captureID: "cap_x", centerHz: 1)

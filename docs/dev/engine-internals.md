@@ -162,6 +162,18 @@ touch the anchor. Sample-rate change restarts the stream: the index continues mo
 reset) and a new anchor is published (`Event.anchor`). Device loss → `.detached`; rebind on
 matching-serial replug continues the same `CaptureID` and index and publishes a new anchor.
 
+**The daemon's wall clock.** `now` above is `WallClock.nowNs()`: CLOCK_REALTIME plus an offset
+that is zero unless the development flag `leylined --wall-clock HH:MM` sets it. The flag sets the
+offset once at startup, before any capture exists, to today's HH:MM in local time minus the real
+time, so the daemon's clock reads HH:MM when it starts and advances in real time from there. Staged
+screenshots use it to show a chosen time of day. Everything the daemon dates goes through the same
+offset: capture anchors, and with them every frame's and decode record's wall clock, recording
+start and end times and part names, job creation times and the record store's job times. Real
+elapsed time uses `WallClock.realNowNs()`: the retention cutoffs (`--store-age`,
+`--recordings-age`), the don't-disturb window, the overrun log's rate limit, the daemon's start
+time, an alert's validity check and the ULID timestamp. Clients compare dates against their own
+clock, so under a shift `ley track --since` and `ley devices-seen` ages are off by the offset.
+
 **Capture-owned index base.** Devices number samples per stream: `RTLTCPDevice`, the rtl-sdr
 callback and `FilePlaybackDevice` all restart at 0 on every `startStreaming`. The capture, not the
 device, owns the timeline. `CaptureDSPCore` keeps an `indexBase`; `expectNewAnchor()` (called by

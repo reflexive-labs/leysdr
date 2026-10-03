@@ -381,7 +381,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
             return "\(who(ch.owner)) is listening on \(fmt(absolute(ch, cap)))"
         }
         if cap.activity.liveAudioSinks > 0 { return "audio is playing from this radio" }
-        let now = UInt64(realtimeNs())
+        let now = UInt64(WallClock.realNowNs())
         let last = UInt64(max(0, cap.activity.lastInteractiveWriteNs))
         if last > 0, now > last, now - last < dontDisturbNs {
             return "somebody was tuning this radio \(Int((now - last) / 1_000_000_000)) s ago"

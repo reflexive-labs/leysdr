@@ -600,7 +600,7 @@ actor RecordRunner: RecordRunning {
         }
         if await writer.isPartOpen { await closePart(endSample: now) }
         outOfCaptureFrom = now
-        let when = Date().formatted(date: .omitted, time: .standard)
+        let when = Date(timeIntervalSince1970: Double(WallClock.nowNs()) / 1e9).formatted(date: .omitted, time: .standard)
         await onStatus(.degraded, "out of capture since \(when), will resume when \(fmtMHz(await writer.manifest.frequencyHz)) is back", nil)
     }
 

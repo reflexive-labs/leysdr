@@ -115,7 +115,7 @@ actor RecordStore {
         }
         let sidecar = RecordSidecar(
             jobID: job.string, decoder: manifest.name, version: manifest.version,
-            config: (try? config.jsonString()) ?? "{}", createdAtNs: realtimeNs(),
+            config: (try? config.jsonString()) ?? "{}", createdAtNs: WallClock.nowNs(),
             captureID: capture.string, anchors: fresh, count: 0)
         return try RecordWriter(base: base, sidecar: sidecar)
     }
@@ -283,7 +283,7 @@ extension RecordStore {
         }
         if q.inEffect {
             guard rec.hasValidity else { return false }
-            let now = realtimeNs()
+            let now = WallClock.realNowNs()
             if rec.validity.startNs != 0, now < rec.validity.startNs { return false }
             if rec.validity.endNs != 0, now > rec.validity.endNs { return false }
         }

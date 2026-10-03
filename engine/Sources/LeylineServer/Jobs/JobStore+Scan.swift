@@ -25,7 +25,7 @@ extension JobStore {
         var job = Leyline_V1_Job()
         job.jobID = id.string
         job.state = .running
-        job.createdAtNs = realtimeNs()
+        job.createdAtNs = WallClock.nowNs()
         job.createdBy = client.proto
         job.config = .scan(config)
         job.resultUris = ["ley://scans/\(scanID.string)"]
@@ -176,7 +176,7 @@ extension JobStore {
         guard var e = entries[id], var scan = e.scan else { return }
         scan.detections = result.hits.map { proto($0, captureID: captureID) }
         scan.noiseFloor = result.floors
-        scan.completedAtNs = realtimeNs()
+        scan.completedAtNs = WallClock.nowNs()
         scan.gains = gains.map(ProtoMapping.gainState)
         // What was actually looked at, always -- not only when the sweep was cut short. A radio
         // that cannot reach all of a range, a request that falls partly in the tuner's blind spot

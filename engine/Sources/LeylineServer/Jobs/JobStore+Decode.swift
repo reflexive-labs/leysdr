@@ -38,7 +38,7 @@ extension JobStore {
         var job = Leyline_V1_Job()
         job.jobID = id.string
         job.state = .running
-        job.createdAtNs = resuming?.createdAtNs ?? realtimeNs()
+        job.createdAtNs = resuming?.createdAtNs ?? WallClock.nowNs()
         job.createdBy = client.proto
         job.config = .decode(config)
         job.statusDetail = resuming == nil ? "starting" : "resuming after a daemon restart"

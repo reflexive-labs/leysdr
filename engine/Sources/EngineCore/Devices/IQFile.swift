@@ -85,13 +85,15 @@ package struct IQSidecar: Codable, Hashable, Sendable {
     package var createdAtNs: Int64?
     package var anchor: Anchor?
     package var description: String?
+    /// Display name for a file device; replaces the filename as the device's `model` when non-empty.
+    package var label: String?
     /// Opaque generator record (`leyfix` provenance); preserved verbatim on round trip.
     package var generator: JSONValue?
     package var expect: [Expectation]?
     package var metadata: [String: String]?
 
     package init(format: String = "cf32", sampleRate: UInt64, centerHz: UInt64, samples: UInt64? = nil,
-                createdAtNs: Int64? = nil, anchor: Anchor? = nil, description: String? = nil,
+                createdAtNs: Int64? = nil, anchor: Anchor? = nil, description: String? = nil, label: String? = nil,
                 generator: JSONValue? = nil, expect: [Expectation]? = nil, metadata: [String: String]? = nil) {
         self.format = format
         self.sampleRate = sampleRate
@@ -100,6 +102,7 @@ package struct IQSidecar: Codable, Hashable, Sendable {
         self.createdAtNs = createdAtNs
         self.anchor = anchor
         self.description = description
+        self.label = label
         self.generator = generator
         self.expect = expect
         self.metadata = metadata
@@ -111,7 +114,7 @@ package struct IQSidecar: Codable, Hashable, Sendable {
         case centerHz = "center_hz"
         case samples
         case createdAtNs = "created_at_ns"
-        case anchor, description, generator, expect, metadata
+        case anchor, description, label, generator, expect, metadata
     }
 
     /// Native sample format named by `format`; nil for anything but cf32/cu8.

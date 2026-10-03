@@ -70,7 +70,7 @@ final class RecordStoreTests: XCTestCase {
             // Validity is a wall-clock window the transmitter states and does not go through an
             // anchor, so an "in effect now" record is stated against now.
             record(seq: 5, sample: 8_000_000, device: "A", kind: "alert",
-                   validity: (realtimeNs() - 3_600_000_000_000, realtimeNs() + 3_600_000_000_000)),
+                   validity: (WallClock.realNowNs() - 3_600_000_000_000, WallClock.realNowNs() + 3_600_000_000_000)),
         ]
         for r in records { await writer.append(r) }
         await writer.close()

@@ -56,12 +56,27 @@ struct DaemonCommand: AsyncParsableCommand {
     @Option(name: .customLong("recordings-age"), help: "Days a recording is held before it is dropped; 0 keeps them until the cap does.")
     var recordingsAge: UInt32 = 0
 
+    @Option(name: .customLong("wall-clock"), help: "Development: shift the wall clock captures, recordings and records are dated from so the daemon starts at HH:MM local time today, for staged screenshots. Retention still runs on the real clock.")
+    var wallClock: String?
+
     func run() async throws {
+        if let wallClock {
+            do {
+                let (hour, minute) = try WallClock.parseClockTime(wallClock)
+                WallClock.setOffsetNs(WallClock.offsetNs(toHour: hour, minute: minute, now: Date()))
+            } catch let e as EngineError {
+                FileHandle.standardError.write(Data("leylined: \(e.message).\n".utf8))
+                throw ExitCode(2)
+            }
+        }
         let level = Logger.Level(rawValue: logLevel) ?? .info
         LoggingSystem.bootstrap { label in
             var h = StreamLogHandler.standardError(label: label)
             h.logLevel = level
             return h
+        }
+        if let wallClock {
+            Logger(label: "leyline.daemon").notice("wall clock set to \(wallClock) today: dates are shifted by \(WallClock.offsetNs / 1_000_000_000) s; retention uses the real clock")
         }
         let pid = pidfile ?? (URL(fileURLWithPath: socket).deletingLastPathComponent().path + "/leylined.pid")
         let remotes = try Daemon.parseRTLTCPEndpoints(rtltcp + rtltcpEndpointsFromEnvironment())
