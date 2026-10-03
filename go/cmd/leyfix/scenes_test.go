@@ -101,21 +101,51 @@ func TestSceneSetSelection(t *testing.T) {
 	}
 }
 
-// Every scene_2m carrier keys at least three times, and scene_net is the net the recording
-// shot needs: eight overs of 4 to 30 s, 6 to 8 s apart, including across the loop's join.
+// Every scene_2m carrier keys at least three times, the hero's schedule is the one the site's
+// on_air wait and transmission log were staged on, and 146.550 overlaps it in part. scene_net is
+// the net the recording shot needs: eight overs of 4 to 30 s, 6 to 8 s apart, including across
+// the loop's join.
 func TestSceneSchedules(t *testing.T) {
-	for i, c := range scene2mCarriers() {
-		if len(c.segs) < 3 {
-			t.Errorf("scene_2m carrier %d keys %d times, want at least 3", i, len(c.segs))
+	carriers := scene2mCarriers()
+	for i, c := range carriers {
+		keying := c.keying()
+		if len(keying) < 3 {
+			t.Errorf("scene_2m carrier %d keys %d times, want at least 3", i, len(keying))
 		}
-		for j, s := range c.segs {
+		for j, s := range keying {
 			if s.startS < 0.5 || s.endS > scene2mDurationS-0.5 || s.endS <= s.startS {
 				t.Errorf("scene_2m carrier %d over %d is [%.2f, %.2f]", i, j, s.startS, s.endS)
 			}
-			if j > 0 && s.startS-c.segs[j-1].endS < 1 {
-				t.Errorf("scene_2m carrier %d overs %d and %d are %.2f s apart", i, j-1, j, s.startS-c.segs[j-1].endS)
+			if j > 0 && s.startS-keying[j-1].endS < 1 {
+				t.Errorf("scene_2m carrier %d overs %d and %d are %.2f s apart", i, j-1, j, s.startS-keying[j-1].endS)
 			}
 		}
+	}
+	hero := carriers[0]
+	if hero.offsetHz != 120_000 || hero.toneHz != 100.0 || hero.voiceSeed != 21 ||
+		!slices.Equal(hero.segs, []keySegment{{0.6, 7.21}, {10.86, 17.85}, {21.85, 29.78}, {32.72, 41.56}}) {
+		t.Errorf("the hero is %+v", hero)
+	}
+	var wide *sceneCarrier
+	for i := range carriers {
+		if carriers[i].offsetHz == 150_000 {
+			wide = &carriers[i]
+		}
+	}
+	if wide == nil {
+		t.Fatal("no carrier on 146.550")
+	}
+	partial := 0
+	for _, w := range wide.segs {
+		for _, h := range hero.segs {
+			overlap := min(w.endS, h.endS) - max(w.startS, h.startS)
+			if overlap > 0 && overlap < min(w.endS-w.startS, h.endS-h.startS) {
+				partial++
+			}
+		}
+	}
+	if partial < 3 {
+		t.Errorf("146.550 overlaps the hero in part %d times, want at least 3", partial)
 	}
 	segs := sceneNetCarrier().segs
 	if len(segs) != 8 {

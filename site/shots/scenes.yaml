@@ -27,7 +27,8 @@ scenes:
     kind: app
     alt: >-
       The Leyline window on the 2 m band: a voice transmission on 146.520 MHz with PL 100.0 in the
-      inspector, the band's carriers on the waterfall, and the 2 m bookmarks in the sidebar.
+      inspector, the stations around it on the waterfall from 146.430 to 146.640 MHz, and the 2 m
+      bookmarks in the sidebar.
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: home.csv
@@ -42,7 +43,7 @@ scenes:
       select_bookmark: Calling
       settle: 40
       on_air: true
-      zoom: 2
+      zoom: 4
     crop: {regions: [window]}
 
   - asset: sidebar-chirp-import.png
@@ -211,8 +212,8 @@ scenes:
   - asset: ways-app.png
     kind: app
     alt: >-
-      Part of the Leyline window: the waterfall of a voice transmission on 146.520 MHz beside the
-      inspector's squelch and level.
+      Part of the Leyline window: the waterfall of a voice transmission on 146.520 MHz among the
+      stations either side of it, beside the inspector's squelch and level.
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: home.csv
@@ -226,6 +227,7 @@ scenes:
       select_bookmark: Calling
       settle: 25
       on_air: true
+      zoom: 4
     crop: {regions: [waterfall, inspector], size: {width: 480, height: 300}, anchor: top-right}
 
   - asset: ways-terminal.png

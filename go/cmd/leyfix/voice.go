@@ -162,6 +162,8 @@ type fmVoice struct {
 	dcsCode  int
 	dcsSet   bool
 	subDevHz float64
+	// tail, when set, replaces the voice with a repeater's courtesy tail after each over.
+	tail *courtesyTail
 
 	audio *voiceAt
 	dcs   *dcsShaper
@@ -183,7 +185,11 @@ func (s *fmVoice) fill(dst []complex128, n0 int64) {
 	ph := s.phase
 	for i := range dst {
 		n := n0 + int64(i)
-		dev := wc + wd*s.audio.at(n)
+		aud := s.audio.at(n)
+		if s.tail != nil {
+			aud = s.tail.audio(aud, n)
+		}
+		dev := wc + wd*aud
 		switch {
 		case s.dcs != nil:
 			dev += wsd * s.dcs.next(n)
@@ -213,6 +219,9 @@ func (s *fmVoice) describe() map[string]any {
 	case s.subToneHz != 0:
 		d["sub_tone_hz"] = s.subToneHz
 		d["sub_deviation_hz"] = s.subDevHz
+	}
+	if s.tail != nil {
+		d["courtesy_tail"] = s.tail.describe(s.devHz)
 	}
 	return d
 }

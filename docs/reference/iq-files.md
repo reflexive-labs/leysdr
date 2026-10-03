@@ -184,7 +184,7 @@ expectations that `leyfix check` verifies.
 
 | name | centre | contents |
 |---|---|---|
-| `scene_2m` | 146.400 MHz, 2.88 MSPS | five NFM carriers keyed in overs, with PL 100.0, PL 127.3 and DCS 023; labelled "NESDR SMArt v5" |
+| `scene_2m` | 146.400 MHz, 2.88 MSPS | ten carriers keyed in overs, with PL 100.0 on 146.520 among a cluster from 146.430 to 146.640: a wide-deviation station with splatter, four-level FSK bursts, and a repeater with PL 146.2 and a courtesy tail; further out PL 127.3 and DCS 023; labelled "NESDR SMArt v5" |
 | `scene_net` | 147.180 MHz | one net of eight overs with gaps longer than the default 5 s hang |
 | `scene_scan` | 146.000 MHz, 5 MSPS | five carriers between 144 and 148 MHz, one pulsed so a scan sees it in few looks |
 | `scene_aprs` | 144.390 MHz | AFSK packets from seven stations with positions |

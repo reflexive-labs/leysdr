@@ -30,45 +30,104 @@ const (
 // centre, with a CTCSS tone or a DCS code or neither, keyed in segs (always on when segs is nil).
 type sceneCarrier struct {
 	offsetHz, dbfs float64
-	voiceSeed      uint64
-	toneHz         float64
-	dcsCode        int // octal; 0 for none
-	segs           []keySegment
+	// voiceSeed seeds the voice, or the symbols when fsk is set.
+	voiceSeed uint64
+	toneHz    float64
+	dcsCode   int // octal; 0 for none
+	segs      []keySegment
 	// pulse, when set, keys the carrier for pulse[1] s at the start of every pulse[0] s.
 	pulse [2]float64
+	// devHz is the voice's peak deviation; 0 is sceneDevHz.
+	devHz float64
+	// splatterHz, when set, puts a splatter skirt of that half-width splatterDB under the carrier
+	// around it while it is keyed.
+	splatterHz, splatterDB float64
+	// tailS, when set, makes the station a repeater: after each over in segs the carrier stays up
+	// for tailS with a courtesy beep in it.
+	tailS float64
+	// fsk makes the carrier a four-level FSK burst in place of a voice.
+	fsk bool
+}
+
+// The courtesy beep in a repeater's tail: 1 kHz for 150 ms, starting 0.6 s after the over, at
+// half the voice's deviation.
+const (
+	sceneBeepHz    = 1000
+	sceneBeepAtS   = 0.6
+	sceneBeepS     = 0.15
+	sceneBeepLevel = 0.5
+)
+
+func (c sceneCarrier) dev() float64 {
+	if c.devHz != 0 {
+		return c.devHz
+	}
+	return sceneDevHz
+}
+
+// keying is when the carrier is up: segs, each with its tail when the station is a repeater.
+func (c sceneCarrier) keying() []keySegment {
+	if c.tailS > 0 {
+		return withTails(c.segs, c.tailS)
+	}
+	return c.segs
 }
 
 func (c sceneCarrier) source(rate float64) source {
-	v := &fmVoice{
-		rate: rate, carrierHz: c.offsetHz, devHz: sceneDevHz, dbfs: c.dbfs, voiceSeed: c.voiceSeed,
-		subToneHz: c.toneHz,
+	var s source
+	if c.fsk {
+		s = &fsk4{rate: rate, carrierHz: c.offsetHz, dbfs: c.dbfs, seed: c.voiceSeed}
+	} else {
+		v := &fmVoice{
+			rate: rate, carrierHz: c.offsetHz, devHz: c.dev(), dbfs: c.dbfs, voiceSeed: c.voiceSeed,
+			subToneHz: c.toneHz,
+		}
+		switch {
+		case c.dcsCode != 0:
+			v.dcsCode, v.dcsSet, v.subDevHz = c.dcsCode, true, dcsDeviationHz
+		case c.toneHz != 0:
+			v.subDevHz = sceneSubDevHz
+		}
+		if c.tailS > 0 {
+			v.tail = &courtesyTail{
+				rate: rate, overs: c.segs, tailS: c.tailS, beepAtS: sceneBeepAtS, beepS: sceneBeepS,
+				beepHz: sceneBeepHz, beepLevel: sceneBeepLevel,
+			}
+		}
+		s = v
 	}
-	switch {
-	case c.dcsCode != 0:
-		v.dcsCode, v.dcsSet, v.subDevHz = c.dcsCode, true, dcsDeviationHz
-	case c.toneHz != 0:
-		v.subDevHz = sceneSubDevHz
+	if c.splatterHz > 0 {
+		s = &splatter{
+			inner: s, rate: rate, offsetHz: c.offsetHz, widthHz: c.splatterHz,
+			carrierDBFS: c.dbfs, dbc: c.splatterDB, seed: c.voiceSeed,
+		}
 	}
 	switch {
 	case c.segs != nil:
-		return &keyed{rate: rate, segments: c.segs, inner: v}
+		return &keyed{rate: rate, segments: c.keying(), inner: s}
 	case c.pulse[0] > 0:
-		return &pulsed{rate: rate, periodS: c.pulse[0], widthS: c.pulse[1], inner: v}
+		return &pulsed{rate: rate, periodS: c.pulse[0], widthS: c.pulse[1], inner: s}
 	}
-	return v
+	return s
 }
 
 // expect is the carrier's expect entry: the channel, the keying as a record expectation when it
 // is keyed in overs, the sub-audible signalling it carries, and a meter reading when withMeter.
+// A wide-deviation voice gets a 25 kHz channel, the width a radio set to wide FM uses.
 func (c sceneCarrier) expect(withMeter bool) iqfile.Expect {
-	e := iqfile.Expect{Mode: "NFM", OffsetHz: c.offsetHz, BandwidthHz: 12_500}
+	bw := 12_500.0
+	if c.dev() > sceneDevHz {
+		bw = 25_000
+	}
+	e := iqfile.Expect{Mode: "NFM", OffsetHz: c.offsetHz, BandwidthHz: bw}
 	if withMeter {
 		// -30 dBFS is the default fixtures' bar; a weaker carrier is held 5 dB under its own level.
 		e.Meter = &iqfile.MeterExpect{PowerDBFSMin: f64(math.Min(-30, c.dbfs-5)), SquelchOpen: bp(true)}
 	}
 	if c.segs != nil {
-		segments := make([]iqfile.RecordSegment, 0, len(c.segs))
-		for _, s := range c.segs {
+		keying := c.keying()
+		segments := make([]iqfile.RecordSegment, 0, len(keying))
+		for _, s := range keying {
 			segments = append(segments, iqfile.RecordSegment{StartS: s.startS, EndS: s.endS})
 		}
 		e.Record = &iqfile.RecordExpect{Gate: "squelch", SquelchDBFS: squelchRefDBFS, Segments: segments}
@@ -92,18 +151,28 @@ func sources(rate float64, cs []sceneCarrier) []source {
 
 // The scene_2m stations, around a centre of 146.400 MHz. 2.88 MSPS puts 145.230 and 147.330
 // inside the 45% analysis edge, which 2.4 MSPS does not. Fifty seconds at 2 bytes a sample is
-// 288 MB, and every carrier keys at least three times in it.
+// 288 MB, and every carrier keys at least three times in it. The site's hero shot zooms the
+// waterfall to 4x around 146.520, about 146.16 to 146.88 MHz, so 146.430 to 146.640 are packed
+// with the traffic a busy simplex and repeater cluster carries.
 const (
 	scene2mCenterHz  = 146_400_000
 	scene2mRate      = 2_880_000
 	scene2mDurationS = 50
 )
 
+// 146.550's splatter skirt, and the repeater's tail. Through the checker's 12.5 kHz channel on
+// 146.520, 30 kHz away, the skirt sits about 60 dB under the hero.
+const (
+	scene2mSplatterHz = 15_000
+	scene2mSplatterDB = 37
+	scene2mTailS      = 1.5
+)
+
 func scene2mCarriers() []sceneCarrier {
 	end := scene2mDurationS - 1.0
 	return []sceneCarrier{
 		// 146.520 simplex, PL 100.0: the hero, and the first expect entry, so ley play tunes it.
-		{offsetHz: 120_000, dbfs: -15, voiceSeed: 21, toneHz: 100.0, segs: overs(1, 0.6, end, 6, 9, 2.5, 4)},
+		{offsetHz: 120_000, dbfs: -12, voiceSeed: 21, toneHz: 100.0, segs: overs(1, 0.6, end, 6, 9, 2.5, 4)},
 		// 146.940 repeater output, PL 127.3.
 		{offsetHz: 540_000, dbfs: -20, voiceSeed: 22, toneHz: 127.3, segs: overs(2, 2.0, end, 5, 10, 3, 6)},
 		// 147.180 net, DCS 023.
@@ -111,6 +180,24 @@ func scene2mCarriers() []sceneCarrier {
 		// 145.230 and 147.330: short keyups.
 		{offsetHz: -1_170_000, dbfs: -28, voiceSeed: 24, segs: overs(4, 3.0, end, 1, 2.5, 7, 12)},
 		{offsetHz: 930_000, dbfs: -30, voiceSeed: 25, segs: overs(5, 6.0, end, 1, 2, 8, 13)},
+		// 146.430: a weak simplex station in short overs.
+		{offsetHz: 30_000, dbfs: -34, voiceSeed: 26, segs: overs(7, 4.0, end, 1.5, 3.5, 5, 10)},
+		// 146.460 simplex, no tone.
+		{offsetHz: 60_000, dbfs: -24, voiceSeed: 27, segs: overs(8, 1.5, end, 3, 7, 4, 9)},
+		// 146.550: a strong handheld on wide deviation, splattering. Its overs overlap the
+		// hero's in part, so both show at once.
+		{
+			offsetHz: 150_000, dbfs: -10, voiceSeed: 28, devHz: 5000,
+			splatterHz: scene2mSplatterHz, splatterDB: scene2mSplatterDB,
+			segs: overs(6, 2.0, end, 4, 8, 3, 7),
+		},
+		// 146.580: digital voice bursts.
+		{offsetHz: 180_000, dbfs: -20, voiceSeed: 29, fsk: true, segs: overs(9, 5.0, end, 3, 8, 3, 8)},
+		// 146.640 repeater output, PL 146.2, with a courtesy tail after each over.
+		{
+			offsetHz: 240_000, dbfs: -18, voiceSeed: 30, toneHz: 146.2, tailS: scene2mTailS,
+			segs: overs(10, 0.8, end-scene2mTailS, 4, 9, 4, 8),
+		},
 	}
 }
 
@@ -214,7 +301,7 @@ var sceneFixtures = []fixture{
 		name: "scene_2m", centerHz: scene2mCenterHz, set: sceneSet, format: iqfile.FormatCU8,
 		fixedRate: scene2mRate, fixedDurationS: scene2mDurationS, noiseDBFS: sceneNoiseDBFS,
 		label:       "NESDR SMArt v5",
-		description: "the 2 m band in overs: 146.520 PL 100.0, 146.940 PL 127.3, 147.180 DCS 023, short keyups on 145.230 and 147.330; speech-shaped voice",
+		description: "the 2 m band in overs: 146.520 PL 100.0 among 146.430, 146.460, a splattering wide-deviation 146.550, digital voice bursts on 146.580 and a 146.640 repeater with PL 146.2 and a courtesy tail; 146.940 PL 127.3, 147.180 DCS 023, short keyups on 145.230 and 147.330; speech-shaped voice",
 		metadata:    sceneMetadata(146_520_000),
 		build:       func(rate float64) []source { return sources(rate, scene2mCarriers()) },
 		expect: func(float64) []iqfile.Expect {
