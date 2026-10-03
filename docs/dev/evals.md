@@ -49,6 +49,8 @@ Each run makes `evals/runs/<timestamp>/<scenario>/` (gitignored) holding:
   at the daemon (`ley mcp` with the run's socket and `--log` on the run's log, so `daemon_logs`
   reads this daemon and not the machine's), the daemon's log, and the recordings under their
   neutral names.
+- `store/` and `recordings/`: the daemon's decode-record store and the recordings any `ley record`
+  in the scenario made. They are never the machine's own.
 - `result.json`: the verdicts and the metrics (tool calls by tool, host calls, tool errors, turns,
   duration, cost).
 - `socket.txt`, only when the run directory's path is too long for a Unix socket (about 100

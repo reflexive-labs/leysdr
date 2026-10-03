@@ -174,3 +174,18 @@ detection, which is exactly what `nfm_hum` asserts.
 reference chain in Go (mix, FIR, decimate, discriminate). It is test tooling, not the engine —
 the engine's Swift fixture tests are the acceptance tests of record — but it checks the fixtures
 on any platform and catches generator regressions in CI.
+
+### Scene fixtures (`leyfix generate --set scenes`)
+
+`make fixtures` leaves these out because they are large (40 to 290 MB each, cu8). `make shots`
+generates them into its own cache for the site screenshots (`docs/plans/site-shots.md`). Each one
+is a staged band with seeded speech-like audio rather than tones, N0CALL-n callsigns, and
+expectations that `leyfix check` verifies.
+
+| name | centre | contents |
+|---|---|---|
+| `scene_2m` | 146.400 MHz, 2.88 MSPS | five NFM carriers keyed in overs, with PL 100.0, PL 127.3 and DCS 023; labelled "NESDR SMArt v5" |
+| `scene_net` | 147.180 MHz | one net of eight overs with gaps longer than the default 5 s hang |
+| `scene_scan` | 146.000 MHz, 5 MSPS | five carriers between 144 and 148 MHz, one pulsed so a scan sees it in few looks |
+| `scene_aprs` | 144.390 MHz | AFSK packets from seven stations with positions |
+| `scene_ais` | 162.000 MHz | position reports from five vessels on AIS 1 |
