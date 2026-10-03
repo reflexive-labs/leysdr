@@ -39,7 +39,7 @@ page covers each of its items.
    One daemon per scene, so no state carries from one shot to the next. The start is
    `go/internal/daemonrun`, which the agent evals use too;
 3. points `LEYLINE_BOOKMARKS` at `tmp/shots/run/<scene>/bookmarks.json`, imports the scene's
-   bookmarks into it with `ley bookmarks import` (a CHIRP CSV, `site/shots/bookmarks-2m.csv` for
+   bookmarks into it with `ley bookmarks import` (a CHIRP CSV, `site/shots/home.csv` for
    the 2 m scenes), attaches each fixture with `ley play --persistent --loop`, and runs the
    scene's `ley` steps (stop, scan, record), logging them to `steps.log`;
 4. waits the scene's `settle` time, so the waterfall has history and the logs have entries;
@@ -154,7 +154,7 @@ refuses a `clock` on any scene that is not an app scene.
 | asset | kind | scene |
 |---|---|---|
 | `app-radio-2m.png` | app, 1440 × 820 pt window | `scene_2m` at 146.520 NFM, 2 m band expanded with Calling, APRS and a net bookmark, inspector shown, clock 19:42 |
-| `sidebar-chirp-import.png` | app, `sidebar` crop | `scene_2m` with `site/shots/chirp-100.csv` imported (about 100 memories over 2 m, 70 cm, GMRS, NOAA, MURS and marine); 2 m expanded |
+| `sidebar-chirp-import.png` | app, `sidebar` crop | `scene_2m` with `site/shots/handheld.csv` imported (about 100 memories over 2 m, 70 cm, GMRS, NOAA, MURS and marine); 2 m expanded |
 | `chirp-csv-before.png` | HTML table of the same CSV, terminal theme | none |
 | `inspector-tone.png` | app, `inspector` crop | `scene_2m` at 146.940, bookmark with offset −0.6 and tone 127.3 |
 | `inspector-dcs.png` | app, `inspector` crop | `scene_2m` at 147.180, DCS 023 |

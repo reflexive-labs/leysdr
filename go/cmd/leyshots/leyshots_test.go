@@ -132,7 +132,7 @@ func TestStageJSON(t *testing.T) {
 	if err := json.Unmarshal(b, &m); err != nil {
 		t.Fatal(err)
 	}
-	if p, _ := m["import_chirp"].(string); !filepath.IsAbs(p) || !strings.HasSuffix(p, "site/shots/chirp-100.csv") {
+	if p, _ := m["import_chirp"].(string); !filepath.IsAbs(p) || !strings.HasSuffix(p, "site/shots/handheld.csv") {
 		t.Errorf("import_chirp %q", m["import_chirp"])
 	}
 	for _, k := range []string{"window", "place", "inspector", "expanded_band", "settle"} {
@@ -337,10 +337,10 @@ func TestTerminalHTML(t *testing.T) {
 		"<title>ways-terminal</title>",
 		"--bg:#090B0C;--fg:#9BA1A6;--bold:#E7E9EA;--green:#2FB6A3",
 		`font:13px/16px ui-monospace,"SF Mono",Menlo,monospace`,
-		".screen{position:relative;padding:16px;width:120ch;height:224px}",
-		`<div class="pane" style="left:calc(16px + 0ch);top:16px;width:59ch;height:224px"><pre class="term">left</pre></div>`,
-		`<div class="pane" style="left:calc(16px + 60ch);top:16px;width:60ch;height:224px"><pre class="term">right</pre></div>`,
-		`<div class="rule" style="left:calc(16px + 59.5ch);top:16px;width:1px;height:224px"></div>`,
+		".screen{position:relative;padding:16px;width:120ch;height:16px}",
+		`<div class="pane" style="left:calc(16px + 0ch);top:16px;width:59ch;height:16px"><pre class="term">left</pre></div>`,
+		`<div class="pane" style="left:calc(16px + 60ch);top:16px;width:60ch;height:16px"><pre class="term">right</pre></div>`,
+		`<div class="rule" style="left:calc(16px + 59.5ch);top:16px;width:1px;height:16px"></div>`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the page lacks %s\n%s", want, page)
@@ -348,6 +348,11 @@ func TestTerminalHTML(t *testing.T) {
 	}
 	if strings.Count(page, `class="rule"`) != 1 {
 		t.Errorf("one rule between two panes:\n%s", page)
+	}
+	shell := []paneCapture{{Left: 0, Top: 0, Width: 100, Height: 22, Text: "$ ley scan\n\x1b[1mFREQ\x1b[0m\n$ \n\n\n"}}
+	page, _ = terminalHTML("x", &Terminal{Cols: 100, Rows: 22}, shell, func(s string) (string, error) { return s, nil })
+	if !strings.Contains(page, "height:32px}") || strings.Contains(page, "FREQ\x1b[0m\n$") {
+		t.Errorf("a single pane keeps its trailing prompt or blank rows:\n%s", page)
 	}
 	stacked := []paneCapture{{Left: 0, Top: 0, Width: 80, Height: 11}, {Left: 0, Top: 12, Width: 80, Height: 12}}
 	page, _ = terminalHTML("x", &Terminal{Cols: 80, Rows: 24}, stacked, func(string) (string, error) { return "", nil })

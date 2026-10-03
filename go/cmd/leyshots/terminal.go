@@ -9,6 +9,7 @@ import (
 	"html"
 	"math"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -185,9 +186,20 @@ body{font:%dpx/%dpx ui-monospace,"SF Mono",Menlo,monospace;color:var(--fg)}
 // put it, in character cells, and a rule in the column or row tmux leaves between two panes.
 // toHTML converts one pane's escapes to a <pre> (scripts/ansi2html.py --palette site).
 func terminalHTML(title string, term *Terminal, panes []paneCapture, toHTML func(string) (string, error)) (string, error) {
+	rows := term.Rows
+	if sideBySide(panes) {
+		// Panes that share the top row end where their output does: the rows below the last
+		// line, and the bare prompt the shell prints when the command exits, are dropped.
+		rows = 1
+		for i := range panes {
+			panes[i].Text = trimScreen(panes[i].Text)
+			panes[i].Height = max(1, strings.Count(panes[i].Text, "\n")+1)
+			rows = max(rows, panes[i].Height)
+		}
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "<!doctype html>\n<html><head><meta charset=\"utf-8\"><title>%s</title><style>\n%s", html.EscapeString(title), themeCSS())
-	fmt.Fprintf(&b, ".screen{position:relative;padding:%dpx;width:%dch;height:%dpx}\n", paddingPx, term.Cols, term.Rows*lineHeightPx)
+	fmt.Fprintf(&b, ".screen{position:relative;padding:%dpx;width:%dch;height:%dpx}\n", paddingPx, term.Cols, rows*lineHeightPx)
 	b.WriteString(".pane{position:absolute;overflow:hidden}\n.pane pre{margin:0;font:inherit;white-space:pre}\n.rule{position:absolute;background:var(--rule)}\n")
 	b.WriteString("</style></head><body><div class=\"screen\">\n")
 	for _, p := range panes {
@@ -209,6 +221,33 @@ func terminalHTML(title string, term *Terminal, panes []paneCapture, toHTML func
 	}
 	b.WriteString("</div></body></html>\n")
 	return b.String(), nil
+}
+
+// sideBySide reports whether every pane starts on the window's top row: one pane, or a window
+// split into columns.
+func sideBySide(panes []paneCapture) bool {
+	for _, p := range panes {
+		if p.Top != 0 {
+			return false
+		}
+	}
+	return len(panes) > 0
+}
+
+var sgrEscape = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+// trimScreen drops a captured pane's trailing rows that are empty or hold only the shell's
+// `$` prompt, keeping the escapes on the rows it keeps.
+func trimScreen(text string) string {
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	for len(lines) > 0 {
+		plain := strings.TrimSpace(sgrEscape.ReplaceAllString(lines[len(lines)-1], ""))
+		if plain != "" && plain != "$" {
+			break
+		}
+		lines = lines[:len(lines)-1]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // ansiToHTML converts captured escapes with scripts/ansi2html.py, the one converter the

@@ -51,9 +51,13 @@ public struct ShotStage: Sendable, Equatable, Codable {
     public var importCHIRP: String?
     /// Seconds the window draws after the stage is applied, before the regions are written.
     public var settle: Double
+    /// After `settle`, the regions wait for the tuned channel's squelch to be open, so the shot
+    /// shows a station on the air.
+    public var onAir: Bool
 
     enum CodingKeys: String, CodingKey {
         case window, place, inspector, settle
+        case onAir = "on_air"
         case expandedBand = "expanded_band"
         case selectBookmark = "select_bookmark"
         case selectPart = "select_part"
@@ -63,7 +67,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
     public init(
         window: WindowSize? = nil, place: Place? = nil, inspector: Bool? = nil,
         expandedBand: String? = nil, selectBookmark: String? = nil, selectPart: Int? = nil,
-        importCHIRP: String? = nil, settle: Double = 0
+        importCHIRP: String? = nil, settle: Double = 0, onAir: Bool = false
     ) {
         self.window = window
         self.place = place
@@ -73,6 +77,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
         self.selectPart = selectPart
         self.importCHIRP = importCHIRP
         self.settle = settle
+        self.onAir = onAir
     }
 
     public init(from decoder: Decoder) throws {
@@ -85,6 +90,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
         selectPart = try c.decodeIfPresent(Int.self, forKey: .selectPart)
         importCHIRP = try c.decodeIfPresent(String.self, forKey: .importCHIRP)
         settle = try c.decodeIfPresent(Double.self, forKey: .settle) ?? 0
+        onAir = try c.decodeIfPresent(Bool.self, forKey: .onAir) ?? false
     }
 
     /// The stage file's path from the environment, or nil when the run is not staged.

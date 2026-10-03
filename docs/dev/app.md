@@ -479,6 +479,7 @@ that `ShotStage` decodes, and every key is optional:
 | `place` | `radio` or `library`, as the toolbar's switch sets it |
 | `select_part` | selects this part of the Library's selected channel without playing it, counted from 0 down the page's recent days |
 | `settle` | the seconds the window keeps drawing after the stage is applied, before the regions are measured |
+| `on_air` | after `settle`, waits up to 30 s for the tuned channel's squelch to open, then 1.5 s more for the inspector's readings to fill. The scene needs a squelch level set |
 
 A staged run shows no splash, so its first frame is the window. It writes nothing to
 UserDefaults and does not reopen the last band, so a staged run neither changes nor depends on
@@ -488,7 +489,7 @@ therefore starts with a capture already tuned (`ley tune`), as it would be for s
 the radio running. Without one, the app opens FM broadcast, as a first launch does. The stage changes only what the window's own controls
 change, and the daemon's state is changed only by the tune a click would make (invariant 7).
 
-`settle` seconds after the stage is applied, the app writes `regions.json` beside the stage file,
+`settle` seconds after the stage is applied (and, with `on_air`, once the squelch has opened), the app clears the text focus and writes `regions.json` beside the stage file,
 replacing it atomically:
 
 ```json

@@ -30,14 +30,18 @@ scenes:
       inspector, the band's carriers on the waterfall, and the 2 m bookmarks in the sidebar.
     fixtures: [{name: scene_2m}]
     clock: "19:42"
-    bookmarks: bookmarks-2m.csv
+    bookmarks: home.csv
+    # A squelch, so the transmissions are logged and on_air has a squelch to wait on.
+    steps:
+      - ley: [set, squelch, "-45"]
     stage:
       window: {width: 1440, height: 820}
       place: radio
       inspector: true
       expanded_band: 2m
       select_bookmark: Calling
-      settle: 12
+      settle: 40
+      on_air: true
     crop: {regions: [window]}
 
   - asset: sidebar-chirp-import.png
@@ -52,7 +56,7 @@ scenes:
       place: radio
       inspector: false
       expanded_band: 2m
-      import_chirp: chirp-100.csv
+      import_chirp: handheld.csv
       settle: 6
     crop: {regions: [sidebar]}
 
@@ -62,7 +66,7 @@ scenes:
       The first rows of a CHIRP CSV export: memories across 2 m, 70 cm, GMRS, NOAA weather, MURS
       and marine, with their offsets and tones.
     table:
-      source: chirp-100.csv
+      source: handheld.csv
       rows: 24
       columns: [Location, Name, Frequency, Duplex, Offset, Tone, rToneFreq, cToneFreq, DtcsCode, Mode, Comment]
       width: 900
@@ -74,14 +78,18 @@ scenes:
       beside the bookmark's offset of -0.6 MHz and its tone.
     fixtures: [{name: scene_2m}]
     clock: "19:42"
-    bookmarks: bookmarks-2m.csv
+    bookmarks: home.csv
+    # A squelch, so the transmissions are logged and on_air has a squelch to wait on.
+    steps:
+      - ley: [set, squelch, "-45"]
     stage:
       window: {width: 1440, height: 820}
       place: radio
       inspector: true
       expanded_band: 2m
       select_bookmark: Club repeater
-      settle: 10
+      settle: 15
+      on_air: true
     crop: {regions: [inspector]}
 
   - asset: inspector-dcs.png
@@ -91,14 +99,18 @@ scenes:
       bookmark's tone.
     fixtures: [{name: scene_2m}]
     clock: "19:42"
-    bookmarks: bookmarks-2m.csv
+    bookmarks: home.csv
+    # A squelch, so the transmissions are logged and on_air has a squelch to wait on.
+    steps:
+      - ley: [set, squelch, "-45"]
     stage:
       window: {width: 1440, height: 820}
       place: radio
       inspector: true
       expanded_band: 2m
       select_bookmark: Evening net
-      settle: 10
+      settle: 15
+      on_air: true
     crop: {regions: [inspector]}
 
   - asset: scan-2m.png
@@ -111,7 +123,7 @@ scenes:
     steps:
       - ley: [stop, all]
     terminal:
-      cols: 100
+      cols: 110
       rows: 22
       panes:
         - command: ley scan 144M..148M
@@ -202,13 +214,17 @@ scenes:
       inspector's squelch and level.
     fixtures: [{name: scene_2m}]
     clock: "19:42"
-    bookmarks: bookmarks-2m.csv
+    bookmarks: home.csv
+    # A squelch, so the transmissions are logged and on_air has a squelch to wait on.
+    steps:
+      - ley: [set, squelch, "-45"]
     stage:
       window: {width: 1440, height: 820}
       place: radio
       inspector: true
       select_bookmark: Calling
-      settle: 10
+      settle: 25
+      on_air: true
     crop: {regions: [waterfall, inspector], size: {width: 480, height: 300}, anchor: top-right}
 
   - asset: ways-terminal.png

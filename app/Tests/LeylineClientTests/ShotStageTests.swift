@@ -27,7 +27,7 @@ final class ShotStageTests: XCTestCase {
             """
             {"window":{"width":1440,"height":820},"place":"library","inspector":true,
              "expanded_band":"2m","select_bookmark":"Calling","select_part":2,
-             "import_chirp":"/tmp/chirp-100.csv","settle":4.5}
+             "import_chirp":"/tmp/handheld.csv","settle":4.5,"on_air":true}
             """)
         let stage = try ShotStage.read(at: url)
         XCTAssertEqual(
@@ -35,7 +35,7 @@ final class ShotStageTests: XCTestCase {
             ShotStage(
                 window: .init(width: 1440, height: 820), place: .library, inspector: true,
                 expandedBand: "2m", selectBookmark: "Calling", selectPart: 2,
-                importCHIRP: "/tmp/chirp-100.csv", settle: 4.5))
+                importCHIRP: "/tmp/handheld.csv", settle: 4.5, onAir: true))
     }
 
     func testAbsentKeysLeaveTheWindowAsLaunched() throws {

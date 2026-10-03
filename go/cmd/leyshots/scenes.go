@@ -86,6 +86,8 @@ type Stage struct {
 	SelectPart     *int    `yaml:"select_part" json:"select_part,omitempty"`
 	ImportChirp    string  `yaml:"import_chirp" json:"import_chirp,omitempty"`
 	Settle         float64 `yaml:"settle" json:"settle,omitempty"`
+	// OnAir holds the shot, after Settle, until the tuned channel's squelch is open.
+	OnAir bool `yaml:"on_air" json:"on_air,omitempty"`
 }
 
 // Crop says which part of the window an app shot keeps: the union of Regions, or a box of Size

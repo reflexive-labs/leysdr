@@ -32,6 +32,12 @@ final class Staging {
     /// The Library's listing and the selected channel's manifests are read after the place
     /// switches, one `ResolveLocalPath` each; this long covers a scene's few recordings.
     static let librarySeconds: Double = 10
+    /// `on_air` waits this long for the squelch to open; the scene fixtures key every carrier at
+    /// least every 15 s.
+    static let onAirSeconds: Double = 30
+    /// Once the squelch opens, the inspector's readings get this long to fill before the regions
+    /// are written.
+    static let onAirFillSeconds: Double = 1.5
 
     let stageURL: URL
     /// nil when the file could not be read or was refused; the run is still staged, so nothing
@@ -99,6 +105,16 @@ final class Staging {
         if let index = stage.selectPart { await select(part: index, session) }
         log("stage", "applied; regions in \(stage.settle) s")
         try? await Task.sleep(for: .seconds(stage.settle))
+        if stage.onAir {
+            if await until(seconds: Self.onAirSeconds, { session.transmissions?.onAir != nil }) {
+                try? await Task.sleep(for: .seconds(Self.onAirFillSeconds))
+                log("stage", "on the air")
+            } else {
+                log("stage", "the squelch did not open within \(Int(Self.onAirSeconds)) s")
+            }
+        }
+        // A shot shows no text cursor: the sidebar's search field takes focus at launch.
+        window?.makeFirstResponder(nil)
         writeRegions()
     }
 
