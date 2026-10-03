@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -146,5 +147,67 @@ func TestReadRefusesAnEmptyBuffer(t *testing.T) {
 	}
 	if n, err := r.Read(make([]complex64, 16)); n != 16 || err != nil {
 		t.Fatalf("the reader must still be usable: %d, %v", n, err)
+	}
+}
+
+// The cu8 writer is the reader's inverse to within half a step, and clips outside ±1.
+func TestWriteCU8(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "z.cu8")
+	w, err := NewFormatWriter(p, FormatCU8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := []complex64{complex(-1, 1), complex(0.25, -0.5), complex(2, -2), 0}
+	if err := w.Write(src); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) != 2*len(src) || raw[0] != 0 || raw[1] != 255 || raw[4] != 255 || raw[5] != 0 {
+		t.Fatalf("bytes %v", raw)
+	}
+	got, err := ReadAll(p, FormatCU8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const halfStep = 0.5/127.5 + 1e-6
+	for i, want := range []complex64{complex(-1, 1), complex(0.25, -0.5), complex(1, -1), 0} {
+		if d := got[i] - want; real(d) > halfStep || real(d) < -halfStep || imag(d) > halfStep || imag(d) < -halfStep {
+			t.Errorf("sample %d: %v, want %v", i, got[i], want)
+		}
+	}
+	if _, err := NewFormatWriter(filepath.Join(t.TempDir(), "x.cs16"), "cs16"); err == nil {
+		t.Error("an unknown format should be refused")
+	}
+}
+
+// Label is optional and left out of the file when empty, so a sidecar written before it
+// existed reads back unchanged.
+func TestSidecarLabel(t *testing.T) {
+	dir := t.TempDir()
+	for _, label := range []string{"", "NESDR SMArt v5"} {
+		p := filepath.Join(dir, "l.cu8")
+		if err := WriteSidecar(p, &Sidecar{Format: FormatCU8, SampleRate: 2.4e6, Label: label}); err != nil {
+			t.Fatal(err)
+		}
+		b, err := os.ReadFile(SidecarPath(p))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if has := strings.Contains(string(b), `"label"`); has != (label != "") {
+			t.Errorf("label %q: the file %s the key", label, map[bool]string{true: "has", false: "lacks"}[has])
+		}
+		got, err := ReadSidecar(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Label != label {
+			t.Errorf("label read back as %q, want %q", got.Label, label)
+		}
 	}
 }

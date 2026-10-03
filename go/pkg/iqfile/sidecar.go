@@ -131,6 +131,9 @@ type Sidecar struct {
 	Generator   json.RawMessage   `json:"generator,omitempty"`
 	Expect      []Expect          `json:"expect,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
+	// Label, when set, is the name the daemon gives the file device in place of the file's
+	// name, so a fixture standing in for a radio in a screenshot reads as that radio.
+	Label string `json:"label,omitempty"`
 }
 
 // Validate checks the required fields.

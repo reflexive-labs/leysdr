@@ -13,32 +13,58 @@ import (
 )
 
 // Writer streams complex samples to a .cf32 file as interleaved little-endian
-// float32 I/Q. Samples are buffered and written block-wise; call Close.
+// float32 I/Q, or to a .cu8 file as offset-binary bytes. Samples are buffered
+// and written block-wise; call Close.
 type Writer struct {
-	f     *os.File
-	w     *bufio.Writer
-	buf   []byte
-	count int64
+	f      *os.File
+	w      *bufio.Writer
+	format string
+	buf    []byte
+	count  int64
 }
 
 // NewWriter creates (truncating) the .cf32 file at path.
 func NewWriter(path string) (*Writer, error) {
+	return NewFormatWriter(path, FormatCF32)
+}
+
+// NewFormatWriter creates (truncating) a sample file at path in format. A cu8
+// component is round(v·127.5 + 127.5) clamped to 0..255, the inverse of what
+// Reader decodes, so a value outside ±1 clips as it would in a dongle's ADC.
+func NewFormatWriter(path, format string) (*Writer, error) {
+	if format != FormatCF32 && format != FormatCU8 {
+		return nil, fmt.Errorf("iqfile: unsupported format %q", format)
+	}
 	f, err := os.Create(path)
 	if err != nil {
 		return nil, err
 	}
-	return &Writer{f: f, w: bufio.NewWriterSize(f, 1<<20), buf: make([]byte, 8*4096)}, nil
+	return &Writer{f: f, w: bufio.NewWriterSize(f, 1<<20), format: format, buf: make([]byte, 8*4096)}, nil
+}
+
+// cu8Byte is one cu8 component of v.
+func cu8Byte(v float32) byte {
+	x := math.Round(float64(v)*127.5 + 127.5)
+	return byte(max(0, min(255, x)))
 }
 
 // Write appends a block of samples.
 func (w *Writer) Write(block []complex64) error {
+	bps := BytesPerSample(w.format)
 	for len(block) > 0 {
-		n := min(len(block), len(w.buf)/8)
-		for i, c := range block[:n] {
-			binary.LittleEndian.PutUint32(w.buf[i*8:], math.Float32bits(real(c)))
-			binary.LittleEndian.PutUint32(w.buf[i*8+4:], math.Float32bits(imag(c)))
+		n := min(len(block), len(w.buf)/bps)
+		if w.format == FormatCU8 {
+			for i, c := range block[:n] {
+				w.buf[i*2] = cu8Byte(real(c))
+				w.buf[i*2+1] = cu8Byte(imag(c))
+			}
+		} else {
+			for i, c := range block[:n] {
+				binary.LittleEndian.PutUint32(w.buf[i*8:], math.Float32bits(real(c)))
+				binary.LittleEndian.PutUint32(w.buf[i*8+4:], math.Float32bits(imag(c)))
+			}
 		}
-		if _, err := w.w.Write(w.buf[:n*8]); err != nil {
+		if _, err := w.w.Write(w.buf[:n*bps]); err != nil {
 			return err
 		}
 		w.count += int64(n)
