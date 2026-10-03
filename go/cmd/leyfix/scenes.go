@@ -186,29 +186,23 @@ const (
 	sceneAISDurationS  = 20
 )
 
-// sceneAISVessels are the scene_ais reports on AIS 1 (161.975 MHz) and AIS 2 (162.025 MHz).
-func sceneAISVessels() (ais1, ais2 []aisReport) {
-	ais1 = []aisReport{
-		{mmsi: 366999101, lat: 37.8105, lon: -122.3820, sogKn: 12.4, cogDeg: 254.0},
-		{mmsi: 366999102, lat: 37.7952, lon: -122.3601, sogKn: 0.1, cogDeg: 0},
-		{mmsi: 538999103, lat: 37.8263, lon: -122.4237, sogKn: 8.7, cogDeg: 71.5},
-	}
-	ais2 = []aisReport{
-		{mmsi: 366999104, lat: 37.7718, lon: -122.3874, sogKn: 5.2, cogDeg: 182.3},
-		{mmsi: 477999105, lat: 37.8441, lon: -122.4672, sogKn: 14.9, cogDeg: 300.8},
-	}
-	return ais1, ais2
+// sceneAISVessels are the scene_ais reports, all on AIS 1 (161.975 MHz): a decode job listens on
+// its recipe's first frequency only, so a report on AIS 2 would never be heard.
+var sceneAISVessels = []aisReport{
+	{mmsi: 366999101, lat: 37.8105, lon: -122.3820, sogKn: 12.4, cogDeg: 254.0},
+	{mmsi: 366999102, lat: 37.7952, lon: -122.3601, sogKn: 0.1, cogDeg: 0},
+	{mmsi: 538999103, lat: 37.8263, lon: -122.4237, sogKn: 8.7, cogDeg: 71.5},
+	{mmsi: 366999104, lat: 37.7718, lon: -122.3874, sogKn: 5.2, cogDeg: 182.3},
+	{mmsi: 477999105, lat: 37.8441, lon: -122.4672, sogKn: 14.9, cogDeg: 300.8},
 }
 
-func sceneAISSources(rate float64) (*aisPacket, *aisPacket) {
-	ais1, ais2 := sceneAISVessels()
-	mk := func(offset float64, reports []aisReport) *aisPacket {
-		return &aisPacket{
-			rate: rate, carrierHz: offset, devHz: 2400, dbfs: signalDBFS,
-			preambleFlags: 1, reports: reports, periodS: sceneAISDurationS,
-		}
+// sceneAISSource sends the vessels' reports once per periodS, 25 kHz below the 162.000 MHz
+// centre.
+func sceneAISSource(rate, periodS float64) *aisPacket {
+	return &aisPacket{
+		rate: rate, carrierHz: -25_000, devHz: 2400, dbfs: signalDBFS,
+		preambleFlags: 1, reports: sceneAISVessels, periodS: periodS,
 	}
-	return mk(-25_000, ais1), mk(25_000, ais2)
 }
 
 func sceneMetadata(hz float64) map[string]string {
@@ -282,23 +276,18 @@ var sceneFixtures = []fixture{
 	{
 		name: "scene_ais", centerHz: 162_000_000, set: sceneSet, format: iqfile.FormatCU8,
 		fixedRate: sceneAISRate, fixedDurationS: sceneAISDurationS, noiseDBFS: sceneNoiseDBFS,
-		description: "AIS on both channels: Type 1 position reports from five vessels with made-up MMSIs, three on 161.975 and two on 162.025",
+		description: "AIS on 161.975: Type 1 position reports from five vessels with made-up MMSIs, spread over the 20 s loop",
 		metadata:    sceneMetadata(161_975_000),
 		build: func(rate float64) []source {
-			a, b := sceneAISSources(rate)
-			return []source{a, b}
+			return []source{sceneAISSource(rate, sceneAISDurationS)}
 		},
 		expect: func(rate float64) []iqfile.Expect {
-			var out []iqfile.Expect
-			a, b := sceneAISSources(rate)
-			for _, p := range []*aisPacket{a, b} {
-				out = append(out, iqfile.Expect{
-					Mode: "NFM", OffsetHz: p.carrierHz, BandwidthHz: 25_000,
-					Meter:  &iqfile.MeterExpect{PowerDBFSMin: f64(-30), SquelchOpen: bp(true)},
-					Decode: &iqfile.DecodeExpect{Protocol: "ais", Records: len(p.reports), DeviceIDs: p.deviceIDs()},
-				})
-			}
-			return out
+			p := sceneAISSource(rate, sceneAISDurationS)
+			return []iqfile.Expect{{
+				Mode: "NFM", OffsetHz: p.carrierHz, BandwidthHz: 25_000,
+				Meter:  &iqfile.MeterExpect{PowerDBFSMin: f64(-30), SquelchOpen: bp(true)},
+				Decode: &iqfile.DecodeExpect{Protocol: "ais", Records: len(p.reports), DeviceIDs: p.deviceIDs()},
+			}}
 		},
 	},
 }

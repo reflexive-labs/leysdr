@@ -280,17 +280,14 @@ func TestSceneAPRSDecodes(t *testing.T) {
 	}
 }
 
-// The scene_ais vessels, at a short period, decode on each channel to the MMSIs its expect
-// entry names.
+// The scene_ais vessels, at a short period, decode to the MMSIs its expect entry names.
 func TestSceneAISDecodes(t *testing.T) {
 	const rate = 960_000
 	f := &fixture{
 		name: "short_ais", centerHz: 162_000_000, format: iqfile.FormatCU8, fixedRate: rate,
 		fixedDurationS: 1, noiseDBFS: sceneNoiseDBFS,
 		build: func(rate float64) []source {
-			a, b := sceneAISSources(rate)
-			a.periodS, b.periodS = 1, 1
-			return []source{a, b}
+			return []source{sceneAISSource(rate, 1)}
 		},
 		expect: func(float64) []iqfile.Expect { return nil },
 	}
