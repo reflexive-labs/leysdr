@@ -21,12 +21,14 @@ struct LibraryBody: View {
             HStack(spacing: 0) {
                 LibrarySidebar()
                     .frame(width: Theme.Layout.sidebarWidth)
+                    .stageRegion(.sidebar)
                 Rectangle().fill(Theme.border).frame(width: 1)
                 RecordingsPage()
                 if session.inspectorShown {
                     Rectangle().fill(Theme.hairline).frame(width: 1)
                     LibraryInspector()
                         .frame(width: Theme.Layout.inspectorWidth)
+                        .stageRegion(.inspector)
                 }
             }
             Rectangle().fill(Theme.border).frame(height: 1)

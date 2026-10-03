@@ -18,8 +18,9 @@ struct MainWindow: View {
 
     /// Whether no window has played the splash yet this launch. The first window's `playSplash`
     /// clears it; a window opened later starts with the splash `done`. A launch by URL would skip
-    /// it too (the spec's clause), but the app opens no URLs yet.
-    private static var splashPending = true
+    /// it too (the spec's clause), but the app opens no URLs yet. A staged run
+    /// (`Staging.swift`) has no splash, so a screenshot never catches it.
+    private static var splashPending = ShotStage.path() == nil
     @State private var splash: SplashPhase = MainWindow.splashPending ? .before : .done
     @State private var flight: SplashFlight?
     @State private var splashMark = WindowFrameAnchor()
@@ -38,16 +39,18 @@ struct MainWindow: View {
         VStack(spacing: 0) {
             switch session.place {
             case .radio: RadioBody()
-            case .library: LibraryBody()
+            case .library: LibraryBody().stageRegion(.library)
             }
         }
         .background(Theme.ground)
+        .stageRegion(.window)
         .overlay {
             if splash != .done {
                 SplashView(phase: splash, flight: flight, markAnchor: splashMark)
             }
         }
         .task { await playSplash() }
+        .task { await session.staging?.run(session) }
         .toolbar {
             // The toolbar's glass is a capsule, a shape nothing else in the window has, so it
             // is hidden and each item draws the pop-ups' ground instead. The items are hidden
@@ -171,12 +174,14 @@ struct RadioBody: View {
             HStack(spacing: 0) {
                 SidebarView()
                     .frame(width: Theme.Layout.sidebarWidth)
+                    .stageRegion(.sidebar)
                 Rectangle().fill(Theme.border).frame(width: 1)
                 canvas
                 if session.inspectorShown {
                     Rectangle().fill(Theme.hairline).frame(width: 1)
                     InspectorView()
                         .frame(width: Theme.Layout.inspectorWidth)
+                        .stageRegion(.inspector)
                 }
             }
             Rectangle().fill(Theme.border).frame(height: 1)
@@ -199,6 +204,7 @@ struct RadioBody: View {
                         // The seam between them is drawn by the waterfall, over its Metal view:
                         // a line laid here sat under the hosted view's rounded-out frame.
                         WaterfallView()
+                            .stageRegion(.waterfall)
                     }
                     gutterColumn
                 }

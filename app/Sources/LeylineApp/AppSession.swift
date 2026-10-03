@@ -69,6 +69,11 @@ final class AppSession {
     let captureLevel = CaptureLevelFeed()
     let audioLevels = AudioLevelsFeed()
 
+    /// A staged run for the site's screenshots (`Staging.swift`), or nil. While set, the
+    /// session writes nothing to UserDefaults and does not reopen the remembered band, so a shot
+    /// neither changes nor depends on what the person last used.
+    let staging = Staging.fromEnvironment()
+
     // View state local to the window: presentation only, never radio state.
     var maxHold = true
     var zoom = 1
@@ -90,7 +95,9 @@ final class AppSession {
         ?? true
     {
         didSet {
-            UserDefaults.standard.set(inspectorShown, forKey: Self.inspectorShownKey)
+            if staging == nil {
+                UserDefaults.standard.set(inspectorShown, forKey: Self.inspectorShownKey)
+            }
             // The audio ladder subscribes only while the panel draws it.
             followAudioLevels()
         }
@@ -104,7 +111,7 @@ final class AppSession {
         .flatMap(WindowPlace.init(rawValue:)) ?? .radio
     {
         didSet {
-            UserDefaults.standard.set(place.rawValue, forKey: Self.placeKey)
+            if staging == nil { UserDefaults.standard.set(place.rawValue, forKey: Self.placeKey) }
             guard place != oldValue else { return }
             log("session", "place: \(place.rawValue)")
             if place == .library { selectFirstChannel() }
@@ -646,7 +653,9 @@ final class AppSession {
         log("session", "start: socket \(socketPath), log \(AppLog.shared.path)")
         loadBookmarks()
         watchBookmarks()
-        selectedBandID = UserDefaults.standard.string(forKey: Self.lastBandKey)
+        if staging == nil {
+            selectedBandID = UserDefaults.standard.string(forKey: Self.lastBandKey)
+        }
         do {
             let daemon = try DaemonConnection(identity: .fresh(kind: "app", label: "Leyline"))
             self.daemon = daemon
@@ -964,7 +973,7 @@ final class AppSession {
         listeningStopped = false
         selectedBandID = band.id
         closeOpenedRows(tuning: Bands.group(of: band) ?? band)
-        UserDefaults.standard.set(band.id, forKey: Self.lastBandKey)
+        if staging == nil { UserDefaults.standard.set(band.id, forKey: Self.lastBandKey) }
         lastError = nil
         log("session", "select band \(band.name)\(hz.map { " at \($0) Hz" } ?? "")")
         do {
