@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"slices"
 
 	"github.com/reflexive-labs/leysdr/go/pkg/dcs"
 	"github.com/reflexive-labs/leysdr/go/pkg/decoders/ax25"
@@ -39,6 +40,44 @@ type fixture struct {
 	// follows a schedule in absolute seconds must be generated at that length.
 	// 0 means --duration decides.
 	fixedDurationS float64
+
+	// set is the catalog set the fixture belongs to: "" for the fixtures `make fixtures`
+	// writes, "scenes" for the site's screenshot scenes (scenes.go).
+	set string
+	// fixedRate overrides --rate, for a fixture whose carriers are placed for one span; 0
+	// means --rate decides.
+	fixedRate float64
+	// format is the sample format written: cf32 when empty.
+	format string
+	// noiseDBFS is the floor under the signals; 0 means noiseDBFS. A cu8 fixture raises it so
+	// the floor spans a few quantisation steps, as a dongle's does.
+	noiseDBFS float64
+	// label is the sidecar's label: the name the daemon gives the file device.
+	label string
+}
+
+// rateFor is the rate the fixture is generated at when rate is asked for.
+func (f *fixture) rateFor(rate float64) float64 {
+	if f.fixedRate > 0 {
+		return f.fixedRate
+	}
+	return rate
+}
+
+// noise is the fixture's floor in dBFS.
+func (f *fixture) noise() float64 {
+	if f.noiseDBFS != 0 {
+		return f.noiseDBFS
+	}
+	return noiseDBFS
+}
+
+// sampleFormat is the fixture's sample format.
+func (f *fixture) sampleFormat() string {
+	if f.format != "" {
+		return f.format
+	}
+	return iqfile.FormatCF32
 }
 
 func f64(v float64) *float64 { return &v }
@@ -102,7 +141,11 @@ var keyedSegments = []keySegment{{1.0, 2.0}, {5.0, 5.5}, {8.5, 10.5}}
 
 const keyedDurationS = 10.5
 
-var catalog = []fixture{
+// catalog is every fixture leyfix can write: the default set and the scenes.
+var catalog = slices.Concat(defaultFixtures, sceneFixtures)
+
+// defaultFixtures are the fixtures `make fixtures` writes.
+var defaultFixtures = []fixture{
 	{
 		name: "nfm_tone", centerHz: 146_520_000,
 		description: "NFM 1 kHz tone at +100 kHz, 2.5 kHz deviation, -20 dBFS over a -60 dBFS floor",
@@ -481,6 +524,10 @@ func aprsSource(rate float64) *afskPacket {
 	}
 }
 
-func newNoise(seed uint64) *gaussNoise {
-	return &gaussNoise{dbfs: noiseDBFS, rng: rand.New(rand.NewPCG(seed, 0x6c65796c696e65))}
+// newNoise is the seeded floor at noiseDBFS.
+func newNoise(seed uint64) *gaussNoise { return newNoiseAt(seed, noiseDBFS) }
+
+// newNoiseAt is the seeded floor at dbfs.
+func newNoiseAt(seed uint64, dbfs float64) *gaussNoise {
+	return &gaussNoise{dbfs: dbfs, rng: rand.New(rand.NewPCG(seed, 0x6c65796c696e65))}
 }

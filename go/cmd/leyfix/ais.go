@@ -11,10 +11,14 @@ import (
 	"github.com/reflexive-labs/leysdr/go/pkg/decoders/ais"
 )
 
-// aisReport is one AIS Type 1 position report the ais_burst fixture transmits.
+// aisReport is one AIS Type 1 position report a fixture transmits. sogKn and
+// cogDeg are 0 in ais_burst, a vessel at rest; the scene fixture gives its
+// vessels way so a track shows them moving.
 type aisReport struct {
 	mmsi     uint32
 	lat, lon float64
+	sogKn    float64
+	cogDeg   float64
 }
 
 // packType1 packs a 168-bit AIS Type 1 position report, MSB first: enough of
@@ -31,14 +35,14 @@ func packType1(r aisReport) []byte {
 	put(1, 6) // message type
 	put(0, 2) // repeat indicator
 	put(uint64(r.mmsi), 30)
-	put(0, 4)            // nav status: under way using engine
-	put(mask(128, 8), 8) // rate of turn: not available
-	put(0, 10)           // SOG
-	put(0, 1)            // position accuracy
+	put(0, 4)                               // nav status: under way using engine
+	put(mask(128, 8), 8)                    // rate of turn: not available
+	put(uint64(math.Round(r.sogKn*10)), 10) // SOG, 0.1 kn
+	put(0, 1)                               // position accuracy
 	put(mask(int64(math.Round(r.lon*600000)), 28), 28)
 	put(mask(int64(math.Round(r.lat*600000)), 27), 27)
-	put(0, 12)  // COG
-	put(511, 9) // true heading: not available
+	put(uint64(math.Round(r.cogDeg*10)), 12) // COG, 0.1°
+	put(511, 9)                              // true heading: not available
 	put(0, 6+2+3+1+19)
 	out := make([]byte, (len(bits)+7)/8)
 	for i, b := range bits {
@@ -54,20 +58,21 @@ func packType1(r aisReport) []byte {
 // DecodeRecord. The GMSK waveform is built by pkg/decoders/ais's own modulator,
 // so the fixture and the decoder share one definition of the modulation.
 //
-// The pattern is one second long and repeats: the two bursts are a few tens of
-// milliseconds of the second, and the rest is silence, as on a real channel
-// most of the time.
+// The pattern is periodS long (one second unless set) and repeats: the bursts
+// are a few tens of milliseconds each, and the rest is unmodulated carrier.
 type aisPacket struct {
 	rate, carrierHz, devHz, dbfs float64
 	reports                      []aisReport
 	preambleFlags                int
+	// periodS is the length of the repeating pattern; 0 is one second.
+	periodS float64
 
 	audio []float32
 	phase float64
 }
 
 // build assembles one period of modulating audio: the bursts spaced out across
-// exactly rate samples.
+// exactly one period.
 func (s *aisPacket) build() {
 	mod := ais.NewModulator(s.rate, 1.0)
 	bursts := make([][]float32, 0, len(s.reports))
@@ -77,10 +82,10 @@ func (s *aisPacket) build() {
 		bursts = append(bursts, b)
 		total += len(b)
 	}
-	period := int(s.rate)
+	period := int(s.rate * periodOrOne(s.periodS))
 	gap := (period - total) / (len(bursts) + 1)
 	if gap < 0 {
-		panic("leyfix: the ais_burst reports do not fit in one second")
+		panic("leyfix: the AIS reports do not fit in their period")
 	}
 	s.audio = make([]float32, 0, period)
 	for _, b := range bursts {
@@ -113,10 +118,14 @@ func (s *aisPacket) fill(dst []complex128, n0 int64) {
 }
 
 func (s *aisPacket) describe() map[string]any {
-	return map[string]any{
+	d := map[string]any{
 		"type": "ais_packet", "carrier_hz": s.carrierHz, "deviation_hz": s.devHz,
 		"dbfs": s.dbfs, "baud": ais.BaudHz, "vessels": strings.Join(s.deviceIDs(), ","),
 	}
+	if s.periodS != 0 {
+		d["period_s"] = s.periodS
+	}
+	return d
 }
 
 // span is Carson's rule over the deviation and the line rate.

@@ -2,7 +2,7 @@
 
 // Command leyfix generates, checks and inspects Leyline IQ fixtures.
 //
-//	leyfix generate --out DIR [--rate 2400000] [--duration 1] [--seed 1] [--only a,b]
+//	leyfix generate --out DIR [--rate 2400000] [--duration 1] [--seed 1] [--only a,b] [--set scenes] [--dry-run]
 //	leyfix check DIR|FILE...
 //	leyfix info FILE
 //
@@ -17,7 +17,8 @@ import (
 const version = "0.1.0"
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: leyfix generate --out DIR [--rate HZ] [--duration S] [--seed N] [--only a,b]")
+	fmt.Fprintln(os.Stderr, "usage: leyfix generate --out DIR [--rate HZ] [--duration S] [--seed N] [--only a,b] [--set scenes] [--dry-run]")
+	fmt.Fprintln(os.Stderr, "       (--set scenes writes "+sceneNames()+")")
 	fmt.Fprintln(os.Stderr, "       leyfix check DIR|FILE...")
 	fmt.Fprintln(os.Stderr, "       leyfix info FILE")
 }

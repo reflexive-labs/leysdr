@@ -21,15 +21,18 @@ type packet struct {
 // same chain a handheld TNC drives, so the fixture exercises the whole path
 // from IQ to DecodeRecord rather than the demodulator alone.
 //
-// The pattern is one second long and repeats, so a longer fixture holds the
-// same three packets again rather than trailing off into silence. The silence
-// between packets is whatever the second has left over after the frames, which
-// is about 17 ms: at 1200 baud the three frames are already 0.93 s, so a
-// 200 ms gap does not fit inside a one-second fixture. Twenty bit times is ample for HDLC to resynchronise.
+// The pattern is periodS long (one second unless set) and repeats, so a longer
+// fixture holds the same packets again rather than trailing off into silence.
+// The silence between packets is whatever the period has left over after the
+// frames, spread evenly. In aprs_afsk's one second that is about 17 ms: at
+// 1200 baud its three frames are already 0.93 s, so a 200 ms gap does not fit.
+// Twenty bit times is ample for HDLC to resynchronise.
 type afskPacket struct {
 	rate, carrierHz, devHz, dbfs float64
 	packets                      []packet
 	preambleFlags                int
+	// periodS is the length of the repeating pattern; 0 is one second.
+	periodS float64
 
 	audio []float32 // one period of modulating audio, built on first use
 	phase float64
@@ -40,7 +43,7 @@ type afskPacket struct {
 const audioAmplitude = 0.9
 
 // build assembles one period of modulating audio: silence, frame, silence,
-// frame, silence, frame, silence, exactly rate samples long.
+// frame, silence, frame, silence, exactly one period long.
 func (s *afskPacket) build() {
 	mod := afsk.NewModulator(s.rate, audioAmplitude)
 	tones := make([][]float32, 0, len(s.packets))
@@ -51,10 +54,10 @@ func (s *afskPacket) build() {
 		tones = append(tones, t)
 		total += len(t)
 	}
-	period := int(s.rate)
+	period := int(s.rate * periodOrOne(s.periodS))
 	gap := (period - total) / (len(tones) + 1)
 	if gap < 0 {
-		panic("leyfix: the aprs_afsk packets do not fit in one second")
+		panic("leyfix: the AFSK packets do not fit in their period")
 	}
 	s.audio = make([]float32, 0, period)
 	for _, t := range tones {
@@ -91,10 +94,22 @@ func (s *afskPacket) describe() map[string]any {
 	for _, p := range s.packets {
 		calls = append(calls, p.source.String())
 	}
-	return map[string]any{
+	d := map[string]any{
 		"type": "afsk_packet", "carrier_hz": s.carrierHz, "deviation_hz": s.devHz,
 		"dbfs": s.dbfs, "baud": afsk.BaudHz, "stations": strings.Join(calls, ","),
 	}
+	if s.periodS != 0 {
+		d["period_s"] = s.periodS
+	}
+	return d
+}
+
+// periodOrOne is a packet source's period in seconds: one second when it sets none.
+func periodOrOne(periodS float64) float64 {
+	if periodS == 0 {
+		return 1
+	}
+	return periodS
 }
 
 // span is Carson's rule over the deviation and the highest AFSK tone.
