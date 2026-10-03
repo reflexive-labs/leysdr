@@ -7,6 +7,12 @@
 
 import Foundation
 
+// On macOS CGRect's geometry (minX, width…) comes from CoreGraphics; Foundation alone carries only
+// the type. Linux's Foundation defines both.
+#if canImport(CoreGraphics)
+    import CoreGraphics
+#endif
+
 /// What a staged run sets before the screenshot: the window's size, the place, the inspector,
 /// the open band, the bookmark tuned, the Library part selected and a CHIRP file imported. Every
 /// field but `settle` may be absent, which leaves that part of the window as a launch has it.

@@ -8,6 +8,10 @@ import XCTest
 
 @testable import LeylineClient
 
+#if canImport(CoreGraphics)
+    import CoreGraphics
+#endif
+
 final class ShotStageTests: XCTestCase {
     private func stageFile(_ json: String) throws -> URL {
         let dir = URL(fileURLWithPath: NSTemporaryDirectory())
