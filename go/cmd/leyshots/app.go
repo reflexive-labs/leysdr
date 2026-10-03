@@ -22,10 +22,15 @@ const appExe = "Contents/MacOS/LeylineApp"
 // launch and the 15 s the app waits for a live daemon before it gives up on the stage.
 const regionsGrace = 30 * time.Second
 
+// onAirGrace is the most an on_air stage adds after settle: the app's 30 s wait for the squelch
+// to open and the 1.5 s it then lets the readings fill (Staging.onAirSeconds, onAirFillSeconds).
+const onAirGrace = 32 * time.Second
+
 // appShot is a running staged app.
 type appShot struct {
 	cmd     *exec.Cmd
-	run     string // the scene's run directory
+	exited  <-chan error // receives the app's exit, once
+	run     string       // the scene's run directory
 	log     string
 	regions *Regions
 }
@@ -59,20 +64,41 @@ func launchApp(ctx context.Context, app string, f *File, s *Scene, run string, e
 	a := &appShot{run: run, log: filepath.Join(run, "app.log")}
 	a.cmd = exec.Command(filepath.Join(app, appExe))
 	a.cmd.Env = append(append(os.Environ(), env...), "LEYLINE_APP_STAGE="+stagePath, "LEYLINE_APP_LOG="+a.log)
+	// The app's own output, where a Swift runtime trap or an AppKit exception is printed.
+	stderrPath := filepath.Join(run, "app.stderr")
+	stderr, err := os.Create(stderrPath)
+	if err != nil {
+		return nil, err
+	}
+	defer stderr.Close()
+	a.cmd.Stdout, a.cmd.Stderr = stderr, stderr
 	if err := a.cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start the app: %w; build it with: make app-bundle", err)
 	}
+	exited := make(chan error, 1)
+	go func() { exited <- a.cmd.Wait() }()
+	a.exited = exited
 	wait := time.Duration(s.Stage.Settle*float64(time.Second)) + regionsGrace
+	if s.Stage.OnAir {
+		wait += onAirGrace
+	}
 	deadline := time.Now().Add(wait)
-	logf("waiting for the app to apply the stage and settle (%.0f s)", s.Stage.Settle)
+	logf("waiting for the app to apply the stage and settle (up to %.0f s)", wait.Seconds())
 	for {
 		if r, err := readRegions(regionsPath); err == nil {
 			a.regions = r
 			return a, nil
 		}
+		select {
+		case err := <-exited:
+			a.cmd = nil
+			return nil, fmt.Errorf("the app exited before it wrote %s (%w); its log is %s and its output %s; crash reports are in ~/Library/Logs/DiagnosticReports",
+				regionsPath, err, a.log, stderrPath)
+		default:
+		}
 		if time.Now().After(deadline) {
 			a.quit()
-			return nil, fmt.Errorf("the app wrote no %s within %.0f s of starting; its log is %s", regionsPath, wait.Seconds(), a.log)
+			return nil, fmt.Errorf("the app wrote no %s within %.0f s of starting; its log is %s and its output %s", regionsPath, wait.Seconds(), a.log, stderrPath)
 		}
 		if err := sleep(ctx, 0.25); err != nil {
 			a.quit()
@@ -110,13 +136,11 @@ func (a *appShot) quit() {
 		return
 	}
 	_ = a.cmd.Process.Signal(os.Interrupt)
-	done := make(chan struct{})
-	go func() { _ = a.cmd.Wait(); close(done) }()
 	select {
-	case <-done:
+	case <-a.exited:
 	case <-time.After(5 * time.Second):
 		_ = a.cmd.Process.Kill()
-		<-done
+		<-a.exited
 	}
 }
 
