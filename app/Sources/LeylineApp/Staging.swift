@@ -123,8 +123,10 @@ final class Staging {
     }
 
     /// The window's frame, toolbar included, at the stage's size with its top-left corner kept.
-    /// The frame is not autosaved or restored, so the next unstaged launch opens at the size the
-    /// person left it.
+    /// The frame is not autosaved, so the next unstaged launch opens at the size the person left
+    /// it. The window stays restorable: marking it otherwise had macOS save the app as having no
+    /// windows, and the next launch, staged or not, opened none. `leyshots` launches the app with
+    /// `-ApplePersistenceIgnoreState YES`, so a staged run does not reopen saved windows either.
     private func sizeWindow(_ size: ShotStage.WindowSize) async {
         guard await until(seconds: Self.confirmSeconds, { self.window != nil }),
             let window
@@ -133,7 +135,6 @@ final class Staging {
             return
         }
         window.setFrameAutosaveName("")
-        window.isRestorable = false
         let f = window.frame
         window.setFrame(
             NSRect(x: f.minX, y: f.maxY - size.height, width: size.width, height: size.height),

@@ -62,7 +62,9 @@ func launchApp(ctx context.Context, app string, f *File, s *Scene, run string, e
 		return nil, err
 	}
 	a := &appShot{run: run, log: filepath.Join(run, "app.log")}
-	a.cmd = exec.Command(filepath.Join(app, appExe))
+	// -ApplePersistenceIgnoreState: the window a previous launch left saved, or a saved state
+	// with no windows, is not restored; the staged window is always a fresh one.
+	a.cmd = exec.Command(filepath.Join(app, appExe), "-ApplePersistenceIgnoreState", "YES")
 	a.cmd.Env = append(append(os.Environ(), env...), "LEYLINE_APP_STAGE="+stagePath, "LEYLINE_APP_LOG="+a.log)
 	// The app's own output, where a Swift runtime trap or an AppKit exception is printed.
 	stderrPath := filepath.Join(run, "app.stderr")

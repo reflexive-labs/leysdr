@@ -43,6 +43,14 @@ final class Activation: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         NSApp.windows.first?.makeKeyAndOrderFront(nil)
+        if ShotStage.path() != nil {
+            // A staged run waits on the window's task; without a window it would wait silently.
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(3))
+                let shown = NSApp.windows.filter(\.isVisible).count
+                if shown == 0 { log("stage", "no window opened within 3 s of launch") }
+            }
+        }
     }
 }
 

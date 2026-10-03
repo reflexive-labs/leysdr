@@ -471,7 +471,7 @@ that `ShotStage` decodes, and every key is optional:
 
 | key | what the app does |
 |---|---|
-| `window` | `{"width":1440,"height":820}`: sets the window's frame to this many points, toolbar included, keeping its top-left corner. The frame is not autosaved or restored afterwards. |
+| `window` | `{"width":1440,"height":820}`: sets the window's frame to this many points, toolbar included, keeping its top-left corner. The frame is not autosaved. `leyshots` launches the app with `-ApplePersistenceIgnoreState YES`, so no saved window is reopened. |
 | `inspector` | shows or hides the inspector |
 | `select_bookmark` | tunes the first bookmark with this name, as a click on its sidebar row does |
 | `import_chirp` | an absolute path to a CHIRP CSV, imported through File ▸ Import CHIRP…'s code path, so the notice prints the import's real counts |
