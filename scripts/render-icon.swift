@@ -7,6 +7,9 @@
 // toolchain and needs no Xcode asset catalog. scripts/bundle-app.sh runs it.
 //
 //   swift scripts/render-icon.swift <dir>   writes <dir>/AppIcon.iconset and <dir>/AppIcon.icns
+//   swift scripts/render-icon.swift --png <px> <file>
+//       writes one <px>-square PNG of the icon: at 1024, the site's app-icon-1024.png
+//       (docs/plans/site-shots.md)
 //
 // The colours are Theme.swift's `accent` (#E8814A) and `ground` (#0B0D0F). The shape follows
 // Apple's macOS icon grid at 1024 px: an 824 px tile (a 100 px transparent margin on each side,
@@ -78,9 +81,20 @@ func writePNG(_ image: CGImage, to url: URL) {
     }
 }
 
+let usage = "usage: swift scripts/render-icon.swift <dir> | --png <px> <file>\n"
 let args = CommandLine.arguments
+if args.count >= 2, args[1] == "--png" {
+    guard args.count == 4, let px = Int(args[2]), px > 0 else {
+        FileHandle.standardError.write(Data(usage.utf8))
+        exit(2)
+    }
+    let file = URL(fileURLWithPath: args[3])
+    writePNG(render(pixels: px), to: file)
+    print(file.path)
+    exit(0)
+}
 guard args.count == 2 else {
-    FileHandle.standardError.write(Data("usage: swift scripts/render-icon.swift <dir>\n".utf8))
+    FileHandle.standardError.write(Data(usage.utf8))
     exit(2)
 }
 let out = URL(fileURLWithPath: args[1], isDirectory: true)
