@@ -13,6 +13,7 @@ import (
 	"time"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/daemonrun"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
@@ -36,97 +37,27 @@ type Env struct {
 	Log func(format string, args ...any)
 }
 
-// daemon is one eval's daemon: a temp directory holding its socket, store and copied fixtures.
+// daemon is one eval's daemon: a hermetic leylined (go/internal/daemonrun) whose directory also
+// holds the copied fixtures. --no-hardware keeps the machine's own dongles out of the run, so an
+// agent that tunes "146.52" with no device named gets the fixture, and nothing on the air can
+// leak into a graded answer.
 type daemon struct {
 	env    Env
 	dir    string
 	socket string
-	// socketDir is the short temp directory the socket was moved to, or empty; removed on stop.
-	socketDir string
-	store     string
-	cmd       *exec.Cmd
-	logBuf    *os.File
-	client    *leyline.Client
+	client *leyline.Client
+	run    *daemonrun.Daemon
 }
 
-// socketPathMax is the longest Unix socket path both platforms accept (104 bytes on macOS,
-// 108 on Linux), with room for the pidfile the daemon puts beside it.
-const socketPathMax = 96
-
-// startDaemon brings up a daemon on a temp socket with a temp store. The socket sits in the run
-// directory unless that path is too long for a Unix socket, in which case it goes in a short
-// temp directory of its own and the run directory gets a note saying where.
 func startDaemon(ctx context.Context, env Env, dir string) (*daemon, error) {
-	d := &daemon{env: env, dir: dir, socket: filepath.Join(dir, "d.sock"), store: filepath.Join(dir, "store")}
-	if len(d.socket) > socketPathMax {
-		short, err := os.MkdirTemp("", "ley")
-		if err != nil {
-			return nil, err
-		}
-		d.socketDir = short
-		d.socket = filepath.Join(short, "d.sock")
-		_ = os.WriteFile(filepath.Join(dir, "socket.txt"), []byte(d.socket+"\n"), 0o644)
-	}
-	logPath := filepath.Join(dir, "leylined.log")
-	f, err := os.Create(logPath)
+	run, err := daemonrun.Start(ctx, daemonrun.Options{Bin: env.Daemon, Dir: dir, Decoders: env.Decoders, Label: "leyeval"})
 	if err != nil {
 		return nil, err
 	}
-	d.logBuf = f
-	// --no-hardware: the machine's own dongles stay out of the run. An agent that tunes "146.52"
-	// with no device named gets the fixture, not the machine's radio, and nothing on the air can
-	// leak into a graded answer.
-	args := []string{"--socket", d.socket, "--store", d.store, "--log-level", "info", "--no-hardware"}
-	if env.Decoders != "" {
-		args = append(args, "--decoders", env.Decoders)
-	}
-	d.cmd = exec.Command(env.Daemon, args...)
-	d.cmd.Stdout, d.cmd.Stderr = f, f
-	if err := d.cmd.Start(); err != nil {
-		return nil, fmt.Errorf("start %s: %w", env.Daemon, err)
-	}
-	c, err := leyline.Dial(ctx, d.socket, leyline.WithKind("cli"), leyline.WithLabel("leyeval"))
-	if err != nil {
-		d.stop()
-		return nil, err
-	}
-	d.client = c
-	deadline := time.Now().Add(15 * time.Second)
-	for {
-		if _, err := c.State(ctx); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			d.stop()
-			return nil, fmt.Errorf("leylined did not answer on %s within 15 s; its log is %s", d.socket, logPath)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	return d, nil
+	return &daemon{env: env, dir: dir, socket: run.Socket, client: run.Client, run: run}, nil
 }
 
-func (d *daemon) stop() {
-	if d.client != nil {
-		_ = d.client.Close()
-	}
-	if d.cmd != nil && d.cmd.Process != nil {
-		_ = d.cmd.Process.Signal(os.Interrupt)
-		done := make(chan struct{})
-		go func() { _ = d.cmd.Wait(); close(done) }()
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			_ = d.cmd.Process.Kill()
-			<-done
-		}
-	}
-	if d.socketDir != "" {
-		_ = os.RemoveAll(d.socketDir)
-	}
-	if d.logBuf != nil {
-		_ = d.logBuf.Close()
-	}
-}
+func (d *daemon) stop() { d.run.Stop() }
 
 // attach copies a fixture under its neutral name with a sidecar that says only what the daemon
 // needs, attaches it as a radio and, unless the fixture says otherwise, tunes it to its centre.
