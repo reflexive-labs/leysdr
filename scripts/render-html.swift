@@ -72,15 +72,24 @@ final class Renderer: NSObject, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         webView.callAsyncJavaScript(
-            "await document.fonts.ready; return document.documentElement.scrollHeight;",
+            """
+            await document.fonts.ready;
+            const e = document.documentElement;
+            return [e.scrollWidth, e.scrollHeight];
+            """,
             arguments: [:], in: nil, in: .page
         ) { result in
             switch result {
             case .success(let value):
-                guard let h = (value as? NSNumber)?.doubleValue, h.isFinite, h > 0 else {
-                    fail("the page reported no height")
+                let size = (value as? [NSNumber])?.map(\.doubleValue) ?? []
+                guard size.count == 2, size.allSatisfy({ $0.isFinite && $0 > 0 }) else {
+                    fail("the page reported no size")
                 }
-                self.snapshot(height: CGFloat(h).rounded(.up))
+                // --width is the least the page is drawn at: a page laid out in `ch` follows the
+                // font WebKit really uses, whose advance can be wider than the caller assumed,
+                // and a fixed width would clip the last column.
+                width = max(width, CGFloat(size[0]).rounded(.up))
+                self.snapshot(height: CGFloat(size[1]).rounded(.up))
             case .failure(let error):
                 fail("the page's height could not be read: \(error.localizedDescription)")
             }
