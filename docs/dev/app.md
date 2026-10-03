@@ -12,8 +12,8 @@ One SwiftPM package at `app/`, beside the engine's and never inside it:
 
 | target | what | builds on |
 |---|---|---|
-| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the session's state machines, which hold no I/O so the Linux tests reach them (`HeldObject.swift`: the window's capture and channel until the mirror carries them; `RetuneQueue.swift`: one centre move at a time; `PartPlayback.swift`: the window's playback of a recorded part and Play all's queue); the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`), and which waterfall rows were captured while the radio clipped and which a recording's parts hold (`ClippedRows.swift`); the transmissions log, one per frequency for the session, and the sample clock (`Transmissions.swift`, `SampleClock.swift`); the audio ladder's bands, scale and ballistics (`AudioLevels.swift`); recordings: the manifest reader, the part-to-transmission match, the window's `RecordConfig`, the switch's job and status line, the question before a move off a recording, a listing's summary, the Library's channel rows and search, the store footer's words and the day words (`Recordings.swift`); the channel page's cards, day groups and chips, the inspector's words for a part, the player's words and its previous and next part, the delete words and Play all's queue (`RecordingPages.swift`) | macOS and Linux |
-| `LeylineApp` | the SwiftUI app: `AppSession` (the composition root: the mirror copied, the selection, the façade's state machines it owns, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones; `CaptureLevelFeed`, the radio's clipping count; `AudioLevelsFeed`, the tuned channel's audio spectrum in octave bands), the views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the inspector (`InspectorView.swift`, `InspectorGroups.swift`, `AudioLevelsView.swift`), recording from the window (the log's Record transmissions switch and kept rows, the bookmark dot, the waterfall's time gutter and kept bars, the volume caption, the retune question, the File items), the window's two places (`MainWindow.swift`: the toolbar's `Radio \| Library` switch and the two bodies; the Library in `LibraryView.swift`, its sidebar, store footer and inspector, with the channel page in `RecordingsPage.swift`, the inspector on a part in `PartInspector.swift` and the player in `PlayerBar.swift`), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
+| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the session's state machines, which hold no I/O so the Linux tests reach them (`HeldObject.swift`: the window's capture and channel until the mirror carries them; `RetuneQueue.swift`: one centre move at a time; `PartPlayback.swift`: the window's playback of a recorded part and Play all's queue); the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`), and which waterfall rows were captured while the radio clipped and which a recording's parts hold (`ClippedRows.swift`); the transmissions log, one per frequency for the session, and the sample clock (`Transmissions.swift`, `SampleClock.swift`); the audio ladder's bands, scale and ballistics (`AudioLevels.swift`); recordings: the manifest reader, the part-to-transmission match, the window's `RecordConfig`, the switch's job and status line, the question before a move off a recording, a listing's summary, the Library's channel rows and search, the store footer's words and the day words (`Recordings.swift`); the channel page's cards, day groups and chips, the inspector's words for a part, the player's words and its previous and next part, the delete words and Play all's queue (`RecordingPages.swift`); a staged run's stage file and regions file (`ShotStage.swift`) | macOS and Linux |
+| `LeylineApp` | the SwiftUI app: `AppSession` (the composition root: the mirror copied, the selection, the façade's state machines it owns, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones; `CaptureLevelFeed`, the radio's clipping count; `AudioLevelsFeed`, the tuned channel's audio spectrum in octave bands), the views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the inspector (`InspectorView.swift`, `InspectorGroups.swift`, `AudioLevelsView.swift`), recording from the window (the log's Record transmissions switch and kept rows, the bookmark dot, the waterfall's time gutter and kept bars, the volume caption, the retune question, the File items), the window's two places (`MainWindow.swift`: the toolbar's `Radio \| Library` switch and the two bodies; the Library in `LibraryView.swift`, its sidebar, store footer and inspector, with the channel page in `RecordingsPage.swift`, the inspector on a part in `PartInspector.swift` and the player in `PlayerBar.swift`), a staged run (`Staging.swift`, "Staged runs" below), `Theme.swift` | macOS only; the manifest declares it under `#if os(macOS)` |
 | `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer and its write order, the session's state machines, the decoders, the bands and bookmarks files, the spectrum folds, the transmissions log and the clock, the audio bands and their ballistics, a hand-written recording manifest, the part match, the switch's job and status line and the retune question, the channel page's cards and day groups, a part's words and table, and Play all's order | both |
 | `LeylineClientDaemonTests` | the façade against a real `leylined --no-hardware` playing a fixture | both; skips itself without `LEYLINED_BIN` |
 
@@ -462,6 +462,51 @@ both suites against the Linux-built daemon; the SwiftUI target does not exist th
 configuration in `app/.swift-format` (`swift-style.md`, "Files"); run it before a commit. Anything
 under `#if canImport(SwiftUI)`, `Metal` or `AppKit` is never compiled on Linux, the same trap
 `setup.md` records for Accelerate: a green Linux run does not compile any view.
+
+## Staged runs
+
+`LEYLINE_APP_STAGE` names a stage file, and the app then sets its window to it for the site's
+screenshots (`../plans/site-shots.md`, "App shots"). `leyshots` writes the file. It holds JSON
+that `ShotStage` decodes, and every key is optional:
+
+| key | what the app does |
+|---|---|
+| `window` | `{"width":1440,"height":820}`: sets the window's frame to this many points, toolbar included, keeping its top-left corner. The frame is not autosaved or restored afterwards. |
+| `inspector` | shows or hides the inspector |
+| `select_bookmark` | tunes the first bookmark with this name, as a click on its sidebar row does |
+| `import_chirp` | an absolute path to a CHIRP CSV, imported through File ▸ Import CHIRP…'s code path, so the notice prints the import's real counts |
+| `expanded_band` | opens this sidebar row (`2m`, the id in `bands.json`), as its chevron does |
+| `place` | `radio` or `library`, as the toolbar's switch sets it |
+| `select_part` | selects this part of the Library's selected channel without playing it, counted from 0 down the page's recent days |
+| `settle` | the seconds the window keeps drawing after the stage is applied, before the regions are measured |
+
+A staged run shows no splash, so its first frame is the window. It writes nothing to
+UserDefaults and does not reopen the last band, so a staged run neither changes nor depends on
+the person's own settings. The stage is applied once, in the order of the table, after the daemon
+is live and the window has its channel, or 5 s after that if no channel arrives. A scene
+therefore starts with a capture already tuned (`ley tune`), as it would be for someone who has
+the radio running. Without one, the app opens FM broadcast, as a first launch does. The stage changes only what the window's own controls
+change, and the daemon's state is changed only by the tune a click would make (invariant 7).
+
+`settle` seconds after the stage is applied, the app writes `regions.json` beside the stage file,
+replacing it atomically:
+
+```json
+{"window_number": 4242,
+ "regions": {"window": {"x": 0, "y": 0, "width": 1440, "height": 820},
+             "toolbar": {"x": 0, "y": 0, "width": 1440, "height": 52}, "sidebar": {…}}}
+```
+
+`window_number` is the `NSWindow` number that `screencapture -l` takes. Each region is a rectangle
+in points from the top-left corner of the window's frame, toolbar included, because
+`screencapture -l` captures that whole frame. The regions are `window`, `toolbar`, `sidebar`,
+`inspector`, `waterfall` and `library` (the Library's whole body). In the Library, `sidebar` and
+`inspector` are the Library's own. A region that is not on screen is left out of the file. Each
+region except `window` and `toolbar` is measured by a `WindowFrameProbe` under its view. The
+toolbar is hosted outside the content's view tree, so its region is the strip above the window's
+`contentLayoutRect`. Every step is logged under `stage`. If the daemon is not live within 15 s,
+or the stage file cannot be read, the app applies nothing and writes no regions, and the log
+says why.
 
 ## Logs
 

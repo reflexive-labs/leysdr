@@ -149,6 +149,12 @@ fixtures' generator records, the `ley --version` output and the commit that prod
   HTML, the manifest, `publish`, and the Makefile targets.
 - [ ] **SHOT-2 (engine).** The sidecar `label` and `leylined --wall-clock`, each with a test.
 - [ ] **SHOT-3 (app; can only be checked on the Mac).** `LEYLINE_APP_STAGE` and `regions.json`.
+  Written and not yet compiled on the Mac; `docs/dev/app.md`, "Staged runs" has the stage keys
+  and the regions file. Differences from the description above: the stage does not reopen the
+  remembered band, so each app scene must leave a capture tuned (`ley tune`) before the app
+  starts, or the app opens FM broadcast; `settle` is counted from when the stage is applied, not
+  from the spectrum's first row; `select_part` selects the part without playing it; in the
+  Library, `sidebar` and `inspector` are the Library's own.
 - [ ] **SHOT-4 (Mac).** `scripts/render-html.swift`, `render-icon.swift --png`, the window and
   notification capture in `leyshots`, then the first full run on the Mac.
 
