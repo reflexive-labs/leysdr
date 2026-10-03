@@ -73,30 +73,67 @@ func checkFile(path string) ([]checkResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, err := iqfile.ReadAll(path, sc.Format)
-	if err != nil {
-		return nil, err
-	}
-	x := make([]complex128, len(raw))
-	for i, v := range raw {
-		x[i] = complex(float64(real(v)), float64(imag(v)))
-	}
 	var out []checkResult
 	for i, e := range sc.Expect {
 		r := checkResult{file: path, index: i}
-		r.pass, r.detail = checkExpect(x, sc.SampleRate, e)
+		res, err := streamChain(path, sc, e)
+		if err != nil {
+			var chainErr chainError
+			if !errors.As(err, &chainErr) {
+				return nil, err
+			}
+			r.detail = fmt.Sprintf("%s @%+.0f bw %.0f: %v", e.Mode, e.OffsetHz, e.BandwidthHz, err)
+		} else {
+			r.pass, r.detail = checkExpect(res, e)
+		}
 		out = append(out, r)
 	}
 	return out, nil
 }
 
-// checkExpect runs the reference chain for one expect entry and evaluates
-// its audio and meter assertions, returning pass and a numeric summary.
-func checkExpect(x []complex128, rate float64, e iqfile.Expect) (bool, string) {
-	res, err := referenceChain(x, rate, e.Mode, e.OffsetHz, e.BandwidthHz)
+// chainError is a reference chain that cannot be built for an expect entry: a failed check,
+// where a read error is a failed run.
+type chainError struct{ error }
+
+// streamChain runs the reference chain for one expect entry over the file block by block, so
+// a scene fixture of a few hundred megabytes is checked in the memory of its decimated channel
+// rather than of the whole file.
+func streamChain(path string, sc *iqfile.Sidecar, e iqfile.Expect) (*channelResult, error) {
+	p, err := planChain(sc.SampleRate, e.Mode, e.OffsetHz, e.BandwidthHz)
 	if err != nil {
-		return false, fmt.Sprintf("%s @%+.0f bw %.0f: %v", e.Mode, e.OffsetHz, e.BandwidthHz, err)
+		return nil, chainError{err}
 	}
+	r, err := iqfile.Open(path, sc.Format)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	s := p.stage1()
+	raw := make([]complex64, genBlock)
+	x := make([]complex128, genBlock)
+	for {
+		n, err := r.Read(raw)
+		for i, v := range raw[:n] {
+			x[i] = complex(float64(real(v)), float64(imag(v)))
+		}
+		s.feed(x[:n])
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	res, err := p.finish(s.out)
+	if err != nil {
+		return nil, chainError{err}
+	}
+	return res, nil
+}
+
+// checkExpect evaluates one expect entry's audio, meter and record assertions against the
+// reference chain's output, returning pass and a numeric summary.
+func checkExpect(res *channelResult, e iqfile.Expect) (bool, string) {
 	// Drop the filter/IIR settling transient (50 ms) when the file is long enough.
 	// `trimmedS` is what that costs the time base: the record check reports edges
 	// in seconds from the start of the file, and a silent 50 ms shift would move
