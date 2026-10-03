@@ -152,11 +152,13 @@ fixtures' generator records, the `ley --version` output and the commit that prod
 - [ ] **SHOT-4 (Mac).** `scripts/render-html.swift`, `render-icon.swift --png`, the window and
   notification capture in `leyshots`, then the first full run on the Mac.
 
-## Notes for the site copy
+## The app is the source of truth
 
-- The app has no "Save tone to bookmark" action. The inspector shows the heard tone beside the
-  bookmark's Tone field, and you type the value in. The mockup's button comes out unless that
-  feature is built.
+Each scene stages the app as it is, and the site copy follows the images. Where the site's
+mockup and the app differ, the leysdr.com side changes the mockup. Differences known on
+2026-10-03:
+
+- The mockup's "Save tone to bookmark" is the app's add channel action.
 - The Library draws a level-bar graph for each part, not a waveform.
 - Scanning in the app is the band row's Scan action, which marks hits on the band rail. There
   is no separate Scan view.
