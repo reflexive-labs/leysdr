@@ -84,6 +84,7 @@ What is being built, in what order, and the record of what each step found.
   work list for the first shared release), [signal views](plans/signal-views.md) (the sonogram
   remains), [band watching](plans/band-watching.md) (occupancy and burst capture remain),
   [decoders](plans/decoders.md) (APRS, SAME and AIS are done; more decoders follow),
+  [site screenshots](plans/site-shots.md) (`make shots` and the release assets leysdr.com pulls),
   [MCP adapter](plans/mcp.md) (the tools the daemon can back are done; the rest wait on their
   milestones) and [the Mac app](plans/app.md) (Milestone E: the window, recording and the bands
   sidebar are done; lifecycle and distribution remain).
