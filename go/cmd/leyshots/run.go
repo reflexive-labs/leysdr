@@ -28,6 +28,8 @@ type runOptions struct {
 	goos                                            string
 	stdout                                          io.Writer
 	logf                                            func(string, ...any)
+	// leyfixSrc is leyfixSourceHash of the checkout, which a cached fixture must match.
+	leyfixSrc string
 }
 
 // errHTMLOnly is a page rendered to HTML on a machine that cannot draw it to a PNG.
@@ -57,6 +59,11 @@ func runScenes(ctx context.Context, o runOptions) error {
 	}
 	if err := os.MkdirAll(o.out, 0o755); err != nil {
 		return err
+	}
+	if o.leyfixSrc == "" {
+		if o.leyfixSrc, err = leyfixSourceHash(o.root); err != nil {
+			return err
+		}
 	}
 	manifestPath := filepath.Join(o.out, "shots.json")
 	manifest, err := readManifest(manifestPath)
@@ -161,7 +168,7 @@ func runScene(ctx context.Context, o runOptions, f *File, s *Scene, tm *tmuxRunn
 	var files []*fixtureFile
 	shot.Fixtures = map[string]json.RawMessage{}
 	for _, ref := range s.Fixtures {
-		ff, err := ensureFixture(ctx, o.leyfix, o.cache, ref, o.logf)
+		ff, err := ensureFixture(ctx, o.leyfix, o.cache, ref, o.leyfixSrc, o.logf)
 		if err != nil {
 			return nil, err
 		}
@@ -313,13 +320,16 @@ func runScene(ctx context.Context, o runOptions, f *File, s *Scene, tm *tmuxRunn
 	return nil, fmt.Errorf("unknown kind %q", s.Kind)
 }
 
-// finish reads the written image's size into the shot.
+// finish reads the written image's size and sha256 into the shot.
 func finish(shot *Shot, path string) (*Shot, error) {
 	w, h, err := pngSize(path)
 	if err != nil {
 		return nil, err
 	}
 	shot.Width, shot.Height = w, h
+	if shot.PNGSHA256, err = fileSHA256(path); err != nil {
+		return nil, err
+	}
 	return shot, nil
 }
 

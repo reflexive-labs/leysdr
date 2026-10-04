@@ -7,6 +7,8 @@
 //	leyshots run [--only a,b] [--out tmp/shots]
 //	leyshots publish [--only a,b] [--out tmp/shots] [--dry-run]
 //	leyshots list
+//	leyshots keys [--out tmp/shots/keys] [--leyfix PATH]
+//	leyshots makefile
 //
 // The programs it drives come from the environment, defaulting to the Makefile's build outputs:
 // LEYLINED_BIN (engine/.build/debug/leylined), LEY_BIN (go/bin/ley), LEYFIX_BIN (go/bin/leyfix)
@@ -32,6 +34,8 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, "       leyshots publish [--only a,b] [--out DIR] [--dry-run]")
 	fmt.Fprintln(w, "                                                 release the reviewed images as shots-YYYY-MM-DD")
 	fmt.Fprintln(w, "       leyshots list                             the scenes, their kind and what they need")
+	fmt.Fprintln(w, "       leyshots keys [--out DIR] [--leyfix PATH] write each scene's input hash, for make shots")
+	fmt.Fprintln(w, "       leyshots makefile                         print the make rules make shots includes")
 }
 
 func main() { os.Exit(realMain(os.Args[1:])) }
@@ -52,6 +56,10 @@ func realMain(args []string) int {
 		err = cmdPublish(ctx, args[1:], os.Stdout)
 	case "list":
 		err = cmdList(args[1:], os.Stdout)
+	case "keys":
+		err = cmdKeys(ctx, args[1:])
+	case "makefile":
+		err = cmdMakefile(args[1:], os.Stdout)
 	case "-h", "--help", "help":
 		usage(os.Stdout)
 		return 0
@@ -144,7 +152,7 @@ func cmdRun(ctx context.Context, args []string, stdout io.Writer) error {
 
 func cmdPublish(ctx context.Context, args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("publish", flag.ContinueOnError)
-	only := fs.String("only", "", "comma-separated assets to refresh in the release, e.g. app-radio-2m (default: every image in shots.json)")
+	only := fs.String("only", "", "comma-separated assets to refresh in the release, e.g. app-radio-2m (default: every image in shots.json whose png_sha256 differs from the latest release's)")
 	out := fs.String("out", "", "the run's output directory (default: tmp/shots in the checkout)")
 	dryRun := fs.Bool("dry-run", false, "merge, compress and check the release in <out>/publish/<tag>, and create nothing")
 	if err := fs.Parse(args); err != nil {
@@ -214,4 +222,61 @@ func listScenes(f *File, w io.Writer) {
 		}
 		fmt.Fprintf(w, "%-22s %-10s %-24s %s\n", s.Name(), s.Kind, fixtures, where)
 	}
+}
+
+// loadFromCheckout finds the checkout above the working directory and loads its scenes file.
+func loadFromCheckout() (root string, f *File, err error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", nil, err
+	}
+	if root, err = findRoot(cwd); err != nil {
+		return "", nil, err
+	}
+	f, err = Load(filepath.Join(root, "site", "shots", "scenes.yaml"))
+	return root, f, err
+}
+
+func cmdKeys(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("keys", flag.ContinueOnError)
+	out := fs.String("out", "", "directory for the <scene>.key files (default: tmp/shots/keys in the checkout)")
+	leyfix := fs.String("leyfix", "", "the leyfix whose dry run gives each fixture's generator record (default: $LEYFIX_BIN or go/bin/leyfix)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	root, f, err := loadFromCheckout()
+	if err != nil {
+		return err
+	}
+	if *out == "" {
+		*out = filepath.Join(root, "tmp", "shots", "keys")
+	}
+	if *leyfix == "" {
+		*leyfix = envOr("LEYFIX_BIN", filepath.Join(root, "go", "bin", "leyfix"))
+	}
+	src, err := leyfixSourceHash(root)
+	if err != nil {
+		return err
+	}
+	cache := defaultCacheDir()
+	plan := leyfixPlanner(func(ref FixtureRef) (*planned, error) { return planFixture(ctx, *leyfix, cache, ref) })
+	changed, err := writeKeys(*out, f, plan, src)
+	if err != nil {
+		return err
+	}
+	if len(changed) > 0 {
+		logf("inputs changed for %s", strings.Join(changed, ", "))
+	}
+	return nil
+}
+
+func cmdMakefile(args []string, stdout io.Writer) error {
+	if len(args) > 0 {
+		return fmt.Errorf("makefile takes no arguments")
+	}
+	_, f, err := loadFromCheckout()
+	if err != nil {
+		return err
+	}
+	return writeMakefile(stdout, f)
 }

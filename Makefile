@@ -14,11 +14,14 @@
 #   make fixtures   generate IQ fixtures into fixtures/ with leyfix (FIXTURE_DURATION=0.5 for a quick set)
 #   make e2e        cross-language contract test: `ley` driving a locally built leylined over UDS
 #   make eval       the agent evals: an agent on `ley mcp` against fixtures, graded (costs tokens)
-#   make shots      the site's screenshots into tmp/shots (docs/plans/site-shots.md); ONLY=a,b takes
-#                   some scenes. The app and screen scenes need the Mac; elsewhere terminal scenes stop
-#                   at HTML
+#   make shots      the site's screenshots into tmp/shots (docs/plans/site-shots.md): only the scenes
+#                   whose inputs changed since their image was taken; ONLY=a,b takes those scenes
+#                   whatever changed. The app and screen scenes need the Mac; elsewhere terminal
+#                   scenes stop at HTML
 #   make shots-publish  release the reviewed tmp/shots images as shots-YYYY-MM-DD, merged with the
 #                   latest shots-* release; ONLY=a,b refreshes some (SHOTS_ARGS=--dry-run to check)
+#   make shots-release  make shots, then release the images that differ from the latest shots-*
+#                   release, or nothing when none does (SHOTS_ARGS=--dry-run to check)
 #   make app        build the Mac app package (app/): the app and the client façade on macOS, the
 #                   façade alone on Linux, where the SwiftUI target is not declared
 #   make app-test   the façade's unit tests (no daemon)
@@ -56,7 +59,7 @@ GOFUMPT_VERSION := v0.12.0
 GOVULNCHECK_VERSION := v1.8.0
 ACTIONLINT_VERSION := v1.7.12
 
-.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval shots shots-publish app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders
+.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval shots shots-bundle shots-publish shots-release app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders
 
 all: go swift app
 
@@ -184,13 +187,63 @@ eval: go swift fixtures
 # The site's screenshots (docs/plans/site-shots.md): leyshots runs each scene in site/shots/scenes.yaml
 # against its own leylined --no-hardware playing a scene fixture it generates into the cache. On the
 # Mac the app is bundled first, because the app scenes launch app/dist/Leyline.app.
-shots: go swift
+#
+# Without ONLY, make takes only the stale images. While this file is read, before any mtime is
+# compared, `leyshots keys` writes tmp/shots/keys/<scene>.key, rewritten only when one of the
+# scene's own inputs changes (its entry in scenes.yaml, the files it reads, its fixtures' generator
+# records, leyfix's source), and `leyshots makefile` writes tmp/shots/shots.mk: one rule per image,
+# which depends on the scene's key and on its kind's SHOTS_DEPS_* sources and takes that one scene.
+# A scene that leaves no PNG (an app scene on Linux, a notification that did not appear) runs again
+# at the next `make shots`. go, swift and the bundle are phony, so they are order-only: as plain
+# prerequisites they would make every image stale on every run. Scenes share tmp/shots/shots.json
+# and one tmux server, so the run is serial. A failed scene stops make; `make -k shots` goes on.
+SHOTS_OUT := $(CURDIR)/tmp/shots
+SHOTS_RUN = LEYLINED_BIN="$$(cd engine && swift build -c $(SWIFT_CONFIG) --show-bin-path)/leylined" LEY_BIN=$(GOBIN)/ley \
+	LEYFIX_BIN=$(GOBIN)/leyfix $(GOBIN)/leyshots run
+ifneq ($(filter shots-release,$(MAKECMDGOALS))$(if $(ONLY),,$(filter shots,$(MAKECMDGOALS))),)
+SHOTS_GEN := $(shell mkdir -p $(SHOTS_OUT)/bin && cd go && go build -o $(SHOTS_OUT)/bin/ ./cmd/leyshots ./cmd/leyfix && \
+	$(SHOTS_OUT)/bin/leyshots keys --leyfix $(SHOTS_OUT)/bin/leyfix --out $(SHOTS_OUT)/keys >&2 && \
+	$(SHOTS_OUT)/bin/leyshots makefile > $(SHOTS_OUT)/shots.mk && echo ok)
+ifneq ($(SHOTS_GEN),ok)
+$(error leyshots could not write $(SHOTS_OUT)/shots.mk; the lines above say why)
+endif
+.NOTPARALLEL:
+.DELETE_ON_ERROR:
+# make expands a rule's prerequisites as it reads the rule, so these come before the include.
+SHOTS_GO := $(shell find go/cmd/ley go/cmd/leyshots go/cmd/leydec-* go/internal go/pkg go/gen -name '*.go' ! -name '*_test.go') \
+	go/go.mod go/go.sum $(shell find decoders -type f)
+SHOTS_ENGINE := $(shell find engine/Sources swift/LeylineProto/Sources -type f) engine/Package.swift swift/LeylineProto/Package.swift
+SHOTS_APP := $(shell find app/Sources -type f) app/Package.swift scripts/bundle-app.sh
+SHOTS_PAGE := scripts/ansi2html.py scripts/render-html.swift
+SHOTS_DEPS_APP := $(SHOTS_GO) $(SHOTS_ENGINE) $(SHOTS_APP)
+SHOTS_DEPS_TERMINAL := $(SHOTS_GO) $(SHOTS_ENGINE) $(SHOTS_PAGE)
+# A table is drawn by leyshots alone, with no daemon and no ley.
+SHOTS_DEPS_TABLE := $(filter go/cmd/leyshots/%,$(SHOTS_GO)) scripts/render-html.swift
+SHOTS_DEPS_COMPOSITE := $(SHOTS_DEPS_APP) $(SHOTS_PAGE)
+SHOTS_DEPS_SCREEN := $(SHOTS_GO) $(SHOTS_ENGINE)
+SHOTS_DEPS_ICON := scripts/render-icon.swift
+include $(SHOTS_OUT)/shots.mk
+$(SHOTS_ASSETS): | go swift
+$(SHOTS_ASSETS_APP) $(SHOTS_ASSETS_COMPOSITE): | shots-bundle
+endif
+
+ifeq ($(ONLY),)
+shots: $(SHOTS_ASSETS)
+else
+shots: go swift shots-bundle
+	$(SHOTS_RUN) --only $(ONLY)
+endif
+
+shots-bundle:
 	@if [ "$$(uname -s)" = Darwin ]; then ./scripts/bundle-app.sh; fi
-	LEYLINED_BIN="$$(cd engine && swift build -c $(SWIFT_CONFIG) --show-bin-path)/leylined" LEY_BIN=$(GOBIN)/ley \
-		LEYFIX_BIN=$(GOBIN)/leyfix $(GOBIN)/leyshots run $(if $(ONLY),--only $(ONLY))
 
 shots-publish: go
 	$(GOBIN)/leyshots publish $(if $(ONLY),--only $(ONLY)) $(SHOTS_ARGS)
+
+# The stale images first, then a release of those whose png_sha256 differs from the latest shots-*
+# release's; with none, leyshots says the latest release is up to date and creates nothing.
+shots-release: $(SHOTS_ASSETS) | go
+	$(GOBIN)/leyshots publish $(SHOTS_ARGS)
 
 # The Mac app (docs/dev/app.md). One package at app/, depending on swift/LeylineProto for the
 # generated contract and on the engine package not at all. `swift test` in app/ would run the

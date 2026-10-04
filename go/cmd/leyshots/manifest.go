@@ -33,6 +33,9 @@ type Shot struct {
 	Commit     string `json:"commit,omitempty"`
 	// Tag is the shots-* release the image was first published in; empty until it is.
 	Tag string `json:"tag,omitempty"`
+	// PNGSHA256 is the sha256 of the PNG `leyshots run` wrote, before oxipng. A release keeps
+	// it, so the next publish can tell which images changed (refreshSet).
+	PNGSHA256 string `json:"png_sha256,omitempty"`
 }
 
 // simulatedSuffix ends every alt text: the signals in every shot are generated.
@@ -110,6 +113,31 @@ func merge(prev, cur *Manifest, refresh []string, tag string) (*Manifest, error)
 	}
 	out.sort()
 	return out, nil
+}
+
+// refreshSet is what a publish without --only refreshes: every shot of cur whose PNG exists
+// and whose png_sha256 differs from prev's entry for it, or that prev does not have.
+func refreshSet(cur, prev *Manifest, exists func(asset string) bool) []string {
+	var out []string
+	for _, s := range cur.Shots {
+		if !exists(s.Asset) {
+			continue
+		}
+		if p, ok := prev.get(s.Asset); ok && p.PNGSHA256 != "" && p.PNGSHA256 == s.PNGSHA256 {
+			continue
+		}
+		out = append(out, s.Asset)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func fileSHA256(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return sum(b), nil
 }
 
 // validate checks a release directory against its manifest: every entry has its PNG at the

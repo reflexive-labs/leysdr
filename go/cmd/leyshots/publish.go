@@ -97,19 +97,26 @@ func publish(ctx context.Context, o publishOptions) error {
 	if err != nil {
 		return err
 	}
-	refresh := o.only
-	if len(refresh) == 0 {
-		for _, s := range cur.Shots {
-			refresh = append(refresh, s.Asset)
+	if len(cur.Shots) == 0 {
+		return fmt.Errorf("%s lists no shots; take them first with: make shots", filepath.Join(o.out, "shots.json"))
+	}
+	// An entry written before shots.json carried png_sha256 takes it from its file.
+	exists := func(asset string) bool {
+		_, err := os.Stat(filepath.Join(o.out, asset))
+		return err == nil
+	}
+	for i := range cur.Shots {
+		if s := &cur.Shots[i]; s.PNGSHA256 == "" && exists(s.Asset) {
+			if s.PNGSHA256, err = fileSHA256(filepath.Join(o.out, s.Asset)); err != nil {
+				return err
+			}
 		}
 	}
+	refresh := slices.Clone(o.only)
 	for i, a := range refresh {
 		if !strings.HasSuffix(a, ".png") {
 			refresh[i] = a + ".png"
 		}
-	}
-	if len(refresh) == 0 {
-		return fmt.Errorf("%s lists no shots; take them first with: make shots", filepath.Join(o.out, "shots.json"))
 	}
 	listJSON, err := exec.CommandContext(ctx, o.gh, "release", "list", "--repo", o.repo, "--limit", "200", "--json", "tagName,createdAt").Output()
 	if err != nil {
@@ -128,14 +135,38 @@ func publish(ctx context.Context, o publishOptions) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	prev := &Manifest{}
-	if prevTag != "" {
-		o.logf("merging with %s", prevTag)
-		cmd := exec.CommandContext(ctx, o.gh, "release", "download", prevTag, "--repo", o.repo, "--dir", dir, "--clobber")
-		if b, err := cmd.CombinedOutput(); err != nil {
+	download := func(pattern ...string) error {
+		args := []string{"release", "download", prevTag, "--repo", o.repo, "--dir", dir, "--clobber"}
+		for _, p := range pattern {
+			args = append(args, "--pattern", p)
+		}
+		if b, err := exec.CommandContext(ctx, o.gh, args...).CombinedOutput(); err != nil {
 			return fmt.Errorf("gh release download %s: %w\n%s", prevTag, err, b)
 		}
+		return nil
+	}
+	prev := &Manifest{}
+	if prevTag != "" {
+		if err := download("shots.json"); err != nil {
+			return err
+		}
 		if prev, err = readManifest(filepath.Join(dir, "shots.json")); err != nil {
+			return err
+		}
+	}
+	if len(refresh) == 0 {
+		refresh = refreshSet(cur, prev, exists)
+		if len(refresh) == 0 && prevTag != "" {
+			fmt.Fprintf(o.stdout, "%s is up to date; nothing to publish\n", prevTag)
+			return os.RemoveAll(dir)
+		}
+		if len(refresh) == 0 {
+			return fmt.Errorf("no image listed in %s is in %s; take them first with: make shots", filepath.Join(o.out, "shots.json"), o.out)
+		}
+	}
+	if prevTag != "" {
+		o.logf("merging with %s", prevTag)
+		if err := download(); err != nil {
 			return err
 		}
 	}
