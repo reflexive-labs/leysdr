@@ -795,7 +795,17 @@ open a part at *this* sample, note an over, close the part at the close transiti
 end the job on quiet. Deciding at frame granularity sets the accuracy: a cut lands within one
 capture block of the transition (16384 samples, 6.8 ms at 2.4 MSPS). Audio arriving while no part
 is open goes into a pre-roll ring allocated once at start, so a part can begin before the squelch
-did. The first meter seeds the gate: a squelch already open when the recording starts sends no
+did. The squelch follower only queues the machine's actions and the drain applies them between
+frames, because an open applied from the follower leaves an await between opening a part and
+writing its pre-roll, and a frame the drain writes there lands ahead of the pre-roll. A gated part is written through `HeldAudio`, a
+delay line of two capture blocks plus a 5 ms ramp and 100 ms of slack, allocated at start; a close
+edge of the squelch's own (`RecordGateMachine.Action.silenceTail`) silences the held audio in the
+two blocks before it, because the squelch closes up to one block plus 0.21 ms after the key-down
+and the discriminator's output in between is full-scale noise (docs/design/recording.md, "The
+squelch tail"). Transition samples are unchanged, the part timer cuts on what has been written so
+held audio carries over, and closing a part flushes it. `AudioFrameSource` dates a frame back from
+the end of the newest block it has seen, so a frame spanning several blocks starts where its
+first sample does. The first meter seeds the gate: a squelch already open when the recording starts sends no
 transition (a broadcast carrier holds it open), so the part opens at the first frame, and a meter
 that later disagrees with the gate is applied as the edge it missed (docs/design/recording.md, "The
 gate"). A gated recording with no squelch on its channel, or one asking for NaN, measures one from

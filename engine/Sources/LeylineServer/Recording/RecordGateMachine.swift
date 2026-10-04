@@ -20,6 +20,13 @@ struct RecordGateMachine: Sendable {
         case openPart(startSample: UInt64)
         /// An over began, for the part's `squelch_opens`.
         case squelchOpened(at: UInt64)
+        /// The squelch closed on its own edge at this sample, so the audio just before it is the
+        /// squelch tail: the discriminator's noise between the carrier dropping and the squelch
+        /// deciding it had. The runner silences it before it reaches the part
+        /// (docs/design/recording.md, "The squelch tail"). Never emitted for a close the machine
+        /// makes itself -- the job ending or the channel leaving the capture -- because the audio
+        /// before those is whatever was on the air.
+        case silenceTail(closedAt: UInt64)
         /// An over ended.
         case squelchClosed(at: UInt64)
         /// Close the open part here: the close transition plus the hang.
@@ -108,7 +115,7 @@ struct RecordGateMachine: Sendable {
         }
         guard case .open = state else { return [] }
         state = .hanging(closedAt: sample)
-        return [.squelchClosed(at: sample)]
+        return [.silenceTail(closedAt: sample), .squelchClosed(at: sample)]
     }
 
     /// Time passing, as the drain reaches `now` on the capture's timeline. Hang expiry and the

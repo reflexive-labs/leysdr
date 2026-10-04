@@ -27,6 +27,20 @@ actor RecordRunner: RecordRunning {
     /// How often the running detail is republished while the recording grows. The decode job's
     /// cadence, for the same reason: fast enough to see, slow enough not to flood.
     static let livenessInterval: Duration = .seconds(2)
+    /// The squelch tail a gated part silences ahead of each close edge of the squelch's own, in
+    /// capture samples: two capture blocks. The squelch decides once per block, so it closes on the
+    /// first block after the carrier has gone; on `nfm_keyed` at 2.4 MSPS the key-down to close
+    /// latency measured at most one block plus the channelizer's 0.2 ms, and the second block is
+    /// the margin (docs/design/recording.md, "The squelch tail").
+    static let tailCaptureSamples = UInt64(2 * CaptureDSPCore.blockSize)
+    /// The tail never shrinks below this, so a capture fast enough to make two blocks shorter than
+    /// the channelizer's delay still covers it. A guess: no rate above 2.4 MSPS has been measured.
+    static let tailFloorMs = 5.0
+    /// The raised-cosine ramp ahead of the silenced tail, so the cut does not click.
+    static let tailFadeMs = 5.0
+    /// How late a close record may reach the runner, after the audio it closes, and still find the
+    /// tail held. The record is pushed before the block's audio, so it usually arrives first.
+    static let tailSlackMs = 100.0
 
     /// What the recording is reading. The channel form and the frequency form are the same case:
     /// the allocator decides who owns the channel, and the lease's own `release` is what differs.
@@ -72,6 +86,13 @@ actor RecordRunner: RecordRunning {
     /// Audio kept while no part is open, so a part can begin before the squelch did. Allocated once
     /// when the runner starts and never on a write path.
     private var preRoll: [Float] = []
+    /// The capture sample just past the newest audio in `preRoll`.
+    private var preRollEnd: UInt64 = 0
+    /// A gated audio part's delay line: audio waits here before the part gets it, so a close edge
+    /// can silence the squelch tail that came before it. Nil for continuous and IQ recordings.
+    private var held: HeldAudio?
+    /// The squelch tail, in capture samples.
+    private let tailSamples: UInt64
     /// Gate actions in the order the machine returned them, applied by whichever task holds
     /// `applying` -- normally the drain, at a frame boundary. The squelch follower only queues: an
     /// open it applied itself would leave an await between opening the part and writing its
@@ -119,9 +140,17 @@ actor RecordRunner: RecordRunning {
                                  hangSamples: UInt64(Double(hangMs) * perMs),
                                  quietSamples: stopAfterQuietMs > 0 ? UInt64(Double(stopAfterQuietMs) * perMs) : 0,
                                  startSample: 0)
+        tailSamples = Swift.max(Self.tailCaptureSamples, UInt64(Self.tailFloorMs * perMs))
         if case .audio(_, let audioRate) = source {
             preRollCapacity = gated ? Int(Double(preRollMs) / 1000 * Double(audioRate)) : 0
-            preRoll.reserveCapacity(preRollCapacity)
+            preRoll.reserveCapacity(preRollCapacity + AudioFrameSource.maxFrame)
+            if gated, captureRateHz > 0 {
+                let perAudio = Double(captureRateHz) / Double(Swift.max(audioRate, 1))
+                let fade = UInt64(Self.tailFadeMs * perMs)
+                let slack = UInt64(Self.tailSlackMs * perMs)
+                let capacity = Int((Double(tailSamples + fade + slack) / perAudio).rounded(.up))
+                held = HeldAudio(capacity: capacity, perAudio: perAudio, fadeSamples: fade)
+            }
         }
     }
 
@@ -207,10 +236,34 @@ actor RecordRunner: RecordRunning {
         await writer.noteLevel(reading, captureRate: captureRateHz)
     }
 
-    /// Closes the open part, with the reading published since the last poll counted first.
+    /// Closes the open part, with the reading published since the last poll counted first. Held
+    /// audio from before `endSample` goes into the part first; what is after it was not part of
+    /// the exchange and goes to the pre-roll, where the next part may want it.
     private func closePart(endSample: UInt64) async {
+        if let (kept, after) = held?.drain(before: endSample) {
+            await writer.append(audio: kept)
+            if !after.isEmpty { keepPreRoll(after, endingAt: Swift.max(now, endSample)) }
+        }
         await readLevel()
         await writer.closePart(endSample: endSample)
+    }
+
+    /// Audio for the open part. A gated part's goes through the delay line, and only what falls
+    /// out of it is written; anything else is written as it comes.
+    private func appendToPart(_ floats: [Float], endingAt end: UInt64) async {
+        guard held != nil else {
+            await writer.append(audio: floats)
+            return
+        }
+        let released = held!.push(floats, endingAt: end)
+        if !released.isEmpty { await writer.append(audio: released) }
+    }
+
+    /// Where the part's written audio has reached on the capture's timeline: the oldest held
+    /// sample for a gated part, else the drain's position.
+    private var writtenTo: UInt64 {
+        guard let held, !held.isEmpty else { return now }
+        return held.startSample
     }
 
     /// Applies the queued gate actions in order. A second caller while one is applying returns at
@@ -360,6 +413,7 @@ actor RecordRunner: RecordRunning {
             gate = RecordGateMachine(preRollSamples: gate.preRollSamples, hangSamples: gate.hangSamples,
                                      quietSamples: gate.quietSamples, startSample: frame.sampleStart)
             preRollStart = frame.sampleStart
+            preRollEnd = frame.sampleStart
             if !gated {
                 await openPart(at: frame.sampleStart)
             } else if seedPending {
@@ -378,8 +432,8 @@ actor RecordRunner: RecordRunning {
             if stopped { return }
         }
         if await writer.isPartOpen {
-            await writer.append(audio: floats)
-            await cutPartIfDue(at: frameEnd)
+            await appendToPart(floats, endingAt: frameEnd)
+            await cutPartIfDue(at: writtenTo)
         } else if gated {
             keepPreRoll(floats, endingAt: frameEnd)
         }
@@ -408,7 +462,10 @@ actor RecordRunner: RecordRunning {
     private func cutPartIfDue(at sample: UInt64) async {
         guard partSamples > 0, await writer.isPartOpen else { return }
         guard sample >= currentPartStart + partSamples else { return }
-        await closePart(endSample: sample)
+        // `sample` is where the written audio has reached, so a gated part's held audio is after
+        // the cut: it carries over to the next part, still within reach of a close edge.
+        await readLevel()
+        await writer.closePart(endSample: sample)
         await openPart(at: sample)
     }
 
@@ -440,6 +497,7 @@ actor RecordRunner: RecordRunning {
     /// Audio the gate has not asked for yet. A ring of `pre_roll_ms` at the audio rate, so a part
     /// can begin before the squelch did.
     private func keepPreRoll(_ floats: [Float], endingAt sample: UInt64) {
+        preRollEnd = sample
         guard preRollCapacity > 0 else {
             preRollStart = sample
             return
@@ -469,6 +527,8 @@ actor RecordRunner: RecordRunning {
             await flushPreRoll(from: start)
         case .squelchOpened(let sample):
             await writer.noteSquelch(open: true, at: sample)
+        case .silenceTail(let closedAt):
+            held?.silence(before: closedAt, tail: tailSamples)
         case .squelchClosed(let sample):
             await writer.noteSquelch(open: false, at: sample)
         case .closePart(let endSample):
@@ -502,7 +562,7 @@ actor RecordRunner: RecordRunning {
         let skip = Swift.min(preRoll.count, Int(skipSamples.rounded()))
         let kept = Array(preRoll[skip...])
         preRoll.removeAll(keepingCapacity: true)
-        if !kept.isEmpty { await writer.append(audio: kept) }
+        if !kept.isEmpty { await appendToPart(kept, endingAt: preRollEnd) }
     }
 
     // MARK: Following the channel

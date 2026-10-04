@@ -189,7 +189,9 @@ final class RecordingTests: XCTestCase {
     func testAReopenInsideTheHangContinuesTheSamePart() {
         var g = gate(hangMs: 5000)
         _ = g.squelch(open: true, at: 1 * rate)
-        XCTAssertEqual(g.squelch(open: false, at: 2 * rate), [.squelchClosed(at: 2 * rate)])
+        XCTAssertEqual(g.squelch(open: false, at: 2 * rate),
+                       [.silenceTail(closedAt: 2 * rate), .squelchClosed(at: 2 * rate)],
+                       "a close edge of the squelch's own has a tail to silence")
         // Three seconds later, inside the five-second hang: one exchange, two overs.
         XCTAssertTrue(g.advance(to: 5 * rate).isEmpty, "the hang has not elapsed")
         XCTAssertEqual(g.squelch(open: true, at: 5 * rate), [.squelchOpened(at: 5 * rate)],
@@ -242,6 +244,55 @@ final class RecordingTests: XCTestCase {
         XCTAssertFalse(g.partIsOpen)
         XCTAssertEqual(g.seedOpen(at: 4 * rate).first, .openPart(startSample: 4 * rate),
                        "back in capture on an open squelch, a new part")
+    }
+
+    // MARK: The squelch tail's delay line
+
+    /// One audio sample per ten capture samples keeps the arithmetic readable.
+    private func line(capacity: Int, fade: UInt64 = 0) -> HeldAudio {
+        HeldAudio(capacity: capacity, perAudio: 10, fadeSamples: fade)
+    }
+
+    func testTheDelayLineReleasesOnlyWhatNoLongerFitsOldestFirst() {
+        var held = line(capacity: 4)
+        XCTAssertEqual(held.push([1, 2, 3], endingAt: 30), [], "three fit")
+        XCTAssertEqual(held.push([4, 5, 6], endingAt: 60), [1, 2], "the two oldest fall out")
+        XCTAssertEqual(held.startSample, 20, "what is held starts where the written audio ends")
+        XCTAssertEqual(held.drainAll(), [3, 4, 5, 6])
+        XCTAssertTrue(held.isEmpty)
+    }
+
+    func testAClosedSquelchSilencesTheHeldTailBehindARamp() {
+        var held = line(capacity: 100, fade: 40)
+        _ = held.push([Float](repeating: 1, count: 20), endingAt: 200)
+        // The close at 200 with a 50-sample tail: silence from 150, the ramp from 110.
+        held.silence(before: 200, tail: 50)
+        let out = held.drainAll()
+        XCTAssertEqual(Array(out[0..<11]), [Float](repeating: 1, count: 11), "before the ramp, untouched")
+        XCTAssertEqual(out[11], 1, accuracy: 1e-6, "the ramp starts at full scale")
+        XCTAssertTrue(out[12] < 1 && out[14] > 0, "and falls through the middle")
+        XCTAssertTrue(zip(out[11..<15], out[12..<15]).allSatisfy { $0 >= $1 }, "never rising")
+        XCTAssertEqual(Array(out[15..<20]), [Float](repeating: 0, count: 5), "the tail itself is silent")
+    }
+
+    /// The close record usually reaches the runner before the audio it closes, so the window
+    /// reaches forward into audio that has not arrived yet.
+    func testATailWhoseAudioHasNotArrivedIsSilencedWhenItDoes() {
+        var held = line(capacity: 100)
+        _ = held.push([1, 1, 1], endingAt: 30)
+        held.silence(before: 60, tail: 20)
+        _ = held.push([1, 1, 1, 1, 1, 1], endingAt: 90)
+        XCTAssertEqual(held.drainAll(), [1, 1, 1, 1, 0, 0, 1, 1, 1],
+                       "only the tail goes; what follows the close is the squelch's own zeros or a new over")
+    }
+
+    func testClosingAPartTakesTheHeldAudioBeforeItsEndAndLeavesTheRest() {
+        var held = line(capacity: 100)
+        _ = held.push([1, 2, 3, 4, 5], endingAt: 50)
+        let (kept, after) = held.drain(before: 30)
+        XCTAssertEqual(kept, [1, 2, 3])
+        XCTAssertEqual(after, [4, 5])
+        XCTAssertTrue(held.isEmpty)
     }
 
     // MARK: The store

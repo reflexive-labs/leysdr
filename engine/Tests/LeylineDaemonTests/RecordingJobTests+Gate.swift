@@ -15,7 +15,7 @@ extension RecordingJobTests {
     // MARK: The gate, against the fixture's own answer key
 
     /// The keying nfm_keyed states in its sidecar, in seconds.
-    private func keyedSegments() throws -> [(start: Double, end: Double)] {
+    func keyedSegments() throws -> [(start: Double, end: Double)] {
         let path = fixturePath("nfm_keyed.json")
         guard let data = FileManager.default.contents(atPath: path) else { throw XCTSkip("fixture missing: \(path)") }
         struct Sidecar: Decodable {
@@ -39,7 +39,7 @@ extension RecordingJobTests {
         return record.segments.map { ($0.start_s, $0.end_s) }
     }
 
-    private func gatedConfig(hangMs: UInt32) -> Leyline_V1_RecordConfig {
+    func gatedConfig(hangMs: UInt32) -> Leyline_V1_RecordConfig {
         var config = Leyline_V1_RecordConfig()
         config.frequencyHz = recordFrequencyHz
         config.mode = .nfm
