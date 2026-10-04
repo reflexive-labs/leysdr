@@ -33,7 +33,10 @@ page covers each of its items.
 1. generates the scene's fixtures into `~/Library/Caches/leyline-shots/iq/` with `leyfix`
    (`$XDG_CACHE_HOME/leyline-shots/iq/` or `~/.cache/leyline-shots/iq/` elsewhere), unless a
    copy there matches what `leyfix generate --dry-run` prints: the same format, rate, centre,
-   length, label and generator record, and a sample file of that size;
+   length, label and generator record, and a sample file of that size. A `.leyfix-source` file
+   beside each copy holds a hash of the generator's Go source (`go/cmd/leyfix` and the `go/pkg`
+   packages it imports), so a code change that leaves the generator record as it was still
+   regenerates the copy;
 2. starts its own `leylined --no-hardware` with a socket, pidfile, store, recordings directory
    and log under `tmp/shots/run/<scene>/`, and `--wall-clock` set when the scene gives a `clock`.
    One daemon per scene, so no state carries from one shot to the next. The start is
@@ -46,7 +49,22 @@ page covers each of its items.
 5. takes the shot (see below), crops it, and writes `tmp/shots/<asset>.png` and its entry in
    `tmp/shots/shots.json`.
 
-`make shots` runs every scene, and `make shots ONLY=app-radio-2m,inspector-tone` runs a subset.
+`make shots` takes only the scenes whose image is older than one of its inputs. Before make
+compares any file times, `leyshots keys` writes `tmp/shots/keys/<scene>.key`, a hash of the
+scene's entry in `scenes.yaml`, the files it reads (its bookmarks CSV, the stage's CHIRP import, a
+table's source), its fixtures' dry runs and the leyfix source hash. A key file is rewritten only
+when that hash changes, so its time moves only then. `leyshots makefile` writes
+`tmp/shots/shots.mk`, which gives each image a rule: it depends on its key and on the sources its
+kind shares (`ley` and the other Go clients, the engine, the app for app and composite scenes,
+`scripts/ansi2html.py` and `scripts/render-html.swift` for pages; the icon only on
+`scripts/render-icon.swift`), and its recipe is `leyshots run --only <asset>`. A scene that leaves
+no PNG, such as an app scene on Linux or a notification that did not appear, is taken again on the
+next run. `make shots ONLY=app-radio-2m,inspector-tone` takes those scenes whether or not they
+are stale. `make shots-release` runs the stale scenes, then publishes every image whose
+`png_sha256` in `tmp/shots/shots.json` differs from the latest `shots-*` release's, or that the
+release does not have; when none differs it prints that the latest release is up to date and
+creates nothing.
+
 `make shots-publish ONLY=…` takes the reviewed images from `tmp/shots/`, merges them with the
 latest `shots-*` release, compresses them with `oxipng` (losslessly, because quantising bands
 the waterfall gradients), checks that the manifest matches the files, and creates the release with its tag on the checkout's HEAD. GitHub can tag only a commit it has, so `make shots-publish` refuses until HEAD is pushed; without a target the tag would land on the default branch's tip.
@@ -205,9 +223,12 @@ Some scenes need more than the stage and a tuned channel:
 ## `shots.json`
 
 Each entry has the asset name, pixel width and height, scale (2), alt text, the scene, the
-fixtures' generator records, the `ley --version` output and the commit that produced it, and the
-`shots-*` tag where the current image was first published. `leyshots run` writes the entries
-with no tag, and `leyshots publish` sets it on the images it refreshes.
+fixtures' generator records, the `ley --version` output and the commit that produced it, the
+`shots-*` tag where the current image was first published, and `png_sha256`, the sha256 of the
+PNG `leyshots run` wrote. `leyshots run` writes the entries with no tag, and `leyshots publish`
+sets it on the images it refreshes. A release keeps the `png_sha256` of the image as it was taken,
+not of the `oxipng` output, so the next `make shots-release` can compare a new image with it.
+Without `ONLY`, `make shots-publish` refreshes the same set `make shots-release` does.
 
 `make shots-publish SHOTS_ARGS=--dry-run` builds the release in `tmp/shots/publish/<tag>/`,
 compresses and checks it, and prints the `gh release create` it would run. A second release on
