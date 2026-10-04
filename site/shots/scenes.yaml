@@ -144,8 +144,8 @@ scenes:
     bookmarks: home.csv
     steps:
       - ley: [stop, all]
-      - ley: [scan, 144M..148M]
-      # The file device tunes only its centre; the stage then tunes Calling inside that capture.
+      # The file device tunes only its centre; the stage then tunes Calling inside that capture
+      # and presses the row's Scan band, because the app shows the hits only of a scan it ran.
       - ley: [tune, "146", --persistent]
     stage:
       window: {width: 1440, height: 820}
@@ -153,8 +153,10 @@ scenes:
       inspector: false
       expanded_band: 2m
       select_bookmark: Calling
+      scan_band: true
       settle: 6
-    crop: {regions: [sidebar]}
+    # The hits are ticks on the band rail over the charts, so the crop takes the rail too.
+    crop: {regions: [sidebar, waterfall], size: {width: 1000, height: 300}, anchor: top-left}
 
   - asset: library-net.png
     kind: app
@@ -235,7 +237,7 @@ scenes:
       settle: 25
       on_air: true
       zoom: 4
-    crop: {regions: [waterfall, inspector], size: {width: 480, height: 300}, anchor: top-right}
+    crop: {regions: [waterfall, inspector], size: {width: 760, height: 475}, anchor: top-right}
 
   - asset: ways-terminal.png
     kind: terminal
@@ -249,7 +251,7 @@ scenes:
       - ley: [stop]
     terminal:
       cols: 90
-      rows: 24
+      rows: 34
       split: vertical
       panes:
         - command: ley tune 146.52

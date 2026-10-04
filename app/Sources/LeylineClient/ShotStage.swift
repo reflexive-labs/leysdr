@@ -56,10 +56,14 @@ public struct ShotStage: Sendable, Equatable, Codable {
     public var onAir: Bool
     /// The spectrum and waterfall's zoom as the band rail's − and + set it: 1, 2, 4 or 8.
     public var zoom: Int?
+    /// Presses the expanded band row's Scan band, as a click does, and waits for the sweep to end
+    /// before `settle` starts; its hits then show on the row and the band rail.
+    public var scanBand: Bool
 
     enum CodingKeys: String, CodingKey {
         case window, place, inspector, settle, zoom
         case onAir = "on_air"
+        case scanBand = "scan_band"
         case expandedBand = "expanded_band"
         case selectBookmark = "select_bookmark"
         case selectPart = "select_part"
@@ -70,7 +74,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
         window: WindowSize? = nil, place: Place? = nil, inspector: Bool? = nil,
         expandedBand: String? = nil, selectBookmark: String? = nil, selectPart: Int? = nil,
         importCHIRP: String? = nil, settle: Double = 0, onAir: Bool = false,
-        zoom: Int? = nil
+        zoom: Int? = nil, scanBand: Bool = false
     ) {
         self.window = window
         self.place = place
@@ -82,6 +86,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
         self.settle = settle
         self.onAir = onAir
         self.zoom = zoom
+        self.scanBand = scanBand
     }
 
     public init(from decoder: Decoder) throws {
@@ -96,6 +101,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
         settle = try c.decodeIfPresent(Double.self, forKey: .settle) ?? 0
         onAir = try c.decodeIfPresent(Bool.self, forKey: .onAir) ?? false
         zoom = try c.decodeIfPresent(Int.self, forKey: .zoom)
+        scanBand = try c.decodeIfPresent(Bool.self, forKey: .scanBand) ?? false
     }
 
     /// The stage file's path from the environment, or nil when the run is not staged.

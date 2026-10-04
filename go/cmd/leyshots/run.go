@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/reflexive-labs/leysdr/go/internal/daemonrun"
@@ -64,6 +65,9 @@ func runScenes(ctx context.Context, o runOptions) error {
 	}
 	tm := &tmuxRunner{bin: o.tmux}
 	defer tm.stop()
+	if stageManagerOn(ctx) {
+		o.logf("warning: Stage Manager is on; it draws a window that is not in front as a thumbnail, and an app shot taken then fails. Turn it off in Control Centre for the run")
+	}
 	prov := provenance(ctx, o)
 	var results []outcome
 	failed := 0
@@ -345,4 +349,14 @@ func renderPage(ctx context.Context, o runOptions, s *Scene, page string, widthP
 		return fmt.Errorf("render-html.swift: %w\n%s", err, b)
 	}
 	return nil
+}
+
+// stageManagerOn reports whether macOS's Stage Manager is enabled; false off macOS or when the
+// setting cannot be read.
+func stageManagerOn(ctx context.Context) bool {
+	if runtime.GOOS != "darwin" {
+		return false
+	}
+	out, err := exec.CommandContext(ctx, "defaults", "read", "com.apple.WindowManager", "GloballyEnabled").Output()
+	return err == nil && strings.TrimSpace(string(out)) == "1"
 }

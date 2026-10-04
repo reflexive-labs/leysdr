@@ -90,6 +90,8 @@ type Stage struct {
 	OnAir bool `yaml:"on_air" json:"on_air,omitempty"`
 	// Zoom is the spectrum and waterfall's zoom, as the − and + buttons set it: 1, 2, 4 or 8.
 	Zoom int `yaml:"zoom" json:"zoom,omitempty"`
+	// ScanBand presses the expanded band row's Scan band and waits for the sweep to end.
+	ScanBand bool `yaml:"scan_band" json:"scan_band,omitempty"`
 }
 
 // Crop says which part of the window an app shot keeps: the union of Regions, or a box of Size

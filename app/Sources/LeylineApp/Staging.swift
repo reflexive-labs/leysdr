@@ -40,6 +40,8 @@ final class Staging {
     static let onAirFillSeconds: Double = 1.5
     /// After the window is brought forward, this long for Stage Manager's animation to finish.
     static let frontSeconds: Double = 1
+    /// A band sweep from the row's Scan band gets this long to finish; 2 m takes a few seconds.
+    static let sweepSeconds: Double = 60
 
     let stageURL: URL
     /// nil when the file could not be read or was refused; the run is still staged, so nothing
@@ -100,7 +102,10 @@ final class Staging {
             log("stage", "import CHIRP \(path)")
             session.importCHIRP(url: URL(fileURLWithPath: path))
         }
-        if let id = stage.expandedBand { open(row: id, session) }
+        if let id = stage.expandedBand {
+            open(row: id, session)
+            if stage.scanBand { await scan(row: id, session) }
+        }
         if let z = stage.zoom {
             session.zoom = z
             log("stage", "zoom \(z)")
@@ -123,21 +128,35 @@ final class Staging {
         writeRegions()
     }
 
-    /// Waits for the squelch to open and stay open through the fill time, so the readings and
-    /// the audio meters are live in the shot; an over that ends during the fill is passed over
-    /// for the next. Gives up after `onAirSeconds` in all.
+    /// Presses the row's Scan band as its click does and waits for the sweep to end.
+    private func scan(row id: String, _ session: AppSession) async {
+        guard let row = session.sidebarRows.first(where: { $0.id == id }) else { return }
+        session.scanBand(row: row)
+        _ = await until(seconds: Self.confirmSeconds) { session.sweeping }
+        let done = await until(seconds: Self.sweepSeconds) { !session.sweeping }
+        log(
+            "stage",
+            done
+                ? "scanned \(row.name)"
+                : "the scan of \(row.name) did not end within \(Int(Self.sweepSeconds)) s")
+    }
+
+    /// Waits for an over to start and stay on the air through the fill time, so the readings and
+    /// the audio meters are live in the shot with the rest of the over still to come. An over
+    /// already on the air when the wait begins is passed over, since it may be about to end, and
+    /// so is one that ends during the fill. Gives up after `onAirSeconds` in all.
     private func waitOnAir(_ session: AppSession) async {
         let deadline = Date().addingTimeInterval(Self.onAirSeconds)
         while Date() < deadline {
+            _ = await until(seconds: deadline.timeIntervalSinceNow) {
+                session.transmissions?.onAir == nil
+            }
             let left = deadline.timeIntervalSinceNow
             guard await until(seconds: left, { session.transmissions?.onAir != nil }) else { break }
             try? await Task.sleep(for: .seconds(Self.onAirFillSeconds))
             if session.transmissions?.onAir != nil {
                 log("stage", "on the air")
                 return
-            }
-            _ = await until(seconds: deadline.timeIntervalSinceNow) {
-                session.transmissions?.onAir == nil
             }
         }
         log("stage", "no over held the squelch open within \(Int(Self.onAirSeconds)) s")
