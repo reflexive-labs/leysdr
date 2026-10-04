@@ -6,12 +6,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 
 	"github.com/reflexive-labs/leysdr/go/pkg/iqfile"
 )
@@ -58,10 +60,9 @@ func leyfixArgs(ref FixtureRef, dir string) []string {
 	return args
 }
 
-// ensureFixture returns the fixture in dir, generating it with leyfix unless the copy there was
-// generated the same way: the same format, rate, centre, length, label and generator record,
-// and a sample file of the size those imply.
-func ensureFixture(ctx context.Context, leyfix, dir string, ref FixtureRef, logf func(string, ...any)) (*fixtureFile, error) {
+// planFixture runs `leyfix generate --dry-run` for ref: the file name and sidecar leyfix would
+// write into dir.
+func planFixture(ctx context.Context, leyfix, dir string, ref FixtureRef) (*planned, error) {
 	out, err := exec.CommandContext(ctx, leyfix, append(leyfixArgs(ref, dir), "--dry-run")...).Output()
 	if err != nil {
 		return nil, fmt.Errorf("leyfix --dry-run for %s: %w", ref.Name, err)
@@ -70,8 +71,20 @@ func ensureFixture(ctx context.Context, leyfix, dir string, ref FixtureRef, logf
 	if err := json.Unmarshal(bytes.TrimSpace(out), &want); err != nil {
 		return nil, fmt.Errorf("leyfix --dry-run for %s printed %q: %w", ref.Name, out, err)
 	}
+	return &want, nil
+}
+
+// ensureFixture returns the fixture in dir, generating it with leyfix unless the copy there was
+// generated the same way: the same format, rate, centre, length, label and generator record, a
+// sample file of the size those imply, and the same leyfix source (leyfixSourceHash), because a
+// change to a source's code need not change the record it prints.
+func ensureFixture(ctx context.Context, leyfix, dir string, ref FixtureRef, leyfixSrc string, logf func(string, ...any)) (*fixtureFile, error) {
+	want, err := planFixture(ctx, leyfix, dir, ref)
+	if err != nil {
+		return nil, err
+	}
 	path := filepath.Join(dir, want.File)
-	if current(path, &want.Sidecar) {
+	if current(path, &want.Sidecar, leyfixSrc) {
 		logf("fixture %s: cached at %s", ref.Name, path)
 		return &fixtureFile{Path: path, Generator: want.Sidecar.Generator}, nil
 	}
@@ -79,24 +92,39 @@ func ensureFixture(ctx context.Context, leyfix, dir string, ref FixtureRef, logf
 		return nil, err
 	}
 	logf("fixture %s: generating into %s", ref.Name, dir)
+	// The stamp goes first, so an interrupted generation never leaves a stamp beside old samples.
+	if err := os.Remove(sourceStamp(path)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
 	cmd := exec.CommandContext(ctx, leyfix, leyfixArgs(ref, dir)...)
 	if b, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("leyfix generate %s: %w\n%s", ref.Name, err, b)
 	}
-	if !current(path, &want.Sidecar) {
+	if err := os.WriteFile(sourceStamp(path), []byte(leyfixSrc+"\n"), 0o644); err != nil {
+		return nil, err
+	}
+	if !current(path, &want.Sidecar, leyfixSrc) {
 		return nil, fmt.Errorf("leyfix wrote %s, but it does not match its own dry run", path)
 	}
 	return &fixtureFile{Path: path, Generator: want.Sidecar.Generator}, nil
 }
 
-// current reports whether the fixture at path was generated as want describes.
-func current(path string, want *iqfile.Sidecar) bool {
+// sourceStamp is the file beside a cached fixture holding the hash of the leyfix sources it was
+// generated from.
+func sourceStamp(path string) string { return path + ".leyfix-source" }
+
+// current reports whether the fixture at path was generated as want describes, by leyfix
+// sources whose hash is leyfixSrc.
+func current(path string, want *iqfile.Sidecar, leyfixSrc string) bool {
 	have, err := iqfile.ReadSidecar(path)
 	if err != nil {
 		return false
 	}
 	if have.Format != want.Format || have.SampleRate != want.SampleRate || have.CenterHz != want.CenterHz ||
 		have.Samples != want.Samples || have.Label != want.Label || !sameJSON(have.Generator, want.Generator) {
+		return false
+	}
+	if stamp, err := os.ReadFile(sourceStamp(path)); err != nil || strings.TrimSpace(string(stamp)) != leyfixSrc {
 		return false
 	}
 	st, err := os.Stat(iqfile.SamplesPath(path, have.Format))
