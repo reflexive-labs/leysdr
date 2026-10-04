@@ -262,8 +262,15 @@ func TestManifestMergeAndValidate(t *testing.T) {
 	}
 	writeTestPNG(t, filepath.Join(dir, "b.png"), 12, 10)
 	writeTestPNG(t, filepath.Join(dir, "stray.png"), 1, 1)
+	// A shot with fixtures must say its signals are simulated; one without (the icon) need not.
 	m.Shots[0].Alt = "A."
+	m.Shots[0].Fixtures = map[string]json.RawMessage{"scene_2m": json.RawMessage(`{}`)}
+	m.Shots[2].Alt = "The icon."
+	m.Shots[2].Fixtures = nil
 	err = m.validate(dir)
+	if err != nil && strings.Contains(err.Error(), "c.png's alt text") {
+		t.Errorf("a shot without fixtures was held to the simulated-signals sentence: %v", err)
+	}
 	for _, want := range []string{"b.png is 12×10", "stray.png", "a.png's alt text"} {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("validate should report %q: %v", want, err)

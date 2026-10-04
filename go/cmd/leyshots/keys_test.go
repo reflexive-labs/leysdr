@@ -228,6 +228,11 @@ func TestRefreshSet(t *testing.T) {
 	if got := refreshSet(cur, cur, exists); len(got) != 0 {
 		t.Errorf("an unchanged set refreshes %v", got)
 	}
+	retitled := &Manifest{Shots: []Shot{{Asset: "a.png", PNGSHA256: "1", Alt: "The icon. Simulated signals."}}}
+	fixed := &Manifest{Shots: []Shot{{Asset: "a.png", PNGSHA256: "1", Alt: "The icon."}}}
+	if got := refreshSet(fixed, retitled, exists); !slices.Equal(got, []string{"a.png"}) {
+		t.Errorf("a shot whose alt text changed refreshes %v, want it", got)
+	}
 	if got := refreshSet(cur, &Manifest{}, exists); len(got) != 4 {
 		t.Errorf("a first release refreshes %v", got)
 	}

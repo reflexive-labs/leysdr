@@ -116,14 +116,14 @@ func merge(prev, cur *Manifest, refresh []string, tag string) (*Manifest, error)
 }
 
 // refreshSet is what a publish without --only refreshes: every shot of cur whose PNG exists
-// and whose png_sha256 differs from prev's entry for it, or that prev does not have.
+// and whose png_sha256 or alt text differs from prev's entry for it, or that prev does not have.
 func refreshSet(cur, prev *Manifest, exists func(asset string) bool) []string {
 	var out []string
 	for _, s := range cur.Shots {
 		if !exists(s.Asset) {
 			continue
 		}
-		if p, ok := prev.get(s.Asset); ok && p.PNGSHA256 != "" && p.PNGSHA256 == s.PNGSHA256 {
+		if p, ok := prev.get(s.Asset); ok && p.PNGSHA256 != "" && p.PNGSHA256 == s.PNGSHA256 && p.Alt == s.Alt {
 			continue
 		}
 		out = append(out, s.Asset)
@@ -141,7 +141,8 @@ func fileSHA256(path string) (string, error) {
 }
 
 // validate checks a release directory against its manifest: every entry has its PNG at the
-// stated size and scale and an alt text ending in the simulated-signals sentence, and every PNG
+// stated size and scale, an alt text ending in the simulated-signals sentence when the shot has
+// fixtures, and every PNG
 // in the directory has an entry.
 func (m *Manifest) validate(dir string) error {
 	var errs []error
@@ -159,7 +160,7 @@ func (m *Manifest) validate(dir string) error {
 		if s.Scale != 2 {
 			errs = append(errs, fmt.Errorf("%s has scale %d; every shot is 2×", s.Asset, s.Scale))
 		}
-		if !strings.HasSuffix(s.Alt, simulatedSuffix) {
+		if len(s.Fixtures) > 0 && !strings.HasSuffix(s.Alt, simulatedSuffix) {
 			errs = append(errs, fmt.Errorf("%s's alt text does not end %q", s.Asset, simulatedSuffix))
 		}
 	}
