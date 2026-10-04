@@ -29,6 +29,26 @@ final class BulkStreamDrainTests: XCTestCase {
         XCTAssertEqual(truncated?.sampleCount, UInt64(slotSamples), "the span matches the payload, not the block")
     }
 
+    /// A reader that falls behind pops several blocks as one frame. The frame starts where the
+    /// oldest of them did: dating it from the newest block's start would put its audio up to a
+    /// dozen blocks late, and a recording's pre-roll and squelch tail are placed by these dates.
+    func testAFrameSpanningSeveralBlocksIsDatedFromItsFirstSample() {
+        let captureRate: UInt64 = 2_400_000
+        let audioRate: UInt32 = 48000
+        let audio = AudioFrameSource(captureRate: captureRate, audioRate: audioRate)
+        let capture = CaptureID()
+        let perBlock = 320 // audio samples in 16000 capture samples
+        let storage = SampleStorage(capacity: perBlock, format: .f32)
+        for block in 0..<3 {
+            audio.sink.write(storage.view(count: perBlock),
+                             at: SampleTime(captureID: capture, sampleIndex: UInt64(block * 16000)))
+        }
+        let frame = audio.next(s16: false)
+        XCTAssertEqual(frame?.sampleStart, 0, "the frame begins with the first block it holds")
+        XCTAssertEqual(frame?.sampleCount, 48000, "and spans all three")
+        XCTAssertNil(audio.next(s16: false))
+    }
+
     /// The channel's audio callback runs on another thread, so a push can land as the source is
     /// finished and its wakeup is dropped. The reader must still hand those samples over instead of
     /// leaving the tail of a transmission in the ring.

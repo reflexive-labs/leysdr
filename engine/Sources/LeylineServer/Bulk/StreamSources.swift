@@ -45,8 +45,10 @@ final class FFTFrameSink: SpectrumSink, Sendable {
 }
 
 /// Audio path: the channel's CallbackSink pushes f32 frames into a FloatRing; the Stream reader
-/// drains it into ≤ 4096-sample S16/F32 frames. Frame times are derived from the most recent block's
-/// capture time and the ring backlog (audio is not sample-indexed by the channel).
+/// drains it into ≤ 4096-sample S16/F32 frames. Frame times are derived from where the most recent
+/// block ends on the capture's timeline and the ring backlog behind it (audio is not sample-indexed
+/// by the channel). A frame can span several blocks when the reader falls behind, so it is dated
+/// back from the newest block's end, not from its start.
 /// Unchecked Sendable: `read`, `lastDropped` and `scratch` belong to the one Stream reader; the sink side touches only the ring and the atomics.
 final class AudioFrameSource: @unchecked Sendable {
     static let maxFrame = 4096
@@ -56,7 +58,8 @@ final class AudioFrameSource: @unchecked Sendable {
     private let pokeContinuation: AsyncStream<Void>.Continuation
     /// Shared with the sink closure (stdlib atomics are non-copyable, so they live in a box).
     private final class Counters: Sendable {
-        let lastBlockStart = Atomic<UInt64>(0)
+        /// The capture sample just past the newest audio pushed into the ring.
+        let lastBlockEnd = Atomic<UInt64>(0)
         let written = Atomic<Int>(0)
     }
     private let counters = Counters()
@@ -81,10 +84,11 @@ final class AudioFrameSource: @unchecked Sendable {
         let r = ring
         let c = cont!
         let k = counters
+        let perAudio = Double(captureRate) / Double(max(audioRate, 1))
         sink = CallbackSink(tap: tap) { audio, time in
             guard audio.format == .f32, audio.count > 0 else { return }
             let n = r.push(UnsafeBufferPointer(audio.floats))
-            k.lastBlockStart.store(time.sampleIndex, ordering: .relaxed)
+            k.lastBlockEnd.store(time.sampleIndex &+ UInt64(Double(n) * perAudio), ordering: .relaxed)
             k.written.wrappingAdd(n, ordering: .releasing)
             // The one lock on this path: `yield` takes the stream's internal lock for the hand-off.
             c.yield(())
@@ -108,9 +112,9 @@ final class AudioFrameSource: @unchecked Sendable {
         let w = counters.written.load(ordering: .acquiring)
         let backlog = max(0, w - read - n)
         let perAudio = captureRate / audioRate
-        let blockStart = counters.lastBlockStart.load(ordering: .relaxed)
-        let behind = UInt64(Double(backlog) * perAudio)
-        let start = blockStart > behind ? blockStart - behind : 0
+        let blockEnd = counters.lastBlockEnd.load(ordering: .relaxed)
+        let behind = UInt64(Double(backlog + n) * perAudio)
+        let start = blockEnd > behind ? blockEnd - behind : 0
         read += n
         let dropped = ring.dropped
         let droppedNow = UInt64(Double(dropped - lastDropped) * perAudio)
