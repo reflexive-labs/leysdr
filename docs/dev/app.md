@@ -479,7 +479,7 @@ that `ShotStage` decodes, and every key is optional:
 | `place` | `radio` or `library`, as the toolbar's switch sets it |
 | `select_part` | selects this part of the Library's selected channel without playing it, counted from 0 down the page's recent days |
 | `settle` | the seconds the window keeps drawing after the stage is applied, before the regions are measured |
-| `on_air` | after `settle`, waits up to 30 s for the tuned channel's squelch to open, then 1.5 s more for the inspector's readings to fill. The scene needs a squelch level set |
+| `on_air` | after `settle`, waits up to 30 s for an over that keeps the tuned channel's squelch open through 1.5 s, so the readings and audio meters are live in the shot; an over that ends sooner is passed over for the next. The scene needs a squelch level set |
 | `zoom` | the spectrum and waterfall's zoom, as the band rail's − and + set it: 1, 2, 4 or 8, centred on the tuned frequency |
 
 A staged run shows no splash, so its first frame is the window. It writes nothing to
@@ -490,8 +490,8 @@ therefore starts with a capture already tuned (`ley tune`), as it would be for s
 the radio running. Without one, the app opens FM broadcast, as a first launch does. The stage changes only what the window's own controls
 change, and the daemon's state is changed only by the tune a click would make (invariant 7).
 
-`settle` seconds after the stage is applied (and, with `on_air`, once the squelch has opened), the app clears the text focus and writes `regions.json` beside the stage file,
-replacing it atomically:
+`settle` seconds after the stage is applied (and, with `on_air`, once an over is on the air), the app clears the text focus, brings the window to the front and waits 1 s, then writes `regions.json` beside the stage file. Stage Manager draws a window that is not in front as a small tilted thumbnail in its strip, and `screencapture -l` takes the thumbnail; `leyshots` refuses a capture that is not the window's size at 1×, 2× or 3×. The file is
+replaced atomically:
 
 ```json
 {"window_number": 4242,
@@ -502,7 +502,7 @@ replacing it atomically:
 `window_number` is the `NSWindow` number that `screencapture -l` takes. Each region is a rectangle
 in points from the top-left corner of the window's frame, toolbar included, because
 `screencapture -l` captures that whole frame. The regions are `window`, `toolbar`, `sidebar`,
-`inspector`, `waterfall` and `library` (the Library's whole body). In the Library, `sidebar` and
+`inspector`, `waterfall`, `notice` (the one-line notice over the bottom of the waterfall, while one shows), `library` (the Library's whole body) and `parts` (the Library's page of the selected channel). In the Library, `sidebar` and
 `inspector` are the Library's own. A region that is not on screen is left out of the file. Each
 region except `window` and `toolbar` is measured by a `WindowFrameProbe` under its view. The
 toolbar is hosted outside the content's view tree, so its region is the strip above the window's

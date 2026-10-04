@@ -49,8 +49,9 @@ scenes:
   - asset: sidebar-chirp-import.png
     kind: app
     alt: >-
-      The Leyline sidebar after importing a CHIRP export of about 100 memories, with the 2 m band
-      open and the import's counts in the notice.
+      The Leyline sidebar after importing a CHIRP export of 100 memories: the 2 m band open with
+      its five bookmarks, the other bands closed, and the import's counts in the notice over the
+      waterfall.
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     stage:
@@ -60,7 +61,9 @@ scenes:
       expanded_band: 2m
       import_chirp: handheld.csv
       settle: 6
-    crop: {regions: [sidebar]}
+    # The import's notice is a line over the bottom of the waterfall, so the crop takes the
+    # sidebar and the left of the charts down to it.
+    crop: {regions: [sidebar, notice], size: {width: 760, height: 1000}, anchor: top-left}
 
   - asset: chirp-csv-before.png
     kind: table
@@ -138,15 +141,18 @@ scenes:
       band rail.
     fixtures: [{name: scene_scan}]
     clock: "19:42"
+    bookmarks: home.csv
     steps:
       - ley: [stop, all]
       - ley: [scan, 144M..148M]
-      - ley: [tune, "146.52", --persistent]
+      # The file device tunes only its centre; the stage then tunes Calling inside that capture.
+      - ley: [tune, "146", --persistent]
     stage:
       window: {width: 1440, height: 820}
       place: radio
       inspector: false
       expanded_band: 2m
+      select_bookmark: Calling
       settle: 6
     crop: {regions: [sidebar]}
 
@@ -157,15 +163,16 @@ scenes:
       for each, and one part selected.
     fixtures: [{name: scene_net}]
     clock: "19:42"
+    bookmarks: home.csv
     steps:
-      - ley: [record, "147.18", --gate, squelch, --for, 75s, --detach]
-      - wait: 80
+      - ley: [record, "147.18", --gate, squelch, --for, 170s, --detach]
+      - wait: 175
     stage:
       window: {width: 1440, height: 820}
       place: library
       select_part: 0
       settle: 4
-    crop: {regions: [library]}
+    crop: {regions: [parts], size: {width: 2000, height: 460}, anchor: top-left}
 
   - asset: notification-same.png
     kind: screen
@@ -233,7 +240,7 @@ scenes:
   - asset: ways-terminal.png
     kind: terminal
     alt: >-
-      Two terminal panes: ley tune 146.52 showing the channel's meter, beside ley set squelch -45
+      Two terminal panes: ley tune 146.52 showing the channel's meter, above ley set squelch -45
       changing the squelch on the same channel.
     fixtures: [{name: scene_2m}]
     # ley stop leaves the radio tuned with no channel, so ley tune makes the one channel ley set
@@ -241,9 +248,9 @@ scenes:
     steps:
       - ley: [stop]
     terminal:
-      cols: 180
-      rows: 20
-      split: horizontal
+      cols: 90
+      rows: 24
+      split: vertical
       panes:
         - command: ley tune 146.52
         - command: ley set squelch -45

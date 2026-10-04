@@ -38,6 +38,8 @@ final class Staging {
     /// Once the squelch opens, the inspector's readings get this long to fill before the regions
     /// are written.
     static let onAirFillSeconds: Double = 1.5
+    /// After the window is brought forward, this long for Stage Manager's animation to finish.
+    static let frontSeconds: Double = 1
 
     let stageURL: URL
     /// nil when the file could not be read or was refused; the run is still staged, so nothing
@@ -109,17 +111,36 @@ final class Staging {
         if let index = stage.selectPart { await select(part: index, session) }
         log("stage", "applied; regions in \(stage.settle) s")
         try? await Task.sleep(for: .seconds(stage.settle))
-        if stage.onAir {
-            if await until(seconds: Self.onAirSeconds, { session.transmissions?.onAir != nil }) {
-                try? await Task.sleep(for: .seconds(Self.onAirFillSeconds))
-                log("stage", "on the air")
-            } else {
-                log("stage", "the squelch did not open within \(Int(Self.onAirSeconds)) s")
-            }
-        }
+        if stage.onAir { await waitOnAir(session) }
         // A shot shows no text cursor: the sidebar's search field takes focus at launch.
         window?.makeFirstResponder(nil)
+        // Stage Manager shrinks a window that is not in front into its strip, and
+        // `screencapture -l` takes it as that tilted thumbnail; the window comes forward first.
+        NSApp.activate(ignoringOtherApps: true)
+        window?.orderFrontRegardless()
+        window?.makeKey()
+        try? await Task.sleep(for: .seconds(Self.frontSeconds))
         writeRegions()
+    }
+
+    /// Waits for the squelch to open and stay open through the fill time, so the readings and
+    /// the audio meters are live in the shot; an over that ends during the fill is passed over
+    /// for the next. Gives up after `onAirSeconds` in all.
+    private func waitOnAir(_ session: AppSession) async {
+        let deadline = Date().addingTimeInterval(Self.onAirSeconds)
+        while Date() < deadline {
+            let left = deadline.timeIntervalSinceNow
+            guard await until(seconds: left, { session.transmissions?.onAir != nil }) else { break }
+            try? await Task.sleep(for: .seconds(Self.onAirFillSeconds))
+            if session.transmissions?.onAir != nil {
+                log("stage", "on the air")
+                return
+            }
+            _ = await until(seconds: deadline.timeIntervalSinceNow) {
+                session.transmissions?.onAir == nil
+            }
+        }
+        log("stage", "no over held the squelch open within \(Int(Self.onAirSeconds)) s")
     }
 
     /// The window's frame, toolbar included, at the stage's size with its top-left corner kept.
@@ -229,7 +250,7 @@ final class Staging {
     /// Waits up to `seconds` for `condition`, checking every 50 ms as
     /// `AppSession.confirmed(within:_:)` does; true when it held.
     private func until(seconds: Double, _ condition: () -> Bool) async -> Bool {
-        for _ in 0..<Int(seconds * 20) {
+        for _ in 0..<max(0, Int(seconds * 20)) {
             if condition() { return true }
             try? await Task.sleep(for: .milliseconds(50))
         }

@@ -24,6 +24,7 @@ struct LibraryBody: View {
                     .stageRegion(.sidebar)
                 Rectangle().fill(Theme.border).frame(width: 1)
                 RecordingsPage()
+                    .stageRegion(.parts)
                 if session.inspectorShown {
                     Rectangle().fill(Theme.hairline).frame(width: 1)
                     LibraryInspector()

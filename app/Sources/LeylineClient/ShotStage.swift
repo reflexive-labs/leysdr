@@ -147,6 +147,10 @@ public enum ShotStageError: Error, Equatable, CustomStringConvertible {
 /// The parts of the window `leyshots` crops to, by the names `scenes.yaml` uses.
 public enum ShotRegion: String, Sendable, CaseIterable, Codable {
     case window, sidebar, inspector, toolbar, waterfall, library
+    /// The one-line notice over the bottom of the waterfall (a CHIRP import's counts), when shown.
+    case notice
+    /// The Library's page of the selected channel: its day strip and its parts.
+    case parts
 }
 
 /// `regions.json`: the window's number for `screencapture -l`, and each region on screen as a

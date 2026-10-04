@@ -232,7 +232,7 @@ func sceneScanCarriers() []sceneCarrier {
 		{offsetHz: -770_000, dbfs: -30, voiceSeed: 44},
 		// 144.390: 25 ms in every 210 ms. A sweep's spectrum rows at 5 MSPS are 16 blocks of
 		// 16384 samples, 52 ms, so the burst fills part of about one row per default dwell.
-		{offsetHz: -1_610_000, dbfs: -20, voiceSeed: 45, pulse: [2]float64{0.210, 0.025}},
+		{offsetHz: -1_610_000, dbfs: -20, voiceSeed: 45, pulse: [2]float64{0.210, 0.015}},
 	}
 }
 
@@ -292,6 +292,10 @@ func sceneAISSource(rate, periodS float64) *aisPacket {
 	}
 }
 
+// sceneRadio is the name every scene's file device shows in place of its filename: the radio
+// the site's screenshots name in the toolbar and the Library.
+const sceneRadio = "NESDR SMArt v5"
+
 func sceneMetadata(hz float64) map[string]string {
 	return map[string]string{"mode": "NFM", "frequency_hz": fmt.Sprintf("%.0f", hz)}
 }
@@ -300,7 +304,7 @@ var sceneFixtures = []fixture{
 	{
 		name: "scene_2m", centerHz: scene2mCenterHz, set: sceneSet, format: iqfile.FormatCU8,
 		fixedRate: scene2mRate, fixedDurationS: scene2mDurationS, noiseDBFS: sceneNoiseDBFS,
-		label:       "NESDR SMArt v5",
+		label:       sceneRadio,
 		description: "the 2 m band in overs: 146.520 PL 100.0 among 146.430, 146.460, a splattering wide-deviation 146.550, digital voice bursts on 146.580 and a 146.640 repeater with PL 146.2 and a courtesy tail; 146.940 PL 127.3, 147.180 DCS 023, short keyups on 145.230 and 147.330; speech-shaped voice",
 		metadata:    sceneMetadata(146_520_000),
 		build:       func(rate float64) []source { return sources(rate, scene2mCarriers()) },
@@ -315,6 +319,7 @@ var sceneFixtures = []fixture{
 	{
 		name: "scene_net", centerHz: 147_180_000, set: sceneSet, format: iqfile.FormatCU8,
 		fixedRate: 480_000, fixedDurationS: sceneNetDurationS, noiseDBFS: sceneNoiseDBFS,
+		label:       sceneRadio,
 		description: "a net on 147.180 DCS 023: eight overs of 4 to 30 s with 6 to 8 s between them; speech-shaped voice",
 		metadata:    sceneMetadata(147_180_000),
 		build:       func(rate float64) []source { return []source{sceneNetCarrier().source(rate)} },
@@ -325,14 +330,15 @@ var sceneFixtures = []fixture{
 	{
 		name: "scene_scan", centerHz: sceneScanCenterHz, set: sceneSet, format: iqfile.FormatCU8,
 		fixedRate: sceneScanRate, fixedDurationS: sceneScanDurationS, noiseDBFS: sceneNoiseDBFS,
-		description: "five carriers for ley scan 144M..148M in one step: 146.520, 146.940, 147.180 and 145.230 on the air throughout, 144.390 keyed for 25 ms in every 210 ms",
+		label:       sceneRadio,
+		description: "five carriers for ley scan 144M..148M in one step: 146.520, 146.940, 147.180 and 145.230 on the air throughout, 144.390 keyed for 15 ms in every 210 ms",
 		metadata:    sceneMetadata(146_520_000),
 		build:       func(rate float64) []source { return sources(rate, sceneScanCarriers()) },
 		expect: func(float64) []iqfile.Expect {
 			var out []iqfile.Expect
 			for _, c := range sceneScanCarriers() {
 				if c.pulse[0] > 0 {
-					// Its mean power is the burst's 12% duty cycle, so a meter reading of it
+					// Its mean power is the burst's 7% duty cycle, so a meter reading of it
 					// says nothing; the scan's SEEN column is what the scene shows.
 					continue
 				}
@@ -344,6 +350,7 @@ var sceneFixtures = []fixture{
 	{
 		name: "scene_aprs", centerHz: 144_390_000, set: sceneSet, format: iqfile.FormatCU8,
 		fixedRate: sceneAPRSRate, fixedDurationS: sceneAPRSDurationS, noiseDBFS: sceneNoiseDBFS,
+		label:       sceneRadio,
 		description: "APRS on 144.390: position reports from N0CALL-1 to N0CALL-7, one every 3 s",
 		metadata:    sceneMetadata(144_390_000),
 		build: func(rate float64) []source {
@@ -363,6 +370,7 @@ var sceneFixtures = []fixture{
 	{
 		name: "scene_ais", centerHz: 162_000_000, set: sceneSet, format: iqfile.FormatCU8,
 		fixedRate: sceneAISRate, fixedDurationS: sceneAISDurationS, noiseDBFS: sceneNoiseDBFS,
+		label:       sceneRadio,
 		description: "AIS on 161.975: Type 1 position reports from five vessels with made-up MMSIs, spread over the 20 s loop",
 		metadata:    sceneMetadata(161_975_000),
 		build: func(rate float64) []source {

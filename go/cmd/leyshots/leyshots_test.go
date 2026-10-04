@@ -455,3 +455,16 @@ func TestFixtureCurrent(t *testing.T) {
 		t.Errorf("leyfix args %v", got)
 	}
 }
+
+func TestCheckCaptureRefusesAThumbnail(t *testing.T) {
+	window := Rect{Width: 1440, Height: 820}
+	if err := checkCapture(image.Rect(0, 0, 2880, 1640), window); err != nil {
+		t.Errorf("a 2x capture was refused: %v", err)
+	}
+	if err := checkCapture(image.Rect(0, 0, 1441, 820), window); err != nil {
+		t.Errorf("a 1x capture a pixel over was refused: %v", err)
+	}
+	if err := checkCapture(image.Rect(0, 0, 256, 200), window); err == nil || !strings.Contains(err.Error(), "Stage Manager") {
+		t.Errorf("a Stage Manager thumbnail was taken: %v", err)
+	}
+}

@@ -69,7 +69,7 @@ With `LEYLINE_APP_STAGE` set, the app:
   staged run leaves the owner's last band, place and inspector setting alone;
 - once the stage is applied and the spectrum has drawn for `settle` seconds, writes
   `regions.json` beside the stage file. It holds the window number and the frames, in window
-  points, of `window`, `sidebar`, `inspector`, `toolbar`, `waterfall` and `library`.
+  points, of `window`, `sidebar`, `inspector`, `toolbar`, `waterfall`, `notice`, `library` and `parts`.
 
 `leyshots` captures with `screencapture -o -x -l <window>` (no shadow, no sound; Retina gives 2×)
 and crops in Go from a region's frame × (image width ÷ window width in points). A crop is one
@@ -169,13 +169,13 @@ refuses a `clock` on any scene that is not an app scene.
 | asset | kind | scene |
 |---|---|---|
 | `app-radio-2m.png` | app, 1440 × 820 pt window | `scene_2m` at 146.520 NFM, 2 m band expanded with Calling, APRS and a net bookmark, inspector shown, clock 19:42 |
-| `sidebar-chirp-import.png` | app, `sidebar` crop | `scene_2m` with `site/shots/handheld.csv` imported (about 100 memories over 2 m, 70 cm, GMRS, NOAA, MURS and marine); 2 m expanded |
+| `sidebar-chirp-import.png` | app, `sidebar` and `notice` crop, 760 pt wide | `scene_2m` with `site/shots/handheld.csv` imported (100 memories: five on 2 m, the rest over 70 cm, GMRS, NOAA, MURS and marine); 2 m expanded |
 | `chirp-csv-before.png` | HTML table of the same CSV, terminal theme | none |
 | `inspector-tone.png` | app, `inspector` crop | `scene_2m` at 146.940, bookmark with offset −0.6 and tone 127.3 |
 | `inspector-dcs.png` | app, `inspector` crop | `scene_2m` at 147.180, DCS 023 |
 | `scan-2m.png` | terminal, 100 columns | `scene_scan`, `ley scan …` |
 | `scan-app.png` | app, `sidebar` crop | `scene_scan`, the band row's Scan with its hits |
-| `library-net.png` | app, `library` crop, Library place | `scene_net` recorded gated, then one part selected |
+| `library-net.png` | app, `parts` crop 460 pt high, Library place | `scene_net` recorded gated, then one part selected |
 | `notification-same.png` | screen region | `same_alert`, `ley watch same --county … --notify`; see below |
 | `aprs-track.png` | terminal | `scene_aprs`, `ley track aprs` |
 | `ais-track.png` | terminal | `scene_ais`, `ley track ais` |

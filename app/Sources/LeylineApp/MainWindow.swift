@@ -213,7 +213,7 @@ struct RadioBody: View {
                 }
                 VStack {
                     Spacer()
-                    NoticeStrip()
+                    NoticeStrip().stageRegion(.notice)
                 }
             }
         }

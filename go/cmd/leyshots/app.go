@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,9 +24,10 @@ const appExe = "Contents/MacOS/LeylineApp"
 // launch and the 15 s the app waits for a live daemon before it gives up on the stage.
 const regionsGrace = 30 * time.Second
 
-// onAirGrace is the most an on_air stage adds after settle: the app's 30 s wait for the squelch
-// to open and the 1.5 s it then lets the readings fill (Staging.onAirSeconds, onAirFillSeconds).
-const onAirGrace = 32 * time.Second
+// onAirGrace is the most an on_air stage adds after settle: the app's 30 s wait for an over that
+// holds the squelch open, the 1.5 s fill and the 1 s it gives the window to come forward
+// (Staging.onAirSeconds, onAirFillSeconds, frontSeconds).
+const onAirGrace = 35 * time.Second
 
 // appShot is a running staged app.
 type appShot struct {
@@ -121,6 +124,9 @@ func (a *appShot) capture(ctx context.Context, c *Crop, out string) error {
 	if err != nil {
 		return err
 	}
+	if err := checkCapture(img.Bounds(), a.regions.Regions["window"]); err != nil {
+		return err
+	}
 	rect, err := cropRect(c, a.regions)
 	if err != nil {
 		return err
@@ -190,4 +196,20 @@ func captureNotification(ctx context.Context, swift, run, out string, logf func(
 	}
 	logf("no NotificationCenter window appeared within 10 s; take %s by hand", filepath.Base(out))
 	return errManual
+}
+
+// checkCapture refuses a capture whose shape is not the window's: Stage Manager's strip and
+// Mission Control draw a window as a small tilted thumbnail, and screencapture -l takes that.
+// The image must be the window's size at a whole scale of 1 to 3, give or take a pixel.
+func checkCapture(b image.Rectangle, window Rect) error {
+	if window.Width <= 0 || window.Height <= 0 {
+		return fmt.Errorf("regions.json gave the window no size")
+	}
+	for scale := 1.0; scale <= 3; scale++ {
+		if math.Abs(float64(b.Dx())-window.Width*scale) <= 1 && math.Abs(float64(b.Dy())-window.Height*scale) <= 1 {
+			return nil
+		}
+	}
+	return fmt.Errorf("the capture is %d×%d px, not the window's %.0f×%.0f pt at 1×, 2× or 3×; Stage Manager or Mission Control was showing it as a thumbnail; turn Stage Manager off in Control Centre and run again",
+		b.Dx(), b.Dy(), window.Width, window.Height)
 }

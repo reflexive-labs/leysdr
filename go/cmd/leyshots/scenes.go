@@ -127,7 +127,7 @@ type Table struct {
 
 // regionNames are the regions regions.json can hold.
 var regionNames = map[string]bool{
-	"window": true, "toolbar": true, "sidebar": true, "inspector": true, "waterfall": true, "library": true,
+	"window": true, "toolbar": true, "sidebar": true, "inspector": true, "waterfall": true, "library": true, "notice": true, "parts": true,
 }
 
 // Load reads and validates a scenes file.
