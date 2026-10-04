@@ -173,6 +173,7 @@ scenes:
       window: {width: 1440, height: 820}
       place: library
       select_part: 0
+      play_part: true
       settle: 4
     crop: {regions: [parts], size: {width: 2000, height: 460}, anchor: top-left}
 

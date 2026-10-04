@@ -478,6 +478,7 @@ that `ShotStage` decodes, and every key is optional:
 | `expanded_band` | opens this sidebar row (`2m`, the id in `bands.json`), as its chevron does |
 | `place` | `radio` or `library`, as the toolbar's switch sets it |
 | `select_part` | selects this part of the Library's selected channel without playing it, counted from 0 down the page's recent days |
+| `play_part` | with `select_part`, plays that part for 0.4 s and pauses it, as a click and a second click do, because the Library draws only the playing row as current |
 | `settle` | the seconds the window keeps drawing after the stage is applied, before the regions are measured |
 | `on_air` | after `settle`, waits up to 30 s for an over to start and keep the tuned channel's squelch open through 1.5 s, so the readings and audio meters are live in the shot with the rest of the over to come; an over already on the air when the wait begins, or one that ends sooner, is passed over for the next. The scene needs a squelch level set |
 | `zoom` | the spectrum and waterfall's zoom, as the band rail's − and + set it: 1, 2, 4 or 8, centred on the tuned frequency |

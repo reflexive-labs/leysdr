@@ -92,6 +92,8 @@ type Stage struct {
 	Zoom int `yaml:"zoom" json:"zoom,omitempty"`
 	// ScanBand presses the expanded band row's Scan band and waits for the sweep to end.
 	ScanBand bool `yaml:"scan_band" json:"scan_band,omitempty"`
+	// PlayPart plays the selected part and pauses it, so the Library draws it as current.
+	PlayPart bool `yaml:"play_part" json:"play_part,omitempty"`
 }
 
 // Crop says which part of the window an app shot keeps: the union of Regions, or a box of Size

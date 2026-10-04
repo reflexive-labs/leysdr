@@ -42,6 +42,8 @@ final class Staging {
     static let frontSeconds: Double = 1
     /// A band sweep from the row's Scan band gets this long to finish; 2 m takes a few seconds.
     static let sweepSeconds: Double = 60
+    /// A staged part plays this long before it is paused, so the player has started.
+    static let playPartSeconds: Double = 0.4
 
     let stageURL: URL
     /// nil when the file could not be read or was refused; the run is still staged, so nothing
@@ -213,7 +215,8 @@ final class Staging {
     }
 
     /// Selects a part of the selected channel's page, counted down the recent days' rows as the
-    /// page draws them, without playing it: a row's click would play it through the speakers.
+    /// page draws them. Without `play_part` it does not play: a row's click would play it
+    /// through the speakers.
     private func select(part index: Int, _ session: AppSession) async {
         var uri: String?
         _ = await until(seconds: Self.librarySeconds) {
@@ -230,6 +233,13 @@ final class Staging {
         }
         session.selectedPartURI = uri
         log("stage", "part \(index) selected: \(uri)")
+        guard stage?.playPart == true else { return }
+        // Played and paused at once, so the row draws as the current one with a fraction of a
+        // second of audio; the pause leaves the player where it stopped.
+        await session.clickRow(uri)
+        try? await Task.sleep(for: .seconds(Self.playPartSeconds))
+        await session.pausePlayback(true)
+        log("stage", "part \(index) played and paused")
     }
 
     /// `regions.json`: the whole frame as `window`, the strip above the content layout rect as
