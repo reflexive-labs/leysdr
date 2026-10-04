@@ -173,10 +173,17 @@ func publish(ctx context.Context, o publishOptions) error {
 	for _, s := range merged.Shots {
 		files = append(files, filepath.Join(dir, s.Asset))
 	}
-	args := append([]string{"release", "create", tag, "--repo", o.repo, "--title", tag, "--notes", notes}, files...)
+	target, err := releaseTarget(ctx)
+	if err != nil && !o.dryRun {
+		return err
+	}
+	args := append([]string{"release", "create", tag, "--repo", o.repo, "--title", tag, "--notes", notes, "--target", target}, files...)
 	if o.dryRun {
-		fmt.Fprintf(o.stdout, "would run: %s release create %s --repo %s --title %s with %d files from %s\n\n%s",
-			o.gh, tag, o.repo, tag, len(files), dir, notes)
+		if err != nil {
+			fmt.Fprintf(o.stdout, "the release would be refused: %v\n", err)
+		}
+		fmt.Fprintf(o.stdout, "would run: %s release create %s --repo %s --title %s --target %s with %d files from %s\n\n%s",
+			o.gh, tag, o.repo, tag, target, len(files), dir, notes)
 		return nil
 	}
 	cmd := exec.CommandContext(ctx, o.gh, args...)
@@ -215,4 +222,27 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return os.WriteFile(dst, b, 0o644)
+}
+
+// releaseTarget is the commit the release's tag points at: the checkout's HEAD, whose scenes.yaml
+// and tools made the images. GitHub can only tag a commit it has, so HEAD must already be on a
+// branch of origin; without --target it would tag the default branch's tip instead, which may
+// predate the scenes.
+func releaseTarget(ctx context.Context) (string, error) {
+	out, err := exec.CommandContext(ctx, "git", "rev-parse", "HEAD").Output()
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse HEAD: %w", err)
+	}
+	head := strings.TrimSpace(string(out))
+	if err := exec.CommandContext(ctx, "git", "fetch", "--quiet", "origin").Run(); err != nil {
+		return head, fmt.Errorf("git fetch origin: %w", err)
+	}
+	out, err = exec.CommandContext(ctx, "git", "branch", "-r", "--contains", head).Output()
+	if err != nil {
+		return head, fmt.Errorf("git branch -r --contains %s: %w", head, err)
+	}
+	if strings.TrimSpace(string(out)) == "" {
+		return head, fmt.Errorf("commit %.12s is not on GitHub yet, and the release's tag must point at it; push it first with: git push", head)
+	}
+	return head, nil
 }

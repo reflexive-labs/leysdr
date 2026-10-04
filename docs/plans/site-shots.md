@@ -49,7 +49,7 @@ page covers each of its items.
 `make shots` runs every scene, and `make shots ONLY=app-radio-2m,inspector-tone` runs a subset.
 `make shots-publish ONLY=…` takes the reviewed images from `tmp/shots/`, merges them with the
 latest `shots-*` release, compresses them with `oxipng` (losslessly, because quantising bands
-the waterfall gradients), checks that the manifest matches the files, and creates the release.
+the waterfall gradients), checks that the manifest matches the files, and creates the release with its tag on the checkout's HEAD. GitHub can tag only a commit it has, so `make shots-publish` refuses until HEAD is pushed; without a target the tag would land on the default branch's tip.
 
 macOS asks the terminal that runs `make shots` for Screen Recording permission the first time
 `screencapture` reads another app's window.
