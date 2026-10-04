@@ -127,7 +127,7 @@ func provenance(ctx context.Context, o runOptions) prov {
 // runScene takes one scene.
 func runScene(ctx context.Context, o runOptions, f *File, s *Scene, tm *tmuxRunner) (*Shot, error) {
 	out := filepath.Join(o.out, s.Asset)
-	shot := &Shot{Asset: s.Asset, Scale: 2, Alt: altText(s.Alt), Scene: s.Name()}
+	shot := &Shot{Asset: s.Asset, Scale: 2, Alt: altText(s.Alt, len(s.Fixtures) > 0), Scene: s.Name()}
 	switch s.Kind {
 	case kindIcon:
 		if o.goos != "darwin" {

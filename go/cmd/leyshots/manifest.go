@@ -38,13 +38,13 @@ type Shot struct {
 	PNGSHA256 string `json:"png_sha256,omitempty"`
 }
 
-// simulatedSuffix ends every alt text: the signals in every shot are generated.
+// simulatedSuffix ends the alt text of every shot with fixtures: their signals are generated.
 const simulatedSuffix = " Simulated signals."
 
 // altText is a scene's alt text as shots.json carries it.
-func altText(alt string) string {
+func altText(alt string, simulated bool) string {
 	alt = strings.Join(strings.Fields(alt), " ")
-	if strings.HasSuffix(alt, simulatedSuffix) {
+	if !simulated || strings.HasSuffix(alt, simulatedSuffix) {
 		return alt
 	}
 	return alt + simulatedSuffix

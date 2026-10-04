@@ -230,12 +230,12 @@ func writeTestPNG(t *testing.T, path string, w, h int) {
 
 func TestManifestMergeAndValidate(t *testing.T) {
 	prev := &Manifest{Shots: []Shot{
-		{Asset: "a.png", Width: 10, Height: 10, Scale: 2, Alt: altText("A."), Tag: "shots-2026-09-01"},
-		{Asset: "b.png", Width: 10, Height: 10, Scale: 2, Alt: altText("B."), Tag: "shots-2026-09-01"},
+		{Asset: "a.png", Width: 10, Height: 10, Scale: 2, Alt: altText("A.", true), Tag: "shots-2026-09-01"},
+		{Asset: "b.png", Width: 10, Height: 10, Scale: 2, Alt: altText("B.", true), Tag: "shots-2026-09-01"},
 	}}
 	cur := &Manifest{Shots: []Shot{
-		{Asset: "a.png", Width: 20, Height: 20, Scale: 2, Alt: altText("A again.")},
-		{Asset: "c.png", Width: 30, Height: 30, Scale: 2, Alt: altText("C.")},
+		{Asset: "a.png", Width: 20, Height: 20, Scale: 2, Alt: altText("A again.", true)},
+		{Asset: "c.png", Width: 30, Height: 30, Scale: 2, Alt: altText("C.", true)},
 	}}
 	m, err := merge(prev, cur, []string{"c.png"}, "shots-2026-10-03")
 	if err != nil {
@@ -311,10 +311,13 @@ func TestReleaseTags(t *testing.T) {
 }
 
 func TestAltText(t *testing.T) {
-	if got := altText("The window\n  on 2 m."); got != "The window on 2 m. Simulated signals." {
+	if got := altText("The window\n  on 2 m.", true); got != "The window on 2 m. Simulated signals." {
 		t.Errorf("%q", got)
 	}
-	if got := altText("Done. Simulated signals."); got != "Done. Simulated signals." {
+	if got := altText("The app icon.", false); got != "The app icon." {
+		t.Errorf("a shot with no fixtures was called simulated: %q", got)
+	}
+	if got := altText("Done. Simulated signals.", true); got != "Done. Simulated signals." {
 		t.Errorf("appended twice: %q", got)
 	}
 }
