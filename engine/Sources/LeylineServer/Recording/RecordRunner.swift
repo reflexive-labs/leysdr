@@ -72,6 +72,13 @@ actor RecordRunner: RecordRunning {
     /// Audio kept while no part is open, so a part can begin before the squelch did. Allocated once
     /// when the runner starts and never on a write path.
     private var preRoll: [Float] = []
+    /// Gate actions in the order the machine returned them, applied by whichever task holds
+    /// `applying` -- normally the drain, at a frame boundary. The squelch follower only queues: an
+    /// open it applied itself would leave an await between opening the part and writing its
+    /// pre-roll, and a frame the drain wrote there would land at the part's first sample, ahead of
+    /// the pre-roll (docs/design/recording.md, "The gate reads the squelch's own transitions").
+    private var pending: [RecordGateMachine.Action] = []
+    private var applying = false
     private var preRollCapacity = 0
     /// The capture sample the first element of `preRoll` sits at.
     private var preRollStart: UInt64 = 0
@@ -132,7 +139,10 @@ actor RecordRunner: RecordRunning {
     private func teardown(endedBy reason: String) async {
         guard !stopped else { return }
         stopped = true
-        for action in gate.finish(at: now) { await apply(action) }
+        // Whatever the drain was applying finishes first, so the job's own close lands after it.
+        while applying { await Task.yield() }
+        pending.append(contentsOf: gate.finish(at: now))
+        await applyPending()
         if await writer.isPartOpen { await closePart(endSample: now) }
         await writer.finish(endedBy: reason, endSample: now)
         switch source {
@@ -201,6 +211,18 @@ actor RecordRunner: RecordRunning {
     private func closePart(endSample: UInt64) async {
         await readLevel()
         await writer.closePart(endSample: endSample)
+    }
+
+    /// Applies the queued gate actions in order. A second caller while one is applying returns at
+    /// once: the one applying drains the queue, including what was added meanwhile.
+    private func applyPending() async {
+        guard !applying else { return }
+        applying = true
+        while !pending.isEmpty {
+            let action = pending.removeFirst()
+            await apply(action)
+        }
+        applying = false
     }
 
     // MARK: The loop
@@ -343,7 +365,7 @@ actor RecordRunner: RecordRunning {
             } else if seedPending {
                 // The squelch was open before the first frame, so the first part starts with it.
                 seedPending = false
-                for action in gate.seedOpen(at: frame.sampleStart) { await apply(action) }
+                pending.append(contentsOf: gate.seedOpen(at: frame.sampleStart))
             }
         }
         if frame.droppedSamples > 0 {
@@ -351,7 +373,8 @@ actor RecordRunner: RecordRunning {
         }
         now = frameEnd
         if gated {
-            for action in gate.advance(to: frameEnd) { await apply(action) }
+            pending.append(contentsOf: gate.advance(to: frameEnd))
+            await applyPending()
             if stopped { return }
         }
         if await writer.isPartOpen {
@@ -469,7 +492,9 @@ actor RecordRunner: RecordRunning {
         }
     }
 
-    /// The pre-roll ring into the part that just opened, from its first sample.
+    /// The pre-roll ring into the part that just opened, from its first sample. Called straight
+    /// after `openPart` by the one task applying gate actions, so no live frame is written between
+    /// the two: a frame there would land at the part's start, ahead of the pre-roll it follows.
     private func flushPreRoll(from sample: UInt64) async {
         guard !preRoll.isEmpty else { return }
         let perAudio = Double(captureRateHz) / audioRateOrOne
@@ -510,7 +535,9 @@ actor RecordRunner: RecordRunning {
             seedPending = open
             return
         }
-        for action in gate.squelch(open: open, at: sample) { await apply(action) }
+        // Queued for the drain, which applies it at its next frame boundary: applying it here
+        // would let the drain's next frame into a part whose pre-roll has not been written yet.
+        pending.append(contentsOf: gate.squelch(open: open, at: sample))
     }
 
     /// A meter carries the squelch's state every 100 ms. The gate opens on transitions, and a
@@ -538,11 +565,11 @@ actor RecordRunner: RecordRunning {
             // wrapped, or the first after a coverage gap. With nothing held yet the part starts
             // where the audio will, never inside the gap.
             let start = preRoll.isEmpty ? Swift.max(now, sample) : Swift.max(startSample, preRollStart)
-            for action in gate.seedOpen(at: start) { await apply(action) }
+            pending.append(contentsOf: gate.seedOpen(at: start))
             return
         }
         guard open != gate.squelchIsOpen else { return }
-        for action in gate.squelch(open: open, at: sample) { await apply(action) }
+        pending.append(contentsOf: gate.squelch(open: open, at: sample))
     }
 
     /// OUT_OF_CAPTURE degrades the job, closes the open part and records a coverage gap; the
@@ -594,7 +621,8 @@ actor RecordRunner: RecordRunning {
             // The gate closes with the part, so the channel's first opening after the gap begins
             // a new one rather than being taken for the over already in progress. What the squelch
             // is doing then is learned again, and the pre-roll from before the gap is not kept.
-            for action in gate.coverageLost(at: now) { await apply(action) }
+            pending.append(contentsOf: gate.coverageLost(at: now))
+            await applyPending()
             squelchKnown = false
             preRoll.removeAll(keepingCapacity: true)
         }
