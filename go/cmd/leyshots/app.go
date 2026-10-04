@@ -152,16 +152,31 @@ func (a *appShot) quit() {
 	}
 }
 
-// notificationSwift prints the frame of the first on-screen window NotificationCenter owns, as
-// "x y width height" in global points, or nothing.
+// notificationSwift prints the frame of the first on-screen window a notification process owns,
+// as "x y width height" in global points. macOS names that process NotificationCenter or
+// Notification Center depending on the release, so any owner starting "Notification" counts.
+// Run with "list", it prints every on-screen window's owner, layer and frame instead, for the
+// run directory when no notification was found.
 const notificationSwift = `import CoreGraphics
 import Foundation
 let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-for w in list where (w[kCGWindowOwnerName as String] as? String) == "NotificationCenter" {
-    if let b = w[kCGWindowBounds as String] as? [String: Any],
-       let x = b["X"] as? Double, let y = b["Y"] as? Double,
-       let width = b["Width"] as? Double, let height = b["Height"] as? Double, width > 0, height > 0 {
-        print("\(x) \(y) \(width) \(height)")
+func frame(_ w: [String: Any]) -> (Double, Double, Double, Double)? {
+    guard let b = w[kCGWindowBounds as String] as? [String: Any],
+          let x = b["X"] as? Double, let y = b["Y"] as? Double,
+          let width = b["Width"] as? Double, let height = b["Height"] as? Double else { return nil }
+    return (x, y, width, height)
+}
+if CommandLine.arguments.dropFirst().first == "list" {
+    for w in list {
+        let owner = w[kCGWindowOwnerName as String] as? String ?? "?"
+        let layer = w[kCGWindowLayer as String] as? Int ?? 0
+        if let f = frame(w) { print("\(owner)\tlayer \(layer)\t\(f.0) \(f.1) \(f.2) \(f.3)") }
+    }
+    exit(0)
+}
+for w in list where (w[kCGWindowOwnerName as String] as? String)?.hasPrefix("Notification") == true {
+    if let f = frame(w), f.2 > 0, f.3 > 0 {
+        print("\(f.0) \(f.1) \(f.2) \(f.3)")
         exit(0)
     }
 }
@@ -170,14 +185,15 @@ for w in list where (w[kCGWindowOwnerName as String] as? String) == "Notificatio
 // errManual is a shot leyshots could not take, which the person takes by hand.
 var errManual = errors.New("manual")
 
-// captureNotification waits up to 10 s for a NotificationCenter window and captures its frame.
-// It is best effort: when the window does not appear, the shot is left for the person to take.
-func captureNotification(ctx context.Context, swift, run, out string, logf func(string, ...any)) error {
+// captureNotification waits up to wait for a notification window and captures its frame. It is
+// best effort: when no window appears, the on-screen windows are listed in windows.txt in the run
+// directory and the shot is left for the person to take.
+func captureNotification(ctx context.Context, swift, run, out string, wait time.Duration, logf func(string, ...any)) error {
 	script := filepath.Join(run, "notification.swift")
 	if err := os.WriteFile(script, []byte(notificationSwift), 0o644); err != nil {
 		return err
 	}
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(wait)
 	for time.Now().Before(deadline) {
 		b, err := exec.CommandContext(ctx, swift, script).Output()
 		if err == nil {
@@ -194,7 +210,12 @@ func captureNotification(ctx context.Context, swift, run, out string, logf func(
 			return err
 		}
 	}
-	logf("no NotificationCenter window appeared within 10 s; take %s by hand", filepath.Base(out))
+	windows := filepath.Join(run, "windows.txt")
+	if b, err := exec.CommandContext(ctx, swift, script, "list").Output(); err == nil {
+		_ = os.WriteFile(windows, b, 0o644)
+	}
+	logf("no notification window appeared within %.0f s; the on-screen windows are in %s; take %s by hand",
+		wait.Seconds(), windows, filepath.Base(out))
 	return errManual
 }
 

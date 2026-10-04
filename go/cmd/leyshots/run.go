@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/reflexive-labs/leysdr/go/internal/daemonrun"
 )
@@ -305,10 +306,18 @@ func runScene(ctx context.Context, o runOptions, f *File, s *Scene, tm *tmuxRunn
 		}
 		done := make(chan error, 1)
 		go func() {
-			_, err := tm.session(ctx, s.Name(), s.Terminal, s.Settle)
+			panes, err := tm.session(ctx, s.Name(), s.Terminal, s.Settle)
+			// What the terminal printed says whether the watch matched, which is the first
+			// question when no notification appeared.
+			for i, p := range panes {
+				_ = os.WriteFile(filepath.Join(run, fmt.Sprintf("terminal-%d.txt", i)), []byte(sgrEscape.ReplaceAllString(p.Text, "")), 0o644)
+			}
 			done <- err
 		}()
-		capErr := captureNotification(ctx, o.swift, run, out, o.logf)
+		// The watch can match on the alert's last pass before the terminal is read, and the
+		// banner stays a few seconds after it.
+		wait := time.Duration((s.Settle + 10) * float64(time.Second))
+		capErr := captureNotification(ctx, o.swift, run, out, wait, o.logf)
 		if err := <-done; err != nil {
 			return nil, err
 		}
