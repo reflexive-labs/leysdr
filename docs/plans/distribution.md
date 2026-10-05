@@ -180,7 +180,8 @@ restarted onto N+1, and `ley daemon status` shows N+1's version.
    --timestamp`: the three driver libraries; Sparkle's `Installer.xpc` and `Downloader.xpc`
    (the latter with `--preserve-metadata=entitlements`), `Autoupdate`, `Updater.app`, then
    `Sparkle.framework`; every executable under `Contents/Helpers`; then the app.
-   No component carries entitlements.
+   No Leyline component carries entitlements; Sparkle's `Downloader.xpc` keeps its own, as
+   Sparkle's signing instructions require.
 3. `codesign --verify --strict --deep` on the app, then a DMG (`hdiutil create -format UDZO`)
    holding the app and an `/Applications` link, signed.
 4. `xcrun notarytool submit Leyline-<version>.dmg --keychain-profile "$NOTARY_PROFILE" --wait`;
@@ -189,6 +190,11 @@ restarted onto N+1, and `ley daemon status` shows N+1's version.
    on the DMG and `spctl -a -vvv` on the app inside it.
 6. The source the release owes: `git archive` of the tag as `leysdr-<version>-source.tar.gz`,
    and the driver tarballs `drivers.json` names, downloaded and checked against their SHA-256.
+
+`release-appcast.sh` passes `--maximum-deltas 0`: Sparkle's delta updates would be extra files to
+serve, and a full DMG is tens of megabytes. `[ ]` The tag is created on GitHub after the build,
+so a release's `LeylineBuild` (the about panel) shows the previous tag's describe; tagging
+locally before `bundle-app.sh` would fix it.
 
 Everything goes to `dist/<version>/`, with `appcast.xml` from `scripts/release-appcast.sh`
 (`--download-url-prefix https://leysdr.com/updates/`, the previous releases' DMGs kept in

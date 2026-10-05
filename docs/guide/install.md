@@ -28,6 +28,10 @@ If that switch is off, the daemon does not run and the window shows "Login Items
 switched off" with an Open Login Items button, which opens that settings page. Switch Leyline on
 there; the window connects on its next retry.
 
+If the switch is on but the daemon has stopped (it crashed, or `ley daemon stop` stopped it), the
+window shows "The engine is not running" with a Restart engine button, which starts it again
+through launchd. `~/Library/Logs/Leyline/leylined.log` says why it stopped.
+
 The app leaves a daemon built from source alone: when `~/Library/LaunchAgents/com.leysdr.daemon.plist`
 exists (`ley daemon install` wrote it), the app registers nothing and connects to that daemon.
 Remove it with `ley daemon uninstall` to let the app start its own.

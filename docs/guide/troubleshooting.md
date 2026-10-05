@@ -23,11 +23,18 @@ the daemon's state, and `ley daemon logs` shows why a start failed. Under launch
 stopped and a crash is relaunched; `ley daemon install` is how the daemon comes back at login
 ([Installing](install.md)).
 
+In the app, a window reading "The engine is not running" has a Restart engine button that does the
+same as `ley daemon start`. One reading "Login Items has the engine switched off" means the daemon
+is switched off in System Settings > General > Login Items & Extensions; its Open Login Items
+button opens that page.
+
 ## No radio in `ley devices`
 
 `(no radios found)` with the dongle plugged in. Check, in order:
 
 - Plugged in; try another port or cable.
+- The Leyline app carries its own copies of both driver libraries, so the next two items apply
+  to a daemon built from source.
 - For RTL-SDR, install `librtlsdr` and restart the daemon, then check that `rtl_test -t` sees it.
 - For HackRF, install `hackrf` and restart the daemon, then check that `hackrf_info` names the board
   and firmware.
