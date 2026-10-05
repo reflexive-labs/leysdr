@@ -20,17 +20,29 @@ struct DecoderRegistry: Sendable {
         var manifest: Leyline_V1_DecoderManifest
         /// The directory the manifest was read from; the plugin's cwd when it runs.
         var directory: String
-        /// Absolute path of the executable, resolved against the directory or `PATH`.
+        /// Absolute path of the executable, resolved against the directory, the program
+        /// directories or `PATH`.
         var executablePath: String
     }
 
     /// Directories to look in, in order. The first manifest with a given name wins: a decoder
     /// dropped in a `--decoders` directory shadows the one the platform default ships.
     let searchPath: [String]
+    /// Directories a manifest's bare `executable` name is looked up in after the plugin's own
+    /// directory and before `PATH`: `leylined`'s directory, where an app bundle keeps the decoder
+    /// executables beside the daemon (`bundledDecodersPath`).
+    let programDirectories: [String]
     private let log = Logger(label: "leyline.decoders")
 
-    init(searchPath: [String]) {
+    init(searchPath: [String], programDirectories: [String] = DecoderRegistry.daemonDirectory()) {
         self.searchPath = searchPath
+        self.programDirectories = programDirectories
+    }
+
+    /// The directory of the running `leylined`, or nothing when it cannot be found.
+    static func daemonDirectory() -> [String] {
+        guard let exe = currentExecutablePath() else { return [] }
+        return [URL(fileURLWithPath: exe).deletingLastPathComponent().path]
     }
 
     func scan() -> [Installed] {
@@ -94,8 +106,8 @@ struct DecoderRegistry: Sendable {
         return Installed(manifest: manifest, directory: directory, executablePath: exe)
     }
 
-    /// The manifest's `executable` as a path relative to the plugin's directory, else a name on
-    /// `PATH`. An absolute path is taken as it stands.
+    /// The manifest's `executable` as a path relative to the plugin's directory, else a name in
+    /// the program directories or on `PATH`. An absolute path is taken as it stands.
     private func resolve(_ executable: String, in directory: String) -> String? {
         let fm = FileManager.default
         if executable.hasPrefix("/") {
@@ -105,7 +117,8 @@ struct DecoderRegistry: Sendable {
         if fm.isExecutableFile(atPath: local) { return local }
         guard !executable.contains("/") else { return nil }
         let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
-        for dir in path.split(separator: ":") where !dir.isEmpty {
+        let dirs = programDirectories + path.split(separator: ":").map(String.init)
+        for dir in dirs where !dir.isEmpty {
             let candidate = String(dir) + "/" + executable
             if fm.isExecutableFile(atPath: candidate) { return candidate }
         }

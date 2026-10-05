@@ -77,7 +77,7 @@ Then the two steps no script can take, which `make alpha` names when it finishes
 - [ ] `make license-check` is green (it is part of `make check`), so every source file names its
       licence and `NOTICE` names every dependency the binaries carry.
 - [ ] The app carries `LICENSE`, `engine/LICENSE`, `NOTICE` and the licence texts of librtlsdr,
-      libhackrf and libusb beside the daemon in `Contents/Helpers`.
+      libhackrf and libusb in `Contents/Resources/licenses`.
 - [ ] The release offers the daemon's source as `leysdr-<VERSION>-source.tar.gz`, served beside
       the disk image. GPLv3 lets a network-distributed binary point at source served the same way,
       so the tarball stays for as long as the disk image is offered. A link to the tag replaces it

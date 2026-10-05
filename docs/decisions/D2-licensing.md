@@ -90,7 +90,7 @@ On every binary release (`docs/dev/release-checklist.md` carries these as checkl
   BSD-2-Clause, MIT and Zlib parts).
 - The licence texts of librtlsdr, libhackrf and libusb alongside the daemon
   (`third_party/licenses/librtlsdr.txt`, `libhackrf.txt`, `libusb.txt`, copied to
-  `Leyline.app/Contents/Helpers`).
+  `Leyline.app/Contents/Resources/licenses`).
 - Direct + notarized distribution. Not the App Store: the GPL conflicts with its terms, and the
   daemon needs USB entitlements a sandboxed app cannot hold. Not TestFlight either, which takes
   App Store builds only.

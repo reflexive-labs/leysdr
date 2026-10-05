@@ -448,8 +448,10 @@ open app/Package.swift   # or: Xcode, with previews; Product > Run runs LeylineA
 `make app-run` runs the bare executable, which SwiftUI accepts (a window, the menu bar, the
 process name in the Dock). The bundle adds `Info.plist` (identifier `com.leysdr.app`, the
 version from `VERSION`), resource bundles beside the binary, and a signature; with
-`--with-daemon` it carries what a distributed build ships: `leylined`, `ley` and the decoders
-under `Contents/Helpers`; the driver libraries under `Contents/Frameworks`, with
+`--with-daemon` it carries what a distributed build ships: `leylined`, `ley` and the decoder
+programs under `Contents/Helpers`, which holds code only (codesign refuses any other file there);
+the decoder manifests under `Contents/Resources/decoders` and the licence texts under
+`Contents/Resources/licenses`; the driver libraries under `Contents/Frameworks`, with
 `drivers.json` in `Contents/Resources` (`../decisions/S3-usb-posture.md`); and the daemon's
 launch agent, `com.leysdr.daemon.plist`, under `Contents/Library/LaunchAgents`. The agent's
 source is `app/Sources/LeylineApp/com.leysdr.daemon.plist`, excluded from the target; it runs

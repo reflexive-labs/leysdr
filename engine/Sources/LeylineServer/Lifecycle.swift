@@ -31,9 +31,18 @@ package func defaultDecodersPath() -> String { defaultDataPath("decoders") }
 package func decoderSearchPath(configured: [String], executablePath: String? = currentExecutablePath()) -> [String] {
     var path = configured + decoderPathsFromEnvironment() + [defaultDecodersPath()]
     if let executablePath {
-        path.append(URL(fileURLWithPath: executablePath).deletingLastPathComponent().appendingPathComponent("decoders").path)
+        path.append(bundledDecodersPath(executablePath: executablePath))
     }
     return path
+}
+
+/// Where an app bundle keeps its decoder manifests, relative to `leylined` in
+/// `Contents/Helpers`: `Contents/Resources/decoders`. Helpers holds code only, because codesign
+/// treats every file there as a nested code object and refuses an unsigned one, so the manifests
+/// sit in Resources and their executables beside `leylined` (`DecoderRegistry.programDirectories`).
+package func bundledDecodersPath(executablePath: String) -> String {
+    URL(fileURLWithPath: executablePath).deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Resources/decoders").path
 }
 
 /// The running executable's path with every symlink resolved, so a `leylined` reached through a

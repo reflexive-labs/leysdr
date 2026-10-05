@@ -276,8 +276,10 @@ form of `DecoderManifest`, whose `executable` names a binary relative to that di
 `PATH`. Discovery reads files and executes nothing, so a broken plugin cannot break `ley decoders`.
 The daemon looks in every directory named by `--decoders` (repeatable; `LEYLINE_DECODERS`,
 colon-separated), then its platform default (`~/Library/Application Support/Leyline/decoders`
-on macOS, `$XDG_DATA_HOME/leyline/decoders` elsewhere), then `decoders/` beside its own executable,
-which is where the app bundle carries the first-party plugins. `decoders/` in the repository holds
+on macOS, `$XDG_DATA_HOME/leyline/decoders` elsewhere), then `../Resources/decoders` relative to its own
+executable, which is where the app bundle carries the first-party manifests; their executables sit
+beside `leylined` in `Contents/Helpers`, where the daemon also resolves a manifest's bare
+`executable` name. `decoders/` in the repository holds
 the first-party manifests, and `make go` builds their binaries beside `ley`.
 
 **A decode job is a job.** `Jobs.StartJob(DecodeConfig)` runs the recipe: the allocator finds or

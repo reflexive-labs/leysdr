@@ -160,7 +160,10 @@ if [ $with_daemon -eq 1 ]; then
   ./scripts/gen-version.sh >/dev/null
   (cd engine && swift build -c release --product leylined >/dev/null)
   ebin=$(cd engine && swift build -c release --show-bin-path)
-  mkdir -p "$out/Contents/Helpers/decoders"
+  # Contents/Helpers holds code only: codesign treats every file there as a nested code object
+  # and fails on an unsigned one, so manifests and licence texts go under Contents/Resources.
+  # leylined reads the manifests from Resources/decoders and finds their executables beside itself.
+  mkdir -p "$out/Contents/Helpers" "$out/Contents/Resources/decoders" "$out/Contents/Resources/licenses"
   cp "$ebin/leylined" "$out/Contents/Helpers/"
   if [ ! -x "$gobin/ley" ]; then
     [ -z "${BUNDLE_GOBIN:-}" ] || die "no ley in BUNDLE_GOBIN ($gobin)"
@@ -169,15 +172,18 @@ if [ $with_daemon -eq 1 ]; then
   cp "$gobin/ley" "$out/Contents/Helpers/"
   for d in decoders/*/; do
     name=$(basename "$d")
-    mkdir -p "$out/Contents/Helpers/decoders/$name"
-    cp "$d"/*.json "$out/Contents/Helpers/decoders/$name/" 2>/dev/null || true
-    [ -x "$gobin/leydec-$name" ] && cp "$gobin/leydec-$name" "$out/Contents/Helpers/decoders/$name/"
+    mkdir -p "$out/Contents/Resources/decoders/$name"
+    cp "$d"/*.json "$out/Contents/Resources/decoders/$name/" 2>/dev/null || true
+    [ -x "$gobin/leydec-$name" ] && cp "$gobin/leydec-$name" "$out/Contents/Helpers/"
   done
   # The GPL engine travels with its licence text and the source offer (docs/decisions/D2-licensing.md).
-  cp engine/LICENSE "$out/Contents/Helpers/LICENSE.leylined"
-  cp third_party/licenses/librtlsdr.txt "$out/Contents/Helpers/"
-  cp third_party/licenses/libhackrf.txt "$out/Contents/Helpers/"
-  cp third_party/licenses/libusb.txt "$out/Contents/Helpers/"
+  cp engine/LICENSE "$out/Contents/Resources/licenses/LICENSE.leylined"
+  cp third_party/licenses/librtlsdr.txt "$out/Contents/Resources/licenses/"
+  cp third_party/licenses/libhackrf.txt "$out/Contents/Resources/licenses/"
+  cp third_party/licenses/libusb.txt "$out/Contents/Resources/licenses/"
+  # A non-executable file left in Helpers would fail the signature check at the end; say which.
+  stray=$(find "$out/Contents/Helpers" -type f ! -perm -u+x)
+  [ -z "$stray" ] || die "Contents/Helpers may hold only executables; found: $stray"
   bundle_drivers "$out"
   # The app registers this agent through SMAppService; its BundleProgram is Contents/Helpers/leylined.
   mkdir -p "$out/Contents/Library/LaunchAgents"

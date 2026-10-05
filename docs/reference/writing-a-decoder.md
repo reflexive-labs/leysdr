@@ -29,8 +29,9 @@ binary still lists in `ley decoders` and a manifest that will not parse costs on
 crash. The daemon looks in every directory named by `--decoders` (repeatable) and `LEYLINE_DECODERS`
 (colon-separated), then the platform default
 (`~/Library/Application Support/Leyline/decoders` on macOS,
-`$XDG_DATA_HOME/leyline/decoders` elsewhere), then `decoders/` beside the `leylined` executable;
-the first directory to define a name wins.
+`$XDG_DATA_HOME/leyline/decoders` elsewhere), then `../Resources/decoders` relative to the
+`leylined` executable (an app bundle's own decoders); the first directory to define a name wins. A
+bare `executable` name resolves in the plugin's directory, then beside `leylined`, then on `PATH`.
 
 The manifest for the bundled APRS decoder, trimmed to the fields that carry meaning:
 

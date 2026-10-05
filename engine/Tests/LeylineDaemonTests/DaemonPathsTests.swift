@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // The paths `leylined` finds without help from its launch agent, whose ProgramArguments cannot
-// expand `~` or name the bundle's directory: the decoders beside the executable and the log file.
+// expand `~` or name the bundle's directory: the bundle's decoders and the log file.
 
 import Foundation
 @testable import LeylineServer
 import XCTest
 
 final class DaemonPathsTests: XCTestCase {
-    /// The decoders a bundle carries beside `leylined` are searched last, so a plugin the user
-    /// installed in a configured or default directory shadows the bundled one.
+    /// The decoders an app bundle carries are searched last, so a plugin the user installed in a
+    /// configured or default directory shadows the bundled one.
     func testBundledDecodersAreSearchedAfterTheConfiguredAndDefaultDirectories() {
         let path = decoderSearchPath(configured: ["/configured"],
                                      executablePath: "/Applications/Leyline.app/Contents/Helpers/leylined")
         XCTAssertEqual(path.first, "/configured")
-        XCTAssertEqual(path.last, "/Applications/Leyline.app/Contents/Helpers/decoders")
+        XCTAssertEqual(path.last, "/Applications/Leyline.app/Contents/Resources/decoders")
         guard let defaultIndex = path.firstIndex(of: defaultDecodersPath()) else {
             return XCTFail("the default decoders directory is missing from \(path)")
         }
@@ -26,15 +26,25 @@ final class DaemonPathsTests: XCTestCase {
         XCTAssertEqual(path.last, defaultDecodersPath())
     }
 
-    /// A plugin found only in the bundle's `decoders` directory is one the daemon can run.
-    func testRegistryFindsAPluginBesideTheExecutable() throws {
-        let helpers = try makeTempDir("helpers")
-        defer { try? FileManager.default.removeItem(atPath: helpers) }
-        try FileManager.default.createDirectory(atPath: helpers + "/decoders", withIntermediateDirectories: true)
-        try writeFakePlugin(in: helpers + "/decoders", name: "bundled-only")
+    /// The bundle's layout: the manifest in `Contents/Resources/decoders/<name>/`, its bare
+    /// executable name beside `leylined` in `Contents/Helpers`, which holds code only.
+    func testRegistryRunsABundledPluginFromTheHelpersDirectory() throws {
+        let contents = try makeTempDir("contents")
+        defer { try? FileManager.default.removeItem(atPath: contents) }
+        let helpers = contents + "/Helpers"
+        try FileManager.default.createDirectory(atPath: helpers, withIntermediateDirectories: true)
+        let program = helpers + "/leydec-bundled"
+        try FileManager.default.copyItem(atPath: fakeDecoderPath(), toPath: program)
         let path = decoderSearchPath(configured: [], executablePath: helpers + "/leylined")
-        XCTAssertEqual(DecoderRegistry(searchPath: path).find("bundled-only")?.directory,
-                       helpers + "/decoders/bundled-only")
+        try FileManager.default.createDirectory(atPath: contents + "/Resources/decoders",
+                                                withIntermediateDirectories: true)
+        try writeFakePlugin(in: contents + "/Resources/decoders", name: "bundled-only",
+                            executable: "leydec-bundled")
+        let found = DecoderRegistry(searchPath: path, programDirectories: [helpers]).find("bundled-only")
+        XCTAssertEqual(found?.directory, contents + "/Resources/decoders/bundled-only")
+        XCTAssertEqual(found?.executablePath, program)
+        XCTAssertNil(DecoderRegistry(searchPath: path, programDirectories: []).find("bundled-only"),
+                     "without the program directory the bare name resolves nowhere")
     }
 
     /// The running executable resolves to a real file with no symlink left in its path, so a

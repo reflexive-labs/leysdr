@@ -728,9 +728,12 @@ directory on the search path and executes nothing, so a plugin whose binary is b
 and a manifest that does not parse costs a log line. The search path is `--decoders` (repeatable),
 then `LEYLINE_DECODERS` (colon-separated), then the platform default
 (`~/Library/Application Support/Leyline/decoders` on macOS, `$XDG_DATA_HOME/leyline/decoders`
-elsewhere), then `decoders/` beside the `leylined` executable with symlinks resolved
-(`decoderSearchPath`). Names are unique and the first directory wins. `executable` resolves against the
-plugin's directory first and `PATH` second.
+elsewhere), then `../Resources/decoders` relative to the `leylined` executable with symlinks
+resolved (`decoderSearchPath`, `bundledDecodersPath`): an app bundle keeps code only in
+`Contents/Helpers`, so its manifests sit in `Contents/Resources`. Names are unique and the first
+directory wins. `executable` resolves against the plugin's directory, then `leylined`'s own
+directory (`DecoderRegistry.programDirectories`, where the bundle keeps the decoder executables),
+then `PATH`.
 
 `PluginProcess` is one spawned child: stdin carries one varint-delimited `StreamDescriptor` then
 varint-delimited `Frame`s (`AUDIO`, `F32`, mono, the channel's rate, `GAP_MARKED`, the tap the

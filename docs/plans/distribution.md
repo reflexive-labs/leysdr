@@ -98,7 +98,11 @@ bundle and a tester:
   `leylined` sits at `Contents/Helpers/leylined`, so that is `Contents/Frameworks`. A build from
   source has no such directory and falls through to Homebrew as today. `LEYLINE_*_LIBRARY` still
   wins.
-- The licence texts for libusb go beside librtlsdr's and libhackrf's under `Contents/Helpers`.
+- The licence texts for libusb go beside librtlsdr's and libhackrf's under
+  `Contents/Resources/licenses`. `Contents/Helpers` holds executables only: the first rehearsal
+  (2026-10-06) failed `codesign --verify` on `libhackrf.txt` there, so the decoder manifests moved
+  to `Contents/Resources/decoders` too, and `bundle-app.sh` refuses a non-executable file in
+  Helpers.
 
 Verification: `scripts/test-optional-sdr-loaders.sh` gains a case that places the fake libraries
 in a `Frameworks` directory beside a fake `Helpers/` and loads them with no environment override
@@ -113,8 +117,9 @@ daemon with Homebrew's copies moved aside.
   `KeepAlive.SuccessfulExit = false` (as `ley daemon install`'s plist: a clean stop stays
   stopped), `AssociatedBundleIdentifiers = [com.leysdr.app]`. `ProgramArguments` cannot expand
   `~`, so the daemon must find its paths without the plist's help:
-  - `leylined` searches `<its own directory>/decoders` after the configured and default decoder
-    directories, so the bundled decoders work without being copied out;
+  - `leylined` searches `<its own directory>/../Resources/decoders` after the configured and
+    default decoder directories and resolves a bare executable name beside itself, so the
+    bundled decoders work without being copied out;
   - `leylined --log-file <path>` appends stdout and stderr to the file, expanding a leading `~/`.
     The plist passes `--log-file ~/Library/Logs/Leyline/leylined.log`, where `ley daemon logs`
     already looks. The socket already defaults to the right path.
