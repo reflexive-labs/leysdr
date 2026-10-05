@@ -728,7 +728,8 @@ directory on the search path and executes nothing, so a plugin whose binary is b
 and a manifest that does not parse costs a log line. The search path is `--decoders` (repeatable),
 then `LEYLINE_DECODERS` (colon-separated), then the platform default
 (`~/Library/Application Support/Leyline/decoders` on macOS, `$XDG_DATA_HOME/leyline/decoders`
-elsewhere). Names are unique and the first directory wins. `executable` resolves against the
+elsewhere), then `decoders/` beside the `leylined` executable with symlinks resolved
+(`decoderSearchPath`). Names are unique and the first directory wins. `executable` resolves against the
 plugin's directory first and `PATH` second.
 
 `PluginProcess` is one spawned child: stdin carries one varint-delimited `StreamDescriptor` then
@@ -898,7 +899,10 @@ resolved values in `PersistenceParams` on the stream descriptor.
   The socket and pidfile are unlinked last, after the devices are closed — while those paths exist a
   replacement daemon takes itself for the live one and races this one for the radios. Teardown runs
   in the process's own task, never in a child that the serve loop's return could cancel.
-- Logs to stderr via swift-log; launchd redirects to `~/Library/Logs/Leyline/leylined.log`.
+- Logs to stderr via swift-log. The plist `ley daemon install` writes has launchd redirect it to
+  `~/Library/Logs/Leyline/leylined.log`; the app's launch agent cannot name a path under `~`, so it
+  passes `--log-file ~/Library/Logs/Leyline/leylined.log` and the daemon appends stdout and stderr
+  there itself (`appendOutput(toLogFile:)`).
 - `ley daemon install` writes `~/Library/LaunchAgents/com.leysdr.daemon.plist` (KeepAlive, RunAtLoad)
   pointing at the `leylined` binary and bootstraps it; `start/stop/status/logs` drive launchctl when
   installed and fall back to spawning/killing the binary directly (pidfile) when not.

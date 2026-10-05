@@ -35,7 +35,7 @@ struct DaemonCommand: AsyncParsableCommand {
     @Option(name: .customLong("rtltcp"), help: "Remote dongle served by rtl_tcp, as host:port, for foreground runs (repeatable; env LEYLINE_RTLTCP, comma-separated). A radio the daemon should keep is attached over the protocol instead, with `ley devices attach`.")
     var rtltcp: [String] = []
 
-    @Option(help: "Directory of decoder plugins (repeatable; env LEYLINE_DECODERS, colon-separated). The platform default is searched last.")
+    @Option(help: "Directory of decoder plugins (repeatable; env LEYLINE_DECODERS, colon-separated). The platform default is searched next, then a decoders directory beside leylined.")
     var decoders: [String] = []
 
     @Option(help: "Where kept decode records are written (platform default otherwise).")
@@ -56,10 +56,23 @@ struct DaemonCommand: AsyncParsableCommand {
     @Option(name: .customLong("recordings-age"), help: "Days a recording is held before it is dropped; 0 keeps them until the cap does.")
     var recordingsAge: UInt32 = 0
 
+    @Option(name: .customLong("log-file"), help: "Append standard output and error to this file, creating it and its directory; a leading ~/ is the home directory. For a launch agent that cannot redirect them itself.")
+    var logFile: String?
+
     @Option(name: .customLong("wall-clock"), help: "Development: shift the wall clock captures, recordings and records are dated from so the daemon starts at HH:MM local time today, for staged screenshots. Retention still runs on the real clock.")
     var wallClock: String?
 
     func run() async throws {
+        if let logFile {
+            do {
+                try appendOutput(toLogFile: logFile)
+            } catch {
+                FileHandle.standardError.write(Data("leylined: \(error).\n".utf8))
+                throw ExitCode(2)
+            }
+            // A file is fully buffered by default; a log line must reach it when it is written.
+            setvbuf(stdout, nil, _IOLBF, 0)
+        }
         if let wallClock {
             do {
                 let (hour, minute) = try WallClock.parseClockTime(wallClock)
@@ -80,7 +93,7 @@ struct DaemonCommand: AsyncParsableCommand {
         }
         let pid = pidfile ?? (URL(fileURLWithPath: socket).deletingLastPathComponent().path + "/leylined.pid")
         let remotes = try Daemon.parseRTLTCPEndpoints(rtltcp + rtltcpEndpointsFromEnvironment())
-        let searchPath = decoders + decoderPathsFromEnvironment() + [defaultDecodersPath()]
+        let searchPath = decoderSearchPath(configured: decoders)
         let daemon = Daemon(config: .init(socketPath: socket, pidfile: pid, pollMs: pollMs, enumerateHardware: !noHardware, rtltcp: remotes,
                                           decoderSearchPath: searchPath, storePath: store,
                                           storeCapBytes: storeCap, storeAgeDays: storeAge,

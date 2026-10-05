@@ -275,9 +275,10 @@ already owns and costs every plugin author a connect step.
 form of `DecoderManifest`, whose `executable` names a binary relative to that directory or on
 `PATH`. Discovery reads files and executes nothing, so a broken plugin cannot break `ley decoders`.
 The daemon looks in every directory named by `--decoders` (repeatable; `LEYLINE_DECODERS`,
-colon-separated) and then its platform default (`~/Library/Application Support/Leyline/decoders`
-on macOS, `$XDG_DATA_HOME/leyline/decoders` elsewhere). `decoders/` in the repository holds the
-first-party manifests, and `make go` builds their binaries beside `ley`.
+colon-separated), then its platform default (`~/Library/Application Support/Leyline/decoders`
+on macOS, `$XDG_DATA_HOME/leyline/decoders` elsewhere), then `decoders/` beside its own executable,
+which is where the app bundle carries the first-party plugins. `decoders/` in the repository holds
+the first-party manifests, and `make go` builds their binaries beside `ley`.
 
 **A decode job is a job.** `Jobs.StartJob(DecodeConfig)` runs the recipe: the allocator finds or
 makes a capture (a capture that already covers the frequency on any device, else an idle device,

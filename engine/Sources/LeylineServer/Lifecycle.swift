@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // What `leylined`'s entry point needs from the server library: default paths, the environment
-// lists, the signal wait and the serve-then-teardown shape. Kept here, not in the executable, so
-// the tests drive the same code.
+// lists, the log file, the signal wait and the serve-then-teardown shape. Kept here, not in the
+// executable, so the tests drive the same code.
 
 import Foundation
 
@@ -22,6 +22,72 @@ package func defaultSocketPath() -> String {
 /// Support/Leyline/decoders` on macOS, `$XDG_DATA_HOME/leyline/decoders` (or
 /// `~/.local/share/leyline/decoders`) elsewhere (docs/design/decoders.md, "Decisions").
 package func defaultDecodersPath() -> String { defaultDataPath("decoders") }
+
+/// Where the daemon looks for decoder plugins, in order: the `--decoders` flags, `LEYLINE_DECODERS`,
+/// the platform default, then the `decoders` directory beside the executable. The last is how
+/// the plugins a distributed build carries in `Contents/Helpers/decoders` work without being
+/// copied out; it comes after the default so a plugin the user installed shadows the bundled one
+/// (docs/design/decoders.md, "Decisions").
+package func decoderSearchPath(configured: [String], executablePath: String? = currentExecutablePath()) -> [String] {
+    var path = configured + decoderPathsFromEnvironment() + [defaultDecodersPath()]
+    if let executablePath {
+        path.append(URL(fileURLWithPath: executablePath).deletingLastPathComponent().appendingPathComponent("decoders").path)
+    }
+    return path
+}
+
+/// The running executable's path with every symlink resolved, so a `leylined` reached through a
+/// link still finds what sits beside the real file. `argv[0]` is no help: launchd passes the
+/// plist's first `ProgramArguments` entry, a bare name.
+package func currentExecutablePath() -> String? {
+    #if canImport(Darwin)
+    var size: UInt32 = 0
+    _ = _NSGetExecutablePath(nil, &size)
+    var buffer = [CChar](repeating: 0, count: Int(size) + 1)
+    guard _NSGetExecutablePath(&buffer, &size) == 0 else { return nil }
+    let raw = String(cString: buffer)
+    #else
+    let raw = "/proc/self/exe"
+    #endif
+    guard let resolved = realpath(raw, nil) else { return nil }
+    defer { free(resolved) }
+    return String(cString: resolved)
+}
+
+/// A leading `~/` replaced by the home directory. launchd does not expand `~` in
+/// `ProgramArguments`, and the launch agent the app registers passes `--log-file
+/// ~/Library/Logs/Leyline/leylined.log`, so the daemon expands it itself.
+package func expandingTilde(_ path: String, home: String = NSHomeDirectory()) -> String {
+    guard path.hasPrefix("~/") else { return path }
+    return (home.hasSuffix("/") ? String(home.dropLast()) : home) + path.dropFirst()
+}
+
+/// Why `--log-file` could not be opened.
+package struct LogFileError: Error, CustomStringConvertible {
+    package let path: String
+    package let reason: String
+    package var description: String { "cannot write the log file \(path): \(reason)" }
+}
+
+/// Points `descriptors` (standard output and error, unless a test passes its own) at `path`,
+/// opened for appending and created with its parent directory if absent, so a daemon launchd
+/// starts without `StandardOutPath` still logs where `ley daemon logs` looks. Appending keeps
+/// what earlier runs wrote, as launchd's own redirection does.
+package func appendOutput(toLogFile path: String, descriptors: [Int32] = [STDOUT_FILENO, STDERR_FILENO]) throws {
+    let expanded = expandingTilde(path)
+    let parent = URL(fileURLWithPath: expanded).deletingLastPathComponent()
+    do {
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+    } catch {
+        throw LogFileError(path: expanded, reason: "cannot create \(parent.path)")
+    }
+    let fd = open(expanded, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0o644)
+    guard fd >= 0 else { throw LogFileError(path: expanded, reason: String(cString: strerror(errno))) }
+    defer { close(fd) }
+    for target in descriptors where dup2(fd, target) < 0 {
+        throw LogFileError(path: expanded, reason: String(cString: strerror(errno)))
+    }
+}
 
 /// Where kept records live when nothing says otherwise, by the same rule.
 package func defaultStorePath() -> String { defaultDataPath("store") }
