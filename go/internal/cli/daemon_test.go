@@ -154,7 +154,7 @@ func TestDaemonInstallRefusesTheAppsJob(t *testing.T) {
 		if err == nil {
 			t.Fatalf("daemon %s: no error for the app's job", verb)
 		}
-		for _, want := range []string{"Leyline app", program, "System Settings > General > Login Items"} {
+		for _, want := range []string{"Leyline app", program, "System Settings > General > Login Items & Extensions"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("daemon %s: error %q does not mention %q", verb, err, want)
 			}

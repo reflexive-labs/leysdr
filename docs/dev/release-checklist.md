@@ -108,7 +108,7 @@ quarantined, onto a Mac that has never built Leyline, or into a fresh user accou
       resource bundle inside the app; if the app looks for it in the build Mac's `app/.build`
       instead, it crashes at launch here.
 - [ ] First launch registers the daemon: macOS notifies that a background item was added, and
-      System Settings > General > Login Items lists it. Switching it off shows "Login Items has
+      System Settings > General > Login Items & Extensions lists it. Switching it off shows "Login Items has
       the engine switched off" in the window; switching it on again connects.
 - [ ] After a restart of the Mac, the daemon is running before the app is opened
       (`ley daemon status`).

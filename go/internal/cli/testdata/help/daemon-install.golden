@@ -3,8 +3,9 @@ install writes a LaunchAgent (a macOS launchd job file in
 starts now and at every login and is restarted if it crashes. It returns once
 the daemon answers on its socket, or points at the log when it does not.
 
-It is for a daemon built from source. When the Leyline app already starts its
-own daemon (System Settings > General > Login Items), install refuses.
+It is for a daemon built from source. When the Leyline app already starts
+its own daemon (System Settings > General > Login Items & Extensions), install
+refuses.
 
 Usage:
   ley daemon install [flags]
