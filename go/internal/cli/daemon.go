@@ -75,10 +75,10 @@ to the ley executable, then PATH.`,
 	logs.Flags().BoolVarP(&f.follow, "follow", "f", false, "keep printing as the log grows")
 	cmd.AddCommand(
 		sub("install", "Start the daemon at login (macOS LaunchAgent)",
-			"install writes a LaunchAgent (a macOS launchd job file in\n~/Library/LaunchAgents/com.leysdr.daemon.plist) and loads it, so the daemon\nstarts now and at every login and is restarted if it crashes. It returns once\nthe daemon answers on its socket, or points at the log when it does not.",
+			"install writes a LaunchAgent (a macOS launchd job file in\n~/Library/LaunchAgents/com.leysdr.daemon.plist) and loads it, so the daemon\nstarts now and at every login and is restarted if it crashes. It returns once\nthe daemon answers on its socket, or points at the log when it does not.\n\nIt is for a daemon built from source. When the Leyline app already starts its\nown daemon (System Settings > General > Login Items), install refuses.",
 			"  ley daemon install       # start at login from now on\n  ley daemon install --bin /opt/leyline/bin/leylined", false, app.daemonInstall),
 		sub("uninstall", "Stop starting the daemon at login (macOS)",
-			"uninstall unloads and removes the LaunchAgent that 'ley daemon install'\nwrote. The daemon stops; 'ley daemon start' still works without it.",
+			"uninstall unloads and removes the LaunchAgent that 'ley daemon install'\nwrote. The daemon stops; 'ley daemon start' still works without it.\n\nThe daemon the Leyline app starts is switched off in System Settings >\nGeneral > Login Items instead; uninstall refuses it.",
 			"  ley daemon uninstall", false, app.daemonUninstall),
 		sub("start", "Start the daemon",
 			"start launches the daemon and prints its pid (process id). With a LaunchAgent\ninstalled it asks launchd; otherwise it spawns leylined in the background\nwith its output in the log file. Already running is not an error.\n--json prints the running daemon's DaemonInfo, as 'ley daemon status --json' does.",
@@ -151,6 +151,51 @@ func launchctl(ctx context.Context, args ...string) error {
 	return nil
 }
 
+// launchctlPrint runs `launchctl print <target>` and returns its output; an
+// error means launchd has no such job.
+func launchctlPrint(ctx context.Context, target string) (string, error) {
+	out, err := exec.CommandContext(ctx, "launchctl", "print", target).Output()
+	return string(out), err
+}
+
+// appDaemonProgram returns the program of the com.leysdr.daemon job when the
+// Leyline app registered it, and "" otherwise. The app and `ley daemon
+// install` share the label, so install would replace the app's job and
+// uninstall would remove it while the app expects it; only Login Items turns
+// the app's off. A job is the app's when its program lies inside an app
+// bundle's Contents/Helpers, unless its plist is the one install writes (a
+// source build may be pointed at a bundled leylined with --bin).
+func (a *App) appDaemonProgram(ctx context.Context) string {
+	printJob := a.launchctlPrint
+	if printJob == nil {
+		if runtime.GOOS != "darwin" {
+			return ""
+		}
+		printJob = launchctlPrint
+	}
+	out, err := printJob(ctx, launchTarget())
+	if err != nil {
+		return ""
+	}
+	var program, plistPath string
+	for _, line := range strings.Split(out, "\n") {
+		key, value, ok := strings.Cut(strings.TrimSpace(line), " = ")
+		if !ok {
+			continue
+		}
+		switch key {
+		case "program":
+			program = value
+		case "path":
+			plistPath = value
+		}
+	}
+	if plistPath == defaultLaunchAgentPath() || !strings.Contains(program, ".app/Contents/Helpers/") {
+		return ""
+	}
+	return program
+}
+
 // plist renders the LaunchAgent for bin/socket/log. The paths are XML-escaped:
 // a home directory with & or < in it must not break the plist.
 func plist(bin, socket, logPath string) string {
@@ -186,6 +231,9 @@ func xmlEscape(s string) string {
 }
 
 func (a *App) daemonInstall(ctx context.Context, f *daemonFlags) error {
+	if prog := a.appDaemonProgram(ctx); prog != "" {
+		return fmt.Errorf("the Leyline app already starts the daemon at login (%s). To run a build from source instead, switch Leyline off in System Settings > General > Login Items, then run ley daemon install again", prog)
+	}
 	if runtime.GOOS != "darwin" {
 		return errors.New("daemon install needs launchd (macOS); use 'ley daemon start' here")
 	}
@@ -246,6 +294,9 @@ func (a *App) daemonInstall(ctx context.Context, f *daemonFlags) error {
 }
 
 func (a *App) daemonUninstall(ctx context.Context, _ *daemonFlags) error {
+	if prog := a.appDaemonProgram(ctx); prog != "" {
+		return fmt.Errorf("the Leyline app starts this daemon at login (%s), not a LaunchAgent ley installed. To stop it starting, switch Leyline off in System Settings > General > Login Items", prog)
+	}
 	if runtime.GOOS != "darwin" {
 		return errors.New("daemon uninstall needs launchd (macOS)")
 	}

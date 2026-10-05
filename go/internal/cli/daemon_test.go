@@ -3,6 +3,10 @@
 package cli
 
 import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -110,6 +114,76 @@ func TestNotRunningLineInk(t *testing.T) {
 	for _, want := range []string{"\x1b[31mnot running\x1b[0m", "\x1b[36mley daemon start\x1b[0m"} {
 		if !strings.Contains(styled, want) {
 			t.Errorf("not-running line lacks %q: %q", want, styled)
+		}
+	}
+}
+
+// launchctlJob is `launchctl print` output for the daemon's job, trimmed to
+// the lines appDaemonProgram reads and a few it must skip.
+func launchctlJob(plistPath, program string) string {
+	return "gui/501/com.leysdr.daemon = {\n" +
+		"\tactive count = 1\n" +
+		"\tpath = " + plistPath + "\n" +
+		"\ttype = LaunchAgent\n" +
+		"\tstate = running\n\n" +
+		"\tprogram = " + program + "\n" +
+		"\targuments = {\n\t\t" + program + "\n\t\t--log-file\n\t}\n" +
+		"}\n"
+}
+
+// The app and `ley daemon install` share the label com.leysdr.daemon, so install and uninstall
+// leave a job the app registered alone and say where it is switched off.
+func TestDaemonInstallRefusesTheAppsJob(t *testing.T) {
+	const program = "/Applications/Leyline.app/Contents/Helpers/leylined"
+	job := launchctlJob("/Applications/Leyline.app/Contents/Library/LaunchAgents/com.leysdr.daemon.plist", program)
+	for _, verb := range []string{"install", "uninstall"} {
+		var targets []string
+		var out, errb bytes.Buffer
+		app := &App{
+			Stdout: &out, Stderr: &errb,
+			LookupEnv: func(string) (string, bool) { return "", false },
+			launchctlPrint: func(_ context.Context, target string) (string, error) {
+				targets = append(targets, target)
+				return job, nil
+			},
+		}
+		sock := filepath.Join(t.TempDir(), "none.sock")
+		err := Execute(t.Context(), app, []string{"--socket", sock, "daemon", verb})
+		if err == nil {
+			t.Fatalf("daemon %s: no error for the app's job", verb)
+		}
+		for _, want := range []string{"Leyline app", program, "System Settings > General > Login Items"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("daemon %s: error %q does not mention %q", verb, err, want)
+			}
+		}
+		if want := fmt.Sprintf("gui/%d/com.leysdr.daemon", os.Getuid()); len(targets) != 1 || targets[0] != want {
+			t.Errorf("daemon %s asked launchctl about %v, want [%s]", verb, targets, want)
+		}
+		if out.Len() != 0 {
+			t.Errorf("daemon %s wrote to stdout after refusing: %q", verb, out.String())
+		}
+	}
+}
+
+// Only a job running a bundle's helper from a plist ley did not write is the app's.
+func TestAppDaemonProgram(t *testing.T) {
+	const helper = "/Applications/Leyline.app/Contents/Helpers/leylined"
+	bundled := "/Applications/Leyline.app/Contents/Library/LaunchAgents/com.leysdr.daemon.plist"
+	cases := []struct {
+		name, out string
+		err       error
+		want      string
+	}{
+		{"the app's job", launchctlJob(bundled, helper), nil, helper},
+		{"no job", "", errors.New("exit status 113"), ""},
+		{"a source build", launchctlJob(defaultLaunchAgentPath(), "/Users/a/leysdr/engine/.build/release/leylined"), nil, ""},
+		{"install pointed at the bundle", launchctlJob(defaultLaunchAgentPath(), helper), nil, ""},
+	}
+	for _, c := range cases {
+		app := &App{launchctlPrint: func(context.Context, string) (string, error) { return c.out, c.err }}
+		if got := app.appDaemonProgram(t.Context()); got != c.want {
+			t.Errorf("%s: appDaemonProgram = %q, want %q", c.name, got, c.want)
 		}
 	}
 }

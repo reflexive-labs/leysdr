@@ -120,6 +120,9 @@ type App struct {
 	// daemon_logs tool read in place of the default path; tests point it at
 	// a file they wrote.
 	logFile string
+	// launchctlPrint, when set, stands in for `launchctl print` so a test can
+	// show `ley daemon install` a job the Leyline app registered.
+	launchctlPrint func(ctx context.Context, target string) (string, error)
 }
 
 // NewRootCommand builds the full `ley` command tree bound to app.

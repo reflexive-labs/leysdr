@@ -1,6 +1,9 @@
 uninstall unloads and removes the LaunchAgent that 'ley daemon install'
 wrote. The daemon stops; 'ley daemon start' still works without it.
 
+The daemon the Leyline app starts is switched off in System Settings >
+General > Login Items instead; uninstall refuses it.
+
 Usage:
   ley daemon uninstall [flags]
 
