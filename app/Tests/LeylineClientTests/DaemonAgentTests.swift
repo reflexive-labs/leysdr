@@ -100,10 +100,32 @@ final class DaemonAgentTests: XCTestCase {
         XCTAssertEqual(DaemonAgent.runningJobs([]), 0)
     }
 
+    func testTheUnreachableStateFollowsWhoOwnsTheDaemon() {
+        XCTAssertEqual(DaemonAgent.unreachable(agentStatus: .enabled), .restartEngine)
+        XCTAssertEqual(DaemonAgent.unreachable(agentStatus: .requiresApproval), .openLoginItems)
+        XCTAssertEqual(DaemonAgent.unreachable(agentStatus: .notRegistered), .startByHand)
+        XCTAssertEqual(DaemonAgent.unreachable(agentStatus: .notFound), .startByHand)
+        XCTAssertEqual(
+            DaemonAgent.unreachable(agentStatus: nil), .startByHand, "a run with its own socket")
+    }
+
+    func testOnlyASourceBuildIsSentToLey() {
+        let cases: [DaemonAgent.Unreachable] = [.startByHand, .openLoginItems, .restartEngine]
+        for u in cases {
+            let words = DaemonAgent.unreachableWords(u, retryIn: .seconds(3))
+            XCTAssertEqual(words.detail.contains("ley daemon start"), u == .startByHand, "\(u)")
+            XCTAssertTrue(words.detail.contains("retrying in"), "\(u)")
+        }
+        XCTAssertNil(DaemonAgent.unreachableActionTitle(.startByHand))
+        XCTAssertEqual(DaemonAgent.unreachableActionTitle(.restartEngine), "Restart engine")
+    }
+
     func testTheApprovalWordsNameLoginItems() {
-        let words = DaemonAgent.loginItemsOffWords(retryIn: .seconds(3))
+        let words = DaemonAgent.unreachableWords(.openLoginItems, retryIn: .seconds(3))
         XCTAssertEqual(words.headline, "Login Items has the engine switched off")
-        XCTAssertTrue(words.detail.hasPrefix("Switch Leyline on in System Settings"))
-        XCTAssertTrue(words.detail.contains("retrying in"))
+        XCTAssertTrue(
+            words.detail.hasPrefix(
+                "Switch Leyline on in System Settings > General > Login Items & Extensions"))
+        XCTAssertEqual(DaemonAgent.unreachableActionTitle(.openLoginItems), "Open Login Items")
     }
 }

@@ -45,7 +45,7 @@ public enum DaemonAgent {
         /// Register the agent, which starts the daemon (`RunAtLoad`), then dial.
         case register
         /// The agent is registered but switched off in Login Items: dial, and while the daemon
-        /// cannot be reached say so and offer System Settings (`loginItemsOffWords`).
+        /// cannot be reached say so and offer System Settings (`Unreachable.openLoginItems`).
         case askForApproval
     }
 
@@ -69,15 +69,63 @@ public enum DaemonAgent {
         }
     }
 
-    /// The empty state while the daemon cannot be reached and its agent waits on Login Items.
-    /// The window offers `openLoginItemsTitle` beside it.
-    public static func loginItemsOffWords(retryIn: Duration) -> (headline: String, detail: String) {
-        (
-            "Login Items has the engine switched off",
-            "Switch Leyline on in System Settings, General, Login Items; retrying in \(retryIn)."
-        )
+    /// What the empty state says and offers while the daemon cannot be reached, by who owns it.
+    public enum Unreachable: Sendable, Equatable {
+        /// No agent of the app's (a source build, a bundle without the daemon, a run with its own
+        /// socket): the daemon is started by hand with `ley daemon start`, and nothing is offered.
+        case startByHand
+        /// The app's agent is switched off in Login Items: offer System Settings.
+        case openLoginItems
+        /// The app's agent is on but its daemon does not answer: offer `launchctl kickstart -k`.
+        /// A tester who installed the app may have no `ley` on the PATH, so the words never send
+        /// them to it.
+        case restartEngine
     }
-    public static let openLoginItemsTitle = "Open Login Items"
+
+    /// Which unreachable state applies, from the agent status read at launch (nil when this run
+    /// touches no agent).
+    public static func unreachable(agentStatus: Status?) -> Unreachable {
+        switch agentStatus {
+        case .requiresApproval: return .openLoginItems
+        case .enabled: return .restartEngine
+        case .notRegistered, .notFound, nil: return .startByHand
+        }
+    }
+
+    /// The empty state's words for `unreachable`. The daemon's log is where the agent's plist
+    /// (`com.leysdr.daemon.plist`, `--log-file`) writes it.
+    public static func unreachableWords(
+        _ unreachable: Unreachable, retryIn: Duration
+    ) -> (headline: String, detail: String) {
+        switch unreachable {
+        case .startByHand:
+            return (
+                "The daemon is not running",
+                "Start it with `ley daemon start`; retrying in \(retryIn)."
+            )
+        case .openLoginItems:
+            return (
+                "Login Items has the engine switched off",
+                "Switch Leyline on in System Settings > General > Login Items & Extensions;"
+                    + " retrying in \(retryIn)."
+            )
+        case .restartEngine:
+            return (
+                "The engine is not running",
+                "Restart it, or read ~/Library/Logs/Leyline/leylined.log for why it stopped;"
+                    + " retrying in \(retryIn)."
+            )
+        }
+    }
+
+    /// The empty state's button for `unreachable`; nil when there is nothing to click.
+    public static func unreachableActionTitle(_ unreachable: Unreachable) -> String? {
+        switch unreachable {
+        case .startByHand: return nil
+        case .openLoginItems: return "Open Login Items"
+        case .restartEngine: return "Restart engine"
+        }
+    }
 
     /// What the app does about the daemon once it is connected.
     public enum AfterConnect: Sendable, Equatable {

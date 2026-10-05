@@ -26,8 +26,8 @@ final class AppSession {
     private var running: Task<Void, Never>?
 
     // The daemon's launch agent, which the distributed bundle carries (`DaemonAgent`).
-    /// What `SMAppService` reported at launch, read again while the daemon cannot be reached and
-    /// Login Items has it switched off; nil when this run touches no agent (`LEYLINE_SOCKET` set).
+    /// What `SMAppService` reported at launch, read again while the daemon cannot be reached;
+    /// nil when this run touches no agent (`LEYLINE_SOCKET` set).
     private(set) var agentStatus: DaemonAgent.Status?
     /// An update is installed, but a job was running when the app connected, so the daemon still
     /// runs the old build: the window shows `DaemonAgent.updatedWords` and a Restart button.
@@ -619,13 +619,10 @@ final class AppSession {
         switch connection {
         case .idle, .connecting: return ("Connecting to leylined", socketPath)
         case .unavailable(let e, let retry):
-            if emptyOffersLoginItems { return DaemonAgent.loginItemsOffWords(retryIn: retry) }
-            return e.daemonUnreachable
-                ? (
-                    "The daemon is not running",
-                    "Start it with `ley daemon start`; retrying in \(retry)."
-                )
-                : (e.message, "Retrying in \(retry).")
+            if let unreachable = emptyUnreachable {
+                return DaemonAgent.unreachableWords(unreachable, retryIn: retry)
+            }
+            return (e.message, "Retrying in \(retry).")
         case .live: break
         }
         if state.devices.allSatisfy({ $0.state == .disconnected }) {
@@ -648,14 +645,24 @@ final class AppSession {
         return nil
     }
 
-    /// Whether the empty state is Login Items having the daemon's agent switched off, which offers
-    /// a button to System Settings (`openLoginItems`). A daemon that answers anyway (a source
-    /// build's, started by hand) is used, and then nothing is said about the agent.
-    var emptyOffersLoginItems: Bool {
-        guard startupError == nil, agentStatus == .requiresApproval,
-            case .unavailable(let e, _) = connection
-        else { return false }
-        return e.daemonUnreachable
+    /// Which unreachable state the empty state shows while nothing answers on the socket, and so
+    /// which button it offers (`DaemonAgent.unreachable`): `ley daemon start` for a daemon that is
+    /// not the app's, Login Items when the app's agent is switched off there, a restart when it is
+    /// on. Nil when the daemon answers or the failure is another one; a daemon that answers anyway
+    /// (a source build's, started by hand) is used, and then nothing is said about the agent.
+    var emptyUnreachable: DaemonAgent.Unreachable? {
+        guard startupError == nil, case .unavailable(let e, _) = connection, e.daemonUnreachable
+        else { return nil }
+        return DaemonAgent.unreachable(agentStatus: agentStatus)
+    }
+
+    /// What the empty state's button does for `emptyUnreachable`.
+    func runEmptyAction(_ unreachable: DaemonAgent.Unreachable) {
+        switch unreachable {
+        case .startByHand: break
+        case .openLoginItems: openLoginItems()
+        case .restartEngine: Task { await restartEngine() }
+        }
     }
 
     // MARK: Lifecycle
@@ -717,9 +724,9 @@ final class AppSession {
                 followUpdate()
             }
         }
-        // Switched on in System Settings while the window waited: launchd starts the daemon and
-        // the next retry reaches it, but the words must stop naming Login Items now.
-        if !isLive, agentStatus == .requiresApproval {
+        // Switched on or off in System Settings while the window waited: launchd starts or stops
+        // the daemon, and the words and their button (Login Items, or a restart) follow now.
+        if !isLive, agentStatus == .requiresApproval || agentStatus == .enabled {
             let now = EngineAgent.status()
             if now != agentStatus { agentStatus = now }
         }

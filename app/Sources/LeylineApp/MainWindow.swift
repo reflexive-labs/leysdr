@@ -212,11 +212,7 @@ struct RadioBody: View {
                 if let words = session.emptyWords {
                     EmptyWords(
                         headline: words.headline, detail: words.detail,
-                        action: session.emptyOffersLoginItems
-                            ? EmptyWords.Action(
-                                title: DaemonAgent.openLoginItemsTitle,
-                                run: { session.openLoginItems() })
-                            : nil)
+                        action: emptyAction)
                 }
                 VStack {
                     Spacer()
@@ -224,6 +220,15 @@ struct RadioBody: View {
                 }
             }
         }
+    }
+
+    /// The empty state's button while the daemon cannot be reached: Login Items, a restart, or
+    /// none (`DaemonAgent.unreachableActionTitle`).
+    private var emptyAction: EmptyWords.Action? {
+        guard let unreachable = session.emptyUnreachable,
+            let title = DaemonAgent.unreachableActionTitle(unreachable)
+        else { return nil }
+        return EmptyWords.Action(title: title, run: { session.runEmptyAction(unreachable) })
     }
 
     /// The waterfall's time gutter, on the right of both charts: beside the waterfall it is the
@@ -289,7 +294,7 @@ struct PlaceSwitch: View {
 
 /// The empty-state message, worded as in the guide, when there is nothing to draw: no daemon, no
 /// radio, no capture, and what to type. A state with something to click (Login Items having the
-/// daemon switched off) carries a button under the words.
+/// daemon switched off, the app's daemon not answering) carries a button under the words.
 struct EmptyWords: View {
     struct Action {
         let title: String
