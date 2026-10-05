@@ -38,6 +38,13 @@ and these Swift packages, all under the Apache License 2.0:
   The NOTICE files those packages distribute are reproduced as
   third_party/licenses/swift_<package>.NOTICE.txt, as their licence requires.
 
+The Mac app, Leyline.app, also links Sparkle (github.com/sparkle-project/Sparkle), which updates
+it:
+
+  Sparkle          MIT, with parts    third_party/licenses/swift_sparkle.txt
+                   under BSD-2-Clause (bsdiff, SUSignatureVerifier), MIT (sais-lite) and Zlib
+                   (the portable Ed25519); its licence text lists each.
+
 The Go clients (ley and the github.com/reflexive-labs/leysdr/go/pkg/leyline library) import:
 
   Apache-2.0    github.com/oklog/ulid/v2, github.com/spf13/cobra,

@@ -8,8 +8,9 @@
 //                      and is tested on Linux as well as macOS, because the contract it wraps is
 //                      the same one `ley` exercises from Go.
 //   LeylineApp         the SwiftUI app (macOS only): renders what the mirror holds, writes through
-//                      the coalescer, draws the bulk streams. Declared only when the manifest is
-//                      evaluated on macOS, so `swift build` on Linux builds and tests the façade.
+//                      the coalescer, draws the bulk streams, and updates itself through Sparkle.
+//                      Declared only when the manifest is evaluated on macOS, with Sparkle, so
+//                      `swift build` on Linux builds and tests the façade.
 //
 // The app is a peer client of the daemon (AGENTS.md invariant 1) and a separate Apache-2.0 work
 // beside the GPL engine (docs/decisions/D2-licensing.md): it depends on the `swift/LeylineProto`
@@ -52,11 +53,31 @@ var products: [Product] = [
     .library(name: "LeylineClient", targets: ["LeylineClient"])
 ]
 
+var dependencies: [Package.Dependency] = [
+    // The generated contract (`make proto`), its own package outside engine/. The versions
+    // below are the engine's own pins, so every package resolves one graph.
+    .package(name: "LeylineProto", path: "../swift/LeylineProto"),
+    .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.4.3"),
+    .package(url: "https://github.com/grpc/grpc-swift-nio-transport.git", from: "2.9.2"),
+    .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.4.1"),
+    .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.38.1"),
+]
+
 #if os(macOS)
+    // Sparkle updates the distributed app (docs/plans/distribution.md, "Sparkle"). It is a binary
+    // target, an xcframework SwiftPM downloads while resolving, so it is declared only here and a
+    // Linux resolve never fetches it. A Linux resolve also drops its pin from Package.resolved;
+    // the committed file is the macOS one, which pins the Sparkle a release ships, so that change
+    // is not committed. `make license-check` accepts the file either way (a `swift-macos` row).
+    dependencies.append(
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.0"))
     targets.append(
         .executableTarget(
             name: "LeylineApp",
-            dependencies: ["LeylineClient"],
+            dependencies: [
+                "LeylineClient",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
             path: "Sources/LeylineApp",
             // Copied into the bundle by scripts/bundle-app.sh, not compiled or bundled as
             // resources: the Info.plist and the daemon's launch agent.
@@ -70,15 +91,7 @@ let package = Package(
     name: "LeylineApp",
     platforms: [.macOS("26.0")],
     products: products,
-    dependencies: [
-        // The generated contract (`make proto`), its own package outside engine/. The versions
-        // below are the engine's own pins, so every package resolves one graph.
-        .package(name: "LeylineProto", path: "../swift/LeylineProto"),
-        .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.4.3"),
-        .package(url: "https://github.com/grpc/grpc-swift-nio-transport.git", from: "2.9.2"),
-        .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.4.1"),
-        .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.38.1"),
-    ],
+    dependencies: dependencies,
     targets: targets,
     swiftLanguageModes: [.v6]
 )

@@ -4,7 +4,7 @@
 // holds and writes through the coalescer; nothing here is authoritative (invariant 7). The window
 // is the sidebar, spectrum, waterfall, transport bar, the device menu, the inspector on the right
 // and a Tune menu that lists every gesture, plus the Library, the window's second place, with its
-// own menu.
+// own menu. The app menu checks for updates through Sparkle (`Updater.swift`).
 
 import AppKit
 import LeylineClient
@@ -16,6 +16,7 @@ import UniformTypeIdentifiers
 struct LeylineApp: App {
     @NSApplicationDelegateAdaptor(Activation.self) private var activation
     @State private var session = AppSession()
+    @StateObject private var updater = AppUpdater()
 
     var body: some Scene {
         WindowGroup("Leyline") {
@@ -29,6 +30,7 @@ struct LeylineApp: App {
         )
         .windowToolbarStyle(.unified)
         .commands {
+            CommandGroup(after: .appInfo) { CheckForUpdatesItem(updater: updater) }
             TuneCommands(session: session)
             LibraryCommands(session: session)
             RecordCommands(session: session)

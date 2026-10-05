@@ -22,6 +22,8 @@
 	<string>__VERSION__</string>
 	<key>CFBundleVersion</key>
 	<string>__BUILD__</string>
+	<key>LeylineBuild</key>
+	<string>__BUILD_DESCRIBE__</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
 	<key>LSApplicationCategoryType</key>
@@ -32,5 +34,11 @@
 	<string>NSApplication</string>
 	<key>NSSupportsAutomaticTermination</key>
 	<false/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://leysdr.com/updates/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>Ct1EXtjnkBDyBIT/onW9Yq4oohjUvDYzIhzwt9TCgOw=</string>
 </dict>
 </plist>

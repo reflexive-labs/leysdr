@@ -88,6 +88,7 @@ while read -r kind name lic file; do
     case "$kind" in
       go) printf '%s' "$one" | grep -Eqx "$permissive" || bad "$name is $one; nothing outside engine/ may import copyleft code" ;;
       swift|system) printf '%s' "$one" | grep -Eqx "$engine_ok" || bad "$name is $one, which the GPL-3.0 engine cannot link" ;;
+      swift-macos) printf '%s' "$one" | grep -Eqx "$permissive" || bad "$name is $one; the Apache-2.0 app may not link copyleft code" ;;
       *) bad "$name: unknown kind '$kind' in $manifest"; break ;;
     esac
   done
@@ -119,17 +120,42 @@ done < <(grep -v '^#' "$manifest" | awk 'NF==4 && $1=="go"')
 # 5. The Swift packages the three Package.resolved files pin equal the manifest (each resolves the
 #    contract package's graph again through its path dependency, plus anything of its own); texts
 #    compared when the checkouts exist (after a swift build), skipped otherwise.
+#    A `swift-macos` row is a package only app/Package.swift's `#if os(macOS)` block declares
+#    (Sparkle, a binary target Linux must not download). A resolve on macOS pins it and a resolve on
+#    Linux drops the pin, so app/Package.resolved may hold it or not; the row must instead name a
+#    package that block declares, and a pin of it is accepted wherever it appears.
 resolved=(engine/Package.resolved)
 [ -f swift/LeylineProto/Package.resolved ] && resolved+=(swift/LeylineProto/Package.resolved)
 [ -f app/Package.resolved ] && resolved+=(app/Package.resolved)
 actual=$(cat "${resolved[@]}" | grep -o '"identity" *: *"[^"]*"' | sed 's/.*: *"//; s/"//' | sort -u)
 listed=$(rows swift)
-for p in $(comm -23 <(printf '%s\n' "$actual") <(printf '%s\n' "$listed")); do
+macos_only=$(rows swift-macos)
+for p in $(comm -23 <(printf '%s\n' "$actual") <(printf '%s\n' "$listed" "$macos_only" | sort)); do
   bad "Swift package $p is in ${resolved[*]} but not in $manifest"
 done
 for p in $(comm -13 <(printf '%s\n' "$actual") <(printf '%s\n' "$listed")); do
   bad "Swift package $p is in $manifest but not in ${resolved[*]}"
 done
+# The identities the macOS block of app/Package.swift declares: the last path component of each
+# package URL between `#if os(macOS)` and `#endif`, lowercased and without `.git`, as SwiftPM
+# names a package in Package.resolved.
+declared_macos=$(awk '/^#if os\(macOS\)/ {on=1} /^#endif/ {on=0} on' app/Package.swift \
+  | grep -o '\.package(url: *"[^"]*"' | sed 's/.*"\(.*\)"/\1/; s|/*$||; s|.*/||; s/\.git$//' \
+  | tr '[:upper:]' '[:lower:]' | sort -u || true)
+for p in $(comm -23 <(printf '%s\n' "$macos_only") <(printf '%s\n' "$declared_macos")); do
+  bad "Swift package $p is a swift-macos row in $manifest but app/Package.swift's #if os(macOS) block does not declare it"
+done
+for p in $(comm -13 <(printf '%s\n' "$macos_only") <(printf '%s\n' "$declared_macos")); do
+  bad "Swift package $p is declared in app/Package.swift's #if os(macOS) block but is not a swift-macos row in $manifest"
+done
+while read -r _ name _ file; do
+  # The checkout keeps the URL's case (Sparkle), the identity is lowercased.
+  dir=$(find app/.build/checkouts -maxdepth 1 -iname "$name" 2>/dev/null | head -n 1)
+  [ -n "$dir" ] || continue
+  src=$(first_of "$dir"/LICENSE*)
+  [ -n "$src" ] || continue
+  cmp -s "$src" "third_party/licenses/$file" || bad "$name: third_party/licenses/$file differs from the checkout's licence file"
+done < <(grep -v '^#' "$manifest" | awk 'NF==4 && $1=="swift-macos"')
 
 # 6. The app never links the engine: it depends on swift/LeylineProto for the generated contract
 #    and on the engine package not at all, so it stays a separate Apache-2.0 work beside the GPL

@@ -4,6 +4,9 @@
 # the licence text copied beside it, when you add a dependency; the NOTICE file names each row.
 # A licence column may list several SPDX ids separated by commas when every one of them applies
 # (a module whose files are under different licences); each must be allowed where it is used.
+# Kind `swift-macos` is a Swift package only the macOS manifest of app/ declares: it is pinned in
+# app/Package.resolved after a resolve on macOS and absent after one on Linux, and is linked by
+# the Apache-2.0 app alone, so only permissive licences are allowed.
 #
 # kind    name                                              licence               file
 system    librtlsdr                                         GPL-2.0-or-later      librtlsdr.txt
@@ -62,3 +65,4 @@ swift     swift-numerics                                    Apache-2.0          
 swift     swift-protobuf                                    Apache-2.0            swift_swift-protobuf.txt
 swift     swift-service-lifecycle                           Apache-2.0            swift_swift-service-lifecycle.txt
 swift     swift-system                                      Apache-2.0            swift_swift-system.txt
+swift-macos sparkle                                         MIT,BSD-2-Clause,Zlib swift_sparkle.txt
