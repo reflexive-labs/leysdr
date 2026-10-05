@@ -130,19 +130,19 @@ daemon with Homebrew's copies moved aside.
   The failure state's `ley daemon start` instruction remains for a source build.
 - **`ley daemon install` and `uninstall` refuse an app-registered job.** `launchctl print
   gui/<uid>/com.leysdr.daemon` shows the program path; one inside `*.app/Contents/Helpers/`
-  means the app registered it, and the error says so and names Login Items. `status` and
-  `logs` need no change. `start` and `stop` choose launchctl only when
-  `~/Library/LaunchAgents/com.leysdr.daemon.plist` exists, so against the app's job `start`
-  spawns a second, detached `leylined`. `[ ]` They must also use launchctl when `launchctl
-  print` finds the label loaded (`kickstart` to start, `kill SIGTERM` to stop).
+  means the app registered it, and the error says so and names Login Items. `start` and
+  `stop` use launchctl when the plist exists or `launchctl print` finds the label loaded
+  (`kickstart -k` to start, `kill SIGTERM` to stop), so they drive the app's job too; `status`
+  and `logs` needed no change.
 - **After an update the daemon is restarted.** When the app connects and the daemon's version
   (`State.daemon.version`) differs from the bundle's `CFBundleShortVersionString` + build, and
   the agent is the app's (`.enabled`), the app runs `launchctl kickstart -k
   gui/<uid>/com.leysdr.daemon` if no job is running. With a recording or decode job running it
   shows "Leyline was updated; restart the engine to finish" with a Restart button instead,
   because a restart ends the job.
-- **Uninstall:** dragging the app to the Trash removes the agent; `install.md` says how to remove
-  the data directories.
+- **Uninstall:** quitting the app leaves the daemon running, and a deleted app's registration
+  lingers in Login Items, so `install.md` switches it off there first, then trashes the app and
+  removes the data directories.
 
 Verification: the decoder search path and `--log-file` in the engine suite; the install refusal in
 `go/internal/cli` against a stubbed `launchctl`; the version comparison in `LeylineClientTests`.

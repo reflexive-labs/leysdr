@@ -9,7 +9,7 @@ You have an RTL-SDR or a HackRF (or an IQ recording) and a Mac.
 
 | read | when |
 |---|---|
-| [Installing Leyline](guide/install.md) | building the daemon and `ley`, starting at login, a radio on another machine, uninstalling |
+| [Installing Leyline](guide/install.md) | the app from its DMG, `ley` on the PATH, updates, building from source, a radio on another machine, uninstalling |
 | [Using `ley`](guide/using-ley.md) | the tasks in the order a newcomer meets them: see the radio, hear a station, adjust it, see the band, scan, watch, the waveform, two channels, play a recording, make one, decode packets, scripts |
 | [Troubleshooting](guide/troubleshooting.md) | the daemon is not running, no radio listed, a busy dongle, no audio, and every message `ley` prints |
 | [`ley` reference](reference/cli.md) | the command tree, input conventions, every `--json` shape, exit status |

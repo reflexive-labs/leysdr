@@ -1309,7 +1309,8 @@ This item is partial:
 
 - `[x]` A daemon that is not running is reported while the mirror retries; a disconnected radio
   and `CAPTURE_DETACHED` capture remain in state so the daemon can rebind them on replug.
-- `[ ]` Once APP-7 installs the bundled launchd job, start or bootstrap it from the app instead of
+- `[ ]` Once APP-7 installs the bundled launchd job (DIST-2: the app registers it and offers
+  Restart engine when it is down), start or bootstrap it from the app instead of
   stopping at the `ley daemon start` instruction.
 - `[ ]` Specify and build the layer 2 parameter inspector last. Layers 0 and 1 must remain usable
   without it (`user-stories.md`, "Progressive disclosure").
