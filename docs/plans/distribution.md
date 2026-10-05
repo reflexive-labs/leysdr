@@ -54,16 +54,20 @@ bundle and a tester:
 
 ## Owner prerequisites
 
-- `[d]` **OWN-1** A Developer ID Application certificate in the build Mac's login keychain.
+- `[x]` **OWN-1** A Developer ID Application certificate in the build Mac's login keychain.
   `security find-identity -v -p codesigning` lists it; `CODESIGN_IDENTITY` takes its full name.
-- `[d]` **OWN-2** Notarization credentials stored as a keychain profile:
+  Done 2026-10-05: team Reflexive Labs LLC, team ID `P2KZW25PL8`, enrolled as the organization;
+  the `.p12` is backed up off the machine.
+- `[x]` **OWN-2** Notarization credentials stored as a keychain profile:
   `xcrun notarytool store-credentials leysdr-notary --apple-id … --team-id …` with an
   app-specific password, or `--key`/`--key-id`/`--issuer` with an App Store Connect API key.
-  Nothing of it enters the repository.
-- `[d]` **OWN-3** A Sparkle EdDSA key pair: Sparkle's `generate_keys` stores the private key in
+  Nothing of it enters the repository. Done 2026-10-05 as the profile `leysdr-notary` with an
+  app-specific password; CI's API key is not set up.
+- `[x]` **OWN-3** A Sparkle EdDSA key pair: Sparkle's `generate_keys` stores the private key in
   the keychain and prints the public key, which goes into `Info.plist` as `SUPublicEDKey`.
   Losing the private key means no existing install can update again, so export a backup
-  (`generate_keys -x`) somewhere off the machine.
+  (`generate_keys -x`) somewhere off the machine. Done 2026-10-05; the public key is
+  `Ct1EXtjnkBDyBIT/onW9Yq4oohjUvDYzIhzwt9TCgOw=` and the private key is backed up.
 - `[d]` **OWN-4** Where the appcast, the DMGs and the source tarballs are served. The proposal:
   `https://leysdr.com/alpha/appcast.xml`, published by the site repository's build, with the
   DMGs and tarballs as assets of a release the site can link. The URL is compiled into
