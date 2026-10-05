@@ -175,8 +175,9 @@ final class RecordingTests: XCTestCase {
     func testTheGateOpensAPartBeforeTheSquelchDid() {
         var g = gate()
         let actions = g.squelch(open: true, at: 10 * rate)
-        XCTAssertEqual(actions, [.openPart(startSample: 10 * rate - rate / 2), .squelchOpened(at: 10 * rate)],
-                       "the part begins a pre-roll before the transition")
+        XCTAssertEqual(actions, [.openPart(startSample: 10 * rate - rate / 2), .fadeIn(openedAt: 10 * rate),
+                                 .squelchOpened(at: 10 * rate)],
+                       "the part begins a pre-roll before the transition, and the open is faded in")
         XCTAssertTrue(g.partIsOpen)
     }
 
@@ -194,7 +195,7 @@ final class RecordingTests: XCTestCase {
                        "a close edge of the squelch's own has a tail to silence")
         // Three seconds later, inside the five-second hang: one exchange, two overs.
         XCTAssertTrue(g.advance(to: 5 * rate).isEmpty, "the hang has not elapsed")
-        XCTAssertEqual(g.squelch(open: true, at: 5 * rate), [.squelchOpened(at: 5 * rate)],
+        XCTAssertEqual(g.squelch(open: true, at: 5 * rate), [.fadeIn(openedAt: 5 * rate), .squelchOpened(at: 5 * rate)],
                        "no second part: the part was never closed")
         XCTAssertTrue(g.partIsOpen)
     }
@@ -230,7 +231,7 @@ final class RecordingTests: XCTestCase {
     func testASquelchAlreadyOpenSeedsAPartAtTheFirstFrameWithNoPreRoll() {
         var g = gate()
         XCTAssertEqual(g.seedOpen(at: 3 * rate), [.openPart(startSample: 3 * rate), .squelchOpened(at: 3 * rate)],
-                       "there is no audio from before the recording to keep")
+                       "there is no audio from before the recording to keep, and no key-up to fade in")
         XCTAssertTrue(g.squelchIsOpen)
         XCTAssertTrue(g.seedOpen(at: 4 * rate).isEmpty, "a gate already open is not seeded twice")
         XCTAssertEqual(g.finish(at: 5 * rate), [.squelchClosed(at: 5 * rate), .closePart(endSample: 5 * rate)],
@@ -284,6 +285,20 @@ final class RecordingTests: XCTestCase {
         _ = held.push([1, 1, 1, 1, 1, 1], endingAt: 90)
         XCTAssertEqual(held.drainAll(), [1, 1, 1, 1, 0, 0, 1, 1, 1],
                        "only the tail goes; what follows the close is the squelch's own zeros or a new over")
+    }
+
+    /// The open transition is the first sample of the block the squelch opened on, so the ramp
+    /// starts there and reaches full gain one fade later; the pre-roll before it is untouched.
+    func testAnOpenIsFadedInFromItsTransition() {
+        var held = line(capacity: 100, fade: 40)
+        _ = held.push([Float](repeating: 1, count: 3), endingAt: 30)
+        held.fadeIn(from: 30, length: 40)
+        _ = held.push([Float](repeating: 1, count: 6), endingAt: 90)
+        let out = held.drainAll()
+        XCTAssertEqual(Array(out[0..<3]), [1, 1, 1], "the pre-roll is as it was written")
+        XCTAssertEqual(out[3], 0, accuracy: 1e-6, "the ramp starts from silence at the open")
+        XCTAssertTrue(out[4] > 0 && out[4] < out[5] && out[5] < out[6] && out[6] < 1, "and rises")
+        XCTAssertEqual(Array(out[7..<9]), [1, 1], "full gain one fade after the open")
     }
 
     func testClosingAPartTakesTheHeldAudioBeforeItsEndAndLeavesTheRest() {

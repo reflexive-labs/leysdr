@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Record jobs: what a gated part's audio holds around the squelch's own edges -- silence in the
-// pre-roll, and no burst of discriminator noise where the carrier dropped and the squelch had not
-// yet closed (docs/design/recording.md, "The squelch tail").
+// pre-roll, the open block faded in, and no burst of discriminator noise where the carrier dropped
+// and the squelch had not yet closed (docs/design/recording.md, "The squelch's edges").
 
 import EngineCore
 import Foundation
@@ -76,11 +76,28 @@ extension RecordingJobTests {
         }
     }
 
+    /// Every squelch opening in every part, re-opens inside the hang included, is faded in: the
+    /// block the squelch opened on is floor noise up to the key-up and the key-up's click, at full
+    /// scale, and the 5 ms after the open stays under the over that follows it. And no part's peak
+    /// reaches -1 dBFS: the fixture's tone deviates 2.5 kHz of the 5 kHz full scale, about -6 dBFS.
+    private func assertOpensFadedIn(_ parts: [GatedPart], _ manifest: RecordingManifest) {
+        let rate = Double(manifest.anchors[0].sampleRate)
+        for (i, gated) in parts.enumerated() {
+            XCTAssertLessThan(gated.part.peakDbfs ?? 0, -1,
+                              "part \(i + 1): the peak is the over, not the squelch's edges")
+            for open in gated.sidecar.recording.squelchOpens where open.openSample >= gated.part.startSample {
+                let at = Double(open.openSample)
+                let voice = loudest(parts, manifest, from: at + 0.050 * rate, to: at + 0.150 * rate)
+                let head = loudest(parts, manifest, from: at, to: at + 0.005 * rate)
+                XCTAssertLessThan(head, voice,
+                                  "part \(i + 1): the 5 ms after the open at \(open.openSample) peak at \(dbText(head)), over the voice's \(dbText(voice))")
+            }
+        }
+    }
+
     /// The pre-roll is the audio from before the squelch opened, and the `.audio` tap is zeros
     /// while the squelch is closed, so every part's WAV is silent up to its open: the fixture's
-    /// floor never opens a -40 dBFS squelch. Away from the open block, nothing in a part reaches
-    /// -1 dBFS: the fixture's tone deviates 2.5 kHz of the 5 kHz full scale, about -6 dBFS, and the
-    /// squelch tail is silenced.
+    /// floor never opens a -40 dBFS squelch. The open is faded in and the squelch tail silenced.
     func testAGatedPartIsSilentBeforeItsOpenAndHoldsNoSquelchTail() async throws {
         let segments = try keyedSegments()
         let dir = try recordings()
@@ -102,22 +119,17 @@ extension RecordingJobTests {
                 let preRollPeak = preRoll.map { abs($0) }.max() ?? 0
                 XCTAssertLessThanOrEqual(preRollPeak, self.silence,
                                          "part \(i + 1): the pre-roll is the squelch's silence, but holds \(self.dbText(preRollPeak)) at sample \(preRoll.firstIndex { abs($0) > self.silence } ?? -1)")
-                // The block the squelch opened on is noise up to the key-up: the open transition is
-                // the block's first sample, and the carrier started inside it. That much is the
-                // squelch's own attack and stays. Two blocks after the open, it is all tone.
-                let headEnd = openIndex + Int(Double(2 * CaptureDSPCore.blockSize) / perAudio)
-                let rest = gated.samples.dropFirst(headEnd).map { abs($0) }.max() ?? 0
-                XCTAssertLessThan(rest, Float(pow(10, -1.0 / 20)),
-                                  "part \(i + 1): past the open block the loudest sample is the tone, not squelch noise (\(self.dbText(rest)))")
                 XCTAssertEqual(Double(part.samples) / audioRate, Double(part.endSample - part.startSample) / captureRate,
                                accuracy: 0.01, "part \(i + 1): the WAV holds the span the manifest gives it")
             }
+            self.assertOpensFadedIn(parts, manifest)
             self.assertNoSquelchTail(parts, manifest, segments: segments)
         }
     }
 
     /// At the default hang the three transmissions are one exchange: each close inside the part is
-    /// followed by a re-open, and the tails before the closes stay silenced.
+    /// followed by a re-open, the tails before the closes stay silenced and every re-open is faded
+    /// in.
     func testEveryTailInsideAnExchangeIsSilenced() async throws {
         let segments = try keyedSegments()
         let dir = try recordings()
@@ -126,6 +138,7 @@ extension RecordingJobTests {
             let (manifest, parts) = try await self.recordKeyedParts(c, dir, hangMs: 0)
             XCTAssertEqual(parts.count, 1, "one exchange, one part")
             XCTAssertEqual(parts.first?.sidecar.recording.squelchOpens.count, segments.count)
+            self.assertOpensFadedIn(parts, manifest)
             self.assertNoSquelchTail(parts, manifest, segments: segments)
             // The tone is still there between the tails: only the tail was silenced.
             let rate = Double(manifest.anchors[0].sampleRate)
@@ -158,6 +171,7 @@ extension RecordingJobTests {
                 XCTAssertEqual(parts[i + 1].part.startSample, part.endSample,
                                "part \(i + 2) begins where part \(i + 1) ended: a cut, not a gap")
             }
+            self.assertOpensFadedIn(parts, manifest)
             self.assertNoSquelchTail(parts, manifest, segments: segments)
         }
     }

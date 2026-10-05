@@ -31,13 +31,23 @@ actor RecordRunner: RecordRunning {
     /// capture samples: two capture blocks. The squelch decides once per block, so it closes on the
     /// first block after the carrier has gone; on `nfm_keyed` at 2.4 MSPS the key-down to close
     /// latency measured at most one block plus the channelizer's 0.2 ms, and the second block is
-    /// the margin (docs/design/recording.md, "The squelch tail").
+    /// the margin (docs/design/recording.md, "The squelch's edges").
     static let tailCaptureSamples = UInt64(2 * CaptureDSPCore.blockSize)
     /// The tail never shrinks below this, so a capture fast enough to make two blocks shorter than
     /// the channelizer's delay still covers it. A guess: no rate above 2.4 MSPS has been measured.
     static let tailFloorMs = 5.0
     /// The raised-cosine ramp ahead of the silenced tail, so the cut does not click.
     static let tailFadeMs = 5.0
+    /// The raised-cosine ramp up from each squelch-open transition, in capture samples: two
+    /// capture blocks. The open transition is the first sample of the block the squelch opened
+    /// on, so the key-up can fall up to one block after it, and the audio filter rings for about
+    /// 2.5 ms after the key-up; on `nfm_keyed` at 2.4 MSPS the full-scale noise ran to 6 ms after
+    /// the open, and a 5 ms ramp left it at -0.6 dBFS (docs/design/recording.md, "The squelch's
+    /// edges").
+    static let openFadeCaptureSamples = UInt64(2 * CaptureDSPCore.blockSize)
+    /// The open fade never shrinks below this. A guess, for capture rates above 2.4 MSPS, where
+    /// the audio filter's ringing after the key-up outlasts the shorter blocks.
+    static let openFadeFloorMs = 10.0
     /// How late a close record may reach the runner, after the audio it closes, and still find the
     /// tail held. The record is pushed before the block's audio, so it usually arrives first.
     static let tailSlackMs = 100.0
@@ -93,6 +103,8 @@ actor RecordRunner: RecordRunning {
     private var held: HeldAudio?
     /// The squelch tail, in capture samples.
     private let tailSamples: UInt64
+    /// The fade up from a squelch-open transition, in capture samples.
+    private let openFadeSamples: UInt64
     /// Gate actions in the order the machine returned them, applied by whichever task holds
     /// `applying` -- normally the drain, at a frame boundary. The squelch follower only queues: an
     /// open it applied itself would leave an await between opening the part and writing its
@@ -141,6 +153,7 @@ actor RecordRunner: RecordRunning {
                                  quietSamples: stopAfterQuietMs > 0 ? UInt64(Double(stopAfterQuietMs) * perMs) : 0,
                                  startSample: 0)
         tailSamples = Swift.max(Self.tailCaptureSamples, UInt64(Self.tailFloorMs * perMs))
+        openFadeSamples = Swift.max(Self.openFadeCaptureSamples, UInt64(Self.openFadeFloorMs * perMs))
         if case .audio(_, let audioRate) = source {
             preRollCapacity = gated ? Int(Double(preRollMs) / 1000 * Double(audioRate)) : 0
             preRoll.reserveCapacity(preRollCapacity + AudioFrameSource.maxFrame)
@@ -529,6 +542,8 @@ actor RecordRunner: RecordRunning {
             await writer.noteSquelch(open: true, at: sample)
         case .silenceTail(let closedAt):
             held?.silence(before: closedAt, tail: tailSamples)
+        case .fadeIn(let openedAt):
+            held?.fadeIn(from: openedAt, length: openFadeSamples)
         case .squelchClosed(let sample):
             await writer.noteSquelch(open: false, at: sample)
         case .closePart(let endSample):

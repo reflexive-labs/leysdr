@@ -801,8 +801,11 @@ writing its pre-roll, and a frame the drain writes there lands ahead of the pre-
 delay line of two capture blocks plus a 5 ms ramp and 100 ms of slack, allocated at start; a close
 edge of the squelch's own (`RecordGateMachine.Action.silenceTail`) silences the held audio in the
 two blocks before it, because the squelch closes up to one block plus 0.21 ms after the key-down
-and the discriminator's output in between is full-scale noise (docs/design/recording.md, "The
-squelch tail"). Transition samples are unchanged, the part timer cuts on what has been written so
+and the discriminator's output in between is full-scale noise. Each open edge of the squelch's own
+(`fadeIn`, re-opens inside the hang included, never a seeded open) fades the held audio in from
+the open sample over two capture blocks, because the open block holds floor noise up to the
+key-up and the key-up's click, and on `nfm_keyed` that noise ran to 6 ms after the open
+(docs/design/recording.md, "The squelch's edges"). Transition samples are unchanged, the part timer cuts on what has been written so
 held audio carries over, and closing a part flushes it. `AudioFrameSource` dates a frame back from
 the end of the newest block it has seen, so a frame spanning several blocks starts where its
 first sample does. The first meter seeds the gate: a squelch already open when the recording starts sends no

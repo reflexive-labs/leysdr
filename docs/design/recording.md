@@ -330,12 +330,14 @@ second reader on the channel's DSP-side ring), and drives a small state machine:
   drain applies them between frames, so no live frame can reach the part before its pre-roll
   does. An open applied by the follower would leave a wait between opening the part and writing
   the pre-roll, and the drain's next frame written in that wait puts one block of the key-up at
-  the part's sample 0, ahead of 500 ms of silence and then the over.
+  the part's sample 0, ahead of 500 ms of silence and then the over. The open is faded in
+  (below).
 - **hanging**: on a squelch-close transition the part stays open for `hang_ms`. A re-open inside
   the hang continues the same part (one exchange, several overs), and each open-and-close pair
   is appended to the part's `squelch_opens`. When the hang elapses the part closes with
   `end_sample` at the close transition plus the hang, and the state is closed again. A close
-  transition also silences the squelch tail before it is written (below).
+  transition also silences the squelch tail before it is written, and a re-open is faded in like
+  any other open (below).
 - **quiet**: when `stop_after_quiet_ms` is set and the squelch has been closed that long, the
   job ends `COMPLETED`, `ended_by = quiet`.
 
@@ -344,7 +346,11 @@ the frame, so a frame holding several blocks (a drain that fell behind) is dated
 sample. A cut lands within one capture block of the transition: 16384 samples, 6.8 ms at 2.4 MSPS
 (computed). That is the accuracy claim, and the fixture test below holds the daemon to it.
 
-**The squelch tail is silenced before it is written.** The squelch decides once per capture block
+**The squelch's edges.** The squelch decides once per capture block, and a gated recording
+removes the noise that leaves at both ends of an over: it silences the tail before each close
+and fades in each open.
+
+The squelch tail is silenced before it is written. The squelch decides once per capture block
 on the block's power, so the block in which the carrier drops stays open and the close transition
 is the first sample of the next block. Between the key-down and that sample the discriminator turns
 the floor into full-scale noise, as it does in any radio. On `nfm_keyed` at 2.4 MSPS, looped
@@ -368,19 +374,32 @@ comes in.
 - **The transcript does not move.** `squelch_opens`, `close_sample` and `end_sample` are the
   transitions' own samples; only the audio of the tail changes, and the part's `peak_dbfs` and
   `mean_dbfs` are measured on what is written.
-- **Only the squelch's own close edges silence anything.** A close the machine makes itself (the
-  job ending, the channel leaving the capture) leaves the audio alone, because the audio before it
-  is whatever was on the air.
+- **Only the squelch's own edges change the audio.** A close the machine makes itself (the job
+  ending, the channel leaving the capture) leaves the audio alone, because the audio before it is
+  whatever was on the air. A seeded open (the recording's first frame, or the first after a
+  coverage gap, on a squelch already open) is not faded, because it is not a key-up.
 - **Held audio goes into the part when it closes**: the hang elapsing, cancel, the job's end, a
   coverage gap. The part timer cuts on what has been written, so the held audio carries over to
   the next part and a tail just after a cut is silenced too. A re-open inside the hang continues
   the part and leaves the silenced tail silent.
-- **The open is not trimmed.** The block the squelch opens on begins before the key-up, so a part
-  holds floor noise and the key-up click for the first 0.8 to 3.3 ms after its open on
-  `nfm_keyed`, at full scale, and its `peak_dbfs` still reads 0 dBFS. Telling that noise from the
-  first syllable inside one block needs the audio, which the gate does not read.
-- **Live audio keeps the tail.** Only recordings are delayed; `ley listen`, the app's speaker and
-  bulk audio streams play the tail as a radio does, since a delay there would be heard.
+- **The open is faded in.** The open transition is the first sample of the block the squelch
+  opened on, and the carrier keyed up somewhere inside that block, so the audio after the open is
+  floor noise up to the key-up, then the key-up's click and the audio filter ringing after it.
+  On `nfm_keyed` at 2.4 MSPS (2026-10-05, the same recordings) the key-up came 0.8 to 3.3 ms after
+  the open and the noise ran at full scale to 5.5 to 6 ms after it. Every squelch-open
+  transition in `squelch_opens`, re-opens inside the hang included, is therefore faded in with a
+  raised cosine from the open sample. The ramp is two capture blocks (13.65 ms at 2.4 MSPS): the
+  key-up can fall up to one block after the open, and the ringing adds about 2.5 ms. A 5 ms ramp
+  was measured and is too short: the noise between 3.5 and 6 ms after the open met it at
+  0.85 to 1.0 gain, and two of the three parts peaked at -0.6 and -0.9 dBFS. With two blocks the
+  first 5 ms after each open peaked at 0.13 to 0.24 (-12.4 dBFS at most) against the tone's 0.49
+  (-6.1 dBFS), and every part's `peak_dbfs` is the tone's. The ramp never drops below 10 ms, a guess for capture rates above
+  2.4 MSPS, where blocks are shorter and the ringing is not. The price is the first 13.65 ms of
+  each over, faded rather than removed. The pre-roll before the open is written as it was, and
+  `open_sample` and `start_sample` do not move.
+- **Live audio keeps both edges.** Only recordings are delayed and faded; `ley listen`, the app's
+  speaker and bulk audio streams play the key-up and the tail as a radio does, since a delay there
+  would be heard.
 
 **Retune, detach and restart.** A record job's channel carries `required_hz` and is the first
 consumer of it. If the human retunes the capture away, the channel goes `OUT_OF_CAPTURE`, the
@@ -489,10 +508,10 @@ expectations.
   pass every structural test and fail this one.
 - A gated recording of `nfm_keyed` at −40 dBFS with a 1 s hang yields three parts whose
   `start_sample` and `end_sample`, less the pre-roll and hang, land within one capture block of
-  the sidecar's segments. Each part's pre-roll is silent up to its open, nothing past the open
-  block reaches -1 dBFS, and the 10 ms after each key-down is silent; the same holds at the
-  default hang (tails inside one part) and with a 700 ms part timer cutting the overs, whose parts
-  are contiguous. The same recording at the default hang yields one part, since the
+  the sidecar's segments. Each part's pre-roll is silent up to its open, no part's `peak_dbfs`
+  reaches -1 dBFS, the 5 ms after each open stays under the tone that follows it, and the 10 ms
+  after each key-down is silent; the same holds at the default hang (re-opens and tails inside one
+  part) and with a 700 ms part timer cutting the overs, whose parts are contiguous. The same recording at the default hang yields one part, since the
   fixture's 3 s gaps are inside 5 s, with three `squelch_opens` at the same samples. Both are
   asserted: the first pins the cut accuracy, the second pins that an exchange keeps its overs.
 - A continuous IQ recording yields parts whose `start_sample`s are contiguous and no coverage

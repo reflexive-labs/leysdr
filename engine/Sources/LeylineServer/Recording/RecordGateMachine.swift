@@ -18,12 +18,18 @@ struct RecordGateMachine: Sendable {
     enum Action: Equatable, Sendable {
         /// Open a part whose first sample is this one, pre-roll included.
         case openPart(startSample: UInt64)
+        /// The squelch opened on its own edge at this sample, so the audio just after it is the
+        /// block it opened on: floor noise up to the key-up, and the key-up's click. The runner
+        /// fades it in (docs/design/recording.md, "The squelch's edges"). Never emitted for a
+        /// seeded open, whose first sample is the recording's or the first after a coverage gap,
+        /// not a key-up.
+        case fadeIn(openedAt: UInt64)
         /// An over began, for the part's `squelch_opens`.
         case squelchOpened(at: UInt64)
         /// The squelch closed on its own edge at this sample, so the audio just before it is the
         /// squelch tail: the discriminator's noise between the carrier dropping and the squelch
         /// deciding it had. The runner silences it before it reaches the part
-        /// (docs/design/recording.md, "The squelch tail"). Never emitted for a close the machine
+        /// (docs/design/recording.md, "The squelch's edges"). Never emitted for a close the machine
         /// makes itself -- the job ending or the channel leaving the capture -- because the audio
         /// before those is whatever was on the air.
         case silenceTail(closedAt: UInt64)
@@ -104,11 +110,11 @@ struct RecordGateMachine: Sendable {
                 // The part's first sample is the transition's less the pre-roll: the pre-roll keeps
                 // the squelch's own attack and the syllable under it.
                 return [.openPart(startSample: sample >= preRollSamples ? sample - preRollSamples : 0),
-                        .squelchOpened(at: sample)]
+                        .fadeIn(openedAt: sample), .squelchOpened(at: sample)]
             case .hanging:
                 // A re-open inside the hang continues the same part: one exchange, several overs.
                 state = .open
-                return [.squelchOpened(at: sample)]
+                return [.fadeIn(openedAt: sample), .squelchOpened(at: sample)]
             case .open:
                 return []
             }

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// The delay line a gated audio recording writes through, so the squelch tail can be silenced
-// before it reaches the part (docs/design/recording.md, "The squelch tail").
+// The delay line a gated audio recording writes through, so the squelch tail can be silenced and
+// the squelch's open faded in before either reaches the part (docs/design/recording.md, "The
+// squelch's edges").
 //
 // The squelch decides once per capture block and closes on the first block after the carrier
 // has gone, so the audio between the carrier dropping and the close transition is the
@@ -24,15 +25,21 @@ struct HeldAudio: Sendable {
     private(set) var samples: [Float] = []
     /// The capture sample just past the last held sample.
     private(set) var endSample: UInt64 = 0
-    /// Windows still to be applied to audio that has not arrived yet: a close record that came in
-    /// before the audio it closes.
+    /// Windows still to be applied to audio that has not arrived yet: an edge record that came in
+    /// before the audio it describes.
     private var windows: [Window] = []
 
-    private struct Window {
-        /// Where the ramp to silence begins, where silence begins, and the close transition.
-        var fadeFrom: UInt64
-        var from: UInt64
-        var to: UInt64
+    private enum Window {
+        /// A ramp to silence from `fadeFrom` to `from`, then silence up to the close transition `to`.
+        case out(fadeFrom: UInt64, from: UInt64, to: UInt64)
+        /// A ramp from silence, from the open transition `from` to full gain at `to`.
+        case fadeIn(from: UInt64, to: UInt64)
+
+        var end: UInt64 {
+            switch self {
+            case .out(_, _, let to), .fadeIn(_, let to): return to
+            }
+        }
     }
 
     init(capacity: Int, perAudio: Double, fadeSamples: UInt64) {
@@ -62,7 +69,7 @@ struct HeldAudio: Sendable {
         endSample = Swift.max(end, endSample)
         if !windows.isEmpty {
             for w in windows { apply(w, from: firstNew) }
-            windows.removeAll { $0.to <= endSample }
+            windows.removeAll { $0.end <= endSample }
         }
         let over = samples.count - capacity
         guard over > 0 else { return [] }
@@ -76,9 +83,19 @@ struct HeldAudio: Sendable {
     /// inside the window; audio already released is out of reach.
     mutating func silence(before closedAt: UInt64, tail: UInt64) {
         let from = closedAt > tail ? closedAt - tail : 0
-        let w = Window(fadeFrom: from > fadeSamples ? from - fadeSamples : 0, from: from, to: closedAt)
+        add(.out(fadeFrom: from > fadeSamples ? from - fadeSamples : 0, from: from, to: closedAt))
+    }
+
+    /// Ramps `[openedAt, openedAt + length)` up from silence with a raised cosine, so the floor
+    /// noise and the key-up click in the block the squelch opened on are not written at full
+    /// scale. Audio before `openedAt` is left as it is.
+    mutating func fadeIn(from openedAt: UInt64, length: UInt64) {
+        add(.fadeIn(from: openedAt, to: openedAt + Swift.max(length, 1)))
+    }
+
+    private mutating func add(_ w: Window) {
         apply(w, from: 0)
-        if w.to > endSample { windows.append(w) }
+        if w.end > endSample { windows.append(w) }
     }
 
     /// Releases every held sample before capture sample `sample`, and returns the rest as well,
@@ -107,15 +124,21 @@ struct HeldAudio: Sendable {
         let count = samples.count
         guard first < count else { return }
         let end = Double(endSample)
-        let ramp = Double(w.from - w.fadeFrom)
         for i in first..<count {
             let at = end - Double(count - i) * perAudio
-            if at < Double(w.fadeFrom) || at >= Double(w.to) { continue }
-            if at >= Double(w.from) {
-                samples[i] = 0
-            } else if ramp > 0 {
-                let x = (at - Double(w.fadeFrom)) / ramp
-                samples[i] *= Float(0.5 * (1 + cos(Double.pi * x)))
+            switch w {
+            case .out(let fadeFrom, let from, let to):
+                if at < Double(fadeFrom) || at >= Double(to) { continue }
+                if at >= Double(from) {
+                    samples[i] = 0
+                } else if from > fadeFrom {
+                    let x = (at - Double(fadeFrom)) / Double(from - fadeFrom)
+                    samples[i] *= Float(0.5 * (1 + cos(Double.pi * x)))
+                }
+            case .fadeIn(let from, let to):
+                if at < Double(from) || at >= Double(to) { continue }
+                let x = (at - Double(from)) / Double(to - from)
+                samples[i] *= Float(0.5 * (1 - cos(Double.pi * x)))
             }
         }
     }
