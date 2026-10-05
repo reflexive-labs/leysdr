@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # The parts of scripts/release.sh that need no Mac: which VERSION may be released, the engine's
-# version constant as the release compares it, the drivers.json reader and the source download's
-# SHA-256 check. The signing, notarization and DMG steps run only on the Mac
-# (docs/plans/distribution.md, "Sign, notarize, package", Verification).
+# version constant as the release compares it, the drivers.json reader, the source download's
+# SHA-256 check and the release's asset list. The signing, notarization and DMG steps run only on
+# the Mac (docs/plans/distribution.md, "Sign, notarize, package", Verification).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=release.sh
@@ -82,6 +82,18 @@ PATH="$tmp/bin:$PATH" fetch_driver_sources "$tmp/out/drivers.json" "$tmp/out" >/
 printf 'tampered\n' > "$tmp/src/hackrf.tar.xz"
 PATH="$tmp/bin:$PATH" fetch_driver_sources "$tmp/out/drivers.json" "$tmp/out" >/dev/null 2>&1 \
   && fail "fetch_driver_sources accepted a tarball whose SHA-256 differs"
+
+want="$tmp/out/Leyline-0.1.0-alpha.2.dmg
+$tmp/out/leysdr-0.1.0-alpha.2-source.tar.gz
+$tmp/out/librtlsdr-2.0.2-source.tar.gz
+$tmp/out/hackrf-2024.02.1-source.tar.xz
+$tmp/out/drivers.json
+$tmp/out/appcast.xml"
+got=$(release_assets "$tmp/out" 0.1.0-alpha.2)
+[ "$got" = "$want" ] || fail "release_assets printed:
+$got
+want:
+$want"
 
 if [ $failures -gt 0 ]; then
   echo "test-release.sh: $failures failed" >&2

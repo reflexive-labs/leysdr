@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# Builds, signs, notarizes and packages a release of the app. docs/plans/distribution.md, "Sign, notarize, package", is the specification and
+# Builds, signs, notarizes and packages a release of the app, and publishes it as a GitHub
+# prerelease. docs/plans/distribution.md, "Sign, notarize, package", is the specification and
 # docs/dev/release-checklist.md the pass around it.
 #
 #   scripts/release.sh           (make release) dist/<VERSION>/: the notarized Leyline-<VERSION>.dmg,
 #                                the source tarballs the release owes, drivers.json, appcast.xml
+#   scripts/release.sh publish   (make release-publish) the GitHub prerelease v<VERSION> on
+#                                reflexive-labs/leysdr from dist/<VERSION>/, refused until the
+#                                commit it was built from is on GitHub
 #
 # CODESIGN_IDENTITY is the Developer ID Application identity's full name and NOTARY_PROFILE the
 # `xcrun notarytool store-credentials` keychain profile; neither has a default here. The Sparkle
@@ -25,6 +29,7 @@ partial=
 
 # The feed and the DMGs it names are served from here (docs/plans/distribution.md, OWN-4).
 DOWNLOAD_URL_PREFIX=https://leysdr.com/updates/
+REPO=reflexive-labs/leysdr
 
 die() { echo "release.sh: $*" >&2; exit 1; }
 
@@ -84,6 +89,14 @@ fetch_driver_sources() {
     got=$(shasum -a 256 "$2/$name" | awk '{print $1}')
     [ "$got" = "$sha" ] || { echo "release.sh: $name has SHA-256 $got; drivers.json says $sha" >&2; return 1; }
   done <<<"$sources"
+}
+
+# release_assets <dir> <version>: every file the GitHub release carries, one per line.
+release_assets() {
+  local name
+  printf '%s\n' "$1/Leyline-$2.dmg" "$1/leysdr-$2-source.tar.gz"
+  driver_sources "$1/drivers.json" | while IFS="|" read -r name _; do printf '%s\n' "$1/$name"; done
+  printf '%s\n' "$1/drivers.json" "$1/appcast.xml"
 }
 
 # build: the release, from the Go build to the appcast.
@@ -183,6 +196,24 @@ build() {
   ls -l "$out"
 }
 
+# publish: the GitHub prerelease, the way `leyshots publish` makes a shots-* release. GitHub can
+# only tag a commit it has, so the commit the release was built from must be on a branch of origin.
+publish() {
+  local version=$1 out=$2 commit asset assets=()
+  [ -f "$out/commit" ] || die "$out has no release; make it first with: make release"
+  commit=$(cat "$out/commit")
+  while IFS= read -r asset; do
+    [ -f "$asset" ] || die "$asset is missing; make the release again with: make release"
+    assets+=("$asset")
+  done < <(release_assets "$out" "$version")
+  git fetch --quiet origin || die "git fetch origin failed"
+  [ -n "$(git branch -r --contains "$commit")" ] \
+    || die "commit ${commit:0:12} is not on GitHub yet, and the release's tag must point at it; push it first with: git push"
+  echo "==> gh release create v$version (prerelease, ${#assets[@]} assets, at ${commit:0:12})"
+  gh release create "v$version" --repo "$REPO" --prerelease --title "Leyline $version" \
+    --notes-file "$out/notes.md" --target "$commit" "${assets[@]}"
+}
+
 main() {
   local version refusal out
   [ "$(uname -s)" = Darwin ] || die "a release is signed and notarized on the Mac; run it there"
@@ -197,7 +228,8 @@ main() {
         || die "the tree has changes, which the release would ship without its source tarball holding them; commit or stash them"
       build "$version" "$out"
       ;;
-    *) echo "usage: scripts/release.sh" >&2; exit 2 ;;
+    publish) publish "$version" "$out" ;;
+    *) echo "usage: scripts/release.sh [publish]" >&2; exit 2 ;;
   esac
 }
 

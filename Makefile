@@ -33,6 +33,8 @@
 #                   whose VERSION is a release's. Needs CODESIGN_IDENTITY and NOTARY_PROFILE; on the
 #                   build Mac they are "Developer ID Application: Reflexive Labs LLC (P2KZW25PL8)"
 #                   and leysdr-notary
+#   make release-publish  the GitHub prerelease v<VERSION> from dist/<VERSION>/, refused until the
+#                   commit it was built from is pushed
 #   make release-test  the parts of scripts/release.sh that need no Mac
 #   make reload     macOS: rebuild ley and leylined (release), stop the running daemon, reinstall the
 #                   LaunchAgent on the new binary and start it — the edit-build-try loop in one step
@@ -65,7 +67,7 @@ GOFUMPT_VERSION := v0.12.0
 GOVULNCHECK_VERSION := v1.8.0
 ACTIONLINT_VERSION := v1.7.12
 
-.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval shots shots-bundle shots-publish shots-release release release-test app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders
+.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval shots shots-bundle shots-publish shots-release release release-publish release-test app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders
 
 all: go swift app
 
@@ -255,6 +257,9 @@ shots-release: $(SHOTS_ASSETS) | go
 # using go/bin, and refuses a dirty tree, a -dev VERSION and a dist/<VERSION>/ that already exists.
 release:
 	./scripts/release.sh
+
+release-publish:
+	./scripts/release.sh publish
 
 release-test:
 	./scripts/test-release.sh
