@@ -32,8 +32,9 @@ import (
 
 // defaultVersion mirrors the root VERSION file, the single source of truth both
 // languages read: `make go` stamps it into Version at link time and
-// scripts/gen-version.sh writes the same number into the engine's constant.
-// TestVersionMatchesTheSourceOfTruth holds the three together.
+// scripts/gen-version.sh (`make version`) writes the same number into the
+// engine's constant and into this literal. TestVersionMatchesTheSourceOfTruth
+// holds the three together.
 const defaultVersion = "0.1.0-dev"
 
 // Version is the ley build version; overridden at link time with

@@ -3,7 +3,8 @@
 # Leyline — top-level developer entry points. See docs/dev/setup.md.
 #
 #   make proto      regenerate leyline.v1 code (Go + Swift) from proto/
-#   make version    regenerate the engine's version constant from the root VERSION file
+#   make version    regenerate the engine's version constant and ley's fallback from the root
+#                   VERSION file
 #   make go         build the Go clients and tools (ley, leyfix, leyshots) into go/bin
 #   make bands-json regenerate the app's seed copy of the band table from `ley bands --json`
 #   make go-test    Go unit + contract tests
@@ -85,7 +86,7 @@ version:
 # Fails if the engine's version constant or the Go fallback literal has drifted from VERSION.
 version-check:
 	./scripts/gen-version.sh
-	git diff --exit-code -- engine/Sources/LeylineDaemon/Version.swift
+	git diff --exit-code -- engine/Sources/LeylineDaemon/Version.swift go/internal/cli/root.go
 	cd go && go test -count=1 -run TestVersionMatchesTheSourceOfTruth ./internal/cli/
 
 go:

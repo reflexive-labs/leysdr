@@ -3,7 +3,8 @@
 # Writes the engine's version constant from the root VERSION file, the single source of truth for
 # both languages. Swift has no link-time -X, so the constant is generated and checked in; CI
 # regenerates it and fails on drift, exactly like the proto check. The Go clients take the same
-# number through -ldflags (see the Makefile) and fall back to the literal in go/internal/cli/root.go.
+# number through -ldflags (see the Makefile) and fall back to the literal defaultVersion in
+# go/internal/cli/root.go, which this rewrites too, so a VERSION bump is one command.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 VERSION="$(tr -d '[:space:]' < VERSION)"
@@ -17,3 +18,13 @@ cat > "$OUT" <<SWIFT
 let leylinedVersion = "$VERSION"
 SWIFT
 echo "wrote $OUT ($VERSION)"
+
+# The literal is rewritten through a temporary file rather than `sed -i`, whose syntax differs
+# between macOS and Linux; `cat >` keeps the file's mode.
+GO=go/internal/cli/root.go
+grep -q '^const defaultVersion = "' "$GO" || { echo "gen-version.sh: no \`const defaultVersion\` in $GO" >&2; exit 1; }
+tmp=$(mktemp)
+sed "s/^const defaultVersion = \".*\"\$/const defaultVersion = \"$VERSION\"/" "$GO" > "$tmp"
+cat "$tmp" > "$GO"
+rm -f "$tmp"
+echo "wrote $GO ($VERSION)"

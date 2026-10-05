@@ -62,7 +62,7 @@ func TestVersionMatchesTheSourceOfTruth(t *testing.T) {
 		t.Fatal("VERSION is empty")
 	}
 	if defaultVersion != want {
-		t.Errorf("go fallback literal is %q, VERSION says %q — edit cli.defaultVersion", defaultVersion, want)
+		t.Errorf("go fallback literal is %q, VERSION says %q — run `make version`", defaultVersion, want)
 	}
 	swift, err := os.ReadFile(filepath.Join(root, "engine", "Sources", "LeylineDaemon", "Version.swift"))
 	if err != nil {
