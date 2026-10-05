@@ -106,10 +106,10 @@ against the real daemon, `make app*`, CI, the bundle script (`docs/dev/app.md`),
 waterfall and click-to-hear window, and the layer 1 controls. The file half of E.4 landed with
 them as the M1 cut, the M2 inspector after it, and E.5 (recording from the window) on 2026-09-24;
 E.4 landed whole on 2026-09-29 as APP-9 (`docs/design/channels.md`), with its Mac acceptance pass
-still open. E.6 is partial: unavailable and detached states exist, while automatic daemon startup
-and the layer 2 parameter inspector remain. E.7 is next: the helper-carrying, ad-hoc-signed bundle
-layout exists; installation and update plumbing remain, and the owner is acquiring the Developer
-ID certificate needed for final signing and notarization.
+still open. E.6 is partial: unavailable and detached states exist and the app starts its own
+daemon as a login item (E.7), while the layer 2 parameter inspector remains. E.7 is implemented
+and unverified on a Mac: `docs/plans/distribution.md` has the bundled drivers, the login item,
+Sparkle and `make alpha`; its Mac checks gate the first alpha.
 
 The SwiftUI app as a peer client (V1a stories in `docs/plans/user-stories.md`). It links
 `LeylineProto` and never `EngineCore`, so it stays a separate Apache-2.0 work beside the GPL engine

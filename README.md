@@ -174,8 +174,8 @@ detail is [`docs/plans/build-order.md`](docs/plans/build-order.md).
 | Decoders: APRS, SAME, AIS | works | more are planned (`docs/plans/decoders.md`) |
 | `ley watch` notifications | works | webhook, shell command or macOS notification |
 | MCP adapter (`ley mcp`) | partial | signal identification and transcript tools are not implemented (`docs/plans/mcp.md`) |
-| Mac app | partial | build from source; does not start the daemon itself; the layer 2 parameter inspector is incomplete |
-| Signed app bundle and installer | planned | the bundle layout exists, signed for local use only |
+| Mac app | partial | starts its own daemon as a login item; the layer 2 parameter inspector is incomplete |
+| Signed app bundle and installer | partial | `make alpha` builds a notarized DMG that carries the drivers and updates through Sparkle; not yet released (`docs/plans/distribution.md`) |
 | Terminal dashboard | planned | |
 | Durable watch jobs | partial | kept decode jobs survive a daemon restart; other jobs do not |
 | Audio transcripts | planned | |
