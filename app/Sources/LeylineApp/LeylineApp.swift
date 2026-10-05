@@ -4,7 +4,8 @@
 // holds and writes through the coalescer; nothing here is authoritative (invariant 7). The window
 // is the sidebar, spectrum, waterfall, transport bar, the device menu, the inspector on the right
 // and a Tune menu that lists every gesture, plus the Library, the window's second place, with its
-// own menu. The app menu checks for updates through Sparkle (`Updater.swift`).
+// own menu. The app menu checks for updates through Sparkle (`Updater.swift`), and its about
+// panel names the build's tree (`AboutPanel`).
 
 import AppKit
 import LeylineClient
@@ -30,7 +31,10 @@ struct LeylineApp: App {
         )
         .windowToolbarStyle(.unified)
         .commands {
-            CommandGroup(after: .appInfo) { CheckForUpdatesItem(updater: updater) }
+            CommandGroup(replacing: .appInfo) {
+                Button("About Leyline") { AboutPanel.show() }
+                CheckForUpdatesItem(updater: updater)
+            }
             TuneCommands(session: session)
             LibraryCommands(session: session)
             RecordCommands(session: session)
@@ -53,6 +57,29 @@ final class Activation: NSObject, NSApplicationDelegate {
                 if shown == 0 { log("stage", "no window opened within 3 s of launch") }
             }
         }
+    }
+}
+
+/// The standard about panel, with the tree the build came from under the version
+/// (`BuildInfo.aboutLine`), so a tester's bug report can name it. The panel is AppKit's own, light
+/// or dark with the system, so its line takes the system's secondary label colour and small font
+/// rather than `Theme`'s, which are drawn for the window's dark ground.
+@MainActor
+enum AboutPanel {
+    static func show() {
+        var options: [NSApplication.AboutPanelOptionKey: Any] = [:]
+        if let line = BuildInfo.aboutLine(info: Bundle.main.infoDictionary) {
+            let centred = NSMutableParagraphStyle()
+            centred.alignment = .center
+            options[.credits] = NSAttributedString(
+                string: line,
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+                    .foregroundColor: NSColor.secondaryLabelColor,
+                    .paragraphStyle: centred,
+                ])
+        }
+        NSApp.orderFrontStandardAboutPanel(options: options)
     }
 }
 
