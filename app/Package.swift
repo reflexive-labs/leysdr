@@ -66,9 +66,10 @@ var dependencies: [Package.Dependency] = [
 #if os(macOS)
     // Sparkle updates the distributed app (docs/plans/distribution.md, "Sparkle"). It is a binary
     // target, an xcframework SwiftPM downloads while resolving, so it is declared only here and a
-    // Linux resolve never fetches it. A Linux resolve also drops its pin from Package.resolved;
-    // the committed file is the macOS one, which pins the Sparkle a release ships, so that change
-    // is not committed. `make license-check` accepts the file either way (a `swift-macos` row).
+    // Linux resolve never fetches it. A Linux resolve would also drop its pin from
+    // Package.resolved, which is the macOS graph and pins the Sparkle a release ships, so on Linux
+    // the Makefile's app targets pass --only-use-versions-from-resolved-file and never rewrite it.
+    // `make license-check` accepts the file either way (a `swift-macos` row).
     dependencies.append(
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.0"))
     targets.append(

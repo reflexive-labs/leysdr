@@ -269,15 +269,22 @@ release-test:
 # daemon-backed suite too and silently skip it without LEYLINED_BIN, so the two targets name their
 # suites: app-test skips it, app-e2e is the only place it runs, with the daemon `make swift` built
 # and the fixtures the file device plays.
+#
+# app/Package.resolved is the macOS graph, which pins Sparkle; Linux evaluates the manifest without
+# Sparkle (app/Package.swift), and a resolve there would rewrite the file without that pin. So on
+# Linux the app targets only read the file, and fail rather than rewrite it when it is out of date:
+# a dependency change is resolved on the Mac.
+APP_RESOLVED := $(if $(filter Linux,$(shell uname -s)),--only-use-versions-from-resolved-file)
+
 app:
-	cd app && swift build -c $(SWIFT_CONFIG)
+	cd app && swift build $(APP_RESOLVED) -c $(SWIFT_CONFIG)
 
 app-test:
-	cd app && swift test --skip LeylineClientDaemonTests
+	cd app && swift test $(APP_RESOLVED) --skip LeylineClientDaemonTests
 
 app-e2e: swift fixtures
 	cd app && LEYLINED_BIN="$$(cd ../engine && swift build -c $(SWIFT_CONFIG) --show-bin-path)/leylined" \
-		LEYLINE_FIXTURES=$(CURDIR)/fixtures swift test --filter LeylineClientDaemonTests
+		LEYLINE_FIXTURES=$(CURDIR)/fixtures swift test $(APP_RESOLVED) --filter LeylineClientDaemonTests
 
 app-run:
 	@[ "$$(uname -s)" = Darwin ] || { echo "the app runs on the Mac" >&2; exit 2; }
