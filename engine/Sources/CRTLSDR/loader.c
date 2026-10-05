@@ -20,15 +20,25 @@ static void initialize_loader(void) {
         }
         return;
     }
+    // A distributed build carries the driver in Leyline.app/Contents/Frameworks, one directory
+    // over from the daemon in Contents/Helpers, signed by the same team so a hardened-runtime
+    // daemon may load it. A build from source has no such directory and falls through to the
+    // system's copy (docs/decisions/S3-usb-posture.md, "Decision"). glibc expands $ORIGIN in a
+    // dlopen path against the calling object, the daemon executable this file is linked into.
 #if defined(__APPLE__)
     static const char *candidates[] = {
+        "@executable_path/../Frameworks/librtlsdr.0.dylib",
         "/opt/homebrew/opt/librtlsdr/lib/librtlsdr.0.dylib",
         "/usr/local/opt/librtlsdr/lib/librtlsdr.0.dylib",
         "librtlsdr.0.dylib",
         "librtlsdr.dylib",
     };
 #else
-    static const char *candidates[] = {"librtlsdr.so.0", "librtlsdr.so"};
+    static const char *candidates[] = {
+        "$ORIGIN/../Frameworks/librtlsdr.so.0",
+        "librtlsdr.so.0",
+        "librtlsdr.so",
+    };
 #endif
     for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {
         library_handle = dlopen(candidates[i], RTLD_LAZY | RTLD_LOCAL);

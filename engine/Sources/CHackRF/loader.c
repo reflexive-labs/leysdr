@@ -20,15 +20,25 @@ static void initialize_loader(void) {
         }
         return;
     }
+    // A distributed build carries the driver in Leyline.app/Contents/Frameworks, one directory
+    // over from the daemon in Contents/Helpers, signed by the same team so a hardened-runtime
+    // daemon may load it. A build from source has no such directory and falls through to the
+    // system's copy (docs/decisions/S3-usb-posture.md, "Decision"). glibc expands $ORIGIN in a
+    // dlopen path against the calling object, the daemon executable this file is linked into.
 #if defined(__APPLE__)
     static const char *candidates[] = {
+        "@executable_path/../Frameworks/libhackrf.0.dylib",
         "/opt/homebrew/opt/hackrf/lib/libhackrf.0.dylib",
         "/usr/local/opt/hackrf/lib/libhackrf.0.dylib",
         "libhackrf.0.dylib",
         "libhackrf.dylib",
     };
 #else
-    static const char *candidates[] = {"libhackrf.so.0", "libhackrf.so"};
+    static const char *candidates[] = {
+        "$ORIGIN/../Frameworks/libhackrf.so.0",
+        "libhackrf.so.0",
+        "libhackrf.so",
+    };
 #endif
     for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {
         library_handle = dlopen(candidates[i], RTLD_LAZY | RTLD_LOCAL);
