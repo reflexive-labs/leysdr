@@ -236,7 +236,7 @@ channels of which one or two are audible from any given house; FM broadcast has 
 and every station is local; marine's coast stations and weather are continuous. A one-shot
 sweep finds only what is transmitting throughout its dwell (`scan.md`: what is sitting on the
 band, not what keyed up during the sweep), so it does not serve the two intermittent presets in
-the story, 2 m repeaters and airband, which key up for seconds an hour. In alpha those come from
+the story, 2 m repeaters and airband, which key up for seconds an hour. Those come from
 bookmarks and CHIRP import; a band watched over time is the band-watching plan's occupancy
 work. The band row's
 context menu and the expanded row carry **Scan band**, which runs the sweep `ley scan --band`
@@ -299,8 +299,8 @@ Additive, in `bookmarks.json`, all optional, unknown keys preserved by both read
 `offset_hz` (signed, hertz) and `duplex` (`+`, `-`, `split`, `off`, as CHIRP spells them) are
 written by the CHIRP import and read by nothing yet: recording a repeater's input as data is not
 transmitting, and a sentence in `note` could not become a field later without parsing prose. The
-inspector's identity region edits `tone` and `note` beside the name; `tags` are edited nowhere in
-alpha and shown as words under the name when present. Neither client gates audio on `tone`: tone
+inspector's identity region edits `tone` and `note` beside the name; `tags` are edited nowhere and
+are shown as words under the name when present. Neither client gates audio on `tone`: tone
 squelch is the engine's separate decision (`control.proto`, `ChannelConfig`'s reserved field 13),
 and a
 bookmark's tone stays a record of what the repeater uses.
@@ -323,7 +323,7 @@ and skipped, `--dry-run` prints the same without writing, and a file with no `Fr
 header is refused with nothing written. The app shows the same counts as one notice and opens
 no row. Both parsers, Go's and Swift's, are held to one fixture CSV and one expected bookmarks
 file under `fixtures/chirp/`, the way the seed file is held to the band table. Nothing is
-exported in alpha: `ley bookmarks --json` is the export.
+exported in another format: `ley bookmarks --json` is the export.
 
 Imported rows appear under their bands, so 120 memories are 2 m and 70 cm rows collapsed until
 opened, which is the reason the spine is bands.
@@ -391,7 +391,7 @@ receives frequencies, channel parameters and job requests without band-plan name
   values and the Swift store retains its `[String: JSONValue]` extras, so either client can write
   a file without deleting fields introduced by the other.
 
-## Deliberately not in alpha
+## Deliberately not
 
 - **Lists and scan lists.** `tags` is the hook; a `Lists` section, a scan across a list and a
   list-aware `ley scan` are the ham story's second half and come after the app is in hands.

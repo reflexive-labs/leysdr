@@ -1328,17 +1328,18 @@ update decisions of 2026-10-05, and its items carry the status:
   the app's job, and the app restarts the daemon after an update: DIST-2. This enables APP-6's
   automatic startup.
 - `[ ]` Updates through Sparkle: DIST-3.
-- `[ ]` Sign, notarize and package (`make release`, `make release-publish`): DIST-4, with the
-  Developer ID, notary and Sparkle key prerequisites (OWN-1 to OWN-3) done 2026-10-05.
+- `[ ]` Sign, notarize and package (`make release`, which runs `make release-build` and
+  `make release-publish`): DIST-4, with the Developer ID, notary and Sparkle key prerequisites
+  (OWN-1 to OWN-3) done 2026-10-05.
 - `[ ]` Publishing through leysdr.com: DIST-7.
 - `[ ]` The checks on a second Mac, which gate sending the first build: DIST-5.
 - `[ ]` The install guide, the decision records and the release checklist: DIST-6.
 - `[d]` Complete D3's trademark check before the first public build (OWN-5 asks whether it also
-  gates a closed alpha).
+  gates the first release to testers).
 
 The release pass is `../dev/release-checklist.md`.
 
-### APP-9 `[x]` Bands, channels and bookmarks for the alpha (E.4, continued)
+### APP-9 `[x]` Bands, channels and bookmarks for the first release (E.4, continued)
 
 `../design/channels.md` is the design, written 2026-09-28 from the owner's ask: NOAA and GMRS
 channels reachable without programming, bands as the sidebar's order, defaults that need no

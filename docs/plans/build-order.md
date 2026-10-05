@@ -109,7 +109,7 @@ E.4 landed whole on 2026-09-29 as APP-9 (`docs/design/channels.md`), with its Ma
 still open. E.6 is partial: unavailable and detached states exist and the app starts its own
 daemon as a login item (E.7), while the layer 2 parameter inspector remains. E.7 is implemented
 and unverified on a Mac: `docs/plans/distribution.md` has the bundled drivers, the login item,
-Sparkle and `make alpha`; its Mac checks gate the first alpha.
+Sparkle and `make release`; its Mac checks gate the first release.
 
 The SwiftUI app as a peer client (V1a stories in `docs/plans/user-stories.md`). It links
 `LeylineProto` and never `EngineCore`, so it stays a separate Apache-2.0 work beside the GPL engine

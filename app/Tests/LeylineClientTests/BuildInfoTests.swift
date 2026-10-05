@@ -10,8 +10,8 @@ import XCTest
 final class BuildInfoTests: XCTestCase {
     func testTheAboutLineNamesTheStampedTree() {
         XCTAssertEqual(
-            BuildInfo.aboutLine(info: ["LeylineBuild": "v0.1.0-alpha.1-3-gd34db33"]),
-            "Build v0.1.0-alpha.1-3-gd34db33")
+            BuildInfo.aboutLine(info: ["LeylineBuild": "v0.1.0-3-gd34db33"]),
+            "Build v0.1.0-3-gd34db33")
     }
 
     func testNoTreeIsNamedWithoutAStamp() {

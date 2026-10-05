@@ -5,12 +5,12 @@ What changed for someone using Leyline, newest first. Each released version has 
 
 ## Unreleased
 
-The first alpha: a signed, notarized Mac app for a small group of testers.
+The first release: a signed, notarized Mac app for a small group of testers.
 
 - **Install.** Leyline is a Mac app (Apple silicon, macOS 26 or later) delivered as a DMG. It
   carries its own RTL-SDR and HackRF drivers, so nothing else needs installing. On first launch it
   registers its engine as a login item, listed in System Settings > General > Login Items &
-  Extensions. Leyline > Check for Updates… installs newer alphas.
+  Extensions. Leyline > Check for Updates… installs newer releases.
 - **Radios.** An RTL-SDR or HackRF on USB, an RTL-SDR another machine serves with `rtl_tcp`, or an
   IQ recording played back as a radio.
 - **Listening.** NFM, WFM, AM, USB, LSB and CW, with squelch, CTCSS and DCS detection, and two
@@ -25,7 +25,7 @@ The first alpha: a signed, notarized Mac app for a small group of testers.
   symlink that puts it on your `PATH`. Every verb takes `--json`, and `ley mcp` serves the same
   verbs to an AI agent as MCP tools.
 
-Not in this alpha: the terminal dashboard, audio transcripts, channel occupancy, and builds for
+Not in this release: the terminal dashboard, audio transcripts, channel occupancy, and builds for
 Intel Macs. Leyline only receives; it never transmits.
 
 Report problems with what you did, what you expected, and `ley daemon logs` (or

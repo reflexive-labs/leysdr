@@ -61,7 +61,7 @@ cannot deliver it. The design doc has the full context and the decisions.
   `ch17` and its repeater aliases); every entry also has a plan-prefixed alias (`wx3`,
   `marine16`, `cb19`, `murs1`, `gmrs17`) that resolves without a band; a bare numeric name
   resolves only in band context; marine duplex pairs are `24` and `24 coast`.
-- R3. The alpha plans are those in the design's table: NOAA WX1 to WX7, GMRS 1 to 22 with the
+- R3. The first release's plans are those in the design's table: NOAA WX1 to WX7, GMRS 1 to 22 with the
   repeater aliases, MURS 1 to 5, the full ITU marine plan with the US A and B variants and ship
   and coast entries, CB 1 to 40, 2 m calling and APRS (`decoder: aprs`), airband guard. MURS is
   two padded halves and a `murs` group; 6 m and 1.25 m are added with no plan. Every frequency is
@@ -166,7 +166,7 @@ cannot deliver it. The design doc has the full context and the decisions.
 
 - **The design doc's decisions stand as reviewed on 2026-09-28** (session-settled: user-approved,
   the eleven review fixes applied as one batch). Governs R1 to R21.
-- **No MCP bookmarks tool in alpha** (session-settled: user-approved; chosen over adding it to
+- **No MCP bookmarks tool in the first release** (session-settled: user-approved; chosen over adding it to
   APP-9e's acceptance: no story asks for it). Governs R4.
 - **Marine ships its full plan** (session-settled: user-approved; chosen over the dozen US
   channels). Governs R3.
@@ -201,7 +201,7 @@ cannot deliver it. The design doc has the full context and the decisions.
 
 ### Scope Boundaries
 
-- **Deferred for later**, from the design's "Deliberately not in alpha": lists and scan lists,
+- **Deferred for later**, from the design's "Deliberately not": lists and scan lists,
   repeater pairs, usage ordering, regional plans, editing the band table in the app, bookmarks in
   the daemon, and the MCP bookmarks tool.
 - **Deferred to follow-up work** (plan-local): the `Bands…` sheet with its per-band checkboxes;
@@ -384,7 +384,7 @@ import writes the fields U6 defines. No unit is parallel with another; each is o
      hits (R19); "The plan is data in the band table" gains KTD2's tie rule.
   3. "CHIRP import" gains the update, blank-name, rounding and mode rules (R23) and the shared
      fixture (R24); "What is remembered where" moves the `Bands…` sheet sentence to
-     "Deliberately not in alpha".
+     "Deliberately not".
   4. `docs/README.md`'s plans list names this plan.
 - **Patterns to follow:** the doc's own voice per `docs/writing-guide.md`; one owner per rule.
 - **Test expectation:** none, a documentation unit; `grep -rn 'docs/'` shows every cited path
@@ -421,7 +421,7 @@ import writes the fields U6 defines. No unit is parallel with another; each is o
 
 ### U3. Plans in the band table, the seed and the CLI
 
-- **Goal:** the table carries every alpha plan, the seed file carries it to the app, and every
+- **Goal:** the table carries every first-release plan, the seed file carries it to the app, and every
   `ley` surface that names a channel reads it (R1 to R6).
 - **Requirements:** R1, R2, R3, R4, R5, R6, R25; KTD1, KTD2, KTD8.
 - **Dependencies:** U2.

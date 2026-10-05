@@ -133,7 +133,7 @@ struct IdentityView: View {
                 }
             }
             if let b = bookmark, !b.tags.isEmpty {
-                // Tags are shown, not edited, in alpha (docs/design/channels.md, "Bookmarks
+                // Tags are shown, not edited (docs/design/channels.md, "Bookmarks
                 // gain three fields").
                 Text(b.tags.joined(separator: " · ")).font(Theme.Font.valueSmall)
                     .foregroundStyle(Theme.inkFaint).lineLimit(1).truncationMode(.tail)

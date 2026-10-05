@@ -54,13 +54,13 @@ final class DaemonAgentTests: XCTestCase {
     func testBuildMetadataIsComparedWithTheBundleVersion() {
         XCTAssertTrue(
             DaemonAgent.sameBuild(
-                daemon: "0.1.0-alpha.2+412", version: "0.1.0-alpha.2", build: "412"))
+                daemon: "0.1.2+412", version: "0.1.2", build: "412"))
         XCTAssertFalse(
             DaemonAgent.sameBuild(
-                daemon: "0.1.0-alpha.2+411", version: "0.1.0-alpha.2", build: "412"))
+                daemon: "0.1.2+411", version: "0.1.2", build: "412"))
         XCTAssertFalse(
             DaemonAgent.sameBuild(
-                daemon: "0.1.0-alpha.1+412", version: "0.1.0-alpha.2", build: "412"))
+                daemon: "0.1.1+412", version: "0.1.2", build: "412"))
         XCTAssertFalse(
             DaemonAgent.sameBuild(daemon: "0.1.0+412", version: "0.1.0", build: nil),
             "a bundle without a build cannot match a daemon that names one")

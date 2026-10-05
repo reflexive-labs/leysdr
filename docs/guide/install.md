@@ -7,10 +7,10 @@ app, which carries the daemon, `ley`, the decoders and the radio drivers, or a b
 ## Install the app
 
 The app is a disk image, `Leyline-<version>.dmg`, signed with a Developer ID and notarized by
-Apple. While Leyline is in a closed alpha, testers receive the link to it; anyone else builds from
-source ("Build from source" below). It needs:
+Apple. While Leyline is distributed to a small group of testers, they receive the link to it;
+anyone else builds from source ("Build from source" below). It needs:
 
-- A Mac with Apple silicon. The alpha has no Intel build, because the radio drivers it carries are
+- A Mac with Apple silicon. There is no Intel build, because the radio drivers it carries are
   arm64 only.
 - macOS 26 or later.
 - An RTL-SDR (RTL2832U) or a HackRF One / HackRF Pro, or nothing ("Without a radio" below). The

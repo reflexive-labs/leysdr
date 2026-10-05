@@ -11,11 +11,12 @@ to anyone.
 - [ ] Apple Developer Program access is active, a Developer ID Application certificate is installed,
       and notarization credentials are configured without storing them in the repository. Their absence
       blocks the signed release, not the install plumbing.
-- [ ] `CHANGELOG.md`'s `## Unreleased` section holds this release's notes. `make alpha` bumps
+- [ ] `CHANGELOG.md`'s `## Unreleased` section holds this release's notes. `make release` bumps
       `VERSION` (do not bump it by hand), dates the section as the release's and tags
-      `v<VERSION>`. Every release changes the version: an alpha is `0.1.0-alpha.N`, one more than
-      the last. The disk image is named after it, the app restarts a daemon whose version differs
-      from it, and the update feed's notes come from its `CHANGELOG.md` section.
+      `v<VERSION>`. Every release changes the version and is greater than the last; there are no
+      pre-release names and no channels. The disk image is named after it, the app restarts a
+      daemon whose version differs from it, and the update feed's notes come from its
+      `CHANGELOG.md` section.
 - [ ] `make check` green on the Mac (Accelerate kernels, parity tests, audio sink compile, e2e).
 - [ ] `make check` green on Linux (the Go half, the portable engine core, e2e).
 - [ ] README's status section agrees with `docs/plans/build-order.md`.
@@ -23,7 +24,7 @@ to anyone.
 
 ## The signed build
 
-On the build Mac, an Apple silicon Mac. `make alpha` runs every step of the build in order and
+On the build Mac, an Apple silicon Mac. `make release` runs every step of the build in order and
 stops at the first that fails, with a line that ends in the command that fixes it:
 
 1. It checks that the checkout is on `main`, clean and not behind `origin/main`; that Homebrew's
@@ -32,13 +33,16 @@ stops at the first that fails, with a line that ends in the command that fixes i
    and Go are there; that the keychain holds the Developer ID Application identity, the
    `leysdr-notary` profile works and the Sparkle key matches `Info.plist`; that `gh` can see the
    repository; and that `## Unreleased` has notes.
-2. It shows the next version (`0.1.0-dev` is followed by `0.1.0-alpha.1`, `0.1.0-alpha.N` by
-   `0.1.0-alpha.N+1`; `NEXT=0.2.0-alpha.1` picks another) with the notes, and asks before going
-   on. `YES=1` skips the question.
+2. It shows the next version with the notes, and asks before going on; `YES=1` skips the
+   question. A `VERSION` of `X-dev` releases as `X`, so `0.1.0-dev` is followed by `0.1.0`. After
+   a release `VERSION` holds that release's version, and the next is the next patch: `0.1.0` is
+   followed by `0.1.1`. `BUMP=minor` makes it `0.2.0` and `BUMP=major` `1.0.0`; `NEXT=0.4.2`
+   names it outright. A version that is not three numbers, or not greater than the newest
+   `vX.Y.Z` tag, is refused.
 3. It writes `VERSION`, runs `make version`, turns `## Unreleased` into `## <VERSION>
    (<date>)` under a new, empty `## Unreleased`, commits that as `release: <VERSION>` and tags it
    `v<VERSION>`. The tag comes before the build, so the about panel names it.
-4. `make release` lays out the app with the daemon, `ley`, the decoders and the driver libraries;
+4. `make release-build` lays out the app with the daemon, `ley`, the decoders and the driver libraries;
    signs each component from the inside out with the hardened runtime; builds and signs
    `Leyline-<VERSION>.dmg`; submits it for notarization and waits, printing the notary log and
    failing on a rejection; staples the ticket and checks the disk image and the app inside it
@@ -47,20 +51,22 @@ stops at the first that fails, with a line that ends in the command that fixes i
    into `dist/<VERSION>/`. Keep the previous releases' disk images in `dist/`, because the update
    feed lists them.
 5. It pushes `main` and the tag, and `make release-publish` creates the GitHub release
-   `v<VERSION>` on this repository as a prerelease, with the disk image, the source tarballs,
-   `drivers.json` and `appcast.xml` as assets.
+   `v<VERSION>` on this repository, with the disk image, the source tarballs, `drivers.json` and
+   `appcast.xml` as assets. The release is not marked Latest, so the repository's Latest stays
+   the newest `shots-*` release; leysdr.com and `leyshots` find releases by tag prefix and do not
+   read it.
 
-A run that stops after the commit is carried on by running `make alpha` again: it finds HEAD is
+A run that stops after the commit is carried on by running `make release` again: it finds HEAD is
 the release commit and goes on from there, reusing a complete `dist/<VERSION>/`, building an
 unfinished one again and skipping a GitHub release that exists. To abandon a release cut but not
 pushed, `git tag -d v<VERSION>` and `git reset --hard HEAD~1`.
 
-`make alpha DRY_RUN=1` is the rehearsal. It runs the checks that need no credentials, shows the
+`make release DRY_RUN=1` is the rehearsal. It runs the checks that need no credentials, shows the
 version and notes, and builds an ad-hoc-signed app and disk image of the tree as it is into a new
 temporary directory. It changes no file, commit or tag, and notarizes, pushes and publishes
 nothing; it lists what it skipped.
 
-Then the two steps no script can take, which `make alpha` names when it finishes:
+Then the two steps no script can take, which `make release` names when it finishes:
 
 - [ ] Download the disk image from the GitHub release in a browser onto a second Mac or a fresh
       account, and pass "Acceptance, on a second Mac" below. Nothing goes to testers before it.

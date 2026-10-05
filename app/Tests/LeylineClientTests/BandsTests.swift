@@ -191,7 +191,7 @@ final class BandsTests: XCTestCase {
         try XCTUnwrap(Bands.resolve(alias), "\(alias) is not in bands.json")
     }
 
-    func testSeedCarriesEveryAlphaPlanAndPartsAnswerThroughTheirGroup() throws {
+    func testSeedCarriesEveryBuiltInPlanAndPartsAnswerThroughTheirGroup() throws {
         // The counts are the design's table (docs/design/channels.md, "The plan is data in the
         // band table"); marine is "about 100" there and entered in full in Go.
         XCTAssertEqual(try band("noaa").channels.count, 7)

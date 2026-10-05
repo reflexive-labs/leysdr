@@ -160,7 +160,7 @@ public enum DaemonAgent {
     /// Whether the daemon runs the bundle's build. `leylined` reports the root VERSION file's
     /// string (`scripts/gen-version.sh`), so a daemon that reports a bare version is compared
     /// with `CFBundleShortVersionString` alone. One that carries semver build metadata,
-    /// `0.1.0-alpha.2+412`, is compared with the version and `CFBundleVersion` together. An empty
+    /// `0.1.2+412`, is compared with the version and `CFBundleVersion` together. An empty
     /// daemon version (one that predates the field) never matches.
     public static func sameBuild(daemon: String, version: String, build: String?) -> Bool {
         guard !daemon.isEmpty else { return false }

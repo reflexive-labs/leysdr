@@ -1,4 +1,4 @@
-# Plan: a signed alpha build
+# Plan: a signed release build
 
 Status: draft, 2026-10-05. Implements E.7 of `build-order.md` (APP-7 in `app.md`). Companion to
 `../decisions/S3-usb-posture.md`, whose driver posture this changes for distributed builds, and
@@ -8,7 +8,7 @@ Status: draft, 2026-10-05. Implements E.7 of `build-order.md` (APP-7 in `app.md`
 
 ## Context
 
-Alpha testers need a build they can download, open and use with an RTL-SDR or a HackRF without
+Testers need a build they can download, open and use with an RTL-SDR or a HackRF without
 cloning the repository, installing Homebrew or running `ley daemon install`. Today
 `scripts/bundle-app.sh --with-daemon` lays out `Leyline.app` with `leylined`, `ley`, the decoders
 and the licence texts under `Contents/Helpers`, ad-hoc signed. Four things stand between that
@@ -20,9 +20,9 @@ bundle and a tester:
   signed, so the `dlopen` in `CRTLSDR/loader.c` and `CHackRF/loader.c` fails and the device list
   is empty. The ad-hoc build works only because it does not opt into the hardened runtime.
 - **Nothing starts the bundled daemon.** The app tells the user to run `ley daemon start`.
-- **Nothing updates the build.** An alpha ships often; a tester on a stale build files stale bugs.
+- **Nothing updates the build.** Releases ship often; a tester on a stale build files stale bugs.
 - **The repository is private.** GitHub Releases on it are not downloadable by testers, and the
-  GPL obligation to provide source travels with every binary handed out, alpha builds included.
+  GPL obligation to provide source travels with every binary handed out, the first included.
 
 ## Decisions (2026-10-05)
 
@@ -45,15 +45,19 @@ bundle and a tester:
   moves and shows in Login Items with weaker attribution.
 - **Sparkle 2 from the first build.** The app checks an appcast, downloads, verifies the EdDSA
   signature and replaces itself; then it restarts the daemon onto the new binary.
-- **Apple silicon only** for the alpha. A universal build needs universal driver libraries, which
+- **Apple silicon only.** A universal build needs universal driver libraries, which
   Homebrew does not provide.
 - **`ley` is reached through a symlink** to `Contents/Helpers/ley`, documented in the install
   guide. A menu item or a Homebrew cask can do it later.
-- **Every release changes `VERSION`** (`0.1.0-alpha.1`, `0.1.0-alpha.2`, …; the release
-  checklist already bumps it). The DMG is `Leyline-<VERSION>.dmg`, its notes are that version's
-  `CHANGELOG.md` section, and the app restarts a daemon whose version differs from its own
-  `CFBundleShortVersionString`. `CFBundleVersion` is `git rev-list --count HEAD`, which Sparkle
-  compares.
+- **Every release changes `VERSION`, to a greater X.Y.Z.** The first release is the first
+  version, `0.1.0`, and each later one increments it: the patch by default (`0.1.1`), the minor or
+  major when `make release` is given `BUMP=minor` or `BUMP=major`, or a version named with
+  `NEXT=`, which must be greater than the newest `vX.Y.Z` tag. A `VERSION` of `X-dev` releases as
+  `X`; after a release `VERSION` holds the released version until the next. There are no
+  pre-release names and no release channels. The DMG is `Leyline-<VERSION>.dmg`, its notes are
+  that version's `CHANGELOG.md` section, and the app restarts a daemon whose version differs from
+  its own `CFBundleShortVersionString`. `CFBundleVersion` is `git rev-list --count HEAD`, which
+  Sparkle compares.
 - **Not TestFlight.** TestFlight for the Mac takes App Store builds only, and an App Store build
   must be sandboxed (`../decisions/D2-licensing.md`, "Distribution obligations").
 
@@ -76,11 +80,11 @@ bundle and a tester:
 - `[x]` **OWN-4** Where the appcast is served: `https://leysdr.com/updates/appcast.xml`
   (decided 2026-10-05), published by the site repository's build. The URL is compiled into
   `SUFeedURL`, and installed copies only move to a new one through an update, so it names no
-  release track; a second track later is a Sparkle channel (`<sparkle:channel>`) in the same
-  feed. The DMGs and source tarballs are served beside it, from `https://leysdr.com/updates/`;
-  "Publishing" below is how they get there.
-- `[d]` **OWN-5** Whether D3 (the trademark check) gates a closed alpha or only the first public
-  build.
+  release track. There are no channels: every installed copy reads the one feed and is offered
+  every release. The DMGs and source tarballs are served beside it, from
+  `https://leysdr.com/updates/`; "Publishing" below is how they get there.
+- `[d]` **OWN-5** Whether D3 (the trademark check) gates the first release to testers or only
+  the first public build.
 
 ## Items
 
@@ -91,7 +95,7 @@ bundle and a tester:
   rewrites each library's id to `@rpath/<name>` and each reference to another of the three to
   `@loader_path/<name>` with `install_name_tool`, then signs each one. It fails, naming the
   library, when `otool -L` still shows a path under `/opt/homebrew` or `/usr/local`, and when a
-  formula is missing (the build Mac needs all three; the alpha carries both drivers).
+  formula is missing (the build Mac needs all three; a release carries both drivers).
 - It writes `Contents/Resources/drivers.json`: each library's formula, version and source URL from
   `brew info --json=v2`, so a release knows what source it owes.
 - Both loaders try `@executable_path/../Frameworks/<name>` before the Homebrew paths.
@@ -178,7 +182,8 @@ restarted onto N+1, and `ley daemon status` shows N+1's version.
 
 ### DIST-4 `[ ]` Sign, notarize, package
 
-`make release` on the Mac, with `CODESIGN_IDENTITY` and `NOTARY_PROFILE` set:
+`make release-build` on the Mac, with `CODESIGN_IDENTITY` and `NOTARY_PROFILE` set (`make release`
+runs it after the commit and tag):
 
 1. `bundle-app.sh --with-daemon` with `ley` and the decoders built for darwin/arm64.
 2. Signing from the inside out, never `codesign --deep`, each with `--options runtime
@@ -198,17 +203,20 @@ restarted onto N+1, and `ley daemon status` shows N+1's version.
 
 `release-appcast.sh` passes `--maximum-deltas 0`: Sparkle's delta updates would be extra files to
 serve, and a full DMG is tens of megabytes. `[ ]` The tag was created on GitHub after the build,
-so a release's `LeylineBuild` (the about panel) showed the previous tag's describe. `make alpha`
-now commits and tags `v<version>` locally before `make release`, and `make release-publish` uses
-that pushed tag, so the describe is the tag; the first alpha's about panel confirms it.
+so a release's `LeylineBuild` (the about panel) showed the previous tag's describe. `make release`
+now commits and tags `v<version>` locally before `make release-build`, and `make release-publish`
+uses that pushed tag, so the describe is the tag; the first release's about panel confirms it.
 
 Everything goes to `dist/<version>/`, with `appcast.xml` from `scripts/release-appcast.sh`
 (`--download-url-prefix https://leysdr.com/updates/`, the previous releases' DMGs kept in
 `dist/` so the feed lists them).
 
-`make release-publish` creates the GitHub release `v<VERSION>` on this repository as a
-prerelease with the DMG, both source tarballs, `drivers.json` and `appcast.xml` as assets, the
-same way `make shots-publish` creates a `shots-*` release: refused until HEAD is pushed.
+`make release-publish` creates the GitHub release `v<VERSION>` on this repository, a full
+release rather than a prerelease, with the DMG, both source tarballs, `drivers.json` and
+`appcast.xml` as assets, the same way `make shots-publish` creates a `shots-*` release: refused
+until HEAD is pushed. It passes `--latest=false`, so the repository's Latest stays the newest
+`shots-*` release as before. Nothing reads Latest: `leyshots` and the site find their releases by
+tag prefix (`shots-`, `v`).
 
 Verification: a Linux test of the pure parts (the version string, the `drivers.json` reader);
 the rest only on the Mac, where step 5 is the gate.
@@ -226,8 +234,8 @@ so merging the site's pull request is the step that ships an update to testers:
   DMGs of the releases the appcast still lists, into `public/updates/`. The deploy's existing
   cache rules fit: `appcast.xml` revalidates on every request, and the versioned DMG and tarball
   names are cached as immutable.
-- A download page links the newest DMG and its source tarballs; it is unlisted while the alpha is
-  closed.
+- A download page links the newest DMG and its source tarballs; it is unlisted while releases go
+  only to testers.
 
 This is work in the site repository, which its own agent maintains; this item is the handoff.
 Verification: after a merge, `curl -I https://leysdr.com/updates/appcast.xml` shows
