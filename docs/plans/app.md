@@ -1316,7 +1316,9 @@ This item is partial:
 
 ### APP-7 `[ ]` Distribution (E.7)
 
-Distribution is the next build item. Certificate acquisition does not block its install work:
+Distribution is the next build item; `distribution.md` is its plan (DIST-1 to DIST-6), with
+the driver, daemon and update decisions of 2026-10-05. Certificate acquisition does not block its
+install work:
 
 - `[x]` `scripts/bundle-app.sh --with-daemon` builds the release layout with `leylined`, `ley`,
   decoder manifests and executables, and the required licence texts under `Contents/Helpers`;
