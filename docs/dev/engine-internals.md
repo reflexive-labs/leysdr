@@ -904,8 +904,9 @@ resolved values in `PersistenceParams` on the stream descriptor.
   passes `--log-file ~/Library/Logs/Leyline/leylined.log` and the daemon appends stdout and stderr
   there itself (`appendOutput(toLogFile:)`).
 - `ley daemon install` writes `~/Library/LaunchAgents/com.leysdr.daemon.plist` (KeepAlive, RunAtLoad)
-  pointing at the `leylined` binary and bootstraps it; `start/stop/status/logs` drive launchctl when
-  installed and fall back to spawning/killing the binary directly (pidfile) when not.
+  pointing at the `leylined` binary and bootstraps it; `start` and `stop` drive launchctl when
+  that plist exists or launchd has the `com.leysdr.daemon` label loaded (the app's agent has no
+  plist there), and fall back to spawning/killing the binary directly (pidfile) when neither.
 
 ## Platform posture
 

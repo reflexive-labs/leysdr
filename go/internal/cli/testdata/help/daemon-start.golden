@@ -1,6 +1,7 @@
-start launches the daemon and prints its pid (process id). With a LaunchAgent
-installed it asks launchd; otherwise it spawns leylined in the background
-with its output in the log file. Already running is not an error.
+start launches the daemon and prints its pid (process id). When launchd has
+its job (a LaunchAgent from install, or the Leyline app's) it asks launchd;
+otherwise it spawns leylined in the background with its output in the log
+file. Already running is not an error.
 --json prints the running daemon's DaemonInfo, as 'ley daemon status --json' does.
 
 Usage:

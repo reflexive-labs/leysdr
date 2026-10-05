@@ -45,9 +45,9 @@ all the radio work; every ley command talks to it. 'start' launches it,
 
 On macOS 'install' writes a LaunchAgent (~/Library/LaunchAgents/
 com.leysdr.daemon.plist) so the daemon starts at login; start and stop then
-drive launchctl. Without a LaunchAgent, start spawns leylined detached
-(stdout/stderr to the log file, pid in the pidfile beside the socket) and stop
-sends SIGTERM via the pidfile.
+drive launchctl, as they do for the daemon the Leyline app starts. Without
+either, start spawns leylined detached (stdout/stderr to the log file, pid in
+the pidfile beside the socket) and stop sends SIGTERM via the pidfile.
 
 The daemon binary is found from --bin, $LEYLINE_DAEMON_BIN, a 'leylined' next
 to the ley executable, then PATH.`,
@@ -81,7 +81,7 @@ to the ley executable, then PATH.`,
 			"uninstall unloads and removes the LaunchAgent that 'ley daemon install'\nwrote. The daemon stops; 'ley daemon start' still works without it.\n\nThe daemon the Leyline app starts is switched off in System Settings >\nGeneral > Login Items instead; uninstall refuses it.",
 			"  ley daemon uninstall", false, app.daemonUninstall),
 		sub("start", "Start the daemon",
-			"start launches the daemon and prints its pid (process id). With a LaunchAgent\ninstalled it asks launchd; otherwise it spawns leylined in the background\nwith its output in the log file. Already running is not an error.\n--json prints the running daemon's DaemonInfo, as 'ley daemon status --json' does.",
+			"start launches the daemon and prints its pid (process id). When launchd has\nits job (a LaunchAgent from install, or the Leyline app's) it asks launchd;\notherwise it spawns leylined in the background with its output in the log\nfile. Already running is not an error.\n--json prints the running daemon's DaemonInfo, as 'ley daemon status --json' does.",
 			"  ley daemon start         # started leylined (pid 12345); check with: ley daemon status\n  ley daemon start --log /tmp/leylined.log\n  ley daemon start --json  # the DaemonInfo of the daemon now running", true, app.daemonStart),
 		sub("stop", "Stop the daemon (and clear a stale socket)",
 			"stop asks the daemon to exit and waits until the socket stops answering.\nA socket file left behind by a crashed daemon is removed so the next start\nis clean. --json prints the DaemonInfo the daemon last reported (its pid),\nor only socketPath when nothing was running.",
@@ -142,8 +142,16 @@ func launchTarget() string {
 	return fmt.Sprintf("gui/%d/%s", os.Getuid(), launchAgentLabel)
 }
 
-// launchctl runs launchctl with args, surfacing its combined output on error.
-func launchctl(ctx context.Context, args ...string) error {
+// launchctl runs launchctl with args, or the test's stand-in for it.
+func (a *App) launchctl(ctx context.Context, args ...string) error {
+	if a.launchctlRun != nil {
+		return a.launchctlRun(ctx, args...)
+	}
+	return runLaunchctl(ctx, args...)
+}
+
+// runLaunchctl runs launchctl with args, surfacing its combined output on error.
+func runLaunchctl(ctx context.Context, args ...string) error {
 	out, err := exec.CommandContext(ctx, "launchctl", args...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("launchctl %v: %w: %s", args, err, out)
@@ -158,6 +166,31 @@ func launchctlPrint(ctx context.Context, target string) (string, error) {
 	return string(out), err
 }
 
+// printJob returns `launchctl print` for the daemon's job (or the test's
+// stand-in); an error means launchd has no such job, as on every platform but
+// macOS.
+func (a *App) printJob(ctx context.Context) (string, error) {
+	if a.launchctlPrint != nil {
+		return a.launchctlPrint(ctx, launchTarget())
+	}
+	if runtime.GOOS != "darwin" {
+		return "", errors.New("launchd is macOS only")
+	}
+	return launchctlPrint(ctx, launchTarget())
+}
+
+// launchdOwnsDaemon reports whether launchd runs the daemon, so start and
+// stop go through launchctl rather than the pidfile: either ley's plist is on
+// disk, or the label is loaded without one, which is how the app registers
+// its agent.
+func (a *App) launchdOwnsDaemon(ctx context.Context) bool {
+	if launchAgentInstalled() {
+		return true
+	}
+	_, err := a.printJob(ctx)
+	return err == nil
+}
+
 // appDaemonProgram returns the program of the com.leysdr.daemon job when the
 // Leyline app registered it, and "" otherwise. The app and `ley daemon
 // install` share the label, so install would replace the app's job and
@@ -166,14 +199,7 @@ func launchctlPrint(ctx context.Context, target string) (string, error) {
 // bundle's Contents/Helpers, unless its plist is the one install writes (a
 // source build may be pointed at a bundled leylined with --bin).
 func (a *App) appDaemonProgram(ctx context.Context) string {
-	printJob := a.launchctlPrint
-	if printJob == nil {
-		if runtime.GOOS != "darwin" {
-			return ""
-		}
-		printJob = launchctlPrint
-	}
-	out, err := printJob(ctx, launchTarget())
+	out, err := a.printJob(ctx)
 	if err != nil {
 		return ""
 	}
@@ -272,12 +298,12 @@ func (a *App) daemonInstall(ctx context.Context, f *daemonFlags) error {
 	if err := os.WriteFile(path, []byte(plist(bin, socket, logPath)), 0o644); err != nil {
 		return err
 	}
-	_ = launchctl(ctx, "bootout", launchTarget())
+	_ = a.launchctl(ctx, "bootout", launchTarget())
 	// bootout is asynchronous; bootstrap fails with EIO / "already" until the
 	// old job is gone.
 	var err2 error
 	for i := 0; i < 10; i++ {
-		err2 = launchctl(ctx, "bootstrap", fmt.Sprintf("gui/%d", os.Getuid()), path)
+		err2 = a.launchctl(ctx, "bootstrap", fmt.Sprintf("gui/%d", os.Getuid()), path)
 		if err2 == nil || (!strings.Contains(err2.Error(), "Input/output error") && !strings.Contains(err2.Error(), "already")) {
 			break
 		}
@@ -304,7 +330,7 @@ func (a *App) daemonUninstall(ctx context.Context, _ *daemonFlags) error {
 	if _, err := os.Stat(path); err != nil {
 		return fmt.Errorf("not installed: %s", path)
 	}
-	_ = launchctl(ctx, "bootout", launchTarget())
+	_ = a.launchctl(ctx, "bootout", launchTarget())
 	if err := os.Remove(path); err != nil {
 		return err
 	}
@@ -352,8 +378,8 @@ func (a *App) daemonStart(ctx context.Context, f *daemonFlags) error {
 	if a.reachable(ctx) {
 		return a.reportStarted(ctx, "already running")
 	}
-	if launchAgentInstalled() {
-		if err := launchctl(ctx, "kickstart", "-k", launchTarget()); err != nil {
+	if a.launchdOwnsDaemon(ctx) {
+		if err := a.launchctl(ctx, "kickstart", "-k", launchTarget()); err != nil {
 			return err
 		}
 		return a.awaitDaemon(ctx, f, nil, "started leylined")
@@ -487,12 +513,12 @@ func (a *App) daemonStop(ctx context.Context, _ *daemonFlags) error {
 	// The daemon cannot be asked afterwards, so its last report (pid and all)
 	// is what --json prints once it is gone.
 	last := a.daemonInfo(ctx)
-	if launchAgentInstalled() {
+	if a.launchdOwnsDaemon(ctx) {
 		if last == nil {
 			a.reportNotRunningForStop()
 			return nil
 		}
-		if err := launchctl(ctx, "kill", "SIGTERM", launchTarget()); err != nil {
+		if err := a.launchctl(ctx, "kill", "SIGTERM", launchTarget()); err != nil {
 			return err
 		}
 		// KeepAlive.SuccessfulExit=false keeps a clean exit down; confirm the

@@ -11,12 +11,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"google.golang.org/grpc"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
 	"github.com/reflexive-labs/leysdr/go/internal/testutil"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
@@ -185,5 +187,74 @@ func TestAppDaemonProgram(t *testing.T) {
 		if got := app.appDaemonProgram(t.Context()); got != c.want {
 			t.Errorf("%s: appDaemonProgram = %q, want %q", c.name, got, c.want)
 		}
+	}
+}
+
+// serveFake starts a fake daemon on sock and returns the function that stops it.
+func serveFake(t *testing.T, sock string) (stop func()) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	served := make(chan error, 1)
+	go func() { served <- fakedaemon.New(fakedaemon.Options{}).Serve(ctx, sock) }()
+	var once sync.Once
+	stop = func() { once.Do(func() { cancel(); <-served }) }
+	t.Cleanup(stop)
+	return stop
+}
+
+// The app's agent has no plist in ~/Library/LaunchAgents, so start and stop find launchd's job by
+// its label and drive it with launchctl, never by spawning or signalling a process themselves.
+func TestDaemonStartAndStopDriveALoadedLabel(t *testing.T) {
+	const program = "/Applications/Leyline.app/Contents/Helpers/leylined"
+	job := launchctlJob("/Applications/Leyline.app/Contents/Library/LaunchAgents/com.leysdr.daemon.plist", program)
+	target := fmt.Sprintf("gui/%d/com.leysdr.daemon", os.Getuid())
+	sock := testutil.SocketPath(t, "agent.sock")
+	var calls [][]string
+	stopFake := func() {}
+	var out, errb bytes.Buffer
+	app := &App{
+		Stdout: &out, Stderr: &errb,
+		LookupEnv:      func(string) (string, bool) { return "", false },
+		launchctlPrint: func(context.Context, string) (string, error) { return job, nil },
+		launchctlRun: func(_ context.Context, args ...string) error {
+			calls = append(calls, args)
+			switch args[0] {
+			case "kickstart":
+				stopFake = serveFake(t, sock)
+			case "kill":
+				stopFake()
+			}
+			return nil
+		},
+	}
+	if err := Execute(t.Context(), app, []string{"--socket", sock, "daemon", "start"}); err != nil {
+		t.Fatalf("daemon start: %v\nstderr: %s", err, errb.String())
+	}
+	if err := Execute(t.Context(), app, []string{"--socket", sock, "daemon", "stop"}); err != nil {
+		t.Fatalf("daemon stop: %v\nstderr: %s", err, errb.String())
+	}
+	want := [][]string{{"kickstart", "-k", target}, {"kill", "SIGTERM", target}}
+	if fmt.Sprint(calls) != fmt.Sprint(want) {
+		t.Errorf("launchctl calls = %v, want %v", calls, want)
+	}
+	if !strings.Contains(out.String(), "started leylined") || !strings.Contains(out.String(), "stopped") {
+		t.Errorf("stdout = %q, want the start and stop reports", out.String())
+	}
+}
+
+// Without a plist or a loaded label, start and stop keep to the pidfile.
+func TestLaunchdOwnsDaemonNeedsALoadedLabel(t *testing.T) {
+	if launchAgentInstalled() {
+		t.Skip("this machine has ley's LaunchAgent installed")
+	}
+	none := &App{launchctlPrint: func(context.Context, string) (string, error) {
+		return "", errors.New("exit status 113")
+	}}
+	if none.launchdOwnsDaemon(t.Context()) {
+		t.Error("launchdOwnsDaemon is true with no job loaded")
+	}
+	loaded := &App{launchctlPrint: func(context.Context, string) (string, error) { return "gui/501/com.leysdr.daemon = {\n}\n", nil }}
+	if !loaded.launchdOwnsDaemon(t.Context()) {
+		t.Error("launchdOwnsDaemon is false with the label loaded")
 	}
 }

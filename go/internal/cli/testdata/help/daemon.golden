@@ -4,9 +4,9 @@ all the radio work; every ley command talks to it. 'start' launches it,
 
 On macOS 'install' writes a LaunchAgent (~/Library/LaunchAgents/
 com.leysdr.daemon.plist) so the daemon starts at login; start and stop then
-drive launchctl. Without a LaunchAgent, start spawns leylined detached
-(stdout/stderr to the log file, pid in the pidfile beside the socket) and stop
-sends SIGTERM via the pidfile.
+drive launchctl, as they do for the daemon the Leyline app starts. Without
+either, start spawns leylined detached (stdout/stderr to the log file, pid in
+the pidfile beside the socket) and stop sends SIGTERM via the pidfile.
 
 The daemon binary is found from --bin, $LEYLINE_DAEMON_BIN, a 'leylined' next
 to the ley executable, then PATH.
