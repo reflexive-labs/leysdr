@@ -49,6 +49,11 @@ bundle and a tester:
   Homebrew does not provide.
 - **`ley` is reached through a symlink** to `Contents/Helpers/ley`, documented in the install
   guide. A menu item or a Homebrew cask can do it later.
+- **Every release changes `VERSION`** (`0.1.0-alpha.1`, `0.1.0-alpha.2`, …; the release
+  checklist already bumps it). The DMG is `Leyline-<VERSION>.dmg`, its notes are that version's
+  `CHANGELOG.md` section, and the app restarts a daemon whose version differs from its own
+  `CFBundleShortVersionString`. `CFBundleVersion` is `git rev-list --count HEAD`, which Sparkle
+  compares.
 - **Not TestFlight.** TestFlight for the Mac takes App Store builds only, and an App Store build
   must be sandboxed (`../decisions/D2-licensing.md`, "Distribution obligations").
 
