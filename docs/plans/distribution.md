@@ -192,9 +192,10 @@ restarted onto N+1, and `ley daemon status` shows N+1's version.
    and the driver tarballs `drivers.json` names, downloaded and checked against their SHA-256.
 
 `release-appcast.sh` passes `--maximum-deltas 0`: Sparkle's delta updates would be extra files to
-serve, and a full DMG is tens of megabytes. `[ ]` The tag is created on GitHub after the build,
-so a release's `LeylineBuild` (the about panel) shows the previous tag's describe; tagging
-locally before `bundle-app.sh` would fix it.
+serve, and a full DMG is tens of megabytes. `[ ]` The tag was created on GitHub after the build,
+so a release's `LeylineBuild` (the about panel) showed the previous tag's describe. `make alpha`
+now commits and tags `v<version>` locally before `make release`, and `make release-publish` uses
+that pushed tag, so the describe is the tag; the first alpha's about panel confirms it.
 
 Everything goes to `dist/<version>/`, with `appcast.xml` from `scripts/release-appcast.sh`
 (`--download-url-prefix https://leysdr.com/updates/`, the previous releases' DMGs kept in

@@ -11,35 +11,59 @@ to anyone.
 - [ ] Apple Developer Program access is active, a Developer ID Application certificate is installed,
       and notarization credentials are configured without storing them in the repository. Their absence
       blocks the signed release, not the install plumbing.
-- [ ] `VERSION` bumped to this release, `make version`, committed; the tag will be `v<VERSION>`.
-      Every release changes it: an alpha is `0.1.0-alpha.N`, one more than the last. The disk
-      image is named after it, the app restarts a daemon whose version differs from it, and the
-      update feed's notes come from its `CHANGELOG.md` section.
+- [ ] `CHANGELOG.md`'s `## Unreleased` section holds this release's notes. `make alpha` bumps
+      `VERSION` (do not bump it by hand), dates the section as the release's and tags
+      `v<VERSION>`. Every release changes the version: an alpha is `0.1.0-alpha.N`, one more than
+      the last. The disk image is named after it, the app restarts a daemon whose version differs
+      from it, and the update feed's notes come from its `CHANGELOG.md` section.
 - [ ] `make check` green on the Mac (Accelerate kernels, parity tests, audio sink compile, e2e).
 - [ ] `make check` green on Linux (the Go half, the portable engine core, e2e).
-- [ ] `CHANGELOG.md` has a dated section for this version.
 - [ ] README's status section agrees with `docs/plans/build-order.md`.
 - [ ] `docs/decisions/` has a note for any spike or measurement this release relied on.
 
 ## The signed build
 
-On the build Mac, an Apple silicon Mac with Homebrew's `librtlsdr`, `hackrf` and `libusb`
-installed, because the app carries copies of all three (`docs/decisions/S3-usb-posture.md`).
+On the build Mac, an Apple silicon Mac. `make alpha` runs every step of the build in order and
+stops at the first that fails, with a line that ends in the command that fixes it:
 
-- [ ] `CODESIGN_IDENTITY` is the full name `security find-identity -v -p codesigning` lists
-      ("Developer ID Application: …"), and `NOTARY_PROFILE` the `xcrun notarytool
-      store-credentials` profile. The Sparkle signing key is in the login keychain.
-- [ ] `make release` succeeds. It lays out the app with the daemon, `ley`, the decoders and the
-      driver libraries; signs each component from the inside out with the hardened runtime;
-      builds and signs `Leyline-<VERSION>.dmg`; submits it for notarization and waits, printing
-      the notary log and failing on a rejection; staples the ticket and checks the disk image and
-      the app inside it with `spctl`. It writes the source tarballs (the tag's
-      `leysdr-<VERSION>-source.tar.gz` and the driver tarballs `drivers.json` lists, each checked
-      against its SHA-256) and `appcast.xml` into `dist/<VERSION>/`. Keep the previous releases'
-      disk images in `dist/`, because the update feed lists them.
-- [ ] `make release-publish` creates the GitHub release `v<VERSION>` on this repository as a
-      prerelease, with the disk image, the source tarballs, `drivers.json` and `appcast.xml` as
-      assets. It refuses until HEAD is pushed.
+1. It checks that the checkout is on `main`, clean and not behind `origin/main`; that Homebrew's
+   `librtlsdr`, `hackrf` and `libusb` are installed, because the app carries copies of all three
+   (`docs/decisions/S3-usb-posture.md`), and installs any that are missing; that Xcode's tools
+   and Go are there; that the keychain holds the Developer ID Application identity, the
+   `leysdr-notary` profile works and the Sparkle key matches `Info.plist`; that `gh` can see the
+   repository; and that `## Unreleased` has notes.
+2. It shows the next version (`0.1.0-dev` is followed by `0.1.0-alpha.1`, `0.1.0-alpha.N` by
+   `0.1.0-alpha.N+1`; `NEXT=0.2.0-alpha.1` picks another) with the notes, and asks before going
+   on. `YES=1` skips the question.
+3. It writes `VERSION`, runs `make version`, turns `## Unreleased` into `## <VERSION>
+   (<date>)` under a new, empty `## Unreleased`, commits that as `release: <VERSION>` and tags it
+   `v<VERSION>`. The tag comes before the build, so the about panel names it.
+4. `make release` lays out the app with the daemon, `ley`, the decoders and the driver libraries;
+   signs each component from the inside out with the hardened runtime; builds and signs
+   `Leyline-<VERSION>.dmg`; submits it for notarization and waits, printing the notary log and
+   failing on a rejection; staples the ticket and checks the disk image and the app inside it
+   with `spctl`. It writes the source tarballs (the tag's `leysdr-<VERSION>-source.tar.gz` and
+   the driver tarballs `drivers.json` lists, each checked against its SHA-256) and `appcast.xml`
+   into `dist/<VERSION>/`. Keep the previous releases' disk images in `dist/`, because the update
+   feed lists them.
+5. It pushes `main` and the tag, and `make release-publish` creates the GitHub release
+   `v<VERSION>` on this repository as a prerelease, with the disk image, the source tarballs,
+   `drivers.json` and `appcast.xml` as assets.
+
+A run that stops after the commit is carried on by running `make alpha` again: it finds HEAD is
+the release commit and goes on from there, reusing a complete `dist/<VERSION>/`, building an
+unfinished one again and skipping a GitHub release that exists. To abandon a release cut but not
+pushed, `git tag -d v<VERSION>` and `git reset --hard HEAD~1`.
+
+`make alpha DRY_RUN=1` is the rehearsal. It runs the checks that need no credentials, shows the
+version and notes, and builds an ad-hoc-signed app and disk image of the tree as it is into a new
+temporary directory. It changes no file, commit or tag, and notarizes, pushes and publishes
+nothing; it lists what it skipped.
+
+Then the two steps no script can take, which `make alpha` names when it finishes:
+
+- [ ] Download the disk image from the GitHub release in a browser onto a second Mac or a fresh
+      account, and pass "Acceptance, on a second Mac" below. Nothing goes to testers before it.
 - [ ] Merge the leysdr.com pull request that pins the new release. The site's daily workflow
       opens it (or dispatch the workflow to open it now); merging it deploys the disk image, the
       tarballs and `appcast.xml` under `https://leysdr.com/updates/`, which is what installed
