@@ -51,5 +51,8 @@ evals/runs/
 app/.build/
 app/dist/
 
+# Releases (scripts/release.sh): every version's DMG stays here, because the appcast lists them
+/dist/
+
 # Python bytecode from running scripts/check-docs.py
 __pycache__/

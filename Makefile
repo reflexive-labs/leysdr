@@ -28,6 +28,12 @@
 #   make app-e2e    the façade against a locally built leylined --no-hardware playing a fixture
 #   make app-run    macOS: run the app straight from the package (no bundle, no signature)
 #   make app-bundle macOS: assemble and sign app/dist/Leyline.app (scripts/bundle-app.sh)
+#   make release    macOS: the signed, notarized Leyline-<VERSION>.dmg, the source tarballs it owes
+#                   and the update feed in dist/<VERSION>/ (scripts/release.sh), from a clean tree
+#                   whose VERSION is a release's. Needs CODESIGN_IDENTITY and NOTARY_PROFILE; on the
+#                   build Mac they are "Developer ID Application: Reflexive Labs LLC (P2KZW25PL8)"
+#                   and leysdr-notary
+#   make release-test  the parts of scripts/release.sh that need no Mac
 #   make reload     macOS: rebuild ley and leylined (release), stop the running daemon, reinstall the
 #                   LaunchAgent on the new binary and start it — the edit-build-try loop in one step
 #   make lint       golangci-lint + gofumpt (pinned versions, installed into .tools/<host>/bin)
@@ -59,7 +65,7 @@ GOFUMPT_VERSION := v0.12.0
 GOVULNCHECK_VERSION := v1.8.0
 ACTIONLINT_VERSION := v1.7.12
 
-.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval shots shots-bundle shots-publish shots-release app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders
+.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval shots shots-bundle shots-publish shots-release release release-test app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders
 
 all: go swift app
 
@@ -244,6 +250,15 @@ shots-publish: go
 shots-release: $(SHOTS_ASSETS) | go
 	$(GOBIN)/leyshots publish $(SHOTS_ARGS)
 
+# A release of the app (docs/plans/distribution.md, "Sign, notarize, package"; the pass around it is
+# docs/dev/release-checklist.md). scripts/release.sh builds its own ley and decoders rather than
+# using go/bin, and refuses a dirty tree, a -dev VERSION and a dist/<VERSION>/ that already exists.
+release:
+	./scripts/release.sh
+
+release-test:
+	./scripts/test-release.sh
+
 # The Mac app (docs/dev/app.md). One package at app/, depending on swift/LeylineProto for the
 # generated contract and on the engine package not at all. `swift test` in app/ would run the
 # daemon-backed suite too and silently skip it without LEYLINED_BIN, so the two targets name their
@@ -278,7 +293,7 @@ app-lint:
 lint: $(GOLANGCI_LINT) $(GOFUMPT)
 	cd go && $(GOLANGCI_LINT) run ./... && test -z "$$($(GOFUMPT) -l .)"
 
-check: proto-check version-check license-check docs-check go-test race lint app-lint swift swift-test e2e app app-test app-e2e
+check: proto-check version-check license-check docs-check go-test race lint app-lint swift swift-test e2e app app-test app-e2e release-test
 
 clean:
 	rm -rf go/bin engine/.build swift/LeylineProto/.build app/.build app/dist

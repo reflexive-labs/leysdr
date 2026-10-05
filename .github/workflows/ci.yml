@@ -41,6 +41,10 @@ jobs:
       # engine/Package.resolved, and no copyleft imported outside engine/ (docs/decisions/D2-licensing.md).
       - name: licences
         run: make license-check
+      # The release script's version refusal, drivers.json reader and source checksums; the
+      # signing and notarization half needs the build Mac (docs/dev/release-checklist.md).
+      - name: release script (the parts that need no Mac)
+        run: make release-test
       - name: go.mod / go.sum are tidy
         working-directory: go
         run: |
