@@ -72,7 +72,8 @@ bundle and a tester:
   (decided 2026-10-05), published by the site repository's build. The URL is compiled into
   `SUFeedURL`, and installed copies only move to a new one through an update, so it names no
   release track; a second track later is a Sparkle channel (`<sparkle:channel>`) in the same
-  feed. `[ ]` Where the DMGs and source tarballs live (the site, or release assets it links).
+  feed. The DMGs and source tarballs are served beside it, from `https://leysdr.com/updates/`;
+  "Publishing" below is how they get there.
 - `[d]` **OWN-5** Whether D3 (the trademark check) gates a closed alpha or only the first public
   build.
 
@@ -184,10 +185,36 @@ restarted onto N+1, and `ley daemon status` shows N+1's version.
 6. The source the release owes: `git archive` of the tag as `leysdr-<version>-source.tar.gz`,
    and the driver tarballs `drivers.json` names, downloaded and checked against their SHA-256.
 
-Everything goes to `dist/<version>/`. Publishing it is OWN-4's mechanism.
+Everything goes to `dist/<version>/`, with `appcast.xml` from `scripts/release-appcast.sh`
+(`--download-url-prefix https://leysdr.com/updates/`, the previous releases' DMGs kept in
+`dist/` so the feed lists them).
+
+`make release-publish` creates the GitHub release `v<VERSION>` on this repository as a
+prerelease with the DMG, both source tarballs, `drivers.json` and `appcast.xml` as assets, the
+same way `make shots-publish` creates a `shots-*` release: refused until HEAD is pushed.
 
 Verification: a Linux test of the pure parts (the version string, the `drivers.json` reader);
 the rest only on the Mac, where step 5 is the gate.
+
+### DIST-7 `[ ]` Publishing through leysdr.com
+
+leysdr.com is an Astro build deployed to S3 behind CloudFront (`reflexive-labs/leysdr.com`,
+`deploy.yml`) and already pulls `shots-*` releases from this private repository with
+`LEYSDR_READ_TOKEN` (`update-shots.yml`, daily, as a pull request). Releases take the same route,
+so merging the site's pull request is the step that ships an update to testers:
+
+- A daily (and manually dispatchable) workflow in the site repository finds the newest `v*`
+  release, and when it differs from the pinned tag opens a pull request that pins it.
+- The site build downloads that release's `appcast.xml`, its DMG and source tarballs, and the
+  DMGs of the releases the appcast still lists, into `public/updates/`. The deploy's existing
+  cache rules fit: `appcast.xml` revalidates on every request, and the versioned DMG and tarball
+  names are cached as immutable.
+- A download page links the newest DMG and its source tarballs; it is unlisted while the alpha is
+  closed.
+
+This is work in the site repository, which its own agent maintains; this item is the handoff.
+Verification: after a merge, `curl -I https://leysdr.com/updates/appcast.xml` shows
+`max-age=0`, and the enclosure URL in it downloads a DMG whose `spctl` check passes.
 
 ### DIST-5 `[ ]` A second Mac
 
