@@ -130,9 +130,13 @@ mkdir -p "$out/Contents/Frameworks"
 ditto "$bin/Sparkle.framework" "$out/Contents/Frameworks/Sparkle.framework"
 otool -l "$out/Contents/MacOS/LeylineApp" | grep -q '@executable_path/../Frameworks' \
   || install_name_tool -add_rpath @executable_path/../Frameworks "$out/Contents/MacOS/LeylineApp"
-# SwiftPM resource bundles (assets, Metal libraries) sit beside the executable; Bundle.module
-# looks for them in the app's Resources when it is not beside the binary.
+# SwiftPM resource bundles sit beside the executable; in the app they go in Contents/Resources,
+# which is where LeylineClient's ResourceBundle looks first for the band table. SwiftPM's own
+# Bundle.module accessor does not look there, so a bundle missing from it would leave the app
+# without its bands on every Mac but this one; the check makes that a failed build instead.
 for b in "$bin"/*.bundle; do [ -e "$b" ] && cp -R "$b" "$out/Contents/Resources/"; done
+[ -f "$out/Contents/Resources/LeylineApp_LeylineClient.bundle/bands.json" ] \
+  || die "$out/Contents/Resources has no LeylineApp_LeylineClient.bundle/bands.json; the app would have no band table (make bands-json, then build again)"
 # The icon is drawn at bundle time rather than checked in (docs/design/brand/README.md);
 # Info.plist names it as CFBundleIconFile. Without iconutil the bundle gets the generic icon.
 if command -v iconutil >/dev/null 2>&1; then

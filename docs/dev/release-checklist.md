@@ -105,8 +105,8 @@ quarantined, onto a Mac that has never built Leyline, or into a fresh user accou
 
 - [ ] Gatekeeper opens the app with no warning beyond "downloaded from the Internet".
 - [ ] The window opens and the bands sidebar lists the built-in bands. The band table is a
-      resource bundle inside the app; if the app looks for it in the build Mac's `app/.build`
-      instead, it crashes at launch here.
+      resource bundle in `Contents/Resources`, which `bundle-app.sh` checks is there and the app
+      looks in before the build Mac's `app/.build`.
 - [ ] First launch registers the daemon: macOS notifies that a background item was added, and
       System Settings > General > Login Items & Extensions lists it. Switching it off shows "Login Items has
       the engine switched off" in the window; switching it on again connects.

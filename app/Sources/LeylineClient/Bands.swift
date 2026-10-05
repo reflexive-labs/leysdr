@@ -173,9 +173,10 @@ public struct Band: Sendable, Hashable, Codable, Identifiable {
 }
 
 public enum Bands {
-    /// The seed file, decoded once. Empty only if the resource is missing, which the tests catch.
+    /// The seed file, decoded once. Empty only if the resource is missing, which the tests catch;
+    /// `ResourceBundle` says where it is looked for.
     public static let builtIn: [Band] = {
-        guard let url = Bundle.module.url(forResource: "bands", withExtension: "json"),
+        guard let url = ResourceBundle.url(forResource: "bands", withExtension: "json"),
             let data = try? Data(contentsOf: url),
             let bands = try? decode(data)
         else { return [] }

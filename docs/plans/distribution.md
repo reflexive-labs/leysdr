@@ -234,10 +234,12 @@ quarantined) onto a Mac that has never built Leyline, or a fresh user account wi
 renamed:
 
 - `[ ]` Gatekeeper opens the app without a warning beyond "downloaded from the Internet".
-- `[ ]` The band table loads. `Bands.builtIn` reads `Bundle.module`, whose generated accessor
-  falls back to an absolute path inside the build machine's `app/.build`; if the bundle copied to
-  `Contents/Resources` is not found there, the app crashes at launch on any other Mac. The fix,
-  if needed, is an accessor that looks in `Bundle.main.resourceURL` first.
+- `[ ]` The band table loads. SwiftPM's `Bundle.module` looks only beside the app's root and at
+  an absolute path inside the build machine's `app/.build`, and stops the app when neither
+  exists, so `Bands.builtIn` now reads the seed through `ResourceBundle`, which looks in
+  `Bundle.main.resourceURL` and beside the executable first and calls `Bundle.module` only where
+  the build tree exists; `bundle-app.sh` fails when `Contents/Resources` lacks the bundle. What
+  is left here is seeing the sidebar list the bands.
 - `[ ]` First launch registers the daemon; Login Items lists it under the team name.
 - `[ ]` `ley devices` (through the symlink) lists an RTL-SDR and a HackRF with Homebrew absent.
 - `[ ]` A second process (`rtl_test`) reports the RTL-SDR busy while the daemon holds it, which
