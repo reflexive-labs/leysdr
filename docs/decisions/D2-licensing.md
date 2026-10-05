@@ -77,11 +77,23 @@ commercial consumer (ours or someone else's) never needs to vendor GPL code.
 
 On every binary release (`docs/dev/release-checklist.md` carries these as checklist items):
 
-- GPL source offer for the daemon (a link to the tagged source suffices).
-- `NOTICE` file covering the Apache-2.0 dependencies.
-- librtlsdr's licence text alongside (`third_party/licenses/librtlsdr.txt`).
+- GPL source offer for the daemon: the release's source, `leysdr-<version>-source.tar.gz` (a
+  `git archive` of the tag), published beside the disk image. While the repository is private a
+  link to the tag reaches no one, so the tarball is the offer.
+- The source of the driver libraries the app carries in `Contents/Frameworks`
+  (`docs/decisions/S3-usb-posture.md`, "Where the libraries come from"): librtlsdr is
+  GPL-2.0-or-later and libusb LGPL-2.1-or-later, so their source tarballs are published beside
+  every disk image. `Contents/Resources/drivers.json` records each library's formula, version,
+  source URL and SHA-256, and the release downloads and checks the tarballs from it. libhackrf is
+  BSD-3-Clause and needs only its licence text.
+- `NOTICE` file covering the Apache-2.0 dependencies and the app's Sparkle (MIT, with
+  BSD-2-Clause, MIT and Zlib parts).
+- The licence texts of librtlsdr, libhackrf and libusb alongside the daemon
+  (`third_party/licenses/librtlsdr.txt`, `libhackrf.txt`, `libusb.txt`, copied to
+  `Leyline.app/Contents/Helpers`).
 - Direct + notarized distribution. Not the App Store: the GPL conflicts with its terms, and the
-  daemon needs USB entitlements a sandboxed app cannot hold.
+  daemon needs USB entitlements a sandboxed app cannot hold. Not TestFlight either, which takes
+  App Store builds only.
 
 ## Implementation
 

@@ -1,17 +1,95 @@
 # Installing Leyline
 
 What you will have at the end: the daemon (`leylined`) running on your Mac, the `ley` command on
-your `PATH`, and a radio (or an IQ recording) it can see. Nothing has been released as a binary yet,
-so this is a build from source.
+your `PATH`, and a radio (or an IQ recording) it can see. There are two ways to get there: the Mac
+app, which carries the daemon, `ley`, the decoders and the radio drivers, or a build from source.
 
-## Requirements
+## Install the app
+
+The app is a disk image, `Leyline-<version>.dmg`, signed with a Developer ID and notarized by
+Apple. While Leyline is in a closed alpha, testers receive the link to it; anyone else builds from
+source ("Build from source" below). It needs:
+
+- A Mac with Apple silicon. The alpha has no Intel build, because the radio drivers it carries are
+  arm64 only.
+- macOS 26 or later.
+- An RTL-SDR (RTL2832U) or a HackRF One / HackRF Pro, or nothing ("Without a radio" below). The
+  drivers for both are inside the app, so Homebrew is not needed.
+
+1. Open the disk image and drag Leyline to Applications.
+2. Open Leyline from Applications. macOS asks once whether to open an app downloaded from the
+   Internet; click Open.
+3. On its first launch the app registers the daemon as a login item, which starts it now and at
+   every login. macOS posts a notification that Leyline added a background item. The daemon is
+   listed in System Settings > General > Login Items & Extensions, under "Allow in the
+   Background".
+
+If that switch is off, the daemon does not run and the window shows "Login Items has the engine
+switched off" with an Open Login Items button, which opens that settings page. Switch Leyline on
+there; the window connects on its next retry.
+
+The app leaves a daemon built from source alone: when `~/Library/LaunchAgents/com.leysdr.daemon.plist`
+exists (`ley daemon install` wrote it), the app registers nothing and connects to that daemon.
+Remove it with `ley daemon uninstall` to let the app start its own.
+
+### `ley` from the app
+
+The app carries `ley` at `Leyline.app/Contents/Helpers/ley`. Link it onto your `PATH`;
+`/usr/local/bin` is on the default `PATH` but does not exist on a new Apple silicon Mac, so create
+it first:
+
+```sh
+sudo mkdir -p /usr/local/bin
+sudo ln -s /Applications/Leyline.app/Contents/Helpers/ley /usr/local/bin/ley
+ley daemon status
+ley devices
+```
+
+The link follows the app through updates, because an update replaces the app in place. `ley
+daemon start` and `ley daemon stop` drive the app's login item through `launchctl`. A stop stays
+stopped until the next `start` or login. `ley daemon install` and `ley daemon
+uninstall` refuse the app's daemon and point at Login Items, because the app owns that job.
+
+### Updates
+
+The app checks for updates automatically, and Leyline > Check for Updates… checks now. An update
+downloads, is verified against the key the app was built with, and replaces the app; the app then
+restarts the daemon onto the new build. If a recording or decode job is running, a restart would
+end it, so the window shows "Leyline was updated; restart the engine to finish" with a Restart
+button instead.
+
+### Logs and data
+
+The daemon logs to `~/Library/Logs/Leyline/leylined.log` (`ley daemon logs`), and the app to
+`app.log` beside it. Recordings, decode records, bookmarks and the remembered `rtl_tcp` radios are
+under `~/Library/Application Support/Leyline/`; "Where things live" below lists each.
+
+### Uninstall the app
+
+1. Switch Leyline off in System Settings > General > Login Items & Extensions, which stops the
+   daemon.
+2. Quit Leyline and drag it from Applications to the Trash. The login item goes with it.
+3. Remove the `ley` link and the data:
+
+```sh
+sudo rm /usr/local/bin/ley
+rm -rf ~/Library/Application\ Support/Leyline ~/Library/Logs/Leyline
+```
+
+## Build from source
+
+A build from source needs:
 
 - macOS 26 with Xcode 26 (the Swift 6.2 toolchain).
 - Homebrew, Go 1.27 or later.
 - An RTL-SDR (RTL2832U) or a HackRF One / HackRF Pro.
   No radio? See "Without a radio" below.
 
-## Build and start
+The daemon built from source loads the drivers from Homebrew. If the app is installed too, switch
+it off in Login Items first: `ley daemon install` refuses while the app starts the daemon, because
+both use the launchd label `com.leysdr.daemon`.
+
+### Build and start
 
 ```sh
 brew install go
@@ -50,7 +128,7 @@ command runs, adjust either stage from another terminal with, for example,
 [Using `ley`](using-ley.md) walks every task, and [Troubleshooting](troubleshooting.md) covers an
 empty device list, a busy radio and no audio.
 
-## Start at login
+### Start at login
 
 `ley daemon install` writes a LaunchAgent so the daemon starts when you log in and is restarted if
 it crashes:
@@ -114,6 +192,8 @@ Nothing on that link is authenticated or encrypted; use it on a network you trus
 `make fixtures` generates IQ recordings of known signals (an NFM tone, AM, SSB, CW, a calibrated
 noise floor, a band with four carriers). `ley play fixtures/nfm_tone.cf32 --loop` plays one through
 the same pipeline as a radio, and you should hear a 1 kHz tone. The whole test suite runs this way.
+The fixtures are generated in a checkout; the app does not carry them, so with the app alone play
+an IQ recording of your own (`ley play <file>`).
 [IQ files and fixtures](../reference/iq-files.md) describes the format and lists the catalog.
 
 ## Decoders
@@ -121,7 +201,10 @@ the same pipeline as a radio, and you should hear a 1 kHz tone. The whole test s
 `ley decode`, `ley records` and `ley watch` need decoder plugins installed where the daemon looks
 for them. Four ship in `decoders/`: APRS, SAME weather alerts, marine AIS, and `iqstat`, a test
 decoder that reports the block power of a capture's IQ and is used to check the IQ input path.
-`make reload` installs all four as part of the rebuild; to install them without a full reload:
+The app carries all four in `Leyline.app/Contents/Helpers/decoders/`, and its daemon finds them
+there with nothing to install; a decoder of the same name in the decoders directory below takes
+precedence over the bundled one. In a build from source, `make reload` installs all four as part
+of the rebuild; to install them without a full reload:
 
 ```sh
 make install-decoders                 # copies decoders/*/ into ~/Library/Application Support/Leyline/decoders/
@@ -140,15 +223,18 @@ no decoders installed, `ley decode aprs` returns `there is no decoder called "ap
 | socket | `~/Library/Application Support/Leyline/leyline.sock` (`ley daemon status` prints it; `--socket` and `LEYLINE_SOCKET` override) |
 | pidfile, `devices.json` (remembered `rtl_tcp` radios) | beside the socket |
 | log | `~/Library/Logs/Leyline/leylined.log` (`ley daemon logs`) |
-| decoders | `~/Library/Application Support/Leyline/decoders/<name>/` (`make install-decoders`; `--decoders` and `LEYLINE_DECODERS` add more) |
+| decoders | `~/Library/Application Support/Leyline/decoders/<name>/` (`make install-decoders`; `--decoders` and `LEYLINE_DECODERS` add more), then `decoders/` beside `leylined` (the app's bundled ones) |
 | recordings | `~/Library/Application Support/Leyline/recordings/` (`--recordings`, `--recordings-cap`, `--recordings-age`) |
 | decode records store | `~/Library/Application Support/Leyline/store/` (kept decode jobs; `--store`, `--store-cap`, `--store-age`) |
-| LaunchAgent | `~/Library/LaunchAgents/com.leysdr.daemon.plist` (`ley daemon install` writes it, `uninstall` removes it) |
+| app log | `~/Library/Logs/Leyline/app.log` |
+| bookmarks | `~/Library/Application Support/Leyline/bookmarks.json` (the app's) |
+| login item (app) | `Leyline.app/Contents/Library/LaunchAgents/com.leysdr.daemon.plist`, registered by the app; switched in System Settings > General > Login Items & Extensions |
+| LaunchAgent (source build) | `~/Library/LaunchAgents/com.leysdr.daemon.plist` (`ley daemon install` writes it, `uninstall` removes it) |
 
 The daemon opens no network listener, and anything that can open the socket controls the radio.
 [SECURITY.md](../../SECURITY.md) has the full statement of what it trusts.
 
-## Uninstall
+## Uninstall a build from source
 
 ```sh
 ley daemon uninstall                                   # stop the daemon, remove the LaunchAgent

@@ -1316,20 +1316,24 @@ This item is partial:
 
 ### APP-7 `[ ]` Distribution (E.7)
 
-Distribution is the next build item; `distribution.md` is its plan (DIST-1 to DIST-6), with
-the driver, daemon and update decisions of 2026-10-05. Certificate acquisition does not block its
-install work:
+Distribution is the next build item; `distribution.md` is its plan, with the driver, daemon and
+update decisions of 2026-10-05, and its items carry the status:
 
 - `[x]` `scripts/bundle-app.sh --with-daemon` builds the release layout with `leylined`, `ley`,
   decoder manifests and executables, and the required licence texts under `Contents/Helpers`;
   without an identity it ad-hoc signs the result for local testing.
-- `[ ]` Make that layout install and update itself: bootstrap `com.leysdr.daemon` on the bundled
-  daemon as `ley daemon install` does, install `ley` and the decoders where a terminal and launchd
-  can find them, and define the corresponding uninstall path. This unlocks APP-6 automatic startup.
-- `[d]` Sign with a Developer ID Application certificate and submit for notarization. The owner is
-  acquiring the Apple Developer certificates (2026-09-29); this blocks the signed/notarized
-  verification and first distributable build, not the installation implementation.
-- `[d]` Complete D3's trademark check before the first public build.
+- `[ ]` The driver libraries in the bundle: `distribution.md` DIST-1.
+- `[ ]` The daemon runs from the bundle as the app's login item, `ley daemon install` refuses
+  the app's job, and the app restarts the daemon after an update: DIST-2. This enables APP-6's
+  automatic startup.
+- `[ ]` Updates through Sparkle: DIST-3.
+- `[ ]` Sign, notarize and package (`make release`, `make release-publish`): DIST-4, with the
+  Developer ID, notary and Sparkle key prerequisites (OWN-1 to OWN-3) done 2026-10-05.
+- `[ ]` Publishing through leysdr.com: DIST-7.
+- `[ ]` The checks on a second Mac, which gate sending the first build: DIST-5.
+- `[ ]` The install guide, the decision records and the release checklist: DIST-6.
+- `[d]` Complete D3's trademark check before the first public build (OWN-5 asks whether it also
+  gates a closed alpha).
 
 The release pass is `../dev/release-checklist.md`.
 
