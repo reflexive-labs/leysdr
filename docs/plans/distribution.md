@@ -68,10 +68,11 @@ bundle and a tester:
   Losing the private key means no existing install can update again, so export a backup
   (`generate_keys -x`) somewhere off the machine. Done 2026-10-05; the public key is
   `Ct1EXtjnkBDyBIT/onW9Yq4oohjUvDYzIhzwt9TCgOw=` and the private key is backed up.
-- `[d]` **OWN-4** Where the appcast, the DMGs and the source tarballs are served. The proposal:
-  `https://leysdr.com/alpha/appcast.xml`, published by the site repository's build, with the
-  DMGs and tarballs as assets of a release the site can link. The URL is compiled into
-  `SUFeedURL`, so it must be settled before the first build goes out.
+- `[x]` **OWN-4** Where the appcast is served: `https://leysdr.com/updates/appcast.xml`
+  (decided 2026-10-05), published by the site repository's build. The URL is compiled into
+  `SUFeedURL`, and installed copies only move to a new one through an update, so it names no
+  release track; a second track later is a Sparkle channel (`<sparkle:channel>`) in the same
+  feed. `[ ]` Where the DMGs and source tarballs live (the site, or release assets it links).
 - `[d]` **OWN-5** Whether D3 (the trademark check) gates a closed alpha or only the first public
   build.
 
@@ -119,11 +120,15 @@ daemon with Homebrew's copies moved aside.
   - `.requiresApproval`: the connection failure state says that Login Items has the daemon
     switched off and offers a button that calls `SMAppService.openSystemSettingsLoginItems()`.
   - `.enabled`: connect as today.
+  - `.notFound`: a bundle built without `--with-daemon` has no agent plist; register nothing.
   The failure state's `ley daemon start` instruction remains for a source build.
 - **`ley daemon install` and `uninstall` refuse an app-registered job.** `launchctl print
   gui/<uid>/com.leysdr.daemon` shows the program path; one inside `*.app/Contents/Helpers/`
-  means the app registered it, and the error says so and names Login Items. `start`, `stop`,
-  `status` and `logs` already work on the label and need no change.
+  means the app registered it, and the error says so and names Login Items. `status` and
+  `logs` need no change. `start` and `stop` choose launchctl only when
+  `~/Library/LaunchAgents/com.leysdr.daemon.plist` exists, so against the app's job `start`
+  spawns a second, detached `leylined`. `[ ]` They must also use launchctl when `launchctl
+  print` finds the label loaded (`kickstart` to start, `kill SIGTERM` to stop).
 - **After an update the daemon is restarted.** When the app connects and the daemon's version
   (`State.daemon.version`) differs from the bundle's `CFBundleShortVersionString` + build, and
   the agent is the app's (`.enabled`), the app runs `launchctl kickstart -k
