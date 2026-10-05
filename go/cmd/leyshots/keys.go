@@ -175,7 +175,7 @@ func leyfixPlanner(plan func(FixtureRef) (*planned, error)) fixturePlanner {
 }
 
 // makeKinds are the scene kinds in the order the generated rules name their SHOTS_DEPS_* lists.
-var makeKinds = []string{kindApp, kindTerminal, kindTable, kindComposite, kindScreen, kindIcon}
+var makeKinds = []string{kindApp, kindTerminal, kindTable, kindComposite, kindIcon}
 
 // writeMakefile prints the make rules `make shots` includes (Makefile, "shots"): the list of
 // images, the images of each kind, and one rule per image whose prerequisites are its key and

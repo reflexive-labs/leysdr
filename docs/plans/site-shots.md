@@ -22,6 +22,9 @@ page covers each of its items.
   every capture anchor is dated from. Transmission times and recording times then read as that
   evening. Retention cutoffs keep the real clock.
 - **Terminal shots are PNGs** rendered from the captured pane in the site's terminal theme.
+- **The SAME notification is a mock on the site** (2026-10-05). A captured macOS notification
+  depended on Notification Center's windows, Focus and the desktop behind the banner, and the
+  daemon posts it through `osascript`, so it names Script Editor rather than Leyline.
 - **Out of scope:** the light-mode hero copy (`Theme.swift` has no light palette),
   `ways-assistant.png` (Claude Desktop), hardware photos, `dmg-window.png`, `og-image.png` and
   both videos.
@@ -58,8 +61,7 @@ when that hash changes, so its time moves only then. `leyshots makefile` writes
 kind shares (`ley` and the other Go clients, the engine, the app for app and composite scenes,
 `scripts/ansi2html.py` and `scripts/render-html.swift` for pages; the icon only on
 `scripts/render-icon.swift`), and its recipe is `leyshots run --only <asset>`. A scene that leaves
-no PNG, such as an app scene on Linux or a notification that did not appear, is taken again on the
-next run. `make shots ONLY=app-radio-2m,inspector-tone` takes those scenes whether or not they
+no PNG, such as an app scene on Linux, is taken again on the next run. `make shots ONLY=app-radio-2m,inspector-tone` takes those scenes whether or not they
 are stale. `make shots-release` runs the stale scenes, then publishes every image whose
 `png_sha256` in `tmp/shots/shots.json` differs from the latest `shots-*` release's, or that the
 release does not have; when none differs it prints that the latest release is up to date and
@@ -194,18 +196,12 @@ refuses a `clock` on any scene that is not an app scene.
 | `scan-2m.png` | terminal, 100 columns | `scene_scan`, `ley scan …` |
 | `scan-app.png` | app, `sidebar` crop | `scene_scan`, the band row's Scan with its hits |
 | `library-net.png` | app, `parts` crop 460 pt high, Library place | `scene_net` recorded gated, then one part selected |
-| `notification-same.png` | screen region | `same_alert`, `ley watch same --county … --notify`; see below |
 | `aprs-track.png` | terminal | `scene_aprs`, `ley track aprs` |
 | `ais-track.png` | terminal | `scene_ais`, `ley track ais` |
 | `ways-app.png` | app, 480 × 300 pt crop of the waterfall and inspector | `scene_2m` |
 | `ways-terminal.png` | terminal, split | `ley tune 146.52` beside `ley set squelch -45` |
 | `ways-sync.png` | composite | the app window and the split terminal, side by side, after the squelch change |
 | `app-icon-1024.png` | `scripts/render-icon.swift --png 1024` | none |
-
-The notification is captured from the NotificationCenter window's on-screen frame, found through
-`CGWindowListCopyWindowInfo`, so it needs a plain dark desktop behind it. `leyshots` prints a
-reminder to set one before that scene, and treats the shot as manual if the window is not found
-within 10 s.
 
 Some scenes need more than the stage and a tuned channel:
 
@@ -242,20 +238,21 @@ one day is tagged `shots-YYYY-MM-DD-2`, then `-3`.
   HTML, the manifest, `publish`, and the Makefile targets. Done 2026-10-03. Verified by the unit
   tests in `go/cmd/leyfix` and `go/cmd/leyshots`, `leyfix check` over the generated set, and a
   Linux run of `scan-2m`, `aprs-track`, `ais-track`, `ways-terminal` and `chirp-csv-before` to
-  HTML. The app capture, the composite, the notification, the icon, `render-html.swift` calls
+  HTML. The app capture, the composite, the icon, `render-html.swift` calls
   and `publish` against GitHub are written and have not run; they are SHOT-4's first run.
   The 2 m bookmarks are a CHIRP CSV imported per scene rather than a bookmarks file, so the
   import path is the one a person uses.
-- [ ] **SHOT-2 (engine).** The sidecar `label` and `leylined --wall-clock`, each with a test.
-- [ ] **SHOT-3 (app; can only be checked on the Mac).** `LEYLINE_APP_STAGE` and `regions.json`.
+- [x] **SHOT-2 (engine).** The sidecar `label` and `leylined --wall-clock`, each with a test.
+- [x] **SHOT-3 (app; can only be checked on the Mac).** `LEYLINE_APP_STAGE` and `regions.json`.
   Written and not yet compiled on the Mac; `docs/dev/app.md`, "Staged runs" has the stage keys
   and the regions file. Differences from the description above: the stage does not reopen the
   remembered band, so each app scene must leave a capture tuned (`ley tune`) before the app
   starts, or the app opens FM broadcast; `settle` is counted from when the stage is applied, not
   from the spectrum's first row; `select_part` selects the part without playing it; in the
   Library, `sidebar` and `inspector` are the Library's own.
-- [ ] **SHOT-4 (Mac).** `scripts/render-html.swift`, `render-icon.swift --png`, the window and
-  notification capture in `leyshots`, then the first full run on the Mac.
+- [x] **SHOT-4 (Mac).** `scripts/render-html.swift`, `render-icon.swift --png`, the window
+  capture in `leyshots`, then the first full run on the Mac. The first release was
+  `shots-2026-10-03`.
 
 ## The app is the source of truth
 

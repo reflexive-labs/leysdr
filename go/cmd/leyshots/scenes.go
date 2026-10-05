@@ -18,7 +18,6 @@ const (
 	kindTerminal  = "terminal"
 	kindTable     = "table"
 	kindComposite = "composite"
-	kindScreen    = "screen"
 	kindIcon      = "icon"
 )
 
@@ -48,8 +47,6 @@ type Scene struct {
 	Table     *Table    `yaml:"table"`
 	// Settle is the seconds a terminal waits after its last pane starts before it is read.
 	Settle float64 `yaml:"settle"`
-	// Manual is printed before a screen scene: what the person at the Mac has to set up.
-	Manual string `yaml:"manual"`
 }
 
 // Name is the scene's name: its asset without the extension.
@@ -197,7 +194,7 @@ func (s *Scene) validate(f *File) error {
 	switch s.Kind {
 	case kindApp:
 		err = errors.Join(needs("a stage", s.Stage != nil), needs("a crop", s.Crop != nil), needs("fixtures", len(s.Fixtures) > 0))
-	case kindTerminal, kindScreen:
+	case kindTerminal:
 		err = errors.Join(needs("a terminal", s.Terminal != nil), needs("fixtures", len(s.Fixtures) > 0))
 	case kindComposite:
 		err = errors.Join(needs("a stage", s.Stage != nil), needs("a crop", s.Crop != nil),

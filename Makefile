@@ -16,7 +16,7 @@
 #   make eval       the agent evals: an agent on `ley mcp` against fixtures, graded (costs tokens)
 #   make shots      the site's screenshots into tmp/shots (docs/plans/site-shots.md): only the scenes
 #                   whose inputs changed since their image was taken; ONLY=a,b takes those scenes
-#                   whatever changed. The app and screen scenes need the Mac; elsewhere terminal
+#                   whatever changed. The app scenes need the Mac; elsewhere terminal
 #                   scenes stop at HTML
 #   make shots-publish  release the reviewed tmp/shots images as shots-YYYY-MM-DD, merged with the
 #                   latest shots-* release; ONLY=a,b refreshes some (SHOTS_ARGS=--dry-run to check)
@@ -220,7 +220,6 @@ SHOTS_DEPS_TERMINAL := $(SHOTS_GO) $(SHOTS_ENGINE) $(SHOTS_PAGE)
 # A table is drawn by leyshots alone, with no daemon and no ley.
 SHOTS_DEPS_TABLE := $(filter go/cmd/leyshots/%,$(SHOTS_GO)) scripts/render-html.swift
 SHOTS_DEPS_COMPOSITE := $(SHOTS_DEPS_APP) $(SHOTS_PAGE)
-SHOTS_DEPS_SCREEN := $(SHOTS_GO) $(SHOTS_ENGINE)
 SHOTS_DEPS_ICON := scripts/render-icon.swift
 include $(SHOTS_OUT)/shots.mk
 $(SHOTS_ASSETS): | go swift

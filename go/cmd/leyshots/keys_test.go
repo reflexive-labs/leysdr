@@ -147,7 +147,6 @@ func TestMakefileRules(t *testing.T) {
 		"\n$(SHOTS_OUT)/app-radio-2m.png: $(SHOTS_OUT)/keys/app-radio-2m.key $(SHOTS_DEPS_APP)\n\t$(SHOTS_RUN) --only app-radio-2m.png\n",
 		"\n$(SHOTS_OUT)/chirp-csv-before.png: $(SHOTS_OUT)/keys/chirp-csv-before.key $(SHOTS_DEPS_TABLE)\n\t$(SHOTS_RUN) --only chirp-csv-before.png\n",
 		"\n$(SHOTS_OUT)/ways-sync.png: $(SHOTS_OUT)/keys/ways-sync.key $(SHOTS_DEPS_COMPOSITE)\n",
-		"\n$(SHOTS_OUT)/notification-same.png: $(SHOTS_OUT)/keys/notification-same.key $(SHOTS_DEPS_SCREEN)\n",
 	} {
 		if !strings.Contains(mk, want) {
 			t.Errorf("the rules have no %q:\n%s", want, mk)

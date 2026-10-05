@@ -10,7 +10,6 @@
 #              on macOS, as a PNG
 #   table      a CSV drawn as a table in the terminal theme
 #   composite  an app shot and a terminal shot from one daemon, side by side
-#   screen     a region of the screen found at run time (macOS only, best effort)
 #   icon       scripts/render-icon.swift (macOS only)
 #
 # fixtures are leyfix catalog entries, attached with `ley play --persistent --loop` in order, so
@@ -176,22 +175,6 @@ scenes:
       play_part: true
       settle: 4
     crop: {regions: [parts], size: {width: 2000, height: 460}, anchor: top-left}
-
-  - asset: notification-same.png
-    kind: screen
-    alt: >-
-      A macOS notification from ley watch same: a Required Weekly Test from the National Weather
-      Service for a watched county.
-    fixtures: [{name: same_alert, rate: 960000, duration: 10}]
-    manual: >-
-      set a plain dark desktop picture and close other notifications before this scene: the
-      notification is captured with what is behind it
-    terminal:
-      cols: 100
-      rows: 10
-      panes:
-        - command: ley watch same --county 20103 --notify
-    settle: 12
 
   - asset: aprs-track.png
     kind: terminal

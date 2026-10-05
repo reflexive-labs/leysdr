@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/reflexive-labs/leysdr/go/internal/daemonrun"
 )
@@ -36,7 +35,7 @@ type runOptions struct {
 // errHTMLOnly is a page rendered to HTML on a machine that cannot draw it to a PNG.
 var errHTMLOnly = errors.New("HTML only: drawing it to a PNG needs macOS")
 
-// errNeedsMac is a scene that drives the app or the screen.
+// errNeedsMac is a scene that drives the app.
 var errNeedsMac = errors.New("needs macOS")
 
 // outcome is what became of one scene.
@@ -88,7 +87,7 @@ func runScenes(ctx context.Context, o runOptions) error {
 			shot.LeyVersion, shot.Commit = prov.ley, prov.commit
 			manifest.put(*shot)
 			res.status = fmt.Sprintf("ok %d×%d", shot.Width, shot.Height)
-		case errors.Is(err, errHTMLOnly), errors.Is(err, errNeedsMac), errors.Is(err, errManual):
+		case errors.Is(err, errHTMLOnly), errors.Is(err, errNeedsMac):
 			res.status = "skipped: " + err.Error()
 		default:
 			failed++
@@ -153,7 +152,7 @@ func runScene(ctx context.Context, o runOptions, f *File, s *Scene, tm *tmuxRunn
 			return nil, err
 		}
 		return finish(shot, out)
-	case kindApp, kindComposite, kindScreen:
+	case kindApp, kindComposite:
 		if o.goos != "darwin" {
 			return nil, errNeedsMac
 		}
@@ -298,31 +297,6 @@ func runScene(ctx context.Context, o runOptions, f *File, s *Scene, tm *tmuxRunn
 		// 16 pt of ground around and between them, at 2×.
 		if err := writePNG(out, composite(imgs, 2*paddingPx)); err != nil {
 			return nil, err
-		}
-		return finish(shot, out)
-	case kindScreen:
-		if s.Manual != "" {
-			fmt.Fprintf(o.stdout, "%s: %s\n", s.Name(), s.Manual)
-		}
-		done := make(chan error, 1)
-		go func() {
-			panes, err := tm.session(ctx, s.Name(), s.Terminal, s.Settle)
-			// What the terminal printed says whether the watch matched, which is the first
-			// question when no notification appeared.
-			for i, p := range panes {
-				_ = os.WriteFile(filepath.Join(run, fmt.Sprintf("terminal-%d.txt", i)), []byte(sgrEscape.ReplaceAllString(p.Text, "")), 0o644)
-			}
-			done <- err
-		}()
-		// The watch can match on the alert's last pass before the terminal is read, and the
-		// banner stays a few seconds after it.
-		wait := time.Duration((s.Settle + 10) * float64(time.Second))
-		capErr := captureNotification(ctx, o.swift, run, out, wait, o.logf)
-		if err := <-done; err != nil {
-			return nil, err
-		}
-		if capErr != nil {
-			return nil, capErr
 		}
 		return finish(shot, out)
 	}
