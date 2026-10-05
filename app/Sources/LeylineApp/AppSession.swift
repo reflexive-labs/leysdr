@@ -25,6 +25,16 @@ final class AppSession {
     private var mirror: DaemonMirror?
     private var running: Task<Void, Never>?
 
+    // The daemon's launch agent, which the distributed bundle carries (`DaemonAgent`).
+    /// What `SMAppService` reported at launch, read again while the daemon cannot be reached and
+    /// Login Items has it switched off; nil when this run touches no agent (`LEYLINE_SOCKET` set).
+    private(set) var agentStatus: DaemonAgent.Status?
+    /// An update is installed, but a job was running when the app connected, so the daemon still
+    /// runs the old build: the window shows `DaemonAgent.updatedWords` and a Restart button.
+    private(set) var engineUpdatePending = false
+    /// The app restarted the daemon this launch; it does not do it twice (`DaemonAgent.afterConnect`).
+    @ObservationIgnored private var engineRestarted = false
+
     // The window's own selection: which capture it shows and which channel it plays. Ids only;
     // the objects are always read back from `state`, or from the RPC's copy until the mirror
     // carries them (`HeldObject`).
@@ -609,6 +619,7 @@ final class AppSession {
         switch connection {
         case .idle, .connecting: return ("Connecting to leylined", socketPath)
         case .unavailable(let e, let retry):
+            if emptyOffersLoginItems { return DaemonAgent.loginItemsOffWords(retryIn: retry) }
             return e.daemonUnreachable
                 ? (
                     "The daemon is not running",
@@ -637,10 +648,21 @@ final class AppSession {
         return nil
     }
 
+    /// Whether the empty state is Login Items having the daemon's agent switched off, which offers
+    /// a button to System Settings (`openLoginItems`). A daemon that answers anyway (a source
+    /// build's, started by hand) is used, and then nothing is said about the agent.
+    var emptyOffersLoginItems: Bool {
+        guard startupError == nil, agentStatus == .requiresApproval,
+            case .unavailable(let e, _) = connection
+        else { return false }
+        return e.daemonUnreachable
+    }
+
     // MARK: Lifecycle
 
     func start() async {
         guard running == nil else { return }
+        prepareAgent()
         captureLevel.onLevel = { [weak self] in
             self?.markClippedRows()
             self?.nameFailure()
@@ -692,7 +714,14 @@ final class AppSession {
             if isLive {
                 staleManifests.formUnion(manifests.keys)
                 reloadRecordings()
+                followUpdate()
             }
+        }
+        // Switched on in System Settings while the window waited: launchd starts the daemon and
+        // the next retry reaches it, but the words must stop naming Login Items now.
+        if !isLive, agentStatus == .requiresApproval {
+            let now = EngineAgent.status()
+            if now != agentStatus { agentStatus = now }
         }
         if let r = requestedHz, r == tunedHz { clearRequested() }
         // Objects the window pointed at may be gone: a tombstone, or the daemon restarted. One
@@ -3408,6 +3437,71 @@ final class AppSession {
         log("record", moveAnyway ? "moved anyway" : "move cancelled; the radio stays")
         if moveAnyway { q.proceed() } else { q.cancel() }
     }
+
+    // MARK: The daemon's launch agent
+
+    /// Registers the launch agent the bundle carries, unless a source build's job holds the label
+    /// or the run names its own socket (`DaemonAgent.launch`). Before the first dial, so the
+    /// daemon is starting while the mirror waits for it; registering starts it (`RunAtLoad`).
+    private func prepareAgent() {
+        let env = ProcessInfo.processInfo.environment
+        guard DaemonAgent.agentApplies(environment: env) else { return }
+        let status = EngineAgent.status()
+        let launch = DaemonAgent.launch(
+            environment: env, status: status,
+            sourcePlistExists: EngineAgent.sourceBuildPlistExists())
+        log("session", "agent: \(status), \(launch)")
+        agentStatus = status
+        guard launch == .register else { return }
+        do {
+            try EngineAgent.register()
+        } catch {
+            log("session", "agent: could not register: \(error)")
+        }
+        let now = EngineAgent.status()
+        agentStatus = now
+        log("session", "agent: registered, now \(now)")
+    }
+
+    /// After an update the daemon still runs the old bundle's binary: restart it onto this one,
+    /// or ask first when a job is running (`DaemonAgent.afterConnect`). Run each time the mirror
+    /// goes live; after one restart it does nothing.
+    private func followUpdate() {
+        let info = Bundle.main.infoDictionary
+        let action = DaemonAgent.afterConnect(
+            daemonVersion: state.daemon.version,
+            bundleVersion: info?["CFBundleShortVersionString"] as? String,
+            bundleBuild: info?["CFBundleVersion"] as? String,
+            appOwnsAgent: agentStatus == .enabled,
+            runningJobs: DaemonAgent.runningJobs(state.jobs),
+            alreadyRestarted: engineRestarted)
+        switch action {
+        case .nothing:
+            break
+        case .restartNow:
+            Task { await restartEngine() }
+        case .askToRestart:
+            log("session", "leylined \(state.daemon.version) is not this build; a job is running")
+            engineUpdatePending = true
+        }
+    }
+
+    /// `launchctl kickstart -k` on the app's agent: the daemon stops, ending every job, and
+    /// launchd starts the bundle's binary; the mirror reconnects on its own.
+    func restartEngine() async {
+        engineRestarted = true
+        engineUpdatePending = false
+        log("session", "restarting leylined \(state.daemon.version) onto this bundle's build")
+        if let failure = await EngineAgent.kickstart() {
+            lastError = LeylineError(
+                code: "RESTART_FAILED", message: "Could not restart the engine: \(failure)")
+        }
+    }
+
+    /// The update strip's close: the daemon keeps the old build until it next starts.
+    func dismissEngineUpdate() { engineUpdatePending = false }
+
+    func openLoginItems() { EngineAgent.openLoginItems() }
 
     /// Logs one line when the waterfall's empty-state message or the out-of-capture message
     /// changes or clears.

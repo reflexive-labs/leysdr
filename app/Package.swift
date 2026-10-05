@@ -58,7 +58,9 @@ var products: [Product] = [
             name: "LeylineApp",
             dependencies: ["LeylineClient"],
             path: "Sources/LeylineApp",
-            exclude: ["Info.plist"]
+            // Copied into the bundle by scripts/bundle-app.sh, not compiled or bundled as
+            // resources: the Info.plist and the daemon's launch agent.
+            exclude: ["Info.plist", "com.leysdr.daemon.plist"]
         )
     )
     products.append(.executable(name: "LeylineApp", targets: ["LeylineApp"]))

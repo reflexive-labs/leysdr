@@ -37,6 +37,7 @@ struct MainWindow: View {
     var body: some View {
         // One container for both places, so the toolbar and the alert stay put across a switch.
         VStack(spacing: 0) {
+            if session.engineUpdatePending { EngineUpdateStrip() }
             switch session.place {
             case .radio: RadioBody()
             case .library: LibraryBody().stageRegion(.library)
@@ -209,7 +210,13 @@ struct RadioBody: View {
                     gutterColumn
                 }
                 if let words = session.emptyWords {
-                    EmptyWords(headline: words.headline, detail: words.detail)
+                    EmptyWords(
+                        headline: words.headline, detail: words.detail,
+                        action: session.emptyOffersLoginItems
+                            ? EmptyWords.Action(
+                                title: DaemonAgent.openLoginItemsTitle,
+                                run: { session.openLoginItems() })
+                            : nil)
                 }
                 VStack {
                     Spacer()
@@ -281,20 +288,59 @@ struct PlaceSwitch: View {
 }
 
 /// The empty-state message, worded as in the guide, when there is nothing to draw: no daemon, no
-/// radio, no capture, and what to type.
+/// radio, no capture, and what to type. A state with something to click (Login Items having the
+/// daemon switched off) carries a button under the words.
 struct EmptyWords: View {
+    struct Action {
+        let title: String
+        let run: @MainActor () -> Void
+    }
+
     let headline: String
     let detail: String
+    var action: Action? = nil
 
     var body: some View {
         VStack(spacing: 6) {
             Text(headline).font(Theme.Font.title).foregroundStyle(Theme.ink)
             Text(detail).font(Theme.Font.label).foregroundStyle(Theme.inkTertiary)
                 .multilineTextAlignment(.center)
+            if let action {
+                Button(action.title) { action.run() }
+                    .buttonStyle(.bordered)
+                    .padding(.top, 6)
+            }
         }
         .padding(20)
         .background(Theme.raised.opacity(0.92), in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border))
+    }
+}
+
+/// The line under the toolbar after an update that found a job running: the daemon still runs the
+/// old build until it restarts, and a restart ends the job, so the person chooses when. Above both
+/// places, because the Library has no notice strip and a recording is often watched from there.
+struct EngineUpdateStrip: View {
+    @Environment(AppSession.self) private var session
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(DaemonAgent.updatedWords).font(Theme.Font.label).foregroundStyle(Theme.ink)
+                .lineLimit(1)
+            Spacer()
+            Button(DaemonAgent.restartTitle) { Task { await session.restartEngine() } }
+                .buttonStyle(.bordered).controlSize(.mini)
+                .help("Restarts the engine onto this build; running recordings and decoders stop")
+            Button {
+                session.dismissEngineUpdate()
+            } label: {
+                Image(systemName: "xmark").font(.system(size: 9))
+            }
+            .buttonStyle(.plain).foregroundStyle(Theme.inkFaint)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 6)
+        .background(Theme.chrome)
+        .overlay(alignment: .bottom) { Rectangle().fill(Theme.border).frame(height: 1) }
     }
 }
 
