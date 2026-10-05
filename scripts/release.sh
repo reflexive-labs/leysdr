@@ -9,7 +9,14 @@
 #                                the source tarballs the release owes, drivers.json, appcast.xml
 #   scripts/release.sh publish   (make release-publish) the GitHub prerelease v<VERSION> on
 #                                reflexive-labs/leysdr from dist/<VERSION>/, refused until the
-#                                commit it was built from is on GitHub
+#                                commit it was built from is on GitHub. When the tag v<VERSION>
+#                                exists locally (make alpha makes it before the build) it must
+#                                point at that commit and be pushed, and the release uses it.
+#   scripts/release.sh rehearse <dir>
+#                                (make release-rehearse) the tree as it is, whatever its VERSION,
+#                                as an ad-hoc-signed Leyline.app and Leyline-<VERSION>.dmg in
+#                                <dir>: the release's build without its credentials, which
+#                                `make alpha DRY_RUN=1` runs
 #
 # CODESIGN_IDENTITY is the Developer ID Application identity's full name and NOTARY_PROFILE the
 # `xcrun notarytool store-credentials` keychain profile; neither has a default here. The Sparkle
@@ -32,6 +39,13 @@ DOWNLOAD_URL_PREFIX=https://leysdr.com/updates/
 REPO=reflexive-labs/leysdr
 
 die() { echo "release.sh: $*" >&2; exit 1; }
+
+# changelog_has_section <version> <file>: whether <file> has a `## <version>` heading, with a
+# date or anything else after a space (`## 0.1.0-alpha.1 (2026-10-05)`, as make alpha writes it),
+# and `## [<version>]` or `## v<version>` counting too, as scripts/release-appcast.sh reads them.
+changelog_has_section() {
+  grep -Eq "^## \[?v?${1//./\\.}\]?([[:space:]]|$)" "$2"
+}
 
 # release_version_refusal <version>: why <version> cannot be released, or nothing. A -dev version
 # is what the tree carries between releases, and every release changes VERSION
@@ -99,31 +113,11 @@ release_assets() {
   printf '%s\n' "$1/drivers.json" "$1/appcast.xml"
 }
 
-# build: the release, from the Go build to the appcast.
-build() {
-  local version=$1 out=$2 identity gobin name app dmg json id status stage d
-  identity=${CODESIGN_IDENTITY:-}
-  [ -n "$identity" ] && [ "$identity" != "-" ] \
-    || die "CODESIGN_IDENTITY must name the Developer ID Application identity (security find-identity -v -p codesigning)"
-  [ -n "${NOTARY_PROFILE:-}" ] || die "NOTARY_PROFILE must name the notarytool keychain profile (xcrun notarytool store-credentials)"
-  security find-identity -v -p codesigning | grep -qF "\"$identity\"" \
-    || die "no valid signing identity \"$identity\" in the keychain"
-  [ "$(engine_version engine/Sources/LeylineDaemon/Version.swift)" = "$version" ] \
-    || die "engine/Sources/LeylineDaemon/Version.swift does not say $version; run make version and commit it"
-  grep -Eq "^## \[?v?${version//./\\.}\]?([[:space:]]|$)" CHANGELOG.md \
-    || die "CHANGELOG.md has no \`## $version\` section, which the update's release notes come from"
-  [ ! -e "$out" ] || die "$out already exists; a version is released once (remove it to build this version again)"
-
-  # A release that stops part way leaves no dist/<VERSION>/ behind, so it can be run again.
-  work=$(mktemp -d "${TMPDIR:-/tmp}/leyline-release.XXXXXX")
-  mnt=
-  partial=$out
-  trap 'if [ -n "$mnt" ]; then hdiutil detach -quiet "$mnt" || true; fi; rm -rf "$work" "$partial"' EXIT
-
-  # The Go helpers, built for the one architecture the alpha ships, stamped with the bare version:
-  # the tree is clean and the release's tag will point at this commit. Not go/bin, which holds
-  # whatever the last `make go` built.
-  gobin=$work/gobin
+# build_app <version> <work> <identity> <app>: ley and the decoders for the one architecture the
+# alpha ships, stamped with the bare version, then the bundle at <app> signed by <identity> ("-"
+# for ad hoc) and verified. Not go/bin, which holds whatever the last `make go` built.
+build_app() {
+  local version=$1 gobin=$2/gobin identity=$3 app=$4 d name
   mkdir -p "$gobin"
   echo "==> go build (darwin/arm64): ley, leydec-*"
   (cd go && GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -trimpath \
@@ -134,19 +128,69 @@ build() {
     [ -x "$gobin/leydec-$name" ] || die "decoders/$name has no go/cmd/leydec-$name to build"
   done
 
-  BUNDLE_GOBIN=$gobin CODESIGN_IDENTITY=$identity ./scripts/bundle-app.sh --with-daemon
-  app=app/dist/Leyline.app
+  BUNDLE_GOBIN=$gobin BUNDLE_OUT=$app CODESIGN_IDENTITY=$identity ./scripts/bundle-app.sh --with-daemon
   echo "==> codesign --verify --strict --deep"
   codesign --verify --strict --deep --verbose=2 "$app"
+}
+
+# make_dmg <app> <dmg> <version> <stage>: the disk image holding the app and an /Applications
+# link, unsigned.
+make_dmg() {
+  echo "==> $2"
+  mkdir -p "$4"
+  ditto "$1" "$4/Leyline.app"
+  ln -s /Applications "$4/Applications"
+  hdiutil create -volname "Leyline $3" -srcfolder "$4" -format UDZO -ov "$2"
+}
+
+# rehearse <version> <dir>: build_app and make_dmg, ad hoc, into <dir>; nothing is notarized,
+# published or written outside <dir>.
+rehearse() {
+  local version=$1 out=$2
+  [ ! -e "$out" ] || [ -z "$(ls -A "$out")" ] || die "$out is not empty; name a new directory"
+  work=$(mktemp -d "${TMPDIR:-/tmp}/leyline-rehearse.XXXXXX")
+  trap 'rm -rf "$work"' EXIT
+  mkdir -p "$out"
+  build_app "$version" "$work" - "$out/Leyline.app"
+  make_dmg "$out/Leyline.app" "$out/Leyline-$version.dmg" "$version" "$work/dmg"
+  echo "$out:"
+  ls -l "$out"
+}
+
+# build: the release, from the Go build to the appcast.
+build() {
+  local version=$1 out=$2 identity app dmg json id status stage d tagged
+  identity=${CODESIGN_IDENTITY:-}
+  [ -n "$identity" ] && [ "$identity" != "-" ] \
+    || die "CODESIGN_IDENTITY must name the Developer ID Application identity (security find-identity -v -p codesigning)"
+  [ -n "${NOTARY_PROFILE:-}" ] || die "NOTARY_PROFILE must name the notarytool keychain profile (xcrun notarytool store-credentials)"
+  security find-identity -v -p codesigning | grep -qF "\"$identity\"" \
+    || die "no valid signing identity \"$identity\" in the keychain"
+  [ "$(engine_version engine/Sources/LeylineDaemon/Version.swift)" = "$version" ] \
+    || die "engine/Sources/LeylineDaemon/Version.swift does not say $version; run make version and commit it"
+  changelog_has_section "$version" CHANGELOG.md \
+    || die "CHANGELOG.md has no \`## $version\` section, which the update's release notes come from"
+  [ ! -e "$out" ] || die "$out already exists; a version is released once (remove it to build this version again)"
+  # make alpha tags before it builds, so the bundle's git describe (LeylineBuild, the about panel)
+  # is the tag. A tag on another commit means this tree is not the release it names.
+  tagged=$(git rev-parse -q --verify "refs/tags/v$version^{commit}" || true)
+  [ -z "$tagged" ] || [ "$tagged" = "$(git rev-parse HEAD)" ] \
+    || die "the tag v$version points at ${tagged:0:12}, not HEAD; check out that commit to build it"
+
+  # A release that stops part way leaves no dist/<VERSION>/ behind, so it can be run again.
+  work=$(mktemp -d "${TMPDIR:-/tmp}/leyline-release.XXXXXX")
+  mnt=
+  partial=$out
+  trap 'if [ -n "$mnt" ]; then hdiutil detach -quiet "$mnt" || true; fi; rm -rf "$work" "$partial"' EXIT
+
+  # The tree is clean and the release's tag points, or will point, at this commit, so the Go
+  # helpers carry the bare version.
+  app=app/dist/Leyline.app
+  build_app "$version" "$work" "$identity" "$app"
 
   mkdir -p "$out"
   dmg=$out/Leyline-$version.dmg
-  echo "==> $dmg"
-  stage=$work/dmg
-  mkdir -p "$stage"
-  ditto "$app" "$stage/Leyline.app"
-  ln -s /Applications "$stage/Applications"
-  hdiutil create -volname "Leyline $version" -srcfolder "$stage" -format UDZO -ov "$dmg"
+  make_dmg "$app" "$dmg" "$version" "$work/dmg"
   codesign --force --sign "$identity" --timestamp "$dmg"
 
   echo "==> notarytool submit (profile $NOTARY_PROFILE); this waits for Apple"
@@ -198,8 +242,10 @@ build() {
 
 # publish: the GitHub prerelease, the way `leyshots publish` makes a shots-* release. GitHub can
 # only tag a commit it has, so the commit the release was built from must be on a branch of origin.
+# A local tag v<version> (make alpha's) is the release's tag: it must name that commit and be on
+# origin, and gh is told to use it rather than make one.
 publish() {
-  local version=$1 out=$2 commit asset assets=()
+  local version=$1 out=$2 commit asset tagged assets=() target=()
   [ -f "$out/commit" ] || die "$out has no release; make it first with: make release"
   commit=$(cat "$out/commit")
   while IFS= read -r asset; do
@@ -209,9 +255,19 @@ publish() {
   git fetch --quiet origin || die "git fetch origin failed"
   [ -n "$(git branch -r --contains "$commit")" ] \
     || die "commit ${commit:0:12} is not on GitHub yet, and the release's tag must point at it; push it first with: git push"
+  tagged=$(git rev-parse -q --verify "refs/tags/v$version^{commit}" || true)
+  if [ -n "$tagged" ]; then
+    [ "$tagged" = "$commit" ] \
+      || die "the tag v$version points at ${tagged:0:12}, but $out was built from ${commit:0:12}; build it again from the tag with: make release"
+    git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null \
+      || die "the tag v$version is not on GitHub yet; push it first with: git push origin v$version"
+    target=(--verify-tag)
+  else
+    target=(--target "$commit")
+  fi
   echo "==> gh release create v$version (prerelease, ${#assets[@]} assets, at ${commit:0:12})"
   gh release create "v$version" --repo "$REPO" --prerelease --title "Leyline $version" \
-    --notes-file "$out/notes.md" --target "$commit" "${assets[@]}"
+    --notes-file "$out/notes.md" "${target[@]}" "${assets[@]}"
 }
 
 main() {
@@ -219,6 +275,11 @@ main() {
   [ "$(uname -s)" = Darwin ] || die "a release is signed and notarized on the Mac; run it there"
   [ "$(uname -m)" = arm64 ] || die "the alpha ships Apple silicon only; build it on an Apple silicon Mac"
   version=$(tr -d '[:space:]' < VERSION)
+  if [ "${1:-}" = rehearse ]; then
+    [ $# -eq 2 ] || { echo "usage: scripts/release.sh rehearse <dir>" >&2; exit 2; }
+    rehearse "$version" "$2"
+    return
+  fi
   refusal=$(release_version_refusal "$version")
   [ -z "$refusal" ] || die "$refusal"
   out=$ROOT/dist/$version
@@ -229,7 +290,7 @@ main() {
       build "$version" "$out"
       ;;
     publish) publish "$version" "$out" ;;
-    *) echo "usage: scripts/release.sh [publish]" >&2; exit 2 ;;
+    *) echo "usage: scripts/release.sh [publish | rehearse <dir>]" >&2; exit 2 ;;
   esac
 }
 

@@ -17,7 +17,8 @@
 # ad-hoc signed, which runs on this machine and nowhere else. Notarization is scripts/release.sh's
 # step, not this script's. BUNDLE_GOBIN names the directory holding ley and the leydec-* plugins
 # (default go/bin, built with `make go` when ley is missing there); scripts/release.sh points it at
-# a release build of its own.
+# a release build of its own. BUNDLE_OUT names the bundle to write (default app/dist/Leyline.app);
+# `make alpha DRY_RUN=1` writes its rehearsal elsewhere.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
@@ -116,7 +117,8 @@ echo "==> swift build -c release (app/)"
 (cd app && swift build -c release --product LeylineApp)
 bin=$(cd app && swift build -c release --show-bin-path)
 
-out=app/dist/Leyline.app
+out=${BUNDLE_OUT:-app/dist/Leyline.app}
+case "$out" in *.app) ;; *) die "BUNDLE_OUT must name a .app bundle, not $out" ;; esac
 rm -rf "$out"
 mkdir -p "$out/Contents/MacOS" "$out/Contents/Resources"
 sed -e "s/__VERSION__/$version/" -e "s/__BUILD__/$build_number/" -e "s/__BUILD_DESCRIBE__/$build/" \

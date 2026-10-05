@@ -3,8 +3,11 @@
 #
 # The parts of scripts/release.sh that need no Mac: which VERSION may be released, the engine's
 # version constant as the release compares it, the drivers.json reader, the source download's
-# SHA-256 check and the release's asset list. The signing, notarization and DMG steps run only on
-# the Mac (docs/plans/distribution.md, "Sign, notarize, package", Verification).
+# SHA-256 check and the release's asset list. Then scripts/alpha.sh: its version arithmetic and
+# CHANGELOG rewrite, and whole runs in a scratch repository with a bare origin, where make, brew,
+# Xcode's tools, security and gh are stubs that log what they were asked. The signing,
+# notarization and DMG steps run only on the Mac (docs/plans/distribution.md, "Sign, notarize,
+# package", Verification).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=release.sh
@@ -94,6 +97,360 @@ got=$(release_assets "$tmp/out" 0.1.0-alpha.2)
 $got
 want:
 $want"
+
+# --- scripts/release-appcast.sh and scripts/alpha.sh
+
+# shellcheck source=release-appcast.sh
+. "$here/release-appcast.sh"
+# shellcheck source=alpha.sh
+. "$here/alpha.sh"
+set +e
+
+for pair in 0.1.0-dev:0.1.0-alpha.1 0.1.0-alpha.1:0.1.0-alpha.2 0.1.0-alpha.9:0.1.0-alpha.10 \
+  0.2.0-alpha.09:0.2.0-alpha.10 1.0.0-dev:1.0.0-alpha.1; do
+  got=$(next_version "${pair%%:*}")
+  [ "$got" = "${pair#*:}" ] || fail "next_version ${pair%%:*} printed \"$got\", want ${pair#*:}"
+done
+for v in 0.1.0 0.1.0-beta.1 0.1.0-alpha. 0.1.0-alpha.x -dev ""; do
+  next_version "$v" >/dev/null 2>&1 && fail "next_version accepted \"$v\""
+done
+
+# The first release drops the sentence saying nothing has been released, and leaves an empty
+# Unreleased above the dated section.
+cat > "$tmp/CHANGELOG.md" <<'MD'
+# Changelog
+
+Nothing has been released yet. This file starts with everything that exists on `main`.
+
+## Unreleased
+
+- A thing.
+
+- Another thing.
+MD
+[ "$(unreleased_notes "$tmp/CHANGELOG.md")" = "- A thing.
+
+- Another thing." ] || fail "unreleased_notes printed: $(unreleased_notes "$tmp/CHANGELOG.md")"
+changelog_cut "$tmp/CHANGELOG.md" 0.1.0-alpha.1 2026-10-05 || fail "changelog_cut failed"
+want='# Changelog
+
+## Unreleased
+
+## 0.1.0-alpha.1 (2026-10-05)
+
+- A thing.
+
+- Another thing.'
+[ "$(cat "$tmp/CHANGELOG.md")" = "$want" ] || fail "changelog_cut wrote:
+$(cat "$tmp/CHANGELOG.md")
+want:
+$want"
+[ -z "$(unreleased_notes "$tmp/CHANGELOG.md")" ] || fail "the new Unreleased section is not empty"
+[ "$(notes_for 0.1.0-alpha.1 "$tmp/CHANGELOG.md")" = "- A thing.
+
+- Another thing." ] || fail "notes_for does not read the dated heading: $(notes_for 0.1.0-alpha.1 "$tmp/CHANGELOG.md")"
+changelog_has_section 0.1.0-alpha.1 "$tmp/CHANGELOG.md" || fail "changelog_has_section missed the dated heading"
+changelog_has_section 0.1.0-alpha "$tmp/CHANGELOG.md" && fail "changelog_has_section matched a prefix"
+
+# The second release keeps the first's section below its own.
+printf '%s\n' '# Changelog' '' '## Unreleased' '' '- New.' '' '## 0.1.0-alpha.1 (2026-10-05)' '' '- Old.' \
+  > "$tmp/CHANGELOG.md"
+changelog_cut "$tmp/CHANGELOG.md" 0.1.0-alpha.2 2026-10-12 || fail "changelog_cut failed on the second release"
+want='# Changelog
+
+## Unreleased
+
+## 0.1.0-alpha.2 (2026-10-12)
+
+- New.
+
+## 0.1.0-alpha.1 (2026-10-05)
+
+- Old.'
+[ "$(cat "$tmp/CHANGELOG.md")" = "$want" ] || fail "changelog_cut on the second release wrote:
+$(cat "$tmp/CHANGELOG.md")"
+[ "$(notes_for 0.1.0-alpha.2 "$tmp/CHANGELOG.md")" = "- New." ] || fail "notes_for 0.1.0-alpha.2 is wrong"
+printf '# Changelog\n\n- No heading.\n' > "$tmp/nohead.md"
+changelog_cut "$tmp/nohead.md" 0.1.0-alpha.1 2026-10-05 && fail "changelog_cut accepted a changelog without ## Unreleased"
+[ "$(cat "$tmp/nohead.md")" = "$(printf '# Changelog\n\n- No heading.')" ] || fail "changelog_cut changed a file it refused"
+
+# Stubs for whole runs. Each scenario's $STUB directory holds switches (files) and the logs.
+stubs=$tmp/stubs
+mkdir -p "$stubs"
+cat > "$stubs/uname" <<'SH'
+#!/usr/bin/env bash
+case "$1" in -s) echo "${STUB_UNAME:-Darwin}" ;; -m) echo arm64 ;; *) for u in /usr/bin/uname /bin/uname; do [ -x "$u" ] && exec "$u" "$@"; done ;; esac
+SH
+cat > "$stubs/brew" <<'SH'
+#!/usr/bin/env bash
+echo "brew $*" >> "$STUB/brew.log"
+case "$1" in
+  list) grep -qx "$3" "$STUB/brew-installed" ;;
+  install) shift; printf '%s\n' "$@" >> "$STUB/brew-installed" ;;
+esac
+SH
+cat > "$stubs/xcode-select" <<'SH'
+#!/usr/bin/env bash
+echo /Library/Developer/CommandLineTools
+SH
+cat > "$stubs/swift" <<'SH'
+#!/usr/bin/env bash
+SH
+cp "$stubs/swift" "$stubs/go"
+cat > "$stubs/security" <<'SH'
+#!/usr/bin/env bash
+echo "security $*" >> "$STUB/credentials.log"
+if [ -e "$STUB/no-identity" ]; then echo "     0 valid identities found"; exit 0; fi
+echo '  1) 0123456789ABCDEF "Developer ID Application: Test Labs (TEAM123)"'
+echo "     1 valid identities found"
+SH
+cat > "$stubs/xcrun" <<'SH'
+#!/usr/bin/env bash
+echo "xcrun $*" >> "$STUB/credentials.log"
+case "$1" in
+  --find) echo "/usr/bin/$2" ;;
+  notarytool) [ ! -e "$STUB/no-notary" ] ;;
+esac
+SH
+cat > "$stubs/gh" <<'SH'
+#!/usr/bin/env bash
+echo "gh $*" >> "$STUB/gh.log"
+case "$1 $2" in
+  "auth status") [ ! -e "$STUB/no-gh" ] ;;
+  "repo view") exit 0 ;;
+  "release view") [ -e "$STUB/gh-release" ] ;;
+  "release create") touch "$STUB/gh-release" ;;
+esac
+SH
+# make: version runs the real generator; release lays out dist/<VERSION>/ as scripts/release.sh
+# does, or a partial one and a failure when $STUB/fail-release exists, and logs what git describe
+# says at that moment; release-publish and release-rehearse only log.
+cat > "$stubs/make" <<'SH'
+#!/usr/bin/env bash
+target=; out=
+for a in "$@"; do case "$a" in --*) ;; OUT=*) out=${a#OUT=} ;; *) target=$a ;; esac; done
+v=$(tr -d '[:space:]' < VERSION)
+case "$target" in
+  version) echo "make version" >> "$STUB/make.log"; ./scripts/gen-version.sh >/dev/null ;;
+  release)
+    echo "make release $v describe=$(git describe --tags --exact-match 2>/dev/null)" >> "$STUB/make.log"
+    d=dist/$v
+    [ ! -e "$d" ] || { echo "release.sh: $d already exists" >&2; exit 1; }
+    mkdir -p "$d"
+    touch "$d/Leyline-$v.dmg"
+    if [ -e "$STUB/fail-release" ]; then echo "notarization Invalid" >&2; exit 1; fi
+    touch "$d/leysdr-$v-source.tar.gz" "$d/libusb-1.0.29-source.tar.bz2" "$d/appcast.xml" "$d/notes.md"
+    printf '{\n  "drivers": [\n    {"library": "libusb-1.0.0.dylib", "formula": "libusb", "version": "1.0.29", "source_url": "https://example.com/libusb-1.0.29.tar.bz2", "sha256": "00"}\n  ]\n}\n' > "$d/drivers.json"
+    git rev-parse HEAD > "$d/commit"
+    ;;
+  release-publish) echo "make release-publish $v" >> "$STUB/make.log"; touch "$STUB/gh-release" ;;
+  release-rehearse) echo "make release-rehearse $v" >> "$STUB/make.log"; touch "$out/Leyline-$v.dmg" ;;
+  *) echo "make: unexpected target $target" >&2; exit 2 ;;
+esac
+SH
+chmod +x "$stubs"/*
+
+# scenario <name>: a scratch repository at $repo with a bare origin, VERSION 0.1.0-dev, the
+# scripts alpha.sh runs and a first-release CHANGELOG, pushed; $STUB holds its switches and logs.
+scenario() {
+  local s=$tmp/scenario-$1
+  mkdir -p "$s/stub"
+  STUB=$s/stub
+  repo=$s/work
+  printf '%s\n' librtlsdr hackrf libusb > "$STUB/brew-installed"
+  : > "$STUB/make.log"; : > "$STUB/gh.log"; : > "$STUB/credentials.log"
+  git init -q --bare -b main "$s/origin.git"
+  git init -q -b main "$repo"
+  mkdir -p "$repo/scripts" "$repo/engine/Sources/LeylineDaemon" "$repo/go/internal/cli"
+  cp "$here/alpha.sh" "$here/release.sh" "$here/release-appcast.sh" "$here/gen-version.sh" "$repo/scripts/"
+  echo 0.1.0-dev > "$repo/VERSION"
+  printf 'package cli\n\nconst defaultVersion = "0.1.0-dev"\n' > "$repo/go/internal/cli/root.go"
+  printf '/dist/\n' > "$repo/.gitignore"
+  cat > "$repo/CHANGELOG.md" <<'MD'
+# Changelog
+
+Nothing has been released yet. This file starts with everything that exists on `main`.
+
+## Unreleased
+
+- The first thing.
+MD
+  (cd "$repo" && ./scripts/gen-version.sh >/dev/null \
+    && git config user.name Tester && git config user.email tester@example.com \
+    && git config commit.gpgsign false && git config tag.gpgsign false \
+    && git add -A && git commit -q -m "start" && git remote add origin "$s/origin.git" \
+    && git push -q origin main)
+}
+
+# report <prefix> <lines>: one failure per non-empty line.
+report() {
+  local line
+  while IFS= read -r line; do
+    [ -z "$line" ] || fail "$1: $line"
+  done <<<"$2"
+}
+
+# alpha [VAR=value…]: scripts/alpha.sh in $repo with the stubs first on PATH, YES=1 unless given;
+# its output in $out, its status returned.
+alpha() {
+  out=$(cd "$repo" && env PATH="$stubs:$PATH" STUB="$STUB" TMPDIR="$tmp" MAKE=make YES=1 \
+    CODESIGN_IDENTITY="Developer ID Application: Test Labs (TEAM123)" NOTARY_PROFILE=test-notary \
+    "$@" ./scripts/alpha.sh 2>&1 </dev/null)
+}
+
+# snapshot: what a refused or rehearsed run must leave as it was.
+snapshot() {
+  (cd "$repo" && git rev-parse HEAD && git status --porcelain && git tag && cat VERSION CHANGELOG.md \
+    && git ls-remote origin)
+}
+
+# refused <want> [VAR=value…]: alpha stops, changes nothing, and its last line ends with <want>.
+refused() {
+  local want=$1 before
+  shift
+  before=$(snapshot)
+  if alpha "$@"; then
+    fail "alpha ran where it should have stopped with \"…$want\":
+$out"
+    return
+  fi
+  case "$(printf '%s\n' "$out" | tail -1)" in
+    alpha:*"$want") ;;
+    *) fail "alpha's last line does not end with \"$want\":
+$out" ;;
+  esac
+  [ "$(snapshot)" = "$before" ] || fail "alpha changed the repository while refusing (\"$want\")"
+}
+
+# A whole run: the commit and tag come before the build, the build sees the tag, then the push and
+# the publish.
+scenario full
+alpha || fail "the full run failed:
+$out"
+problems=$(
+  cd "$repo" || exit 1
+  [ "$(cat VERSION)" = 0.1.0-alpha.1 ] || echo "VERSION is $(cat VERSION)"
+  [ "$(git log -1 --format=%s)" = "release: 0.1.0-alpha.1" ] || echo "HEAD is \"$(git log -1 --format=%s)\""
+  git log -1 --format=%B | grep -q '^Signed-off-by: Tester <tester@example.com>$' || echo "the release commit is not signed off"
+  [ "$(git cat-file -t v0.1.0-alpha.1)" = tag ] || echo "v0.1.0-alpha.1 is not an annotated tag"
+  [ "$(git rev-parse 'v0.1.0-alpha.1^{commit}')" = "$(git rev-parse HEAD)" ] || echo "the tag is not at HEAD"
+  [ "$(git show --name-only --format= HEAD | sort | xargs)" \
+    = "CHANGELOG.md VERSION engine/Sources/LeylineDaemon/Version.swift go/internal/cli/root.go" ] \
+    || echo "the release commit holds: $(git show --name-only --format= HEAD | xargs)"
+  grep -q 'leylinedVersion = "0.1.0-alpha.1"' engine/Sources/LeylineDaemon/Version.swift || echo "Version.swift was not regenerated"
+  grep -q 'defaultVersion = "0.1.0-alpha.1"' go/internal/cli/root.go || echo "root.go was not regenerated"
+  grep -q '^Nothing has been released' CHANGELOG.md && echo "the first-release sentence is still there"
+  grep -qx "## 0.1.0-alpha.1 ($(date +%Y-%m-%d))" CHANGELOG.md || echo "CHANGELOG.md has no dated section"
+  [ "$(git ls-remote origin refs/heads/main | cut -f1)" = "$(git rev-parse HEAD)" ] || echo "main was not pushed"
+  git ls-remote --exit-code origin refs/tags/v0.1.0-alpha.1 >/dev/null || echo "the tag was not pushed"
+)
+report "full run" "$problems"
+[ "$(cat "$STUB/make.log")" = "make version
+make release 0.1.0-alpha.1 describe=v0.1.0-alpha.1
+make release-publish 0.1.0-alpha.1" ] || fail "the full run called make as:
+$(cat "$STUB/make.log")"
+case "$out" in *"Two steps are left"*"Acceptance, on a second"*"pins v0.1.0-alpha.1"*) ;; *) fail "the full run did not name what is left:
+$out" ;; esac
+
+# release.sh publish uses the pushed tag rather than making one.
+(cd "$repo" && env PATH="$stubs:$PATH" STUB="$STUB" ./scripts/release.sh publish >/dev/null 2>&1) \
+  || fail "release.sh publish failed after the full run"
+grep 'release create v0.1.0-alpha.1 ' "$STUB/gh.log" | grep -q -- '--verify-tag' \
+  || fail "release.sh publish did not pass --verify-tag: $(grep 'release create' "$STUB/gh.log")"
+grep 'release create' "$STUB/gh.log" | grep -q -- '--target' && fail "release.sh publish passed --target beside an existing tag"
+
+# Run again on the finished release, it changes nothing and builds and publishes nothing.
+: > "$STUB/make.log"
+alpha || fail "a second run on a finished release failed:
+$out"
+[ ! -s "$STUB/make.log" ] || fail "a second run on a finished release called make: $(cat "$STUB/make.log")"
+[ "$(cd "$repo" && git log --format=%s | grep -c '^release:')" = 1 ] || fail "a second run cut another release"
+
+# A build that fails leaves the commit and tag; the next run builds again from them, without a
+# second bump.
+scenario resume
+touch "$STUB/fail-release"
+alpha && fail "the run whose build fails succeeded"
+(cd "$repo" && [ "$(git log -1 --format=%s)" = "release: 0.1.0-alpha.1" ] && git rev-parse -q --verify refs/tags/v0.1.0-alpha.1 >/dev/null) \
+  || fail "the failed run did not leave the release commit and tag"
+(cd "$repo" && git ls-remote --exit-code origin refs/tags/v0.1.0-alpha.1 >/dev/null) && fail "the failed run pushed the tag"
+case "$(printf '%s\n' "$out" | tail -1)" in *": make alpha") ;; *) fail "the failed run's last line is: $(printf '%s\n' "$out" | tail -1)" ;; esac
+rm "$STUB/fail-release"
+alpha || fail "the resumed run failed:
+$out"
+case "$out" in *"carrying on"*"unfinished; building it again"*) ;; *) fail "the resumed run did not say it carried on and rebuilt:
+$out" ;; esac
+problems=$(
+  cd "$repo" || exit 1
+  [ "$(cat VERSION)" = 0.1.0-alpha.1 ] || echo "VERSION is $(cat VERSION)"
+  [ "$(git log --format=%s | grep -c '^release:')" = 1 ] || echo "there are $(git log --format=%s | grep -c '^release:') release commits"
+  [ -f dist/0.1.0-alpha.1/commit ] || echo "dist/0.1.0-alpha.1 was not rebuilt"
+  git ls-remote --exit-code origin refs/tags/v0.1.0-alpha.1 >/dev/null || echo "the tag was not pushed"
+)
+report "resumed run" "$problems"
+[ "$(grep -c '^make release 0.1.0-alpha.1' "$STUB/make.log")" = 2 ] && grep -q '^make release-publish' "$STUB/make.log" \
+  && [ "$(grep -c '^make version' "$STUB/make.log")" = 1 ] \
+  || fail "the two runs called make as:
+$(cat "$STUB/make.log")"
+
+# A run stopped between the commit and the tag: the next one tags HEAD and goes on.
+scenario untagged
+(cd "$repo" && echo 0.1.0-alpha.1 > VERSION && ./scripts/gen-version.sh >/dev/null \
+  && git commit -q -a -m "release: 0.1.0-alpha.1")
+alpha || fail "the run after an untagged release commit failed:
+$out"
+[ "$(cd "$repo" && git rev-parse 'v0.1.0-alpha.1^{commit}')" = "$(cd "$repo" && git rev-parse HEAD)" ] \
+  || fail "the run after an untagged release commit did not tag HEAD"
+
+# A rehearsal changes nothing, asks for no credentials, and builds through release-rehearse.
+scenario dry
+before=$(snapshot)
+alpha DRY_RUN=1 || fail "the rehearsal failed:
+$out"
+[ "$(snapshot)" = "$before" ] || fail "the rehearsal changed the repository"
+[ "$(cat "$STUB/make.log")" = "make release-rehearse 0.1.0-dev" ] || fail "the rehearsal called make as: $(cat "$STUB/make.log")"
+[ ! -s "$STUB/credentials.log" ] && [ ! -s "$STUB/gh.log" ] \
+  || fail "the rehearsal checked credentials: $(cat "$STUB/credentials.log" "$STUB/gh.log")"
+case "$out" in *"Next release: 0.1.0-alpha.1"*"Rehearsal of 0.1.0-alpha.1 done"*"Skipped:"*) ;; *) fail "the rehearsal did not say what it built and skipped:
+$out" ;; esac
+
+# A missing driver formula is installed, not refused.
+grep -v hackrf "$STUB/brew-installed" > "$STUB/b" && mv "$STUB/b" "$STUB/brew-installed"
+alpha DRY_RUN=1 || fail "the rehearsal without hackrf failed:
+$out"
+grep -qx 'brew install hackrf' "$STUB/brew.log" || fail "the missing formula was not installed: $(cat "$STUB/brew.log")"
+
+# NEXT names the version.
+alpha DRY_RUN=1 NEXT=0.2.0-alpha.1 || fail "the rehearsal with NEXT failed"
+case "$out" in *"Next release: 0.2.0-alpha.1"*) ;; *) fail "NEXT was not used:
+$out" ;; esac
+
+# Refusals: each stops before changing anything, its last line ending in the command that fixes it.
+scenario refusals
+refused "make alpha NEXT=<version>" NEXT=0.2.0-dev
+refused "Run it there with: make alpha" STUB_UNAME=Linux
+(cd "$repo" && git switch -q -c feature)
+refused "git switch main"
+(cd "$repo" && git switch -q main && echo x >> VERSION)
+refused "git stash -u"
+(cd "$repo" && git checkout -q -- VERSION && git commit -q --allow-empty -m ahead && git push -q origin main \
+  && git reset -q --hard HEAD~1)
+refused "git pull --ff-only origin main"
+(cd "$repo" && git pull -q --ff-only origin main)
+touch "$STUB/no-identity"
+refused "security import <file>.p12 -k ~/Library/Keychains/login.keychain-db"
+rm "$STUB/no-identity"; touch "$STUB/no-notary"
+refused "xcrun notarytool store-credentials test-notary --apple-id <Apple ID> --team-id TEAM123"
+rm "$STUB/no-notary"; touch "$STUB/no-gh"
+refused "gh auth login"
+rm "$STUB/no-gh"
+(cd "$repo" && git tag -a v0.1.0-alpha.1 -m x HEAD~0 2>/dev/null)
+refused "make alpha NEXT=<version>"
+(cd "$repo" && git tag -d v0.1.0-alpha.1 >/dev/null)
+refused "Run again when ready, with YES=1 to skip this question: make alpha" YES=
+(cd "$repo" && printf '# Changelog\n\n## Unreleased\n\n## 0.0.1 (2026-01-01)\n\n- Old.\n' > CHANGELOG.md \
+  && git commit -q -am "empty notes" && git push -q origin main)
+refused "\$EDITOR CHANGELOG.md"
 
 if [ $failures -gt 0 ]; then
   echo "test-release.sh: $failures failed" >&2
