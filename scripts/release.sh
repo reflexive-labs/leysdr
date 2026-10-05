@@ -2,21 +2,22 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Builds, signs, notarizes and packages a release of the app, and publishes it as a GitHub
-# prerelease. docs/plans/distribution.md, "Sign, notarize, package", is the specification and
+# release. docs/plans/distribution.md, "Sign, notarize, package", is the specification and
 # docs/dev/release-checklist.md the pass around it.
 #
-#   scripts/release.sh           (make release) dist/<VERSION>/: the notarized Leyline-<VERSION>.dmg,
-#                                the source tarballs the release owes, drivers.json, appcast.xml
-#   scripts/release.sh publish   (make release-publish) the GitHub prerelease v<VERSION> on
+#   scripts/release.sh           (make release-build) dist/<VERSION>/: the notarized
+#                                Leyline-<VERSION>.dmg, the source tarballs the release owes,
+#                                drivers.json, appcast.xml
+#   scripts/release.sh publish   (make release-publish) the GitHub release v<VERSION> on
 #                                reflexive-labs/leysdr from dist/<VERSION>/, refused until the
 #                                commit it was built from is on GitHub. When the tag v<VERSION>
-#                                exists locally (make alpha makes it before the build) it must
+#                                exists locally (make release makes it before the build) it must
 #                                point at that commit and be pushed, and the release uses it.
 #   scripts/release.sh rehearse <dir>
 #                                (make release-rehearse) the tree as it is, whatever its VERSION,
 #                                as an ad-hoc-signed Leyline.app and Leyline-<VERSION>.dmg in
 #                                <dir>: the release's build without its credentials, which
-#                                `make alpha DRY_RUN=1` runs
+#                                `make release DRY_RUN=1` runs
 #
 # CODESIGN_IDENTITY is the Developer ID Application identity's full name and NOTARY_PROFILE the
 # `xcrun notarytool store-credentials` keychain profile; neither has a default here. The Sparkle
@@ -41,19 +42,19 @@ REPO=reflexive-labs/leysdr
 die() { echo "release.sh: $*" >&2; exit 1; }
 
 # changelog_has_section <version> <file>: whether <file> has a `## <version>` heading, with a
-# date or anything else after a space (`## 0.1.0-alpha.1 (2026-10-05)`, as make alpha writes it),
+# date or anything else after a space (`## 0.1.0 (2026-10-05)`, as make release writes it),
 # and `## [<version>]` or `## v<version>` counting too, as scripts/release-appcast.sh reads them.
 changelog_has_section() {
   grep -Eq "^## \[?v?${1//./\\.}\]?([[:space:]]|$)" "$2"
 }
 
-# release_version_refusal <version>: why <version> cannot be released, or nothing. A -dev version
-# is what the tree carries between releases, and every release changes VERSION
+# release_version_refusal <version>: why <version> cannot be released, or nothing. `X-dev` names a
+# release not cut yet, which make release turns into X, and every release changes VERSION
 # (docs/plans/distribution.md, "Decisions").
 release_version_refusal() {
   case "$1" in
     "") echo "VERSION is empty" ;;
-    *-dev | *-dev+* | *-dev.*) echo "VERSION is $1; bump it to this release's version (0.1.0-alpha.N) and commit" ;;
+    *-dev | *-dev+* | *-dev.*) echo "VERSION is $1, which is not a release; cut one with: make release" ;;
     # A + would read as build metadata, which DaemonAgent.sameBuild compares with CFBundleVersion.
     *[!0-9A-Za-z.-]*) echo "VERSION $1 may hold only letters, digits, dots and hyphens" ;;
   esac
@@ -113,8 +114,8 @@ release_assets() {
   printf '%s\n' "$1/drivers.json" "$1/appcast.xml"
 }
 
-# build_app <version> <work> <identity> <app>: ley and the decoders for the one architecture the
-# alpha ships, stamped with the bare version, then the bundle at <app> signed by <identity> ("-"
+# build_app <version> <work> <identity> <app>: ley and the decoders for the one architecture a
+# release ships, stamped with the bare version, then the bundle at <app> signed by <identity> ("-"
 # for ad hoc) and verified. Not go/bin, which holds whatever the last `make go` built.
 build_app() {
   local version=$1 gobin=$2/gobin identity=$3 app=$4 d name
@@ -171,7 +172,7 @@ build() {
   changelog_has_section "$version" CHANGELOG.md \
     || die "CHANGELOG.md has no \`## $version\` section, which the update's release notes come from"
   [ ! -e "$out" ] || die "$out already exists; a version is released once (remove it to build this version again)"
-  # make alpha tags before it builds, so the bundle's git describe (LeylineBuild, the about panel)
+  # make release tags before it builds, so the bundle's git describe (LeylineBuild, the about panel)
   # is the tag. A tag on another commit means this tree is not the release it names.
   tagged=$(git rev-parse -q --verify "refs/tags/v$version^{commit}" || true)
   [ -z "$tagged" ] || [ "$tagged" = "$(git rev-parse HEAD)" ] \
@@ -240,16 +241,21 @@ build() {
   ls -l "$out"
 }
 
-# publish: the GitHub prerelease, the way `leyshots publish` makes a shots-* release. GitHub can
-# only tag a commit it has, so the commit the release was built from must be on a branch of origin.
-# A local tag v<version> (make alpha's) is the release's tag: it must name that commit and be on
+# publish: the GitHub release, the way `leyshots publish` makes a shots-* release. GitHub can only
+# tag a commit it has, so the commit the release was built from must be on a branch of origin. A
+# local tag v<version> (make release's) is the release's tag: it must name that commit and be on
 # origin, and gh is told to use it rather than make one.
+#
+# The release is a full release, never a prerelease, and is not marked Latest: the repository's
+# Latest stays the newest shots-* release, as it was before app releases. Nothing reads Latest;
+# leyshots and leysdr.com find their releases by tag prefix (shots-, v), so either way works, and
+# --latest=false leaves the screenshots' releases as they were.
 publish() {
   local version=$1 out=$2 commit asset tagged assets=() target=()
-  [ -f "$out/commit" ] || die "$out has no release; make it first with: make release"
+  [ -f "$out/commit" ] || die "$out has no release; make it first with: make release-build"
   commit=$(cat "$out/commit")
   while IFS= read -r asset; do
-    [ -f "$asset" ] || die "$asset is missing; make the release again with: make release"
+    [ -f "$asset" ] || die "$asset is missing; make the release again with: make release-build"
     assets+=("$asset")
   done < <(release_assets "$out" "$version")
   git fetch --quiet origin || die "git fetch origin failed"
@@ -258,22 +264,22 @@ publish() {
   tagged=$(git rev-parse -q --verify "refs/tags/v$version^{commit}" || true)
   if [ -n "$tagged" ]; then
     [ "$tagged" = "$commit" ] \
-      || die "the tag v$version points at ${tagged:0:12}, but $out was built from ${commit:0:12}; build it again from the tag with: make release"
+      || die "the tag v$version points at ${tagged:0:12}, but $out was built from ${commit:0:12}; build it again from the tag with: make release-build"
     git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null \
       || die "the tag v$version is not on GitHub yet; push it first with: git push origin v$version"
     target=(--verify-tag)
   else
     target=(--target "$commit")
   fi
-  echo "==> gh release create v$version (prerelease, ${#assets[@]} assets, at ${commit:0:12})"
-  gh release create "v$version" --repo "$REPO" --prerelease --title "Leyline $version" \
+  echo "==> gh release create v$version (${#assets[@]} assets, at ${commit:0:12})"
+  gh release create "v$version" --repo "$REPO" --latest=false --title "Leyline $version" \
     --notes-file "$out/notes.md" "${target[@]}" "${assets[@]}"
 }
 
 main() {
   local version refusal out
   [ "$(uname -s)" = Darwin ] || die "a release is signed and notarized on the Mac; run it there"
-  [ "$(uname -m)" = arm64 ] || die "the alpha ships Apple silicon only; build it on an Apple silicon Mac"
+  [ "$(uname -m)" = arm64 ] || die "a release ships Apple silicon only; build it on an Apple silicon Mac"
   version=$(tr -d '[:space:]' < VERSION)
   if [ "${1:-}" = rehearse ]; then
     [ $# -eq 2 ] || { echo "usage: scripts/release.sh rehearse <dir>" >&2; exit 2; }

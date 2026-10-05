@@ -18,7 +18,7 @@
 # step, not this script's. BUNDLE_GOBIN names the directory holding ley and the leydec-* plugins
 # (default go/bin, built with `make go` when ley is missing there); scripts/release.sh points it at
 # a release build of its own. BUNDLE_OUT names the bundle to write (default app/dist/Leyline.app);
-# `make alpha DRY_RUN=1` writes its rehearsal elsewhere.
+# `make release DRY_RUN=1` writes its rehearsal elsewhere.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD

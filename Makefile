@@ -29,21 +29,23 @@
 #   make app-e2e    the façade against a locally built leylined --no-hardware playing a fixture
 #   make app-run    macOS: run the app straight from the package (no bundle, no signature)
 #   make app-bundle macOS: assemble and sign app/dist/Leyline.app (scripts/bundle-app.sh)
-#   make alpha      macOS: cut the next alpha from start to finish (scripts/alpha.sh): check the
-#                   build Mac, bump VERSION, date the CHANGELOG's Unreleased section, commit and
-#                   tag, make release, push, make release-publish, then name the two manual steps
-#                   left. Run again after a failure, it carries on from where it stopped.
-#                   NEXT=0.2.0-alpha.1 picks the version, YES=1 skips the question, DRY_RUN=1 is
-#                   a rehearsal that changes nothing and builds an ad-hoc DMG in a temporary directory
-#   make release    macOS: the signed, notarized Leyline-<VERSION>.dmg, the source tarballs it owes
-#                   and the update feed in dist/<VERSION>/ (scripts/release.sh), from a clean tree
-#                   whose VERSION is a release's. CODESIGN_IDENTITY and NOTARY_PROFILE default to
-#                   the build Mac's identity and notary profile
-#   make release-publish  the GitHub prerelease v<VERSION> from dist/<VERSION>/, refused until the
+#   make release    macOS: cut the next release from start to finish (scripts/cut-release.sh):
+#                   check the build Mac, bump VERSION, date the CHANGELOG's Unreleased section,
+#                   commit and tag, make release-build, push, make release-publish, then name the
+#                   two manual steps left. Run again after a failure, it carries on from where it
+#                   stopped. VERSION X-dev releases as X and X.Y.Z as X.Y.Z+1; BUMP=minor or
+#                   BUMP=major picks another number, NEXT=0.2.0 names it, YES=1 skips the question,
+#                   DRY_RUN=1 is a rehearsal that changes nothing and builds an ad-hoc DMG in a
+#                   temporary directory
+#   make release-build  macOS: the signed, notarized Leyline-<VERSION>.dmg, the source tarballs it
+#                   owes and the update feed in dist/<VERSION>/ (scripts/release.sh), from a clean
+#                   tree whose VERSION is a release's. CODESIGN_IDENTITY and NOTARY_PROFILE default
+#                   to the build Mac's identity and notary profile
+#   make release-publish  the GitHub release v<VERSION> from dist/<VERSION>/, refused until the
 #                   commit it was built from is pushed
 #   make release-rehearse  macOS: the tree as it is as an ad-hoc-signed app and DMG in OUT (default a
 #                   new temporary directory), without credentials
-#   make release-test  the parts of scripts/release.sh that need no Mac
+#   make release-test  the parts of scripts/release.sh and scripts/cut-release.sh that need no Mac
 #   make reload     macOS: rebuild ley and leylined (release), stop the running daemon, reinstall the
 #                   LaunchAgent on the new binary and start it — the edit-build-try loop in one step
 #   make lint       golangci-lint + gofumpt (pinned versions, installed into .tools/<host>/bin)
@@ -82,7 +84,7 @@ ACTIONLINT_VERSION := v1.7.12
 CODESIGN_IDENTITY ?= Developer ID Application: Reflexive Labs LLC (P2KZW25PL8)
 NOTARY_PROFILE ?= leysdr-notary
 
-.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval shots shots-bundle shots-publish shots-release alpha release release-publish release-rehearse release-test app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders
+.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval shots shots-bundle shots-publish shots-release release release-build release-publish release-rehearse release-test app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders
 
 all: go swift app
 
@@ -267,10 +269,17 @@ shots-publish: go
 shots-release: $(SHOTS_ASSETS) | go
 	$(GOBIN)/leyshots publish $(SHOTS_ARGS)
 
-# A release of the app (docs/plans/distribution.md, "Sign, notarize, package"; the pass around it is
-# docs/dev/release-checklist.md). scripts/release.sh builds its own ley and decoders rather than
-# using go/bin, and refuses a dirty tree, a -dev VERSION and a dist/<VERSION>/ that already exists.
+# Every step of a release in order, resumable (docs/dev/release-checklist.md, "The signed build").
+# It calls make release-build, release-publish and release-rehearse itself. The recipe does not
+# name $(MAKE), which would make `make -n release` run it.
 release:
+	CODESIGN_IDENTITY="$(CODESIGN_IDENTITY)" NOTARY_PROFILE="$(NOTARY_PROFILE)" \
+		NEXT="$(NEXT)" BUMP="$(BUMP)" YES="$(YES)" DRY_RUN="$(DRY_RUN)" ./scripts/cut-release.sh
+
+# The build of a release (docs/plans/distribution.md, "Sign, notarize, package"; the pass around it
+# is docs/dev/release-checklist.md). scripts/release.sh builds its own ley and decoders rather than
+# using go/bin, and refuses a dirty tree, a -dev VERSION and a dist/<VERSION>/ that already exists.
+release-build:
 	CODESIGN_IDENTITY="$(CODESIGN_IDENTITY)" NOTARY_PROFILE="$(NOTARY_PROFILE)" ./scripts/release.sh
 
 release-publish:
@@ -278,13 +287,6 @@ release-publish:
 
 release-rehearse:
 	./scripts/release.sh rehearse "$(or $(OUT),$$(mktemp -d "$${TMPDIR:-/tmp}/leyline-rehearsal.XXXXXX"))"
-
-# Every step of an alpha in order, resumable (docs/dev/release-checklist.md, "The signed build").
-# It calls make release, release-publish and release-rehearse itself. The recipe does not name
-# $(MAKE), which would make `make -n alpha` run it.
-alpha:
-	CODESIGN_IDENTITY="$(CODESIGN_IDENTITY)" NOTARY_PROFILE="$(NOTARY_PROFILE)" \
-		NEXT="$(NEXT)" YES="$(YES)" DRY_RUN="$(DRY_RUN)" ./scripts/alpha.sh
 
 release-test:
 	./scripts/test-release.sh

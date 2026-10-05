@@ -1,21 +1,24 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# Cuts the next alpha of the app from start to finish (make alpha), so no step of
+# Cuts the next release of the app from start to finish (make release), so no step of
 # docs/dev/release-checklist.md, "The signed build", depends on being remembered:
 #
 #   1. preflight: on main, a clean tree not behind origin/main, Homebrew's drivers (installed when
 #      missing), Xcode's tools and Go, the signing identity, the notary profile, GitHub access, and
 #      notes under the CHANGELOG's `## Unreleased`
-#   2. the version: the next alpha after VERSION (`X-dev` is followed by `X-alpha.1`, `X-alpha.N`
-#      by `X-alpha.N+1`), or NEXT; it and its notes are shown and confirmed unless YES=1
+#   2. the version: VERSION `X-dev` releases as X; a released X.Y.Z is followed by X.Y.Z+1, or the
+#      next minor or major with BUMP=minor or BUMP=major; NEXT names it outright. It must be greater
+#      than the newest vX.Y.Z tag. It and its notes are shown and confirmed unless YES=1
 #   3. VERSION, `make version`, and `## Unreleased` dated as `## <version> (<YYYY-MM-DD>)` under a
 #      new, empty `## Unreleased`
 #   4. the commit `release: <version>` and the annotated tag v<version>, both before the build, so
 #      the bundle's git describe (LeylineBuild, the about panel) is the tag
-#   5. make release
+#   5. make release-build
 #   6. main and the tag pushed, then make release-publish
 #   7. what is left for a person: the second Mac's checks and the site's pull request
+#
+# After a release VERSION holds the released version until the next release changes it.
 #
 # A run that stops after step 4 is carried on by running it again: HEAD is the release commit,
 # tagged, so nothing is bumped twice; a complete dist/<version>/ is reused and a partial one built
@@ -29,7 +32,7 @@
 # calls back into, `make` when unset.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-# release_version_refusal, release_assets and REPO; notes_for, which reads a CHANGELOG section.
+# release_assets and REPO; notes_for, which reads a CHANGELOG section.
 # shellcheck source=release.sh
 . "$(dirname "${BASH_SOURCE[0]}")/release.sh"
 # shellcheck source=release-appcast.sh
@@ -37,7 +40,7 @@ cd "$(dirname "$0")/.."
 
 FORMULAS=(librtlsdr hackrf libusb)
 
-die() { echo "alpha: $*" >&2; exit 1; }
+die() { echo "cut-release: $*" >&2; exit 1; }
 say() { echo "==> $*"; }
 
 # truthy <value>: set to anything but nothing, 0, no or false.
@@ -45,19 +48,58 @@ truthy() {
   case "${1:-}" in "" | 0 | no | false | NO | FALSE) return 1 ;; *) return 0 ;; esac
 }
 
-# next_version <version>: the alpha after <version>, or a failure when <version> is neither
-# `X-dev` nor `X-alpha.N`.
+# next_version <version> [<bump>]: the release after VERSION <version>. `X-dev` releases as X; a
+# released X.Y.Z is followed by the next patch, or by the next minor or major when <bump> is
+# minor or major. Fails on any other <version>, on an unknown <bump>, and on a <bump> beside
+# `X-dev`, whose release is X already.
 next_version() {
-  local n
+  local base major minor patch
   case "$1" in
-    ?*-dev) echo "${1%-dev}-alpha.1" ;;
-    ?*-alpha.*)
-      n=${1##*-alpha.}
-      [[ $n =~ ^[0-9]+$ ]] || return 1
-      echo "${1%-alpha.*}-alpha.$((10#$n + 1))"
+    ?*-dev)
+      base=${1%-dev}
+      [ -z "${2:-}" ] && [ -z "$(release_number_refusal "$base")" ] || return 1
+      echo "$base"
       ;;
-    *) return 1 ;;
+    *)
+      [ -z "$(release_number_refusal "$1")" ] || return 1
+      IFS=. read -r major minor patch <<<"$1"
+      case "${2:-patch}" in
+        patch) echo "$((10#$major)).$((10#$minor)).$((10#$patch + 1))" ;;
+        minor) echo "$((10#$major)).$((10#$minor + 1)).0" ;;
+        major) echo "$((10#$major + 1)).0.0" ;;
+        *) return 1 ;;
+      esac
+      ;;
   esac
+}
+
+# release_number_refusal <version>: why <version> is not X.Y.Z, three numbers, or nothing. Every
+# release make release cuts is one; there are no pre-release names or channels
+# (docs/plans/distribution.md, "Decisions").
+release_number_refusal() {
+  [[ $1 =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] \
+    || echo "a release is three numbers, X.Y.Z"
+}
+
+# version_gt <a> <b>: whether X.Y.Z <a> is greater than X.Y.Z <b>.
+version_gt() {
+  local a1 a2 a3 b1 b2 b3
+  IFS=. read -r a1 a2 a3 <<<"$1"
+  IFS=. read -r b1 b2 b3 <<<"$2"
+  ((10#$a1 != 10#$b1)) && { ((10#$a1 > 10#$b1)); return; }
+  ((10#$a2 != 10#$b2)) && { ((10#$a2 > 10#$b2)); return; }
+  ((10#$a3 > 10#$b3))
+}
+
+# last_release: the greatest version among the local vX.Y.Z tags, or nothing before the first.
+last_release() {
+  local tag v last=
+  while IFS= read -r tag; do
+    v=${tag#v}
+    [ -z "$(release_number_refusal "$v")" ] || continue
+    if [ -z "$last" ] || version_gt "$v" "$last"; then last=$v; fi
+  done < <(git tag -l 'v*')
+  echo "$last"
 }
 
 # unreleased_notes <changelog>: the `## Unreleased` section's text, trimmed of blank lines at
@@ -95,7 +137,7 @@ resume_version() {
   [ "$(tr -d '[:space:]' < VERSION)" = "$version" ] || return 1
   tagged=$(git rev-parse -q --verify "refs/tags/v$version^{commit}" || true)
   [ -z "$tagged" ] || [ "$tagged" = "$(git rev-parse HEAD)" ] \
-    || { echo "alpha: HEAD is the release commit for $version, but the tag v$version points at ${tagged:0:12}. Look at both with: git log --oneline --no-walk v$version HEAD" >&2; return 3; }
+    || { echo "cut-release: HEAD is the release commit for $version, but the tag v$version points at ${tagged:0:12}. Look at both with: git log --oneline --no-walk v$version HEAD" >&2; return 3; }
   echo "$version"
 }
 
@@ -154,7 +196,7 @@ preflight_tools() {
 preflight_credentials() {
   local team bin want got
   [ -n "${CODESIGN_IDENTITY:-}" ] && [ -n "${NOTARY_PROFILE:-}" ] \
-    || die "CODESIGN_IDENTITY and NOTARY_PROFILE are not set. Run it as: make alpha"
+    || die "CODESIGN_IDENTITY and NOTARY_PROFILE are not set. Run it as: make release"
   security find-identity -v -p codesigning 2>/dev/null | grep -qF "\"$CODESIGN_IDENTITY\"" \
     || die "the keychain has no valid signing identity \"$CODESIGN_IDENTITY\". Import the certificate's backup with: security import <file>.p12 -k ~/Library/Keychains/login.keychain-db"
   xcrun --find notarytool >/dev/null 2>&1 && xcrun --find stapler >/dev/null 2>&1 \
@@ -182,7 +224,7 @@ confirm() {
   local answer=
   truthy "${YES:-}" && return 0
   read -r -p "Cut $1? [y/N] " answer || true
-  case "$answer" in y | Y | yes | YES) ;; *) die "stopped before changing anything. Run again when ready, with YES=1 to skip this question: make alpha" ;; esac
+  case "$answer" in y | Y | yes | YES) ;; *) die "stopped before changing anything. Run again when ready, with YES=1 to skip this question: make release" ;; esac
 }
 
 # cut_release <version>: steps 3 and 4, the bump, the CHANGELOG, the commit and the tag.
@@ -203,7 +245,7 @@ cut_release() {
 dry_run() {
   local version=$1 current out
   current=$(tr -d '[:space:]' < VERSION)
-  out=$(mktemp -d "${TMPDIR:-/tmp}/leyline-alpha-rehearsal.XXXXXX")
+  out=$(mktemp -d "${TMPDIR:-/tmp}/leyline-release-rehearsal.XXXXXX")
   say "make release-rehearse OUT=$out"
   "$MAKE" --no-print-directory release-rehearse OUT="$out"
   cat <<EOF
@@ -212,14 +254,14 @@ Rehearsal of $version done: $out holds an ad-hoc-signed Leyline.app and Leyline-
 built from the tree as it is, so they say $current, not $version.
 Skipped: the signing identity, notary profile and GitHub checks; VERSION, \`make version\` and
 the CHANGELOG; the commit and tag; the Developer ID signature, notarization and stapling; the
-source tarballs and appcast; the push and the GitHub release. \`make alpha\` does all of them.
+source tarballs and appcast; the push and the GitHub release. \`make release\` does all of them.
 EOF
 }
 
 main() {
-  local dry=0 resumed= rc=0 version current notes state out
-  [ "$(uname -s)" = Darwin ] || die "a release is signed and notarized on the Mac. Run it there with: make alpha"
-  [ "$(uname -m)" = arm64 ] || die "the alpha ships Apple silicon only. Run it on an Apple silicon Mac with: make alpha"
+  local dry=0 resumed= rc=0 version current notes state out last
+  [ "$(uname -s)" = Darwin ] || die "a release is signed and notarized on the Mac. Run it there with: make release"
+  [ "$(uname -m)" = arm64 ] || die "a release ships Apple silicon only. Run it on an Apple silicon Mac with: make release"
   truthy "${DRY_RUN:-}" && dry=1
   MAKE=${MAKE:-make}
 
@@ -239,20 +281,28 @@ main() {
       || die "CHANGELOG.md's \`## Unreleased\` section is empty, and it becomes the release's notes. Write them, then commit: \$EDITOR CHANGELOG.md"
     current=$(tr -d '[:space:]' < VERSION)
     if [ -n "${NEXT:-}" ]; then
+      [ -z "${BUMP:-}" ] || die "NEXT and BUMP both pick the version. Give one, as: make release NEXT=$NEXT"
       version=$NEXT
     else
-      version=$(next_version "$current") \
-        || die "VERSION is $current, which is neither X-dev nor X-alpha.N, so the next alpha is unclear. Name it with: make alpha NEXT=<version>"
+      case "$current" in
+        *-dev) [ -z "${BUMP:-}" ] || die "VERSION is $current, which releases as ${current%-dev}, so BUMP=$BUMP has nothing to pick. Name another version with: make release NEXT=<version>" ;;
+        *) case "${BUMP:-patch}" in patch | minor | major) ;; *) die "BUMP is $BUMP; it takes patch, minor or major. Run it as: make release BUMP=minor" ;; esac ;;
+      esac
+      version=$(next_version "$current" "${BUMP:-}") \
+        || die "VERSION is $current, which is neither X-dev nor a released X.Y.Z, so the next release is unclear. Name it with: make release NEXT=<version>"
     fi
-    [ -z "$(release_version_refusal "$version")" ] \
-      || die "$version is not a version a release can carry ($(release_version_refusal "$version")). Name another with: make alpha NEXT=<version>"
+    [ -z "$(release_number_refusal "$version")" ] \
+      || die "$version is not a version a release can carry ($(release_number_refusal "$version")). Name another with: make release NEXT=<version>"
     [ -z "$(git rev-parse -q --verify "refs/tags/v$version" || true)" ] \
-      || die "the tag v$version already exists, so $version has been cut. Name the next with: make alpha NEXT=<version>"
+      || die "the tag v$version already exists, so $version has been released. Name the next with: make release NEXT=<version>"
+    last=$(last_release)
+    [ -z "$last" ] || version_gt "$version" "$last" \
+      || die "$version is not greater than $last, the last release, and each release is greater than the one before. Name a greater one with: make release NEXT=<version>"
     if [ $dry -eq 0 ]; then
       ! git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1 \
-        || die "origin already has the tag v$version. Fetch it and name the next with: git fetch --tags && make alpha NEXT=<version>"
+        || die "origin already has the tag v$version. Fetch it and name the next with: git fetch --tags && make release NEXT=<version>"
       [ ! -e "dist/$version" ] \
-        || die "dist/$version exists from a build that was not cut by make alpha. Move it aside with: rm -rf dist/$version"
+        || die "dist/$version exists from a build that was not cut by make release. Move it aside with: rm -rf dist/$version"
     fi
     echo
     echo "Next release: $version (VERSION is $current)"
@@ -284,21 +334,21 @@ main() {
       ;;
   esac
   if [ "$state" != complete ]; then
-    say "make release"
-    "$MAKE" --no-print-directory release \
-      || die "make release failed; the lines above say why. Once it is fixed, carry on with: make alpha"
+    say "make release-build"
+    "$MAKE" --no-print-directory release-build \
+      || die "make release-build failed; the lines above say why. Once it is fixed, carry on with: make release"
   fi
 
   say "git push origin main v$version"
   git push --quiet origin main "refs/tags/v$version" \
-    || die "the push failed; the lines above say why. Once it is fixed, carry on with: make alpha"
+    || die "the push failed; the lines above say why. Once it is fixed, carry on with: make release"
 
   if gh release view "v$version" --repo "$REPO" >/dev/null 2>&1; then
     say "the GitHub release v$version exists; not publishing it again"
   else
     say "make release-publish"
     "$MAKE" --no-print-directory release-publish \
-      || die "make release-publish failed; the lines above say why. Once it is fixed, carry on with: make alpha"
+      || die "make release-publish failed; the lines above say why. Once it is fixed, carry on with: make release"
   fi
 
   cat <<EOF

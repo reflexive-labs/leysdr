@@ -8,7 +8,7 @@
 #   scripts/release-appcast.sh <dir> [generate_appcast option…]
 #
 # Every DMG is named Leyline-<version>.dmg. Its release notes are the `## <version>` section of
-# CHANGELOG.md (make alpha writes `## <version> (<date>)`; anything after the version is ignored,
+# CHANGELOG.md (make release writes `## <version> (<date>)`; anything after the version is ignored,
 # and a heading of `## [<version>]` or `## v<version>` counts too), written beside it as
 # Leyline-<version>.md and embedded in the appcast, so a tester reads in the update dialog what
 # the changelog says. A DMG whose version has no section stops the script: an update without
