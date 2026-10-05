@@ -14,8 +14,10 @@
 #                                         ships: E.7)
 #
 # CODESIGN_IDENTITY names a signing identity ("Developer ID Application: …"); unset, the bundle is
-# ad-hoc signed, which runs on this machine and nowhere else. Notarization is the release
-# checklist's step, not this script's.
+# ad-hoc signed, which runs on this machine and nowhere else. Notarization is scripts/release.sh's
+# step, not this script's. BUNDLE_GOBIN names the directory holding ley and the leydec-* plugins
+# (default go/bin, built with `make go` when ley is missing there); scripts/release.sh points it at
+# a release build of its own.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
@@ -105,6 +107,10 @@ identity=${CODESIGN_IDENTITY:--}
 
 version=$(tr -d '[:space:]' < VERSION)
 build=$(git describe --tags --always --dirty --match 'v*' --abbrev=7 2>/dev/null || echo dev)
+# Sparkle compares CFBundleVersion between builds, so it is a number that only grows; the describe
+# string, which names the tree, goes in LeylineBuild for the about panel and bug reports.
+build_number=$(git rev-list --count HEAD 2>/dev/null || echo 0)
+gobin=${BUNDLE_GOBIN:-go/bin}
 
 echo "==> swift build -c release (app/)"
 (cd app && swift build -c release --product LeylineApp)
@@ -113,9 +119,17 @@ bin=$(cd app && swift build -c release --show-bin-path)
 out=app/dist/Leyline.app
 rm -rf "$out"
 mkdir -p "$out/Contents/MacOS" "$out/Contents/Resources"
-sed -e "s/__VERSION__/$version/" -e "s/__BUILD__/$build/" app/Sources/LeylineApp/Info.plist > "$out/Contents/Info.plist"
+sed -e "s/__VERSION__/$version/" -e "s/__BUILD__/$build_number/" -e "s/__BUILD_DESCRIBE__/$build/" \
+  app/Sources/LeylineApp/Info.plist > "$out/Contents/Info.plist"
 printf 'APPL????' > "$out/Contents/PkgInfo"
 cp "$bin/LeylineApp" "$out/Contents/MacOS/LeylineApp"
+# The app links Sparkle, which SwiftPM leaves beside the executable as a framework. In a bundle it
+# lives in Contents/Frameworks, and the executable needs an rpath that reaches it there.
+[ -d "$bin/Sparkle.framework" ] || die "no Sparkle.framework in $bin; the release build should have put it there"
+mkdir -p "$out/Contents/Frameworks"
+ditto "$bin/Sparkle.framework" "$out/Contents/Frameworks/Sparkle.framework"
+otool -l "$out/Contents/MacOS/LeylineApp" | grep -q '@executable_path/../Frameworks' \
+  || install_name_tool -add_rpath @executable_path/../Frameworks "$out/Contents/MacOS/LeylineApp"
 # SwiftPM resource bundles (assets, Metal libraries) sit beside the executable; Bundle.module
 # looks for them in the app's Resources when it is not beside the binary.
 for b in "$bin"/*.bundle; do [ -e "$b" ] && cp -R "$b" "$out/Contents/Resources/"; done
@@ -133,17 +147,25 @@ fi
 
 if [ $with_daemon -eq 1 ]; then
   echo "==> helpers: leylined, ley, decoders"
+  # leylined reports the version compiled into it, and the app restarts a daemon whose version
+  # differs from CFBundleShortVersionString (DaemonAgent.sameBuild), so a constant left behind by
+  # a VERSION bump would restart the daemon on every launch. Regenerating it here changes nothing
+  # when it is current.
+  ./scripts/gen-version.sh >/dev/null
   (cd engine && swift build -c release --product leylined >/dev/null)
   ebin=$(cd engine && swift build -c release --show-bin-path)
   mkdir -p "$out/Contents/Helpers/decoders"
   cp "$ebin/leylined" "$out/Contents/Helpers/"
-  [ -x go/bin/ley ] || make go >/dev/null
-  cp go/bin/ley "$out/Contents/Helpers/"
+  if [ ! -x "$gobin/ley" ]; then
+    [ -z "${BUNDLE_GOBIN:-}" ] || die "no ley in BUNDLE_GOBIN ($gobin)"
+    make go >/dev/null
+  fi
+  cp "$gobin/ley" "$out/Contents/Helpers/"
   for d in decoders/*/; do
     name=$(basename "$d")
     mkdir -p "$out/Contents/Helpers/decoders/$name"
     cp "$d"/*.json "$out/Contents/Helpers/decoders/$name/" 2>/dev/null || true
-    [ -x "go/bin/leydec-$name" ] && cp "go/bin/leydec-$name" "$out/Contents/Helpers/decoders/$name/"
+    [ -x "$gobin/leydec-$name" ] && cp "$gobin/leydec-$name" "$out/Contents/Helpers/decoders/$name/"
   done
   # The GPL engine travels with its licence text and the source offer (docs/decisions/D2-licensing.md).
   cp engine/LICENSE "$out/Contents/Helpers/LICENSE.leylined"
@@ -160,11 +182,21 @@ cp LICENSE NOTICE "$out/Contents/Resources/"
 echo "==> codesign ($identity)"
 sign_opts=(--force --sign "$identity" --timestamp=none)
 [ "$identity" != "-" ] && sign_opts=(--force --sign "$identity" --options runtime --timestamp)
+# Inside out, each piece on its own and never with --deep, which would sign Sparkle's helpers
+# without the hardened runtime and strip Downloader.xpc's entitlements: Sparkle's XPC services, its
+# Autoupdate and Updater.app, the framework; the libraries the helpers load; the helpers; the app.
+# Sparkle's order and the entitlements Downloader.xpc keeps are Sparkle's own instructions
+# ("Sandboxing" and "Code signing" in its documentation).
+sparkle="$out/Contents/Frameworks/Sparkle.framework"
+codesign "${sign_opts[@]}" "$sparkle/Versions/B/XPCServices/Installer.xpc"
+codesign "${sign_opts[@]}" --preserve-metadata=entitlements "$sparkle/Versions/B/XPCServices/Downloader.xpc"
+codesign "${sign_opts[@]}" "$sparkle/Versions/B/Autoupdate"
+codesign "${sign_opts[@]}" "$sparkle/Versions/B/Updater.app"
+codesign "${sign_opts[@]}" "$sparkle"
 if [ $with_daemon -eq 1 ]; then
-  # Inside out: the libraries the helpers load, then the helpers, then the app.
-  find "$out/Contents/Frameworks" -type f -name '*.dylib' -exec codesign "${sign_opts[@]}" {} \;
+  find "$out/Contents/Frameworks" -maxdepth 1 -type f -name '*.dylib' -exec codesign "${sign_opts[@]}" {} \;
   find "$out/Contents/Helpers" -type f -perm -u+x -exec codesign "${sign_opts[@]}" {} \;
 fi
 codesign "${sign_opts[@]}" "$out"
 codesign --verify --deep --strict "$out"
-echo "$out ($version, $build). Open it with: open $out"
+echo "$out ($version, build $build_number, $build). Open it with: open $out"
