@@ -235,7 +235,7 @@ prints one `DecodeRecord` per line (NDJSON) and nothing else on stdout; the bann
 decoder, the frequency and the channel it got is stderr prose, as is the line a `--job` run ends
 with. `ley watch <decoder> --json` prints the same NDJSON `DecodeRecord`s as `decode`, but only
 the ones its predicate matched: `--where field=value` (with `!=`, `~` for contains, and `>`, `>=`,
-`<`, `<=` numeric), `--county FIPS` (a `PRED_CONTAINS` on the `fips` field, repeatable), and
+`<`, `<=` numeric), `--county FIPS` (a `PRED_CONTAINS` on the `fips` field, repeatable; the five-digit FIPS code or the six-digit SAME code, whose leading part digit is dropped), and
 `--near LAT,LON --radius R` (a `GeoTest`) become a `DecodeConfig.predicate`; `--notify` (bare for a
 macOS notification, `--notify=webhook:URL` or `--notify=shell:CMD`) becomes a
 `DecodeConfig.notify` the daemon fires on each match. Attached it streams and cancels on exit;

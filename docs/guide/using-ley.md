@@ -902,7 +902,8 @@ Ctrl-C stops
 21:26:27  KEAX/NWS      alert      ZCZC-WXR-RWT-020103-020209+0030-1051700-KEAX/NWS-
 ```
 
-`--county` matches the alert's FIPS county codes, so a county the alert does not name sees nothing
+`--county` takes the county's five-digit FIPS code (20103) or the six-digit SAME code a weather
+radio is programmed with (020103), and matches the counties the alert names, so a county the alert does not name sees nothing
 and the notifier stays silent. `--where field=value` filters on any field a decoder emits (with
 `!=`, `~` for "contains", and numeric `>`, `>=`, `<`, `<=`), and `--near LAT,LON --radius 10km`
 filters on position. `--notify` hands each match to a macOS notification (bare `--notify`), a

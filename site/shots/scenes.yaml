@@ -190,7 +190,7 @@ scenes:
       cols: 100
       rows: 10
       panes:
-        - command: ley watch same --county 020103 --notify
+        - command: ley watch same --county 20103 --notify
     settle: 12
 
   - asset: aprs-track.png

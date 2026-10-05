@@ -41,7 +41,8 @@ func TestWatchFiltersByWhere(t *testing.T) {
 }
 
 // TestWatchCountyMatchesFips: --county is a CONTAINS test on the fips field, so it matches the
-// station whose FIPS list names the code and no other.
+// station whose FIPS list names the code and no other. The six-digit SAME code NOAA's county
+// lists print is taken as its five-digit FIPS code.
 func TestWatchCountyMatchesFips(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
@@ -55,7 +56,7 @@ func TestWatchCountyMatchesFips(t *testing.T) {
 			t.Errorf("only the station carrying the FIPS list matches --county: %q", l)
 		}
 	}
-	if !strings.Contains(errOut, "fips names one of 006001") {
+	if !strings.Contains(errOut, "fips names one of 06001") {
 		t.Errorf("the banner must describe the county filter: %q", errOut)
 	}
 }
@@ -179,5 +180,18 @@ func TestWatchBadWhere(t *testing.T) {
 	_, _, err := run(t, t.Context(), sock, "watch", "aprs", "--where", "device_id")
 	if exitCode(err) != 2 {
 		t.Fatalf("exit %d (%v), want 2", exitCode(err), err)
+	}
+}
+
+func TestCountyFIPS(t *testing.T) {
+	for in, want := range map[string]string{"06009": "06009", "006009": "06009", "120103": "20103"} {
+		if got, err := countyFIPS(in); err != nil || got != want {
+			t.Errorf("countyFIPS(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"6009", "0060091", "06OO9", ""} {
+		if _, err := countyFIPS(in); err == nil || !strings.Contains(err.Error(), "six-digit SAME code") {
+			t.Errorf("countyFIPS(%q) was not refused with the two forms: %v", in, err)
+		}
 	}
 }

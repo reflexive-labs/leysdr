@@ -174,10 +174,21 @@ if CommandLine.arguments.dropFirst().first == "list" {
     }
     exit(0)
 }
+// A banner: a notification process's window on a display, about the size of one notification
+// (Notification Center also keeps full-screen and zero-size windows). The region is clipped to
+// that display, since screencapture -R refuses a rectangle that leaves every display.
+var displays = [CGDirectDisplayID](repeating: 0, count: 16)
+var count: UInt32 = 0
+CGGetActiveDisplayList(16, &displays, &count)
 for w in list where (w[kCGWindowOwnerName as String] as? String)?.hasPrefix("Notification") == true {
-    if let f = frame(w), f.2 > 0, f.3 > 0 {
-        print("\(f.0) \(f.1) \(f.2) \(f.3)")
-        exit(0)
+    guard let f = frame(w), f.2 >= 200, f.2 <= 900, f.3 >= 40, f.3 <= 400 else { continue }
+    let r = CGRect(x: f.0, y: f.1, width: f.2, height: f.3)
+    for d in displays.prefix(Int(count)) {
+        let c = r.intersection(CGDisplayBounds(d)).integral
+        if c.width >= 100, c.height >= 30 {
+            print("\(Int(c.minX)) \(Int(c.minY)) \(Int(c.width)) \(Int(c.height))")
+            exit(0)
+        }
     }
 }
 `
@@ -200,9 +211,12 @@ func captureNotification(ctx context.Context, swift, run, out string, wait time.
 			var x, y, w, h float64
 			if _, serr := fmt.Sscan(string(b), &x, &y, &w, &h); serr == nil {
 				region := fmt.Sprintf("%.0f,%.0f,%.0f,%.0f", x, y, w, h)
+				listWindows(ctx, swift, script, run)
 				if b, err := exec.CommandContext(ctx, "screencapture", "-x", "-R", region, out).CombinedOutput(); err != nil {
-					return fmt.Errorf("screencapture: %w: %s", err, strings.TrimSpace(string(b)))
+					return fmt.Errorf("screencapture -R %s: %w: %s (the on-screen windows are in %s)",
+						region, err, strings.TrimSpace(string(b)), filepath.Join(run, "windows.txt"))
 				}
+				logf("notification captured from %s", region)
 				return nil
 			}
 		}
@@ -210,13 +224,20 @@ func captureNotification(ctx context.Context, swift, run, out string, wait time.
 			return err
 		}
 	}
+	windows := listWindows(ctx, swift, script, run)
+	logf("no notification window appeared within %.0f s; the on-screen windows are in %s; take %s by hand",
+		wait.Seconds(), windows, filepath.Base(out))
+	return errManual
+}
+
+// listWindows writes every on-screen window's owner, layer and frame to windows.txt in the run
+// directory, for working out which window a notification capture took or why it found none.
+func listWindows(ctx context.Context, swift, script, run string) string {
 	windows := filepath.Join(run, "windows.txt")
 	if b, err := exec.CommandContext(ctx, swift, script, "list").Output(); err == nil {
 		_ = os.WriteFile(windows, b, 0o644)
 	}
-	logf("no notification window appeared within %.0f s; the on-screen windows are in %s; take %s by hand",
-		wait.Seconds(), windows, filepath.Base(out))
-	return errManual
+	return windows
 }
 
 // checkCapture refuses a capture whose shape is not the window's: Stage Manager's strip and

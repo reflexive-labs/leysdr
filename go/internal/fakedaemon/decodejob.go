@@ -214,7 +214,7 @@ var fakeStations = []func(now uint64) *leylinev1.DecodeRecord{
 				// A delimited FIPS county list, so `ley watch --county` has something to match: it
 				// is the field a SAME alert will populate, carried here on the one fake station
 				// that has a position so the predicate machinery is proven before SAME lands.
-				"fips": textField("006001-006013"),
+				"fips": textField("06001,06013"),
 			},
 			Raw: []byte("LEYTST-1>APRS,WIDE1-1:!3745.60N/12225.20W>fake"),
 		}

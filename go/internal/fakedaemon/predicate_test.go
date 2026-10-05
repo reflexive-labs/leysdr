@@ -57,7 +57,7 @@ func TestDecodePredicateCountyContains(t *testing.T) {
 	defer cancel()
 	pred := &leylinev1.Predicate{All: []*leylinev1.Clause{{Test: &leylinev1.Clause_Field{Field: &leylinev1.FieldTest{
 		Field: "fips", Op: leylinev1.PredicateOp_PRED_CONTAINS,
-		Values: []*leylinev1.FieldValue{{Value: &leylinev1.FieldValue_Text{Text: "006001"}}},
+		Values: []*leylinev1.FieldValue{{Value: &leylinev1.FieldValue_Text{Text: "06001"}}},
 	}}}}}
 	job, err := c.StartDecode(ctx, &leylinev1.DecodeConfig{Decoder: "aprs", Predicate: pred})
 	if err != nil {

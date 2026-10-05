@@ -67,7 +67,8 @@ for two common cases:
                         (R is 10km, 500m, 5nm, 3mi). Position is a field every
                         decoder that has one reports, so this is not tied to any.
   --county FIPS         shorthand for --where fips~FIPS: the county codes a SAME
-                        weather alert carries. Repeat for more; a record matches
+                        weather alert carries, as the five-digit FIPS code or the
+                        six-digit SAME code. Repeat for more; a record matches
                         if it names any of them. A decoder with no 'fips' field
                         never matches, which is the honest answer.
 
@@ -131,7 +132,7 @@ notifier, so it fires whether or not ley is attached.
 	cmd.Flags().StringVar(&o.device, "device", "", "which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)")
 	cmd.Flags().BoolVar(&o.takeOver, "take-over", false, "watch even when somebody is using the radio; it is theirs again afterwards")
 	cmd.Flags().StringArrayVar(&where, "where", nil, "a field test: field=value, field!=value, field~value, field>value (repeatable)")
-	cmd.Flags().StringArrayVar(&counties, "county", nil, "a FIPS county code the record must name in its 'fips' field, e.g. 06009 (repeatable)")
+	cmd.Flags().StringArrayVar(&counties, "county", nil, "a county the record must name in its 'fips' field: the five-digit FIPS code (06009) or the six-digit SAME code (006009) (repeatable)")
 	cmd.Flags().StringVar(&near, "near", "", "records from around here: LAT,LON, e.g. 37.76,-122.42 (needs --radius)")
 	cmd.Flags().StringVar(&radius, "radius", "", "how far around --near to look: 10km, 500m, 5nm, 3mi")
 	cmd.Flags().StringVar(&notify, "notify", "", "hand each match to a notifier: bare (macOS notification), webhook:URL or shell:CMD")
@@ -251,13 +252,19 @@ func buildPredicate(where, counties []string, near, radius string) (*leylinev1.P
 	}
 	if len(counties) > 0 {
 		var vals []*leylinev1.FieldValue
+		var codes []string
 		for _, code := range counties {
-			vals = append(vals, textValue(strings.TrimSpace(code)))
+			fips, err := countyFIPS(code)
+			if err != nil {
+				return nil, "", err
+			}
+			vals = append(vals, textValue(fips))
+			codes = append(codes, fips)
 		}
 		clauses = append(clauses, &leylinev1.Clause{Test: &leylinev1.Clause_Field{Field: &leylinev1.FieldTest{
 			Field: "fips", Op: leylinev1.PredicateOp_PRED_CONTAINS, Values: vals,
 		}}})
-		words = append(words, "fips names one of "+strings.Join(counties, ", "))
+		words = append(words, "fips names one of "+strings.Join(codes, ", "))
 	}
 	switch {
 	case near != "" && radius == "":
@@ -379,4 +386,20 @@ func textValue(s string) *leylinev1.FieldValue {
 
 func numberValue(v float64) *leylinev1.FieldValue {
 	return &leylinev1.FieldValue{Value: &leylinev1.FieldValue_Number{Number: v}}
+}
+
+// countyFIPS is the five-digit FIPS code SSCCC a SAME record's fips field lists, from either that
+// code or the six-digit SAME location code PSSCCC that NOAA's county lists print and weather
+// radios are programmed with. P names a part of the county; an alert for any part names the
+// county's SSCCC, so the part is dropped.
+func countyFIPS(code string) (string, error) {
+	code = strings.TrimSpace(code)
+	digits := strings.Trim(code, "0123456789") == ""
+	switch {
+	case digits && len(code) == 5:
+		return code, nil
+	case digits && len(code) == 6:
+		return code[1:], nil
+	}
+	return "", usageErrorf("--county %q is not a county code: give the five-digit FIPS code (06009) or the six-digit SAME code (006009)", code)
 }
