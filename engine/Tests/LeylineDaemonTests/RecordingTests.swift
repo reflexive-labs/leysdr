@@ -301,6 +301,17 @@ final class RecordingTests: XCTestCase {
         XCTAssertEqual(Array(out[7..<9]), [1, 1], "full gain one fade after the open")
     }
 
+    /// A frame is dated to within an audio sample, so the open block's first sample can sit just
+    /// before the open: it is faded all the same, and a sample a whole audio sample earlier is not.
+    func testAnOpenBlocksFirstSampleDatedJustBeforeTheOpenIsFaded() {
+        var held = line(capacity: 100, fade: 40)
+        _ = held.push([1, 1, 1, 1], endingAt: 34)
+        held.fadeIn(from: 30, length: 40)
+        let out = held.drainAll()
+        XCTAssertEqual(Array(out[0..<3]), [1, 1, 1], "the pre-roll is as it was written")
+        XCTAssertEqual(out[3], 0, "the sample dated 6 before the open is silenced, not left at full scale")
+    }
+
     func testClosingAPartTakesTheHeldAudioBeforeItsEndAndLeavesTheRest() {
         var held = line(capacity: 100)
         _ = held.push([1, 2, 3, 4, 5], endingAt: 50)

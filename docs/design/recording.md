@@ -412,7 +412,11 @@ its entry gives.
   (-6.1 dBFS), and every part's `peak_dbfs` is the tone's. The ramp never drops below 10 ms, a guess for capture rates above
   2.4 MSPS, where blocks are shorter and the ringing is not. The price is the first 13.65 ms of
   each over, faded rather than removed. The pre-roll before the open is written as it was, and
-  `open_sample` and `start_sample` do not move.
+  `open_sample` and `start_sample` do not move. Audio dated less than one audio sample before the
+  open is silenced too: a capture block is 327.68 audio samples at 2.4 MSPS and 48 kHz, so a frame
+  is dated to within one audio sample, and the open block's first sample, dated just before the
+  open, would be written outside the ramp at full scale (-5.0 dBFS on `nfm_keyed`, on Linux with
+  every core busy, 2026-10-06).
 - **Live audio keeps both edges.** Only recordings are delayed and faded; `ley listen`, the app's
   speaker and bulk audio streams play the key-up and the tail as a radio does, since a delay there
   would be heard.

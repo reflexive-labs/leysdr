@@ -32,12 +32,13 @@ struct HeldAudio: Sendable {
     private enum Window {
         /// A ramp to silence from `fadeFrom` to `from`, then silence up to the close transition `to`.
         case out(fadeFrom: UInt64, from: UInt64, to: UInt64)
-        /// A ramp from silence, from the open transition `from` to full gain at `to`.
-        case fadeIn(from: UInt64, to: UInt64)
+        /// Silence from `silentFrom` to the open transition `from`, then a ramp from silence to full
+        /// gain at `to`.
+        case fadeIn(silentFrom: UInt64, from: UInt64, to: UInt64)
 
         var end: UInt64 {
             switch self {
-            case .out(_, _, let to), .fadeIn(_, let to): return to
+            case .out(_, _, let to), .fadeIn(_, _, let to): return to
             }
         }
     }
@@ -88,9 +89,17 @@ struct HeldAudio: Sendable {
 
     /// Ramps `[openedAt, openedAt + length)` up from silence with a raised cosine, so the floor
     /// noise and the key-up click in the block the squelch opened on are not written at full
-    /// scale. Audio before `openedAt` is left as it is.
+    /// scale. Audio dated less than one audio sample before the open is silenced too, because a
+    /// held sample's place on the timeline is only good to that: a capture block is not a whole
+    /// number of audio samples (16384 capture samples are 327.68 at 2.4 MSPS and 48 kHz), so a
+    /// frame of 327 or 328 is dated up to an audio sample either side of where it belongs, and the
+    /// open block's first sample can sit just before the open, where the ramp would not reach it.
+    /// Whatever else falls there is the squelch's zeros on the `.audio` tap. Audio a whole audio
+    /// sample or more before the open is left as it is.
     mutating func fadeIn(from openedAt: UInt64, length: UInt64) {
-        add(.fadeIn(from: openedAt, to: openedAt + Swift.max(length, 1)))
+        let reach = UInt64(Swift.max(perAudio.rounded(.up) - 1, 0))
+        add(.fadeIn(silentFrom: openedAt > reach ? openedAt - reach : 0, from: openedAt,
+                    to: openedAt + Swift.max(length, 1)))
     }
 
     private mutating func add(_ w: Window) {
@@ -135,8 +144,12 @@ struct HeldAudio: Sendable {
                     let x = (at - Double(fadeFrom)) / Double(from - fadeFrom)
                     samples[i] *= Float(0.5 * (1 + cos(Double.pi * x)))
                 }
-            case .fadeIn(let from, let to):
-                if at < Double(from) || at >= Double(to) { continue }
+            case .fadeIn(let silentFrom, let from, let to):
+                if at < Double(silentFrom) || at >= Double(to) { continue }
+                if at < Double(from) {
+                    samples[i] = 0
+                    continue
+                }
                 let x = (at - Double(from)) / Double(to - from)
                 samples[i] *= Float(0.5 * (1 - cos(Double.pi * x)))
             }
