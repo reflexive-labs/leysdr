@@ -150,7 +150,9 @@ for p in $(comm -13 <(printf '%s\n' "$macos_only") <(printf '%s\n' "$declared_ma
 done
 while read -r _ name _ file; do
   # The checkout keeps the URL's case (Sparkle), the identity is lowercased.
-  dir=$(find app/.build/checkouts -maxdepth 1 -iname "$name" 2>/dev/null | head -n 1)
+  # A fresh clone (CI) has no checkouts, and find's failure would end the script under pipefail.
+  [ -d app/.build/checkouts ] || continue
+  dir=$(find app/.build/checkouts -maxdepth 1 -iname "$name" | head -n 1)
   [ -n "$dir" ] || continue
   src=$(first_of "$dir"/LICENSE*)
   [ -n "$src" ] || continue
