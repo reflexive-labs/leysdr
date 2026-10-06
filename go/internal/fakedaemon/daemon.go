@@ -16,7 +16,9 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
@@ -238,6 +240,18 @@ func (d *Daemon) Register(s grpc.ServiceRegistrar) {
 	leylinev1.RegisterDecodersServer(s, d)
 }
 
+// refuseWhileClosing answers every unary call made after shutdown began with UNAVAILABLE. Closing
+// the streams and GracefulStop are not one step, so without it a client's teardown, prompted by
+// the streams ending, could still reach the handlers and succeed on a slow host.
+func (d *Daemon) refuseWhileClosing(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	select {
+	case <-d.closing:
+		return nil, status.Error(codes.Unavailable, "the daemon is shutting down")
+	default:
+		return handler(ctx, req)
+	}
+}
+
 // Serve listens on the UDS at socketPath until ctx is cancelled. A stale socket
 // file is removed first; the file is unlinked on return.
 func (d *Daemon) Serve(ctx context.Context, socketPath string) error {
@@ -249,7 +263,7 @@ func (d *Daemon) Serve(ctx context.Context, socketPath string) error {
 	d.mu.Lock()
 	d.socket = socketPath
 	d.mu.Unlock()
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(grpc.ChainUnaryInterceptor(d.refuseWhileClosing))
 	d.Register(srv)
 	done := make(chan error, 1)
 	go func() { done <- srv.Serve(l) }()
