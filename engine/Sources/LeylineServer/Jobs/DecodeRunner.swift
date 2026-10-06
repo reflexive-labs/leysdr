@@ -42,6 +42,12 @@ actor DecodeRunner {
     private var seq: UInt64
     /// Record count and last-record time, for the detail it publishes while RUNNING.
     private var liveness = DecodeLiveness()
+    /// The DEGRADED detail while the channel is out of its capture, nil while it is in. Every
+    /// RUNNING the runner would publish goes through `publishRunning`, which reads this, because
+    /// the record count moving is not the channel coming back: records still arrive after the
+    /// move, and the count's two-second republish would otherwise put a degraded job back to
+    /// RUNNING while the capture is still away.
+    private var awayDetail: String?
     private var rssiDBFS = Double.nan
     private var snrDB = Double.nan
     private var task: Task<Void, Never>?
@@ -125,7 +131,7 @@ actor DecodeRunner {
             try? await Task.sleep(nanoseconds: UInt64(wait * 1e9))
             wait = Swift.min(wait * 2, Self.maxRestartSeconds)
             if Task.isCancelled || stopped { break }
-            await onStatus(.running, liveness.detail(decoder: installed.manifest.name))
+            await publishRunning(liveness.detail(decoder: installed.manifest.name))
         }
         meter.cancel()
         health.cancel()
@@ -148,7 +154,7 @@ actor DecodeRunner {
             return -1
         }
         currentPlugin.withLock { $0 = process }
-        await onStatus(.running, liveness.detail(decoder: installed.manifest.name))
+        await publishRunning(liveness.detail(decoder: installed.manifest.name))
         let status = await withTaskGroup(of: Int32?.self) { group in
             group.addTask { [weak self] in
                 for await record in process.records {
@@ -253,8 +259,8 @@ actor DecodeRunner {
         rec.snrDb = snrDB
         await hub.publish(rec)
         await writer?.append(rec)
-        if liveness.noteRecord() {
-            await onStatus(.running, liveness.publish(decoder: installed.manifest.name))
+        if liveness.noteRecord(), awayDetail == nil {
+            await publishRunning(liveness.publish(decoder: installed.manifest.name))
         }
         // Off the hot path and fire-and-forget: a slow webhook or shell hook must never stall the
         // reader, so the notifier runs in its own task with the record it saw (invariant 4 is about
@@ -293,12 +299,26 @@ actor DecodeRunner {
                 last = state
                 switch state {
                 case .outOfCapture:
-                    await onStatus(.degraded, "the capture moved away from \(fmtMHz(frequencyHz)); waiting for it to come back")
+                    let detail = "the capture moved away from \(fmtMHz(frequencyHz)); waiting for it to come back"
+                    awayDetail = detail
+                    await onStatus(.degraded, detail)
                 case .active:
-                    await onStatus(.running, liveness.detail(decoder: installed.manifest.name))
+                    awayDetail = nil
+                    await publishRunning(liveness.detail(decoder: installed.manifest.name))
                 }
             }
             try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+    }
+
+    /// RUNNING with `detail`, or DEGRADED with the away detail while the channel is out of its
+    /// capture. A plugin restart replaced the away detail with its own, so the restart's RUNNING
+    /// puts the away detail back rather than claiming the job is decoding.
+    private func publishRunning(_ detail: String) async {
+        if let awayDetail {
+            await onStatus(.degraded, awayDetail)
+        } else {
+            await onStatus(.running, detail)
         }
     }
 
@@ -308,8 +328,8 @@ actor DecodeRunner {
         while !Task.isCancelled {
             try? await Task.sleep(for: DecodeLiveness.interval)
             if Task.isCancelled || stopped { return }
-            if liveness.moved {
-                await onStatus(.running, liveness.publish(decoder: installed.manifest.name))
+            if liveness.moved, awayDetail == nil {
+                await publishRunning(liveness.publish(decoder: installed.manifest.name))
             }
         }
     }

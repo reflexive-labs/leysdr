@@ -760,7 +760,8 @@ plugin's own values for those are overwritten. A plugin that exits is spawned ag
 doubling to 30 s, with the job in `DEGRADED` and `status_detail` saying so; the drain outlives the
 restart, because `AudioFrameSource.poke` has one iterator and a second one would feed the new plugin
 nothing. A channel that goes `OUT_OF_CAPTURE` degrades the job and comes back to `RUNNING` with the
-capture. `keep` jobs are not cancelled when their client goes; cancel stops the plugin, closes the
+capture, and only then: records still arrive after the move, so the record count's republish and a
+plugin restart keep the job `DEGRADED` while the channel is away. `keep` jobs are not cancelled when their client goes; cancel stops the plugin, closes the
 writer and releases the lease.
 
 `RecordHub` is the live plane: drop-oldest, 256 deep, scoped to everything, one job or one protocol,

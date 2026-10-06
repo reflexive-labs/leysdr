@@ -365,8 +365,14 @@ final class DecodeJobTests: XCTestCase {
             let started = try await self.startDecode(c, frequencyHz: 100_100_000)
             let running = try await self.waitForJob(c, started.jobID) { $0.state == .running }
             XCTAssertNotNil(running)
-            let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
-            let capture = try XCTUnwrap(state.captures.first)
+            // A job is RUNNING from the moment it is accepted, before the allocator has made its
+            // capture, so the capture is waited for rather than read once.
+            var made: Leyline_V1_Capture?
+            for _ in 0..<200 where made == nil {
+                made = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata).captures.first
+                if made == nil { try await Task.sleep(nanoseconds: 50_000_000) }
+            }
+            let capture = try XCTUnwrap(made, "the job's capture appears within 10 s")
             // A quarter span below the channel: clear of the tuner's own DC spike.
             XCTAssertEqual(capture.centerHz, 100_100_000 - 2_400_000 / 8)
 
@@ -382,6 +388,14 @@ final class DecodeJobTests: XCTestCase {
             let degraded = try await self.waitForJob(c, started.jobID) { $0.state == .degraded }
             XCTAssertNotNil(degraded, "a channel out of its capture degrades the job")
             XCTAssertTrue(degraded?.statusDetail.contains("moved away") == true, degraded?.statusDetail ?? "")
+            // Records still arrive after the move, and the record count's republish must not read
+            // as the channel coming back: past one republish interval the
+            // job is still DEGRADED. Without this hold the wait above passes only when a poll lands
+            // before the first republish, which a loaded machine's round trip can miss.
+            try await Task.sleep(for: DecodeLiveness.interval + .milliseconds(500))
+            let later = try await self.job(c, started.jobID)
+            XCTAssertEqual(later.state, .degraded,
+                           "a job stays DEGRADED while its capture is away: \(later.statusDetail)")
 
             try await retune(tag: 2, to: 100_100_000 - 2_400_000 / 8)
             let back = try await self.waitForJob(c, started.jobID) { $0.state == .running }
