@@ -5,6 +5,8 @@ What changed for someone using Leyline, newest first. Each released version has 
 
 ## Unreleased
 
+## 0.1.0 (2026-10-05)
+
 The first release: a signed, notarized Mac app for a small group of testers.
 
 - **Install.** Leyline is a Mac app (Apple silicon, macOS 26 or later) delivered as a DMG. It
