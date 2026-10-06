@@ -99,6 +99,21 @@ extension RecordingJobTests {
     /// while the squelch is closed, so every part's WAV is silent up to its open: the fixture's
     /// floor never opens a -40 dBFS squelch. The open is faded in and the squelch tail silenced.
     func testAGatedPartIsSilentBeforeItsOpenAndHoldsNoSquelchTail() async throws {
+        try await assertKeyedPartsSilentBeforeTheirOpens()
+    }
+
+    /// The squelch's records reach the runner through the telemetry fan-out and its audio through
+    /// the drain, with no order between the two, so on a busy machine the drain takes the block
+    /// an open describes before the open arrives. Held back 20 ms (three capture blocks), every
+    /// open and close still lands where it belongs: the over's first block is not written into the
+    /// pre-roll, the WAV holds the span its entry gives, and the tails are silenced.
+    func testASquelchRecordLateBehindItsAudioStillLandsWhereItBelongs() async throws {
+        RecordRunner.squelchRecordDelay.withLock { $0 = .milliseconds(20) }
+        defer { RecordRunner.squelchRecordDelay.withLock { $0 = nil } }
+        try await assertKeyedPartsSilentBeforeTheirOpens()
+    }
+
+    private func assertKeyedPartsSilentBeforeTheirOpens() async throws {
         let segments = try keyedSegments()
         let dir = try recordings()
         defer { try? FileManager.default.removeItem(atPath: dir) }

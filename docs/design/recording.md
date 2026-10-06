@@ -321,9 +321,10 @@ second reader on the channel's DSP-side ring), and drives a small state machine:
   holds; without that, gated recordings of an FM station were 0 s and 0 B.
   `RecordingJobTests` holds a gated recording of `nfm_tone` cancelled after 2 s to one part of
   about 2 s, in both the frequency form and the channel form.
-- **closed**: audio goes into a pre-roll ring of `pre_roll_ms` at the audio rate (24000 floats,
-  96 KB, at 48 kHz and 500 ms; allocated when the runner starts, never on the hot path). No file
-  is open.
+- **closed**: audio goes into a pre-roll ring of `pre_roll_ms` and 100 ms of slack at the audio
+  rate (28800 floats, 115 KB, at 48 kHz and 500 ms; allocated when the runner starts, never on
+  the hot path). No file is open. The slack is for an open that reaches the runner after the
+  drain has taken the block it opened on (below, "The squelch's edges").
 - **open**: on a squelch-open transition, a part opens, the pre-roll ring is written first, then
   live audio. The part's `start_sample` is the transition's sample minus the pre-roll, on the
   capture timebase. The task that follows the squelch only queues the machine's actions, and the
@@ -344,7 +345,13 @@ second reader on the channel's DSP-side ring), and drives a small state machine:
 Audio frames are dated back from where the newest block in the ring ends, less the backlog behind
 the frame, so a frame holding several blocks (a drain that fell behind) is dated from its own first
 sample. A cut lands within one capture block of the transition: 16384 samples, 6.8 ms at 2.4 MSPS
-(computed). That is the accuracy claim, and the fixture test below holds the daemon to it.
+(computed). That is the accuracy claim, and the fixture test below holds the daemon to it. Each
+frame is taken in one order: the squelch's queued edges, then the frame's audio, then the hang
+and quiet timers up to the frame's end. A hang that ends inside the frame then closes the part on
+the frame's audio up to `end_sample`, with the rest going to the pre-roll. A close applied ahead of
+the frame's audio would lose what the frame held before the end: 3.3 ms of every hang-closed part
+of `nfm_keyed` (measured on Linux, 2026-10-06), and up to a whole frame from a drain that has
+fallen behind.
 
 **The squelch's edges.** The squelch decides once per capture block, and a gated recording
 removes the noise that leaves at both ends of an over: it silences the tail before each close
@@ -367,9 +374,18 @@ fast enough to make two blocks shorter than the channelizer's delay; that floor 
 because no rate above 2.4 MSPS has been measured. At 2.4 MSPS the price is 6.6 to 11.4 ms of the
 end of the over, plus the ramp. The delay line holds the tail, the ramp and 100 ms of slack (5,700
 floats at 48 kHz) and is allocated when the runner starts. The slack covers a close record that
-reaches the runner after the audio it closes; the channel pushes the record before the block's
-audio, so it normally arrives first, and the runner silences audio that has not arrived yet as it
-comes in.
+reaches the runner after the audio it closes, and the runner silences audio that has not arrived
+yet as it comes in. The channel pushes the record before the block's audio, but the record
+reaches the runner through the telemetry fan-out and the audio through the drain, two tasks with
+no order between them. On a loaded macOS CI runner (2026-10-06) the drain took the block an open
+described before the open arrived, so the pre-roll ring had already moved one block past the
+pre-roll's first sample: the part's WAV began one block (6.8 ms) after its `start_sample`, and the
+over's faded first block lay inside the pre-roll at -12 dBFS. The pre-roll ring keeps the
+same 100 ms of slack for that reason, so an open up to 100 ms late still finds its whole pre-roll
+and the block it opened on, and the open's fade still finds that block held. A part never starts
+before the oldest audio the ring holds: an open later than the slack, or one less than the
+pre-roll after the last part ended, starts where its audio does, so its WAV always holds the span
+its entry gives.
 
 - **The transcript does not move.** `squelch_opens`, `close_sample` and `end_sample` are the
   transitions' own samples; only the audio of the tail changes, and the part's `peak_dbfs` and

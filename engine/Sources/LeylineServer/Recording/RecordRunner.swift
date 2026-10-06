@@ -12,6 +12,7 @@ import EngineCore
 import Foundation
 import LeylineProto
 import Logging
+import Synchronization
 
 /// What the job table holds a record job's runner as, beside a decode job's.
 protocol RecordRunning: AnyObject, Sendable {
@@ -48,9 +49,16 @@ actor RecordRunner: RecordRunning {
     /// The open fade never shrinks below this. A guess, for capture rates above 2.4 MSPS, where
     /// the audio filter's ringing after the key-up outlasts the shorter blocks.
     static let openFadeFloorMs = 10.0
-    /// How late a close record may reach the runner, after the audio it closes, and still find the
-    /// tail held. The record is pushed before the block's audio, so it usually arrives first.
-    static let tailSlackMs = 100.0
+    /// How late a squelch record may reach the runner, after the audio it describes, and still be
+    /// applied where it belongs. The channel pushes the record before the block's audio, but the
+    /// record reaches the runner through the telemetry fan-out and the audio through the drain,
+    /// two tasks with no order between them, so on a busy machine the drain can take the block a
+    /// record describes first. A close then still finds its tail held, and an open still finds its
+    /// whole pre-roll and the block it opened on in the pre-roll ring.
+    static let edgeSlackMs = 100.0
+    /// Holds each squelch transition back this long before the gate sees it. Nil, and set only by
+    /// tests, which use it to stand in for the busy machine `edgeSlackMs` describes.
+    static let squelchRecordDelay = Mutex<Duration?>(nil)
 
     /// What the recording is reading. The channel form and the frequency form are the same case:
     /// the allocator decides who owns the channel, and the lease's own `release` is what differs.
@@ -155,12 +163,14 @@ actor RecordRunner: RecordRunning {
         tailSamples = Swift.max(Self.tailCaptureSamples, UInt64(Self.tailFloorMs * perMs))
         openFadeSamples = Swift.max(Self.openFadeCaptureSamples, UInt64(Self.openFadeFloorMs * perMs))
         if case .audio(_, let audioRate) = source {
-            preRollCapacity = gated ? Int(Double(preRollMs) / 1000 * Double(audioRate)) : 0
+            // The pre-roll and the slack after it: an open applied after the drain has passed it
+            // finds the audio from the open on in the ring as well as the pre-roll before it.
+            preRollCapacity = gated ? Int((Double(preRollMs) + Self.edgeSlackMs) / 1000 * Double(audioRate)) : 0
             preRoll.reserveCapacity(preRollCapacity + AudioFrameSource.maxFrame)
             if gated, captureRateHz > 0 {
                 let perAudio = Double(captureRateHz) / Double(Swift.max(audioRate, 1))
                 let fade = UInt64(Self.tailFadeMs * perMs)
-                let slack = UInt64(Self.tailSlackMs * perMs)
+                let slack = UInt64(Self.edgeSlackMs * perMs)
                 let capacity = Int((Double(tailSamples + fade + slack) / perAudio).rounded(.up))
                 held = HeldAudio(capacity: capacity, perAudio: perAudio, fadeSamples: fade)
             }
@@ -440,7 +450,7 @@ actor RecordRunner: RecordRunning {
         }
         now = frameEnd
         if gated {
-            pending.append(contentsOf: gate.advance(to: frameEnd))
+            // The squelch's edges first, so an open's pre-roll is written ahead of this frame.
             await applyPending()
             if stopped { return }
         }
@@ -449,6 +459,15 @@ actor RecordRunner: RecordRunning {
             await cutPartIfDue(at: writtenTo)
         } else if gated {
             keepPreRoll(floats, endingAt: frameEnd)
+        }
+        if gated {
+            // Then time passing, once this frame is in: a hang that ends inside the frame closes
+            // the part on the frame's audio up to the end, and the rest goes to the pre-roll. A
+            // drain that has fallen behind pops several blocks as one frame, and a close applied
+            // ahead of it would leave the part short of its `end_sample` by up to that frame.
+            pending.append(contentsOf: gate.advance(to: frameEnd))
+            await applyPending()
+            if stopped { return }
         }
         if await failIfWriteFailed() { return }
         await endIfDurationReached(at: frameEnd)
@@ -534,8 +553,12 @@ actor RecordRunner: RecordRunning {
     private func apply(_ action: RecordGateMachine.Action) async {
         switch action {
         case .openPart(let startSample):
-            // The pre-roll cannot reach back before the recording's first frame.
-            let start = Swift.max(startSample, self.startSample)
+            // The pre-roll cannot reach back before the recording's first frame, nor before the
+            // oldest audio the ring still holds: an open applied later than the slack, or one that
+            // follows the last part's end by less than the pre-roll, starts where its audio does,
+            // so the part's WAV holds the span its entry gives.
+            var start = Swift.max(startSample, self.startSample)
+            if !preRoll.isEmpty { start = Swift.max(start, preRollStart) }
             await openPart(at: start)
             await flushPreRoll(from: start)
         case .squelchOpened(let sample):
@@ -590,6 +613,7 @@ actor RecordRunner: RecordRunning {
             if Task.isCancelled { return }
             switch t {
             case .squelch(let time, let open, _, _, _):
+                if let delay = Self.squelchRecordDelay.withLock({ $0 }) { try? await Task.sleep(for: delay) }
                 await noteSquelch(open: open, at: time.sampleIndex)
             case .meter(let time, _, _, let open, _, _, _, _):
                 await noteMeter(open: open, at: time.sampleIndex)
@@ -637,9 +661,13 @@ actor RecordRunner: RecordRunning {
             squelchKnown = true
             guard open else { return }
             // From the oldest audio the pre-roll holds: the first frame's unless the ring has
-            // wrapped, or the first after a coverage gap. With nothing held yet the part starts
-            // where the audio will, never inside the gap.
-            let start = preRoll.isEmpty ? Swift.max(now, sample) : Swift.max(startSample, preRollStart)
+            // wrapped, or the first after a coverage gap. The ring also keeps the slack a late
+            // open needs, which a seed does not reach back into. With nothing held yet the part
+            // starts where the audio will, never inside the gap.
+            let preRollSpan = gate.preRollSamples
+            let start = preRoll.isEmpty
+                ? Swift.max(now, sample)
+                : Swift.max(startSample, preRollStart, preRollEnd > preRollSpan ? preRollEnd - preRollSpan : 0)
             pending.append(contentsOf: gate.seedOpen(at: start))
             return
         }

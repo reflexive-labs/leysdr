@@ -800,7 +800,9 @@ open a part at *this* sample, note an over, close the part at the close transiti
 end the job on quiet. Deciding at frame granularity sets the accuracy: a cut lands within one
 capture block of the transition (16384 samples, 6.8 ms at 2.4 MSPS). Audio arriving while no part
 is open goes into a pre-roll ring allocated once at start, so a part can begin before the squelch
-did. The squelch follower only queues the machine's actions and the drain applies them between
+did; it holds `pre_roll_ms` and 100 ms more (`RecordRunner.edgeSlackMs`), because the squelch
+record and the audio reach the runner by two tasks with no order between them, and an open the
+drain has run past must still find its whole pre-roll. The squelch follower only queues the machine's actions and the drain applies them between
 frames, because an open applied from the follower leaves an await between opening a part and
 writing its pre-roll, and a frame the drain writes there lands ahead of the pre-roll. A gated part is written through `HeldAudio`, a
 delay line of two capture blocks plus a 5 ms ramp and 100 ms of slack, allocated at start; a close
@@ -811,7 +813,9 @@ and the discriminator's output in between is full-scale noise. Each open edge of
 the open sample over two capture blocks, because the open block holds floor noise up to the
 key-up and the key-up's click, and on `nfm_keyed` that noise ran to 6 ms after the open
 (docs/design/recording.md, "The squelch's edges"). Transition samples are unchanged, the part timer cuts on what has been written so
-held audio carries over, and closing a part flushes it. `AudioFrameSource` dates a frame back from
+held audio carries over, and closing a part flushes it. The drain takes each frame as the
+squelch's queued edges, then the frame's audio, then the hang and quiet timers, so a hang that ends
+inside a frame closes the part on that frame's audio. `AudioFrameSource` dates a frame back from
 the end of the newest block it has seen, so a frame spanning several blocks starts where its
 first sample does. The first meter seeds the gate: a squelch already open when the recording starts sends no
 transition (a broadcast carrier holds it open), so the part opens at the first frame, and a meter
