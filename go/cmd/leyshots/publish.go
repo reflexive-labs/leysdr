@@ -55,8 +55,8 @@ func nextTag(day time.Time, rels []release) string {
 	return tag
 }
 
-// releaseNotes lists what a release refreshed and what it carried forward.
-func releaseNotes(m *Manifest, refreshed []string, prevTag string) string {
+// releaseNotes lists what a release refreshed, what it carried forward and what it retired.
+func releaseNotes(m *Manifest, refreshed, retired []string, prevTag string) string {
 	var b strings.Builder
 	b.WriteString("Screenshots for leysdr.com, taken with `make shots` against synthetic IQ (docs/plans/site-shots.md).\n\n")
 	b.WriteString("Refreshed:\n")
@@ -74,14 +74,19 @@ func releaseNotes(m *Manifest, refreshed []string, prevTag string) string {
 		if len(kept) > 0 {
 			fmt.Fprintf(&b, "\nCarried forward from %s: %s.\n", prevTag, strings.Join(kept, ", "))
 		}
+		if len(retired) > 0 {
+			fmt.Fprintf(&b, "\nRetired (no longer in scenes.yaml): %s.\n", strings.Join(retired, ", "))
+		}
 	}
 	return b.String()
 }
 
 // publishOptions are `leyshots publish`'s flags.
 type publishOptions struct {
-	out    string // the run's output directory, holding shots.json and the PNGs
-	only   []string
+	out  string // the run's output directory, holding shots.json and the PNGs
+	only []string
+	// scenes is the asset of every scene in scenes.yaml; a shot not in it is retired.
+	scenes map[string]bool
 	repo   string
 	dryRun bool
 	gh     string
@@ -97,6 +102,7 @@ func publish(ctx context.Context, o publishOptions) error {
 	if err != nil {
 		return err
 	}
+	cur.retire(o.scenes)
 	if len(cur.Shots) == 0 {
 		return fmt.Errorf("%s lists no shots; take them first with: make shots", filepath.Join(o.out, "shots.json"))
 	}
@@ -154,6 +160,10 @@ func publish(ctx context.Context, o publishOptions) error {
 			return err
 		}
 	}
+	retired := prev.retire(o.scenes)
+	for _, a := range retired {
+		o.logf("retiring %s: its scene is no longer in scenes.yaml", a)
+	}
 	if len(refresh) == 0 {
 		refresh = refreshSet(cur, prev, exists)
 		if len(refresh) == 0 && prevTag != "" {
@@ -168,6 +178,11 @@ func publish(ctx context.Context, o publishOptions) error {
 		o.logf("merging with %s", prevTag)
 		if err := download(); err != nil {
 			return err
+		}
+		for _, a := range retired {
+			if err := os.Remove(filepath.Join(dir, a)); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
 		}
 	}
 	merged, err := merge(prev, cur, refresh, tag)
@@ -199,7 +214,7 @@ func publish(ctx context.Context, o publishOptions) error {
 	if err := merged.validate(dir); err != nil {
 		return fmt.Errorf("the release in %s does not match its shots.json:\n%w", dir, err)
 	}
-	notes := releaseNotes(merged, refresh, prevTag)
+	notes := releaseNotes(merged, refresh, retired, prevTag)
 	files := []string{filepath.Join(dir, "shots.json")}
 	for _, s := range merged.Shots {
 		files = append(files, filepath.Join(dir, s.Asset))

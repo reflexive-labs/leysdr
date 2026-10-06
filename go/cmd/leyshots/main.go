@@ -170,8 +170,12 @@ func cmdPublish(ctx context.Context, args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	scenes := map[string]bool{}
+	for _, s := range f.Scenes {
+		scenes[s.Asset] = true
+	}
 	o := publishOptions{
-		out: *out, only: splitList(*only), repo: f.Repo, dryRun: *dryRun,
+		out: *out, only: splitList(*only), scenes: scenes, repo: f.Repo, dryRun: *dryRun,
 		gh: envOr("GH", "gh"), oxipng: envOr("OXIPNG", "oxipng"), now: time.Now(), stdout: stdout, logf: logf,
 	}
 	if o.out == "" {

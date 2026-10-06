@@ -78,6 +78,24 @@ func (m *Manifest) sort() {
 	sort.Slice(m.Shots, func(i, j int) bool { return m.Shots[i].Asset < m.Shots[j].Asset })
 }
 
+// retire removes every shot whose asset is not in scenes and returns the removed assets, sorted.
+// A scene dropped from scenes.yaml must not travel forward from release to release, so publish
+// retires the previous release's manifest and this run's against the current scenes file.
+func (m *Manifest) retire(scenes map[string]bool) []string {
+	var kept []Shot
+	var gone []string
+	for _, s := range m.Shots {
+		if scenes[s.Asset] {
+			kept = append(kept, s)
+		} else {
+			gone = append(gone, s.Asset)
+		}
+	}
+	m.Shots = kept
+	sort.Strings(gone)
+	return gone
+}
+
 // put replaces the entry for s.Asset, or adds it.
 func (m *Manifest) put(s Shot) {
 	for i := range m.Shots {

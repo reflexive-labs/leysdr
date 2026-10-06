@@ -311,9 +311,23 @@ func TestReleaseTags(t *testing.T) {
 	if got := latestShots(rels[:1]); got != "" {
 		t.Errorf("no shots release, got %q", got)
 	}
-	notes := releaseNotes(&Manifest{Shots: []Shot{{Asset: "a.png"}, {Asset: "b.png", Width: 4, Height: 2, Commit: "abc1234"}}}, []string{"b.png"}, "shots-2026-09-30")
-	if !strings.Contains(notes, "- b.png (4×2, commit abc1234)") || !strings.Contains(notes, "Carried forward from shots-2026-09-30: a.png.") {
+	notes := releaseNotes(&Manifest{Shots: []Shot{{Asset: "a.png"}, {Asset: "b.png", Width: 4, Height: 2, Commit: "abc1234"}}}, []string{"b.png"}, []string{"old.png"}, "shots-2026-09-30")
+	if !strings.Contains(notes, "- b.png (4×2, commit abc1234)") || !strings.Contains(notes, "Carried forward from shots-2026-09-30: a.png.") ||
+		!strings.Contains(notes, "Retired (no longer in scenes.yaml): old.png.") {
 		t.Errorf("notes:\n%s", notes)
+	}
+}
+
+// A scene dropped from scenes.yaml leaves the manifest at the next publish rather than being
+// carried forward from the previous release for ever.
+func TestRetireDropsShotsWithoutAScene(t *testing.T) {
+	m := &Manifest{Shots: []Shot{{Asset: "a.png"}, {Asset: "gone.png"}, {Asset: "b.png"}, {Asset: "also-gone.png"}}}
+	gone := m.retire(map[string]bool{"a.png": true, "b.png": true})
+	if !slices.Equal(gone, []string{"also-gone.png", "gone.png"}) {
+		t.Errorf("retired %v", gone)
+	}
+	if len(m.Shots) != 2 || m.Shots[0].Asset != "a.png" || m.Shots[1].Asset != "b.png" {
+		t.Errorf("kept %v", m.Shots)
 	}
 }
 

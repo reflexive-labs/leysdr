@@ -12,7 +12,8 @@ page covers each of its items.
   needs no stored recording. Every scene's alt text ends with "Simulated signals."
 - **The images are release assets.** Each refresh is a new release tagged `shots-YYYY-MM-DD`.
   The release holds every image plus `shots.json`. Shots that were not refreshed are copied
-  forward from the previous `shots-*` release, so one tag is always a complete set.
+  forward from the previous `shots-*` release, so one tag is always a complete set. A shot whose
+  scene is no longer in `scenes.yaml` is not carried forward; the release notes list it as retired.
   leysdr.com's build pins a tag and runs `gh release download <tag> --repo reflexive-labs/leysdr`.
   This repository holds only the inputs: `site/shots/scenes.yaml`, the scene CHIRP CSV and the
   tools.
