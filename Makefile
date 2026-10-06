@@ -81,7 +81,7 @@ ACTIONLINT_VERSION := v1.7.12
 # profile (docs/plans/distribution.md, "Owner prerequisites"); either can be overridden from the
 # environment or the command line. Only the release targets pass them on, so `make app-bundle`
 # stays ad-hoc signed.
-CODESIGN_IDENTITY ?= Developer ID Application: Reflexive Labs LLC (P2KZW25PL8)
+CODESIGN_IDENTITY ?= Developer ID Application: Reflexive Labs LLC. (P2KZW25PL8)
 NOTARY_PROFILE ?= leysdr-notary
 
 .PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval shots shots-bundle shots-publish shots-release release release-build release-publish release-rehearse release-test app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders

@@ -194,11 +194,20 @@ preflight_tools() {
 # preflight_credentials: the signing identity, the notary profile, notarytool and stapler, GitHub
 # access to the repository, and the Sparkle key when Sparkle's tools are already resolved.
 preflight_credentials() {
-  local team bin want got
+  local team bin want got found
   [ -n "${CODESIGN_IDENTITY:-}" ] && [ -n "${NOTARY_PROFILE:-}" ] \
     || die "CODESIGN_IDENTITY and NOTARY_PROFILE are not set. Run it as: make release"
-  security find-identity -v -p codesigning 2>/dev/null | grep -qF "\"$CODESIGN_IDENTITY\"" \
-    || die "the keychain has no valid signing identity \"$CODESIGN_IDENTITY\". Import the certificate's backup with: security import <file>.p12 -k ~/Library/Keychains/login.keychain-db"
+  if ! security find-identity -v -p codesigning 2>/dev/null | grep -qF "\"$CODESIGN_IDENTITY\""; then
+    # The usual cause is a name that differs by punctuation from the certificate's, so list what
+    # the keychain does hold before suggesting a re-import.
+    found=$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/^ *[0-9]*) [0-9A-F]* "\(Developer ID Application:.*\)"$/  \1/p')
+    if [ -n "$found" ]; then
+      die "the keychain has no signing identity named \"$CODESIGN_IDENTITY\". It has:
+$found
+Pass the exact name with: make release CODESIGN_IDENTITY=\"<name>\""
+    fi
+    die "the keychain has no valid Developer ID Application identity. Import the certificate's backup with: security import <file>.p12 -k ~/Library/Keychains/login.keychain-db"
+  fi
   xcrun --find notarytool >/dev/null 2>&1 && xcrun --find stapler >/dev/null 2>&1 \
     || die "notarytool or stapler is missing from Xcode's tools. Install them with: xcode-select --install"
   team=$(printf '%s' "$CODESIGN_IDENTITY" | sed -n 's/.*(\([A-Z0-9]*\))$/\1/p')
