@@ -180,7 +180,13 @@ Verification: on the Mac, version N installed from its DMG updates to N+1 from a
 (`SUFeedURL` overridden with `defaults write com.leysdr.app SUFeedURL file://…`), the daemon is
 restarted onto N+1, and `ley daemon status` shows N+1's version.
 
-### DIST-4 `[ ]` Sign, notarize, package
+### DIST-4 `[x]` Sign, notarize, package
+
+Done 2026-10-05: `make release` cut 0.1.0 on the owner's Mac, notarized, stapled and published
+as `v0.1.0` with the DMG (77 MB), both source tarballs, the three driver tarballs, `drivers.json`
+and an appcast whose enclosure is `https://leysdr.com/updates/Leyline-0.1.0.dmg`. The first
+rehearsal failed `codesign --verify` on a licence text in `Contents/Helpers`; the first real run
+failed on the identity's name, which is `Reflexive Labs LLC.` with a full stop.
 
 `make release-build` on the Mac, with `CODESIGN_IDENTITY` and `NOTARY_PROFILE` set (`make release`
 runs it after the commit and tag):
