@@ -82,10 +82,8 @@ Apache-2.0 with DCO sign-off (`CONTRIBUTING.md`); the name is what the project p
 (`TRADEMARK.md`, D3). Landed: `LICENSE`, `engine/LICENSE`, `NOTICE`, `third_party/licenses/`, SPDX
 headers everywhere, `make license-check` in the gate and CI. REL-1 and REL-2 are closed by it.
 
-**D3 — The name.** `docs/plans/archive/planning-phase.md:32`: "USPTO check on 'Leyline' before first public
-release." Not recorded as done. The name is now in the proto package, the launchd label
-(`com.leysdr.daemon`), the socket path and the URI scheme, so a rename after release is a breaking
-change. Owner action, before the repo goes public. Settled 2026-10-01: the repository is
+**D3 — The name.** The name is in the proto package, the launchd label (`com.leysdr.daemon`), the
+socket path and the URI scheme, so a rename after release is a breaking change. Settled 2026-10-01: the repository is
 `github.com/reflexive-labs/leysdr` (the Go module path follows it), Reflexive Labs, LLC holds the
 copyright and the marks, and reverse-DNS identifiers come from `leysdr.com` (`com.leysdr.app`,
 `com.leysdr.daemon`, `com.leysdr.engine`) so they stay with the product. "Leyline SDR" is the
@@ -266,7 +264,6 @@ CLI behaviour tested against the wrong response:
 | REL-12 | no macOS CI job runs `ley`, `make e2e`, or the launchd path | |
 | REL-13 | no CONTRIBUTING, CHANGELOG, SECURITY, issue templates — the three files **added** (`66caa35`); issue templates remain (R-9) | |
 | REL-14 | no contact, repository URL or issues link anywhere — **fixed** in README (`3709ba0`); the repo has no remote yet | |
-| REL-17 | trademark check outstanding (D3) | |
 | REL-18 | the macOS 26 floor (`Package.swift:18`) is stated only in `docs/dev/setup.md`, not the README — **fixed** (`3709ba0`) | — |
 | REL-19 | a launchd plist template under `engine/launchd/` was referenced by nothing and disagreed with the plist `ley daemon install` writes — **fixed** (deleted) | — |
 | REL-20–23, 25 | no secrets; build artefacts gitignored; both halves green from clean; `daemon start` without a binary fails with a clear message; stubs say they are unimplemented | — |
@@ -524,8 +521,6 @@ the DC guard). Split into two commits if it helps: bulk/telemetry parity, then j
 tone audible, a real station audible, `set` from a second terminal, `scan` of a known band,
 record → play, `daemon install` / `status` / `uninstall`, unplug and replug — plus the mechanical
 steps (VERSION bump, `make check` on both hosts, tag, release notes).
-
-### R-18 `[d]` Trademark check (D3)
 
 ### R-19 `[x]` Signposts on the sample-path code added since Milestone B (S)
 

@@ -83,8 +83,6 @@ bundle and a tester:
   release track. There are no channels: every installed copy reads the one feed and is offered
   every release. The DMGs and source tarballs are served beside it, from
   `https://leysdr.com/updates/`; "Publishing" below is how they get there.
-- `[d]` **OWN-5** Whether D3 (the trademark check) gates the first release to testers or only
-  the first public build.
 
 ## Items
 

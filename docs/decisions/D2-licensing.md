@@ -4,8 +4,7 @@ Status: decided 2026-09-12 and current. `LICENSE`, `engine/LICENSE`,
 `NOTICE`, `TRADEMARK.md`, `third_party/licenses/` and `scripts/check-licenses.sh` implement it;
 `CONTRIBUTING.md` contains the inbound-licence clause.
 
-Not legal advice. The trademark filing and the contributor terms should be reviewed by counsel
-before the repository goes public.
+Not legal advice.
 
 ## Decision
 
@@ -55,10 +54,8 @@ These two preserve the option of a commercial licence, OEM deal or appliance par
    GPL-3.0 for the engine. A DCO alone would lock the licence in permanently; an assignment CLA
    deters contributors. Inbound-permissive/outbound-copyleft is the middle path and is in
    `CONTRIBUTING.md` before the first outside PR, not after.
-2. **Trademark.** File "Leyline" (intent-to-use, software class) before the repo goes public, after
-   a clearance search; there are existing users in other classes. The code licence does not grant
-   use of the name. The licence cannot stop someone shipping "Leyline Pro"; the trademark can.
-   `TRADEMARK.md` is the policy.
+2. **The name.** The code licence does not grant use of the name, so a fork that ships under it
+   is answered by the trademark policy, `TRADEMARK.md`, not by the licence.
 
 Also keep maintained: the `RTLTCPDevice` path, CI-tested as a first-class device backend rather
 than a contingency. It costs a loopback copy (about 4.8 MB/s per radio, a millisecond or two
@@ -108,9 +105,6 @@ On every binary release (`docs/dev/release-checklist.md` carries these as checkl
       in `make check` and the Go CI job).
 - [x] `RTLTCPDevice` named as a supported backend in the README and the engine internals, with its
       CI coverage.
-
-Public release still requires the trademark clearance and filing recorded in
-`docs/plans/v1-release.md`.
 
 ## Follow-on
 

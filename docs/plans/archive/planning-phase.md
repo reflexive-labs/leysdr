@@ -31,7 +31,7 @@ Goal for this phase: resolve the open architectural questions and land interface
 ## 5. Interface design in code (phase exit deliverable)
 Conventions decided: monorepo (engine, app, CLI, MCP adapter, protos; split app later only if monetization demands); proto package `leyline.v1`, one file per plane; prefixed ULIDs for IDs; standard proto3 JSON mapping for `--json`; engine-internal protocols hand-designed, never generated. **Languages: Swift for engine + Mac app (vDSP/CoreAudio/Metal); Go for terminal clients** — `ley` is
 one Go binary (CLI verbs + terminal live views today: `spectrum --watch`, `waterfall`, `phosphor`;
-the dashboard is Milestone D.14) and doubles as the cross-language contract test; MCP adapter in Go sharing the same client library; Swift client façade is app-only. **Name: Leyline** (brand) / **leysdr** (repo, domain, unique handle); CLI binary `ley`; scheme `ley://`. USPTO check on "Leyline" before first public release.
+the dashboard is Milestone D.14) and doubles as the cross-language contract test; MCP adapter in Go sharing the same client library; Swift client façade is app-only. **Name: Leyline** (brand) / **leysdr** (repo, domain, unique handle); CLI binary `ley`; scheme `ley://`.
 - [x] Swift: engine package layout; core protocols (Device, Stream, DemodChain, Sink, Job, Detector) — signatures only. → `leysdr/engine/CoreProtocols.swift`
 - [x] Protobuf/schema files for control + telemetry + bulk planes (+ jobs/resources). Validated with protoc. → `leysdr/proto/*.proto`
 - [x] MCP tool surface + CLI command tree, mapped to the protos. → `leysdr/docs/reference/cli.md`. The Swift client façade transcribes from the protos at build time — first implementation task, not a design artifact.

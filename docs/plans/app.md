@@ -43,7 +43,7 @@ mirror so nothing works only from Swift.
   the shm ring is built if the numbers say so (`build-order.md`, "Decided not to gate on").
 - **The bundle identifier is `com.leysdr.app`**, beside the daemon's `com.leysdr.daemon`
   launchd label (both were `com.leyline.*` until 2026-10-01; the domain is one the project owns,
-  `v1-release.md` D3). It becomes fixed at the first signed release: UserDefaults, Keychain items
+  `v1-release.md`, D3). It becomes fixed at the first signed release: UserDefaults, Keychain items
   and privacy grants are keyed to it.
 - **Not sandboxed.** Direct, notarized distribution (`D2-licensing.md`, "Distribution
   obligations"); the daemon holds the USB access, and the app reads the socket under
@@ -1334,8 +1334,6 @@ update decisions of 2026-10-05, and its items carry the status:
 - `[ ]` Publishing through leysdr.com: DIST-7.
 - `[ ]` The checks on a second Mac, which gate sending the first build: DIST-5.
 - `[ ]` The install guide, the decision records and the release checklist: DIST-6.
-- `[d]` Complete D3's trademark check before the first public build (OWN-5 asks whether it also
-  gates the first release to testers).
 
 The release pass is `../dev/release-checklist.md`.
 

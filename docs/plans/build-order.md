@@ -135,6 +135,5 @@ its `ley` mirror.
 7. Distribution (D4): the bundle already carries `leylined`, `ley` and the decoders and can be
    ad-hoc signed. Next, install the launchd job as `ley daemon install` does and install the terminal
    helpers; Developer ID signing and notarization follow when the owner's certificate is available.
-   The trademark check (D3) gates the first public build.
 
 Each task lands with: tests (fixture-based where DSP), os_signpost instrumentation on any new sample-path code, and no invariant violations (AGENTS.md is the review checklist).
