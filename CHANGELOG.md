@@ -5,6 +5,8 @@ What changed for someone using Leyline, newest first. Each released version has 
 
 ## Unreleased
 
+## 0.1.2 (2026-10-07)
+
 - **Install.** Install CLI Tools… in the app menu puts `ley` on the Terminal path.
 
 ## 0.1.1 (2026-10-06)
