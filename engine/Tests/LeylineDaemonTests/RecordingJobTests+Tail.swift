@@ -104,11 +104,13 @@ extension RecordingJobTests {
 
     /// The squelch's records reach the runner through the telemetry fan-out and its audio through
     /// the drain, with no order between the two, so on a busy machine the drain takes the block
-    /// an open describes before the open arrives. Held back 20 ms (three capture blocks), every
-    /// open and close still lands where it belongs: the over's first block is not written into the
-    /// pre-roll, the WAV holds the span its entry gives, and the tails are silenced.
+    /// an open describes before the open arrives (140 ms on a loaded macOS runner). Each record is
+    /// held back 150 ms here, so the follower falls further behind with every one, 0.9 s by the
+    /// sixth, and every open and close still lands where it belongs: the over's first block is not
+    /// written into the pre-roll, the open is faded, the WAV holds the span its entry gives, and
+    /// the tails are silenced. The drain holds each frame until the telemetry has reached it.
     func testASquelchRecordLateBehindItsAudioStillLandsWhereItBelongs() async throws {
-        RecordRunner.squelchRecordDelay.withLock { $0 = .milliseconds(20) }
+        RecordRunner.squelchRecordDelay.withLock { $0 = .milliseconds(150) }
         defer { RecordRunner.squelchRecordDelay.withLock { $0 = nil } }
         try await assertKeyedPartsSilentBeforeTheirOpens()
     }

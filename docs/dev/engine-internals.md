@@ -800,12 +800,14 @@ open a part at *this* sample, note an over, close the part at the close transiti
 end the job on quiet. Deciding at frame granularity sets the accuracy: a cut lands within one
 capture block of the transition (16384 samples, 6.8 ms at 2.4 MSPS). Audio arriving while no part
 is open goes into a pre-roll ring allocated once at start, so a part can begin before the squelch
-did; it holds `pre_roll_ms` and 100 ms more (`RecordRunner.edgeSlackMs`), because the squelch
-record and the audio reach the runner by two tasks with no order between them, and an open the
-drain has run past must still find its whole pre-roll. The squelch follower only queues the machine's actions and the drain applies them between
+did. The squelch record and the audio reach the runner by two tasks with no order between
+them, so a gated recording holds each frame in `RecordRunner.waiting` until the telemetry has been
+heard through the frame's last block, then applies the records before the frame's end, then the
+frame: the edges meet the audio in sample order however far the telemetry falls behind
+(docs/design/recording.md, "The squelch's records are applied in sample order"). The squelch follower only queues the machine's actions and the drain applies them between
 frames, because an open applied from the follower leaves an await between opening a part and
 writing its pre-roll, and a frame the drain writes there lands ahead of the pre-roll. A gated part is written through `HeldAudio`, a
-delay line of two capture blocks plus a 5 ms ramp and 100 ms of slack, allocated at start; a close
+delay line of two capture blocks plus a 5 ms ramp, allocated at start; a close
 edge of the squelch's own (`RecordGateMachine.Action.silenceTail`) silences the held audio in the
 two blocks before it, because the squelch closes up to one block plus 0.21 ms after the key-down
 and the discriminator's output in between is full-scale noise. Each open edge of the squelch's own

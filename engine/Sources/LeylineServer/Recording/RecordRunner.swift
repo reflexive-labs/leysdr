@@ -49,15 +49,9 @@ actor RecordRunner: RecordRunning {
     /// The open fade never shrinks below this. A guess, for capture rates above 2.4 MSPS, where
     /// the audio filter's ringing after the key-up outlasts the shorter blocks.
     static let openFadeFloorMs = 10.0
-    /// How late a squelch record may reach the runner, after the audio it describes, and still be
-    /// applied where it belongs. The channel pushes the record before the block's audio, but the
-    /// record reaches the runner through the telemetry fan-out and the audio through the drain,
-    /// two tasks with no order between them, so on a busy machine the drain can take the block a
-    /// record describes first. A close then still finds its tail held, and an open still finds its
-    /// whole pre-roll and the block it opened on in the pre-roll ring.
-    static let edgeSlackMs = 100.0
-    /// Holds each squelch transition back this long before the gate sees it. Nil, and set only by
-    /// tests, which use it to stand in for the busy machine `edgeSlackMs` describes.
+    /// Holds each squelch transition back this long before the runner hears it. Nil, and set only
+    /// by tests, which use it to stand in for a busy machine where the telemetry fan-out runs far
+    /// behind the drain (`waiting`).
     static let squelchRecordDelay = Mutex<Duration?>(nil)
 
     /// What the recording is reading. The channel form and the frequency form are the same case:
@@ -120,6 +114,35 @@ actor RecordRunner: RecordRunning {
     /// the pre-roll (docs/design/recording.md, "The gate reads the squelch's own transitions").
     private var pending: [RecordGateMachine.Action] = []
     private var applying = false
+    /// A gated recording's frames, held until the channel's telemetry has reached their end. The
+    /// channel pushes a block's squelch record before the block's audio, but the record reaches the
+    /// runner through the telemetry fan-out and the audio through the drain, two tasks with no
+    /// order between them: a loaded macOS runner delivered an open 140 ms after the drain had
+    /// taken the block it opened on. So no frame reaches the gate before every record about its
+    /// samples has, and the squelch's edges are applied in sample order with the audio rather
+    /// than in arrival order (docs/design/recording.md, "The gate reads the squelch's own
+    /// transitions").
+    private var waiting: [AudioFrameSource.Frame] = []
+    /// Squelch records and meters heard but not yet applied, because no frame has reached their
+    /// sample. In the channel's own order, which is sample order.
+    private var heard: [Heard] = []
+    /// The block-start sample of the newest record heard. Every record the channel pushed for an
+    /// earlier block was pushed ahead of it, so everything said about blocks up to here is known.
+    private var heardThrough: UInt64?
+    private var draining = false
+    private var tearingDown = false
+
+    /// What the channel's telemetry said, for the drain to apply when it reaches `sample`.
+    private enum Heard {
+        case squelch(open: Bool, at: UInt64)
+        case meter(open: Bool, at: UInt64)
+
+        var sample: UInt64 {
+            switch self {
+            case .squelch(_, let at), .meter(_, let at): return at
+            }
+        }
+    }
     private var preRollCapacity = 0
     /// The capture sample the first element of `preRoll` sits at.
     private var preRollStart: UInt64 = 0
@@ -163,15 +186,12 @@ actor RecordRunner: RecordRunning {
         tailSamples = Swift.max(Self.tailCaptureSamples, UInt64(Self.tailFloorMs * perMs))
         openFadeSamples = Swift.max(Self.openFadeCaptureSamples, UInt64(Self.openFadeFloorMs * perMs))
         if case .audio(_, let audioRate) = source {
-            // The pre-roll and the slack after it: an open applied after the drain has passed it
-            // finds the audio from the open on in the ring as well as the pre-roll before it.
-            preRollCapacity = gated ? Int((Double(preRollMs) + Self.edgeSlackMs) / 1000 * Double(audioRate)) : 0
+            preRollCapacity = gated ? Int(Double(preRollMs) / 1000 * Double(audioRate)) : 0
             preRoll.reserveCapacity(preRollCapacity + AudioFrameSource.maxFrame)
             if gated, captureRateHz > 0 {
                 let perAudio = Double(captureRateHz) / Double(Swift.max(audioRate, 1))
                 let fade = UInt64(Self.tailFadeMs * perMs)
-                let slack = UInt64(Self.edgeSlackMs * perMs)
-                let capacity = Int((Double(tailSamples + fade + slack) / perAudio).rounded(.up))
+                let capacity = Int((Double(tailSamples + fade) / perAudio).rounded(.up))
                 held = HeldAudio(capacity: capacity, perAudio: perAudio, fadeSamples: fade)
             }
         }
@@ -189,10 +209,14 @@ actor RecordRunner: RecordRunning {
     }
 
     private func teardown(endedBy reason: String) async {
-        guard !stopped else { return }
+        guard !stopped, !tearingDown else { return }
+        tearingDown = true
+        // Whatever the drain was applying finishes first, so the job's own close lands after it,
+        // and the frames still waiting for telemetry go in with what has been heard: the channel
+        // has nothing more to say about them once the job is ending.
+        while applying || draining { await Task.yield() }
+        await drainWaiting(force: true)
         stopped = true
-        // Whatever the drain was applying finishes first, so the job's own close lands after it.
-        while applying { await Task.yield() }
         pending.append(contentsOf: gate.finish(at: now))
         await applyPending()
         if await writer.isPartOpen { await closePart(endSample: now) }
@@ -334,7 +358,12 @@ actor RecordRunner: RecordRunning {
         for await _ in audio.poke {
             if Task.isCancelled || stopped { break }
             while let frame = audio.next(s16: false) {
-                await handle(frame: frame)
+                if gated {
+                    waiting.append(frame)
+                    await drainWaiting(force: false)
+                } else {
+                    await handle(frame: frame)
+                }
                 if stopped { break }
             }
             if stopped { break }
@@ -554,9 +583,9 @@ actor RecordRunner: RecordRunning {
         switch action {
         case .openPart(let startSample):
             // The pre-roll cannot reach back before the recording's first frame, nor before the
-            // oldest audio the ring still holds: an open applied later than the slack, or one that
-            // follows the last part's end by less than the pre-roll, starts where its audio does,
-            // so the part's WAV holds the span its entry gives.
+            // oldest audio the ring still holds: an open that follows the last part's end by less
+            // than the pre-roll starts where its audio does, so the part's WAV holds the span its
+            // entry gives.
             var start = Swift.max(startSample, self.startSample)
             if !preRoll.isEmpty { start = Swift.max(start, preRollStart) }
             await openPart(at: start)
@@ -614,28 +643,80 @@ actor RecordRunner: RecordRunning {
             switch t {
             case .squelch(let time, let open, _, _, _):
                 if let delay = Self.squelchRecordDelay.withLock({ $0 }) { try? await Task.sleep(for: delay) }
-                await noteSquelch(open: open, at: time.sampleIndex)
+                await hear(.squelch(open: open, at: time.sampleIndex))
             case .meter(let time, _, _, let open, _, _, _, _):
-                await noteMeter(open: open, at: time.sampleIndex)
+                await hear(.meter(open: open, at: time.sampleIndex))
             default:
                 break
             }
         }
     }
 
-    private func noteSquelch(open: Bool, at sample: UInt64) async {
-        squelchOpen = open
-        squelchChangedAt = .now
+    /// One record from the channel's telemetry. The status detail reads it at once; the gate gets
+    /// it from the drain, when the drain reaches its sample, and the frames it was holding back for
+    /// it go on.
+    private func hear(_ record: Heard) async {
+        switch record {
+        case .squelch(let open, _):
+            squelchOpen = open
+            squelchChangedAt = .now
+        case .meter(let open, _):
+            if open != squelchOpen {
+                squelchOpen = open
+                squelchChangedAt = .now
+            }
+        }
+        heardThrough = Swift.max(heardThrough ?? 0, record.sample)
         // Out of capture the part is already closed; what the channel reports on the way back is
         // learned afresh from the first meter after it (`noteMeter`).
+        guard gated, !stopped, !degraded else { return }
+        heard.append(record)
+        await drainWaiting(force: false)
+    }
+
+    /// Whether every record about the frame's samples has been heard: one stamped at or after the
+    /// frame's last block. A record is stamped with its block's first sample and a frame is dated
+    /// to within an audio sample, so half a block short of the frame's end is that block.
+    private func isHeard(_ frame: AudioFrameSource.Frame) -> Bool {
+        guard let heardThrough else { return false }
+        return heardThrough + UInt64(CaptureDSPCore.blockSize / 2) >= frame.sampleStart + frame.sampleCount
+    }
+
+    /// Hands the waiting frames to the gate in order, each after the records about the samples
+    /// before its end, for as long as the frame at the front has been heard. `force` takes every
+    /// frame regardless, for the job ending or the channel leaving the capture. One caller at a
+    /// time; another returns at once and the one draining takes what it added.
+    private func drainWaiting(force: Bool) async {
+        guard !draining else { return }
+        draining = true
+        while let frame = waiting.first, force || isHeard(frame) {
+            waiting.removeFirst()
+            let end = frame.sampleStart + frame.sampleCount
+            while let record = heard.first, record.sample < end {
+                heard.removeFirst()
+                switch record {
+                case .squelch(let open, let at): noteSquelch(open: open, at: at)
+                case .meter(let open, let at): noteMeter(open: open, at: at)
+                }
+            }
+            await handle(frame: frame)
+            if stopped {
+                waiting.removeAll()
+                break
+            }
+        }
+        draining = false
+    }
+
+    private func noteSquelch(open: Bool, at sample: UInt64) {
         guard gated, !stopped, !degraded else { return }
         squelchKnown = true
         guard started else {
             seedPending = open
             return
         }
-        // Queued for the drain, which applies it at its next frame boundary: applying it here
-        // would let the drain's next frame into a part whose pre-roll has not been written yet.
+        // Queued for the frame about to be handled, which applies it before its own audio: applied
+        // anywhere else, a frame could reach a part whose pre-roll has not been written yet.
         pending.append(contentsOf: gate.squelch(open: open, at: sample))
     }
 
@@ -646,11 +727,7 @@ actor RecordRunner: RecordRunning {
     /// already open (docs/design/recording.md, "The gate"). After that a meter that disagrees with
     /// the gate is an edge the recording never saw -- one sent before it subscribed, or lost to the
     /// fan-out buffer -- and is applied at the meter's sample.
-    private func noteMeter(open: Bool, at sample: UInt64) async {
-        if open != squelchOpen {
-            squelchOpen = open
-            squelchChangedAt = .now
-        }
+    private func noteMeter(open: Bool, at sample: UInt64) {
         guard gated, !stopped, !degraded else { return }
         guard started else {
             squelchKnown = true
@@ -661,13 +738,9 @@ actor RecordRunner: RecordRunning {
             squelchKnown = true
             guard open else { return }
             // From the oldest audio the pre-roll holds: the first frame's unless the ring has
-            // wrapped, or the first after a coverage gap. The ring also keeps the slack a late
-            // open needs, which a seed does not reach back into. With nothing held yet the part
-            // starts where the audio will, never inside the gap.
-            let preRollSpan = gate.preRollSamples
-            let start = preRoll.isEmpty
-                ? Swift.max(now, sample)
-                : Swift.max(startSample, preRollStart, preRollEnd > preRollSpan ? preRollEnd - preRollSpan : 0)
+            // wrapped, or the first after a coverage gap. With nothing held yet the part starts
+            // where the audio will, never inside the gap.
+            let start = preRoll.isEmpty ? Swift.max(now, sample) : Swift.max(startSample, preRollStart)
             pending.append(contentsOf: gate.seedOpen(at: start))
             return
         }
@@ -719,6 +792,12 @@ actor RecordRunner: RecordRunning {
 
     private func outOfCapture() async {
         guard !degraded else { return }
+        // The audio from before the channel left goes in first, with what was heard about it.
+        if gated {
+            while draining { await Task.yield() }
+            await drainWaiting(force: true)
+            heard.removeAll()
+        }
         degraded = true
         if gated {
             // The gate closes with the part, so the channel's first opening after the gap begins

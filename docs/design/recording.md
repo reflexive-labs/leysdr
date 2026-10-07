@@ -321,10 +321,9 @@ second reader on the channel's DSP-side ring), and drives a small state machine:
   holds; without that, gated recordings of an FM station were 0 s and 0 B.
   `RecordingJobTests` holds a gated recording of `nfm_tone` cancelled after 2 s to one part of
   about 2 s, in both the frequency form and the channel form.
-- **closed**: audio goes into a pre-roll ring of `pre_roll_ms` and 100 ms of slack at the audio
-  rate (28800 floats, 115 KB, at 48 kHz and 500 ms; allocated when the runner starts, never on
-  the hot path). No file is open. The slack is for an open that reaches the runner after the
-  drain has taken the block it opened on (below, "The squelch's edges").
+- **closed**: audio goes into a pre-roll ring of `pre_roll_ms` at the audio rate (24000 floats,
+  96 KB, at 48 kHz and 500 ms; allocated when the runner starts, never on the hot path). No file
+  is open.
 - **open**: on a squelch-open transition, a part opens, the pre-roll ring is written first, then
   live audio. The part's `start_sample` is the transition's sample minus the pre-roll, on the
   capture timebase. The task that follows the squelch only queues the machine's actions, and the
@@ -333,6 +332,25 @@ second reader on the channel's DSP-side ring), and drives a small state machine:
   the pre-roll, and the drain's next frame written in that wait puts one block of the key-up at
   the part's sample 0, ahead of 500 ms of silence and then the over. The open is faded in
   (below).
+
+**The squelch's records are applied in sample order with the audio, not in arrival order.** The
+channel pushes a block's squelch record before the block's audio, but the record reaches the
+runner through the telemetry fan-out and the audio through the drain, two tasks with no order
+between them, and nothing bounds how far the first can fall behind the second. On a loaded macOS
+CI runner (2026-10-06) the drain took the block an open described before the open arrived: the
+pre-roll ring had moved past the part's first sample, its WAV began after its `start_sample`, and
+the over's first block lay unfaded inside the pre-roll. A 100 ms allowance for late records was
+tried and was not enough on the next run, where an open arrived about 140 ms late. So a gated
+recording holds each frame the drain pops until the channel's telemetry has reached the frame's
+last block, then applies the records about samples before the frame's end, then the frame. A
+record is stamped with its block's first sample, and every record for an earlier block was pushed
+ahead of it, so hearing one stamped at a block means everything about the blocks before it has
+been heard (or lost to the fan-out buffer, which the meter rule above repairs). Meters come every
+100 ms of samples whatever the squelch is doing, so a frame waits at most about that long for one
+on a machine that is keeping up, and longer only while the telemetry is behind. When the job ends
+or the channel leaves the capture, the waiting frames go in with what has been heard. A part never
+starts before the oldest audio the pre-roll ring holds, so an open less than a pre-roll after the
+last part ended starts where its audio does and its WAV holds the span its entry gives.
 - **hanging**: on a squelch-close transition the part stays open for `hang_ms`. A re-open inside
   the hang continues the same part (one exchange, several overs), and each open-and-close pair
   is appended to the part's `squelch_opens`. When the hang elapses the part closes with
@@ -372,20 +390,10 @@ ramp ending at C - tail. The tail is two capture blocks (32768 samples, 13.65 ms
 block for the measured latency and one as margin. It never drops below 5 ms, for capture rates
 fast enough to make two blocks shorter than the channelizer's delay; that floor is a guess,
 because no rate above 2.4 MSPS has been measured. At 2.4 MSPS the price is 6.6 to 11.4 ms of the
-end of the over, plus the ramp. The delay line holds the tail, the ramp and 100 ms of slack (5,700
-floats at 48 kHz) and is allocated when the runner starts. The slack covers a close record that
-reaches the runner after the audio it closes, and the runner silences audio that has not arrived
-yet as it comes in. The channel pushes the record before the block's audio, but the record
-reaches the runner through the telemetry fan-out and the audio through the drain, two tasks with
-no order between them. On a loaded macOS CI runner (2026-10-06) the drain took the block an open
-described before the open arrived, so the pre-roll ring had already moved one block past the
-pre-roll's first sample: the part's WAV began one block (6.8 ms) after its `start_sample`, and the
-over's faded first block lay inside the pre-roll at -12 dBFS. The pre-roll ring keeps the
-same 100 ms of slack for that reason, so an open up to 100 ms late still finds its whole pre-roll
-and the block it opened on, and the open's fade still finds that block held. A part never starts
-before the oldest audio the ring holds: an open later than the slack, or one less than the
-pre-roll after the last part ended, starts where its audio does, so its WAV always holds the span
-its entry gives.
+end of the over, plus the ramp. The delay line holds the tail and the ramp (896 floats at 48 kHz)
+and is allocated when the runner starts. A close record is applied before the frame that holds
+its sample (above, "The squelch's records are applied in sample order"), so the tail ahead of it
+is still held, and the part of the tail inside that frame is silenced as it comes in.
 
 - **The transcript does not move.** `squelch_opens`, `close_sample` and `end_sample` are the
   transitions' own samples; only the audio of the tail changes, and the part's `peak_dbfs` and
