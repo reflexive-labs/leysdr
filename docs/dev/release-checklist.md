@@ -142,8 +142,8 @@ quarantined, onto a Mac that has never built Leyline, or into a fresh user accou
       the engine switched off" in the window; switching it on again connects.
 - [ ] After a restart of the Mac, the daemon is running before the app is opened
       (`ley daemon status`).
-- [ ] With `ley` linked as `docs/guide/install.md` describes, `ley devices` lists an RTL-SDR and a
-      HackRF.
+- [ ] Leyline > Install CLI Tools… asks for administrator approval; in a new Terminal window,
+      `command -v ley` prints `/usr/local/bin/ley`, and `ley devices` lists an RTL-SDR and a HackRF.
 - [ ] While the daemon holds the RTL-SDR, `rtl_test` in a second process reports it busy; record
       the result in `docs/decisions/S3-usb-posture.md`, "Provisional item".
 - [ ] `ley devices attach rtltcp <host>:1234` reaches a host on the LAN. If macOS's Local Network

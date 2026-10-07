@@ -38,21 +38,21 @@ Remove it with `ley daemon uninstall` to let the app start its own.
 
 ### `ley` from the app
 
-The app carries `ley` at `Leyline.app/Contents/Helpers/ley`. Link it onto your `PATH`;
-`/usr/local/bin` is on the default `PATH` but does not exist on a new Apple silicon Mac, so create
-it first:
+Choose Leyline > Install CLI Tools…. The app asks for an administrator password, then links the
+`ley` it carries into `/usr/local/bin`, which is on the default `PATH`. It refuses to replace a
+file or link another program put there. Open a new Terminal window, then check it:
 
 ```sh
-sudo mkdir -p /usr/local/bin
-sudo ln -s /Applications/Leyline.app/Contents/Helpers/ley /usr/local/bin/ley
 ley daemon status
 ley devices
 ```
 
-The link follows the app through updates, because an update replaces the app in place. `ley
-daemon start` and `ley daemon stop` drive the app's login item through `launchctl`. A stop stays
-stopped until the next `start` or login. `ley daemon install` and `ley daemon
-uninstall` refuse the app's daemon and point at Login Items, because the app owns that job.
+The link points into `Leyline.app` and follows updates, because an update replaces the app in
+place. To make the same link by hand, run `sudo mkdir -p /usr/local/bin` and `sudo ln -s
+/Applications/Leyline.app/Contents/Helpers/ley /usr/local/bin/ley`. `ley daemon start` and `ley
+daemon stop` drive the app's login item through `launchctl`. A stop stays stopped until the next
+`start` or login. `ley daemon install` and `ley daemon uninstall` refuse the app's daemon and
+point at Login Items, because the app owns that job.
 
 ### Updates
 

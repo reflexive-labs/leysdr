@@ -47,8 +47,10 @@ bundle and a tester:
   signature and replaces itself; then it restarts the daemon onto the new binary.
 - **Apple silicon only.** A universal build needs universal driver libraries, which
   Homebrew does not provide.
-- **`ley` is reached through a symlink** to `Contents/Helpers/ley`, documented in the install
-  guide. A menu item or a Homebrew cask can do it later.
+- **`ley` is reached through a symlink** to `Contents/Helpers/ley`. Install CLI Tools… in the app
+  menu asks macOS for administrator approval and creates `/usr/local/bin/ley`; it replaces only a
+  link into an older Leyline app and refuses every unrelated file or link. A Homebrew cask can do
+  it later too.
 - **Every release changes `VERSION`, to a greater X.Y.Z.** The first release is the first
   version, `0.1.0`, and each later one increments it: the patch by default (`0.1.1`), the minor or
   major when `make release` is given `BUMP=minor` or `BUMP=major`, or a version named with
@@ -149,6 +151,10 @@ daemon with Homebrew's copies moved aside.
   gui/<uid>/com.leysdr.daemon` if no job is running. With a recording or decode job running it
   shows "Leyline was updated; restart the engine to finish" with a Restart button instead,
   because a restart ends the job.
+- **The app installs the CLI link on request.** Install CLI Tools… asks for administrator approval
+  through macOS, creates `/usr/local/bin` when absent and links its `ley` to
+  `Contents/Helpers/ley`. Choosing it again is harmless. A link into another Leyline app is
+  updated; an unrelated file or link is left untouched and named in the error.
 - **Uninstall:** quitting the app leaves the daemon running, and a deleted app's registration
   lingers in Login Items, so `install.md` switches it off there first, then trashes the app and
   removes the data directories.
