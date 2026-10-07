@@ -769,7 +769,10 @@ with the last 256 records per job replayed for `since_seq` — replay and live d
 the actor, so a subscriber cannot see them interleaved. `RecordStore` is the kept plane: a kept job
 writes `<store>/records/<job_id>.records` (varint-delimited records, flushed every 32 records or
 second) beside `<job_id>.json` holding the config, the decoder's name and version, every
-`CaptureAnchor` that was in force and the count. A query scans the sidecars, skips the files whose
+`CaptureAnchor` that was in force and the count. The anchor is the capture's own: one read while
+the job was being allocated can be the placeholder at host time zero that a capture holds until
+its first block, so the writer replaces it once the capture has its real one
+(`RecordWriter.settleAnchor`, before each kept record until then). A query scans the sidecars, skips the files whose
 protocol or wall-clock span cannot match, filters the rest in memory, sorts newest first and cuts at
 `limit` (default 1000). There is no index, and there will be a SQLite one when a query is measured
 to be slow, not before. Retention (`--store-cap`, default 2 GiB; `--store-age`, default 90 days)

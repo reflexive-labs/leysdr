@@ -50,15 +50,41 @@ actor RecordWriter {
     }
 
     /// A capture that re-anchored while the job ran. The sidecar keeps every one, because a record
-    /// is turned into wall clock by the anchor in force when it arrived, not by the newest.
+    /// is turned into wall clock by the anchor in force when it arrived, not by the newest. An
+    /// anchor for a capture and sample the sidecar already holds replaces it only when the one held
+    /// is the placeholder at host time zero (`settleAnchor`).
     func noteAnchor(_ anchor: CaptureAnchor, fromSample: UInt64, captureID: String? = nil) {
         guard !closed else { return }
+        let capture = captureID ?? sidecar.captureID
         let stored = StoredAnchor(hostTimeNs: anchor.hostTimeNsAtSampleZero, sampleRate: anchor.sampleRate,
-                                  driftPpm: anchor.driftPPM, fromSample: fromSample, captureID: captureID ?? sidecar.captureID)
-        if sidecar.anchors.last == nil || sidecar.anchors.last!.fromSample != fromSample {
+                                  driftPpm: anchor.driftPPM, fromSample: fromSample, captureID: capture)
+        if let i = sidecar.anchors.lastIndex(where: {
+            ($0.captureID ?? sidecar.captureID) == capture && $0.fromSample == fromSample
+        }) {
+            guard sidecar.anchors[i].hostTimeNs == 0, stored.hostTimeNs != 0 else { return }
+            sidecar.anchors[i] = stored
+        } else {
             sidecar.anchors.append(stored)
-            try? Self.write(sidecar, to: base)
         }
+        try? Self.write(sidecar, to: base)
+    }
+
+    /// Set once this run's capture has a real anchor in the sidecar.
+    private var anchorSettled = false
+
+    /// The capture's own anchor, once it has one. A capture publishes its anchor with its first
+    /// block, so the one read while the job was being allocated can be the placeholder at host
+    /// time zero, and every record it dates reads as 1970: a query, which sorts newest first, put a
+    /// resumed job's first run ahead of its second. The runner calls this before each record it
+    /// keeps until the capture's real anchor has replaced the placeholder; a capture that has not
+    /// published one yet is asked again at the next record.
+    func settleAnchor(of capture: CaptureID, in store: SessionStore) async {
+        guard !anchorSettled, !closed else { return }
+        guard let anchor = await store.captureEngine(capture)?.snapshot.anchor,
+              anchor.hostTimeNsAtSampleZero != 0, !anchorSettled
+        else { return }
+        anchorSettled = true
+        noteAnchor(anchor, fromSample: 0, captureID: capture.string)
     }
 
     func flush() {

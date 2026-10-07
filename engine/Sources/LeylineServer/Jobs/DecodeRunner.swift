@@ -258,6 +258,7 @@ actor DecodeRunner {
         rec.rssiDbfs = rssiDBFS
         rec.snrDb = snrDB
         await hub.publish(rec)
+        await writer?.settleAnchor(of: lease.captureID, in: store)
         await writer?.append(rec)
         if liveness.noteRecord(), awayDetail == nil {
             await publishRunning(liveness.publish(decoder: installed.manifest.name))

@@ -307,6 +307,10 @@ final class DecodeJobTests: XCTestCase {
             q.jobID = jobID
             let page = try await c.decoders.queryRecords(q, metadata: testMetadata)
             XCTAssertGreaterThan(page.records.count, before, "the store should hold both runs' records")
+            // A capture's anchor is published with its first block, after the job has opened its
+            // store; the placeholder read before that would date every record to 1970.
+            XCTAssertTrue(page.anchors.allSatisfy { $0.anchor.hostTimeNs != 0 },
+                          "every stored anchor is the capture's own, not the placeholder: \(page.anchors.map(\.anchor.hostTimeNs))")
             let captures = Set(page.anchors.map(\.anchor.captureID))
             XCTAssertTrue(captures.contains(firstCapture) && captures.count == 2,
                           "the page should carry an anchor for each capture the job ran on: \(captures)")

@@ -253,6 +253,7 @@ actor IQDecodeRunner: DecodeRunning {
         rec.rssiDbfs = Double.nan
         rec.snrDb = Double.nan
         await hub.publish(rec)
+        await writer?.settleAnchor(of: lease.captureID, in: store)
         await writer?.append(rec)
         if liveness.noteRecord() {
             await onStatus(.running, liveness.publish(decoder: installed.manifest.name))
