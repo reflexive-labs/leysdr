@@ -31,6 +31,14 @@ enum EngineAgent {
         FileManager.default.fileExists(atPath: DaemonAgent.sourceBuildPlist())
     }
 
+    /// `SMAppService.Status.notFound` also describes a valid service the system has never seen,
+    /// so status alone cannot distinguish a fresh distributed install from `make app-run`.
+    static func bundledPlistExists() -> Bool {
+        let path =
+            Bundle.main.bundlePath + "/Contents/Library/LaunchAgents/" + DaemonAgent.plistName
+        return FileManager.default.fileExists(atPath: path)
+    }
+
     static func openLoginItems() { SMAppService.openSystemSettingsLoginItems() }
 
     /// `launchctl kickstart -k gui/<uid>/com.leysdr.daemon`: kills the running daemon and starts

@@ -27,10 +27,9 @@ public enum DaemonAgent {
         return home + "/Library/LaunchAgents/" + plistName
     }
 
-    /// `SMAppService.Status`, without importing ServiceManagement. `notFound` is what a bundle
-    /// laid out without the daemon (`bundle-app.sh` without `--with-daemon`) and a bare executable
-    /// (`make app-run`) read: neither carries the plist, so the app registers nothing and a daemon
-    /// that is down is reported with the `ley daemon start` words, as for a source build.
+    /// `SMAppService.Status`, without importing ServiceManagement. `notFound` does not say whether
+    /// the bundle carries the plist: a service the system has never seen and a bundle laid out
+    /// without the daemon can both report it. `launch` uses `bundledPlistExists` to tell them apart.
     public enum Status: Sendable, Equatable {
         case notRegistered
         case enabled
@@ -56,16 +55,19 @@ public enum DaemonAgent {
         (environment["LEYLINE_SOCKET"] ?? "").isEmpty
     }
 
-    /// The launch decision. An unregistered agent is registered unless a source build's job holds
-    /// the label (`sourcePlistExists`), because two jobs under one label cannot both load.
+    /// The launch decision. An agent the system has not seen or that is not registered is
+    /// registered when this bundle carries it, unless a source build's job holds the label
+    /// (`sourcePlistExists`), because two jobs under one label cannot both load.
     public static func launch(
-        environment: [String: String], status: Status, sourcePlistExists: Bool
+        environment: [String: String], status: Status, sourcePlistExists: Bool,
+        bundledPlistExists: Bool
     ) -> Launch {
         guard agentApplies(environment: environment) else { return .connect }
         switch status {
-        case .notRegistered: return sourcePlistExists ? .connect : .register
+        case .notRegistered, .notFound:
+            return bundledPlistExists && !sourcePlistExists ? .register : .connect
         case .requiresApproval: return .askForApproval
-        case .enabled, .notFound: return .connect
+        case .enabled: return .connect
         }
     }
 

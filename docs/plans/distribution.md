@@ -128,12 +128,14 @@ daemon with Homebrew's copies moved aside.
 - **Registration from the app.** On launch, unless the app was started with `LEYLINE_SOCKET` set
   (the shots and e2e runs), the app reads `SMAppService.agent(plistName:).status`:
   - `.notRegistered`: if `~/Library/LaunchAgents/com.leysdr.daemon.plist` exists, a source
-    build's daemon owns the label, so the app registers nothing and connects as today. Otherwise
-    it calls `register()`.
+    build's daemon owns the label, so the app registers nothing and connects as today. Otherwise,
+    when the bundle carries the agent plist, it calls `register()`.
   - `.requiresApproval`: the connection failure state says that Login Items has the daemon
     switched off and offers a button that calls `SMAppService.openSystemSettingsLoginItems()`.
   - `.enabled`: connect as today.
-  - `.notFound`: a bundle built without `--with-daemon` has no agent plist; register nothing.
+  - `.notFound`: the status describes both a service the Mac has never seen and a bundle without
+    the agent. If the bundle carries the agent plist, call `register()` as for a fresh install;
+    otherwise register nothing.
   The failure state's `ley daemon start` instruction remains for a source build.
 - **`ley daemon install` and `uninstall` refuse an app-registered job.** `launchctl print
   gui/<uid>/com.leysdr.daemon` shows the program path; one inside `*.app/Contents/Helpers/`

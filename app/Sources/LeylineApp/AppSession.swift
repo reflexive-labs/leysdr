@@ -3456,7 +3456,8 @@ final class AppSession {
         let status = EngineAgent.status()
         let launch = DaemonAgent.launch(
             environment: env, status: status,
-            sourcePlistExists: EngineAgent.sourceBuildPlistExists())
+            sourcePlistExists: EngineAgent.sourceBuildPlistExists(),
+            bundledPlistExists: EngineAgent.bundledPlistExists())
         log("session", "agent: \(status), \(launch)")
         agentStatus = status
         guard launch == .register else { return }

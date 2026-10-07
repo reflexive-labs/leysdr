@@ -10,11 +10,14 @@ import XCTest
 
 final class DaemonAgentTests: XCTestCase {
     private func launch(
-        _ status: DaemonAgent.Status, sourcePlist: Bool = false, socket: String? = nil
+        _ status: DaemonAgent.Status, sourcePlist: Bool = false, bundledPlist: Bool = true,
+        socket: String? = nil
     ) -> DaemonAgent.Launch {
         var env = ["HOME": "/Users/t"]
         if let socket { env["LEYLINE_SOCKET"] = socket }
-        return DaemonAgent.launch(environment: env, status: status, sourcePlistExists: sourcePlist)
+        return DaemonAgent.launch(
+            environment: env, status: status, sourcePlistExists: sourcePlist,
+            bundledPlistExists: bundledPlist)
     }
 
     func testLaunchFollowsTheAgentStatus() {
@@ -22,11 +25,21 @@ final class DaemonAgentTests: XCTestCase {
         XCTAssertEqual(
             launch(.notRegistered, sourcePlist: true), .connect,
             "a source build's job holds the label")
+        XCTAssertEqual(
+            launch(.notRegistered, bundledPlist: false), .connect,
+            "a development bundle without the agent has nothing to register")
         XCTAssertEqual(launch(.requiresApproval), .askForApproval)
         XCTAssertEqual(launch(.requiresApproval, sourcePlist: true), .askForApproval)
         XCTAssertEqual(launch(.enabled), .connect)
         XCTAssertEqual(
-            launch(.notFound), .connect, "a bundle without the daemon, or a bare executable")
+            launch(.notFound), .register,
+            "a fresh install has a plist even though the system has not seen its service")
+        XCTAssertEqual(
+            launch(.notFound, bundledPlist: false), .connect,
+            "a bundle without the daemon, or a bare executable")
+        XCTAssertEqual(
+            launch(.notFound, sourcePlist: true), .connect,
+            "a source build's job still owns the label on a fresh app install")
     }
 
     func testASocketFromTheEnvironmentTouchesNoAgent() {
