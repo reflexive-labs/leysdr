@@ -114,6 +114,11 @@ func runDevices(cmd *cobra.Command, app *App, watch, wide bool) error {
 	defer c.Close()
 	resp, err := c.Control.ListDevices(ctx, &leylinev1.ListDevicesRequest{})
 	if err != nil {
+		// A watch ends when its caller says so (Ctrl-C, or a deadline), and that is
+		// a clean exit wherever it lands, setup included.
+		if watch && ctx.Err() != nil {
+			return nil
+		}
 		return app.notRunning(err)
 	}
 	if app.JSON {
@@ -133,6 +138,9 @@ func runDevices(cmd *cobra.Command, app *App, watch, wide bool) error {
 	}
 	events, errs, err := c.Events(ctx, nil)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
 		return err
 	}
 	for ev := range events {

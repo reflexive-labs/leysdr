@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -173,9 +174,18 @@ func TestDevicesTableAndJSON(t *testing.T) {
 // lines (never bare DeviceDescriptors).
 func TestDevicesWatchJSON(t *testing.T) {
 	sock, _ := harness(t, fakedaemon.Options{})
-	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	// The watch is ended once its first line has printed, which is the moment
+	// the verb opens its event stream: an end that lands during that setup is
+	// still a clean exit, as Ctrl-C there is. The timeout only bounds a hang.
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	out, errOut, err := run(t, ctx, sock, "--json", "devices", "--watch")
+	var outb, errb bytes.Buffer
+	app := &App{Stdout: &cancelAfterLine{w: &outb, cancel: cancel}, Stderr: &errb, LookupEnv: func(string) (string, bool) { return "", false }}
+	err := Execute(ctx, app, []string{"--socket", sock, "--json", "devices", "--watch"})
+	out, errOut := outb.String(), errb.String()
+	if ctx.Err() == context.DeadlineExceeded {
+		t.Fatalf("devices --watch --json never printed its first line")
+	}
 	if err != nil || errOut != "" {
 		t.Fatalf("devices --watch --json: %v stderr=%q", err, errOut)
 	}
@@ -192,6 +202,21 @@ func TestDevicesWatchJSON(t *testing.T) {
 			t.Fatalf("later lines must be device Events: %v %s", err, l)
 		}
 	}
+}
+
+// cancelAfterLine passes writes through and calls cancel once a newline has been
+// written: it ends a watch as soon as the watch has printed something.
+type cancelAfterLine struct {
+	w      io.Writer
+	cancel context.CancelFunc
+}
+
+func (c *cancelAfterLine) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	if bytes.IndexByte(p, '\n') >= 0 {
+		c.cancel()
+	}
+	return n, err
 }
 
 // gainsString reports an unreadable table as "unknown" only when both the
