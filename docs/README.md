@@ -90,6 +90,9 @@ What is being built, in what order, and the record of what each step found.
   [MCP adapter](plans/mcp.md) (the tools the daemon can back are done; the rest wait on their
   milestones) and [the Mac app](plans/app.md) (Milestone E: the window, recording and the bands
   sidebar are done; lifecycle and distribution remain).
+- A draft scope, nothing built: [AI features on the user's own key](plans/ai-features.md) (keys,
+  usage and budgets, speech-to-text as a decoder, and an assistant that runs the radio from plain
+  requests; user stories, the recommended shape and the decisions it waits on).
 - [`plans/archive/`](plans/archive/): finished plans and review records, among them
   [bands, channels and bookmarks](plans/archive/channels.md), kept because commit messages cite
   their item ids. Nothing in there is a work list any more.
