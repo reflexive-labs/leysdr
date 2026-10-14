@@ -37,6 +37,25 @@ var mcpToolNames = []string{
 	"list_decoders", "query_records", "list_entities", "start_decode_job",
 	"record", "find_recordings", "get_recording", "delete_recording",
 	"list_jobs", "get_job", "cancel_job",
+	"set", "stop", "list_bands", "list_presets", "help",
+	"list_bookmarks", "add_bookmark", "remove_bookmark", "import_chirp",
+	"watch", "attach_device",
+}
+
+// mcpToolAnnotations is each tool's kind as the assistant's policy table reads it
+// (docs/plans/ai-features.md, "What the assistant may do"): reading runs, a change the user
+// asked for runs and is reported, and a removal that cannot be undone is destructive.
+var mcpToolAnnotations = map[string]string{
+	"list_devices": "readOnly", "get_state": "readOnly", "daemon_logs": "readOnly",
+	"tune": "mutates", "scan": "mutates", "listen_summary": "mutates", "snapshot": "mutates",
+	"list_decoders": "readOnly", "query_records": "readOnly", "list_entities": "mutates",
+	"start_decode_job": "mutates", "record": "mutates", "find_recordings": "readOnly",
+	"get_recording": "readOnly", "delete_recording": "destructive", "list_jobs": "readOnly",
+	"get_job": "readOnly", "cancel_job": "destructive",
+	"set": "mutates", "stop": "mutates", "list_bands": "readOnly", "list_presets": "readOnly",
+	"help": "readOnly", "list_bookmarks": "readOnly", "add_bookmark": "mutates",
+	"remove_bookmark": "destructive", "import_chirp": "mutates", "watch": "mutates",
+	"attach_device": "mutates",
 }
 
 // mcpHarness starts a fake daemon, an MCP server dialled to it the way `ley
@@ -120,7 +139,7 @@ func resultText(res *mcp.CallToolResult) string {
 			texts = append(texts, tc.Text)
 		}
 	}
-	if n := len(texts); n > 0 && json.Valid([]byte(texts[n-1])) && strings.HasPrefix(strings.TrimSpace(texts[n-1]), "{") {
+	if n := len(texts); n > 0 && json.Valid([]byte(texts[n-1])) && strings.ContainsAny(strings.TrimSpace(texts[n-1])[:1], "{[") {
 		texts = texts[:n-1]
 	}
 	return strings.Join(texts, "")
@@ -181,6 +200,18 @@ func TestMCPListsTheToolTable(t *testing.T) {
 		names = append(names, tool.Name)
 		if tool.Description == "" || tool.InputSchema == nil {
 			t.Errorf("%s: no description or input schema", tool.Name)
+		}
+		kind := "mutates"
+		switch a := tool.Annotations; {
+		case a == nil:
+			kind = "none"
+		case a.ReadOnlyHint:
+			kind = "readOnly"
+		case a.DestructiveHint != nil && *a.DestructiveHint:
+			kind = "destructive"
+		}
+		if want := mcpToolAnnotations[tool.Name]; kind != want {
+			t.Errorf("%s is annotated %s, want %s", tool.Name, kind, want)
 		}
 		// Every tool that takes a gain describes it in the sentence every --gain uses.
 		var schema struct {

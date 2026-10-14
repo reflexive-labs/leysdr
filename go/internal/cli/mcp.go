@@ -44,10 +44,13 @@ verb does. Each tool is a ley verb seen from an agent -- list_devices is
 'ley records' -- and returns the same proto3 JSON '--json' prints, plus a
 short text summary so the agent spends its context on reasoning.
 
-Tools: list_devices, get_state, daemon_logs, tune, scan, listen_summary,
-snapshot, list_decoders, query_records, list_entities, start_decode_job,
-record, find_recordings, get_recording, delete_recording, list_jobs, get_job,
-cancel_job. The resources ley://recordings/<job_id> and ley://records/<job_id>
+Tools: list_devices, get_state, daemon_logs, help, list_bands, list_presets,
+tune, set, stop, attach_device, scan, listen_summary, snapshot,
+list_decoders, query_records, list_entities, start_decode_job, watch,
+record, find_recordings, get_recording, delete_recording, list_bookmarks,
+add_bookmark, remove_bookmark, import_chirp, list_jobs, get_job,
+cancel_job. The shell notifier is not among them: watch takes macos or a
+webhook. The resources ley://recordings/<job_id> and ley://records/<job_id>
 read a recording's manifest and a kept decode job's records. Anything an agent
 starts here (a channel from tune, a decode job without keep) ends when the
 agent disconnects, the way a ley verb's ends at Ctrl-C; keep: true on a tool
@@ -179,7 +182,9 @@ const mcpInstructions = `Leyline is a software-defined radio: one daemon owns th
 
 A daemon restart shows in get_state: DaemonInfo.pid and startedAtNs change and the event sequence starts over; daemon_logs says why. A job started before a restart is gone with it, except a decode job started with keep, which comes back as the same job.
 
-Only one thing can use the radio at a time. tune, scan, snapshot, start_decode_job and record refuse to move a radio somebody is listening on and say who; take_over: true insists. A channel tune makes, or a decode job started without keep, ends when this server exits; a recording does not -- it is written to disk and stays there.
+Only one thing can use the radio at a time. tune, set (a freq that moves the radio), stop (another client's channel), scan, snapshot, start_decode_job, watch and record refuse to disturb somebody else's listening and say who; take_over: true insists.
+
+help returns the ley help topics, and list_bands and list_presets the names a frequency argument accepts. The bookmarks (list_bookmarks, add_bookmark, remove_bookmark, import_chirp) are the user's own file, shared with the Mac app. Ask the user before a call that writes something they did not spell out: a watch with keep or a webhook notifier, several bookmarks at once (import_chirp has dry_run to show them first), and a remove_bookmark. watch has no shell notifier; that is for a person to set up. A channel tune makes, or a decode job started without keep, ends when this server exits; a recording does not -- it is written to disk and stays there.
 
 The detector does not overclaim: a detection is a carrier that stood above the measured noise floor with the looks that saw it; nothing here names a protocol or a station unless a decoder decoded it. Audio and samples never cross this connection: record writes files on the daemon's machine and get_recording hands back their paths, for another tool to open. Not available yet: snapshot resources (ley:// store), transcripts of watched audio, signal identification, and external identity lookups.`
 

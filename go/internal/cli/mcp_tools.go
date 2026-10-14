@@ -147,7 +147,22 @@ func (srv *mcpServer) registerTools() {
 		Description: "Stop a job and hand the radio back (Jobs.CancelJob; ley jobs cancel). A job that has already finished is left as it is. Returns the Job in the state the daemon left it.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: boolPtr(false)},
 	}, srv.cancelJob)
+	srv.registerControlTools()
+	srv.registerReferenceTools()
+	srv.registerBookmarkTools()
+	srv.registerWatchTool()
+	srv.registerDeviceTools()
 }
+
+// The annotations the later tool families share. Each matches a row of the assistant's policy
+// table (docs/plans/ai-features.md, "What the assistant may do"): reading runs; a change the user
+// asked for runs and is reported; removing what cannot be brought back is destructive, which a
+// client confirms.
+var (
+	toolReadOnly    = &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: boolPtr(false)}
+	toolMutates     = &mcp.ToolAnnotations{DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(false)}
+	toolDestructive = &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: boolPtr(false)}
+)
 
 // gainSchema is the input schema the SDK would infer for a tool's arguments, with the gain field
 // described by gainHelp and the tool's own default after it. A struct tag cannot name a constant,
@@ -418,9 +433,16 @@ func refuseRetune(s *verbSession, freq uint64, bw uint32, takeOver bool) error {
 	if capture == nil || covers(capture, freq, bw) {
 		return nil
 	}
+	return retuneRefusal(s.State, capture, freq, "")
+}
+
+// retuneRefusal names the channels listening on a capture that moving it to freq would
+// silence, leaving out the one channel (except, when set) the move is for: set moves its own
+// channel with the radio. nil when nobody else is listening.
+func retuneRefusal(st *leylinev1.GetStateResponse, capture *leylinev1.Capture, freq uint64, except string) error {
 	var who []string
-	for _, ch := range s.State.GetChannels() {
-		if ch.GetCaptureId() != capture.GetCaptureId() || ch.GetState() != leylinev1.ChannelState_CHANNEL_ACTIVE {
+	for _, ch := range st.GetChannels() {
+		if ch.GetCaptureId() != capture.GetCaptureId() || ch.GetState() != leylinev1.ChannelState_CHANNEL_ACTIVE || ch.GetChannelId() == except {
 			continue
 		}
 		hz := uint64(int64(capture.GetCenterHz()) + ch.GetOffsetHz())
