@@ -18,7 +18,7 @@ owns, stores it if the job asked to keep records, and hands it to every client w
 your program is logged as a gap and restarted; it never takes the daemon down.
 
 So the division is fixed: **the daemon measures the signal, you interpret it.** You never set
-`rssi_dbfs`, `snr_db`, `record_id`, `job_id`, `seq` or `channel_id` — the daemon overwrites them,
+`rssi_dbfs`, `snr_db`, `record_id`, `job_id`, `seq`, `channel_id`, `clip_uri` or `over` — the daemon overwrites them,
 because only it has those values. You set the fields the protocol carries.
 
 ## The manifest
@@ -66,10 +66,16 @@ The manifest for the bundled APRS decoder, trimmed to the fields that carry mean
 - **`input.tap`** is which stage of the channel you read. `TAP_AUDIO` is what a listener hears, after
   de-emphasis and the limiter; `TAP_DEMOD` is the discriminator before any of that, which a data
   decoder usually wants because de-emphasis tilts the tones a modem keys on. `input.mode` is
-  `CONTINUOUS` for a stream, and `SEGMENTED` for a decoder that works on one over at a time, as a
-  speech engine does (below, "Segmented input"); `input.preRollMs` and `input.hangMs` set how much
-  audio a segment keeps either side of the squelch, 500 ms each when 0. `SLOT_ALIGNED` (for
-  slot-timed protocols like FT8) is declared here but not yet delivered by the daemon.
+  `CONTINUOUS` for a stream, or `SEGMENTED` for one over at a time, cut at the squelch (below), which
+  is what a speech decoder wants; `preRollMs` and `hangMs` set how much audio a segment keeps before
+  the squelch opened and after it closed, 500 ms each when left 0. `SLOT_ALIGNED` (for slot-timed
+  protocols like FT8) is declared here but not yet delivered by the daemon.
+- **`credentialProvider`** names the provider whose key your decoder calls with (`deepgram`,
+  `openai`), and **`contactsHosts`** the hosts it sends to, so a person sees where the audio goes
+  before running it. The daemon refuses to start the job until the user has added that key with
+  `ley ai add <provider>`, and hands it to you on stdin (below). When the user has chosen a speech
+  model on that provider (`ley ai use speech <provider> <model>`), the daemon adds
+  `--model <model>` after your `args`. Leave both out when your decoder calls nobody.
 - **`outputs`** declares what shapes you produce. Every decoder produces `SHAPE_RECORDS`;
   `SHAPE_ENTITIES` says a client can fold your records into a per-transmitter table (`ley track`),
   and `entitySilenceS` is how long a station stays in that table after its last record.
@@ -92,6 +98,11 @@ Your program reads stdin and writes stdout; both carry length-delimited protobuf
 "delimited" convention (a varint length, then that many bytes of message). Stderr is yours for
 logging — the daemon captures it under `leyline.decoder.<name>`.
 
+0. **If your manifest names a `credentialProvider`, read one `SetCredentialRequest` before
+   anything else.** It carries `provider`, `secret` (the key) and `endpoint` (empty for the
+   provider's own API). The daemon reads the key as it stands each time it starts you, restarts
+   included. Keep it in memory only: never write it to stderr, a file or a record. The daemon
+   replaces it in your stderr before logging, but a record goes where the user sends it.
 1. **Read one `StreamDescriptor` first.** It names the audio `sample_rate` and `format` (`F32` mono
    in this build), the `tap` you are served, and, in `center_hz` and `span_hz`, the channel's
    frequency and the capture's sample rate. A demodulator's filters depend on the audio rate, so
@@ -111,28 +122,6 @@ logging — the daemon captures it under `leyline.decoder.<name>`.
    the decoder again on the restart backoff; any other job ends with `PROVIDER_REFUSED` and that
    message. Any other exit while stdin is open is a crash, and the daemon restarts the decoder.
 
-### Segmented input
-
-A manifest with `input.mode` `SEGMENTED` gets one segment at a time instead of a stream. A segment
-is one over: the audio from `preRollMs` before the squelch opened to `hangMs` after it closed, and a
-squelch that reopens inside the hang continues the same segment. The first frame of a segment has
-`segment` set to `SEGMENT_START` and carries audio; the frames after it are unmarked; the last has
-`segment` set to `SEGMENT_END`, an empty payload, and the `time` of the sample after the segment's
-last sample. Nothing arrives between segments, so audio while the squelch is shut is never sent.
-The START frame's `time` is the segment's first sample, and the daemon finds a record's over from
-the record's `time`, so stamp each record with the START frame's `time` exactly. A segment the
-daemon could not deliver is skipped whole, and the next START frame carries a `gap`. Keep reading
-stdin while a segment is being transcribed: on a live job the daemon replaces a plugin that leaves
-a frame half-written for 2 s. When stdin closes, at the end of a recording or of the job, write
-every record you still owe and exit 0.
-
-A decode job can also read a gated recording instead of a radio (`DecodeConfig.source_uri`, which
-`ley transcribe` sets). The daemon cuts the stored parts at their `squelch_opens` with the same
-pre-roll and hang and sends the segments as fast as you read them, so a recording transcribed later
-gives the same segments as the live job that made it. Each record from a segmented job gets two
-fields from the daemon: `clip_uri`, the recording part that holds its audio, and `over`, the 1-based
-index of its first over in that part. Leave both unset.
-
 ### The key
 
 When the manifest names a `credentialProvider`, the daemon writes one varint-delimited
@@ -145,7 +134,40 @@ own units, `audio_seconds` for speech); the daemon fills in `feature` and `job_i
 the ledger `ley ai usage` prints.
 
 The daemon's write to you is non-blocking. A decoder that stops reading has its audio dropped and
-gapped, not queued, so keep up with the stream or expect gaps.
+gapped, not queued, so keep up with the stream or expect gaps. A frame the pipe has taken part of
+must finish within 2 s or the daemon replaces your program, so a decoder that does slow work, such
+as a call to a provider, keeps reading stdin while it works.
+
+### Segmented input
+
+Under `input.mode = SEGMENTED` you get one over at a time, never the audio between overs:
+
+- **The first frame of a segment** carries `segment = SEGMENT_START` and audio. Its `time` is the
+  segment's first sample, `preRollMs` before the squelch opened (or the start of the recording
+  part, or the end of the segment before, whichever is later). Stamp the record for the segment
+  with this `time`: it is how the daemon matches the record to its over.
+- **The frames after it** carry audio and no mark. A `gap` on one of them is audio inside the
+  segment that was lost.
+- **One last frame** carries `segment = SEGMENT_END`, no payload, and the `time` of the sample after
+  the segment's last, `hangMs` after the squelch closed. Decode the segment when it arrives.
+- **A squelch that reopens inside the hang** continues the same segment, so a segment can hold more
+  than one opening when they are closer together than `hangMs`.
+- **Segments never overlap.** Every START you are given is followed by its END before the next
+  START. A segment the daemon could not start delivering is skipped whole, and the next START
+  carries a `gap` covering it. Stdin closing inside a segment is the job stopping; the segment is
+  incomplete.
+
+The daemon fills `over` on your records: within a recording part, the index of the segment's
+first opening in the part's `squelch_opens`; on a live job, the count of segments since the job
+began. It fills `clip_uri` with the recording part that holds the audio when there is one.
+
+### Reading a stored recording
+
+A decode job can read a recording instead of a radio (`ley://recordings/<id>` as
+`DecodeConfig.source_uri`). Nothing changes for you: the descriptor is `AUDIO`, `F32` mono at the
+recording's rate, and the frames come as fast as you read them rather than at the speed of the air,
+with segments cut by the same rule. When the recording has all gone your stdin closes: write the
+records you still owe and exit 0, and the job ends once you have.
 
 Stamping `time` precisely means turning a sample offset within a frame into a `SampleTime` on the
 capture's timeline, which runs at `span_hz` while your audio runs at `sample_rate`. The Go SDK's

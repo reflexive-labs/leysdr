@@ -158,7 +158,7 @@ parts, and what `ley recordings show` prints.
   "created_by": { "client_id": "cli_01J…", "kind": "cli", "label": "ley record" },
   "anchors": [ { "capture_id": "cap_01J…", "host_time_ns": 1789653700000000000, "sample_rate": 2400000, "drift_ppm": 0, "from_sample": 0 } ],
   "parts": [
-    { "part": 1, "file": "2026-09-17_14-03-22_146.520MHz_NFM_001.wav", "start_sample": 244800000, "end_sample": 290400000, "samples": 912000, "bytes": 1824044, "peak_dbfs": -6.2, "mean_dbfs": -18.4, "squelch_opens": 2, "clipped_ms": 400 }
+    { "part": 1, "file": "2026-09-17_14-03-22_146.520MHz_NFM_001.wav", "start_sample": 244800000, "end_sample": 290400000, "samples": 912000, "bytes": 1824044, "peak_dbfs": -6.2, "mean_dbfs": -18.4, "squelch_opens": 2, "squelch_open_ms": 11000, "clipped_ms": 400 }
   ],
   "coverage_gaps": [ { "from_sample": 300000000, "to_sample": 312000000, "reason": "out of capture" } ],
   "bytes": 1824044
@@ -169,6 +169,13 @@ parts, and what `ley recordings show` prints.
 `error`. `anchors` is a list for the same reason the kept-records sidecar's is: a recording that
 spans a device detach and reattach spans two captures, and each part's samples are dated by the
 anchor of its own capture.
+
+A part's `squelch_open_ms` is how long the squelch was open inside it: its sidecar's
+`squelch_opens` intervals summed at the capture rate and rounded once, written when the part
+closes. It is how much signal the part holds, which is what a transcription sends, so a client can
+say so without opening every sidecar. A continuous recording has no intervals and no
+`squelch_open_ms`, and a part written by an older daemon lacks it; a client sums that part's
+sidecar instead.
 
 ### Nothing heard
 

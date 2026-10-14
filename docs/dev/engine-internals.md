@@ -803,13 +803,22 @@ varint-delimited `Frame`s (`AUDIO`, `F32`, mono, the channel's rate, `GAP_MARKED
 manifest asked for), stdout carries varint-delimited `DecodeRecord`s, and stderr is prose logged
 under `leyline.decoder.<name>`. The framing is protobuf's own delimited convention, coded by hand
 because `BinaryDelimited` takes Foundation streams and a pipe file descriptor is not one. A plugin
-whose manifest names `credential_provider` reads one varint-delimited `SetCredentialRequest` before
-the `StreamDescriptor`. `stop()`
+whose manifest names `credential_provider` reads one varint-delimited `SetCredentialRequest`
+(`provider`, `secret`, `endpoint`) before the `StreamDescriptor`. The runner reads it from
+`CredentialStore.pluginCredential` each time it spawns the plugin, restarts included, so a replaced
+key reaches the next start; a key that cannot be read then ends the job `CREDENTIAL_MISSING` with
+the store's words. The plugin's stderr is logged with the key replaced (`WorkerProcess.redacting`). When the user has
+chosen a speech model on that provider (a `FeatureModel` for `speech` with a non-empty `model`),
+`--model <model>` is appended to the manifest's `args` at every spawn (`pluginArguments`); that is
+the only way the model reaches a plugin.
+`stop()`
 closes stdin, waits 2 s, then `SIGTERM`, then `SIGKILL`; a write to a dead pipe is an error return,
 never a signal.
 
 `JobStore.startDecode` looks the decoder up (`DECODER_NOT_FOUND`), refuses `SLOT_ALIGNED` with
-`UNIMPLEMENTED`, and asks `SessionCaptureAllocator` for `AllocationRequest.channel`. That path takes
+`UNIMPLEMENTED`, refuses a manifest whose `credential_provider` has no key with
+`CREDENTIAL_MISSING` (naming `ley ai add <provider>`) and one whose key the provider refused with
+`CREDENTIAL_REJECTED`, and asks `SessionCaptureAllocator` for `AllocationRequest.channel`. That path takes
 a capture that already covers the frequency on any device, else a device with no capture (creating
 one centred `frequency − Fs/8`, so the channel sits clear of the tuner's DC spike and inside the
 flat part of the passband), else a capture the don't-disturb test calls free (retuned), else it
@@ -834,6 +843,51 @@ A channel that goes `OUT_OF_CAPTURE` degrades the job and comes back to `RUNNING
 capture, and only then: records still arrive after the move, so the record count's republish and a
 plugin restart keep the job `DEGRADED` while the channel is away. `keep` jobs are not cancelled when their client goes; cancel stops the plugin, closes the
 writer and releases the lease.
+
+**Segmented input.** A manifest with `input.mode = SEGMENTED` (audio only; an IQ one is
+`UNIMPLEMENTED`) is fed one over at a time. A segment starts `pre_roll_ms` before the squelch
+opened and ends `hang_ms` after it closed, 500 ms each when the manifest leaves them 0, and a
+squelch that reopens inside the hang continues the segment. Its first frame carries
+`segment = SEGMENT_START` and audio, the frames after it carry no mark, and one last frame carries
+`SEGMENT_END`, an empty payload and the `time` of the sample after the segment's last. Nothing is
+written while the squelch is shut. On a channel, `Segmenter` (`Jobs/Segmenter.swift`) sits behind
+the drain and follows the squelch the way `RecordRunner.followSquelch` does: squelch records and
+meters arrive by the telemetry subscription, frames wait until the telemetry has been heard through
+their end, and each frame is walked in sample order, so an edge or a hang that ends inside a frame
+cuts it at its own sample. While the squelch is shut the audio goes into a pre-roll ring of
+`pre_roll_ms`; a segment never reaches back before the last one ended. The first meter opens a
+segment at once when the squelch was already open, and a meter that disagrees with the state is
+the edge the follower missed. A frame left waiting 2 s behind the newest audio goes on without
+its telemetry. On the wire a segment exists only between a START the plugin took and its END: a
+START the pipe cannot take skips the segment, an END it cannot take is owed before anything else,
+and a restarted plugin gets nothing of a segment opened on the one before. A segmented job's own
+channel gets the recorder's auto squelch when it has none, because a squelch that is off has no
+edges. A record from a live segmented job carries `over`, the 1-based count of segments since the
+job began, matched by the record's `time` to the newest segment that started at or before it.
+
+**A stored recording.** `DecodeConfig.source_uri = ley://recordings/<id>` decodes an audio
+recording instead of a radio (`Jobs/RecordingSource.swift`). `startDecode` reads the manifest and
+plans the job there, so a missing recording is `JOB_NOT_FOUND` as `ResolveLocalPath` gives it, an
+IQ recording or an IQ decoder is `UNIMPLEMENTED`, a recording whose job is still running (no
+`ended_by` yet) is `FAILED_PRECONDITION`, and a part URI or any URI that is not
+`ley://recordings/<id>` is `INVALID_ARGUMENT`. The branch comes before the frequency check, since
+a speech manifest names no frequency. It makes no
+allocation, channel or lease, so a `--no-hardware` daemon runs it. Under `SEGMENTED` input each
+part is cut by `Segmenter.cut` from its sidecar's `squelch_opens` with the live rule, clamped to the
+part, so a recording decoded later yields the segments the live job would have sent; under any other
+input each part goes whole, with a `Gap` for the time between parts. A capture sample is placed in
+the WAV by the sidecar's two rates (the anchor's capture rate and the file's audio rate), and a
+START is dated by its segment's exact first sample. `WAVReader` reads 4096 samples a frame and the
+runner writes them patiently: a full pipe is waited out rather than dropped, since nothing here is
+live and the plugin sets the pace. When every part has gone the plugin's stdin is closed, its
+records are read until it exits, and the job ends `COMPLETED`; a recording with no squelch
+openings sends nothing and ends `COMPLETED` with no records. A plugin that dies on the way is
+restarted from the segment it had last; a part that cannot be read fails the job. The descriptor is
+`AUDIO`, `F32` mono at the recording's rate, centred on its frequency. Records carry `clip_uri`
+(`ley://recordings/<id>/<part>`) and `over` (the index in that part's `squelch_opens` of the
+segment's first opening, 0 when not segmented); `channel_id` is empty and the levels are NaN. A kept
+job's records are dated by the recording's own anchors. A kept source job the daemon restarts reads
+the recording again from the start.
 
 `RecordHub` is the live plane: drop-oldest, 256 deep, scoped to everything, one job or one protocol,
 with the last 256 records per job replayed for `since_seq` — replay and live delivery both happen on
@@ -908,7 +962,9 @@ minutes running for ever.
 
 `PartWriter` owns one open file at a time: a WAV opens with placeholder lengths that are patched
 from the file's own size on close, a cf32 is appended raw, and the part's sidecar and the manifest
-are written when it closes. The manifest is rewritten atomically on every change, so a client
+are written when it closes. Closing a gated part also writes its `squelch_open_ms`: the sidecar's
+`squelch_opens` intervals summed on the capture's timeline and turned into milliseconds once at the
+anchor's rate, so the figure is the sidecar's sum and not a sum of rounded intervals. The manifest is rewritten atomically on every change, so a client
 reading a running recording always sees a consistent file. `RecordingStore` is the directory
 (`--recordings`, default beside the record store), its retention (`--recordings-cap`, default
 20 GiB; `--recordings-age`, default 0) and the restart repair: at boot, any manifest with no
