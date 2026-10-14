@@ -918,6 +918,27 @@ public nonisolated struct Leyline_V1_Event: @unchecked Sendable {
     set {_uniqueStorage()._body = .playback(newValue)}
   }
 
+  /// The keys and feature models changed: a key was set, checked, used or deleted, or a feature's
+  /// model was chosen. The whole AIState each time, so a deleted key is a shorter list rather
+  /// than a tombstone. Never carries a secret (ai.proto, Credential).
+  public var ai: Leyline_V1_AIState {
+    get {
+      if case .ai(let v)? = _storage._body {return v}
+      return Leyline_V1_AIState()
+    }
+    set {_uniqueStorage()._body = .ai(newValue)}
+  }
+
+  /// A usage report was added to the ledger: the whole line it was folded into, after the fold,
+  /// never the report alone.
+  public var usage: Leyline_V1_UsageLine {
+    get {
+      if case .usage(let v)? = _storage._body {return v}
+      return Leyline_V1_UsageLine()
+    }
+    set {_uniqueStorage()._body = .usage(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Body: Equatable, Sendable {
@@ -937,6 +958,13 @@ public nonisolated struct Leyline_V1_Event: @unchecked Sendable {
     /// starts, four times a second while it plays with `position` current (the whole object each
     /// time, never a delta), and once more as the tombstone when it ends.
     case playback(Leyline_V1_Playback)
+    /// The keys and feature models changed: a key was set, checked, used or deleted, or a feature's
+    /// model was chosen. The whole AIState each time, so a deleted key is a shorter list rather
+    /// than a tombstone. Never carries a secret (ai.proto, Credential).
+    case ai(Leyline_V1_AIState)
+    /// A usage report was added to the ledger: the whole line it was folded into, after the fold,
+    /// never the report alone.
+    case usage(Leyline_V1_UsageLine)
 
   }
 
@@ -1019,16 +1047,7 @@ public nonisolated struct Leyline_V1_EventScope: Sendable {
   fileprivate var _sinceSeq: UInt64? = nil
 }
 
-public nonisolated struct Leyline_V1_Empty: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  public init() {}
-}
-
+/// Empty lives in common.proto: ai.proto's services return it, and control.proto imports ai.proto.
 public nonisolated struct Leyline_V1_ListDevicesRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -1103,11 +1122,25 @@ public nonisolated struct Leyline_V1_GetStateResponse: Sendable {
   /// recordings the daemon is playing right now
   public var playbacks: [Leyline_V1_Playback] = []
 
+  /// the keys (never their secrets) and each feature's model
+  public var ai: Leyline_V1_AIState {
+    get {_ai ?? Leyline_V1_AIState()}
+    set {_ai = newValue}
+  }
+  /// Returns true if `ai` has been explicitly set.
+  public var hasAi: Bool {self._ai != nil}
+  /// Clears the value of `ai`. Subsequent reads from it will return its default value.
+  public mutating func clearAi() {self._ai = nil}
+
+  /// the ledger's lines, the same ones Event.usage updates
+  public var usage: [Leyline_V1_UsageLine] = []
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _daemon: Leyline_V1_DaemonInfo? = nil
+  fileprivate var _ai: Leyline_V1_AIState? = nil
 }
 
 public nonisolated struct Leyline_V1_DaemonInfo: Sendable {
@@ -2321,7 +2354,7 @@ nonisolated extension Leyline_V1_WriteSummary: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension Leyline_V1_Event: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Event"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}seq\0\u{3}caused_by\0\u{1}device\0\u{1}capture\0\u{1}channel\0\u{1}sink\0\u{3}write_rejected\0\u{1}anchor\0\u{1}job\0\u{1}playback\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}seq\0\u{3}caused_by\0\u{1}device\0\u{1}capture\0\u{1}channel\0\u{1}sink\0\u{3}write_rejected\0\u{1}anchor\0\u{1}job\0\u{1}playback\0\u{1}ai\0\u{1}usage\0")
 
   fileprivate class _StorageClass {
     var _seq: UInt64 = 0
@@ -2464,6 +2497,32 @@ nonisolated extension Leyline_V1_Event: SwiftProtobuf.Message, SwiftProtobuf._Me
             _storage._body = .playback(v)
           }
         }()
+        case 11: try {
+          var v: Leyline_V1_AIState?
+          var hadOneofValue = false
+          if let current = _storage._body {
+            hadOneofValue = true
+            if case .ai(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._body = .ai(v)
+          }
+        }()
+        case 12: try {
+          var v: Leyline_V1_UsageLine?
+          var hadOneofValue = false
+          if let current = _storage._body {
+            hadOneofValue = true
+            if case .usage(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._body = .usage(v)
+          }
+        }()
         default: break
         }
       }
@@ -2514,6 +2573,14 @@ nonisolated extension Leyline_V1_Event: SwiftProtobuf.Message, SwiftProtobuf._Me
       case .playback?: try {
         guard case .playback(let v)? = _storage._body else { preconditionFailure() }
         try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
+      }()
+      case .ai?: try {
+        guard case .ai(let v)? = _storage._body else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 11)
+      }()
+      case .usage?: try {
+        guard case .usage(let v)? = _storage._body else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 12)
       }()
       case nil: break
       }
@@ -2639,25 +2706,6 @@ nonisolated extension Leyline_V1_EventScope: SwiftProtobuf.Message, SwiftProtobu
   }
 }
 
-nonisolated extension Leyline_V1_Empty: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".Empty"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
-
-  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    // Load everything into unknown fields
-    while try decoder.nextFieldNumber() != nil {}
-  }
-
-  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  public static func ==(lhs: Leyline_V1_Empty, rhs: Leyline_V1_Empty) -> Bool {
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
 nonisolated extension Leyline_V1_ListDevicesRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ListDevicesRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
@@ -2743,7 +2791,7 @@ nonisolated extension Leyline_V1_GetStateRequest: SwiftProtobuf.Message, SwiftPr
 
 nonisolated extension Leyline_V1_GetStateResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".GetStateResponse"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}devices\0\u{1}captures\0\u{1}channels\0\u{1}sinks\0\u{3}event_seq\0\u{1}daemon\0\u{1}jobs\0\u{1}playbacks\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}devices\0\u{1}captures\0\u{1}channels\0\u{1}sinks\0\u{3}event_seq\0\u{1}daemon\0\u{1}jobs\0\u{1}playbacks\0\u{1}ai\0\u{1}usage\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2759,6 +2807,8 @@ nonisolated extension Leyline_V1_GetStateResponse: SwiftProtobuf.Message, SwiftP
       case 6: try { try decoder.decodeSingularMessageField(value: &self._daemon) }()
       case 7: try { try decoder.decodeRepeatedMessageField(value: &self.jobs) }()
       case 8: try { try decoder.decodeRepeatedMessageField(value: &self.playbacks) }()
+      case 9: try { try decoder.decodeSingularMessageField(value: &self._ai) }()
+      case 10: try { try decoder.decodeRepeatedMessageField(value: &self.usage) }()
       default: break
       }
     }
@@ -2793,6 +2843,12 @@ nonisolated extension Leyline_V1_GetStateResponse: SwiftProtobuf.Message, SwiftP
     if !self.playbacks.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.playbacks, fieldNumber: 8)
     }
+    try { if let v = self._ai {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
+    } }()
+    if !self.usage.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.usage, fieldNumber: 10)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2805,6 +2861,8 @@ nonisolated extension Leyline_V1_GetStateResponse: SwiftProtobuf.Message, SwiftP
     if lhs._daemon != rhs._daemon {return false}
     if lhs.jobs != rhs.jobs {return false}
     if lhs.playbacks != rhs.playbacks {return false}
+    if lhs._ai != rhs._ai {return false}
+    if lhs.usage != rhs.usage {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

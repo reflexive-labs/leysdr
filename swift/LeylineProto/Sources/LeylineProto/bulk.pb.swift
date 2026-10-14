@@ -245,6 +245,44 @@ public nonisolated enum Leyline_V1_AudioSampleFormat: SwiftProtobuf.Enum, Swift.
 
 }
 
+public nonisolated enum Leyline_V1_SegmentMark: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case segmentStart // = 1
+  case segmentEnd // = 2
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .segmentStart
+    case 2: self = .segmentEnd
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .segmentStart: return 1
+    case .segmentEnd: return 2
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Leyline_V1_SegmentMark] = [
+    .unspecified,
+    .segmentStart,
+    .segmentEnd,
+  ]
+
+}
+
 public nonisolated struct Leyline_V1_SubscribeRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -631,6 +669,10 @@ public nonisolated struct Leyline_V1_Frame: Sendable {
   /// format per StreamDescriptor
   public var payload: Data = Data()
 
+  /// Set only on a decoder's SEGMENTED input (decode.proto, InputMode): the first frame of an over
+  /// is SEGMENT_START and an END frame with an empty payload closes it. Unset on every other frame.
+  public var segment: Leyline_V1_SegmentMark = .unspecified
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -673,6 +715,10 @@ nonisolated extension Leyline_V1_FftBinFormat: SwiftProtobuf._ProtoNameProviding
 
 nonisolated extension Leyline_V1_AudioSampleFormat: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0AUDIO_SAMPLE_FORMAT_UNSPECIFIED\0\u{1}S16\0\u{1}F32\0")
+}
+
+nonisolated extension Leyline_V1_SegmentMark: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0SEGMENT_MARK_UNSPECIFIED\0\u{1}SEGMENT_START\0\u{1}SEGMENT_END\0")
 }
 
 nonisolated extension Leyline_V1_SubscribeRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
@@ -1214,7 +1260,7 @@ nonisolated extension Leyline_V1_ShmRing: SwiftProtobuf.Message, SwiftProtobuf._
 
 nonisolated extension Leyline_V1_Frame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Frame"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}stream_id\0\u{1}seq\0\u{1}time\0\u{1}gap\0\u{1}payload\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}stream_id\0\u{1}seq\0\u{1}time\0\u{1}gap\0\u{1}payload\0\u{1}segment\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1227,6 +1273,7 @@ nonisolated extension Leyline_V1_Frame: SwiftProtobuf.Message, SwiftProtobuf._Me
       case 3: try { try decoder.decodeSingularMessageField(value: &self._time) }()
       case 4: try { try decoder.decodeSingularMessageField(value: &self._gap) }()
       case 5: try { try decoder.decodeSingularBytesField(value: &self.payload) }()
+      case 6: try { try decoder.decodeSingularEnumField(value: &self.segment) }()
       default: break
       }
     }
@@ -1252,6 +1299,9 @@ nonisolated extension Leyline_V1_Frame: SwiftProtobuf.Message, SwiftProtobuf._Me
     if !self.payload.isEmpty {
       try visitor.visitSingularBytesField(value: self.payload, fieldNumber: 5)
     }
+    if self.segment != .unspecified {
+      try visitor.visitSingularEnumField(value: self.segment, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1261,6 +1311,7 @@ nonisolated extension Leyline_V1_Frame: SwiftProtobuf.Message, SwiftProtobuf._Me
     if lhs._time != rhs._time {return false}
     if lhs._gap != rhs._gap {return false}
     if lhs.payload != rhs.payload {return false}
+    if lhs.segment != rhs.segment {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

@@ -55,6 +55,10 @@ message StreamPosition {
   }
 }
 
+// The reply of an RPC that returns nothing. Here rather than in control.proto because ai.proto's
+// services return it and control.proto imports ai.proto (same package, wire-identical).
+message Empty {}
+
 message ErrorDetail {
   string code = 1;    // stable machine string, e.g. "FREQ_OUT_OF_RANGE"
   string message = 2;

@@ -309,6 +309,18 @@ public nonisolated struct Leyline_V1_StreamPosition: Sendable {
   public init() {}
 }
 
+/// The reply of an RPC that returns nothing. Here rather than in control.proto because ai.proto's
+/// services return it and control.proto imports ai.proto (same package, wire-identical).
+public nonisolated struct Leyline_V1_Empty: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 public nonisolated struct Leyline_V1_ErrorDetail: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -659,6 +671,25 @@ nonisolated extension Leyline_V1_StreamPosition: SwiftProtobuf.Message, SwiftPro
 
   public static func ==(lhs: Leyline_V1_StreamPosition, rhs: Leyline_V1_StreamPosition) -> Bool {
     if lhs.position != rhs.position {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_Empty: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".Empty"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_Empty, rhs: Leyline_V1_Empty) -> Bool {
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

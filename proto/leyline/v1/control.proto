@@ -8,6 +8,7 @@ package leyline.v1;
 option go_package = "github.com/reflexive-labs/leysdr/go/gen/leyline/v1;leylinev1";
 import "leyline/v1/common.proto";
 import "leyline/v1/jobs.proto";
+import "leyline/v1/ai.proto";
 
 // ---------- Capability model ----------
 
@@ -184,6 +185,13 @@ message Event {
     // starts, four times a second while it plays with `position` current (the whole object each
     // time, never a delta), and once more as the tombstone when it ends.
     Playback playback = 10;
+    // The keys and feature models changed: a key was set, checked, used or deleted, or a feature's
+    // model was chosen. The whole AIState each time, so a deleted key is a shorter list rather
+    // than a tombstone. Never carries a secret (ai.proto, Credential).
+    AIState ai = 11;
+    // A usage report was added to the ledger: the whole line it was folded into, after the fold,
+    // never the report alone.
+    UsageLine usage = 12;
   }
 }
 message WriteRejected { uint64 tag = 1; ErrorDetail error = 2; }
@@ -235,7 +243,7 @@ service Control {
   rpc DetachFileDevice(DetachFileDeviceRequest) returns (Empty);
 }
 
-message Empty {}
+// Empty lives in common.proto: ai.proto's services return it, and control.proto imports ai.proto.
 message ListDevicesRequest {}
 message ListDevicesResponse { repeated DeviceDescriptor devices = 1; }
 message GetStateRequest { EventScope scope = 1; }
@@ -248,6 +256,8 @@ message GetStateResponse {
   DaemonInfo daemon = 6;
   repeated Job jobs = 7;   // running and recently finished; reconnect renders these like the rest
   repeated Playback playbacks = 8;  // recordings the daemon is playing right now
+  AIState ai = 9;                   // the keys (never their secrets) and each feature's model
+  repeated UsageLine usage = 10;    // the ledger's lines, the same ones Event.usage updates
 }
 message DaemonInfo {
   string version = 1;
