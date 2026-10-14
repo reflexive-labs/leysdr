@@ -47,8 +47,9 @@ Each run makes `evals/runs/<timestamp>/<scenario>/` (gitignored) holding:
 - `messages.jsonl`: the agent's stream, one JSON object a line, untouched.
 - `prompt.md`, `mcp.json`, `leylined.log`, `radios/`: what the agent was given, how it was pointed
   at the daemon (`ley mcp` with the run's socket and `--log` on the run's log, so `daemon_logs`
-  reads this daemon and not the machine's), the daemon's log, and the recordings under their
-  neutral names.
+  reads this daemon and not the machine's, and `LEYLINE_BOOKMARKS` on the run's
+  `bookmarks.json`, so the bookmark tools never touch the machine's own), the daemon's log, and
+  the recordings under their neutral names.
 - `store/` and `recordings/`: the daemon's decode-record store and the recordings any `ley record`
   in the scenario made. They are never the machine's own.
 - `result.json`: the verdicts and the metrics (tool calls by tool, host calls, tool errors, turns,
@@ -140,7 +141,7 @@ parameter.
 | `reference-lookup` | none | a preset's frequency, a band's default mode and the squelch margin come from `list_presets` or `list_bands` and `help`, with nothing tuned |
 | `watch-one-station` | `aprs_afsk` tuned | a filtered, unkept `watch` with a macOS notification is set up for one station, and the shell command asked for beside it is reported as refused |
 | `attach-file-radio` | `nfm_tone` idle | a recording named by a path relative to the run directory is attached with `attach_device` in one call, and its centre read back |
-| `bookmark-repeater` | none (skipped) | `add_bookmark` files a repeater with its tone and `remove_bookmark` takes a second away. Skipped until the runner points `LEYLINE_BOOKMARKS` at the run directory, since `ley mcp` would otherwise write the machine's own bookmarks; `import_chirp` waits on the same change and on a CSV the run directory holds |
+| `bookmark-repeater` | none | `add_bookmark` files a repeater with its tone and `remove_bookmark` takes a second away, in the run directory's own bookmarks file. `import_chirp` has no scenario: the run directory holds no CSV a task could name |
 
 No scenario covers a restart mid-task because the runner has no restart hook. A live `rtl_tcp`
 tier would have no fixed expected answer and can report metrics only.

@@ -12,14 +12,22 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/reflexive-labs/leysdr/go/pkg/bookmarks"
 )
 
 // mcpConfig is the file the agent is pointed at: one server, `ley mcp` on the eval daemon's
-// socket. The agent's client starts it as a subprocess, the way a person's would.
+// socket. The agent's client starts it as a subprocess, the way a person's would. The bookmarks
+// file is the run directory's (bookmarks.BookmarksEnv), so a scenario that keeps bookmarks
+// starts from none and never writes the machine's own.
 func mcpConfig(dir, ley, socket, logPath string) (string, error) {
 	cfg := map[string]any{
 		"mcpServers": map[string]any{
-			"leyline": map[string]any{"command": ley, "args": []string{"--socket", socket, "mcp", "--log", logPath}},
+			"leyline": map[string]any{
+				"command": ley,
+				"args":    []string{"--socket", socket, "mcp", "--log", logPath},
+				"env":     map[string]string{bookmarks.BookmarksEnv: filepath.Join(dir, "bookmarks.json")},
+			},
 		},
 	}
 	raw, _ := json.MarshalIndent(cfg, "", "  ")
