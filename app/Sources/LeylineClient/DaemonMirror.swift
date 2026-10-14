@@ -36,6 +36,12 @@ public struct MirrorState: Sendable, Equatable {
     public var sinks: [Leyline_V1_Sink] = []
     public var jobs: [Leyline_V1_Job] = []
     public var playbacks: [Leyline_V1_Playback] = []
+    /// The provider keys (never their text) and the model each feature uses. One event carries
+    /// the whole list, so a removed key is a shorter list, not a tombstone.
+    public var ai = Leyline_V1_AIState()
+    /// The usage ledger, one line per provider, model, feature, scope and UTC day. An event
+    /// carries the one line it changed.
+    public var usage: [Leyline_V1_UsageLine] = []
     /// The newest event folded (the snapshot's `event_seq` at open). Events at or below it are
     /// already reflected and are skipped.
     public var seq: UInt64 = 0
@@ -55,6 +61,8 @@ public struct MirrorState: Sendable, Equatable {
         sinks = snapshot.sinks
         jobs = snapshot.jobs
         playbacks = snapshot.playbacks
+        ai = snapshot.ai
+        usage = snapshot.usage
         seq = snapshot.eventSeq
     }
 
@@ -109,6 +117,14 @@ public struct MirrorState: Sendable, Equatable {
         case .anchor(let a):
             if let i = captures.firstIndex(where: { $0.captureID == a.captureID }) {
                 captures[i].anchor = a
+            }
+        case .ai(let state):
+            ai = state
+        case .usage(let line):
+            if let i = usage.firstIndex(where: { $0.sameLine(as: line) }) {
+                usage[i] = line
+            } else {
+                usage.append(line)
             }
         case .writeRejected, .none:
             break
@@ -228,5 +244,13 @@ public final class DaemonMirror {
             state.apply(event)
             if event.seq != 0 { expected = max(expected, event.seq &+ 1) }
         }
+    }
+}
+
+extension Leyline_V1_UsageLine {
+    /// Two lines are the same ledger entry when their five keys match; the counters differ.
+    fileprivate func sameLine(as other: Leyline_V1_UsageLine) -> Bool {
+        provider == other.provider && model == other.model && feature == other.feature
+            && scopeID == other.scopeID && day == other.day
     }
 }

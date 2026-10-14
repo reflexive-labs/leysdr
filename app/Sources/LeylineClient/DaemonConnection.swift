@@ -71,6 +71,12 @@ public final class DaemonConnection: Sendable {
             st.sinks.sort { $0.sinkID < $1.sinkID }
             st.jobs.sort { $0.jobID < $1.jobID }
             st.playbacks.sort { $0.playbackID < $1.playbackID }
+            st.ai.credentials.sort { $0.provider < $1.provider }
+            st.ai.features.sort { $0.feature < $1.feature }
+            st.usage.sort {
+                ($0.day, $0.provider, $0.model, $0.feature, $0.scopeID)
+                    < ($1.day, $1.provider, $1.model, $1.feature, $1.scopeID)
+            }
             return st
         } catch {
             throw LeylineError(error)
