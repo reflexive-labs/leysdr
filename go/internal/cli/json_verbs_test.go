@@ -41,6 +41,8 @@ type jsonVerbCase struct {
 	env func(t *testing.T) map[string]string
 	// timeout bounds a verb that otherwise streams until Ctrl-C.
 	timeout time.Duration
+	// stdin is what the verb reads on stdin (a key for `ai add`); empty is an empty stdin.
+	stdin string
 }
 
 // jsonNoOutput is the refusal shared by every verb whose output is a script, a
@@ -65,6 +67,12 @@ var jsonVerbs = []jsonVerbCase{
 	{path: "daemon install", args: []string{"daemon", "install"}, refuse: jsonNoOutput},
 	{path: "daemon logs", args: []string{"daemon", "logs"}, refuse: jsonNoOutput},
 	{path: "daemon uninstall", args: []string{"daemon", "uninstall"}, refuse: jsonNoOutput},
+	{path: "ai", args: []string{"ai"}},
+	{path: "ai add", args: []string{"ai", "add", "anthropic"}, stdin: "sk-ant-test-1234\n"},
+	{path: "ai check", args: []string{"ai", "check", "anthropic"}, prep: prepKey},
+	{path: "ai remove", args: []string{"ai", "remove", "anthropic"}, prep: prepKey},
+	{path: "ai use", args: []string{"ai", "use", "assistant", "anthropic", "claude-sonnet-5-5"}},
+	{path: "ai usage", args: []string{"ai", "usage"}},
 	{path: "decode", args: []string{"decode", "aprs", "--count", "2"}},
 	{path: "decoders", args: []string{"decoders"}},
 	// start against a daemon already answering reports it rather than
@@ -129,6 +137,15 @@ func seededBookmarks(t *testing.T) map[string]string {
 		t.Fatal(err)
 	}
 	return env
+}
+
+// prepKey stores an anthropic key for the verbs that check or remove one.
+func prepKey(t *testing.T, _ string, c *leyline.Client) []string {
+	t.Helper()
+	if _, err := c.Credentials.SetCredential(t.Context(), &leylinev1.SetCredentialRequest{Provider: "anthropic", Secret: "sk-ant-test-1234"}); err != nil {
+		t.Fatal(err)
+	}
+	return nil
 }
 
 // prepChannel leaves a channel running for the verbs that adjust or stop one.
@@ -257,7 +274,7 @@ func TestEveryVerbAnswersOrRefusesJSON(t *testing.T) {
 			if c.env != nil {
 				env = c.env(t)
 			}
-			out, errOut, err := runEnv(t, ctx, sock, env, args...)
+			out, errOut, err := runEnvIn(t, ctx, sock, env, c.stdin, args...)
 			if c.refuse != "" {
 				if exitCode(err) != ExitUsage || err == nil || !strings.Contains(err.Error(), c.refuse) {
 					t.Fatalf("ley %v: want exit %d saying %q, got exit %d (%v)", args, ExitUsage, c.refuse, exitCode(err), err)

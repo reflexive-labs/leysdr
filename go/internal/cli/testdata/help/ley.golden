@@ -55,6 +55,7 @@ Data for tools:
   mcp          Serve the radio to an agent over MCP (stdin and stdout)
 
 Daemon:
+  ai           Show the provider keys and the model each feature uses
   daemon       Start, stop and check the process that owns the radio
   version      Print the ley version
 

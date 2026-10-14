@@ -74,6 +74,18 @@ func runEnv(t *testing.T, ctx context.Context, sock string, env map[string]strin
 	return out.String(), errb.String(), err
 }
 
+// runEnvIn is runEnv with stdin holding the given text.
+func runEnvIn(t *testing.T, ctx context.Context, sock string, env map[string]string, stdin string, args ...string) (string, string, error) {
+	t.Helper()
+	var out, errb bytes.Buffer
+	app := &App{
+		Stdout: &out, Stderr: &errb, Stdin: strings.NewReader(stdin),
+		LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok },
+	}
+	err := Execute(ctx, app, append([]string{"--socket", sock}, args...))
+	return out.String(), errb.String(), err
+}
+
 // mustSay is mustRun for an assertion about prose. A live verb's prose is on
 // stderr and its ids are on stdout, so "what a person saw" is both streams.
 func mustSay(t *testing.T, sock string, args ...string) string {

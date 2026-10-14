@@ -1,0 +1,25 @@
+use sets the provider and model a feature calls: assistant is 'ley ask'
+and the app's assistant panel, speech is speech-to-text on received audio.
+The model is the provider's own name for it, passed on as typed, so a model
+the provider has not heard of fails on the first call rather than here.
+
+A model can be chosen before the provider's key is added; ley says so and
+prints the command that adds it.
+
+--json prints the FeatureModel the daemon stored.
+
+Usage:
+  ley ai use <feature> <provider> <model> [flags]
+
+Examples:
+  ley ai use assistant anthropic claude-sonnet-5-5
+  ley ai use speech deepgram nova-3
+
+Flags:
+  -h, --help   help for use
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

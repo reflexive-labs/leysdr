@@ -1,0 +1,21 @@
+remove deletes the provider's key from the daemon. Every job that calls
+the provider ends with CREDENTIAL_MISSING, because it can make no further
+call. The model a feature uses stays chosen, so 'ley ai add' with a new key
+puts the feature back to work.
+
+--json prints {} once the key is gone.
+
+Usage:
+  ley ai remove <provider> [flags]
+
+Examples:
+  ley ai remove anthropic
+
+Flags:
+  -h, --help   help for remove
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

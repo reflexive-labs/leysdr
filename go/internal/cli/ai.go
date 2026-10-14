@@ -1,0 +1,481 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package cli
+
+import (
+	"bufio"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"regexp"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
+)
+
+// The features a model can be chosen for, in the order `ley ai` lists them.
+var aiFeatures = []string{"assistant", "speech"}
+
+// providerName is how a provider is spelled: the lower-case name of a kind of endpoint
+// (proto/leyline/v1/ai.proto, "Keys"), so "Anthropic" is refused rather than filed as a second
+// provider.
+var providerName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
+
+func checkProvider(p string) error {
+	if !providerName.MatchString(p) {
+		return usageErrorf("%q is not a provider name; providers are spelled in lower case, such as anthropic, openai or deepgram", p)
+	}
+	return nil
+}
+
+// newAICommand builds `ley ai`: the keys the daemon holds for model providers, the model each
+// feature calls, and what the calls used. The daemon keeps the keys and never returns one, so
+// every verb here reads or writes daemon state over the contract (docs/design/ai.md).
+func newAICommand(app *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "ai",
+		Short: "Show the provider keys and the model each feature uses",
+		Long: `ai lists the keys the daemon holds for model providers, and the provider
+and model each feature calls. A key is stored by the daemon and never
+printed or returned: the KEY column shows its last four characters, so two
+keys can be told apart. LAST USED is when a worker last took the key for a
+call; CHECKED is what the provider said when the key was last tried
+(accepted, rejected, or unavailable when the check could not run).
+
+'ley ai add <provider>' stores a key, reading it from stdin; 'ley ai check'
+tries it again, 'ley ai remove' deletes it, 'ley ai use' chooses the model a
+feature calls, and 'ley ai usage' prints what the calls used.
+
+--json prints the AIState: every key's description (never its text) and
+every feature's model.`,
+		Example: `  ley ai                               # which keys are set, and do they work?
+  ley ai add anthropic                 # paste a key at the prompt
+  ley ai use assistant anthropic claude-sonnet-5-5
+  ley ai usage                         # requests and tokens, last 30 days
+  ley ai --json | jq -r '.credentials[].provider'`,
+		GroupID: GroupDaemon,
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runAI(cmd.Context(), app)
+		},
+	}
+	cmd.AddCommand(newAIAddCommand(app), newAICheckCommand(app), newAIRemoveCommand(app),
+		newAIUseCommand(app), newAIUsageCommand(app))
+	return cmd
+}
+
+func runAI(ctx context.Context, app *App) error {
+	c, err := app.dial(ctx)
+	if err != nil {
+		return app.notRunning(err)
+	}
+	defer c.Close()
+	st, err := c.Credentials.GetAIState(ctx, &leylinev1.GetAIStateRequest{})
+	if err != nil {
+		return app.notRunning(err)
+	}
+	if app.JSON {
+		return app.printJSON(st)
+	}
+	_, err = io.WriteString(app.Stdout, renderAI(tableStyle(app), st))
+	return err
+}
+
+// renderAI is `ley ai`: a table of keys, then a table of features. Every feature is listed
+// whether or not a model was chosen for it, so the reader sees what can be set.
+func renderAI(s ui.Style, st *leylinev1.AIState) string {
+	var b strings.Builder
+	keys := []column{
+		{head: "PROVIDER"},
+		{head: "LABEL", drop: 2, hideEmpty: true},
+		{head: "KEY"},
+		{head: "ENDPOINT", min: 12, drop: 3, hideEmpty: true},
+		{head: "LAST USED", drop: 1},
+		{head: "CHECKED", min: 12},
+	}
+	for _, cr := range st.GetCredentials() {
+		used := s.Glyphs().Absent
+		if cr.GetLastUsedAtNs() > 0 {
+			used = recordingClock(cr.GetLastUsedAtNs())
+		}
+		add(keys, cr.GetProvider(), absentIfEmpty(s, cr.GetLabel()), keyHint(s, cr),
+			absentIfEmpty(s, cr.GetEndpoint()), used, checkedCell(s, cr.GetLastCheck()))
+	}
+	_, _ = printColumns(&b, s, keys, nil)
+	if len(st.GetCredentials()) == 0 {
+		writeWrapped(&b, s, "(no keys; add one with: ley ai add anthropic)")
+	}
+	b.WriteByte('\n')
+	features := []column{{head: "FEATURE"}, {head: "PROVIDER"}, {head: "MODEL", min: 10}}
+	chosen := 0
+	for _, f := range aiFeatures {
+		provider, model := s.Glyphs().Absent, s.Glyphs().Absent
+		for _, fm := range st.GetFeatures() {
+			if fm.GetFeature() == f {
+				provider, model = fm.GetProvider(), fm.GetModel()
+				chosen++
+			}
+		}
+		add(features, f, provider, model)
+	}
+	_, _ = printColumns(&b, s, features, nil)
+	if chosen == 0 {
+		writeWrapped(&b, s, "(no models chosen; pick one with: ley ai use assistant anthropic claude-sonnet-5-5)")
+	}
+	return b.String()
+}
+
+// keyHint is the KEY cell: the key's last four characters behind an ellipsis, so it reads as the
+// end of something longer. A key too short to show any of itself is the absent glyph.
+func keyHint(s ui.Style, cr *leylinev1.Credential) string {
+	if cr.GetLastFour() == "" {
+		return s.Glyphs().Absent
+	}
+	return s.Glyphs().Ellipsis + cr.GetLastFour()
+}
+
+// keyWords names a key in a sentence: "anthropic key …1234".
+func keyWords(s ui.Style, cr *leylinev1.Credential) string {
+	if cr.GetLastFour() == "" {
+		return cr.GetProvider() + " key"
+	}
+	return cr.GetProvider() + " key " + keyHint(s, cr)
+}
+
+// outcomeWord is a check's outcome as a person says it, inked by what it means.
+func outcomeWord(s ui.Style, c *leylinev1.CredentialCheck) string {
+	switch c.GetOutcome() {
+	case leylinev1.CredentialCheck_ACCEPTED:
+		return s.Ok("accepted")
+	case leylinev1.CredentialCheck_REJECTED:
+		return s.Err("rejected")
+	case leylinev1.CredentialCheck_UNAVAILABLE:
+		return s.Warn("unavailable")
+	}
+	return s.Glyphs().Absent
+}
+
+func checkedCell(s ui.Style, c *leylinev1.CredentialCheck) string {
+	if c.GetAtNs() == 0 {
+		return s.Glyphs().Absent
+	}
+	return outcomeWord(s, c) + " " + recordingClock(c.GetAtNs())
+}
+
+// writeWrapped writes a muted hint, wrapped to the style's width when it is known.
+func writeWrapped(b *strings.Builder, s ui.Style, text string) {
+	for _, line := range wrapWords(text, s.Width) {
+		b.WriteString(s.Muted(line))
+		b.WriteByte('\n')
+	}
+}
+
+// wrapWords breaks text at spaces so no line is wider than width; a width of zero or less keeps
+// it on one line, and a word longer than width gets a line of its own.
+func wrapWords(text string, width int) []string {
+	if width <= 0 {
+		return []string{text}
+	}
+	var lines []string
+	line := ""
+	for _, w := range strings.Fields(text) {
+		switch {
+		case line == "":
+			line = w
+		case ui.Visible(line)+1+ui.Visible(w) <= width:
+			line += " " + w
+		default:
+			lines = append(lines, line)
+			line = w
+		}
+	}
+	return append(lines, line)
+}
+
+func newAIAddCommand(app *App) *cobra.Command {
+	var label, endpoint string
+	cmd := &cobra.Command{
+		Use:   "add <provider> [--label L] [--endpoint URL]",
+		Short: "Store a provider key, read from stdin, and check it",
+		Long: `add gives the daemon a key for a model provider and has it checked once
+against the provider. The key is read from stdin, never from an argument or
+the environment, because an argument is visible to every user in ps and the
+environment is inherited by everything ley starts. On a terminal ley asks
+for it and turns echo off while you paste it; otherwise it reads one line.
+Spaces and the newline around the key are dropped.
+
+The key replaces any key already stored for the provider. A key the
+provider refuses is still stored, so the line printed afterwards says what
+the provider answered and what to do next; the exit status is 0 either way.
+
+--label is a name for the key in 'ley ai' (which account it is), and
+--endpoint points the provider at a gateway or an OpenAI-compatible server
+in place of the provider's own API.
+
+--json prints the stored Credential: its description and the check's
+outcome, never the key.`,
+		Example: `  ley ai add anthropic                         # paste at the prompt
+  ley ai add anthropic --label work < ~/.config/anthropic.key
+  pbpaste | ley ai add openai
+  ley ai add openai --endpoint http://localhost:11434 --label ollama`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAIAdd(cmd.Context(), app, args[0], label, endpoint)
+		},
+	}
+	cmd.Flags().StringVar(&label, "label", "", "a name for the key in ley ai, e.g. --label work")
+	cmd.Flags().StringVar(&endpoint, "endpoint", "", "a gateway or OpenAI-compatible server to call in place of the provider's own API")
+	return cmd
+}
+
+func runAIAdd(ctx context.Context, app *App, provider, label, endpoint string) error {
+	if err := checkProvider(provider); err != nil {
+		return err
+	}
+	c, err := app.dial(ctx)
+	if err != nil {
+		return app.notRunning(err)
+	}
+	defer c.Close()
+	// Ask the daemon first, so nobody pastes a key into a verb that cannot store it.
+	if _, err := c.Credentials.GetAIState(ctx, &leylinev1.GetAIStateRequest{}); err != nil {
+		return app.notRunning(err)
+	}
+	secret, err := readKey(ctx, app, provider)
+	if err != nil {
+		return err
+	}
+	cred, err := c.Credentials.SetCredential(ctx, &leylinev1.SetCredentialRequest{
+		Provider: provider, Secret: secret, Label: label, Endpoint: endpoint,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(app.Stderr, addedLine(app.ErrStyle, cred))
+	if app.JSON {
+		return app.printJSON(cred)
+	}
+	return nil
+}
+
+// addedLine reports a stored key and what the provider said about it, ending with the next
+// command when the key does not work yet.
+func addedLine(s ui.Style, cred *leylinev1.Credential) string {
+	key, p := keyWords(s, cred), cred.GetProvider()
+	chk := cred.GetLastCheck()
+	switch chk.GetOutcome() {
+	case leylinev1.CredentialCheck_ACCEPTED:
+		return fmt.Sprintf("%s added; the provider %s it", key, s.Ok("accepted"))
+	case leylinev1.CredentialCheck_REJECTED:
+		return fmt.Sprintf("%s added; the provider %s it: %s. Paste a working key with: %s",
+			key, s.Err("rejected"), oneLine(chk.GetMessage()), s.Cmd("ley ai add "+p))
+	}
+	return fmt.Sprintf("%s added; the check %s: %s. Try it again with: %s",
+		key, s.Warn("could not run"), oneLine(chk.GetMessage()), s.Cmd("ley ai check "+p))
+}
+
+// oneLine keeps a provider's message to one line, and gives an empty one a word.
+func oneLine(msg string) string {
+	msg = strings.Join(strings.Fields(msg), " ")
+	if msg == "" {
+		return "no reason given"
+	}
+	return msg
+}
+
+// readKey reads one line from stdin. On a terminal it prompts on stderr and turns echo off for
+// the line, so the key is never on the screen; Ctrl-C while it waits ends the verb.
+func readKey(ctx context.Context, app *App, provider string) (string, error) {
+	tty := app.IsInTTY()
+	if tty {
+		fmt.Fprintf(app.Stderr, "Paste the %s key and press Enter: ", provider)
+		if f, ok := app.Stdin.(*os.File); ok {
+			if restore, err := noEcho(int(f.Fd())); err == nil {
+				defer restore()
+			}
+		}
+		// With echo off the Enter is not shown either, so the next line would start mid-prompt.
+		defer fmt.Fprintln(app.Stderr)
+	}
+	type read struct {
+		line string
+		err  error
+	}
+	got := make(chan read, 1)
+	go func() {
+		line, err := bufio.NewReader(app.Stdin).ReadString('\n')
+		got <- read{line, err}
+	}()
+	var r read
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case r = <-got:
+	}
+	if r.err != nil && !errors.Is(r.err, io.EOF) {
+		return "", fmt.Errorf("cannot read the key from stdin: %w", r.err)
+	}
+	key := strings.TrimSpace(r.line)
+	if key != "" {
+		return key, nil
+	}
+	if tty {
+		return "", usageErrorf("no key was entered; run ley ai add %s again and paste the key at the prompt", provider)
+	}
+	return "", usageErrorf("stdin held no key; pipe one in: ley ai add %s < %s.key", provider, provider)
+}
+
+func newAICheckCommand(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "check <provider>",
+		Short: "Try a stored key against its provider again",
+		Long: `check has the daemon try the provider's stored key again, the same check
+'ley ai add' runs, and records the answer in the CHECKED column of 'ley ai'.
+
+It exits 0 when the provider accepts the key and 1 otherwise: a refused key
+is the daemon's CREDENTIAL_REJECTED with the provider's words, and a check
+that could not run (the provider unreachable, no worker to run it) says why.
+A check that could not run says nothing about the key itself.
+
+--json prints the Credential with the new outcome in lastCheck; the exit
+status follows the same rule.`,
+		Example: `  ley ai check anthropic
+  ley ai check openai --json | jq -r .lastCheck.outcome`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAICheck(cmd.Context(), app, args[0])
+		},
+	}
+}
+
+func runAICheck(ctx context.Context, app *App, provider string) error {
+	if err := checkProvider(provider); err != nil {
+		return err
+	}
+	c, err := app.dial(ctx)
+	if err != nil {
+		return app.notRunning(err)
+	}
+	defer c.Close()
+	cred, err := c.Credentials.CheckCredential(ctx, &leylinev1.CredentialRef{Provider: provider})
+	if err != nil {
+		return app.notRunning(err)
+	}
+	if app.JSON {
+		if err := app.printJSON(cred); err != nil {
+			return err
+		}
+	}
+	s := app.ErrStyle
+	if cred.GetLastCheck().GetOutcome() != leylinev1.CredentialCheck_ACCEPTED {
+		return &ExitError{Code: 1, Message: fmt.Sprintf("could not check the %s: %s. Run: ley ai check %s",
+			keyWords(ui.Style{Unicode: s.Unicode}, cred), oneLine(cred.GetLastCheck().GetMessage()), provider)}
+	}
+	fmt.Fprintf(app.Stderr, "%s: the provider %s it\n", keyWords(s, cred), s.Ok("accepted"))
+	return nil
+}
+
+func newAIRemoveCommand(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "remove <provider>",
+		Short: "Delete a provider's key from the daemon",
+		Long: `remove deletes the provider's key from the daemon. Every job that calls
+the provider ends with CREDENTIAL_MISSING, because it can make no further
+call. The model a feature uses stays chosen, so 'ley ai add' with a new key
+puts the feature back to work.
+
+--json prints {} once the key is gone.`,
+		Example: `  ley ai remove anthropic`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAIRemove(cmd.Context(), app, args[0])
+		},
+	}
+}
+
+func runAIRemove(ctx context.Context, app *App, provider string) error {
+	if err := checkProvider(provider); err != nil {
+		return err
+	}
+	c, err := app.dial(ctx)
+	if err != nil {
+		return app.notRunning(err)
+	}
+	defer c.Close()
+	done, err := c.Credentials.DeleteCredential(ctx, &leylinev1.CredentialRef{Provider: provider})
+	if err != nil {
+		return app.notRunning(err)
+	}
+	fmt.Fprintf(app.Stderr, "%s the %s key; any job that used it has ended\n", app.ErrStyle.Ok("Removed"), provider)
+	if app.JSON {
+		return app.printJSON(done)
+	}
+	return nil
+}
+
+func newAIUseCommand(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "use <feature> <provider> <model>",
+		Short: "Choose the provider and model a feature calls",
+		Long: `use sets the provider and model a feature calls: assistant is 'ley ask'
+and the app's assistant panel, speech is speech-to-text on received audio.
+The model is the provider's own name for it, passed on as typed, so a model
+the provider has not heard of fails on the first call rather than here.
+
+A model can be chosen before the provider's key is added; ley says so and
+prints the command that adds it.
+
+--json prints the FeatureModel the daemon stored.`,
+		Example: `  ley ai use assistant anthropic claude-sonnet-5-5
+  ley ai use speech deepgram nova-3`,
+		Args: cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAIUse(cmd.Context(), app, args[0], args[1], args[2])
+		},
+	}
+}
+
+func runAIUse(ctx context.Context, app *App, feature, provider, model string) error {
+	known := false
+	for _, f := range aiFeatures {
+		known = known || f == feature
+	}
+	if !known {
+		return usageErrorf("no feature named %q; the features are %s", feature, strings.Join(aiFeatures, " and "))
+	}
+	if err := checkProvider(provider); err != nil {
+		return err
+	}
+	c, err := app.dial(ctx)
+	if err != nil {
+		return app.notRunning(err)
+	}
+	defer c.Close()
+	fm, err := c.Credentials.SetFeatureModel(ctx, &leylinev1.FeatureModel{Feature: feature, Provider: provider, Model: model})
+	if err != nil {
+		return app.notRunning(err)
+	}
+	s := app.ErrStyle
+	fmt.Fprintf(app.Stderr, "%s now calls %s %s\n", fm.GetFeature(), fm.GetProvider(), fm.GetModel())
+	if st, err := c.Credentials.GetAIState(ctx, &leylinev1.GetAIStateRequest{}); err == nil && !hasKey(st, provider) {
+		fmt.Fprintf(app.Stderr, "  %s %s\n", s.Muted("no "+provider+" key is set yet; add one with:"), s.Cmd("ley ai add "+provider))
+	}
+	if app.JSON {
+		return app.printJSON(fm)
+	}
+	return nil
+}
+
+func hasKey(st *leylinev1.AIState, provider string) bool {
+	for _, cr := range st.GetCredentials() {
+		if cr.GetProvider() == provider {
+			return true
+		}
+	}
+	return false
+}

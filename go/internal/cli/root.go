@@ -233,6 +233,7 @@ while it plays, 'ley spectrum' to see what is on the air, and 'ley help
 		newPlayCommand(app),
 		newStateCommand(app),
 		newDaemonCommand(app),
+		newAICommand(app),
 		newVersionCommand(app),
 	)
 	root.AddCommand(newStubCommands(app)...)

@@ -1,0 +1,37 @@
+add gives the daemon a key for a model provider and has it checked once
+against the provider. The key is read from stdin, never from an argument or
+the environment, because an argument is visible to every user in ps and the
+environment is inherited by everything ley starts. On a terminal ley asks
+for it and turns echo off while you paste it; otherwise it reads one line.
+Spaces and the newline around the key are dropped.
+
+The key replaces any key already stored for the provider. A key the
+provider refuses is still stored, so the line printed afterwards says what
+the provider answered and what to do next; the exit status is 0 either way.
+
+--label is a name for the key in 'ley ai' (which account it is), and
+--endpoint points the provider at a gateway or an OpenAI-compatible server
+in place of the provider's own API.
+
+--json prints the stored Credential: its description and the check's
+outcome, never the key.
+
+Usage:
+  ley ai add <provider> [--label L] [--endpoint URL] [flags]
+
+Examples:
+  ley ai add anthropic                         # paste at the prompt
+  ley ai add anthropic --label work < ~/.config/anthropic.key
+  pbpaste | ley ai add openai
+  ley ai add openai --endpoint http://localhost:11434 --label ollama
+
+Flags:
+      --endpoint string   a gateway or OpenAI-compatible server to call in place of the provider's own API
+  -h, --help              help for add
+      --label string      a name for the key in ley ai, e.g. --label work
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)
