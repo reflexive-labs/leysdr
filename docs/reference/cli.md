@@ -102,6 +102,9 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # remembers it across restarts; detach removes any device a client attached
 ├── state                            # GetState snapshot, the debugging entry point
 ├── daemon [install|uninstall|start|stop|status|logs]
+├── ai [add <provider> [--label L] [--endpoint URL] | check <provider> | remove <provider> | use <feature> <provider> <model> | usage [--since D] [--by day|month]]
+│                                    # the model-provider keys the daemon holds (never printed: the last four
+│                                    # characters tell them apart), the model each feature calls, and the usage ledger
 ├── version
 ├── help [command|topic]             # topics: squelch, frequencies, modes, gain, presets, glossary, scripting, roadmap
 └── (planned) transcript             # arrives with the durable job store
@@ -384,7 +387,10 @@ cannot be reached is exit 1 with the daemon's `DEVICE_IO` sentence and nothing r
 print the same `DaemonInfo` as `daemon status --json` (start from a fresh `GetState` after the
 action; stop the last info the daemon reported, pid included, or only `socketPath` when nothing was
 running); `daemon install`, `uninstall` and `logs` have no JSON shape and reject `--json` as a
-usage error (exit 2).
+usage error (exit 2). `ley worker` is hidden from help: it holds the processes the daemon starts to
+make a call on a stored key (`ley worker check --provider P [--endpoint URL]` reads the key on stdin,
+asks the provider to list its models, prints one `{"outcome", "message"}` JSON line and reports the
+request to the ledger), and nobody runs it by hand.
 
 **Recording** (`docs/design/recording.md`). A recording is a job's output, not a sink somebody
 attaches: `Control.AttachSink(file)` stays refused, because a sink attached to a channel dies with
@@ -506,6 +512,65 @@ user's retune to protect a job: it marks the job `DEGRADED`, closes the open par
 gap.
 The guard is in the client, so `ley tune` and `ley set freq` refuse a retune of a capture a
 recording is riding on, name the job and `ley jobs cancel`, and go ahead with `--retune`.
+
+**Keys and usage** (`proto/leyline/v1/ai.proto`). The daemon holds one key per model provider
+(`anthropic`, `openai`, `deepgram`, ...) and never returns it: no RPC, event or `--json` shape
+carries the text of a key, and `ley ai` shows its last four characters so two keys can be told
+apart. `ley ai add <provider>` reads the key from stdin, never from an argument (visible in `ps`)
+or the environment; on a terminal it asks for it with echo off, otherwise it reads one line, and
+an empty line is a usage error. The daemon stores the key and checks it once by asking the
+provider to list its models. A key the provider refuses is still stored, so `add` exits 0 and its
+line ends with the command that replaces the key; `ley ai check <provider>` exits 1 unless the
+provider accepted the key (`CREDENTIAL_REJECTED` with the provider's words, or the reason a check
+could not run). A provider with no key is `CREDENTIAL_MISSING` from `check` and `remove`.
+`ley ai use <feature> <provider> <model>` chooses what the `assistant` and `speech` features call,
+and may name a provider whose key is not added yet. Under `--json`, `ley ai` prints the
+`AIState`, `add` and `check` the `Credential`, `use` the `FeatureModel` and `remove` `{}`; every
+sentence goes to stderr.
+
+`ley ai usage [--since 30d] [--by day|month]` prints the ledger in the provider's units: one row
+per day (or month), provider, model and feature, summed over the jobs and conversations that made
+the calls, with a total row. Days are UTC because the providers' consoles count UTC days, and the
+numbers are what the workers reported after each response; `ley` prints no prices. `--since`
+counts whole UTC days back (`0` is the whole ledger, `1y` a year), and a column empty in every row
+is left out. `--json` prints the `GetUsageResponse`, the daemon's lines one per scope and day,
+unsummed. A key check is counted as one request under the feature `check` and the model
+`/v1/models`, the endpoint it called. Recorded against the contract's fake daemon at 100
+columns, so your keys, dates and counts will differ:
+
+```
+$ ley ai add anthropic --label work
+Paste the anthropic key and press Enter:
+anthropic key …7c2e added; the provider accepted it
+
+$ ley ai add openai < openai.key
+openai key added; the provider rejected it: invalid x-api-key. Paste a working key with: ley ai add openai
+
+$ ley ai use speech deepgram nova-3
+speech now calls deepgram nova-3
+  no deepgram key is set yet; add one with: ley ai add deepgram
+
+$ ley ai
+PROVIDER   LABEL  KEY    LAST USED  CHECKED
+anthropic  work   …7c2e  -          accepted 23:01:18
+openai     -      -      -          rejected 23:01:18
+
+FEATURE    PROVIDER   MODEL
+assistant  anthropic  claude-sonnet-5-5
+speech     deepgram   nova-3
+
+$ ley ai usage
+Days are UTC, as the providers count them. The numbers are what the workers reported, from
+2026-09-14.
+DAY         PROVIDER   MODEL              FEATURE    REQUESTS      IN    OUT  CACHE RD  AUDIO (min)
+2026-10-13  anthropic  /v1/models         check             1       -      -         -            -
+2026-10-13  deepgram   nova-3             speech           40       -      -         -         20.6
+2026-10-14  anthropic  claude-sonnet-5-5  assistant        15  49,210  4,104   120,000            -
+total                                                      56  49,210  4,104   120,000         20.6
+```
+
+The KEY column reads `-` for a key of four characters or fewer, which shows none of itself. On a
+narrower terminal `ley ai usage` drops the cache columns first, then the feature and the provider.
 
 **Exit status** (also `ley help scripting`): 0 on success, including a Ctrl-C that ends a live
 `tune`/`play`/`spectrum --watch`/`fft`/`listen`/`devices --watch` session; 1 when the daemon refused or
