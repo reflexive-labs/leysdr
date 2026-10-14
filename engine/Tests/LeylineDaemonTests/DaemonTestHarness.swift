@@ -57,12 +57,16 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
     let socket = dir + "/d.sock"
     // A test never looks at the host's own plugin directory or writes to its store: both
     // default to somewhere inside the temp directory the daemon is running in.
-    let daemon = Daemon(config: .init(socketPath: socket, pidfile: dir + "/leylined.pid", pollMs: 100_000,
-                                      presenceGraceNs: presenceGraceNs, rtltcp: rtltcp,
-                                      decoderSearchPath: decoderSearchPath ?? [dir + "/decoders"],
-                                      storePath: storePath ?? (dir + "/store"),
-                                      recordingsPath: recordingsPath ?? (dir + "/recordings"),
-                                      recordingsCapBytes: recordingsCapBytes, version: testDaemonVersion))
+    // Keys go to a file in the test's own data directory, never the Mac's keychain.
+    var config = Daemon.Config(socketPath: socket, pidfile: dir + "/leylined.pid", pollMs: 100_000,
+                               presenceGraceNs: presenceGraceNs, rtltcp: rtltcp,
+                               decoderSearchPath: decoderSearchPath ?? [dir + "/decoders"],
+                               storePath: storePath ?? (dir + "/store"),
+                               recordingsPath: recordingsPath ?? (dir + "/recordings"),
+                               recordingsCapBytes: recordingsCapBytes, dataPath: dir + "/data",
+                               version: testDaemonVersion)
+    config.secretStore = FileSecrets(path: dir + "/data/credentials.json")
+    let daemon = Daemon(config: config)
     let serverTask = Task { try await daemon.run() }
     let listening = await daemon.waitUntilListening()
     XCTAssertTrue(listening, "daemon did not start listening")

@@ -56,6 +56,9 @@ struct DaemonCommand: AsyncParsableCommand {
     @Option(name: .customLong("recordings-age"), help: "Days a recording is held before it is dropped; 0 keeps them until the cap does.")
     var recordingsAge: UInt32 = 0
 
+    @Option(help: "The data directory: what the daemon keeps about AI keys and each feature's model, and, where there is no keychain, the keys themselves (platform default otherwise).")
+    var data: String = defaultDataDirectory()
+
     @Option(name: .customLong("log-file"), help: "Append standard output and error to this file, creating it and its directory; a leading ~/ is the home directory. For a launch agent that cannot redirect them itself.")
     var logFile: String?
 
@@ -98,7 +101,8 @@ struct DaemonCommand: AsyncParsableCommand {
                                           decoderSearchPath: searchPath, storePath: store,
                                           storeCapBytes: storeCap, storeAgeDays: storeAge,
                                           recordingsPath: recordings, recordingsCapBytes: recordingsCap,
-                                          recordingsAgeDays: recordingsAge, version: leylinedVersion))
+                                          recordingsAgeDays: recordingsAge, dataPath: data,
+                                          version: leylinedVersion))
         // A write to a socket whose peer vanished (rtl_tcp dying mid-command) must be an error
         // return, never a process-killing SIGPIPE.
         signal(SIGPIPE, SIG_IGN)

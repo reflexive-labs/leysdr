@@ -42,6 +42,12 @@ package final class Daemon: Sendable {
         var recordingsPath: String
         var recordingsCapBytes: UInt64
         var recordingsAgeDays: UInt32
+        /// The data directory: `ai.json`, and `credentials.json` where there is no keychain
+        /// (docs/dev/engine-internals.md, "Credentials and usage").
+        var dataPath: String
+        /// Where provider keys are kept; nil is the platform's (`defaultSecretStore`). A test
+        /// passes a file store in its own directory so it never writes to the Mac's keychain.
+        var secretStore: (any SecretStore)?
         /// Reported in `DaemonInfo` and the startup log line: the executable passes its generated
         /// `leylinedVersion`, a test its own string.
         var version: String
@@ -52,7 +58,8 @@ package final class Daemon: Sendable {
                      decoderSearchPath: [String] = [defaultDecodersPath()], storePath: String = defaultStorePath(),
                      storeCapBytes: UInt64 = 2 << 30, storeAgeDays: UInt32 = 90,
                      recordingsPath: String = defaultRecordingsPath(), recordingsCapBytes: UInt64 = 20 << 30,
-                     recordingsAgeDays: UInt32 = 0, version: String)
+                     recordingsAgeDays: UInt32 = 0, dataPath: String = defaultDataDirectory(),
+                     version: String)
         {
             self.socketPath = socketPath
             self.pidfile = pidfile
@@ -69,6 +76,7 @@ package final class Daemon: Sendable {
             self.recordingsPath = recordingsPath
             self.recordingsCapBytes = recordingsCapBytes
             self.recordingsAgeDays = recordingsAgeDays
+            self.dataPath = dataPath
             self.version = version
         }
     }
@@ -100,6 +108,8 @@ package final class Daemon: Sendable {
     let remembered: RememberedDevices
     let streams: StreamRegistry
     let jobs: JobStore
+    /// The user's provider keys and each feature's model.
+    let credentials: CredentialStore
     private let server: GRPCServer<HTTP2ServerTransport.Posix>
     private let log = Logger(label: "leyline.daemon")
     private let teardown = TeardownGate()
@@ -120,6 +130,8 @@ package final class Daemon: Sendable {
                                         ageDays: config.recordingsAgeDays)
         jobs = JobStore(store: store, allocator: allocator, decoders: decoders, records: recordStore,
                         recordings: recordings)
+        credentials = CredentialStore(path: CredentialStore.path(inData: config.dataPath),
+                                      secrets: config.secretStore ?? defaultSecretStore(dataPath: config.dataPath))
         // Transport policy for a local, user-trusted socket. The default keepalive policy counts any
         // client PING arriving sooner than five minutes after the previous one as a strike while a
         // stream is open and sends GOAWAY on the third strike — but grpc-go pings for bandwidth
