@@ -337,10 +337,11 @@ func newAICheckCommand(app *App) *cobra.Command {
 		Long: `check has the daemon try the provider's stored key again, the same check
 'ley ai add' runs, and records the answer in the CHECKED column of 'ley ai'.
 
-It exits 0 when the provider accepts the key and 1 otherwise: a refused key
-is the daemon's CREDENTIAL_REJECTED with the provider's words, and a check
-that could not run (the provider unreachable, no worker to run it) says why.
-A check that could not run says nothing about the key itself.
+It exits 0 when the provider accepts the key and 1 otherwise: for a refused
+key it prints the provider's words and the command that replaces the key,
+and for a check that could not run (the provider unreachable, no worker to
+run it) it says why. A check that could not run says nothing about the key
+itself.
 
 --json prints the Credential with the new outcome in lastCheck; the exit
 status follows the same rule.`,
@@ -372,12 +373,18 @@ func runAICheck(ctx context.Context, app *App, provider string) error {
 		}
 	}
 	s := app.ErrStyle
-	if cred.GetLastCheck().GetOutcome() != leylinev1.CredentialCheck_ACCEPTED {
-		return &ExitError{Code: 1, Message: fmt.Sprintf("could not check the %s: %s. Run: ley ai check %s",
-			keyWords(ui.Style{Unicode: s.Unicode}, cred), oneLine(cred.GetLastCheck().GetMessage()), provider)}
+	key, said := keyWords(ui.Style{Unicode: s.Unicode}, cred), oneLine(cred.GetLastCheck().GetMessage())
+	switch cred.GetLastCheck().GetOutcome() {
+	case leylinev1.CredentialCheck_ACCEPTED:
+		fmt.Fprintf(app.Stderr, "%s: the provider %s it\n", keyWords(s, cred), s.Ok("accepted"))
+		return nil
+	case leylinev1.CredentialCheck_REJECTED:
+		// The exit status comes from the outcome: the daemon answers a refused key with the
+		// credential, not an error, because the check itself worked.
+		return &ExitError{Code: 1, Message: fmt.Sprintf("the provider rejected the %s: %s. Paste a working key with: ley ai add %s",
+			key, said, provider)}
 	}
-	fmt.Fprintf(app.Stderr, "%s: the provider %s it\n", keyWords(s, cred), s.Ok("accepted"))
-	return nil
+	return &ExitError{Code: 1, Message: fmt.Sprintf("could not check the %s: %s. Run: ley ai check %s", key, said, provider)}
 }
 
 func newAIRemoveCommand(app *App) *cobra.Command {

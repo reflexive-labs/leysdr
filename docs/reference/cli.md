@@ -521,8 +521,10 @@ or the environment; on a terminal it asks for it with echo off, otherwise it rea
 an empty line is a usage error. The daemon stores the key and checks it once by asking the
 provider to list its models. A key the provider refuses is still stored, so `add` exits 0 and its
 line ends with the command that replaces the key; `ley ai check <provider>` exits 1 unless the
-provider accepted the key (`CREDENTIAL_REJECTED` with the provider's words, or the reason a check
-could not run). A provider with no key is `CREDENTIAL_MISSING` from `check` and `remove`.
+provider accepted the key, printing the provider's words and the same command for a refused key,
+or the reason a check could not run. The daemon answers both with the `Credential` and its
+outcome, not an error; `CREDENTIAL_REJECTED` is what a job gets when it starts on a key whose last
+check was refused. A provider with no key is `CREDENTIAL_MISSING` from `check` and `remove`.
 `ley ai use <feature> <provider> <model>` chooses what the `assistant` and `speech` features call,
 and may name a provider whose key is not added yet. Under `--json`, `ley ai` prints the
 `AIState`, `add` and `check` the `Credential`, `use` the `FeatureModel` and `remove` `{}`; every

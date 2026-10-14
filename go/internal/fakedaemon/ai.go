@@ -143,9 +143,10 @@ func (d *Daemon) SetCredential(ctx context.Context, req *leylinev1.SetCredential
 	return cred, nil
 }
 
-// CheckCredential implements Credentials: the stored key is tried again. A key the provider
-// refuses is CREDENTIAL_REJECTED, as the daemon answers it. A check that could not run is not an
-// error, because it says nothing about the key; the reply carries it in last_check.
+// CheckCredential implements Credentials: the stored key is tried again and the reply carries the
+// outcome in last_check, rejected or not, as SetCredential's does. The only error is
+// CREDENTIAL_MISSING, for a provider with no key; CREDENTIAL_REJECTED belongs to a job that
+// starts on a key whose last check was refused.
 func (d *Daemon) CheckCredential(ctx context.Context, req *leylinev1.CredentialRef) (*leylinev1.Credential, error) {
 	ci := clientFrom(ctx)
 	d.touchUnary(ci)
@@ -159,10 +160,6 @@ func (d *Daemon) CheckCredential(ctx context.Context, req *leylinev1.CredentialR
 	cred, err := d.checkStored(ci, provider)
 	if err != nil {
 		return nil, fail(ctx, err)
-	}
-	if c := cred.GetLastCheck(); c.GetOutcome() == leylinev1.CredentialCheck_REJECTED {
-		return nil, fail(ctx, errorf(leyline.CodeCredentialRejected, provider,
-			fmt.Sprintf("%s refused the key: %s; add a new one with ley ai add %s", provider, c.GetMessage(), provider)))
 	}
 	return cred, nil
 }

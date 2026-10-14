@@ -19,7 +19,7 @@ import (
 // shape. The clause that follows one of these is a command to type.
 var remedyLeads = []string{
 	"Start it with: ", "start it with: ", "Check with: ", "check with: ",
-	"Run: ", "run: ", "Look at its log: ", "adjust with: ", "change one with: ",
+	"Run: ", "run: ", "Look at its log: ", "adjust with: ", "change one with: ", "Paste a working key with: ",
 	// "use ley scan, which sweeps": the daemon's own remedies lead this way.
 	"use ",
 }

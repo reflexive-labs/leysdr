@@ -1,10 +1,11 @@
 check has the daemon try the provider's stored key again, the same check
 'ley ai add' runs, and records the answer in the CHECKED column of 'ley ai'.
 
-It exits 0 when the provider accepts the key and 1 otherwise: a refused key
-is the daemon's CREDENTIAL_REJECTED with the provider's words, and a check
-that could not run (the provider unreachable, no worker to run it) says why.
-A check that could not run says nothing about the key itself.
+It exits 0 when the provider accepts the key and 1 otherwise: for a refused
+key it prints the provider's words and the command that replaces the key,
+and for a check that could not run (the provider unreachable, no worker to
+run it) it says why. A check that could not run says nothing about the key
+itself.
 
 --json prints the Credential with the new outcome in lastCheck; the exit
 status follows the same rule.

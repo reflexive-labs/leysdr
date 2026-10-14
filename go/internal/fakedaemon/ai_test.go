@@ -92,8 +92,8 @@ func TestCredentialIsWriteOnly(t *testing.T) {
 	}
 }
 
-// A refused key is stored and reported, not refused by SetCredential; CheckCredential is the call
-// that answers CREDENTIAL_REJECTED, with the provider's words and the line that fixes it.
+// A refused key is stored and reported, not refused: SetCredential and CheckCredential both
+// return it with a REJECTED outcome and the provider's words.
 func TestRejectedKey(t *testing.T) {
 	t.Parallel()
 	c, _ := harness(t, fakedaemon.Options{})
@@ -108,9 +108,10 @@ func TestRejectedKey(t *testing.T) {
 	if cred.LastFour != "" {
 		t.Errorf("a three-character key showed %q of itself", cred.LastFour)
 	}
-	_, err = c.Credentials.CheckCredential(ctx, &leylinev1.CredentialRef{Provider: "anthropic"})
-	if leyline.Code(err) != leyline.CodeCredentialRejected || !strings.Contains(err.Error(), "ley ai add anthropic") {
-		t.Errorf("check: %v, want CREDENTIAL_REJECTED naming ley ai add", err)
+	cred, err = c.Credentials.CheckCredential(ctx, &leylinev1.CredentialRef{Provider: "anthropic"})
+	if err != nil || cred.GetLastCheck().GetOutcome() != leylinev1.CredentialCheck_REJECTED ||
+		cred.GetLastCheck().GetMessage() != "invalid x-api-key" {
+		t.Errorf("check: %v %v, want the credential with a REJECTED outcome", cred, err)
 	}
 }
 

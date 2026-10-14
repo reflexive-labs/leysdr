@@ -237,8 +237,12 @@ func TestAICheck(t *testing.T) {
 		t.Errorf("accepted: %v %q", err, errOut)
 	}
 	_, _, err = runLey(t, sock, 80, false, "", "ai", "check", "openai")
-	if exitCode(err) != 1 || leyline.Code(err) != leyline.CodeCredentialRejected || !strings.Contains(err.Error(), "invalid x-api-key") {
+	if exitCode(err) != 1 || err.Error() != "the provider rejected the openai key: invalid x-api-key. Paste a working key with: ley ai add openai" {
 		t.Errorf("rejected: exit %d (%v)", exitCode(err), err)
+	}
+	out, _, err := runLey(t, sock, 80, false, "", "--json", "ai", "check", "openai")
+	if exitCode(err) != 1 || !strings.Contains(out, `"outcome":"REJECTED"`) {
+		t.Errorf("rejected --json: exit %d, stdout %q", exitCode(err), out)
 	}
 }
 
