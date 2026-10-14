@@ -1,0 +1,40 @@
+# Two channels on one radio: one somebody else left listening, one the agent opens. The agent
+# changes its own channel with set and stops it with stop, and the other channel must survive both:
+# set picks the channel an agent made, and stop with no channel named stops only the server's own.
+name: channel-set-stop
+description: Open a channel beside one already listening, switch it to AM with set, stop it, and leave the other running.
+fixtures:
+  - file: nfm_tone.cf32
+    as: radio-c           # tuned to its centre, 146.520 MHz, so 146.55 sits on the same capture
+setup:
+  - ley: ["tune", "146.52", "--persistent", "--no-audio"]
+task: |
+  One channel is already listening on 146.52 MHz; leave it running. Open a second channel on
+  146.55 MHz, then change that new channel's mode to AM, and once the change is confirmed stop the
+  channel you opened. Report the mode the new channel had when you stopped it and how many channels
+  are still running.
+answer_schema: |
+  {"mode": "<the new channel's mode when stopped>", "channels_running": <integer>}
+truth:
+  mode: AM
+  channels_running: 1
+checks:
+  - type: answered
+  - type: json_equals
+    path: mode
+    truth: mode
+    why: the set was confirmed by the daemon's event, which carries the mode
+  - type: json_equals
+    path: channels_running
+    truth: channels_running
+    why: only the agent's channel was stopped; the one already listening runs on
+  - type: used_tool
+    tool: set
+    why: the mode is changed on the running channel, not by tuning again
+  - type: used_tool
+    tool: stop
+  - type: take_over_after_refusal
+    why: nothing here needs the other channel; taking it over is never a first move
+  - type: max_tool_calls
+    n: 7
+  - type: no_shell

@@ -1,0 +1,40 @@
+# Questions ley's own tables and help answer, with no radio needed: a preset's frequency, a band's
+# default mode, and what squelch auto does. The truths are the band table and the squelch topic,
+# which live in ley, so they are known before the agent starts and nothing is tuned.
+name: reference-lookup
+description: Answer a preset, a band default and a help question from list_presets, list_bands and help, without touching a radio.
+task: |
+  Without tuning or scanning anything: what frequency does the name wx3 stand for, what mode does
+  ley use by default on 146.52 MHz, and according to ley's own help, how many dB above the noise
+  floor does squelch auto put the level?
+answer_schema: |
+  {"wx3_hz": <integer, Hz>, "mode_at_146_52": "<mode>", "squelch_auto_db_above_floor": <number>}
+truth:
+  wx3_hz: 162475000
+  mode: nfm
+  squelch_margin_db: 10
+checks:
+  - type: answered
+  - type: json_equals
+    path: wx3_hz
+    truth: wx3_hz
+    why: wx3 is NOAA weather channel 3 in the band plan
+  - type: json_equals
+    path: mode_at_146_52
+    truth: mode
+    why: 146.52 is in the 2 m amateur band, whose default is NFM
+  - type: json_equals
+    path: squelch_auto_db_above_floor
+    truth: squelch_margin_db
+    why: the squelch help topic says floor + 10 dB
+  - type: used_one_of
+    values: [list_presets, list_bands]
+    why: the preset and the band default come from ley's tables
+  - type: used_tool
+    tool: help
+    why: the squelch answer is the help topic's, not a guess
+  - type: not_used_tool
+    tool: tune
+  - type: max_tool_calls
+    n: 5
+  - type: no_shell

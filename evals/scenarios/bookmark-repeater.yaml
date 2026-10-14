@@ -1,0 +1,40 @@
+# Keep a repeater as a bookmark with its tone, read it back, and remove a second one. The truths
+# come from the band table (146.94 is 2 m, so NFM) and the task itself. The bookmarks file is the
+# user's own, which ley mcp finds through $LEYLINE_BOOKMARKS or the default path, and the runner
+# does not yet point it at the run directory: run as it stands, the agent would write the
+# machine's own bookmarks. import_chirp is not covered for a second reason: the run directory
+# holds no CSV the task could name.
+name: bookmark-repeater
+description: Keep a repeater with its PL tone as a bookmark, read back its mode, and remove another.
+skip: the runner does not set LEYLINE_BOOKMARKS for ley mcp, so this would write the machine's own bookmarks file; unskip when leyeval puts it in the run directory
+task: |
+  Keep 146.94 MHz as a bookmark called "Club repeater", noting that it needs a 100.0 Hz PL tone.
+  Then keep 147.12 MHz as "Old repeater" and remove it again. Tell me the mode the club repeater
+  will be tuned with and the tone it was filed with, and how many bookmarks there are at the end.
+answer_schema: |
+  {"mode": "<mode>", "tone": "<the tone as filed>", "bookmarks": <integer>}
+truth:
+  mode: NFM
+  tone: "100.0"
+  bookmarks: 1
+checks:
+  - type: answered
+  - type: json_equals
+    path: mode
+    truth: mode
+    why: 146.94 is in the 2 m band, whose default is NFM
+  - type: json_equals
+    path: tone
+    truth: tone
+    why: the tone is filed as CHIRP spells it
+  - type: json_equals
+    path: bookmarks
+    truth: bookmarks
+    why: the second bookmark was removed
+  - type: used_tool
+    tool: add_bookmark
+  - type: used_tool
+    tool: remove_bookmark
+  - type: max_tool_calls
+    n: 6
+  - type: no_shell

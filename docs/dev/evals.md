@@ -136,6 +136,11 @@ parameter.
 | `dcs-code-present` | `rf-captures/ht-dcs-754` (local) | the GMRS handheld's DCS 754 is named, normal, with no PL tone invented |
 | `dcs-code-absent` | `ht-narrow` (local) | asked for a tone or a code, the agent names the 100 Hz PL and no DCS code. `pl-tone-absent` already covers a station that sends neither |
 | `record-squelch-opens` | `nfm_keyed` tuned | a gated recording is made and the three transmissions counted. The count comes from the manifest's `squelch_opens`, not from the part count: at the default 5 s hang the fixture's 3 s gaps keep all three overs in one part, so an agent that counts parts answers 1 |
+| `channel-set-stop` | `nfm_tone` with a channel listening | `set` changes the agent's own channel and `stop` stops it, and the channel somebody else left on 146.52 survives both |
+| `reference-lookup` | none | a preset's frequency, a band's default mode and the squelch margin come from `list_presets` or `list_bands` and `help`, with nothing tuned |
+| `watch-one-station` | `aprs_afsk` tuned | a filtered, unkept `watch` with a macOS notification is set up for one station, and the shell command asked for beside it is reported as refused |
+| `attach-file-radio` | `nfm_tone` idle | a recording named by a path relative to the run directory is attached with `attach_device` in one call, and its centre read back |
+| `bookmark-repeater` | none (skipped) | `add_bookmark` files a repeater with its tone and `remove_bookmark` takes a second away. Skipped until the runner points `LEYLINE_BOOKMARKS` at the run directory, since `ley mcp` would otherwise write the machine's own bookmarks; `import_chirp` waits on the same change and on a CSV the run directory holds |
 
 No scenario covers a restart mid-task because the runner has no restart hook. A live `rtl_tcp`
 tier would have no fixed expected answer and can report metrics only.
