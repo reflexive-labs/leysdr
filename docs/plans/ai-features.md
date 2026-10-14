@@ -581,7 +581,7 @@ seconds from squelch close to text in `docs/decisions/S4-speech-to-text.md`, wit
 engine. Needs the Mac and the radio. AI-5 builds the contract against a scripted engine so that
 this spike chooses a plugin, not a design.
 
-### AI-1 `[ ]` The design doc
+### AI-1 `[x]` The design doc
 
 Write `docs/design/ai.md` from "The shape" and "Decisions taken for the build": keys in the
 daemon, workers out of process, speech as a decoder, the assistant as a `ley` worker with `ley
@@ -595,13 +595,17 @@ provider, key, assistant, over, speech record and ledger; the accepted stories m
 `docs/plans/user-stories.md` as V3. Files: `docs/design/ai.md` (new), `SECURITY.md`,
 `docs/README.md`, `docs/design/semantic-tier.md`, `docs/writing-guide.md`,
 `docs/plans/user-stories.md`. Verify: `make docs-check`; the doc reads without its code blocks;
-every path in it resolves.
+every path in it resolves. **Done 2026-10-14.** The review of the doc found two gaps in this plan,
+settled in "Decisions taken for the build": how `over` is numbered when a segment holds two
+openings, and that a conversation cannot end with its starter's presence. The terms table's
+`recording` entry was widened to cover audio parts, and `transcript` gained an entry.
 
 ### AI-2 `[ ]` Keys
 
 In two halves that share only the contract.
 
-**AI-2a, the contract.** `proto/leyline/v1/ai.proto` as settled above, the four error codes, and
+**AI-2a, the contract.** Done 2026-10-14; `Empty` moved to `common.proto` so that `control.proto`
+can import `ai.proto` without a cycle (same wire format and generated names). `proto/leyline/v1/ai.proto` as settled above, the four error codes, and
 the `control.proto` additions for `AIState` and `UsageLine` (the usage additions land here too, so
 `make proto` runs once). Then `make proto`; the Go registry (`go/pkg/leyline/errors.go`,
 `DaemonCodes`, `GRPCCode`), the Swift registry (`EngineError.Code`, `.all`, a factory each,
@@ -671,7 +675,7 @@ decoder's backoff rather than ending; an unkept job ends with the error. Files:
 `engine/Sources/LeylineServer/Jobs/DecodeRunner.swift`, tests. Verify: the fake decoder told to
 refuse (`--refuse-after=N`) degrades a kept job, which recovers when it stops refusing.
 
-### AI-8 `[ ]` The tools the assistant needs, in `ley mcp`
+### AI-8 `[x]` The tools the assistant needs, in `ley mcp`
 
 Go only, so it can run beside AI-2. Each tool reuses the verb's own options and session code, has
 its `ley` mirror already, a row in `docs/reference/mcp.md`, a name in `ley mcp --help` and
@@ -686,7 +690,12 @@ fake-daemon tests of each tool against its mirror's `--json`; `TestMCPListsTheTo
 `leyeval check` parses every scenario; the scenarios run when a key is present. Known limit: a
 tool that picks "the agent's own channel" chooses by client kind `mcp`, so two agents on one
 daemon can pick each other's channel; the fix is a per-client choice when a second agent is a
-real case.
+real case. **Done 2026-10-14**, eleven tools (`set`, `stop`, `list_bookmarks`, `add_bookmark`,
+`remove_bookmark`, `list_bands`, `list_presets`, `watch`, `attach_device`, `import_chirp`, `help`)
+and five scenarios; `remove_bookmark` is annotated destructive, so a client that confirms
+destructive tools asks before every removal, one more than the policy table asks for; the eval
+runner now gives `ley mcp` its own `LEYLINE_BOOKMARKS` file. The scenarios have not run (no key
+in the container).
 
 ### AI-5 `[ ]` Speech on stored recordings
 
