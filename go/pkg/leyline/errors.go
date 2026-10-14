@@ -44,6 +44,10 @@ const (
 	CodeScanNotFound        = "SCAN_NOT_FOUND"
 	CodeDecoderNotFound     = "DECODER_NOT_FOUND"
 	CodeDecoderFailed       = "DECODER_FAILED"
+	CodeCredentialMissing   = "CREDENTIAL_MISSING"
+	CodeCredentialRejected  = "CREDENTIAL_REJECTED"
+	CodeProviderUnavailable = "PROVIDER_UNAVAILABLE"
+	CodeProviderRefused     = "PROVIDER_REFUSED"
 	CodeModeUnsupported     = "MODE_UNSUPPORTED"
 	CodeUnimplemented       = "UNIMPLEMENTED"
 	CodePlatformUnsupported = "PLATFORM_UNSUPPORTED"
@@ -66,7 +70,9 @@ var DaemonCodes = []string{
 	CodeDeviceNotFound, CodeDeviceBusy, CodeDeviceSweeping, CodeDeviceDetached, CodeDeviceIO, CodeNoDevice,
 	CodeFreqOutOfRange, CodeRateUnsupported, CodeOffsetOutOfCapture, CodeBlindSpot, CodeGainElementUnknown,
 	CodeCaptureNotFound, CodeChannelNotFound, CodeSinkNotFound, CodeStreamNotFound, CodeJobNotFound,
-	CodeScanNotFound, CodeDecoderNotFound, CodeDecoderFailed, CodeModeUnsupported, CodeUnimplemented, CodePlatformUnsupported,
+	CodeScanNotFound, CodeDecoderNotFound, CodeDecoderFailed,
+	CodeCredentialMissing, CodeCredentialRejected, CodeProviderUnavailable, CodeProviderRefused,
+	CodeModeUnsupported, CodeUnimplemented, CodePlatformUnsupported,
 	CodeFailedPrecondition, CodeInvalidArgument, CodeInternal,
 }
 
@@ -214,9 +220,10 @@ func GRPCCode(code string) codes.Code {
 	case CodeDeviceNotFound, CodeCaptureNotFound, CodeChannelNotFound, CodeSinkNotFound, CodeStreamNotFound,
 		CodeJobNotFound, CodeScanNotFound, CodeDecoderNotFound, CodeNotFound:
 		return codes.NotFound
-	case CodeDeviceBusy, CodeDeviceSweeping, CodeNoDevice, CodeDecoderFailed, CodeFailedPrecondition:
+	case CodeDeviceBusy, CodeDeviceSweeping, CodeNoDevice, CodeDecoderFailed, CodeCredentialMissing,
+		CodeCredentialRejected, CodeProviderRefused, CodeFailedPrecondition:
 		return codes.FailedPrecondition
-	case CodeDeviceDetached, CodeDeviceIO, CodeUnavailable:
+	case CodeDeviceDetached, CodeDeviceIO, CodeProviderUnavailable, CodeUnavailable:
 		return codes.Unavailable
 	case CodeFreqOutOfRange, CodeRateUnsupported, CodeOffsetOutOfCapture, CodeBlindSpot, CodeGainElementUnknown,
 		CodeInvalidArgument:

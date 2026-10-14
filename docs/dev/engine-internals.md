@@ -604,7 +604,7 @@ on each side holds its switch against these rows, and the same tests assert that
 rather than the trailer (a retry interceptor, a mesh policy, a client in a fourth language) then gets
 the same result from `leylined` and from the fake daemon. `FAILED_PRECONDITION` is deliberate where
 `RESOURCE_EXHAUSTED` would read as natural: the latter is retriable under default gRPC retry policies,
-and a radio someone else is using must not be retried blind.
+and neither a radio someone else is using nor a provider account at its limit may be retried blind.
 
 | Code | gRPC status | Raised when |
 | --- | --- | --- |
@@ -627,6 +627,10 @@ and a radio someone else is using must not be retried blind.
 | `SCAN_NOT_FOUND` | `NOT_FOUND` | no scan result with that id (sixteen are kept) |
 | `DECODER_NOT_FOUND` | `NOT_FOUND` | no installed decoder by that name (`ley decoders` lists them) |
 | `DECODER_FAILED` | `FAILED_PRECONDITION` | the decoder's program could not be started: missing, not executable, or exited before reading its descriptor |
+| `CREDENTIAL_MISSING` | `FAILED_PRECONDITION` | the feature or decoder needs a provider's key and none is set; the message names `ley ai add <provider>` |
+| `CREDENTIAL_REJECTED` | `FAILED_PRECONDITION` | the provider refused the key itself |
+| `PROVIDER_UNAVAILABLE` | `UNAVAILABLE` | the provider, or the worker that calls it, could not be reached |
+| `PROVIDER_REFUSED` | `FAILED_PRECONDITION` | the provider refused a request for its own reason, such as a rate or spend limit; the message is the provider's |
 | `MODE_UNSUPPORTED` | `UNIMPLEMENTED` | the demodulator is not built into this daemon |
 | `UNIMPLEMENTED` | `UNIMPLEMENTED` | the RPC or option arrives in a later milestone |
 | `PLATFORM_UNSUPPORTED` | `UNIMPLEMENTED` | the feature needs macOS frameworks |

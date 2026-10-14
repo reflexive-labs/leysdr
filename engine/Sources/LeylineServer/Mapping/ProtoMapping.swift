@@ -208,9 +208,10 @@ enum ProtoMapping {
              EngineError.Code.scanNotFound, EngineError.Code.decoderNotFound:
             return .notFound
         case EngineError.Code.deviceBusy, EngineError.Code.deviceSweeping, EngineError.Code.noDevice,
-             EngineError.Code.failedPrecondition, EngineError.Code.decoderFailed:
+             EngineError.Code.failedPrecondition, EngineError.Code.decoderFailed, EngineError.Code.credentialMissing,
+             EngineError.Code.credentialRejected, EngineError.Code.providerRefused:
             return .failedPrecondition
-        case EngineError.Code.deviceDetached, EngineError.Code.deviceIO:
+        case EngineError.Code.deviceDetached, EngineError.Code.deviceIO, EngineError.Code.providerUnavailable:
             return .unavailable
         case EngineError.Code.freqOutOfRange, EngineError.Code.rateUnsupported, EngineError.Code.offsetOutOfCapture,
              EngineError.Code.blindSpot, EngineError.Code.gainElementUnknown, EngineError.Code.invalidArgument:
