@@ -86,6 +86,18 @@ type Options struct {
 	// Usage preloads the ledger, folded as ReportUsage folds a report but with no event, so a test
 	// starts with days of usage already counted.
 	Usage []*leylinev1.UsageReport
+	// Recordings are gated audio recordings already in the store when the daemon starts, written
+	// into RecordingsDir as SeedRecording describes; a recording is what `ley transcribe` reads.
+	Recordings []SeedRecording
+	// SpeechScript is the text of the fake speech decoder's records, one line per over in order,
+	// the last repeated when they run out; with none, each record says "segment N", as the
+	// scripted engine of leydec-speech does.
+	SpeechScript []string
+	// SpeechProvider and SpeechHosts are the fake speech decoder's credential_provider and
+	// contacts_hosts. Empty keeps the manifest as decoders/speech/manifest.json has it, which
+	// needs no key and sends audio nowhere.
+	SpeechProvider string
+	SpeechHosts    []string
 }
 
 // DCSCode is a DCS code the fake sends on a carrier (Options.DCS).
@@ -232,6 +244,12 @@ func New(opts Options) *Daemon {
 	}
 	for _, r := range opts.Usage {
 		d.foldUsage(r)
+	}
+	for _, rec := range opts.Recordings {
+		// A seed that cannot be written is a broken test setup, not a state the daemon can be in.
+		if _, err := d.SeedRecording(rec); err != nil {
+			panic("fakedaemon: seed a recording: " + err.Error())
+		}
 	}
 	if !opts.NoDevice {
 		dev := fakeRTLSDR()

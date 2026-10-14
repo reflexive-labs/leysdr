@@ -29,7 +29,7 @@ func TestDecodersTableAndJSON(t *testing.T) {
 	if head := strings.Fields(out)[0]; head != "NAME" || !strings.Contains(out, "aprs") {
 		t.Fatalf("unexpected table:\n%s", out)
 	}
-	for _, want := range []string{"144.390 MHz", "NFM", "records, entities", "0.1.0"} {
+	for _, want := range []string{"144.390 MHz", "NFM", "records, entities", "0.1.0", "speech"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the table lacks %q:\n%s", want, out)
 		}
@@ -43,7 +43,7 @@ func TestDecodersTableAndJSON(t *testing.T) {
 		SearchPath []string         `json:"searchPath"`
 		StorePath  string           `json:"storePath"`
 	}
-	if err := json.Unmarshal([]byte(out), &resp); err != nil || len(resp.Decoders) != 1 {
+	if err := json.Unmarshal([]byte(out), &resp); err != nil || len(resp.Decoders) != 2 {
 		t.Fatalf("json decoders: %v %s", err, out)
 	}
 	if resp.Decoders[0]["name"] != "aprs" || len(resp.SearchPath) == 0 || resp.StorePath == "" {

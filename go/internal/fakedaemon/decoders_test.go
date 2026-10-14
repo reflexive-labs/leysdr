@@ -13,7 +13,7 @@ import (
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
-// The registry answers with the one manifest it has, the directories it looked in, and the
+// The registry answers with the manifests it has, the directories it looked in, and the
 // retention it applies -- the three things `ley decoders` prints.
 func TestListDecoders(t *testing.T) {
 	t.Parallel()
@@ -22,7 +22,7 @@ func TestListDecoders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Decoders) != 1 || resp.Decoders[0].Name != "aprs" {
+	if len(resp.Decoders) != 2 || resp.Decoders[0].Name != "aprs" || resp.Decoders[1].Name != "speech" {
 		t.Fatalf("decoders: %v", resp.Decoders)
 	}
 	m := resp.Decoders[0]

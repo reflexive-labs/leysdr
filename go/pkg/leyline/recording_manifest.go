@@ -87,6 +87,11 @@ type RecordingPart struct {
 	PeakDBFS     *float64 `json:"peak_dbfs,omitempty"`
 	MeanDBFS     *float64 `json:"mean_dbfs,omitempty"`
 	SquelchOpens int      `json:"squelch_opens"`
+	// SquelchOpenMs is how long the squelch was open inside the part, written
+	// when the part closes. nil when the file has no such key, which a
+	// recording made before the key existed does not; SquelchOpenTime then sums
+	// the part's sidecar instead.
+	SquelchOpenMs *int64 `json:"squelch_open_ms,omitempty"`
 	// ClippedMs is how long inside the part the capture's CaptureLevel
 	// reported clipping, at the window's 1e-4 floor; 0 (absent in the file)
 	// when nothing clipped. It is the clipping fact: PeakDBFS measures the

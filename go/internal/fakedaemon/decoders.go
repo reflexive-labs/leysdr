@@ -16,9 +16,10 @@ import (
 )
 
 // The decoders service, faked the way the scan job is: the shape of the contract with synthetic
-// traffic behind it. One decoder is installed (`aprs`, the shape of decoders/aprs/manifest.json),
-// a decode job emits records from three invented stations, and every rule the Swift daemon keeps
-// is kept here -- a kept job outlives its client, a decoder name nobody installed is
+// traffic behind it. Two decoders are installed (`aprs` and `speech`, the shapes of their
+// manifests in decoders/), a decode job on a radio emits records from three invented stations, a
+// speech job on a recording emits one record per over, and every rule the Swift daemon keeps is
+// kept here -- a kept job outlives its client, a decoder name nobody installed is
 // DECODER_NOT_FOUND, and a job's records replay from since_seq.
 
 // RecordInterval is how often a fake decode job emits a record. Short enough that a test waits
@@ -67,6 +68,39 @@ func AprsManifest() *leylinev1.DecoderManifest {
 	}
 }
 
+// SpeechManifest is the speech decoder as decoders/speech/manifest.json has it: SEGMENTED input,
+// no frequency of its own, and no provider.
+func SpeechManifest() *leylinev1.DecoderManifest {
+	return &leylinev1.DecoderManifest{
+		Name:        "speech",
+		Aliases:     []string{"transcribe"},
+		Version:     "0.1.0",
+		Description: "Speech to text, one record per over; this build's engine replays a script",
+		License:     "Apache-2.0",
+		Recipe:      &leylinev1.DecoderRecipe{Mode: leylinev1.DemodMode_NFM, Gain: leylinev1.GainPolicy_GAIN_LEAVE},
+		Input:       &leylinev1.DecoderInput{Mode: leylinev1.InputMode_SEGMENTED, Tap: leylinev1.AudioTap_TAP_AUDIO},
+		Outputs:     []leylinev1.OutputShape{leylinev1.OutputShape_SHAPE_RECORDS},
+		Fields: []*leylinev1.FieldHint{
+			{Name: "text", Type: leylinev1.FieldType_TEXT, Description: "what the speech engine heard, as it wrote it"},
+			{Name: "language", Type: leylinev1.FieldType_TEXT, Description: "the language the engine transcribed, as an ISO 639-1 code"},
+			{Name: "model", Type: leylinev1.FieldType_TEXT, Description: "the model that produced the text"},
+			{Name: "confidence", Type: leylinev1.FieldType_NUMBER, Description: "the engine's own confidence in the text, 0 to 1, when it reports one"},
+			{Name: "callsigns", Type: leylinev1.FieldType_TEXT, Description: "callsigns in the text, comma-separated: a pattern match over the normalised text, not a decoded identity"},
+		},
+		Executable: "leydec-speech",
+		Args:       []string{"--engine", "scripted"},
+	}
+}
+
+// installedDecoders is the fake's registry: APRS, and speech as Options.SpeechProvider and
+// SpeechHosts adjust it.
+func (d *Daemon) installedDecoders() []*leylinev1.DecoderManifest {
+	speech := SpeechManifest()
+	speech.CredentialProvider = d.opts.SpeechProvider
+	speech.ContactsHosts = append([]string(nil), d.opts.SpeechHosts...)
+	return []*leylinev1.DecoderManifest{AprsManifest(), speech}
+}
+
 // FakeDecoderPath and FakeStorePath are the directories ListDecoders reports it looked in and
 // keeps kept records under.
 const (
@@ -78,7 +112,7 @@ const (
 func (d *Daemon) ListDecoders(ctx context.Context, _ *leylinev1.ListDecodersRequest) (*leylinev1.ListDecodersResponse, error) {
 	d.touchUnary(clientFrom(ctx))
 	return &leylinev1.ListDecodersResponse{
-		Decoders:      []*leylinev1.DecoderManifest{AprsManifest()},
+		Decoders:      d.installedDecoders(),
 		SearchPath:    []string{FakeDecoderPath},
 		StorePath:     FakeStorePath,
 		StoreCapBytes: FakeStoreCapBytes,
@@ -87,10 +121,12 @@ func (d *Daemon) ListDecoders(ctx context.Context, _ *leylinev1.ListDecodersRequ
 }
 
 // decoderByName is the registry lookup StartJob makes. Caller need not hold the lock: the fake's
-// registry is a constant.
-func decoderByName(name string) *leylinev1.DecoderManifest {
-	if m := AprsManifest(); name == m.Name {
-		return m
+// registry is fixed when it starts.
+func (d *Daemon) decoderByName(name string) *leylinev1.DecoderManifest {
+	for _, m := range d.installedDecoders() {
+		if m.GetName() == name {
+			return m
+		}
 	}
 	return nil
 }

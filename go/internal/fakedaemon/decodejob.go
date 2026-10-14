@@ -17,17 +17,28 @@ import (
 
 // startDecode is Jobs.StartJob(decode) in the fake: look the decoder up, take a capture and a
 // channel the way SessionCaptureAllocator does, and run a goroutine that emits records. The
-// allocation failures the daemon answers synchronously (an unknown decoder, a radio somebody
-// else is using) are answered synchronously here too, so a client exercises the same paths.
+// allocation failures the daemon answers synchronously (an unknown decoder, a missing key, a
+// radio somebody else is using) are answered synchronously here too, so a client exercises the
+// same paths. A source_uri reads a recording instead of a radio (speechjob.go).
 func (d *Daemon) startDecode(ctx context.Context, cfg *leylinev1.DecodeConfig) (*leylinev1.Job, error) {
-	man := decoderByName(cfg.GetDecoder())
+	man := d.decoderByName(cfg.GetDecoder())
 	if man == nil {
 		return nil, fail(ctx, errorf(leyline.CodeDecoderNotFound, cfg.GetDecoder(),
 			"no decoder called "+quoted(cfg.GetDecoder())+" is installed"))
 	}
+	if err := d.credentialFor(man); err != nil {
+		return nil, fail(ctx, err)
+	}
+	if cfg.GetSourceUri() != "" {
+		return d.startSourceDecode(ctx, cfg, man)
+	}
 	hz := cfg.GetFrequencyHz()
 	if hz == 0 && len(man.GetRecipe().GetFrequenciesHz()) > 0 {
 		hz = man.GetRecipe().GetFrequenciesHz()[0]
+	}
+	if hz == 0 {
+		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, cfg.GetDecoder(),
+			cfg.GetDecoder()+" names no frequency of its own; say which with --freq"))
 	}
 	bw := man.GetRecipe().GetBandwidthHz()
 	ci := clientFrom(ctx)
@@ -69,6 +80,26 @@ func (d *Daemon) startDecode(ctx context.Context, cfg *leylinev1.DecodeConfig) (
 }
 
 func quoted(s string) string { return "\"" + s + "\"" }
+
+// credentialFor refuses a decoder whose manifest names a provider with no key set, or with a key
+// the provider has refused, as the daemon refuses it before any radio is touched.
+func (d *Daemon) credentialFor(man *leylinev1.DecoderManifest) *leyline.Error {
+	provider := man.GetCredentialProvider()
+	if provider == "" {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	cred := d.ai.credentials[provider]
+	if cred == nil {
+		return credentialMissing(provider)
+	}
+	if check := cred.GetLastCheck(); check.GetOutcome() == leylinev1.CredentialCheck_REJECTED {
+		return errorf(leyline.CodeCredentialRejected, provider,
+			fmt.Sprintf("%s refused the key: %s; replace it with ley ai add %s", provider, check.GetMessage(), provider))
+	}
+	return nil
+}
 
 // pluralRecords is "1 record" or "N records".
 func pluralRecords(n uint64) string {
@@ -264,6 +295,13 @@ func (d *Daemon) runDecode(jobID string, man *leylinev1.DecoderManifest) {
 			continue
 		}
 		rec := fakeStations[n%uint64(len(fakeStations))](n)
+		if man.GetInput().GetMode() == leylinev1.InputMode_SEGMENTED {
+			// A speech decoder on a radio hears overs, not stations. No recording holds them, so
+			// the record names no clip and no over.
+			rec = d.speechRecord(man, "", speechSegment{audioSecs: fakeOverSeconds}, n+1)
+			rec.ClipUri, rec.Over = "", 0
+			rec.Usage.JobId = jobID
+		}
 		rec.Protocol = man.GetName()
 		rec.RecordId = newID("rec_")
 		rec.JobId = jobID
@@ -284,6 +322,9 @@ func (d *Daemon) runDecode(jobID string, man *leylinev1.DecoderManifest) {
 		j.seq++
 		rec.Seq = j.seq
 		d.publishRecord(j, rec)
+		if rec.GetUsage() != nil {
+			d.emit(byDaemon(), d.foldUsage(rec.GetUsage()))
+		}
 		// The liveness the daemon carries in status_detail: the count and the age of the
 		// last record. The detail moves on every record; the Job event that carries it goes out
 		// for the first record and then every fifth, the daemon's timer at this record rate.
@@ -300,12 +341,33 @@ func (d *Daemon) runDecode(jobID string, man *leylinev1.DecoderManifest) {
 	}
 }
 
+// fakeOverSeconds is how long each over a live fake speech job hears is.
+const fakeOverSeconds = 3.0
+
 // The levels the fake channel's meter reads. A plugin never measures these: the daemon stamps
 // them from the channel it decoded on (docs/design/decoders.md, "Decisions").
 const (
 	fakeRecordRssiDbfs = -25.0
 	fakeRecordSnrDb    = 20.0
 )
+
+// failDecodeLocked ends a running decode job FAILED with the reason: the radio goes back as
+// finishDecode hands it back, and the terminal event goes out last. Caller holds the lock.
+func (d *Daemon) failDecodeLocked(j *fakeJob, why *leylinev1.ErrorDetail) {
+	by := &leylinev1.ClientInfo{ClientId: "daemon", Kind: "job", Label: "decode"}
+	if j.channelID != "" {
+		d.destroyChannelLocked(j.channelID, by)
+		j.channelID = ""
+	}
+	if j.createdCapture && j.captureID != "" {
+		d.destroyCaptureLocked(j.captureID, by)
+		j.createdCapture = false
+	}
+	j.proto.State = leylinev1.JobState_FAILED
+	j.proto.StatusDetail = why.GetMessage()
+	j.proto.Error = why
+	d.emit(byDaemon(), proto.Clone(j.proto).(*leylinev1.Job))
+}
 
 // finishDecode ends a decode job: the channel goes, the capture goes with it when the job made
 // it, and the terminal Job event goes out last, so a client that sees the job end finds the

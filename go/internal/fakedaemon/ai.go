@@ -197,7 +197,8 @@ func credentialMissing(provider string) *leyline.Error {
 		fmt.Sprintf("no %s key is set; add one with ley ai add %s", provider, provider))
 }
 
-// DeleteCredential implements Credentials. The fake's one decoder needs no key, so no job ends.
+// DeleteCredential implements Credentials. Every running decode job whose decoder names the
+// provider ends FAILED with CREDENTIAL_MISSING, as the daemon ends them.
 func (d *Daemon) DeleteCredential(ctx context.Context, req *leylinev1.CredentialRef) (*leylinev1.Empty, error) {
 	ci := clientFrom(ctx)
 	d.touchUnary(ci)
@@ -210,6 +211,16 @@ func (d *Daemon) DeleteCredential(ctx context.Context, req *leylinev1.Credential
 	delete(d.ai.credentials, provider)
 	delete(d.ai.secrets, provider)
 	d.emit(ci, d.aiSnapshot())
+	gone := credentialMissing(provider)
+	for _, id := range d.jobOrder {
+		j := d.jobs[id]
+		if j == nil || j.proto.GetState() != leylinev1.JobState_RUNNING || j.proto.GetDecode() == nil {
+			continue
+		}
+		if man := d.decoderByName(j.protocol); man.GetCredentialProvider() == provider {
+			d.failDecodeLocked(j, &leylinev1.ErrorDetail{Code: gone.Code, Message: gone.Message, Target: provider})
+		}
+	}
 	return &leylinev1.Empty{}, nil
 }
 
