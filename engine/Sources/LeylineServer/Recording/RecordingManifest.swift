@@ -31,6 +31,11 @@ struct RecordingPart: Codable, Sendable {
     /// reason the levels are: nobody measured it. A client prints `0.0 dBFS · clipped` from this,
     /// not from `peak_dbfs`, which measures the audio rather than the IQ.
     var clippedMs: Int64? = nil
+    /// Milliseconds the squelch was open inside this part: the sidecar's `squelch_opens` intervals
+    /// summed at the capture rate, so a client can say how much signal a recording holds (what a
+    /// transcription would send) without opening every sidecar. Absent on a continuous recording,
+    /// which has no intervals, and on a part written by a daemon older than the field.
+    var squelchOpenMs: Int64? = nil
 
     enum CodingKeys: String, CodingKey {
         case part, file, samples, bytes
@@ -40,6 +45,7 @@ struct RecordingPart: Codable, Sendable {
         case meanDbfs = "mean_dbfs"
         case squelchOpens = "squelch_opens"
         case clippedMs = "clipped_ms"
+        case squelchOpenMs = "squelch_open_ms"
     }
 }
 

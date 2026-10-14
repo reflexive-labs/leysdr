@@ -402,7 +402,7 @@ actor PartWriter {
                                  startSample: partStartSample, endSample: endSample,
                                  samples: partSamples, bytes: partBytes,
                                  peakDbfs: peakDb, meanDbfs: meanDb, squelchOpens: squelchOpens.count,
-                                 clippedMs: clippedMs)
+                                 clippedMs: clippedMs, squelchOpenMs: squelchOpenMs())
         manifest.parts.append(part)
         manifest.bytes += partBytes
         // The per-part accumulators belong to the part that just closed. `bytes` adds the open
@@ -412,6 +412,17 @@ actor PartWriter {
         partSamples = 0
         writeSidecar(for: part, peak: peakDb, mean: meanDb)
         persist()
+    }
+
+    /// The closing part's `squelch_open_ms`: its intervals summed on the capture's timeline and
+    /// turned into milliseconds once, so the figure is the sidecar's sum rather than a sum of
+    /// rounded intervals. Nil for a continuous recording, and while the capture's rate is unknown.
+    private func squelchOpenMs() -> Int64? {
+        guard manifest.gate != nil else { return nil }
+        let anchor = manifest.anchors.last { ($0.captureID ?? "") == captureID } ?? manifest.anchors.last
+        guard let rate = anchor?.sampleRate, rate > 0 else { return nil }
+        let samples = squelchOpens.reduce(UInt64(0)) { $0 + ($1.closeSample > $1.openSample ? $1.closeSample - $1.openSample : 0) }
+        return Int64((Double(samples) / Double(rate) * 1000).rounded())
     }
 
     /// Ends the recording: the open part is closed and the manifest records how it ended.

@@ -117,6 +117,13 @@ extension RecordingJobTests {
                 let open = Double(sidecar.recording.squelchOpens[i].openSample) / rate
                 XCTAssertEqual(open, want.start, accuracy: 0.15, "over \(i + 1) opens at the key-up")
             }
+            // The manifest says how long the squelch was open without the sidecar: its intervals
+            // summed at the capture rate.
+            let openSamples = sidecar.recording.squelchOpens.reduce(UInt64(0)) { $0 + $1.closeSample - $1.openSample }
+            XCTAssertEqual(manifest.parts[0].squelchOpenMs, Int64((Double(openSamples) / rate * 1000).rounded()))
+            let keyedMs = segments.reduce(0.0) { $0 + ($1.end - $1.start) } * 1000
+            XCTAssertEqual(Double(manifest.parts[0].squelchOpenMs ?? 0), keyedMs, accuracy: 3 * 150,
+                           "the squelch was open for about as long as the fixture keyed")
         }
     }
 
