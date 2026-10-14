@@ -5,6 +5,8 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,6 +114,7 @@ var jsonVerbs = []jsonVerbCase{
 	{path: "stop", args: []string{"stop", "all"}, prep: prepChannel},
 	{path: "tune", args: []string{"tune", "146.52", "--no-audio"}, timeout: 2 * time.Second},
 	{path: "version", args: []string{"version"}},
+	{path: "worker check", args: []string{"worker", "check", "--provider", "openai"}, prep: prepProvider, stdin: "sk-test-1234\n"},
 	{path: "watch", args: []string{"watch", "aprs", "--where", "device_id=LEYTST-1", "--count", "2"}},
 	{path: "waveform", args: []string{"waveform", "146.52", "--seconds", "2", "--count", "2"}},
 	{path: "waterfall", args: []string{"waterfall", "146.52", "--count", "2", "--rate", "10"}},
@@ -146,6 +149,14 @@ func prepKey(t *testing.T, _ string, c *leyline.Client) []string {
 		t.Fatal(err)
 	}
 	return nil
+}
+
+// prepProvider starts a model API that accepts every key, and names it for `worker check`.
+func prepProvider(t *testing.T, _ string, _ *leyline.Client) []string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{}`)) }))
+	t.Cleanup(srv.Close)
+	return []string{"--endpoint", srv.URL}
 }
 
 // prepChannel leaves a channel running for the verbs that adjust or stop one.

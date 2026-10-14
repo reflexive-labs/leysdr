@@ -35,7 +35,7 @@ func checkProvider(p string) error {
 
 // newAICommand builds `ley ai`: the keys the daemon holds for model providers, the model each
 // feature calls, and what the calls used. The daemon keeps the keys and never returns one, so
-// every verb here reads or writes daemon state over the contract (docs/design/ai.md).
+// every verb here reads or writes daemon state over the contract (proto/leyline/v1/ai.proto).
 func newAICommand(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ai",
