@@ -110,39 +110,13 @@ func stopChannel(ctx context.Context, s *verbSession, ch *leylinev1.Channel, cap
 // the flag.
 func stopAll(ctx context.Context, s *verbSession, deviceSel string) error {
 	st := s.State
-	var dev *leylinev1.DeviceDescriptor
-	if deviceSel != "" {
-		d, err := leyline.ResolveDevice(st, deviceSel)
-		if err != nil {
-			return fmt.Errorf("--device %w. Run: ley devices", err)
-		}
-		dev = d
-	} else {
-		var inUse []*leylinev1.DeviceDescriptor
-		for _, d := range st.Devices {
-			if leyline.FindCapture(st, d.DeviceId) != nil {
-				inUse = append(inUse, d)
-			}
-		}
-		switch len(inUse) {
-		case 0:
-			s.stopNothing("nothing is running; every radio is free")
-			return nil
-		case 1:
-			dev = inUse[0]
-		default:
-			// The rows say what each radio is doing: two dongles of the same
-			// model differ by the frequency they are on, not by their ids.
-			lines := make([]string, 0, len(inUse))
-			for _, d := range inUse {
-				for i, all := range st.Devices {
-					if all.DeviceId == d.DeviceId {
-						lines = append(lines, fmt.Sprintf("  %d  %s  %s  %s", i+1, d.Model, deviceDoing(st, d), d.DeviceId))
-					}
-				}
-			}
-			return fmt.Errorf("%d radios are in use; say which with --device:\n%s\ne.g. ley stop --all --device 1", len(inUse), strings.Join(lines, "\n"))
-		}
+	dev, err := stopAllDevice(st, deviceSel)
+	if err != nil {
+		return err
+	}
+	if dev == nil {
+		s.stopNothing("nothing is running; every radio is free")
+		return nil
 	}
 	var caps []*leylinev1.Capture
 	for _, c := range st.Captures {
@@ -185,6 +159,41 @@ func stopAll(ctx context.Context, s *verbSession, deviceSel string) error {
 	sty := s.app.Style
 	fmt.Fprintf(s.app.Stdout, "stopped %d %s and %s %s %s\n", stopped, noun, sty.Ok("freed"), dev.Model, sty.Muted("("+dev.DeviceId+")"))
 	return nil
+}
+
+// stopAllDevice is the radio stop --all frees: the one --device names, else the one in use.
+// Several in use need the flag; none in use is a nil device and no error.
+func stopAllDevice(st *leylinev1.GetStateResponse, deviceSel string) (*leylinev1.DeviceDescriptor, error) {
+	if deviceSel != "" {
+		d, err := leyline.ResolveDevice(st, deviceSel)
+		if err != nil {
+			return nil, fmt.Errorf("--device %w. Run: ley devices", err)
+		}
+		return d, nil
+	}
+	var inUse []*leylinev1.DeviceDescriptor
+	for _, d := range st.Devices {
+		if leyline.FindCapture(st, d.DeviceId) != nil {
+			inUse = append(inUse, d)
+		}
+	}
+	switch len(inUse) {
+	case 0:
+		return nil, nil
+	case 1:
+		return inUse[0], nil
+	}
+	// The rows say what each radio is doing: two dongles of the same
+	// model differ by the frequency they are on, not by their ids.
+	lines := make([]string, 0, len(inUse))
+	for _, d := range inUse {
+		for i, all := range st.Devices {
+			if all.DeviceId == d.DeviceId {
+				lines = append(lines, fmt.Sprintf("  %d  %s  %s  %s", i+1, d.Model, deviceDoing(st, d), d.DeviceId))
+			}
+		}
+	}
+	return nil, fmt.Errorf("%d radios are in use; say which with --device:\n%s\ne.g. ley stop --all --device 1", len(inUse), strings.Join(lines, "\n"))
 }
 
 // deviceDoing describes what one radio is playing, for a picker whose rows

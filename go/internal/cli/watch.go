@@ -143,14 +143,10 @@ notifier, so it fires whether or not ley is attached.
 	return cmd
 }
 
-// runWatch starts the decode job with its predicate and notifier. Attached (the default) it
-// streams the matching records the way decode streams every record; detached it leaves the job
-// running for the notifier and prints how to stop it.
-func runWatch(ctx context.Context, s *verbSession, o watchOptions) error {
-	if name, _, err := s.Client.ResolveDecoder(ctx, o.decoder); err == nil {
-		o.decoder = name
-	}
-	cfg := &leylinev1.DecodeConfig{
+// config is the decode job a watch starts: the decoder with the filter and the notifier, kept
+// when the watch is detached.
+func (o watchOptions) config() *leylinev1.DecodeConfig {
+	return &leylinev1.DecodeConfig{
 		Decoder:     o.decoder,
 		FrequencyHz: o.freqHz,
 		DeviceId:    o.deviceID,
@@ -159,7 +155,16 @@ func runWatch(ctx context.Context, s *verbSession, o watchOptions) error {
 		Predicate:   o.predicate,
 		Notify:      o.notify,
 	}
-	job, err := s.Client.StartDecode(ctx, cfg)
+}
+
+// runWatch starts the decode job with its predicate and notifier. Attached (the default) it
+// streams the matching records the way decode streams every record; detached it leaves the job
+// running for the notifier and prints how to stop it.
+func runWatch(ctx context.Context, s *verbSession, o watchOptions) error {
+	if name, _, err := s.Client.ResolveDecoder(ctx, o.decoder); err == nil {
+		o.decoder = name
+	}
+	job, err := s.Client.StartDecode(ctx, o.config())
 	if err != nil {
 		return decodeFailure(s, decodeOptions{decoder: o.decoder}, err)
 	}
@@ -218,6 +223,17 @@ func watchStopped(ctx context.Context, s *verbSession, job *leylinev1.Job) error
 // reach them.
 func watchBanner(ctx context.Context, s *verbSession, job *leylinev1.Job, o watchOptions) string {
 	st := s.app.ErrStyle
+	line := watchWhat(ctx, s, job, o)
+	if o.detach {
+		return line + "\n" + st.Muted("kept: it runs on after ley exits")
+	}
+	return line + "\nCtrl-C stops"
+}
+
+// watchWhat is the banner without its last line, which says how the watch ends: the decoder,
+// where it listens, the filter and the notifier. The MCP adapter's watch tool ends it its own way.
+func watchWhat(ctx context.Context, s *verbSession, job *leylinev1.Job, o watchOptions) string {
+	st := s.app.ErrStyle
 	where := ""
 	if hz := decodeFrequency(ctx, s, job); hz > 0 {
 		where = " on " + units.FormatFrequency(hz)
@@ -230,10 +246,7 @@ func watchBanner(ctx context.Context, s *verbSession, job *leylinev1.Job, o watc
 	if o.notify != nil {
 		line += "\n  " + st.Muted("notify: "+notifierWords(o.notify))
 	}
-	if o.detach {
-		return line + "\n" + st.Muted("kept: it runs on after ley exits")
-	}
-	return line + "\nCtrl-C stops"
+	return line
 }
 
 // buildPredicate turns the filter flags into a Predicate whose clauses are ANDed, and a plain
