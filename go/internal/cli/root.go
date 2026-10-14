@@ -220,6 +220,7 @@ while it plays, 'ley spectrum' to see what is on the air, and 'ley help
 		newJobsCommand(app),
 		newDecodersCommand(app),
 		newDecodeCommand(app),
+		newTranscribeCommand(app),
 		newWatchCommand(app),
 		newRecordCommand(app),
 		newRecordingsCommand(app),
