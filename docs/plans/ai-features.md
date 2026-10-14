@@ -202,7 +202,7 @@ Six recommendations. AI-1 turns the accepted ones into the design doc; each is o
 ### Keys live in the daemon and never leave it
 
 The daemon stores keys, and the contract can only write them. `SetCredential` takes a key;
-`ListCredentials` returns the provider, a label, the last four characters, and when the key was
+`GetAIState` returns the provider, a label, the last four characters, and when the key was
 added, last used and last checked, and never the key itself. On macOS a key is a login-keychain
 item created by `leylined`, so the daemon reads it without a prompt and macOS asks the user before
 any other program reads it. On Linux, where the daemon runs for development and CI, it is a file
@@ -406,9 +406,13 @@ socket client can already start a paid job.
 | `bulk.proto` `Frame` | `SegmentMark segment` with `enum SegmentMark { SEGMENT_MARK_UNSPECIFIED = 0; SEGMENT_START = 1; SEGMENT_END = 2; }`; the END frame carries an empty payload | 6 |
 
 A segment is one over: it starts `pre_roll_ms` before the squelch opened and ends `hang_ms` after
-it closed, and a squelch that reopens inside the hang continues the same segment. That is the
-"per over" answer to the open question, chosen because it gives one speaker per record and one
-notification per over; a plugin that wants more context can hold segments back itself.
+it closed, and a squelch that reopens inside the hang continues the same segment, so a segment
+can hold more than one entry of the part's `squelch_opens` when they are closer than the hang.
+`over` is then the 1-based index of the segment's first `squelch_opens` entry in its part. The
+stored-recording path cuts with the same pre-roll and hang, so a recording transcribed later
+yields the same segments as the live job that recorded it. That is the "per over" answer to the
+open question, chosen because it gives one speaker per record and one notification per over; a
+plugin that wants more context can hold segments back itself.
 
 **Error codes**, in the "Error codes" table of `docs/dev/engine-internals.md`, `EngineError.Code`
 and `leyline.DaemonCodes`:
@@ -515,7 +519,7 @@ one conversation takes is unmeasured; AI-12 measures it.
 | 5, sample timebase | speech records carry `SampleTime`; wall clock comes from the anchor, as for every record |
 | 6, full state | ledger and conversation events carry the whole object |
 | 7, state in the daemon | keys, the ledger and conversations are daemon state; view state stays in the client, as now |
-| 8, persistence follows intent | a conversation and an unkept speech job end with their client; `keep` persists speech records and their clips |
+| 8, persistence follows intent | a conversation ends when cancelled or idle and an unkept speech job ends with its client; `keep` persists speech records and their clips |
 | 9, `CaptureAllocator` | speech jobs are decode jobs and allocate through it |
 | 11, TX | there are no TX tools, as in `ley mcp` |
 | 12, no overclaiming | speech text is labelled as model output with its confidence; the assistant cites detections and the band plan, and states what the detector cannot tell |
@@ -531,8 +535,10 @@ answer each:
 - **The assistant's client kind** is `mcp` with label `assistant`. It adds no kind, so the
   don't-disturb rule counts its writes as interactive, which is right while a person is asking.
   An unattended agent job is not in this plan.
-- **A conversation is not kept.** It ends when its owner's presence ends, after the same grace a
-  channel gets, or when it is cancelled; what it used stays in the ledger under its id.
+- **A conversation is not kept.** It is daemon state in memory only: it ends when it is
+  cancelled, 30 minutes after its last turn, or when the daemon stops, and what it used stays in
+  the ledger under its id. It is not tied to its starter's presence, because `ley ask` exits
+  between turns and `ley ask --continue` must find the conversation again.
 - **One speech record per over**, so the segmenter cuts at squelch edges with a short pre-roll and
   tail (the `SEGMENTED` entry above).
 - **Usage from a decoder travels on its records** (`DecodeRecord.usage`): no second message type,
@@ -728,7 +734,7 @@ action, full-state on every event; `Start`, `Send`, `Watch`, `Resolve`, `Cancel`
 tools a client declares at `Start` and answers through `AnswerViewTool`), a `ConversationStore`
 actor that spawns `ley worker assistant` per conversation through `WorkerProcess` with the key on
 stdin and talks to it on stdio (varint-delimited `WorkerEvent` in, `WorkerMessage` out, both in
-`ai.proto`), ends it with its owner's presence, and ends a crashed worker's conversation with
+`ai.proto`), ends it on cancel or after 30 idle minutes, and ends a crashed worker's conversation with
 `INTERNAL` while the others continue. The worker in Go: `anthropic-sdk-go` (vendored licence,
 `NOTICE`), the `ley mcp` tools called in-process through one registry both `ley mcp` and the
 worker build from, the policy table as a gate before each tool call (`asks` rows become a pending
