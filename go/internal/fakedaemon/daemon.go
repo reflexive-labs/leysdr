@@ -80,6 +80,12 @@ type Options struct {
 	// CTCSS tone, which the daemon suppresses while DCS is locked. The demod tap then carries no
 	// sub-audible tone either. Empty keeps every carrier as the table has it.
 	DCS map[uint64]DCSCode
+	// CheckCredential is the provider's answer when a key is set or checked, standing in for the
+	// daemon's check worker. nil accepts every key but RejectedSecret.
+	CheckCredential CheckFunc
+	// Usage preloads the ledger, folded as ReportUsage folds a report but with no event, so a test
+	// starts with days of usage already counted.
+	Usage []*leylinev1.UsageReport
 }
 
 // DCSCode is a DCS code the fake sends on a carrier (Options.DCS).
@@ -90,12 +96,13 @@ type DCSCode struct {
 	Inverted bool
 }
 
-// Daemon is the in-memory state store plus all six service implementations.
+// Daemon is the in-memory state store plus every service implementation.
 type Daemon struct {
 	leylinev1.UnimplementedControlServer
 	leylinev1.UnimplementedJobsServer
 	leylinev1.UnimplementedResourcesServer
 	leylinev1.UnimplementedDecodersServer
+	leylinev1.UnimplementedCredentialsServer
 
 	opts      Options
 	startedNs int64
@@ -134,6 +141,8 @@ type Daemon struct {
 	// and reported afresh by the next one.
 	detectionEpoch int
 	socket         string
+	// ai is the keys, the feature models and the usage ledger.
+	ai aiState
 	// history holds the last eventHistoryLimit events, oldest first, for
 	// WatchEvents(since_seq) replay (the Swift daemon keeps the same window).
 	history []retainedEvent
@@ -219,6 +228,10 @@ func New(opts Options) *Daemon {
 		presence:     map[string]*presence{},
 		socket:       opts.SocketPath,
 		closing:      make(chan struct{}),
+		ai:           newAIState(),
+	}
+	for _, r := range opts.Usage {
+		d.foldUsage(r)
 	}
 	if !opts.NoDevice {
 		dev := fakeRTLSDR()
@@ -230,7 +243,7 @@ func New(opts Options) *Daemon {
 	return d
 }
 
-// Register registers all six services on s.
+// Register registers every service on s.
 func (d *Daemon) Register(s grpc.ServiceRegistrar) {
 	leylinev1.RegisterControlServer(s, d)
 	leylinev1.RegisterTelemetryServer(s, telemetrySvc{d: d})
@@ -238,6 +251,8 @@ func (d *Daemon) Register(s grpc.ServiceRegistrar) {
 	leylinev1.RegisterJobsServer(s, d)
 	leylinev1.RegisterResourcesServer(s, d)
 	leylinev1.RegisterDecodersServer(s, d)
+	leylinev1.RegisterCredentialsServer(s, d)
+	leylinev1.RegisterUsageServer(s, usageSvc{d: d})
 }
 
 // refuseWhileClosing answers every unary call made after shutdown began with UNAVAILABLE. Closing
