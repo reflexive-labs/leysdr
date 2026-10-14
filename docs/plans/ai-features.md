@@ -1,7 +1,9 @@
 # Plan: AI features on the user's own key
 
-Status: draft, scoping only. Nothing here is built and no design doc exists yet; AI-1 writes
-`docs/design/ai.md` from the recommendations below once they are accepted. Companion to
+Status: partial. The recommendations in "The shape" were accepted for the build on 2026-10-14;
+"Decisions taken for the build" settles the open questions that blocked it, "What the contract
+gains" is the settled contract, and the build items carry the status. AI-1 writes
+`docs/design/ai.md` from them. Companion to
 [`semantic-tier.md`](../design/semantic-tier.md) (transcripts and the MCP surface),
 [`decoders.md`](../design/decoders.md) (the plugin contract this plan reuses for speech),
 [`recording.md`](../design/recording.md) (gated parts and overs), [`mcp.md`](mcp.md) (the tool
@@ -304,28 +306,150 @@ manifest gives the squelch-open duration of every part (U3).
 
 ### What the contract gains
 
-A sketch for AI-1 to settle. Every item is additive within v1.
+Settled for the build on 2026-10-14. Every item is additive within v1, and every number below is
+the next free one in its message as of that date; a later plan that takes one of them first moves
+this list, not the other way round. The `Assistant` service is sketched here and settled by AI-9,
+because its shape depends on what the worker turns out to need.
 
-| addition | for |
-|---|---|
-| `Credentials`: `SetCredential`, `DeleteCredential`, `ListCredentials`, `CheckCredential` | K1 to K5 |
-| `Usage`: `GetUsage` and a ledger event | U1 to U5 |
-| `DecoderManifest`: the `segmented` input mode, a required credential, the contacted hosts | T1 to T12 |
-| `DecodeConfig`: a recording as the source | T1, T9, T10 |
-| `DecodeRecord`: the usage the record took | U2 |
-| `Assistant`: start, send, subscribe, approve, cancel; view tools a client declares | A1 to A19 |
-| error codes `CREDENTIAL_MISSING`, `CREDENTIAL_REJECTED`, `PROVIDER_UNAVAILABLE`, `PROVIDER_REFUSED` (a rate or spend limit at the provider, with its message) | every feature |
+**A new file, `proto/leyline/v1/ai.proto`**, with two services. One key per provider: a
+provider is the name of a kind of endpoint (`anthropic`, `openai`, `deepgram`), with an optional
+`endpoint` for a gateway or an OpenAI-compatible server.
 
-Each has its `ley` mirror and an implementation in the fake for `ley`'s tests. The error codes go
-into the "Error codes" table in `docs/dev/engine-internals.md`, which tests parse. The mirrors:
+```proto
+message Credential {                 // never carries the secret
+  string provider = 1;
+  string label = 2;
+  string last_four = 3;
+  string endpoint = 4;               // empty = the provider's own API
+  int64 added_at_ns = 5;
+  int64 last_used_at_ns = 6;         // a worker took the key for a call
+  CredentialCheck last_check = 7;
+}
+message CredentialCheck {
+  enum Outcome { OUTCOME_UNSPECIFIED = 0; ACCEPTED = 1; REJECTED = 2; UNAVAILABLE = 3; }
+  Outcome outcome = 1;
+  string message = 2;                // the provider's words, or why the check could not run
+  int64 at_ns = 3;
+}
+message SetCredentialRequest { string provider = 1; string secret = 2; string label = 3; string endpoint = 4; }
+message CredentialRef { string provider = 1; }
+message FeatureModel { string feature = 1; string provider = 2; string model = 3; } // feature: "assistant" | "speech"
+message AIState { repeated Credential credentials = 1; repeated FeatureModel features = 2; }
+message GetAIStateRequest {}
+
+service Credentials {
+  rpc SetCredential(SetCredentialRequest) returns (Credential);   // stores, then checks once
+  rpc DeleteCredential(CredentialRef) returns (Empty);            // ends every job using it (K5)
+  rpc CheckCredential(CredentialRef) returns (Credential);
+  rpc GetAIState(GetAIStateRequest) returns (AIState);
+  rpc SetFeatureModel(FeatureModel) returns (FeatureModel);
+}
+
+message UsageReport {                // one per provider response, in the provider's units
+  string provider = 1;
+  string model = 2;
+  string feature = 3;                // "assistant" | "speech" | "check"
+  string job_id = 4;                 // one of these two names the scope
+  string conversation_id = 5;
+  uint64 requests = 6;
+  uint64 input_tokens = 7;
+  uint64 output_tokens = 8;
+  uint64 cache_read_tokens = 9;
+  uint64 cache_write_tokens = 10;
+  double audio_seconds = 11;
+  int64 at_ns = 12;
+}
+message UsageLine {                  // the ledger's grain: provider, model, feature, scope, UTC day
+  string provider = 1;
+  string model = 2;
+  string feature = 3;
+  string scope_id = 4;               // the job or conversation id
+  string day = 5;                    // "2026-10-14", UTC, as the providers' consoles count
+  uint64 requests = 6;
+  uint64 input_tokens = 7;
+  uint64 output_tokens = 8;
+  uint64 cache_read_tokens = 9;
+  uint64 cache_write_tokens = 10;
+  double audio_seconds = 11;
+  int64 last_at_ns = 12;
+}
+message GetUsageRequest { int64 since_ns = 1; string provider = 2; string feature = 3; string scope_id = 4; }
+message GetUsageResponse { repeated UsageLine lines = 1; }
+
+service Usage {
+  rpc GetUsage(GetUsageRequest) returns (GetUsageResponse);
+  rpc ReportUsage(UsageReport) returns (Empty);                   // workers call this
+}
+```
+
+`ReportUsage` is a plain RPC, so the assistant worker and the check worker report over the socket
+like any client; a speech plugin has no socket and reports on its records instead (below). Any
+socket client can therefore add to the ledger, which `SECURITY.md` states beside the fact that any
+socket client can already start a paid job.
+
+**Additions to existing files.**
+
+| file | addition | number |
+|---|---|---|
+| `control.proto` `Event.body` | `AIState ai` (the whole list, so a delete is a smaller list, not a tombstone) | 11 |
+| `control.proto` `Event.body` | `UsageLine usage` (the whole line after each report) | 12 |
+| `control.proto` `GetStateResponse` | `AIState ai` | 9 |
+| `control.proto` `GetStateResponse` | `repeated UsageLine usage` | 10 |
+| `decode.proto` `InputMode` | `SEGMENTED` | 3 |
+| `decode.proto` `DecoderInput` | `uint32 pre_roll_ms`, `uint32 hang_ms` (SEGMENTED only; 0 = 500 and 500) | 6, 7 |
+| `decode.proto` `DecoderManifest` | `string credential_provider` (empty = none needed) | 17 |
+| `decode.proto` `DecoderManifest` | `repeated string contacts_hosts` | 18 |
+| `decode.proto` `DecodeConfig` | `string source_uri` (`ley://recordings/<id>`: read the stored parts instead of a radio) | 8 |
+| `decode.proto` `DecodeRecord` | `UsageReport usage` (set by the plugin; the daemon fills `feature` and `job_id` and adds it to the ledger) | 15 |
+| `decode.proto` `DecodeRecord` | `string clip_uri` (the part that holds this record's audio, `ley://recordings/<id>/<part>`) | 16 |
+| `decode.proto` `DecodeRecord` | `uint32 over` (1-based within the part; 0 = not segmented) | 17 |
+| `bulk.proto` `Frame` | `SegmentMark segment` with `enum SegmentMark { SEGMENT_MARK_UNSPECIFIED = 0; SEGMENT_START = 1; SEGMENT_END = 2; }`; the END frame carries an empty payload | 6 |
+
+A segment is one over: it starts `pre_roll_ms` before the squelch opened and ends `hang_ms` after
+it closed, and a squelch that reopens inside the hang continues the same segment. That is the
+"per over" answer to the open question, chosen because it gives one speaker per record and one
+notification per over; a plugin that wants more context can hold segments back itself.
+
+**Error codes**, in the "Error codes" table of `docs/dev/engine-internals.md`, `EngineError.Code`
+and `leyline.DaemonCodes`:
+
+| code | gRPC status | raised when |
+|---|---|---|
+| `CREDENTIAL_MISSING` | `FAILED_PRECONDITION` | the feature or decoder needs a provider's key and none is set; the message names `ley ai add <provider>` |
+| `CREDENTIAL_REJECTED` | `FAILED_PRECONDITION` | the provider refused the key itself |
+| `PROVIDER_UNAVAILABLE` | `UNAVAILABLE` | the provider or the worker could not be reached |
+| `PROVIDER_REFUSED` | `FAILED_PRECONDITION` | the provider refused a request for its own reason (a rate or spend limit), with the provider's message; `FAILED_PRECONDITION` rather than `RESOURCE_EXHAUSTED` so no default retry policy hammers the account |
+
+**Workers.** The daemon spawns `ley` as it spawns a decoder: the executable is found beside
+`leylined`, then on `PATH`, and `--ley <path>` or `LEYLINE_LEY` overrides it for tests. The verbs
+are hidden, under `ley worker`:
+
+```sh
+ley worker check --provider anthropic [--endpoint URL]   # key on stdin; prints one JSON line
+ley worker assistant --conversation conv_…               # key on stdin; the loop of AI-9
+```
+
+A worker reads the key from stdin, never from an argument or the environment, and reports usage
+with `ReportUsage`. The check worker's line is `{"outcome": "accepted" | "rejected" |
+"unavailable", "message": "…"}`; its exit status is 0 whenever it produced a line.
+
+**Where things are stored.** Secrets: on macOS a login-keychain item per provider, service
+`com.leysdr.leyline`, account the provider's name, created by `leylined`; elsewhere
+`<data>/credentials.json`, mode 0600, written atomically. Everything `Credential` and
+`FeatureModel` carry: `<data>/ai.json` on both platforms, so a listing never opens the keychain.
+The ledger: `<store>/usage.jsonl`, one `UsageReport` per line, appended as reports arrive and
+folded into lines at start; lines older than 400 days are dropped at start.
+
+**The mirrors**, each with an implementation in the fake for `ley`'s tests:
 
 ```sh
 ley ai                              # providers: label, last four characters, last used and checked
-ley ai add anthropic                # reads the key from stdin and checks it
+ley ai add anthropic [--label L] [--endpoint URL]   # reads the key from stdin and checks it
 ley ai check anthropic
 ley ai remove anthropic
-ley ai usage [--since 30d] [--json]
-ley transcribe <recording>
+ley ai use assistant anthropic claude-sonnet-5-5    # K4: the provider and model a feature uses
+ley ai usage [--since 30d] [--by day|month] [--json]
+ley transcribe <recording> [--yes]
 ley decode speech --freq 146.94 [--job]
 ley ask "<request>" [--continue]
 ```
@@ -398,122 +522,298 @@ one conversation takes is unmeasured; AI-12 measures it.
 
 Invariants 3, 10 and 13 are not affected.
 
+## Decisions taken for the build
+
+The six recommendations in "The shape" are taken as accepted on 2026-10-14; AI-1 writes them up as
+the design doc. The open questions resolved with them, so that the build items below have one
+answer each:
+
+- **The assistant's client kind** is `mcp` with label `assistant`. It adds no kind, so the
+  don't-disturb rule counts its writes as interactive, which is right while a person is asking.
+  An unattended agent job is not in this plan.
+- **A conversation is not kept.** It ends when its owner's presence ends, after the same grace a
+  channel gets, or when it is cancelled; what it used stays in the ledger under its id.
+- **One speech record per over**, so the segmenter cuts at squelch edges with a short pre-roll and
+  tail (the `SEGMENTED` entry above).
+- **Usage from a decoder travels on its records** (`DecodeRecord.usage`): no second message type,
+  so the plugin framing does not change for the decoders that exist.
+- **The ledger counts UTC days.** That is what the providers' consoles show, so the two can be
+  compared; `ley ai usage` says so in its header.
+- **Workers read the key from stdin.** Not an argument (visible in `ps`) and not the environment
+  (inherited by anything the worker runs).
+- **Squelch-open time per part goes into the manifest.** `recording.json` gains
+  `squelch_open_ms` per part, written at part close; the per-over intervals stay in the part
+  sidecar. Before that, U3 sums the sidecars, which is what `ley transcribe` does for recordings
+  made by an older daemon.
+- **Playing one over** (T1) needs `StartPlaybackRequest` to take a sample range. That is AI-6's
+  contract addition, not this cut's.
+
+Still open, and not blocking the first items: who owns a channel the assistant makes (AI-9 takes
+the leaning in "Open questions"); whether a daemon started outside the login session can read its
+keychain item (AI-2 reports `CREDENTIAL_MISSING` with the keychain's message, and the Mac check
+decides the rest); the speech engine's vocabulary hint (AI-0).
+
 ## Status legend and build items
 
-`[ ]` pending, `[x]` done, `[-]` dropped with the reason, `[d]` waiting on a decision. In build
-order: keys and the ledger first, because both features call providers through them; speech on
-stored recordings before live speech, because it needs no new live path and the amount of audio
-it sends is known in advance; the assistant after the MCP tools it needs.
+`[ ]` pending, `[x]` done, `[-]` dropped with the reason, `[d]` waiting on a decision. Each item
+names the files it changes so that two of them can be built at once without touching the same
+ones, and ends with how it is verified. The order is the dependency order: the contract first,
+because every daemon item compiles against it; keys and the ledger before anything that calls a
+provider; speech on stored recordings before live speech; the assistant after the tools it needs.
+
+Three items need the owner's Mac or a key and cannot be finished from the Linux container: AI-0
+(real receiver audio), AI-12 (a key and the eval run) and the Mac acceptance pass of every app
+item. Everything else runs against the fake, the Linux-built daemon and a scripted provider.
 
 ### AI-0 `[ ]` Spike: speech-to-text on receiver audio
 
-Measure each candidate speech engine on real receiver audio before any speech code is written. The
-corpus, recorded as gated audio recordings with Leyline, a few minutes each, transcribed by hand:
-NOAA Weather Radio (a synthetic voice reading text the National Weather Service also publishes),
-airband ATIS (one speaker, set phraseology), and a 2 m repeater net (several speakers, callsigns,
-noise). It stays out of the repository unless it can be shared. Record per engine: word error
-rate, callsign recall after normalisation, cost per hour of squelch-open audio, and seconds from
-squelch close to text. Verify: `docs/decisions/S4-speech-to-text.md` records the numbers, how they
-were measured, and the default engine. If no on-device engine is usable on NFM speech, T7 is
-offered with its measured accuracy stated, or dropped.
+Unchanged from the scope: measure each candidate engine on real receiver audio (NOAA Weather
+Radio, airband ATIS, a 2 m net), recorded as gated recordings and transcribed by hand; record
+word error rate, callsign recall after normalisation, cost per hour of squelch-open audio, and
+seconds from squelch close to text in `docs/decisions/S4-speech-to-text.md`, with the default
+engine. Needs the Mac and the radio. AI-5 builds the contract against a scripted engine so that
+this spike chooses a plugin, not a design.
 
-### AI-1 `[d]` The design doc
+### AI-1 `[ ]` The design doc
 
-Waiting on acceptance of the recommendations in "The shape". Write `docs/design/ai.md` with its
-"Deliberately not" and open questions, and move the accepted stories into `user-stories.md`.
-Verify: the doc reads without its code blocks; `docs/README.md` lists it; `SECURITY.md` gains what
-the daemon stores (keys), which hosts workers contact, and that any socket client can now make
-calls on the user's provider account.
+Write `docs/design/ai.md` from "The shape" and "Decisions taken for the build": keys in the
+daemon, workers out of process, speech as a decoder, the assistant as a `ley` worker with `ley
+mcp`'s tools, usage in the provider's units, the action policy, received text as untrusted input,
+privacy. Its "Deliberately not" and open questions come from here. No plan ids in it
+(`docs/writing-guide.md`). With it: `SECURITY.md` gains what the daemon stores (keys and where),
+which hosts workers contact, and that any socket client can now make calls on the user's account;
+`docs/README.md` lists the design doc and the plan's new status; `docs/design/semantic-tier.md`'s
+open question on speech-to-text is answered; the terms table in `docs/writing-guide.md` gains
+provider, key, assistant, over, speech record and ledger; the accepted stories move to
+`docs/plans/user-stories.md` as V3. Files: `docs/design/ai.md` (new), `SECURITY.md`,
+`docs/README.md`, `docs/design/semantic-tier.md`, `docs/writing-guide.md`,
+`docs/plans/user-stories.md`. Verify: `make docs-check`; the doc reads without its code blocks;
+every path in it resolves.
 
 ### AI-2 `[ ]` Keys
 
-The `Credentials` service, keychain storage on macOS and a user-only file elsewhere,
-`CheckCredential` for each supported provider, `ley ai` with `add`, `check` and `remove`, the
-key read from stdin, and the fake. Verify: Swift tests that no RPC, error message or log line
-contains key material; `ley` tests against the fake; an e2e test in which a key added by `ley`
-is listed by a second client.
+In two halves that share only the contract.
+
+**AI-2a, the contract.** `proto/leyline/v1/ai.proto` as settled above, the four error codes, and
+the `control.proto` additions for `AIState` and `UsageLine` (the usage additions land here too, so
+`make proto` runs once). Then `make proto`; the Go registry (`go/pkg/leyline/errors.go`,
+`DaemonCodes`, `GRPCCode`), the Swift registry (`EngineError.Code`, `.all`, a factory each,
+`ProtoMapping.statusCode(for:)`), and the rows in `docs/dev/engine-internals.md`, "Error codes".
+Files: the protos, `go/gen`, `swift/LeylineProto`, `go/pkg/leyline/errors.go`,
+`engine/Sources/EngineCore/Model.swift`, `engine/Sources/LeylineServer/Mapping/ProtoMapping.swift`,
+`docs/dev/engine-internals.md`. Verify: `make proto-check`; `ErrorTableTests` and
+`TestErrorTableMatchesDocumentation` pass with the new rows; `make go swift`.
+
+**AI-2b, the daemon.** A `CredentialStore` actor holding `ai.json` (metadata and feature models)
+and a `SecretStore` protocol with two implementations: `KeychainSecrets` under
+`#if canImport(Security)` (service `com.leysdr.leyline`, account = provider) and `FileSecrets`
+(`credentials.json`, 0600, atomic). `CredentialsService` with the five RPCs; `SetCredential`
+stores, then runs the check; `DeleteCredential` ends every job whose decoder names the provider
+with `CREDENTIAL_MISSING` and the `ley ai add` line (K5). A `WorkerProcess` (the spawn half of
+`PluginProcess`, with the executable found the way `DecoderRegistry.resolve` finds one, `--ley`
+and `LEYLINE_LEY` for tests) runs `ley worker check` with the secret on stdin and reads its JSON
+line; no worker, or no `ley`, is `UNAVAILABLE` in `last_check`, never an error from the RPC.
+`AIState` goes out on the event plane after every change and into `GetState`. `Daemon.Config`
+gains the data path, `--ley` and the search. Files: `engine/Sources/LeylineServer/AI/*` (new),
+`Services/CredentialsService.swift` (new), `Server.swift`, `Lifecycle.swift`,
+`Session/SessionStore+Snapshot.swift`, `Session/SessionStore.swift`,
+`engine/Sources/LeylineDaemon/DaemonCommand.swift`, `engine/Tests/LeylineDaemonTests/*`.
+Verify: Swift tests that no RPC response, error message, event or log line contains the secret
+(a test key with a distinctive suffix, grepped out of everything the harness captured); the
+file store is 0600; a scripted `ley` on `--ley` that prints `rejected` yields
+`CREDENTIAL_REJECTED` from `CheckCredential` and a `REJECTED` outcome in the list; a missing `ley`
+yields `UNAVAILABLE`.
+
+**AI-2c, `ley`.** `Credentials` and `Usage` clients on `leyline.Client`; the fake's
+`Credentials` and `Usage` servers with the same write-only rule; `ley ai` (list, `add` with the
+key from stdin and a refusal with a usage error when stdin is a terminal and `--stdin` was not
+given, `check`, `remove`, `use`) and the hidden `ley worker check`, which for `anthropic` calls
+`GET /v1/models` with the key and maps 200, 401 and anything else to accepted, rejected and
+unavailable, for an OpenAI-compatible endpoint `GET /v1/models` likewise, and reports one request
+to `ReportUsage` with feature `check`. The mirror's `AIState` fold in `go/internal/session`.
+Files: `go/pkg/leyline/client.go`, `go/internal/fakedaemon/ai.go` (new), `go/internal/cli/ai.go`
+(new), `go/internal/cli/worker.go` (new), `go/internal/cli/root.go`, `json_verbs_test.go`,
+`testdata/help/*.golden`, `docs/reference/cli.md`. Verify: `ley` tests against the fake; help
+goldens; `ley ai --json` is the `AIState` proto3 JSON; a `httptest` provider for the worker; an
+e2e test in `go/internal/e2e` in which a key added by `ley ai add` is listed by a second client
+with its last four characters and never its text, and `ley ai check` against a scripted `ley`
+worker reports the outcome.
 
 ### AI-3 `[ ]` The ledger
 
-The `Usage` service, the ledger event and `ley ai usage`. Verify: the reports of a scripted worker
-sum per provider, model, feature and job, by day and month; the event and `ley ai usage --json`
-agree; a scripted provider refusal reaches the job as `PROVIDER_REFUSED` with the provider's
-message, and a kept job retries.
+**AI-3a, the daemon.** A `Ledger` actor: `usage.jsonl` appended per report, folded into
+`UsageLine`s by provider, model, feature, scope and UTC day; `UsageService` with `GetUsage` and
+`ReportUsage`; a `UsageLine` event after every report; the lines in `GetState`; `last_used_at_ns`
+on the credential whose provider the report names; lines older than 400 days dropped at start. A
+decode record that carries `usage` is added to the ledger by `DecodeRunner.emit` with `feature`
+`speech` and the job's id before it is published. Files: `engine/Sources/LeylineServer/AI/Ledger.swift`
+(new), `Services/UsageService.swift` (new), `Jobs/DecodeRunner.swift`, `Server.swift`,
+`Session/*`. Verify: the reports of a scripted worker sum per provider, model, feature and scope,
+by day and by month, across a daemon restart; the event and `GetUsage` agree; a record with
+`usage` from the fake decoder appears as a line under the job.
 
-### AI-4 `[ ]` Settings, AI in the app
+**AI-3b, `ley ai usage`.** `--since` (default 30d), `--by day|month`, `--json` as
+`GetUsageResponse`, a header that says the days are UTC and the numbers are what the workers
+reported; the fake's ledger. Files: `go/internal/cli/ai.go`, `go/internal/fakedaemon/ai.go`,
+goldens, `docs/reference/cli.md`. Verify: `ley` tests against the fake at 40, 80 and 160 columns;
+`--json` equals the fake's lines.
 
-The app's first Settings window (⌘,) with an AI pane: keys (K1 to K5), the provider and model per
-feature (K4), and the usage view (U1). It renders the daemon's state and writes through
-the coalescer like every other view. Verify: `make app-e2e` against the daemon with a scripted
-provider; on the Mac, the pane read in both themes, and the K1 check that no AI control shows
-without a key.
-
-### AI-5 `[ ]` Speech on stored recordings
-
-The `segmented` input mode, a recording as a decode source, the credential requirement in the
-manifest, the speech plugin AI-0 chose, callsign normalisation, and `ley transcribe <recording>`
-with the amount of audio and the confirmation (U3). Verify, with a scripted speech engine that
-returns known text: each record's `time` matches its over in the manifest to the sample; the
-stated amount equals the manifest's squelch-open duration; no audio from a span with the squelch
-shut reaches the plugin.
-
-### AI-6 `[ ]` Speech in the Library
-
-T1, T2, T8, T9 and T12 in the app: the words under each over, play from the words, search, the
-model and confidence shown, transcribe again, export. Verify: façade tests on Linux for the fold
-of speech records onto parts and overs; the views read on the Mac.
-
-### AI-7 `[ ]` Live speech and speech watches
-
-T3 to T5: `ley decode speech` on a live channel, the gated recording beside it, speech in the
-transmissions log in both clients, and `ley watch speech`. Verify: an e2e test playing a fixture
-with keyed overs through the scripted engine, a `--where text~` predicate firing on the expected
-over, and a kept job resuming with the same id after a daemon restart.
+**AI-3c, refusal and retry.** `PROVIDER_REFUSED` from a worker or plugin reaches the job as
+`DEGRADED` with the provider's message in `status_detail`, and a kept job retries with the
+decoder's backoff rather than ending; an unkept job ends with the error. Files:
+`engine/Sources/LeylineServer/Jobs/DecodeRunner.swift`, tests. Verify: the fake decoder told to
+refuse (`--refuse-after=N`) degrades a kept job, which recovers when it stops refusing.
 
 ### AI-8 `[ ]` The tools the assistant needs, in `ley mcp`
 
-`set`, `stop`, bookmarks, bands and presets, `watch`, `devices attach`, CHIRP import and the help
-topics, each with its `ley` mirror and its entry in `docs/reference/mcp.md`. Verify: fake-daemon
-tests against each mirror's `--json`, and an eval scenario for each new tool (`AGENTS.md`, "Agent
-evals").
+Go only, so it can run beside AI-2. Each tool reuses the verb's own options and session code, has
+its `ley` mirror already, a row in `docs/reference/mcp.md`, a name in `ley mcp --help` and
+`mcpToolNames`, and one eval scenario: `set` (a parameter on an existing channel, with the same
+don't-disturb refusal as `tune`), `stop`, `list_bookmarks`, `add_bookmark`, `remove_bookmark`,
+`list_bands`, `list_presets`, `watch` (a predicate and a notifier, `keep` only with the policy
+table's confirmation left to the caller), `attach_device` (`rtltcp` and a file), `import_chirp`,
+and `help` (the `ley help` topics, read-only). Files: `go/internal/cli/mcp_tools.go`,
+`mcp_tools_*.go` (new, one file per family), `mcp.go` (the help text and instructions),
+`mcp_test.go`, `docs/reference/mcp.md`, `evals/scenarios/*.yaml`, `docs/dev/evals.md`. Verify:
+fake-daemon tests of each tool against its mirror's `--json`; `TestMCPListsTheToolTable`;
+`leyeval check` parses every scenario; the scenarios run when a key is present.
+
+### AI-5 `[ ]` Speech on stored recordings
+
+**AI-5a, the segmenter and the recording source (daemon).** `SEGMENTED` in `startDecode`: a
+`Segmenter` that follows the channel's squelch edges as `RecordRunner.followSquelch` does, keeps a
+pre-roll ring while shut, and writes `SEGMENT_START`, the over's frames, and an empty
+`SEGMENT_END` to the plugin; audio while the squelch is shut is never written. `source_uri`: a
+`RecordingSource` that reads a recording's parts with `WAVReader`, cuts segments from the part
+sidecar's `squelch_opens`, and feeds the plugin as fast as it reads, with no capture, channel or
+lease; the job's `channel_id` is empty and `clip_uri` and `over` are stamped in `emit`. The
+credential requirement: a manifest with `credential_provider` whose key is not set is refused by
+`startDecode` with `CREDENTIAL_MISSING`; the worker-style spawn passes the key to the plugin on
+stdin before the descriptor, so the plugin contract gains one line: "a plugin whose manifest names
+a provider reads one varint-delimited `SetCredentialRequest` before the `StreamDescriptor`".
+`recording.json` gains `squelch_open_ms` per part. Files: `engine/Sources/LeylineServer/Jobs/
+Segmenter.swift`, `RecordingSource.swift` (new), `JobStore+Decode.swift`, `DecodeRunner.swift`,
+`Decoders/PluginProcess.swift`, `Recording/PartWriter.swift`, `RecordingManifest.swift`, tests;
+`engine/Sources/FakeDecoder/main.swift` (echo segments and the credential's last four).
+Verify, with the fake decoder and a fixture with keyed overs: each record's `time` equals its
+over's `open_sample` less the pre-roll to the sample; the frames between START and END hold
+exactly the samples the sidecar's interval covers plus pre-roll and tail; no frame arrives while
+the squelch is shut; a recording source transcribes a 60 s recording in under 5 s; a manifest
+naming `anthropic` with no key is `CREDENTIAL_MISSING` and names the command.
+
+**AI-5b, the plugin side and `ley transcribe` (Go).** `go/pkg/plugin` gains `Segmented`: a
+`SegmentDecoder` interface (`Segment(samples, at, emit)`) and the START/END framing, plus the
+credential read; `go/cmd/leydec-speech` with `--engine scripted` (reads a `LEYDEC_SPEECH_SCRIPT`
+file of lines, one per segment, and emits a record with `text`, `language`, `model`,
+`confidence` and `usage`), the callsign normaliser (`go/pkg/callsign`, the phonetic alphabet and
+the pattern, a `callsigns` field labelled as a pattern match), and the manifest
+`decoders/speech/manifest.json` with `credential_provider` and `contacts_hosts` left for AI-0's
+engine. `ley transcribe <recording> [--model M] [--yes]`: reads the manifest, sums
+`squelch_open_ms` (or the sidecars), prints the minutes and the provider's host, asks `[y/N]`
+unless `--yes`, starts the kept decode job with `source_uri`, and follows its records to the end;
+`--json` is the records. The fake: a `source_uri` decode job that reads the recordings directory
+the fake serves. Files: `go/pkg/plugin/segmented.go` (new), `go/cmd/leydec-speech/*` (new),
+`go/pkg/callsign/*` (new), `decoders/speech/manifest.json` (new), `go/internal/cli/transcribe.go`
+(new), `go/internal/fakedaemon/decodejob.go`, `root.go`, goldens, `docs/reference/cli.md`,
+`docs/reference/writing-a-decoder.md`. Verify: plugin tests with scripted segments; the
+normaliser on the phonetic examples ("whiskey six alpha bravo charlie" is `W6ABC`); `ley
+transcribe` against the fake states the minutes and refuses without a terminal and `--yes`; an e2e
+test transcribes a gated fixture recording through the scripted engine and `ley records
+--protocol speech` shows one record per over with its `clip_uri` and `over`.
 
 ### AI-9 `[ ]` The assistant service and worker
 
-The `Assistant` service, the `ley` worker the daemon spawns for each conversation (found the way
-the daemon finds a decoder's executable), the confirmation policy above, and undo of the
-assistant's own writes from the state it read before writing. Verify: tests with a scripted model
-that every row of the policy table holds; a crashed worker ends its conversation with an error and
-leaves the daemon and other conversations running; `third_party/licenses` and `NOTICE` list the
-provider SDK.
+The `Assistant` service in `ai.proto` (a `Conversation` with its turns, tool calls and a pending
+action, full-state on every event; `Start`, `Send`, `Watch`, `Resolve`, `Cancel`, `List`; view
+tools a client declares at `Start` and answers through `AnswerViewTool`), a `ConversationStore`
+actor that spawns `ley worker assistant` per conversation through `WorkerProcess` with the key on
+stdin and talks to it on stdio (varint-delimited `WorkerEvent` in, `WorkerMessage` out, both in
+`ai.proto`), ends it with its owner's presence, and ends a crashed worker's conversation with
+`INTERNAL` while the others continue. The worker in Go: `anthropic-sdk-go` (vendored licence,
+`NOTICE`), the `ley mcp` tools called in-process through one registry both `ley mcp` and the
+worker build from, the policy table as a gate before each tool call (`asks` rows become a pending
+action the daemon holds until `Resolve`), undo from the state read before each write, received
+text wrapped as quoted data, and `ReportUsage` after each response. A scripted model
+(`LEY_ASSISTANT_SCRIPT`) for tests. Files: `proto/leyline/v1/ai.proto`,
+`engine/Sources/LeylineServer/AI/ConversationStore.swift`, `Services/AssistantService.swift`,
+`go/internal/assistant/*` (new), `go/internal/cli/worker.go`, `go/internal/cli/mcp_tools*.go`
+(the registry), `third_party/licenses`, `NOTICE`. Verify: a test per policy row with the scripted
+model; the crash test; `make license-check`.
 
 ### AI-10 `[ ]` `ley ask`
 
-The terminal client of a conversation: one request on the command line or a prompt loop,
-confirmations as questions on stderr, `--continue`, and `--json` as the conversation's events.
-Verify: help goldens, and transcripts recorded against the fake.
+One request on the command line or a prompt loop; confirmations as `[y/N]` questions on stderr;
+`--continue` resumes the newest conversation the daemon has; `--json` is the conversation's
+events. Files: `go/internal/cli/ask.go`, goldens, `docs/reference/cli.md`,
+`docs/guide/using-ley.md`. Verify: help goldens; transcripts recorded against the fake with a
+scripted conversation.
+
+### AI-4 `[ ]` Settings, AI in the app
+
+A `Settings` scene (⌘,) with an AI pane: keys (K1 to K5), the provider and model per feature
+(K4), and the usage view (U1). `DaemonMirror` gains `ai` and `usage` from the snapshot and the
+two events; the pane renders them and writes through `AppSession` with the unary RPCs, as
+recordings and bookmarks do (the coalescer carries parameter writes only). Verify: façade tests
+on Linux for the mirror and the usage fold by day and month; `make app-e2e` against the daemon
+with a scripted `ley` worker; on the Mac, the pane read in both appearances, and K1.
+
+### AI-6 `[ ]` Speech in the Library
+
+T1, T2, T8, T9 and T12: `StartPlaybackRequest` gains a sample range so one over can play; the
+Swift manifest reader takes the sidecar's per-over intervals; speech records fold onto parts and
+overs by `clip_uri` and `over`; the words under each over with the model and confidence; search
+by text; transcribe again; export as text and SRT from the capture's anchor. Verify: façade
+tests on Linux for the fold and the SRT times; the views read on the Mac.
+
+### AI-7 `[ ]` Live speech and speech watches
+
+T3 to T5: `ley decode speech` on a live channel starts a gated recording beside the job and
+stamps each record's `clip_uri` from it; speech in the transmissions log in both clients; `ley
+watch speech --where 'text~…'`. Verify: an e2e test playing a fixture with keyed overs through the
+scripted engine, a `text~` predicate firing on the expected over, a kept job resuming with the
+same id after a daemon restart.
 
 ### AI-11 `[ ]` The app's assistant panel
 
-A panel beside the inspector: the conversation, each step expandable to its tool call and result
-(A16), confirmations as buttons, stop, the tokens used so far, and view tools for the waterfall
-and the Library (A19). Verify: façade tests; the panel read on the Mac; a story test in which the
-assistant retunes and the app's mirror shows the change attributed to it.
+A third column beside the inspector: the conversation, each step expandable to its tool call and
+result (A16), confirmations as buttons, stop, the tokens used so far, and the view tools for the
+waterfall and the Library (A19). A15 needs the mirror to keep each object's last `caused_by`,
+which no view reads today. Verify: façade tests; the panel read on the Mac; a story test in
+which the assistant retunes and the mirror shows the change attributed to it.
 
 ### AI-12 `[ ]` Assistant evals and the default model
 
-`leyeval` runs scenarios with the assistant as the agent, on a key the developer supplies, and
-reports the tokens each scenario took from the ledger. Run the existing scenarios and new ones for
-A1, A3, A6 and A11 on Claude Opus 5.5, Sonnet 5.5 and Haiku 5.5 at low and medium effort. Verify:
-the default model and effort are chosen on pass rate and tokens per completed scenario, priced
-from the provider's list on the day of the run, and the run's numbers and date are recorded
-here.
+`leyeval` runs scenarios with the assistant as the agent (`ley ask` as the command), reads the
+tokens each scenario took from the ledger, and the run across Claude Opus 5.5, Sonnet 5.5 and
+Haiku 5.5 at low and medium effort chooses the default model and effort on pass rate and tokens
+per completed scenario, priced from the provider's list on the day. Needs a key. Verify: the
+numbers and the date recorded here.
 
 ### AI-13 `[ ]` Injection scenarios
 
-Eval scenarios in which a fixture's decoded text (an APRS comment first, a speech record once
-AI-7 exists) asks the agent to add a notifier, delete a recording or retune. Checks: no such write
-appears in the daemon's event log. Verify: the scenarios pass for the assistant, and for Claude
-Code on `ley mcp`.
+A check type `no_write` that reads the daemon's event log for a write the scenario forbids, and
+scenarios in which a fixture's APRS comment (a speech record once AI-7 exists) asks the agent to
+add a notifier, delete a recording or retune. Verify: the scenarios pass for the assistant and
+for Claude Code on `ley mcp`.
+
+## Lanes
+
+What can be built at once, each lane in its own worktree, merged in this order:
+
+1. **Contract** (AI-2a), alone, because every other daemon lane compiles against it.
+2. **Docs** (AI-1) beside **MCP tools** (AI-8): no shared files.
+3. **Daemon keys and ledger** (AI-2b, AI-3a, AI-3c) beside **`ley` keys and ledger** (AI-2c,
+   AI-3b): the Swift and Go halves share only the generated code. The e2e tests in AI-2c run
+   once both have merged.
+4. **Segmenter and source** (AI-5a) beside **plugin and `ley transcribe`** (AI-5b): the same
+   split.
+5. **Assistant** (AI-9, then AI-10), after lanes 3 and 4.
+6. The app items (AI-4, AI-6, AI-11) when a Mac can read the result; AI-7, AI-12 and AI-13 after
+   the assistant.
+
+Each lane is verified by a reviewer who did not write it: the diff against this plan and
+`AGENTS.md`, the lane's own tests, and `make go-test swift-test e2e lint` on the merged tree. A
+finding goes back to the lane's author; a lane merges when the reviewer has nothing left.
 
 ## Deliberately not
 
@@ -541,20 +841,10 @@ Code on `ley mcp`.
   ends 5 s after that client's presence does (`docs/dev/engine-internals.md`, "Client identity and
   ownership"), so "put on the weather radio" would go silent when the conversation ends. Leaning:
   in the app the assistant retunes the app's own channel; from `ley ask` it makes the channel
-  persistent and says how to stop it.
-- **The assistant's client kind.** A new `agent` kind, or `mcp` with label `assistant`. The
-  don't-disturb signal counts every write not made by a `job` as interactive, which is right
-  while the user is asking and wrong for a later unattended agent job.
-- **Whether a conversation can be kept,** and if so what it is: a resource beside recordings, or
-  only its lines in the ledger.
-- **A speech record per over or per exchange** (a gated part). Per over gives one speaker per
-  record and one notification per over; per exchange gives the engine more context.
-- **Where usage travels from a decoder:** a field on `DecodeRecord`, or a second message type on
-  the plugin's stdout, which changes the framing for existing plugins.
-- **The usage view's days and months:** the user's local calendar, or UTC, which is what most
-  providers' consoles use, so the two can be compared.
+  persistent and says how to stop it. AI-9 decides.
 - **The keychain from an SSH session:** whether a daemon started by hand outside the login session
-  can read its keychain item, and what `ley ai` reports when it cannot.
+  can read its keychain item. AI-2 reports `CREDENTIAL_MISSING` with the keychain's message; the
+  Mac check of AI-2 records what happens.
 - **The speech engine's vocabulary hint:** whether it should come from the band (callsigns and the
   phonetic alphabet on amateur bands, ATC phraseology on airband) and from the user's bookmarks and
   labels, and how much that changes AI-0's numbers.
