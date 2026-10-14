@@ -58,13 +58,18 @@ engine/                       SwiftPM package (macOS 26+, Swift 6 toolchain, Swi
 │   │                         restart repair), PlaybackEngine + WAVReader (playing a recording back
 │   │                         through the daemon's own audio device)
 │   ├── Services/             Control, Telemetry, Bulk, Jobs (scan, monitor, decode and record
-│   │                         implemented; watch UNIMPLEMENTED), Decoders, Resources
+│   │                         implemented; watch UNIMPLEMENTED), Decoders, Resources, Credentials,
+│   │                         Usage
+│   ├── AI/                   SecretStore (keychain or key file), CredentialStore (ai.json),
+│   │                         WorkerProcess (`ley worker check`), Ledger (usage.jsonl), UsageRecorder
+│   ├── ChildProcess.swift    a spawned program on pipes: decoder plugins and `ley` workers
+│   ├── ProgramLocator.swift  finds a program by name beside `leylined`, then on `PATH`
 │   ├── Bulk/                 stream registry: FFT/audio/IQ subscriptions -> rings -> gRPC frames
 │   ├── WriteCoalescer.swift  ParamWrite coalescing
 │   ├── RememberedDevices.swift  devices.json beside the socket: the rtl_tcp endpoints to re-attach
 │   └── Mapping/              engine <-> proto conversions
 ├── Sources/LeylineDaemon     executable `leylined`: DaemonCommand (ArgumentParser: --socket,
-│                             --log-level, --pidfile, ...) and the generated Version.swift
+│                             --log-level, --pidfile, --data, --ley, ...) and the generated Version.swift
 ├── Sources/S2Throughput      executable `s2-throughput`, the S2 harness (../decisions/S2-throughput.md);
 │                             built, not shipped
 ├── Sources/FakeDecoder       executable `leyline-fake-decoder`, a decoder plugin that decodes nothing,
@@ -595,6 +600,49 @@ brings it in as soon as it responds; the log line says the daemon is waiting for
 never keeps the daemon from serving local dongles. An unreadable `devices.json` is read as an empty
 list: losing the remembered remote endpoints is better than refusing to serve local dongles.
 
+### Credentials and usage
+
+Model calls run on the user's own provider key, and the daemon holds the keys so a kept job can use
+one with no client attached and every client sees the same list (invariant 7). The contract can
+write a key and never read one: `Credentials` returns a `Credential` with the provider, label, the
+secret's last four characters (none for a secret under eight) and the times, and no reply, event,
+error or log line carries the secret. On macOS the secret is a login-keychain item `leylined`
+creates (service `com.leysdr.leyline`, account the provider, readable after first unlock);
+elsewhere it is `credentials.json` in the data directory, mode 0600 in a 0700 directory, written to
+a temporary file created 0600 and renamed over the old one (`SecretStore`, `FileSecrets`,
+`KeychainSecrets`). What a listing shows is `ai.json` beside it, the proto3 JSON of `AIState`, so a
+listing never opens the keychain (`CredentialStore`). The data directory is `--data`, by default
+`~/Library/Application Support/Leyline` on macOS and `$XDG_DATA_HOME/leyline` (or
+`~/.local/share/leyline`) elsewhere.
+
+The daemon makes no model call. A check runs `ley worker check --provider P [--endpoint E]` with
+`LEYLINE_SOCKET` set to the daemon's socket, writes the secret and a newline to its stdin and reads
+one JSON line, `{"outcome": "accepted"|"rejected"|"unavailable", "message": "…"}`, within 30 s
+(`WorkerProcess`). `ley` is `--ley` or `LEYLINE_LEY`, else the one beside `leylined`, else `PATH`
+(`ProgramLocator`, the lookup a decoder's bare `executable` uses). No `ley`, no answer or an answer
+that does not parse is an `UNAVAILABLE` outcome with the reason, never an RPC error, and anything
+the worker writes has the secret replaced before it is logged or stored. `SetCredential` stores the
+key and then checks it; `CheckCredential` checks the stored one. Both return the `Credential` with
+the outcome in `last_check`, a rejected key included, and fail only with `CREDENTIAL_MISSING` when
+there is no key to check, as `DeleteCredential` does when there is none to delete. Deleting a key
+ends every live decode job whose manifest names that `credential_provider`, `FAILED` with
+`CREDENTIAL_MISSING`. `SetFeatureModel` takes `assistant` or `speech`; an empty provider and model
+clears the choice.
+
+The ledger is `<store>/usage.jsonl`: one `UsageReport` per line as proto3 JSON, appended as each
+arrives (`Ledger`). At start the file is folded into `UsageLine`s by provider, model, feature, scope
+(the job or conversation) and UTC day, the day the providers' consoles count, and reports older
+than 400 days are dropped and the file rewritten. A report arrives by `Usage.ReportUsage` from a
+worker, or on a decode record (`DecodeRunner`, "Decoders" below); either way `UsageRecorder` adds
+it, publishes the whole line and sets `last_used_at_ns` on the provider's key. `GetUsage` filters
+by provider, feature, scope and the UTC day `since_ns` falls on, sorted by day then provider.
+
+Every change to a key or a feature model publishes `Event.ai` with the whole `AIState`, so a deleted
+key is a shorter list rather than a tombstone (invariant 6); every report publishes `Event.usage`
+with the line it changed. `GetState` carries both. Two changes that race to the store are published
+in the order they were made: each carries its store's version, and an older one is dropped
+(`SessionStore.publishAI(from:by:)`, `publishUsage`).
+
 ### Error codes
 
 Every stable code a daemon puts in `ErrorDetail.code`, and the gRPC status it is served with. This
@@ -766,7 +814,9 @@ restart, because `AudioFrameSource.poke` has one iterator and a second one would
 nothing. Exit status 75 (`EX_TEMPFAIL`, `DecodeRunner.refusedExitStatus`) is the plugin saying its
 provider refused a request, with the provider's words as its last stderr line: a kept job waits it
 out on the same backoff with `status_detail` "the provider refused: …", and any other job ends
-`FAILED` with `PROVIDER_REFUSED`.
+`FAILED` with `PROVIDER_REFUSED`. A record carrying `usage` goes to the ledger before the predicate
+judges it, since a call the filter discards was still paid for, under feature `speech`, the job's
+id, and the manifest's `credential_provider` when the plugin left the provider empty.
 A channel that goes `OUT_OF_CAPTURE` degrades the job and comes back to `RUNNING` with the
 capture, and only then: records still arrive after the move, so the record count's republish and a
 plugin restart keep the job `DEGRADED` while the channel is away. `keep` jobs are not cancelled when their client goes; cancel stops the plugin, closes the
@@ -920,6 +970,10 @@ resolved values in `PersistenceParams` on the stream descriptor.
   The socket and pidfile are unlinked last, after the devices are closed — while those paths exist a
   replacement daemon takes itself for the live one and races this one for the radios. Teardown runs
   in the process's own task, never in a child that the serve loop's return could cancel.
+- Data directory: `--data`, `~/Library/Application Support/Leyline` on macOS and
+  `$XDG_DATA_HOME/leyline` (or `~/.local/share/leyline`) elsewhere; it holds `ai.json` and, off
+  macOS, `credentials.json` ("Credentials and usage"). `--ley` (or `LEYLINE_LEY`) names the `ley`
+  the daemon runs for its workers.
 - Logs to stderr via swift-log. The plist `ley daemon install` writes has launchd redirect it to
   `~/Library/Logs/Leyline/leylined.log`; the app's launch agent cannot name a path under `~`, so it
   passes `--log-file ~/Library/Logs/Leyline/leylined.log` and the daemon appends stdout and stderr

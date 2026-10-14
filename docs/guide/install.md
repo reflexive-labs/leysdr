@@ -230,6 +230,8 @@ no decoders installed, `ley decode aprs` returns `there is no decoder called "ap
 | decoders | `~/Library/Application Support/Leyline/decoders/<name>/` (`make install-decoders`; `--decoders` and `LEYLINE_DECODERS` add more), then `decoders/` beside `leylined` (the app's bundled ones) |
 | recordings | `~/Library/Application Support/Leyline/recordings/` (`--recordings`, `--recordings-cap`, `--recordings-age`) |
 | decode records store | `~/Library/Application Support/Leyline/store/` (kept decode jobs; `--store`, `--store-cap`, `--store-age`) |
+| AI keys | the login keychain, one item per provider under `com.leysdr.leyline`; what `ley ai` lists is `~/Library/Application Support/Leyline/ai.json` (`--data` moves the directory) |
+| AI usage | `usage.jsonl` in the decode records store |
 | app log | `~/Library/Logs/Leyline/app.log` |
 | bookmarks | `~/Library/Application Support/Leyline/bookmarks.json` (the app's) |
 | login item (app) | `Leyline.app/Contents/Library/LaunchAgents/com.leysdr.daemon.plist`, registered by the app; switched in System Settings > General > Login Items & Extensions |
