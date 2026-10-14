@@ -14,8 +14,8 @@ the scenarios in `evals/scenarios/` grade how an agent uses them. That agent is 
 and configures outside Leyline (Claude Code, Claude Desktop, Cursor). This plan scopes three
 features that put a model inside Leyline, paid for on the user's own provider account:
 
-1. **Keys and usage.** A place to add provider API keys, a ledger of what each feature spent
-   against them, and budgets that stop spending at a cap.
+1. **Keys and usage.** A place to add provider API keys, and a view of how much each feature
+   used against them.
 2. **Speech-to-text.** The words spoken on a recording or a live channel, as records tied to the
    over they came from.
 3. **The assistant.** A conversation panel in the app, and `ley ask` in a terminal, that runs the
@@ -33,13 +33,12 @@ This plan uses these terms; AI-1 moves the ones that survive into the writing gu
 | term | means | not |
 |---|---|---|
 | **provider** | a company or local engine that runs a model: Anthropic, OpenAI, Apple's on-device speech engine | "vendor", "backend" |
-| **key** | the secret a provider issues for its API; the contract calls it a credential | "token" (a token is what a model counts) |
+| **key** | the secret a provider issues for its API, or the credentials a cloud platform such as Amazon Bedrock takes; the contract calls it a credential | "token" (a token is what a model counts) |
 | **the assistant** | Leyline's built-in agent, running on the user's key | "copilot", "the AI", "the bot" |
 | **agent** | any MCP client driving `ley mcp`; the assistant is one | |
 | **over** | one squelch opening: one station keyed up, from open to close | "utterance" |
 | **speech record** | the words of one over as a speech decoder reports them: a `DecodeRecord` with protocol `speech` | "transcript" |
-| **ledger** | the daemon's record of model usage: tokens, audio seconds, estimated cost | "billing" |
-| **budget** | the user's cap on a provider's estimated spend in a month | "limit"; "quota" is the provider's |
+| **ledger** | the daemon's record of model usage: requests, tokens and audio seconds | "billing" |
 
 **"Transcript" is taken.** In the contract and the design docs a transcript is the activity log
 of a watch job: squelch-open intervals, levels and coverage gaps (`jobs.proto`, `Transcript`;
@@ -61,7 +60,7 @@ candidate until AI-1 accepts it. The ids are for cross-reference in this plan on
 - **K2.** As an operator, I can paste a key for a provider into Settings, AI. Leyline checks it
   with one cheap call and states whether the provider accepted it. From then on it shows only the
   provider, a label, the key's last four characters and when it was last used.
-- **K3.** As an operator, I can add the same key from a terminal with `ley ai keys add anthropic`,
+- **K3.** As an operator, I can add the same key from a terminal with `ley ai add anthropic`,
   which reads it from stdin so it stays out of the shell history and `ps`. The app's Settings
   shows it at once, because the daemon holds it.
 - **K4.** As an operator, I can choose which provider and model each feature uses. Before I
@@ -69,22 +68,20 @@ candidate until AI-1 accepts it. The ids are for cross-reference in this plan on
 - **K5.** As an operator, I can remove a key. Every job that was using it stops with a line
   naming the key and the command that adds another.
 
-### Usage and budgets
+### Usage
 
-- **U1.** As an operator, I can see this month's usage per provider and per feature: tokens for
-  the assistant and audio minutes for speech, each with an estimated cost and the date of the
-  price table it was computed from.
-- **U2.** As an operator, I can see what one conversation or one transcription job cost, on the
-  conversation and on the job.
-- **U3.** As an operator, I can set a monthly budget per provider. At 80% the app and `ley` warn
-  once. At 100% Leyline starts no new paid work, stops what is running, and states what it
-  stopped and how to raise the budget.
-- **U4.** As an operator, before I transcribe a batch of recordings, Leyline states how many
-  minutes of squelch-open audio that is and the estimated cost, and starts only when I confirm.
-- **U5.** As an operator, a kept speech job running overnight cannot spend past the budget. At
-  the cap it goes `DEGRADED` with `BUDGET_EXHAUSTED`, and it resumes when I raise the budget or
-  the month turns.
-- **U6.** As an operator, `ley ai usage --json` prints the ledger as the standard proto3 JSON
+- **U1.** As an operator, I can see usage per provider, model and feature, by day and by month:
+  requests and tokens for the assistant, requests and audio minutes for speech. Leyline shows
+  usage and no prices; the provider's console shows what it cost.
+- **U2.** As an operator, I can see what one conversation or one transcription job used, on the
+  conversation and on the job, while it runs.
+- **U3.** As an operator, before I transcribe a batch of recordings, Leyline states how many
+  minutes of squelch-open audio it will send and to which provider, and starts only when I
+  confirm.
+- **U4.** As an operator, when a provider refuses a request because of its own rate limit or spend
+  limit, the job or conversation states the provider's reason, and a kept speech job goes
+  `DEGRADED` and retries with backoff rather than ending.
+- **U5.** As an operator, `ley ai usage --json` prints the ledger as the standard proto3 JSON
   mapping, for my own accounting.
 
 ### Speech-to-text
@@ -210,20 +207,21 @@ any other program reads it. On Linux, where the daemon runs for development and 
 only the user can read.
 
 The daemon holds keys, rather than the app, for three reasons. A kept speech job runs with no
-client attached, so it needs the key without the app open. One budget across the app, `ley` and
-the jobs needs one place that sees every spend. And `ley ai keys` and Settings must show the same
+client attached, so it needs the key without the app open. One usage view across the app, `ley`
+and the jobs needs one place that sees every call. And `ley ai` and Settings must show the same
 keys, which is invariant 7 applied to configuration.
 
 A key the contract could return would be readable by anything that opens the socket, which has no
 authentication (`SECURITY.md`, "What the daemon trusts"). With write-only keys, a local process
-can spend through Leyline's jobs, up to the budget, but cannot copy a key.
+can make calls through Leyline's jobs, which appear in the ledger, but cannot copy a key. A cap on
+spending belongs at the provider, in whatever terms it offers.
 
 ### Paid work runs in worker processes the daemon starts
 
 The Swift daemon makes no model call. Each feature's calls are made by an out-of-process worker
 that the daemon spawns, as it spawns decoder plugins today: speech by a decoder plugin, the
-assistant by a `ley` worker. The daemon passes the worker the key it needs at spawn, adds what the
-worker reports it spent to the ledger, and stops the worker when the budget runs out.
+assistant by a `ley` worker. The daemon passes the worker the key it needs at spawn and adds what
+the worker reports it used to the ledger.
 
 This keeps provider SDKs, HTTP clients and prompts out of the process that carries the hot path
 (invariant 4). It reuses the plugin lifecycle that already restarts a crashed plugin and records
@@ -287,25 +285,22 @@ The tools the assistant needs and `ley mcp` lacks are written as MCP tools first
 `ley` mirror, so every agent gains them: `set` on an existing channel, `stop`, bookmarks, bands and
 presets, `watch`, `devices attach`, CHIRP import, and the `ley help` topics as a read-only tool.
 
-### Usage is daemon state, and the budget is enforced where the money is spent
+### Usage is daemon state, in the provider's own units
 
 Each worker reports the usage its provider returned with every response: input, output,
-cache-read and cache-write tokens for a language model, and audio seconds for speech. The daemon
-adds each report to the ledger under the provider, model, feature, and job or conversation, and
-prices it from a bundled table that carries its date and that the user can override. The ledger
-and the budgets are control-plane state with full-state events, so the app's usage view is a
-subscription like any other.
+cache-read and cache-write tokens for a language model, and audio seconds for speech, with one
+request counted per response. The daemon adds each report to the ledger under the provider, model,
+feature, and job or conversation. The ledger is control-plane state with full-state events, so the
+app's usage view is a subscription like any other.
 
-The daemon checks the budget before it spawns a worker and after every report. At the cap it
-refuses new paid work with `BUDGET_EXHAUSTED`, stops the running workers, and puts their jobs in
-`DEGRADED`. The numbers are what the workers report, so a third-party plugin can under-report; the
-ledger is labelled an estimate, and the provider's own console is the account of record.
-Anthropic's usage and cost reports need an Admin API key, and a regular key is refused, so
-reconciling the ledger against them is optional and later.
+Leyline shows usage and never a price. The same model costs different amounts directly, through
+Amazon Bedrock or Google Vertex AI, through a third-party gateway, or under a negotiated contract,
+and a bundled price table would be wrong for most of those. The provider's console is where cost
+and spend limits live. The numbers are what the workers report, so a third-party plugin can
+under-report; the ledger says so.
 
-For speech the cost of a batch is known before it starts: a recording's manifest gives the
-squelch-open duration of every part, and that duration is what a per-minute price applies to
-(U4).
+For speech, the amount of audio a batch will send is known before it starts: a recording's
+manifest gives the squelch-open duration of every part (U3).
 
 ### What the contract gains
 
@@ -314,22 +309,32 @@ A sketch for AI-1 to settle. Every item is additive within v1.
 | addition | for |
 |---|---|
 | `Credentials`: `SetCredential`, `DeleteCredential`, `ListCredentials`, `CheckCredential` | K1 to K5 |
-| `Usage`: `GetUsage`, `SetBudget`, and a ledger event | U1 to U6 |
+| `Usage`: `GetUsage` and a ledger event | U1 to U5 |
 | `DecoderManifest`: the `segmented` input mode, a required credential, the contacted hosts | T1 to T12 |
 | `DecodeConfig`: a recording as the source | T1, T9, T10 |
-| `DecodeRecord`: the usage the record cost | U2 |
+| `DecodeRecord`: the usage the record took | U2 |
 | `Assistant`: start, send, subscribe, approve, cancel; view tools a client declares | A1 to A19 |
-| error codes `CREDENTIAL_MISSING`, `CREDENTIAL_REJECTED`, `BUDGET_EXHAUSTED`, `PROVIDER_UNAVAILABLE`, `PROVIDER_RATE_LIMITED` | every feature |
+| error codes `CREDENTIAL_MISSING`, `CREDENTIAL_REJECTED`, `PROVIDER_UNAVAILABLE`, `PROVIDER_REFUSED` (a rate or spend limit at the provider, with its message) | every feature |
 
-Each has its `ley` mirror (`ley ai keys`, `ley ai usage`, `ley ai budget`, `ley transcribe`,
-`ley decode speech`, `ley ask`) and an implementation in the fake for `ley`'s tests. The error
-codes go into the "Error codes" table in `docs/dev/engine-internals.md`, which tests parse.
+Each has its `ley` mirror and an implementation in the fake for `ley`'s tests. The error codes go
+into the "Error codes" table in `docs/dev/engine-internals.md`, which tests parse. The mirrors:
+
+```sh
+ley ai                              # providers: label, last four characters, last used and checked
+ley ai add anthropic                # reads the key from stdin and checks it
+ley ai check anthropic
+ley ai remove anthropic
+ley ai usage [--since 30d] [--json]
+ley transcribe <recording>
+ley decode speech --freq 146.94 [--job]
+ley ask "<request>" [--continue]
+```
 
 ## What the assistant may do
 
 Leyline only receives, so what an assistant can do wrong is bounded: retune or take over a radio,
-delete recordings, fill the disk, spend the budget and fire notifiers. The policy for each kind of
-action:
+delete recordings, fill the disk, make calls on the user's provider account and fire notifiers.
+The policy for each kind of action:
 
 | action | policy |
 |---|---|
@@ -338,8 +343,8 @@ action:
 | take over a radio another client or channel is using | asks, naming what stops |
 | start a kept job, add a webhook notifier, add or remove several bookmarks | asks, showing what will be written |
 | delete a recording | asks every time |
-| start paid transcription | asks, with the estimate (U4) |
-| run a shell command, add a shell notifier, change keys or budgets | not among the assistant's tools |
+| start paid transcription | asks, stating how much audio it will send (U3) |
+| run a shell command, add a shell notifier, change keys | not among the assistant's tools |
 
 **Text from the air is untrusted input.** Anyone with a transmitter can put words into an APRS
 comment, an AIS field or a speech record, and the assistant reads all three. The worker passes
@@ -365,16 +370,16 @@ Candidates as of 2026-10-12. AI-0 and AI-12 choose the defaults.
 | feature | provider | notes |
 |---|---|---|
 | assistant | Anthropic (Claude) | tool use, prompt caching and a Go SDK (`anthropic-sdk-go`); the tool definitions and system prompt are the same on every turn, so turns after the first read them from the cache |
+| assistant | Claude through Amazon Bedrock, Google Vertex AI or a third-party gateway | the same model behind another endpoint and credential: AWS or Google credentials, or a gateway's URL and key; the Go SDK has Bedrock and Vertex clients |
 | assistant | an OpenAI-compatible local model server | later; whether a local model meets the evals is unmeasured |
 | speech | Apple's on-device speech engine (`SpeechAnalyzer`, macOS 26) | no key, no cost, no audio leaves the Mac; accuracy on NFM receiver audio unmeasured |
 | speech | whisper.cpp | MIT, runs on the Mac; speed against model size on the target Macs unmeasured |
-| speech | a cloud speech-to-text API (OpenAI, Deepgram, AssemblyAI and others) | priced per minute of audio; most take a vocabulary or prompt hint, which is where callsigns and the phonetic alphabet go |
+| speech | a cloud speech-to-text API (OpenAI, Deepgram, AssemblyAI and others) | billed by audio duration; most take a vocabulary or prompt hint, which is where callsigns and the phonetic alphabet go |
 
-Anthropic's API has no speech-to-text endpoint, so a user who wants cloud speech adds a second
-provider's key. Anthropic's list prices on 2026-10-06, per million input and output tokens:
-Claude Opus 5.5 $4 and $20, Claude Sonnet 5.5 $2 and $10, Claude Haiku 5.5 $0.10 and $0.50. What
-one conversation costs is unmeasured. The eval harness already reports cost per scenario
-(`docs/dev/evals.md`), and AI-12 uses it to choose the default model on cost per completed task.
+A provider is a kind (Anthropic, Bedrock, Vertex, OpenAI-compatible, a speech API) plus an
+optional endpoint, and the credential is whatever that kind takes. Anthropic's API has no
+speech-to-text endpoint, so a user who wants cloud speech adds a second provider. How many tokens
+one conversation takes is unmeasured; AI-12 measures it.
 
 ## How the invariants hold
 
@@ -385,7 +390,7 @@ one conversation costs is unmeasured. The eval harness already reports cost per 
 | 4, allocation-free hot path | the segmenter reuses the gated recorder's path; no model call, HTTP request or prompt runs in the daemon's process |
 | 5, sample timebase | speech records carry `SampleTime`; wall clock comes from the anchor, as for every record |
 | 6, full state | ledger and conversation events carry the whole object |
-| 7, state in the daemon | keys, budgets, the ledger and conversations are daemon state; view state stays in the client, as now |
+| 7, state in the daemon | keys, the ledger and conversations are daemon state; view state stays in the client, as now |
 | 8, persistence follows intent | a conversation and an unkept speech job end with their client; `keep` persists speech records and their clips |
 | 9, `CaptureAllocator` | speech jobs are decode jobs and allocate through it |
 | 11, TX | there are no TX tools, as in `ley mcp` |
@@ -396,9 +401,9 @@ Invariants 3, 10 and 13 are not affected.
 ## Status legend and build items
 
 `[ ]` pending, `[x]` done, `[-]` dropped with the reason, `[d]` waiting on a decision. In build
-order: keys and the ledger first, because both features spend through them; speech on stored
-recordings before live speech, because it needs no new live path and its cost is known in
-advance; the assistant after the MCP tools it needs.
+order: keys and the ledger first, because both features call providers through them; speech on
+stored recordings before live speech, because it needs no new live path and the amount of audio
+it sends is known in advance; the assistant after the MCP tools it needs.
 
 ### AI-0 `[ ]` Spike: speech-to-text on receiver audio
 
@@ -417,27 +422,28 @@ offered with its measured accuracy stated, or dropped.
 Waiting on acceptance of the recommendations in "The shape". Write `docs/design/ai.md` with its
 "Deliberately not" and open questions, and move the accepted stories into `user-stories.md`.
 Verify: the doc reads without its code blocks; `docs/README.md` lists it; `SECURITY.md` gains what
-the daemon stores (keys), which hosts workers contact, and what any socket client can now spend.
+the daemon stores (keys), which hosts workers contact, and that any socket client can now make
+calls on the user's provider account.
 
 ### AI-2 `[ ]` Keys
 
 The `Credentials` service, keychain storage on macOS and a user-only file elsewhere,
-`CheckCredential` for each supported provider, `ley ai keys add|list|remove|check` reading the key
-from stdin, and the fake. Verify: Swift tests that no RPC, error message or log line contains key
-material; `ley` tests against the fake; an e2e test in which a key added by `ley` is listed by a
-second client.
+`CheckCredential` for each supported provider, `ley ai` with `add`, `check` and `remove`, the
+key read from stdin, and the fake. Verify: Swift tests that no RPC, error message or log line
+contains key material; `ley` tests against the fake; an e2e test in which a key added by `ley`
+is listed by a second client.
 
-### AI-3 `[ ]` The ledger and budgets
+### AI-3 `[ ]` The ledger
 
-The `Usage` service, the dated price table, budget checks at spawn and on every report, the ledger
-event, `ley ai usage` and `ley ai budget`. Verify: a scripted worker that reports usage past the
-cap is stopped and its job reads `BUDGET_EXHAUSTED`; a new month resumes it; the 80% warning
-arrives once.
+The `Usage` service, the ledger event and `ley ai usage`. Verify: the reports of a scripted worker
+sum per provider, model, feature and job, by day and month; the event and `ley ai usage --json`
+agree; a scripted provider refusal reaches the job as `PROVIDER_REFUSED` with the provider's
+message, and a kept job retries.
 
 ### AI-4 `[ ]` Settings, AI in the app
 
 The app's first Settings window (⌘,) with an AI pane: keys (K1 to K5), the provider and model per
-feature (K4), budgets and the usage view (U1, U3). It renders the daemon's state and writes through
+feature (K4), and the usage view (U1). It renders the daemon's state and writes through
 the coalescer like every other view. Verify: `make app-e2e` against the daemon with a scripted
 provider; on the Mac, the pane read in both themes, and the K1 check that no AI control shows
 without a key.
@@ -446,10 +452,10 @@ without a key.
 
 The `segmented` input mode, a recording as a decode source, the credential requirement in the
 manifest, the speech plugin AI-0 chose, callsign normalisation, and `ley transcribe <recording>`
-with the estimate and the confirmation (U4). Verify, with a scripted speech engine that returns
-known text: each record's `time` matches its over in the manifest to the sample; the estimate
-equals the manifest's squelch-open duration; no audio from a span with the squelch shut reaches
-the plugin.
+with the amount of audio and the confirmation (U3). Verify, with a scripted speech engine that
+returns known text: each record's `time` matches its over in the manifest to the sample; the
+stated amount equals the manifest's squelch-open duration; no audio from a span with the squelch
+shut reaches the plugin.
 
 ### AI-6 `[ ]` Speech in the Library
 
@@ -489,17 +495,18 @@ Verify: help goldens, and transcripts recorded against the fake.
 ### AI-11 `[ ]` The app's assistant panel
 
 A panel beside the inspector: the conversation, each step expandable to its tool call and result
-(A16), confirmations as buttons, stop, the cost so far, and view tools for the waterfall and the
-Library (A19). Verify: façade tests; the panel read on the Mac; a story test in which the
+(A16), confirmations as buttons, stop, the tokens used so far, and view tools for the waterfall
+and the Library (A19). Verify: façade tests; the panel read on the Mac; a story test in which the
 assistant retunes and the app's mirror shows the change attributed to it.
 
 ### AI-12 `[ ]` Assistant evals and the default model
 
 `leyeval` runs scenarios with the assistant as the agent, on a key the developer supplies, and
-reports cost per scenario as it does today. Run the existing scenarios and new ones for A1, A3, A6
-and A11 on Claude Opus 5.5, Sonnet 5.5 and Haiku 5.5 at low and medium effort. Verify: the default
-model and effort are chosen on pass rate and cost per completed scenario, and the run's numbers
-and date are recorded here.
+reports the tokens each scenario took from the ledger. Run the existing scenarios and new ones for
+A1, A3, A6 and A11 on Claude Opus 5.5, Sonnet 5.5 and Haiku 5.5 at low and medium effort. Verify:
+the default model and effort are chosen on pass rate and tokens per completed scenario, priced
+from the provider's list on the day of the run, and the run's numbers and date are recorded
+here.
 
 ### AI-13 `[ ]` Injection scenarios
 
@@ -516,6 +523,10 @@ Code on `ley mcp`.
 - **Model calls from the daemon's process.** Provider SDKs and HTTP clients stay out of the
   process that carries the hot path, and a provider change needs no daemon release.
 - **A key the contract returns.** Anything that opens the socket could copy it.
+- **Prices, cost estimates and budgets.** Prices differ by provider, platform (Bedrock, Vertex, a
+  gateway) and contract, so a bundled table would be wrong for many users, and a budget enforced
+  on wrong prices would stop work at the wrong point. Leyline shows usage in the provider's units;
+  cost and spend limits stay with the provider.
 - **A Leyline account or relay service.** Leyline runs no service; every call goes from the
   user's Mac to the provider they chose.
 - **Speech text without its audio.** A live speech job keeps the clips it transcribed.
@@ -540,10 +551,10 @@ Code on `ley mcp`.
   record and one notification per over; per exchange gives the engine more context.
 - **Where usage travels from a decoder:** a field on `DecodeRecord`, or a second message type on
   the plugin's stdout, which changes the framing for existing plugins.
-- **The ledger's month:** the provider's billing month, which may be in UTC, or the user's
-  calendar month.
+- **The usage view's days and months:** the user's local calendar, or UTC, which is what most
+  providers' consoles use, so the two can be compared.
 - **The keychain from an SSH session:** whether a daemon started by hand outside the login session
-  can read its keychain item, and what `ley ai keys` reports when it cannot.
+  can read its keychain item, and what `ley ai` reports when it cannot.
 - **The speech engine's vocabulary hint:** whether it should come from the band (callsigns and the
   phonetic alphabet on amateur bands, ATC phraseology on airband) and from the user's bookmarks and
   labels, and how much that changes AI-0's numbers.

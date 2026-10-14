@@ -60,4 +60,4 @@ Candidates, not commitments. The showcase layer that makes people screenshot the
 - As an operator, a menu-bar / ambient mode shows a live mini-spectrum of a watched frequency.
 
 ## V3 — AI features on the user's own key
-Candidates, not commitments. The stories (keys, usage and budgets, speech-to-text, an assistant that runs the radio from plain requests), the shape that serves them and the decisions they wait on are in [`ai-features.md`](ai-features.md); the accepted ones move here.
+Candidates, not commitments. The stories (keys and usage, speech-to-text, an assistant that runs the radio from plain requests), the shape that serves them and the decisions they wait on are in [`ai-features.md`](ai-features.md); the accepted ones move here.
