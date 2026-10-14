@@ -600,7 +600,7 @@ settled in "Decisions taken for the build": how `over` is numbered when a segmen
 openings, and that a conversation cannot end with its starter's presence. The terms table's
 `recording` entry was widened to cover audio parts, and `transcript` gained an entry.
 
-### AI-2 `[ ]` Keys
+### AI-2 `[x]` Keys
 
 In two halves that share only the contract.
 
@@ -615,7 +615,16 @@ Files: the protos, `go/gen`, `swift/LeylineProto`, `go/pkg/leyline/errors.go`,
 `docs/dev/engine-internals.md`. Verify: `make proto-check`; `ErrorTableTests` and
 `TestErrorTableMatchesDocumentation` pass with the new rows; `make go swift`.
 
-**AI-2b, the daemon.** A `CredentialStore` actor holding `ai.json` (metadata and feature models)
+**AI-2b, the daemon.** Done 2026-10-14. What the build settled beyond the text below: the
+secret file is `<data>/secrets/credentials.json` in a directory of its own, because the data
+directory is shared with the store and is created 0755 by whoever gets there first; `CheckCredential`
+returns the `Credential` and never fails for a rejected key, which `startDecode` raises as
+`CREDENTIAL_REJECTED` instead; the worker's answer and a refusing plugin's last stderr line have
+the key replaced, verbatim, JSON-escaped and percent-encoded, before they reach a message or an
+event; the daemon's check path reports no usage because the worker does. The keychain store was
+written on Linux and never compiled: the Mac check is that `SetCredential` makes a login-keychain
+item (`com.leysdr.leyline`, account the provider) a launchd-started `leylined` reads without a
+prompt. A `CredentialStore` actor holding `ai.json` (metadata and feature models)
 and a `SecretStore` protocol with two implementations: `KeychainSecrets` under
 `#if canImport(Security)` (service `com.leysdr.leyline`, account = provider) and `FileSecrets`
 (`credentials.json`, 0600, atomic). `CredentialsService` with the five RPCs; `SetCredential`
@@ -635,7 +644,11 @@ file store is 0600; a scripted `ley` on `--ley` that prints `rejected` yields
 `CREDENTIAL_REJECTED` from `CheckCredential` and a `REJECTED` outcome in the list; a missing `ley`
 yields `UNAVAILABLE`.
 
-**AI-2c, `ley`.** `Credentials` and `Usage` clients on `leyline.Client`; the fake's
+**AI-2c, `ley`.** Done 2026-10-14, with `ley ai add` reading the key with echo off on a
+terminal and refusing to prompt when echo cannot be turned off; the check worker follows no
+redirect and replaces the key in any provider message it echoes; the e2e tests in
+`go/internal/e2e/ai_test.go` prove the key's text absent from every output, event, log and file
+except the 0600 key file. `Credentials` and `Usage` clients on `leyline.Client`; the fake's
 `Credentials` and `Usage` servers with the same write-only rule; `ley ai` (list, `add` with the
 key from stdin and a refusal with a usage error when stdin is a terminal and `--stdin` was not
 given, `check`, `remove`, `use`) and the hidden `ley worker check`, which for `anthropic` calls
@@ -650,9 +663,11 @@ e2e test in `go/internal/e2e` in which a key added by `ley ai add` is listed by 
 with its last four characters and never its text, and `ley ai check` against a scripted `ley`
 worker reports the outcome.
 
-### AI-3 `[ ]` The ledger
+### AI-3 `[x]` The ledger
 
-**AI-3a, the daemon.** A `Ledger` actor: `usage.jsonl` appended per report, folded into
+**AI-3a, the daemon.** Done 2026-10-14. The append is one `write(2)`, so a power cut can lose the
+last reports and a crash cannot; the ledger write is awaited on the decode job's reader task, so
+a slow disk slows a speech job's records and never the DSP thread. A `Ledger` actor: `usage.jsonl` appended per report, folded into
 `UsageLine`s by provider, model, feature, scope and UTC day; `UsageService` with `GetUsage` and
 `ReportUsage`; a `UsageLine` event after every report; the lines in `GetState`; `last_used_at_ns`
 on the credential whose provider the report names; lines older than 400 days dropped at start. A
@@ -663,13 +678,14 @@ decode record that carries `usage` is added to the ledger by `DecodeRunner.emit`
 by day and by month, across a daemon restart; the event and `GetUsage` agree; a record with
 `usage` from the fake decoder appears as a line under the job.
 
-**AI-3b, `ley ai usage`.** `--since` (default 30d), `--by day|month`, `--json` as
+**AI-3b, `ley ai usage`.** Done 2026-10-14. `--since` (default 30d), `--by day|month`, `--json` as
 `GetUsageResponse`, a header that says the days are UTC and the numbers are what the workers
 reported; the fake's ledger. Files: `go/internal/cli/ai.go`, `go/internal/fakedaemon/ai.go`,
 goldens, `docs/reference/cli.md`. Verify: `ley` tests against the fake at 40, 80 and 160 columns;
 `--json` equals the fake's lines.
 
-**AI-3c, refusal and retry.** `PROVIDER_REFUSED` from a worker or plugin reaches the job as
+**AI-3c, refusal and retry.** Done 2026-10-14: a plugin exits 75 (`EX_TEMPFAIL`) with the
+provider's words as its last stderr line. `PROVIDER_REFUSED` from a worker or plugin reaches the job as
 `DEGRADED` with the provider's message in `status_detail`, and a kept job retries with the
 decoder's backoff rather than ending; an unkept job ends with the error. Files:
 `engine/Sources/LeylineServer/Jobs/DecodeRunner.swift`, tests. Verify: the fake decoder told to
@@ -769,7 +785,8 @@ scripted conversation.
 
 ### AI-4 `[ ]` Settings, AI in the app
 
-A `Settings` scene (⌘,) with an AI pane: keys (K1 to K5), the provider and model per feature
+The mirror half is done (2026-10-14): `MirrorState` carries `ai` and `usage` from the snapshot
+and the two events, tested on Linux; the pane remains. A `Settings` scene (⌘,) with an AI pane: keys (K1 to K5), the provider and model per feature
 (K4), and the usage view (U1). `DaemonMirror` gains `ai` and `usage` from the snapshot and the
 two events; the pane renders them and writes through `AppSession` with the unary RPCs, as
 recordings and bookmarks do (the coalescer carries parameter writes only). Verify: façade tests
