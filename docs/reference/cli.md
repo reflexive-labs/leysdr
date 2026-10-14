@@ -57,6 +57,10 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # the resource ley://records/<job_id>
 ├── records [--protocol P] [--job-id ID] [--device-id ID] [--kind K] [--since 1h] [--near LAT,LON --radius 10km] [--in-effect] [--limit N]
 │                                    # Decoders.QueryRecords over what kept jobs wrote, newest first
+├── transcribe <recording> [--engine D] [--model M] [--yes]
+│                                    # a kept decode job with DecodeConfig.source_uri: a speech decoder reads
+│                                    # a gated recording one over at a time; states the minutes of
+│                                    # squelch-open audio and where they go, and asks first
 ├── watch <decoder> [--where field=value] [--county FIPS] [--near LAT,LON --radius R] [--notify[=TARGET]] [--freq F] [--device SEL] [--take-over] [--detach|--job] [--count N]
 │                                    # a decode job with a daemon-side predicate and a notifier:
 │                                    # attached it streams only the matching records; --detach leaves
@@ -489,9 +493,10 @@ would drift from what Finder shows. Its keys are snake_case: `{job_id, uri, kind
 mode, bandwidth_hz, sample_rate, format, device, gains, squelch_dbfs, gate, part_ms, started_at_ns,
 ended_at_ns, ended_by, created_by, anchors, parts, coverage_gaps, bytes}`, where `parts` is
 `[{part, file, start_sample, end_sample, samples, bytes, peak_dbfs, mean_dbfs, squelch_opens,
-clipped_ms}]` (`peak_dbfs` and `mean_dbfs` absent on a part nobody finished measuring, such as one
-a restart repaired; `clipped_ms`, how long the capture's `CaptureLevel` reported clipping inside the
-part, absent when nothing clipped), `coverage_gaps` is `[{from_sample, to_sample, reason}]` and `anchors` is one entry per
+squelch_open_ms, clipped_ms}]` (`peak_dbfs` and `mean_dbfs` absent on a part nobody finished
+measuring, such as one a restart repaired; `squelch_open_ms`, how long the squelch was open inside
+the part, absent in a recording made before the key existed; `clipped_ms`, how long the capture's
+`CaptureLevel` reported clipping inside the part, absent when nothing clipped), `coverage_gaps` is `[{from_sample, to_sample, reason}]` and `anchors` is one entry per
 capture the recording spanned, each dating its own capture's samples. `ended_by` is one of
 `duration`, `quiet`, `cancelled`, `channel ended`, `restart`, `store full`, `error`. Beside each
 part is its own sidecar — the `iqfile` document (`iq-files.md`) with a `recording` block — which is
@@ -576,6 +581,59 @@ total                                                      56  49,210  4,104   1
 
 The KEY column reads `-` for a key of four characters or fewer, which shows none of itself. On a
 narrower terminal `ley ai usage` drops the cache columns first, then the feature and the provider.
+
+**Speech on a recording** (`docs/design/ai.md`, "Speech-to-text is a decoder"). `ley transcribe
+<recording>` runs a speech decoder over a gated audio recording: `Jobs.StartJob` with a kept
+`DecodeConfig` whose `source_uri` is `ley://recordings/<id>`, so the daemon reads the stored parts
+with no capture, channel or lease, and hands the decoder one segment at a time, cut at each part's
+`squelch_opens` with half a second either side. Before it starts, `ley` reads the manifest through
+`Resources.ResolveLocalPath` and states the parts, the minutes the squelch was open (each part's
+`squelch_open_ms`, or the sum of its sidecar's `squelch_opens` for a recording made before that
+key), the frequency and mode, the decoder, and where the audio goes: the decoder manifest's
+`contacts_hosts`, or `on this Mac; no audio leaves it` when it lists none. On a terminal it asks
+`[y/N]`; `--yes` (`-y`) starts without asking and is required when stdin is not a terminal, a
+usage error otherwise. It then prints one line per record as the records arrive: the wall clock of
+the over, from the recording's anchor; its part and its 1-based over within the part (the record's
+`clip_uri` and `over`); the text; and the record's `callsigns`, a pattern match over the text, in
+parentheses. When the job leaves `RUNNING` it prints any record the live stream had not yet
+delivered, read back with `QueryRecords`, then the count and the `ley records` command that reads
+them again. A job that fails exits 1 with its reason and code; Ctrl-C cancels the job and keeps
+the records it made. `--json` prints each `DecodeRecord` as one line of NDJSON and nothing else on
+stdout.
+
+`--engine` picks the speech decoder, by name or alias (default `speech`); a decoder whose input is
+not `SEGMENTED` is a usage error. `--model` sets the speech feature's model for the decoder's
+provider, as `ley ai use speech <provider> <model>` does, so later speech jobs use it too; it is a
+usage error with a decoder that calls no provider. A decoder whose manifest names a provider with
+no key set is refused by the daemon with `CREDENTIAL_MISSING`, whose message names `ley ai add`. A
+recording that lists no squelch openings (one recorded without `--gate squelch`) and an IQ
+recording are refused before anything is asked, each with the `ley record` command that makes one
+that can be transcribed. The bundled `speech` decoder has one engine, `scripted`, which replays a
+file of lines and sends nothing anywhere; it is what the tests transcribe with. Recorded against
+the contract's fake daemon, whose recording and words are seeded, so ids and times will differ:
+
+```
+$ ley transcribe job_01SEEDSEEDSEEDSEEDSEEDSE < /dev/null
+Transcribe 2 parts, 0.1 min of squelch-open audio from 146.520 MHz NFM, with speech (on this Mac; no audio leaves it).
+ley: stdin is not a terminal, so nobody can confirm sending the audio. Run: ley transcribe job_01SEEDSEEDSEEDSEEDSEEDSE --yes
+
+$ ley transcribe job_01SEEDSEEDSEEDSEEDSEEDSE --yes
+Transcribing 2 parts, 0.1 min of squelch-open audio from 146.520 MHz NFM, with speech (on this Mac; no audio leaves it).
+14:03:00 part 1 over 1  this is whiskey six alpha bravo charlie (W6ABC)
+14:03:03 part 1 over 3  kilo delta two x-ray yankee zulu, go ahead (KD2XYZ)
+14:03:16 part 2 over 1  roger, see you at six alpha
+Transcribed 3 records, kept as ley://records/job_01M4YD5AKAGK8S2QREFDM9RV91
+Next: ley records --protocol speech --job-id job_01M4YD5AKAGK8S2QREFDM9RV91
+
+$ ley records --protocol speech
+TIME          PROTOCOL  DEVICE  KIND  SUMMARY
+Oct 13 14:03  speech    -       -     roger, see you at six alpha
+Oct 13 14:03  speech    -       -     kilo delta two x-ray yankee zulu, go ahead
+Oct 13 14:03  speech    -       -     this is whiskey six alpha bravo charlie
+```
+
+Part 1's first two overs are 300 ms apart, inside the half-second hang, so they are one segment
+and one record, numbered by its first over; that is why the next line is over 3.
 
 **Exit status** (also `ley help scripting`): 0 on success, including a Ctrl-C that ends a live
 `tune`/`play`/`spectrum --watch`/`fft`/`listen`/`devices --watch` session; 1 when the daemon refused or

@@ -66,8 +66,10 @@ The manifest for the bundled APRS decoder, trimmed to the fields that carry mean
 - **`input.tap`** is which stage of the channel you read. `TAP_AUDIO` is what a listener hears, after
   de-emphasis and the limiter; `TAP_DEMOD` is the discriminator before any of that, which a data
   decoder usually wants because de-emphasis tilts the tones a modem keys on. `input.mode` is
-  `CONTINUOUS` for a stream; `SLOT_ALIGNED` (for slot-timed protocols like FT8) is declared here but
-  not yet delivered by the daemon.
+  `CONTINUOUS` for a stream, and `SEGMENTED` for a decoder that works on one over at a time, as a
+  speech engine does (below, "Segmented input"); `input.preRollMs` and `input.hangMs` set how much
+  audio a segment keeps either side of the squelch, 500 ms each when 0. `SLOT_ALIGNED` (for
+  slot-timed protocols like FT8) is declared here but not yet delivered by the daemon.
 - **`outputs`** declares what shapes you produce. Every decoder produces `SHAPE_RECORDS`;
   `SHAPE_ENTITIES` says a client can fold your records into a per-transmitter table (`ley track`),
   and `entitySilenceS` is how long a station stays in that table after its last record.
@@ -76,6 +78,13 @@ The manifest for the bundled APRS decoder, trimmed to the fields that carry mean
   passes through untouched.
 - **`executable`** is the program, resolved against the manifest's own directory first and `PATH`
   second, with `args` passed to it.
+- **`credentialProvider`** names the provider whose key your decoder calls with (`deepgram`,
+  `openai`), and **`contactsHosts`** lists the hosts it sends data to. With a provider named, the
+  daemon refuses to start the job until a key is set (`CREDENTIAL_MISSING`, whose message names
+  `ley ai add <provider>`) and hands the key to your program when it starts it (below, "The key").
+  `contactsHosts` is advisory and nothing enforces it; `ley transcribe` states it before it sends
+  anything, so a person can see where the audio goes, and `ley decoders --json` carries it. Leave both empty when your decoder calls
+  nobody.
 
 ## The wire
 
@@ -101,6 +110,34 @@ logging — the daemon captures it under `leyline.decoder.<name>`.
    its last line on stderr and exits with status 75 (`EX_TEMPFAIL`). A kept job waits and starts
    the decoder again on the restart backoff; any other job ends with `PROVIDER_REFUSED` and that
    message. Any other exit while stdin is open is a crash, and the daemon restarts the decoder.
+
+### Segmented input
+
+A manifest with `input.mode` `SEGMENTED` gets one segment at a time instead of a stream. A segment
+is one over: the audio from `preRollMs` before the squelch opened to `hangMs` after it closed, and a
+squelch that reopens inside the hang continues the same segment. The first frame of a segment has
+`segment` set to `SEGMENT_START` and carries audio; the frames after it are unmarked; the last has
+`segment` set to `SEGMENT_END`, an empty payload, and the `time` of the sample after the segment's
+last sample. Nothing arrives between segments, so audio while the squelch is shut is never sent.
+Emit the segment's records when its END frame arrives, stamped with the START frame's `time`.
+
+A decode job can also read a gated recording instead of a radio (`DecodeConfig.source_uri`, which
+`ley transcribe` sets). The daemon cuts the stored parts at their `squelch_opens` with the same
+pre-roll and hang and sends the segments as fast as you read them, so a recording transcribed later
+gives the same segments as the live job that made it. Each record from a segmented job gets two
+fields from the daemon: `clip_uri`, the recording part that holds its audio, and `over`, the 1-based
+index of its first over in that part. Leave both unset.
+
+### The key
+
+When the manifest names a `credentialProvider`, the daemon writes one varint-delimited
+`SetCredentialRequest` (`provider`, `secret`, `endpoint`) to stdin before the `StreamDescriptor`,
+every time it starts your program. Pass the secret to the provider's API and nowhere else: not to
+stderr, a record, a file or a child process's environment. The daemon replaces the key in the last
+stderr line of a decoder that exits 75, but no other output is scrubbed. Report what each call
+used in the record's `usage` (a `UsageReport`: `provider`, `model`, `requests`, and the provider's
+own units, `audio_seconds` for speech); the daemon fills in `feature` and `job_id` and adds it to
+the ledger `ley ai usage` prints.
 
 The daemon's write to you is non-blocking. A decoder that stops reading has its audio dropped and
 gapped, not queued, so keep up with the stream or expect gaps.
@@ -135,10 +172,56 @@ func main() {
 ```
 
 `plugin.Main` handles `--manifest` (it prints the manifest and exits, which is how a build checks the
-file matches the code) and otherwise runs the read-decode-emit loop over stdin and stdout. The
+file matches the code) and otherwise runs the read-decode-emit loop over stdin and stdout.
+
+A decoder with `SEGMENTED` input implements `SegmentDecoder` instead and calls `plugin.MainSegmented`:
+
+```go
+type SegmentDecoder interface {
+    Segment(samples []float32, at *leylinev1.SampleTime, emit func(*leylinev1.DecodeRecord))
+}
+
+func main() {
+    plugin.MainSegmented(manifest, func(audioRateHz uint32, key *leylinev1.SetCredentialRequest) plugin.SegmentDecoder {
+        return newMyDecoder(audioRateHz, key)
+    })
+}
+```
+
+`Segment` is called once per segment with all of its audio, a gap inside it filled with silence,
+and `at` is the START frame's time. The buffer is reused for the next segment, so copy what you
+keep. `MainSegmented` reads the key first when the manifest names a provider (`plugin.ReadCredential`
+does the read for a decoder that wires stdin itself) and passes it to the factory; `key` is nil
+when the manifest names none. A segment longer than `plugin.MaxSegment` (ten minutes), a segment cut
+off by the end of input, and audio outside a segment are logged on stderr and dropped. The
 bundled `leydec-aprs` (`go/cmd/leydec-aprs`, with the AFSK, AX.25 and APRS stages in
 `go/pkg/decoders`) is the worked example; the fake decoder in the engine tests
 (`engine/Sources/FakeDecoder`) is the smallest one, a single record per frame.
+
+## Speech decoders
+
+A speech decoder emits one record per segment with `protocol` `speech` (the manifest's `name`),
+`time` at the START frame, and these `fields`:
+
+| field | type | holds |
+|---|---|---|
+| `text` | text | what the engine heard, as it wrote it |
+| `language` | text | the language transcribed, an ISO 639-1 code |
+| `model` | text | the model that produced the text |
+| `confidence` | number | the engine's own confidence, 0 to 1; absent when the engine reports none |
+| `callsigns` | text | callsigns in the text, upper case and comma-separated, empty when none |
+
+`raw` holds the provider's response bytes as they arrived, and `usage` what the call used. The
+`callsigns` field is a pattern match over the text, and its field hint says so: `go/pkg/callsign`
+folds the phonetic alphabet, spoken digits and spelled letters into compact runs ("whiskey six
+alpha bravo charlie" is `W6ABC`) and matches the amateur callsign pattern on each run.
+
+The bundled `leydec-speech` (`go/cmd/leydec-speech`) is the worked example. Its `--engine` picks the
+engine, and this build has one: `scripted`, which ignores the audio and returns the lines of the
+file `LEYDEC_SPEECH_SCRIPT` names, one per segment, repeating the last line when they run out and
+returning `segment N` with no file. It calls no provider, so its manifest names none, and it exists
+so that a test of the whole path knows the words in advance. `--model` is recorded on each record
+and `--language` (default `en`) is the language asked for.
 
 ## Wrapping an existing tool
 

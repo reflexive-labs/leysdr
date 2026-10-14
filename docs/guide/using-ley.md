@@ -784,6 +784,32 @@ A recording that is still being made is refused, because the daemon has a part o
 `ley jobs cancel job_…` first, and the recording is complete when it stops. Deleting the
 directory in Finder does the same as `delete`, and the daemon does not need to be told.
 
+### Transcribing a recording
+
+`ley transcribe` turns the overs of a gated recording into text, one record per over, which
+`ley records --protocol speech` reads back later. The daemon reads the stored parts faster than
+real time and sends a speech decoder only the audio around each over, so before it starts,
+`transcribe` states how many minutes of squelch-open audio that is and where it goes, and asks.
+`--yes` skips the question. A recording made without `--gate squelch` lists no overs and has
+nothing to transcribe. This was recorded against the fake daemon, with its words seeded:
+
+```console
+$ ley transcribe job_01SEED
+Transcribe 2 parts, 0.1 min of squelch-open audio from 146.520 MHz NFM, with speech (on this Mac; no audio leaves it)? [y/N] y
+14:03:00 part 1 over 1  this is whiskey six alpha bravo charlie (W6ABC)
+14:03:03 part 1 over 3  kilo delta two x-ray yankee zulu, go ahead (KD2XYZ)
+14:03:16 part 2 over 1  roger, see you at six alpha
+Transcribed 3 records, kept as ley://records/job_01M4YD5AKAGK8S2QREFDM9RV91
+Next: ley records --protocol speech --job-id job_01M4YD5AKAGK8S2QREFDM9RV91
+```
+
+Each line is one over: when it was heard, which part of the recording holds it, and the words. The
+callsigns in parentheses are what a pattern found in the text after the phonetic alphabet was
+folded into letters, so check a doubtful one by ear with `ley play`. The speech decoder in this
+build has no speech engine yet: it replays a script of lines and is what the tests transcribe
+with, so a real recording gets `segment 1`, `segment 2` and so on. `ley transcribe --help` lists
+the rest.
+
 ## 12. Decode what is being said
 
 `ley decode` shows what the packets on a frequency contain. The daemon runs a decoder,
