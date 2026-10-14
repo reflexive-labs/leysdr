@@ -114,6 +114,8 @@ final class UsageLedgerTests: XCTestCase {
         XCTAssertEqual(lines.map(\.inputTokens), [2])
         let text = try String(contentsOfFile: path, encoding: .utf8)
         XCTAssertEqual(text.split(separator: "\n").count, 1, "the file is rewritten without what was dropped: \(text)")
+        let attributes = try FileManager.default.attributesOfItem(atPath: path)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600, "the rewrite keeps the ledger private")
     }
 
     // MARK: Over the socket

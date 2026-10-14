@@ -608,10 +608,14 @@ write a key and never read one: `Credentials` returns a `Credential` with the pr
 secret's last four characters (none for a secret of four or fewer) and the times, and no reply, event,
 error or log line carries the secret. On macOS the secret is a login-keychain item `leylined`
 creates (service `com.leysdr.leyline`, account the provider, readable after first unlock);
-elsewhere it is `credentials.json` in the data directory, mode 0600 in a 0700 directory, written to
-a temporary file created 0600 and renamed over the old one (`SecretStore`, `FileSecrets`,
-`KeychainSecrets`). What a listing shows is `ai.json` beside it, the proto3 JSON of `AIState`, so a
-listing never opens the keychain (`CredentialStore`). The data directory is `--data`, by default
+elsewhere it is `secrets/credentials.json` in the data directory, mode 0600, in a `secrets`
+directory the daemon creates 0700 and sets back to 0700 if it finds it otherwise: the data
+directory itself may already be 0755, made by the record store or the recordings (`SecretStore`,
+`FileSecrets`, `KeychainSecrets`). What a listing shows is `ai.json` in the data directory, the
+proto3 JSON of `AIState`, so a listing never opens the keychain (`CredentialStore`). The key file,
+`ai.json` and a rewritten ledger are written to a temporary file created 0600 and renamed over the
+old one, so each stays 0600 (`writePrivateFile(_:to:)`); a temporary key file a crash left is
+removed the next time the key file is read. The data directory is `--data`, by default
 `~/Library/Application Support/Leyline` on macOS and `$XDG_DATA_HOME/leyline` (or
 `~/.local/share/leyline`) elsewhere.
 
@@ -620,18 +624,23 @@ The daemon makes no model call. A check runs `ley worker check --provider P [--e
 one JSON line, `{"outcome": "accepted"|"rejected"|"unavailable", "message": "…"}`, within 30 s
 (`WorkerProcess`). `ley` is `--ley` or `LEYLINE_LEY`, else the one beside `leylined`, else `PATH`
 (`ProgramLocator`, the lookup a decoder's bare `executable` uses). No `ley`, no answer or an answer
-that does not parse is an `UNAVAILABLE` outcome with the reason, never an RPC error, and anything
-the worker writes has the secret replaced before it is logged or stored. `SetCredential` stores the
+that does not parse is an `UNAVAILABLE` outcome with the reason, never an RPC error. The answer's
+message and the worker's stderr have the secret replaced before they are logged or stored, as
+does the last stderr line of a decoder that refuses ("Decoders" below), in three forms: as it
+stands, JSON-escaped and percent-encoded (`WorkerProcess.redacting(_:in:)`). A worker or plugin
+that transforms the key any other way is not caught. `SetCredential` stores the
 key and then checks it; `CheckCredential` checks the stored one. Both return the `Credential` with
 the outcome in `last_check`, a rejected key included, and fail only with `CREDENTIAL_MISSING` when
 there is no key to check, as `DeleteCredential` does when there is none to delete. Deleting a key
 ends every live decode job whose manifest names that `credential_provider`, `FAILED` with
 `CREDENTIAL_MISSING`, and a decode job whose provider's key was last checked `REJECTED` is refused
-at start with `CREDENTIAL_REJECTED` in the provider's words. `SetFeatureModel` takes `assistant` or `speech`; an empty provider and model
-clears the choice.
+at start with `CREDENTIAL_REJECTED` in the provider's words. `SetFeatureModel` takes `assistant`
+or `speech`; an empty provider and model clears the choice.
 
 The ledger is `<store>/usage.jsonl`: one `UsageReport` per line as proto3 JSON, appended as each
-arrives (`Ledger`). At start the file is folded into `UsageLine`s by provider, model, feature, scope
+arrives with one `write(2)` (`Ledger`). That reaches the kernel, not the disk: a power cut can
+lose the last reports, a daemon crash cannot. The append happens on the path of the record that
+carried the usage, so a slow disk slows record delivery of a speech job. At start the file is folded into `UsageLine`s by provider, model, feature, scope
 (the job or conversation) and UTC day, the day the providers' consoles count, and reports older
 than 400 days are dropped and the file rewritten. A report names a job or a conversation or
 neither (a key check has no scope), never both. A report arrives by `Usage.ReportUsage` from a
@@ -976,7 +985,7 @@ resolved values in `PersistenceParams` on the stream descriptor.
   in the process's own task, never in a child that the serve loop's return could cancel.
 - Data directory: `--data`, `~/Library/Application Support/Leyline` on macOS and
   `$XDG_DATA_HOME/leyline` (or `~/.local/share/leyline`) elsewhere; it holds `ai.json` and, off
-  macOS, `credentials.json` ("Credentials and usage"). `--ley` (or `LEYLINE_LEY`) names the `ley`
+  macOS, `secrets/credentials.json` ("Credentials and usage"). `--ley` (or `LEYLINE_LEY`) names the `ley`
   the daemon runs for its workers.
 - Logs to stderr via swift-log. The plist `ley daemon install` writes has launchd redirect it to
   `~/Library/Logs/Leyline/leylined.log`; the app's launch agent cannot name a path under `~`, so it

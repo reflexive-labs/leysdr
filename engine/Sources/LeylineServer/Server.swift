@@ -42,7 +42,7 @@ package final class Daemon: Sendable {
         var recordingsPath: String
         var recordingsCapBytes: UInt64
         var recordingsAgeDays: UInt32
-        /// The data directory: `ai.json`, and `credentials.json` where there is no keychain
+        /// The data directory: `ai.json`, and `secrets/credentials.json` where there is no keychain
         /// (docs/dev/engine-internals.md, "Credentials and usage").
         var dataPath: String
         /// Where provider keys are kept; nil is the platform's (`defaultSecretStore`). A test

@@ -170,7 +170,7 @@ actor Ledger {
         var text = kept.joined(separator: "\n")
         if !text.isEmpty { text += "\n" }
         do {
-            try Data(text.utf8).write(to: URL(fileURLWithPath: path), options: .atomic)
+            try writePrivateFile(Data(text.utf8), to: path)
         } catch {
             log.error("cannot rewrite \(path): \(error)")
         }

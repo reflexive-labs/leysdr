@@ -34,6 +34,9 @@ final class WorkerProcessTests: XCTestCase {
         let args = try String(contentsOfFile: dir + "/ley.args", encoding: .utf8)
         XCTAssertEqual(args, "worker check --provider anthropic --endpoint https://gw.example\n")
         XCTAssertFalse(args.contains("SECRETMARKER"), "the key is never an argument")
+        let environment = try String(contentsOfFile: dir + "/ley.env", encoding: .utf8)
+        XCTAssertTrue(environment.contains("LEYLINE_SOCKET="), "the dump is the worker's environment")
+        XCTAssertFalse(environment.contains("SECRETMARKER"), "the key is never in the environment")
         XCTAssertEqual(try String(contentsOfFile: dir + "/ley.stdin", encoding: .utf8), secret + "\n")
         XCTAssertEqual(try String(contentsOfFile: dir + "/ley.socket", encoding: .utf8), "/tmp/test.sock\n",
                        "the worker reports usage to the daemon that ran it")
@@ -50,6 +53,21 @@ final class WorkerProcessTests: XCTestCase {
         let check = await worker(ley).check(provider: "anthropic", endpoint: "", secret: secret)
         XCTAssertEqual(check.outcome, .accepted)
         XCTAssertEqual(check.message, "hello [key]")
+    }
+
+    func testTheKeyEscapedAsJSONOrPercentEncodedIsReplacedToo() async throws {
+        let dir = try makeTempDir("worker")
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        // A key with characters JSON and URLs both escape, so each form differs from the key.
+        let awkward = "sk-test/SECRET\"MARKER9f3"
+        // The worker JSON-encodes a message that already holds the key escaped twice over, as a
+        // worker quoting an HTTP body it sent would: decoding the line leaves the escaped form.
+        let line = #"{"outcome": "rejected", "message": "sent {\"key\": \"sk-test\\/SECRET\\\"MARKER9f3\"} to /v1/models?key=sk-test/SECRET%22MARKER9f3 and \"sk-test/SECRET\"MARKER9f3\""}"#
+        try (line + "\n").write(toFile: dir + "/answer", atomically: true, encoding: .utf8)
+        let ley = try writeScriptedLey(in: dir, "read key\ncat \"\(dir)/answer\"")
+        let check = await worker(ley).check(provider: "anthropic", endpoint: "", secret: awkward)
+        XCTAssertEqual(check.outcome, .rejected)
+        XCTAssertEqual(check.message, #"sent {"key": "[key]"} to /v1/models?key=[key] and "[key]""#)
     }
 
     func testSilenceOrAFailedExitIsUnavailable() async throws {

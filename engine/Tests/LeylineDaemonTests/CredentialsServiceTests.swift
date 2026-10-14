@@ -98,7 +98,7 @@ final class CredentialsServiceTests: XCTestCase {
     func testTheKeyFileIsTheUsersAlone() async throws {
         try await withDaemon { c in
             _ = try await c.credentials.setCredential(self.setRequest("anthropic"), metadata: testMetadata)
-            let attributes = try FileManager.default.attributesOfItem(atPath: c.dataPath + "/credentials.json")
+            let attributes = try FileManager.default.attributesOfItem(atPath: c.dataPath + "/secrets/credentials.json")
             XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
         }
     }
@@ -230,6 +230,61 @@ final class CredentialsServiceTests: XCTestCase {
             let refused = await self.failure { _ = try await c.jobs.startJob(request, metadata: testMetadata) }
             XCTAssertEqual(refused.code, EngineError.Code.credentialRejected)
             XCTAssertTrue(refused.text.contains("invalid x-api-key; paste a working key with ley ai add fakeprov"), refused.text)
+        }
+    }
+
+    func testTheLaterOfTwoRacingKeysKeepsItsOwnCheck() async throws {
+        let dir = try makeTempDir("ley")
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        // The first key's check answers last, and would land on the second key if nothing stopped it.
+        let ley = try writeScriptedLey(in: dir, """
+        read key
+        case "$key" in
+          *first*) sleep 1; printf '%s\\n' '{"outcome": "rejected", "message": "first"}' ;;
+          *) printf '%s\\n' '{"outcome": "accepted", "message": "second"}' ;;
+        esac
+        """)
+        try await withDaemon(leyPath: ley) { c in
+            async let first = c.credentials.setCredential(self.setRequest("anthropic", secret: "sk-first-0001"), metadata: testMetadata)
+            try await Task.sleep(nanoseconds: 200_000_000)
+            let second = try await c.credentials.setCredential(self.setRequest("anthropic", secret: "sk-second-0002"), metadata: testMetadata)
+            XCTAssertEqual(second.lastCheck.message, "second")
+            let firstReply = try await first
+            XCTAssertEqual(firstReply.lastCheck.message, "first", "the first caller still hears its own check")
+            let state = try await c.credentials.getAIState(Leyline_V1_GetAIStateRequest(), metadata: testMetadata)
+            XCTAssertEqual(state.credentials.first?.lastFour, "0002")
+            XCTAssertEqual(state.credentials.first?.lastCheck.outcome, .accepted)
+            XCTAssertEqual(state.credentials.first?.lastCheck.message, "second", "the stored key keeps its own check")
+        }
+    }
+
+    func testAPluginsRefusalHasItsKeyReplaced() async throws {
+        let plugins = try makeTempDir("decoders")
+        defer { try? FileManager.default.removeItem(atPath: plugins) }
+        try writeFakePlugin(in: plugins, name: "paid", args: ["--refuse-after=2"], credentialProvider: "fakeprov")
+        setenv("FAKE_DECODER_REFUSAL", "429 for key \(Self.secret)", 1)
+        defer { unsetenv("FAKE_DECODER_REFUSAL") }
+        try await withDaemon(decoderSearchPath: [plugins]) { c in
+            var attach = Leyline_V1_AttachFileDeviceRequest()
+            attach.path = fixturePath("nfm_tone.cf32")
+            attach.loop = true
+            _ = try await c.control.attachFileDevice(attach, metadata: testMetadata)
+            _ = try await c.credentials.setCredential(self.setRequest("fakeprov"), metadata: testMetadata)
+            var config = Leyline_V1_DecodeConfig()
+            config.decoder = "paid"
+            config.frequencyHz = decodeFrequencyHz
+            var request = Leyline_V1_StartJobRequest()
+            request.decode = config
+            let id = try await c.jobs.startJob(request, metadata: testMetadata).jobID
+            var job = Leyline_V1_Job()
+            for _ in 0..<200 {
+                job = try await c.jobs.getJob({ var r = Leyline_V1_JobRef(); r.jobID = id; return r }(), metadata: testMetadata)
+                if job.state == .failed { break }
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
+            XCTAssertEqual(job.error.code, EngineError.Code.providerRefused)
+            XCTAssertTrue(job.error.message.contains("429 for key [key]"), job.error.message)
+            XCTAssertFalse(try job.jsonString().contains(Self.marker), "the key reached the job")
         }
     }
 }

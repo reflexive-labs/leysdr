@@ -151,9 +151,8 @@ actor CredentialStore {
             var data = try state.jsonUTF8Data()
             data.append(0x0a)
             try FileManager.default.createDirectory(at: URL(fileURLWithPath: path).deletingLastPathComponent(),
-                                                    withIntermediateDirectories: true,
-                                                    attributes: [.posixPermissions: 0o700])
-            try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+                                                    withIntermediateDirectories: true)
+            try writePrivateFile(data, to: path)
         } catch {
             log.error("cannot write \(path): \(error)")
         }

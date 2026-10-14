@@ -37,7 +37,7 @@ struct DaemonClients {
     let credentials: Leyline_V1_Credentials.Client<HTTP2ClientTransport.Posix>
     let usage: Leyline_V1_Usage.Client<HTTP2ClientTransport.Posix>
     let daemon: Daemon
-    /// The daemon's data directory: `ai.json`, and `credentials.json` for the test's file store.
+    /// The daemon's data directory: `ai.json`, and `secrets/credentials.json` for the test's file store.
     let dataPath: String
     let socketPath: String
 }
@@ -74,7 +74,7 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
                                recordingsPath: recordingsPath ?? (dir + "/recordings"),
                                recordingsCapBytes: recordingsCapBytes, dataPath: dir + "/data",
                                version: testDaemonVersion)
-    config.secretStore = FileSecrets(path: dir + "/data/credentials.json")
+    config.secretStore = FileSecrets(inData: dir + "/data")
     // `ley` is whatever the test names and nothing else: never one on the machine's PATH.
     config.leyPath = leyPath
     config.programLocator = ProgramLocator(directories: [], searchPath: [])
@@ -259,9 +259,9 @@ func makeTempDir(_ tag: String) throws -> String {
 // MARK: Workers
 
 /// Writes `<dir>/ley`, a shell script standing in for `ley worker check`: `body` runs with the
-/// worker's arguments and its stdin, and whatever it prints is the worker's answer. The arguments
-/// and the environment's socket are written to `<dir>/ley.args` so a test can see what the daemon
-/// passed.
+/// worker's arguments and its stdin, and whatever it prints is the worker's answer. The arguments,
+/// the socket and the whole environment are written to `<dir>/ley.args`, `ley.socket` and
+/// `ley.env` so a test can see what the daemon passed.
 @discardableResult
 func writeScriptedLey(in dir: String, _ body: String) throws -> String {
     let path = dir + "/ley"
@@ -269,6 +269,7 @@ func writeScriptedLey(in dir: String, _ body: String) throws -> String {
     #!/bin/sh
     echo "$@" > "\(dir)/ley.args"
     echo "$LEYLINE_SOCKET" > "\(dir)/ley.socket"
+    env > "\(dir)/ley.env"
     \(body)
 
     """

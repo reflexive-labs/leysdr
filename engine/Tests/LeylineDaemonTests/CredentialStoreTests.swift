@@ -20,11 +20,17 @@ final class CredentialStoreTests: XCTestCase {
     func testTheKeyFileIsReadableOnlyByItsOwner() throws {
         let dir = try makeTempDir("secrets")
         defer { try? FileManager.default.removeItem(atPath: dir) }
-        let path = dir + "/data/credentials.json"
-        let store = FileSecrets(path: path)
+        // The record store and the recordings create the data directory 0755 before any key.
+        let data = dir + "/data"
+        try FileManager.default.createDirectory(atPath: data + "/secrets", withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o755])
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: data)
+        let store = FileSecrets(inData: data)
+        let path = data + "/secrets/credentials.json"
         try store.set(provider: "anthropic", secret: secret)
         XCTAssertEqual(try mode(path), 0o600)
-        XCTAssertEqual(try mode(dir + "/data"), 0o700, "a directory the store creates is the user's alone")
+        XCTAssertEqual(try mode(data + "/secrets"), 0o700, "the key's directory is the user's alone, whoever made it")
+        XCTAssertEqual(try mode(data), 0o755, "the data directory is left as the others made it")
         // A rewrite keeps the mode: the new file is a new inode created 0600, not the old one.
         try store.set(provider: "openai", secret: "sk-other-0000")
         XCTAssertEqual(try mode(path), 0o600)
@@ -56,6 +62,15 @@ final class CredentialStoreTests: XCTestCase {
         XCTAssertEqual(try store.get(provider: "openai"), "sk-other-0000")
         let text = try String(contentsOfFile: dir + "/credentials.json", encoding: .utf8)
         XCTAssertFalse(text.contains("SECRETMARKER"), "a removed secret is gone from the file")
+    }
+
+    func testATemporaryFileACrashLeftIsSweptOnRead() throws {
+        let dir = try makeTempDir("secrets")
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let stale = dir + "/credentials.json.tmp-99999"
+        try "{\"anthropic\": \"\(secret)\"}".write(toFile: stale, atomically: false, encoding: .utf8)
+        XCTAssertNil(try FileSecrets(path: dir + "/credentials.json").get(provider: "anthropic"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stale))
     }
 
     func testAWriteLeavesNoTemporaryFileBehind() throws {
@@ -90,6 +105,7 @@ final class CredentialStoreTests: XCTestCase {
         XCTAssertEqual(stored, secret)
         let listing = try await store.snapshot().jsonString()
         XCTAssertFalse(listing.contains("SECRETMARKER"), listing)
+        XCTAssertEqual(try mode(dir + "/ai.json"), 0o600, "the key list is the user's alone too")
         let file = try String(contentsOfFile: dir + "/ai.json", encoding: .utf8)
         XCTAssertFalse(file.contains("SECRETMARKER"), "ai.json holds what a listing shows, never the key")
         XCTAssertEqual(CredentialStore.lastFour(of: "abcd"), "", "a secret of four shows none of itself")

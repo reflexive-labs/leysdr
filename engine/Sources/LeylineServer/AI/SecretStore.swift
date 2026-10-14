@@ -7,15 +7,10 @@
 // `ai.json` and asks a `SecretStore` only when a worker needs the key. On macOS that is a
 // login-keychain item `leylined` creates, which the daemon reads without a prompt and any other
 // program reads only after macOS asks the user; elsewhere, where the daemon runs for development
-// and CI, it is a file only the user can read. No error thrown here carries a secret: the messages
+// and CI, it is a file only the user can read, in a directory only the user can open. No error thrown here carries a secret: the messages
 // name the file or the keychain status, never what was being stored.
 
 import Foundation
-#if canImport(Glibc)
-import Glibc
-#elseif canImport(Darwin)
-import Darwin
-#endif
 #if canImport(Security)
 import Security
 #endif
@@ -36,22 +31,32 @@ struct SecretStoreError: Error, CustomStringConvertible {
     var description: String { message }
 }
 
-/// The platform's store: the login keychain on macOS, `credentials.json` in `dataPath` elsewhere.
+/// The platform's store: the login keychain on macOS, `secrets/credentials.json` in `dataPath`
+/// elsewhere.
 func defaultSecretStore(dataPath: String) -> any SecretStore {
     #if canImport(Security)
     return KeychainSecrets()
     #else
-    return FileSecrets(path: dataPath + "/credentials.json")
+    return FileSecrets(inData: dataPath)
     #endif
 }
 
-/// `credentials.json`: a JSON object of provider name to secret, mode 0600 in a directory of mode
-/// 0700. Every write goes to a temporary file created 0600 by `open(2)` and is renamed over the old
-/// one, so the secret is never in a file another user can read, not even for the moment between
-/// a write and a `chmod`, and a crash mid-write leaves the previous file whole
-/// (docs/dev/swift-style.md, "Foundation on two platforms").
+/// `secrets/credentials.json`: a JSON object of provider name to secret, mode 0600, in a
+/// directory of its own kept at mode 0700. The data directory itself is not enough: the record
+/// store and the recordings may have created it 0755 first, and its mode is theirs. Every write
+/// goes through `writePrivateFile(_:to:)`, and a temporary file a crash left, which may hold a
+/// secret, is removed the next time the file is read.
 struct FileSecrets: SecretStore {
     let path: String
+
+    init(path: String) {
+        self.path = path
+    }
+
+    /// The key file in a data directory: `<data>/secrets/credentials.json`.
+    init(inData dataPath: String) {
+        self.init(path: dataPath + "/secrets/credentials.json")
+    }
 
     func set(provider: String, secret: String) throws {
         var all = try load()
@@ -70,6 +75,7 @@ struct FileSecrets: SecretStore {
     }
 
     private func load() throws -> [String: String] {
+        sweepPrivateFileTemporaries(of: path)
         guard let data = FileManager.default.contents(atPath: path) else { return [:] }
         guard let all = try? JSONDecoder().decode([String: String].self, from: data) else {
             throw SecretStoreError(message: "\(path) is not a key file")
@@ -86,39 +92,15 @@ struct FileSecrets: SecretStore {
         do {
             try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true,
                                                     attributes: [.posixPermissions: 0o700])
+            // A directory that already existed keeps its mode through createDirectory.
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir)
+            try writePrivateFile(data, to: path)
+        } catch let error as PrivateFileError {
+            throw SecretStoreError(message: error.message)
         } catch {
             throw SecretStoreError(message: "cannot create \(dir): \(error.localizedDescription)")
         }
-        let tmp = path + ".tmp-\(getpid())"
-        let fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0o600)
-        guard fd >= 0 else { throw SecretStoreError(message: "cannot write \(tmp): \(Self.errnoText())") }
-        // O_CREAT's mode only applies to a new file; one left behind by a crash keeps its own.
-        _ = fchmod(fd, 0o600)
-        let wrote = data.withUnsafeBytes { raw -> Bool in
-            var offset = 0
-            while offset < raw.count {
-                let n = write(fd, raw.baseAddress!.advanced(by: offset), raw.count - offset)
-                if n < 0, errno == EINTR { continue }
-                guard n > 0 else { return false }
-                offset += n
-            }
-            return true
-        }
-        let synced = fsync(fd) == 0
-        close(fd)
-        guard wrote, synced else {
-            let why = Self.errnoText()
-            unlink(tmp)
-            throw SecretStoreError(message: "cannot write \(tmp): \(why)")
-        }
-        guard rename(tmp, path) == 0 else {
-            let why = Self.errnoText()
-            unlink(tmp)
-            throw SecretStoreError(message: "cannot replace \(path): \(why)")
-        }
     }
-
-    private static func errnoText() -> String { String(cString: strerror(errno)) }
 }
 
 #if canImport(Security)

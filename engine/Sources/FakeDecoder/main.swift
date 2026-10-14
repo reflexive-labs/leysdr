@@ -158,7 +158,10 @@ while let bytes = readDelimited() {
     writeDelimited(rec)
     if dieAfter > 0, seq >= dieAfter { exit(3) }
     if refuseAfter > 0, seq >= refuseAfter {
-        FileHandle.standardError.write(Data("rate_limit_error: this request would exceed your rate limit (fake provider)\n".utf8))
+        // FAKE_DECODER_REFUSAL replaces the words, so a test can make a plugin echo its key.
+        let words = ProcessInfo.processInfo.environment["FAKE_DECODER_REFUSAL"]
+            ?? "rate_limit_error: this request would exceed your rate limit (fake provider)"
+        FileHandle.standardError.write(Data("\(words)\n".utf8))
         exit(75)
     }
 }

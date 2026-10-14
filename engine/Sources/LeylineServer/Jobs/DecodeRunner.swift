@@ -41,6 +41,9 @@ actor DecodeRunner {
     private let notifier = Notifier()
     /// Where the usage a record carries goes, before the record is published.
     private let usage: UsageRecorder?
+    /// The user's keys, so a refusal's words are cleared of the decoder's key before they reach
+    /// `status_detail` or an error (`WorkerProcess.redacting(_:in:)`).
+    private let credentials: CredentialStore?
     private let onStatus: @Sendable (Leyline_V1_JobState, String) async -> Void
     /// Ends the job with a code of its own, where `onStatus(.failed, …)` would say the decoder
     /// failed. Nil falls back to that.
@@ -71,7 +74,7 @@ actor DecodeRunner {
     init(jobID: JobID, installed: DecoderRegistry.Installed, lease: any ChannelLease, hub: RecordHub,
          writer: RecordWriter?, store: SessionStore, frequencyHz: UInt64, captureRateHz: UInt64,
          tap: AudioTap, predicate: Leyline_V1_Predicate, notify: Leyline_V1_NotifyTarget?,
-         usage: UsageRecorder? = nil, keep: Bool = false,
+         usage: UsageRecorder? = nil, credentials: CredentialStore? = nil, keep: Bool = false,
          onStatus: @escaping @Sendable (Leyline_V1_JobState, String) async -> Void,
          onFailure: (@Sendable (EngineError) async -> Void)? = nil,
          seqStart: UInt64 = 0)
@@ -88,6 +91,7 @@ actor DecodeRunner {
         self.predicate = predicate
         self.notify = notify
         self.usage = usage
+        self.credentials = credentials
         self.keep = keep
         self.onStatus = onStatus
         self.onFailure = onFailure
@@ -143,7 +147,7 @@ actor DecodeRunner {
             if Task.isCancelled || stopped { break }
             restarts += 1
             if exit.status == Self.refusedExitStatus {
-                let said = exit.lastErrorLine ?? "no reason given"
+                let said = await redacted(exit.lastErrorLine ?? "no reason given")
                 guard keep else {
                     await fail(EngineError.providerRefused(providerName, providerMessage: said))
                     await teardown()
@@ -173,6 +177,14 @@ actor DecodeRunner {
     /// decoder itself.
     private var providerName: String {
         installed.manifest.credentialProvider.isEmpty ? installed.manifest.name : installed.manifest.credentialProvider
+    }
+
+    /// What a plugin wrote, with the key of the provider its manifest names replaced: a plugin that
+    /// echoes its request into a refusal must not put the key on the event plane.
+    private func redacted(_ text: String) async -> String {
+        let provider = installed.manifest.credentialProvider
+        guard !provider.isEmpty, let secret = try? await credentials?.secret(provider: provider) else { return text }
+        return WorkerProcess.redacting(secret, in: text)
     }
 
     private func fail(_ error: EngineError) async {
