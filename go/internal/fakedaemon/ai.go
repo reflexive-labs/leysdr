@@ -118,7 +118,9 @@ func lastFour(secret string) string {
 }
 
 // SetCredential implements Credentials: the key replaces any for the provider and is checked once.
-// A rejected key is still stored, and the reply says so in last_check.
+// A rejected key is still stored, and the reply says so in last_check. A replacement is added now,
+// but keeps last_used_at_ns: that is when the provider's account was last called, which a new key
+// for the same account does not reset.
 func (d *Daemon) SetCredential(ctx context.Context, req *leylinev1.SetCredentialRequest) (*leylinev1.Credential, error) {
 	ci := clientFrom(ctx)
 	d.touchUnary(ci)
@@ -134,6 +136,7 @@ func (d *Daemon) SetCredential(ctx context.Context, req *leylinev1.SetCredential
 	d.ai.credentials[provider] = &leylinev1.Credential{
 		Provider: provider, Label: req.GetLabel(), LastFour: lastFour(req.GetSecret()),
 		Endpoint: req.GetEndpoint(), AddedAtNs: time.Now().UnixNano(),
+		LastUsedAtNs: d.ai.credentials[provider].GetLastUsedAtNs(),
 	}
 	d.mu.Unlock()
 	cred, err := d.checkStored(ci, provider)
@@ -150,7 +153,7 @@ func (d *Daemon) SetCredential(ctx context.Context, req *leylinev1.SetCredential
 func (d *Daemon) CheckCredential(ctx context.Context, req *leylinev1.CredentialRef) (*leylinev1.Credential, error) {
 	ci := clientFrom(ctx)
 	d.touchUnary(ci)
-	provider := req.GetProvider()
+	provider := strings.TrimSpace(req.GetProvider())
 	d.mu.Lock()
 	_, ok := d.ai.credentials[provider]
 	d.mu.Unlock()
@@ -198,13 +201,14 @@ func credentialMissing(provider string) *leyline.Error {
 func (d *Daemon) DeleteCredential(ctx context.Context, req *leylinev1.CredentialRef) (*leylinev1.Empty, error) {
 	ci := clientFrom(ctx)
 	d.touchUnary(ci)
+	provider := strings.TrimSpace(req.GetProvider())
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if _, ok := d.ai.credentials[req.GetProvider()]; !ok {
-		return nil, fail(ctx, credentialMissing(req.GetProvider()))
+	if _, ok := d.ai.credentials[provider]; !ok {
+		return nil, fail(ctx, credentialMissing(provider))
 	}
-	delete(d.ai.credentials, req.GetProvider())
-	delete(d.ai.secrets, req.GetProvider())
+	delete(d.ai.credentials, provider)
+	delete(d.ai.secrets, provider)
 	d.emit(ci, d.aiSnapshot())
 	return &leylinev1.Empty{}, nil
 }

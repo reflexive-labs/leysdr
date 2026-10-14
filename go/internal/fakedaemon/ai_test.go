@@ -92,6 +92,31 @@ func TestCredentialIsWriteOnly(t *testing.T) {
 	}
 }
 
+// A replacement key is added now and keeps the provider's last use, which a new key for the same
+// account does not reset.
+func TestReplacedKeyKeepsLastUse(t *testing.T) {
+	t.Parallel()
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := t.Context()
+	first, err := c.Credentials.SetCredential(ctx, &leylinev1.SetCredentialRequest{Provider: "anthropic", Secret: testSecret})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Usage.ReportUsage(ctx, &leylinev1.UsageReport{Provider: "anthropic", Model: "m", Feature: "assistant", Requests: 1, AtNs: 42}); err != nil {
+		t.Fatal(err)
+	}
+	second, err := c.Credentials.SetCredential(ctx, &leylinev1.SetCredentialRequest{Provider: " anthropic ", Secret: "sk-ant-other-9876"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.LastUsedAtNs != 42 || second.AddedAtNs <= first.AddedAtNs || second.LastFour != "9876" {
+		t.Errorf("replacement: %v", second)
+	}
+	if _, err := c.Credentials.CheckCredential(ctx, &leylinev1.CredentialRef{Provider: " anthropic"}); err != nil {
+		t.Errorf("a padded provider name: %v", err)
+	}
+}
+
 // A refused key is stored and reported, not refused: SetCredential and CheckCredential both
 // return it with a REJECTED outcome and the provider's words.
 func TestRejectedKey(t *testing.T) {

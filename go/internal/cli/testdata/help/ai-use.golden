@@ -1,5 +1,6 @@
-use sets the provider and model a feature calls: assistant is 'ley ask'
-and the app's assistant panel, speech is speech-to-text on received audio.
+use sets the provider and model a feature calls: assistant is the
+assistant that runs the radio for you, speech is speech-to-text on received
+audio.
 The model is the provider's own name for it, passed on as typed, so a model
 the provider has not heard of fails on the first call rather than here.
 

@@ -176,6 +176,40 @@ func TestWorkerKeyOnlyOnStdin(t *testing.T) {
 	}
 }
 
+// A gateway that echoes the request in its refusal does not get the key into the line: every
+// occurrence is cut, so nothing downstream (last_check, listings, events) can carry it.
+func TestWorkerCheckScrubsTheKey(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"bad header ` + r.Header.Get("Authorization") + ` for key ` + workerSecret + `"}}`))
+	}))
+	t.Cleanup(srv.Close)
+	res, out, errOut, err := runWorker(t, testutil.SocketPath(t, "gone.sock"), workerSecret, "--provider", "openai", "--endpoint", srv.URL)
+	if err != nil || res.Outcome != "rejected" {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if strings.Contains(out+errOut, "WORKERCANARY") || res.Message != "bad header Bearer … for key …" {
+		t.Errorf("the key reached the line: %q", out)
+	}
+}
+
+// A redirect is not followed, so the key's header never reaches another host.
+func TestWorkerCheckRefusesRedirects(t *testing.T) {
+	t.Parallel()
+	elsewhere, p := newProvider(t, 200, `{}`)
+	srv := httptest.NewServer(http.RedirectHandler(elsewhere.URL+"/v1/models", http.StatusFound))
+	t.Cleanup(srv.Close)
+	res, _, _, err := runWorker(t, testutil.SocketPath(t, "gone.sock"), workerSecret, "--provider", "anthropic", "--endpoint", srv.URL)
+	host := strings.TrimPrefix(elsewhere.URL, "http://")
+	if err != nil || res.Outcome != "unavailable" || res.Message != "redirected to "+host {
+		t.Errorf("%+v %v", res, err)
+	}
+	if path, _ := p.last(); path != "" {
+		t.Errorf("the redirect was followed to %s", path)
+	}
+}
+
 func TestOneLineCapped(t *testing.T) {
 	long := strings.Repeat("a", 300)
 	if got := oneLineCapped("x\n\ty  " + long); len([]rune(got)) != 200 || !strings.HasPrefix(got, "x y a") {

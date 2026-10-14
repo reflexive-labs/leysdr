@@ -518,11 +518,13 @@ recording is riding on, name the job and `ley jobs cancel`, and go ahead with `-
 carries the text of a key, and `ley ai` shows its last four characters so two keys can be told
 apart. `ley ai add <provider>` reads the key from stdin, never from an argument (visible in `ps`)
 or the environment; on a terminal it asks for it with echo off, otherwise it reads one line, and
-an empty line is a usage error. The daemon stores the key and checks it once by asking the
+an empty line is a usage error. A terminal on which echo cannot be turned off is refused with
+a usage error that says to pipe the key in (`pbpaste | ley ai add anthropic`). The daemon stores the key and checks it once by asking the
 provider to list its models. A key the provider refuses is still stored, so `add` exits 0 and its
 line ends with the command that replaces the key; `ley ai check <provider>` exits 1 unless the
-provider accepted the key, printing the provider's words and the same command for a refused key,
-or the reason a check could not run. The daemon answers both with the `Credential` and its
+provider accepted the key. For a refused key the line reads `ley: the provider rejected the openai
+key: invalid x-api-key. Paste a working key with: ley ai add openai`, and for a check that could
+not run it gives the reason and `ley ai check <provider>` to try again. The daemon answers both with the `Credential` and its
 outcome, not an error; `CREDENTIAL_REJECTED` is what a job gets when it starts on a key whose last
 check was refused. A provider with no key is `CREDENTIAL_MISSING` from `check` and `remove`.
 `ley ai use <feature> <provider> <model>` chooses what the `assistant` and `speech` features call,
@@ -537,7 +539,8 @@ numbers are what the workers reported after each response; `ley` prints no price
 counts whole UTC days back (`0` is the whole ledger, `1y` a year), and a column empty in every row
 is left out. `--json` prints the `GetUsageResponse`, the daemon's lines one per scope and day,
 unsummed. A key check is counted as one request under the feature `check` and the model
-`/v1/models`, the endpoint it called. Recorded against the contract's fake daemon at 100
+`/v1/models`, the endpoint it called. The check follows no redirect, so the key reaches no host
+but the one it names, and it cuts the key out of any message the provider echoes back. Recorded against the contract's fake daemon at 100
 columns, so your keys, dates and counts will differ:
 
 ```

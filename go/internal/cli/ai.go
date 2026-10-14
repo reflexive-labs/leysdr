@@ -254,7 +254,7 @@ func runAIAdd(ctx context.Context, app *App, provider, label, endpoint string) e
 		Provider: provider, Secret: secret, Label: label, Endpoint: endpoint,
 	})
 	if err != nil {
-		return err
+		return app.notRunning(err)
 	}
 	fmt.Fprintln(app.Stderr, addedLine(app.ErrStyle, cred))
 	if app.JSON {
@@ -293,12 +293,18 @@ func oneLine(msg string) string {
 func readKey(ctx context.Context, app *App, provider string) (string, error) {
 	tty := app.IsInTTY()
 	if tty {
-		fmt.Fprintf(app.Stderr, "Paste the %s key and press Enter: ", provider)
-		if f, ok := app.Stdin.(*os.File); ok {
-			if restore, err := noEcho(int(f.Fd())); err == nil {
-				defer restore()
-			}
+		quiet := app.echoOff
+		if quiet == nil {
+			quiet = echoOff
 		}
+		// A key typed with echo on would sit on the screen and in the scrollback, so a terminal
+		// that will not turn echo off is refused rather than read.
+		restore, err := quiet(app.Stdin)
+		if err != nil {
+			return "", usageErrorf("cannot turn echo off on this terminal (%v), so the key would show as you paste it; pipe it in instead: pbpaste | ley ai add %s", err, provider)
+		}
+		defer restore()
+		fmt.Fprintf(app.Stderr, "Paste the %s key and press Enter: ", provider)
 		// With echo off the Enter is not shown either, so the next line would start mid-prompt.
 		defer fmt.Fprintln(app.Stderr)
 	}
@@ -328,6 +334,15 @@ func readKey(ctx context.Context, app *App, provider string) (string, error) {
 		return "", usageErrorf("no key was entered; run ley ai add %s again and paste the key at the prompt", provider)
 	}
 	return "", usageErrorf("stdin held no key; pipe one in: ley ai add %s < %s.key", provider, provider)
+}
+
+// echoOff turns echo off on stdin when it is a terminal file.
+func echoOff(r io.Reader) (restore func(), err error) {
+	f, ok := r.(*os.File)
+	if !ok {
+		return nil, errors.New("stdin is not a file")
+	}
+	return noEcho(int(f.Fd()))
 }
 
 func newAICheckCommand(app *App) *cobra.Command {
@@ -429,8 +444,9 @@ func newAIUseCommand(app *App) *cobra.Command {
 	return &cobra.Command{
 		Use:   "use <feature> <provider> <model>",
 		Short: "Choose the provider and model a feature calls",
-		Long: `use sets the provider and model a feature calls: assistant is 'ley ask'
-and the app's assistant panel, speech is speech-to-text on received audio.
+		Long: `use sets the provider and model a feature calls: assistant is the
+assistant that runs the radio for you, speech is speech-to-text on received
+audio.
 The model is the provider's own name for it, passed on as typed, so a model
 the provider has not heard of fails on the first call rather than here.
 

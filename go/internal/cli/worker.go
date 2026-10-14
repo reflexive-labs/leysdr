@@ -86,7 +86,10 @@ func runWorkerCheck(ctx context.Context, app *App, provider, endpoint string) er
 	if secret == "" {
 		return usageErrorf("worker check reads the key from stdin, and stdin held none")
 	}
-	res, called := checkKey(ctx, &http.Client{Timeout: workerHTTPTimeout}, provider, endpoint, secret)
+	res, called := checkKey(ctx, newCheckClient(), provider, endpoint, secret)
+	// A gateway may echo the request back in its refusal, header and all; the message travels on
+	// into last_check, every listing and the event plane, so the key is cut out of it here.
+	res.Message = strings.ReplaceAll(res.Message, secret, "…")
 	b, err := json.Marshal(res)
 	if err != nil {
 		return err
@@ -98,6 +101,16 @@ func runWorkerCheck(ctx context.Context, app *App, provider, endpoint string) er
 		reportCheckUsage(ctx, app, provider)
 	}
 	return nil
+}
+
+// newCheckClient is the check's HTTP client. It never follows a redirect, because Go re-sends
+// x-api-key and Authorization to a redirect's host when they were set by hand, and the key must
+// reach no host but the one the check names.
+func newCheckClient() *http.Client {
+	return &http.Client{
+		Timeout:       workerHTTPTimeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 }
 
 // checkKey asks the provider to list its models with the key. called reports whether a provider
@@ -118,6 +131,13 @@ func checkKey(ctx context.Context, hc *http.Client, provider, endpoint, secret s
 		return checkResult{Outcome: "accepted"}, true
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return checkResult{Outcome: "rejected", Message: providerMessage(resp, body)}, true
+	}
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		to := "another address"
+		if loc, err := resp.Location(); err == nil {
+			to = loc.Host
+		}
+		return checkResult{Outcome: "unavailable", Message: "redirected to " + to}, true
 	}
 	msg := resp.Status
 	if said := providerMessage(resp, body); said != resp.Status {

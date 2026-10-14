@@ -4,6 +4,8 @@ package cli
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -209,17 +211,51 @@ func TestAIAddReadsStdin(t *testing.T) {
 		t.Errorf("capitalised provider: exit %d (%v)", exitCode(err), err)
 	}
 	var out, errb bytes.Buffer
-	app := &App{Stdout: &out, Stderr: &errb, Stdin: strings.NewReader(aiSecret), IsInTTY: func() bool { return true }}
+	echoed := false
+	app := &App{
+		Stdout: &out, Stderr: &errb, Stdin: strings.NewReader(aiSecret), IsInTTY: func() bool { return true },
+		echoOff: func(io.Reader) (func(), error) { return func() { echoed = true }, nil },
+	}
 	if err := Execute(t.Context(), app, []string{"--socket", sock, "ai", "add", "openai"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(errb.String(), "Paste the openai key and press Enter: \n") {
-		t.Errorf("terminal prompt: %q", errb.String())
+	if !strings.HasPrefix(errb.String(), "Paste the openai key and press Enter: \n") || !echoed {
+		t.Errorf("terminal prompt: %q, echo restored %v", errb.String(), echoed)
 	}
 	app.Stdin = strings.NewReader("\n")
 	err = Execute(t.Context(), app, []string{"--socket", sock, "ai", "add", "openai"})
 	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "paste the key at the prompt") {
 		t.Errorf("nothing typed at the prompt: exit %d (%v)", exitCode(err), err)
+	}
+	// A terminal that keeps echo on is refused before the key is asked for.
+	app.Stdin = strings.NewReader(aiSecret)
+	app.echoOff = func(io.Reader) (func(), error) { return nil, errors.New("no termios") }
+	errb.Reset()
+	err = Execute(t.Context(), app, []string{"--socket", sock, "ai", "add", "openai"})
+	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "pbpaste | ley ai add openai") || strings.Contains(errb.String(), "Paste the") {
+		t.Errorf("echo stays on: exit %d (%v), stderr %q", exitCode(err), err, errb.String())
+	}
+}
+
+// Neither add nor check under --json, nor their prose, carries the key's text.
+func TestAIKeyNeverPrinted(t *testing.T) {
+	t.Parallel()
+	sock, _ := harness(t, fakedaemon.Options{})
+	var seen strings.Builder
+	for _, args := range [][]string{
+		{"--json", "ai", "add", "anthropic"},
+		{"ai", "add", "anthropic"},
+		{"--json", "ai", "check", "anthropic"},
+		{"ai", "check", "anthropic"},
+	} {
+		out, errOut, err := runLey(t, sock, 80, false, aiSecret+"\n", args...)
+		if err != nil {
+			t.Fatalf("ley %v: %v", args, err)
+		}
+		seen.WriteString(out + errOut)
+	}
+	if strings.Contains(seen.String(), "LEAKCANARY") || !strings.Contains(seen.String(), `"lastFour":"1234"`) {
+		t.Errorf("output:\n%s", seen.String())
 	}
 }
 
