@@ -16,6 +16,11 @@ final class DecodeRefusalTests: XCTestCase {
     private let providerWords = "rate_limit_error: this request would exceed your rate limit (fake provider)"
 
     private func startRefusingJob(_ c: DaemonClients, keep: Bool) async throws -> Leyline_V1_Job {
+        // The decoder needs a key to start at all.
+        var key = Leyline_V1_SetCredentialRequest()
+        key.provider = "fakeprov"
+        key.secret = "fk-test-0000"
+        _ = try await c.credentials.setCredential(key, metadata: testMetadata)
         var attach = Leyline_V1_AttachFileDeviceRequest()
         attach.path = fixturePath("nfm_tone.cf32")
         attach.loop = true

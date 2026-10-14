@@ -184,6 +184,10 @@ final class UsageLedgerTests: XCTestCase {
         setenv("FAKE_DECODER_USAGE", ",fake-model,0.5", 1)
         defer { unsetenv("FAKE_DECODER_USAGE") }
         try await withDaemon(decoderSearchPath: [plugins]) { c in
+            var key = Leyline_V1_SetCredentialRequest()
+            key.provider = "fakeprov"
+            key.secret = "fk-test-0000"
+            _ = try await c.credentials.setCredential(key, metadata: testMetadata)
             var attach = Leyline_V1_AttachFileDeviceRequest()
             attach.path = fixturePath("nfm_tone.cf32")
             attach.loop = true

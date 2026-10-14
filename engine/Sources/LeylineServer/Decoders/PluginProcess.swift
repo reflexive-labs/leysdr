@@ -144,6 +144,18 @@ func writeDelimited(_ message: any Message, to fd: Int32, deadlineSeconds: Doubl
     return .written
 }
 
+/// The key a plugin's manifest names a provider for, read from the store now, for
+/// `PluginProcess.start`. Nil when the manifest names none; `CREDENTIAL_MISSING` when it names one
+/// and no key is set, or there is no store to hold one.
+func pluginCredential(for manifest: Leyline_V1_DecoderManifest,
+                      from store: CredentialStore?) async throws -> Leyline_V1_SetCredentialRequest?
+{
+    let provider = manifest.credentialProvider
+    guard !provider.isEmpty else { return nil }
+    guard let store else { throw EngineError.credentialMissing(provider) }
+    return try await store.pluginCredential(provider)
+}
+
 /// A spawned decoder. One instance runs one child; a restart makes a new one.
 /// Unchecked Sendable: the child and its pipes are set up in init and only read afterwards; the write descriptor is behind a Mutex.
 final class PluginProcess: @unchecked Sendable {
@@ -172,11 +184,16 @@ final class PluginProcess: @unchecked Sendable {
         (records, recordsContinuation) = AsyncStream<Leyline_V1_DecodeRecord>.makeStream(bufferingPolicy: .unbounded)
     }
 
-    /// Spawns the child and writes the descriptor, which is the first thing every plugin reads.
-    func start(descriptor: Leyline_V1_StreamDescriptor) throws {
+    /// Spawns the child and writes the descriptor, which is the first thing every plugin reads. A
+    /// plugin whose manifest names a provider reads one `SetCredentialRequest` before it: the key,
+    /// read from the store by the caller at this moment, so a restart takes the key as it now
+    /// stands. The key never reaches a log line: what the plugin writes on stderr is logged with it
+    /// replaced.
+    func start(descriptor: Leyline_V1_StreamDescriptor, credential: Leyline_V1_SetCredentialRequest? = nil) throws {
         let logger = log
+        let secret = credential?.secret ?? ""
         do {
-            try child.run { logger.info("\($0)") }
+            try child.run { logger.info("\(WorkerProcess.redacting(secret, in: $0))") }
         } catch {
             recordsContinuation.finish()
             throw EngineError(code: EngineError.Code.decoderFailed,
@@ -190,6 +207,10 @@ final class PluginProcess: @unchecked Sendable {
         let flags = fcntl(wfd, F_GETFL, 0)
         if flags >= 0 { _ = fcntl(wfd, F_SETFL, flags | O_NONBLOCK) }
         writeFD.withLock { $0 = wfd }
+        if let credential, try writeDelimited(credential, to: wfd, deadlineSeconds: 5) == .droppedFull {
+            throw EngineError(code: EngineError.Code.decoderFailed,
+                              message: "\(name) did not read its key", target: name)
+        }
         if try writeDelimited(descriptor, to: wfd, deadlineSeconds: 5) == .droppedFull {
             throw EngineError(code: EngineError.Code.decoderFailed,
                               message: "\(name) did not read its stream descriptor", target: name)

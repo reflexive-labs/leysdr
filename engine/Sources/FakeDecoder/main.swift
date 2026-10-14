@@ -6,7 +6,8 @@
 // else: read the varint-delimited StreamDescriptor, then one DecodeRecord per Frame. A frame with
 // an empty payload makes it exit(3), which is how the restart path is tested; FAKE_DECODER_SLEEP_MS
 // delays its start, which is how a slow plugin is tested; FAKE_DECODER_USAGE stamps each record
-// with the usage a paid decoder would report.
+// with the usage a paid decoder would report; FAKE_DECODER_EXPECT_KEY reads the credential
+// handshake; FAKE_DECODER_SEGMENTS answers SEGMENTED input once per segment.
 //
 // Framing is coded here rather than through `BinaryDelimited` because that API takes Foundation
 // `InputStream`/`OutputStream`, which cannot be built from the process's own pipes; the bytes are
@@ -66,6 +67,21 @@ func writeDelimited(_ message: any Message) {
 if let ms = ProcessInfo.processInfo.environment["FAKE_DECODER_SLEEP_MS"], let n = UInt32(ms) {
     usleep(n * 1000)
 }
+
+/// `FAKE_DECODER_EXPECT_KEY=1`, or `--expect-key`, reads the credential handshake a plugin whose
+/// manifest names a provider gets: one `SetCredentialRequest` before the descriptor. Every record
+/// then carries the key's last four characters in `key_last_four`, and never the key.
+let expectKey = ProcessInfo.processInfo.environment["FAKE_DECODER_EXPECT_KEY"] == "1"
+    || CommandLine.arguments.dropFirst().contains("--expect-key")
+let keyLastFour: Leyline_V1_FieldValue? = {
+    guard expectKey else { return nil }
+    guard let bytes = readDelimited(), let key = try? Leyline_V1_SetCredentialRequest(serializedBytes: bytes),
+          !key.secret.isEmpty
+    else { exit(6) }
+    var v = Leyline_V1_FieldValue()
+    v.text = String(key.secret.suffix(4))
+    return v
+}()
 
 guard let head = readDelimited(), let descriptor = try? Leyline_V1_StreamDescriptor(serializedBytes: head) else {
     exit(1)
@@ -177,6 +193,7 @@ func runSegmented() -> Never {
             text.text = "segment \(count)"
             rec.fields["text"] = text
             if let usagePerRecord { rec.usage = usagePerRecord }
+            if let keyLastFour { rec.fields["key_last_four"] = keyLastFour }
             writeDelimited(rec)
         default:
             guard open != nil else {
@@ -211,6 +228,7 @@ while let bytes = readDelimited() {
     rec.time = frame.time
     rec.raw = frame.payload.prefix(4)
     if let usagePerRecord { rec.usage = usagePerRecord }
+    if let keyLastFour { rec.fields["key_last_four"] = keyLastFour }
     writeDelimited(rec)
     if dieAfter > 0, seq >= dieAfter { exit(3) }
     if refuseAfter > 0, seq >= refuseAfter {

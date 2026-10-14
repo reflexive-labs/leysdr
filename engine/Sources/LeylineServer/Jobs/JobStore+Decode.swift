@@ -27,9 +27,16 @@ extension JobStore {
         }
         // A key the provider has already refused would fail the decoder's first call, so the
         // caller is told now, in the provider's words, rather than by a job that dies later.
+        // A decoder that calls a provider cannot start without the key, and the caller is told
+        // the command that adds one rather than meeting a job that fails at its first call.
         let provider = installed.manifest.credentialProvider
-        if !provider.isEmpty, let key = await credentials?.credential(provider), key.lastCheck.outcome == .rejected {
-            throw EngineError.credentialRejected(provider, providerMessage: key.lastCheck.message)
+        if !provider.isEmpty {
+            guard let key = await credentials?.credential(provider) else {
+                throw EngineError.credentialMissing(provider)
+            }
+            if key.lastCheck.outcome == .rejected {
+                throw EngineError.credentialRejected(provider, providerMessage: key.lastCheck.message)
+            }
         }
         if !config.sourceUri.isEmpty {
             return try await startSourceDecode(config: config, installed: installed, by: client, resuming: resuming)
@@ -235,6 +242,7 @@ extension JobStore {
         let runner = IQDecodeRunner(
             jobID: id, installed: installed, lease: lease, hub: hub, writer: writer, store: store,
             predicate: config.predicate, notify: config.hasNotify ? config.notify : nil,
+            credentials: credentials,
             onStatus: { [weak self] state, detail in
                 await self?.setDecodeStatus(id, state: state, detail: detail)
             },

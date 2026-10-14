@@ -348,10 +348,18 @@ actor DecodeRunner {
     /// Spawns the plugin with its descriptor and makes it the one the drain feeds. Nil, with the
     /// job failed and torn down, when it would not start.
     private func spawnPlugin() async -> PluginProcess? {
+        let credential: Leyline_V1_SetCredentialRequest?
+        do {
+            credential = try await pluginCredential(for: installed.manifest, from: credentials)
+        } catch {
+            await fail(error as? EngineError ?? EngineError.credentialMissing(installed.manifest.credentialProvider))
+            await teardown()
+            return nil
+        }
         let process = PluginProcess(name: installed.manifest.name, executable: installed.executablePath,
                                     args: installed.manifest.args, directory: installed.directory)
         do {
-            try await process.start(descriptor: descriptor())
+            try await process.start(descriptor: descriptor(), credential: credential)
         } catch {
             await onStatus(.failed, (error as? EngineError)?.message ?? "\(error)")
             await teardown()

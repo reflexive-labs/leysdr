@@ -79,6 +79,26 @@ actor CredentialStore {
         return try secrets.get(provider: provider)
     }
 
+    /// What a decoder plugin whose manifest names `provider` reads before its stream descriptor:
+    /// the provider, the secret and the endpoint, read now so a restarted plugin gets the key as it
+    /// stands. Throws `CREDENTIAL_MISSING` when no key is set or the store cannot give it up (the
+    /// keychain's own words go in the message).
+    func pluginCredential(_ provider: String) throws -> Leyline_V1_SetCredentialRequest {
+        loadIfNeeded()
+        let secret: String?
+        do {
+            secret = try self.secret(provider: provider)
+        } catch {
+            throw EngineError.credentialMissing(provider, detail: (error as? EngineError)?.message ?? "\(error)")
+        }
+        guard let secret, let credential = credential(provider) else { throw EngineError.credentialMissing(provider) }
+        var request = Leyline_V1_SetCredentialRequest()
+        request.provider = provider
+        request.secret = secret
+        request.endpoint = credential.endpoint
+        return request
+    }
+
     /// Records a check of the key that was added at `addedAtNs`. A key replaced while its check
     /// ran keeps no outcome from the old one; nil then, and when the key has gone.
     func recordCheck(provider: String, addedAtNs: Int64, _ check: Leyline_V1_CredentialCheck) -> Leyline_V1_Credential? {

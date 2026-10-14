@@ -230,6 +230,9 @@ func writeFakePlugin(in dir: String, name: String = "fake", executable: String? 
         // (docs/design/decoders.md, "Multiplexing"). The fake decoder is signal-agnostic: it emits
         // one record per frame either way.
         let signalName = signal == .signalIq ? "SIGNAL_IQ" : "SIGNAL_AUDIO"
+        // A manifest that names a provider gets the key before its descriptor, so the fake has
+        // to know to read it.
+        let args = credentialProvider.isEmpty ? args : args + ["--expect-key"]
         body = """
         {
           "name": "\(name)",

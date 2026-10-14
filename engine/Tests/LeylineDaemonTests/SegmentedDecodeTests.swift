@@ -369,6 +369,75 @@ final class SegmentedDecodeTests: XCTestCase {
         }
     }
 
+    // MARK: The key
+
+    func testADecoderNamingAProviderWithNoKeyIsRefusedWithTheCommandThatAddsOne() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        defer {
+            for d in [plugins, recordings] { try? FileManager.default.removeItem(atPath: d) }
+        }
+        try writeSegmentedPlugin(in: plugins, credentialProvider: "anthropic")
+        let id = try await writeRecording(in: recordings)
+        try await withDaemon(decoderSearchPath: [plugins], recordingsPath: recordings) { c in
+            do {
+                _ = try await self.startDecode(c, self.sourceConfig(id))
+                XCTFail("a decoder whose provider has no key started")
+            } catch {
+                let (code, detail) = errorCode(error)
+                XCTAssertEqual(code, EngineError.Code.credentialMissing)
+                XCTAssertTrue(detail?.message.contains("ley ai add anthropic") == true, detail?.message ?? "\(error)")
+            }
+            let jobs = try await c.jobs.listJobs(Leyline_V1_ListJobsRequest(), metadata: testMetadata)
+            XCTAssertTrue(jobs.jobs.isEmpty, "a refused job is not a job")
+        }
+    }
+
+    func testThePluginReadsTheKeyBeforeItsDescriptorOnEveryStart() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        defer {
+            for d in [plugins, recordings] { try? FileManager.default.removeItem(atPath: d) }
+        }
+        let secret = "sk-ant-test-0123456789-Zq7w"
+        try writeSegmentedPlugin(in: plugins, credentialProvider: "anthropic")
+        // A second plugin on the live path that dies once, so the key is seen to go to the restart.
+        try writeFakePlugin(in: plugins, name: "dies", recipe: (decodeFrequencyHz, 15_000), args: ["--die-after=2"],
+                            credentialProvider: "anthropic")
+        setenv("FAKE_DECODER_EXPECT_KEY", "1", 1)
+        defer { unsetenv("FAKE_DECODER_EXPECT_KEY") }
+        let id = try await writeRecording(in: recordings)
+        try await withDaemon(decoderSearchPath: [plugins], recordingsPath: recordings) { c in
+            var key = Leyline_V1_SetCredentialRequest()
+            key.provider = "anthropic"
+            key.secret = secret
+            _ = try await c.credentials.setCredential(key, metadata: testMetadata)
+
+            let started = try await self.startDecode(c, self.sourceConfig(id))
+            let done = try await self.waitForEnd(c, started.jobID)
+            XCTAssertEqual(done.state, .completed, done.statusDetail)
+            let got = try await self.records(c, job: started.jobID, count: Self.syntheticSegments.count, timeoutMs: 5000)
+            XCTAssertEqual(got.count, Self.syntheticSegments.count)
+            for rec in got {
+                XCTAssertEqual(rec.fields["key_last_four"]?.text, "Zq7w", "the plugin had the key")
+                XCTAssertFalse(try rec.jsonString().contains(secret), "the key reached a record")
+            }
+
+            unsetenv("FAKE_DECODER_SEGMENTS")
+            try await self.attach(c, fixture: "nfm_tone.cf32", loop: true)
+            var config = Leyline_V1_DecodeConfig()
+            config.decoder = "dies"
+            config.frequencyHz = decodeFrequencyHz
+            let live = try await self.startDecode(c, config)
+            // Two records from the first plugin, then the restart's.
+            let records = try await self.records(c, job: live.jobID, count: 4, timeoutMs: 15000)
+            try await self.cancel(c, live.jobID)
+            XCTAssertEqual(records.count, 4)
+            XCTAssertEqual(Set(records.map { $0.fields["key_last_four"]?.text ?? "" }), ["Zq7w"],
+                           "a restarted plugin reads the key again")
+        }
+    }
+
     func testARecordingSourceIsRefusedWhenItCannotBeRead() async throws {
         let plugins = try makeTempDir("decoders")
         let recordings = try makeTempDir("recordings")
