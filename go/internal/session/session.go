@@ -222,6 +222,11 @@ func (s *Session) fold(ev *leylinev1.Event) {
 		if s.Sink != nil && s.Sink.SinkId == b.Sink.SinkId {
 			s.Sink = b.Sink
 		}
+	case *leylinev1.Event_Ai:
+		// The whole AIState every time, so a deleted key is simply absent from the new one.
+		s.State.Ai = b.Ai
+	case *leylinev1.Event_Usage:
+		replaceUsage(s.State, b.Usage)
 	case *leylinev1.Event_Anchor:
 		// A capture publishes its anchor with its first block, and again on a
 		// rate change or a rebind, so the one its Capture arrived with is the
@@ -270,6 +275,18 @@ func replaceSink(st *leylinev1.GetStateResponse, k *leylinev1.Sink) {
 		}
 	}
 	st.Sinks = append(st.Sinks, k)
+}
+
+// replaceUsage puts a ledger line in place of the one with the same provider, model, feature,
+// scope and day, which is the line's identity (UsageLine).
+func replaceUsage(st *leylinev1.GetStateResponse, l *leylinev1.UsageLine) {
+	for i, x := range st.Usage {
+		if x.Provider == l.Provider && x.Model == l.Model && x.Feature == l.Feature && x.ScopeId == l.ScopeId && x.Day == l.Day {
+			st.Usage[i] = l
+			return
+		}
+	}
+	st.Usage = append(st.Usage, l)
 }
 
 // withoutCapture, withoutChannel and withoutSink drop a destroyed object from

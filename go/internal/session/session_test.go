@@ -37,6 +37,32 @@ func TestApplySkipsWhatTheMirrorAlreadyHolds(t *testing.T) {
 	}
 }
 
+// TestFoldKeysAndUsage: an ai event replaces the whole AIState, so a deleted key leaves the
+// mirror; a usage event replaces its line by provider, model, feature, scope and day.
+func TestFoldKeysAndUsage(t *testing.T) {
+	s := &Session{State: &leylinev1.GetStateResponse{
+		Ai: &leylinev1.AIState{Credentials: []*leylinev1.Credential{{Provider: "anthropic"}, {Provider: "openai"}}},
+		Usage: []*leylinev1.UsageLine{
+			{Provider: "anthropic", Model: "m", Feature: "assistant", ScopeId: "conv_1", Day: "2026-10-14", Requests: 1},
+		},
+	}}
+	s.Apply(&leylinev1.Event{Seq: 1, Body: &leylinev1.Event_Ai{Ai: &leylinev1.AIState{
+		Credentials: []*leylinev1.Credential{{Provider: "openai"}},
+	}}})
+	if got := s.State.GetAi().GetCredentials(); len(got) != 1 || got[0].Provider != "openai" {
+		t.Errorf("after the delete the mirror holds %v", got)
+	}
+	s.Apply(&leylinev1.Event{Seq: 2, Body: &leylinev1.Event_Usage{Usage: &leylinev1.UsageLine{
+		Provider: "anthropic", Model: "m", Feature: "assistant", ScopeId: "conv_1", Day: "2026-10-14", Requests: 2,
+	}}})
+	s.Apply(&leylinev1.Event{Seq: 3, Body: &leylinev1.Event_Usage{Usage: &leylinev1.UsageLine{
+		Provider: "anthropic", Model: "m", Feature: "assistant", ScopeId: "conv_1", Day: "2026-10-15", Requests: 1,
+	}}})
+	if u := s.State.GetUsage(); len(u) != 2 || u[0].Requests != 2 || u[1].Day != "2026-10-15" {
+		t.Errorf("usage lines: %v", u)
+	}
+}
+
 // TestCleanupContextOutlivesItsParent: cleanup RPCs run after the run's context has ended.
 func TestCleanupContextOutlivesItsParent(t *testing.T) {
 	parent, cancel := context.WithCancel(t.Context())
