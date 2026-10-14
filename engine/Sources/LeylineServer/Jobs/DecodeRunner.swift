@@ -18,6 +18,11 @@ actor DecodeRunner {
     /// to. A decoder that crashes on every frame should not spin the CPU.
     static let firstRestartSeconds: Double = 1
     static let maxRestartSeconds: Double = 30
+    /// The exit status a plugin uses to say its provider refused a request for a reason of its own
+    /// (a rate or spend limit), with the provider's words as its last line on stderr: `EX_TEMPFAIL`
+    /// from `sysexits.h`, "try again later". A kept job waits and retries on the restart backoff;
+    /// any other job ends with `PROVIDER_REFUSED`, since nobody asked it to outlast the refusal.
+    static let refusedExitStatus: Int32 = 75
 
     private let jobID: JobID
     private let installed: DecoderRegistry.Installed
@@ -37,6 +42,11 @@ actor DecodeRunner {
     /// Where the usage a record carries goes, before the record is published.
     private let usage: UsageRecorder?
     private let onStatus: @Sendable (Leyline_V1_JobState, String) async -> Void
+    /// Ends the job with a code of its own, where `onStatus(.failed, …)` would say the decoder
+    /// failed. Nil falls back to that.
+    private let onFailure: (@Sendable (EngineError) async -> Void)?
+    /// `keep`: whether a refusal is waited out (`refusedExitStatus`).
+    private let keep: Bool
     private let log: Logger
 
     /// The record sequence: 1-based and contiguous per job, so it continues from what a kept job's
@@ -61,8 +71,9 @@ actor DecodeRunner {
     init(jobID: JobID, installed: DecoderRegistry.Installed, lease: any ChannelLease, hub: RecordHub,
          writer: RecordWriter?, store: SessionStore, frequencyHz: UInt64, captureRateHz: UInt64,
          tap: AudioTap, predicate: Leyline_V1_Predicate, notify: Leyline_V1_NotifyTarget?,
-         usage: UsageRecorder? = nil,
+         usage: UsageRecorder? = nil, keep: Bool = false,
          onStatus: @escaping @Sendable (Leyline_V1_JobState, String) async -> Void,
+         onFailure: (@Sendable (EngineError) async -> Void)? = nil,
          seqStart: UInt64 = 0)
     {
         self.jobID = jobID
@@ -77,7 +88,9 @@ actor DecodeRunner {
         self.predicate = predicate
         self.notify = notify
         self.usage = usage
+        self.keep = keep
         self.onStatus = onStatus
+        self.onFailure = onFailure
         seq = seqStart
         log = Logger(label: "leyline.jobs.decode")
     }
@@ -126,12 +139,22 @@ actor DecodeRunner {
         var wait = Self.firstRestartSeconds
         var restarts = 0
         while !Task.isCancelled {
-            let status = await runPlugin()
+            let exit = await runPlugin()
             if Task.isCancelled || stopped { break }
             restarts += 1
-            // A coverage gap the job reports. A transcript's own Gap list arrives with the watch
-            // job, which is not built yet (docs/plans/build-order.md).
-            await onStatus(.degraded, "the decoder exited (status \(status)); restarting in \(Int(wait)) s (restart \(restarts))")
+            if exit.status == Self.refusedExitStatus {
+                let said = exit.lastErrorLine ?? "no reason given"
+                guard keep else {
+                    await fail(EngineError.providerRefused(providerName, providerMessage: said))
+                    await teardown()
+                    break
+                }
+                await onStatus(.degraded, "the provider refused: \(said); retrying in \(Int(wait)) s (retry \(restarts))")
+            } else {
+                // A coverage gap the job reports. A transcript's own Gap list arrives with the
+                // watch job, which is not built yet (docs/plans/build-order.md).
+                await onStatus(.degraded, "the decoder exited (status \(exit.status)); restarting in \(Int(wait)) s (restart \(restarts))")
+            }
             try? await Task.sleep(nanoseconds: UInt64(wait * 1e9))
             wait = Swift.min(wait * 2, Self.maxRestartSeconds)
             if Task.isCancelled || stopped { break }
@@ -146,8 +169,19 @@ actor DecodeRunner {
         audio.finish()
     }
 
-    /// Spawns the plugin and pumps it until it exits or the job is cancelled. Returns its status.
-    private func runPlugin() async -> Int32 {
+    /// The provider a refusal is reported against: the one whose key the decoder uses, else the
+    /// decoder itself.
+    private var providerName: String {
+        installed.manifest.credentialProvider.isEmpty ? installed.manifest.name : installed.manifest.credentialProvider
+    }
+
+    private func fail(_ error: EngineError) async {
+        if let onFailure { await onFailure(error) } else { await onStatus(.failed, error.message) }
+    }
+
+    /// Spawns the plugin and pumps it until it exits or the job is cancelled. Returns its status,
+    /// and for a refusal the last line it wrote on stderr, which is the provider's reason.
+    private func runPlugin() async -> (status: Int32, lastErrorLine: String?) {
         let process = PluginProcess(name: installed.manifest.name, executable: installed.executablePath,
                                     args: installed.manifest.args, directory: installed.directory)
         do {
@@ -155,7 +189,7 @@ actor DecodeRunner {
         } catch {
             await onStatus(.failed, (error as? EngineError)?.message ?? "\(error)")
             await teardown()
-            return -1
+            return (-1, nil)
         }
         currentPlugin.withLock { $0 = process }
         await publishRunning(liveness.detail(decoder: installed.manifest.name))
@@ -180,9 +214,10 @@ actor DecodeRunner {
             group.cancelAll()
             return out
         }
+        let said = status == Self.refusedExitStatus ? await process.lastErrorLine() : nil
         await process.stop()
         currentPlugin.withLock { $0 = nil }
-        return status
+        return (status, said)
     }
 
     /// Audio out of the ring and into whichever plugin is up, one frame at a time. Nonisolated: it

@@ -96,6 +96,11 @@ logging — the daemon captures it under `leyline.decoder.<name>`.
    bytes you decoded, so a better decoder can reprocess it later — and stamp `time` from the frame
    the packet finished in. Leave the daemon's fields unset.
 4. **Stdin closing is how a job stops.** Read until EOF and exit 0; it is not an error.
+5. **Exit 75 when your provider refuses.** A decoder that calls a paid service and is turned away
+   for the provider's own reason, such as a rate or spend limit, writes the provider's message as
+   its last line on stderr and exits with status 75 (`EX_TEMPFAIL`). A kept job waits and starts
+   the decoder again on the restart backoff; any other job ends with `PROVIDER_REFUSED` and that
+   message. Any other exit while stdin is open is a crash, and the daemon restarts the decoder.
 
 The daemon's write to you is non-blocking. A decoder that stops reading has its audio dropped and
 gapped, not queued, so keep up with the stream or expect gaps.

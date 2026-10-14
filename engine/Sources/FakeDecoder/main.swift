@@ -88,6 +88,21 @@ let dieAfter: UInt64 = {
     return 0
 }()
 
+/// `--refuse-after=N` exits with status 75 after N frames, its last stderr line a provider's
+/// refusal, the way a speech plugin says its provider turned a request down
+/// (`DecodeRunner.refusedExitStatus`). It refuses once, recorded by a marker file the way
+/// `--die-after` records its death, so a kept job can be seen to come back.
+let refuseAfter: UInt64 = {
+    for arg in CommandLine.arguments.dropFirst() where arg.hasPrefix("--refuse-after=") {
+        let n = UInt64(arg.dropFirst("--refuse-after=".count)) ?? 0
+        let marker = FileManager.default.currentDirectoryPath + "/.refused-once"
+        if FileManager.default.fileExists(atPath: marker) { return 0 }
+        FileManager.default.createFile(atPath: marker, contents: nil)
+        return n
+    }
+    return 0
+}()
+
 /// `--deaf-after=N` reads and answers N frames, then stops reading its input, the way a plugin that
 /// has wedged does. The daemon's non-blocking write must drop-and-gap rather than stall.
 let deafAfter: UInt64 = {
@@ -142,4 +157,8 @@ while let bytes = readDelimited() {
     if let usagePerRecord { rec.usage = usagePerRecord }
     writeDelimited(rec)
     if dieAfter > 0, seq >= dieAfter { exit(3) }
+    if refuseAfter > 0, seq >= refuseAfter {
+        FileHandle.standardError.write(Data("rate_limit_error: this request would exceed your rate limit (fake provider)\n".utf8))
+        exit(75)
+    }
 }

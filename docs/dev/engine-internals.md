@@ -763,7 +763,11 @@ contiguous per job), `channel_id` and `rssi_dbfs`/`snr_db` from the channel's la
 plugin's own values for those are overwritten. A plugin that exits is spawned again after 1 s,
 doubling to 30 s, with the job in `DEGRADED` and `status_detail` saying so; the drain outlives the
 restart, because `AudioFrameSource.poke` has one iterator and a second one would feed the new plugin
-nothing. A channel that goes `OUT_OF_CAPTURE` degrades the job and comes back to `RUNNING` with the
+nothing. Exit status 75 (`EX_TEMPFAIL`, `DecodeRunner.refusedExitStatus`) is the plugin saying its
+provider refused a request, with the provider's words as its last stderr line: a kept job waits it
+out on the same backoff with `status_detail` "the provider refused: …", and any other job ends
+`FAILED` with `PROVIDER_REFUSED`.
+A channel that goes `OUT_OF_CAPTURE` degrades the job and comes back to `RUNNING` with the
 capture, and only then: records still arrive after the move, so the record count's republish and a
 plugin restart keep the job `DEGRADED` while the channel is away. `keep` jobs are not cancelled when their client goes; cancel stops the plugin, closes the
 writer and releases the lease.
