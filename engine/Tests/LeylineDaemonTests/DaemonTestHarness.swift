@@ -35,6 +35,7 @@ struct DaemonClients {
     let jobs: Leyline_V1_Jobs.Client<HTTP2ClientTransport.Posix>
     let resources: Leyline_V1_Resources.Client<HTTP2ClientTransport.Posix>
     let credentials: Leyline_V1_Credentials.Client<HTTP2ClientTransport.Posix>
+    let usage: Leyline_V1_Usage.Client<HTTP2ClientTransport.Posix>
     let daemon: Daemon
     /// The daemon's data directory: `ai.json`, and `credentials.json` for the test's file store.
     let dataPath: String
@@ -90,7 +91,7 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
             let clients = DaemonClients(
                 control: .init(wrapping: client), decoders: .init(wrapping: client), telemetry: .init(wrapping: client),
                 bulk: .init(wrapping: client), jobs: .init(wrapping: client), resources: .init(wrapping: client),
-                credentials: .init(wrapping: client), daemon: daemon, dataPath: dir + "/data", socketPath: socket
+                credentials: .init(wrapping: client), usage: .init(wrapping: client), daemon: daemon, dataPath: dir + "/data", socketPath: socket
             )
             do { try await body(clients) } catch { bodyError = error }
         }

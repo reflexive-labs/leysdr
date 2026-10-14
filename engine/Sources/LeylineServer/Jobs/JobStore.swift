@@ -58,6 +58,8 @@ actor JobStore {
     let records: RecordStore
     /// Where recordings are written (docs/design/recording.md, "Files").
     let recordings: RecordingStore
+    /// Where a decoder's usage goes (`DecodeRunner.emit`); nil when nothing records it.
+    let usage: UsageRecorder?
     let hub = RecordHub()
     let log = Logger(label: "leyline.jobs")
     var entries: [JobID: Entry] = [:]
@@ -70,13 +72,14 @@ actor JobStore {
     private var shuttingDown = false
 
     init(store: SessionStore, allocator: SessionCaptureAllocator, decoders: DecoderRegistry,
-         records: RecordStore, recordings: RecordingStore)
+         records: RecordStore, recordings: RecordingStore, usage: UsageRecorder? = nil)
     {
         self.store = store
         self.allocator = allocator
         self.decoders = decoders
         self.records = records
         self.recordings = recordings
+        self.usage = usage
     }
 
     // MARK: Kept jobs across a restart

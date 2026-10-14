@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Keys and feature models on the event plane (docs/dev/engine-internals.md, "Credentials and
+// Keys, feature models and the ledger on the event plane (docs/dev/engine-internals.md, "Credentials and
 // usage"). `CredentialStore` owns them; the store publishes them like any other state, the whole
 // `AIState` every time, so a deleted key is a shorter list and needs no tombstone (invariant 6).
 
@@ -22,5 +22,19 @@ extension SessionStore {
         guard version > aiPublishedVersion else { return }
         aiPublishedVersion = version
         emit(.ai(state), captureID: nil, by: by)
+    }
+
+    /// Installed by the daemon so `GetState` carries the ledger's lines.
+    func setUsageProvider(_ provider: @escaping @Sendable () async -> [Leyline_V1_UsageLine]) {
+        usageProvider = provider
+    }
+
+    /// Publishes one ledger line after a report, unless a newer state of the same line is already
+    /// out: two reports to one line race here the way two key changes do (`publishAI`).
+    func publishUsage(_ line: Leyline_V1_UsageLine, version: UInt64, by: ClientContext) {
+        let key = Ledger.key(of: line)
+        guard version > usagePublishedVersions[key, default: 0] else { return }
+        usagePublishedVersions[key] = version
+        emit(.usage(line), captureID: nil, by: by)
     }
 }

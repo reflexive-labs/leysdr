@@ -34,6 +34,8 @@ actor DecodeRunner {
     private let predicate: Leyline_V1_Predicate
     private let notify: Leyline_V1_NotifyTarget?
     private let notifier = Notifier()
+    /// Where the usage a record carries goes, before the record is published.
+    private let usage: UsageRecorder?
     private let onStatus: @Sendable (Leyline_V1_JobState, String) async -> Void
     private let log: Logger
 
@@ -59,6 +61,7 @@ actor DecodeRunner {
     init(jobID: JobID, installed: DecoderRegistry.Installed, lease: any ChannelLease, hub: RecordHub,
          writer: RecordWriter?, store: SessionStore, frequencyHz: UInt64, captureRateHz: UInt64,
          tap: AudioTap, predicate: Leyline_V1_Predicate, notify: Leyline_V1_NotifyTarget?,
+         usage: UsageRecorder? = nil,
          onStatus: @escaping @Sendable (Leyline_V1_JobState, String) async -> Void,
          seqStart: UInt64 = 0)
     {
@@ -73,6 +76,7 @@ actor DecodeRunner {
         self.tap = tap
         self.predicate = predicate
         self.notify = notify
+        self.usage = usage
         self.onStatus = onStatus
         seq = seqStart
         log = Logger(label: "leyline.jobs.decode")
@@ -244,6 +248,17 @@ actor DecodeRunner {
         var rec = incoming
         if rec.protocol.isEmpty { rec.protocol = installed.manifest.name }
         if rec.time.captureID.isEmpty { rec.time.captureID = lease.captureID.string }
+        // A plugin has no socket, so the usage of the call behind a record travels on the record.
+        // It is counted before the predicate: a call the filter discards was still paid for. A
+        // decoder's calls are speech, scoped to this job, whatever the plugin wrote there.
+        if rec.hasUsage {
+            rec.usage.feature = "speech"
+            rec.usage.jobID = jobID.string
+            rec.usage.conversationID = ""
+            if rec.usage.provider.isEmpty { rec.usage.provider = installed.manifest.credentialProvider }
+            if rec.usage.atNs == 0 { rec.usage.atNs = WallClock.nowNs() }
+            await usage?.record(rec.usage, by: .daemon)
+        }
         // The predicate filters delivery (docs/design/decoders.md, "Predicates and delivery"): a
         // record that does not match reaches neither the hub nor the store nor the notifier. An
         // empty predicate matches everything, so `ley decode` delivers all. Judged before the seq

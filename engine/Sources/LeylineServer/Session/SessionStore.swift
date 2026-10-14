@@ -172,6 +172,11 @@ actor SessionStore {
     /// The `CredentialStore.version` of the last `AIState` published, so an older state that
     /// arrives late is not published over a newer one (`publishAI(from:by:)`).
     var aiPublishedVersion: UInt64 = 0
+    /// Installed by the daemon: the ledger's lines `GetState` carries.
+    var usageProvider: (@Sendable () async -> [Leyline_V1_UsageLine])?
+    /// The ledger version each line was last published at (`publishUsage`), keyed by
+    /// `Ledger.key(of:)`. One entry per line the daemon has published since it started.
+    var usagePublishedVersions: [String: UInt64] = [:]
     private var clientGoneHook: (@Sendable (String) async -> Void)?
     /// Captures a sweep currently holds. Invariant 9 puts jobs behind the allocator; this is the
     /// other half of it -- without it a client can join a capture that is walking a band, and its

@@ -5,7 +5,8 @@
 // It keeps the contract of docs/design/decoders.md, "Decisions" ("Transport: stdio") and nothing
 // else: read the varint-delimited StreamDescriptor, then one DecodeRecord per Frame. A frame with
 // an empty payload makes it exit(3), which is how the restart path is tested; FAKE_DECODER_SLEEP_MS
-// delays its start, which is how a slow plugin is tested.
+// delays its start, which is how a slow plugin is tested; FAKE_DECODER_USAGE stamps each record
+// with the usage a paid decoder would report.
 //
 // Framing is coded here rather than through `BinaryDelimited` because that API takes Foundation
 // `InputStream`/`OutputStream`, which cannot be built from the process's own pipes; the bytes are
@@ -96,6 +97,20 @@ let deafAfter: UInt64 = {
     return 0
 }()
 
+/// `FAKE_DECODER_USAGE=provider,model,audio_seconds`: every record carries one request of that
+/// much audio, as a speech plugin reports what each call used (decode.proto, `DecodeRecord.usage`).
+let usagePerRecord: Leyline_V1_UsageReport? = {
+    guard let spec = ProcessInfo.processInfo.environment["FAKE_DECODER_USAGE"] else { return nil }
+    let parts = spec.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+    guard parts.count == 3, let seconds = Double(parts[2]) else { return nil }
+    var usage = Leyline_V1_UsageReport()
+    usage.provider = parts[0]
+    usage.model = parts[1]
+    usage.requests = 1
+    usage.audioSeconds = seconds
+    return usage
+}()
+
 func writeLastAndSleep(frame: Leyline_V1_Frame, seq: UInt64) -> Never {
     var rec = Leyline_V1_DecodeRecord()
     rec.protocol = "fake"
@@ -124,6 +139,7 @@ while let bytes = readDelimited() {
     rec.position.longitude = 2.0
     rec.time = frame.time
     rec.raw = frame.payload.prefix(4)
+    if let usagePerRecord { rec.usage = usagePerRecord }
     writeDelimited(rec)
     if dieAfter > 0, seq >= dieAfter { exit(3) }
 }

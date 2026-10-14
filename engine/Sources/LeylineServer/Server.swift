@@ -115,6 +115,8 @@ package final class Daemon: Sendable {
     let jobs: JobStore
     /// The user's provider keys and each feature's model.
     let credentials: CredentialStore
+    /// What every provider call used, as its worker or plugin reported it.
+    let ledger: Ledger
     private let server: GRPCServer<HTTP2ServerTransport.Posix>
     private let log = Logger(label: "leyline.daemon")
     private let teardown = TeardownGate()
@@ -133,10 +135,12 @@ package final class Daemon: Sendable {
         let recordStore = RecordStore(directory: config.storePath, capBytes: config.storeCapBytes, ageDays: config.storeAgeDays)
         let recordings = RecordingStore(directory: config.recordingsPath, capBytes: config.recordingsCapBytes,
                                         ageDays: config.recordingsAgeDays)
-        jobs = JobStore(store: store, allocator: allocator, decoders: decoders, records: recordStore,
-                        recordings: recordings)
         credentials = CredentialStore(path: CredentialStore.path(inData: config.dataPath),
                                       secrets: config.secretStore ?? defaultSecretStore(dataPath: config.dataPath))
+        ledger = Ledger(path: Ledger.path(inStore: config.storePath))
+        let usage = UsageRecorder(ledger: ledger, credentials: credentials, store: store)
+        jobs = JobStore(store: store, allocator: allocator, decoders: decoders, records: recordStore,
+                        recordings: recordings, usage: usage)
         // Transport policy for a local, user-trusted socket. The default keepalive policy counts any
         // client PING arriving sooner than five minutes after the previous one as a strike while a
         // stream is open and sends GOAWAY on the third strike — but grpc-go pings for bandwidth
@@ -157,6 +161,7 @@ package final class Daemon: Sendable {
                                    worker: WorkerProcess(leyPath: config.leyPath, locator: config.programLocator,
                                                          socketPath: config.socketPath),
                                    store: store, jobs: jobs),
+                UsageService(recorder: usage, store: store),
             ],
             interceptors: [ClientContextInterceptor()]
         )
@@ -228,6 +233,10 @@ package final class Daemon: Sendable {
         await store.setClientGoneHook { await table.clientGone($0) }
         let keys = credentials
         await store.setAIProvider { await keys.snapshot() }
+        // The ledger is folded and trimmed to its retention before the first report is added.
+        let ledger = ledger
+        await ledger.load()
+        await store.setUsageProvider { await ledger.lines() }
         log.info("leylined \(config.version) listening on \(config.socketPath)")
         var served: (any Error)?
         do { try await server.serve() } catch { served = error }

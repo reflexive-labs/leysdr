@@ -107,6 +107,7 @@ extension JobStore {
             frequencyHz: frequencyHz, captureRateHz: snapshot?.sampleRate ?? 0,
             tap: installed.manifest.input.tap == .tapDemod ? .demod : .audio,
             predicate: config.predicate, notify: config.hasNotify ? config.notify : nil,
+            usage: usage,
             onStatus: { [weak self] state, detail in
                 await self?.setDecodeStatus(id, state: state, detail: detail)
             },
