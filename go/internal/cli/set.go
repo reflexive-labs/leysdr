@@ -345,11 +345,10 @@ func buildWrites(ctx context.Context, s *verbSession, param, value string, ch *l
 		return nil
 	}
 	if param == "freq" {
-		t, terr := resolveDial(value, "146.52 (MHz)", nil)
-		if terr != nil {
+		var terr error
+		if hz, terr = setFreqHz(value); terr != nil {
 			return nil, nil, 0, paramErr(param, terr)
 		}
-		hz = t.Hz
 		if err := needCapture(); err != nil {
 			return nil, nil, 0, err
 		}
@@ -401,6 +400,14 @@ func buildWrites(ctx context.Context, s *verbSession, param, value string, ch *l
 	}
 	writes, confirmed, err = buildChannelWrites(ctx, s, param, value, ch, capture, needChannel)
 	return writes, confirmed, 0, err
+}
+
+// setFreqHz reads a set freq value the way tune reads a frequency: a number, a unit or a preset.
+// buildWrites and the MCP adapter's retune refusal both read it here, so they agree on where
+// the write goes.
+func setFreqHz(value string) (uint64, error) {
+	t, err := resolveDial(value, "146.52 (MHz)", nil)
+	return t.Hz, err
 }
 
 // buildChannelWrites handles the channel-scoped parameters (squelch, bw,

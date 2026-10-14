@@ -26,7 +26,7 @@ func (srv *mcpServer) registerControlTools() {
 		Name: "set",
 		Description: "Change one setting of a channel that is running and report the value the radio applied (ParamWrite, confirmed by the daemon's event; ley set). " +
 			"param is one of ley set's settings: freq, mode, bw, squelch, gain, volume. The channel is the only active one, else the one an agent made when exactly one is, else the one channel names. " +
-			"A freq outside what the radio is tuned to moves the radio, and that is refused when other channels are listening on it, naming them, unless take_over is true. gain belongs to the radio and moves every channel on it. " +
+			"Refused, naming what it would disturb, unless take_over is true: any setting of a channel another client made; a gain while another client's channel is on the radio (gain belongs to the radio and moves every channel on it); a freq outside what the radio is tuned to while other channels listen on it or a recording runs on it (the recording would get a gap). " +
 			"Returns the Event that confirmed the write, the shape 'ley set --json' prints; the text is the line ley set prints.",
 		Annotations: toolMutates,
 		InputSchema: setSchema(),
@@ -43,7 +43,7 @@ type setArgs struct {
 	Param    string `json:"param" jsonschema:"which setting: freq (or frequency), mode, bw (or filter), squelch, gain, volume"`
 	Value    string `json:"value"`
 	Channel  string `json:"channel,omitempty" jsonschema:"which channel: an id (chan_...), id prefix, row number from get_state or frequency (default: the only active one, else the only one an agent made)"`
-	TakeOver bool   `json:"take_over,omitempty" jsonschema:"move the radio for a freq even when other channels are listening on it; they fall silent (default: false, refuse and say who is listening). Send it only after a refusal named who is listening"`
+	TakeOver bool   `json:"take_over,omitempty" jsonschema:"change another client's channel, set a gain under another client's channel, or move the radio for a freq when other channels listen on it or a recording runs on it (the recording logs the gap) (default: false, refuse and say what would be disturbed). Send it only after such a refusal"`
 }
 
 // setSchema describes value with ley set's own parameter table, so the forms the tool accepts
@@ -84,9 +84,14 @@ func (srv *mcpServer) set(ctx context.Context, _ *mcp.CallToolRequest, in setArg
 	if err != nil {
 		return nil, nil, toolError(err)
 	}
-	if p.name == "freq" && !in.TakeOver {
-		if err := refuseSetRetune(s, ch, capture, in.Value); err != nil {
+	if !in.TakeOver {
+		if err := srv.refuseSetOthers(s.State, p.name, ch, capture); err != nil {
 			return nil, nil, err
+		}
+		if p.name == "freq" {
+			if err := refuseSetRetune(s, ch, capture, in.Value); err != nil {
+				return nil, nil, err
+			}
 		}
 	}
 	res, err := applySet(ctx, s, p.name, in.Value, ch, capture, in.TakeOver)
@@ -109,14 +114,33 @@ func refuseSetRetune(s *verbSession, ch *leylinev1.Channel, capture *leylinev1.C
 	if capture == nil {
 		return nil
 	}
-	t, err := resolveDial(value, "146.52 (MHz)", nil)
+	hz, err := setFreqHz(value)
 	if err != nil {
 		return nil
 	}
-	if ch != nil && covers(capture, t.Hz, ch.GetBandwidthHz()) {
+	if ch != nil && covers(capture, hz, ch.GetBandwidthHz()) {
 		return nil
 	}
-	return retuneRefusal(s.State, capture, t.Hz, ch.GetChannelId())
+	return retuneRefusal(s.State, capture, hz, ch.GetChannelId())
+}
+
+// refuseSetOthers refuses a set that would change what another client's channel is doing: any
+// setting of a channel another client made, and a gain, which belongs to the radio and moves
+// every channel on it, while another client's channel is active there.
+func (srv *mcpServer) refuseSetOthers(st *leylinev1.GetStateResponse, param string, ch *leylinev1.Channel, capture *leylinev1.Capture) error {
+	if param == "gain" && capture != nil {
+		var on []*leylinev1.Channel
+		for _, c := range st.GetChannels() {
+			if c.GetCaptureId() == capture.GetCaptureId() && c.GetState() == leylinev1.ChannelState_CHANNEL_ACTIVE {
+				on = append(on, c)
+			}
+		}
+		return srv.othersChannels(st, on, "The gain belongs to the radio and changes what every channel on it hears", "set the gain")
+	}
+	if ch == nil {
+		return nil
+	}
+	return srv.othersChannels(st, []*leylinev1.Channel{ch}, "Changing its "+param+" changes what whoever is listening hears", "change it")
 }
 
 type stopArgs struct {
@@ -161,7 +185,7 @@ func (srv *mcpServer) stopOne(ctx context.Context, s *verbSession, sel string, t
 		return err
 	}
 	if !takeOver {
-		if err := srv.othersChannels(s.State, []*leylinev1.Channel{ch}); err != nil {
+		if err := srv.othersChannels(s.State, []*leylinev1.Channel{ch}, "Stopping it silences whoever is listening", "stop it"); err != nil {
 			return err
 		}
 	}
@@ -201,16 +225,17 @@ func (srv *mcpServer) stopRadio(ctx context.Context, s *verbSession, deviceSel s
 				on = append(on, ch)
 			}
 		}
-		if err := srv.othersChannels(s.State, on); err != nil {
+		if err := srv.othersChannels(s.State, on, "Freeing the radio silences whoever is listening there", "free the radio"); err != nil {
 			return err
 		}
 	}
 	return stopAll(ctx, s, deviceSel)
 }
 
-// othersChannels refuses to stop channels another client made, naming each with its frequency
-// and owner: stopping them silences whoever is listening, which the policy asks about first.
-func (srv *mcpServer) othersChannels(st *leylinev1.GetStateResponse, chs []*leylinev1.Channel) error {
+// othersChannels refuses to disturb channels another client made, naming each with its
+// frequency and owner, which the policy asks about first. effect is the sentence on what the
+// call would do to them and action what take_over would go ahead and do.
+func (srv *mcpServer) othersChannels(st *leylinev1.GetStateResponse, chs []*leylinev1.Channel, effect, action string) error {
 	var who []string
 	for _, ch := range chs {
 		if ch.GetOwner().GetClientId() == srv.client.ClientID() {
@@ -221,7 +246,6 @@ func (srv *mcpServer) othersChannels(st *leylinev1.GetStateResponse, chs []*leyl
 	if len(who) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%s made by another client: %s. Stopping %s silences whoever is listening. Call again with take_over: true to stop %s anyway",
-		words.Pick(len(who), "that channel was", "those channels were"), strings.Join(who, ", "),
-		words.Pick(len(who), "it", "them"), words.Pick(len(who), "it", "them"))
+	return fmt.Errorf("%s made by another client: %s. %s. Call again with take_over: true to %s anyway",
+		words.Pick(len(who), "that channel was", "those channels were"), strings.Join(who, ", "), effect, action)
 }

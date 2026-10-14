@@ -93,23 +93,12 @@ notifier, so it fires whether or not ley is attached.
 			return completeDecoders(app, toComplete)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			o.decoder = args[0]
-			if freq != "" {
-				hz, err := units.ParseFrequency(freq)
-				if err != nil {
-					return usageErrorf("--freq %v", err)
-				}
-				o.freqHz = hz
-			}
-			pred, words, err := buildPredicate(where, counties, near, radius)
-			if err != nil {
-				return err
-			}
-			o.predicate, o.predWords = pred, words
+			var notifyValue *string
 			if cmd.Flags().Changed("notify") {
-				if o.notify, err = parseNotify(notify); err != nil {
-					return err
-				}
+				notifyValue = &notify
+			}
+			if err := o.build(args[0], freq, where, counties, near, radius, notifyValue); err != nil {
+				return err
 			}
 			o.detach = asJob
 			s, err := openSession(cmd.Context(), app)
@@ -141,6 +130,31 @@ notifier, so it fires whether or not ley is attached.
 	cmd.Flags().BoolVar(&asJob, "job", false, "alias for --detach")
 	cmd.Flags().IntVar(&o.count, "count", 0, "stop after this many matches, e.g. 5 (default: until Ctrl-C)")
 	return cmd
+}
+
+// build fills in what a watch decodes and keeps from the verb's flags (the MCP adapter's watch
+// tool passes its arguments as the same strings): the decoder, the frequency, the filter and
+// the notifier. A nil notify is no notifier.
+func (o *watchOptions) build(decoder, freq string, where, counties []string, near, radius string, notify *string) error {
+	o.decoder = decoder
+	if freq != "" {
+		hz, err := units.ParseFrequency(freq)
+		if err != nil {
+			return usageErrorf("--freq %v", err)
+		}
+		o.freqHz = hz
+	}
+	pred, words, err := buildPredicate(where, counties, near, radius)
+	if err != nil {
+		return err
+	}
+	o.predicate, o.predWords = pred, words
+	if notify != nil {
+		if o.notify, err = parseNotify(*notify); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // config is the decode job a watch starts: the decoder with the filter and the notifier, kept

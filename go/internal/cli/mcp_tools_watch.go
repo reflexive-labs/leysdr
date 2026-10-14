@@ -10,7 +10,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/reflexive-labs/leysdr/go/pkg/units"
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // The watch tool: `ley watch` seen from an agent. It builds the filter and the notifier with the
@@ -53,26 +53,22 @@ func (srv *mcpServer) watch(ctx context.Context, _ *mcp.CallToolRequest, in watc
 	if strings.TrimSpace(in.Decoder) == "" {
 		return nil, nil, errors.New("decoder is required: a name from list_decoders, e.g. aprs")
 	}
-	o := watchOptions{decoder: in.Decoder, device: in.Device, takeOver: in.TakeOver, detach: in.Keep}
-	if in.Frequency != "" {
-		hz, err := units.ParseFrequency(in.Frequency)
-		if err != nil {
-			return nil, nil, fmt.Errorf("frequency %w", err)
-		}
-		o.freqHz = hz
-	}
-	pred, predWords, err := buildPredicate(in.Where, in.County, in.Near, in.Radius)
-	if err != nil {
-		return nil, nil, toolError(err)
-	}
-	o.predicate, o.predWords = pred, predWords
+	o := watchOptions{device: in.Device, takeOver: in.TakeOver, detach: in.Keep}
+	var notify *string
 	if n := strings.TrimSpace(in.Notify); n != "" {
-		if scheme, _, _ := strings.Cut(n, ":"); strings.EqualFold(scheme, "shell") {
+		// Refused by name before parsing, so the sentence is this one and not the parser's.
+		if scheme, _, _ := strings.Cut(n, ":"); strings.EqualFold(strings.TrimSpace(scheme), "shell") {
 			return nil, nil, errors.New(shellNotifyRefusal)
 		}
-		if o.notify, err = parseNotify(n); err != nil {
-			return nil, nil, toolError(err)
-		}
+		notify = &n
+	}
+	if err := o.build(in.Decoder, in.Frequency, in.Where, in.County, in.Near, in.Radius, notify); err != nil {
+		return nil, nil, toolError(err)
+	}
+	// And by what the parser made of it, so no spelling or later alias of the shell notifier
+	// can get through the string check above.
+	if _, isShell := o.notify.GetTarget().(*leylinev1.NotifyTarget_Shell); isShell {
+		return nil, nil, errors.New(shellNotifyRefusal)
 	}
 	app, out, errb := srv.toolApp()
 	s, err := openSession(ctx, app)

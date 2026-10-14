@@ -67,9 +67,61 @@ func TestMCPSetMirrorsLeySet(t *testing.T) {
 		t.Errorf("a refusal changed the daemon: seq %d -> %d", before.EventSeq, after.EventSeq)
 	}
 	h.must(t, "set", map[string]any{"param": "freq", "value": "150", "channel": mine.GetChannelId(), "take_over": true})
+	moved, _ := h.client.State(t.Context())
+	if c := captureByID(moved, mine.GetCaptureId()); c.GetCenterHz() != 150_000_000 || channelByID(moved, mine.GetChannelId()).GetOffsetHz() != 0 {
+		t.Errorf("take_over did not move the radio to 150 MHz with the channel on it: %v %v", c, channelByID(moved, mine.GetChannelId()))
+	}
 
 	if r := h.call(t, "set", map[string]any{"param": "loudness", "value": "3"}); !r.IsError || !strings.Contains(resultText(r), "squelch") {
 		t.Errorf("an unknown setting must be refused with the list: %s", resultText(r))
+	}
+}
+
+// set on a channel another client made is refused for any setting, and a gain under it too,
+// naming the channel; take_over goes ahead.
+func TestMCPSetRefusesAnotherClientsChannel(t *testing.T) {
+	t.Parallel()
+	h := newMCPHarness(t)
+	listening(t, h.client) // the only channel, and not the agent's
+	st, _ := h.client.State(t.Context())
+	theirs := st.GetChannels()[0]
+	for _, c := range []struct{ param, value string }{{"squelch", "-50"}, {"gain", "30"}} {
+		before, _ := h.client.State(t.Context())
+		r := h.call(t, "set", map[string]any{"param": c.param, "value": c.value})
+		if !r.IsError || !strings.Contains(resultText(r), theirs.GetChannelId()) || !strings.Contains(resultText(r), "take_over: true") {
+			t.Fatalf("set %s on another client's channel must be refused by name:\n%s", c.param, resultText(r))
+		}
+		if after, _ := h.client.State(t.Context()); after.EventSeq != before.EventSeq {
+			t.Errorf("a refused set %s changed the daemon", c.param)
+		}
+		h.must(t, "set", map[string]any{"param": c.param, "value": c.value, "take_over": true})
+	}
+	st, _ = h.client.State(t.Context())
+	if channelByID(st, theirs.GetChannelId()).GetSquelchDb() != -50 {
+		t.Errorf("take_over did not set the squelch: %v", channelByID(st, theirs.GetChannelId()))
+	}
+	if g := captureByID(st, theirs.GetCaptureId()).GetGains(); len(g) == 0 || g[0].GetDb() < 25 || g[0].GetDb() > 35 {
+		t.Errorf("take_over did not set the gain: %v", g)
+	}
+}
+
+// stop all on a radio with another client's channel on it is refused until take_over.
+func TestMCPStopAllRefusesAnotherClientsRadio(t *testing.T) {
+	t.Parallel()
+	h := newMCPHarness(t)
+	listening(t, h.client)
+	st, _ := h.client.State(t.Context())
+	theirs := st.GetChannels()[0].GetChannelId()
+	r := h.call(t, "stop", map[string]any{"all": true, "device": "1"})
+	if !r.IsError || !strings.Contains(resultText(r), theirs) || !strings.Contains(resultText(r), "take_over: true") {
+		t.Fatalf("stop all must refuse a radio with another client's channel:\n%s", resultText(r))
+	}
+	if after, _ := h.client.State(t.Context()); after.EventSeq != st.EventSeq {
+		t.Errorf("a refused stop all changed the daemon")
+	}
+	h.must(t, "stop", map[string]any{"all": true, "device": "1", "take_over": true})
+	if after, _ := h.client.State(t.Context()); len(after.GetChannels()) != 0 || len(after.GetCaptures()) != 0 {
+		t.Errorf("take_over did not free the radio: %v %v", after.GetChannels(), after.GetCaptures())
 	}
 }
 
@@ -228,8 +280,10 @@ func TestMCPBookmarkTools(t *testing.T) {
 func TestMCPWatchMirrorsLeyWatch(t *testing.T) {
 	t.Parallel()
 	h := newMCPHarness(t)
-	if r := h.call(t, "watch", map[string]any{"decoder": "aprs", "notify": "shell:say hi"}); !r.IsError || !strings.Contains(resultText(r), "not available") {
-		t.Fatalf("the shell notifier must be refused: %s", resultText(r))
+	for _, n := range []string{"shell:say hi", "SHELL:x", " shell:x", "shell :x", "Shell:x"} {
+		if r := h.call(t, "watch", map[string]any{"decoder": "aprs", "notify": n}); !r.IsError {
+			t.Fatalf("notify %q must be refused: %s", n, resultText(r))
+		}
 	}
 	if jobs, _ := h.client.ListJobs(t.Context()); len(jobs) != 0 {
 		t.Fatalf("a refused watch started a job: %v", jobs)
@@ -265,6 +319,28 @@ func TestMCPWatchMirrorsLeyWatch(t *testing.T) {
 	if r := h.call(t, "watch", map[string]any{"decoder": "aprs", "near": "37.76,-122.42"}); !r.IsError || !strings.Contains(resultText(r), "radius") {
 		t.Errorf("near without radius must be refused: %s", resultText(r))
 	}
+}
+
+// watch declines a radio somebody is listening on, as start_decode_job does, until take_over,
+// and takes a webhook notifier.
+func TestMCPWatchBusyRadioAndWebhook(t *testing.T) {
+	t.Parallel()
+	h := newMCPHarness(t)
+	listening(t, h.client)
+	args := map[string]any{"decoder": "aprs", "notify": "webhook:https://hooks.example.invalid/ley"}
+	if r := h.call(t, "watch", args); !r.IsError || !strings.Contains(resultText(r), "take_over: true") {
+		t.Fatalf("watch on a busy radio must be refused with the remedy: %s", resultText(r))
+	}
+	if jobs, _ := h.client.ListJobs(t.Context()); len(jobs) != 0 {
+		t.Fatalf("a refused watch started a job: %v", jobs)
+	}
+	args["take_over"] = true
+	var job leylinev1.Job
+	structured(t, h.must(t, "watch", args), &job)
+	if job.GetDecode().GetNotify().GetWebhook() != "https://hooks.example.invalid/ley" || job.GetState() != leylinev1.JobState_RUNNING {
+		t.Errorf("the webhook watch: %v", &job)
+	}
+	h.must(t, "cancel_job", map[string]any{"job": job.GetJobId()})
 }
 
 // attach_device adds an rtl_tcp radio as ley devices attach does, and a recording as a file

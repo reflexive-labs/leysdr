@@ -246,10 +246,12 @@ Notes a table cell cannot hold:
   only active one, else the one channel an agent made through `ley mcp` when exactly one is, else
   the one `channel` names. The text is the line `ley set` prints (`squelch -80 dBFS → -50 dBFS on
   146.550 MHz NFM (channel 2)`), after the decisions on the way (a measured `squelch auto`, a
-  retune). A `freq` outside what the radio is tuned to moves the radio, and with other channels
-  listening on it that is refused before anything is written, naming them, as `tune` refuses;
-  `take_over: true` insists, and also moves the radio under a running recording, which `ley set`
-  calls `--retune`. A `gain` belongs to the radio and moves every channel on it.
+  retune). Three writes are refused before anything is written, naming what they would
+  disturb, until `take_over: true`: any setting of a channel another client made; a `gain` while
+  another client's channel is on the radio, since the gain belongs to the radio and moves every
+  channel on it; and a `freq` outside what the radio is tuned to while other channels listen on
+  it, as `tune` refuses, or while a recording runs on it, which `ley set` overrides with
+  `--retune` (the recording logs the gap).
 - **`stop`** with no arguments stops every channel this server made and nothing else. `channel`
   is `ley stop <channel>` and `all` is `ley stop all`, which also removes the capture so the radio
   is free. A channel another client made (the app's, a `ley tune --persistent`, an earlier
