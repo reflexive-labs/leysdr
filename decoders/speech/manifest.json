@@ -1,0 +1,52 @@
+{
+  "name": "speech",
+  "version": "0.1.0",
+  "aliases": [
+    "transcribe"
+  ],
+  "description": "Speech to text, one record per over; this build's engine replays a script",
+  "license": "Apache-2.0",
+  "recipe": {
+    "mode": "NFM",
+    "gain": "GAIN_LEAVE"
+  },
+  "input": {
+    "mode": "SEGMENTED",
+    "tap": "TAP_AUDIO"
+  },
+  "outputs": [
+    "SHAPE_RECORDS"
+  ],
+  "fields": [
+    {
+      "name": "text",
+      "type": "TEXT",
+      "description": "what the speech engine heard, as it wrote it"
+    },
+    {
+      "name": "language",
+      "type": "TEXT",
+      "description": "the language the engine transcribed, as an ISO 639-1 code"
+    },
+    {
+      "name": "model",
+      "type": "TEXT",
+      "description": "the model that produced the text"
+    },
+    {
+      "name": "confidence",
+      "type": "NUMBER",
+      "description": "the engine's own confidence in the text, 0 to 1, when it reports one"
+    },
+    {
+      "name": "callsigns",
+      "type": "TEXT",
+      "description": "callsigns in the text, comma-separated: a pattern match over the normalised text, not a decoded identity"
+    }
+  ],
+  "executable": "leydec-speech",
+  "args": [
+    "--engine",
+    "scripted"
+  ]
+}
