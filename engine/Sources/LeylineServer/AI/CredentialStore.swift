@@ -122,10 +122,10 @@ actor CredentialStore {
         return feature
     }
 
-    /// The secret's last four characters, so a person can tell keys apart. A secret of fewer than
-    /// eight characters shows none: four of them would be half of it or more.
+    /// The secret's last four characters, so a person can tell keys apart. A secret of four
+    /// characters or fewer shows none, since the four would be all of it.
     static func lastFour(of secret: String) -> String {
-        secret.count >= 8 ? String(secret.suffix(4)) : ""
+        secret.count > 4 ? String(secret.suffix(4)) : ""
     }
 
     private func changed() {

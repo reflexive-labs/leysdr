@@ -236,11 +236,11 @@ package struct EngineError: Error, Hashable, Sendable, CustomStringConvertible {
         return .init(code: Code.credentialMissing, message: "no \(provider) key is set\(why); add one with ley ai add \(provider)", target: provider)
     }
     /// `providerMessage` is the provider's own words, passed on unedited.
-    package static func credentialRejected(_ provider: String, providerMessage: String) -> EngineError { .init(code: Code.credentialRejected, message: "\(provider) refused the key: \(providerMessage); add a new one with ley ai add \(provider)", target: provider) }
+    package static func credentialRejected(_ provider: String, providerMessage: String) -> EngineError { .init(code: Code.credentialRejected, message: "\(provider) refused the key: \(providerMessage); paste a working key with ley ai add \(provider)", target: provider) }
     package static func providerUnavailable(_ provider: String, detail: String) -> EngineError { .init(code: Code.providerUnavailable, message: "\(provider) could not be reached: \(detail); try again with ley ai check \(provider)", target: provider) }
     /// A refusal for the provider's own reason, such as a rate or spend limit. Served as
     /// FAILED_PRECONDITION so that no default retry policy repeats the call against the account.
-    package static func providerRefused(_ provider: String, providerMessage: String) -> EngineError { .init(code: Code.providerRefused, message: "\(provider) refused the request: \(providerMessage)", target: provider) }
+    package static func providerRefused(_ provider: String, providerMessage: String) -> EngineError { .init(code: Code.providerRefused, message: "\(provider) refused the request: \(providerMessage); check the account at the provider, then try again with ley ai check \(provider)", target: provider) }
     /// A precondition the caller can see and fix, where no more specific code fits.
     package static func failedPrecondition(_ msg: String, target: String = "") -> EngineError { .init(code: Code.failedPrecondition, message: msg, target: target) }
     /// A fault the caller did not cause and cannot act on; the prose is whatever went wrong.

@@ -28,6 +28,10 @@ struct UsageService: Leyline_V1_Usage.SimpleServiceProtocol {
             where value.isEmpty {
                 throw EngineError.invalidArgument("a usage report names its \(field)", target: field)
             }
+            // One scope or none: a key check is made for no job and no conversation.
+            guard request.jobID.isEmpty || request.conversationID.isEmpty else {
+                throw EngineError.invalidArgument("a usage report names a job or a conversation, not both", target: request.jobID)
+            }
             await recorder.record(request, by: client)
             return Leyline_V1_Empty()
         }

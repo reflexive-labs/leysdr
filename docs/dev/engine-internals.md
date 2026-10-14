@@ -605,7 +605,7 @@ list: losing the remembered remote endpoints is better than refusing to serve lo
 Model calls run on the user's own provider key, and the daemon holds the keys so a kept job can use
 one with no client attached and every client sees the same list (invariant 7). The contract can
 write a key and never read one: `Credentials` returns a `Credential` with the provider, label, the
-secret's last four characters (none for a secret under eight) and the times, and no reply, event,
+secret's last four characters (none for a secret of four or fewer) and the times, and no reply, event,
 error or log line carries the secret. On macOS the secret is a login-keychain item `leylined`
 creates (service `com.leysdr.leyline`, account the provider, readable after first unlock);
 elsewhere it is `credentials.json` in the data directory, mode 0600 in a 0700 directory, written to
@@ -626,13 +626,15 @@ key and then checks it; `CheckCredential` checks the stored one. Both return the
 the outcome in `last_check`, a rejected key included, and fail only with `CREDENTIAL_MISSING` when
 there is no key to check, as `DeleteCredential` does when there is none to delete. Deleting a key
 ends every live decode job whose manifest names that `credential_provider`, `FAILED` with
-`CREDENTIAL_MISSING`. `SetFeatureModel` takes `assistant` or `speech`; an empty provider and model
+`CREDENTIAL_MISSING`, and a decode job whose provider's key was last checked `REJECTED` is refused
+at start with `CREDENTIAL_REJECTED` in the provider's words. `SetFeatureModel` takes `assistant` or `speech`; an empty provider and model
 clears the choice.
 
 The ledger is `<store>/usage.jsonl`: one `UsageReport` per line as proto3 JSON, appended as each
 arrives (`Ledger`). At start the file is folded into `UsageLine`s by provider, model, feature, scope
 (the job or conversation) and UTC day, the day the providers' consoles count, and reports older
-than 400 days are dropped and the file rewritten. A report arrives by `Usage.ReportUsage` from a
+than 400 days are dropped and the file rewritten. A report names a job or a conversation or
+neither (a key check has no scope), never both. A report arrives by `Usage.ReportUsage` from a
 worker, or on a decode record (`DecodeRunner`, "Decoders" below); either way `UsageRecorder` adds
 it, publishes the whole line and sets `last_used_at_ns` on the provider's key. `GetUsage` filters
 by provider, feature, scope and the UTC day `since_ns` falls on, sorted by day then provider.

@@ -140,7 +140,7 @@ package final class Daemon: Sendable {
         ledger = Ledger(path: Ledger.path(inStore: config.storePath))
         let usage = UsageRecorder(ledger: ledger, credentials: credentials, store: store)
         jobs = JobStore(store: store, allocator: allocator, decoders: decoders, records: recordStore,
-                        recordings: recordings, usage: usage)
+                        recordings: recordings, usage: usage, credentials: credentials)
         // Transport policy for a local, user-trusted socket. The default keepalive policy counts any
         // client PING arriving sooner than five minutes after the previous one as a strike while a
         // stream is open and sends GOAWAY on the third strike — but grpc-go pings for bandwidth

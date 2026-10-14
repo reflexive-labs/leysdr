@@ -25,6 +25,12 @@ extension JobStore {
         if installed.manifest.input.mode == .slotAligned {
             throw EngineError.unimplemented("slot-aligned decoder input")
         }
+        // A key the provider has already refused would fail the decoder's first call, so the
+        // caller is told now, in the provider's words, rather than by a job that dies later.
+        let provider = installed.manifest.credentialProvider
+        if !provider.isEmpty, let key = await credentials?.credential(provider), key.lastCheck.outcome == .rejected {
+            throw EngineError.credentialRejected(provider, providerMessage: key.lastCheck.message)
+        }
         let frequencyHz = config.frequencyHz != 0 ? config.frequencyHz : (installed.manifest.recipe.frequenciesHz.first ?? 0)
         guard frequencyHz > 0 else {
             throw EngineError.invalidArgument("\(config.decoder) names no frequency of its own; say which with --freq", target: config.decoder)

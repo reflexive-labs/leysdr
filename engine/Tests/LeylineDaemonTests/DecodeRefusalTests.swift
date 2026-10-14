@@ -73,7 +73,8 @@ final class DecodeRefusalTests: XCTestCase {
             let job = try await self.startRefusingJob(c, keep: false)
             let failed = await self.jobEvent(events, job.jobID) { $0.state == .failed }
             XCTAssertEqual(failed?.error.code, EngineError.Code.providerRefused)
-            XCTAssertEqual(failed?.error.message, "fakeprov refused the request: \(self.providerWords)")
+            XCTAssertEqual(failed?.error.message,
+                           "fakeprov refused the request: \(self.providerWords); check the account at the provider, then try again with ley ai check fakeprov")
             XCTAssertEqual(failed?.statusDetail, failed?.error.message)
             let degraded = await events.events.contains {
                 if case .job(let j)? = $0.body { return j.jobID == job.jobID && j.state == .degraded }

@@ -210,4 +210,26 @@ final class CredentialsServiceTests: XCTestCase {
             _ = try await c.jobs.cancelJob({ var r = Leyline_V1_JobRef(); r.jobID = free; return r }(), metadata: testMetadata)
         }
     }
+
+    func testADecoderWhoseKeyWasRejectedIsRefusedAtStart() async throws {
+        let plugins = try makeTempDir("decoders")
+        let workers = try makeTempDir("ley")
+        defer {
+            try? FileManager.default.removeItem(atPath: plugins)
+            try? FileManager.default.removeItem(atPath: workers)
+        }
+        try writeFakePlugin(in: plugins, name: "paid", credentialProvider: "fakeprov")
+        let ley = try writeScriptedLey(in: workers, outcome: "rejected", message: "invalid x-api-key")
+        try await withDaemon(decoderSearchPath: [plugins], leyPath: ley) { c in
+            _ = try await c.credentials.setCredential(self.setRequest("fakeprov"), metadata: testMetadata)
+            var config = Leyline_V1_DecodeConfig()
+            config.decoder = "paid"
+            config.frequencyHz = decodeFrequencyHz
+            var request = Leyline_V1_StartJobRequest()
+            request.decode = config
+            let refused = await self.failure { _ = try await c.jobs.startJob(request, metadata: testMetadata) }
+            XCTAssertEqual(refused.code, EngineError.Code.credentialRejected)
+            XCTAssertTrue(refused.text.contains("invalid x-api-key; paste a working key with ley ai add fakeprov"), refused.text)
+        }
+    }
 }

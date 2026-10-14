@@ -92,7 +92,8 @@ final class CredentialStoreTests: XCTestCase {
         XCTAssertFalse(listing.contains("SECRETMARKER"), listing)
         let file = try String(contentsOfFile: dir + "/ai.json", encoding: .utf8)
         XCTAssertFalse(file.contains("SECRETMARKER"), "ai.json holds what a listing shows, never the key")
-        XCTAssertEqual(CredentialStore.lastFour(of: "short"), "", "a short secret shows none of itself")
+        XCTAssertEqual(CredentialStore.lastFour(of: "abcd"), "", "a secret of four shows none of itself")
+        XCTAssertEqual(CredentialStore.lastFour(of: "abcde"), "bcde")
     }
 
     func testTheListSurvivesARestartAndADeleteTakesTheSecret() async throws {

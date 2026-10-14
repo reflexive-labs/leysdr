@@ -151,10 +151,26 @@ final class UsageLedgerTests: XCTestCase {
             } catch {
                 XCTAssertEqual(errorCode(error).code, EngineError.Code.invalidArgument)
             }
+            var both = self.report(job: "job_1", atNs: 0)
+            both.conversationID = "conv_1"
+            do {
+                _ = try await c.usage.reportUsage(both, metadata: testMetadata)
+                XCTFail("a report with two scopes was taken")
+            } catch {
+                XCTAssertEqual(errorCode(error).code, EngineError.Code.invalidArgument)
+            }
+            // A key check is made for no job and no conversation, and still marks the key used.
+            let check = self.report(model: "/v1/models", feature: "check", conversation: "", atNs: 0)
+            _ = try await c.usage.reportUsage(check, metadata: testMetadata)
+            var checks = Leyline_V1_GetUsageRequest()
+            checks.feature = "check"
+            let checkLines = try await c.usage.getUsage(checks, metadata: testMetadata).lines
+            XCTAssertEqual(checkLines.map(\.scopeID), [""])
+            XCTAssertEqual(checkLines.first?.requests, 1)
         }
         try await withDaemon(dir: dir) { c in
             let got = try await c.usage.getUsage(Leyline_V1_GetUsageRequest(), metadata: testMetadata)
-            XCTAssertEqual(got.lines.map(\.inputTokens), [150], "the ledger survives a restart")
+            XCTAssertEqual(got.lines.map(\.inputTokens), [0, 150], "the ledger survives a restart, the check sorted first by model")
         }
     }
 

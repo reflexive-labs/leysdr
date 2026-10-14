@@ -60,6 +60,9 @@ actor JobStore {
     let recordings: RecordingStore
     /// Where a decoder's usage goes (`DecodeRunner.emit`); nil when nothing records it.
     let usage: UsageRecorder?
+    /// The user's keys, so a decoder that needs one is refused when the provider has turned it
+    /// down; nil when the daemon holds none (tests that build a store of their own).
+    let credentials: CredentialStore?
     let hub = RecordHub()
     let log = Logger(label: "leyline.jobs")
     var entries: [JobID: Entry] = [:]
@@ -72,7 +75,8 @@ actor JobStore {
     private var shuttingDown = false
 
     init(store: SessionStore, allocator: SessionCaptureAllocator, decoders: DecoderRegistry,
-         records: RecordStore, recordings: RecordingStore, usage: UsageRecorder? = nil)
+         records: RecordStore, recordings: RecordingStore, usage: UsageRecorder? = nil,
+         credentials: CredentialStore? = nil)
     {
         self.store = store
         self.allocator = allocator
@@ -80,6 +84,7 @@ actor JobStore {
         self.records = records
         self.recordings = recordings
         self.usage = usage
+        self.credentials = credentials
     }
 
     // MARK: Kept jobs across a restart
