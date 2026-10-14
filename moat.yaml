@@ -8,13 +8,13 @@
 # toolchain in the container yourself (setup.md has the recipe).
 
 name: leysdr
-agents: [claude]   # pick the agent you use
+agents: [claude, codex]   # pick the agent you use
 
 # Credentials are injected at the network layer, never as environment variables. Grants are per
 # user: add the ones you have (`moat grant add github` on the host) and remove the rest.
 grants:
   - github         # gh and git over https://github.com
-  - claude         # the agent's own credential
+  - ssh:github.com
 
 dependencies:
   - go@1.27
