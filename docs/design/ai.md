@@ -1,11 +1,12 @@
 # Design: AI features on the user's own key
 
-Status: draft. The design and the contract below are settled, and nothing in this document is
-implemented yet; `docs/plans/ai-features.md` holds the build order and its status. Companion to
-[`decoders.md`](decoders.md) (the plugin contract speech reuses),
-[`recording.md`](recording.md) (gated parts and overs), [`semantic-tier.md`](semantic-tier.md)
-(the state boundary and the MCP surface), [`docs/reference/mcp.md`](../reference/mcp.md) (the
-tools the assistant reuses) and [`SECURITY.md`](../../SECURITY.md) (what the daemon trusts).
+Status: draft. The design is settled, and the contract below is settled except the `Assistant`
+service, which is settled when it is built. Nothing in this document is implemented yet;
+`docs/plans/ai-features.md` holds the build order and its status. Companion to
+[`decoders.md`](decoders.md) (the plugin contract speech reuses), [`recording.md`](recording.md)
+(gated parts and overs), [`semantic-tier.md`](semantic-tier.md) (the state boundary and the MCP
+surface), [`docs/reference/mcp.md`](../reference/mcp.md) (the tools the assistant reuses) and
+[`SECURITY.md`](../../SECURITY.md) (what the daemon trusts).
 
 ## Context
 
@@ -90,38 +91,43 @@ The rules every worker follows:
   an error from the RPC.
 - **The verbs are hidden**, under `ley worker`. `ley worker check --provider <name>` makes the
   check call and prints one JSON line, `{"outcome": "accepted" | "rejected" | "unavailable",
-  "message": "…"}`; its exit status is 0 whenever it printed a line. For `anthropic` and for an
+  "message": "…"}`; its exit status is 0 whenever it printed a line. For Anthropic and for an
   OpenAI-compatible endpoint the check is `GET /v1/models`: 200 is accepted, 401 rejected, and
-  anything else unavailable. `ley worker assistant --conversation <id>` runs one conversation.
+  anything else unavailable. Other provider kinds, such as Bedrock and Vertex, define their own
+  check when they are added. `ley worker assistant --conversation <id>` runs one conversation.
 - **Usage is reported per response.** A `ley` worker calls `ReportUsage` over the socket like any
   client. A decoder plugin has no socket, so it puts the usage on the record it emits.
 
 ## Speech-to-text is a decoder
 
-A speech decoder is a decoder plugin like APRS: audio in, records out. It emits one
-`DecodeRecord` per over with protocol `speech`, `time` at the segment's first sample, and `fields`
-holding `text`, `language`, `model`, `callsigns`, and `confidence` when the provider reports one;
-`raw` holds the provider's response bytes. Everything downstream already exists: the record store
-and `ley://records/<job_id>`, `ley records`, `ley watch` predicates and notifiers, the MCP
+A speech decoder is a decoder plugin like APRS: audio in, records out. It emits one `DecodeRecord`
+per segment with protocol `speech`, `time` at the segment's first sample, and `fields` holding
+`text`, `language`, `model`, `callsigns`, and `confidence` when the provider reports one; `raw`
+holds the provider's response bytes. Everything downstream already exists: the record store and
+`ley://records/<job_id>`, `ley records`, `ley watch` predicates and notifiers, the MCP
 `query_records` tool, and `keep`. An agent on `ley mcp` reads speech records with `query_records`
 and needs no new tool.
 
 **Segmented input.** In the `SEGMENTED` input mode the daemon cuts the channel's audio at squelch
-transitions and hands the plugin one over at a time: a `SEGMENT_START` frame, the over's audio,
-and an empty `SEGMENT_END` frame. A segment starts `pre_roll_ms` before the squelch opened and ends
-`hang_ms` after it closed, both 500 ms by default, and a squelch that reopens inside the hang
-continues the same segment. Speech engines work on a whole utterance, and the daemon already knows
-to the sample where each over starts and ends (`SquelchTransition`; `recording.md`, "The daemon").
-Audio while the squelch is shut is never sent or billed. One record per over gives one speaker per
-record and one notification per over; a plugin that wants more context can hold segments back
-itself.
+transitions and hands the plugin one segment at a time: a `SEGMENT_START` frame, the segment's
+audio, and an empty `SEGMENT_END` frame. A segment starts `pre_roll_ms` before the squelch opened
+and ends `hang_ms` after it closed, both 500 ms by default. A squelch that reopens inside the hang
+continues the same segment, so a segment holds several overs, several entries of the part's
+`squelch_opens`, when they are closer together than the hang. Speech engines work on a whole
+utterance, and the daemon already knows to the sample where each over starts and ends
+(`SquelchTransition`; `recording.md`, "The daemon"). Audio while the squelch is shut is never sent
+or billed. One record per segment gives, in the usual case, one speaker per record and one
+notification per over; a plugin that wants more context can hold segments back itself.
 
 The segmenter's default hang is shorter than the gated recorder's 5 s. A recording part is one
-exchange and lists every over in it (`recording.md`, "What a recording is"); a segment is one over.
+exchange and lists every over in it (`recording.md`, "What a recording is"); a segment is one over,
+or several overs that follow each other inside the 500 ms hang.
 
 **A recording as a source.** `DecodeConfig.source_uri` names a recording
 (`ley://recordings/<id>`), and the job reads its stored audio parts as fast as the plugin accepts
-them, with no capture, channel or lease. Segments come from each part sidecar's `squelch_opens`.
+them, with no capture, channel or lease. Segments come from each part sidecar's `squelch_opens`,
+cut with the same pre-roll and hang as a live job, so a recording transcribed later gives the same
+segments as the live job that recorded it.
 Every decoder gains reprocessing of stored audio, which `decoders.md` anticipates when it requires
 `raw`, and a recording from yesterday transcribes faster than real time. IQ recordings need an
 offline demodulation path first and come later.
@@ -131,15 +137,16 @@ offline demodulation path first and come later.
 the job without that key (`CREDENTIAL_MISSING`), and `ley decoders` and Settings list the hosts.
 
 **Speech text keeps its audio.** A live speech job also writes a gated recording, and each speech
-record names its part (`clip_uri`) and its over within the part (`over`, 1-based). Speech text
+record names its part (`clip_uri`) and its first over (`over`): the 1-based index, in the part's
+`squelch_opens`, of the segment's first entry. Speech text
 without its audio can be neither checked by ear nor redone with a better model, and the clip is the
 audio that `raw` would otherwise have to carry. Records are immutable, so transcribing again with
 another model adds records beside the earlier ones, and a client shows the newest by default.
 
 **Callsigns are a pattern match.** A spoken callsign ("whiskey six alpha bravo charlie") appears
 in `callsigns` as `W6ABC`, found by a pattern over the text after the phonetic alphabet is
-normalised. The field is labelled as a pattern match, because the model heard words and the
-pattern inferred a callsign from them.
+normalised. The field is labelled as a pattern match, because it holds what a pattern matched in
+the model's text.
 
 The first-party plugins will be one that calls a cloud speech API on the user's key and one that
 runs on the Mac; third parties can ship others. Before a batch of
@@ -165,9 +172,11 @@ subscription, so `ley ask --continue` continues a conversation started in the ap
 conversation outlives the window it started in. Each event carries the whole conversation so far
 (invariant 6), so a client that reconnects reads it and resumes from its `seq`.
 
-A conversation is not kept. It ends 5 s after the client that started it is no longer present, the
-grace a channel gets, or when it is cancelled; what it used stays in the ledger under its id. A worker that
-crashes ends its own conversation with `INTERNAL` and leaves the others running.
+A conversation is not kept. It is daemon state in memory only, and it ends when it is cancelled,
+30 minutes after its last turn, or when the daemon stops; what it used stays in the ledger under
+its id. It is not tied to the presence of the client that started it, because `ley ask` exits
+between turns and `ley ask --continue` must find the conversation again. A worker that crashes
+ends its own conversation with `INTERNAL` and leaves the others running.
 
 A client attached to a conversation may declare view tools that it performs itself, such as moving
 the app's waterfall to a band or selecting a recording in the Library. The worker offers them to
@@ -417,7 +426,7 @@ completed scenario. How many tokens one conversation takes is unmeasured.
 | 5, sample timebase | speech records carry `SampleTime`; wall clock comes from the anchor, as for every record |
 | 6, full state | ledger and conversation events carry the whole object |
 | 7, state in the daemon | keys, the ledger and conversations are daemon state; view state stays in the client |
-| 8, persistence follows intent | a conversation and an unkept speech job end with their client; `keep` persists speech records and their clips |
+| 8, persistence follows intent | a conversation ends when cancelled or idle and an unkept speech job ends with its client; `keep` persists speech records and their clips |
 | 9, `CaptureAllocator` | speech jobs are decode jobs and allocate through it |
 | 11, TX | there are no TX tools, as in `ley mcp` |
 | 12, no overclaiming | speech text is labelled as model output with its confidence; the assistant cites detections and the band plan, and states what the detector cannot tell |
@@ -442,8 +451,8 @@ Invariants 3, 10 and 13 are not affected.
   daemon; the assistant cites them (`semantic-tier.md`, "State boundary").
 - **Digital voice.** Speech from DMR, D-STAR or C4FM needs the vocoder `decoders.md` excludes, and
   speech-to-text does not change that.
-- **An unattended agent job.** The assistant runs while a person is in the conversation, and a
-  conversation is not kept.
+- **An unattended agent job.** The assistant acts on a person's requests, and a conversation is
+  not kept.
 
 ## Open questions
 

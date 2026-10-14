@@ -793,7 +793,9 @@ then `PATH`.
 varint-delimited `Frame`s (`AUDIO`, `F32`, mono, the channel's rate, `GAP_MARKED`, the tap the
 manifest asked for), stdout carries varint-delimited `DecodeRecord`s, and stderr is prose logged
 under `leyline.decoder.<name>`. The framing is protobuf's own delimited convention, coded by hand
-because `BinaryDelimited` takes Foundation streams and a pipe file descriptor is not one. `stop()`
+because `BinaryDelimited` takes Foundation streams and a pipe file descriptor is not one. A plugin
+whose manifest names `credential_provider` reads one varint-delimited `SetCredentialRequest` before
+the `StreamDescriptor`. `stop()`
 closes stdin, waits 2 s, then `SIGTERM`, then `SIGKILL`; a write to a dead pipe is an error return,
 never a signal.
 
