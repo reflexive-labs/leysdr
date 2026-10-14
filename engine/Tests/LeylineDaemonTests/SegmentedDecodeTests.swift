@@ -138,4 +138,262 @@ final class SegmentedDecodeTests: XCTestCase {
             }
         }
     }
+
+    // MARK: A stored recording
+
+    /// The synthetic recording's capture rate and audio rate: ten capture samples per audio sample,
+    /// so every cut in it lands on a whole audio sample and the expected counts are exact.
+    static let captureRate: UInt64 = 480_000
+    static let audioRate: UInt64 = 48_000
+
+    func capture(_ seconds: Double) -> UInt64 { UInt64((seconds * Double(Self.captureRate)).rounded()) }
+
+    /// Writes a 60 s gated recording of two contiguous 30 s parts through `PartWriter`, the way the
+    /// daemon writes one, with squelch intervals at `opens` (seconds, per part). Returns its id.
+    func writeRecording(in dir: String, kind: String = "audio",
+                        opens: [[(Double, Double)]] = SegmentedDecodeTests.syntheticOpens) async throws -> String
+    {
+        let id = JobID().string
+        let manifest = RecordingManifest(
+            jobID: id, kind: kind, frequencyHz: recordFrequencyHz, mode: "NFM", bandwidthHz: 12_500,
+            sampleRate: kind == "iq" ? Self.captureRate : Self.audioRate, format: kind == "iq" ? "cf32" : "wav-s16",
+            device: nil, gains: [], squelchDbfs: -40,
+            gate: RecordingGateInfo(kind: "squelch", preRollMs: 500, hangMs: 5000), partMs: 30_000,
+            startedAtNs: WallClock.nowNs(), createdBy: RecordingClient(clientID: "", kind: "cli", label: "test"),
+            anchors: [])
+        let captureID = CaptureID().string
+        let writer = try PartWriter(directory: dir + "/" + id, manifest: manifest, captureID: captureID, centerHz: recordFrequencyHz)
+        await writer.noteAnchor(CaptureAnchor(hostTimeNsAtSampleZero: WallClock.nowNs(), sampleRate: Self.captureRate),
+                                captureID: captureID, fromSample: 0)
+        for (i, partOpens) in opens.enumerated() {
+            let start = capture(Double(i) * 30)
+            await writer.openPart(at: start)
+            let audio = (0..<Int(30 * Self.audioRate)).map { Float(sin(Double($0) * 0.13)) * 0.5 }
+            if kind == "iq" {
+                await writer.append(iq: Data(count: 8 * 1000))
+            } else {
+                await writer.append(audio: audio)
+            }
+            for (open, close) in partOpens {
+                await writer.noteSquelch(open: true, at: capture(open))
+                await writer.noteSquelch(open: false, at: capture(close))
+            }
+            await writer.closePart(endSample: capture(Double(i + 1) * 30))
+        }
+        await writer.finish(endedBy: "duration", endSample: capture(60))
+        return id
+    }
+
+    static let syntheticOpens: [[(Double, Double)]] = [
+        [(2.0, 4.0), (4.3, 5.0), (10.0, 12.0), (29.8, 30.0)],
+        [(31.0, 33.0), (45.0, 45.2)],
+    ]
+
+    /// What the synthetic recording's segments are, worked out by hand from the rule: 0.5 s back
+    /// from each first opening, 0.5 s on from each last close, an opening inside the hang
+    /// continuing the segment, and neither end past its part.
+    static let syntheticSegments: [(part: Int, over: UInt32, start: Double, end: Double)] = [
+        (1, 1, 1.5, 5.5),   // 4.3 opens 0.3 s after 4.0 closed: the same over
+        (1, 3, 9.5, 12.5),
+        (1, 4, 29.3, 30.0), // the hang would run past the part's end
+        (2, 1, 30.5, 33.5),
+        (2, 2, 44.5, 45.7),
+    ]
+
+    func sourceConfig(_ id: String, keep: Bool = false) -> Leyline_V1_DecodeConfig {
+        var config = Leyline_V1_DecodeConfig()
+        config.decoder = "fake"
+        config.sourceUri = "ley://recordings/\(id)"
+        config.keep = keep
+        return config
+    }
+
+    func waitForEnd(_ c: DaemonClients, _ id: String, timeoutMs: Int = 20000) async throws -> Leyline_V1_Job {
+        for _ in 0..<(timeoutMs / 20) {
+            let j = try await job(c, id)
+            if j.state != .running, j.state != .degraded { return j }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        return try await job(c, id)
+    }
+
+    func testARecordingIsReadAsFastAsThePluginTakesItAndCutTheLiveWay() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        let store = try makeTempDir("store")
+        defer {
+            for d in [plugins, recordings, store] { try? FileManager.default.removeItem(atPath: d) }
+        }
+        try writeSegmentedPlugin(in: plugins)
+        let id = try await writeRecording(in: recordings)
+        try await withDaemon(decoderSearchPath: [plugins], storePath: store, recordingsPath: recordings) { c in
+            let began = ContinuousClock.now
+            let started = try await self.startDecode(c, self.sourceConfig(id, keep: true))
+            let done = try await self.waitForEnd(c, started.jobID)
+            let took = ContinuousClock.now - began
+            XCTAssertEqual(done.state, .completed, done.statusDetail)
+            XCTAssertLessThan(took, .seconds(5), "a 60 s recording is read in under 5 s")
+
+            let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            XCTAssertTrue(state.captures.isEmpty, "a recording needs no radio")
+            XCTAssertTrue(state.channels.isEmpty)
+
+            let got = try await self.records(c, job: started.jobID, count: Self.syntheticSegments.count, timeoutMs: 5000)
+            XCTAssertEqual(got.count, Self.syntheticSegments.count, "one record per over")
+            for (rec, want) in zip(got, Self.syntheticSegments) {
+                XCTAssertEqual(rec.time.sampleIndex, self.capture(want.start),
+                               "the record is dated at its segment's first sample, to the sample")
+                XCTAssertEqual(rec.clipUri, "ley://recordings/\(id)/\(want.part)")
+                XCTAssertEqual(rec.over, want.over, "over is the index of the segment's first opening in its part")
+                XCTAssertTrue(rec.channelID.isEmpty)
+                XCTAssertTrue(rec.rssiDbfs.isNaN)
+                XCTAssertTrue(rec.snrDb.isNaN)
+                let samples = (self.capture(want.end) - self.capture(want.start)) / (Self.captureRate / Self.audioRate)
+                XCTAssertEqual(self.integer(rec, "samples"), Int64(samples),
+                               "the segment holds exactly its span, pre-roll and hang included")
+                XCTAssertEqual(self.integer(rec, "frames"), Int64((samples + 4095) / 4096))
+                XCTAssertEqual(self.integer(rec, "outside"), 0, "nothing is sent between segments")
+                XCTAssertEqual(self.integer(rec, "rate"), Int64(Self.audioRate))
+            }
+
+            // Kept, so the records are a resource dated by the recording's own anchor.
+            var query = Leyline_V1_RecordQuery()
+            query.jobID = started.jobID
+            let page = try await c.decoders.queryRecords(query, metadata: testMetadata)
+            XCTAssertEqual(page.records.count, Self.syntheticSegments.count)
+            XCTAssertEqual(page.anchors.first?.anchor.sampleRate, Self.captureRate)
+        }
+    }
+
+    func testAGatedRecordingOfTheKeyedFixtureDecodesOverForOver() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        defer {
+            for d in [plugins, recordings] { try? FileManager.default.removeItem(atPath: d) }
+        }
+        try writeSegmentedPlugin(in: plugins)
+        try await withDaemon(decoderSearchPath: [plugins], recordingsPath: recordings) { c in
+            try await self.attach(c, fixture: "nfm_keyed.cf32", loop: false)
+            var record = Leyline_V1_RecordConfig()
+            record.frequencyHz = recordFrequencyHz
+            record.mode = .nfm
+            record.gate = .squelch
+            record.squelchDbfs = -40
+            record.preRollMs = 500
+            record.hangMs = 5000
+            record.durationMs = 11_500
+            var request = Leyline_V1_StartJobRequest()
+            request.record = record
+            let recording = try await c.jobs.startJob(request, metadata: testMetadata)
+            let recorded = try await self.waitForEnd(c, recording.jobID, timeoutMs: 30000)
+            XCTAssertNotEqual(recorded.state, .failed, recorded.statusDetail)
+
+            let manifest = try JSONDecoder().decode(RecordingManifest.self, from: Data(contentsOf: URL(
+                fileURLWithPath: recordings + "/" + recording.jobID + "/recording.json")))
+            var want: [(part: Int, start: UInt64, end: UInt64, over: UInt32)] = []
+            var rates: (capture: Double, audio: Double) = (Double(manifest.anchors[0].sampleRate), Double(manifest.sampleRate))
+            for part in manifest.parts {
+                let base = (part.file as NSString).deletingPathExtension
+                let sidecar = try JSONDecoder().decode(PartSidecar.self, from: Data(contentsOf: URL(
+                    fileURLWithPath: recordings + "/" + recording.jobID + "/" + base + ".json")))
+                rates.capture = Double(sidecar.anchor.sampleRate)
+                // The manifest leaves the decoder's pre-roll and hang at 0: 500 ms each.
+                let preRoll = UInt64(0.5 * rates.capture)
+                let hang = preRoll
+                var lastEnd = part.startSample
+                var current: (start: UInt64, end: UInt64, over: UInt32)?
+                for (i, o) in sidecar.recording.squelchOpens.enumerated() {
+                    if let cur = current, o.openSample < cur.end {
+                        current!.end = o.closeSample + hang
+                        continue
+                    }
+                    if let cur = current {
+                        want.append((part.part, cur.start, min(cur.end, part.endSample), cur.over))
+                        lastEnd = min(cur.end, part.endSample)
+                    }
+                    let start = max(o.openSample >= preRoll ? o.openSample - preRoll : 0, part.startSample, lastEnd)
+                    current = (start, o.closeSample + hang, UInt32(i + 1))
+                }
+                if let cur = current { want.append((part.part, cur.start, min(cur.end, part.endSample), cur.over)) }
+            }
+            XCTAssertEqual(want.count, 3, "nfm_keyed keys three times")
+
+            let started = try await self.startDecode(c, self.sourceConfig(recording.jobID))
+            let done = try await self.waitForEnd(c, started.jobID)
+            XCTAssertEqual(done.state, .completed, done.statusDetail)
+            let got = try await self.records(c, job: started.jobID, count: want.count, timeoutMs: 5000)
+            XCTAssertEqual(got.count, want.count)
+            for (rec, w) in zip(got, want) {
+                XCTAssertEqual(rec.time.sampleIndex, w.start, "the over's opening less the pre-roll, to the sample")
+                XCTAssertEqual(rec.over, w.over)
+                XCTAssertEqual(rec.clipUri, "ley://recordings/\(recording.jobID)/\(w.part)")
+                XCTAssertEqual(self.integer(rec, "outside"), 0)
+                // The WAV places a capture sample by the two rates, rounded to an audio sample.
+                let part = manifest.parts.first { $0.part == w.part }!
+                func frame(_ x: UInt64) -> Int64 {
+                    min(Int64(part.samples), Int64((Double(x - part.startSample) * rates.audio / rates.capture).rounded()))
+                }
+                XCTAssertEqual(self.integer(rec, "samples"), frame(w.end) - frame(w.start),
+                               "the frames between START and END hold the interval plus pre-roll and tail")
+            }
+        }
+    }
+
+    func testAContinuousDecoderReadsEveryPartWhole() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        defer {
+            for d in [plugins, recordings] { try? FileManager.default.removeItem(atPath: d) }
+        }
+        // The plain fake: one record per frame, CONTINUOUS input.
+        try writeFakePlugin(in: plugins)
+        unsetenv("FAKE_DECODER_SEGMENTS")
+        let id = try await writeRecording(in: recordings)
+        try await withDaemon(decoderSearchPath: [plugins], recordingsPath: recordings) { c in
+            // Kept, because there are more records than the live window replays.
+            let started = try await self.startDecode(c, self.sourceConfig(id, keep: true))
+            let done = try await self.waitForEnd(c, started.jobID)
+            XCTAssertEqual(done.state, .completed, done.statusDetail)
+            // 30 s at 48 kHz is 1,440,000 samples a part, in frames of 4096.
+            let perPart = (Int(30 * Self.audioRate) + 4095) / 4096
+            var query = Leyline_V1_RecordQuery()
+            query.jobID = started.jobID
+            let got = try await c.decoders.queryRecords(query, metadata: testMetadata).records.sorted { $0.seq < $1.seq }
+            XCTAssertEqual(got.count, 2 * perPart, "every sample of both parts, and nothing twice")
+            guard got.count == 2 * perPart else { return }
+            XCTAssertEqual(got.first?.time.sampleIndex, 0)
+            XCTAssertEqual(got[perPart].time.sampleIndex, self.capture(30), "the second part starts where it was cut")
+            XCTAssertEqual(Set(got.prefix(perPart).map(\.clipUri)), ["ley://recordings/\(id)/1"])
+            XCTAssertEqual(Set(got.suffix(perPart).map(\.clipUri)), ["ley://recordings/\(id)/2"])
+            XCTAssertEqual(Set(got.map(\.over)), [0], "an over is a SEGMENTED notion")
+        }
+    }
+
+    func testARecordingSourceIsRefusedWhenItCannotBeRead() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        defer {
+            for d in [plugins, recordings] { try? FileManager.default.removeItem(atPath: d) }
+        }
+        try writeSegmentedPlugin(in: plugins)
+        let iq = try await writeRecording(in: recordings, kind: "iq")
+        try await withDaemon(decoderSearchPath: [plugins], recordingsPath: recordings) { c in
+            func refusal(_ uri: String) async -> String {
+                var config = self.sourceConfig("")
+                config.sourceUri = uri
+                do {
+                    _ = try await self.startDecode(c, config)
+                    return "started"
+                } catch {
+                    return errorCode(error).code
+                }
+            }
+            let missing = await refusal("ley://recordings/job_01JAAAAAAAAAAAAAAAAAAAAAAA")
+            XCTAssertEqual(missing, EngineError.Code.jobNotFound, "as ResolveLocalPath says it")
+            let iqCode = await refusal("ley://recordings/\(iq)")
+            XCTAssertEqual(iqCode, EngineError.Code.unimplemented, "an IQ recording needs an offline demodulator first")
+            let part = await refusal("ley://recordings/\(iq)/1")
+            XCTAssertEqual(part, EngineError.Code.invalidArgument)
+        }
+    }
 }

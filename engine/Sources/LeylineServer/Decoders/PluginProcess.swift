@@ -112,8 +112,14 @@ struct PluginStalled: Error {}
 /// whole frame is dropped and reported (`droppedFull`); once a byte has gone the frame must finish
 /// or the length prefix no longer matches the bytes that follow, so a stall past `deadlineSeconds`
 /// mid-frame throws `PluginStalled` and the plugin is replaced rather than fed a torn stream.
+///
+/// `patient` is for input that is not live -- a stored recording -- where the plugin sets the pace:
+/// a full pipe is waited out rather than dropped, with no deadline, until the calling task is
+/// cancelled.
 @discardableResult
-func writeDelimited(_ message: any Message, to fd: Int32, deadlineSeconds: Double = 2.0) throws -> PluginWrite {
+func writeDelimited(_ message: any Message, to fd: Int32, deadlineSeconds: Double = 2.0,
+                    patient: Bool = false) throws -> PluginWrite
+{
     let out = try delimitedBytes(message)
     var offset = 0
     let deadline = ContinuousClock.now.advanced(by: .seconds(deadlineSeconds))
@@ -124,9 +130,10 @@ func writeDelimited(_ message: any Message, to fd: Int32, deadlineSeconds: Doubl
         if written > 0 { offset += written; continue }
         if written < 0 && errno == EINTR { continue }
         if written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) {
-            if offset == 0 { return .droppedFull }
+            if offset == 0, !patient { return .droppedFull }
+            if Task.isCancelled { throw CancellationError() }
             // Mid-frame: wait for the reader to make room, but not for ever.
-            if ContinuousClock.now >= deadline { throw PluginStalled() }
+            if !patient, ContinuousClock.now >= deadline { throw PluginStalled() }
             var pfd = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
             _ = poll(&pfd, 1, 50)
             continue
@@ -201,6 +208,29 @@ final class PluginProcess: @unchecked Sendable {
         }
     }
 
+    /// One frame of a stored recording: written whole however long the plugin takes to read it
+    /// (`writeDelimited`, `patient`). Throws when the plugin has gone or its input is closed, and
+    /// `CancellationError` when the calling task is cancelled while it waits.
+    func writeWaiting(_ frame: Leyline_V1_Frame) throws {
+        try writeFD.withLock { fd in
+            guard let fd else {
+                throw EngineError(code: EngineError.Code.decoderFailed, message: "\(name)'s input is closed", target: name)
+            }
+            try writeDelimited(frame, to: fd, patient: true)
+        }
+    }
+
+    /// Closes the plugin's input without waiting for it to exit: the end of a stored recording,
+    /// after which the plugin writes what it has left and exits on its own.
+    func closeInput() {
+        let open = writeFD.withLock { fd -> Bool in
+            let was = fd != nil
+            fd = nil
+            return was
+        }
+        if open { try? child.input.fileHandleForWriting.close() }
+    }
+
     /// The last line the plugin wrote on stderr before it exited, which is where a plugin says why
     /// (`DecodeRunner.refusedExitStatus`).
     func lastErrorLine() async -> String? {
@@ -224,12 +254,7 @@ final class PluginProcess: @unchecked Sendable {
     /// flush what it has before it is killed. Idempotent: the drain stops a stalled plugin and
     /// the runner's teardown stops it again, and the input is closed once.
     func stop() async {
-        let open = writeFD.withLock { fd -> Bool in
-            let was = fd != nil
-            fd = nil
-            return was
-        }
-        if open { try? child.input.fileHandleForWriting.close() }
+        closeInput()
         if await child.waitForExit(seconds: 2) { return }
         await child.terminate()
     }

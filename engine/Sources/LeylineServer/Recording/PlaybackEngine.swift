@@ -95,6 +95,11 @@ struct WAVReader {
         return out
     }
 
+    /// Moves the next `read` to frame `frame`, clamped to the end of the data.
+    func seek(toFrame frame: UInt64) {
+        try? handle.seek(toOffset: dataOffset + Swift.min(frame, frames) * 2)
+    }
+
     func close() { try? handle.close() }
 }
 

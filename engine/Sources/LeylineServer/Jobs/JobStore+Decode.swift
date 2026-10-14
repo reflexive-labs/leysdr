@@ -31,6 +31,9 @@ extension JobStore {
         if !provider.isEmpty, let key = await credentials?.credential(provider), key.lastCheck.outcome == .rejected {
             throw EngineError.credentialRejected(provider, providerMessage: key.lastCheck.message)
         }
+        if !config.sourceUri.isEmpty {
+            return try await startSourceDecode(config: config, installed: installed, by: client, resuming: resuming)
+        }
         let frequencyHz = config.frequencyHz != 0 ? config.frequencyHz : (installed.manifest.recipe.frequenciesHz.first ?? 0)
         guard frequencyHz > 0 else {
             throw EngineError.invalidArgument("\(config.decoder) names no frequency of its own; say which with --freq", target: config.decoder)
@@ -40,6 +43,18 @@ extension JobStore {
             throw EngineError.deviceNotFound(config.deviceID)
         }
 
+        return await addDecodeJob(config: config, installed: installed, by: client, resuming: resuming) { [weak self] id in
+            await self?.runDecode(id, config: config, installed: installed, frequencyHz: frequencyHz, deviceID: deviceID)
+        }
+    }
+
+    /// Enters a decode job in the table and starts `run` for it. The task goes in before the first
+    /// suspension, for the same reason a scan's does: a cancel arriving while `publishJob` runs
+    /// must find something to cancel.
+    private func addDecodeJob(config: Leyline_V1_DecodeConfig, installed: DecoderRegistry.Installed,
+                              by client: ClientContext, resuming: (id: JobID, createdAtNs: Int64)?,
+                              run: @escaping @Sendable (JobID) async -> Void) async -> Leyline_V1_Job
+    {
         let id = resuming?.id ?? JobID()
         var job = Leyline_V1_Job()
         job.jobID = id.string
@@ -50,13 +65,7 @@ extension JobStore {
         job.statusDetail = resuming == nil ? "starting" : "resuming after a daemon restart"
         // Persistence follows intent (invariant 8): only a kept job has a resource.
         if config.keep { job.resultUris = ["ley://records/\(id.string)"] }
-
-        // The task goes in before the first suspension, for the same reason a scan's does: a cancel
-        // arriving while `publishJob` runs must find something to cancel.
-        let task = Task { [weak self] in
-            guard let self else { return }
-            await self.runDecode(id, config: config, installed: installed, frequencyHz: frequencyHz, deviceID: deviceID)
-        }
+        let task = Task { await run(id) }
         entries[id] = Entry(proto: job, scan: nil, task: task, ownerClientID: client.id, decode: nil, keep: config.keep,
                             credentialProvider: installed.manifest.credentialProvider)
         order.append(id)
@@ -64,6 +73,75 @@ extension JobStore {
         if config.keep { persistKept() }
         await store.publishJob(job)
         return job
+    }
+
+    // MARK: A stored recording
+
+    /// A decode job over a stored recording (`DecodeConfig.source_uri`). The recording is read and
+    /// cut here, so a missing one, a part URI or an IQ recording is refused to the caller. No
+    /// allocation, channel or lease: the job needs no radio, so a daemon without hardware runs it.
+    private func startSourceDecode(config: Leyline_V1_DecodeConfig, installed: DecoderRegistry.Installed,
+                                   by client: ClientContext,
+                                   resuming: (id: JobID, createdAtNs: Int64)?) async throws -> Leyline_V1_Job
+    {
+        if installed.manifest.input.signal == .signalIq {
+            throw EngineError.unimplemented("an IQ decoder on a stored recording")
+        }
+        let source = try await RecordingSource.open(uri: config.sourceUri, store: recordings,
+                                                    input: installed.manifest.input)
+        return await addDecodeJob(config: config, installed: installed, by: client, resuming: resuming) { [weak self] id in
+            await self?.runSourceDecode(id, config: config, installed: installed, source: source)
+        }
+    }
+
+    private func runSourceDecode(_ id: JobID, config: Leyline_V1_DecodeConfig, installed: DecoderRegistry.Installed,
+                                 source: RecordingSource) async
+    {
+        guard entries[id]?.proto.state == .running else { return }
+        let writer: RecordWriter?
+        do {
+            writer = try await openSourceWriterIfKept(id, config: config, installed: installed, source: source)
+        } catch {
+            await finish(id, state: .failed, detail: "the record store would not open: \(error)",
+                         code: EngineError.Code.internalError)
+            return
+        }
+        let runner = DecodeRunner(
+            jobID: id, installed: installed, lease: nil, source: source, hub: hub, writer: writer, store: store,
+            frequencyHz: source.manifest.frequencyHz, captureRateHz: source.captureRate, tap: .audio,
+            predicate: config.predicate, notify: config.hasNotify ? config.notify : nil,
+            usage: usage, credentials: credentials, keep: config.keep,
+            onStatus: { [weak self] state, detail in
+                await self?.setDecodeStatus(id, state: state, detail: detail)
+            },
+            onFailure: { [weak self] error in
+                await self?.finish(id, state: .failed, detail: error.message, code: error.code)
+            },
+            seqStart: await writer?.recordCount ?? 0)
+        entries[id]?.decode = runner
+        await runner.start()
+    }
+
+    /// The kept job's store, dated by the recording's own anchors, so a record from a stored
+    /// recording has the wall clock the audio was heard at.
+    private func openSourceWriterIfKept(_ id: JobID, config: Leyline_V1_DecodeConfig,
+                                        installed: DecoderRegistry.Installed,
+                                        source: RecordingSource) async throws -> RecordWriter?
+    {
+        guard config.keep else { return nil }
+        let anchors = source.manifest.anchors
+        let first = anchors.first
+        let capture = first.flatMap { CaptureID(string: $0.captureID ?? "") }
+            ?? CaptureID(string: source.parts.first?.captureID ?? "") ?? CaptureID()
+        await records.retain()
+        let writer = try await records.open(
+            job: id, config: config, manifest: installed.manifest, capture: capture,
+            anchor: first.map { CaptureAnchor(hostTimeNsAtSampleZero: $0.hostTimeNs, sampleRate: $0.sampleRate, driftPPM: $0.driftPpm) })
+        for a in anchors.dropFirst() {
+            await writer.noteAnchor(CaptureAnchor(hostTimeNsAtSampleZero: a.hostTimeNs, sampleRate: a.sampleRate, driftPPM: a.driftPpm),
+                                    fromSample: a.fromSample, captureID: a.captureID)
+        }
+        return writer
     }
 
     private func runDecode(_ id: JobID, config: Leyline_V1_DecodeConfig, installed: DecoderRegistry.Installed,
@@ -223,6 +301,11 @@ extension JobStore {
         guard var e = entries[id], Self.isLive(e.proto.state) else { return }
         if state == .failed {
             await finish(id, state: .failed, detail: detail, code: EngineError.Code.decoderFailed)
+            return
+        }
+        // A job that reads a stored recording ends on its own once the plugin has had all of it.
+        if state == .completed {
+            await finish(id, state: .completed, detail: detail)
             return
         }
         e.proto.state = state
