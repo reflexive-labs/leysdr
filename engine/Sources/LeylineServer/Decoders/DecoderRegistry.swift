@@ -34,15 +34,9 @@ struct DecoderRegistry: Sendable {
     let programDirectories: [String]
     private let log = Logger(label: "leyline.decoders")
 
-    init(searchPath: [String], programDirectories: [String] = DecoderRegistry.daemonDirectory()) {
+    init(searchPath: [String], programDirectories: [String] = ProgramLocator.daemonDirectory()) {
         self.searchPath = searchPath
         self.programDirectories = programDirectories
-    }
-
-    /// The directory of the running `leylined`, or nothing when it cannot be found.
-    static func daemonDirectory() -> [String] {
-        guard let exe = currentExecutablePath() else { return [] }
-        return [URL(fileURLWithPath: exe).deletingLastPathComponent().path]
     }
 
     func scan() -> [Installed] {
@@ -115,13 +109,6 @@ struct DecoderRegistry: Sendable {
         }
         let local = directory + "/" + executable
         if fm.isExecutableFile(atPath: local) { return local }
-        guard !executable.contains("/") else { return nil }
-        let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
-        let dirs = programDirectories + path.split(separator: ":").map(String.init)
-        for dir in dirs where !dir.isEmpty {
-            let candidate = String(dir) + "/" + executable
-            if fm.isExecutableFile(atPath: candidate) { return candidate }
-        }
-        return nil
+        return ProgramLocator(directories: programDirectories).find(executable)
     }
 }

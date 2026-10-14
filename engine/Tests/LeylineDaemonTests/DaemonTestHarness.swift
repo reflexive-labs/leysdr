@@ -241,3 +241,33 @@ func makeTempDir(_ tag: String) throws -> String {
     try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
     return dir
 }
+
+// MARK: Workers
+
+/// Writes `<dir>/ley`, a shell script standing in for `ley worker check`: `body` runs with the
+/// worker's arguments and its stdin, and whatever it prints is the worker's answer. The arguments
+/// and the environment's socket are written to `<dir>/ley.args` so a test can see what the daemon
+/// passed.
+@discardableResult
+func writeScriptedLey(in dir: String, _ body: String) throws -> String {
+    let path = dir + "/ley"
+    let script = """
+    #!/bin/sh
+    echo "$@" > "\(dir)/ley.args"
+    echo "$LEYLINE_SOCKET" > "\(dir)/ley.socket"
+    \(body)
+
+    """
+    try script.write(toFile: path, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path)
+    return path
+}
+
+/// A worker that answers every check with `outcome` and the message `message`.
+@discardableResult
+func writeScriptedLey(in dir: String, outcome: String, message: String) throws -> String {
+    try writeScriptedLey(in: dir, """
+    read key
+    printf '%s\\n' '{"outcome": "\(outcome)", "message": "\(message)"}'
+    """)
+}

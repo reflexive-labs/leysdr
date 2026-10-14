@@ -138,19 +138,12 @@ func writeDelimited(_ message: any Message, to fd: Int32, deadlineSeconds: Doubl
 }
 
 /// A spawned decoder. One instance runs one child; a restart makes a new one.
-/// Unchecked Sendable: the process and its pipes are set up in init and only read afterwards; the write descriptor is behind a Mutex.
+/// Unchecked Sendable: the child and its pipes are set up in init and only read afterwards; the write descriptor is behind a Mutex.
 final class PluginProcess: @unchecked Sendable {
     let name: String
-    private let executable: String
-    private let args: [String]
-    private let directory: String
-    private let process = Process()
-    private let inPipe = Pipe()
-    private let outPipe = Pipe()
-    private let errPipe = Pipe()
+    private let child: ChildProcess
     private let log: Logger
     private let recordsContinuation: AsyncStream<Leyline_V1_DecodeRecord>.Continuation
-    private let exitContinuation: AsyncStream<Int32>.Continuation
     /// The write end of the plugin's stdin as a raw descriptor: nil before `start` and after
     /// `stop`. A write holds the lock for its duration, so `stop` cannot close the descriptor under
     /// a frame in flight, and `stop` empties it first, so a frame that arrives afterwards is a drop
@@ -163,46 +156,30 @@ final class PluginProcess: @unchecked Sendable {
     /// Records the plugin wrote, in order. Finishes when its stdout closes.
     let records: AsyncStream<Leyline_V1_DecodeRecord>
     /// The child's exit status, once.
-    let exits: AsyncStream<Int32>
+    var exits: AsyncStream<Int32> { child.exits }
 
     init(name: String, executable: String, args: [String], directory: String) {
         self.name = name
-        self.executable = executable
-        self.args = args
-        self.directory = directory
+        child = ChildProcess(executable: executable, args: args, directory: directory)
         log = Logger(label: "leyline.decoder.\(name)")
         (records, recordsContinuation) = AsyncStream<Leyline_V1_DecodeRecord>.makeStream(bufferingPolicy: .unbounded)
-        (exits, exitContinuation) = AsyncStream<Int32>.makeStream()
     }
 
     /// Spawns the child and writes the descriptor, which is the first thing every plugin reads.
     func start(descriptor: Leyline_V1_StreamDescriptor) throws {
-        // A write to a pipe whose reader died must be an error return, never a process-killing
-        // signal. The daemon's main does this too; a test hosting the daemon in-process does not.
-        signal(SIGPIPE, SIG_IGN)
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = args
-        process.currentDirectoryURL = URL(fileURLWithPath: directory)
-        process.standardInput = inPipe
-        process.standardOutput = outPipe
-        process.standardError = errPipe
-        process.terminationHandler = { [weak self] p in
-            self?.exitContinuation.yield(p.terminationStatus)
-            self?.exitContinuation.finish()
-        }
+        let logger = log
         do {
-            try process.run()
+            try child.run { logger.info("\($0)") }
         } catch {
             recordsContinuation.finish()
-            exitContinuation.finish()
             throw EngineError(code: EngineError.Code.decoderFailed,
                               message: "\(name) could not be started: \(error)", target: name)
         }
-        startReaders()
+        startReader()
         // The write end is non-blocking so a plugin that stops reading cannot wedge the runner's
         // drain task. The descriptor is small and read at once, so a drop there means the plugin is
         // not reading its input -- treat it as a failure to start.
-        let wfd = inPipe.fileHandleForWriting.fileDescriptor
+        let wfd = child.input.fileHandleForWriting.fileDescriptor
         let flags = fcntl(wfd, F_GETFL, 0)
         if flags >= 0 { _ = fcntl(wfd, F_SETFL, flags | O_NONBLOCK) }
         writeFD.withLock { $0 = wfd }
@@ -224,8 +201,14 @@ final class PluginProcess: @unchecked Sendable {
         }
     }
 
-    private func startReaders() {
-        let outFD = outPipe.fileHandleForReading.fileDescriptor
+    /// The last line the plugin wrote on stderr before it exited, which is where a plugin says why
+    /// (`DecodeRunner.refusedExitStatus`).
+    func lastErrorLine() async -> String? {
+        await child.lastErrorLine()
+    }
+
+    private func startReader() {
+        let outFD = child.output.fileHandleForReading.fileDescriptor
         let cont = recordsContinuation
         Thread.detachNewThread {
             let reader = DelimitedReader(fd: outFD)
@@ -234,26 +217,6 @@ final class PluginProcess: @unchecked Sendable {
                 cont.yield(rec)
             }
             cont.finish()
-        }
-        let errFD = errPipe.fileHandleForReading.fileDescriptor
-        let logger = log
-        Thread.detachNewThread {
-            var line = [UInt8]()
-            var chunk = [UInt8](repeating: 0, count: 4096)
-            while true {
-                let got = chunk.withUnsafeMutableBytes { read(errFD, $0.baseAddress, 4096) }
-                if got < 0 && errno == EINTR { continue }
-                guard got > 0 else { break }
-                for b in chunk[0..<got] {
-                    if b == UInt8(ascii: "\n") {
-                        if !line.isEmpty { logger.info("\(String(decoding: line, as: UTF8.self))") }
-                        line.removeAll(keepingCapacity: true)
-                    } else {
-                        line.append(b)
-                    }
-                }
-            }
-            if !line.isEmpty { logger.info("\(String(decoding: line, as: UTF8.self))") }
         }
     }
 
@@ -266,20 +229,8 @@ final class PluginProcess: @unchecked Sendable {
             fd = nil
             return was
         }
-        if open { try? inPipe.fileHandleForWriting.close() }
-        if await waitForExit(seconds: 2) { return }
-        if process.isRunning { process.terminate() }
-        if await waitForExit(seconds: 1) { return }
-        if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-        _ = await waitForExit(seconds: 1)
-    }
-
-    private func waitForExit(seconds: Double) async -> Bool {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(seconds))
-        while ContinuousClock.now < deadline {
-            if !process.isRunning { return true }
-            try? await Task.sleep(nanoseconds: 20_000_000)
-        }
-        return !process.isRunning
+        if open { try? child.input.fileHandleForWriting.close() }
+        if await child.waitForExit(seconds: 2) { return }
+        await child.terminate()
     }
 }

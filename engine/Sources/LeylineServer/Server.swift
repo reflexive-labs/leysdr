@@ -48,6 +48,10 @@ package final class Daemon: Sendable {
         /// Where provider keys are kept; nil is the platform's (`defaultSecretStore`). A test
         /// passes a file store in its own directory so it never writes to the Mac's keychain.
         var secretStore: (any SecretStore)?
+        /// The `ley` the daemon runs for its workers (`--ley`, `LEYLINE_LEY`); nil finds one with
+        /// `programLocator`: beside `leylined`, then `PATH`.
+        var leyPath: String?
+        var programLocator: ProgramLocator = .init()
         /// Reported in `DaemonInfo` and the startup log line: the executable passes its generated
         /// `leylinedVersion`, a test its own string.
         var version: String
@@ -59,7 +63,7 @@ package final class Daemon: Sendable {
                      storeCapBytes: UInt64 = 2 << 30, storeAgeDays: UInt32 = 90,
                      recordingsPath: String = defaultRecordingsPath(), recordingsCapBytes: UInt64 = 20 << 30,
                      recordingsAgeDays: UInt32 = 0, dataPath: String = defaultDataDirectory(),
-                     version: String)
+                     leyPath: String? = nil, version: String)
         {
             self.socketPath = socketPath
             self.pidfile = pidfile
@@ -77,6 +81,7 @@ package final class Daemon: Sendable {
             self.recordingsCapBytes = recordingsCapBytes
             self.recordingsAgeDays = recordingsAgeDays
             self.dataPath = dataPath
+            self.leyPath = leyPath
             self.version = version
         }
     }

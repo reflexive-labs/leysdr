@@ -150,6 +150,12 @@ package func serveUntilStopped(
     }
 }
 
+/// `LEYLINE_LEY=/path/to/ley`: the `ley` the daemon runs for its workers when `--ley` is not given.
+package func leyPathFromEnvironment() -> String? {
+    guard let env = ProcessInfo.processInfo.environment["LEYLINE_LEY"], !env.isEmpty else { return nil }
+    return env
+}
+
 /// `LEYLINE_RTLTCP=host:port[,host:port...]` — appended to the `--rtltcp` flags.
 package func rtltcpEndpointsFromEnvironment() -> [String] {
     guard let env = ProcessInfo.processInfo.environment["LEYLINE_RTLTCP"], !env.isEmpty else { return [] }

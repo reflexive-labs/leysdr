@@ -59,6 +59,9 @@ struct DaemonCommand: AsyncParsableCommand {
     @Option(help: "The data directory: what the daemon keeps about AI keys and each feature's model, and, where there is no keychain, the keys themselves (platform default otherwise).")
     var data: String = defaultDataDirectory()
 
+    @Option(help: "The ley executable the daemon runs to check keys and call providers (env LEYLINE_LEY; otherwise the one beside leylined, then PATH).")
+    var ley: String?
+
     @Option(name: .customLong("log-file"), help: "Append standard output and error to this file, creating it and its directory; a leading ~/ is the home directory. For a launch agent that cannot redirect them itself.")
     var logFile: String?
 
@@ -102,6 +105,7 @@ struct DaemonCommand: AsyncParsableCommand {
                                           storeCapBytes: storeCap, storeAgeDays: storeAge,
                                           recordingsPath: recordings, recordingsCapBytes: recordingsCap,
                                           recordingsAgeDays: recordingsAge, dataPath: data,
+                                          leyPath: ley.map { expandingTilde($0) } ?? leyPathFromEnvironment(),
                                           version: leylinedVersion))
         // A write to a socket whose peer vanished (rtl_tcp dying mid-command) must be an error
         // return, never a process-killing SIGPIPE.
