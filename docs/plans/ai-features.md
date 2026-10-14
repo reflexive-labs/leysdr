@@ -473,6 +473,7 @@ The policy for each kind of action:
 | delete a recording | asks every time |
 | start paid transcription | asks, stating how much audio it will send (U3) |
 | run a shell command, add a shell notifier, change keys | not among the assistant's tools |
+| attach an `rtl_tcp` server or a file as a radio, import a CHIRP file, as the user asked | runs, and is reported; the host or path is the user's own words |
 
 **Text from the air is untrusted input.** Anyone with a transmitter can put words into an APRS
 comment, an AIS field or a speech record, and the assistant reads all three. The worker passes
@@ -682,7 +683,10 @@ and `help` (the `ley help` topics, read-only). Files: `go/internal/cli/mcp_tools
 `mcp_tools_*.go` (new, one file per family), `mcp.go` (the help text and instructions),
 `mcp_test.go`, `docs/reference/mcp.md`, `evals/scenarios/*.yaml`, `docs/dev/evals.md`. Verify:
 fake-daemon tests of each tool against its mirror's `--json`; `TestMCPListsTheToolTable`;
-`leyeval check` parses every scenario; the scenarios run when a key is present.
+`leyeval check` parses every scenario; the scenarios run when a key is present. Known limit: a
+tool that picks "the agent's own channel" chooses by client kind `mcp`, so two agents on one
+daemon can pick each other's channel; the fix is a per-client choice when a second agent is a
+real case.
 
 ### AI-5 `[ ]` Speech on stored recordings
 
