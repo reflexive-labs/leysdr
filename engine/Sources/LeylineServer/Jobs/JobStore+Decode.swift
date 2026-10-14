@@ -97,6 +97,9 @@ extension JobStore {
             await lease.release()
             return
         }
+        if installed.manifest.input.mode == .segmented {
+            await squelchForSegments(id, lease: lease)
+        }
         let snapshot = await store.captureEngine(lease.captureID)?.snapshot
         let writer: RecordWriter?
         do {
@@ -160,6 +163,20 @@ extension JobStore {
             seqStart: await writer?.recordCount ?? 0)
         entries[id]?.decode = runner
         await runner.start()
+    }
+
+    /// SEGMENTED input cuts at the squelch's edges, and a channel with the squelch off has none:
+    /// every meter says open, and the plugin would get one segment that never ends. The job's own
+    /// channel gets the gated recorder's auto squelch, the band's floor plus 10 dB, measured where
+    /// the channel is (`autoSquelch`). A channel whose meter never arrives keeps its squelch off.
+    private func squelchForSegments(_ id: JobID, lease: any ChannelLease) async {
+        var channelConfig = await lease.engine.config
+        guard channelConfig.squelchDB.isNaN else { return }
+        await setDetail(id, "measuring the noise floor")
+        guard let measured = await autoSquelch(lease) else { return }
+        channelConfig.squelchDB = measured
+        try? await lease.engine.update(channelConfig)
+        await store.publishChannel(lease.channelID)
     }
 
     /// Fails the job with the allocator's decline reason and code (or a fallback when it declined

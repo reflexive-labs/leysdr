@@ -69,6 +69,10 @@ actor DecodeRunner {
     /// The plugin the drain is feeding. Held outside the actor because the drain runs as its own
     /// task: a pipe write must never park the actor that is also stamping records.
     private let currentPlugin = Mutex<PluginProcess?>(nil)
+    /// SEGMENTED input's cutter, nil for every other mode. Set once by `loop` before the drain and
+    /// the squelch follower start, and shared by the two: the follower hands it records, the drain
+    /// hands it audio and writes what it releases.
+    private let segmenter = Mutex<Segmenter?>(nil)
     private var stopped = false
 
     init(jobID: JobID, installed: DecoderRegistry.Installed, lease: any ChannelLease, hub: RecordHub,
@@ -134,6 +138,15 @@ actor DecodeRunner {
         }
         let meter = Task { [weak self] in await self?.followMeter() }
         let health = Task { [weak self] in await self?.followChannel() }
+        var squelch: Task<Void, Never>?
+        if installed.manifest.input.mode == .segmented {
+            let (preRollMs, hangMs) = Segmenter.timings(installed.manifest.input)
+            segmenter.withLock {
+                $0 = Segmenter(preRollMs: preRollMs, hangMs: hangMs, captureRateHz: captureRateHz,
+                               audioRateHz: engine.audioRate)
+            }
+            squelch = Task { [weak self] in await self?.followSquelch(audio: audio) }
+        }
         // One drain for the life of the job, not one per plugin: `AudioFrameSource.poke` has a
         // single iterator, and a second `for await` on it would see a finished stream and feed a
         // restarted plugin nothing. Frames written while no plugin is up are dropped, and the ring
@@ -166,6 +179,7 @@ actor DecodeRunner {
         }
         meter.cancel()
         health.cancel()
+        squelch?.cancel()
         drain.cancel()
         counting.cancel()
         audio.wake()
@@ -235,6 +249,10 @@ actor DecodeRunner {
     /// Audio out of the ring and into whichever plugin is up, one frame at a time. Nonisolated: it
     /// is the one part of the job that should never wait on the actor.
     private nonisolated func drain(audio: AudioFrameSource) async {
+        if segmenter.withLock({ $0 != nil }) {
+            await drainSegmented(audio: audio)
+            return
+        }
         var seq: UInt64 = 0
         var lastEnd: UInt64 = 0
         // The earliest sample the plugin has not seen, held open across dropped frames so the next
@@ -287,6 +305,151 @@ actor DecodeRunner {
         }
     }
 
+    // MARK: Segmented input
+
+    /// What the segmented drain knows about the plugin's side of the stream. A segment exists on
+    /// the wire only between a START the plugin was given and its END, so a START that cannot be
+    /// written skips the whole segment, an END that cannot be written is owed before anything else,
+    /// and a plugin that replaced the one a segment was open on sees nothing more of it.
+    private struct SegmentedWire {
+        var seq: UInt64 = 0
+        /// The plugin that has the open segment's START.
+        var openOn: ObjectIdentifier?
+        var skipping = false
+        var owedEnd: Segmenter.Piece?
+        /// Audio of a segment the plugin did not get, reported on the next frame that reaches it.
+        var lost: Range<UInt64>?
+
+        mutating func lose(_ piece: Segmenter.Piece) {
+            if piece.mark == .segmentStart { skipping = true }
+            guard !piece.floats.isEmpty else { return }
+            let end = piece.time + UInt64(Double(piece.floats.count) * perAudioHint)
+            lost = (lost?.lowerBound ?? piece.time)..<Swift.max(lost?.upperBound ?? end, end)
+        }
+
+        /// Capture samples per audio sample, for the end of a lost piece.
+        var perAudioHint: Double = 1
+    }
+
+    /// The drain under SEGMENTED input: audio into the segmenter, and what it releases into the
+    /// plugin. The squelch follower wakes it when a record lets waiting frames go.
+    private nonisolated func drainSegmented(audio: AudioFrameSource) async {
+        var wire = SegmentedWire()
+        wire.perAudioHint = audio.captureRate / audio.audioRate
+        for await _ in audio.poke {
+            if Task.isCancelled { return }
+            while let f = audio.next(s16: false) {
+                let floats = f.payload.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+                let frame = Segmenter.Frame(start: f.sampleStart, count: f.sampleCount, floats: floats,
+                                            dropped: f.droppedSamples)
+                segmenter.withLock { $0?.push(frame) }
+            }
+            let pieces = segmenter.withLock { $0?.release() } ?? []
+            for piece in pieces {
+                await deliver(piece, wire: &wire)
+            }
+        }
+    }
+
+    private nonisolated func deliver(_ piece: Segmenter.Piece, wire: inout SegmentedWire) async {
+        guard let process = currentPlugin.withLock({ $0 }) else {
+            wire.lose(piece)
+            return
+        }
+        let plugin = ObjectIdentifier(process)
+        if let open = wire.openOn, open != plugin {
+            // The plugin was replaced inside a segment: the new one never saw its START.
+            wire.openOn = nil
+            wire.owedEnd = nil
+            wire.skipping = true
+        }
+        if let owed = wire.owedEnd {
+            guard await send(owed, to: process, wire: &wire) == .written else {
+                wire.lose(piece)
+                return
+            }
+            wire.owedEnd = nil
+            wire.openOn = nil
+        }
+        switch piece.mark {
+        case .segmentStart:
+            wire.skipping = false
+        case .segmentEnd:
+            // Nothing of this segment is open on the wire, so there is nothing to end.
+            guard !wire.skipping, wire.openOn != nil else {
+                wire.skipping = false
+                return
+            }
+        default:
+            guard !wire.skipping, wire.openOn != nil else {
+                wire.lose(piece)
+                return
+            }
+        }
+        switch await send(piece, to: process, wire: &wire) {
+        case .written:
+            if piece.mark == .segmentStart { wire.openOn = plugin }
+            if piece.mark == .segmentEnd { wire.openOn = nil }
+        case .droppedFull:
+            if piece.mark == .segmentEnd {
+                wire.owedEnd = piece
+            } else {
+                wire.lose(piece)
+            }
+        }
+    }
+
+    /// One piece as a frame. A failure or a stall counts as a drop: the restart loop replaces the
+    /// plugin, and `deliver` sees the new one.
+    private nonisolated func send(_ piece: Segmenter.Piece, to process: PluginProcess,
+                                  wire: inout SegmentedWire) async -> PluginWrite
+    {
+        var frame = Leyline_V1_Frame()
+        frame.streamID = streamID
+        frame.seq = wire.seq + 1
+        frame.time.captureID = lease.captureID.string
+        frame.time.sampleIndex = piece.time
+        frame.segment = piece.mark
+        frame.payload = piece.floats.withUnsafeBytes { Data($0) }
+        let gap = [wire.lost, piece.gap].compactMap { $0 }
+        if piece.mark != .segmentEnd, let from = gap.map(\.lowerBound).min(), let to = gap.map(\.upperBound).max() {
+            frame.gap.fromSample = from
+            frame.gap.toSample = to
+        }
+        do {
+            let result = try process.write(frame)
+            if result == .written {
+                wire.seq += 1
+                if piece.mark != .segmentEnd { wire.lost = nil }
+            }
+            return result
+        } catch is PluginStalled {
+            await process.stop()
+            return .droppedFull
+        } catch {
+            return .droppedFull
+        }
+    }
+
+    /// The channel's squelch records and meters into the segmenter, in the channel's order, through
+    /// the same in-process path `RecordRunner.followSquelch` uses. Each one may let frames the
+    /// drain is holding go, so it wakes the drain.
+    private nonisolated func followSquelch(audio: AudioFrameSource) async {
+        let subscription = lease.engine.telemetrySubscription()
+        for await t in subscription.stream {
+            if Task.isCancelled { return }
+            switch t {
+            case .squelch(let time, let open, _, _, _):
+                segmenter.withLock { $0?.hear(.squelch(open: open, at: time.sampleIndex)) }
+            case .meter(let time, _, _, let open, _, _, _, _):
+                segmenter.withLock { $0?.hear(.meter(open: open, at: time.sampleIndex)) }
+            default:
+                continue
+            }
+            audio.wake()
+        }
+    }
+
     // MARK: Stamping
 
     /// The daemon's own fields: a record id, the job, the channel, the sequence and the levels the
@@ -317,6 +480,11 @@ actor DecodeRunner {
         rec.jobID = jobID.string
         rec.seq = seq
         rec.channelID = lease.channelID.string
+        // Under SEGMENTED input the over is the segment the plugin stamped the record inside,
+        // counted from 1 since the job began. No recording holds a live job's audio yet, so there
+        // is no clip to name.
+        rec.over = segmenter.withLock { $0?.over(at: rec.time.sampleIndex) } ?? 0
+        rec.clipUri = ""
         rec.rssiDbfs = rssiDBFS
         rec.snrDb = snrDB
         await hub.publish(rec)

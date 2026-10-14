@@ -136,6 +136,62 @@ func writeLastAndSleep(frame: Leyline_V1_Frame, seq: UInt64) -> Never {
     while true { sleep(3600) }
 }
 
+/// `FAKE_DECODER_SEGMENTS=1` reads SEGMENTED input (decode.proto, InputMode) the way a speech
+/// decoder does: one record per segment, written at its END, dated by its START frame, with
+/// `frames` (the audio frames, START included and END not), `samples` (the audio samples they
+/// carried), `text` ("segment N"), `rate` (the descriptor's audio rate) and `outside` (frames that
+/// arrived with no segment open, which the daemon must never send).
+let segmented = ProcessInfo.processInfo.environment["FAKE_DECODER_SEGMENTS"] == "1"
+
+struct OpenSegment {
+    var time: Leyline_V1_SampleTime
+    var frames: Int64 = 0
+    var samples: Int64 = 0
+}
+
+func runSegmented() -> Never {
+    var open: OpenSegment?
+    var count: Int64 = 0
+    var outside: Int64 = 0
+    while let bytes = readDelimited() {
+        guard let frame = try? Leyline_V1_Frame(serializedBytes: bytes) else { exit(2) }
+        switch frame.segment {
+        case .segmentStart:
+            open = OpenSegment(time: frame.time, frames: 1, samples: Int64(frame.payload.count / 4))
+        case .segmentEnd:
+            guard let done = open else {
+                outside += 1
+                continue
+            }
+            open = nil
+            count += 1
+            var rec = Leyline_V1_DecodeRecord()
+            rec.protocol = "fake"
+            rec.time = done.time
+            func field(_ v: Int64) -> Leyline_V1_FieldValue { var f = Leyline_V1_FieldValue(); f.integer = v; return f }
+            rec.fields["frames"] = field(done.frames)
+            rec.fields["samples"] = field(done.samples)
+            rec.fields["outside"] = field(outside)
+            rec.fields["rate"] = field(Int64(descriptor.audio.sampleRate))
+            var text = Leyline_V1_FieldValue()
+            text.text = "segment \(count)"
+            rec.fields["text"] = text
+            if let usagePerRecord { rec.usage = usagePerRecord }
+            writeDelimited(rec)
+        default:
+            guard open != nil else {
+                outside += 1
+                continue
+            }
+            open!.frames += 1
+            open!.samples += Int64(frame.payload.count / 4)
+        }
+    }
+    exit(0)
+}
+
+if segmented { runSegmented() }
+
 var seq: UInt64 = 0
 while let bytes = readDelimited() {
     guard let frame = try? Leyline_V1_Frame(serializedBytes: bytes) else { exit(2) }

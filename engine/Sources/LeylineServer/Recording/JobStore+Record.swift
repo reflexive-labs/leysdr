@@ -284,7 +284,7 @@ extension JobStore {
     /// same reason. Bounded: a channel whose meter never arrives leaves the squelch alone, and the
     /// gate then sees a squelch that is off -- which the runner reports rather than silently
     /// recording nothing.
-    private func autoSquelch(_ lease: any ChannelLease) async -> Double? {
+    func autoSquelch(_ lease: any ChannelLease) async -> Double? {
         let subscription = lease.engine.telemetrySubscription()
         var floors: [Double] = []
         var powers: [Double] = []
