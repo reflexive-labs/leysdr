@@ -51,7 +51,8 @@ extension JobStore {
             guard let self else { return }
             await self.runDecode(id, config: config, installed: installed, frequencyHz: frequencyHz, deviceID: deviceID)
         }
-        entries[id] = Entry(proto: job, scan: nil, task: task, ownerClientID: client.id, decode: nil, keep: config.keep)
+        entries[id] = Entry(proto: job, scan: nil, task: task, ownerClientID: client.id, decode: nil, keep: config.keep,
+                            credentialProvider: installed.manifest.credentialProvider)
         order.append(id)
         trim()
         if config.keep { persistKept() }
@@ -171,6 +172,22 @@ extension JobStore {
         await records.retain()
         return try await records.open(job: id, config: config, manifest: installed.manifest,
                                       capture: capture, anchor: anchor)
+    }
+
+    /// Ends every live decode job whose decoder uses `provider`'s key, FAILED with
+    /// `CREDENTIAL_MISSING` and the command that adds one: the key has been deleted, and a job
+    /// left running would fail on its next call anyway, or worse, keep a key the user meant to
+    /// revoke in use. A kept job ends too and is not resumed at the next start.
+    func endJobs(usingCredential provider: String) async {
+        guard !provider.isEmpty else { return }
+        let error = EngineError.credentialMissing(provider)
+        for id in order {
+            guard let e = entries[id], Self.isLive(e.proto.state), e.credentialProvider == provider else { continue }
+            log.info("ending \(id.string): the \(provider) key it uses was deleted")
+            e.task?.cancel()
+            if let runner = e.decode { await runner.stop() }
+            await finish(id, state: .failed, detail: error.message, code: error.code)
+        }
     }
 
     /// What the runner reports. FAILED is terminal and carries the decoder's code; RUNNING and

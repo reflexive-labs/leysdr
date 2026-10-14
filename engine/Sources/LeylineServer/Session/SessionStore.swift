@@ -167,6 +167,11 @@ actor SessionStore {
     var teardownHook: (@Sendable (TeardownScope) async -> Void)?
     /// Installed by the job store; nil until jobs exist.
     var jobsProvider: (@Sendable () async -> [Leyline_V1_Job])?
+    /// Installed by the daemon: the keys and feature models `GetState` carries.
+    var aiProvider: (@Sendable () async -> Leyline_V1_AIState)?
+    /// The `CredentialStore.version` of the last `AIState` published, so an older state that
+    /// arrives late is not published over a newer one (`publishAI(from:by:)`).
+    var aiPublishedVersion: UInt64 = 0
     private var clientGoneHook: (@Sendable (String) async -> Void)?
     /// Captures a sweep currently holds. Invariant 9 puts jobs behind the allocator; this is the
     /// other half of it -- without it a client can join a capture that is walking a band, and its

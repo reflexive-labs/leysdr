@@ -9,6 +9,8 @@ import GRPCNIOTransportHTTP2
 import GRPCProtobuf
 @testable import LeylineServer
 import LeylineProto
+import Logging
+import Synchronization
 import XCTest
 
 /// Identity the tests send on every RPC.
@@ -32,7 +34,10 @@ struct DaemonClients {
     let bulk: Leyline_V1_Bulk.Client<HTTP2ClientTransport.Posix>
     let jobs: Leyline_V1_Jobs.Client<HTTP2ClientTransport.Posix>
     let resources: Leyline_V1_Resources.Client<HTTP2ClientTransport.Posix>
+    let credentials: Leyline_V1_Credentials.Client<HTTP2ClientTransport.Posix>
     let daemon: Daemon
+    /// The daemon's data directory: `ai.json`, and `credentials.json` for the test's file store.
+    let dataPath: String
     let socketPath: String
 }
 
@@ -49,7 +54,10 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
                 rtltcp: [Daemon.RTLTCPEndpoint] = [],
                 decoderSearchPath: [String]? = nil, storePath: String? = nil,
                 recordingsPath: String? = nil, recordingsCapBytes: UInt64 = 20 << 30,
+                leyPath: String? = nil,
                 _ body: @escaping @Sendable (DaemonClients) async throws -> Void) async throws {
+    // Every logger the daemon makes goes through the capture's handler, so a test can read the log.
+    _ = LogCapture.shared
     let caller = dir
     let dir = caller ?? (NSTemporaryDirectory() + "leyline-test-\(getpid())-\(UInt32.random(in: 0...UInt32.max))")
     try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
@@ -66,6 +74,9 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
                                recordingsCapBytes: recordingsCapBytes, dataPath: dir + "/data",
                                version: testDaemonVersion)
     config.secretStore = FileSecrets(path: dir + "/data/credentials.json")
+    // `ley` is whatever the test names and nothing else: never one on the machine's PATH.
+    config.leyPath = leyPath
+    config.programLocator = ProgramLocator(directories: [], searchPath: [])
     let daemon = Daemon(config: config)
     let serverTask = Task { try await daemon.run() }
     let listening = await daemon.waitUntilListening()
@@ -78,7 +89,8 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
         ) { client in
             let clients = DaemonClients(
                 control: .init(wrapping: client), decoders: .init(wrapping: client), telemetry: .init(wrapping: client),
-                bulk: .init(wrapping: client), jobs: .init(wrapping: client), resources: .init(wrapping: client), daemon: daemon, socketPath: socket
+                bulk: .init(wrapping: client), jobs: .init(wrapping: client), resources: .init(wrapping: client),
+                credentials: .init(wrapping: client), daemon: daemon, dataPath: dir + "/data", socketPath: socket
             )
             do { try await body(clients) } catch { bodyError = error }
         }
@@ -203,7 +215,7 @@ func fakeDecoderPath() -> String {
 func writeFakePlugin(in dir: String, name: String = "fake", executable: String? = nil,
                      recipe: (frequencyHz: UInt64, bandwidthHz: UInt32)? = (146_000_000, 15_000),
                      signal: Leyline_V1_DecoderSignal = .signalAudio,
-                     args: [String] = [], json: String? = nil) throws -> String
+                     args: [String] = [], credentialProvider: String = "", json: String? = nil) throws -> String
 {
     let pluginDir = dir + "/" + name
     try FileManager.default.createDirectory(atPath: pluginDir, withIntermediateDirectories: true)
@@ -226,6 +238,7 @@ func writeFakePlugin(in dir: String, name: String = "fake", executable: String? 
           "input": {"mode": "CONTINUOUS", "tap": "TAP_AUDIO", "signal": "\(signalName)"},
           "outputs": ["SHAPE_RECORDS"],
           "entitySilenceS": 1800,
+          "credentialProvider": "\(credentialProvider)",
           "executable": "\(executable ?? fakeDecoderPath())",
           "args": [\(args.map { "\"\($0)\"" }.joined(separator: ", "))]
         }
@@ -270,4 +283,52 @@ func writeScriptedLey(in dir: String, outcome: String, message: String) throws -
     read key
     printf '%s\\n' '{"outcome": "\(outcome)", "message": "\(message)"}'
     """)
+}
+
+// MARK: The daemon's log
+
+/// Every line any `Logger` writes while `capture` runs, for tests that must show something never
+/// reaches the log. swift-log takes one bootstrap per process, so the handler is installed on first
+/// use and tees to standard output, which is where the default handler writes, so the suite's own
+/// output is unchanged.
+final class LogCapture: Sendable {
+    private let state = Mutex<(on: Bool, lines: [String])>((false, []))
+
+    static let shared: LogCapture = {
+        let capture = LogCapture()
+        LoggingSystem.bootstrap { label in
+            MultiplexLogHandler([StreamLogHandler.standardOutput(label: label), CapturingLogHandler(label: label, capture: capture)])
+        }
+        return capture
+    }()
+
+    /// Runs `body` with capture on and returns what was logged meanwhile, as one text.
+    func capture(_ body: () async throws -> Void) async rethrows -> String {
+        state.withLock { $0 = (true, []) }
+        defer { state.withLock { $0.on = false } }
+        try await body()
+        return state.withLock { $0.lines.joined(separator: "\n") }
+    }
+
+    fileprivate func append(_ line: String) {
+        state.withLock { if $0.on { $0.lines.append(line) } }
+    }
+}
+
+private struct CapturingLogHandler: LogHandler {
+    let label: String
+    let capture: LogCapture
+    var metadata: Logger.Metadata = [:]
+    var logLevel: Logger.Level = .trace
+
+    subscript(metadataKey key: String) -> Logger.Metadata.Value? {
+        get { metadata[key] }
+        set { metadata[key] = newValue }
+    }
+
+    func log(level: Logger.Level, message: Logger.Message, metadata: Logger.Metadata?, source _: String,
+             file _: String, function _: String, line _: UInt)
+    {
+        capture.append("\(label) \(level) \(message) \(metadata ?? [:])")
+    }
 }

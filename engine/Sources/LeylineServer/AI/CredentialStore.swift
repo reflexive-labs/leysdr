@@ -43,6 +43,12 @@ actor CredentialStore {
         return state
     }
 
+    /// The state with the version it is at, for `SessionStore.publishAI(from:by:)`.
+    func versioned() -> (Leyline_V1_AIState, UInt64) {
+        loadIfNeeded()
+        return (state, version)
+    }
+
     func credential(_ provider: String) -> Leyline_V1_Credential? {
         loadIfNeeded()
         return state.credentials.first { $0.provider == provider }

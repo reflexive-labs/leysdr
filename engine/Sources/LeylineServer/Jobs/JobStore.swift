@@ -40,6 +40,9 @@ actor JobStore {
         var record: (any RecordRunning)?
         /// `keep`: persistence follows intent (invariant 8). A kept job outlives its client.
         var keep = false
+        /// The provider whose key a decode job's decoder uses (its manifest's
+        /// `credential_provider`); empty for every other job.
+        var credentialProvider = ""
     }
 
     /// Live states. A decode job sits in DEGRADED while its capture has moved away from it, and is

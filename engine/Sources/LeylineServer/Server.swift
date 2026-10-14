@@ -153,6 +153,10 @@ package final class Daemon: Sendable {
                 JobsService(jobs: jobs, store: store),
                 DecodersService(jobs: jobs, store: store),
                 ResourcesService(jobs: jobs, store: store),
+                CredentialsService(credentials: credentials,
+                                   worker: WorkerProcess(leyPath: config.leyPath, locator: config.programLocator,
+                                                         socketPath: config.socketPath),
+                                   store: store, jobs: jobs),
             ],
             interceptors: [ClientContextInterceptor()]
         )
@@ -222,6 +226,8 @@ package final class Daemon: Sendable {
         let table = jobs
         await store.setJobsProvider { await table.snapshot() }
         await store.setClientGoneHook { await table.clientGone($0) }
+        let keys = credentials
+        await store.setAIProvider { await keys.snapshot() }
         log.info("leylined \(config.version) listening on \(config.socketPath)")
         var served: (any Error)?
         do { try await server.serve() } catch { served = error }
