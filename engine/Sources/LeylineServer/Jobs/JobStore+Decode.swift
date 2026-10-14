@@ -25,6 +25,10 @@ extension JobStore {
         if installed.manifest.input.mode == .slotAligned {
             throw EngineError.unimplemented("slot-aligned decoder input")
         }
+        // Overs are cut at a channel's squelch, and raw IQ has no channel.
+        if installed.manifest.input.mode == .segmented, installed.manifest.input.signal == .signalIq {
+            throw EngineError.unimplemented("segmented IQ decoder input")
+        }
         // A key the provider has already refused would fail the decoder's first call, so the
         // caller is told now, in the provider's words, rather than by a job that dies later.
         // A decoder that calls a provider cannot start without the key, and the caller is told

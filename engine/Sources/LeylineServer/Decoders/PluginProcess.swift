@@ -156,6 +156,17 @@ func pluginCredential(for manifest: Leyline_V1_DecoderManifest,
     return try await store.pluginCredential(provider)
 }
 
+/// The arguments a plugin is spawned with: the manifest's, then `--model <model>` when the user
+/// has chosen a speech model on the provider the plugin calls (`ley ai use speech <provider>
+/// <model>`). Read at every spawn, so a restart takes the choice as it now stands.
+func pluginArguments(for manifest: Leyline_V1_DecoderManifest, from store: CredentialStore?) async -> [String] {
+    let provider = manifest.credentialProvider
+    guard !provider.isEmpty, let store else { return manifest.args }
+    let chosen = await store.snapshot().features.first { $0.feature == "speech" && $0.provider == provider }
+    guard let model = chosen?.model, !model.isEmpty else { return manifest.args }
+    return manifest.args + ["--model", model]
+}
+
 /// A spawned decoder. One instance runs one child; a restart makes a new one.
 /// Unchecked Sendable: the child and its pipes are set up in init and only read afterwards; the write descriptor is behind a Mutex.
 final class PluginProcess: @unchecked Sendable {

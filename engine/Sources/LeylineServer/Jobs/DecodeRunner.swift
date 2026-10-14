@@ -357,7 +357,8 @@ actor DecodeRunner {
             return nil
         }
         let process = PluginProcess(name: installed.manifest.name, executable: installed.executablePath,
-                                    args: installed.manifest.args, directory: installed.directory)
+                                    args: await pluginArguments(for: installed.manifest, from: credentials),
+                                    directory: installed.directory)
         do {
             try await process.start(descriptor: descriptor(), credential: credential)
         } catch {

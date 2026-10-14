@@ -64,6 +64,11 @@ struct RecordingSource: Sendable {
         }
         guard let manifest = await store.manifest(jobID: id) else { throw EngineError.jobNotFound(id) }
         guard manifest.kind == "audio" else { throw EngineError.unimplemented("decoding an IQ recording") }
+        // A recording still being made has parts yet to close; it is read once it has ended.
+        guard !manifest.endedBy.isEmpty else {
+            throw EngineError.failedPrecondition(
+                "\(uri) is still recording; decode it once its job has ended", target: uri)
+        }
         let directory = store.directory + "/" + id
         let segmented = input.mode == .segmented
         let (preRollMs, hangMs) = Segmenter.timings(input)

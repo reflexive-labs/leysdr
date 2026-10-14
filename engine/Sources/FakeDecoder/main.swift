@@ -73,6 +73,16 @@ if let ms = ProcessInfo.processInfo.environment["FAKE_DECODER_SLEEP_MS"], let n 
 /// then carries the key's last four characters in `key_last_four`, and never the key.
 let expectKey = ProcessInfo.processInfo.environment["FAKE_DECODER_EXPECT_KEY"] == "1"
     || CommandLine.arguments.dropFirst().contains("--expect-key")
+/// `--model <model>`, which the daemon appends when the user chose a speech model on this
+/// decoder's provider, goes into every record as `model`.
+let modelField: Leyline_V1_FieldValue? = {
+    let args = Array(CommandLine.arguments.dropFirst())
+    guard let i = args.firstIndex(of: "--model"), i + 1 < args.count else { return nil }
+    var v = Leyline_V1_FieldValue()
+    v.text = args[i + 1]
+    return v
+}()
+
 let keyLastFour: Leyline_V1_FieldValue? = {
     guard expectKey else { return nil }
     guard let bytes = readDelimited(), let key = try? Leyline_V1_SetCredentialRequest(serializedBytes: bytes),
@@ -194,6 +204,7 @@ func runSegmented() -> Never {
             rec.fields["text"] = text
             if let usagePerRecord { rec.usage = usagePerRecord }
             if let keyLastFour { rec.fields["key_last_four"] = keyLastFour }
+            if let modelField { rec.fields["model"] = modelField }
             writeDelimited(rec)
         default:
             guard open != nil else {
@@ -229,6 +240,7 @@ while let bytes = readDelimited() {
     rec.raw = frame.payload.prefix(4)
     if let usagePerRecord { rec.usage = usagePerRecord }
     if let keyLastFour { rec.fields["key_last_four"] = keyLastFour }
+    if let modelField { rec.fields["model"] = modelField }
     writeDelimited(rec)
     if dieAfter > 0, seq >= dieAfter { exit(3) }
     if refuseAfter > 0, seq >= refuseAfter {

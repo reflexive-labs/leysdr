@@ -143,7 +143,8 @@ actor IQDecodeRunner: DecodeRunning {
     /// Spawns the plugin and pumps it until it exits or the job is cancelled. Returns its status.
     private func runPlugin() async -> Int32 {
         let process = PluginProcess(name: installed.manifest.name, executable: installed.executablePath,
-                                    args: installed.manifest.args, directory: installed.directory)
+                                    args: await pluginArguments(for: installed.manifest, from: credentials),
+                                    directory: installed.directory)
         do {
             let credential = try await pluginCredential(for: installed.manifest, from: credentials)
             try await process.start(descriptor: descriptor(), credential: credential)

@@ -151,7 +151,8 @@ final class SegmentedDecodeTests: XCTestCase {
     /// Writes a 60 s gated recording of two contiguous 30 s parts through `PartWriter`, the way the
     /// daemon writes one, with squelch intervals at `opens` (seconds, per part). Returns its id.
     func writeRecording(in dir: String, kind: String = "audio",
-                        opens: [[(Double, Double)]] = SegmentedDecodeTests.syntheticOpens) async throws -> String
+                        opens: [[(Double, Double)]] = SegmentedDecodeTests.syntheticOpens,
+                        finished: Bool = true) async throws -> String
     {
         let id = JobID().string
         let manifest = RecordingManifest(
@@ -180,7 +181,8 @@ final class SegmentedDecodeTests: XCTestCase {
             }
             await writer.closePart(endSample: capture(Double(i + 1) * 30))
         }
-        await writer.finish(endedBy: "duration", endSample: capture(60))
+        // An unfinished recording is one whose job is still running: no `ended_by` yet.
+        if finished { await writer.finish(endedBy: "duration", endSample: capture(60)) }
         return id
     }
 
@@ -412,6 +414,12 @@ final class SegmentedDecodeTests: XCTestCase {
             key.provider = "anthropic"
             key.secret = secret
             _ = try await c.credentials.setCredential(key, metadata: testMetadata)
+            // The speech model chosen on this provider reaches the plugin as --model.
+            var model = Leyline_V1_FeatureModel()
+            model.feature = "speech"
+            model.provider = "anthropic"
+            model.model = "test-model-1"
+            _ = try await c.credentials.setFeatureModel(model, metadata: testMetadata)
 
             let started = try await self.startDecode(c, self.sourceConfig(id))
             let done = try await self.waitForEnd(c, started.jobID)
@@ -420,6 +428,7 @@ final class SegmentedDecodeTests: XCTestCase {
             XCTAssertEqual(got.count, Self.syntheticSegments.count)
             for rec in got {
                 XCTAssertEqual(rec.fields["key_last_four"]?.text, "Zq7w", "the plugin had the key")
+                XCTAssertEqual(rec.fields["model"]?.text, "test-model-1", "the plugin was told the model")
                 XCTAssertFalse(try rec.jsonString().contains(secret), "the key reached a record")
             }
 
@@ -435,6 +444,8 @@ final class SegmentedDecodeTests: XCTestCase {
             XCTAssertEqual(records.count, 4)
             XCTAssertEqual(Set(records.map { $0.fields["key_last_four"]?.text ?? "" }), ["Zq7w"],
                            "a restarted plugin reads the key again")
+            XCTAssertEqual(Set(records.map { $0.fields["model"]?.text ?? "" }), ["test-model-1"],
+                           "and is told the model again")
         }
     }
 
@@ -463,6 +474,52 @@ final class SegmentedDecodeTests: XCTestCase {
             XCTAssertEqual(iqCode, EngineError.Code.unimplemented, "an IQ recording needs an offline demodulator first")
             let part = await refusal("ley://recordings/\(iq)/1")
             XCTAssertEqual(part, EngineError.Code.invalidArgument)
+            let notRecording = await refusal("ley://records/\(iq)")
+            XCTAssertEqual(notRecording, EngineError.Code.invalidArgument)
+            let running = try await self.writeRecording(in: recordings, finished: false)
+            let stillRecording = await refusal("ley://recordings/\(running)")
+            XCTAssertEqual(stillRecording, EngineError.Code.failedPrecondition, "a recording still being made")
+        }
+    }
+
+    func testARecordingWithNoOpeningsEndsWithNothingDecoded() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        defer {
+            for d in [plugins, recordings] { try? FileManager.default.removeItem(atPath: d) }
+        }
+        try writeSegmentedPlugin(in: plugins)
+        let quiet = try await writeRecording(in: recordings, opens: [[], []])
+        try await withDaemon(decoderSearchPath: [plugins], recordingsPath: recordings) { c in
+            let started = try await self.startDecode(c, self.sourceConfig(quiet))
+            let done = try await self.waitForEnd(c, started.jobID)
+            XCTAssertEqual(done.state, .completed, "nothing to send is not an error: \(done.statusDetail)")
+            XCTAssertFalse(done.hasError)
+            XCTAssertTrue(done.statusDetail.contains("0 records"), done.statusDetail)
+        }
+    }
+
+    func testSegmentedIQInputIsNotImplemented() async throws {
+        let plugins = try makeTempDir("decoders")
+        defer { try? FileManager.default.removeItem(atPath: plugins) }
+        try writeFakePlugin(in: plugins, json: """
+        {
+          "name": "fake",
+          "version": "0.1.0",
+          "recipe": {"frequenciesHz": ["\(recordFrequencyHz)"]},
+          "input": {"mode": "SEGMENTED", "signal": "SIGNAL_IQ"},
+          "executable": "\(fakeDecoderPath())"
+        }
+        """)
+        try await withDaemon(decoderSearchPath: [plugins]) { c in
+            var config = Leyline_V1_DecodeConfig()
+            config.decoder = "fake"
+            do {
+                _ = try await self.startDecode(c, config)
+                XCTFail("a segmented IQ decoder started")
+            } catch {
+                XCTAssertEqual(errorCode(error).code, EngineError.Code.unimplemented)
+            }
         }
     }
 }
