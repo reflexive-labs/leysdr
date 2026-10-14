@@ -15,6 +15,11 @@ a credential.
 opens no network listener of its own; a network transport for it waits on the same remote-access
 milestone (`docs/reference/mcp.md`, "What an agent can do, and the trust that implies").
 
+The AI features (`docs/design/ai.md`, being built) will add to what a client of the socket can do.
+Any client will be able to start paid work on your provider account, such as a speech job or an
+assistant conversation, and to add entries to the usage ledger with `ReportUsage`. No client will
+be able to read a provider key back, because the contract accepts keys and never returns them.
+
 The daemon opens no network listener. Remote control is a later milestone and will arrive with
 authentication designed for it (`docs/design/control-plane.md`, "Auth for TCP remote access").
 
@@ -30,6 +35,12 @@ A `webhook:URL` notifier (`ley watch --notify=webhook:URL`) makes the daemon POS
 decode record to that URL as JSON, over `http` or `https` (the only schemes it accepts), for as
 long as the job runs.
 
+The daemon itself will make no model call. A provider's API is contacted by the worker processes
+the daemon starts for the AI features: a speech decoder plugin, and `ley` running as the assistant
+or as the check that runs when a key is added. Each plugin's manifest lists the hosts it contacts
+(`contacts_hosts`), and `ley decoders` shows them; the assistant and the check contact the host of
+the provider or endpoint you set with `ley ai add`.
+
 ## What the daemon reads and writes
 
 - Reads IQ files and JSON sidecars you name with `ley play`; a sidecar is capped at 1 MiB and must be
@@ -40,6 +51,11 @@ long as the job runs.
 - Writes recordings under `~/Library/Application Support/Leyline/recordings` (`--recordings`
   moves it; `--recordings-cap` and `--recordings-age` bound it), and kept decode jobs' records
   under `~/Library/Application Support/Leyline/store` (`--store`).
+- Will store provider keys added with `ley ai add` or the app's Settings: on macOS a login-keychain
+  item per provider (service `com.leysdr.leyline`), elsewhere a `credentials.json` file of mode
+  0600 in its data directory. No RPC, event or log line returns a key; `ley ai` shows the provider,
+  a label and the last four characters. `ai.json` in the data directory holds that listing and
+  the model each feature uses, and `usage.jsonl` in the store holds the usage ledger.
 
 ## What the daemon runs
 
@@ -51,6 +67,12 @@ long as the job runs.
 - **Shell notifiers.** `ley watch --notify=shell:CMD` makes the daemon run `CMD` with
   `/bin/sh -c` for each matching record, with the record's JSON on stdin. Any client of the socket
   can ask for this, which is one more reason the socket must stay private to your account.
+- **`ley` as a worker.** For a key check and for each assistant conversation the daemon will run
+  `ley worker`, found beside `leylined`, then on `PATH` (`--ley` / `LEYLINE_LEY` overrides it). It
+  runs as your user with no sandbox and receives the provider key on stdin, never in its arguments
+  or environment. A decoder plugin whose manifest names a provider receives that provider's key
+  the same way. The assistant's tools are `ley mcp`'s; it has no tool that runs a shell command or
+  adds a shell notifier.
 
 ## Supported versions
 

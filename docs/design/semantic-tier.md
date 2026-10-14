@@ -89,9 +89,14 @@ The capture allocator enforces the don't-disturb policy for jobs. The adapter al
 implicit retune before issuing a write, so the agent receives the affected channel ids and the
 `take_over` alternative.
 
+## Speech-to-text
+
+Speech-to-text is a decoder plugin, and the words of one over are a speech record: a
+`DecodeRecord` with protocol `speech`, separate from a watch job's transcript, which contains no
+words. `docs/design/ai.md`, "Speech-to-text is a decoder", is the design.
+
 ## Open questions
 
 - How far modulation classification can go before it requires a dedicated classifier rather than
   a measured detector heuristic.
-- Whether speech-to-text belongs in the app or an adapter once watch transcripts exist.
 - What retention policy a general durable job store should apply to scans, clips and transcripts.

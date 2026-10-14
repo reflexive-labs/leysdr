@@ -64,6 +64,7 @@ behaviour that contradicts it.
 | [Recording](design/recording.md) | recording as a job whose output is a resource: parts, the squelch gate, the manifest, the store, the `Resources` service | implemented |
 | [Brand](design/brand/README.md) | the mark and the splash, drawn in code; how the icon is made | implemented |
 | [Bands, channels and bookmarks](design/channels.md) | the three kinds of frequency; plan channels as data in the band table; bands as the sidebar's spine; Scan band over the scan job; tone, note and tags; CHIRP import; the engine and CLI pass | implemented |
+| [AI features](design/ai.md) | model features on the user's own provider key: keys in the daemon, usage, speech-to-text as a decoder, the assistant as a `ley` worker with `ley mcp`'s tools, what it may do | designed, being built |
 
 ### Decisions (`decisions/`)
 
@@ -90,9 +91,9 @@ What is being built, in what order, and the record of what each step found.
   [MCP adapter](plans/mcp.md) (the tools the daemon can back are done; the rest wait on their
   milestones) and [the Mac app](plans/app.md) (Milestone E: the window, recording and the bands
   sidebar are done; lifecycle and distribution remain).
-- A draft scope, nothing built: [AI features on the user's own key](plans/ai-features.md) (keys,
-  usage, speech-to-text as a decoder, and an assistant that runs the radio from plain
-  requests; user stories, the recommended shape and the decisions it waits on).
+- Being built in lanes: [AI features on the user's own key](plans/ai-features.md) (keys, usage,
+  speech-to-text as a decoder, and an assistant that runs the radio from plain requests). The
+  contract was settled on 2026-10-14; the build items and their lanes carry the status.
 - [`plans/archive/`](plans/archive/): finished plans and review records, among them
   [bands, channels and bookmarks](plans/archive/channels.md), kept because commit messages cite
   their item ids. Nothing in there is a work list any more.

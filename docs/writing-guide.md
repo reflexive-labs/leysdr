@@ -139,10 +139,17 @@ in the sentence where it appears; `ley help glossary` is the reference.
 | **job**, **resource** | a declared intent the daemon runs, and the durable thing it produces | "task", "file" |
 | **decoder**, **plugin** | a program the daemon runs to turn a channel's audio into records; "decoder" in guide prose, "plugin" when the process itself is meant | "codec", "module" |
 | **record** | one thing a transmitter said, as a decoder reports it (`DecodeRecord`) | "packet" (a packet is what was on the air), "message" |
+| **speech record** | the words of one over as a speech decoder reports them: a record with protocol `speech` | "transcript" |
 | **entity**, **station** | what a client's fold over records shows per transmitter; "station" for APRS | "track", "target" |
 | **fixture** | a generated IQ file with expectations in its sidecar | |
-| **recording** | an IQ file that came from a radio | |
+| **recording** | audio or IQ that came from a radio: a record job's parts and manifest (`ley://recordings/<id>`), or an IQ file `ley play` reads | |
+| **over** | one squelch opening: one station keyed up, from open to close; a gated recording's part is one exchange of overs | "utterance" |
+| **transcript** | in the contract, the activity log of a watch job: squelch-open intervals, levels and coverage gaps, with no words; on a page, a recorded terminal session | speech text (a speech record) |
 | **sample time**, **anchor** | the timebase every frame carries, and the one wall-clock mapping per capture | "timestamp" |
+| **provider** | a company or local engine that runs a model: Anthropic, OpenAI, Apple's on-device speech engine | "vendor", "backend" |
+| **key** | the secret a provider issues for its API, or the credentials a cloud platform such as Amazon Bedrock takes; the contract calls it a credential | "token" (a token is what a model counts) |
+| **the assistant** | Leyline's built-in agent, running on the user's key; "agent" is any MCP client driving `ley mcp`, the assistant among them | "copilot", "the AI", "the bot" |
+| **ledger** | the daemon's record of model usage: requests, tokens and audio seconds | "billing" |
 | **invariant** | one of the thirteen rules in `AGENTS.md` | "principle", "guideline" |
 | **milestone**, **spike**, **decision**, **work item** | A.1 to E.7; S1 to S3; D2; SV-8, R-4, DEC-2, APP-4 (used in `plans/` and `decisions/` only) | |
 
