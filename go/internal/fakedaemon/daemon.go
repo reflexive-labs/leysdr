@@ -98,6 +98,13 @@ type Options struct {
 	// needs no key and sends audio nowhere.
 	SpeechProvider string
 	SpeechHosts    []string
+	// AssistantScript is what the fake's assistant says and does: one turn per SendMessage, in
+	// order across conversations, each a list of steps (AssistantStep). With none, or once the
+	// script has run out, a turn answers "You said: " and the user's words.
+	AssistantScript []AssistantTurn
+	// AssistantStepDelay is the pause before each step of a scripted turn, so a client sees the
+	// turn's intermediate states arrive one at a time. Default 0.
+	AssistantStepDelay time.Duration
 }
 
 // DCSCode is a DCS code the fake sends on a carrier (Options.DCS).
@@ -155,6 +162,8 @@ type Daemon struct {
 	socket         string
 	// ai is the keys, the feature models and the usage ledger.
 	ai aiState
+	// talk is the assistant's conversations.
+	talk assistantState
 	// history holds the last eventHistoryLimit events, oldest first, for
 	// WatchEvents(since_seq) replay (the Swift daemon keeps the same window).
 	history []retainedEvent
@@ -271,6 +280,7 @@ func (d *Daemon) Register(s grpc.ServiceRegistrar) {
 	leylinev1.RegisterDecodersServer(s, d)
 	leylinev1.RegisterCredentialsServer(s, d)
 	leylinev1.RegisterUsageServer(s, usageSvc{d: d})
+	leylinev1.RegisterAssistantServer(s, assistantSvc{d: d})
 }
 
 // refuseWhileClosing answers every unary call made after shutdown began with UNAVAILABLE. Closing
