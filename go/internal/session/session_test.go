@@ -63,6 +63,29 @@ func TestFoldKeysAndUsage(t *testing.T) {
 	}
 }
 
+// TestFoldConversations: a conversation event replaces the conversation with its id, an ended one
+// included, and a new id is added.
+func TestFoldConversations(t *testing.T) {
+	s := &Session{State: &leylinev1.GetStateResponse{
+		Conversations: []*leylinev1.Conversation{{ConversationId: "conv_1", State: leylinev1.ConversationState_CONVERSATION_IDLE, Seq: 1}},
+	}}
+	s.Apply(&leylinev1.Event{Seq: 1, Body: &leylinev1.Event_Conversation{Conversation: &leylinev1.Conversation{
+		ConversationId: "conv_1", State: leylinev1.ConversationState_CONVERSATION_THINKING, Seq: 2,
+		Turns: []*leylinev1.Turn{{TurnId: "t1", Role: leylinev1.Role_ROLE_USER, Text: "tune to 146.52", Done: true}},
+	}}})
+	s.Apply(&leylinev1.Event{Seq: 2, Body: &leylinev1.Event_Conversation{Conversation: &leylinev1.Conversation{
+		ConversationId: "conv_2", State: leylinev1.ConversationState_CONVERSATION_IDLE, Seq: 1,
+	}}})
+	s.Apply(&leylinev1.Event{Seq: 3, Body: &leylinev1.Event_Conversation{Conversation: &leylinev1.Conversation{
+		ConversationId: "conv_1", State: leylinev1.ConversationState_CONVERSATION_ENDED, Seq: 3,
+	}}})
+	got := s.State.GetConversations()
+	if len(got) != 2 || got[0].ConversationId != "conv_1" || got[0].State != leylinev1.ConversationState_CONVERSATION_ENDED ||
+		got[0].Seq != 3 || got[1].ConversationId != "conv_2" {
+		t.Errorf("conversations: %v", got)
+	}
+}
+
 // TestCleanupContextOutlivesItsParent: cleanup RPCs run after the run's context has ended.
 func TestCleanupContextOutlivesItsParent(t *testing.T) {
 	parent, cancel := context.WithCancel(t.Context())

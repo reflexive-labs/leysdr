@@ -227,6 +227,10 @@ func (s *Session) fold(ev *leylinev1.Event) {
 		s.State.Ai = b.Ai
 	case *leylinev1.Event_Usage:
 		replaceUsage(s.State, b.Usage)
+	case *leylinev1.Event_Conversation:
+		// An ended conversation stays listed, as the daemon keeps it, so it is replaced and
+		// never removed.
+		replaceConversation(s.State, b.Conversation)
 	case *leylinev1.Event_Anchor:
 		// A capture publishes its anchor with its first block, and again on a
 		// rate change or a rebind, so the one its Capture arrived with is the
@@ -287,6 +291,17 @@ func replaceUsage(st *leylinev1.GetStateResponse, l *leylinev1.UsageLine) {
 		}
 	}
 	st.Usage = append(st.Usage, l)
+}
+
+// replaceConversation puts a conversation in place of the one with its id.
+func replaceConversation(st *leylinev1.GetStateResponse, c *leylinev1.Conversation) {
+	for i, x := range st.Conversations {
+		if x.ConversationId == c.ConversationId {
+			st.Conversations[i] = c
+			return
+		}
+	}
+	st.Conversations = append(st.Conversations, c)
 }
 
 // withoutCapture, withoutChannel and withoutSink drop a destroyed object from
