@@ -293,8 +293,11 @@ final class AppSession {
     /// again: a mirror change arrives four times a second while a part plays.
     @ObservationIgnored private var failedManifests: Set<String> = []
     /// The part the Library's inspector and player show: the last row clicked, and
-    /// the part Play all or Play day moved on to. Cleared when its recording is deleted.
-    var selectedPartURI: String?
+    /// the part Play all or Play day moved on to. Cleared when its recording is deleted. Another
+    /// part clears `selectedOver`.
+    var selectedPartURI: String? {
+        didSet { if selectedPartURI != oldValue { selectedOver = nil } }
+    }
     /// The EARLIER days (older than `Recordings.collapseAfterDays`) opened in place by a click,
     /// by `DayRows.id`. Presentation only.
     var openedDays: Set<String> = []
@@ -308,6 +311,23 @@ final class AppSession {
     /// playing playback four times a second.
     private var partPlayback = PartPlayback()
     private var playbackID: String? { partPlayback.playbackID }
+    var playingOver: Int? { partPlayback.playingOver }
+    /// Speech lines by recording id, from the daemon's speech records (`SpeechRecords.byRecording`),
+    /// read for each recording on the channel page and, while the search field holds words, for
+    /// every recording listed; read again on each event of a transcription of the recording.
+    private(set) var speechLines: [String: [SpeechLine]] = [:]
+    @ObservationIgnored private var speechLoads: [String: Task<Void, Never>] = [:]
+    /// The transcription jobs as last seen, so a change to one reads its recording's speech again.
+    @ObservationIgnored private var transcriptionsSeen: [Leyline_V1_Job] = []
+    /// The speech decoder as `ListDecoders` lists it, nil until read or when none is installed.
+    private(set) var speechDecoder: Leyline_V1_DecoderManifest?
+    @ObservationIgnored private var speechDecoderRead = false
+    /// The over the search or a speech line's click selected in `selectedPartURI`, for the page
+    /// to scroll to and mark. Presentation only.
+    var selectedOver: Int?
+    /// Transcribe's question while its dialog is up: the recording, the question's words, and the
+    /// model "Transcribe again…" chose (empty: the speech feature's own).
+    var transcribeAsk: TranscribeAsk?
     var playingURI: String? { partPlayback.playingURI }
     var playingRowStart: Leyline_V1_SampleTime? { partPlayback.playingRowStart }
     var playQueue: PlayQueue { partPlayback.queue }
@@ -2826,6 +2846,7 @@ final class AppSession {
         }
         followTunedRecordings()
         followPage()
+        followTranscriptions()
         noticeFailedRecordJobs()
         settleRecordSwitch()
         markRecordToggles()
@@ -2976,7 +2997,11 @@ final class AppSession {
     /// the page while it is not showing.
     private func followPage() {
         guard recordingsPageShown, let c = selectedChannel else { return }
-        for r in c.recordings { readManifestIfNeeded(r.jobID) }
+        for r in c.recordings {
+            readManifestIfNeeded(r.jobID)
+            if speechLines[r.jobID] == nil { loadSpeech(for: r.jobID) }
+        }
+        readSpeechDecoderIfNeeded()
     }
 
     /// `ResolveLocalPath(ley://recordings/<id>)`, then `recording.json` from that directory:
@@ -3018,6 +3043,7 @@ final class AppSession {
         var listed = Set(recordings.map(\.jobID))
         if let running = recordingJob?.jobID { listed.insert(running) }
         for id in manifests.keys where !listed.contains(id) { manifests[id] = nil }
+        for id in speechLines.keys where !listed.contains(id) { speechLines[id] = nil }
         for (id, task) in manifestLoads where !listed.contains(id) {
             task.cancel()
             manifestLoads[id] = nil
@@ -3054,6 +3080,7 @@ final class AppSession {
     /// ends a Play all or a Play day.
     func clickRow(_ uri: String) async {
         selectedPartURI = uri
+        selectedOver = nil
         if playingURI == uri, playback != nil {
             await pausePlayback(!isPaused)
         } else if playingURI != uri {
@@ -3127,7 +3154,10 @@ final class AppSession {
 
     /// `play(partURI:)` without touching Play all's queue, which `playAll` and `endPlayback`
     /// have set for the parts after this one.
-    private func startPlayback(_ uri: String, row: Leyline_V1_SampleTime? = nil) async {
+    private func startPlayback(
+        _ uri: String, row: Leyline_V1_SampleTime? = nil, over: Int? = nil,
+        range: (start: UInt64, end: UInt64)? = nil
+    ) async {
         guard let daemon else { return }
         if let old = partPlayback.replace(sinkAttached: sink != nil) {
             var stop = Leyline_V1_StopPlaybackRequest()
@@ -3135,7 +3165,7 @@ final class AppSession {
             _ = try? await daemon.control.stopPlayback(stop)
             log("playback", "\(old) stopped for \(uri)")
         }
-        partPlayback.playing(uri, row: row)
+        partPlayback.playing(uri, row: row, over: over)
         if let s = sink {
             var detach = Leyline_V1_DetachSinkRequest()
             detach.sinkID = s.sinkID
@@ -3148,6 +3178,10 @@ final class AppSession {
         }
         var req = Leyline_V1_StartPlaybackRequest()
         req.resourceUri = uri
+        if let range {
+            req.startSample = range.start
+            req.endSample = range.end
+        }
         do {
             let pb = try await daemon.control.startPlayback(req)
             partPlayback.started(id: pb.playbackID, at: Date())
@@ -3452,6 +3486,232 @@ final class AppSession {
             notice = e.message.isEmpty ? e.code : e.message
             return nil
         }
+    }
+
+    // MARK: Speech in the Library
+
+    /// A recording's speech as the page shows it: its lines dated through its manifest, the
+    /// newest transcription of each over shown (`RecordingSpeech.shown`). nil until read.
+    func speech(for recordingID: String) -> RecordingSpeech? {
+        speechLines[recordingID].map {
+            RecordingSpeech(lines: $0, manifest: manifests[recordingID])
+        }
+    }
+
+    /// Every recording's speech read so far, for the search.
+    var loadedSpeech: [String: RecordingSpeech] {
+        Dictionary(
+            uniqueKeysWithValues: speechLines.keys.compactMap { id in
+                speech(for: id).map { (id, $0) }
+            })
+    }
+
+    /// `Decoders.QueryRecords` for `recordingID`'s speech: protocol `speech` over the recording's
+    /// span (`SpeechRecords.query`), since a record query has no filter on `clip_uri`, and the
+    /// recording's own kept by `SpeechRecords.byRecording`. A read in flight is replaced. A
+    /// failure is logged and leaves what was read before: the words are an addition to the page.
+    func loadSpeech(for recordingID: String) {
+        guard let daemon, let summary = recordings.first(where: { $0.jobID == recordingID }) else {
+            return
+        }
+        speechLoads[recordingID]?.cancel()
+        let query = SpeechRecords.query(for: summary, now: Date())
+        speechLoads[recordingID] = Task { [weak self] in
+            do {
+                let page = try await daemon.decoders.queryRecords(query)
+                guard let self, !Task.isCancelled else { return }
+                self.speechLoads[recordingID] = nil
+                let lines = SpeechRecords.byRecording(page.records)[recordingID] ?? []
+                if page.truncated {
+                    log("speech", "\(recordingID): speech query cut at \(query.limit) records")
+                }
+                if self.speechLines[recordingID] != lines {
+                    log("speech", "\(recordingID): \(lines.count) speech lines")
+                    self.speechLines[recordingID] = lines
+                }
+            } catch {
+                guard let self, !Task.isCancelled else { return }
+                self.speechLoads[recordingID] = nil
+                log("speech", "speech of \(recordingID) not read: \(LeylineError(error))")
+            }
+        }
+    }
+
+    /// A transcription job (a decode job reading a recording) changed: its recording's speech is
+    /// read again, so lines appear as the job writes them, and a failure is the session's notice.
+    private func followTranscriptions() {
+        let jobs = state.jobs.filter {
+            if case .decode(let d)? = $0.config { return !d.sourceUri.isEmpty }
+            return false
+        }
+        guard jobs != transcriptionsSeen else { return }
+        let changed = jobs.filter { !transcriptionsSeen.contains($0) }
+        transcriptionsSeen = jobs
+        for j in changed {
+            guard case .decode(let d)? = j.config,
+                let id = RecordingPartRef.recordingID(of: d.sourceUri)
+            else { continue }
+            loadSpeech(for: id)
+            if j.state == .failed,
+                let line = SpeechRecords.statusLine(job: j, speech: speech(for: id))
+            {
+                notice = line
+            }
+        }
+    }
+
+    /// The newest transcription of a recording and its status line (`Transcribing · 3 overs so
+    /// far`, the daemon's `status_detail` while degraded, `Could not transcribe: …`); nil when none
+    /// runs or failed.
+    func transcriptionStatus(for recordingID: String) -> (job: Leyline_V1_Job, line: String)? {
+        guard
+            let job = SpeechRecords.transcription(
+                of: "ley://recordings/\(recordingID)", in: state.jobs),
+            let line = SpeechRecords.statusLine(job: job, speech: speech(for: recordingID))
+        else { return nil }
+        return (job, line)
+    }
+
+    /// `ListDecoders` once, for the speech decoder's manifest: whether Transcribe is offered,
+    /// whether it needs a key, and which hosts the question names.
+    private func readSpeechDecoderIfNeeded() {
+        guard !speechDecoderRead, let daemon else { return }
+        speechDecoderRead = true
+        Task { [weak self] in
+            do {
+                let listed = try await daemon.decoders.listDecoders(
+                    Leyline_V1_ListDecodersRequest())
+                let found = listed.decoders.first {
+                    $0.name == SpeechRecords.protocolName
+                        || $0.aliases.contains(SpeechRecords.protocolName)
+                }
+                self?.speechDecoder = found
+                log(
+                    "speech",
+                    found.map { "speech decoder \($0.name) \($0.version)" }
+                        ?? "no speech decoder installed")
+            } catch {
+                self?.speechDecoderRead = false
+                log("speech", "decoders not listed: \(LeylineError(error))")
+            }
+        }
+    }
+
+    /// Whether the Library offers Transcribe: a speech decoder is installed, and it needs no key
+    /// or a key is set. While false no speech control shows (docs/design/ai.md, K1).
+    var canTranscribe: Bool { SpeechRecords.canTranscribe(decoder: speechDecoder, ai: state.ai) }
+
+    /// The speech model in use and the models "Transcribe again…" offers.
+    var speechModels: (current: String, offered: [String]) { SpeechRecords.models(state.ai) }
+
+    /// Transcribe and Transcribe again…: puts the question `ley transcribe` asks into
+    /// `transcribeAsk`, which the view shows as a confirmation dialog; nothing is sent until
+    /// `transcribe(recordingID:model:)`.
+    func askTranscribe(recordingID: String, model: String = "") {
+        guard let m = manifests[recordingID], let d = speechDecoder else {
+            notice =
+                "Could not transcribe: the recording or the speech decoder has not been read yet."
+            return
+        }
+        transcribeAsk = TranscribeAsk(
+            recordingID: recordingID, model: model,
+            question: SpeechRecords.question(manifest: m, decoder: d, model: model))
+    }
+
+    /// Starts the kept speech job over the stored recording (`StartJob` with `source_uri`), as
+    /// `ley transcribe --yes` does. With `model`, the speech feature is set to it first, because the
+    /// model reaches the plugin when it starts, and put back when the daemon refuses the job. The
+    /// job's records arrive through `followTranscriptions`.
+    func transcribe(recordingID: String, model: String = "") async {
+        transcribeAsk = nil
+        guard let daemon, let d = speechDecoder else { return }
+        let previous =
+            state.ai.features.first { $0.feature == SpeechRecords.feature }
+            ?? .with { $0.feature = SpeechRecords.feature }
+        if !model.isEmpty {
+            var fm = Leyline_V1_FeatureModel()
+            fm.feature = SpeechRecords.feature
+            fm.provider = d.credentialProvider
+            fm.model = model
+            do {
+                _ = try await daemon.credentials.setFeatureModel(fm)
+            } catch {
+                let e = LeylineError(error)
+                notice =
+                    "Could not choose the speech model: \(e.message.isEmpty ? e.code : e.message)"
+                return
+            }
+        }
+        var req = Leyline_V1_StartJobRequest()
+        req.decode = SpeechRecords.transcribeConfig(
+            recordingURI: "ley://recordings/\(recordingID)", decoder: d.name)
+        do {
+            let job = try await daemon.jobs.startJob(req)
+            log(
+                "speech",
+                "\(job.jobID) transcribing \(recordingID)\(model.isEmpty ? "" : " with \(model)")")
+        } catch {
+            let e = LeylineError(error)
+            log("speech", "\(recordingID) not transcribed: \(e.code) \(e.message)")
+            notice = "Could not transcribe: \(e.message.isEmpty ? e.code : e.message)"
+            if !model.isEmpty { _ = try? await daemon.credentials.setFeatureModel(previous) }
+        }
+    }
+
+    /// Writes a recording's shown speech to `url` as plain text or SRT (`SpeechRecords.export`);
+    /// the view's save panel chose the file. A failure is the session's notice.
+    func exportSpeech(recordingID: String, format: SpeechExportFormat, to url: URL) {
+        guard let s = speech(for: recordingID), let m = manifests[recordingID] else { return }
+        do {
+            try Data(SpeechRecords.export(s, manifest: m, format: format).utf8).write(to: url)
+            log("speech", "\(recordingID) exported as \(format.rawValue) to \(url.path)")
+        } catch {
+            notice = "Could not export the words: \(error.localizedDescription)"
+        }
+    }
+
+    /// A speech line's click: the part is selected with the over, and only that over plays, its
+    /// segment as the speech decoder heard it (`SpeechRecords.range`, `StartPlayback`'s sample
+    /// range); a part whose openings were not read plays whole. A click on the over playing
+    /// pauses or resumes it.
+    func play(part uri: String, over: Int) async {
+        selectedPartURI = uri
+        selectedOver = over
+        if playingURI == uri, playingOver == over, playback != nil {
+            await pausePlayback(!isPaused)
+            return
+        }
+        partPlayback.queue.clear()
+        var range: (start: UInt64, end: UInt64)?
+        if let ref = RecordingPartRef(uri: uri), let m = manifests[ref.jobID],
+            let part = m.parts.first(where: { $0.part == ref.part })
+        {
+            range = SpeechRecords.range(over: over, of: part, in: m)
+        }
+        log("playback", "over \(over) of \(uri)\(range == nil ? ", whole part" : "")")
+        await startPlayback(uri, over: over, range: range)
+    }
+
+    /// The search field's words changed: while it holds some, every listed recording's speech is
+    /// read once, so a channel is found by what was said in it.
+    func searchSpeech() {
+        guard !recordingsQuery.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        for r in recordings where speechLines[r.jobID] == nil && speechLoads[r.jobID] == nil {
+            loadSpeech(for: r.jobID)
+        }
+    }
+
+    /// The speech line the search finds in `c`, or nil.
+    func speechHit(in c: RecordingChannel) -> SpeechHit? {
+        SpeechRecords.hit(recordingsQuery, in: c, speech: loadedSpeech)
+    }
+
+    /// The search's hit chosen: the channel, the part and the over are selected, and the page
+    /// scrolls to the over (`selectedOver`).
+    func select(hit: SpeechHit, in c: RecordingChannel) {
+        if selectedRecordingChannel != c.id { selectedRecordingChannel = c.id }
+        selectedPartURI = hit.partURI
+        selectedOver = hit.over
     }
 
     // MARK: Moving the radio over a recording
@@ -3834,4 +4094,13 @@ extension AppSession: ViewToolPerformer {
             return AppViewTools.shown(p)
         }
     }
+
+/// Transcribe's question while it is asked: the recording, the model chosen (empty for the
+/// speech feature's own) and `ley transcribe`'s words.
+struct TranscribeAsk: Equatable, Identifiable {
+    var recordingID: String
+    var model: String
+    var question: String
+
+    var id: String { recordingID + "\u{0}" + model }
 }

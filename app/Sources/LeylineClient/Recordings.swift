@@ -234,18 +234,23 @@ public struct RecordingManifest: Sendable, Equatable, Codable {
     /// which is what `ResolveLocalPath` returns for `ley://recordings/<id>`. Each part is given its
     /// capture (`RecordingPart.captureID`): the anchors' one capture when they name one, else the
     /// part sidecar's `anchor.capture_id`, which only a recording spanning two captures needs read.
+    /// A part whose squelch opened has its sidecar read for the openings themselves
+    /// (`RecordingPart.squelchIntervals`), which is where one over is found to play it.
     public static func read(at url: URL) throws -> RecordingManifest {
         var isDirectory: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
         let file = exists && isDirectory.boolValue ? url.appendingPathComponent(fileName) : url
         var manifest = try decode(Data(contentsOf: file))
         let captures = Set(manifest.anchors.map(\.captureID).filter { !$0.isEmpty })
-        if captures.count > 1 {
-            let directory = file.deletingLastPathComponent()
-            for i in manifest.parts.indices {
-                manifest.parts[i].captureID = sidecarCapture(
-                    directory.appendingPathComponent(manifest.parts[i].file))
-            }
+        let directory = file.deletingLastPathComponent()
+        for i in manifest.parts.indices {
+            let manyCaptures = captures.count > 1
+            guard manyCaptures || manifest.parts[i].squelchOpens > 0 else { continue }
+            let sidecar = PartSidecar.read(
+                beside: directory.appendingPathComponent(manifest.parts[i].file))
+            if manyCaptures { manifest.parts[i].captureID = sidecar?.captureID }
+            manifest.parts[i].squelchIntervals = sidecar?.intervals
+            manifest.parts[i].captureRate = sidecar?.captureRate
         }
         return manifest
     }
@@ -259,24 +264,6 @@ public struct RecordingManifest: Sendable, Equatable, Codable {
             for i in manifest.parts.indices { manifest.parts[i].captureID = only }
         }
         return manifest
-    }
-
-    /// The capture a part sidecar dates its samples on (`docs/design/recording.md`, "The part
-    /// sidecar"): the samples file's name with `.json` for its extension.
-    private static func sidecarCapture(_ samples: URL) -> String? {
-        struct Sidecar: Decodable {
-            struct Anchor: Decodable {
-                var captureID: String?
-                enum CodingKeys: String, CodingKey { case captureID = "capture_id" }
-            }
-            var anchor: Anchor?
-        }
-        let url = samples.deletingPathExtension().appendingPathExtension("json")
-        guard let data = try? Data(contentsOf: url),
-            let id = (try? JSONDecoder().decode(Sidecar.self, from: data))?.anchor?.captureID,
-            !id.isEmpty
-        else { return nil }
-        return id
     }
 
     /// `ley://recordings/<id>/<part>`: what `Control.StartPlayback` and `ResolveLocalPath` take
@@ -325,6 +312,16 @@ public struct RecordingPart: Sendable, Equatable, Codable {
     /// The capture the samples are on. Not in the file: `RecordingManifest.read(at:)` sets it
     /// from the anchors, and nil means it could not be told.
     public var captureID: String?
+    /// How long the squelch was open inside the part, in ms, written when the part closed; nil on
+    /// a continuous recording and on a part from a daemon older than the key, whose sidecar is
+    /// summed instead (docs/design/recording.md, "The manifest").
+    public var squelchOpenMs: Int64?
+    /// Each opening of the squelch inside the part, on its capture's timeline, from the part's
+    /// sidecar. Not in the manifest: `RecordingManifest.read(at:)` reads the sidecar of a part
+    /// whose squelch opened, and nil means it was not read. Over `n` is the `n`th, counted from 1.
+    public var squelchIntervals: [SquelchInterval]?
+    /// The rate the part's samples count in, from its sidecar's anchor, when `read(at:)` read it.
+    public var captureRate: UInt64?
 
     enum CodingKeys: String, CodingKey {
         case part, file, samples, bytes
@@ -333,13 +330,15 @@ public struct RecordingPart: Sendable, Equatable, Codable {
         case peakDBFS = "peak_dbfs"
         case meanDBFS = "mean_dbfs"
         case squelchOpens = "squelch_opens"
+        case squelchOpenMs = "squelch_open_ms"
         case clippedMs = "clipped_ms"
     }
 
     public init(
         part: Int, file: String, startSample: UInt64, endSample: UInt64, samples: UInt64,
         bytes: UInt64, peakDBFS: Double? = nil, meanDBFS: Double? = nil, squelchOpens: Int = 0,
-        clippedMs: Int64? = nil, captureID: String? = nil
+        clippedMs: Int64? = nil, captureID: String? = nil, squelchOpenMs: Int64? = nil,
+        squelchIntervals: [SquelchInterval]? = nil, captureRate: UInt64? = nil
     ) {
         self.part = part
         self.file = file
@@ -352,6 +351,9 @@ public struct RecordingPart: Sendable, Equatable, Codable {
         self.squelchOpens = squelchOpens
         self.clippedMs = clippedMs
         self.captureID = captureID
+        self.squelchOpenMs = squelchOpenMs
+        self.squelchIntervals = squelchIntervals
+        self.captureRate = captureRate
     }
 
     public init(from decoder: any Decoder) throws {
@@ -366,7 +368,10 @@ public struct RecordingPart: Sendable, Equatable, Codable {
         meanDBFS = try c.decodeIfPresent(Double.self, forKey: .meanDBFS)
         squelchOpens = try c.decodeIfPresent(Int.self, forKey: .squelchOpens) ?? 0
         clippedMs = try c.decodeIfPresent(Int64.self, forKey: .clippedMs)
+        squelchOpenMs = try c.decodeIfPresent(Int64.self, forKey: .squelchOpenMs)
         captureID = nil
+        squelchIntervals = nil
+        captureRate = nil
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -380,7 +385,55 @@ public struct RecordingPart: Sendable, Equatable, Codable {
         try c.encodeIfPresent(peakDBFS, forKey: .peakDBFS)
         try c.encodeIfPresent(meanDBFS, forKey: .meanDBFS)
         try c.encode(squelchOpens, forKey: .squelchOpens)
+        try c.encodeIfPresent(squelchOpenMs, forKey: .squelchOpenMs)
         try c.encodeIfPresent(clippedMs, forKey: .clippedMs)
+    }
+}
+
+/// One open-and-close of the squelch inside a part, on the capture's timeline at the capture rate
+/// (docs/design/recording.md, "The part sidecar", `squelch_opens`).
+public struct SquelchInterval: Sendable, Equatable, Codable {
+    public var openSample: UInt64
+    public var closeSample: UInt64
+
+    enum CodingKeys: String, CodingKey {
+        case openSample = "open_sample"
+        case closeSample = "close_sample"
+    }
+
+    public init(openSample: UInt64, closeSample: UInt64) {
+        self.openSample = openSample
+        self.closeSample = closeSample
+    }
+}
+
+/// What the window reads from a part's sidecar: the capture its samples are on, that capture's
+/// rate, and the squelch's openings. The samples file's name with `.json` for its extension.
+struct PartSidecar: Decodable {
+    struct Anchor: Decodable {
+        var captureID: String?
+        var sampleRate: UInt64?
+        enum CodingKeys: String, CodingKey {
+            case captureID = "capture_id"
+            case sampleRate = "sample_rate"
+        }
+    }
+    struct Recording: Decodable {
+        var squelchOpens: [SquelchInterval]?
+        enum CodingKeys: String, CodingKey { case squelchOpens = "squelch_opens" }
+    }
+    var anchor: Anchor?
+    var recording: Recording?
+
+    var captureID: String? { anchor?.captureID.flatMap { $0.isEmpty ? nil : $0 } }
+    var captureRate: UInt64? { anchor?.sampleRate.flatMap { $0 > 0 ? $0 : nil } }
+    var intervals: [SquelchInterval]? { recording?.squelchOpens }
+
+    /// The sidecar beside `samples`, or nil when there is none or it is not JSON.
+    static func read(beside samples: URL) -> PartSidecar? {
+        let url = samples.deletingPathExtension().appendingPathExtension("json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(PartSidecar.self, from: data)
     }
 }
 

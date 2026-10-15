@@ -97,6 +97,16 @@ public struct RecordingPartRef: Sendable, Equatable {
 
     /// The recording the part belongs to, `ley://recordings/<id>`.
     public var recordingURI: String { "ley://recordings/\(jobID)" }
+
+    /// The recording's id in `ley://recordings/<id>`, the form `DecodeConfig.source_uri` takes;
+    /// nil for any other URI, a part's included.
+    public static func recordingID(of uri: String) -> String? {
+        let prefix = "ley://recordings/"
+        guard uri.hasPrefix(prefix) else { return nil }
+        let id = uri.dropFirst(prefix.count)
+        guard !id.isEmpty, !id.contains("/") else { return nil }
+        return String(id)
+    }
 }
 
 /// The Library's player's words for one part: two lines beside the play button and the two ends of

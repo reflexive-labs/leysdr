@@ -34,6 +34,10 @@ public struct PartPlayback: Sendable, Equatable {
     /// and the progress line when several rows lie inside one part; nil when the part was
     /// started anywhere else.
     public private(set) var playingRowStart: Leyline_V1_SampleTime?
+    /// The over of the part playing when a speech line's click started it (`StartPlayback` with
+    /// that over's sample range), so only that line shows as playing; nil when the whole part
+    /// plays.
+    public private(set) var playingOver: Int?
     /// Play all's or Play day's parts still to play.
     public var queue = PlayQueue()
     /// Whether the mirror has listed the playback.
@@ -57,10 +61,12 @@ public struct PartPlayback: Sendable, Equatable {
         return nil
     }
 
-    /// The part about to be asked for, and the log row that asked, if one did.
-    public mutating func playing(_ uri: String, row: Leyline_V1_SampleTime?) {
+    /// The part about to be asked for, the log row that asked, if one did, and the over when only
+    /// that over plays.
+    public mutating func playing(_ uri: String, row: Leyline_V1_SampleTime?, over: Int? = nil) {
         playingURI = uri
         playingRowStart = row
+        playingOver = over
     }
 
     /// `StartPlayback` answered with `id`.
@@ -74,6 +80,7 @@ public struct PartPlayback: Sendable, Equatable {
     public mutating func failed() {
         playingURI = nil
         playingRowStart = nil
+        playingOver = nil
         queue.clear()
     }
 
@@ -98,6 +105,7 @@ public struct PartPlayback: Sendable, Equatable {
         playbackID = nil
         seen = false
         playingRowStart = nil
+        playingOver = nil
         if let next = queue.next() {
             playingURI = next
             return .next(next)
