@@ -1097,7 +1097,7 @@ undo stack; the newest-100 rule also runs when a conversation starts; an append 
 transcript line starts a line of its own; a half-written `conversation.json` is skipped and left
 on disk. `ley ask --delete` takes a unique id prefix.
 
-### AI-15 `[ ]` The assistant on an OpenAI-compatible endpoint
+### AI-15 `[x]` The assistant on an OpenAI-compatible endpoint
 
 Decided 2026-10-15: one key can serve both features. The worker gains a second `Model`
 implementation for the OpenAI-compatible chat API (`POST {base}/v1/chat/completions` with tools,
@@ -1114,7 +1114,12 @@ until then `ley ai add openai` as the only key makes `openai` the default for bo
 `worker.go` (selection), tests with `httptest` pinning the request shape and the tool-result
 ordering, `docs/dev/assistant.md`, `docs/design/ai.md` "Providers". Verify: the policy-row tests
 run against both models through the scripted harness; the `ask` e2e runs once per provider
-against a fake endpoint.
+against a fake endpoint. **Done 2026-10-15**: the chat completions API with `tool_calls` and
+`tool` messages, `max_completion_tokens` with a remembered fallback to `max_tokens`, input
+reported as prompt tokens less the cached ones so input and cache read add up as Anthropic's do,
+a 16384-token output limit because reasoning models count their hidden reasoning in it, every
+policy row run on both models, and an e2e on `openai` and on a gateway named `acme`. A key is
+always required, local servers included.
 
 ### AI-16 `[ ]` First-run ergonomics of `ley ai`
 
