@@ -1,0 +1,47 @@
+ask hands a request to the assistant, Leyline's own agent running on your
+provider key, and prints its answer as it arrives on stdout, with each tool
+it calls as one line on stderr and the first line of the result beneath it.
+
+Reading the radio's state, and the tuning, setting, stopping, scanning and
+recording you ask for, run at once and are reported. Taking over a radio
+someone else is using, deleting a recording, keeping a job, adding a webhook
+or several bookmarks, and paid transcription ask first with a [y/N] question
+on stderr; --yes allows all of them, and with no terminal to answer on and
+no --yes they are declined.
+
+With no request, ask reads one request per line at a '> ' prompt until a
+blank line or Ctrl-D. The conversation stays in the daemon after ask exits:
+--continue carries on the newest idle one, whether ask or the app started
+it, and starts a new one when there is none.
+
+Ctrl-C stops the assistant's turn and keeps the conversation; a second
+Ctrl-C, or one at the prompt, ends the conversation.
+
+The assistant calls the provider and model chosen with 'ley ai use
+assistant'; --provider and --model choose others for a new conversation.
+
+--json prints every state of the conversation as it changes, one
+Conversation per line (NDJSON), and no prose.
+
+Usage:
+  ley ask [request] [flags]
+
+Examples:
+  ley ask "tune to the NOAA weather radio"
+  ley ask                                    # a prompt, one request per line
+  ley ask --continue "now record it for ten minutes"
+  ley ask --yes "delete yesterday's recordings"   # allow what it asks
+  ley ask --json "what is on 2m?" | jq -r .state
+
+Flags:
+      --continue          carry on the newest idle conversation instead of starting one
+  -h, --help              help for ask
+      --model string      the model a new conversation calls (default: ley ai use assistant's)
+      --provider string   the provider a new conversation calls (default: ley ai use assistant's)
+  -y, --yes               allow everything the assistant asks to do, without a question
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

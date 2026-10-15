@@ -15,6 +15,7 @@ Examples:
   ley spectrum 101.1       # what is on the air around the FM broadcast band?
 
 Listening:
+  ask          Ask the assistant to run the radio for you
   play         Listen to a recording as if it were a radio
   record       Record a channel or the raw capture to a file
   tune         Listen to a frequency through the speakers

@@ -75,6 +75,7 @@ var jsonVerbs = []jsonVerbCase{
 	{path: "ai remove", args: []string{"ai", "remove", "anthropic"}, prep: prepKey},
 	{path: "ai use", args: []string{"ai", "use", "assistant", "anthropic", "claude-sonnet-5-5"}},
 	{path: "ai usage", args: []string{"ai", "usage"}},
+	{path: "ask", args: []string{"ask", "hello"}, prep: prepAssistant},
 	{path: "decode", args: []string{"decode", "aprs", "--count", "2"}},
 	{path: "decoders", args: []string{"decoders"}},
 	// start against a daemon already answering reports it rather than
@@ -147,6 +148,17 @@ func seededBookmarks(t *testing.T) map[string]string {
 func prepKey(t *testing.T, _ string, c *leyline.Client) []string {
 	t.Helper()
 	if _, err := c.Credentials.SetCredential(t.Context(), &leylinev1.SetCredentialRequest{Provider: "anthropic", Secret: "sk-ant-test-1234"}); err != nil {
+		t.Fatal(err)
+	}
+	return nil
+}
+
+// prepAssistant stores a key and chooses the assistant's model, so `ask` can start a
+// conversation.
+func prepAssistant(t *testing.T, sock string, c *leyline.Client) []string {
+	t.Helper()
+	prepKey(t, sock, c)
+	if _, err := c.Credentials.SetFeatureModel(t.Context(), &leylinev1.FeatureModel{Feature: "assistant", Provider: "anthropic", Model: "claude-sonnet-5-5"}); err != nil {
 		t.Fatal(err)
 	}
 	return nil
