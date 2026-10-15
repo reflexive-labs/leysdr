@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // One connection to one daemon: the gRPC client over the Unix socket, the identity interceptor,
-// and the six typed service clients. Lazy like the Go client (`go/pkg/leyline/client.go`): nothing
+// and the eight typed service clients. Lazy like the Go client (`go/pkg/leyline/client.go`): nothing
 // connects until the first RPC, and a socket with no listener fails that RPC with `UNAVAILABLE`.
 // Everything else in this module is built on it.
 
@@ -23,6 +23,8 @@ public final class DaemonConnection: Sendable {
     public let jobs: Leyline_V1_Jobs.Client<Transport>
     public let resources: Leyline_V1_Resources.Client<Transport>
     public let decoders: Leyline_V1_Decoders.Client<Transport>
+    public let credentials: Leyline_V1_Credentials.Client<Transport>
+    public let usage: Leyline_V1_Usage.Client<Transport>
 
     let client: GRPCClient<Transport>
     private let runner: Task<Void, any Error>
@@ -46,6 +48,8 @@ public final class DaemonConnection: Sendable {
         self.jobs = .init(wrapping: client)
         self.resources = .init(wrapping: client)
         self.decoders = .init(wrapping: client)
+        self.credentials = .init(wrapping: client)
+        self.usage = .init(wrapping: client)
         self.runner = Task { try await client.runConnections() }
     }
 

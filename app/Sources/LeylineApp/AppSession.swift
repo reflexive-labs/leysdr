@@ -189,6 +189,14 @@ final class AppSession {
             }
         }
     }
+    /// The Settings window's one line about the last key or model write: what the provider said
+    /// about a key, or why a write failed. Its own line rather than `notice`, which shows over the
+    /// main window's waterfall where a person in Settings would not see it; logged the same way.
+    private(set) var settingsNotice: String? {
+        didSet {
+            if let n = settingsNotice, n != oldValue { log("shown", "settings: \(n)") }
+        }
+    }
     /// The empty-state and out-of-capture messages last logged, so a change logs one line.
     private var shownEmptyWords: String?
     private var shownOutOfCapture: String?
@@ -3443,6 +3451,102 @@ final class AppSession {
         retuneQuestion = nil
         log("record", moveAnyway ? "moved anyway" : "move cancelled; the radio stays")
         if moveAnyway { q.proceed() } else { q.cancel() }
+    }
+
+    // MARK: Settings, AI
+
+    /// Stores `secret` as the key for `provider` and has the daemon check it once
+    /// (`Credentials.SetCredential`). The secret lives in this call's request and nowhere else:
+    /// never in the session's state and never in a log line. The reply's check is worded into
+    /// `settingsNotice`; the key's row arrives with the mirror's `ai` event, as a key `ley ai add`
+    /// stored does. Returns whether the daemon stored the key, so the form can clear its field.
+    func addKey(provider: String, secret: String, label: String, endpoint: String) async -> Bool {
+        guard let daemon else {
+            settingsNotice = Self.notDialledWords
+            return false
+        }
+        var req = Leyline_V1_SetCredentialRequest()
+        req.provider = provider
+        req.secret = secret
+        req.label = label
+        req.endpoint = endpoint
+        do {
+            let c = try await daemon.credentials.setCredential(req)
+            log("ai", "\(AISettings.keyWords(c)) added: \(KeyOutcome(c.lastCheck).word)")
+            settingsNotice = AISettings.addedWords(c)
+            return true
+        } catch {
+            settingsNotice = aiFailed("add the \(provider) key", error)
+            return false
+        }
+    }
+
+    /// Tries the stored key against the provider again (`Credentials.CheckCredential`).
+    func checkKey(provider: String) async {
+        guard let daemon else {
+            settingsNotice = Self.notDialledWords
+            return
+        }
+        var ref = Leyline_V1_CredentialRef()
+        ref.provider = provider
+        do {
+            let c = try await daemon.credentials.checkCredential(ref)
+            log("ai", "\(AISettings.keyWords(c)) checked: \(KeyOutcome(c.lastCheck).word)")
+            settingsNotice = AISettings.checkedWords(c)
+        } catch {
+            settingsNotice = aiFailed("check the \(provider) key", error)
+        }
+    }
+
+    /// Removes the key (`Credentials.DeleteCredential`); the daemon ends every job and
+    /// conversation that uses it, each with a line naming the key.
+    func removeKey(provider: String) async {
+        guard let daemon else {
+            settingsNotice = Self.notDialledWords
+            return
+        }
+        var ref = Leyline_V1_CredentialRef()
+        ref.provider = provider
+        do {
+            _ = try await daemon.credentials.deleteCredential(ref)
+            log("ai", "\(provider) key removed")
+            settingsNotice = "\(provider) key removed; anything that was using it has stopped."
+        } catch {
+            settingsNotice = aiFailed("remove the \(provider) key", error)
+        }
+    }
+
+    /// Chooses the provider and model a feature calls (`Credentials.SetFeatureModel`), as `ley ai
+    /// use` does; the pane's pickers show the mirror's value once the `ai` event carries it.
+    func setFeatureModel(feature: String, provider: String, model: String) async {
+        guard let daemon else {
+            settingsNotice = Self.notDialledWords
+            return
+        }
+        var fm = Leyline_V1_FeatureModel()
+        fm.feature = feature
+        fm.provider = provider
+        fm.model = model
+        do {
+            let got = try await daemon.credentials.setFeatureModel(fm)
+            log("ai", "\(got.feature) now calls \(got.provider) \(got.model)")
+            settingsNotice =
+                "\(AISettings.title(got.feature)) now calls \(got.provider) \(got.model)."
+        } catch {
+            let what = "choose the \(AISettings.title(feature).lowercased()) model"
+            settingsNotice = aiFailed(what, error)
+        }
+    }
+
+    func clearSettingsNotice() { settingsNotice = nil }
+
+    private static let notDialledWords = "The daemon is not running, so nothing was written."
+
+    /// The settings line for a write the daemon refused or never received, logged with its code.
+    private func aiFailed(_ what: String, _ error: any Error) -> String {
+        let e = LeylineError(error)
+        log("ai", "could not \(what): \(e.code) \(e.message)")
+        return "Could not \(what): \(e.message.isEmpty ? e.code : e.message)"
     }
 
     // MARK: The daemon's launch agent
