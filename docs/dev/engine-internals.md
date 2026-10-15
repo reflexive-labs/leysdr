@@ -59,9 +59,11 @@ engine/                       SwiftPM package (macOS 26+, Swift 6 toolchain, Swi
 │   │                         through the daemon's own audio device)
 │   ├── Services/             Control, Telemetry, Bulk, Jobs (scan, monitor, decode and record
 │   │                         implemented; watch UNIMPLEMENTED), Decoders, Resources, Credentials,
-│   │                         Usage
+│   │                         Usage, Assistant
 │   ├── AI/                   SecretStore (keychain or key file), CredentialStore (ai.json),
-│   │                         WorkerProcess (`ley worker check`), Ledger (usage.jsonl), UsageRecorder
+│   │                         WorkerProcess (`ley worker check`), Ledger (usage.jsonl), UsageRecorder,
+│   │                         ConversationStore (the assistant's conversations), AssistantWorker
+│   │                         (`ley worker assistant`)
 │   ├── ChildProcess.swift    a spawned program on pipes: decoder plugins and `ley` workers
 │   ├── ProgramLocator.swift  finds a program by name beside `leylined`, then on `PATH`
 │   ├── Bulk/                 stream registry: FFT/audio/IQ subscriptions -> rings -> gRPC frames
@@ -74,6 +76,8 @@ engine/                       SwiftPM package (macOS 26+, Swift 6 toolchain, Swi
 │                             built, not shipped
 ├── Sources/FakeDecoder       executable `leyline-fake-decoder`, a decoder plugin that decodes nothing,
 │                             for the decode-job tests; built, not shipped
+├── Sources/FakeWorker        executable `leyline-fake-worker`, a `ley worker assistant` that plays a
+│                             script, for the assistant tests; built, not shipped
 ├── Tests/EngineCoreTests     unit tests; fixture round-trips. Most of the target builds and runs on Linux;
 │                             `KernelParityTests` and anything under `#if canImport(Accelerate)` or
 │                             `#if canImport(AVFoundation)` need macOS and do not compile elsewhere.
@@ -654,6 +658,71 @@ with the line it changed. `GetState` carries both. Two changes that race to the 
 in the order they were made: each carries its store's version, and an older one is dropped
 (`SessionStore.publishAI(from:by:)`, `publishUsage`).
 
+### Assistant
+
+A conversation with the assistant is daemon state in memory (`ConversationStore`), and the model
+runs in a worker the daemon spawns for it, as a key check does: the daemon makes no model call and
+holds no provider SDK. `Assistant` (`AssistantService`) maps the RPCs onto the store, and any
+client may watch, answer or end any conversation, so `ley ask --continue` picks up one the app
+started.
+
+`StartConversation` takes the request's provider and model, else the `assistant` feature's
+(`ley ai use assistant <provider> <model>`); with neither it is `CREDENTIAL_MISSING` naming `ley ai
+add`. No key for the provider is `CREDENTIAL_MISSING`, and a key whose last check was `REJECTED`
+is `CREDENTIAL_REJECTED` in the provider's words. An empty model is the worker's default for the
+provider. The daemon then mints `conv_<ulid>` and runs `ley worker assistant --conversation <id>`
+(`WorkerProcess.startAssistant`, the same `ley` lookup as a check) with the daemon's environment
+plus `LEYLINE_SOCKET` and `LEYLINE_KEY_ON_STDIN=1`. Both directions of its stdio are
+varint-delimited protobuf, framed as a decoder plugin's are (`AssistantWorker`). On stdin the
+worker reads, in order: one `SetCredentialRequest` (provider, secret, endpoint), one
+`WorkerEvent.start` (`WorkerStart`: the conversation id, provider, model, endpoint, the client's
+view tools and the socket), then `WorkerEvent`s until stdin closes. Both are written before the
+reply, into the pipe, so the worker may read them at its own pace; the key is never an argument
+or a variable. On stdout it writes `WorkerMessage`s. Its tool calls and its `ReportUsage` go over
+the socket like any client's. A worker that cannot be found or started, or does not take its key,
+is `PROVIDER_UNAVAILABLE` and leaves no conversation behind. The reply is the conversation `IDLE`.
+
+The daemon derives the state from the turns the worker writes. A `Turn` replaces the turn with
+its id, or is appended when the id is new; its role is set to the assistant's whatever the worker
+wrote, and a turn that names a user turn's id is ignored with a warning. A turn marked `done`
+makes the conversation `IDLE`; one whose last call is `AWAITING_APPROVAL` or `AWAITING_CLIENT`
+makes it `WAITING` with that call copied into `pending`; any other makes it `THINKING`. A
+`WorkerFailure` makes it `FAILED` with the worker's error (`INTERNAL` when the worker gives no
+code). What the worker writes, turns and errors alike, has the key replaced as a check's answer
+does.
+
+The clients move it only by what they send. `SendMessage` is `FAILED_PRECONDITION` unless `IDLE`;
+it adds the user turn `t<n>`, one past the highest `tN` so far, writes `UserMessage` with that id
+and makes the conversation `THINKING`. The worker names its own turn; the fake worker and the
+daemon's tests use `t<n+1>`. `ResolveAction` and `AnswerViewTool` are `FAILED_PRECONDITION`
+unless the conversation is `WAITING` on that call and the call is of their kind (an approval, a
+view tool); each writes `ActionResolved` or `ViewToolAnswer`, marks the call `RUNNING`
+(approved), `REFUSED` (declined) or `DONE` with the client's answer until the worker's next turn
+says otherwise, and makes the conversation `THINKING`. `StopTurn` writes `WorkerStop`, which the
+worker answers by marking the turn done, and waits up to 2 s for that before it replies; on an
+`IDLE` conversation it changes nothing.
+
+Every change bumps the conversation's own `seq` and goes out whole (invariant 6): to each
+`WatchConversation` stream, then as `Event.conversation`. The event is version-guarded like
+`Event.ai`: a state no newer than the one last published for that conversation is dropped
+(`SessionStore.publishConversation`). `WatchConversation` sends the current state first unless
+`since_seq` is the conversation's current `seq` (the client already has it), so a stale or zero
+`since_seq` gets the current state rather than history, and the stream ends after it delivers
+`ENDED` or `FAILED`. `ListConversations` is newest first; `GetState.conversations` is the same
+list.
+
+A conversation is not kept (invariant 8). It ends (`ENDED`) when a client calls
+`EndConversation`, after 30 minutes `IDLE` (a sweep every 30 s; `ConversationStore.Timing` takes
+both and the clock, for tests), when its worker exits between turns, and at the daemon's shutdown,
+which ends every conversation straight after the listener stops. A worker that exits while
+`THINKING` or `WAITING` fails its own conversation, `INTERNAL` "the assistant stopped
+unexpectedly (status N)", and no other. Ending closes the worker's stdin, gives it 2 s to exit,
+then sends `SIGTERM` and, a second later, `SIGKILL`; `EndConversation` replies once the worker has
+gone. An ended or failed conversation stays listed, the newest 32 of them. An unknown
+`conversation_id` is `INVALID_ARGUMENT`. The worker's stderr is logged a line at a time under
+`leyline.assistant.<conversation id>` with the key replaced; the store's own lines are
+`leyline.assistant`.
+
 ### Error codes
 
 Every stable code a daemon puts in `ErrorDetail.code`, and the gRPC status it is served with. This
@@ -1060,7 +1129,8 @@ resolved values in `PersistenceParams` on the stream descriptor.
   after the socket, `leyline.pid` / `/tmp/leyline-<uid>.pid`, so two sockets in one directory never
   share it). `SIGTERM`/`SIGINT` → graceful stop (captures stopped, devices closed, socket unlinked).
 - Stop order: the listener stops accepting first, because an RPC admitted during teardown builds
-  state the store that owns it is about to drop; then jobs are cancelled (a running sweep gets its
+  state the store that owns it is about to drop; then every assistant conversation ends and its
+  worker is stopped ("Assistant"), jobs are cancelled (a running sweep gets its
   seconds to hand a capture lease back), streams close, the store shuts down and the registry stops.
   The socket and pidfile are unlinked last, after the devices are closed — while those paths exist a
   replacement daemon takes itself for the live one and races this one for the radios. Teardown runs
