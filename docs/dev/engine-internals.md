@@ -980,11 +980,27 @@ before its first opening and never before the previous segment ended, a hang aft
 last close, so every earlier interval had closed by then. The recorder's part boundaries (a 5 s
 hang) and the segmenter's (500 ms) differ by design; `over` indexes openings, which both read from
 the same squelch records. A record waits up to 2 s for a recorder that has not reached its opening
-yet, and goes out with no clip and `over` 0 if it never does. The writer keeps the intervals of the
-last 64 closed parts for this.
+yet, and goes out with no clip and `over` 0 if it never does; it does not wait at all once the
+recorder has stopped (by the job's stop or on its own, which its status reports) or when no part
+is open and the last closed part ended after the segment's opening could have been
+(`PartWriter.ClipLookup.never`). The writer keeps the intervals of the last 64 closed parts for
+this. The clips hold every over the squelch opened on, including those a watch's predicate drops.
+
+The clips are bounded: they may hold a tenth of the record store's cap
+(`JobStore.clipsShareOfStoreCap`; `--store-cap`, 2 GiB by default, so about 200 MiB), and each
+time a part closes past it the recording's own oldest parts are removed, files and sidecars, the
+newest always kept (`PartWriter.trimToCap`). Parts are also cut at half that share in time, so
+the part being written never holds more; a transmission across such a cut is listed in the part
+it began in, as any `part_ms` cut does. A job that runs for weeks keeps its latest overs, and its
+clips never push the user's other recordings out of the recordings store. A record whose part was
+removed keeps a `clip_uri` that no longer resolves.
 
 The clips persist only when the job is kept (invariant 8): an unkept job's recording is deleted
-when the job ends, however it ends, a daemon shutdown included. A kept job the daemon takes down
+when the job ends, however it ends, a daemon shutdown included, after `RecordRunner.stop` has
+returned, which waits for a teardown the recorder began on its own, so the directory is never
+removed under a manifest write. Unkept clips carry `"keep": false` in `recording.json`, and a
+daemon killed before it could remove them leaves an orphan that the next boot's repair deletes
+instead of closing it as a restart. A kept job the daemon takes down
 closes its recording with `ended_by = restart`; when `kept-jobs.json` brings the job back,
 `RecordingStore.carryOn` opens the same recording again, clears `ended_by`, adds the new capture's
 anchor beside the old, and numbers the new parts after the old ones. A kept job whose recording is

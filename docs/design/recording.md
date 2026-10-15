@@ -178,7 +178,11 @@ parts, and what `ley recordings show` prints.
 `ended_by` is one of `duration`, `quiet`, `cancelled`, `channel ended`, `restart`, `store full`,
 `error`. `anchors` is a list for the same reason the kept-records sidecar's is: a recording that
 spans a device detach and reattach spans two captures, and each part's samples are dated by the
-anchor of its own capture.
+anchor of its own capture. `keep` is present, and `false`, only on the clips of a live speech job
+that was not kept: they are deleted when the job ends, and the boot after a daemon that died first
+deletes them too rather than closing them as a restart. A kept speech job's clips drop their own
+oldest parts past a tenth of the record store's cap, so the part numbers of a long-running job's
+recording need not start at 1.
 
 A part's `squelch_open_ms` is how long the squelch was open inside it: its sidecar's
 `squelch_opens` intervals summed at the capture rate and rounded once, written when the part

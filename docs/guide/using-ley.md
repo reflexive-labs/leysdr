@@ -967,13 +967,16 @@ decoding speech on 146.620 MHz. The overs are recorded as ley://recordings/job_0
 02:36:48 part 1 over 2  kilo delta two x-ray yankee zulu, go ahead (KD2XYZ)
 left running; ley jobs cancel 2 stops it
 $ ley records --protocol speech
-TIME      PROTOCOL  DEVICE  KIND  CLIP  SUMMARY
+TIME      PROTOCOL  DEVICE  KIND  OVER  SUMMARY
 02:36:47  speech    -       -     1/2   kilo delta two x-ray yankee zulu, go ahead
 02:36:43  speech    -       -     1/1   this is whiskey six alpha bravo charlie
 ```
 
 With `--job` the job transcribes until `ley jobs cancel`, and the words and the recording are both
-kept; without it, the recording goes when the job ends. Once the job has ended, `ley transcribe`
+kept; without it, the recording goes when the job ends. The recording holds every over, including
+the ones a watch's filter leaves out. A kept job's recording may grow to a tenth of the record
+store's cap (`leylined --store-cap`, 2 GiB by default) before its own oldest parts are removed, so
+a job left running for weeks keeps its latest overs without pushing out your other recordings. Once the job has ended, `ley transcribe`
 can read its recording again with another model and gives the same parts and overs. A watch works
 on the words too: `ley watch speech --freq 146.52 --where 'text~net control' --notify --detach`
 shows a notification whenever an over says "net control", since `~` matches whole words in order

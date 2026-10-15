@@ -59,7 +59,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # as ley://recordings/<job_id>, kept only with --job
 ├── records [--protocol P] [--job-id ID] [--device-id ID] [--kind K] [--since 1h] [--near LAT,LON --radius 10km] [--in-effect] [--limit N]
 │                                    # Decoders.QueryRecords over what kept jobs wrote, newest first;
-│                                    # a CLIP column (<part>/<over>) when a record names a clip
+│                                    # an OVER column (<part>/<over>) when a record names a clip
 ├── transcribe <recording> [--engine D] [--model M] [--yes]
 │                                    # a kept decode job with DecodeConfig.source_uri: a speech decoder reads
 │                                    # a gated recording one over at a time; states the minutes of
@@ -260,8 +260,9 @@ the ones its predicate matched: `--where field=value` (with `!=`, `~` for contai
 macOS notification, `--notify=webhook:URL` or `--notify=shell:CMD`) becomes a
 `DecodeConfig.notify` the daemon fires on each match. Attached it streams and cancels on exit;
 `--detach` (alias `--job`) keeps the job so the notifier fires unattended, printing the id and
-`ley jobs cancel` on stderr. The `ley records` table adds a CLIP column, `<part>/<over>` of the
-recording named by the record's `clip_uri`, when any record on the page has one. `ley records --json` prints a `RecordPage`: the records newest first plus the
+`ley jobs cancel` on stderr. The `ley records` table adds an OVER column, `<part>/<over>` of the
+recording named by the record's `clip_uri`, when any record on the page has one; DEVICE, which a
+speech record never fills, is then the first column a narrow terminal drops. `ley records --json` prints a `RecordPage`: the records newest first plus the
 `RecordAnchor`s that date them, because no record carries a clock of its own and wall time is
 derived from the anchor whose `from_sample` is not past the record's (`docs/design/decoders.md`,
 "Decisions"). `ley track --json` is the fourth documented exception to the proto3 rule, beside the
