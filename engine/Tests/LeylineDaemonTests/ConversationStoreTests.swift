@@ -113,6 +113,36 @@ final class ConversationStoreTests: XCTestCase {
                        "an id the daemon cannot read still counts as a turn")
     }
 
+    func testReplayIsEveryVersionAfterTheClientsOrTheCurrentState() {
+        let versions = (1...100).map { seq -> Leyline_V1_Conversation in
+            var conversation = Leyline_V1_Conversation()
+            conversation.seq = UInt64(seq)
+            return conversation
+        }
+        let kept = Array(versions.suffix(ConversationStore.keptVersions))
+        let current = versions[99]
+        XCTAssertEqual(ConversationStore.replay(kept, current: current, sinceSeq: 0).map(\.seq), [100])
+        XCTAssertEqual(ConversationStore.replay(kept, current: current, sinceSeq: 100).map(\.seq), [])
+        XCTAssertEqual(ConversationStore.replay(kept, current: current, sinceSeq: 97).map(\.seq), [98, 99, 100])
+        XCTAssertEqual(ConversationStore.replay(kept, current: current, sinceSeq: 36).count, 64, "the oldest kept version")
+        XCTAssertEqual(ConversationStore.replay(kept, current: current, sinceSeq: 35).map(\.seq), [100],
+                       "older than what is kept gets the current state")
+        XCTAssertEqual(ConversationStore.replay(kept, current: current, sinceSeq: 500).map(\.seq), [100])
+    }
+
+    func testAStoppedTurnIsDoneWithNothingRunningOrWaiting() {
+        var conversation = Leyline_V1_Conversation()
+        conversation.fold(turn("t2", lastCall: .toolCallAwaitingApproval))
+        conversation.turns[0].tools[0].state = .toolCallRunning
+        conversation.closeStoppedTurn()
+        XCTAssertEqual(conversation.state, .conversationIdle)
+        XCTAssertFalse(conversation.hasPending)
+        XCTAssertEqual(conversation.turns[0].done, true)
+        XCTAssertEqual(conversation.turns[0].tools.map(\.state), [.toolCallDone, .toolCallRefused])
+        XCTAssertEqual(conversation.turns[0].tools[0].resultText, "stopped")
+        XCTAssertTrue(conversation.turns[0].tools[0].isError)
+    }
+
     // MARK: Lifetime
 
     func testAConversationIdleForThirtyMinutesEnds() async throws {

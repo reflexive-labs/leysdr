@@ -110,11 +110,11 @@ final class AssistantServiceTests: XCTestCase {
 
     // MARK: Starting
 
-    func testStartWithoutAKeyIsCredentialMissingNamingTheCommand() async throws {
+    func testStartWithoutAModelOrAKeyIsRefusedNamingTheCommand() async throws {
         try await withAssistant(scripts: ["end"], chooseModel: false, addKey: false) { c, _ in
             let unnamed = await self.failure { _ = try await self.start(c) }
-            XCTAssertEqual(unnamed.code, EngineError.Code.credentialMissing)
-            XCTAssertTrue(unnamed.text.contains("ley ai add"), unnamed.text)
+            XCTAssertEqual(unnamed.code, EngineError.Code.failedPrecondition)
+            XCTAssertTrue(unnamed.text.contains("ley ai use assistant <provider> <model>"), unnamed.text)
             var request = Leyline_V1_StartConversationRequest()
             request.provider = "anthropic"
             let named = await self.failure { _ = try await c.assistant.startConversation(request, metadata: testMetadata) }
@@ -280,16 +280,34 @@ final class AssistantServiceTests: XCTestCase {
     }
 
     func testSendingWhileThinkingIsRefusedAndStopTurnEndsTheTurn() async throws {
-        try await withAssistant(scripts: ["text working on it\nsleep 10000\ntext never said\nend\n\ntext second\nend"]) { c, _ in
+        let script = """
+        text working on it
+        sleep 300
+        tool scan_band {}
+        ask delete_recording {"id":"rec_1"} deleting a recording asks every time
+        text never said
+        end
+
+        text second
+        end
+        """
+        try await withAssistant(scripts: [script]) { c, _ in
             let id = try await self.start(c).conversationID
             _ = try await self.send(c, id, "scan the band")
             _ = try await self.conversation(c, id) { $0.turns.last?.text == "working on it" }
             let busy = await self.failure { _ = try await self.send(c, id, "are you done?") }
             XCTAssertEqual(busy.code, EngineError.Code.failedPrecondition)
+            _ = try await self.conversation(c, id) { $0.state == .conversationWaiting }
             let stopped = try await c.assistant.stopTurn(self.ref(id), metadata: testMetadata)
             XCTAssertEqual(stopped.state, .conversationIdle, "the worker marks the turn done at once")
+            XCTAssertFalse(stopped.hasPending)
             XCTAssertEqual(stopped.turns.last?.done, true)
             XCTAssertEqual(stopped.turns.last?.text, "working on it")
+            let calls = stopped.turns.last?.tools ?? []
+            XCTAssertEqual(calls.map(\.state), [.toolCallDone, .toolCallRefused],
+                           "a running call is done as stopped, a waiting one refused")
+            XCTAssertEqual(calls.first?.isError, true)
+            XCTAssertEqual(calls.first?.resultText, "stopped")
             let again = try await c.assistant.stopTurn(self.ref(id), metadata: testMetadata)
             XCTAssertEqual(again.state, .conversationIdle, "stopping an idle conversation changes nothing")
             _ = try await self.send(c, id, "next")
@@ -393,7 +411,7 @@ final class AssistantServiceTests: XCTestCase {
         }
     }
 
-    func testWatchSendsTheCurrentStateFirstUnlessTheClientHasIt() async throws {
+    func testWatchReplaysWhatTheClientHasNotSeen() async throws {
         try await withAssistant(scripts: ["end"]) { c, _ in
             let id = try await self.start(c).conversationID
             _ = try await self.send(c, id, "hello")
@@ -402,10 +420,11 @@ final class AssistantServiceTests: XCTestCase {
             let fresh = await ConversationWatch.start(c, id, sinceSeq: 0)
             let stale = await ConversationWatch.start(c, id, sinceSeq: 1)
             let caughtUp = await ConversationWatch.start(c, id, sinceSeq: current.seq)
-            let freshFirst = await fresh.seen.first
-            let staleFirst = await stale.seen.first
-            XCTAssertEqual(freshFirst?.seq, current.seq, "since_seq 0 gets the current state first")
-            XCTAssertEqual(staleFirst?.seq, current.seq, "a stale since_seq gets the current state, not history")
+            _ = await stale.waitFor { $0.seq == current.seq }
+            let freshSeen = await fresh.seen.map(\.seq)
+            let staleSeen = await stale.seen.map(\.seq)
+            XCTAssertEqual(freshSeen, [current.seq], "since_seq 0 gets the current state alone")
+            XCTAssertEqual(staleSeen, Array(2...current.seq), "since_seq 1 replays every version after it")
             try await Task.sleep(nanoseconds: 200_000_000)
             let quiet = await caughtUp.seen
             XCTAssertTrue(quiet.isEmpty, "a client that has the current state gets nothing older")

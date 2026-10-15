@@ -666,9 +666,8 @@ holds no provider SDK. `Assistant` (`AssistantService`) maps the RPCs onto the s
 client may watch, answer or end any conversation, so `ley ask --continue` picks up one the app
 started.
 
-`StartConversation` takes the request's provider and model, else the `assistant` feature's
-(`ley ai use assistant <provider> <model>`); with neither it is `CREDENTIAL_MISSING` naming `ley ai
-add`. No key for the provider is `CREDENTIAL_MISSING`, and a key whose last check was `REJECTED`
+`StartConversation` takes the request's provider and model, else the `assistant` feature's; with
+neither it is `FAILED_PRECONDITION` naming `ley ai use assistant <provider> <model>`. No key for the provider is `CREDENTIAL_MISSING`, and a key whose last check was `REJECTED`
 is `CREDENTIAL_REJECTED` in the provider's words. An empty model is the worker's default for the
 provider. The daemon then mints `conv_<ulid>` and runs `ley worker assistant --conversation <id>`
 (`WorkerProcess.startAssistant`, the same `ley` lookup as a check) with the daemon's environment
@@ -679,7 +678,8 @@ worker reads, in order: one `SetCredentialRequest` (provider, secret, endpoint),
 view tools and the socket), then `WorkerEvent`s until stdin closes. Both are written before the
 reply, into the pipe, so the worker may read them at its own pace; the key is never an argument
 or a variable. On stdout it writes `WorkerMessage`s. Its tool calls and its `ReportUsage` go over
-the socket like any client's. A worker that cannot be found or started, or does not take its key,
+the socket like any client's, with the conversation id as the usage scope; the daemon reports no
+usage for a conversation itself. A worker that cannot be found or started, or does not take its key,
 is `PROVIDER_UNAVAILABLE` and leaves no conversation behind. The reply is the conversation `IDLE`.
 
 The daemon derives the state from the turns the worker writes. A `Turn` replaces the turn with
@@ -699,16 +699,20 @@ unless the conversation is `WAITING` on that call and the call is of their kind 
 view tool); each writes `ActionResolved` or `ViewToolAnswer`, marks the call `RUNNING`
 (approved), `REFUSED` (declined) or `DONE` with the client's answer until the worker's next turn
 says otherwise, and makes the conversation `THINKING`. `StopTurn` writes `WorkerStop`, which the
-worker answers by marking the turn done, and waits up to 2 s for that before it replies; on an
-`IDLE` conversation it changes nothing.
+worker answers by marking the turn done, and waits up to 2 s for that. Then, whether the worker
+answered or not, the daemon closes the turn: it is marked done, a call still `AWAITING_APPROVAL`
+or `AWAITING_CLIENT` becomes `REFUSED`, one still `RUNNING` becomes `DONE` with `is_error` and
+the result "stopped", and the conversation is `IDLE`. On an `IDLE` conversation `StopTurn` changes
+nothing, and on an ended or failed one it is `FAILED_PRECONDITION`.
 
 Every change bumps the conversation's own `seq` and goes out whole (invariant 6): to each
 `WatchConversation` stream, then as `Event.conversation`. The event is version-guarded like
 `Event.ai`: a state no newer than the one last published for that conversation is dropped
-(`SessionStore.publishConversation`). `WatchConversation` sends the current state first unless
-`since_seq` is the conversation's current `seq` (the client already has it), so a stale or zero
-`since_seq` gets the current state rather than history, and the stream ends after it delivers
-`ENDED` or `FAILED`. `ListConversations` is newest first; `GetState.conversations` is the same
+(`SessionStore.publishConversation`). `WatchConversation` first catches the client up from
+`since_seq`: 0 sends the current state alone, the current `seq` sends nothing, and any other
+sends every version after it from the last 64 the daemon keeps per conversation; a `since_seq`
+older than those, or newer than the conversation, sends the current state. The stream then goes
+live and ends after it delivers `ENDED` or `FAILED`. `ListConversations` is newest first; `GetState.conversations` is the same
 list.
 
 A conversation is not kept (invariant 8). It ends (`ENDED`) when a client calls

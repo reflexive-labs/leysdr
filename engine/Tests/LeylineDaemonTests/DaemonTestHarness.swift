@@ -312,9 +312,9 @@ func writeFakeWorkerLey(in dir: String, scripts: [String]) throws -> String {
     #!/bin/sh
     n=0
     if [ "$2" = assistant ]; then
-        n=$(cat "\(dir)/started" 2>/dev/null || echo 0)
-        n=$((n + 1))
-        echo "$n" > "\(dir)/started"
+        # mkdir is atomic, so two workers starting at once never take the same number.
+        n=1
+        until mkdir "\(dir)/started.$n" 2>/dev/null; do n=$((n + 1)); done
     fi
     script="\(dir)/script.$n"
     [ -f "$script" ] || script="\(dir)/script.\(scripts.count)"

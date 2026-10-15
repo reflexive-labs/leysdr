@@ -35,6 +35,8 @@ actor ConversationStore {
 
     /// Finished conversations kept for listing; older ones are forgotten.
     static let keptFinished = 32
+    /// How many versions of each conversation `WatchConversation` can replay.
+    static let keptVersions = 64
     /// How long `StopTurn` waits for the worker to mark the turn done before it answers anyway.
     static let stopWaitSeconds: Double = 2
 
@@ -46,6 +48,8 @@ actor ConversationStore {
         /// When the conversation last became IDLE; nil in any other state.
         var idleSince: ContinuousClock.Instant?
         var watchers: [UUID: AsyncStream<Leyline_V1_Conversation>.Continuation] = [:]
+        /// The newest `keptVersions` states, oldest first, for `watch(_:sinceSeq:)` to replay.
+        var history: [Leyline_V1_Conversation] = []
     }
 
     private let credentials: CredentialStore
@@ -76,13 +80,14 @@ actor ConversationStore {
         try entry(id).conversation
     }
 
-    /// The conversation as it changes. A client that already has `sinceSeq` and is current gets
-    /// nothing until the next change; any other client (0, stale, or ahead of the daemon after a
-    /// restart) gets the current state first. The stream ends after it delivers ENDED or FAILED.
+    /// The conversation as it changes, after what the client already has (`replay`). The stream
+    /// ends after it delivers ENDED or FAILED.
     func watch(_ id: String, sinceSeq: UInt64) throws -> AsyncStream<Leyline_V1_Conversation> {
-        let current = try entry(id).conversation
-        let (stream, continuation) = AsyncStream<Leyline_V1_Conversation>.makeStream(bufferingPolicy: .bufferingNewest(64))
-        if sinceSeq != current.seq { continuation.yield(current) }
+        let found = try entry(id)
+        let current = found.conversation
+        let (stream, continuation) = AsyncStream<Leyline_V1_Conversation>.makeStream(
+            bufferingPolicy: .bufferingNewest(2 * Self.keptVersions))
+        for version in Self.replay(found.history, current: current, sinceSeq: sinceSeq) { continuation.yield(version) }
         if Self.isFinished(current.state) {
             continuation.finish()
             return stream
@@ -194,9 +199,9 @@ actor ConversationStore {
         }
     }
 
-    /// Asks the worker to stop the running turn and waits up to `stopWaitSeconds` for it to mark
-    /// the turn done. An IDLE conversation is returned as it is; an ended or failed one is
-    /// FAILED_PRECONDITION.
+    /// Asks the worker to stop the running turn, waits up to `stopWaitSeconds` for it to mark the
+    /// turn done, then closes the turn whatever the worker did (`closeStoppedTurn`). An IDLE
+    /// conversation is returned as it is; an ended or failed one is FAILED_PRECONDITION.
     func stopTurn(_ id: String, by client: ClientContext) async throws -> Leyline_V1_Conversation {
         let current = try entry(id)
         switch current.conversation.state {
@@ -216,7 +221,13 @@ actor ConversationStore {
         {
             try? await Task.sleep(nanoseconds: 20_000_000)
         }
-        return try entry(id).conversation
+        // Whether the worker marked the turn done or never answered, the turn is over: nothing in
+        // it may still look as if it runs or waits.
+        guard let after = entries[id]?.conversation, !Self.isFinished(after.state) else { return try entry(id).conversation }
+        var closed = after
+        closed.closeStoppedTurn()
+        guard closed != after else { return after }
+        return await commit(id, by: client) { $0.conversation.closeStoppedTurn() }
     }
 
     /// Ends the conversation and stops its worker: stdin closed, then `SIGTERM` and `SIGKILL`
@@ -327,6 +338,8 @@ actor ConversationStore {
             e.idleSince = nil
         }
         let conversation = e.conversation
+        e.history.append(conversation)
+        if e.history.count > Self.keptVersions { e.history.removeFirst(e.history.count - Self.keptVersions) }
         for watcher in e.watchers.values { watcher.yield(conversation) }
         if Self.isFinished(conversation.state) {
             for watcher in e.watchers.values { watcher.finish() }
@@ -381,6 +394,20 @@ actor ConversationStore {
         for conversation in oldest { entries[conversation.conversationID] = nil }
     }
 
+    /// What a watcher that has `sinceSeq` is sent before the live changes: 0 is the current state
+    /// alone; a seq still in `history` is every version after it; a seq older than that, or newer
+    /// than the conversation (a client that kept one across a daemon restart), is the current
+    /// state; the current seq is nothing.
+    static func replay(_ history: [Leyline_V1_Conversation], current: Leyline_V1_Conversation,
+                       sinceSeq: UInt64) -> [Leyline_V1_Conversation]
+    {
+        if sinceSeq == current.seq { return [] }
+        guard sinceSeq != 0, sinceSeq < current.seq else { return [current] }
+        let newer = history.filter { $0.seq > sinceSeq }
+        guard newer.first?.seq == sinceSeq + 1 else { return [current] }
+        return newer
+    }
+
     private func entry(_ id: String) throws -> Entry {
         guard let e = entries[id] else {
             throw EngineError.invalidArgument("there is no conversation called \(id); ListConversations lists them", target: id)
@@ -408,16 +435,17 @@ actor ConversationStore {
     }
 
     /// Resolves the request's provider and model: the request's own, else the `assistant`
-    /// feature's. A model left empty is the worker's default for the provider.
+    /// feature's; FAILED_PRECONDITION when neither names a provider. A model left empty is the
+    /// worker's default for the provider.
     private func resolveModel(_ request: Leyline_V1_StartConversationRequest) async throws -> (String, String) {
         var provider = request.provider.trimmingCharacters(in: .whitespacesAndNewlines)
         var model = request.model.trimmingCharacters(in: .whitespacesAndNewlines)
         let chosen = await credentials.snapshot().features.first { $0.feature == "assistant" }
         if provider.isEmpty {
             guard let chosen, !chosen.provider.isEmpty else {
-                throw EngineError(code: EngineError.Code.credentialMissing,
-                                  message: "no provider is chosen for the assistant; add a key with ley ai add <provider>, then choose a model with ley ai use assistant <provider> <model>",
-                                  target: "assistant")
+                throw EngineError.failedPrecondition(
+                    "no model is chosen for the assistant; choose one with ley ai use assistant <provider> <model>",
+                    target: "assistant")
             }
             provider = chosen.provider
             if model.isEmpty { model = chosen.model }
@@ -514,6 +542,29 @@ extension Leyline_V1_Conversation {
             state = .conversationThinking
             clearPending()
         }
+    }
+
+    /// Ends a stopped turn: the newest turn, when it is the assistant's, is marked done, a call
+    /// still waiting on someone is REFUSED and one still running is DONE as an error, "stopped".
+    /// The conversation is IDLE.
+    mutating func closeStoppedTurn() {
+        if let last = turns.indices.last, turns[last].role == .assistant {
+            turns[last].done = true
+            for c in turns[last].tools.indices {
+                switch turns[last].tools[c].state {
+                case .toolCallAwaitingApproval, .toolCallAwaitingClient:
+                    turns[last].tools[c].state = .toolCallRefused
+                case .toolCallRunning:
+                    turns[last].tools[c].state = .toolCallDone
+                    turns[last].tools[c].isError = true
+                    turns[last].tools[c].resultText = "stopped"
+                default:
+                    break
+                }
+            }
+        }
+        state = .conversationIdle
+        clearPending()
     }
 
     /// Changes the call `callID` in whichever turn holds it, newest first.
