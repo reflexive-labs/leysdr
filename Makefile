@@ -15,6 +15,9 @@
 #   make fixtures   generate IQ fixtures into fixtures/ with leyfix (FIXTURE_DURATION=0.5 for a quick set)
 #   make e2e        cross-language contract test: `ley` driving a locally built leylined over UDS
 #   make eval       the agent evals: an agent on `ley mcp` against fixtures, graded (costs tokens)
+#   make speech-spike RECORDING=<id> ENGINES="speech <decoder>=<model>"
+#                   one row per speech engine on a gated recording, scored against its hand
+#                   transcript (docs/dev/speech-spike.md); a cloud engine costs what it bills
 #   make shots      the site's screenshots into tmp/shots (docs/plans/site-shots.md): only the scenes
 #                   whose inputs changed since their image was taken; ONLY=a,b takes those scenes
 #                   whatever changed. The app scenes need the Mac; elsewhere terminal
@@ -84,7 +87,7 @@ ACTIONLINT_VERSION := v1.7.12
 CODESIGN_IDENTITY ?= Developer ID Application: Reflexive Labs LLC. (P2KZW25PL8)
 NOTARY_PROFILE ?= leysdr-notary
 
-.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval shots shots-bundle shots-publish shots-release release release-build release-publish release-rehearse release-test app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders
+.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval speech-spike shots shots-bundle shots-publish shots-release release release-build release-publish release-rehearse release-test app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders
 
 all: go swift app
 
@@ -208,6 +211,15 @@ eval: go swift fixtures
 	cd go && LEYLINED_BIN="$$(cd ../engine && swift build -c $(SWIFT_CONFIG) --show-bin-path)/leylined" LEY_BIN=$(GOBIN)/ley \
 		LEYLINE_FIXTURES=$(CURDIR)/fixtures LEYLINE_DECODERS=$(CURDIR)/decoders PATH="$(GOBIN):$$PATH" \
 		go run ./cmd/leyeval run --scenarios $(CURDIR)/evals/scenarios --out $(CURDIR)/evals/runs $(EVAL_ARGS)
+
+# The speech-to-text spike (docs/dev/speech-spike.md): leyspeech transcribes RECORDING once per
+# engine on the running daemon and scores each against the transcript.txt beside it. ENGINES is
+# space-separated, each a decoder or decoder=model; SPIKE_ARGS passes more flags (--json, --ref F,
+# --daemon). Costs whatever a cloud engine bills, so it is not in `check`.
+speech-spike: go
+	@test -n "$(RECORDING)" || { echo 'usage: make speech-spike RECORDING=<id> ENGINES="speech <decoder>=<model>"' >&2; exit 2; }
+	$(GOBIN)/leyspeech compare --ley $(GOBIN)/ley --recording $(RECORDING) \
+		$(foreach e,$(or $(ENGINES),speech),--engine $(e)) $(SPIKE_ARGS)
 
 # The site's screenshots (docs/plans/site-shots.md): leyshots runs each scene in site/shots/scenes.yaml
 # against its own leylined --no-hardware playing a scene fixture it generates into the cache. On the

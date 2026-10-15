@@ -52,7 +52,7 @@ func newRoot() *cobra.Command {
 	f := root.PersistentFlags()
 	f.StringVar(&g.ley, "ley", envOr("LEY_BIN", "ley"), "the ley binary (default: $LEY_BIN, else ley on PATH)")
 	f.StringVar(&g.socket, "socket", "", "the daemon's socket (default: ley's own, $LEYLINE_SOCKET)")
-	root.AddCommand(newRefCommand(&g), newRunCommand(&g), newLiveCommand(&g))
+	root.AddCommand(newRefCommand(&g), newRunCommand(&g), newCompareCommand(&g), newLiveCommand(&g))
 	return root
 }
 
