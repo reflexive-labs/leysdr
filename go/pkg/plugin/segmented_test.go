@@ -7,10 +7,13 @@ import (
 	"encoding/binary"
 	"io"
 	"math"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/protobuf/encoding/protodelim"
+	"google.golang.org/protobuf/proto"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/pkg/plugin"
@@ -114,7 +117,12 @@ func TestRunSegmentedDropsWhatIsNotAWholeSegment(t *testing.T) {
 	// Input ends inside a segment: the job stopped mid-over.
 	mustMarshal(t, &in, segFrame(6, 400, leylinev1.SegmentMark_SEGMENT_START, f32(1)))
 
+	var log bytes.Buffer
+	defer plugin.SetSegmentLog(&log)()
 	dec, recs := runSegmented(t, &in, "")
+	if !strings.Contains(log.String(), "plugin: segment 3 cut off by end of input, dropped") {
+		t.Errorf("the segment cut off by the end of input was not logged:\n%s", log.String())
+	}
 	if len(dec.segments) != 1 || len(dec.segments[0]) != 1 || dec.segments[0][0] != 0.5 {
 		t.Errorf("want only the one whole segment [0.5], got %v", dec.segments)
 	}
@@ -198,5 +206,96 @@ func TestReadCredentialLeavesTheDescriptor(t *testing.T) {
 	mustMarshal(t, &empty, &leylinev1.SetCredentialRequest{Provider: "openai"})
 	if _, err := plugin.ReadCredential(&empty); err == nil {
 		t.Error("a request with no secret was accepted as a key")
+	}
+}
+
+// blockingDecoder holds its first Segment call until release is closed, as a provider call that
+// takes seconds does, and records the START time of every segment it is handed.
+type blockingDecoder struct {
+	release chan struct{}
+	started chan struct{}
+	seen    []uint64
+}
+
+func (d *blockingDecoder) Segment(_ []float32, at *leylinev1.SampleTime, emit func(*leylinev1.DecodeRecord)) {
+	if len(d.seen) == 0 {
+		close(d.started)
+		<-d.release
+	}
+	d.seen = append(d.seen, at.GetSampleIndex())
+	emit(&leylinev1.DecodeRecord{Protocol: "speech", Time: at})
+}
+
+// A decoder busy with one segment does not stop stdin being read: ten more segments arrive while
+// it is blocked, the oldest waiting ones past the queue's eight are dropped with a line each, and
+// the rest are decoded in order, with every record written before the run returns.
+func TestRunSegmentedKeepsReadingWhileTheDecoderWorks(t *testing.T) {
+	var log bytes.Buffer
+	defer plugin.SetSegmentLog(&log)()
+	pr, pw := io.Pipe()
+	dec := &blockingDecoder{release: make(chan struct{}), started: make(chan struct{})}
+	var out bytes.Buffer
+	ran := make(chan error, 1)
+	go func() {
+		ran <- plugin.RunSegmentedStreams(t.Context(), pr, &out, "", func(uint32, *leylinev1.SetCredentialRequest) plugin.SegmentDecoder { return dec })
+	}()
+
+	write := func(m proto.Message) {
+		if _, err := protodelim.MarshalTo(pw, m); err != nil {
+			t.Error(err)
+		}
+	}
+	segment := func(n uint64) {
+		write(segFrame(2*n, n*100, leylinev1.SegmentMark_SEGMENT_START, f32(0.5)))
+		write(segFrame(2*n+1, n*100+5, leylinev1.SegmentMark_SEGMENT_END, nil))
+	}
+	write(descriptor(leylinev1.AudioSampleFormat_F32))
+	segment(1)
+	<-dec.started
+	// Every write below goes through an unbuffered pipe, so it returns only once the reader took
+	// it: if the reader stalled behind the decoder, this would never finish.
+	wrote := make(chan struct{})
+	go func() {
+		for n := uint64(2); n <= 11; n++ {
+			segment(n)
+		}
+		_ = pw.Close()
+		close(wrote)
+	}()
+	select {
+	case <-wrote:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the reader stalled while the decoder was busy")
+	}
+	close(dec.release)
+	if err := <-ran; err != nil {
+		t.Fatal(err)
+	}
+	want := []uint64{100, 400, 500, 600, 700, 800, 900, 1000, 1100}
+	if !slices.Equal(dec.seen, want) {
+		t.Errorf("decoded segments at %v, want %v", dec.seen, want)
+	}
+	for _, n := range []string{"2", "3"} {
+		if !strings.Contains(log.String(), "plugin: dropped segment "+n+": the engine is behind") {
+			t.Errorf("no line for dropped segment %s:\n%s", n, log.String())
+		}
+	}
+	if recs := readRecords(t, out.Bytes()); len(recs) != len(want) {
+		t.Errorf("wrote %d records, want %d", len(recs), len(want))
+	}
+}
+
+// A gap on a START frame is audio the daemon could not deliver before the segment, so it adds no
+// silence to the segment.
+func TestRunSegmentedIgnoresAGapBeforeTheStart(t *testing.T) {
+	var in bytes.Buffer
+	mustMarshal(t, &in, descriptor(leylinev1.AudioSampleFormat_F32))
+	start := segFrame(1, 5000, leylinev1.SegmentMark_SEGMENT_START, f32(0.5))
+	start.Gap = &leylinev1.Gap{FromSample: 1000, ToSample: 5000}
+	mustMarshal(t, &in, start)
+	mustMarshal(t, &in, segFrame(2, 5005, leylinev1.SegmentMark_SEGMENT_END, nil))
+	dec, _ := runSegmented(t, &in, "")
+	if len(dec.segments) != 1 || len(dec.segments[0]) != 1 {
+		t.Errorf("segments %v, want one of one sample", dec.segments)
 	}
 }

@@ -3,6 +3,7 @@
 package plugin
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -20,9 +21,11 @@ import (
 // whole segment's audio in one buffer: the frames from the one marked
 // SEGMENT_START to the one marked SEGMENT_END. at is the START frame's time,
 // which is pre-roll before the squelch opened, and is what a record's `time`
-// carries. samples is reused for the next segment, so a decoder that keeps
-// audio past the call copies it. emit follows Decoder's rules: any number of
-// calls during Segment and none after it returns.
+// carries. samples is the decoder's to keep. Segment runs on a goroutine of
+// its own while stdin is still read, so a call that takes seconds (a provider's
+// API) does not hold up the daemon's writes; calls are in order, one at a time,
+// and emit follows Decoder's rules: any number of calls during Segment and none
+// after it returns.
 //
 // A decoder that needs the capture rate also implements Starter, as an audio
 // Decoder does.
@@ -40,6 +43,12 @@ type SegmentFactory func(audioRateHz uint32, cred *leylinev1.SetCredentialReques
 // would hold minutes of audio in memory for a call no speech engine accepts.
 const MaxSegment = 10 * time.Minute
 
+// segmentQueue is how many complete segments may wait for the decoder. When a
+// slow engine lets more pile up, the oldest waiting one is dropped, because the
+// daemon replaces a plugin that stops reading its stdin and the newest overs
+// are the ones a person is waiting for.
+const segmentQueue = 8
+
 // RunSegmented reads a SEGMENTED stream from stdin and writes records to
 // stdout. provider is the manifest's credential_provider: when it is set, the
 // daemon writes one SetCredentialRequest before the descriptor, and it is read
@@ -49,13 +58,17 @@ func RunSegmented(ctx context.Context, provider string, newDecoder SegmentFactor
 }
 
 // RunSegmentedStreams is RunSegmented against explicit streams, which is what
-// the tests use. It assembles each segment's frames into one buffer and hands
-// it to the decoder at the END frame. A gap inside a segment is filled with
-// silence, so the buffer keeps the segment's length on the timeline. A frame
-// outside a segment, an END with no START, a START inside a segment and a
-// segment over MaxSegment are each logged on stderr and dropped: the daemon
-// sends none of them, and a plugin that decoded a half segment would emit a
-// record for words it did not hear whole.
+// the tests use. It assembles each segment's frames into one buffer on the
+// reading goroutine and, at the END frame, queues it for the decoder, which
+// runs on a second goroutine; at the end of input it waits for every queued
+// segment and writes the records before it returns. A gap inside a segment is
+// filled with silence, so the buffer keeps the segment's length on the
+// timeline; a gap on a START frame is audio before the segment (a segment the
+// daemon could not deliver) and is not. A frame outside a segment, an END with
+// no START, a START inside a segment, a segment over MaxSegment, a segment cut
+// off by the end of input and a queued segment the decoder fell behind on are
+// each logged on stderr and dropped: a plugin that decoded a half segment would
+// emit a record for words it did not hear whole.
 func RunSegmentedStreams(ctx context.Context, r io.Reader, w io.Writer, provider string, newDecoder SegmentFactory) error {
 	in := asByteReader(r)
 	var cred *leylinev1.SetCredentialRequest
@@ -65,7 +78,9 @@ func RunSegmentedStreams(ctx context.Context, r io.Reader, w io.Writer, provider
 			return err
 		}
 	}
-	return runFramed(ctx, in, w, func(desc *leylinev1.StreamDescriptor, emit func(*leylinev1.DecodeRecord)) (func(*leylinev1.Frame) error, error) {
+	var a *segmentAssembler
+	var work *segmentWorker
+	err := runFramed(ctx, in, w, func(desc *leylinev1.StreamDescriptor, _ func(*leylinev1.DecodeRecord)) (func(*leylinev1.Frame) error, error) {
 		audio := desc.GetAudio()
 		if audio == nil || audio.GetSampleRate() == 0 {
 			return nil, errors.New("plugin: descriptor carries no audio params")
@@ -74,17 +89,86 @@ func RunSegmentedStreams(ctx context.Context, r io.Reader, w io.Writer, provider
 		if st, ok := dec.(Starter); ok {
 			st.Start(desc)
 		}
-		a := &segmentAssembler{
+		a = &segmentAssembler{
 			format:      audio.GetFormat(),
 			audioRate:   float64(audio.GetSampleRate()),
 			captureRate: float64(desc.GetSpanHz()),
 			maxSamples:  int(MaxSegment.Seconds() * float64(audio.GetSampleRate())),
-			deliver: func(samples []float32, at *leylinev1.SampleTime) {
-				dec.Segment(samples, at, emit)
-			},
 		}
+		work = startSegmentWorker(dec, w)
+		a.deliver = work.enqueue
 		return a.frame, nil
 	})
+	if a != nil {
+		a.end()
+	}
+	if work != nil {
+		if werr := work.finish(); err == nil {
+			err = werr
+		}
+	}
+	return err
+}
+
+// queuedSegment is one complete segment waiting for the decoder.
+type queuedSegment struct {
+	n       int
+	samples []float32
+	at      *leylinev1.SampleTime
+}
+
+// segmentWorker runs the decoder on its own goroutine and is the only writer of
+// records, so emit needs no lock and each record is flushed as it is made.
+type segmentWorker struct {
+	queue chan queuedSegment
+	done  chan error
+}
+
+func startSegmentWorker(dec SegmentDecoder, w io.Writer) *segmentWorker {
+	sw := &segmentWorker{queue: make(chan queuedSegment, segmentQueue), done: make(chan error, 1)}
+	go func() {
+		out := bufio.NewWriter(w)
+		var werr error
+		emit := func(rec *leylinev1.DecodeRecord) {
+			if rec == nil || werr != nil {
+				return
+			}
+			if _, werr = protodelim.MarshalTo(out, rec); werr == nil {
+				werr = out.Flush()
+			}
+		}
+		for seg := range sw.queue {
+			dec.Segment(seg.samples, seg.at, emit)
+		}
+		if werr != nil {
+			werr = fmt.Errorf("plugin: write record: %w", werr)
+		}
+		sw.done <- werr
+	}()
+	return sw
+}
+
+// enqueue hands a segment to the decoder without blocking the reader: when the
+// queue is full the oldest waiting segment makes room. The reader is the only
+// sender, so after one receive the send cannot block.
+func (sw *segmentWorker) enqueue(seg queuedSegment) {
+	select {
+	case sw.queue <- seg:
+		return
+	default:
+	}
+	select {
+	case old := <-sw.queue:
+		fmt.Fprintf(segmentLog, "plugin: dropped segment %d: the engine is behind\n", old.n)
+	default:
+	}
+	sw.queue <- seg
+}
+
+// finish waits for the decoder to work through every queued segment.
+func (sw *segmentWorker) finish() error {
+	close(sw.queue)
+	return <-sw.done
 }
 
 // MainSegmented is Main for a plugin with SEGMENTED input: --manifest prints
@@ -144,7 +228,7 @@ type segmentAssembler struct {
 	audioRate   float64
 	captureRate float64
 	maxSamples  int
-	deliver     func(samples []float32, at *leylinev1.SampleTime)
+	deliver     func(queuedSegment)
 
 	open     bool
 	dropping bool
@@ -154,6 +238,8 @@ type segmentAssembler struct {
 	// strays counts frames outside a segment, so the log says so once per run
 	// of them rather than once per frame.
 	strays int
+	// started counts the segments begun, so a log line can say which one.
+	started int
 }
 
 func (a *segmentAssembler) frame(f *leylinev1.Frame) error {
@@ -166,6 +252,7 @@ func (a *segmentAssembler) frame(f *leylinev1.Frame) error {
 		a.reset()
 		a.open, a.at = true, f.GetTime()
 		a.strays = 0
+		a.started++
 		return a.add(f)
 	case leylinev1.SegmentMark_SEGMENT_END:
 		if !a.open {
@@ -173,7 +260,8 @@ func (a *segmentAssembler) frame(f *leylinev1.Frame) error {
 			return nil
 		}
 		if !a.dropping {
-			a.deliver(a.buf, a.at)
+			a.deliver(queuedSegment{n: a.started, samples: a.buf, at: a.at})
+			a.buf = nil // the decoder owns it now
 		}
 		a.reset()
 		return nil
@@ -199,7 +287,9 @@ func (a *segmentAssembler) add(f *leylinev1.Frame) error {
 		return nil
 	}
 	gapSamples := 0
-	if g := f.GetGap(); g != nil && a.captureRate > 0 && g.GetToSample() > g.GetFromSample() {
+	// A gap on a START frame lies before the segment, not inside it.
+	if g := f.GetGap(); g != nil && f.GetSegment() != leylinev1.SegmentMark_SEGMENT_START &&
+		a.captureRate > 0 && g.GetToSample() > g.GetFromSample() {
 		gapSamples = int(float64(g.GetToSample()-g.GetFromSample()) * a.audioRate / a.captureRate)
 	}
 	if len(a.buf)+gapSamples+len(a.scratch) > a.maxSamples {
@@ -219,6 +309,18 @@ func (a *segmentAssembler) reset() {
 	a.buf = a.buf[:0]
 }
 
+// end is called when the input ends: a segment still open never got its END
+// frame, so it is dropped, and the log says so.
+func (a *segmentAssembler) end() {
+	if a.open {
+		a.logf("segment %d cut off by end of input, dropped", a.started)
+		a.reset()
+	}
+}
+
+// segmentLog is where the assembler's lines go; a test swaps it to read them.
+var segmentLog io.Writer = os.Stderr
+
 func (a *segmentAssembler) logf(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "plugin: "+format+"\n", args...)
+	fmt.Fprintf(segmentLog, "plugin: "+format+"\n", args...)
 }
