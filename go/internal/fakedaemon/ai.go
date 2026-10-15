@@ -143,7 +143,30 @@ func (d *Daemon) SetCredential(ctx context.Context, req *leylinev1.SetCredential
 	if err != nil {
 		return nil, fail(ctx, err)
 	}
+	d.setDefaults(ci, cred)
 	return cred, nil
+}
+
+// setDefaults gives every feature the key's provider serves by the default table, and that has
+// no provider chosen, the table's model, as the daemon does after a check: never over a choice,
+// and nothing for a key the provider rejected.
+func (d *Daemon) setDefaults(by *leylinev1.ClientInfo, cred *leylinev1.Credential) {
+	if cred.GetLastCheck().GetOutcome() == leylinev1.CredentialCheck_REJECTED {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	set := false
+	for _, f := range leyline.TableFeatures(cred.GetProvider()) {
+		if d.ai.features[f].GetProvider() != "" {
+			continue
+		}
+		d.ai.features[f] = &leylinev1.FeatureModel{Feature: f, Provider: cred.GetProvider(), Model: leyline.DefaultModel(cred.GetProvider(), f)}
+		set = true
+	}
+	if set {
+		d.emit(by, d.aiSnapshot())
+	}
 }
 
 // CheckCredential implements Credentials: the stored key is tried again and the reply carries the

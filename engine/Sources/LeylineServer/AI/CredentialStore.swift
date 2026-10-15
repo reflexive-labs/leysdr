@@ -142,6 +142,30 @@ actor CredentialStore {
         return feature
     }
 
+    /// Gives every feature `provider` serves by the default table, and that has no provider
+    /// chosen, the table's model, and returns what it set. A choice already made is never
+    /// overwritten, whoever made it.
+    func setDefaults(for provider: String) -> [Leyline_V1_FeatureModel] {
+        loadIfNeeded()
+        var set: [Leyline_V1_FeatureModel] = []
+        for feature in ProviderDefaults.tableFeatures(provider) {
+            guard let model = ProviderDefaults.defaultModel(provider, feature),
+                  !state.features.contains(where: { $0.feature == feature && !$0.provider.isEmpty })
+            else { continue }
+            var chosen = Leyline_V1_FeatureModel()
+            chosen.feature = feature
+            chosen.provider = provider
+            chosen.model = model
+            state.features.removeAll { $0.feature == feature }
+            state.features.append(chosen)
+            set.append(chosen)
+        }
+        guard !set.isEmpty else { return [] }
+        state.features.sort { $0.feature < $1.feature }
+        changed()
+        return set
+    }
+
     /// The secret's last four characters, so a person can tell keys apart. A secret of four
     /// characters or fewer shows none, since the four would be all of it.
     static func lastFour(of secret: String) -> String {

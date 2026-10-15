@@ -198,6 +198,52 @@ func TestAIAdd(t *testing.T) {
 	}
 }
 
+// One added key is enough to start: the daemon gives the features its provider serves their
+// default models, the banner says so with the command that changes them, a choice already made
+// is kept, and a rejected key sets nothing. --json is still the Credential alone.
+func TestAIAddSetsTheDefaults(t *testing.T) {
+	t.Parallel()
+	sock, c := harness(t, fakedaemon.Options{})
+	_, errOut, err := runLey(t, sock, 80, false, "sk-oa-0042\n", "ai", "add", "openai")
+	want := "openai key …0042 added; the provider accepted it. The assistant and speech now use openai " +
+		"(gpt-5, whisper-1); change one with ley ai use <feature> <provider> [<model>]\n"
+	if err != nil || errOut != want {
+		t.Errorf("first key: %v\ngot  %q\nwant %q", err, errOut, want)
+	}
+	_, errOut, err = runLey(t, sock, 80, false, "sk-ant-0042\n", "ai", "add", "anthropic")
+	if err != nil || errOut != "anthropic key …0042 added; the provider accepted it\n" {
+		t.Errorf("second key, nothing left to set: %v %q", err, errOut)
+	}
+	st, _ := c.Credentials.GetAIState(t.Context(), &leylinev1.GetAIStateRequest{})
+	got := []string{}
+	for _, f := range st.GetFeatures() {
+		got = append(got, f.GetFeature()+" "+f.GetProvider()+" "+f.GetModel())
+	}
+	if strings.Join(got, ", ") != "assistant openai gpt-5, speech openai whisper-1" {
+		t.Errorf("features: %v", got)
+	}
+
+	// One feature set reads in the singular; --json prints the Credential only.
+	sock, _ = harness(t, fakedaemon.Options{})
+	out, errOut, err := runLey(t, sock, 80, false, "sk-ant-0042\n", "--json", "ai", "add", "anthropic")
+	if err != nil || !strings.HasSuffix(errOut, ". The assistant now uses anthropic (claude-sonnet-5-5); "+
+		"change it with ley ai use assistant <provider> [<model>]\n") {
+		t.Errorf("anthropic first: %v %q", err, errOut)
+	}
+	var cred leylinev1.Credential
+	if err := protojson.Unmarshal([]byte(out), &cred); err != nil || cred.GetProvider() != "anthropic" {
+		t.Errorf("--json: %v %q", err, out)
+	}
+
+	sock, c = harness(t, fakedaemon.Options{})
+	if _, _, err := runLey(t, sock, 80, false, fakedaemon.RejectedSecret+"\n", "ai", "add", "openai"); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := c.Credentials.GetAIState(t.Context(), &leylinev1.GetAIStateRequest{}); len(st.GetFeatures()) != 0 {
+		t.Errorf("a rejected key set %v", st.GetFeatures())
+	}
+}
+
 // A key is trimmed of spaces and the newline, never taken empty, and asked for on a terminal.
 func TestAIAddReadsStdin(t *testing.T) {
 	t.Parallel()

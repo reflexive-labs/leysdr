@@ -82,8 +82,8 @@ func TestCredentialIsWriteOnly(t *testing.T) {
 			aiEvents++
 		}
 	}
-	if aiEvents != 2 {
-		t.Errorf("%d ai events, want one for the set and one for the check", aiEvents)
+	if aiEvents != 3 {
+		t.Errorf("%d ai events, want one for the set, one for the assistant's default model and one for the check", aiEvents)
 	}
 	for _, m := range seen {
 		if b, _ := protojson.Marshal(m); strings.Contains(string(b), "LEAKCANARY") {
@@ -208,7 +208,9 @@ func TestDeleteAndFeatureModels(t *testing.T) {
 	if len(last.GetCredentials()) != 1 || last.GetCredentials()[0].Provider != "openai" {
 		t.Errorf("after the delete the event lists %v, want openai alone", last.GetCredentials())
 	}
-	if len(last.GetFeatures()) != 1 || last.GetFeatures()[0].Model != "claude-sonnet-5-5" {
+	// The keys set the defaults: anthropic's first, so the assistant stays on it; speech from
+	// openai's. A delete leaves both choices.
+	if len(last.GetFeatures()) != 2 || last.GetFeatures()[0].Model != "claude-sonnet-5-5" || last.GetFeatures()[1].Model != "whisper-1" {
 		t.Errorf("features: %v", last.GetFeatures())
 	}
 }

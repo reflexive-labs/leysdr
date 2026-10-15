@@ -16,10 +16,11 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
 // The features a model can be chosen for, in the order `ley ai` lists them.
-var aiFeatures = []string{"assistant", "speech"}
+var aiFeatures = leyline.AIFeatures
 
 // providerName is how a provider is spelled: the lower-case name of a kind of endpoint
 // (proto/leyline/v1/ai.proto, "Keys"), so "Anthropic" is refused rather than filed as a second
@@ -213,6 +214,12 @@ The key replaces any key already stored for the provider. A key the
 provider refuses is still stored, so the line printed afterwards says what
 the provider answered and what to do next; the exit status is 0 either way.
 
+Unless the provider refuses the key, every feature the provider serves and
+that has no model yet gets the provider's default (openai: the assistant
+gpt-5 and speech whisper-1; anthropic: the assistant claude-sonnet-5-5),
+and the line says so. A model already chosen is kept; 'ley ai use'
+changes one.
+
 --label is a name for the key in 'ley ai' (which account it is), and
 --endpoint points the provider at a gateway or an OpenAI-compatible server
 in place of the provider's own API.
@@ -242,8 +249,10 @@ func runAIAdd(ctx context.Context, app *App, provider, label, endpoint string) e
 		return app.notRunning(err)
 	}
 	defer c.Close()
-	// Ask the daemon first, so nobody pastes a key into a verb that cannot store it.
-	if _, err := c.Credentials.GetAIState(ctx, &leylinev1.GetAIStateRequest{}); err != nil {
+	// Ask the daemon first, so nobody pastes a key into a verb that cannot store it. The state
+	// is kept to tell afterwards which features the daemon gave this provider.
+	before, err := c.Credentials.GetAIState(ctx, &leylinev1.GetAIStateRequest{})
+	if err != nil {
 		return app.notRunning(err)
 	}
 	secret, err := readKey(ctx, app, provider)
@@ -256,11 +265,56 @@ func runAIAdd(ctx context.Context, app *App, provider, label, endpoint string) e
 	if err != nil {
 		return app.notRunning(err)
 	}
-	fmt.Fprintln(app.Stderr, addedLine(app.ErrStyle, cred))
+	line := addedLine(app.ErrStyle, cred)
+	if after, err := c.Credentials.GetAIState(ctx, &leylinev1.GetAIStateRequest{}); err == nil {
+		if set := newlySet(before, after, provider); len(set) > 0 {
+			sep := ". "
+			if cred.GetLastCheck().GetOutcome() != leylinev1.CredentialCheck_ACCEPTED {
+				sep = "\n" // the line already ends with its own next command
+			}
+			line += sep + defaultsSentence(app.ErrStyle, set)
+		}
+	}
+	fmt.Fprintln(app.Stderr, line)
 	if app.JSON {
 		return app.printJSON(cred)
 	}
 	return nil
+}
+
+// newlySet are the features that call provider in after and did not before: the ones the
+// daemon gave the provider's default models when its key was added.
+func newlySet(before, after *leylinev1.AIState, provider string) []*leylinev1.FeatureModel {
+	was := map[string]string{}
+	for _, f := range before.GetFeatures() {
+		was[f.GetFeature()] = f.GetProvider() + "\x00" + f.GetModel()
+	}
+	var set []*leylinev1.FeatureModel
+	for _, f := range after.GetFeatures() {
+		if f.GetProvider() == provider && was[f.GetFeature()] != f.GetProvider()+"\x00"+f.GetModel() {
+			set = append(set, f)
+		}
+	}
+	return set
+}
+
+// defaultsSentence says which features now call the provider, with which models, and how to
+// change them: "The assistant and speech now use openai (gpt-5, whisper-1); change one with ley
+// ai use <feature> <provider> [<model>]".
+func defaultsSentence(s ui.Style, set []*leylinev1.FeatureModel) string {
+	var names, models []string
+	for _, f := range set {
+		names = append(names, leyline.FeatureWords(f.GetFeature()))
+		models = append(models, f.GetModel())
+	}
+	subject := strings.Join(names, " and ")
+	subject = strings.ToUpper(subject[:1]) + subject[1:]
+	if len(set) == 1 {
+		return fmt.Sprintf("%s now uses %s (%s); change it with %s", subject, set[0].GetProvider(), models[0],
+			s.Cmd("ley ai use "+set[0].GetFeature()+" <provider> [<model>]"))
+	}
+	return fmt.Sprintf("%s now use %s (%s); change one with %s", subject, set[0].GetProvider(),
+		strings.Join(models, ", "), s.Cmd("ley ai use <feature> <provider> [<model>]"))
 }
 
 // addedLine reports a stored key and what the provider said about it, ending with the next

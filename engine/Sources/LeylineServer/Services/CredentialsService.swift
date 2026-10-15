@@ -51,8 +51,23 @@ struct CredentialsService: Leyline_V1_Credentials.SimpleServiceProtocol {
             }
             log.info("stored a key for \(provider) for \(client.kind) \(client.label)")
             await store.publishAI(from: credentials, by: client)
-            return await check(stored, secret: secret, by: client)
+            let checked = await check(stored, secret: secret, by: client)
+            await setDefaults(after: checked, by: client)
+            return checked
         }
+    }
+
+    /// Gives the features the key's provider serves, and that have no model chosen, the default
+    /// table's (`ProviderDefaults`), so one added key is enough to start. A key the provider
+    /// rejected sets nothing; one whose check could not run does, since the check is retried with
+    /// `ley ai check` and nothing else would set them then. The reply is unchanged: a client sees
+    /// what was set in the published `AIState`.
+    private func setDefaults(after checked: Leyline_V1_Credential, by client: ClientContext) async {
+        guard checked.lastCheck.outcome != .rejected else { return }
+        let set = await credentials.setDefaults(for: checked.provider)
+        guard !set.isEmpty else { return }
+        log.info("\(set.map { "\($0.feature) now calls \($0.provider) \($0.model)" }.joined(separator: ", "))")
+        await store.publishAI(from: credentials, by: client)
     }
 
     /// Removes the key and ends every job that uses it.
