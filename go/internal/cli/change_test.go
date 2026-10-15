@@ -272,6 +272,9 @@ func TestWhoChangedNamesTheKind(t *testing.T) {
 			t.Errorf("%s: got %q want %q", kind, got, want)
 		}
 	}
+	if got := whoChanged(&leylinev1.ClientInfo{ClientId: "cl_01ABC", Kind: "mcp", Label: "assistant"}); got != "the assistant" {
+		t.Errorf("mcp assistant: got %q", got)
+	}
 	if got := whoChanged(nil); got != "something" {
 		t.Errorf("nil: got %q", got)
 	}
