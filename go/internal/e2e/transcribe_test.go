@@ -11,10 +11,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -23,7 +21,6 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
-	"github.com/reflexive-labs/leysdr/go/pkg/plugin"
 )
 
 // Speech on a stored recording end to end (docs/plans/ai-features.md, AI-5): the real daemon
@@ -128,48 +125,11 @@ func newTranscribeRig(t *testing.T, decoders, fixture string) *transcribeRig {
 	return r
 }
 
-// paidShimName is the name the test binary answers to as speechpaid's executable.
-const paidShimName = "leydec-speechpaid"
-
-// TestMain lets the test binary stand in front of leydec-speech for speechpaid. The daemon writes
-// a manifest's key before the descriptor, and leydec-speech reads one only when its own built-in
-// manifest names a provider, which the bundled one does not; so the shim takes the key off stdin,
-// checks it is the one `ley ai add` was given, and execs the real plugin on the rest of the stream
-// with the daemon's arguments (--model included).
-func TestMain(m *testing.M) {
-	if filepath.Base(os.Args[0]) == paidShimName {
-		os.Exit(runPaidSpeechShim())
-	}
-	os.Exit(m.Run())
-}
-
-func runPaidSpeechShim() int {
-	cred, err := plugin.ReadCredential(os.Stdin)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, paidShimName+": "+err.Error())
-		return 1
-	}
-	env := os.Environ()
-	if cred.GetProvider() != "anthropic" || cred.GetSecret() != anthropicKey {
-		// The wrong key: the scripted engine loses its script, so every record's text is
-		// "segment N" and the test's text check names the failure.
-		fmt.Fprintln(os.Stderr, paidShimName+": the daemon handed over a key the test never gave")
-		env = slices.DeleteFunc(env, func(kv string) bool { return strings.HasPrefix(kv, "LEYDEC_SPEECH_SCRIPT=") })
-	}
-	exe, err := exec.LookPath("leydec-speech")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, paidShimName+": "+err.Error())
-		return 1
-	}
-	err = syscall.Exec(exe, append([]string{exe}, os.Args[1:]...), env)
-	fmt.Fprintln(os.Stderr, paidShimName+": exec leydec-speech: "+err.Error())
-	return 1
-}
-
 // writePaidSpeechDecoder installs a copy of the bundled speech manifest named speechpaid that
 // names a provider and a host, in a directory of its own, and returns the directory. The alias
-// is dropped so that `transcribe` still means the bundled decoder, and the executable is the
-// TestMain shim, linked into the decoder's directory, with the manifest's args unchanged.
+// is dropped so that `transcribe` still means the bundled decoder; the executable and args are
+// the bundled ones, so the unchanged leydec-speech binary, whose own manifest names no provider,
+// learns from LEYLINE_KEY_ON_STDIN that the key comes first.
 func writePaidSpeechDecoder(t *testing.T, decoders, dir string) string {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(decoders, "speech", "manifest.json"))
@@ -184,20 +144,12 @@ func writePaidSpeechDecoder(t *testing.T, decoders, dir string) string {
 	delete(m, "aliases")
 	m["credentialProvider"] = "anthropic"
 	m["contactsHosts"] = []string{"api.example.test"}
-	m["executable"] = paidShimName
 	out, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		t.Fatal(err)
 	}
 	paid := filepath.Join(dir, "paid-decoders")
 	if err := os.MkdirAll(filepath.Join(paid, "speechpaid"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	self, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(self, filepath.Join(paid, "speechpaid", paidShimName)); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(paid, "speechpaid", "manifest.json"), out, 0o644); err != nil {
