@@ -121,6 +121,8 @@ logging — the daemon captures it under `leyline.decoder.<name>`.
    its last line on stderr and exits with status 75 (`EX_TEMPFAIL`). A kept job waits and starts
    the decoder again on the restart backoff; any other job ends with `PROVIDER_REFUSED` and that
    message. Any other exit while stdin is open is a crash, and the daemon restarts the decoder.
+   On a stored recording it gives up after the fourth exit in a row that answered nothing new
+   (see "Reading a stored recording").
 
 ### The key
 
@@ -174,7 +176,9 @@ with segments cut by the same rule. When the recording has all gone your stdin c
 records you still owe and exit 0, and the job ends once you have. You have 30 s, plus 2 s for each
 segment you have not answered yet; after that the daemon stops you and the job fails. If you die
 part way, you are started again at the first segment you had not answered, so answer each segment
-with at least one record (an empty `text` will do) or expect it again.
+with at least one record (an empty `text` will do) or expect it again. A decoder that exits four
+times in a row without answering anything new fails the job with `DECODER_FAILED`, naming its
+last exit status and its last line on stderr; a live job is restarted however often it exits.
 
 Stamping `time` precisely means turning a sample offset within a frame into a `SampleTime` on the
 capture's timeline, which runs at `span_hz` while your audio runs at `sample_rate`. The Go SDK's

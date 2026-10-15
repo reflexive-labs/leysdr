@@ -898,7 +898,11 @@ and the job fails `DECODER_FAILED` naming the decoder. An item counts as done wh
 comes back (a segment's record arrives at its END, so the segment and every one before it are
 done; a whole part only every one before it), so a plugin that dies is restarted at the first item
 it has not answered: a segment it took but died on is sent again, and an item that legitimately
-yields no record may be sent twice. Duplicates are preferred to losses. A part that cannot be read
+yields no record may be sent twice. Duplicates are preferred to losses. Restarts are bounded here,
+unlike a live job's: a fourth exit in a row with the cursor where the previous start left it
+(`DecodeRunner.maxFruitlessSourceExits`, 3; a refusal not counted) fails the job
+`DECODER_FAILED` with "<decoder> exited 4 times without decoding ley://recordings/<id>; last status
+<s>: <last stderr line>", the line with the key replaced. A part that cannot be read
 fails the job. The descriptor is
 `AUDIO`, `F32` mono at the recording's rate, centred on its frequency. Records carry `clip_uri`
 (`ley://recordings/<id>/<part>`) and `over` (the index in that part's `squelch_opens` of the

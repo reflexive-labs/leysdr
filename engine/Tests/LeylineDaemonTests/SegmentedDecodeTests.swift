@@ -445,6 +445,49 @@ final class SegmentedDecodeTests: XCTestCase {
         }
     }
 
+    /// A plugin that dies before answering anything is given three restarts, and the fourth exit
+    /// with the cursor where it was ends the job, rather than a restart every 30 s for ever.
+    func testAPluginThatNeverAnswersFailsTheJobAfterFourExits() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        defer {
+            for d in [plugins, recordings] { try? FileManager.default.removeItem(atPath: d) }
+        }
+        try writeSegmentedPlugin(in: plugins, args: ["--exit-at-start=1000"])
+        let id = try await writeRecording(in: recordings)
+        try await withDaemon(decoderSearchPath: [plugins], recordingsPath: recordings) { c in
+            let began = ContinuousClock.now
+            let started = try await self.startDecode(c, self.sourceConfig(id))
+            let done = try await self.waitForEnd(c, started.jobID, timeoutMs: 20000)
+            let took = ContinuousClock.now - began
+            XCTAssertEqual(done.state, .failed, done.statusDetail)
+            XCTAssertEqual(done.error.code, EngineError.Code.decoderFailed)
+            XCTAssertEqual(done.statusDetail,
+                           "fake exited 4 times without decoding ley://recordings/\(id); "
+                               + "last status 3: fake decoder giving up at start 4")
+            // 1 + 2 + 4 s of backoff between the four starts.
+            XCTAssertLessThan(took, .seconds(12), "the job gave up after its fourth exit: \(took)")
+        }
+    }
+
+    /// Three exits with nothing answered are allowed: the fourth start that works completes the job.
+    func testAPluginThatDiesThreeTimesBeforeAnsweringStillCompletes() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        defer {
+            for d in [plugins, recordings] { try? FileManager.default.removeItem(atPath: d) }
+        }
+        try writeSegmentedPlugin(in: plugins, args: ["--exit-at-start=3"])
+        let id = try await writeRecording(in: recordings)
+        try await withDaemon(decoderSearchPath: [plugins], recordingsPath: recordings) { c in
+            let started = try await self.startDecode(c, self.sourceConfig(id))
+            let done = try await self.waitForEnd(c, started.jobID, timeoutMs: 20000)
+            XCTAssertEqual(done.state, .completed, done.statusDetail)
+            let got = try await self.records(c, job: started.jobID, count: Self.syntheticSegments.count, timeoutMs: 3000)
+            XCTAssertEqual(got.count, Self.syntheticSegments.count, "every over answered once")
+        }
+    }
+
     // MARK: The key
 
     func testADecoderNamingAProviderWithNoKeyIsRefusedWithTheCommandThatAddsOne() async throws {

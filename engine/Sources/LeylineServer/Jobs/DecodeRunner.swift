@@ -221,15 +221,24 @@ actor DecodeRunner {
     /// Settable so a test need not wait half a minute.
     static let sourceExitAllowance = Mutex<(baseSeconds: Double, perItemSeconds: Double)>((30, 2))
 
+    /// How many times in a row a source job's plugin may exit without answering anything new
+    /// before the job gives up. A recording ends, so a plugin that cannot get past some point in it
+    /// will not get past it on the next restart either; a live job has no end to wait for and keeps
+    /// restarting. A refusal is not counted: it has its own rule (`refusedExitStatus`).
+    static let maxFruitlessSourceExits = 3
+
     /// The restart loop for a job that reads a recording. It ends on its own: once every item has
     /// reached the plugin and the plugin has exited cleanly with its last records written, the job
-    /// is COMPLETED.
+    /// is COMPLETED; and once the plugin has exited more than `maxFruitlessSourceExits` times in a
+    /// row without moving the cursor, the job is FAILED.
     private func loopSource(_ source: RecordingSource) async {
         let counting = Task { [weak self] in await self?.followRecords() }
         defer { counting.cancel() }
         var wait = Self.firstRestartSeconds
         var restarts = 0
+        var fruitless = 0
         while !Task.isCancelled {
+            let cursorBefore = sourceCursor.withLock { $0 }
             let exit = await runSourcePlugin(source)
             if Task.isCancelled || stopped { return }
             switch exit.fed {
@@ -250,6 +259,18 @@ actor DecodeRunner {
                 return
             default:
                 break
+            }
+            if exit.status != Self.refusedExitStatus {
+                fruitless = sourceCursor.withLock { $0 } == cursorBefore ? fruitless + 1 : 0
+                if fruitless > Self.maxFruitlessSourceExits {
+                    let said = await redacted(exit.lastErrorLine ?? "nothing on stderr")
+                    await teardown()
+                    await fail(EngineError.decoderFailed(
+                        "\(installed.manifest.name) exited \(fruitless) times without decoding \(source.uri); "
+                            + "last status \(exit.status): \(said)",
+                        target: installed.manifest.name))
+                    return
+                }
             }
             restarts += 1
             guard await recover(from: (exit.status, exit.lastErrorLine), restarts: restarts, wait: wait) else { return }
@@ -304,7 +325,8 @@ actor DecodeRunner {
             status = code
             break
         }
-        let said = status == Self.refusedExitStatus ? await process.lastErrorLine() : nil
+        // Every exit's last line, not only a refusal's: a plugin that keeps dying is reported with it.
+        let said = await process.lastErrorLine()
         await process.stop()
         currentPlugin.withLock { $0 = nil }
         return (status, said, fed)

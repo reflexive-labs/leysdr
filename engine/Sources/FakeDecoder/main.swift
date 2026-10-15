@@ -99,6 +99,21 @@ guard let head = readDelimited(), let descriptor = try? Leyline_V1_StreamDescrip
     exit(1)
 }
 FileHandle.standardError.write(Data("fake decoder up on \(descriptor.streamID)\n".utf8))
+/// `--exit-at-start=N` exits with status 3 straight after its descriptor, before answering
+/// anything, the first N times it is started, counted by a file in the working directory (the
+/// plugin's own directory, per test): the plugin that cannot get going, which a source job must
+/// give up on rather than restart for ever.
+for arg in CommandLine.arguments.dropFirst() where arg.hasPrefix("--exit-at-start=") {
+    let limit = Int(arg.dropFirst("--exit-at-start=".count)) ?? 0
+    let counter = FileManager.default.currentDirectoryPath + "/.exits-at-start"
+    let before = (try? String(contentsOfFile: counter, encoding: .utf8)).flatMap { Int($0) } ?? 0
+    if before < limit {
+        try? String(before + 1).write(toFile: counter, atomically: true, encoding: .utf8)
+        FileHandle.standardError.write(Data("fake decoder giving up at start \(before + 1)\n".utf8))
+        exit(3)
+    }
+}
+
 /// `--die-after=N` exits after N frames, the way a decoder with a bug in it would. A decode job's
 /// restart path has no other way to be provoked: every frame the daemon sends is a real one. It
 /// dies once: a marker file in the working directory (the plugin's own directory, per test) records
