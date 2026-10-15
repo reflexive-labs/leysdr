@@ -101,6 +101,17 @@ final class PredicateEvalTests: XCTestCase {
         XCTAssertFalse(matches(dash, predicate([fieldClause("fips", .predContains, [text("006009")])])))
     }
 
+    func testContainsAPhraseInSpeech() {
+        // `ley watch speech --where 'text~net control'`: the words in order, ignoring case, and
+        // never part of a word.
+        let said = record(fields: ["text": text("This is the Net Control station for tonight")])
+        XCTAssertTrue(matches(said, predicate([fieldClause("text", .predContains, [text("net control")])])))
+        XCTAssertTrue(matches(said, predicate([fieldClause("text", .predContains, [text("NET")])])))
+        XCTAssertFalse(matches(said, predicate([fieldClause("text", .predContains, [text("control net")])])))
+        XCTAssertFalse(matches(said, predicate([fieldClause("text", .predContains, [text("contr")])])))
+        XCTAssertFalse(matches(said, predicate([fieldClause("text", .predContains, [text("")])])))
+    }
+
     func testExists() {
         XCTAssertTrue(matches(record(deviceID: "x"), predicate([fieldClause("device_id", .predExists)])))
         XCTAssertFalse(matches(record(), predicate([fieldClause("device_id", .predExists)])))
