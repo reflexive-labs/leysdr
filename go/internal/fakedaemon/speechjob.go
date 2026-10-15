@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -93,7 +94,7 @@ func (d *Daemon) startSourceDecode(ctx context.Context, cfg *leylinev1.DecodeCon
 	}
 	d.emit(byDaemon(), job)
 	reply := proto.Clone(job).(*leylinev1.Job)
-	go d.runSourceDecode(job.JobId, man, src.record.dir, *m)
+	go d.runSourceDecode(job.JobId, d.withSpeechModel(man), src.record.dir, *m)
 	return reply, nil
 }
 
@@ -153,6 +154,20 @@ func (d *Daemon) endSourceDecode(jobID string, state leylinev1.JobState, failure
 	d.trimJobsLocked()
 }
 
+// withSpeechModel is the manifest a job spawns its plugin with: the daemon appends
+// `--model <m>` to the args when the speech feature's model names the decoder's provider, so the
+// model is fixed when the job starts. Caller holds the lock.
+func (d *Daemon) withSpeechModel(man *leylinev1.DecoderManifest) *leylinev1.DecoderManifest {
+	p := man.GetCredentialProvider()
+	fm := d.ai.features["speech"]
+	if p == "" || fm == nil || fm.GetProvider() != p {
+		return man
+	}
+	spawned := proto.Clone(man).(*leylinev1.DecoderManifest)
+	spawned.Args = append(spawned.Args, "--model", fm.GetModel())
+	return spawned
+}
+
 // speechRecord is the record leydec-speech's scripted engine writes for the n-th segment, with
 // what the daemon stamps on it. Caller holds the lock.
 func (d *Daemon) speechRecord(man *leylinev1.DecoderManifest, recID string, seg speechSegment, n uint64) *leylinev1.DecodeRecord {
@@ -163,9 +178,9 @@ func (d *Daemon) speechRecord(man *leylinev1.DecoderManifest, recID string, seg 
 	provider, model := "scripted", "scripted"
 	if p := man.GetCredentialProvider(); p != "" {
 		provider = p
-		if fm := d.ai.features["speech"]; fm != nil && fm.GetProvider() == p {
-			model = fm.GetModel()
-		}
+	}
+	if i := slices.Index(man.GetArgs(), "--model"); i >= 0 && i+1 < len(man.GetArgs()) {
+		model = man.GetArgs()[i+1]
 	}
 	return &leylinev1.DecodeRecord{
 		RecordId: newID("rec_"),

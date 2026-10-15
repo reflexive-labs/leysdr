@@ -119,7 +119,12 @@ squelch that reopens inside the hang continues the same segment. The first frame
 `segment` set to `SEGMENT_START` and carries audio; the frames after it are unmarked; the last has
 `segment` set to `SEGMENT_END`, an empty payload, and the `time` of the sample after the segment's
 last sample. Nothing arrives between segments, so audio while the squelch is shut is never sent.
-Emit the segment's records when its END frame arrives, stamped with the START frame's `time`.
+The START frame's `time` is the segment's first sample, and the daemon finds a record's over from
+the record's `time`, so stamp each record with the START frame's `time` exactly. A segment the
+daemon could not deliver is skipped whole, and the next START frame carries a `gap`. Keep reading
+stdin while a segment is being transcribed: on a live job the daemon replaces a plugin that leaves
+a frame half-written for 2 s. When stdin closes, at the end of a recording or of the job, write
+every record you still owe and exit 0.
 
 A decode job can also read a gated recording instead of a radio (`DecodeConfig.source_uri`, which
 `ley transcribe` sets). The daemon cuts the stored parts at their `squelch_opens` with the same
@@ -189,8 +194,11 @@ func main() {
 ```
 
 `Segment` is called once per segment with all of its audio, a gap inside it filled with silence,
-and `at` is the START frame's time. The buffer is reused for the next segment, so copy what you
-keep. `MainSegmented` reads the key first when the manifest names a provider (`plugin.ReadCredential`
+and `at` is the START frame's time; the buffer is the decoder's to keep. The SDK reads stdin on one
+goroutine and calls `Segment` on another, in order and one at a time, with up to eight complete
+segments waiting; when a slow engine lets more pile up, the oldest waiting one is dropped with a
+line on stderr (`dropped segment N: the engine is behind`). At the end of input it waits for every
+queued segment and writes its records before it returns. `MainSegmented` reads the key first when the manifest names a provider (`plugin.ReadCredential`
 does the read for a decoder that wires stdin itself) and passes it to the factory; `key` is nil
 when the manifest names none. A segment longer than `plugin.MaxSegment` (ten minutes), a segment cut
 off by the end of input, and audio outside a segment are logged on stderr and dropped. The
@@ -214,7 +222,13 @@ A speech decoder emits one record per segment with `protocol` `speech` (the mani
 `raw` holds the provider's response bytes as they arrived, and `usage` what the call used. The
 `callsigns` field is a pattern match over the text, and its field hint says so: `go/pkg/callsign`
 folds the phonetic alphabet, spoken digits and spelled letters into compact runs ("whiskey six
-alpha bravo charlie" is `W6ABC`) and matches the amateur callsign pattern on each run.
+alpha bravo charlie" is `W6ABC`), ends a run at a comma, a semicolon or the end of a sentence, and
+matches the amateur callsign pattern on each run: a prefix of one or two letters or of a digit and
+a letter, one digit, and a suffix of one to three letters, with `/P` and `/M` dropped. A one-letter
+prefix must be one the ITU issues alone (B, F, G, K, M, N, R, W; I is left out because a lone
+capital I is the pronoun), and with one a one-letter suffix counts only when it was spelled out
+phonetically, so `B2B` and `C3PO` are not callsigns. A four-letter suffix such as `N0CALL` is not
+matched.
 
 The bundled `leydec-speech` (`go/cmd/leydec-speech`) is the worked example. Its `--engine` picks the
 engine, and this build has one: `scripted`, which ignores the audio and returns the lines of the

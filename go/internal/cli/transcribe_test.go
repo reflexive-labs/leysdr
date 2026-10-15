@@ -170,35 +170,95 @@ func TestTranscribeNamesTheHostAndNeedsTheKey(t *testing.T) {
 	opts := transcribeOpts(t, false)
 	opts.SpeechProvider, opts.SpeechHosts = "deepgram", []string{"api.deepgram.com"}
 	sock, c := harness(t, opts)
-	_, errOut, err := runLey(t, sock, 80, false, "", "transcribe", transcribeID, "--yes")
+	_, errOut, err := runLey(t, sock, 80, false, "", "transcribe", transcribeID, "--yes", "--model", "nova-3")
 	if exitCode(err) != 1 || leyline.Code(err) != leyline.CodeCredentialMissing || !strings.Contains(err.Error(), "ley ai add deepgram") {
 		t.Errorf("want CREDENTIAL_MISSING naming ley ai add deepgram, got exit %d: %v", exitCode(err), err)
 	}
-	if !strings.Contains(errOut, "with speech (sends the audio to api.deepgram.com)") {
+	if !strings.Contains(errOut, "with speech, model nova-3 (sends the audio to api.deepgram.com)") {
 		t.Errorf("stderr does not say where the audio goes:\n%s", errOut)
 	}
+	speechModel := func() string {
+		st, err := c.Credentials.GetAIState(t.Context(), &leylinev1.GetAIStateRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range st.GetFeatures() {
+			if f.GetFeature() == "speech" {
+				return f.GetModel()
+			}
+		}
+		return ""
+	}
+	if m := speechModel(); m != "" {
+		t.Errorf("a refused job set the speech model to %q", m)
+	}
 
-	// With a key, --model becomes the speech model and the records carry it.
+	// With a key, --model becomes the speech model once the job has started. The daemon fixed this
+	// job's model when it started the plugin, so the next job is the first to carry it.
 	if _, err := c.Credentials.SetCredential(t.Context(), &leylinev1.SetCredentialRequest{Provider: "deepgram", Secret: "dg-1234"}); err != nil {
 		t.Fatal(err)
 	}
-	out, errOut, err := runLey(t, sock, 80, false, "", "--json", "transcribe", transcribeID, "--yes", "--model", "nova-3")
+	_, errOut, err = runLey(t, sock, 80, false, "", "--json", "transcribe", transcribeID, "--yes", "--model", "nova-3")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, errOut)
 	}
-	if !strings.Contains(errOut, "with speech, model nova-3 (sends the audio to api.deepgram.com)") || strings.Count(out, `"model":{"text":"nova-3"}`) != 3 {
-		t.Errorf("--model: stderr\n%s\nstdout\n%s", errOut, out)
+	if !strings.Contains(errOut, "with speech, model nova-3 (sends the audio to api.deepgram.com); the speech model becomes nova-3 for later jobs.") {
+		t.Errorf("--model: stderr\n%s", errOut)
 	}
-	st, err := c.Credentials.GetAIState(t.Context(), &leylinev1.GetAIStateRequest{})
-	if err != nil {
-		t.Fatal(err)
+	if m := speechModel(); m != "nova-3" {
+		t.Errorf("the speech model is %q, want nova-3", m)
 	}
-	found := false
-	for _, f := range st.GetFeatures() {
-		found = found || (f.GetFeature() == "speech" && f.GetModel() == "nova-3")
+	out, _, err := runLey(t, sock, 80, false, "", "--json", "transcribe", transcribeID, "--yes")
+	if err != nil || strings.Count(out, `"model":{"text":"nova-3"}`) != 3 {
+		t.Errorf("the next job does not use nova-3: %v\n%s", err, out)
 	}
-	if !found {
-		t.Errorf("the speech feature does not use nova-3: %v", st.GetFeatures())
+}
+
+// A job that somebody else cancels is not a finished transcription: transcribe says so and exits 1.
+func TestTranscribeReportsACancelledJob(t *testing.T) {
+	t.Parallel()
+	opts := transcribeOpts(t, false)
+	var overs []fakedaemon.SeedOver
+	for i := range int64(300) {
+		overs = append(overs, fakedaemon.SeedOver{OpenMs: 600 + 2000*i, CloseMs: 1600 + 2000*i})
+	}
+	opts.Recordings[0].Parts = [][]fakedaemon.SeedOver{overs}
+	sock, c := harness(t, opts)
+	type result struct {
+		out string
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		out, _, err := runLey(t, sock, 80, false, "", "transcribe", transcribeID, "--yes")
+		done <- result{out, err}
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	cancelled := false
+	for !cancelled && time.Now().Before(deadline) {
+		jobs, err := c.ListJobs(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, j := range jobs {
+			if j.GetDecode() != nil && j.GetState() == leylinev1.JobState_RUNNING {
+				if _, err := c.Jobs.CancelJob(t.Context(), &leylinev1.JobRef{JobId: j.GetJobId()}); err != nil {
+					t.Fatal(err)
+				}
+				cancelled = true
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !cancelled {
+		t.Fatal("the transcription job never appeared")
+	}
+	r := <-done
+	if exitCode(r.err) != 1 || !strings.Contains(r.err.Error(), "cancelled before it finished") || !strings.Contains(r.err.Error(), "ley records --protocol speech --job-id job_") {
+		t.Errorf("want exit 1 saying it was cancelled, got exit %d: %v", exitCode(r.err), r.err)
+	}
+	if strings.Count(r.out, "\n") >= 300 {
+		t.Errorf("the job was not stopped early:\n%d lines", strings.Count(r.out, "\n"))
 	}
 }
 

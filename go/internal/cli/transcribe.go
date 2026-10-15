@@ -50,8 +50,10 @@ and transcribing again with another model adds records beside these.
 
 --engine picks the speech decoder ('ley decoders' lists them; the default is
 speech). --model sets the model the speech feature uses with the decoder's
-provider, as 'ley ai use speech' does, so later jobs use it too; a decoder
-that calls no provider has no model to choose.
+provider, as 'ley ai use speech' does, once the job has started. The daemon
+fixes a job's model when it starts the decoder, so this job runs with the
+model set before it and later jobs with this one; a decoder that calls no
+provider has no model to choose.
 
 The recording is a job id, an id prefix, or a ley://recordings/ URI.
 
@@ -77,7 +79,7 @@ The recording is a job id, an id prefix, or a ley://recordings/ URI.
 		},
 	}
 	cmd.Flags().StringVar(&o.decoder, "engine", "speech", "the speech decoder to run ('ley decoders' lists them)")
-	cmd.Flags().StringVar(&o.model, "model", "", "the model the decoder's provider runs, kept for later speech jobs too")
+	cmd.Flags().StringVar(&o.model, "model", "", "the speech model for later jobs, set once this one starts, as 'ley ai use speech' sets it")
 	cmd.Flags().BoolVarP(&o.yes, "yes", "y", false, "start without asking")
 	return cmd
 }
@@ -99,17 +101,18 @@ func runTranscribe(ctx context.Context, s *verbSession, o transcribeOptions) err
 	if ok, err := confirmTranscribe(s, run, open, o); !ok || err != nil {
 		return err
 	}
-	if o.model != "" {
-		fm := &leylinev1.FeatureModel{Feature: "speech", Provider: run.decoder.GetCredentialProvider(), Model: o.model}
-		if _, err := s.Client.Credentials.SetFeatureModel(ctx, fm); err != nil {
-			return err
-		}
-	}
 	job, err := s.Client.StartDecode(ctx, &leylinev1.DecodeConfig{
 		Decoder: run.decoder.GetName(), SourceUri: leyline.RecordingURI(run.jobID), Keep: true,
 	})
 	if err != nil {
 		return decodeFailure(s, decodeOptions{decoder: run.decoder.GetName()}, err)
+	}
+	// Set only once the job is running, so a refused job leaves the speech feature as it was.
+	if o.model != "" {
+		fm := &leylinev1.FeatureModel{Feature: "speech", Provider: run.decoder.GetCredentialProvider(), Model: o.model}
+		if _, err := s.Client.Credentials.SetFeatureModel(ctx, fm); err != nil {
+			return err
+		}
 	}
 	return followTranscribe(ctx, s, run, job)
 }
@@ -226,8 +229,12 @@ func transcribeStatement(lead string, run *transcribeRun, open time.Duration, mo
 	if hosts := run.decoder.GetContactsHosts(); len(hosts) > 0 {
 		where = "sends the audio to " + strings.Join(hosts, ", ")
 	}
-	return fmt.Sprintf("%s %s, %.1f min of squelch-open audio from %s %s, with %s (%s)", lead,
+	statement := fmt.Sprintf("%s %s, %.1f min of squelch-open audio from %s %s, with %s (%s)", lead,
 		words.Count(len(m.Parts), "part"), open.Minutes(), units.FormatFrequency(m.FrequencyHz), m.Mode, with, where)
+	if model != "" {
+		statement += "; the speech model becomes " + model + " for later jobs"
+	}
+	return statement
 }
 
 // followTranscribe prints the job's records as they arrive until the job ends, then any the live
@@ -282,13 +289,20 @@ func followTranscribe(ctx context.Context, s *verbSession, run *transcribeRun, j
 	if err := printRemainingSpeech(ctx, s, run, job.GetJobId()); err != nil {
 		return err
 	}
-	if final.GetState() == leylinev1.JobState_FAILED {
+	next := "ley records --protocol " + run.decoder.GetName() + " --job-id " + job.GetJobId()
+	switch final.GetState() {
+	case leylinev1.JobState_FAILED:
 		return &ExitError{Code: 1, Message: recordFailureDetail(final)}
+	case leylinev1.JobState_CANCELLED:
+		// Somebody else cancelled it (Ctrl-C here returns before this): the transcription is
+		// incomplete, which a script must not read as success.
+		return &ExitError{Code: 1, Message: fmt.Sprintf("the transcription was cancelled before it finished; %s kept. Read them with: %s",
+			words.Count(len(run.printed), "record"), next)}
 	}
 	st := s.app.ErrStyle
 	s.say("%s %s, kept as %s\n%s%s\n", st.Label("Transcribed"), words.Count(len(run.printed), "record"),
 		"ley://records/"+job.GetJobId(), st.Muted("Next: "),
-		st.Cmd("ley records --protocol "+run.decoder.GetName()+" --job-id "+job.GetJobId()))
+		st.Cmd(next))
 	return nil
 }
 

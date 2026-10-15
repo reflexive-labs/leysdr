@@ -41,7 +41,7 @@
     {
       "name": "callsigns",
       "type": "TEXT",
-      "description": "callsigns in the text, comma-separated: a pattern match over the normalised text, not a decoded identity"
+      "description": "callsigns in the text, comma-separated: a pattern match over the normalised text (prefix, one digit, 1 to 3 letters; a 4-letter suffix such as N0CALL is not matched), not a decoded identity"
     }
   ],
   "executable": "leydec-speech",

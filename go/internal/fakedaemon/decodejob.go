@@ -73,9 +73,10 @@ func (d *Daemon) startDecode(ctx context.Context, cfg *leylinev1.DecodeConfig) (
 	}
 	d.emit(byDaemon(), job)
 	reply := proto.Clone(job).(*leylinev1.Job)
+	spawned := d.withSpeechModel(man)
 	d.mu.Unlock()
 
-	go d.runDecode(job.JobId, man)
+	go d.runDecode(job.JobId, spawned)
 	return reply, nil
 }
 

@@ -597,14 +597,16 @@ the over, from the recording's anchor; its part and its 1-based over within the 
 `clip_uri` and `over`); the text; and the record's `callsigns`, a pattern match over the text, in
 parentheses. When the job leaves `RUNNING` it prints any record the live stream had not yet
 delivered, read back with `QueryRecords`, then the count and the `ley records` command that reads
-them again. A job that fails exits 1 with its reason and code; Ctrl-C cancels the job and keeps
+them again. A job that fails exits 1 with its reason and code, and one another client cancels exits 1 saying so; Ctrl-C cancels the job and keeps
 the records it made. `--json` prints each `DecodeRecord` as one line of NDJSON and nothing else on
 stdout.
 
 `--engine` picks the speech decoder, by name or alias (default `speech`); a decoder whose input is
 not `SEGMENTED` is a usage error. `--model` sets the speech feature's model for the decoder's
-provider, as `ley ai use speech <provider> <model>` does, so later speech jobs use it too; it is a
-usage error with a decoder that calls no provider. A decoder whose manifest names a provider with
+provider, as `ley ai use speech <provider> <model>` does, once the job has started, so a job the
+daemon refuses changes nothing. The daemon passes the model to the decoder when it starts it, so
+the job `--model` is given on runs with the model set before it, and later jobs run with this one;
+the statement says so. It is a usage error with a decoder that calls no provider. A decoder whose manifest names a provider with
 no key set is refused by the daemon with `CREDENTIAL_MISSING`, whose message names `ley ai add`. A
 recording that lists no squelch openings (one recorded without `--gate squelch`) and an IQ
 recording are refused before anything is asked, each with the `ley record` command that makes one

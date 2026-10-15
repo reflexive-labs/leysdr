@@ -30,6 +30,16 @@ func TestFind(t *testing.T) {
 		{"the net starts at seven, see you there", nil},
 		{"roger that, good copy, see you later", nil},
 		{"I have a radio", nil},
+		{"this is W6ABC, kilo delta two x-ray yankee zulu", []string{"W6ABC", "KD2XYZ"}},
+		{"W6ABC, W7XYZ", []string{"W6ABC", "W7XYZ"}},
+		{"W6ABC; W7XYZ", []string{"W6ABC", "W7XYZ"}},
+		{"meet at B2B later", nil},
+		{"C3PO said so", nil},
+		{"I 6 B", nil},
+		{"india six bravo charlie", nil},
+		{"N0CALL testing", nil},
+		{"N0A", nil},
+		{"G4ABC and M0XY", []string{"G4ABC", "M0XY"}},
 		{"", nil},
 	} {
 		if got := Find(tc.text); !slices.Equal(got, tc.want) {

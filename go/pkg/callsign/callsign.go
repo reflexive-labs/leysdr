@@ -4,7 +4,9 @@
 // writes a callsign the way it was spoken -- "whiskey six alpha bravo
 // charlie", "W 6 ABC", "W6ABC" -- so Normalise first folds the phonetic
 // alphabet, spoken digits and spelled letters into compact runs, and Find then
-// applies the callsign pattern to each run. What Find returns is a pattern
+// applies the callsign pattern to each run: a prefix of one or two letters or
+// of a digit and a letter, one digit, and a suffix of one to three letters, so
+// a four-letter suffix (N0CALL) is not matched. What Find returns is a pattern
 // match over a model's text, not a decoded identity, and a record that carries
 // it says so (docs/design/ai.md, "Callsigns are a pattern match").
 package callsign
@@ -38,19 +40,45 @@ var fillers = map[string]bool{"number": true}
 // upper-case token: "this is whiskey six alpha bravo charlie" becomes
 // "this is W6ABC". A run is a sequence of phonetic words, digit words,
 // digits, single letters and letter-digit tokens; it is joined without spaces
-// and upper-cased, and ends at a full stop, a question mark or an exclamation
-// mark. Every other word is kept as written, so the result still
+// and upper-cased, and ends at a word that ends in a comma, a semicolon, a
+// full stop, a question mark or an exclamation mark, so two callsigns in a
+// list stay two. Every other word is kept as written, so the result still
 // reads as the sentence. The lower-case words "a" and "i" are read as words,
 // not letters, because in running text they nearly always are.
 func Normalise(text string) string {
-	var out, run []string
+	toks := scan(text)
+	out := make([]string, len(toks))
+	for i, t := range toks {
+		out[i] = t.text
+	}
+	return strings.Join(out, " ")
+}
+
+// token is one word of the normalised text, or one run.
+type token struct {
+	text string
+	run  bool
+	// phonetic is set on a run that holds a spoken word ("bravo", "six"), which
+	// is a person spelling something out rather than a word that happens to mix
+	// letters and digits.
+	phonetic bool
+}
+
+// scan splits text into words and runs, as Normalise describes.
+func scan(text string) []token {
+	var out []token
+	var run strings.Builder
+	phonetic := false
 	var pending []string // fillers seen inside a run, kept if the run ends there
 	flush := func() {
-		if len(run) > 0 {
-			out = append(out, strings.Join(run, ""))
-			run = run[:0]
+		if run.Len() > 0 {
+			out = append(out, token{text: run.String(), run: true, phonetic: phonetic})
+			run.Reset()
+			phonetic = false
 		}
-		out = append(out, pending...)
+		for _, f := range pending {
+			out = append(out, token{text: f})
+		}
 		pending = pending[:0]
 	}
 	for _, field := range strings.Fields(text) {
@@ -59,22 +87,23 @@ func Normalise(text string) string {
 		})
 		if ch, ok := spelled(word); ok {
 			pending = pending[:0]
-			run = append(run, ch)
-			// A sentence ends the run: two callsigns either side of a full stop are two.
-			if strings.ContainsAny(field[len(field)-1:], ".?!") {
+			run.WriteString(ch)
+			_, isSpoken := spoken[strings.ToLower(word)]
+			phonetic = phonetic || isSpoken
+			if strings.ContainsAny(field[len(field)-1:], ",;.?!") {
 				flush()
 			}
 			continue
 		}
-		if len(run) > 0 && fillers[strings.ToLower(word)] {
+		if run.Len() > 0 && fillers[strings.ToLower(word)] {
 			pending = append(pending, field)
 			continue
 		}
 		flush()
-		out = append(out, field)
+		out = append(out, token{text: field})
 	}
 	flush()
-	return strings.Join(out, " ")
+	return out
 }
 
 // spelled is what one word contributes to a run, if it belongs in one.
@@ -106,27 +135,50 @@ func spelled(word string) (string, bool) {
 	return "", false
 }
 
-// pattern is an amateur callsign: a prefix of one or two letters or a digit
-// and a letter, one digit, and a suffix of one to three letters.
-var pattern = regexp.MustCompile(`^(?:[A-Z]{1,2}|[0-9][A-Z])[0-9][A-Z]{1,3}$`)
+// pattern is an amateur callsign: a prefix of one or two letters or of a
+// digit and a letter, one digit, and a suffix of one to three letters. A
+// four-letter suffix (N0CALL) is not matched.
+var pattern = regexp.MustCompile(`^([A-Z]{1,2}|[0-9][A-Z])[0-9]([A-Z]{1,3})$`)
+
+// singlePrefixes are the letters the ITU issues as a whole callsign prefix
+// (B China, F France, G United Kingdom, K/N/W United States, M United Kingdom,
+// R Russia). I is one too but is left out: a lone capital I in running text is
+// nearly always the pronoun.
+const singlePrefixes = "BFGKMNRW"
 
 // portable is the stroke suffix an operator away from home adds: /P
 // portable, /M mobile. It is not part of the callsign.
 var portable = regexp.MustCompile(`/[PM]$`)
+
+// isCallsign applies the pattern to one run. A one-letter prefix must be one
+// the ITU issues alone, and with it a one-letter suffix (N0A) counts only when
+// it was spelled out phonetically, because a typed B2B or a model's "C3PO" is
+// far more often not a callsign.
+func isCallsign(call string, phonetic bool) bool {
+	m := pattern.FindStringSubmatch(call)
+	if m == nil {
+		return false
+	}
+	prefix, suffix := m[1], m[2]
+	if len(prefix) == 1 && (!strings.Contains(singlePrefixes, prefix) || (len(suffix) < 2 && !phonetic)) {
+		return false
+	}
+	return true
+}
 
 // Find returns the callsigns the pattern matches in the normalised text, in
 // the order they first appear and each once. A text with none returns nil.
 func Find(text string) []string {
 	var found []string
 	seen := map[string]bool{}
-	for _, tok := range strings.Fields(Normalise(text)) {
-		tok = strings.TrimFunc(tok, func(r rune) bool {
-			return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '/'
-		})
-		tok = portable.ReplaceAllString(strings.ToUpper(tok), "")
-		if pattern.MatchString(tok) && !seen[tok] {
-			seen[tok] = true
-			found = append(found, tok)
+	for _, tok := range scan(text) {
+		if !tok.run {
+			continue
+		}
+		call := portable.ReplaceAllString(tok.text, "")
+		if isCallsign(call, tok.phonetic) && !seen[call] {
+			seen[call] = true
+			found = append(found, call)
 		}
 	}
 	return found

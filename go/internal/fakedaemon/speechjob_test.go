@@ -204,6 +204,32 @@ func TestSpeechNeedsItsKey(t *testing.T) {
 	}
 }
 
+// A key the provider refused is CREDENTIAL_REJECTED at start, with the provider's words and the
+// command that replaces it.
+func TestSpeechRefusesARejectedKey(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{
+		RecordingsDir: t.TempDir(), Recordings: []fakedaemon.SeedRecording{seeded(false)},
+		SpeechProvider: "deepgram",
+	})
+	ctx := t.Context()
+	if _, err := c.Credentials.SetCredential(ctx, &leylinev1.SetCredentialRequest{Provider: "deepgram", Secret: fakedaemon.RejectedSecret}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := c.StartDecode(ctx, &leylinev1.DecodeConfig{Decoder: "speech", SourceUri: leyline.RecordingURI(seededID), Keep: true})
+	if leyline.Code(err) != leyline.CodeCredentialRejected || !strings.Contains(err.Error(), "invalid x-api-key") || !strings.Contains(err.Error(), "ley ai add deepgram") {
+		t.Fatalf("want CREDENTIAL_REJECTED with the provider's words and ley ai add deepgram, got %v", err)
+	}
+	jobs, err := c.ListJobs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, j := range jobs {
+		if j.GetDecode() != nil {
+			t.Errorf("a refused decode left a job: %v", j)
+		}
+	}
+}
+
 // A gated recording the fake makes lists its over in the part sidecar, so it can be transcribed.
 func TestAGatedRecordingListsItsOvers(t *testing.T) {
 	dir := t.TempDir()

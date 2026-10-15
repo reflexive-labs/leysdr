@@ -15,8 +15,10 @@ and transcribing again with another model adds records beside these.
 
 --engine picks the speech decoder ('ley decoders' lists them; the default is
 speech). --model sets the model the speech feature uses with the decoder's
-provider, as 'ley ai use speech' does, so later jobs use it too; a decoder
-that calls no provider has no model to choose.
+provider, as 'ley ai use speech' does, once the job has started. The daemon
+fixes a job's model when it starts the decoder, so this job runs with the
+model set before it and later jobs with this one; a decoder that calls no
+provider has no model to choose.
 
 The recording is a job id, an id prefix, or a ley://recordings/ URI.
 
@@ -34,7 +36,7 @@ Examples:
 Flags:
       --engine string   the speech decoder to run ('ley decoders' lists them) (default "speech")
   -h, --help            help for transcribe
-      --model string    the model the decoder's provider runs, kept for later speech jobs too
+      --model string    the speech model for later jobs, set once this one starts, as 'ley ai use speech' sets it
   -y, --yes             start without asking
 
 Global Flags:
