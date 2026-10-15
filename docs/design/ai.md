@@ -409,15 +409,19 @@ endpoint, and the key is whatever that kind takes. The candidates, with no defau
 
 | feature | provider | notes |
 |---|---|---|
-| assistant | Anthropic (Claude) | tool use, prompt caching and a Go SDK (`anthropic-sdk-go`); the tool definitions and system prompt are the same on every turn, so later turns read them from the cache |
-| assistant | Claude through Amazon Bedrock, Google Vertex AI or a third-party gateway | the same model behind another endpoint and credential; the Go SDK has Bedrock and Vertex clients |
-| assistant | an OpenAI-compatible local model server | later; whether a local model passes the evals is unmeasured |
+| assistant | Anthropic (Claude) | the Messages API with tool use and prompt caching; the tool definitions and system prompt are the same on every turn, so later turns read them from the cache |
+| assistant | Claude through Amazon Bedrock or Google Vertex AI | the same model behind another endpoint and credential; not built |
+| assistant | OpenAI, or any OpenAI-compatible endpoint (a gateway, a local model server) | the chat completions API with tools; the API caches a repeated prefix by itself; whether a local model passes the evals is unmeasured |
 | speech | Apple's on-device speech engine (`SpeechAnalyzer`, macOS 26) | no key, no cost, no audio leaves the Mac; accuracy on NFM receiver audio unmeasured |
 | speech | whisper.cpp | MIT, runs on the Mac; speed against model size on the target Macs unmeasured |
 | speech | a cloud speech-to-text API (OpenAI, Deepgram, AssemblyAI and others) | billed by audio duration; most take a vocabulary or prompt hint, where callsigns and the phonetic alphabet go |
 
-Anthropic's API has no speech-to-text endpoint, so a user who wants cloud speech adds a second
-provider. The default speech engine will be chosen by measuring each candidate on real receiver
+The assistant runs on Anthropic or on any OpenAI-compatible endpoint: the provider `anthropic`
+calls the Messages API, and `openai`, or any other provider whose key names an endpoint, calls
+chat completions ([`docs/dev/assistant.md`](../dev/assistant.md), "The model"). So one OpenAI key can serve both
+features, the assistant and cloud speech. Anthropic's API has no speech-to-text endpoint, so a
+user whose assistant runs on Anthropic and who wants cloud speech adds a second provider. The
+default speech engine will be chosen by measuring each candidate on real receiver
 audio (NOAA Weather Radio, airband ATIS, a 2 m net) for word error rate, callsign recall, cost per
 hour of squelch-open audio and the delay from squelch close to text. The default assistant model
 will be chosen by running the evals with the assistant as the agent, on pass rate and tokens per

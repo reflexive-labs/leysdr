@@ -99,11 +99,12 @@ next message joins it.
 A model error is written as a `WorkerFailure` with its code: `CREDENTIAL_REJECTED` for a key the
 provider refused, `PROVIDER_REFUSED` for a rate or spend limit or an overloaded provider, with the
 provider's words (a 400 `invalid_request_error` that mentions credit or billing is an account
-out of credit, and is `PROVIDER_REFUSED` too), and `PROVIDER_UNAVAILABLE` for anything else. A
-provider other than `anthropic` fails at start with `PROVIDER_UNAVAILABLE`, and `anthropic` with
-no key with `CREDENTIAL_MISSING`. So does an endpoint that would send the key in the clear: it
-must be `https`, or plain `http` to `localhost`, `127.0.0.1` or `::1` only ("the endpoint must be
-https").
+out of credit, and is `PROVIDER_REFUSED` too), and `PROVIDER_UNAVAILABLE` for anything else; each
+model's mapping is under "The model" below. A provider the worker has no model for (neither
+`anthropic` nor `openai`, and no endpoint) fails at start with `PROVIDER_UNAVAILABLE`, and a
+provider with no key with `CREDENTIAL_MISSING`, naming `ley ai add <provider>`. So does an
+endpoint that would send the key in the clear, with `PROVIDER_UNAVAILABLE`: it must be `https`, or
+plain `http` to `localhost`, `127.0.0.1` or `::1` only ("the endpoint must be https").
 
 ## The tools
 
@@ -202,17 +203,72 @@ tool error that says there is nothing to undo.
 ## The model
 
 `Model` is one method, `Respond(ctx, system, tools, messages)`, returning text and tool-use
-blocks, the stop reason and the usage.
+blocks, the stop reason and the usage. The messages are in the worker's own form, the Messages
+API's blocks (`go/internal/assistant/model.go`), whatever the provider; the transcript file holds
+the same form, so a resumed worker loads it the same way for either model. A conversation keeps
+the provider it started with.
+
+The worker picks the model from `WorkerStart`:
+
+| `provider` | `endpoint` | model | default model |
+|---|---|---|---|
+| any, with `LEY_ASSISTANT_SCRIPT` set | | Scripted | |
+| `anthropic` | empty: `https://api.anthropic.com` | Anthropic | none |
+| `openai` | empty: `https://api.openai.com` | OpenAI | `gpt-5` |
+| any other | set: a gateway or a local model server | OpenAI | none: fails `FAILED_PRECONDITION`, naming `ley ai use assistant <provider> <model>` |
+| any other | empty | none: fails `PROVIDER_UNAVAILABLE` | |
+
+`gpt-5` is a placeholder until the evals choose a default. The usage reports name the model that
+ran, the default included. Both models make one call at a time with the same rules: the call has
+3 minutes, the client follows no redirect (Go re-sends a header set by hand to the redirect's
+host), an endpoint written with `/v1` on the end does not get a second one, and the provider's
+words reach the failure on one line of at most 300 characters with the key cut out.
 
 **Anthropic** (`go/internal/assistant/anthropic.go`) speaks the Messages API with `net/http`:
 `POST {endpoint}/v1/messages` with `x-api-key` and `anthropic-version: 2023-06-01`, non-streaming,
 the system prompt as one text block and the last tool definition each marked
 `cache_control: {"type": "ephemeral"}`, because both are the same on every call of a
-conversation and every call after the first reads them from the provider's cache. The client
-follows no redirect, since Go re-sends a header set by hand to the redirect's host. It is not
+conversation and every call after the first reads them from the provider's cache. It is not
 `anthropic-sdk-go`: the SDK's module graph brings the AWS and Google Cloud SDKs for its Bedrock
 and Vertex clients, dozens of rows in `third_party/licenses` for one request shape and four error
-outcomes.
+outcomes. A 401 or 403 is `CREDENTIAL_REJECTED`; a 429, a 529, an `overloaded_error`, or a 400
+`invalid_request_error` that mentions credit or billing is `PROVIDER_REFUSED`; anything else is
+`PROVIDER_UNAVAILABLE`.
+
+**OpenAI** (`go/internal/assistant/openai.go`) speaks the chat completions API, which OpenAI
+serves and gateways and local model servers copy, with `net/http`: `POST {endpoint}/v1/chat/completions`
+with `Authorization: Bearer <key>`, non-streaming, `tool_choice: "auto"`. The transcript is
+converted on every call:
+
+| the worker's form | chat completions |
+|---|---|
+| the system prompt | the first message, role `system` |
+| a user message's `text` blocks | one `user` message, the texts joined |
+| an assistant message | one `assistant` message: its text as `content` (`null` when it has none), each `tool_use` block as an entry of `tool_calls` (`{id, type: "function", function: {name, arguments}}`) in order |
+| a `tool_result` block | a `tool` message with `tool_call_id` and `content`, before the user message's text so it follows the call it answers; `is_error` becomes the prefix `error: ` on the content, since the API has no flag for it |
+| a tool definition | `{type: "function", function: {name, description, parameters}}`, the input schema as `parameters` |
+
+Back the other way, the first choice's content is a `text` block (a refusal in the message's
+`refusal` field too), and each entry of `tool_calls` is a `tool_use` block in the order given;
+parallel calls run one at a time through the gate as any others. A call with no id (some local
+servers send none) is given one, since its result must name it. `arguments` is a JSON string the
+model writes, and it may not be JSON: such a call is kept in the transcript as a JSON string, sent
+back as the model wrote it, and refused without running, the model told "the arguments are not a
+JSON object". `finish_reason` maps onto the loop's stop reasons: `tool_calls` (or tool calls under
+any reason, as some servers send `stop`) is `tool_use`, `stop` is `end_turn`, `length` is
+`max_tokens`, and `content_filter`, or a `refusal`, is `refusal`. The usage is `prompt_tokens`,
+`completion_tokens` and `prompt_tokens_details.cached_tokens`; since `prompt_tokens` counts the
+cached tokens too, the input reported is `prompt_tokens` less the cached ones, so input and cache
+read add up to what was sent as they do for Anthropic, and cache write is 0. The API caches a
+repeated prefix by itself, so nothing is marked.
+
+The response is bounded with `max_completion_tokens`, 16384 because a reasoning model counts its
+hidden reasoning in it. An endpoint that takes only the older `max_tokens` refuses it with a 400
+that names it; the call is made again with `max_tokens`, and the rest of the conversation sends
+`max_tokens` from the start. Errors map as the speech engine's do: a 401 or 403 is
+`CREDENTIAL_REJECTED`; a 429, any 5xx, an error whose type or code says `overloaded`, the code
+`insufficient_quota`, or a 400 that mentions credit or billing is `PROVIDER_REFUSED`; anything
+else, a redirect and a response with no choices included, is `PROVIDER_UNAVAILABLE`.
 
 **Scripted** (`go/internal/assistant/scripted.go`) plays the file `LEY_ASSISTANT_SCRIPT` names,
 whatever the provider: one JSON object a line, each one model response, played in order across
@@ -239,13 +295,21 @@ which is how a test stops a turn mid-call.
 `go test ./internal/assistant` runs the loop in process against `go/internal/fakedaemon`, with
 pipes on both sides and the test playing the daemon's half of the protocol
 (`go/internal/assistant/harness_test.go`). It covers each row of the gate approved and declined,
-with the daemon's state after each, the speech decoder's alias included; undo, of a stopped
+with the daemon's state after each, the speech decoder's alias included, on both the scripted model
+and the OpenAI model; undo, of a stopped
 channel and of a volume; received text across turns and from a view tool; `WorkerStop` during a
 slow response, a running tool and a wait; a response cut at `max_tokens`; the 32 KB cut; usage on
-the ledger per response; view tools and the names left out; the Messages API request shape, its
-error mapping and the https rule against `httptest`; the transcript's round trip, a torn last line,
-a call left without a result, a resumed worker's first call and a missing file
+the ledger per response; view tools and the names left out; each model's request shape, error
+mapping and the https rule against `httptest`, and for the OpenAI model the tool-result order, the
+`max_completion_tokens` fallback, the default model, a provider with an endpoint and arguments
+that are not an object; the transcript's round trip, a torn last line,
+a call left without a result, a resumed worker's first call (on both models) and a missing file
 (`transcript_test.go`); and the key on no stream but stdin, and not in the transcript.
+
+A test runs the OpenAI model with `workerConfig.via = "openai"`: the harness starts a chat
+completions endpoint that plays the same script lines (`openai_loop_test.go`), one per request,
+and refuses a request the API would: the system prompt not first, or a tool call not answered by a
+`tool` message, in order, before anything else.
 `TestWorkerAssistantCommand` in `go/internal/cli/worker_test.go` runs the same protocol through
 `ley worker assistant` itself.
 
