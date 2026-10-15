@@ -93,8 +93,8 @@ public final class AssistantController {
     public private(set) var notice: AssistantNotice? { didSet { onChange?(self) } }
     /// A start or a message is on its way: the field waits for the reply.
     public private(set) var sending = false { didSet { onChange?(self) } }
-    /// The daemon no longer knows the conversation (it restarted, or forgot a finished one): it
-    /// can only be replaced.
+    /// The daemon no longer knows the conversation (a client deleted it, or the daemon's
+    /// retention dropped it): it can only be replaced.
     public private(set) var isLost = false { didSet { onChange?(self) } }
 
     /// Called on the main actor after any of the above changes.
@@ -299,8 +299,8 @@ public final class AssistantController {
     }
 
     /// Follows the conversation until it ends or fails, resuming from the held `seq` after a
-    /// dropped stream. An unknown id ends the watch: the daemon restarted and the conversation,
-    /// which is never kept, went with it.
+    /// dropped stream, a daemon restart included, since the daemon keeps the conversation. An
+    /// unknown id ends the watch: the conversation was deleted.
     private func watch(_ id: String) {
         watching?.cancel()
         watching = Task { [weak self] in

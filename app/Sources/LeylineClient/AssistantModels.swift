@@ -244,10 +244,10 @@ public enum AssistantWords {
     public static let whatItDoes =
         "Ask in plain words: \u{201C}put on the weather radio\u{201D}, \u{201C}what\u{2019}s active on 2 m?\u{201D}, \u{201C}show me airband\u{201D}. The assistant tunes, scans, records and explains, and asks before it takes over a radio, deletes a recording or starts paid transcription."
 
-    /// The daemon answered that it does not know the conversation: it restarted, and a
-    /// conversation is never kept (`docs/design/ai.md`, "The assistant").
+    /// The daemon answered that it does not know the conversation: another client deleted it, or
+    /// it fell out of what the daemon keeps (`docs/design/ai.md`, "The assistant").
     public static let forgotten =
-        "The daemon no longer has this conversation; it ends when the daemon restarts. Start a new one to go on."
+        "The daemon no longer has this conversation; it was deleted. Start a new one to go on."
 
     /// The empty panel with no model chosen yet.
     public static let noModel =
