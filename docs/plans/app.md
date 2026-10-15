@@ -1557,6 +1557,44 @@ off the Mac. The pane is forced dark like the window rather than giving `Theme` 
   row, and the day and month switch.
 - The relative words move on each minute (`TimelineView(.everyMinute)`).
 
+### The assistant panel `[x]` (built under `ai-features.md`)
+
+A column beside the inspector holding one conversation with the assistant: steps that open to
+their arguments and result, questions as Allow and Decline, Stop, the tokens so far, and the
+app's three view tools (`../dev/app.md`, "The assistant panel"). The façade's rows, the view
+tools' parsing and the attribution fold are Linux-tested; the conversation, a question, a view
+tool answered through `AnswerViewTool`, Stop, End and the attribution story run against the daemon
+and the fake worker in `make app-e2e`. The views are not compiled off the Mac.
+
+#### Unverified on the Mac
+
+- The panel compiles: `AssistantPanel.swift`, `AppSession`'s assistant section and its
+  `ViewToolPerformer` conformance, the `visibleRange` rewrite onto `ViewWindow.visible`, the
+  column and toggle in `MainWindow.swift`, Show Assistant in `LeylineApp.swift`, the change note in
+  `InspectorView.swift`, the `Theme.Layout.assistant*` tokens.
+- K1: with no key, no toggle, no menu item and no column; adding a key in Settings brings the
+  toggle, and removing it takes the column away even while it was open.
+- ⇧⌘A and the toolbar toggle open and close the column in both places, and the choice survives
+  a relaunch; ⌘1 and ⌘2 with the column open keep the transcript, its scroll and the field's text.
+- The empty panel's words wrap inside 320 pt; with no model chosen, Open Settings opens the AI
+  pane.
+- Return in the field sends and clears it; Option-Return makes a new line; Space and the arrows
+  type into the field rather than muting and tuning the radio; the field is disabled while the
+  assistant thinks or asks, and a refused send puts the text back.
+- The transcript stays scrolled to the newest turn as text and steps arrive; a user turn sits on
+  the right in muted ink; a step's row opens and closes and shows the arguments, the result and
+  its JSON; long results wrap and can be selected.
+- A question shows as a card under the transcript; Allow and Decline answer it and the card
+  goes; Return does not answer it.
+- Stop shows only while the assistant thinks and ends the turn; New Conversation ends the
+  conversation and empties the panel.
+- "Show me 2 m" with the radio on 146.52 MHz zooms the waterfall and the rail's window onto the
+  part of 2 m the radio captures without moving the radio; a tune puts the window back on the
+  tuned frequency; "show me airband" from there answers that a tune is needed and moves nothing.
+- "Open the recording …" switches to the Library on that recording's channel and part.
+- With `ley set squelch -45` from a terminal, the inspector's identity reads "Another terminal
+  set the squelch to -45 dBFS.", and the line goes on the window's own next change.
+
 ## Backlog
 
 - **Two frequency affine maps remain separate.** `SquelchTrack` and `GainSlider` share
