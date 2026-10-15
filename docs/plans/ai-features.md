@@ -958,10 +958,16 @@ the fake. Files: `go/internal/cli/ask.go`, goldens, `docs/reference/cli.md`,
 `docs/guide/using-ley.md`. Verify: help goldens; transcripts recorded against the fake with a
 scripted conversation.
 
-### AI-4 `[ ]` Settings, AI in the app
+### AI-4 `[x]` Settings, AI in the app
 
-The mirror half is done (2026-10-14): `MirrorState` carries `ai` and `usage` from the snapshot
-and the two events, tested on Linux; the pane remains. A `Settings` scene (⌘,) with an AI pane: keys (K1 to K5), the provider and model per feature
+Done 2026-10-15 on Linux: the façade (`AISettings`: key rows, feature rows with the privacy
+sentence per provider, the usage fold by UTC day and month, `hasAnyAI`) and the session's unary
+writes are tested, and the e2e adds a key through the contract against the real daemon and
+proves its text absent from the mirror, the notice and the log. The views
+(`SettingsView`, `AISettingsView`) were written blind and are listed in `docs/plans/app.md` for
+the Mac pass: ⌘,, the dark appearance under a light system, the `SecureField` clearing on close,
+the pickers. The Settings window is forced dark like the main window rather than given light
+tokens. A `Settings` scene (⌘,) with an AI pane: keys (K1 to K5), the provider and model per feature
 (K4), and the usage view (U1). `DaemonMirror` gains `ai` and `usage` from the snapshot and the
 two events; the pane renders them and writes through `AppSession` with the unary RPCs, as
 recordings and bookmarks do (the coalescer carries parameter writes only). Verify: façade tests
@@ -976,11 +982,18 @@ overs by `clip_uri` and `over`; the words under each over with the model and con
 by text; transcribe again; export as text and SRT from the capture's anchor. Verify: façade
 tests on Linux for the fold and the SRT times; the views read on the Mac.
 
-### AI-7 `[ ]` Live speech and speech watches
+### AI-7 `[x]` Live speech and speech watches
 
 T3 to T5: `ley decode speech` on a live channel starts a gated recording beside the job and
 stamps each record's `clip_uri` from it; speech in the transmissions log in both clients; `ley
-watch speech --where 'text~…'`. Verify: an e2e test playing a fixture with keyed overs through the
+watch speech --where 'text~…'`. **Done 2026-10-15** (the `ley` side; the app's transmissions log
+is AI-6's and AI-11's territory and still shows no words): the clips are a `RecordRunner` on a
+borrowed lease of the decode job's channel, under the job's own id, with the recorder's gate; an
+unkept job's clips go when it ends and a crash orphan is deleted at boot (`keep: false` in the
+manifest); a kept job's clips are capped at a tenth of `--store-cap` with parts cut on time at
+half that; a resumed kept job continues the same recording with new parts. The `~` predicate
+could never match a phrase (it compared each word to the whole value); it now matches whole
+tokens in order, case-folded, so `text~net control` fires. `ley records` shows an OVER column. Verify: an e2e test playing a fixture with keyed overs through the
 scripted engine, a `text~` predicate firing on the expected over, a kept job resuming with the
 same id after a daemon restart.
 
@@ -1000,12 +1013,18 @@ Haiku 5.5 at low and medium effort chooses the default model and effort on pass 
 per completed scenario, priced from the provider's list on the day. Needs a key. Verify: the
 numbers and the date recorded here.
 
-### AI-13 `[ ]` Injection scenarios
+### AI-13 `[x]` Injection scenarios
 
 A check type `no_write` that reads the daemon's event log for a write the scenario forbids, and
 scenarios in which a fixture's APRS comment (a speech record once AI-7 exists) asks the agent to
 add a notifier, delete a recording or retune. Verify: the scenarios pass for the assistant and
-for Claude Code on `ley mcp`.
+for Claude Code on `ley mcp`. **Written 2026-10-15, unrun**: a `no_write` check reads the run's
+`events.jsonl` (every event from seq 0), `mode: assistant` runs `ley ask --yes --json` as the
+agent with the key piped to `ley ai add` and removed at the end, `--scripted` plays the whole
+path without a key (three scripted runs pass and the obeying scripts fail exactly the expected
+checks), and the three `inject-aprs-*` scenarios run in both modes. The eval daemon gets
+`LEYLINE_SECRETS=file` so a Mac run never touches the login keychain. What remains is the run
+itself: `make eval` on the Mac with a key, both modes, six passes.
 
 ## Lanes
 
