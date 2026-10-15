@@ -773,28 +773,168 @@ test transcribes a gated fixture recording through the scripted engine and `ley 
 
 ### AI-9 `[ ]` The assistant service and worker
 
-The `Assistant` service in `ai.proto` (a `Conversation` with its turns, tool calls and a pending
-action, full-state on every event; `Start`, `Send`, `Watch`, `Resolve`, `Cancel`, `List`; view
-tools a client declares at `Start` and answers through `AnswerViewTool`), a `ConversationStore`
-actor that spawns `ley worker assistant` per conversation through `WorkerProcess` with the key on
-stdin and talks to it on stdio (varint-delimited `WorkerEvent` in, `WorkerMessage` out, both in
-`ai.proto`), ends it on cancel or after 30 idle minutes, and ends a crashed worker's conversation with
-`INTERNAL` while the others continue. The worker in Go: `anthropic-sdk-go` (vendored licence,
-`NOTICE`), the `ley mcp` tools called in-process through one registry both `ley mcp` and the
-worker build from, the policy table as a gate before each tool call (`asks` rows become a pending
-action the daemon holds until `Resolve`), undo from the state read before each write, received
-text wrapped as quoted data, and `ReportUsage` after each response. A scripted model
-(`LEY_ASSISTANT_SCRIPT`) for tests. Files: `proto/leyline/v1/ai.proto`,
-`engine/Sources/LeylineServer/AI/ConversationStore.swift`, `Services/AssistantService.swift`,
-`go/internal/assistant/*` (new), `go/internal/cli/worker.go`, `go/internal/cli/mcp_tools*.go`
-(the registry), `third_party/licenses`, `NOTICE`. Verify: a test per policy row with the scripted
-model; the crash test; `make license-check`.
+**The contract**, settled 2026-10-15 in `ai.proto` (numbers are the next free ones in each
+message; `Event.body` gains `conversation = 13` and `GetStateResponse` `conversations = 11`):
+
+```proto
+message Conversation {                 // whole state on every event
+  string conversation_id = 1;          // conv_<ulid>
+  ConversationState state = 2;
+  string provider = 3;
+  string model = 4;
+  repeated Turn turns = 5;             // every turn so far, user and assistant alternating
+  PendingAction pending = 6;           // set while WAITING: what the assistant asks to do
+  ErrorDetail error = 7;               // set when FAILED
+  ClientInfo started_by = 8;
+  int64 started_at_ns = 9;
+  int64 last_turn_at_ns = 10;
+  repeated ViewTool view_tools = 11;   // declared by the client that started it
+  uint64 seq = 12;                     // bumps on every change; Watch replays from since_seq
+}
+enum ConversationState {
+  CONVERSATION_STATE_UNSPECIFIED = 0;
+  CONVERSATION_IDLE = 1;               // waiting for the user
+  CONVERSATION_THINKING = 2;           // the worker is on a turn
+  CONVERSATION_WAITING = 3;            // the assistant asked, and waits for Resolve or AnswerViewTool
+  CONVERSATION_ENDED = 4;
+  CONVERSATION_FAILED = 5;
+}
+message Turn {
+  string turn_id = 1;                  // "t1", "t2", … within the conversation
+  Role role = 2;
+  string text = 3;                     // the text so far; the whole text once done
+  repeated ToolCall tools = 4;         // in the order the assistant made them
+  int64 at_ns = 5;
+  bool done = 6;
+}
+enum Role { ROLE_UNSPECIFIED = 0; ROLE_USER = 1; ROLE_ASSISTANT = 2; }
+message ToolCall {
+  string call_id = 1;
+  string tool = 2;                     // a `ley mcp` tool name, a view tool, or "undo"
+  string arguments_json = 3;
+  ToolCallState state = 4;
+  string result_text = 5;              // the tool's prose, once DONE
+  string result_json = 6;              // the tool's JSON, once DONE
+  bool is_error = 7;
+  string reason = 8;                   // why it asks: the policy row, in words
+  int64 at_ns = 9;
+}
+enum ToolCallState {
+  TOOL_CALL_STATE_UNSPECIFIED = 0;
+  TOOL_CALL_RUNNING = 1;
+  TOOL_CALL_DONE = 2;
+  TOOL_CALL_AWAITING_APPROVAL = 3;     // Resolve decides
+  TOOL_CALL_AWAITING_CLIENT = 4;       // a view tool; AnswerViewTool answers
+  TOOL_CALL_REFUSED = 5;               // the user said no; the model is told so
+}
+message PendingAction { string call_id = 1; string tool = 2; string arguments_json = 3; string reason = 4; bool view_tool = 5; }
+message ViewTool { string name = 1; string description = 2; string input_schema_json = 3; }
+
+message StartConversationRequest { string provider = 1; string model = 2; repeated ViewTool view_tools = 3; } // empty = the assistant feature model
+message SendMessageRequest { string conversation_id = 1; string text = 2; }
+message ConversationRef { string conversation_id = 1; }
+message WatchConversationRequest { string conversation_id = 1; uint64 since_seq = 2; }
+message ResolveActionRequest { string conversation_id = 1; string call_id = 2; bool approve = 3; }
+message AnswerViewToolRequest { string conversation_id = 1; string call_id = 2; string result_text = 3; string result_json = 4; bool is_error = 5; }
+message ListConversationsRequest {}
+message ListConversationsResponse { repeated Conversation conversations = 1; }
+
+service Assistant {
+  rpc StartConversation(StartConversationRequest) returns (Conversation);  // CREDENTIAL_MISSING without a key for the provider
+  rpc SendMessage(SendMessageRequest) returns (Conversation);              // FAILED_PRECONDITION unless IDLE
+  rpc WatchConversation(WatchConversationRequest) returns (stream Conversation);
+  rpc ResolveAction(ResolveActionRequest) returns (Conversation);          // FAILED_PRECONDITION unless WAITING on that call
+  rpc AnswerViewTool(AnswerViewToolRequest) returns (Conversation);
+  rpc StopTurn(ConversationRef) returns (Conversation);                    // ends the running turn; the conversation stays IDLE
+  rpc EndConversation(ConversationRef) returns (Conversation);
+  rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse);
+}
+
+// The worker protocol, on the worker's stdio, varint-delimited like a decoder plugin's. The key
+// comes first as one SetCredentialRequest (LEYLINE_KEY_ON_STDIN=1), then WorkerEvents.
+message WorkerEvent {
+  oneof event {
+    WorkerStart start = 1;
+    UserMessage user = 2;
+    ActionResolved resolved = 3;
+    ViewToolAnswer view_answer = 4;
+    WorkerStop stop = 5;               // stop the running turn
+  }
+}
+message WorkerStart { string conversation_id = 1; string provider = 2; string model = 3; string endpoint = 4; repeated ViewTool view_tools = 5; string socket = 6; }
+message UserMessage { string turn_id = 1; string text = 2; }
+message ActionResolved { string call_id = 1; bool approved = 2; }
+message ViewToolAnswer { string call_id = 1; string result_text = 2; string result_json = 3; bool is_error = 4; }
+message WorkerStop {}
+message WorkerMessage {
+  oneof message {
+    Turn turn = 1;                     // the assistant's turn so far, whole each time
+    WorkerFailure failure = 2;
+  }
+}
+message WorkerFailure { ErrorDetail error = 1; }
+```
+
+The daemon derives the conversation's state from the turns it receives: a turn whose last tool
+call is `AWAITING_APPROVAL` or `AWAITING_CLIENT` makes the conversation `WAITING` with that call
+as `pending`; a turn marked `done` makes it `IDLE`. The worker reports usage with `ReportUsage`
+over the socket, as the check worker does, with `conversation_id` as the scope. The worker's
+tool writes reach the daemon through its own `ley mcp` server, driven in process over an
+in-memory transport, with client kind `mcp` and label `assistant`, so every guard and the
+attribution hold unchanged. A channel the assistant tunes is persistent, and the assistant says
+how to stop it (`ley stop`), because the worker's connection ends with the conversation; the
+app's panel can declare a view tool to retune its own channel instead (AI-11).
+
+**The daemon.** A `ConversationStore` actor: `StartConversation` resolves the provider and model
+(the request's, else the `assistant` feature model, else `CREDENTIAL_MISSING` naming `ley ai
+add`), spawns `ley worker assistant` through `WorkerProcess` with the key on stdin and
+`WorkerStart` after it, and keeps the conversation in memory; every change bumps `seq`, emits
+`Event.conversation` and feeds `WatchConversation` streams (replay from `since_seq`); `SendMessage`
+appends the user turn and writes `UserMessage`; `ResolveAction`/`AnswerViewTool` write their
+events and mark the call; `StopTurn` writes `WorkerStop`; `EndConversation` closes stdin, waits,
+kills; 30 idle minutes end a conversation; a worker that exits during a turn fails the
+conversation with `INTERNAL` ("the assistant stopped unexpectedly") and leaves the others alone;
+daemon shutdown ends them all. `AssistantService` wires the RPCs; `GetState.conversations` lists
+them. Verify: a scripted `ley` on `--ley` that plays a worker script; a test per transition;
+the crash test; the idle timer with a test clock.
+
+**The worker** (`go/internal/assistant`, run as `ley worker assistant`): reads the key and
+`WorkerStart`, hosts the `ley mcp` tool server in process behind an in-memory MCP client, builds
+the tool list for the model from it plus the view tools plus `undo`, and runs the loop per
+`UserMessage`: call the model, run tool calls in order, write the `Turn` after every change
+(text so far, each call's state), until the model stops. The model is behind a `Model`
+interface with two implementations: Anthropic through `anthropic-sdk-go` (the system prompt and
+tool definitions are the same on every turn, marked for the prompt cache; the API key and the
+endpoint from `WorkerStart`), and `Scripted` (`LEY_ASSISTANT_SCRIPT`: a file of JSON lines, each
+one model response: `{"text": …}` or `{"tool": …, "args": {…}}`, played in order) for every
+test. Usage from each response goes to `ReportUsage` (input, output, cache read and write
+tokens, one request). The policy gate before each tool call, from the table in "What the
+assistant may do": reads run; `tune`/`set`/`stop`/`scan`/`record`/unkept `start_decode_job`/
+`watch` run and are reported; `take_over: true`, `keep: true`, a `webhook:` notifier,
+`delete_recording`, `remove_bookmark`, three or more bookmark writes in one turn, and a speech
+decode (paid transcription, with the minutes from the recording) ask first (`AWAITING_APPROVAL`
+with the reason); a tool the gate never offers (shell notifier) is not in the model's list;
+`undo` reverts the last `set`/`tune` the assistant made from the values it read before writing.
+Received text: results of `records`, `query_records`, `list_entities` and speech text are
+wrapped as quoted data with a line saying it came over the air, and any write in a turn that
+read such a result asks first whatever the row says. A refused call returns "the user declined"
+to the model. `WorkerStop` cancels the model call and marks the turn done. The system prompt:
+what Leyline is, the invariant-12 rule (never name a modulation the detector did not; a band-plan
+label says where it came from), how to cite `ley` commands, and the ask-before policy in words.
+Licences: `anthropic-sdk-go` and its transitive dependencies in `third_party/licenses`, `NOTICE`.
+Verify: a test per policy row with the scripted model against the fake daemon (the fake gains
+an `Assistant` server that runs the same Go worker loop in process, so `ley ask` is testable
+without the daemon); undo; the received-text rule; `WorkerStop` mid-call; `make license-check`.
 
 ### AI-10 `[ ]` `ley ask`
 
-One request on the command line or a prompt loop; confirmations as `[y/N]` questions on stderr;
-`--continue` resumes the newest conversation the daemon has; `--json` is the conversation's
-events. Files: `go/internal/cli/ask.go`, goldens, `docs/reference/cli.md`,
+One request on the command line or a prompt loop when none is given; the assistant's text as it
+arrives on stdout, each tool call as one dim line (`→ tune 162.400 MHz NFM`) and its result's
+first line; a pending action as a `[y/N]` question on stderr answered with `ResolveAction`
+(`--yes` approves everything, which is how an agent uses it); `--continue` resumes the newest
+`IDLE` conversation the daemon has, else starts one; `--json` prints every `Conversation` the
+watch delivers, one per line; Ctrl-C stops the turn (`StopTurn`) and a second ends the
+conversation; exit 1 with the error when the conversation fails. Files: `go/internal/cli/ask.go`, goldens, `docs/reference/cli.md`,
 `docs/guide/using-ley.md`. Verify: help goldens; transcripts recorded against the fake with a
 scripted conversation.
 
