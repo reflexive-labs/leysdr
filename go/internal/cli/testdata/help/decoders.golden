@@ -4,6 +4,11 @@ audio of a channel and writes records back, so 'ley decode aprs' needs no
 frequency, mode or bandwidth -- the decoder's recipe says where its protocol
 lives and how to demodulate it.
 
+A decoder that calls a model provider says so: NEEDS names the key it runs
+on ('ley ai add <provider>' adds it), and SENDS TO the hosts its manifest
+says the audio goes to. They are the manifest's word, not something the
+daemon enforces, and the columns are left out when no decoder calls one.
+
 The daemon reads manifests and runs nothing to build this list, so a broken
 plugin is missing from it rather than breaking the verb; the directories it
 looked in are printed under the table.

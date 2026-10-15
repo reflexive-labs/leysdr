@@ -49,7 +49,8 @@ ley                                  # bare: orientation screen on a TTY (see be
 ├── monitor <band|range> [--for D] [--min-snr DB] [--min-hold D] [--skirt-db DB] [--take-over] [--device SEL]
 │                                    # scan's stationary sibling: parks one capture on a band for --for and prints a
 │                                    # time-ordered transmission log; Jobs.StartJob(MonitorConfig), detections on telemetry
-├── decoders                         # the installed decoder plugins: name, recipe, output shapes, version
+├── decoders                         # the installed decoder plugins: name, recipe, output shapes, version,
+│                                    # and for one that calls a provider the key it needs and the hosts it sends to
 ├── decode <decoder> [--freq F] [--device SEL] [--take-over] [--job] [--count N]
 │                                    # Jobs.StartJob(DecodeConfig): the daemon finds or makes the capture,
 │                                    # adds the channel the job owns and spawns the plugin; records arrive
@@ -244,8 +245,11 @@ band table from `app/Sources/LeylineClient/Resources/bands.json`, the checked-in
 "Decoders" below.
 
 **Decoders.** `ley decoders --json` prints a `ListDecodersResponse`: the manifests the daemon
-found, the directories it looked in, and the store's path, cap and age. `ley decode <name> --json`
-prints one `DecodeRecord` per line (NDJSON) and nothing else on stdout; the banner naming the
+found, the directories it looked in, and the store's path, cap and age. The table adds `NEEDS` (the
+manifest's `credential_provider` as `<provider> key`) and `SENDS TO` (its `contacts_hosts`) when
+any decoder names a provider; they are the first columns dropped at a narrow width, `SENDS TO`
+before `NEEDS`. `ley decode <name> --json` prints one `DecodeRecord` per line (NDJSON) and nothing
+else on stdout; the banner naming the
 decoder, the frequency and the channel it got is stderr prose, as is the line a `--job` run ends
 with. A decoder whose manifest names no frequency (`speech`) needs `--freq`, and `decode` and
 `watch` refuse it without one as a usage error naming the flag. `ley decode speech --freq F`

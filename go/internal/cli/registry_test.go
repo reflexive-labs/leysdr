@@ -3,8 +3,10 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -220,5 +222,55 @@ func TestDecodersTableShowsAliases(t *testing.T) {
 	out := mustRun(t, sock, "decoders")
 	if !strings.Contains(out, "aprs") || !strings.Contains(out, "packets") {
 		t.Errorf("the table should show the alias beside the name:\n%s", out)
+	}
+}
+
+// A decoder that calls a provider shows the key it needs and where it sends the audio; at a
+// narrow width those two are the first columns dropped, SENDS TO before NEEDS, and with no such
+// decoder installed neither is shown.
+func TestDecodersTableShowsWhatADecoderSends(t *testing.T) {
+	t.Parallel()
+	sock, _ := harness(t, fakedaemon.Options{})
+	wide, _, err := runLey(t, sock, 160, false, "", "decoders")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var speechRow, scriptedRow string
+	for _, line := range strings.Split(wide, "\n") {
+		switch strings.Fields(line + " -")[0] {
+		case "speech":
+			speechRow = line
+		case "speech-scripted":
+			scriptedRow = line
+		}
+	}
+	if !strings.Contains(wide, "NEEDS") || !strings.Contains(wide, "SENDS TO") ||
+		!strings.Contains(speechRow, "openai key") || !strings.Contains(speechRow, "api.openai.com") {
+		t.Errorf("at 160 columns the speech row lacks its key and host:\n%s", wide)
+	}
+	if strings.Contains(scriptedRow, "openai") || strings.Contains(scriptedRow, "api.") {
+		t.Errorf("speech-scripted calls nobody, yet its row names a provider:\n%s", wide)
+	}
+	for _, tc := range []struct {
+		width int
+		needs bool
+	}{
+		{85, true},
+		{65, false},
+	} {
+		out, _, err := runLey(t, sock, tc.width, false, "", "decoders")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(out, "SENDS TO") || strings.Contains(out, "NEEDS") != tc.needs || !strings.Contains(out, "VERSION") {
+			t.Errorf("at %d columns SENDS TO should be gone, NEEDS shown=%v, and VERSION kept:\n%s", tc.width, tc.needs, out)
+		}
+	}
+
+	var out bytes.Buffer
+	printDecoderTable(&App{Stdout: &out, Stderr: io.Discard},
+		&leylinev1.ListDecodersResponse{Decoders: []*leylinev1.DecoderManifest{fakedaemon.AprsManifest()}})
+	if strings.Contains(out.String(), "NEEDS") || strings.Contains(out.String(), "SENDS TO") {
+		t.Errorf("with no decoder that calls a provider the columns stay out:\n%s", out.String())
 	}
 }

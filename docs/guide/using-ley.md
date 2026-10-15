@@ -827,12 +827,19 @@ line per record. `ley decoders` lists what is installed and where each one liste
 
 ```console
 $ ley decoders
-NAME  FREQUENCY         MODE        OUTPUTS            VERSION
-aprs  144.390 MHz (+1)  NFM 15 kHz  records, entities  0.1.0
+NAME                 FREQUENCY         MODE        OUTPUTS            VERSION  NEEDS       SENDS TO
+ais (vessels)        161.975 MHz (+1)  NFM 25 kHz  records, entities  0.1.0    -           -
+aprs                 144.390 MHz (+1)  NFM 15 kHz  records, entities  0.1.0    -           -
+iqstat               100.000 MHz       NFM         records            0.1.0    -           -
+same                 162.400 MHz (+6)  NFM 15 kHz  records            0.1.0    -           -
+speech (transcribe)  -                 NFM         records            0.2.0    openai key  api.openai.com
+speech-scripted      -                 NFM         records            0.2.0    -           -
 looked in /Users/you/Library/Application Support/Leyline/decoders
 kept records in /Users/you/Library/Application Support/Leyline/store, 2 GiB or 90 days, whichever comes first
 ```
 
+`NEEDS` and `SENDS TO` are filled in for a decoder that calls a model provider: `speech` runs on
+your OpenAI key and sends what it hears to api.openai.com ("Transcribing a recording", above).
 A decoder carries its own recipe (the frequency, the mode, the bandwidth), so `decode` takes no
 tune flags. APRS is the first one: position, weather, telemetry, status and message packets that
 amateur stations send on 144.390 MHz in North America (`--freq 144.8` is the European
