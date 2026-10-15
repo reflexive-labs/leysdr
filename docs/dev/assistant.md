@@ -44,7 +44,12 @@ response's text joins the turn's text; each `tool_use` block becomes a `ToolCall
 order the model made them, through the gate below; the results go back to the model as one user
 message of `tool_result` blocks in the same order, and the model is called again. The turn ends
 when a response has no tool calls, when the user stops it, or after 40 model calls, which ends a
-model that keeps calling tools without finishing.
+model that keeps calling tools without finishing. A response that stops with `max_tokens` (cut
+at the output limit, perhaps mid tool call) or `refusal` ends the turn too: its text is kept, its
+tool calls do not run, and the turn ends with a line saying which it was.
+
+The model reads at most 32 KB of one result; a longer one is cut there and ends with "(result cut
+at 32 KB; ask for fewer)". The client's `result_text` and `result_json` stay whole.
 
 After every response the worker sends `Usage.ReportUsage` over the socket: provider, model,
 feature `assistant`, the conversation id as the scope, one request, and the four token counts
@@ -55,16 +60,21 @@ is logged, and the turn goes on.
 a running tool call, which ends `DONE` with `is_error` and `result_text` "stopped", or a wait for
 approval or for a client, which ends `REFUSED` with "stopped". The turn is written `done` at once
 (the tests hold it under 2 s), and the worker waits for the next `UserMessage`. The daemon
-reports no usage for a conversation itself; the worker's reports are the ledger's only source. Every `tool_use` the model made still gets a `tool_result` ("the user
-stopped the turn before this ran"), because the Messages API refuses a transcript without one.
+reports no usage for a conversation itself; the worker's reports are the ledger's only source.
+Every `tool_use` the model made still gets a `tool_result` ("the user stopped the turn before
+this ran"), because the Messages API refuses a transcript without one. A cancelled context
+(SIGTERM) ends any wait the same way and the worker exits.
 A turn stopped before the model answered leaves the user's message last in the transcript; the
 next message joins it.
 
 A model error is written as a `WorkerFailure` with its code: `CREDENTIAL_REJECTED` for a key the
 provider refused, `PROVIDER_REFUSED` for a rate or spend limit or an overloaded provider, with the
-provider's words, and `PROVIDER_UNAVAILABLE` for anything else. A provider other than `anthropic`
-fails at start with `PROVIDER_UNAVAILABLE`, and `anthropic` with no key with
-`CREDENTIAL_MISSING`.
+provider's words (a 400 `invalid_request_error` that mentions credit or billing is an account
+out of credit, and is `PROVIDER_REFUSED` too), and `PROVIDER_UNAVAILABLE` for anything else. A
+provider other than `anthropic` fails at start with `PROVIDER_UNAVAILABLE`, and `anthropic` with
+no key with `CREDENTIAL_MISSING`. So does an endpoint that would send the key in the clear: it
+must be `https`, or plain `http` to `localhost`, `127.0.0.1` or `::1` only ("the endpoint must be
+https").
 
 ## The tools
 
@@ -77,10 +87,12 @@ like any other client's. The server's own instructions follow the assistant's sy
 (`go/internal/assistant/prompt.go`).
 
 The model is offered, in this order: every tool the server lists, with its description and input
-schema; the view tools from `WorkerStart` (a view tool named like a server tool or `undo` is left
-out, so a client cannot take over a radio tool); and `undo`. A view tool call waits as
-`AWAITING_CLIENT` until a `ViewToolAnswer` with its call id arrives, and the answer is the
-result. Each result reaches the `ToolCall` as `result_text` (the prose) and `result_json` (the
+schema; the view tools from `WorkerStart`; and `undo`. A view tool is left out, with a line on
+stderr, when its name is not 1 to 64 letters, digits, `_` or `-` (what the Messages API accepts),
+when it is named like a server tool or `undo` (so a client cannot take over a radio tool), or
+when it is declared twice. A view tool call waits as `AWAITING_CLIENT` until a `ViewToolAnswer`
+with its call id arrives, and the answer is the result; the model reads it quoted, as received
+text (below). Each result reaches the `ToolCall` as `result_text` (the prose) and `result_json` (the
 JSON block); `snapshot`'s PNG is not passed on, and the model reads the row's numbers instead.
 
 A channel `tune` makes is kept (`keep: true` unless the model set `keep` itself), because the
@@ -106,14 +118,19 @@ told "the user declined". An approved call runs.
 | `cancel_job` of a job no call in this conversation started | asks | cancel the job, which the assistant did not start |
 | `import_chirp` without `dry_run` | asks | import every channel in the file into your bookmarks |
 | the third and later `add_bookmark` in one turn | asks | a third bookmark change this turn |
-| `start_decode_job` or `watch` with decoder `speech` | asks | paid transcription, live and unbounded |
-| any write in a turn that has read received text | asks | the assistant read text received over the air this turn |
+| `start_decode_job` or `watch` whose decoder is `speech` or one of its aliases (`transcribe`) | asks | paid transcription, live and unbounded |
+| `start_decode_job` or `watch` whose decoder the daemon cannot resolve | asks | the assistant could not check whether it is paid transcription |
+| any write after the conversation has read received text | asks | the assistant read text received over the air earlier in this conversation |
 
 A write is a server tool without the read-only annotation, or `undo`; a view tool is not a write.
 Bookmark changes count `add_bookmark`, `remove_bookmark` and `import_chirp` without `dry_run`
 that ran. The jobs the conversation started are read from the `jobId` in the results of
 `start_decode_job`, `watch`, `scan` and `record`, and only a whole id matches, since a prefix or
-row number could name another client's job. A speech job is always described as live and
+row number could name another client's job. The take-over reason names the listeners from the
+newest refusal that offered `take_over`, and any call that works clears it, so a later prompt
+never names a listener who may have gone. The decoder is resolved through `ListDecoders` before
+the gate, so an alias of the speech decoder asks as `speech` does, and a name that cannot be
+checked asks rather than runs. A speech job is always described as live and
 unbounded, because `start_decode_job` takes no recording to transcribe; `ley transcribe` is the
 path that states the minutes of a recording.
 
@@ -130,10 +147,13 @@ results of `query_records` and `list_entities`, and any result whose JSON has a 
 Received over the air (untrusted, quoted): "<the result's prose and JSON, as one JSON string>"
 ```
 
-so nothing in them reads as an instruction, and the prompt says such text is data to report.
-Once a turn has read one, every write in that turn waits for the user with the reason "the
-assistant read text received over the air this turn", whatever its row says. The client sees the
-result as the tool returned it; the quoting is only for the model.
+so nothing in them reads as an instruction, and the prompt says such text is data to report. A
+view tool's answer is quoted the same way, because the client may answer with decoded text it
+shows. Once the conversation has read one, every later write, in that turn and every turn after
+it, waits for the user with the reason "the assistant read text received over the air earlier in
+this conversation", whatever its row says: what the model read in one turn is still in its
+context in the next. The client sees the result as the tool returned it; the quoting is only for
+the model.
 
 ## Undo
 
@@ -143,9 +163,12 @@ goes onto a stack as the form `set` takes (Hz, a mode name, a bandwidth in Hz, a
 or `off`, gains by stage name or `auto`). A `tune` makes a channel of its own, so the stack keeps
 that channel. `undo` pops one entry: a `set` with the old value on the same channel, with
 `take_over` when the original needed it, reporting the `set` line with the old and new values;
-or a `stop` of the tune's channel. A volume change is not undone, because the state has no sink
-volume to read before the write. An empty stack is a tool error that says there is nothing to
-undo.
+or a `stop` of the tune's channel. A change whose old value could not be read (a volume, since
+the state has no sink volume) still goes on the stack, and undoing it is a tool error, "cannot
+undo volume", that pops it, so the change before it is next rather than undone in its place.
+When the entry's channel is gone (the user stopped it), undo pops it and says "that channel was
+already stopped", so one gone channel does not block every undo behind it. An empty stack is a
+tool error that says there is nothing to undo.
 
 ## The model
 
@@ -183,9 +206,11 @@ which is how a test stops a turn mid-call.
 `go test ./internal/assistant` runs the loop in process against `go/internal/fakedaemon`, with
 pipes on both sides and the test playing the daemon's half of the protocol
 (`go/internal/assistant/harness_test.go`). It covers each row of the gate approved and declined,
-with the daemon's state after each; undo; received text; `WorkerStop` during a slow response and
-while asking; usage on the ledger per response; a view tool; the Messages API request shape and
-its error mapping against `httptest`; and the key on no stream but stdin.
+with the daemon's state after each, the speech decoder's alias included; undo, of a stopped
+channel and of a volume; received text across turns and from a view tool; `WorkerStop` during a
+slow response, a running tool and a wait; a response cut at `max_tokens`; the 32 KB cut; usage on
+the ledger per response; view tools and the names left out; the Messages API request shape, its
+error mapping and the https rule against `httptest`; and the key on no stream but stdin.
 `TestWorkerAssistantCommand` in `go/internal/cli/worker_test.go` runs the same protocol through
 `ley worker assistant` itself.
 
