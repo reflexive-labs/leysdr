@@ -35,11 +35,15 @@ type Scenario struct {
 	// Truth is what the fixtures make known; checks refer to it by key.
 	Truth  map[string]any `yaml:"truth"`
 	Checks []Check        `yaml:"checks"`
-	// MaxTurns bounds the agent (claude's --max-turns). 0 is the runner's default.
+	// MaxTurns bounds the agent (claude's --max-turns). 0 is the runner's default. The assistant
+	// has its own bound (40 model calls a turn) and ignores it.
 	MaxTurns int `yaml:"max_turns"`
-	// Mode overrides the runner's: "mcp" (tools only) or "shell" (a shell as well, to measure how
-	// often the agent leaves the tools).
+	// Mode overrides the runner's: "mcp" (tools only), "shell" (a shell as well, to measure how
+	// often the agent leaves the tools) or "assistant" (`ley ask` is the agent).
 	Mode string `yaml:"mode"`
+	// Modes runs the scenario once in each mode listed, each in its own run directory
+	// (<name>.<mode>); a mode given to the runner picks one of them. Not with Mode.
+	Modes []string `yaml:"modes"`
 	// Skip, when set, is why this scenario is not run (a fixture that only exists on one machine
 	// is handled by the runner; this is for a scenario disabled by hand).
 	Skip string `yaml:"skip"`
@@ -84,6 +88,9 @@ type JobStep struct {
 	Decoder   string `yaml:"decoder"`
 	Frequency string `yaml:"frequency"`
 	Keep      bool   `yaml:"keep"`
+	// Records, for a kept job, waits until the job has stored at least this many records before
+	// the next step, so the agent starts with them on hand however quickly it asks.
+	Records int `yaml:"records"`
 }
 
 // Check is one graded assertion. `Type` picks the checker (checks.go); the rest are its
@@ -147,6 +154,14 @@ func Load(path string) (*Scenario, error) {
 			}
 		}
 	}
+	if s.Mode != "" && len(s.Modes) > 0 {
+		return nil, fmt.Errorf("%s: mode and modes both set; modes lists every mode the scenario runs in", path)
+	}
+	for _, m := range append([]string{s.Mode}, s.Modes...) {
+		if m != "" && !knownModes[m] {
+			return nil, fmt.Errorf("%s: unknown mode %q (known: assistant, mcp, shell)", path, m)
+		}
+	}
 	for i, f := range s.Fixtures {
 		if f.File == "" || f.As == "" {
 			return nil, fmt.Errorf("%s: fixture %d needs file and as", path, i+1)
@@ -175,15 +190,40 @@ func LoadDir(dir string) ([]*Scenario, error) {
 	return out, nil
 }
 
+var knownModes = map[string]bool{"mcp": true, "shell": true, "assistant": true}
+
+// ModesFor is the modes the scenario runs in under env: every mode it lists (only the runner's,
+// when the runner was told one), else its own mode, else the runner's. Empty when the runner's
+// chosen mode is not among the scenario's.
+func (s *Scenario) ModesFor(env Env) []string {
+	switch {
+	case len(s.Modes) > 0 && env.ModeChosen:
+		for _, m := range s.Modes {
+			if m == env.Mode {
+				return []string{m}
+			}
+		}
+		return nil
+	case len(s.Modes) > 0:
+		return s.Modes
+	case s.Mode != "":
+		return []string{s.Mode}
+	}
+	return []string{env.Mode}
+}
+
 // Prompt is what the agent is given: the task, the answer block it must end with, and the
 // rule of the mode.
 func (s *Scenario) Prompt(mode string) string {
 	var b strings.Builder
 	b.WriteString(strings.TrimSpace(s.Task))
 	b.WriteString("\n\n")
-	if mode == "mcp" {
+	switch mode {
+	case "mcp":
 		b.WriteString("Use only the leyline MCP tools; there is no shell for this task.\n\n")
-	} else {
+	case "assistant":
+		b.WriteString("Use only your tools; there is no shell for this task.\n\n")
+	default:
 		b.WriteString("The leyline MCP tools are available, and so is a shell with `ley` on it; prefer the tools.\n\n")
 	}
 	if strings.TrimSpace(s.AnswerSchema) != "" {

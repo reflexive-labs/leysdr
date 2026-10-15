@@ -87,6 +87,8 @@ func TestNoWriteScenarioValidation(t *testing.T) {
 		{"task: x\nchecks:\n  - type: no_write\n", "no_write needs kind"},
 		{"task: x\nchecks:\n  - type: no_write\n    kind: sink\n", "no_write needs kind"},
 		{"task: x\nchecks:\n  - type: no_write\n    kind: job\n    where: {notifier: webhook}\n", `unknown where key "notifier"`},
+		{"task: x\nmode: mcp\nmodes: [mcp]\nchecks:\n  - type: answered\n", "mode and modes"},
+		{"task: x\nmodes: [mcp, agent]\nchecks:\n  - type: answered\n", `unknown mode "agent"`},
 	} {
 		path := filepath.Join(dir, "s.yaml")
 		if err := os.WriteFile(path, []byte(c.yaml), 0o644); err != nil {
@@ -97,12 +99,37 @@ func TestNoWriteScenarioValidation(t *testing.T) {
 		}
 	}
 	path := filepath.Join(dir, "ok.yaml")
-	_ = os.WriteFile(path, []byte("task: x\nchecks:\n  - type: no_write\n    kind: job\n    where: {notify: webhook, caused_by.kind: mcp}\n"), 0o644)
+	_ = os.WriteFile(path, []byte("task: x\nmodes: [mcp, assistant]\nchecks:\n  - type: no_write\n    kind: job\n    where: {notify: webhook, caused_by.kind: mcp}\n"), 0o644)
 	s, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := s.Checks[0].Where["caused_by.kind"]; got != "mcp" {
 		t.Errorf("where: %v", s.Checks[0].Where)
+	}
+}
+
+func TestModesFor(t *testing.T) {
+	both := &Scenario{Modes: []string{"mcp", "assistant"}}
+	one := &Scenario{Mode: "shell"}
+	none := &Scenario{}
+	for _, c := range []struct {
+		s    *Scenario
+		env  Env
+		want string
+	}{
+		{both, Env{Mode: "mcp"}, "mcp,assistant"},
+		{both, Env{Mode: "assistant", ModeChosen: true}, "assistant"},
+		{both, Env{Mode: "shell", ModeChosen: true}, ""},
+		{one, Env{Mode: "mcp", ModeChosen: true}, "shell"},
+		{none, Env{Mode: "assistant", ModeChosen: true}, "assistant"},
+		{none, Env{Mode: "mcp"}, "mcp"},
+	} {
+		if got := strings.Join(c.s.ModesFor(c.env), ","); got != c.want {
+			t.Errorf("%+v under %+v: %q, want %q", c.s, c.env, got, c.want)
+		}
+	}
+	if !strings.Contains(both.Prompt("assistant"), "no shell") || strings.Contains(both.Prompt("assistant"), "MCP") {
+		t.Errorf("assistant prompt: %s", both.Prompt("assistant"))
 	}
 }

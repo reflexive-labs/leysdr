@@ -50,16 +50,27 @@ func newRunCommand() *cobra.Command {
 		Use:   "run [scenario ...]",
 		Short: "Run every scenario, or the ones named",
 		Long: `run stands up a daemon per scenario, plays its fixtures as radios, starts the agent
-with the leyline MCP server on that daemon, and grades what it did. Each run leaves a
-directory under --out with messages.jsonl (the agent's stream), transcript.md (the
-conversation, readable), prompt.md and result.json; the summary table is printed at the
-end. Nothing here needs a radio or a person on the air.`,
+with the leyline MCP server on that daemon (or, in assistant mode, runs ley ask on it),
+and grades what it did. Each run leaves a directory under --out with messages.jsonl (the
+agent's stream), events.jsonl (the daemon's events), transcript.md (the conversation,
+readable), prompt.md and result.json; the summary table is printed at the end. Nothing
+here needs a radio or a person on the air.`,
 		Example: `  leyeval run                         # every scenario in evals/scenarios
   leyeval run survey-2m --mode shell  # one scenario, with a shell available to the agent
-  leyeval run --model claude-sonnet-5 # a different model`,
+  leyeval run --model claude-sonnet-5 # a different model
+  LEYEVAL_KEY=... leyeval run inject-aprs-webhook --mode assistant  # ley ask as the agent
+  leyeval run inject-aprs-webhook --mode assistant --scripted s.jsonl  # no key: a scripted model`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			env.Timeout = timeout
 			env.Log = func(format string, a ...any) { fmt.Fprintf(os.Stderr, format+"\n", a...) }
+			env.ModeChosen = cmd.Flags().Changed("mode")
+			// Read here and passed on stdin to `ley ai add` only; never a flag, which ps shows.
+			env.Key = strings.TrimSpace(os.Getenv(eval.KeyEnv))
+			if env.Script != "" {
+				if _, err := os.Stat(env.Script); err != nil {
+					return fmt.Errorf("--scripted: %w", err)
+				}
+			}
 			if env.Daemon == "" {
 				return fmt.Errorf("no daemon: set --daemon or LEYLINED_BIN to a built leylined")
 			}
@@ -93,15 +104,16 @@ end. Nothing here needs a radio or a person on the air.`,
 				if cmd.Context().Err() != nil {
 					break
 				}
-				r := eval.Run(cmd.Context(), env, s, runDir)
-				results = append(results, r)
-				switch {
-				case r.Skipped != "":
-					env.Log("%s: skipped (%s)", s.Name, r.Skipped)
-				case r.Error != "":
-					env.Log("%s: error: %s", s.Name, r.Error)
-				default:
-					env.Log("%s: %d passed, %d failed; %s", s.Name, r.Passed, r.Failed, filepath.Join(r.Dir, "transcript.md"))
+				for _, r := range eval.RunScenario(cmd.Context(), env, s, runDir) {
+					results = append(results, r)
+					switch {
+					case r.Skipped != "":
+						env.Log("%s (%s): skipped (%s)", s.Name, r.Mode, r.Skipped)
+					case r.Error != "":
+						env.Log("%s (%s): error: %s", s.Name, r.Mode, r.Error)
+					default:
+						env.Log("%s (%s): %d passed, %d failed; %s", s.Name, r.Mode, r.Passed, r.Failed, filepath.Join(r.Dir, "transcript.md"))
+					}
 				}
 			}
 			fmt.Print(eval.Summary(results))
@@ -120,8 +132,9 @@ end. Nothing here needs a radio or a person on the air.`,
 	f.StringVar(&env.Fixtures, "fixtures", envOr("LEYLINE_FIXTURES", "fixtures"), "where scenario fixtures are relative to")
 	f.StringVar(&env.Decoders, "decoders", envOr("LEYLINE_DECODERS", "decoders"), "the decoder plugin directory the daemon searches; the plugin binaries must be on PATH")
 	f.StringVar(&env.Claude, "claude", envOr("LEYEVAL_AGENT", "claude"), "the agent command; it gets Claude Code's headless flags and the prompt on stdin")
-	f.StringVar(&env.Model, "model", "", "passed to the agent as --model (default: the agent's own)")
-	f.StringVar(&env.Mode, "mode", "mcp", "mcp: the leyline tools alone; shell: a shell as well, to measure how often the agent leaves the tools")
+	f.StringVar(&env.Model, "model", "", "passed to the agent as --model, or the assistant's model in assistant mode (default: the agent's own; "+eval.DefaultAssistantModel+" for the assistant)")
+	f.StringVar(&env.Mode, "mode", "mcp", "mcp: the leyline tools alone; shell: a shell as well, to measure how often the agent leaves the tools; assistant: ley ask is the agent, on the key in $"+eval.KeyEnv+". A scenario that lists modes runs in this one only when it is given")
+	f.StringVar(&env.Script, "scripted", "", "assistant mode plays this model script (one JSON response a line, docs/dev/assistant.md) instead of calling a provider, so no key is needed")
 	f.IntVar(&env.MaxTurns, "max-turns", 25, "the agent's turn budget unless the scenario sets one")
 	f.DurationVar(&timeout, "timeout", 10*time.Minute, "how long one agent run may take")
 	f.StringVar(&scenarios, "scenarios", "evals/scenarios", "the scenario directory")
@@ -192,6 +205,11 @@ func newCheckCommand() *cobra.Command {
 			}
 			for _, s := range all {
 				fmt.Printf("%s: %d fixture(s), %d setup step(s), %d check(s)", s.Name, len(s.Fixtures), len(s.Setup), len(s.Checks))
+				if len(s.Modes) > 0 {
+					fmt.Printf(", modes %s", strings.Join(s.Modes, ", "))
+				} else if s.Mode != "" {
+					fmt.Printf(", mode %s", s.Mode)
+				}
 				if s.Skip != "" {
 					fmt.Printf(" (skipped: %s)", s.Skip)
 				}

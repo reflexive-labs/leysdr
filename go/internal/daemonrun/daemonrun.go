@@ -21,7 +21,8 @@ import (
 type Options struct {
 	// Bin is the leylined binary.
 	Bin string
-	// Dir holds the socket, pidfile, store, recordings and log. It is created if missing.
+	// Dir holds the socket, pidfile, store, recordings, data directory and log. It is created if
+	// missing.
 	Dir string
 	// Decoders is a plugin directory the daemon searches before its default, or empty.
 	Decoders string
@@ -84,6 +85,10 @@ func Start(ctx context.Context, o Options) (*Daemon, error) {
 	args := []string{
 		"--socket", d.Socket, "--pidfile", filepath.Join(o.Dir, "leylined.pid"),
 		"--store", d.Store, "--recordings", d.Recordings, "--log-level", "info", "--no-hardware",
+		// The AI keys' metadata and each feature's model, and the keys themselves off macOS: a
+		// key an eval adds stays in this directory. On macOS the keys go to the login keychain
+		// whatever this says (docs/dev/evals.md, "The assistant as the agent").
+		"--data", filepath.Join(o.Dir, "data"),
 	}
 	if o.Decoders != "" {
 		args = append(args, "--decoders", o.Decoders)

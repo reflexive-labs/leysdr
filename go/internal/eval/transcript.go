@@ -38,6 +38,10 @@ func Transcript(s *Scenario, res *Result, log *Log) string {
 		m := res.Metrics
 		fmt.Fprintf(&b, "%d tool calls (%s), %d to the host, %d errors, %d turns, %.1f s, $%.3f.\n\n",
 			m.ToolCalls, sortedTools(m.ByTool), m.ShellCalls, m.ToolErrors, m.Turns, float64(m.DurationMs)/1000, m.CostUSD)
+		if t := m.Tokens; t != nil {
+			fmt.Fprintf(&b, "The ledger: %d requests, %d tokens in, %d out, %d cache read, %d cache write.\n\n",
+				t.Requests, t.InputTokens, t.OutputTokens, t.CacheReadTokens, t.CacheWriteTokens)
+		}
 		if res.Error != "" {
 			fmt.Fprintf(&b, "**Harness error:** %s\n\n", res.Error)
 		}
