@@ -259,6 +259,9 @@ func TestRunSegmentedKeepsReadingWhileTheDecoderWorks(t *testing.T) {
 		for n := uint64(2); n <= 11; n++ {
 			segment(n)
 		}
+		// The reader takes the next bytes only once it has handled the last END, so this stray
+		// frame returns only when segment 11 is queued, before the decoder is released.
+		write(segFrame(24, 1200, leylinev1.SegmentMark_SEGMENT_MARK_UNSPECIFIED, f32(0.5)))
 		_ = pw.Close()
 		close(wrote)
 	}()
