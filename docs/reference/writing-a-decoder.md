@@ -280,18 +280,21 @@ engines:
   `POST {base}/v1/audio/transcriptions`, on the key the daemon hands over. The base is
   `https://api.openai.com`, or the endpoint the key was added with (`ley ai add openai --endpoint
   URL`), which is how a gateway or a local Whisper server is reached; a trailing `/` or `/v1` on it
-  is ignored, it must be `https` unless it is this machine, and a redirect is refused rather than
-  followed, so the key reaches no other host. The request is a multipart form: `file`, the
-  segment as a 16-bit mono WAV at the descriptor's rate; `model` (default `whisper-1`);
+  is ignored, it must be `https` unless it is this machine, it may carry no user name, password or
+  query string, and a redirect is refused rather than followed, so the key reaches no other host.
+  A message names the endpoint's host only, never the whole URL. The request is a multipart form:
+  `file`, the segment as a 16-bit mono WAV at the descriptor's rate; `model` (default `whisper-1`);
   `response_format` `verbose_json`; `language`; and `prompt`, the vocabulary hint (below). The
   record's `text` is the response's, trimmed; `language` is the language the response names, as
   its code; `confidence` is 1 less the mean of the response segments' `no_speech_prob`, absent
-  when none reports one; `raw` is the response body; and `usage` names `openai`, or the
-  endpoint's host when the key has one, with the model, one request and the segment's length in
-  `audio_seconds`. A model that answers only plain `json` (`gpt-4o-transcribe` and its kin) is
-  asked again in it, and its records have no confidence. Each call has 60 s. OpenAI takes at most
-  25 MB in one call, about 4.5 minutes of WAV at 48 kHz, and a longer over is logged and not sent.
-  How a call that fails ends:
+  when none reports one; `raw` is the response body; and `usage` names the key's provider,
+  `openai`, whatever its endpoint, so the ledger line and the key's last use line up with the
+  credential, with the model, one request and the segment's length in `audio_seconds`. A model
+  that answers only plain `json` (`gpt-4o-transcribe` and its kin) is asked again in it, and its
+  records have no confidence. Each call has 60 s plus one second per 256 KB uploaded, at most 5
+  minutes, so a long over on a slow uplink is not taken for a provider that stopped answering.
+  OpenAI takes at most 25 MB in one call, about 4.5 minutes of WAV at 48 kHz, and a longer over is
+  logged and not sent. How a call that fails ends:
 
   | the provider answers | the plugin |
   |---|---|
@@ -302,6 +305,11 @@ engines:
 
   The key goes in the `Authorization` header and nowhere else, and is cut out of any provider
   message before it is logged.
+
+  A rejected key is not a refusal the daemon waits out. On a live job it shows in the job's status
+  as "the decoder exited (status 1); restarting in …", again on every restart, until the key is
+  replaced with `ley ai add openai`; `ley ai check openai` shows why the provider turned it away.
+  A job on a stored recording fails with `DECODER_FAILED` after four such exits.
 
   The vocabulary hint is sent to the provider with the audio, as the `prompt` field, so it is
   never somewhere to put what should stay on the Mac. It starts with the phonetic alphabet,

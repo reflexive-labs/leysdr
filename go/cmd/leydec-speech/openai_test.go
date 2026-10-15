@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/pkg/plugin"
@@ -160,8 +161,8 @@ func TestOpenAIRequestAndRecord(t *testing.T) {
 		t.Errorf("raw is not the response body: %q", rec.GetRaw())
 	}
 	u := rec.GetUsage()
-	if u.GetProvider() != "127.0.0.1" || u.GetModel() != "whisper-1" || u.GetRequests() != 1 || math.Abs(u.GetAudioSeconds()-1) > 1e-9 {
-		t.Errorf("usage %v, want the endpoint's host, whisper-1, 1 request, 1 s", u)
+	if u.GetProvider() != "openai" || u.GetModel() != "whisper-1" || u.GetRequests() != 1 || math.Abs(u.GetAudioSeconds()-1) > 1e-9 {
+		t.Errorf("usage %v, want the key's provider, whisper-1, 1 request, 1 s", u)
 	}
 	if strings.Contains(stderr, testKey) {
 		t.Errorf("the key is on stderr: %s", stderr)
@@ -235,17 +236,42 @@ func TestOpenAIRefusedAudioSkipsTheSegment(t *testing.T) {
 	}
 }
 
+// A call has a minute plus a second per 256 KB uploaded, never more than five minutes, so a long
+// over on a slow uplink is not taken for a provider that stopped answering; --help says so.
+func TestCallTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		bytes int
+		want  time.Duration
+	}{
+		{0, time.Minute},
+		{256<<10 - 1, time.Minute},
+		{25 << 20, time.Minute + 100*time.Second},
+		{1 << 30, 5 * time.Minute},
+	} {
+		if got := callTimeout(tc.bytes); got != tc.want {
+			t.Errorf("callTimeout(%d) = %v, want %v", tc.bytes, got, tc.want)
+		}
+	}
+	var help bytes.Buffer
+	if _, err := parseArgs([]string{"-h"}, func(string) string { return "" }, &help); err == nil ||
+		!strings.Contains(help.String(), "60 s plus\none second per 256 KB uploaded, at most 5 minutes") {
+		t.Errorf("--help does not state the timeout rule (%v):\n%s", err, help.String())
+	}
+}
+
 func TestOpenAIEndpoint(t *testing.T) {
 	for _, tc := range []struct {
 		endpoint, base, host, err string
 	}{
-		{"", "https://api.openai.com", "openai", ""},
+		{"", "https://api.openai.com", "api.openai.com", ""},
 		{"https://gateway.example/v1/", "https://gateway.example", "gateway.example", ""},
 		{"https://gateway.example/openai", "https://gateway.example/openai", "gateway.example", ""},
 		{"http://localhost:8080/v1", "http://localhost:8080", "localhost", ""},
 		{"http://127.0.0.1:9000", "http://127.0.0.1:9000", "127.0.0.1", ""},
-		{"http://gateway.example", "", "", "the endpoint must be https: http://gateway.example would send the key in the clear"},
-		{"gateway.example", "", "", `the endpoint "gateway.example" is not a URL`},
+		{"http://gateway.example/v1", "", "", "the endpoint must be https: plain http to gateway.example would send the key in the clear"},
+		{"gateway.example", "", "", "the key's endpoint is not a URL: it needs a scheme and a host, such as https://gateway.example/v1"},
+		{"https://me:pw@gateway.example/v1", "", "", "the endpoint for gateway.example carries a user name or password; add the key with ley ai add and an endpoint without one"},
+		{"https://gateway.example/v1?api-version=2", "", "", "the endpoint for gateway.example carries a query string; give the API's base URL alone, such as https://gateway.example/v1"},
 	} {
 		base, host, err := openaiBase(tc.endpoint)
 		if base != tc.base || host != tc.host || (err == nil) != (tc.err == "") || (err != nil && err.Error() != tc.err) {
@@ -349,7 +375,7 @@ func TestOpenAIUnreachableIsTemporary(t *testing.T) {
 	url := p.URL
 	p.Close()
 	run := runProcess(t, []string{"--engine", "openai"}, url, 4800)
-	if run.code != exitTempFail || !strings.HasPrefix(run.lastLine(), "127.0.0.1 did not answer") {
+	if run.code != exitTempFail || !strings.HasPrefix(run.lastLine(), "127.0.0.1 did not answer") || strings.Contains(run.lastLine(), "http://") {
 		t.Errorf("exit %d, last line %q; want 75 and the host", run.code, run.lastLine())
 	}
 }

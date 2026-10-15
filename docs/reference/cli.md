@@ -653,8 +653,11 @@ that can be transcribed. Two speech decoders ship, one program with two manifest
 each over to OpenAI's transcription API on the `openai` key (`ley ai add openai`; an endpoint on
 the key points it at a compatible server instead), and `speech-scripted` replays a file of lines,
 needs no key and sends nothing anywhere, which is what the tests transcribe with
-(`docs/reference/writing-a-decoder.md`, "Speech decoders"). Recorded against
-the contract's fake daemon, whose recording and words are seeded, so ids and times will differ:
+(`docs/reference/writing-a-decoder.md`, "Speech decoders"). A key OpenAI rejects is not a refusal
+the daemon waits out: a live speech job's status reads "the decoder exited (status 1); restarting
+in …" on every restart until the key is replaced with `ley ai add openai`, and `ley ai check
+openai` shows why the provider turned it away; `ley transcribe` ends with `DECODER_FAILED` after
+four such exits. Recorded against the contract's fake daemon, whose recording and words are seeded, so ids and times will differ:
 
 ```
 $ ley transcribe job_01SEEDSEEDSEEDSEEDSEEDSE < /dev/null

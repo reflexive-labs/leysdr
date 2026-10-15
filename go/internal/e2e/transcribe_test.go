@@ -98,7 +98,7 @@ func TestTranscribeAgainstRealDaemon(t *testing.T) {
 // checkOpenAISpeech: the bundled speech decoder, with the openai key added at a local endpoint,
 // sends each over there as a WAV with the key as a bearer token and the vocabulary hint as the
 // prompt, and its records carry the endpoint's words, whisper-1, the confidence the response
-// implies, and usage under the endpoint's host.
+// implies, and usage under the key's provider, which marks the key used.
 func checkOpenAISpeech(t *testing.T, r *transcribeRig) {
 	var mu sync.Mutex
 	var calls int
@@ -122,6 +122,10 @@ func checkOpenAISpeech(t *testing.T, r *transcribeRig) {
 	}))
 	defer provider.Close()
 	r.mustLey(openaiKey+"\n", "ai", "add", "openai", "--endpoint", provider.URL)
+	// The scripted check reports no usage, so only the transcription can mark the key used.
+	if cred := r.credential("openai"); cred == nil || cred["lastUsedAtNs"] != nil {
+		t.Fatalf("before transcribing, the openai key is %v; want it set and unused", cred)
+	}
 
 	out, errOut, code := r.callWithin(30*time.Second, "transcribe", r.recordingID, "--yes", "--json")
 	if code != 0 {
@@ -151,12 +155,15 @@ func checkOpenAISpeech(t *testing.T, r *transcribeRig) {
 			f["model"].GetText() != "whisper-1" || f["confidence"].GetNumber() != 0.75 {
 			t.Errorf("record %d: protocol %q fields %v", i, rec.GetProtocol(), f)
 		}
-		if u.GetProvider() != "127.0.0.1" || u.GetModel() != "whisper-1" || u.GetFeature() != "speech" || u.GetAudioSeconds() <= 0 {
+		if u.GetProvider() != "openai" || u.GetModel() != "whisper-1" || u.GetFeature() != "speech" || u.GetAudioSeconds() <= 0 {
 			t.Errorf("record %d: usage %v", i, u)
 		}
 		if got := rec.GetTime().GetSampleIndex(); got != r.segments[i].start {
 			t.Errorf("record %d: time.sampleIndex %d, want the segment's start %d", i, got, r.segments[i].start)
 		}
+	}
+	if cred := r.credential("openai"); cred == nil || cred["lastUsedAtNs"] == nil {
+		t.Errorf("after transcribing, the openai key is not marked used: %v", cred)
 	}
 	r.assertNoCanary()
 }

@@ -42,6 +42,21 @@ func main() {
 	})
 }
 
+// usageText heads --help. The daemon runs this program; the text is for a person reading what it
+// does with the audio and the key.
+const usageText = `leydec-speech is the speech decoder plugin the daemon runs: one over of audio
+in on stdin, one speech record out on stdout (docs/reference/writing-a-decoder.md).
+
+--engine openai sends each over, as a 16-bit WAV, and the vocabulary hint to
+the OpenAI-compatible endpoint of the key the daemon hands over on stdin
+(https://api.openai.com unless the key names another). Each call has 60 s plus
+one second per 256 KB uploaded, at most 5 minutes. A rejected key exits 1; a
+rate or spend limit, an outage, or no answer in time exits 75 with the
+provider's words as the last line on stderr. --engine scripted replays the lines
+of the file LEYDEC_SPEECH_SCRIPT names and sends nothing anywhere.
+
+`
+
 // options are what the command line says: the engine and how to configure it.
 type options struct {
 	engine        string
@@ -54,6 +69,10 @@ type options struct {
 func parseArgs(args []string, getenv func(string) string, stderr io.Writer) (options, error) {
 	fs := flag.NewFlagSet("leydec-speech", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	fs.Usage = func() {
+		fmt.Fprint(fs.Output(), usageText)
+		fs.PrintDefaults()
+	}
 	name := fs.String("engine", "openai", "the speech engine: openai, or scripted for tests")
 	model := fs.String("model", "", "the model to ask the engine for, recorded on each record (default: the engine's own)")
 	language := fs.String("language", "en", "the language spoken, as an ISO 639-1 code; empty lets the engine detect it")

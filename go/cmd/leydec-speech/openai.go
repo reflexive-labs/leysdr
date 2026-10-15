@@ -4,6 +4,8 @@ package main
 
 import (
 	"bytes"
+	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,9 +32,12 @@ const openaiAPI = "https://api.openai.com"
 // openaiDefaultModel is the model asked for when the speech feature names none.
 const openaiDefaultModel = "whisper-1"
 
-// openaiTimeout bounds one call. A four-minute over takes tens of seconds to upload and
-// transcribe; a call that takes longer is a provider that is not answering.
-const openaiTimeout = 60 * time.Second
+// openaiTimeout is the base of one call's deadline and openaiMaxTimeout its ceiling (see
+// callTimeout). A call that takes longer is a provider that is not answering.
+const (
+	openaiTimeout    = 60 * time.Second
+	openaiMaxTimeout = 5 * time.Minute
+)
 
 // openaiMaxUpload is the largest file OpenAI takes in one call, 25 MB. A 16-bit mono WAV at
 // 48 kHz reaches it at about 4.5 minutes.
@@ -48,7 +53,7 @@ type openAI struct {
 	key string
 	// keyName is the provider the key was added under, which `ley ai check` takes.
 	keyName  string
-	host     string // the usage report's provider: "openai", or the endpoint's host
+	host     string // where the calls go, the only part of the endpoint a message names
 	modelID  string
 	language string
 	prompt   string
@@ -70,7 +75,7 @@ func newOpenAI(cfg engineConfig, cred *leylinev1.SetCredentialRequest) (engine, 
 	o := &openAI{
 		url:      base + "/v1/audio/transcriptions",
 		key:      cred.GetSecret(),
-		keyName:  cred.GetProvider(),
+		keyName:  cmp.Or(cred.GetProvider(), "openai"),
 		host:     host,
 		modelID:  cfg.model,
 		language: cfg.language,
@@ -79,7 +84,6 @@ func newOpenAI(cfg engineConfig, cred *leylinev1.SetCredentialRequest) (engine, 
 		// Never follow a redirect: Go re-sends a header set by hand to the redirect's host, and
 		// the key must reach no host but the one the user added it for.
 		http: &http.Client{
-			Timeout:       openaiTimeout,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 	}
@@ -89,28 +93,45 @@ func newOpenAI(cfg engineConfig, cred *leylinev1.SetCredentialRequest) (engine, 
 	return o, nil
 }
 
-// openaiBase is the API base with no trailing slash or /v1, and the name the usage report gives
-// the provider. An endpoint must be https, or plain http to this machine only, so the key never
-// crosses the network in the clear.
+// openaiBase is the API base with no trailing slash or /v1, and the host every message names.
+// An endpoint must be https, or plain http to this machine only, so the key never crosses the
+// network in the clear. It may carry no user and password, which would travel beside the key, and
+// no query string, which the path appended to it would break. No message prints the endpoint
+// whole: the host is enough to say where the audio went.
 func openaiBase(endpoint string) (base, host string, err error) {
 	if endpoint == "" {
-		return openaiAPI, "openai", nil
+		return openaiAPI, "api.openai.com", nil
 	}
 	u, err := url.Parse(endpoint)
 	if err != nil || u.Host == "" {
-		return "", "", fmt.Errorf("the endpoint %q is not a URL", endpoint)
+		return "", "", errors.New("the key's endpoint is not a URL: it needs a scheme and a host, such as https://gateway.example/v1")
 	}
-	local := u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1" || u.Hostname() == "::1"
-	if u.Scheme != "https" && (u.Scheme != "http" || !local) {
-		return "", "", fmt.Errorf("the endpoint must be https: %s would send the key in the clear", u.Redacted())
+	host = u.Hostname()
+	local := host == "localhost" || host == "127.0.0.1" || host == "::1"
+	switch {
+	case u.Scheme != "https" && (u.Scheme != "http" || !local):
+		return "", "", fmt.Errorf("the endpoint must be https: plain %s to %s would send the key in the clear", u.Scheme, host)
+	case u.User != nil:
+		return "", "", fmt.Errorf("the endpoint for %s carries a user name or password; add the key with ley ai add and an endpoint without one", host)
+	case u.RawQuery != "" || u.ForceQuery || u.Fragment != "":
+		return "", "", fmt.Errorf("the endpoint for %s carries a query string; give the API's base URL alone, such as https://%s/v1", host, u.Host)
 	}
 	// An OpenAI-compatible base URL is often written with its /v1 already on it.
 	base = strings.TrimSuffix(strings.TrimRight(endpoint, "/"), "/v1")
-	return base, u.Hostname(), nil
+	return base, host, nil
 }
 
-func (o *openAI) provider() string { return o.host }
+// provider is the provider the key was added under, so the usage line is counted against the key
+// that paid for it; where the audio went is the key's endpoint, which the credential shows.
+func (o *openAI) provider() string { return o.keyName }
 func (o *openAI) model() string    { return o.modelID }
+
+// callTimeout bounds one call: a minute to transcribe, plus a second for every 256 KB uploaded
+// so a long over on a slow uplink is not mistaken for a provider that stopped answering, and
+// never more than five minutes.
+func callTimeout(uploadBytes int) time.Duration {
+	return min(openaiTimeout+time.Duration(uploadBytes/(256<<10))*time.Second, openaiMaxTimeout)
+}
 
 // verboseTranscript is the part of a verbose_json response the record is built from. A plain
 // json response has only text.
@@ -181,21 +202,23 @@ func (o *openAI) call(wav []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest(http.MethodPost, o.url, bytes.NewReader(form))
+	ctx, cancel := context.WithTimeout(context.Background(), callTimeout(len(form)))
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, o.url, bytes.NewReader(form))
 	if err != nil {
-		return nil, &stopError{exit: 1, msg: fmt.Sprintf("the endpoint %s is not a URL", o.host)}
+		return nil, &stopError{exit: 1, msg: fmt.Sprintf("the endpoint for %s is not a URL", o.host)}
 	}
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("Authorization", "Bearer "+o.key)
 	resp, err := o.http.Do(req)
 	if err != nil {
 		// Offline, a name that does not resolve, a timeout: the provider may answer later.
-		return nil, &stopError{exit: exitTempFail, msg: o.scrub(fmt.Sprintf("%s did not answer: %v", o.host, err))}
+		return nil, &stopError{exit: exitTempFail, msg: o.scrub(fmt.Sprintf("%s did not answer: %v", o.host, withoutURL(err)))}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, openaiMaxBody))
 	if err != nil {
-		return nil, &stopError{exit: exitTempFail, msg: o.scrub(fmt.Sprintf("%s: reading the response: %v", o.host, err))}
+		return nil, &stopError{exit: exitTempFail, msg: o.scrub(fmt.Sprintf("%s: reading the response: %v", o.host, withoutURL(err)))}
 	}
 	if resp.StatusCode == http.StatusOK {
 		return body, nil
@@ -262,7 +285,7 @@ func (o *openAI) refusal(resp *http.Response, body []byte) error {
 		}
 		return &stopError{exit: 1, msg: fmt.Sprintf("%s redirected the call to %s, and the key is not sent on", o.host, to)}
 	case status == http.StatusNotFound:
-		return &stopError{exit: 1, msg: fmt.Sprintf("%s has no transcription API at %s (%s: %s)", o.host, o.url, resp.Status, said)}
+		return &stopError{exit: 1, msg: fmt.Sprintf("%s has no transcription API at the key's endpoint (%s: %s)", o.host, resp.Status, said)}
 	case status == http.StatusBadRequest && strings.Contains(said, "response_format"):
 		return &formatRefused{msg: said}
 	}
@@ -276,6 +299,20 @@ func (o *openAI) scrub(msg string) string {
 		return msg
 	}
 	return strings.ReplaceAll(msg, o.key, "…")
+}
+
+// withoutURL is a transport error without the request URL net/http wraps it in (`Post
+// "https://…": dial tcp …`), since a message names the host alone. A deadline says how long the
+// call had.
+func withoutURL(err error) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return errors.New("no answer within the call's time limit")
+	}
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return ue.Err
+	}
+	return err
 }
 
 // providerMessage is the provider's own words: the message in its error body (OpenAI sends
