@@ -302,9 +302,17 @@ func TestAskAgainstRealDaemon(t *testing.T) {
 	}
 
 	t.Run("restart", func(t *testing.T) {
+		var before []string
+		for _, cv := range r.conversations() {
+			before = append(before, cv.GetConversationId())
+		}
 		r.restart()
-		if list := r.conversations(); len(list) != 0 {
-			t.Errorf("conversations outlived the daemon: %v", list)
+		var after []string
+		for _, cv := range r.conversations() {
+			after = append(after, cv.GetConversationId())
+		}
+		if strings.Join(after, ",") != strings.Join(before, ",") {
+			t.Errorf("before the restart the daemon kept %v, after it %v", before, after)
 		}
 		if l := r.assistantUsage(tuneConv); l == nil || l.GetRequests() < 4 {
 			t.Errorf("after a restart the ledger's assistant line for %s is %v", tuneConv, l)
@@ -593,6 +601,93 @@ func TestAskProviderFailuresAgainstRealDaemon(t *testing.T) {
 			b, _ := json.Marshal(cv.GetError())
 			t.Errorf("the conversation against a %d: %v, error %s", c.status, cv.GetState(), b)
 		}
+	}
+	r.assertNoCanary()
+}
+
+// A conversation with a tool call outlives a daemon restart: ley ask --list shows it, --continue
+// carries it on in a worker started to resume it (same id, turns t1..t4), and the model's first
+// call in that worker carries the turns before the restart; ley ask --delete then removes it and
+// its files.
+func TestAskConversationSurvivesARestart(t *testing.T) {
+	record := filepath.Join(t.TempDir(), "record.jsonl")
+	// Every worker the daemon starts inherits it, so the scripted model records each call.
+	t.Setenv(assistant.RecordEnv, record)
+	r := newAskRig(t, true)
+	r.mustLey("", "ai", "use", "assistant", "anthropic", "claude-sonnet-5-5")
+	r.setScript(
+		`{"text":"Looking.","tool":"list_devices","args":{}}`,
+		`{"text":"That is every radio."}`,
+		`{"text":"Still every radio."}`,
+	)
+	if out, errOut, code := r.ask("what radios are there", "--yes"); code != 0 || !strings.Contains(out, "That is every radio.") {
+		t.Fatalf("ley ask: exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
+	}
+	cv := r.newest()
+	id := cv.GetConversationId()
+	if len(cv.GetTurns()) != 2 || len(calls(cv)) != 1 {
+		t.Fatalf("the conversation before the restart: %v", cv)
+	}
+
+	r.restart()
+	list, _ := r.mustLey("", "ask", "--list")
+	if !strings.Contains(list, id) || !strings.Contains(list, "what radios are there") || !strings.Contains(list, "idle") {
+		t.Errorf("ley ask --list after the restart:\n%s", list)
+	}
+	if kept := r.conversation(id); kept.GetSeq() != cv.GetSeq() {
+		t.Errorf("seq %d after the restart, %d before", kept.GetSeq(), cv.GetSeq())
+	}
+
+	out, errOut, code := r.ask("--continue", "again", "--yes")
+	if code != 0 || !strings.Contains(out, "Still every radio.") || !strings.Contains(errOut, "Continuing the conversation") {
+		t.Fatalf("ley ask --continue after the restart: exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
+	}
+	var ids []string
+	for _, turn := range r.conversation(id).GetTurns() {
+		ids = append(ids, turn.GetTurnId())
+	}
+	if strings.Join(ids, ",") != "t1,t2,t3,t4" {
+		t.Errorf("turns %v, want t1..t4 in %s", ids, id)
+	}
+
+	raw, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if len(sent) != 3 {
+		t.Fatalf("want three model calls recorded, got %d:\n%s", len(sent), raw)
+	}
+	var third []assistant.Message
+	if err := json.Unmarshal([]byte(sent[2]), &third); err != nil {
+		t.Fatal(err)
+	}
+	var said []string
+	for _, m := range third {
+		for _, b := range m.Content {
+			said = append(said, m.Role+" "+b.Type+" "+b.Text+b.Name)
+		}
+	}
+	want := "user text what radios are there|assistant text Looking.|assistant tool_use list_devices|" +
+		"user tool_result |assistant text That is every radio.|user text again"
+	if strings.Join(said, "|") != want {
+		t.Errorf("the third call after the restart carried\n%s\nwant\n%s", strings.Join(said, "|"), want)
+	}
+
+	dir := filepath.Join(r.data, "conversations", id)
+	for _, f := range []string{"conversation.json", "transcript.jsonl"} {
+		if fi, err := os.Stat(filepath.Join(dir, f)); err != nil || fi.Mode().Perm() != 0o600 {
+			t.Errorf("%s: %v %v", f, fi, err)
+		}
+	}
+	if _, errOut := r.mustLey("", "ask", "--delete", id, "--yes"); !strings.Contains(errOut, "Deleted "+id) {
+		t.Errorf("ley ask --delete said %q", errOut)
+	}
+	if list := r.conversations(); len(list) != 0 {
+		t.Errorf("listed after the delete: %v", list)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("%s is still there (%v)", dir, err)
 	}
 	r.assertNoCanary()
 }
