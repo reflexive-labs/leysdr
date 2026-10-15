@@ -57,13 +57,21 @@ ley play job_01J... --part 1 --over 3     # listen to one over while you write i
 The format is one line per over: `part/over`, a tab, and the words as spoken.
 
 - Write a callsign as it was said or as written: `whiskey six alpha bravo charlie` and `W6ABC`
-  score the same, because both sides are normalised before they are compared.
+  score the same, because both sides are normalised before they are compared. A portable or
+  mobile suffix folds away (`W6ABC/P` and `whiskey six alpha bravo charlie slash papa` are both
+  `W6ABC`), so a suffix is never scored; `slash portable` spelled as a word is not folded.
+- Put a comma between two callsigns said back to back. Without one, the spelled words run
+  together into one token that is no callsign, so it is scored as the words written and counts
+  as no callsign on either side. An engine that writes two callsigns with nothing between them
+  is scored the same way, which is what a reader of its text would face.
 - Write numbers as digits where you expect an engine to (`146.94`, `PL 100`). Outside a callsign,
   `six` and `6` are different words.
 - Leave the text empty for an over in which nobody said anything you can make out (a kerchunk).
   Any word an engine writes there is an insertion.
-- Leave `?` on an over you have not transcribed. It is left out of the score, with the engine's
-  record for it.
+- Leave `?` on an over you have not transcribed. It is left out of the score, with every record
+  and transcribed line whose audio overlaps it: an engine with a longer hang may hear a `?` over
+  and the next one as one segment, and that whole stretch is left out. The notes under the table
+  count what was left out.
 - Case and punctuation never count.
 
 `leyspeech run` reads `transcript.txt` beside `recording.json`, or the file `--ref` names. The
@@ -85,12 +93,14 @@ make speech-spike RECORDING=job_01J... ENGINES="<decoder>=<model-a> <decoder>=<m
 `decoder=model`), against the same transcript, and prints one row each; `SPIKE_ARGS="--json"`
 prints them as JSON. Each run is a `ley transcribe --yes` job of its own, so it sends the
 recording's squelch-open audio to wherever that decoder sends it, and a cloud engine bills for
-it. `--model` makes `ley transcribe` choose the model for later jobs too; `leyspeech` puts the
-previous choice back after each run.
+it. Each run also stays in the owner's daemon: a kept job, its records (`ley records --protocol
+speech --job-id <job>`) and its ledger lines in `ley ai usage`. `--daemon` (below) leaves nothing
+there. `--model` makes `ley transcribe` choose the model for later jobs too; `leyspeech` puts the
+previous choice back after each run, or clears it when there was none. Ctrl-C interrupts `ley
+transcribe`, which cancels its job and keeps the records it made.
 
-The scripted engine, run hermetically on a copy of a recording, is how the tool itself is tested.
-Its output, from the end-to-end test against the real daemon with one wrong word in the
-transcript:
+The scripted engine is how the tool itself is tested. Its output, from the end-to-end test against
+the real daemon with one wrong word in the transcript:
 
 ```
 ENGINE  MODEL     OVERS  WER   S/D/I  CALLSIGNS  OPEN     REQUESTS  BILLED     PER OPEN HOUR  SPEED
@@ -104,18 +114,25 @@ speech scripted, the overs with errors:
 
 The columns:
 
-- **OVERS** is the overs with a record against the overs in the transcript.
+- **OVERS** is the records scored against the transcript lines scored.
 - **WER** and **S/D/I** are summed over the whole recording: total errors over total reference
-  words. An over with no record counts all its words as deletions; a record for an over the
-  transcript does not list counts all its words as insertions. When an engine cuts a part
-  differently from the transcript (a decoder whose manifest sets a longer hang joins two openings
-  the template lists apart), the overs that share audio are scored as one stretch, named `1/1+2`.
+  words. The table does not show the reference word count; `--json` does, as `ref_words` in the
+  score's `counts`, per over and in total. An over with no record counts all its words as
+  deletions; a record for an over the transcript does not list counts all its words as
+  insertions. When an engine cuts a part differently from the transcript (a decoder whose manifest
+  sets a longer hang joins two openings the template lists apart), the overs that share audio are
+  scored as one stretch, named `1/1+2`.
 - **CALLSIGNS** is the callsigns found against the callsigns spoken, by the pattern in
-  `go/pkg/callsign` applied to both sides: a pattern match, not a decoded identity.
+  `go/pkg/callsign` applied to both sides: a pattern match, not a decoded identity. It counts from
+  the reference only: each callsign in a transcript line is found or not in the engine's text for
+  the same over. A callsign the engine wrote that nobody said does not lower it; its words are
+  insertions in the WER.
 - **OPEN** is the minutes the squelch was open, which is what the cost per hour is counted against.
   The audio sent is a little longer, because each over carries its pre-roll and hang.
 - **BILLED** is the job's ledger line in the provider's unit: audio seconds, else tokens, else
-  requests. **PER OPEN HOUR** is the same scaled to one hour of squelch-open audio. Leyline shows
+  requests. The line is read by the job's id, taken from its records, or from `ListJobs` (the new
+  job reading this recording) when the job made no record, so an engine that heard nothing still
+  shows what it was billed. **PER OPEN HOUR** is the same scaled to one hour of squelch-open audio. Leyline shows
   no prices; the provider's price sheet turns these into money.
 - **SPEED** is seconds of squelch-open audio transcribed per second of wall clock, for a stored
   recording. It is throughput, not latency.
@@ -136,11 +153,21 @@ leyspeech live --freq 146.94 --engine <decoder> --model <model> --seconds 1800
 `live` runs `ley decode <decoder> --freq F --job --json` for `--seconds`, stamps each record as it
 arrives, then cancels the job and reads, from the recording the job kept of its overs, when each
 over's squelch closed. It reports the delay per over with its median, 90th percentile and maximum.
+
+It runs on the owner's daemon and takes the radio as `ley decode` does: it tunes an idle radio or
+a capture that already covers the frequency, and refuses, as `ley decode` refuses, when somebody
+else is using the radio (it never passes `--take-over`). With `--model` the speech model is
+switched for the whole `--seconds` window, so any other speech job started meanwhile uses it too,
+and put back afterwards. The job is cancelled on every way out: at the end of the window, when
+`ley decode` fails, and on Ctrl-C.
 The close is on the capture's clock, through the anchor, and the arrival is on the Mac's clock, so
 the two agree because the daemon and `leyspeech` run on the same machine. Every delay includes the
 decoder's hang (half a second unless its manifest says otherwise), because the daemon ends a
-segment only that long after the squelch closes. The end-to-end test measures 0.60 to 0.61 s with
-the scripted engine, which answers at once: the hang plus about a tenth of a second of plumbing.
+segment only that long after the squelch closes; the table's cell and a note under it say so
+(`0.6 s median (0.5 s hang), 0.6 s p90`). The end-to-end test measures 0.60 to 0.62 s with the
+scripted engine, which answers at once: the hang plus about a tenth of a second of plumbing. A
+record whose over the recording's sidecars do not hold cannot be given a delay; the note under the
+table counts such records, and `--json` gives the count as `unplaced`.
 
 The job's records and its recording are kept, so `leyspeech ref` and `leyspeech run --recording
 <job>` can score the same overs afterwards.
