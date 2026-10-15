@@ -27,10 +27,11 @@ type Scenario struct {
 	// Setup runs after the fixtures are attached and before the agent: a `ley` verb against the
 	// eval daemon, or a decode job started through the client library.
 	Setup []SetupStep `yaml:"setup"`
-	// SpeechScript is what the speech decoder hears: one line per over, in order, the last line
-	// again for every over after. The runner writes it to the run directory and names the file in
-	// the daemon's LEYDEC_SPEECH_SCRIPT, which leydec-speech's scripted engine inherits, so a
-	// speech job in the setup stores records whose words the scenario fixed in advance.
+	// SpeechScript is what the speech-scripted decoder hears: one line per over, in order, the
+	// last line again for every over after. The runner writes it to the run directory and names
+	// the file in the daemon's LEYDEC_SPEECH_SCRIPT, which leydec-speech's scripted engine
+	// inherits, so a speech-scripted job in the setup stores records whose words the scenario
+	// fixed in advance.
 	SpeechScript []string `yaml:"speech_script"`
 	// Task is what the agent is asked, verbatim.
 	Task string `yaml:"task"`
