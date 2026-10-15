@@ -1082,6 +1082,25 @@ closes the turn with the note; the idle sweep stops the worker and a later messa
 with `resume`; the retention rule; `ley ask --continue` across the restart in e2e; the canary
 absent from both files.
 
+### AI-15 `[ ]` The assistant on an OpenAI-compatible endpoint
+
+Decided 2026-10-15: one key can serve both features. The worker gains a second `Model`
+implementation for the OpenAI-compatible chat API (`POST {base}/v1/chat/completions` with tools,
+or the responses API if the tool-result shape is cleaner; one file over the standard library,
+the key in the bearer header only, the same error mapping as the speech engine: 401/403
+`CREDENTIAL_REJECTED`, 429/5xx/credit `PROVIDER_REFUSED`, else `PROVIDER_UNAVAILABLE`; redirects
+refused, https required except localhost; tool calls run in the order the model gave them, with
+parallel calls executed one at a time so the gate holds; usage reported in the provider's names
+for input, output and cached tokens). `WorkerStart.provider` selects the implementation:
+`anthropic` as today, anything else with an endpoint or `openai` as this one, so gateways and
+local servers are covered. The default provider for both features is chosen by the AI-12 run;
+until then `ley ai add openai` as the only key makes `openai` the default for both features
+(see the ergonomics item). Files: `go/internal/assistant/openai.go` (new), `model.go`,
+`worker.go` (selection), tests with `httptest` pinning the request shape and the tool-result
+ordering, `docs/dev/assistant.md`, `docs/design/ai.md` "Providers". Verify: the policy-row tests
+run against both models through the scripted harness; the `ask` e2e runs once per provider
+against a fake endpoint.
+
 ## Lanes
 
 What can be built at once, each lane in its own worktree, merged in this order:
