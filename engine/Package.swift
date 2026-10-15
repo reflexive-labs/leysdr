@@ -84,7 +84,7 @@ let package = Package(
             ],
             path: "Sources/LeylineDaemon"
         ),
-        // The two executables below are not products: they are a test fixture and a spike harness,
+        // The three executables below are not products: they are test fixtures and a spike harness,
         // not something this package ships. SwiftPM still builds an executable target in the root
         // package under the target's name, so the names are the binaries' names, which
         // DaemonTestHarness, scripts/hot-path-allocations.sh and docs/decisions/S2-throughput.md use.
@@ -97,6 +97,15 @@ let package = Package(
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
             ],
             path: "Sources/FakeDecoder"
+        ),
+        // A `ley worker assistant` that plays a script, for the daemon's assistant tests.
+        .executableTarget(
+            name: "leyline-fake-worker",
+            dependencies: [
+                .product(name: "LeylineProto", package: "LeylineProto"),
+                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+            ],
+            path: "Sources/FakeWorker"
         ),
         // The S2 throughput harness (docs/decisions/S2-throughput.md).
         .executableTarget(
