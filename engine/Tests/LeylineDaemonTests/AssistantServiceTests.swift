@@ -146,7 +146,7 @@ final class AssistantServiceTests: XCTestCase {
         try await withAssistant(scripts: ["end"], chooseModel: false, addKey: false) { c, _ in
             let unnamed = await self.failure { _ = try await self.start(c) }
             XCTAssertEqual(unnamed.code, EngineError.Code.failedPrecondition)
-            XCTAssertTrue(unnamed.text.contains("ley ai use assistant <provider> <model>"), unnamed.text)
+            XCTAssertTrue(unnamed.text.contains("add one with ley ai add openai (or anthropic)"), unnamed.text)
             var request = Leyline_V1_StartConversationRequest()
             request.provider = "anthropic"
             let named = await self.failure { _ = try await c.assistant.startConversation(request, metadata: testMetadata) }

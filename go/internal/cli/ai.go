@@ -109,26 +109,51 @@ func renderAI(s ui.Style, st *leylinev1.AIState) string {
 	}
 	_, _ = printColumns(&b, s, keys, nil)
 	if len(st.GetCredentials()) == 0 {
-		writeWrapped(&b, s, "(no keys; add one with: ley ai add anthropic)")
+		writeWrapped(&b, s, "(no keys; add one with: "+unbracketed(leyline.AddCommand("assistant"))+")")
 	}
 	b.WriteByte('\n')
 	features := []column{{head: "FEATURE"}, {head: "PROVIDER"}, {head: "MODEL", min: 10}}
-	chosen := 0
+	var unset []string
 	for _, f := range aiFeatures {
 		provider, model := s.Glyphs().Absent, s.Glyphs().Absent
 		for _, fm := range st.GetFeatures() {
 			if fm.GetFeature() == f {
 				provider, model = fm.GetProvider(), fm.GetModel()
-				chosen++
 			}
+		}
+		if provider == s.Glyphs().Absent {
+			unset = append(unset, f)
 		}
 		add(features, f, provider, model)
 	}
 	_, _ = printColumns(&b, s, features, nil)
-	if chosen == 0 {
-		writeWrapped(&b, s, "(no models chosen; pick one with: ley ai use assistant anthropic claude-sonnet-5-5)")
+	// With no key the line above already says what to do first.
+	if len(st.GetCredentials()) > 0 {
+		for _, f := range unset {
+			writeWrapped(&b, s, unsetHint(f, st.GetCredentials()))
+		}
 	}
 	return b.String()
+}
+
+// unsetHint is the next step for a feature with no model, from the keys there are: the use
+// that sets it, or the add of a key that can serve it.
+func unsetHint(feature string, keys []*leylinev1.Credential) string {
+	cmd := leyline.ChooseCommand(feature, keys)
+	if strings.HasPrefix(cmd, "ley ai use ") {
+		return fmt.Sprintf("(%s has no model; choose one with: %s)", feature, cmd)
+	}
+	return fmt.Sprintf("(%s has no model, and no key serves it; add one with: %s)", feature, unbracketed(cmd))
+}
+
+// unbracketed turns AddCommand's "ley ai add openai (or anthropic)" into "ley ai add openai, or
+// anthropic", so a hint that is itself in brackets holds none.
+func unbracketed(cmd string) string {
+	head, others, ok := strings.Cut(cmd, " (or ")
+	if !ok {
+		return cmd
+	}
+	return head + ", or " + strings.TrimSuffix(others, ")")
 }
 
 // keyHint is the KEY cell: the key's last four characters behind an ellipsis, so it reads as the

@@ -122,13 +122,37 @@ func TestAIList(t *testing.T) {
 	}
 }
 
-// An empty daemon says how to add a key and choose a model.
-func TestAIListEmpty(t *testing.T) {
+// The listing's hint follows the state: with no key it names the add, and with keys it names
+// the command for each feature with no model, built from the keys there are.
+func TestAIListHints(t *testing.T) {
 	t.Parallel()
-	sock, _ := harness(t, fakedaemon.Options{})
-	out := checkScreen(t, sock, "ai")[80]
-	if !strings.Contains(out, "ley ai add anthropic") || !strings.Contains(out, "ley ai use assistant") {
-		t.Errorf("empty state names no next command:\n%s", out)
+	sock, c := harness(t, fakedaemon.Options{})
+	out := checkScreen(t, sock, "ai")[160]
+	if !strings.Contains(out, "(no keys; add one with: ley ai add openai, or anthropic)") || strings.Contains(out, "has no model") {
+		t.Errorf("no keys:\n%s", out)
+	}
+	if _, err := c.Credentials.SetCredential(t.Context(), &leylinev1.SetCredentialRequest{Provider: "anthropic", Secret: aiSecret}); err != nil {
+		t.Fatal(err)
+	}
+	out = checkScreen(t, sock, "ai")[160]
+	if !strings.Contains(out, "(speech has no model, and no key serves it; add one with: ley ai add openai)") ||
+		strings.Contains(out, "assistant has no model") {
+		t.Errorf("an anthropic key, which set the assistant:\n%s", out)
+	}
+	if _, err := c.Credentials.SetCredential(t.Context(), &leylinev1.SetCredentialRequest{Provider: "openai", Secret: fakedaemon.RejectedSecret}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Credentials.SetFeatureModel(t.Context(), &leylinev1.FeatureModel{Feature: "assistant"}); err != nil {
+		t.Fatal(err)
+	}
+	out = checkScreen(t, sock, "ai")[160]
+	for _, want := range []string{
+		"(assistant has no model; choose one with: ley ai use assistant openai)",
+		"(speech has no model; choose one with: ley ai use speech openai)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("keys for both, no models: lacks %q\n%s", want, out)
+		}
 	}
 }
 

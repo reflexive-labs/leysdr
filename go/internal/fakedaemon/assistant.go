@@ -150,7 +150,7 @@ func (a assistantSvc) StartConversation(ctx context.Context, req *leylinev1.Star
 	switch {
 	case provider == "":
 		return nil, fail(ctx, errorf(leyline.CodeFailedPrecondition, "assistant",
-			"no model is chosen for the assistant; choose one with ley ai use assistant anthropic claude-sonnet-5-5"))
+			leyline.MissingModelMessage("assistant", d.aiSnapshot().GetCredentials())))
 	case d.ai.credentials[provider] == nil:
 		return nil, fail(ctx, credentialMissing(provider))
 	case model == "":

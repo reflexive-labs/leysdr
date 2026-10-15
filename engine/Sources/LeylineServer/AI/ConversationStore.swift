@@ -719,12 +719,12 @@ actor ConversationStore {
     private func resolveModel(_ request: Leyline_V1_StartConversationRequest) async throws -> (String, String) {
         var provider = request.provider.trimmingCharacters(in: .whitespacesAndNewlines)
         var model = request.model.trimmingCharacters(in: .whitespacesAndNewlines)
-        let chosen = await credentials.snapshot().features.first { $0.feature == "assistant" }
+        let ai = await credentials.snapshot()
+        let chosen = ai.features.first { $0.feature == "assistant" }
         if provider.isEmpty {
             guard let chosen, !chosen.provider.isEmpty else {
                 throw EngineError.failedPrecondition(
-                    "no model is chosen for the assistant; choose one with ley ai use assistant <provider> <model>",
-                    target: "assistant")
+                    ProviderDefaults.missingModelMessage("assistant", keys: ai.credentials), target: "assistant")
             }
             provider = chosen.provider
             if model.isEmpty { model = chosen.model }
