@@ -645,17 +645,20 @@ usage error with a decoder that calls no provider. A decoder whose manifest name
 no key set is refused by the daemon with `CREDENTIAL_MISSING`, whose message names `ley ai add`. A
 recording that lists no squelch openings (one recorded without `--gate squelch`) and an IQ
 recording are refused before anything is asked, each with the `ley record` command that makes one
-that can be transcribed. The bundled `speech` decoder has one engine, `scripted`, which replays a
-file of lines and sends nothing anywhere; it is what the tests transcribe with. Recorded against
+that can be transcribed. Two speech decoders ship, one program with two manifests: `speech` sends
+each over to OpenAI's transcription API on the `openai` key (`ley ai add openai`; an endpoint on
+the key points it at a compatible server instead), and `speech-scripted` replays a file of lines,
+needs no key and sends nothing anywhere, which is what the tests transcribe with
+(`docs/reference/writing-a-decoder.md`, "Speech decoders"). Recorded against
 the contract's fake daemon, whose recording and words are seeded, so ids and times will differ:
 
 ```
 $ ley transcribe job_01SEEDSEEDSEEDSEEDSEEDSE < /dev/null
-Transcribe 2 parts, 0.1 min of squelch-open audio from 146.520 MHz NFM, with speech (on this Mac; no audio leaves it).
+Transcribe 2 parts, 0.1 min of squelch-open audio from 146.520 MHz NFM, with speech (sends the audio to api.openai.com).
 ley: stdin is not a terminal, so nobody can confirm sending the audio. Run: ley transcribe job_01SEEDSEEDSEEDSEEDSEEDSE --yes
 
 $ ley transcribe job_01SEEDSEEDSEEDSEEDSEEDSE --yes
-Transcribing 2 parts, 0.1 min of squelch-open audio from 146.520 MHz NFM, with speech (on this Mac; no audio leaves it).
+Transcribing 2 parts, 0.1 min of squelch-open audio from 146.520 MHz NFM, with speech (sends the audio to api.openai.com).
 14:03:00 part 1 over 1  this is whiskey six alpha bravo charlie (W6ABC)
 14:03:03 part 1 over 3  kilo delta two x-ray yankee zulu, go ahead (KD2XYZ)
 14:03:16 part 2 over 1  roger, see you at six alpha

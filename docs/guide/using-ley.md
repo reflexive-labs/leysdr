@@ -795,7 +795,7 @@ nothing to transcribe. This was recorded against the fake daemon, with its words
 
 ```console
 $ ley transcribe job_01SEED
-Transcribe 2 parts, 0.1 min of squelch-open audio from 146.520 MHz NFM, with speech (on this Mac; no audio leaves it)? [y/N] y
+Transcribe 2 parts, 0.1 min of squelch-open audio from 146.520 MHz NFM, with speech (sends the audio to api.openai.com)? [y/N] y
 14:03:00 part 1 over 1  this is whiskey six alpha bravo charlie (W6ABC)
 14:03:03 part 1 over 3  kilo delta two x-ray yankee zulu, go ahead (KD2XYZ)
 14:03:16 part 2 over 1  roger, see you at six alpha
@@ -806,10 +806,18 @@ Next: ley records --protocol speech --job-id job_01M4YD5AKAGK8S2QREFDM9RV91
 Each line is one over: when it was heard, which part of the recording holds it, and the words. The
 callsigns in parentheses are what a pattern found in the text after the phonetic alphabet was
 folded into letters, so check a doubtful one by ear: `ley play job_01SEED --part 1 --over 3`
-plays just that over. The speech decoder in this
-build has no speech engine yet: it replays a script of lines and is what the tests transcribe
-with, so a real recording gets `segment 1`, `segment 2` and so on. `ley transcribe --help` lists
-the rest.
+plays just that over. `ley transcribe --help` lists the rest.
+
+The `speech` decoder sends each over to OpenAI's transcription API on your own key, so add one
+first with `ley ai add openai`; it is billed by the minute of audio, and `ley ai usage` shows how
+much was sent. `ley ai use speech openai whisper-1` chooses the model (`whisper-1` is the default), and
+`transcribe --model` does the same for one run and the ones after it. A key added with
+`--endpoint` sends the audio to that OpenAI-compatible server instead, such as a Whisper server on
+your own network. What leaves the Mac is the audio of each over, half a second either side, and a
+vocabulary hint that helps the model spell callsigns: the phonetic alphabet and a few net phrases.
+Where passing on what you received is restricted, keep speech off or transcribe on a server of
+your own. A decoder named `speech-scripted` is installed beside it: it replays a file of lines,
+sends nothing anywhere, and is what the tests transcribe with.
 
 ## 12. Decode what is being said
 
@@ -959,7 +967,7 @@ does a recording. Speech has no frequency of its own, so `--freq` says where to 
 runs, the daemon records the overs as a gated recording under the job's id, so each line names the
 part and the over that hold the words, and `ley play` plays them when one looks doubtful. This was
 recorded against the real daemon playing the `nfm_keyed` fixture, with the scripted engine
-reading three lines:
+standing in for OpenAI and reading three lines:
 
 ```console
 $ ley decode speech --freq 146.62 --job --count 2

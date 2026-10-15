@@ -43,7 +43,7 @@ func TestDecodersTableAndJSON(t *testing.T) {
 		SearchPath []string         `json:"searchPath"`
 		StorePath  string           `json:"storePath"`
 	}
-	if err := json.Unmarshal([]byte(out), &resp); err != nil || len(resp.Decoders) != 2 {
+	if err := json.Unmarshal([]byte(out), &resp); err != nil || len(resp.Decoders) != 3 {
 		t.Fatalf("json decoders: %v %s", err, out)
 	}
 	if resp.Decoders[0]["name"] != "aprs" || len(resp.SearchPath) == 0 || resp.StorePath == "" {

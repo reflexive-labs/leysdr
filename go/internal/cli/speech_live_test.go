@@ -50,7 +50,7 @@ var overLinePattern = regexp.MustCompile(`^\d\d:\d\d:\d\d part (\d+) over 1  (.+
 func TestDecodeSpeechOnTheAir(t *testing.T) {
 	t.Parallel()
 	opts := speechLiveOpts(t)
-	sock, c := harness(t, opts)
+	sock, c := transcribeHarness(t, opts)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	out, errOut, err := run(t, ctx, sock, "decode", "speech", "--freq", "146.94", "--count", "2")
@@ -85,7 +85,7 @@ func TestDecodeSpeechOnTheAir(t *testing.T) {
 func TestDecodeSpeechKeepsItsClips(t *testing.T) {
 	t.Parallel()
 	opts := speechLiveOpts(t)
-	sock, c := harness(t, opts)
+	sock, c := transcribeHarness(t, opts)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	out, errOut, err := run(t, ctx, sock, "--json", "decode", "speech", "--freq", "146.94", "--job", "--count", "3")
@@ -146,7 +146,7 @@ func TestDecodeSpeechKeepsItsClips(t *testing.T) {
 // and to the notifier, and a detached one runs on with the notifier and the clips named.
 func TestWatchSpeechForAPhrase(t *testing.T) {
 	t.Parallel()
-	sock, c := harness(t, fakedaemon.Options{
+	sock, c := transcribeHarness(t, fakedaemon.Options{
 		RecordingsDir: t.TempDir(), PresenceGrace: 100 * time.Millisecond,
 		SpeechScript: []string{"alpha one", "this is net control, go ahead", "bravo two", "net check-in"},
 	})

@@ -89,13 +89,13 @@ type Options struct {
 	// Recordings are gated audio recordings already in the store when the daemon starts, written
 	// into RecordingsDir as SeedRecording describes; a recording is what `ley transcribe` reads.
 	Recordings []SeedRecording
-	// SpeechScript is the text of the fake speech decoder's records, one line per over in order,
+	// SpeechScript is the text of the fake speech decoders' records, one line per over in order,
 	// the last repeated when they run out; with none, each record says "segment N", as the
-	// scripted engine of leydec-speech does.
+	// scripted engine of leydec-speech does. Both speech and speech-scripted write it.
 	SpeechScript []string
-	// SpeechProvider and SpeechHosts are the fake speech decoder's credential_provider and
+	// SpeechProvider and SpeechHosts replace the fake speech decoder's credential_provider and
 	// contacts_hosts. Empty keeps the manifest as decoders/speech/manifest.json has it, which
-	// needs no key and sends audio nowhere.
+	// needs an openai key and sends audio to api.openai.com; speech-scripted needs no key.
 	SpeechProvider string
 	SpeechHosts    []string
 	// AssistantScript is what the fake's assistant says and does: one turn per SendMessage, in

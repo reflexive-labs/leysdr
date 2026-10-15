@@ -1,10 +1,10 @@
 {
   "name": "speech",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "aliases": [
     "transcribe"
   ],
-  "description": "Speech to text, one record per over; this build's engine replays a script",
+  "description": "Speech to text, one record per over, by OpenAI's transcription API on your key: each over's squelch-open audio leaves this Mac for api.openai.com, or for the endpoint the key was added with",
   "license": "Apache-2.0",
   "recipe": {
     "mode": "NFM",
@@ -47,6 +47,10 @@
   "executable": "leydec-speech",
   "args": [
     "--engine",
-    "scripted"
+    "openai"
+  ],
+  "credentialProvider": "openai",
+  "contactsHosts": [
+    "api.openai.com"
   ]
 }

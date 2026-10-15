@@ -174,7 +174,10 @@ if [ $with_daemon -eq 1 ]; then
     name=$(basename "$d")
     mkdir -p "$out/Contents/Resources/decoders/$name"
     cp "$d"/*.json "$out/Contents/Resources/decoders/$name/" 2>/dev/null || true
-    [ -x "$gobin/leydec-$name" ] && cp "$gobin/leydec-$name" "$out/Contents/Helpers/"
+    # The binary the manifest names, which two decoders may share (leydec-speech is speech and
+    # speech-scripted). Bare sed rather than jq: this runs on a stock Mac.
+    exe=$(sed -n 's/.*"executable"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$d/manifest.json" | head -1)
+    if [ -n "$exe" ] && [ -x "$gobin/$exe" ]; then cp "$gobin/$exe" "$out/Contents/Helpers/"; fi
   done
   # The GPL engine travels with its licence text and the source offer (docs/decisions/D2-licensing.md).
   cp engine/LICENSE "$out/Contents/Resources/licenses/LICENSE.leylined"

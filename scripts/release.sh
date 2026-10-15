@@ -114,11 +114,17 @@ release_assets() {
   printf '%s\n' "$1/drivers.json" "$1/appcast.xml"
 }
 
+# manifest_executable <manifest.json>: the binary a decoder's manifest names. One binary can serve
+# two decoders (leydec-speech is speech and speech-scripted), so the directory's name is not it.
+manifest_executable() {
+  sed -n 's/.*"executable"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" | head -1
+}
+
 # build_app <version> <work> <identity> <app>: ley and the decoders for the one architecture a
 # release ships, stamped with the bare version, then the bundle at <app> signed by <identity> ("-"
 # for ad hoc) and verified. Not go/bin, which holds whatever the last `make go` built.
 build_app() {
-  local version=$1 gobin=$2/gobin identity=$3 app=$4 d name
+  local version=$1 gobin=$2/gobin identity=$3 app=$4 d name exe
   mkdir -p "$gobin"
   echo "==> go build (darwin/arm64): ley, leydec-*"
   (cd go && GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -trimpath \
@@ -126,7 +132,8 @@ build_app() {
     -o "$gobin/" ./cmd/ley ./cmd/leydec-*)
   for d in decoders/*/; do
     name=$(basename "$d")
-    [ -x "$gobin/leydec-$name" ] || die "decoders/$name has no go/cmd/leydec-$name to build"
+    exe=$(manifest_executable "$d/manifest.json")
+    [ -x "$gobin/$exe" ] || die "decoders/$name names $exe, and there is no go/cmd/$exe to build"
   done
 
   BUNDLE_GOBIN=$gobin BUNDLE_OUT=$app CODESIGN_IDENTITY=$identity ./scripts/bundle-app.sh --with-daemon

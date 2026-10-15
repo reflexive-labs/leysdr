@@ -8,11 +8,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,9 +28,10 @@ import (
 
 // Speech on a stored recording end to end (docs/plans/ai-features.md, AI-5): the real daemon
 // records the keyed fixture gated on its squelch, `ley transcribe` runs the real leydec-speech
-// with its scripted engine over the recording, and the records, the job and the ledger are read
-// back through the real `ley`. The script fixes the words, and the fixture's keying fixes where
-// the overs are, so every record is graded against the part sidecars the daemon wrote.
+// over the recording, and the records, the job and the ledger are read back through the real
+// `ley`. speech-scripted's script fixes the words, and the fixture's keying fixes where the overs
+// are, so every record is graded against the part sidecars the daemon wrote; the bundled speech
+// decoder then sends the same overs to a local stand-in for OpenAI's transcription API.
 var speechScript = []string{"alpha one", "bravo two", "charlie three", "delta four"}
 
 // The segment rule the daemon applies to a stored part (docs/reference/writing-a-decoder.md,
@@ -71,11 +75,11 @@ func TestTranscribeAgainstRealDaemon(t *testing.T) {
 
 	t.Run("decoders lists speech as segmented", func(t *testing.T) { checkSpeechListed(t, r) })
 	t.Run("refuses without a terminal or --yes", func(t *testing.T) { checkTranscribeRefusal(t, r) })
-	first := r.transcribe(t, "speech", "")
+	first := r.transcribe(t, "speech-scripted", "")
 	t.Run("records the job kept", func(t *testing.T) { checkStoredRecords(t, r, first) })
 	t.Run("ledger line", func(t *testing.T) { checkSpeechUsage(t, r, first) })
 	t.Run("again", func(t *testing.T) {
-		second := r.transcribe(t, "speech", "")
+		second := r.transcribe(t, "speech-scripted", "")
 		if second.jobID == first.jobID {
 			t.Fatalf("a second transcription reused job %s", first.jobID)
 		}
@@ -88,6 +92,73 @@ func TestTranscribeAgainstRealDaemon(t *testing.T) {
 		checkStoredRecords(t, r, second)
 	})
 	t.Run("a decoder that needs a key", func(t *testing.T) { checkPaidSpeech(t, r) })
+	t.Run("the bundled decoder on an OpenAI endpoint", func(t *testing.T) { checkOpenAISpeech(t, r) })
+}
+
+// checkOpenAISpeech: the bundled speech decoder, with the openai key added at a local endpoint,
+// sends each over there as a WAV with the key as a bearer token and the vocabulary hint as the
+// prompt, and its records carry the endpoint's words, whisper-1, the confidence the response
+// implies, and usage under the endpoint's host.
+func checkOpenAISpeech(t *testing.T, r *transcribeRig) {
+	var mu sync.Mutex
+	var calls int
+	var problems []string
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if req.Header.Get("Authorization") != "Bearer "+openaiKey || req.URL.Path != "/v1/audio/transcriptions" {
+			problems = append(problems, fmt.Sprintf("%s %s with the wrong key or path", req.Method, req.URL.Path))
+			http.Error(w, `{"error":{"message":"not the test's key or path"}}`, http.StatusUnauthorized)
+			return
+		}
+		if err := req.ParseMultipartForm(32 << 20); err != nil || req.MultipartForm.File["file"] == nil ||
+			req.FormValue("model") != "whisper-1" || !strings.Contains(req.FormValue("prompt"), "Whiskey") {
+			problems = append(problems, fmt.Sprintf("form %v: %v", req.MultipartForm, err))
+		}
+		calls++
+		text := speechScript[min(calls, len(speechScript))-1]
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"language":"english","text":" %s ","segments":[{"no_speech_prob":0.25}]}`, text)
+	}))
+	defer provider.Close()
+	r.mustLey(openaiKey+"\n", "ai", "add", "openai", "--endpoint", provider.URL)
+
+	out, errOut, code := r.callWithin(30*time.Second, "transcribe", r.recordingID, "--yes", "--json")
+	if code != 0 {
+		t.Fatalf("ley transcribe: exit %d\n%s", code, errOut)
+	}
+	if !strings.Contains(errOut, "with speech (sends the audio to api.openai.com)") {
+		t.Errorf("the statement does not say where the audio goes:\n%s", errOut)
+	}
+	var recs []*leylinev1.DecodeRecord
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		rec := &leylinev1.DecodeRecord{}
+		unmarshalProto(t, line, rec)
+		recs = append(recs, rec)
+	}
+	sortBySample(recs)
+	mu.Lock()
+	if len(problems) > 0 || calls != len(r.segments) {
+		t.Errorf("the endpoint had %d calls for %d segments, and these problems: %v", calls, len(r.segments), problems)
+	}
+	mu.Unlock()
+	if len(recs) != len(r.segments) {
+		t.Fatalf("want one record per segment, %d, got %d:\n%s", len(r.segments), len(recs), out)
+	}
+	for i, rec := range recs {
+		f, u := rec.GetFields(), rec.GetUsage()
+		if rec.GetProtocol() != "speech" || f["text"].GetText() != speechScript[i] || f["language"].GetText() != "en" ||
+			f["model"].GetText() != "whisper-1" || f["confidence"].GetNumber() != 0.75 {
+			t.Errorf("record %d: protocol %q fields %v", i, rec.GetProtocol(), f)
+		}
+		if u.GetProvider() != "127.0.0.1" || u.GetModel() != "whisper-1" || u.GetFeature() != "speech" || u.GetAudioSeconds() <= 0 {
+			t.Errorf("record %d: usage %v", i, u)
+		}
+		if got := rec.GetTime().GetSampleIndex(); got != r.segments[i].start {
+			t.Errorf("record %d: time.sampleIndex %d, want the segment's start %d", i, got, r.segments[i].start)
+		}
+	}
+	r.assertNoCanary()
 }
 
 // newTranscribeRig starts the daemon with a scripted check worker, the repository's decoders and
@@ -125,14 +196,13 @@ func newTranscribeRig(t *testing.T, decoders, fixture string) *transcribeRig {
 	return r
 }
 
-// writePaidSpeechDecoder installs a copy of the bundled speech manifest named speechpaid that
-// names a provider and a host, in a directory of its own, and returns the directory. The alias
-// is dropped so that `transcribe` still means the bundled decoder; the executable and args are
-// the bundled ones, so the unchanged leydec-speech binary, whose own manifest names no provider,
-// learns from LEYLINE_KEY_ON_STDIN that the key comes first.
+// writePaidSpeechDecoder installs a copy of the speech-scripted manifest named speechpaid that
+// names a provider and a host, in a directory of its own, and returns the directory. The
+// executable and args are speech-scripted's, so leydec-speech runs its scripted engine, whose own
+// manifest names no provider, and learns from LEYLINE_KEY_ON_STDIN that the key comes first.
 func writePaidSpeechDecoder(t *testing.T, decoders, dir string) string {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(decoders, "speech", "manifest.json"))
+	raw, err := os.ReadFile(filepath.Join(decoders, "speech-scripted", "manifest.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,6 +332,7 @@ func cutPart(p leyline.RecordingPart, sc *leyline.RecordingSidecar) []expectedSe
 // transcription is one `ley transcribe --yes --json` run: its job and its records in time order.
 type transcription struct {
 	jobID   string
+	decoder string
 	records []*leylinev1.DecodeRecord
 	stderr  string
 }
@@ -270,10 +341,7 @@ type transcription struct {
 // against the expected segments, the job's end, and how long it took.
 func (r *transcribeRig) transcribe(t *testing.T, decoder, model string) transcription {
 	t.Helper()
-	args := []string{"transcribe", r.recordingID, "--yes", "--json"}
-	if decoder != "speech" {
-		args = append(args, "--engine", decoder)
-	}
+	args := []string{"transcribe", r.recordingID, "--yes", "--json", "--engine", decoder}
 	if model != "" {
 		args = append(args, "--model", model)
 	}
@@ -287,7 +355,7 @@ func (r *transcribeRig) transcribe(t *testing.T, decoder, model string) transcri
 		t.Errorf("transcribing %d ms of overs took %v, want under 5 s", r.openMs, took)
 	}
 	var tr transcription
-	tr.stderr = errOut
+	tr.stderr, tr.decoder = errOut, decoder
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		rec := &leylinev1.DecodeRecord{}
 		unmarshalProto(t, line, rec)
@@ -303,19 +371,20 @@ func (r *transcribeRig) transcribe(t *testing.T, decoder, model string) transcri
 		wantModel = model
 	}
 	for i, rec := range tr.records {
-		r.checkSpeechRecord(t, i, rec, tr.jobID, wantModel)
+		r.checkSpeechRecord(t, i, rec, decoder, tr.jobID, wantModel)
 	}
 	r.checkJobCompleted(t, tr.jobID)
 	return tr
 }
 
-// checkSpeechRecord grades record i against segment i and line i of the script.
-func (r *transcribeRig) checkSpeechRecord(t *testing.T, i int, rec *leylinev1.DecodeRecord, jobID, model string) {
+// checkSpeechRecord grades record i against segment i and line i of the script. Its protocol is
+// the decoder's name, which the daemon stamps.
+func (r *transcribeRig) checkSpeechRecord(t *testing.T, i int, rec *leylinev1.DecodeRecord, decoder, jobID, model string) {
 	t.Helper()
 	seg := r.segments[i]
 	f := rec.GetFields()
-	if rec.GetProtocol() != "speech" && rec.GetProtocol() != "speechpaid" {
-		t.Errorf("record %d: protocol %q", i, rec.GetProtocol())
+	if rec.GetProtocol() != decoder {
+		t.Errorf("record %d: protocol %q, want %q", i, rec.GetProtocol(), decoder)
 	}
 	if got := f["text"].GetText(); got != speechScript[i] {
 		t.Errorf("record %d: text %q, want the script's %q", i, got, speechScript[i])
@@ -366,23 +435,31 @@ func checkSpeechListed(t *testing.T, r *transcribeRig) {
 	out, _ := r.mustLey("", "decoders", "--json")
 	var resp leylinev1.ListDecodersResponse
 	unmarshalProto(t, out, &resp)
+	// The bundled speech decoder calls OpenAI and says so; speech-scripted calls nobody.
+	want := map[string]string{"speech": "openai api.openai.com", "speech-scripted": " "}
 	for _, d := range resp.GetDecoders() {
-		if d.GetName() != "speech" {
+		sends, ok := want[d.GetName()]
+		if !ok {
 			continue
 		}
+		delete(want, d.GetName())
 		if d.GetInput().GetMode() != leylinev1.InputMode_SEGMENTED {
-			t.Errorf("speech input mode %v, want SEGMENTED", d.GetInput().GetMode())
+			t.Errorf("%s input mode %v, want SEGMENTED", d.GetName(), d.GetInput().GetMode())
 		}
 		if fs := d.GetRecipe().GetFrequenciesHz(); len(fs) != 0 {
-			t.Errorf("speech names frequencies %v; it decodes whatever is recorded", fs)
+			t.Errorf("%s names frequencies %v; it decodes whatever is recorded", d.GetName(), fs)
 		}
-		return
+		if got := d.GetCredentialProvider() + " " + strings.Join(d.GetContactsHosts(), ","); got != sends {
+			t.Errorf("%s needs and sends to %q, want %q", d.GetName(), got, sends)
+		}
 	}
-	t.Fatalf("ley decoders --json lists no speech decoder: %s", out)
+	if len(want) > 0 {
+		t.Fatalf("ley decoders --json lacks %v: %s", want, out)
+	}
 }
 
 // checkTranscribeRefusal: off a terminal and without --yes nothing is sent, and the statement
-// gives the squelch-open minutes the manifest sums to.
+// gives the squelch-open minutes the manifest sums to and the host the bundled decoder sends to.
 func checkTranscribeRefusal(t *testing.T, r *transcribeRig) {
 	out, errOut, code := r.call("", nil, "transcribe", r.recordingID)
 	if code != 2 {
@@ -392,7 +469,7 @@ func checkTranscribeRefusal(t *testing.T, r *transcribeRig) {
 		t.Errorf("the refusal printed on stdout: %q", out)
 	}
 	minutes := fmt.Sprintf("%.1f min of squelch-open audio", float64(r.openMs)/60000)
-	for _, want := range []string{minutes, "no audio leaves", "--yes"} {
+	for _, want := range []string{minutes, "with speech (sends the audio to api.openai.com)", "--yes"} {
 		if !strings.Contains(errOut, want) {
 			t.Errorf("the refusal lacks %q:\n%s", want, errOut)
 		}
@@ -420,7 +497,7 @@ func (r *transcribeRig) speechJobs(t *testing.T) []string {
 // checkStoredRecords: `ley records` reads back the job's records, the same ids.
 func checkStoredRecords(t *testing.T, r *transcribeRig, tr transcription) {
 	t.Helper()
-	out, _ := r.mustLey("", "records", "--protocol", "speech", "--job-id", tr.jobID, "--json")
+	out, _ := r.mustLey("", "records", "--protocol", tr.decoder, "--job-id", tr.jobID, "--json")
 	var page leylinev1.RecordPage
 	unmarshalProto(t, out, &page)
 	stored := page.GetRecords()

@@ -40,7 +40,23 @@ func transcribeOpts(t *testing.T, noOpenMs bool) fakedaemon.Options {
 	}
 }
 
-const transcribeStatementWant = "Transcribe 2 parts, 0.1 min of squelch-open audio from 146.520 MHz NFM, with speech (on this Mac; no audio leaves it)"
+// transcribeHarness is the fake with an openai key set, which the bundled speech decoder needs.
+func transcribeHarness(t *testing.T, opts fakedaemon.Options) (string, *leyline.Client) {
+	t.Helper()
+	sock, c := harness(t, opts)
+	setOpenAIKey(t, c)
+	return sock, c
+}
+
+// setOpenAIKey adds a key for openai, the provider the bundled speech decoder calls.
+func setOpenAIKey(t *testing.T, c *leyline.Client) {
+	t.Helper()
+	if _, err := c.Credentials.SetCredential(t.Context(), &leylinev1.SetCredentialRequest{Provider: "openai", Secret: "sk-test-1234"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+const transcribeStatementWant = "Transcribe 2 parts, 0.1 min of squelch-open audio from 146.520 MHz NFM, with speech (sends the audio to api.openai.com)"
 
 // Without a terminal to answer and without --yes, transcribe states what it would send and
 // refuses with a usage error, starting nothing. The minutes are the same whether the manifest
@@ -48,7 +64,7 @@ const transcribeStatementWant = "Transcribe 2 parts, 0.1 min of squelch-open aud
 func TestTranscribeRefusesWithoutATerminal(t *testing.T) {
 	t.Parallel()
 	for _, noOpenMs := range []bool{false, true} {
-		sock, c := harness(t, transcribeOpts(t, noOpenMs))
+		sock, c := transcribeHarness(t, transcribeOpts(t, noOpenMs))
 		out, errOut, err := runLey(t, sock, 80, false, "", "transcribe", transcribeID)
 		if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "ley transcribe "+transcribeID+" --yes") {
 			t.Fatalf("want a usage error naming --yes, got exit %d: %v", exitCode(err), err)
@@ -74,7 +90,7 @@ func TestTranscribeRefusesWithoutATerminal(t *testing.T) {
 // At a terminal it asks, and anything but yes sends nothing.
 func TestTranscribeAsks(t *testing.T) {
 	t.Parallel()
-	sock, c := harness(t, transcribeOpts(t, false))
+	sock, c := transcribeHarness(t, transcribeOpts(t, false))
 	app := &App{Socket: sock, Stdin: strings.NewReader("n\n"), IsInTTY: func() bool { return true }}
 	_, errOut, err := runApp(t, app, "transcribe", transcribeID)
 	if err != nil {
@@ -98,7 +114,7 @@ func TestTranscribeAsks(t *testing.T) {
 // the command that reads them again.
 func TestTranscribePrintsEachOver(t *testing.T) {
 	t.Parallel()
-	sock, _ := harness(t, transcribeOpts(t, true))
+	sock, _ := transcribeHarness(t, transcribeOpts(t, true))
 	out, errOut, err := runLey(t, sock, 80, false, "", "transcribe", leyline.RecordingURI(transcribeID), "--yes")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, errOut)
@@ -135,7 +151,7 @@ func TestTranscribePrintsEachOver(t *testing.T) {
 // --json is the records, one DecodeRecord per line, with their part and over, and no ink.
 func TestTranscribeJSON(t *testing.T) {
 	t.Parallel()
-	sock, _ := harness(t, transcribeOpts(t, false))
+	sock, _ := transcribeHarness(t, transcribeOpts(t, false))
 	out, _, err := runLey(t, sock, 80, true, "", "--json", "transcribe", transcribeID, "--yes")
 	if err != nil {
 		t.Fatal(err)
@@ -244,7 +260,7 @@ func TestTranscribeReportsACancelledJob(t *testing.T) {
 		overs = append(overs, fakedaemon.SeedOver{OpenMs: 600 + 2000*i, CloseMs: 1600 + 2000*i})
 	}
 	opts.Recordings[0].Parts = [][]fakedaemon.SeedOver{overs}
-	sock, c := harness(t, opts)
+	sock, c := transcribeHarness(t, opts)
 	type result struct {
 		out string
 		err error
@@ -286,13 +302,13 @@ func TestTranscribeReportsACancelledJob(t *testing.T) {
 // The refusals that come before any question.
 func TestTranscribeRefusals(t *testing.T) {
 	t.Parallel()
-	sock, _ := harness(t, transcribeOpts(t, false))
+	sock, _ := transcribeHarness(t, transcribeOpts(t, false))
 	for _, tc := range []struct {
 		args []string
 		code int
 		says string
 	}{
-		{[]string{"transcribe", transcribeID, "--model", "big", "--yes"}, ExitUsage, "--model needs a decoder that calls a provider"},
+		{[]string{"transcribe", transcribeID, "--engine", "speech-scripted", "--model", "big", "--yes"}, ExitUsage, "--model needs a decoder that calls a provider"},
 		{[]string{"transcribe", transcribeID, "--engine", "aprs", "--yes"}, ExitUsage, "decodes a continuous stream, not overs"},
 		{[]string{"transcribe", transcribeID, "--engine", "whisper", "--yes"}, 1, "ley decoders"},
 		{[]string{"transcribe", leyline.RecordingPartURI(transcribeID, 2)}, ExitUsage, "give " + leyline.RecordingURI(transcribeID)},
@@ -321,7 +337,7 @@ func TestTranscribeRefusals(t *testing.T) {
 func TestTranscribeReportsAFailedJob(t *testing.T) {
 	t.Parallel()
 	opts := transcribeOpts(t, false)
-	sock, _ := harness(t, opts)
+	sock, _ := transcribeHarness(t, opts)
 	// The minutes come from the manifest, so the question is asked; the job then cannot read the
 	// part's sidecar.
 	sidecars, err := filepath.Glob(filepath.Join(opts.RecordingsDir, transcribeID, "*_001.json"))

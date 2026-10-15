@@ -244,8 +244,9 @@ bundled `leydec-aprs` (`go/cmd/leydec-aprs`, with the AFSK, AX.25 and APRS stage
 
 ## Speech decoders
 
-A speech decoder emits one record per segment with `protocol` `speech` (the manifest's `name`),
-`time` at the START frame, and these `fields`:
+A speech decoder emits one record per segment with `protocol` the manifest's `name` (`speech` for
+the bundled one; leave it empty and the daemon fills it in, which a program that serves more than
+one manifest must do), `time` at the START frame, and these `fields`:
 
 | field | type | holds |
 |---|---|---|
@@ -266,9 +267,14 @@ capital I is the pronoun), and with one a one-letter suffix counts only when it 
 phonetically, so `B2B` and `C3PO` are not callsigns. A four-letter suffix such as `N0CALL` is not
 matched.
 
-The bundled `leydec-speech` (`go/cmd/leydec-speech`) is the worked example. Its `--engine` picks the
-engine; `--model` is the model asked for and recorded on each record, and `--language` (default
-`en`; empty lets the engine detect it) is the language asked for. It has two engines:
+The bundled `leydec-speech` (`go/cmd/leydec-speech`) is the worked example, and one program with two
+manifests: `decoders/speech/` runs it with `--engine openai` and names `openai` as its
+`credentialProvider` and `api.openai.com` in `contactsHosts`, and `decoders/speech-scripted/` runs
+it with `--engine scripted` and names neither. `leydec-speech --manifest` prints the first, and
+with `--engine scripted` the second, because the built-in manifest's `credentialProvider` decides
+whether the SDK waits for a key. `--model` is the model asked for and recorded on each record, and
+`--language` (default `en`; empty lets the engine detect it) is the language asked for. The
+engines:
 
 - **`openai`** sends each over to an OpenAI-compatible transcription endpoint,
   `POST {base}/v1/audio/transcriptions`, on the key the daemon hands over. The base is

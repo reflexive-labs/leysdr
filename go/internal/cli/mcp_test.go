@@ -519,7 +519,7 @@ func TestMCPDecoderAndJobTools(t *testing.T) {
 	h := newMCPHarness(t)
 	var decs leylinev1.ListDecodersResponse
 	structured(t, h.must(t, "list_decoders", nil), &decs)
-	if len(decs.Decoders) != 2 || decs.Decoders[0].Name != "aprs" || decs.Decoders[1].Name != "speech" {
+	if len(decs.Decoders) != 3 || decs.Decoders[0].Name != "aprs" || decs.Decoders[1].Name != "speech" || decs.Decoders[2].Name != "speech-scripted" {
 		t.Fatalf("decoders: %v", decs.Decoders)
 	}
 	// An alias resolves to the canonical decoder, as `ley decode packets` does.

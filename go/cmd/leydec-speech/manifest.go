@@ -4,23 +4,55 @@ package main
 
 import leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 
-// manifest is what --manifest prints and what decoders/speech/manifest.json in
-// the repository holds. The file is the source of truth -- discovery reads
-// files and executes nothing (docs/design/decoders.md) -- and
-// TestManifestMatchesTheFile keeps the two identical.
+// One binary is two decoders. `speech` runs the openai engine on the user's key, and is what
+// `ley transcribe`, the app and `ley decode speech` reach; `speech-scripted` runs the scripted
+// engine, needs no key and sends nothing, and is what the tests and evals transcribe with. Each
+// has its manifest in the repository, decoders/speech/manifest.json and
+// decoders/speech-scripted/manifest.json. The files are the source of truth -- discovery reads
+// files and executes nothing (docs/design/decoders.md) -- and TestManifestsMatchTheFiles keeps
+// them and these identical.
 //
-// The recipe has no frequency: speech is wherever somebody is talking, so
-// `ley decode speech` needs --freq and `ley transcribe` reads a recording. The
-// args run the scripted engine, the only one this build has; it calls no
-// provider, so credential_provider and contacts_hosts stay empty until an
-// engine that does is added.
-func manifest() *leylinev1.DecoderManifest {
+// The built-in manifest is the one for the engine on the command line, because its
+// credential_provider decides whether the SDK reads a key before the descriptor: the scripted
+// engine run by an installed manifest that names no provider must not wait for one.
+func manifestFor(engineName string) *leylinev1.DecoderManifest {
+	if engineName == "scripted" {
+		return scriptedManifest()
+	}
+	return speechManifest()
+}
+
+// speechManifest is decoders/speech/manifest.json. The recipe has no frequency: speech is
+// wherever somebody is talking, so `ley decode speech` needs --freq and `ley transcribe` reads a
+// recording.
+func speechManifest() *leylinev1.DecoderManifest {
+	m := baseManifest()
+	m.Name = "speech"
+	m.Aliases = []string{"transcribe"}
+	m.Description = "Speech to text, one record per over, by OpenAI's transcription API on your key: " +
+		"each over's squelch-open audio leaves this Mac for api.openai.com, or for the endpoint the key was added with"
+	m.CredentialProvider = "openai"
+	m.ContactsHosts = []string{"api.openai.com"}
+	m.Args = []string{"--engine", "openai"}
+	return m
+}
+
+// scriptedManifest is decoders/speech-scripted/manifest.json: the same decoder with the scripted
+// engine, no provider and no alias, so `transcribe` still means the real one.
+func scriptedManifest() *leylinev1.DecoderManifest {
+	m := baseManifest()
+	m.Name = "speech-scripted"
+	m.Description = "Speech to text for tests: replays the lines of the file LEYDEC_SPEECH_SCRIPT names, " +
+		"one per over, and sends nothing anywhere"
+	m.Args = []string{"--engine", "scripted"}
+	return m
+}
+
+// baseManifest is what the two share.
+func baseManifest() *leylinev1.DecoderManifest {
 	return &leylinev1.DecoderManifest{
-		Name:        "speech",
-		Version:     "0.1.0",
-		Aliases:     []string{"transcribe"},
-		Description: "Speech to text, one record per over; this build's engine replays a script",
-		License:     "Apache-2.0",
+		Version: "0.2.0",
+		License: "Apache-2.0",
 		Recipe: &leylinev1.DecoderRecipe{
 			Mode: leylinev1.DemodMode_NFM,
 			Gain: leylinev1.GainPolicy_GAIN_LEAVE,
@@ -36,7 +68,6 @@ func manifest() *leylinev1.DecoderManifest {
 		Outputs:    []leylinev1.OutputShape{leylinev1.OutputShape_SHAPE_RECORDS},
 		Fields:     fieldHints(),
 		Executable: "leydec-speech",
-		Args:       []string{"--engine", "scripted"},
 	}
 }
 

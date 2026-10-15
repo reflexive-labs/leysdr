@@ -22,7 +22,7 @@ func TestListDecoders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Decoders) != 2 || resp.Decoders[0].Name != "aprs" || resp.Decoders[1].Name != "speech" {
+	if len(resp.Decoders) != 3 || resp.Decoders[0].Name != "aprs" || resp.Decoders[1].Name != "speech" || resp.Decoders[2].Name != "speech-scripted" {
 		t.Fatalf("decoders: %v", resp.Decoders)
 	}
 	m := resp.Decoders[0]

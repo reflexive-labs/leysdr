@@ -227,9 +227,11 @@ func prepRecording(t *testing.T, sock string, _ *leyline.Client) []string {
 }
 
 // prepGatedRecording leaves a gated recording in the store, which lists where its squelch opened
-// and so is one a speech decoder can read, and names it.
-func prepGatedRecording(t *testing.T, sock string, _ *leyline.Client) []string {
+// and so is one a speech decoder can read, and names it. The openai key is set, because the
+// bundled speech decoder calls OpenAI.
+func prepGatedRecording(t *testing.T, sock string, c *leyline.Client) []string {
 	t.Helper()
+	setOpenAIKey(t, c)
 	out := mustRun(t, sock, "--json", "record", "146.52", "--for", "300ms", "--gate", "squelch")
 	var job struct {
 		JobID string `json:"jobId"`

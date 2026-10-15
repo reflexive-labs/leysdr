@@ -19,7 +19,8 @@ import (
 )
 
 // Live speech end to end (docs/plans/ai-features.md, AI-7): the real daemon plays the keyed
-// fixture on a loop, the real leydec-speech with its scripted engine names each over, and the
+// fixture on a loop, the real leydec-speech with its scripted engine (speech-scripted, which needs
+// no key) names each over, and the
 // daemon records the overs as clips under the job's id. The clips are transcribed again and give
 // the same parts and overs; a watch for a word fires its webhook on the over that says it and on
 // no other; and a kept watch comes back after a daemon restart as the same job, writing new parts
@@ -93,13 +94,13 @@ func (r *aiRig) attachLooping(fixture string) {
 	}
 }
 
-// decodeLive runs `ley decode speech --job --json` for three overs, then cancels the kept job and
-// returns its id and every record it kept, in time order.
+// decodeLive runs `ley decode speech-scripted --job --json` for three overs, then cancels the kept
+// job and returns its id and every record it kept, in time order.
 func (r *aiRig) decodeLive(t *testing.T) (string, []*leylinev1.DecodeRecord) {
 	t.Helper()
-	out, errOut, code := r.callWithin(60*time.Second, "decode", "speech", "--freq", speechLiveFreq, "--job", "--json", "--count", "3")
+	out, errOut, code := r.callWithin(60*time.Second, "decode", "speech-scripted", "--freq", speechLiveFreq, "--job", "--json", "--count", "3")
 	if code != 0 {
-		t.Fatalf("ley decode speech: exit %d\n%s\n%s", code, out, errOut)
+		t.Fatalf("ley decode speech-scripted: exit %d\n%s\n%s", code, out, errOut)
 	}
 	var printed []*leylinev1.DecodeRecord
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
@@ -152,7 +153,7 @@ func (r *aiRig) checkClipsListed(t *testing.T, jobID string) {
 // may hold one segment more at the end: an over the cancel cut short, which the live job never
 // finished.
 func (r *aiRig) checkRetranscribed(t *testing.T, jobID string, live []*leylinev1.DecodeRecord) {
-	out, errOut, code := r.callWithin(30*time.Second, "transcribe", jobID, "--yes", "--json")
+	out, errOut, code := r.callWithin(30*time.Second, "transcribe", jobID, "--engine", "speech-scripted", "--yes", "--json")
 	if code != 0 {
 		t.Fatalf("ley transcribe %s: exit %d\n%s", jobID, code, errOut)
 	}
@@ -221,10 +222,10 @@ func (r *aiRig) checkWatchAndRestart(t *testing.T, fixture string) {
 	hits := &webhookHits{}
 	server := httptest.NewServer(hits)
 	defer server.Close()
-	_, errOut, code := r.callWithin(30*time.Second, "watch", "speech", "--freq", speechLiveFreq,
+	_, errOut, code := r.callWithin(30*time.Second, "watch", "speech-scripted", "--freq", speechLiveFreq,
 		"--where", "text~bravo", "--notify=webhook:"+server.URL, "--detach")
 	if code != 0 {
-		t.Fatalf("ley watch speech --detach: exit %d\n%s", code, errOut)
+		t.Fatalf("ley watch speech-scripted --detach: exit %d\n%s", code, errOut)
 	}
 	jobID := r.runningSpeechJob(t)
 	hits.waitFor(t, 1, 30*time.Second)

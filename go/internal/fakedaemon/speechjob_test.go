@@ -34,18 +34,24 @@ func seeded(noOpenMs bool) fakedaemon.SeedRecording {
 	}
 }
 
-// The speech decoder is listed as decoders/speech/manifest.json has it.
-func TestSpeechManifestMatchesTheFile(t *testing.T) {
-	data, err := os.ReadFile("../../../decoders/speech/manifest.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var fromFile leylinev1.DecoderManifest
-	if err := protojson.Unmarshal(data, &fromFile); err != nil {
-		t.Fatal(err)
-	}
-	if !proto.Equal(&fromFile, fakedaemon.SpeechManifest()) {
-		t.Errorf("the fake's speech manifest and decoders/speech/manifest.json differ:\nfile: %v\nfake: %v", &fromFile, fakedaemon.SpeechManifest())
+// The speech decoders are listed as decoders/speech/manifest.json and
+// decoders/speech-scripted/manifest.json have them.
+func TestSpeechManifestsMatchTheFiles(t *testing.T) {
+	for dir, fake := range map[string]*leylinev1.DecoderManifest{
+		"speech":          fakedaemon.SpeechManifest(),
+		"speech-scripted": fakedaemon.ScriptedSpeechManifest(),
+	} {
+		data, err := os.ReadFile("../../../decoders/" + dir + "/manifest.json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fromFile leylinev1.DecoderManifest
+		if err := protojson.Unmarshal(data, &fromFile); err != nil {
+			t.Fatal(err)
+		}
+		if !proto.Equal(&fromFile, fake) {
+			t.Errorf("the fake's %s manifest and decoders/%s/manifest.json differ:\nfile: %v\nfake: %v", dir, dir, &fromFile, fake)
+		}
 	}
 }
 
@@ -87,7 +93,7 @@ func TestSpeechJobOnARecording(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	job, err := c.StartDecode(ctx, &leylinev1.DecodeConfig{Decoder: "speech", SourceUri: leyline.RecordingURI(seededID), Keep: true})
+	job, err := c.StartDecode(ctx, &leylinev1.DecodeConfig{Decoder: "speech-scripted", SourceUri: leyline.RecordingURI(seededID), Keep: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,10 +160,12 @@ func TestSpeechJobRefusals(t *testing.T) {
 		cfg  *leylinev1.DecodeConfig
 		code string
 	}{
-		{&leylinev1.DecodeConfig{Decoder: "speech", SourceUri: leyline.RecordingURI("job_01NOSUCHNOSUCHNOSUCHNOSUC")}, leyline.CodeJobNotFound},
-		{&leylinev1.DecodeConfig{Decoder: "speech", SourceUri: leyline.RecordingPartURI(seededID, 1)}, leyline.CodeInvalidArgument},
+		{&leylinev1.DecodeConfig{Decoder: "speech-scripted", SourceUri: leyline.RecordingURI("job_01NOSUCHNOSUCHNOSUCHNOSUC")}, leyline.CodeJobNotFound},
+		{&leylinev1.DecodeConfig{Decoder: "speech-scripted", SourceUri: leyline.RecordingPartURI(seededID, 1)}, leyline.CodeInvalidArgument},
 		// On a radio, speech has no frequency of its own.
-		{&leylinev1.DecodeConfig{Decoder: "speech"}, leyline.CodeInvalidArgument},
+		{&leylinev1.DecodeConfig{Decoder: "speech-scripted"}, leyline.CodeInvalidArgument},
+		// The bundled speech decoder calls OpenAI, so it needs that key.
+		{&leylinev1.DecodeConfig{Decoder: "speech", SourceUri: leyline.RecordingURI(seededID)}, leyline.CodeCredentialMissing},
 	} {
 		if _, err := c.StartDecode(ctx, tc.cfg); leyline.Code(err) != tc.code {
 			t.Errorf("%v: code %q (%v), want %s", tc.cfg, leyline.Code(err), err, tc.code)

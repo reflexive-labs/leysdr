@@ -32,7 +32,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "leydec-speech: "+err.Error())
 		os.Exit(2)
 	}
-	plugin.MainSegmented(manifest(), func(rate uint32, cred *leylinev1.SetCredentialRequest) plugin.SegmentDecoder {
+	plugin.MainSegmented(manifestFor(opts.engine), func(rate uint32, cred *leylinev1.SetCredentialRequest) plugin.SegmentDecoder {
 		eng, err := newEngine(opts.engine, opts.config, cred)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "leydec-speech: "+err.Error())
@@ -54,7 +54,7 @@ type options struct {
 func parseArgs(args []string, getenv func(string) string, stderr io.Writer) (options, error) {
 	fs := flag.NewFlagSet("leydec-speech", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	name := fs.String("engine", "scripted", "the speech engine: openai or scripted")
+	name := fs.String("engine", "openai", "the speech engine: openai, or scripted for tests")
 	model := fs.String("model", "", "the model to ask the engine for, recorded on each record (default: the engine's own)")
 	language := fs.String("language", "en", "the language spoken, as an ISO 639-1 code; empty lets the engine detect it")
 	hint := fs.String("hint", "", "words to add to the vocabulary hint sent with the audio, after the built-in phonetic alphabet and net phrases; "+hintEnv+" takes its place when set")
@@ -113,7 +113,10 @@ func (d *decoder) Segment(samples []float32, at *leylinev1.SampleTime, emit func
 
 // buildRecord is the speech record: the fields docs/design/ai.md lists, the raw response, and the
 // usage the daemon adds to the ledger once it has filled in the feature and the job. clip_uri and
-// over are the daemon's to stamp.
+// over are the daemon's to stamp, and so is protocol: it is the installed manifest's name, which
+// this binary does not know, being both speech and speech-scripted, and the daemon fills it in
+// when it is empty. The record store files a job's records under that name, so a record that
+// said otherwise would not be found by the protocol it carries.
 func buildRecord(tr transcript, eng engine, at *leylinev1.SampleTime, seconds float64) *leylinev1.DecodeRecord {
 	fields := map[string]*leylinev1.FieldValue{
 		"text":      text(tr.text),
@@ -125,10 +128,9 @@ func buildRecord(tr transcript, eng engine, at *leylinev1.SampleTime, seconds fl
 		fields["confidence"] = &leylinev1.FieldValue{Value: &leylinev1.FieldValue_Number{Number: tr.confidence}}
 	}
 	return &leylinev1.DecodeRecord{
-		Protocol: "speech",
-		Time:     at,
-		Fields:   fields,
-		Raw:      tr.raw,
+		Time:   at,
+		Fields: fields,
+		Raw:    tr.raw,
 		Usage: &leylinev1.UsageReport{
 			Provider:     eng.provider(),
 			Model:        eng.model(),

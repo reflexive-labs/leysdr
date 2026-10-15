@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -20,23 +21,58 @@ import (
 	"github.com/reflexive-labs/leysdr/go/pkg/plugin"
 )
 
-// TestManifestMatchesTheFile keeps the manifest this binary prints identical to
-// decoders/speech/manifest.json, which is what the daemon's registry reads.
-func TestManifestMatchesTheFile(t *testing.T) {
-	data, err := os.ReadFile("../../../decoders/speech/manifest.json")
-	if err != nil {
-		t.Fatal(err)
+// TestManifestsMatchTheFiles keeps the manifests this binary prints identical to
+// decoders/speech/manifest.json and decoders/speech-scripted/manifest.json, which are what the
+// daemon's registry reads: `leydec-speech --manifest` prints the first, and with
+// `--engine scripted` the second.
+func TestManifestsMatchTheFiles(t *testing.T) {
+	for _, tc := range []struct {
+		dir  string
+		args []string
+	}{
+		{"speech", []string{"--manifest"}},
+		{"speech-scripted", []string{"--engine", "scripted", "--manifest"}},
+	} {
+		t.Run(tc.dir, func(t *testing.T) {
+			path := "../../../decoders/" + tc.dir + "/manifest.json"
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fromFile leylinev1.DecoderManifest
+			if err := protojson.Unmarshal(data, &fromFile); err != nil {
+				t.Fatalf("%s does not parse: %v", path, err)
+			}
+			cmd := exec.Command(os.Args[0], tc.args...)
+			cmd.Env = append(os.Environ(), runMainEnv+"=1")
+			printed, err := cmd.Output()
+			if err != nil {
+				t.Fatalf("leydec-speech %v: %v", tc.args, err)
+			}
+			var built leylinev1.DecoderManifest
+			if err := protojson.Unmarshal(printed, &built); err != nil {
+				t.Fatalf("leydec-speech %v printed no manifest: %v\n%s", tc.args, err, printed)
+			}
+			if !proto.Equal(&fromFile, &built) {
+				t.Errorf("leydec-speech %v and %s differ:\nfile:  %v\nbuilt: %v", tc.args, path, &fromFile, &built)
+			}
+			if fromFile.GetName() != tc.dir {
+				t.Errorf("%s is named %q; the registry wants the directory's name", path, fromFile.GetName())
+			}
+			// The plugin reads segments and so must say so, or the daemon would stream it
+			// continuous audio.
+			if fromFile.GetInput().GetMode() != leylinev1.InputMode_SEGMENTED {
+				t.Errorf("input mode is %v, want SEGMENTED", fromFile.GetInput().GetMode())
+			}
+		})
 	}
-	var fromFile leylinev1.DecoderManifest
-	if err := protojson.Unmarshal(data, &fromFile); err != nil {
-		t.Fatalf("decoders/speech/manifest.json does not parse: %v", err)
+	// The real one names its provider and where the audio goes; the scripted one neither, so a
+	// test needs no key.
+	if m := manifestFor("openai"); m.GetCredentialProvider() != "openai" || len(m.GetContactsHosts()) != 1 || m.GetContactsHosts()[0] != "api.openai.com" {
+		t.Errorf("speech: provider %q hosts %v", m.GetCredentialProvider(), m.GetContactsHosts())
 	}
-	if !proto.Equal(&fromFile, manifest()) {
-		t.Errorf("the built manifest and decoders/speech/manifest.json differ:\nfile:  %v\nbuilt: %v", &fromFile, manifest())
-	}
-	// The plugin reads segments and so must say so, or the daemon would stream it continuous audio.
-	if fromFile.GetInput().GetMode() != leylinev1.InputMode_SEGMENTED {
-		t.Errorf("input mode is %v, want SEGMENTED", fromFile.GetInput().GetMode())
+	if m := manifestFor("scripted"); m.GetCredentialProvider() != "" || len(m.GetContactsHosts()) != 0 || len(m.GetAliases()) != 0 {
+		t.Errorf("speech-scripted: provider %q hosts %v aliases %v", m.GetCredentialProvider(), m.GetContactsHosts(), m.GetAliases())
 	}
 }
 
@@ -140,7 +176,8 @@ func TestScriptedRecords(t *testing.T) {
 	wantSeconds := []float64{1, 0.5, 0.1}
 	for i, rec := range recs {
 		f := rec.GetFields()
-		if rec.GetProtocol() != "speech" || f["text"].GetText() != wantText[i] || f["callsigns"].GetText() != wantCalls[i] {
+		// protocol is the installed manifest's name, which the daemon stamps.
+		if rec.GetProtocol() != "" || f["text"].GetText() != wantText[i] || f["callsigns"].GetText() != wantCalls[i] {
 			t.Errorf("record %d: protocol %q text %q callsigns %q", i+1, rec.GetProtocol(), f["text"].GetText(), f["callsigns"].GetText())
 		}
 		if f["model"].GetText() != "scripted" || f["language"].GetText() != "en" || f["confidence"].GetNumber() != 1 {
@@ -165,7 +202,7 @@ func TestScriptedRecords(t *testing.T) {
 // With no script the engine says which segment it was, and --model and --language are what the
 // record carries.
 func TestScriptedWithoutAScript(t *testing.T) {
-	recs := runPlugin(t, []string{"--model", "tiny", "--language", "de"}, map[string]string{scriptEnv: "/nonexistent/script.txt"}, 480, 480)
+	recs := runPlugin(t, []string{"--engine", "scripted", "--model", "tiny", "--language", "de"}, map[string]string{scriptEnv: "/nonexistent/script.txt"}, 480, 480)
 	if len(recs) != 2 {
 		t.Fatalf("got %d records, want 2", len(recs))
 	}
