@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"io"
 	"math"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -170,6 +171,82 @@ func TestRunSegmentedReadsTheKeyFirst(t *testing.T) {
 	}
 	if len(recs) != 1 {
 		t.Errorf("want 1 record after the key, got %d", len(recs))
+	}
+}
+
+// The daemon goes by the installed manifest, which may name a provider the binary's own does not:
+// with KeyOnStdinEnv set, RunSegmented reads the key first although its built-in provider is
+// empty, and the decoder is built with it.
+func TestRunSegmentedReadsTheKeyTheEnvironmentAnnounces(t *testing.T) {
+	t.Setenv(plugin.KeyOnStdinEnv, "1")
+	var in bytes.Buffer
+	mustMarshal(t, &in, &leylinev1.SetCredentialRequest{Provider: "anthropic", Secret: "sk-ant-env"})
+	mustMarshal(t, &in, descriptor(leylinev1.AudioSampleFormat_F32))
+	mustMarshal(t, &in, segFrame(1, 10, leylinev1.SegmentMark_SEGMENT_START, f32(0.5)))
+	mustMarshal(t, &in, segFrame(2, 15, leylinev1.SegmentMark_SEGMENT_END, nil))
+	stdout := swapStdio(t, in.Bytes())
+
+	dec := &segmentEcho{}
+	err := plugin.RunSegmented(t.Context(), "", func(_ uint32, cred *leylinev1.SetCredentialRequest) plugin.SegmentDecoder {
+		dec.cred = cred
+		return dec
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dec.cred.GetSecret() != "sk-ant-env" || dec.cred.GetProvider() != "anthropic" {
+		t.Errorf("the decoder got %v", dec.cred)
+	}
+	if recs := readRecords(t, stdout()); len(recs) != 1 {
+		t.Errorf("want 1 record after the key, got %d", len(recs))
+	}
+}
+
+// RunStreams reads the key the environment announces and drops it, so the descriptor after it is
+// read as the descriptor.
+func TestRunStreamsSkipsTheKeyTheEnvironmentAnnounces(t *testing.T) {
+	t.Setenv(plugin.KeyOnStdinEnv, "1")
+	var in bytes.Buffer
+	mustMarshal(t, &in, &leylinev1.SetCredentialRequest{Provider: "anthropic", Secret: "sk-ant-env"})
+	mustMarshal(t, &in, descriptor(leylinev1.AudioSampleFormat_F32))
+	dec := &echoDecoder{}
+	if err := plugin.RunStreams(t.Context(), &in, &bytes.Buffer{}, func(uint32) plugin.Decoder { return dec }); err != nil {
+		t.Fatal(err)
+	}
+	if dec.capID != "str_1" {
+		t.Errorf("the decoder started on %q, want the descriptor after the key", dec.capID)
+	}
+}
+
+// swapStdio points os.Stdin at a pipe holding input and os.Stdout at a file, for the length of the
+// test, and returns what was written to stdout as a function to call once the run has returned.
+func swapStdio(t *testing.T, input []byte) func() []byte {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		_, _ = w.Write(input)
+		_ = w.Close()
+	}()
+	out, err := os.CreateTemp(t.TempDir(), "stdout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldIn, oldOut := os.Stdin, os.Stdout
+	os.Stdin, os.Stdout = r, out
+	t.Cleanup(func() {
+		os.Stdin, os.Stdout = oldIn, oldOut
+		_ = r.Close()
+		_ = out.Close()
+	})
+	return func() []byte {
+		b, err := os.ReadFile(out.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
 	}
 }
 

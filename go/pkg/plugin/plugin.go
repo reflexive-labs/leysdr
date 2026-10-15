@@ -73,6 +73,8 @@ type IQDecoder interface {
 type IQFactory func(sampleRateHz uint32) IQDecoder
 
 // Run reads the descriptor and frames from stdin and writes records to stdout.
+// When the daemon says a key comes first (KeyOnStdinEnv), it is read and
+// dropped: a Decoder has no use for it, and the descriptor follows it.
 func Run(ctx context.Context, newDecoder Factory) error {
 	return RunStreams(ctx, os.Stdin, os.Stdout, newDecoder)
 }
@@ -89,7 +91,17 @@ func RunIQ(ctx context.Context, newDecoder IQFactory) error {
 // RunIQStreams. The descriptor's span_hz is the capture's rate, which is what
 // SampleTime counts in.
 func RunStreams(ctx context.Context, r io.Reader, w io.Writer, newDecoder Factory) error {
-	return runFramed(ctx, r, w, func(desc *leylinev1.StreamDescriptor, emit func(*leylinev1.DecodeRecord)) (func(*leylinev1.Frame) error, error) {
+	return runStreams(ctx, r, w, "", newDecoder)
+}
+
+// runStreams is RunStreams with the built-in manifest's credential_provider,
+// which Main passes so a plugin whose own manifest names one reads its key.
+func runStreams(ctx context.Context, r io.Reader, w io.Writer, provider string, newDecoder Factory) error {
+	in := bufio.NewReaderSize(r, 1<<16)
+	if _, err := readKeyIfSent(in, provider); err != nil {
+		return err
+	}
+	return runFramed(ctx, in, w, func(desc *leylinev1.StreamDescriptor, emit func(*leylinev1.DecodeRecord)) (func(*leylinev1.Frame) error, error) {
 		audio := desc.GetAudio()
 		if audio == nil || audio.GetSampleRate() == 0 {
 			return nil, errors.New("plugin: descriptor carries no audio params")
@@ -116,7 +128,16 @@ func RunStreams(ctx context.Context, r io.Reader, w io.Writer, newDecoder Factor
 // capture's sample rate, then converts each frame's cf32 payload to []complex64
 // and feeds it. EOF ends the job cleanly, as for the audio path.
 func RunIQStreams(ctx context.Context, r io.Reader, w io.Writer, newDecoder IQFactory) error {
-	return runFramed(ctx, r, w, func(desc *leylinev1.StreamDescriptor, emit func(*leylinev1.DecodeRecord)) (func(*leylinev1.Frame) error, error) {
+	return runIQStreams(ctx, r, w, "", newDecoder)
+}
+
+// runIQStreams is runStreams for an IQ plugin.
+func runIQStreams(ctx context.Context, r io.Reader, w io.Writer, provider string, newDecoder IQFactory) error {
+	in := bufio.NewReaderSize(r, 1<<16)
+	if _, err := readKeyIfSent(in, provider); err != nil {
+		return err
+	}
+	return runFramed(ctx, in, w, func(desc *leylinev1.StreamDescriptor, emit func(*leylinev1.DecodeRecord)) (func(*leylinev1.Frame) error, error) {
 		iq := desc.GetIq()
 		if desc.GetKind() != leylinev1.StreamKind_IQ || iq == nil || iq.GetSampleRate() == 0 {
 			return nil, errors.New("plugin: descriptor carries no IQ params")
@@ -258,10 +279,11 @@ func SampleTimeAt(frameTime *leylinev1.SampleTime, offsetSamples int, audioRate,
 // Main is a plugin's whole main function. With --manifest it prints the
 // manifest as proto3 JSON and exits 0, which is what `ley decoders --check`
 // and the registry's own tests read; with anything else it runs the decoder
-// against stdin and stdout.
+// against stdin and stdout, reading the key first when the daemon says one
+// comes (KeyOnStdinEnv) or the manifest names a credential_provider.
 func Main(manifest *leylinev1.DecoderManifest, newDecoder Factory) {
 	handleManifestFlag(manifest)
-	if err := Run(context.Background(), newDecoder); err != nil {
+	if err := runStreams(context.Background(), os.Stdin, os.Stdout, manifest.GetCredentialProvider(), newDecoder); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -271,7 +293,7 @@ func Main(manifest *leylinev1.DecoderManifest, newDecoder Factory) {
 // IQDecoder over stdin and stdout (decode.proto, SIGNAL_IQ).
 func MainIQ(manifest *leylinev1.DecoderManifest, newDecoder IQFactory) {
 	handleManifestFlag(manifest)
-	if err := RunIQ(context.Background(), newDecoder); err != nil {
+	if err := runIQStreams(context.Background(), os.Stdin, os.Stdout, manifest.GetCredentialProvider(), newDecoder); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

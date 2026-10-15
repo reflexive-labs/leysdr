@@ -50,9 +50,10 @@ const MaxSegment = 10 * time.Minute
 const segmentQueue = 8
 
 // RunSegmented reads a SEGMENTED stream from stdin and writes records to
-// stdout. provider is the manifest's credential_provider: when it is set, the
-// daemon writes one SetCredentialRequest before the descriptor, and it is read
-// first.
+// stdout. provider is the built-in manifest's credential_provider. The daemon
+// writes one SetCredentialRequest before the descriptor when the installed
+// manifest names a provider, and says so in KeyOnStdinEnv; the key is read
+// first when that variable is 1 or provider is set.
 func RunSegmented(ctx context.Context, provider string, newDecoder SegmentFactory) error {
 	return RunSegmentedStreams(ctx, os.Stdin, os.Stdout, provider, newDecoder)
 }
@@ -71,16 +72,13 @@ func RunSegmented(ctx context.Context, provider string, newDecoder SegmentFactor
 // emit a record for words it did not hear whole.
 func RunSegmentedStreams(ctx context.Context, r io.Reader, w io.Writer, provider string, newDecoder SegmentFactory) error {
 	in := asByteReader(r)
-	var cred *leylinev1.SetCredentialRequest
-	if provider != "" {
-		var err error
-		if cred, err = ReadCredential(in); err != nil {
-			return err
-		}
+	cred, err := readKeyIfSent(in, provider)
+	if err != nil {
+		return err
 	}
 	var a *segmentAssembler
 	var work *segmentWorker
-	err := runFramed(ctx, in, w, func(desc *leylinev1.StreamDescriptor, _ func(*leylinev1.DecodeRecord)) (func(*leylinev1.Frame) error, error) {
+	err = runFramed(ctx, in, w, func(desc *leylinev1.StreamDescriptor, _ func(*leylinev1.DecodeRecord)) (func(*leylinev1.Frame) error, error) {
 		audio := desc.GetAudio()
 		if audio == nil || audio.GetSampleRate() == 0 {
 			return nil, errors.New("plugin: descriptor carries no audio params")
@@ -172,8 +170,9 @@ func (sw *segmentWorker) finish() error {
 }
 
 // MainSegmented is Main for a plugin with SEGMENTED input: --manifest prints
-// the manifest, and otherwise it reads the key the manifest's
-// credential_provider asks for, then the segments.
+// the manifest, and otherwise it reads the key when the daemon says one comes
+// (KeyOnStdinEnv) or the manifest names a credential_provider, then the
+// segments.
 func MainSegmented(manifest *leylinev1.DecoderManifest, newDecoder SegmentFactory) {
 	handleManifestFlag(manifest)
 	if err := RunSegmented(context.Background(), manifest.GetCredentialProvider(), newDecoder); err != nil {

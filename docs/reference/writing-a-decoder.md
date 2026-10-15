@@ -225,9 +225,10 @@ and `at` is the START frame's time; the buffer is the decoder's to keep. The SDK
 goroutine and calls `Segment` on another, in order and one at a time, with up to eight complete
 segments waiting; when a slow engine lets more pile up, the oldest waiting one is dropped with a
 line on stderr (`dropped segment N: the engine is behind`). At the end of input it waits for every
-queued segment and writes its records before it returns. `MainSegmented` reads the key first when the manifest names a provider (`plugin.ReadCredential`
-does the read for a decoder that wires stdin itself) and passes it to the factory; `key` is nil
-when the manifest names none. A segment longer than `plugin.MaxSegment` (ten minutes), a segment cut
+queued segment and writes its records before it returns. `MainSegmented` reads the key first when `LEYLINE_KEY_ON_STDIN` is `1` or its own manifest
+names a provider (`plugin.ReadCredential` does the read for a decoder that wires stdin itself)
+and passes it to the factory; `key` is nil when no key was sent. `Main` and `MainIQ` read it the
+same way and drop it. A segment longer than `plugin.MaxSegment` (ten minutes), a segment cut
 off by the end of input, and audio outside a segment are logged on stderr and dropped. The
 bundled `leydec-aprs` (`go/cmd/leydec-aprs`, with the AFSK, AX.25 and APRS stages in
 `go/pkg/decoders`) is the worked example; the fake decoder in the engine tests
