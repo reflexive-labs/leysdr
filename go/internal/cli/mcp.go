@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -207,6 +209,28 @@ func newMCPServer(ctx context.Context, app *App) (*mcpServer, error) {
 	srv.registerResources()
 	go srv.keepPresence(ctx)
 	return srv, nil
+}
+
+// NewAssistantToolServer is the `ley mcp` server the assistant's worker drives in process
+// (docs/dev/assistant.md): the same tools, guards and refusals, dialled with client kind mcp and
+// label assistant so its writes are attributed to the assistant. closeServer ends its presence,
+// and with it every channel and job it started without keep. lookupEnv reads LEYLINE_BOOKMARKS as
+// `ley mcp` does; nil is os.LookupEnv.
+func NewAssistantToolServer(ctx context.Context, socket string, lookupEnv func(string) (string, bool), stderr io.Writer) (server *mcp.Server, closeServer func(), err error) {
+	if lookupEnv == nil {
+		lookupEnv = os.LookupEnv
+	}
+	app := &App{
+		Socket: socket, Stdout: io.Discard, Stderr: stderr, LookupEnv: lookupEnv,
+		IsTTY: func() bool { return false }, IsErrTTY: func() bool { return false },
+		TermWidth: func() int { return 0 }, TermHeight: func() int { return 0 }, ErrTermWidth: func() int { return 0 },
+		clientKind: "mcp", clientLabel: "assistant",
+	}
+	srv, err := newMCPServer(ctx, app)
+	if err != nil {
+		return nil, nil, err
+	}
+	return srv.server, srv.close, nil
 }
 
 // close ends the presence stream and the connection behind it. Whatever this
