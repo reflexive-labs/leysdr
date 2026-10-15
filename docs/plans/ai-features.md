@@ -536,10 +536,11 @@ answer each:
 - **The assistant's client kind** is `mcp` with label `assistant`. It adds no kind, so the
   don't-disturb rule counts its writes as interactive, which is right while a person is asking.
   An unattended agent job is not in this plan.
-- **A conversation is not kept.** It is daemon state in memory only: it ends when it is
-  cancelled, 30 minutes after its last turn, or when the daemon stops, and what it used stays in
-  the ledger under its id. It is not tied to its starter's presence, because `ley ask` exits
-  between turns and `ley ask --continue` must find the conversation again.
+- **A conversation is kept on disk** (revised 2026-10-15, AI-14; before that it was daemon
+  memory only). It ends when the user ends it; 30 idle minutes stop its worker, not the
+  conversation; a daemon restart reloads it. It is not tied to its starter's presence, because
+  `ley ask` exits between turns and `ley ask --continue` must find the conversation again. What
+  it used stays in the ledger under its id.
 - **One speech record per over**, so the segmenter cuts at squelch edges with a short pre-roll and
   tail (the `SEGMENTED` entry above).
 - **Usage from a decoder travels on its records** (`DecodeRecord.usage`): no second message type,
@@ -1037,6 +1038,49 @@ path without a key (three scripted runs pass and the obeying scripts fail exactl
 checks), and the three `inject-aprs-*` scenarios run in both modes. The eval daemon gets
 `LEYLINE_SECRETS=file` so a Mac run never touches the login keychain. What remains is the run
 itself: `make eval` on the Mac with a key, both modes, six passes.
+
+### AI-14 `[ ]` Persisted conversations
+
+Decided 2026-10-15: a conversation is kept on disk, so it survives a daemon restart and `ley ask
+--continue` and the app find it afterwards; the worker stays the process that holds the key and
+runs the loop. What changes:
+
+- **On disk.** `<data>/conversations/<conversation_id>/conversation.json` holds the
+  `Conversation` as proto3 JSON, written through `writePrivateFile` whenever a turn is done, a
+  pending action is set or resolved, or the state changes (not on every text delta: a crash
+  mid-turn loses the partial turn, which the user repeats). Beside it, `transcript.jsonl` is the
+  worker's own model transcript, one `Message` per line, appended by the worker after every
+  model response and tool result, so a new worker resumes with the exact context. No file holds
+  a key: turns are redacted as today and the transcript never carries one.
+- **Lifetime.** Idle no longer ends a conversation: after 30 idle minutes the daemon stops its
+  worker and the conversation stays `IDLE` on disk; the next `SendMessage` spawns a worker again
+  with `WorkerStart.resume = true` and the transcript path, and the worker loads the transcript
+  before its first call. `ENDED` means the user ended it; `FAILED` stays as it is. At daemon
+  start every conversation on disk is loaded without a worker; one that was `THINKING` or
+  `WAITING` has its last turn closed with the note "(the daemon restarted during this turn)",
+  any pending call `REFUSED`, and goes `IDLE`. The newest 100 conversations are kept, and ones
+  older than 90 days are dropped at start; `EndConversation` keeps the files (an ended
+  conversation is still readable) and a new `DeleteConversation` RPC removes them.
+- **Contract.** `WorkerStart` gains `string transcript_path = 7` and `bool resume = 8`;
+  `Assistant` gains `rpc DeleteConversation(ConversationRef) returns (Empty)`; the `Conversation`
+  message is unchanged. `ListConversations` lists what is on disk, newest first.
+- **Clients.** `ley ask --continue` resumes across restarts; `ley ask --list` prints the
+  conversations (id, started, last turn, state, first words) and `ley ask --delete <id>`; the
+  app's mirror already carries the list.
+
+Files: `proto/leyline/v1/ai.proto` and `make proto`; `engine/Sources/LeylineServer/AI/
+ConversationStore.swift` (load, save, lazy spawn, the idle rule), `AssistantWorker.swift`
+(`WorkerStart` fields), `Services/AssistantService.swift`, `Lifecycle.swift` (the directory),
+tests; `go/internal/assistant/worker.go` (transcript append and load), `go/internal/cli/ask.go`,
+`go/internal/fakedaemon/assistant.go` (the fake persists across its own restart if it has one;
+else it lists and deletes), the session fold; `docs/design/ai.md` (lifetime), `docs/dev/
+engine-internals.md` "Assistant", `docs/dev/assistant.md`, `docs/reference/cli.md`,
+`SECURITY.md` (what the daemon stores). Verify: a conversation with two turns and a tool call
+survives a daemon restart with the same id and seq, and a third turn's model call carries the
+first two in its transcript (the scripted model records what it was sent); a restart mid-turn
+closes the turn with the note; the idle sweep stops the worker and a later message restarts it
+with `resume`; the retention rule; `ley ask --continue` across the restart in e2e; the canary
+absent from both files.
 
 ## Lanes
 
