@@ -6,8 +6,8 @@
 // else: read the varint-delimited StreamDescriptor, then one DecodeRecord per Frame. A frame with
 // an empty payload makes it exit(3), which is how the restart path is tested; FAKE_DECODER_SLEEP_MS
 // delays its start, which is how a slow plugin is tested; FAKE_DECODER_USAGE stamps each record
-// with the usage a paid decoder would report; FAKE_DECODER_EXPECT_KEY reads the credential
-// handshake; FAKE_DECODER_SEGMENTS answers SEGMENTED input once per segment.
+// with the usage a paid decoder would report; LEYLINE_KEY_ON_STDIN (or FAKE_DECODER_EXPECT_KEY)
+// reads the credential handshake; FAKE_DECODER_SEGMENTS answers SEGMENTED input once per segment.
 //
 // Framing is coded here rather than through `BinaryDelimited` because that API takes Foundation
 // `InputStream`/`OutputStream`, which cannot be built from the process's own pipes; the bytes are
@@ -68,10 +68,12 @@ if let ms = ProcessInfo.processInfo.environment["FAKE_DECODER_SLEEP_MS"], let n 
     usleep(n * 1000)
 }
 
-/// `FAKE_DECODER_EXPECT_KEY=1`, or `--expect-key`, reads the credential handshake a plugin whose
-/// manifest names a provider gets: one `SetCredentialRequest` before the descriptor. Every record
-/// then carries the key's last four characters in `key_last_four`, and never the key.
-let expectKey = ProcessInfo.processInfo.environment["FAKE_DECODER_EXPECT_KEY"] == "1"
+/// `LEYLINE_KEY_ON_STDIN=1`, which the daemon sets when it sends a key, reads the credential
+/// handshake: one `SetCredentialRequest` before the descriptor. `FAKE_DECODER_EXPECT_KEY=1` and
+/// `--expect-key` still ask for it too. Every record then carries the key's last four characters
+/// in `key_last_four`, and never the key.
+let expectKey = ProcessInfo.processInfo.environment["LEYLINE_KEY_ON_STDIN"] == "1"
+    || ProcessInfo.processInfo.environment["FAKE_DECODER_EXPECT_KEY"] == "1"
     || CommandLine.arguments.dropFirst().contains("--expect-key")
 /// `--model <model>`, which the daemon appends when the user chose a speech model on this
 /// decoder's provider, goes into every record as `model`.

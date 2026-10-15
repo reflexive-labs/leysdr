@@ -25,17 +25,18 @@ final class SegmentedDecodeTests: XCTestCase {
     }
 
     /// A fake whose manifest asks for SEGMENTED audio, on nfm_keyed's carrier.
-    func writeSegmentedPlugin(in dir: String, credentialProvider: String = "", args: [String] = []) throws {
-        try writeFakePlugin(in: dir, json: """
+    func writeSegmentedPlugin(in dir: String, name: String = "fake", executable: String? = nil,
+                              credentialProvider: String = "", args: [String] = []) throws {
+        try writeFakePlugin(in: dir, name: name, json: """
         {
-          "name": "fake",
+          "name": "\(name)",
           "version": "0.1.0",
           "description": "counts segments, for tests",
           "recipe": {"frequenciesHz": ["\(recordFrequencyHz)"], "bandwidthHz": 12500, "mode": "NFM", "gain": "GAIN_LEAVE"},
           "input": {"mode": "SEGMENTED", "tap": "TAP_AUDIO", "signal": "SIGNAL_AUDIO"},
           "outputs": ["SHAPE_RECORDS"],
           "credentialProvider": "\(credentialProvider)",
-          "executable": "\(fakeDecoderPath())",
+          "executable": "\(executable ?? fakeDecoderPath())",
           "args": [\(args.map { "\"\($0)\"" }.joined(separator: ", "))]
         }
         """)
@@ -479,8 +480,6 @@ final class SegmentedDecodeTests: XCTestCase {
         // A second plugin on the live path that dies once, so the key is seen to go to the restart.
         try writeFakePlugin(in: plugins, name: "dies", recipe: (decodeFrequencyHz, 15_000), args: ["--die-after=2"],
                             credentialProvider: "anthropic")
-        setenv("FAKE_DECODER_EXPECT_KEY", "1", 1)
-        defer { unsetenv("FAKE_DECODER_EXPECT_KEY") }
         let id = try await writeRecording(in: recordings)
         try await withDaemon(decoderSearchPath: [plugins], recordingsPath: recordings) { c in
             var key = Leyline_V1_SetCredentialRequest()
@@ -520,6 +519,47 @@ final class SegmentedDecodeTests: XCTestCase {
             XCTAssertEqual(Set(records.map { $0.fields["model"]?.text ?? "" }), ["test-model-1"],
                            "and is told the model again")
         }
+    }
+
+    /// The key's presence is told to the plugin in its environment, by the installed manifest: a
+    /// binary built without a provider of its own cannot tell from its built-in manifest. A daemon
+    /// that has the variable in its own environment does not pass it to a plugin it sends no key.
+    func testThePluginIsToldInItsEnvironmentWhenAKeyComesFirst() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        defer {
+            for d in [plugins, recordings] { try? FileManager.default.removeItem(atPath: d) }
+        }
+        // Dumps its environment into its own directory, then reads its input to the end.
+        let script = plugins + "/dump-env"
+        try "#!/bin/sh\nenv > plugin.env\ncat > /dev/null\n".write(toFile: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script)
+        try writeSegmentedPlugin(in: plugins, name: "free", executable: script)
+        try writeSegmentedPlugin(in: plugins, name: "paid", executable: script, credentialProvider: "anthropic")
+        setenv("LEYLINE_KEY_ON_STDIN", "1", 1)
+        defer { unsetenv("LEYLINE_KEY_ON_STDIN") }
+        let id = try await writeRecording(in: recordings)
+        try await withDaemon(decoderSearchPath: [plugins], recordingsPath: recordings) { c in
+            var key = Leyline_V1_SetCredentialRequest()
+            key.provider = "anthropic"
+            key.secret = "sk-ant-test-env-0000"
+            _ = try await c.credentials.setCredential(key, metadata: testMetadata)
+            for name in ["free", "paid"] {
+                var config = self.sourceConfig(id)
+                config.decoder = name
+                let started = try await self.startDecode(c, config)
+                let done = try await self.waitForEnd(c, started.jobID)
+                XCTAssertEqual(done.state, .completed, "\(name): \(done.statusDetail)")
+            }
+        }
+        func environment(_ name: String) throws -> [String] {
+            try String(contentsOfFile: "\(plugins)/\(name)/plugin.env", encoding: .utf8)
+                .split(separator: "\n").map(String.init)
+        }
+        XCTAssertTrue(try environment("paid").contains("LEYLINE_KEY_ON_STDIN=1"), "a plugin sent the key is told so")
+        XCTAssertFalse(try environment("free").contains { $0.hasPrefix("LEYLINE_KEY_ON_STDIN=") },
+                       "a plugin sent no key is not told one is coming, whatever the daemon's own environment says")
+        XCTAssertTrue(try environment("free").contains { $0.hasPrefix("PATH=") }, "the rest is the daemon's environment")
     }
 
     func testARecordingSourceIsRefusedWhenItCannotBeRead() async throws {

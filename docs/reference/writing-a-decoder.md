@@ -126,7 +126,9 @@ logging — the daemon captures it under `leyline.decoder.<name>`.
 
 When the manifest names a `credentialProvider`, the daemon writes one varint-delimited
 `SetCredentialRequest` (`provider`, `secret`, `endpoint`) to stdin before the `StreamDescriptor`,
-every time it starts your program. Pass the secret to the provider's API and nowhere else: not to
+every time it starts your program. It goes by the installed manifest, not one built into your
+program, and sets `LEYLINE_KEY_ON_STDIN=1` in your environment exactly when it sends the key, so
+read the key when that variable is `1` (the Go SDK does). Pass the secret to the provider's API and nowhere else: not to
 stderr, a record, a file or a child process's environment. The daemon replaces the key in the last
 stderr line of a decoder that exits 75, but no other output is scrubbed. Report what each call
 used in the record's `usage` (a `UsageReport`: `provider`, `model`, `requests`, and the provider's

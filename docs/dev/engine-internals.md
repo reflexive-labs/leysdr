@@ -804,7 +804,10 @@ manifest asked for), stdout carries varint-delimited `DecodeRecord`s, and stderr
 under `leyline.decoder.<name>`. The framing is protobuf's own delimited convention, coded by hand
 because `BinaryDelimited` takes Foundation streams and a pipe file descriptor is not one. A plugin
 whose manifest names `credential_provider` reads one varint-delimited `SetCredentialRequest`
-(`provider`, `secret`, `endpoint`) before the `StreamDescriptor`. The runner reads it from
+(`provider`, `secret`, `endpoint`) before the `StreamDescriptor`, and is spawned with
+`LEYLINE_KEY_ON_STDIN=1` in its environment exactly then (the variable is removed otherwise),
+because the installed manifest may name a provider the binary's own does not
+(`PluginProcess.environment`). The runner reads it from
 `CredentialStore.pluginCredential` each time it spawns the plugin, restarts included, so a replaced
 key reaches the next start; a key that cannot be read then ends the job `CREDENTIAL_MISSING` with
 the store's words. The plugin's stderr is logged with the key replaced (`WorkerProcess.redacting`). When the user has

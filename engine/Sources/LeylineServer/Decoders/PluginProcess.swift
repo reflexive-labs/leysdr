@@ -208,6 +208,7 @@ final class PluginProcess: @unchecked Sendable {
     func start(descriptor: Leyline_V1_StreamDescriptor, credential: Leyline_V1_SetCredentialRequest? = nil) throws {
         let logger = log
         let secret = credential?.secret ?? ""
+        child.process.environment = Self.environment(sendingKey: credential != nil)
         do {
             try child.run { logger.info("\(WorkerProcess.redacting(secret, in: $0))") }
         } catch {
@@ -231,6 +232,21 @@ final class PluginProcess: @unchecked Sendable {
             throw EngineError(code: EngineError.Code.decoderFailed,
                               message: "\(name) did not read its stream descriptor", target: name)
         }
+    }
+
+    /// The variable that tells a plugin a key comes before its descriptor. A plugin cannot learn
+    /// it from its own built-in manifest, because the installed one is what the daemon goes by and
+    /// may name a provider the binary's does not.
+    static let keyOnStdinVariable = "LEYLINE_KEY_ON_STDIN"
+
+    /// The daemon's environment, with `LEYLINE_KEY_ON_STDIN=1` when the key is sent and without
+    /// the variable when it is not, so a daemon started with it set cannot mislead a plugin.
+    static func environment(sendingKey: Bool,
+                            inheriting base: [String: String] = ProcessInfo.processInfo.environment) -> [String: String]
+    {
+        var env = base
+        env[keyOnStdinVariable] = sendingKey ? "1" : nil
+        return env
     }
 
     /// One frame to the plugin, without blocking the caller. Returns whether the frame reached the
