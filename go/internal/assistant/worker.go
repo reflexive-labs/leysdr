@@ -59,7 +59,8 @@ type Options struct {
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer // logs; never the key
-	// LookupEnv reads LEYLINE_KEY_ON_STDIN and LEY_ASSISTANT_SCRIPT; nil is os.LookupEnv.
+	// LookupEnv reads LEYLINE_KEY_ON_STDIN, LEY_ASSISTANT_SCRIPT and LEY_ASSISTANT_RECORD; nil is
+	// os.LookupEnv.
 	LookupEnv func(string) (string, bool)
 	// NewToolServer is cli.NewAssistantToolServer in `ley worker assistant`; it is passed in
 	// because the cli package is where the server lives and it imports this one.
@@ -97,8 +98,10 @@ type worker struct {
 	events     chan *leylinev1.WorkerEvent
 
 	transcript []Message
-	policy     *Policy
-	undo       undoStack
+	// transcriptFailed is set once an append to the transcript file has failed and been logged.
+	transcriptFailed bool
+	policy           *Policy
+	undo             undoStack
 	// calls numbers the conversation's tool calls: c1, c2, ...
 	calls int
 }
@@ -139,6 +142,9 @@ func Run(ctx context.Context, opts Options) error {
 		return err
 	}
 	defer w.close()
+	if w.start.GetResume() {
+		w.resume()
+	}
 	w.events = make(chan *leylinev1.WorkerEvent)
 	go readEvents(in, w.events, w.logw)
 	return w.serve(ctx)
@@ -198,7 +204,12 @@ func (w *worker) close() {
 // pickModel is the scripted model when LEY_ASSISTANT_SCRIPT names one, else the provider's.
 func (w *worker) pickModel() (Model, error) {
 	if path, ok := w.opts.LookupEnv(ScriptEnv); ok && path != "" {
-		return LoadScript(path)
+		script, err := LoadScript(path)
+		if err != nil {
+			return nil, err
+		}
+		script.Record, _ = w.opts.LookupEnv(RecordEnv)
+		return script, nil
 	}
 	if w.start.GetProvider() != "anthropic" {
 		return nil, &ModelError{
@@ -293,13 +304,13 @@ func (w *worker) runTurn(ctx context.Context, user *leylinev1.UserMessage) error
 			// A response cut at the output limit may end in a half-made tool call, and a refusal
 			// has nothing to run: keep the text, drop the calls, and end the turn saying why.
 			if text := resp.Text(); text != "" {
-				w.transcript = append(w.transcript, Message{Role: "assistant", Content: []Block{{Type: "text", Text: text}}})
+				w.record(Message{Role: "assistant", Content: []Block{{Type: "text", Text: text}}})
 			}
 			turn.Text = joinText(joinText(turn.Text, resp.Text()), note)
 			return w.finish(turn)
 		}
 		if len(resp.Content) > 0 {
-			w.transcript = append(w.transcript, Message{Role: "assistant", Content: resp.Content})
+			w.record(Message{Role: "assistant", Content: resp.Content})
 		}
 		turn.Text = joinText(turn.Text, resp.Text())
 		uses := resp.ToolUses()
@@ -531,14 +542,10 @@ func (w *worker) waitFor(ctx context.Context, callID string, view bool) (*leylin
 	}
 }
 
-// appendUser adds blocks to the transcript as the user's, joining the last message when it is the
-// user's already (a turn stopped before the model answered leaves one).
+// appendUser adds blocks to the transcript as the user's (record joins them to a last message
+// that is the user's already).
 func (w *worker) appendUser(blocks ...Block) {
-	if n := len(w.transcript); n > 0 && w.transcript[n-1].Role == "user" {
-		w.transcript[n-1].Content = append(w.transcript[n-1].Content, blocks...)
-		return
-	}
-	w.transcript = append(w.transcript, Message{Role: "user", Content: blocks})
+	w.record(Message{Role: "user", Content: blocks})
 }
 
 // finish marks the turn done and writes it.

@@ -67,8 +67,12 @@ SetCredentialRequest, then a WorkerStart and the conversation's events, each
 varint-delimited; it writes the assistant's turns on stdout the same way, and
 logs on stderr. It drives the radio through the ley mcp tools over the
 daemon's socket, as client kind mcp with the label assistant.
+It appends the model transcript to WorkerStart's transcript path, one message
+a line, and with resume loads it before the first call.
 LEY_ASSISTANT_SCRIPT names a file of scripted model responses, one JSON object
-a line, which tests play in place of a provider. It exits 0 when stdin closes.`,
+a line, which tests play in place of a provider; LEY_ASSISTANT_RECORD names a
+file the scripted model appends the messages of each call to. It exits 0 when
+stdin closes.`,
 		Example: `  ley worker assistant --conversation conv_01K...   # the daemon runs this`,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {

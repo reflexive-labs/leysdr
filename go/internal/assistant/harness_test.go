@@ -62,6 +62,11 @@ type workerConfig struct {
 	key       string // sent first on stdin when set, with LEYLINE_KEY_ON_STDIN=1
 	viewTools []*leylinev1.ViewTool
 	http      *http.Client
+	// transcript is WorkerStart.transcript_path, and resume its resume.
+	transcript string
+	resume     bool
+	// record is LEY_ASSISTANT_RECORD, the file the scripted model appends what it is sent to.
+	record string
 }
 
 type lockedBuffer struct {
@@ -125,6 +130,9 @@ func startWorker(t *testing.T, cfg workerConfig) *worker {
 	if cfg.key != "" {
 		env[plugin.KeyOnStdinEnv] = "1"
 	}
+	if cfg.record != "" {
+		env[assistant.RecordEnv] = cfg.record
+	}
 	lookup := func(k string) (string, bool) { v, ok := env[k]; return v, ok }
 
 	inR, inW := io.Pipe()
@@ -172,7 +180,7 @@ func startWorker(t *testing.T, cfg workerConfig) *worker {
 	}
 	w.send(&leylinev1.WorkerEvent{Event: &leylinev1.WorkerEvent_Start{Start: &leylinev1.WorkerStart{
 		ConversationId: convID, Provider: provider, Model: "claude-test", Endpoint: cfg.endpoint,
-		ViewTools: cfg.viewTools, Socket: sock,
+		ViewTools: cfg.viewTools, Socket: sock, TranscriptPath: cfg.transcript, Resume: cfg.resume,
 	}}})
 	return w
 }
