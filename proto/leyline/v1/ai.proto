@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// leyline.v1 — keys and usage
+// leyline.v1 — keys, usage and the assistant
 // Model calls on the user's own provider key (docs/design/ai.md). The daemon holds the keys and
 // never returns one: a client can set, check and delete a key and read what is known about it,
 // and the workers the daemon spawns are the only processes that see the secret. Usage is kept in
 // the provider's own units (requests, tokens, audio seconds); cost and spend limits stay with the
-// provider.
+// provider. The assistant's conversations are daemon state like any other: a worker the daemon
+// spawns runs the model, and every client renders the conversation it is sent.
 syntax = "proto3";
 package leyline.v1;
 
@@ -125,3 +126,177 @@ service Usage {
   // client can add to the ledger.
   rpc ReportUsage(UsageReport) returns (Empty);
 }
+
+// ---------- Assistant ----------
+// A conversation with the model, held by the daemon. The daemon spawns one worker per
+// conversation, passes it what the user says and decides, and derives the conversation's state
+// from the turns the worker writes back. Any client may watch, answer or end any conversation.
+
+// One conversation, whole on every event and every reply.
+message Conversation {
+  string conversation_id = 1;          // conv_<ulid>
+  ConversationState state = 2;
+  string provider = 3;
+  string model = 4;
+  repeated Turn turns = 5;             // every turn so far, user and assistant alternating
+  // Set while WAITING: the call the assistant asks to make or waits on a client for. Unset in
+  // every other state.
+  PendingAction pending = 6;
+  ErrorDetail error = 7;               // set when FAILED
+  ClientInfo started_by = 8;
+  int64 started_at_ns = 9;             // CLOCK_REALTIME
+  int64 last_turn_at_ns = 10;          // CLOCK_REALTIME of the newest turn's last change
+  repeated ViewTool view_tools = 11;   // declared by the client that started it
+  // Bumps on every change to this conversation; WatchConversation replays from since_seq. Its own
+  // count, not Event.seq.
+  uint64 seq = 12;
+}
+
+// The daemon derives the state from the turns the worker writes: a turn whose last tool call is
+// AWAITING_APPROVAL or AWAITING_CLIENT makes the conversation WAITING with that call as
+// `pending`; a turn marked `done` makes it IDLE.
+enum ConversationState {
+  CONVERSATION_STATE_UNSPECIFIED = 0;
+  CONVERSATION_IDLE = 1;               // waiting for the user
+  CONVERSATION_THINKING = 2;           // the worker is on a turn
+  CONVERSATION_WAITING = 3;            // the assistant asked; ResolveAction or AnswerViewTool answers
+  CONVERSATION_ENDED = 4;              // a client ended it, it sat idle, or the daemon stopped
+  CONVERSATION_FAILED = 5;             // the worker failed or exited mid-turn; `error` says why
+}
+
+// One turn of the conversation. A user turn is whole when the daemon adds it; an assistant turn
+// grows while the worker is on it and is replaced whole each time.
+message Turn {
+  string turn_id = 1;                  // "t1", "t2", … within the conversation
+  Role role = 2;
+  string text = 3;                     // the text so far; the whole text once done
+  repeated ToolCall tools = 4;         // in the order the assistant made them; empty on a user turn
+  int64 at_ns = 5;                     // CLOCK_REALTIME the turn began
+  bool done = 6;                       // the assistant has finished the turn, or it was stopped
+}
+enum Role { ROLE_UNSPECIFIED = 0; ROLE_USER = 1; ROLE_ASSISTANT = 2; }
+
+// One tool call the assistant made within a turn.
+message ToolCall {
+  string call_id = 1;                  // unique within the conversation
+  string tool = 2;                     // a `ley mcp` tool name, a view tool, or "undo"
+  string arguments_json = 3;
+  ToolCallState state = 4;
+  string result_text = 5;              // the tool's prose, once DONE
+  string result_json = 6;              // the tool's JSON, once DONE
+  bool is_error = 7;                   // the tool ran and failed; result_text says why
+  string reason = 8;                   // why it asks: the policy row, in words; AWAITING_APPROVAL only
+  int64 at_ns = 9;                     // CLOCK_REALTIME the call was made
+}
+enum ToolCallState {
+  TOOL_CALL_STATE_UNSPECIFIED = 0;
+  TOOL_CALL_RUNNING = 1;
+  TOOL_CALL_DONE = 2;
+  TOOL_CALL_AWAITING_APPROVAL = 3;     // ResolveAction decides
+  TOOL_CALL_AWAITING_CLIENT = 4;       // a view tool; AnswerViewTool answers
+  TOOL_CALL_REFUSED = 5;               // the user said no; the model is told so
+}
+
+// What a WAITING conversation waits on: a copy of the call so a client need not search the turns.
+message PendingAction {
+  string call_id = 1;
+  string tool = 2;
+  string arguments_json = 3;
+  string reason = 4;                   // why it asks, as ToolCall.reason; empty for a view tool
+  bool view_tool = 5;                  // true: AnswerViewTool answers it; false: ResolveAction
+}
+
+// A tool the client that starts a conversation offers the model, answered by that client and
+// not by the daemon (move the client's own view, say). The model calls it like any other tool.
+message ViewTool {
+  string name = 1;
+  string description = 2;              // what the model reads to decide when to call it
+  string input_schema_json = 3;        // a JSON Schema object for the arguments
+}
+
+// Empty provider and model: the assistant feature model (FeatureModel "assistant").
+message StartConversationRequest {
+  string provider = 1;
+  string model = 2;
+  repeated ViewTool view_tools = 3;
+}
+message SendMessageRequest { string conversation_id = 1; string text = 2; }
+message ConversationRef { string conversation_id = 1; }
+// since_seq is the seq of the Conversation the client already has (0 = none): what changed after
+// it is sent first, then the stream goes live.
+message WatchConversationRequest { string conversation_id = 1; uint64 since_seq = 2; }
+// approve false refuses the call; the model is told the user declined.
+message ResolveActionRequest { string conversation_id = 1; string call_id = 2; bool approve = 3; }
+message AnswerViewToolRequest {
+  string conversation_id = 1;
+  string call_id = 2;
+  string result_text = 3;
+  string result_json = 4;
+  bool is_error = 5;
+}
+message ListConversationsRequest {}
+message ListConversationsResponse { repeated Conversation conversations = 1; }
+
+// Every reply is the conversation's whole state after the call, the same state Event.conversation
+// carries.
+service Assistant {
+  // Starts a worker and returns the conversation IDLE. CREDENTIAL_MISSING without a key for the
+  // provider.
+  rpc StartConversation(StartConversationRequest) returns (Conversation);
+  // Adds a user turn and hands it to the worker. FAILED_PRECONDITION unless IDLE.
+  rpc SendMessage(SendMessageRequest) returns (Conversation);
+  rpc WatchConversation(WatchConversationRequest) returns (stream Conversation);
+  // Approves or refuses the pending call. FAILED_PRECONDITION unless WAITING on that call.
+  rpc ResolveAction(ResolveActionRequest) returns (Conversation);
+  // Answers the pending view tool call. FAILED_PRECONDITION unless WAITING on that call.
+  rpc AnswerViewTool(AnswerViewToolRequest) returns (Conversation);
+  // Ends the running turn; the conversation stays and becomes IDLE.
+  rpc StopTurn(ConversationRef) returns (Conversation);
+  // Stops the worker; the conversation is ENDED and stays listed.
+  rpc EndConversation(ConversationRef) returns (Conversation);
+  rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse);
+}
+
+// ---------- Assistant worker ----------
+// What the daemon and the worker it spawns for a conversation say to each other on the worker's
+// stdio, each message varint-delimited as a decoder plugin's are. The worker starts with
+// LEYLINE_KEY_ON_STDIN=1: the key comes first on stdin as one SetCredentialRequest, then
+// WorkerEvents until stdin closes. The worker writes WorkerMessages on stdout. Its tool calls and
+// usage reports go over the daemon's socket like any client's.
+
+// The daemon to the worker.
+message WorkerEvent {
+  oneof event {
+    WorkerStart start = 1;             // once, straight after the key
+    UserMessage user = 2;              // the user said something; begin a turn
+    ActionResolved resolved = 3;       // the user approved or refused a call that asked
+    ViewToolAnswer view_answer = 4;    // a client answered a view tool call
+    WorkerStop stop = 5;               // stop the running turn
+  }
+}
+message WorkerStart {
+  string conversation_id = 1;
+  string provider = 2;
+  string model = 3;
+  string endpoint = 4;                 // the key's endpoint; empty = the provider's own API
+  repeated ViewTool view_tools = 5;
+  string socket = 6;                   // the daemon's socket, for tool calls and ReportUsage
+}
+message UserMessage { string turn_id = 1; string text = 2; }
+message ActionResolved { string call_id = 1; bool approved = 2; }
+message ViewToolAnswer {
+  string call_id = 1;
+  string result_text = 2;
+  string result_json = 3;
+  bool is_error = 4;
+}
+message WorkerStop {}
+
+// The worker to the daemon.
+message WorkerMessage {
+  oneof message {
+    Turn turn = 1;                     // the assistant's turn so far, whole each time
+    WorkerFailure failure = 2;         // the conversation cannot go on; the daemon fails it
+  }
+}
+message WorkerFailure { ErrorDetail error = 1; }

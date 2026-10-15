@@ -85,6 +85,7 @@ type Client struct {
 	Decoders    leylinev1.DecodersClient
 	Credentials leylinev1.CredentialsClient
 	Usage       leylinev1.UsageClient
+	Assistant   leylinev1.AssistantClient
 
 	conn     *grpc.ClientConn
 	path     string
@@ -135,6 +136,7 @@ func Dial(_ context.Context, socketPath string, opts ...Option) (*Client, error)
 	c.Decoders = leylinev1.NewDecodersClient(conn)
 	c.Credentials = leylinev1.NewCredentialsClient(conn)
 	c.Usage = leylinev1.NewUsageClient(conn)
+	c.Assistant = leylinev1.NewAssistantClient(conn)
 	return c, nil
 }
 

@@ -939,6 +939,15 @@ public nonisolated struct Leyline_V1_Event: @unchecked Sendable {
     set {_uniqueStorage()._body = .usage(newValue)}
   }
 
+  /// An assistant conversation changed: the whole Conversation, an ended one included.
+  public var conversation: Leyline_V1_Conversation {
+    get {
+      if case .conversation(let v)? = _storage._body {return v}
+      return Leyline_V1_Conversation()
+    }
+    set {_uniqueStorage()._body = .conversation(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Body: Equatable, Sendable {
@@ -965,6 +974,8 @@ public nonisolated struct Leyline_V1_Event: @unchecked Sendable {
     /// A usage report was added to the ledger: the whole line it was folded into, after the fold,
     /// never the report alone.
     case usage(Leyline_V1_UsageLine)
+    /// An assistant conversation changed: the whole Conversation, an ended one included.
+    case conversation(Leyline_V1_Conversation)
 
   }
 
@@ -1134,6 +1145,9 @@ public nonisolated struct Leyline_V1_GetStateResponse: Sendable {
 
   /// the ledger's lines, the same ones Event.usage updates
   public var usage: [Leyline_V1_UsageLine] = []
+
+  /// the assistant's conversations, ended ones included
+  public var conversations: [Leyline_V1_Conversation] = []
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -2354,7 +2368,7 @@ nonisolated extension Leyline_V1_WriteSummary: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension Leyline_V1_Event: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Event"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}seq\0\u{3}caused_by\0\u{1}device\0\u{1}capture\0\u{1}channel\0\u{1}sink\0\u{3}write_rejected\0\u{1}anchor\0\u{1}job\0\u{1}playback\0\u{1}ai\0\u{1}usage\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}seq\0\u{3}caused_by\0\u{1}device\0\u{1}capture\0\u{1}channel\0\u{1}sink\0\u{3}write_rejected\0\u{1}anchor\0\u{1}job\0\u{1}playback\0\u{1}ai\0\u{1}usage\0\u{1}conversation\0")
 
   fileprivate class _StorageClass {
     var _seq: UInt64 = 0
@@ -2523,6 +2537,19 @@ nonisolated extension Leyline_V1_Event: SwiftProtobuf.Message, SwiftProtobuf._Me
             _storage._body = .usage(v)
           }
         }()
+        case 13: try {
+          var v: Leyline_V1_Conversation?
+          var hadOneofValue = false
+          if let current = _storage._body {
+            hadOneofValue = true
+            if case .conversation(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._body = .conversation(v)
+          }
+        }()
         default: break
         }
       }
@@ -2581,6 +2608,10 @@ nonisolated extension Leyline_V1_Event: SwiftProtobuf.Message, SwiftProtobuf._Me
       case .usage?: try {
         guard case .usage(let v)? = _storage._body else { preconditionFailure() }
         try visitor.visitSingularMessageField(value: v, fieldNumber: 12)
+      }()
+      case .conversation?: try {
+        guard case .conversation(let v)? = _storage._body else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 13)
       }()
       case nil: break
       }
@@ -2791,7 +2822,7 @@ nonisolated extension Leyline_V1_GetStateRequest: SwiftProtobuf.Message, SwiftPr
 
 nonisolated extension Leyline_V1_GetStateResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".GetStateResponse"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}devices\0\u{1}captures\0\u{1}channels\0\u{1}sinks\0\u{3}event_seq\0\u{1}daemon\0\u{1}jobs\0\u{1}playbacks\0\u{1}ai\0\u{1}usage\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}devices\0\u{1}captures\0\u{1}channels\0\u{1}sinks\0\u{3}event_seq\0\u{1}daemon\0\u{1}jobs\0\u{1}playbacks\0\u{1}ai\0\u{1}usage\0\u{1}conversations\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2809,6 +2840,7 @@ nonisolated extension Leyline_V1_GetStateResponse: SwiftProtobuf.Message, SwiftP
       case 8: try { try decoder.decodeRepeatedMessageField(value: &self.playbacks) }()
       case 9: try { try decoder.decodeSingularMessageField(value: &self._ai) }()
       case 10: try { try decoder.decodeRepeatedMessageField(value: &self.usage) }()
+      case 11: try { try decoder.decodeRepeatedMessageField(value: &self.conversations) }()
       default: break
       }
     }
@@ -2849,6 +2881,9 @@ nonisolated extension Leyline_V1_GetStateResponse: SwiftProtobuf.Message, SwiftP
     if !self.usage.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.usage, fieldNumber: 10)
     }
+    if !self.conversations.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.conversations, fieldNumber: 11)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2863,6 +2898,7 @@ nonisolated extension Leyline_V1_GetStateResponse: SwiftProtobuf.Message, SwiftP
     if lhs.playbacks != rhs.playbacks {return false}
     if lhs._ai != rhs._ai {return false}
     if lhs.usage != rhs.usage {return false}
+    if lhs.conversations != rhs.conversations {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

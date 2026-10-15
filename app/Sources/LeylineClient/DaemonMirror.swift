@@ -42,6 +42,9 @@ public struct MirrorState: Sendable, Equatable {
     /// The usage ledger, one line per provider, model, feature, scope and UTC day. An event
     /// carries the one line it changed.
     public var usage: [Leyline_V1_UsageLine] = []
+    /// The assistant's conversations, each whole. An ended or failed one stays listed with its
+    /// state, as a finished job does.
+    public var conversations: [Leyline_V1_Conversation] = []
     /// The newest event folded (the snapshot's `event_seq` at open). Events at or below it are
     /// already reflected and are skipped.
     public var seq: UInt64 = 0
@@ -63,6 +66,7 @@ public struct MirrorState: Sendable, Equatable {
         playbacks = snapshot.playbacks
         ai = snapshot.ai
         usage = snapshot.usage
+        conversations = snapshot.conversations
         seq = snapshot.eventSeq
     }
 
@@ -126,6 +130,8 @@ public struct MirrorState: Sendable, Equatable {
             } else {
                 usage.append(line)
             }
+        case .conversation(let c):
+            replace(&conversations, c, by: \.conversationID)
         case .writeRejected, .none:
             break
         }

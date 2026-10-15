@@ -1607,6 +1607,7 @@ type Event struct {
 	//	*Event_Playback
 	//	*Event_Ai
 	//	*Event_Usage
+	//	*Event_Conversation
 	Body          isEvent_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1753,6 +1754,15 @@ func (x *Event) GetUsage() *UsageLine {
 	return nil
 }
 
+func (x *Event) GetConversation() *Conversation {
+	if x != nil {
+		if x, ok := x.Body.(*Event_Conversation); ok {
+			return x.Conversation
+		}
+	}
+	return nil
+}
+
 type isEvent_Body interface {
 	isEvent_Body()
 }
@@ -1809,6 +1819,11 @@ type Event_Usage struct {
 	Usage *UsageLine `protobuf:"bytes,12,opt,name=usage,proto3,oneof"`
 }
 
+type Event_Conversation struct {
+	// An assistant conversation changed: the whole Conversation, an ended one included.
+	Conversation *Conversation `protobuf:"bytes,13,opt,name=conversation,proto3,oneof"`
+}
+
 func (*Event_Device) isEvent_Body() {}
 
 func (*Event_Capture) isEvent_Body() {}
@@ -1828,6 +1843,8 @@ func (*Event_Playback) isEvent_Body() {}
 func (*Event_Ai) isEvent_Body() {}
 
 func (*Event_Usage) isEvent_Body() {}
+
+func (*Event_Conversation) isEvent_Body() {}
 
 type WriteRejected struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -2110,10 +2127,11 @@ type GetStateResponse struct {
 	Sinks         []*Sink                `protobuf:"bytes,4,rep,name=sinks,proto3" json:"sinks,omitempty"`
 	EventSeq      uint64                 `protobuf:"varint,5,opt,name=event_seq,json=eventSeq,proto3" json:"event_seq,omitempty"` // events after this seq are newer than this snapshot
 	Daemon        *DaemonInfo            `protobuf:"bytes,6,opt,name=daemon,proto3" json:"daemon,omitempty"`
-	Jobs          []*Job                 `protobuf:"bytes,7,rep,name=jobs,proto3" json:"jobs,omitempty"`           // running and recently finished; reconnect renders these like the rest
-	Playbacks     []*Playback            `protobuf:"bytes,8,rep,name=playbacks,proto3" json:"playbacks,omitempty"` // recordings the daemon is playing right now
-	Ai            *AIState               `protobuf:"bytes,9,opt,name=ai,proto3" json:"ai,omitempty"`               // the keys (never their secrets) and each feature's model
-	Usage         []*UsageLine           `protobuf:"bytes,10,rep,name=usage,proto3" json:"usage,omitempty"`        // the ledger's lines, the same ones Event.usage updates
+	Jobs          []*Job                 `protobuf:"bytes,7,rep,name=jobs,proto3" json:"jobs,omitempty"`                    // running and recently finished; reconnect renders these like the rest
+	Playbacks     []*Playback            `protobuf:"bytes,8,rep,name=playbacks,proto3" json:"playbacks,omitempty"`          // recordings the daemon is playing right now
+	Ai            *AIState               `protobuf:"bytes,9,opt,name=ai,proto3" json:"ai,omitempty"`                        // the keys (never their secrets) and each feature's model
+	Usage         []*UsageLine           `protobuf:"bytes,10,rep,name=usage,proto3" json:"usage,omitempty"`                 // the ledger's lines, the same ones Event.usage updates
+	Conversations []*Conversation        `protobuf:"bytes,11,rep,name=conversations,proto3" json:"conversations,omitempty"` // the assistant's conversations, ended ones included
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2214,6 +2232,13 @@ func (x *GetStateResponse) GetAi() *AIState {
 func (x *GetStateResponse) GetUsage() []*UsageLine {
 	if x != nil {
 		return x.Usage
+	}
+	return nil
+}
+
+func (x *GetStateResponse) GetConversations() []*Conversation {
+	if x != nil {
+		return x.Conversations
 	}
 	return nil
 }
@@ -3406,7 +3431,7 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"\x05param\"^\n" +
 	"\fWriteSummary\x12'\n" +
 	"\x0fwrites_received\x18\x01 \x01(\x04R\x0ewritesReceived\x12%\n" +
-	"\x0ewrites_applied\x18\x02 \x01(\x04R\rwritesApplied\"\xc0\x04\n" +
+	"\x0ewrites_applied\x18\x02 \x01(\x04R\rwritesApplied\"\x80\x05\n" +
 	"\x05Event\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x04R\x03seq\x123\n" +
 	"\tcaused_by\x18\x02 \x01(\v2\x16.leyline.v1.ClientInfoR\bcausedBy\x126\n" +
@@ -3420,7 +3445,8 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"\bplayback\x18\n" +
 	" \x01(\v2\x14.leyline.v1.PlaybackH\x00R\bplayback\x12%\n" +
 	"\x02ai\x18\v \x01(\v2\x13.leyline.v1.AIStateH\x00R\x02ai\x12-\n" +
-	"\x05usage\x18\f \x01(\v2\x15.leyline.v1.UsageLineH\x00R\x05usageB\x06\n" +
+	"\x05usage\x18\f \x01(\v2\x15.leyline.v1.UsageLineH\x00R\x05usage\x12>\n" +
+	"\fconversation\x18\r \x01(\v2\x18.leyline.v1.ConversationH\x00R\fconversationB\x06\n" +
 	"\x04body\"P\n" +
 	"\rWriteRejected\x12\x10\n" +
 	"\x03tag\x18\x01 \x01(\x04R\x03tag\x12-\n" +
@@ -3438,7 +3464,7 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"\x13ListDevicesResponse\x126\n" +
 	"\adevices\x18\x01 \x03(\v2\x1c.leyline.v1.DeviceDescriptorR\adevices\"?\n" +
 	"\x0fGetStateRequest\x12,\n" +
-	"\x05scope\x18\x01 \x01(\v2\x16.leyline.v1.EventScopeR\x05scope\"\xcc\x03\n" +
+	"\x05scope\x18\x01 \x01(\v2\x16.leyline.v1.EventScopeR\x05scope\"\x8c\x04\n" +
 	"\x10GetStateResponse\x126\n" +
 	"\adevices\x18\x01 \x03(\v2\x1c.leyline.v1.DeviceDescriptorR\adevices\x12/\n" +
 	"\bcaptures\x18\x02 \x03(\v2\x13.leyline.v1.CaptureR\bcaptures\x12/\n" +
@@ -3450,7 +3476,8 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"\tplaybacks\x18\b \x03(\v2\x14.leyline.v1.PlaybackR\tplaybacks\x12#\n" +
 	"\x02ai\x18\t \x01(\v2\x13.leyline.v1.AIStateR\x02ai\x12+\n" +
 	"\x05usage\x18\n" +
-	" \x03(\v2\x15.leyline.v1.UsageLineR\x05usage\"\xaf\x01\n" +
+	" \x03(\v2\x15.leyline.v1.UsageLineR\x05usage\x12>\n" +
+	"\rconversations\x18\v \x03(\v2\x18.leyline.v1.ConversationR\rconversations\"\xaf\x01\n" +
 	"\n" +
 	"DaemonInfo\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x10\n" +
@@ -3659,8 +3686,9 @@ var file_leyline_v1_control_proto_goTypes = []any{
 	(*Job)(nil),                      // 52: leyline.v1.Job
 	(*AIState)(nil),                  // 53: leyline.v1.AIState
 	(*UsageLine)(nil),                // 54: leyline.v1.UsageLine
-	(*ErrorDetail)(nil),              // 55: leyline.v1.ErrorDetail
-	(*Empty)(nil),                    // 56: leyline.v1.Empty
+	(*Conversation)(nil),             // 55: leyline.v1.Conversation
+	(*ErrorDetail)(nil),              // 56: leyline.v1.ErrorDetail
+	(*Empty)(nil),                    // 57: leyline.v1.Empty
 }
 var file_leyline_v1_control_proto_depIdxs = []int32{
 	0,  // 0: leyline.v1.DeviceDescriptor.state:type_name -> leyline.v1.DeviceState
@@ -3695,65 +3723,67 @@ var file_leyline_v1_control_proto_depIdxs = []int32{
 	28, // 29: leyline.v1.Event.playback:type_name -> leyline.v1.Playback
 	53, // 30: leyline.v1.Event.ai:type_name -> leyline.v1.AIState
 	54, // 31: leyline.v1.Event.usage:type_name -> leyline.v1.UsageLine
-	55, // 32: leyline.v1.WriteRejected.error:type_name -> leyline.v1.ErrorDetail
-	8,  // 33: leyline.v1.ListDevicesResponse.devices:type_name -> leyline.v1.DeviceDescriptor
-	22, // 34: leyline.v1.GetStateRequest.scope:type_name -> leyline.v1.EventScope
-	8,  // 35: leyline.v1.GetStateResponse.devices:type_name -> leyline.v1.DeviceDescriptor
-	11, // 36: leyline.v1.GetStateResponse.captures:type_name -> leyline.v1.Capture
-	13, // 37: leyline.v1.GetStateResponse.channels:type_name -> leyline.v1.Channel
-	14, // 38: leyline.v1.GetStateResponse.sinks:type_name -> leyline.v1.Sink
-	27, // 39: leyline.v1.GetStateResponse.daemon:type_name -> leyline.v1.DaemonInfo
-	52, // 40: leyline.v1.GetStateResponse.jobs:type_name -> leyline.v1.Job
-	28, // 41: leyline.v1.GetStateResponse.playbacks:type_name -> leyline.v1.Playback
-	53, // 42: leyline.v1.GetStateResponse.ai:type_name -> leyline.v1.AIState
-	54, // 43: leyline.v1.GetStateResponse.usage:type_name -> leyline.v1.UsageLine
-	48, // 44: leyline.v1.Playback.created_by:type_name -> leyline.v1.ClientInfo
-	7,  // 45: leyline.v1.Playback.state:type_name -> leyline.v1.PlaybackState
-	50, // 46: leyline.v1.CreateChannelRequest.mode:type_name -> leyline.v1.DemodMode
-	14, // 47: leyline.v1.AttachSinkRequest.sink:type_name -> leyline.v1.Sink
-	41, // 48: leyline.v1.DeviceSource.file:type_name -> leyline.v1.FileSource
-	42, // 49: leyline.v1.DeviceSource.rtl_tcp:type_name -> leyline.v1.RtlTcpSource
-	40, // 50: leyline.v1.AttachDeviceRequest.source:type_name -> leyline.v1.DeviceSource
-	10, // 51: leyline.v1.DeviceDescriptor.FeaturesEntry.value:type_name -> leyline.v1.FeatureValue
-	23, // 52: leyline.v1.Control.ListDevices:input_type -> leyline.v1.ListDevicesRequest
-	22, // 53: leyline.v1.Control.WatchEvents:input_type -> leyline.v1.EventScope
-	25, // 54: leyline.v1.Control.GetState:input_type -> leyline.v1.GetStateRequest
-	32, // 55: leyline.v1.Control.CreateCapture:input_type -> leyline.v1.CreateCaptureRequest
-	33, // 56: leyline.v1.Control.DestroyCapture:input_type -> leyline.v1.DestroyCaptureRequest
-	34, // 57: leyline.v1.Control.CreateChannel:input_type -> leyline.v1.CreateChannelRequest
-	35, // 58: leyline.v1.Control.DestroyChannel:input_type -> leyline.v1.DestroyChannelRequest
-	36, // 59: leyline.v1.Control.AttachSink:input_type -> leyline.v1.AttachSinkRequest
-	37, // 60: leyline.v1.Control.DetachSink:input_type -> leyline.v1.DetachSinkRequest
-	29, // 61: leyline.v1.Control.StartPlayback:input_type -> leyline.v1.StartPlaybackRequest
-	30, // 62: leyline.v1.Control.StopPlayback:input_type -> leyline.v1.StopPlaybackRequest
-	31, // 63: leyline.v1.Control.SetPlaybackPaused:input_type -> leyline.v1.SetPlaybackPausedRequest
-	18, // 64: leyline.v1.Control.WriteParams:input_type -> leyline.v1.ParamWrite
-	43, // 65: leyline.v1.Control.AttachDevice:input_type -> leyline.v1.AttachDeviceRequest
-	44, // 66: leyline.v1.Control.DetachDevice:input_type -> leyline.v1.DetachDeviceRequest
-	38, // 67: leyline.v1.Control.AttachFileDevice:input_type -> leyline.v1.AttachFileDeviceRequest
-	39, // 68: leyline.v1.Control.DetachFileDevice:input_type -> leyline.v1.DetachFileDeviceRequest
-	24, // 69: leyline.v1.Control.ListDevices:output_type -> leyline.v1.ListDevicesResponse
-	20, // 70: leyline.v1.Control.WatchEvents:output_type -> leyline.v1.Event
-	26, // 71: leyline.v1.Control.GetState:output_type -> leyline.v1.GetStateResponse
-	11, // 72: leyline.v1.Control.CreateCapture:output_type -> leyline.v1.Capture
-	56, // 73: leyline.v1.Control.DestroyCapture:output_type -> leyline.v1.Empty
-	13, // 74: leyline.v1.Control.CreateChannel:output_type -> leyline.v1.Channel
-	56, // 75: leyline.v1.Control.DestroyChannel:output_type -> leyline.v1.Empty
-	14, // 76: leyline.v1.Control.AttachSink:output_type -> leyline.v1.Sink
-	56, // 77: leyline.v1.Control.DetachSink:output_type -> leyline.v1.Empty
-	28, // 78: leyline.v1.Control.StartPlayback:output_type -> leyline.v1.Playback
-	56, // 79: leyline.v1.Control.StopPlayback:output_type -> leyline.v1.Empty
-	28, // 80: leyline.v1.Control.SetPlaybackPaused:output_type -> leyline.v1.Playback
-	19, // 81: leyline.v1.Control.WriteParams:output_type -> leyline.v1.WriteSummary
-	8,  // 82: leyline.v1.Control.AttachDevice:output_type -> leyline.v1.DeviceDescriptor
-	56, // 83: leyline.v1.Control.DetachDevice:output_type -> leyline.v1.Empty
-	8,  // 84: leyline.v1.Control.AttachFileDevice:output_type -> leyline.v1.DeviceDescriptor
-	56, // 85: leyline.v1.Control.DetachFileDevice:output_type -> leyline.v1.Empty
-	69, // [69:86] is the sub-list for method output_type
-	52, // [52:69] is the sub-list for method input_type
-	52, // [52:52] is the sub-list for extension type_name
-	52, // [52:52] is the sub-list for extension extendee
-	0,  // [0:52] is the sub-list for field type_name
+	55, // 32: leyline.v1.Event.conversation:type_name -> leyline.v1.Conversation
+	56, // 33: leyline.v1.WriteRejected.error:type_name -> leyline.v1.ErrorDetail
+	8,  // 34: leyline.v1.ListDevicesResponse.devices:type_name -> leyline.v1.DeviceDescriptor
+	22, // 35: leyline.v1.GetStateRequest.scope:type_name -> leyline.v1.EventScope
+	8,  // 36: leyline.v1.GetStateResponse.devices:type_name -> leyline.v1.DeviceDescriptor
+	11, // 37: leyline.v1.GetStateResponse.captures:type_name -> leyline.v1.Capture
+	13, // 38: leyline.v1.GetStateResponse.channels:type_name -> leyline.v1.Channel
+	14, // 39: leyline.v1.GetStateResponse.sinks:type_name -> leyline.v1.Sink
+	27, // 40: leyline.v1.GetStateResponse.daemon:type_name -> leyline.v1.DaemonInfo
+	52, // 41: leyline.v1.GetStateResponse.jobs:type_name -> leyline.v1.Job
+	28, // 42: leyline.v1.GetStateResponse.playbacks:type_name -> leyline.v1.Playback
+	53, // 43: leyline.v1.GetStateResponse.ai:type_name -> leyline.v1.AIState
+	54, // 44: leyline.v1.GetStateResponse.usage:type_name -> leyline.v1.UsageLine
+	55, // 45: leyline.v1.GetStateResponse.conversations:type_name -> leyline.v1.Conversation
+	48, // 46: leyline.v1.Playback.created_by:type_name -> leyline.v1.ClientInfo
+	7,  // 47: leyline.v1.Playback.state:type_name -> leyline.v1.PlaybackState
+	50, // 48: leyline.v1.CreateChannelRequest.mode:type_name -> leyline.v1.DemodMode
+	14, // 49: leyline.v1.AttachSinkRequest.sink:type_name -> leyline.v1.Sink
+	41, // 50: leyline.v1.DeviceSource.file:type_name -> leyline.v1.FileSource
+	42, // 51: leyline.v1.DeviceSource.rtl_tcp:type_name -> leyline.v1.RtlTcpSource
+	40, // 52: leyline.v1.AttachDeviceRequest.source:type_name -> leyline.v1.DeviceSource
+	10, // 53: leyline.v1.DeviceDescriptor.FeaturesEntry.value:type_name -> leyline.v1.FeatureValue
+	23, // 54: leyline.v1.Control.ListDevices:input_type -> leyline.v1.ListDevicesRequest
+	22, // 55: leyline.v1.Control.WatchEvents:input_type -> leyline.v1.EventScope
+	25, // 56: leyline.v1.Control.GetState:input_type -> leyline.v1.GetStateRequest
+	32, // 57: leyline.v1.Control.CreateCapture:input_type -> leyline.v1.CreateCaptureRequest
+	33, // 58: leyline.v1.Control.DestroyCapture:input_type -> leyline.v1.DestroyCaptureRequest
+	34, // 59: leyline.v1.Control.CreateChannel:input_type -> leyline.v1.CreateChannelRequest
+	35, // 60: leyline.v1.Control.DestroyChannel:input_type -> leyline.v1.DestroyChannelRequest
+	36, // 61: leyline.v1.Control.AttachSink:input_type -> leyline.v1.AttachSinkRequest
+	37, // 62: leyline.v1.Control.DetachSink:input_type -> leyline.v1.DetachSinkRequest
+	29, // 63: leyline.v1.Control.StartPlayback:input_type -> leyline.v1.StartPlaybackRequest
+	30, // 64: leyline.v1.Control.StopPlayback:input_type -> leyline.v1.StopPlaybackRequest
+	31, // 65: leyline.v1.Control.SetPlaybackPaused:input_type -> leyline.v1.SetPlaybackPausedRequest
+	18, // 66: leyline.v1.Control.WriteParams:input_type -> leyline.v1.ParamWrite
+	43, // 67: leyline.v1.Control.AttachDevice:input_type -> leyline.v1.AttachDeviceRequest
+	44, // 68: leyline.v1.Control.DetachDevice:input_type -> leyline.v1.DetachDeviceRequest
+	38, // 69: leyline.v1.Control.AttachFileDevice:input_type -> leyline.v1.AttachFileDeviceRequest
+	39, // 70: leyline.v1.Control.DetachFileDevice:input_type -> leyline.v1.DetachFileDeviceRequest
+	24, // 71: leyline.v1.Control.ListDevices:output_type -> leyline.v1.ListDevicesResponse
+	20, // 72: leyline.v1.Control.WatchEvents:output_type -> leyline.v1.Event
+	26, // 73: leyline.v1.Control.GetState:output_type -> leyline.v1.GetStateResponse
+	11, // 74: leyline.v1.Control.CreateCapture:output_type -> leyline.v1.Capture
+	57, // 75: leyline.v1.Control.DestroyCapture:output_type -> leyline.v1.Empty
+	13, // 76: leyline.v1.Control.CreateChannel:output_type -> leyline.v1.Channel
+	57, // 77: leyline.v1.Control.DestroyChannel:output_type -> leyline.v1.Empty
+	14, // 78: leyline.v1.Control.AttachSink:output_type -> leyline.v1.Sink
+	57, // 79: leyline.v1.Control.DetachSink:output_type -> leyline.v1.Empty
+	28, // 80: leyline.v1.Control.StartPlayback:output_type -> leyline.v1.Playback
+	57, // 81: leyline.v1.Control.StopPlayback:output_type -> leyline.v1.Empty
+	28, // 82: leyline.v1.Control.SetPlaybackPaused:output_type -> leyline.v1.Playback
+	19, // 83: leyline.v1.Control.WriteParams:output_type -> leyline.v1.WriteSummary
+	8,  // 84: leyline.v1.Control.AttachDevice:output_type -> leyline.v1.DeviceDescriptor
+	57, // 85: leyline.v1.Control.DetachDevice:output_type -> leyline.v1.Empty
+	8,  // 86: leyline.v1.Control.AttachFileDevice:output_type -> leyline.v1.DeviceDescriptor
+	57, // 87: leyline.v1.Control.DetachFileDevice:output_type -> leyline.v1.Empty
+	71, // [71:88] is the sub-list for method output_type
+	54, // [54:71] is the sub-list for method input_type
+	54, // [54:54] is the sub-list for extension type_name
+	54, // [54:54] is the sub-list for extension extendee
+	0,  // [0:54] is the sub-list for field type_name
 }
 
 func init() { file_leyline_v1_control_proto_init() }
@@ -3797,6 +3827,7 @@ func file_leyline_v1_control_proto_init() {
 		(*Event_Playback)(nil),
 		(*Event_Ai)(nil),
 		(*Event_Usage)(nil),
+		(*Event_Conversation)(nil),
 	}
 	file_leyline_v1_control_proto_msgTypes[14].OneofWrappers = []any{
 		(*EventScope_Daemon)(nil),

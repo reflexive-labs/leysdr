@@ -77,6 +77,7 @@ public final class DaemonConnection: Sendable {
                 ($0.day, $0.provider, $0.model, $0.feature, $0.scopeID)
                     < ($1.day, $1.provider, $1.model, $1.feature, $1.scopeID)
             }
+            st.conversations.sort { $0.conversationID < $1.conversationID }
             return st
         } catch {
             throw LeylineError(error)

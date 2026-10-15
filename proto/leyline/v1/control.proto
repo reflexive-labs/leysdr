@@ -192,6 +192,8 @@ message Event {
     // A usage report was added to the ledger: the whole line it was folded into, after the fold,
     // never the report alone.
     UsageLine usage = 12;
+    // An assistant conversation changed: the whole Conversation, an ended one included.
+    Conversation conversation = 13;
   }
 }
 message WriteRejected { uint64 tag = 1; ErrorDetail error = 2; }
@@ -258,6 +260,7 @@ message GetStateResponse {
   repeated Playback playbacks = 8;  // recordings the daemon is playing right now
   AIState ai = 9;                   // the keys (never their secrets) and each feature's model
   repeated UsageLine usage = 10;    // the ledger's lines, the same ones Event.usage updates
+  repeated Conversation conversations = 11;  // the assistant's conversations, ended ones included
 }
 message DaemonInfo {
   string version = 1;

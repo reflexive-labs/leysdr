@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-/// leyline.v1 — keys and usage
+/// leyline.v1 — keys, usage and the assistant
 /// Model calls on the user's own provider key (docs/design/ai.md). The daemon holds the keys and
 /// never returns one: a client can set, check and delete a key and read what is known about it,
 /// and the workers the daemon spawns are the only processes that see the secret. Usage is kept in
 /// the provider's own units (requests, tokens, audio seconds); cost and spend limits stay with the
-/// provider.
+/// provider. The assistant's conversations are daemon state like any other: a worker the daemon
+/// spawns runs the model, and every client renders the conversation it is sent.
 
 // DO NOT EDIT.
 // swift-format-ignore-file
@@ -1681,6 +1682,1863 @@ extension Leyline_V1_Usage.ClientProtocol {
             metadata: metadata
         )
         return try await self.reportUsage(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+}
+
+// MARK: - leyline.v1.Assistant
+
+/// Namespace containing generated types for the "leyline.v1.Assistant" service.
+@available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+public enum Leyline_V1_Assistant: Sendable {
+    /// Service descriptor for the "leyline.v1.Assistant" service.
+    public static let descriptor = GRPCCore.ServiceDescriptor(fullyQualifiedService: "leyline.v1.Assistant")
+    /// Namespace for method metadata.
+    public enum Method: Sendable {
+        /// Namespace for "StartConversation" metadata.
+        public enum StartConversation: Sendable {
+            /// Request type for "StartConversation".
+            public typealias Input = Leyline_V1_StartConversationRequest
+            /// Response type for "StartConversation".
+            public typealias Output = Leyline_V1_Conversation
+            /// Descriptor for "StartConversation".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "leyline.v1.Assistant"),
+                method: "StartConversation",
+                type: .unary
+            )
+        }
+        /// Namespace for "SendMessage" metadata.
+        public enum SendMessage: Sendable {
+            /// Request type for "SendMessage".
+            public typealias Input = Leyline_V1_SendMessageRequest
+            /// Response type for "SendMessage".
+            public typealias Output = Leyline_V1_Conversation
+            /// Descriptor for "SendMessage".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "leyline.v1.Assistant"),
+                method: "SendMessage",
+                type: .unary
+            )
+        }
+        /// Namespace for "WatchConversation" metadata.
+        public enum WatchConversation: Sendable {
+            /// Request type for "WatchConversation".
+            public typealias Input = Leyline_V1_WatchConversationRequest
+            /// Response type for "WatchConversation".
+            public typealias Output = Leyline_V1_Conversation
+            /// Descriptor for "WatchConversation".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "leyline.v1.Assistant"),
+                method: "WatchConversation",
+                type: .serverStreaming
+            )
+        }
+        /// Namespace for "ResolveAction" metadata.
+        public enum ResolveAction: Sendable {
+            /// Request type for "ResolveAction".
+            public typealias Input = Leyline_V1_ResolveActionRequest
+            /// Response type for "ResolveAction".
+            public typealias Output = Leyline_V1_Conversation
+            /// Descriptor for "ResolveAction".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "leyline.v1.Assistant"),
+                method: "ResolveAction",
+                type: .unary
+            )
+        }
+        /// Namespace for "AnswerViewTool" metadata.
+        public enum AnswerViewTool: Sendable {
+            /// Request type for "AnswerViewTool".
+            public typealias Input = Leyline_V1_AnswerViewToolRequest
+            /// Response type for "AnswerViewTool".
+            public typealias Output = Leyline_V1_Conversation
+            /// Descriptor for "AnswerViewTool".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "leyline.v1.Assistant"),
+                method: "AnswerViewTool",
+                type: .unary
+            )
+        }
+        /// Namespace for "StopTurn" metadata.
+        public enum StopTurn: Sendable {
+            /// Request type for "StopTurn".
+            public typealias Input = Leyline_V1_ConversationRef
+            /// Response type for "StopTurn".
+            public typealias Output = Leyline_V1_Conversation
+            /// Descriptor for "StopTurn".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "leyline.v1.Assistant"),
+                method: "StopTurn",
+                type: .unary
+            )
+        }
+        /// Namespace for "EndConversation" metadata.
+        public enum EndConversation: Sendable {
+            /// Request type for "EndConversation".
+            public typealias Input = Leyline_V1_ConversationRef
+            /// Response type for "EndConversation".
+            public typealias Output = Leyline_V1_Conversation
+            /// Descriptor for "EndConversation".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "leyline.v1.Assistant"),
+                method: "EndConversation",
+                type: .unary
+            )
+        }
+        /// Namespace for "ListConversations" metadata.
+        public enum ListConversations: Sendable {
+            /// Request type for "ListConversations".
+            public typealias Input = Leyline_V1_ListConversationsRequest
+            /// Response type for "ListConversations".
+            public typealias Output = Leyline_V1_ListConversationsResponse
+            /// Descriptor for "ListConversations".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "leyline.v1.Assistant"),
+                method: "ListConversations",
+                type: .unary
+            )
+        }
+        /// Descriptors for all methods in the "leyline.v1.Assistant" service.
+        public static let descriptors: [GRPCCore.MethodDescriptor] = [
+            StartConversation.descriptor,
+            SendMessage.descriptor,
+            WatchConversation.descriptor,
+            ResolveAction.descriptor,
+            AnswerViewTool.descriptor,
+            StopTurn.descriptor,
+            EndConversation.descriptor,
+            ListConversations.descriptor
+        ]
+    }
+}
+
+@available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+extension GRPCCore.ServiceDescriptor {
+    /// Service descriptor for the "leyline.v1.Assistant" service.
+    public static let leyline_v1_Assistant = GRPCCore.ServiceDescriptor(fullyQualifiedService: "leyline.v1.Assistant")
+}
+
+// MARK: leyline.v1.Assistant (server)
+
+@available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+extension Leyline_V1_Assistant {
+    /// Streaming variant of the service protocol for the "leyline.v1.Assistant" service.
+    ///
+    /// This protocol is the lowest-level of the service protocols generated for this service
+    /// giving you the most flexibility over the implementation of your service. This comes at
+    /// the cost of more verbose and less strict APIs. Each RPC requires you to implement it in
+    /// terms of a request stream and response stream. Where the RPC expects only a single
+    /// request or response message, you are responsible for ensuring your implementation
+    /// maintains this invariant.
+    ///
+    /// Where possible, prefer using the stricter, less-verbose ``ServiceProtocol``
+    /// or ``SimpleServiceProtocol`` instead.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Every reply is the conversation's whole state after the call, the same state Event.conversation
+    /// > carries.
+    public protocol StreamingServiceProtocol: GRPCCore.RegistrableRPCService {
+        /// Handle the "StartConversation" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Starts a worker and returns the conversation IDLE. CREDENTIAL_MISSING without a key for the
+        /// > provider.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Leyline_V1_StartConversationRequest` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Leyline_V1_Conversation` messages.
+        func startConversation(
+            request: GRPCCore.StreamingServerRequest<Leyline_V1_StartConversationRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Conversation>
+
+        /// Handle the "SendMessage" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Adds a user turn and hands it to the worker. FAILED_PRECONDITION unless IDLE.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Leyline_V1_SendMessageRequest` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Leyline_V1_Conversation` messages.
+        func sendMessage(
+            request: GRPCCore.StreamingServerRequest<Leyline_V1_SendMessageRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Conversation>
+
+        /// Handle the "WatchConversation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Leyline_V1_WatchConversationRequest` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Leyline_V1_Conversation` messages.
+        func watchConversation(
+            request: GRPCCore.StreamingServerRequest<Leyline_V1_WatchConversationRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Conversation>
+
+        /// Handle the "ResolveAction" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Approves or refuses the pending call. FAILED_PRECONDITION unless WAITING on that call.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Leyline_V1_ResolveActionRequest` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Leyline_V1_Conversation` messages.
+        func resolveAction(
+            request: GRPCCore.StreamingServerRequest<Leyline_V1_ResolveActionRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Conversation>
+
+        /// Handle the "AnswerViewTool" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Answers the pending view tool call. FAILED_PRECONDITION unless WAITING on that call.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Leyline_V1_AnswerViewToolRequest` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Leyline_V1_Conversation` messages.
+        func answerViewTool(
+            request: GRPCCore.StreamingServerRequest<Leyline_V1_AnswerViewToolRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Conversation>
+
+        /// Handle the "StopTurn" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Ends the running turn; the conversation stays and becomes IDLE.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Leyline_V1_ConversationRef` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Leyline_V1_Conversation` messages.
+        func stopTurn(
+            request: GRPCCore.StreamingServerRequest<Leyline_V1_ConversationRef>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Conversation>
+
+        /// Handle the "EndConversation" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Stops the worker; the conversation is ENDED and stays listed.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Leyline_V1_ConversationRef` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Leyline_V1_Conversation` messages.
+        func endConversation(
+            request: GRPCCore.StreamingServerRequest<Leyline_V1_ConversationRef>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Conversation>
+
+        /// Handle the "ListConversations" method.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Leyline_V1_ListConversationsRequest` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Leyline_V1_ListConversationsResponse` messages.
+        func listConversations(
+            request: GRPCCore.StreamingServerRequest<Leyline_V1_ListConversationsRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_ListConversationsResponse>
+    }
+
+    /// Service protocol for the "leyline.v1.Assistant" service.
+    ///
+    /// This protocol is higher level than ``StreamingServiceProtocol`` but lower level than
+    /// the ``SimpleServiceProtocol``, it provides access to request and response metadata and
+    /// trailing response metadata. If you don't need these then consider using
+    /// the ``SimpleServiceProtocol``. If you need fine grained control over your RPCs then
+    /// use ``StreamingServiceProtocol``.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Every reply is the conversation's whole state after the call, the same state Event.conversation
+    /// > carries.
+    public protocol ServiceProtocol: Leyline_V1_Assistant.StreamingServiceProtocol {
+        /// Handle the "StartConversation" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Starts a worker and returns the conversation IDLE. CREDENTIAL_MISSING without a key for the
+        /// > provider.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_StartConversationRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Leyline_V1_Conversation` message.
+        func startConversation(
+            request: GRPCCore.ServerRequest<Leyline_V1_StartConversationRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Conversation>
+
+        /// Handle the "SendMessage" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Adds a user turn and hands it to the worker. FAILED_PRECONDITION unless IDLE.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_SendMessageRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Leyline_V1_Conversation` message.
+        func sendMessage(
+            request: GRPCCore.ServerRequest<Leyline_V1_SendMessageRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Conversation>
+
+        /// Handle the "WatchConversation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_WatchConversationRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Leyline_V1_Conversation` messages.
+        func watchConversation(
+            request: GRPCCore.ServerRequest<Leyline_V1_WatchConversationRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Conversation>
+
+        /// Handle the "ResolveAction" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Approves or refuses the pending call. FAILED_PRECONDITION unless WAITING on that call.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_ResolveActionRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Leyline_V1_Conversation` message.
+        func resolveAction(
+            request: GRPCCore.ServerRequest<Leyline_V1_ResolveActionRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Conversation>
+
+        /// Handle the "AnswerViewTool" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Answers the pending view tool call. FAILED_PRECONDITION unless WAITING on that call.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_AnswerViewToolRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Leyline_V1_Conversation` message.
+        func answerViewTool(
+            request: GRPCCore.ServerRequest<Leyline_V1_AnswerViewToolRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Conversation>
+
+        /// Handle the "StopTurn" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Ends the running turn; the conversation stays and becomes IDLE.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_ConversationRef` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Leyline_V1_Conversation` message.
+        func stopTurn(
+            request: GRPCCore.ServerRequest<Leyline_V1_ConversationRef>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Conversation>
+
+        /// Handle the "EndConversation" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Stops the worker; the conversation is ENDED and stays listed.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_ConversationRef` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Leyline_V1_Conversation` message.
+        func endConversation(
+            request: GRPCCore.ServerRequest<Leyline_V1_ConversationRef>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Conversation>
+
+        /// Handle the "ListConversations" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_ListConversationsRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Leyline_V1_ListConversationsResponse` message.
+        func listConversations(
+            request: GRPCCore.ServerRequest<Leyline_V1_ListConversationsRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Leyline_V1_ListConversationsResponse>
+    }
+
+    /// Simple service protocol for the "leyline.v1.Assistant" service.
+    ///
+    /// This is the highest level protocol for the service. The API is the easiest to use but
+    /// doesn't provide access to request or response metadata. If you need access to these
+    /// then use ``ServiceProtocol`` instead.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Every reply is the conversation's whole state after the call, the same state Event.conversation
+    /// > carries.
+    public protocol SimpleServiceProtocol: Leyline_V1_Assistant.ServiceProtocol {
+        /// Handle the "StartConversation" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Starts a worker and returns the conversation IDLE. CREDENTIAL_MISSING without a key for the
+        /// > provider.
+        ///
+        /// - Parameters:
+        ///   - request: A `Leyline_V1_StartConversationRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Leyline_V1_Conversation` to respond with.
+        func startConversation(
+            request: Leyline_V1_StartConversationRequest,
+            context: GRPCCore.ServerContext
+        ) async throws -> Leyline_V1_Conversation
+
+        /// Handle the "SendMessage" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Adds a user turn and hands it to the worker. FAILED_PRECONDITION unless IDLE.
+        ///
+        /// - Parameters:
+        ///   - request: A `Leyline_V1_SendMessageRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Leyline_V1_Conversation` to respond with.
+        func sendMessage(
+            request: Leyline_V1_SendMessageRequest,
+            context: GRPCCore.ServerContext
+        ) async throws -> Leyline_V1_Conversation
+
+        /// Handle the "WatchConversation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A `Leyline_V1_WatchConversationRequest` message.
+        ///   - response: A response stream of `Leyline_V1_Conversation` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        func watchConversation(
+            request: Leyline_V1_WatchConversationRequest,
+            response: GRPCCore.RPCWriter<Leyline_V1_Conversation>,
+            context: GRPCCore.ServerContext
+        ) async throws
+
+        /// Handle the "ResolveAction" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Approves or refuses the pending call. FAILED_PRECONDITION unless WAITING on that call.
+        ///
+        /// - Parameters:
+        ///   - request: A `Leyline_V1_ResolveActionRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Leyline_V1_Conversation` to respond with.
+        func resolveAction(
+            request: Leyline_V1_ResolveActionRequest,
+            context: GRPCCore.ServerContext
+        ) async throws -> Leyline_V1_Conversation
+
+        /// Handle the "AnswerViewTool" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Answers the pending view tool call. FAILED_PRECONDITION unless WAITING on that call.
+        ///
+        /// - Parameters:
+        ///   - request: A `Leyline_V1_AnswerViewToolRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Leyline_V1_Conversation` to respond with.
+        func answerViewTool(
+            request: Leyline_V1_AnswerViewToolRequest,
+            context: GRPCCore.ServerContext
+        ) async throws -> Leyline_V1_Conversation
+
+        /// Handle the "StopTurn" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Ends the running turn; the conversation stays and becomes IDLE.
+        ///
+        /// - Parameters:
+        ///   - request: A `Leyline_V1_ConversationRef` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Leyline_V1_Conversation` to respond with.
+        func stopTurn(
+            request: Leyline_V1_ConversationRef,
+            context: GRPCCore.ServerContext
+        ) async throws -> Leyline_V1_Conversation
+
+        /// Handle the "EndConversation" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Stops the worker; the conversation is ENDED and stays listed.
+        ///
+        /// - Parameters:
+        ///   - request: A `Leyline_V1_ConversationRef` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Leyline_V1_Conversation` to respond with.
+        func endConversation(
+            request: Leyline_V1_ConversationRef,
+            context: GRPCCore.ServerContext
+        ) async throws -> Leyline_V1_Conversation
+
+        /// Handle the "ListConversations" method.
+        ///
+        /// - Parameters:
+        ///   - request: A `Leyline_V1_ListConversationsRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Leyline_V1_ListConversationsResponse` to respond with.
+        func listConversations(
+            request: Leyline_V1_ListConversationsRequest,
+            context: GRPCCore.ServerContext
+        ) async throws -> Leyline_V1_ListConversationsResponse
+    }
+}
+
+// Default implementation of 'registerMethods(with:)'.
+@available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+extension Leyline_V1_Assistant.StreamingServiceProtocol {
+    public func registerMethods<Transport>(with router: inout GRPCCore.RPCRouter<Transport>) where Transport: GRPCCore.ServerTransport {
+        router.registerHandler(
+            forMethod: Leyline_V1_Assistant.Method.StartConversation.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_StartConversationRequest>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_Conversation>(),
+            handler: { request, context in
+                try await self.startConversation(
+                    request: request,
+                    context: context
+                )
+            }
+        )
+        router.registerHandler(
+            forMethod: Leyline_V1_Assistant.Method.SendMessage.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_SendMessageRequest>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_Conversation>(),
+            handler: { request, context in
+                try await self.sendMessage(
+                    request: request,
+                    context: context
+                )
+            }
+        )
+        router.registerHandler(
+            forMethod: Leyline_V1_Assistant.Method.WatchConversation.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_WatchConversationRequest>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_Conversation>(),
+            handler: { request, context in
+                try await self.watchConversation(
+                    request: request,
+                    context: context
+                )
+            }
+        )
+        router.registerHandler(
+            forMethod: Leyline_V1_Assistant.Method.ResolveAction.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_ResolveActionRequest>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_Conversation>(),
+            handler: { request, context in
+                try await self.resolveAction(
+                    request: request,
+                    context: context
+                )
+            }
+        )
+        router.registerHandler(
+            forMethod: Leyline_V1_Assistant.Method.AnswerViewTool.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_AnswerViewToolRequest>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_Conversation>(),
+            handler: { request, context in
+                try await self.answerViewTool(
+                    request: request,
+                    context: context
+                )
+            }
+        )
+        router.registerHandler(
+            forMethod: Leyline_V1_Assistant.Method.StopTurn.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_ConversationRef>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_Conversation>(),
+            handler: { request, context in
+                try await self.stopTurn(
+                    request: request,
+                    context: context
+                )
+            }
+        )
+        router.registerHandler(
+            forMethod: Leyline_V1_Assistant.Method.EndConversation.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_ConversationRef>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_Conversation>(),
+            handler: { request, context in
+                try await self.endConversation(
+                    request: request,
+                    context: context
+                )
+            }
+        )
+        router.registerHandler(
+            forMethod: Leyline_V1_Assistant.Method.ListConversations.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_ListConversationsRequest>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_ListConversationsResponse>(),
+            handler: { request, context in
+                try await self.listConversations(
+                    request: request,
+                    context: context
+                )
+            }
+        )
+    }
+}
+
+// Default implementation of streaming methods from 'StreamingServiceProtocol'.
+@available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+extension Leyline_V1_Assistant.ServiceProtocol {
+    public func startConversation(
+        request: GRPCCore.StreamingServerRequest<Leyline_V1_StartConversationRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Conversation> {
+        let response = try await self.startConversation(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
+
+    public func sendMessage(
+        request: GRPCCore.StreamingServerRequest<Leyline_V1_SendMessageRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Conversation> {
+        let response = try await self.sendMessage(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
+
+    public func watchConversation(
+        request: GRPCCore.StreamingServerRequest<Leyline_V1_WatchConversationRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Conversation> {
+        let response = try await self.watchConversation(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return response
+    }
+
+    public func resolveAction(
+        request: GRPCCore.StreamingServerRequest<Leyline_V1_ResolveActionRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Conversation> {
+        let response = try await self.resolveAction(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
+
+    public func answerViewTool(
+        request: GRPCCore.StreamingServerRequest<Leyline_V1_AnswerViewToolRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Conversation> {
+        let response = try await self.answerViewTool(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
+
+    public func stopTurn(
+        request: GRPCCore.StreamingServerRequest<Leyline_V1_ConversationRef>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Conversation> {
+        let response = try await self.stopTurn(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
+
+    public func endConversation(
+        request: GRPCCore.StreamingServerRequest<Leyline_V1_ConversationRef>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Conversation> {
+        let response = try await self.endConversation(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
+
+    public func listConversations(
+        request: GRPCCore.StreamingServerRequest<Leyline_V1_ListConversationsRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_ListConversationsResponse> {
+        let response = try await self.listConversations(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
+}
+
+// Default implementation of methods from 'ServiceProtocol'.
+@available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+extension Leyline_V1_Assistant.SimpleServiceProtocol {
+    public func startConversation(
+        request: GRPCCore.ServerRequest<Leyline_V1_StartConversationRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Conversation> {
+        return GRPCCore.ServerResponse<Leyline_V1_Conversation>(
+            message: try await self.startConversation(
+                request: request.message,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+
+    public func sendMessage(
+        request: GRPCCore.ServerRequest<Leyline_V1_SendMessageRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Conversation> {
+        return GRPCCore.ServerResponse<Leyline_V1_Conversation>(
+            message: try await self.sendMessage(
+                request: request.message,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+
+    public func watchConversation(
+        request: GRPCCore.ServerRequest<Leyline_V1_WatchConversationRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Conversation> {
+        return GRPCCore.StreamingServerResponse<Leyline_V1_Conversation>(
+            metadata: [:],
+            producer: { writer in
+                try await self.watchConversation(
+                    request: request.message,
+                    response: writer,
+                    context: context
+                )
+                return [:]
+            }
+        )
+    }
+
+    public func resolveAction(
+        request: GRPCCore.ServerRequest<Leyline_V1_ResolveActionRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Conversation> {
+        return GRPCCore.ServerResponse<Leyline_V1_Conversation>(
+            message: try await self.resolveAction(
+                request: request.message,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+
+    public func answerViewTool(
+        request: GRPCCore.ServerRequest<Leyline_V1_AnswerViewToolRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Conversation> {
+        return GRPCCore.ServerResponse<Leyline_V1_Conversation>(
+            message: try await self.answerViewTool(
+                request: request.message,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+
+    public func stopTurn(
+        request: GRPCCore.ServerRequest<Leyline_V1_ConversationRef>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Conversation> {
+        return GRPCCore.ServerResponse<Leyline_V1_Conversation>(
+            message: try await self.stopTurn(
+                request: request.message,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+
+    public func endConversation(
+        request: GRPCCore.ServerRequest<Leyline_V1_ConversationRef>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Conversation> {
+        return GRPCCore.ServerResponse<Leyline_V1_Conversation>(
+            message: try await self.endConversation(
+                request: request.message,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+
+    public func listConversations(
+        request: GRPCCore.ServerRequest<Leyline_V1_ListConversationsRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Leyline_V1_ListConversationsResponse> {
+        return GRPCCore.ServerResponse<Leyline_V1_ListConversationsResponse>(
+            message: try await self.listConversations(
+                request: request.message,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+}
+
+// MARK: leyline.v1.Assistant (client)
+
+@available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+extension Leyline_V1_Assistant {
+    /// Generated client protocol for the "leyline.v1.Assistant" service.
+    ///
+    /// You don't need to implement this protocol directly, use the generated
+    /// implementation, ``Client``.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Every reply is the conversation's whole state after the call, the same state Event.conversation
+    /// > carries.
+    public protocol ClientProtocol: Sendable {
+        /// Call the "StartConversation" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Starts a worker and returns the conversation IDLE. CREDENTIAL_MISSING without a key for the
+        /// > provider.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_StartConversationRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_StartConversationRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Conversation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func startConversation<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_StartConversationRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_StartConversationRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Conversation>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "SendMessage" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Adds a user turn and hands it to the worker. FAILED_PRECONDITION unless IDLE.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_SendMessageRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_SendMessageRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Conversation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func sendMessage<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_SendMessageRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_SendMessageRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Conversation>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "WatchConversation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_WatchConversationRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_WatchConversationRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Conversation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func watchConversation<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_WatchConversationRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_WatchConversationRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Conversation>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Leyline_V1_Conversation>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ResolveAction" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Approves or refuses the pending call. FAILED_PRECONDITION unless WAITING on that call.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_ResolveActionRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_ResolveActionRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Conversation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func resolveAction<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_ResolveActionRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_ResolveActionRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Conversation>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "AnswerViewTool" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Answers the pending view tool call. FAILED_PRECONDITION unless WAITING on that call.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_AnswerViewToolRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_AnswerViewToolRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Conversation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func answerViewTool<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_AnswerViewToolRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_AnswerViewToolRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Conversation>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "StopTurn" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Ends the running turn; the conversation stays and becomes IDLE.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_ConversationRef` message.
+        ///   - serializer: A serializer for `Leyline_V1_ConversationRef` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Conversation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func stopTurn<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_ConversationRef>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_ConversationRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Conversation>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "EndConversation" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Stops the worker; the conversation is ENDED and stays listed.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_ConversationRef` message.
+        ///   - serializer: A serializer for `Leyline_V1_ConversationRef` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Conversation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func endConversation<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_ConversationRef>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_ConversationRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Conversation>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ListConversations" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_ListConversationsRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_ListConversationsRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_ListConversationsResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func listConversations<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_ListConversationsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_ListConversationsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_ListConversationsResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_ListConversationsResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+    }
+
+    /// Generated client for the "leyline.v1.Assistant" service.
+    ///
+    /// The ``Client`` provides an implementation of ``ClientProtocol`` which wraps
+    /// a `GRPCCore.GRPCCClient`. The underlying `GRPCClient` provides the long-lived
+    /// means of communication with the remote peer.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Every reply is the conversation's whole state after the call, the same state Event.conversation
+    /// > carries.
+    public struct Client<Transport>: ClientProtocol where Transport: GRPCCore.ClientTransport {
+        private let client: GRPCCore.GRPCClient<Transport>
+
+        /// Creates a new client wrapping the provided `GRPCCore.GRPCClient`.
+        ///
+        /// - Parameters:
+        ///   - client: A `GRPCCore.GRPCClient` providing a communication channel to the service.
+        public init(wrapping client: GRPCCore.GRPCClient<Transport>) {
+            self.client = client
+        }
+
+        /// Call the "StartConversation" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Starts a worker and returns the conversation IDLE. CREDENTIAL_MISSING without a key for the
+        /// > provider.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_StartConversationRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_StartConversationRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Conversation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func startConversation<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_StartConversationRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_StartConversationRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Conversation>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Leyline_V1_Assistant.Method.StartConversation.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "SendMessage" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Adds a user turn and hands it to the worker. FAILED_PRECONDITION unless IDLE.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_SendMessageRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_SendMessageRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Conversation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func sendMessage<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_SendMessageRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_SendMessageRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Conversation>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Leyline_V1_Assistant.Method.SendMessage.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "WatchConversation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_WatchConversationRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_WatchConversationRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Conversation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func watchConversation<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_WatchConversationRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_WatchConversationRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Conversation>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Leyline_V1_Conversation>) async throws -> Result
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.serverStreaming(
+                request: request,
+                descriptor: Leyline_V1_Assistant.Method.WatchConversation.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ResolveAction" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Approves or refuses the pending call. FAILED_PRECONDITION unless WAITING on that call.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_ResolveActionRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_ResolveActionRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Conversation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func resolveAction<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_ResolveActionRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_ResolveActionRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Conversation>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Leyline_V1_Assistant.Method.ResolveAction.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "AnswerViewTool" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Answers the pending view tool call. FAILED_PRECONDITION unless WAITING on that call.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_AnswerViewToolRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_AnswerViewToolRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Conversation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func answerViewTool<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_AnswerViewToolRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_AnswerViewToolRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Conversation>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Leyline_V1_Assistant.Method.AnswerViewTool.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "StopTurn" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Ends the running turn; the conversation stays and becomes IDLE.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_ConversationRef` message.
+        ///   - serializer: A serializer for `Leyline_V1_ConversationRef` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Conversation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func stopTurn<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_ConversationRef>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_ConversationRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Conversation>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Leyline_V1_Assistant.Method.StopTurn.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "EndConversation" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Stops the worker; the conversation is ENDED and stays listed.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_ConversationRef` message.
+        ///   - serializer: A serializer for `Leyline_V1_ConversationRef` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Conversation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func endConversation<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_ConversationRef>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_ConversationRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Conversation>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Leyline_V1_Assistant.Method.EndConversation.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ListConversations" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_ListConversationsRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_ListConversationsRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_ListConversationsResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func listConversations<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_ListConversationsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_ListConversationsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_ListConversationsResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_ListConversationsResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Leyline_V1_Assistant.Method.ListConversations.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+    }
+}
+
+// Helpers providing default arguments to 'ClientProtocol' methods.
+@available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+extension Leyline_V1_Assistant.ClientProtocol {
+    /// Call the "StartConversation" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Starts a worker and returns the conversation IDLE. CREDENTIAL_MISSING without a key for the
+    /// > provider.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Leyline_V1_StartConversationRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func startConversation<Result>(
+        request: GRPCCore.ClientRequest<Leyline_V1_StartConversationRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.startConversation(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_StartConversationRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_Conversation>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SendMessage" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Adds a user turn and hands it to the worker. FAILED_PRECONDITION unless IDLE.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Leyline_V1_SendMessageRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func sendMessage<Result>(
+        request: GRPCCore.ClientRequest<Leyline_V1_SendMessageRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.sendMessage(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_SendMessageRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_Conversation>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WatchConversation" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Leyline_V1_WatchConversationRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func watchConversation<Result>(
+        request: GRPCCore.ClientRequest<Leyline_V1_WatchConversationRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Leyline_V1_Conversation>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        try await self.watchConversation(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_WatchConversationRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_Conversation>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ResolveAction" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Approves or refuses the pending call. FAILED_PRECONDITION unless WAITING on that call.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Leyline_V1_ResolveActionRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func resolveAction<Result>(
+        request: GRPCCore.ClientRequest<Leyline_V1_ResolveActionRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.resolveAction(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_ResolveActionRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_Conversation>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "AnswerViewTool" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Answers the pending view tool call. FAILED_PRECONDITION unless WAITING on that call.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Leyline_V1_AnswerViewToolRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func answerViewTool<Result>(
+        request: GRPCCore.ClientRequest<Leyline_V1_AnswerViewToolRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.answerViewTool(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_AnswerViewToolRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_Conversation>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "StopTurn" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Ends the running turn; the conversation stays and becomes IDLE.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Leyline_V1_ConversationRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func stopTurn<Result>(
+        request: GRPCCore.ClientRequest<Leyline_V1_ConversationRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.stopTurn(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_ConversationRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_Conversation>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "EndConversation" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Stops the worker; the conversation is ENDED and stays listed.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Leyline_V1_ConversationRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func endConversation<Result>(
+        request: GRPCCore.ClientRequest<Leyline_V1_ConversationRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.endConversation(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_ConversationRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_Conversation>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListConversations" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Leyline_V1_ListConversationsRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listConversations<Result>(
+        request: GRPCCore.ClientRequest<Leyline_V1_ListConversationsRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_ListConversationsResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.listConversations(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_ListConversationsRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_ListConversationsResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+}
+
+// Helpers providing sugared APIs for 'ClientProtocol' methods.
+@available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
+extension Leyline_V1_Assistant.ClientProtocol {
+    /// Call the "StartConversation" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Starts a worker and returns the conversation IDLE. CREDENTIAL_MISSING without a key for the
+    /// > provider.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func startConversation<Result>(
+        _ message: Leyline_V1_StartConversationRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Leyline_V1_StartConversationRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.startConversation(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SendMessage" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Adds a user turn and hands it to the worker. FAILED_PRECONDITION unless IDLE.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func sendMessage<Result>(
+        _ message: Leyline_V1_SendMessageRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Leyline_V1_SendMessageRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.sendMessage(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WatchConversation" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func watchConversation<Result>(
+        _ message: Leyline_V1_WatchConversationRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Leyline_V1_Conversation>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Leyline_V1_WatchConversationRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.watchConversation(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ResolveAction" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Approves or refuses the pending call. FAILED_PRECONDITION unless WAITING on that call.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func resolveAction<Result>(
+        _ message: Leyline_V1_ResolveActionRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Leyline_V1_ResolveActionRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.resolveAction(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "AnswerViewTool" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Answers the pending view tool call. FAILED_PRECONDITION unless WAITING on that call.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func answerViewTool<Result>(
+        _ message: Leyline_V1_AnswerViewToolRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Leyline_V1_AnswerViewToolRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.answerViewTool(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "StopTurn" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Ends the running turn; the conversation stays and becomes IDLE.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func stopTurn<Result>(
+        _ message: Leyline_V1_ConversationRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Leyline_V1_ConversationRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.stopTurn(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "EndConversation" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Stops the worker; the conversation is ENDED and stays listed.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func endConversation<Result>(
+        _ message: Leyline_V1_ConversationRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Leyline_V1_ConversationRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.endConversation(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListConversations" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listConversations<Result>(
+        _ message: Leyline_V1_ListConversationsRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_ListConversationsResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Leyline_V1_ListConversationsRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.listConversations(
             request: request,
             options: options,
             onResponse: handleResponse
