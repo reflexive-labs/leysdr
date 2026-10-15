@@ -37,12 +37,9 @@ func defaultCheck(_, secret, _ string) (leylinev1.CredentialCheck_Outcome, strin
 	return leylinev1.CredentialCheck_ACCEPTED, ""
 }
 
-// The features a model can be chosen for, and the ones a usage report may name: a key check is a
-// call on the account too, so it is counted.
-var (
-	modelFeatures = map[string]bool{"assistant": true, "speech": true}
-	usageFeatures = map[string]bool{"assistant": true, "speech": true, "check": true}
-)
+// The features a usage report may name: those a model can be chosen for (leyline.AIFeatures),
+// and the key check, which is a call on the account too, so it is counted.
+var usageFeatures = map[string]bool{"assistant": true, "speech": true, "check": true}
 
 // aiState is the daemon's keys, feature models and ledger. Guarded by Daemon.mu.
 type aiState struct {
@@ -256,11 +253,12 @@ func (d *Daemon) GetAIState(ctx context.Context, _ *leylinev1.GetAIStateRequest)
 }
 
 // SetFeatureModel implements Credentials. A model can be chosen before its provider's key is
-// added: the feature reports CREDENTIAL_MISSING when it runs, not here.
+// added: the feature reports CREDENTIAL_MISSING when it runs, not here. A provider that cannot
+// serve the feature is refused here, in the daemon's words (leyline.FeatureRefusal).
 func (d *Daemon) SetFeatureModel(ctx context.Context, req *leylinev1.FeatureModel) (*leylinev1.FeatureModel, error) {
 	ci := clientFrom(ctx)
 	d.touchUnary(ci)
-	if !modelFeatures[req.GetFeature()] {
+	if !leyline.IsAIFeature(req.GetFeature()) {
 		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, req.GetFeature(),
 			fmt.Sprintf("no feature named %q; the features are assistant and speech", req.GetFeature())))
 	}
@@ -272,6 +270,11 @@ func (d *Daemon) SetFeatureModel(ctx context.Context, req *leylinev1.FeatureMode
 	fm := &leylinev1.FeatureModel{Feature: req.GetFeature(), Provider: req.GetProvider(), Model: req.GetModel()}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if !clearing {
+		if why := leyline.FeatureRefusal(fm.Feature, fm.Provider, d.ai.credentials[fm.Provider], d.installedDecoders()); why != "" {
+			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, fm.Provider, why))
+		}
+	}
 	// An empty provider and model clear the feature's choice, as the daemon does.
 	if clearing {
 		delete(d.ai.features, fm.Feature)

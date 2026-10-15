@@ -215,6 +215,64 @@ func TestDeleteAndFeatureModels(t *testing.T) {
 	}
 }
 
+// A key sets every feature its provider serves that has no provider yet, and never one chosen;
+// a rejected key sets none.
+func TestAKeySetsTheDefaultsAndOverwritesNoChoice(t *testing.T) {
+	t.Parallel()
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := t.Context()
+	features := func() string {
+		st, err := c.Credentials.GetAIState(ctx, &leylinev1.GetAIStateRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, f := range st.GetFeatures() {
+			out = append(out, f.GetFeature()+" "+f.GetProvider()+" "+f.GetModel())
+		}
+		return strings.Join(out, ", ")
+	}
+	set := func(provider, secret string) {
+		if _, err := c.Credentials.SetCredential(ctx, &leylinev1.SetCredentialRequest{Provider: provider, Secret: secret}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	set("openai", fakedaemon.RejectedSecret)
+	if got := features(); got != "" {
+		t.Errorf("a rejected key set %q", got)
+	}
+	if _, err := c.Credentials.SetFeatureModel(ctx, &leylinev1.FeatureModel{Feature: "assistant", Provider: "anthropic", Model: "claude-opus-5-5"}); err != nil {
+		t.Fatal(err)
+	}
+	set("openai", testSecret)
+	if got := features(); got != "assistant anthropic claude-opus-5-5, speech openai whisper-1" {
+		t.Errorf("after the openai key: %q", got)
+	}
+}
+
+// A provider that cannot serve a feature is refused when it is chosen, naming those that can.
+func TestAFeatureItsProviderCannotServeIsRefused(t *testing.T) {
+	t.Parallel()
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx := t.Context()
+	_, err := c.Credentials.SetFeatureModel(ctx, &leylinev1.FeatureModel{Feature: "speech", Provider: "anthropic", Model: "nova-3"})
+	if leyline.Code(err) != leyline.CodeInvalidArgument || !strings.Contains(err.Error(), "anthropic does not serve speech; openai does: ley ai use speech openai") {
+		t.Errorf("speech on anthropic: %v", err)
+	}
+	// A speech decoder installed for a provider makes it a speech provider.
+	c, _ = harness(t, fakedaemon.Options{SpeechProvider: "deepgram"})
+	if _, err := c.Credentials.SetFeatureModel(ctx, &leylinev1.FeatureModel{Feature: "speech", Provider: "deepgram", Model: "nova-3"}); err != nil {
+		t.Errorf("speech on the installed decoder's provider: %v", err)
+	}
+	if _, err := c.Credentials.SetCredential(ctx, &leylinev1.SetCredentialRequest{Provider: "ollama", Secret: testSecret}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Credentials.SetFeatureModel(ctx, &leylinev1.FeatureModel{Feature: "assistant", Provider: "ollama", Model: "llama3"})
+	if leyline.Code(err) != leyline.CodeInvalidArgument || !strings.Contains(err.Error(), "ley ai add ollama --endpoint <url>") {
+		t.Errorf("an unknown provider's key with no endpoint: %v", err)
+	}
+}
+
 // Reports fold by provider, model, feature, scope and UTC day; each one sends the whole line and
 // marks the key used; GetUsage filters, and a seeded ledger is there from the start.
 func TestUsageLedger(t *testing.T) {

@@ -356,17 +356,74 @@ func TestAIRemoveAndUse(t *testing.T) {
 	if leyline.Code(err) != leyline.CodeCredentialMissing {
 		t.Errorf("second remove: %v", err)
 	}
-	_, errOut, err := runLey(t, sock, 80, false, "", "ai", "use", "speech", "deepgram", "nova-3")
-	if err != nil || !strings.Contains(errOut, "speech now calls deepgram nova-3") || !strings.Contains(errOut, "ley ai add deepgram") {
+	_, errOut, err := runLey(t, sock, 80, false, "", "ai", "use", "assistant", "anthropic", "claude-opus-5-5")
+	if err != nil || !strings.Contains(errOut, "assistant now calls anthropic claude-opus-5-5") || !strings.Contains(errOut, "ley ai add anthropic") {
 		t.Errorf("use: %v %q", err, errOut)
 	}
-	_, _, err = runLey(t, sock, 80, false, "", "ai", "use", "cooking", "deepgram", "nova-3")
+	_, _, err = runLey(t, sock, 80, false, "", "ai", "use", "cooking", "openai", "gpt-5")
 	if exitCode(err) != ExitUsage {
 		t.Errorf("unknown feature: exit %d (%v)", exitCode(err), err)
 	}
 	st, _ := c.Credentials.GetAIState(t.Context(), &leylinev1.GetAIStateRequest{})
-	if len(st.GetCredentials()) != 1 || len(st.GetFeatures()) != 2 {
+	if len(st.GetCredentials()) != 1 || len(st.GetFeatures()) != 1 {
 		t.Errorf("state: %v", st)
+	}
+}
+
+// use takes a provider alone, a feature and a provider, or all three; a provider and a model
+// alone only when the provider serves one feature; and a provider that cannot serve the feature
+// is refused by the daemon, naming those that can.
+func TestAIUseForms(t *testing.T) {
+	t.Parallel()
+	features := func(c *leyline.Client) string {
+		st, _ := c.Credentials.GetAIState(t.Context(), &leylinev1.GetAIStateRequest{})
+		var out []string
+		for _, f := range st.GetFeatures() {
+			out = append(out, f.GetFeature()+" "+f.GetProvider()+" "+f.GetModel())
+		}
+		return strings.Join(out, ", ")
+	}
+	cases := []struct {
+		args          []string
+		want, errWant string
+		code          int
+	}{
+		{args: []string{"openai"}, want: "assistant openai gpt-5, speech openai whisper-1"},
+		{args: []string{"anthropic"}, want: "assistant anthropic claude-sonnet-5-5"},
+		{args: []string{"speech", "openai"}, want: "speech openai whisper-1"},
+		{args: []string{"assistant", "anthropic"}, want: "assistant anthropic claude-sonnet-5-5"},
+		{args: []string{"anthropic", "claude-opus-5-5"}, want: "assistant anthropic claude-opus-5-5"},
+		{args: []string{"ollama", "llama3"}, want: "assistant ollama llama3"},
+		{args: []string{"assistant", "ollama", "llama3"}, want: "assistant ollama llama3"},
+		{args: []string{"openai", "gpt-5"}, code: ExitUsage,
+			errWant: "gpt-5 could be a model for assistant or speech, since openai serves both; say which: ley ai use assistant openai gpt-5"},
+		{args: []string{"speech"}, code: ExitUsage, errWant: "name the provider speech should call: ley ai add openai"},
+		{args: []string{"ollama"}, code: ExitUsage,
+			errWant: "ollama has no default model for the assistant; name one: ley ai use assistant ollama <model>"},
+		{args: []string{"assistant", "ollama"}, code: ExitUsage, errWant: "ley ai use assistant ollama <model>"},
+		{args: []string{"assistnat", "openai"}, code: ExitUsage, errWant: `no feature named "assistnat"`},
+		{args: []string{"speech", "anthropic"}, code: ExitUsage, errWant: "anthropic has no default model for speech"},
+		{args: []string{"speech", "anthropic", "nova-3"}, code: 1,
+			errWant: "anthropic does not serve speech; openai does: ley ai use speech openai"},
+	}
+	for _, tc := range cases {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			t.Parallel()
+			sock, c := harness(t, fakedaemon.Options{})
+			out, _, err := runLey(t, sock, 80, false, "", append([]string{"--json", "ai", "use"}, tc.args...)...)
+			if tc.code != 0 {
+				if exitCode(err) != tc.code || !strings.Contains(err.Error(), tc.errWant) {
+					t.Errorf("exit %d (%v), want %d saying %q", exitCode(err), err, tc.code, tc.errWant)
+				}
+				return
+			}
+			if err != nil || features(c) != tc.want {
+				t.Errorf("%v: features %q, want %q", err, features(c), tc.want)
+			}
+			if lines := strings.Count(out, "\n"); lines != strings.Count(tc.want, ",")+1 {
+				t.Errorf("--json printed %d lines for %q:\n%s", lines, tc.want, out)
+			}
+		})
 	}
 }
 

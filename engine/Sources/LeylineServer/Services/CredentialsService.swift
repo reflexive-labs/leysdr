@@ -127,6 +127,16 @@ struct CredentialsService: Leyline_V1_Credentials.SimpleServiceProtocol {
                 throw EngineError.invalidArgument("there is no feature called \"\(request.feature)\"; it is assistant or speech",
                                                   target: request.feature)
             }
+            // A provider that cannot serve the feature is refused now rather than on its first
+            // call. An empty provider and model clear the choice and need no check.
+            if !(request.provider.isEmpty && request.model.isEmpty) {
+                let decoders = jobs.decoders.scan().map(\.manifest)
+                if let why = ProviderDefaults.refusal(feature: request.feature, provider: request.provider,
+                                                      key: await credentials.credential(request.provider), decoders: decoders)
+                {
+                    throw EngineError.invalidArgument(why, target: request.provider)
+                }
+            }
             let set = await credentials.setFeature(request)
             await store.publishAI(from: credentials, by: client)
             return set

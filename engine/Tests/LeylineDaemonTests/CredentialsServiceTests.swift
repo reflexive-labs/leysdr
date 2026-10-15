@@ -167,6 +167,76 @@ final class CredentialsServiceTests: XCTestCase {
         }
     }
 
+    private func feature(_ name: String, _ provider: String, _ model: String) -> Leyline_V1_FeatureModel {
+        var f = Leyline_V1_FeatureModel()
+        f.feature = name
+        f.provider = provider
+        f.model = model
+        return f
+    }
+
+    /// One added key is enough to start: the features its provider serves get the default table's
+    /// models, a choice already made is kept, and the reply is the key as before.
+    func testAnAddedKeySetsTheFeaturesItServesAndOverwritesNoChoice() async throws {
+        let dir = try makeTempDir("ley")
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let ley = try writeScriptedLey(in: dir, outcome: "accepted", message: "")
+        try await withDaemon(leyPath: ley) { c in
+            let events = await EventCollector.start(c.control, daemon: c.daemon)
+            let anthropic = try await c.credentials.setCredential(self.setRequest("anthropic"), metadata: testMetadata)
+            XCTAssertEqual(anthropic.provider, "anthropic")
+            XCTAssertEqual(anthropic.lastCheck.outcome, .accepted)
+            var state = try await c.credentials.getAIState(Leyline_V1_GetAIStateRequest(), metadata: testMetadata)
+            XCTAssertEqual(state.features, [self.feature("assistant", "anthropic", "claude-sonnet-5-5")])
+            XCTAssertEqual(state.credentials, [anthropic], "the reply is the key as the list has it")
+            let published = await events.waitFor {
+                if case .ai(let s)? = $0.body { return !s.features.isEmpty } else { return false }
+            }
+            XCTAssertNotNil(published, "the defaults are on the event plane")
+
+            _ = try await c.credentials.setCredential(self.setRequest("openai"), metadata: testMetadata)
+            state = try await c.credentials.getAIState(Leyline_V1_GetAIStateRequest(), metadata: testMetadata)
+            XCTAssertEqual(state.features, [self.feature("assistant", "anthropic", "claude-sonnet-5-5"),
+                                            self.feature("speech", "openai", "whisper-1")],
+                           "the assistant keeps its choice; speech had none")
+            await events.stop()
+        }
+    }
+
+    func testARejectedKeySetsNoFeature() async throws {
+        let dir = try makeTempDir("ley")
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let ley = try writeScriptedLey(in: dir, outcome: "rejected", message: "invalid api key")
+        try await withDaemon(leyPath: ley) { c in
+            _ = try await c.credentials.setCredential(self.setRequest("openai"), metadata: testMetadata)
+            let state = try await c.credentials.getAIState(Leyline_V1_GetAIStateRequest(), metadata: testMetadata)
+            XCTAssertEqual(state.features, [])
+        }
+    }
+
+    /// A provider that cannot serve a feature is refused when it is chosen, naming the ones that can.
+    func testAProviderThatCannotServeTheFeatureIsRefused() async throws {
+        try await withDaemon { c in
+            let refused = await self.failure {
+                _ = try await c.credentials.setFeatureModel(self.feature("speech", "anthropic", "nova-3"), metadata: testMetadata)
+            }
+            XCTAssertEqual(refused.code, EngineError.Code.invalidArgument)
+            XCTAssertTrue(refused.text.contains("anthropic does not serve speech; openai does: ley ai use speech openai"), refused.text)
+            // A server the table does not know serves the assistant, before its key and at an endpoint.
+            _ = try await c.credentials.setFeatureModel(self.feature("assistant", "ollama", "llama3"), metadata: testMetadata)
+            _ = try await c.credentials.setCredential(self.setRequest("ollama"), metadata: testMetadata)
+            let noEndpoint = await self.failure {
+                _ = try await c.credentials.setFeatureModel(self.feature("assistant", "ollama", "llama3"), metadata: testMetadata)
+            }
+            XCTAssertEqual(noEndpoint.code, EngineError.Code.invalidArgument)
+            XCTAssertTrue(noEndpoint.text.contains("ley ai add ollama --endpoint <url>"), noEndpoint.text)
+            // Clearing a choice needs no provider.
+            _ = try await c.credentials.setFeatureModel(self.feature("assistant", "", ""), metadata: testMetadata)
+            let state = try await c.credentials.getAIState(Leyline_V1_GetAIStateRequest(), metadata: testMetadata)
+            XCTAssertEqual(state.features, [])
+        }
+    }
+
     func testDeletingAKeyEndsTheJobsThatUseIt() async throws {
         let plugins = try makeTempDir("decoders")
         defer { try? FileManager.default.removeItem(atPath: plugins) }

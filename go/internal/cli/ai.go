@@ -496,36 +496,103 @@ func runAIRemove(ctx context.Context, app *App, provider string) error {
 
 func newAIUseCommand(app *App) *cobra.Command {
 	return &cobra.Command{
-		Use:   "use <feature> <provider> <model>",
+		Use:   "use [<feature>] <provider> [<model>]",
 		Short: "Choose the provider and model a feature calls",
 		Long: `use sets the provider and model a feature calls: assistant is the
 assistant that runs the radio for you, speech is speech-to-text on received
 audio.
+
+With a provider alone, every feature the provider serves calls it, with the
+provider's default model (openai: the assistant gpt-5 and speech
+whisper-1; anthropic: the assistant claude-sonnet-5-5). With a feature and a
+provider, that feature calls it with the default model. A provider and a
+model with no feature is taken when the provider serves one feature, and
+refused when it serves two, since the model could be either's.
+
 The model is the provider's own name for it, passed on as typed, so a model
-the provider has not heard of fails on the first call rather than here.
+the provider has not heard of fails on the first call rather than here. A
+provider that cannot serve the feature is refused here, naming those that
+can: speech is served by openai and by the provider of any speech decoder
+installed, and a provider ley does not know serves the assistant as an
+OpenAI-compatible server, at the endpoint its key was added with.
 
 A model can be chosen before the provider's key is added; ley says so and
 prints the command that adds it.
 
---json prints the FeatureModel the daemon stored.`,
-		Example: `  ley ai use assistant anthropic claude-sonnet-5-5
-  ley ai use speech deepgram nova-3`,
-		Args: cobra.ExactArgs(3),
+--json prints the FeatureModel the daemon stored, one line per feature.`,
+		Example: `  ley ai use openai                                # the assistant and speech
+  ley ai use assistant anthropic                   # its default model
+  ley ai use assistant anthropic claude-opus-5-5
+  ley ai use assistant ollama llama3               # added with --endpoint`,
+		Args: cobra.RangeArgs(1, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAIUse(cmd.Context(), app, args[0], args[1], args[2])
+			return runAIUse(cmd.Context(), app, args)
 		},
 	}
 }
 
-func runAIUse(ctx context.Context, app *App, feature, provider, model string) error {
-	known := false
-	for _, f := range aiFeatures {
-		known = known || f == feature
+// useChoices turns use's arguments into the feature models to set, filling in the default
+// models (leyline.ProviderDefaults). Whether the provider can serve each feature is the daemon's
+// to say: it knows which speech decoders are installed.
+func useChoices(args []string) ([]*leylinev1.FeatureModel, error) {
+	if leyline.IsAIFeature(args[0]) && len(args) == 1 {
+		return nil, usageErrorf("name the provider %s should call: %s", leyline.FeatureWords(args[0]),
+			leyline.ChooseCommand(args[0], nil))
 	}
-	if !known {
-		return usageErrorf("no feature named %q; the features are %s", feature, strings.Join(aiFeatures, " and "))
+	// Three words start with a feature, and so do two whose second is a provider: a typo in the
+	// feature must not become a provider called "assistnat".
+	if !leyline.IsAIFeature(args[0]) && (len(args) == 3 || len(args) == 2 && leyline.IsKnownProvider(args[1])) {
+		return nil, usageErrorf("no feature named %q; the features are %s", args[0], strings.Join(aiFeatures, " and "))
 	}
-	if err := checkProvider(provider); err != nil {
+	for _, p := range args[:min(len(args), 2)] {
+		if !leyline.IsAIFeature(p) {
+			if err := checkProvider(p); err != nil {
+				return nil, err
+			}
+		}
+	}
+	choice := func(feature, provider, model string) ([]*leylinev1.FeatureModel, error) {
+		if model == "" {
+			model = leyline.DefaultModel(provider, feature)
+		}
+		if model == "" {
+			return nil, usageErrorf("%s has no default model for %s; name one: ley ai use %s %s <model>",
+				provider, leyline.FeatureWords(feature), feature, provider)
+		}
+		return []*leylinev1.FeatureModel{{Feature: feature, Provider: provider, Model: model}}, nil
+	}
+	switch {
+	case len(args) == 3:
+		return choice(args[0], args[1], args[2])
+	case leyline.IsAIFeature(args[0]):
+		return choice(args[0], args[1], "")
+	}
+	provider := args[0]
+	served := leyline.TableFeatures(provider)
+	if !leyline.IsKnownProvider(provider) {
+		served = []string{"assistant"} // an OpenAI-compatible server
+	}
+	if len(args) == 2 {
+		if len(served) > 1 {
+			return nil, usageErrorf("%s could be a model for %s, since %s serves both; say which: ley ai use %s %s %s",
+				args[1], strings.Join(served, " or "), provider, served[0], provider, args[1])
+		}
+		return choice(served[0], provider, args[1])
+	}
+	var out []*leylinev1.FeatureModel
+	for _, f := range served {
+		fm, err := choice(f, provider, "")
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, fm...)
+	}
+	return out, nil
+}
+
+func runAIUse(ctx context.Context, app *App, args []string) error {
+	choices, err := useChoices(args)
+	if err != nil {
 		return err
 	}
 	c, err := app.dial(ctx)
@@ -533,17 +600,26 @@ func runAIUse(ctx context.Context, app *App, feature, provider, model string) er
 		return app.notRunning(err)
 	}
 	defer c.Close()
-	fm, err := c.Credentials.SetFeatureModel(ctx, &leylinev1.FeatureModel{Feature: feature, Provider: provider, Model: model})
-	if err != nil {
-		return app.notRunning(err)
+	var set []*leylinev1.FeatureModel
+	for _, want := range choices {
+		fm, err := c.Credentials.SetFeatureModel(ctx, want)
+		if err != nil {
+			return app.notRunning(err)
+		}
+		set = append(set, fm)
+		fmt.Fprintf(app.Stderr, "%s now calls %s %s\n", fm.GetFeature(), fm.GetProvider(), fm.GetModel())
 	}
-	s := app.ErrStyle
-	fmt.Fprintf(app.Stderr, "%s now calls %s %s\n", fm.GetFeature(), fm.GetProvider(), fm.GetModel())
+	s, provider := app.ErrStyle, choices[0].GetProvider()
 	if st, err := c.Credentials.GetAIState(ctx, &leylinev1.GetAIStateRequest{}); err == nil && !hasKey(st, provider) {
 		fmt.Fprintf(app.Stderr, "  %s %s\n", s.Muted("no "+provider+" key is set yet; add one with:"), s.Cmd("ley ai add "+provider))
 	}
-	if app.JSON {
-		return app.printJSON(fm)
+	if !app.JSON {
+		return nil
+	}
+	for _, fm := range set {
+		if err := app.printJSON(fm); err != nil {
+			return err
+		}
 	}
 	return nil
 }
