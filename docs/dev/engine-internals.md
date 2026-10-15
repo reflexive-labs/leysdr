@@ -617,7 +617,7 @@ directory the daemon creates 0700 and sets back to 0700 if it finds it otherwise
 directory itself may already be 0755, made by the record store or the recordings (`SecretStore`,
 `FileSecrets`, `KeychainSecrets`). What a listing shows is `ai.json` in the data directory, the
 proto3 JSON of `AIState`, so a listing never opens the keychain (`CredentialStore`). The key file,
-`ai.json` and a rewritten ledger are written to a temporary file created 0600 and renamed over the
+`ai.json`, a rewritten ledger and each kept conversation ("Assistant" below) are written to a temporary file created 0600 and renamed over the
 old one, so each stays 0600 (`writePrivateFile(_:to:)`); a temporary key file a crash left is
 removed the next time the key file is read. The data directory is `--data`, by default
 `~/Library/Application Support/Leyline` on macOS and `$XDG_DATA_HOME/leyline` (or
@@ -663,11 +663,11 @@ in the order they were made: each carries its store's version, and an older one 
 
 ### Assistant
 
-A conversation with the assistant is daemon state in memory (`ConversationStore`), and the model
-runs in a worker the daemon spawns for it, as a key check does: the daemon makes no model call and
-holds no provider SDK. `Assistant` (`AssistantService`) maps the RPCs onto the store, and any
-client may watch, answer or end any conversation, so `ley ask --continue` picks up one the app
-started.
+A conversation with the assistant is daemon state the daemon keeps on disk (`ConversationStore`),
+and the model runs in a worker the daemon spawns for it, as a key check does: the daemon makes no
+model call and holds no provider SDK. `Assistant` (`AssistantService`) maps the RPCs onto the
+store, and any client may watch, answer, end or delete any conversation, so `ley ask --continue`
+picks up one the app started, before a restart or after.
 
 `StartConversation` takes the request's provider and model, else the `assistant` feature's; with
 neither it is `FAILED_PRECONDITION` naming `ley ai use assistant <provider> <model>`. No key for the provider is `CREDENTIAL_MISSING`, and a key whose last check was `REJECTED`
@@ -678,7 +678,8 @@ plus `LEYLINE_SOCKET` and `LEYLINE_KEY_ON_STDIN=1`. Both directions of its stdio
 varint-delimited protobuf, framed as a decoder plugin's are (`AssistantWorker`). On stdin the
 worker reads, in order: one `SetCredentialRequest` (provider, secret, endpoint), one
 `WorkerEvent.start` (`WorkerStart`: the conversation id, provider, model, endpoint, the client's
-view tools and the socket), then `WorkerEvent`s until stdin closes. Both are written before the
+view tools, the socket, the transcript path and `resume`), then `WorkerEvent`s until stdin
+closes. Both are written before the
 reply, into the pipe, so the worker may read them at its own pace; the key is never an argument
 or a variable. On stdout it writes `WorkerMessage`s. Its tool calls and its `ReportUsage` go over
 the socket like any client's, with the conversation id as the usage scope; the daemon reports no
@@ -722,20 +723,60 @@ Every change bumps the conversation's own `seq` and goes out whole (invariant 6)
 `since_seq`: 0 sends the current state alone, the current `seq` sends nothing, and any other
 sends every version after it from the last 64 the daemon keeps per conversation; a `since_seq`
 older than those, or newer than the conversation, sends the current state. The stream then goes
-live and ends after it delivers `ENDED` or `FAILED`. `ListConversations` is newest first;
+live and ends after it delivers `ENDED` or `FAILED`, or at the daemon's shutdown.
+`ListConversations` is every conversation the daemon keeps, the one started last first;
 `GetState.conversations` is the same list.
 
-A conversation is not kept (invariant 8). It ends (`ENDED`) when a client calls
-`EndConversation`, after 30 minutes `IDLE` (a sweep every 30 s; `ConversationStore.Timing` takes
-both and the clock, for tests), when its worker exits between turns, and at the daemon's shutdown,
-which ends every conversation straight after the listener stops. A worker that exits while
-`THINKING` or `WAITING` fails its own conversation, `INTERNAL` "the assistant stopped
-unexpectedly (status N)", and no other. Ending closes the worker's stdin, gives it 2 s to exit,
-then sends `SIGTERM` and, a second later, `SIGKILL`; `EndConversation` replies once the worker has
-gone. An ended or failed conversation stays listed, without its replay history: the 32 that
-finished last, counted once each one's worker has gone. An older one is forgotten, and its id is
-then unknown to every RPC, `EndConversation` and `StopTurn` included. An unknown
-`conversation_id` is `INVALID_ARGUMENT`. The worker's stderr is logged a line at a time under
+A conversation is kept (invariant 8: the user started it and comes back to it). Each one is a
+directory `<data>/conversations/<id>/`, created 0700 (and set back to 0700 if found otherwise, as
+`secrets` is), holding two files. `conversation.json` is the `Conversation` as proto3 JSON,
+written through `writePrivateFile` (0600, a temporary file and a rename) whenever a turn is done, a
+call is asked, answered or changes state, a turn or the pending action is added or cleared, or the
+state changes: whenever the conversation differs from the last one written other than in its
+`seq`, its last-turn time and the text of a turn still being written (`ConversationStore.milestones`),
+so a text delta writes nothing and a crash mid-turn loses that turn's latest text. The shutdown
+writes each one whose `seq` moved past the file's, so the next daemon's `seq` is never behind what
+a client saw. `transcript.jsonl` is the worker's model transcript, which the worker appends to and
+the daemon only names and removes (`docs/dev/assistant.md`, "The transcript"). Neither holds the
+key: the turns are redacted as above before they are kept, and the worker redacts its lines.
+
+At start, before the listener opens, `load()` reads every `conv_*` directory: each conversation
+comes back with its `seq` and no worker, and one whose file cannot be read, or names another id, is
+logged and left on disk unlisted. One the last daemon left `THINKING` or `WAITING` is closed: its
+last turn, the assistant's, is marked done with "(the daemon restarted during this turn)" after its
+text, a call still waiting on someone is `REFUSED` and one still running is `DONE` as an error,
+"stopped"; when the worker had not written its turn yet, a done assistant turn `t<n+1>` with the
+note alone answers the user's. It is then `IDLE`, its `seq` bumped once, and written back. The
+retention runs there too: of the conversations by last turn (their start when they have none),
+the newest 100 are kept and none whose last turn is more than 90 days old
+(`keptConversations`, `keptDays`); the rest are deleted with their directories. A new conversation
+past 100 deletes the one used longest ago that has no worker. The replay history is in memory
+only, so a loaded conversation replays nothing older than its load and a `since_seq` from before
+it gets the current state.
+
+A conversation's worker comes and goes with use. `SendMessage` to an `IDLE` conversation with no
+worker (loaded at start, or whose worker was stopped) first starts one, with the key as it stands
+now and `WorkerStart.resume` set, so the worker loads its transcript before the model's first call;
+it fails as `StartConversation` does (no key, a rejected one, no `ley`), and then the conversation
+is as it was. After 30 minutes `IDLE` (a sweep every 30 s; `ConversationStore.Timing` takes both
+and the clock, for tests) the worker is stopped and the conversation stays `IDLE`, with no new
+`seq`: nothing a client sees has changed. A worker that exits between turns leaves the
+conversation the same way. A worker that exits while `THINKING` or `WAITING` fails its own
+conversation, `INTERNAL` "the assistant stopped unexpectedly (status N)", and no other; a worker the
+store stopped itself (by an end, a failure, the sweep or the shutdown) is no longer the
+conversation's when it exits, and its exit and anything it still writes change nothing.
+
+A conversation ends (`ENDED`) only when a client calls `EndConversation`; `FAILED` is as above.
+Ending closes the worker's stdin, gives it 2 s to exit, then sends `SIGTERM` and, a second later,
+`SIGKILL`; `EndConversation` replies once the worker has gone. An ended or failed conversation
+stays listed and on disk, without a replay history. `DeleteConversation` ends a conversation still
+going, so its watchers and the event plane see it `ENDED`, then forgets it and removes its
+directory; nothing is published for the deletion itself, so a deleted conversation simply stops
+being listed (`GetState`, `ListConversations`), and a mirror holds it until its next snapshot. The
+daemon's shutdown stops every worker and ends every `WatchConversation` stream straight after the
+listener stops, and leaves each conversation as it stands; one stopped mid-turn is closed by the
+next daemon's load. An unknown `conversation_id` (never known, deleted, or past the retention) is
+`INVALID_ARGUMENT` to every RPC. The worker's stderr is logged a line at a time under
 `leyline.assistant.<conversation id>` with the key replaced; the store's own lines are
 `leyline.assistant`.
 

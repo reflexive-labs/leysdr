@@ -56,6 +56,13 @@ the provider or endpoint you set with `ley ai add`.
   0600 in its data directory. No RPC, event or log line returns a key; `ley ai` shows the provider,
   a label and the last four characters. `ai.json` in the data directory holds that listing and
   the model each feature uses, and `usage.jsonl` in the store holds the usage ledger.
+- Will keep the assistant's conversations under `conversations/` in its data directory, one
+  directory of mode 0700 per conversation, with files of mode 0600 readable by your user only:
+  `conversation.json`, what every client sees of it (the turns, the tool calls and their results),
+  and `transcript.jsonl`, the worker's model transcript, which is what was sent to the provider.
+  Both can hold frequencies, decoded records and speech text, and neither holds a key. They stay
+  until the conversation is deleted (`ley ask --delete`); the daemon keeps the newest 100 and drops
+  any unused for 90 days.
 
 ## What the daemon runs
 

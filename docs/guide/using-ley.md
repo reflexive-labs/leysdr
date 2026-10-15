@@ -1071,9 +1071,10 @@ script or another agent runs `ask`. Without a terminal to answer on and without 
 call is declined.
 
 `ley ask` with no request is a `> ` prompt that takes one request per line until a blank line or
-Ctrl-D. The conversation stays in the daemon when `ask` exits, so `ley ask --continue "now record
-it"` carries it on, including one started in the app. Ctrl-C stops the assistant's turn; a second
-Ctrl-C ends the conversation. The [`ley` reference](../reference/cli.md) has the full behaviour
+Ctrl-D. The conversation stays in the daemon when `ask` exits, and on disk when the daemon
+restarts, so `ley ask --continue "now record it"` carries it on, including one started in the app.
+`ley ask --list` shows the conversations the daemon keeps, and `ley ask --delete <id>` removes one.
+Ctrl-C stops the assistant's turn; a second Ctrl-C ends the conversation. The [`ley` reference](../reference/cli.md) has the full behaviour
 and a recorded session. Try it with `ley ask "what is on the air around 146.52?"`.
 
 ## 14. When things go wrong

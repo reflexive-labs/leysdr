@@ -434,8 +434,11 @@ resumes from the `seq` it holds after a drop, and from the mirror's `conversatio
 the session passes on. A refusal is a notice: `CREDENTIAL_MISSING`, `CREDENTIAL_REJECTED` and a
 start's `FAILED_PRECONDITION` (no model chosen) point to Settings with an Open Settings button; a
 `FAILED_PRECONDITION` on any other call means the conversation moved on first and says nothing;
-an unknown id after a daemon restart marks the conversation gone, because a conversation is never
-kept. The session copies the controller's state out on every change, as it copies the mirror's.
+an unknown id marks the conversation gone, deleted by another client or dropped by the daemon's
+retention; a daemon restart does not, because the daemon keeps conversations on disk. A deleted
+conversation stays in the mirror, last seen `ENDED`, until the next `GetState` snapshot, since the
+contract sends no event for the deletion itself. The session copies the controller's state out on
+every change, as it copies the mirror's.
 
 **The rows** (`AssistantModels.swift`). `ConversationView` turns the conversation into turns, a
 user's right-aligned in muted ink and the assistant's in body text, and each tool call into a

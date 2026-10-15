@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Files only the user can read: the key file, `ai.json` and the usage ledger
-// (docs/dev/engine-internals.md, "Credentials and usage"). `Data.write(options: .atomic)` creates
+// Files only the user can read: the key file, `ai.json`, the usage ledger and the assistant's
+// conversations (docs/dev/engine-internals.md, "Credentials and usage" and "Assistant"). `Data.write(options: .atomic)` creates
 // its temporary file with the process's umask, usually 0644, and the rename keeps that mode, so a
 // rewrite would leave a file other users can read. This writes the temporary file itself, created
 // 0600 by `open(2)`, then renames it over the old one (docs/dev/swift-style.md, "Foundation on two

@@ -14,7 +14,8 @@ Everything on stdin and stdout is varint-delimited protobuf, framed as a decoder
 1. stdin: one `SetCredentialRequest`, the provider's key. The key never travels as an argument,
    which `ps` shows, or in the environment, which anything the worker runs would inherit.
 2. stdin: one `WorkerEvent.start` (`WorkerStart`): the conversation id, provider, model,
-   endpoint, the view tools the starting client declared, and the daemon's socket.
+   endpoint, the view tools the starting client declared, the daemon's socket, the transcript
+   path, and `resume`.
 3. stdin, until it closes: `UserMessage`, `ActionResolved`, `ViewToolAnswer`, `WorkerStop`.
 4. stdout: a `WorkerMessage.turn` each time the assistant's turn changes, whole, or one
    `WorkerMessage.failure` when the conversation cannot go on.
@@ -23,7 +24,30 @@ stderr is a log for a person reading the daemon's log; it never holds the key, a
 message that echoes the key back has it replaced with `…` before it is logged or sent.
 
 The worker exits 0 when stdin closes, during a turn or between turns, because that is how the
-daemon ends a conversation. After writing a failure it exits 1.
+daemon ends a conversation or stops the worker of an idle one. After writing a failure it exits 1.
+
+## The transcript
+
+The worker keeps the model transcript, the messages it sends the model, in the file
+`WorkerStart.transcript_path` names (`<data>/conversations/<id>/transcript.jsonl`, beside the
+daemon's `conversation.json`), so a worker started later for the same conversation gives the model
+the context it had. Each message the loop adds is appended as it is added, one `Message` a line as
+JSON, in one `write(2)`: the user's text, each model response, each turn's tool results. The file
+is created 0600, and the key, as it stands and JSON-escaped, is replaced with `[key]` in a line
+before it is written. The daemon never reads the file; it only names it, and removes it with the
+conversation.
+
+The daemon starts a worker with `resume` set when the conversation went on before it: after the
+idle sweep stopped the last worker, after a worker exited between turns, or after a restart. Such a
+worker loads the file before its first model call (`LoadTranscript`): lines of one role in a row
+join into one message (the loop writes the user's next text as a line of its own after a turn's
+tool results), a line that is not a message (one a crash cut short) is skipped, and a `tool_use`
+left without a `tool_result`, from a worker stopped mid-call, is given one that says the call was
+cut short, since the Messages API refuses a transcript without it. The call ids go on from the
+`tool_use` blocks the file holds, so they stay unique within the conversation, and a
+`tool_result` that quotes received text makes later writes ask, as it did before. A missing or
+unreadable file is logged and the worker starts from an empty transcript; it never fails the
+conversation for it. The undo stack is not kept: a resumed worker undoes only what it did.
 
 **Ids.** The daemon numbers turns on both sides and sends the user's in `UserMessage.turn_id`;
 the assistant's turn that answers it takes the next number, so `t3` is answered by `t4` (an id
@@ -187,7 +211,11 @@ outcomes.
 
 **Scripted** (`go/internal/assistant/scripted.go`) plays the file `LEY_ASSISTANT_SCRIPT` names,
 whatever the provider: one JSON object a line, each one model response, played in order across
-the whole conversation. Once the lines run out, every response is the text `done`.
+the whole conversation. Once the lines run out, every response is the text `done`. A worker that
+resumes skips a line for each model response its transcript holds, so a conversation carried on
+by a new worker plays on through the same script. When `LEY_ASSISTANT_RECORD` names a file, each
+call appends the messages it was sent there as one JSON array a line, which is how a test reads
+what context a call carried.
 
 ```text
 {"text": "Looking."}
@@ -210,7 +238,9 @@ with the daemon's state after each, the speech decoder's alias included; undo, o
 channel and of a volume; received text across turns and from a view tool; `WorkerStop` during a
 slow response, a running tool and a wait; a response cut at `max_tokens`; the 32 KB cut; usage on
 the ledger per response; view tools and the names left out; the Messages API request shape, its
-error mapping and the https rule against `httptest`; and the key on no stream but stdin.
+error mapping and the https rule against `httptest`; the transcript's round trip, a torn last line,
+a call left without a result, a resumed worker's first call and a missing file
+(`transcript_test.go`); and the key on no stream but stdin, and not in the transcript.
 `TestWorkerAssistantCommand` in `go/internal/cli/worker_test.go` runs the same protocol through
 `ley worker assistant` itself.
 

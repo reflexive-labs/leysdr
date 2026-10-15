@@ -167,16 +167,23 @@ client kind, so the don't-disturb rule counts its writes as interactive, which m
 asking.
 
 The conversation is daemon state, behind an `Assistant` service: start, send a message, watch,
-approve or refuse a pending action, cancel, list. The app's panel and `ley ask` render the same
+approve or refuse a pending action, cancel, list, delete. The app's panel and `ley ask` render the same
 subscription, so `ley ask --continue` continues a conversation started in the app, and a
 conversation outlives the window it started in. Each event carries the whole conversation so far
 (invariant 6), so a client that reconnects reads it and resumes from its `seq`.
 
-A conversation is not kept. It is daemon state in memory only, and it ends when it is cancelled,
-30 minutes after its last turn, or when the daemon stops; what it used stays in the ledger under
-its id. It is not tied to the presence of the client that started it, because `ley ask` exits
-between turns and `ley ask --continue` must find the conversation again. A worker that crashes
-ends its own conversation with `INTERNAL` and leaves the others running.
+A conversation is kept, because the user started it and comes back to it (invariant 8): the
+daemon writes it to its data directory, so it survives a restart, and `ley ask --continue` and the
+app find it afterwards. It ends only when the user ends it, and an ended conversation stays
+readable until the user deletes it; the daemon keeps the newest 100 and drops any unused for 90
+days. After 30 idle minutes the daemon stops the worker behind a conversation, not the
+conversation, and the next message starts a worker that reloads the model transcript the last one
+kept beside it, so the model has the same context. A daemon that stops mid-turn leaves that turn
+to be closed with a note when it starts again, and the call it was waiting on is refused. What a
+conversation used stays in the ledger under its id. It is not tied to the presence of the client
+that started it, because `ley ask` exits between turns and `ley ask --continue` must find the
+conversation again. A worker that crashes mid-turn fails its own conversation with `INTERNAL` and
+leaves the others running.
 
 A client attached to a conversation may declare view tools that it performs itself, such as moving
 the app's waterfall to a band or selecting a recording in the Library. The worker offers them to
@@ -426,7 +433,7 @@ completed scenario. How many tokens one conversation takes is unmeasured.
 | 5, sample timebase | speech records carry `SampleTime`; wall clock comes from the anchor, as for every record |
 | 6, full state | ledger and conversation events carry the whole object |
 | 7, state in the daemon | keys, the ledger and conversations are daemon state; view state stays in the client |
-| 8, persistence follows intent | a conversation ends when cancelled or idle and an unkept speech job ends with its client; `keep` persists speech records and their clips |
+| 8, persistence follows intent | a conversation the user started is kept until the user deletes it, and its worker stops when idle; an unkept speech job ends with its client; `keep` persists speech records and their clips |
 | 9, `CaptureAllocator` | speech jobs are decode jobs and allocate through it |
 | 11, TX | there are no TX tools, as in `ley mcp` |
 | 12, no overclaiming | speech text is labelled as model output with its confidence; the assistant cites detections and the band plan, and states what the detector cannot tell |
@@ -451,8 +458,8 @@ Invariants 3, 10 and 13 are not affected.
   daemon; the assistant cites them (`semantic-tier.md`, "State boundary").
 - **Digital voice.** Speech from DMR, D-STAR or C4FM needs the vocoder `decoders.md` excludes, and
   speech-to-text does not change that.
-- **An unattended agent job.** The assistant acts on a person's requests, and a conversation is
-  not kept.
+- **An unattended agent job.** The assistant acts on a person's requests: a kept conversation
+  waits for the next one, and nothing runs it without a person asking.
 
 ## Open questions
 
