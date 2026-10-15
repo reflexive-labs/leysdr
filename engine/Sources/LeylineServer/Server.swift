@@ -152,7 +152,9 @@ package final class Daemon: Sendable {
                         recordings: recordings, usage: usage, credentials: credentials)
         let worker = WorkerProcess(leyPath: config.leyPath, locator: config.programLocator, socketPath: config.socketPath)
         let session = store
-        conversations = ConversationStore(credentials: credentials, spawner: worker, timing: config.conversationTiming,
+        conversations = ConversationStore(credentials: credentials, spawner: worker,
+                                          directory: ConversationStore.directory(inData: config.dataPath),
+                                          timing: config.conversationTiming,
                                           forget: { await session.forgetConversation($0) }) {
             await session.publishConversation($0, by: $1)
         }
@@ -250,7 +252,9 @@ package final class Daemon: Sendable {
         let ledger = ledger
         await ledger.load()
         await store.setUsageProvider { await ledger.lines() }
+        // Kept conversations come back without a worker; the first message to one starts it.
         let conversations = conversations
+        await conversations.load()
         await store.setConversationsProvider { await conversations.list() }
         log.info("leylined \(config.version) listening on \(config.socketPath)")
         var served: (any Error)?
@@ -325,8 +329,9 @@ package final class Daemon: Sendable {
         // First of all: teardown takes seconds (a running sweep can hold a capture for ~3 s), and an
         // RPC accepted during that window would build state after the store that owns it is gone.
         server.beginGracefulShutdown()
-        // A conversation is not kept: each one ends, its watchers see ENDED and its worker goes.
-        await conversations.endAll()
+        // Every assistant worker goes and every conversation watch ends; the conversations stay
+        // on disk for the next daemon.
+        await conversations.stopAll()
         // Before the store: a running sweep holds a lease on a capture and must give it back
         // while there is still a store to give it back to.
         await jobs.cancelAll()

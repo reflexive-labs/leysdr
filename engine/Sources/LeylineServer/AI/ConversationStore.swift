@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// The assistant's conversations: daemon state in memory, one `ley worker assistant` per live
-// conversation (docs/dev/engine-internals.md, "Assistant"; docs/design/ai.md, "The assistant").
+// The assistant's conversations: daemon state kept on disk, and one `ley worker assistant` for each
+// conversation in use (docs/dev/engine-internals.md, "Assistant"; docs/design/ai.md, "The
+// assistant").
 //
 // The worker runs the model and the tools; the daemon holds the conversation and derives its state
 // from the turns the worker writes back (ai.proto, `ConversationState`): a turn whose last call
@@ -11,20 +12,27 @@
 // conversation's own `seq` and goes out whole (invariant 6), to `WatchConversation` streams and as
 // `Event.conversation`.
 //
-// A conversation is not kept (invariant 8): it ends when a client ends it, after `idleLimit` with
-// nothing asked, when its worker exits between turns, and when the daemon stops. A worker that
-// exits mid-turn, or stops reading, fails its own conversation and no other. Ended and failed
-// conversations stay listed, the `keptFinished` that finished last, so a client that comes back
-// sees how one finished; an older one is forgotten and its id is then unknown.
+// A conversation is kept, because the user asked for it and comes back to it (invariant 8):
+// `<data>/conversations/<id>/conversation.json` holds it, rewritten whenever a turn is done, a call
+// is asked or answered, or the state changes, but not on a text delta. Beside it the worker keeps
+// its own model transcript, `transcript.jsonl`. It ends only when a client ends it, and stays
+// readable until a client deletes it or the retention drops it (the newest `keptConversations`,
+// none older than `keptDays`). After `idleLimit` with nothing asked its worker is stopped and the
+// conversation stays IDLE; a worker that exits between turns leaves it the same way, and so does
+// the daemon's shutdown. The next message starts a worker again, told to resume from its
+// transcript. A worker that exits mid-turn, or stops reading, fails its own conversation and no
+// other. At start every kept conversation is loaded without a worker, and one the last daemon left
+// mid-turn has that turn closed with `restartNote`.
 
 import EngineCore
 import Foundation
 import LeylineProto
 import Logging
+import SwiftProtobuf
 
 actor ConversationStore {
-    /// When an idle conversation ends, and the clock that says so: a test passes a clock of its
-    /// own and a short sweep (`DecodeRunner` takes its timings the same way).
+    /// When an idle conversation's worker is stopped, and the clock that says so: a test passes a
+    /// clock of its own and a short sweep (`DecodeRunner` takes its timings the same way).
     struct Timing: Sendable {
         var idleLimit: Duration = .seconds(30 * 60)
         var sweepEvery: Duration = .seconds(30)
@@ -33,11 +41,18 @@ actor ConversationStore {
 
     /// Publishes a conversation on the event plane, caused by a client (`SessionStore.publishConversation`).
     typealias Publisher = @Sendable (Leyline_V1_Conversation, ClientContext) async -> Void
-    /// Hears that a finished conversation has been forgotten (`SessionStore.forgetConversation`).
+    /// Hears that a conversation has been deleted (`SessionStore.forgetConversation`).
     typealias Forgetter = @Sendable (String) async -> Void
 
-    /// Finished conversations kept for listing; older ones are forgotten.
-    static let keptFinished = 32
+    /// How many conversations are kept, newest last turn first; older ones are deleted.
+    static let keptConversations = 100
+    /// Conversations whose last turn is older than this are deleted when the daemon starts.
+    static let keptDays: Int64 = 90
+    /// What closes a turn the last daemon was on when it stopped.
+    static let restartNote = "(the daemon restarted during this turn)"
+    /// The files in a conversation's directory.
+    static let conversationFile = "conversation.json"
+    static let transcriptFile = "transcript.jsonl"
     /// How many versions of each conversation `WatchConversation` can replay.
     static let keptVersions = 64
     /// How long `StopTurn` waits for the worker to mark the turn done before it answers anyway.
@@ -45,23 +60,28 @@ actor ConversationStore {
 
     private struct Entry {
         var conversation: Leyline_V1_Conversation
+        /// The running worker; nil before the first message after a load, after the idle sweep
+        /// and once the conversation has finished.
         var worker: AssistantWorker?
-        /// The key, kept only to replace it in what the worker writes back.
+        /// The key, kept while a worker runs only to replace it in what the worker writes back.
         var secret: String
         /// When the conversation last became IDLE; nil in any other state.
         var idleSince: ContinuousClock.Instant?
         var watchers: [UUID: AsyncStream<Leyline_V1_Conversation>.Continuation] = [:]
         /// The newest `keptVersions` states, oldest first, for `watch(_:sinceSeq:)` to replay.
-        /// Emptied when the conversation finishes: nothing follows to replay.
+        /// In memory only, so a loaded conversation replays nothing older than its load; emptied
+        /// when the conversation finishes, since nothing follows to replay.
         var history: [Leyline_V1_Conversation] = []
-        /// When the conversation ended or failed, which orders the forgetting.
-        var finishedAt: ContinuousClock.Instant?
         /// Assistant turns a `StopTurn` closed: the worker's later writes to them are ignored.
         var closedTurns: Set<String> = []
+        /// The seq of the state last written to disk; a text delta leaves it behind.
+        var savedSeq: UInt64 = 0
     }
 
     private let credentials: CredentialStore
     private let spawner: WorkerProcess
+    /// `<data>/conversations`: one directory per conversation.
+    private let directory: String
     private let publish: Publisher
     private let forget: Forgetter
     private let timing: Timing
@@ -70,14 +90,70 @@ actor ConversationStore {
     private var closed = false
     private let log = Logger(label: "leyline.assistant")
 
-    init(credentials: CredentialStore, spawner: WorkerProcess, timing: Timing = Timing(),
+    init(credentials: CredentialStore, spawner: WorkerProcess, directory: String, timing: Timing = Timing(),
          forget: @escaping Forgetter = { _ in }, publish: @escaping Publisher)
     {
         self.credentials = credentials
         self.spawner = spawner
+        self.directory = directory
         self.timing = timing
         self.forget = forget
         self.publish = publish
+    }
+
+    /// `<data>/conversations`, where the conversations of a data directory are kept.
+    static func directory(inData dataPath: String) -> String { dataPath + "/conversations" }
+
+    // MARK: Loading
+
+    /// Loads every kept conversation, each without a worker, before the daemon serves. One the last
+    /// daemon left THINKING or WAITING has its last turn closed with `restartNote` and goes IDLE
+    /// (`closeAfterRestart`); those beyond the newest `keptConversations`, or whose last turn is
+    /// older than `keptDays`, are deleted. A file that cannot be read is left where it is and the
+    /// conversation is not listed.
+    func load() {
+        guard ensurePrivateDirectory(directory),
+              let names = try? FileManager.default.contentsOfDirectory(atPath: directory) else { return }
+        var options = JSONDecodingOptions()
+        options.ignoreUnknownFields = true
+        var found: [Leyline_V1_Conversation] = []
+        for name in names where name.hasPrefix("conv_") {
+            let path = directory + "/" + name + "/" + Self.conversationFile
+            sweepPrivateFileTemporaries(of: path)
+            guard let data = FileManager.default.contents(atPath: path) else {
+                log.warning("\(directory)/\(name) has no \(Self.conversationFile); leaving it out")
+                continue
+            }
+            guard let conversation = try? Leyline_V1_Conversation(jsonUTF8Bytes: data, options: options),
+                  conversation.conversationID == name
+            else {
+                log.warning("\(path) is not a conversation; leaving it out")
+                continue
+            }
+            found.append(conversation)
+        }
+        let cutoff = WallClock.realNowNs() - Self.keptDays * 86_400 * 1_000_000_000
+        let newestFirst = found.sorted { Self.lastActivity($0) > Self.lastActivity($1) }
+        for (rank, conversation) in newestFirst.enumerated() {
+            let id = conversation.conversationID
+            guard rank < Self.keptConversations, Self.lastActivity(conversation) >= cutoff else {
+                log.info("\(id) is past the retention (the newest \(Self.keptConversations), none older than \(Self.keptDays) days); deleting it")
+                removeFiles(of: id)
+                continue
+            }
+            var entry = Entry(conversation: conversation, worker: nil, secret: "")
+            if conversation.state == .conversationThinking || conversation.state == .conversationWaiting {
+                entry.conversation.closeAfterRestart()
+                entry.conversation.seq += 1
+                save(entry.conversation)
+                log.info("\(id) was on a turn when the last daemon stopped; that turn is closed")
+            }
+            entry.savedSeq = entry.conversation.seq
+            entries[id] = entry
+        }
+        if !entries.isEmpty {
+            log.info("loaded \(entries.count == 1 ? "1 conversation" : "\(entries.count) conversations") from \(directory)")
+        }
     }
 
     // MARK: Reads
@@ -122,18 +198,15 @@ actor ConversationStore {
         let (provider, model) = try await resolveModel(request)
         let credential = try await key(for: provider)
         let id = "conv_" + ULID().string
-        var start = Leyline_V1_WorkerStart()
-        start.conversationID = id
-        start.provider = provider
-        start.model = model
-        start.endpoint = credential.endpoint
-        start.viewTools = request.viewTools
-        start.socket = spawner.socketPath
-        // The lookups above suspend, and `endAll` may have run meanwhile. Nothing suspends from here
-        // until the conversation is in `entries`, where a later `endAll` finds it.
+        // The lookups above suspend, and `stopAll` may have run meanwhile. Nothing suspends from
+        // here until the conversation is in `entries`, where a later `stopAll` finds it.
         guard !closed else { throw EngineError.failedPrecondition("the daemon is stopping") }
-        let worker = try spawner.startAssistant(credential: credential, start: start) { [weak self] error in
-            Task { await self?.writeFailed(id, error) }
+        let worker: AssistantWorker
+        do {
+            worker = try spawn(id, credential: credential, model: model, viewTools: request.viewTools, resume: false)
+        } catch {
+            removeFiles(of: id)
+            throw error
         }
 
         var conversation = Leyline_V1_Conversation()
@@ -146,19 +219,25 @@ actor ConversationStore {
         conversation.viewTools = request.viewTools
         entries[id] = Entry(conversation: conversation, worker: worker, secret: credential.secret)
         log.info("started \(id) on \(provider) \(model.isEmpty ? "(the worker's default model)" : model) for \(client.kind) \(client.label)")
-        follow(worker, of: id)
-        startSweeping()
-        return await commit(id, by: client) { _ in }
+        let started = await commit(id, by: client) { _ in }
+        await trimToRetention()
+        return started
     }
 
-    /// Adds the user's turn and hands it to the worker. FAILED_PRECONDITION unless IDLE.
+    /// Adds the user's turn and hands it to the worker, starting one told to resume from the
+    /// transcript when the conversation has none. FAILED_PRECONDITION unless IDLE; a worker that
+    /// cannot start fails the call as it fails `start`, and the conversation is left as it was.
     func send(_ id: String, text: String, by client: ClientContext) async throws -> Leyline_V1_Conversation {
-        let current = try entry(id)
-        guard current.conversation.state == .conversationIdle else {
-            throw EngineError.failedPrecondition("\(Self.describe(current.conversation.state)); a message can be sent when it is idle", target: id)
-        }
+        var current = try entry(id)
+        try Self.requireIdle(current.conversation)
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw EngineError.invalidArgument("the message is empty", target: id) }
+        if current.worker == nil {
+            try await resumeWorker(id)
+            // The key lookup suspended, and another client may have moved the conversation on.
+            current = try entry(id)
+            try Self.requireIdle(current.conversation)
+        }
         let turnID = Self.nextTurnID(after: current.conversation.turns)
         var event = Leyline_V1_WorkerEvent()
         event.user.turnID = turnID
@@ -270,40 +349,67 @@ actor ConversationStore {
         }
         log.info("ended \(id) for \(client.kind) \(client.label)")
         await stopWorker(of: id)
-        await forgetOldFinished()
         return ended
     }
 
-    /// Ends every live conversation, for the daemon's shutdown. Nothing starts afterwards.
-    func endAll() async {
+    /// Ends the conversation if it is still going, so its watchers and the event plane see it
+    /// ENDED, then forgets it and removes its files. INVALID_ARGUMENT for an unknown id.
+    func delete(_ id: String, by client: ClientContext) async throws {
+        _ = try await end(id, by: client)
+        // Ending suspends; a second delete may have removed it meanwhile.
+        guard entries[id] != nil else { return }
+        remove(id)
+        await forget(id)
+        log.info("deleted \(id) for \(client.kind) \(client.label)")
+    }
+
+    /// Stops every worker and ends every watch, for the daemon's shutdown. Each conversation is
+    /// written as it stands; one stopped mid-turn is closed when the next daemon loads it. Nothing
+    /// starts afterwards.
+    func stopAll() async {
         closed = true
         sweeper?.cancel()
-        let live = entries.filter { !Self.isFinished($0.value.conversation.state) }.map(\.key)
+        var workers: [AssistantWorker] = []
+        for id in Array(entries.keys) {
+            guard var e = entries[id] else { continue }
+            if let worker = e.worker { workers.append(worker) }
+            e.worker = nil
+            e.secret = ""
+            for watcher in e.watchers.values { watcher.finish() }
+            e.watchers = [:]
+            // The text so far too, so the next daemon's seq is never behind what a client saw.
+            if e.savedSeq != e.conversation.seq {
+                save(e.conversation)
+                e.savedSeq = e.conversation.seq
+            }
+            entries[id] = e
+        }
         await withTaskGroup(of: Void.self) { group in
-            for id in live {
-                group.addTask { _ = try? await self.end(id, by: .daemon) }
+            for worker in workers {
+                group.addTask { await worker.stop() }
             }
         }
     }
 
-    /// Ends every conversation that has been IDLE for `idleLimit`. The sweep calls it; so can a test.
-    func endIdle() async {
-        let now = timing.now()
-        let stale = entries.filter { entry in
-            guard let since = entry.value.idleSince else { return false }
-            return now - since >= timing.idleLimit
-        }.map(\.key)
-        for id in stale {
-            log.info("\(id) sat idle for \(timing.idleLimit); ending it")
-            _ = try? await end(id, by: .daemon)
+    /// Stops the worker of every conversation that has been IDLE for `idleLimit`. The conversation
+    /// stays IDLE, and the next message starts a worker again. The sweep calls it; so can a test.
+    func stopIdleWorkers() async {
+        for id in Array(entries.keys) {
+            // Checked one at a time: stopping a worker suspends, and a message may arrive meanwhile.
+            guard let e = entries[id], e.worker != nil, let since = e.idleSince,
+                  timing.now() - since >= timing.idleLimit else { continue }
+            log.info("\(id) sat idle for \(timing.idleLimit); stopping its worker")
+            await stopWorker(of: id)
         }
     }
 
     // MARK: The worker's side
 
-    /// Folds one message from the worker. A conversation that has finished takes nothing more.
-    func apply(_ message: Leyline_V1_WorkerMessage, to id: String) async {
+    /// Folds one message from the worker. A conversation that has finished takes nothing more, and
+    /// nothing is taken from a worker that is no longer the conversation's.
+    func apply(_ message: Leyline_V1_WorkerMessage, to id: String, from worker: AssistantWorker? = nil) async {
         guard let current = entries[id], !Self.isFinished(current.conversation.state) else { return }
+        if let worker, current.worker !== worker { return }
         switch message.message {
         case .turn(let raw)?:
             let turn = Self.redacted(raw, secret: current.secret)
@@ -329,16 +435,18 @@ actor ConversationStore {
                 e.conversation.clearPending()
             }
             await stopWorker(of: id)
-            await forgetOldFinished()
         case nil:
             return
         }
     }
 
-    /// The worker has exited. Between turns that ends the conversation; mid-turn it fails it.
-    func workerExited(_ id: String, status: Int32) async {
-        guard let current = entries[id] else { return }
+    /// The worker has exited. Between turns the conversation stays IDLE without one, and the next
+    /// message starts another; mid-turn it fails. A worker the store stopped itself is no longer
+    /// the conversation's by the time it exits, and its exit changes nothing.
+    func workerExited(_ id: String, worker: AssistantWorker, status: Int32) async {
+        guard let current = entries[id], current.worker === worker else { return }
         entries[id]?.worker = nil
+        entries[id]?.secret = ""
         switch current.conversation.state {
         case .conversationThinking, .conversationWaiting:
             log.warning("\(id): the worker exited mid-turn with status \(status)")
@@ -349,12 +457,10 @@ actor ConversationStore {
                 e.conversation.clearPending()
             }
         case .conversationIdle:
-            log.info("\(id): the worker exited between turns with status \(status); ending it")
-            _ = await commit(id, by: .daemon) { e in e.conversation.state = .conversationEnded }
+            log.info("\(id): the worker exited between turns with status \(status); the next message starts another")
         default:
             break
         }
-        await forgetOldFinished()
     }
 
     /// A write did not reach the worker: it stopped reading, or its stdin closed under it. The
@@ -368,7 +474,6 @@ actor ConversationStore {
             e.conversation.clearPending()
         }
         await stopWorker(of: id)
-        await forgetOldFinished()
     }
 
     // MARK: Internals
@@ -380,6 +485,7 @@ actor ConversationStore {
                         _ mutate: (inout Entry) -> Void) async -> Leyline_V1_Conversation
     {
         guard var e = entries[id] else { return Leyline_V1_Conversation() }
+        let before = e.conversation
         mutate(&e)
         e.conversation.seq += 1
         if e.conversation.state == .conversationIdle {
@@ -396,9 +502,12 @@ actor ConversationStore {
             e.watchers = [:]
             e.secret = ""
             e.history = []
-            e.finishedAt = timing.now()
         }
         entries[id] = e
+        if before.seq == 0 || Self.milestones(of: before) != Self.milestones(of: conversation) {
+            save(conversation)
+            entries[id]?.savedSeq = conversation.seq
+        }
         await publish(conversation, client)
         return conversation
     }
@@ -407,12 +516,55 @@ actor ConversationStore {
     private func follow(_ worker: AssistantWorker, of id: String) {
         Task { [weak self] in
             for await message in worker.messages {
-                await self?.apply(message, to: id)
+                await self?.apply(message, to: id, from: worker)
             }
             var status: Int32 = -1
             for await code in worker.exits { status = code }
-            await self?.workerExited(id, status: status)
+            await self?.workerExited(id, worker: worker, status: status)
         }
+    }
+
+    /// Creates the conversation's directory and starts its worker with the key and `WorkerStart`,
+    /// told to resume from the transcript or to begin it. Nothing here suspends, so a caller that
+    /// checked the store's state just before still holds it after.
+    private func spawn(_ id: String, credential: Leyline_V1_SetCredentialRequest, model: String,
+                       viewTools: [Leyline_V1_ViewTool], resume: Bool) throws -> AssistantWorker
+    {
+        let dir = directory + "/" + id
+        guard ensurePrivateDirectory(directory), ensurePrivateDirectory(dir) else {
+            throw EngineError.internalError("cannot create \(dir) for the conversation", target: id)
+        }
+        var start = Leyline_V1_WorkerStart()
+        start.conversationID = id
+        start.provider = credential.provider
+        start.model = model
+        start.endpoint = credential.endpoint
+        start.viewTools = viewTools
+        start.socket = spawner.socketPath
+        start.transcriptPath = dir + "/" + Self.transcriptFile
+        start.resume = resume
+        let worker = try spawner.startAssistant(credential: credential, start: start) { [weak self] error in
+            Task { await self?.writeFailed(id, error) }
+        }
+        follow(worker, of: id)
+        startSweeping()
+        return worker
+    }
+
+    /// Starts a worker for a kept conversation that has none (loaded at start, or stopped by the
+    /// idle sweep), with the key as it stands now. A worker another message started meanwhile is
+    /// kept.
+    private func resumeWorker(_ id: String) async throws {
+        guard !closed else { throw EngineError.failedPrecondition("the daemon is stopping", target: id) }
+        let conversation = try entry(id).conversation
+        let credential = try await key(for: conversation.provider)
+        guard !closed else { throw EngineError.failedPrecondition("the daemon is stopping", target: id) }
+        guard try entry(id).worker == nil else { return }
+        let worker = try spawn(id, credential: credential, model: conversation.model,
+                               viewTools: conversation.viewTools, resume: true)
+        entries[id]?.worker = worker
+        entries[id]?.secret = credential.secret
+        log.info("\(id): started a worker to resume it")
     }
 
     private func startSweeping() {
@@ -422,14 +574,17 @@ actor ConversationStore {
             while !Task.isCancelled {
                 try? await Task.sleep(for: every)
                 guard !Task.isCancelled else { return }
-                await self?.endIdle()
+                await self?.stopIdleWorkers()
             }
         }
     }
 
+    /// Stops the conversation's worker, which is no longer the conversation's from here on, so
+    /// its exit changes nothing.
     private func stopWorker(of id: String) async {
         guard let worker = entries[id]?.worker else { return }
         entries[id]?.worker = nil
+        entries[id]?.secret = ""
         await worker.stop()
     }
 
@@ -437,19 +592,85 @@ actor ConversationStore {
         entries[id]?.watchers[key] = nil
     }
 
-    /// Forgets the finished conversations beyond the `keptFinished` that finished last. Called
-    /// after a worker has been stopped, so one whose worker is still going is never dropped with it.
-    private func forgetOldFinished() async {
-        let finished = entries.compactMap { id, e -> (id: String, at: ContinuousClock.Instant)? in
-            guard let at = e.finishedAt, e.worker == nil else { return nil }
-            return (id, at)
-        }
-        guard finished.count > Self.keptFinished else { return }
-        let oldest = finished.sorted { $0.at < $1.at }.prefix(finished.count - Self.keptFinished)
-        for (id, _) in oldest {
-            entries[id] = nil
+    /// Deletes the conversations beyond the newest `keptConversations` by last turn, after a new
+    /// one. One whose worker runs is never among them.
+    private func trimToRetention() async {
+        let excess = entries.count - Self.keptConversations
+        guard excess > 0 else { return }
+        let oldest = entries.filter { $0.value.worker == nil }
+            .sorted { Self.lastActivity($0.value.conversation) < Self.lastActivity($1.value.conversation) }
+            .prefix(excess).map(\.key)
+        for id in oldest {
+            log.info("\(id) is older than the newest \(Self.keptConversations) conversations; deleting it")
+            remove(id)
             await forget(id)
         }
+    }
+
+    /// Forgets a conversation and removes its files. Its watchers' streams end.
+    private func remove(_ id: String) {
+        if let e = entries[id] {
+            for watcher in e.watchers.values { watcher.finish() }
+        }
+        entries[id] = nil
+        removeFiles(of: id)
+    }
+
+    private func removeFiles(of id: String) {
+        let dir = directory + "/" + id
+        guard FileManager.default.fileExists(atPath: dir) else { return }
+        do {
+            try FileManager.default.removeItem(atPath: dir)
+        } catch {
+            log.error("cannot remove \(dir): \(error)")
+        }
+    }
+
+    /// Writes `conversation.json` for the conversation, 0600 in a 0700 directory. A failure is
+    /// logged and the conversation goes on in memory.
+    private func save(_ conversation: Leyline_V1_Conversation) {
+        let dir = directory + "/" + conversation.conversationID
+        let path = dir + "/" + Self.conversationFile
+        guard ensurePrivateDirectory(directory), ensurePrivateDirectory(dir) else { return }
+        do {
+            var data = try conversation.jsonUTF8Data()
+            data.append(0x0a)
+            try writePrivateFile(data, to: path)
+        } catch {
+            log.error("cannot write \(path): \(error)")
+        }
+    }
+
+    /// Creates `path` 0700, or sets it back to 0700 if it exists with another mode: what is kept
+    /// there is readable by the user only. False, logged, when it cannot be made.
+    private func ensurePrivateDirectory(_ path: String) -> Bool {
+        do {
+            try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true,
+                                                    attributes: [.posixPermissions: 0o700])
+            // A directory that already existed keeps its mode through createDirectory.
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path)
+            return true
+        } catch {
+            log.error("cannot create \(path): \(error)")
+            return false
+        }
+    }
+
+    /// What a save waits for: the conversation without its seq, its last-turn time and the text of
+    /// a turn still being written, so a text delta alone writes nothing.
+    static func milestones(of conversation: Leyline_V1_Conversation) -> Leyline_V1_Conversation {
+        var out = conversation
+        out.seq = 0
+        out.lastTurnAtNs = 0
+        for i in out.turns.indices where !out.turns[i].done {
+            out.turns[i].text = ""
+        }
+        return out
+    }
+
+    /// When the conversation was last used: its last turn, or its start when it has none.
+    static func lastActivity(_ conversation: Leyline_V1_Conversation) -> Int64 {
+        conversation.lastTurnAtNs != 0 ? conversation.lastTurnAtNs : conversation.startedAtNs
     }
 
     /// What a watcher that has `sinceSeq` is sent before the live changes: 0 is the current state
@@ -530,6 +751,13 @@ actor ConversationStore {
             guard names.insert(tool.name).inserted else {
                 throw EngineError.invalidArgument("two view tools are called \(tool.name)", target: tool.name)
             }
+        }
+    }
+
+    private static func requireIdle(_ conversation: Leyline_V1_Conversation) throws {
+        guard conversation.state == .conversationIdle else {
+            throw EngineError.failedPrecondition("\(describe(conversation.state)); a message can be sent when it is idle",
+                                                 target: conversation.conversationID)
         }
     }
 
@@ -624,6 +852,32 @@ extension Leyline_V1_Conversation {
                 }
             }
         }
+        state = .conversationIdle
+        clearPending()
+    }
+
+    /// Closes the turn a daemon that stopped was on, for the next daemon's load: the assistant's last
+    /// turn is marked done with `restartNote` after its text, a call still waiting on someone is
+    /// REFUSED and one still running is DONE as an error, "stopped". When the worker had not
+    /// written its turn yet, a done turn with the note alone answers the user's. The conversation
+    /// is IDLE.
+    mutating func closeAfterRestart() {
+        let note = ConversationStore.restartNote
+        let now = WallClock.nowNs()
+        if let last = turns.indices.last, turns[last].role == .assistant {
+            let id = turns[last].turnID
+            closeStoppedTurn(id)
+            turns[last].text = turns[last].text.isEmpty ? note : turns[last].text + "\n\n" + note
+        } else {
+            var turn = Leyline_V1_Turn()
+            turn.turnID = ConversationStore.nextTurnID(after: turns)
+            turn.role = .assistant
+            turn.text = note
+            turn.atNs = now
+            turn.done = true
+            turns.append(turn)
+        }
+        lastTurnAtNs = now
         state = .conversationIdle
         clearPending()
     }

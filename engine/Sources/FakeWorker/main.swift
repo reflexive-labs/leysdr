@@ -38,8 +38,13 @@
 // The assistant's turn for user turn `tN` is `tN+1`, and call ids count up across the
 // conversation. WorkerStop marks the turn done at once, mid-sleep or mid-wait, and skips the rest
 // of the block. FAKE_WORKER_DUMP names a file the worker writes after its WorkerStart: its pid,
-// the key's last four, its arguments, the WorkerStart and its environment, one `name=value` per
-// line. The key itself is never written anywhere.
+// the key's last four, its arguments, the WorkerStart (the transcript path and resume included),
+// how many turns it resumed after, and its environment, one `name=value` per line. The key itself
+// is never written anywhere.
+//
+// The worker keeps a transcript of its own at WorkerStart's transcript_path: one line per turn it
+// played, `turn <id> calls <n>`. With `resume` it reads that file first and goes on from it: the
+// next turn plays the block after the last one played, and call ids count on from the last.
 
 import Foundation
 import LeylineProto
@@ -120,11 +125,39 @@ else {
 }
 FileHandle.standardError.write(Data("fake worker up for \(start.conversationID)\n".utf8))
 
+var callCount = 0
+var blockIndex = 0
+
+/// The turns an earlier worker for this conversation played, read back when resuming.
+var resumedLines: [String] = []
+if start.resume, !start.transcriptPath.isEmpty,
+   let text = try? String(contentsOfFile: start.transcriptPath, encoding: .utf8)
+{
+    resumedLines = text.split(separator: "\n").map(String.init)
+    blockIndex = resumedLines.count
+    if let last = resumedLines.last?.split(separator: " "), last.count == 4 { callCount = Int(last[3]) ?? 0 }
+}
+
+/// Notes a played turn in the transcript, for a worker that resumes after this one.
+func noteTurn(_ turnID: String) {
+    guard !start.transcriptPath.isEmpty else { return }
+    let line = Data("turn \(turnID) calls \(callCount)\n".utf8)
+    if !FileManager.default.fileExists(atPath: start.transcriptPath) {
+        FileManager.default.createFile(atPath: start.transcriptPath, contents: nil, attributes: [.posixPermissions: 0o600])
+    }
+    guard let handle = FileHandle(forWritingAtPath: start.transcriptPath) else { return }
+    handle.seekToEndOfFile()
+    handle.write(line)
+    try? handle.close()
+}
+
 if let dump = environment["FAKE_WORKER_DUMP"] {
     var lines = ["pid=\(getpid())", "last4=\(lastFour)", "argv=\(arguments.joined(separator: " "))",
                  "start.conversation=\(start.conversationID)", "start.provider=\(start.provider)",
                  "start.model=\(start.model)", "start.endpoint=\(start.endpoint)", "start.socket=\(start.socket)",
-                 "start.view_tools=\(start.viewTools.map(\.name).joined(separator: ","))"]
+                 "start.view_tools=\(start.viewTools.map(\.name).joined(separator: ","))",
+                 "start.transcript_path=\(start.transcriptPath)", "start.resume=\(start.resume)",
+                 "resumed.turns=\(resumedLines.count)"]
     for (name, value) in environment.sorted(by: { $0.key < $1.key }) { lines.append("env.\(name)=\(value)") }
     try? (lines.joined(separator: "\n") + "\n").write(toFile: dump, atomically: true, encoding: .utf8)
 }
@@ -209,9 +242,6 @@ func split(_ line: String, words count: Int) -> (head: [String], rest: String) {
 }
 
 func nowNs() -> Int64 { Int64(Date().timeIntervalSince1970 * 1e9) }
-
-var callCount = 0
-var blockIndex = 0
 
 /// Plays one block as the assistant's answer to the user turn `userTurnID`.
 func play(_ lines: [String], userTurnID: String) {
@@ -351,4 +381,5 @@ while true {
     guard case .user(let user)? = event.event else { continue }
     play(blockIndex < blocks.count ? blocks[blockIndex] : [], userTurnID: user.turnID)
     blockIndex += 1
+    noteTurn("t\((Int(user.turnID.dropFirst()) ?? 0) + 1)")
 }

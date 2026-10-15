@@ -2,8 +2,8 @@
 
 // leyline.v1.Assistant over the socket, with the scripted fake worker standing in for `ley worker
 // assistant` (docs/dev/engine-internals.md, "Assistant"): how a conversation starts, what each
-// client action and each worker message does to its state, what ends or fails it, and that the key
-// reaches the worker on stdin and nowhere else.
+// client action and each worker message does to its state, what ends or fails it, how it outlives
+// a restart and is deleted, and that the key reaches the worker on stdin and nowhere else.
 
 import EngineCore
 import Foundation
@@ -12,6 +12,7 @@ import GRPCNIOTransportHTTP2
 @testable import LeylineServer
 import LeylineProto
 import SwiftProtobuf
+import Synchronization
 import XCTest
 
 final class AssistantServiceTests: XCTestCase {
@@ -33,21 +34,50 @@ final class AssistantServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(atPath: dir) }
         let ley = try writeFakeWorkerLey(in: dir, scripts: scripts)
         try await withDaemon(leyPath: ley, conversationTiming: timing) { c in
-            if addKey {
-                var key = Leyline_V1_SetCredentialRequest()
-                key.provider = "anthropic"
-                key.secret = Self.secret
-                _ = try await c.credentials.setCredential(key, metadata: testMetadata)
-            }
-            if chooseModel {
-                var feature = Leyline_V1_FeatureModel()
-                feature.feature = "assistant"
-                feature.provider = "anthropic"
-                feature.model = "claude-test"
-                _ = try await c.credentials.setFeatureModel(feature, metadata: testMetadata)
-            }
+            try await Self.addKeyAndModel(c, addKey: addKey, chooseModel: chooseModel)
             try await body(c, dir)
         }
+    }
+
+    /// `first` against one daemon, then `second` against the next on the same directory, as a
+    /// restart runs them: the key, the model and the conversations are what the first left.
+    private func acrossRestart(scripts: [String], _ first: @escaping @Sendable (DaemonClients, String) async throws -> Void,
+                               then second: @escaping @Sendable (DaemonClients, String) async throws -> Void) async throws
+    {
+        let dir = try makeTempDir("assistant")
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let ley = try writeFakeWorkerLey(in: dir, scripts: scripts)
+        try await withDaemon(dir: dir, leyPath: ley) { c in
+            try await Self.addKeyAndModel(c, addKey: true, chooseModel: true)
+            try await first(c, dir)
+        }
+        try await withDaemon(dir: dir, leyPath: ley) { c in try await second(c, dir) }
+    }
+
+    private static func addKeyAndModel(_ c: DaemonClients, addKey: Bool, chooseModel: Bool) async throws {
+        if addKey {
+            var key = Leyline_V1_SetCredentialRequest()
+            key.provider = "anthropic"
+            key.secret = secret
+            _ = try await c.credentials.setCredential(key, metadata: testMetadata)
+        }
+        if chooseModel {
+            var feature = Leyline_V1_FeatureModel()
+            feature.feature = "assistant"
+            feature.provider = "anthropic"
+            feature.model = "claude-test"
+            _ = try await c.credentials.setFeatureModel(feature, metadata: testMetadata)
+        }
+    }
+
+    /// Every file under the data directory's conversations, by path.
+    private static func conversationFiles(_ c: DaemonClients) -> [String: String] {
+        let root = c.dataPath + "/conversations"
+        var out: [String: String] = [:]
+        for case let name as String in FileManager.default.enumerator(atPath: root)?.allObjects ?? [] {
+            if let text = try? String(contentsOfFile: root + "/" + name, encoding: .utf8) { out[name] = text }
+        }
+        return out
     }
 
     private func start(_ c: DaemonClients, viewTools: [String] = []) async throws -> Leyline_V1_Conversation {
@@ -416,6 +446,8 @@ final class AssistantServiceTests: XCTestCase {
             XCTAssertEqual(refused.code, EngineError.Code.failedPrecondition)
             let listed = try await c.assistant.listConversations(Leyline_V1_ListConversationsRequest(), metadata: testMetadata)
             XCTAssertEqual(listed.conversations.first?.state, .conversationEnded, "an ended conversation stays listed")
+            let kept = Self.conversationFiles(c)["\(id)/conversation.json"] ?? ""
+            XCTAssertTrue(kept.contains("CONVERSATION_ENDED"), "an ended conversation's file stays, ended: \(kept)")
             let unknown = await self.failure { _ = try await c.assistant.endConversation(self.ref("conv_nope"), metadata: testMetadata) }
             XCTAssertEqual(unknown.code, EngineError.Code.invalidArgument)
             let noTurn = await self.failure { _ = try await c.assistant.stopTurn(self.ref(id), metadata: testMetadata) }
@@ -437,6 +469,7 @@ final class AssistantServiceTests: XCTestCase {
                 ("AnswerViewTool", { _ = try await c.assistant.answerViewTool(answer, metadata: testMetadata) }),
                 ("StopTurn", { _ = try await c.assistant.stopTurn(self.ref(nope), metadata: testMetadata) }),
                 ("EndConversation", { _ = try await c.assistant.endConversation(self.ref(nope), metadata: testMetadata) }),
+                ("DeleteConversation", { _ = try await c.assistant.deleteConversation(self.ref(nope), metadata: testMetadata) }),
                 ("WatchConversation", {
                     try await c.assistant.watchConversation(watch, metadata: testMetadata) { response in
                         for try await _ in response.messages {}
@@ -490,23 +523,122 @@ final class AssistantServiceTests: XCTestCase {
         }
     }
 
-    func testIdleTimeoutEndsTheConversationAndTheEventSaysSo() async throws {
+    func testIdleTimeoutStopsTheWorkerAndTheConversationStaysIdle() async throws {
         let clock = TestClock()
         let timing = ConversationStore.Timing(idleLimit: .seconds(30 * 60), sweepEvery: .milliseconds(20), now: clock.now)
-        try await withAssistant(scripts: ["end"], timing: timing) { c, _ in
-            let events = await EventCollector.start(c.control, daemon: c.daemon)
-            let id = try await self.start(c).conversationID
+        try await withAssistant(scripts: ["end"], timing: timing) { c, dir in
+            let started = try await self.start(c)
+            let written = await fakeWorkerDump(dir + "/dump.1")
+            let pid = try XCTUnwrap(written?["pid"].flatMap { Int32($0) })
             clock.advance(by: .seconds(29 * 60))
             try await Task.sleep(nanoseconds: 200_000_000)
-            let early = try await c.daemon.conversations.get(id)
-            XCTAssertEqual(early.state, .conversationIdle, "29 minutes is not idle enough")
+            XCTAssertEqual(kill(pid, 0), 0, "29 minutes is not idle enough")
             clock.advance(by: .seconds(60))
+            for _ in 0..<250 where kill(pid, 0) == 0 {
+                try await Task.sleep(nanoseconds: 20_000_000)
+            }
+            XCTAssertNotEqual(kill(pid, 0), 0, "the idle sweep stopped the worker")
+            let after = try await c.daemon.conversations.get(started.conversationID)
+            XCTAssertEqual(after.state, .conversationIdle)
+            XCTAssertEqual(after.seq, started.seq, "stopping the worker is not a change a client sees")
+        }
+    }
+
+    // MARK: Kept across restarts
+
+    func testAConversationWithATurnAndACallSurvivesARestart() async throws {
+        let script = """
+        tool list_devices {}
+        done list_devices one radio
+        text found one
+        end
+
+        text again
+        end
+        """
+        let before = Mutex<Leyline_V1_Conversation?>(nil)
+        try await acrossRestart(scripts: [script, script]) { c, _ in
+            let id = try await self.start(c).conversationID
+            _ = try await self.send(c, id, "what radios are there")
+            let done = try await self.conversation(c, id) { $0.state == .conversationIdle && $0.turns.count == 2 }
+            before.withLock { $0 = done }
+        } then: { c, dir in
+            let kept = try XCTUnwrap(before.withLock { $0 })
+            let listed = try await c.assistant.listConversations(Leyline_V1_ListConversationsRequest(), metadata: testMetadata)
+            XCTAssertEqual(listed.conversations, [kept], "the same conversation, id, seq and turns")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: dir + "/dump.2"), "loading starts no worker")
+            let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            XCTAssertEqual(state.conversations.map(\.conversationID), [kept.conversationID])
+
+            let sent = try await self.send(c, kept.conversationID, "again")
+            XCTAssertEqual(sent.seq, kept.seq + 1, "seq goes on from the kept conversation")
+            let done = try await self.conversation(c, kept.conversationID) { $0.state == .conversationIdle && $0.turns.count == 4 }
+            XCTAssertEqual(done.turns.map(\.turnID), ["t1", "t2", "t3", "t4"])
+            XCTAssertEqual(done.turns[3].text, "again", "the new worker plays on from its transcript")
+            XCTAssertEqual(done.turns[1].tools.first?.callID, "call1")
+            let resumed = await fakeWorkerDump(dir + "/dump.2")
+            XCTAssertEqual(resumed?["start.resume"], "true")
+            XCTAssertEqual(resumed?["start.transcript_path"], c.dataPath + "/conversations/\(kept.conversationID)/transcript.jsonl")
+            XCTAssertEqual(resumed?["start.model"], "claude-test")
+            XCTAssertEqual(resumed?["resumed.turns"], "1")
+        }
+    }
+
+    func testARestartMidTurnClosesTheTurnWithTheNoteAndRefusesThePendingCall() async throws {
+        let script = """
+        text checking
+        ask delete_recording {"id":"rec_1"} deleting a recording asks every time
+        approved done delete_recording deleted
+        end
+        """
+        let before = Mutex<Leyline_V1_Conversation?>(nil)
+        try await acrossRestart(scripts: [script]) { c, _ in
+            let id = try await self.start(c).conversationID
+            _ = try await self.send(c, id, "delete rec_1")
+            let waiting = try await self.conversation(c, id) { $0.state == .conversationWaiting }
+            before.withLock { $0 = waiting }
+        } then: { c, _ in
+            let waiting = try XCTUnwrap(before.withLock { $0 })
+            let id = waiting.conversationID
+            let closed = try await c.daemon.conversations.get(id)
+            XCTAssertEqual(closed.state, .conversationIdle)
+            XCTAssertFalse(closed.hasPending)
+            XCTAssertEqual(closed.seq, waiting.seq + 1)
+            XCTAssertEqual(closed.turns.count, 2)
+            XCTAssertTrue(closed.turns[1].done)
+            XCTAssertEqual(closed.turns[1].text, "checking\n\n" + ConversationStore.restartNote)
+            XCTAssertEqual(closed.turns[1].tools.map(\.state), [.toolCallRefused])
+            let late = await self.failure { _ = try await self.resolve(c, id, call: waiting.pending.callID, approve: true) }
+            XCTAssertEqual(late.code, EngineError.Code.failedPrecondition, "the pending call went with the daemon")
+            let onDisk = Self.conversationFiles(c)["\(id)/conversation.json"] ?? ""
+            XCTAssertTrue(onDisk.contains("the daemon restarted during this turn"), "the closed turn is written back")
+        }
+    }
+
+    func testDeleteConversationEndsItThenRemovesItAndItsFiles() async throws {
+        try await withAssistant(scripts: ["text one\nend"]) { c, dir in
+            let id = try await self.start(c).conversationID
+            _ = try await self.send(c, id, "hello")
+            _ = try await self.conversation(c, id) { $0.state == .conversationIdle && $0.turns.count == 2 }
+            let written = await fakeWorkerDump(dir + "/dump.1")
+            let pid = try XCTUnwrap(written?["pid"].flatMap { Int32($0) })
+            XCTAssertTrue(FileManager.default.fileExists(atPath: c.dataPath + "/conversations/\(id)/transcript.jsonl"))
+            let events = await EventCollector.start(c.control, daemon: c.daemon)
+            let watch = await ConversationWatch.start(c, id, sinceSeq: try await c.daemon.conversations.get(id).seq)
+            _ = try await c.assistant.deleteConversation(self.ref(id), metadata: testMetadata)
+            XCTAssertNotEqual(kill(pid, 0), 0, "the worker has gone by the time the reply arrives")
             let ended = await events.waitFor {
                 if case .conversation(let conv)? = $0.body { return conv.conversationID == id && conv.state == .conversationEnded }
                 return false
             }
-            XCTAssertNotNil(ended, "Event.conversation carries the end")
-            XCTAssertEqual(ended?.causedBy.kind, "daemon")
+            XCTAssertNotNil(ended, "the last event about it says it ended")
+            let watchEnded = await watch.waitUntilFinished()
+            XCTAssertTrue(watchEnded)
+            let listed = try await c.assistant.listConversations(Leyline_V1_ListConversationsRequest(), metadata: testMetadata)
+            XCTAssertTrue(listed.conversations.isEmpty)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: c.dataPath + "/conversations/\(id)"))
+            let again = await self.failure { _ = try await c.assistant.deleteConversation(self.ref(id), metadata: testMetadata) }
+            XCTAssertEqual(again.code, EngineError.Code.invalidArgument)
             await events.stop()
         }
     }
@@ -588,6 +720,10 @@ final class AssistantServiceTests: XCTestCase {
             await events.stop()
             for event in await events.events { seen.append(try event.jsonString()) }
             for text in seen { XCTAssertFalse(text.contains(Self.marker), "the key reached a client: \(text)") }
+            let files = Self.conversationFiles(c)
+            XCTAssertNotNil(files["\(id)/conversation.json"])
+            XCTAssertNotNil(files["\(id)/transcript.jsonl"])
+            for (name, text) in files { XCTAssertFalse(text.contains(Self.marker), "the key reached \(name)") }
             XCTAssertTrue(log.contains("leyline.assistant.\(id)"), "the worker's stderr is logged under its conversation")
             XCTAssertTrue(log.contains("fake worker up for \(id)"))
             XCTAssertTrue(log.contains("fake worker leaks [key] and [key]"), "the leaking stderr line was logged, redacted")

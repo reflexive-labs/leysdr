@@ -2,7 +2,7 @@
 
 // leyline.v1.Assistant: the assistant's conversations over the socket (docs/dev/engine-internals.md,
 // "Assistant"). `ConversationStore` holds them and runs their workers; this file maps the RPCs onto
-// it. Any client may watch, answer or end any conversation, so `ley ask --continue` picks up one
+// it. Any client may watch, answer, end or delete any conversation, so `ley ask --continue` picks up one
 // the app started. Every reply is the conversation's whole state after the call, the same state
 // `Event.conversation` carries (invariant 6).
 
@@ -86,8 +86,11 @@ struct AssistantService: Leyline_V1_Assistant.SimpleServiceProtocol {
         return response
     }
 
-    func deleteConversation(request _: Leyline_V1_ConversationRef, context _: ServerContext) async throws -> Leyline_V1_Empty {
-        await store.touchUnary(ClientContext.current)
-        return try await mapErrors { throw EngineError.unimplemented("deleting a conversation") }
+    /// Ends a conversation still going, then removes it and its files.
+    func deleteConversation(request: Leyline_V1_ConversationRef, context _: ServerContext) async throws -> Leyline_V1_Empty {
+        let client = ClientContext.current
+        await store.touchUnary(client)
+        try await mapErrors { try await conversations.delete(request.conversationID, by: client) }
+        return Leyline_V1_Empty()
     }
 }
