@@ -100,27 +100,7 @@ func TestTranscribeAgainstRealDaemon(t *testing.T) {
 // prompt, and its records carry the endpoint's words, whisper-1, the confidence the response
 // implies, and usage under the key's provider, which marks the key used.
 func checkOpenAISpeech(t *testing.T, r *transcribeRig) {
-	var mu sync.Mutex
-	var calls int
-	var problems []string
-	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		mu.Lock()
-		defer mu.Unlock()
-		if req.Header.Get("Authorization") != "Bearer "+openaiKey || req.URL.Path != "/v1/audio/transcriptions" {
-			problems = append(problems, fmt.Sprintf("%s %s with the wrong key or path", req.Method, req.URL.Path))
-			http.Error(w, `{"error":{"message":"not the test's key or path"}}`, http.StatusUnauthorized)
-			return
-		}
-		if err := req.ParseMultipartForm(32 << 20); err != nil || req.MultipartForm.File["file"] == nil ||
-			req.FormValue("model") != "whisper-1" || !strings.Contains(req.FormValue("prompt"), "Whiskey") {
-			problems = append(problems, fmt.Sprintf("form %v: %v", req.MultipartForm, err))
-		}
-		calls++
-		text := speechScript[min(calls, len(speechScript))-1]
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"language":"english","text":" %s ","segments":[{"no_speech_prob":0.25}]}`, text)
-	}))
-	defer provider.Close()
+	provider := newOpenAIStandIn(t)
 	r.mustLey(openaiKey+"\n", "ai", "add", "openai", "--endpoint", provider.URL)
 	// The scripted check reports no usage, so only the transcription can mark the key used.
 	if cred := r.credential("openai"); cred == nil || cred["lastUsedAtNs"] != nil {
@@ -134,6 +114,58 @@ func checkOpenAISpeech(t *testing.T, r *transcribeRig) {
 	if !strings.Contains(errOut, "with speech (sends the audio to api.openai.com)") {
 		t.Errorf("the statement does not say where the audio goes:\n%s", errOut)
 	}
+	r.checkOpenAITranscript(t, provider, out)
+	if cred := r.credential("openai"); cred == nil || cred["lastUsedAtNs"] == nil {
+		t.Errorf("after transcribing, the openai key is not marked used: %v", cred)
+	}
+	r.assertNoCanary()
+}
+
+// openAIStandIn is OpenAI's API as far as the key check and the bundled speech decoder call it:
+// GET /v1/models accepts the test's key, and POST /v1/audio/transcriptions answers each over
+// with the next line of speechScript, noting any request with the wrong key, path or form.
+type openAIStandIn struct {
+	*httptest.Server
+	mu       sync.Mutex
+	calls    int
+	problems []string
+}
+
+func newOpenAIStandIn(t *testing.T) *openAIStandIn {
+	p := &openAIStandIn{}
+	p.Server = httptest.NewServer(http.HandlerFunc(p.serve))
+	t.Cleanup(p.Close)
+	return p
+}
+
+func (p *openAIStandIn) serve(w http.ResponseWriter, req *http.Request) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if req.Header.Get("Authorization") == "Bearer "+openaiKey && req.Method == http.MethodGet && req.URL.Path == "/v1/models" {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[]}`))
+		return
+	}
+	if req.Header.Get("Authorization") != "Bearer "+openaiKey || req.URL.Path != "/v1/audio/transcriptions" {
+		p.problems = append(p.problems, fmt.Sprintf("%s %s with the wrong key or path", req.Method, req.URL.Path))
+		http.Error(w, `{"error":{"message":"not the test's key or path"}}`, http.StatusUnauthorized)
+		return
+	}
+	if err := req.ParseMultipartForm(32 << 20); err != nil || req.MultipartForm.File["file"] == nil ||
+		req.FormValue("model") != "whisper-1" || !strings.Contains(req.FormValue("prompt"), "Whiskey") {
+		p.problems = append(p.problems, fmt.Sprintf("form %v: %v", req.MultipartForm, err))
+	}
+	p.calls++
+	text := speechScript[min(p.calls, len(speechScript))-1]
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"language":"english","text":" %s ","segments":[{"no_speech_prob":0.25}]}`, text)
+}
+
+// checkOpenAITranscript grades `ley transcribe --json` output made through the stand-in: one
+// call and one record per segment, with the endpoint's words, whisper-1, the confidence the
+// response implies, and usage under openai.
+func (r *transcribeRig) checkOpenAITranscript(t *testing.T, provider *openAIStandIn, out string) {
+	t.Helper()
 	var recs []*leylinev1.DecodeRecord
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		rec := &leylinev1.DecodeRecord{}
@@ -141,11 +173,11 @@ func checkOpenAISpeech(t *testing.T, r *transcribeRig) {
 		recs = append(recs, rec)
 	}
 	sortBySample(recs)
-	mu.Lock()
-	if len(problems) > 0 || calls != len(r.segments) {
-		t.Errorf("the endpoint had %d calls for %d segments, and these problems: %v", calls, len(r.segments), problems)
+	provider.mu.Lock()
+	if len(provider.problems) > 0 || provider.calls != len(r.segments) {
+		t.Errorf("the endpoint had %d calls for %d segments, and these problems: %v", provider.calls, len(r.segments), provider.problems)
 	}
-	mu.Unlock()
+	provider.mu.Unlock()
 	if len(recs) != len(r.segments) {
 		t.Fatalf("want one record per segment, %d, got %d:\n%s", len(r.segments), len(recs), out)
 	}
@@ -162,10 +194,6 @@ func checkOpenAISpeech(t *testing.T, r *transcribeRig) {
 			t.Errorf("record %d: time.sampleIndex %d, want the segment's start %d", i, got, r.segments[i].start)
 		}
 	}
-	if cred := r.credential("openai"); cred == nil || cred["lastUsedAtNs"] == nil {
-		t.Errorf("after transcribing, the openai key is not marked used: %v", cred)
-	}
-	r.assertNoCanary()
 }
 
 // newTranscribeRig starts the daemon with a scripted check worker, the repository's decoders and

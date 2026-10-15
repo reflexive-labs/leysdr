@@ -439,7 +439,8 @@ func TestAIUsageAgainstRealDaemon(t *testing.T) {
 		t.Errorf("the header is on stdout too:\n%s", out)
 	}
 
-	r.mustLey("", "ai", "use", "speech", "openai", "whisper-1")
+	// The add gave both features openai's defaults; one is changed, and both survive a restart.
+	r.mustLey("", "ai", "use", "assistant", "openai", "gpt-5-mini")
 	r.restart()
 
 	cred := r.credential("openai")
@@ -447,7 +448,8 @@ func TestAIUsageAgainstRealDaemon(t *testing.T) {
 		lastCheck(cred)["outcome"] != "ACCEPTED" {
 		t.Errorf("after a restart ley ai --json shows %v", cred)
 	}
-	if fs := list(r.aiState(), "features"); len(fs) != 1 || fs[0].(map[string]any)["model"] != "whisper-1" {
+	if fs := list(r.aiState(), "features"); len(fs) != 2 || fs[0].(map[string]any)["model"] != "gpt-5-mini" ||
+		fs[1].(map[string]any)["model"] != "whisper-1" {
 		t.Errorf("after a restart the feature model is %v", fs)
 	}
 	assertUsageLine(t, r, dayBefore, 2)
