@@ -477,8 +477,8 @@ The policy for each kind of action:
 
 **Text from the air is untrusted input.** Anyone with a transmitter can put words into an APRS
 comment, an AIS field or a speech record, and the assistant reads all three. The worker passes
-record content to the model as quoted data, never as instructions. An action proposed in a turn
-that read received text needs confirmation even where the table says it runs. And the shell
+record content to the model as quoted data, never as instructions. Once a conversation has read
+received text, every action it proposes needs confirmation even where the table says it runs. And the shell
 notifier, which would turn such text into a command on the Mac, is not one of the assistant's
 tools. AI-13 adds eval scenarios in which a fixture's decoded text asks the agent to act.
 
@@ -915,9 +915,11 @@ assistant may do": reads run; `tune`/`set`/`stop`/`scan`/`record`/unkept `start_
 decode (paid transcription, with the minutes from the recording) ask first (`AWAITING_APPROVAL`
 with the reason); a tool the gate never offers (shell notifier) is not in the model's list;
 `undo` reverts the last `set`/`tune` the assistant made from the values it read before writing.
-Received text: results of `records`, `query_records`, `list_entities` and speech text are
-wrapped as quoted data with a line saying it came over the air, and any write in a turn that
-read such a result asks first whatever the row says. A refused call returns "the user declined"
+Received text: results of `records`, `query_records`, `list_entities`, view tools and speech
+text are wrapped as quoted data with a line saying it came over the air, and once a conversation
+has read such a result every later write in it asks first whatever the row says (decided
+2026-10-15: a per-turn rule let text read in one turn steer a write in the next; the cost is one
+extra question per write after a records read, which the evals of AI-12 can revisit). A refused call returns "the user declined"
 to the model. `WorkerStop` cancels the model call and marks the turn done. The system prompt:
 what Leyline is, the invariant-12 rule (never name a modulation the detector did not; a band-plan
 label says where it came from), how to cite `ley` commands, and the ask-before policy in words.
