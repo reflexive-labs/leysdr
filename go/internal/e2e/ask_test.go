@@ -48,23 +48,37 @@ type askRig struct {
 // which every worker it spawns inherits; unscripted it is empty, so the worker calls the provider.
 func newAskRig(t *testing.T, scripted bool) *askRig {
 	t.Helper()
+	r := &askRig{}
+	r.provider = httptest.NewServer(http.HandlerFunc(r.serveProvider))
+	t.Cleanup(r.provider.Close)
+	r.aiRig = startAskDaemon(t, scripted)
+	r.script = askScriptPath(r.aiRig)
+
+	// The check is the real `ley worker check`, against the test's provider.
+	_, errOut := r.mustLey(anthropicKey+"\n", "ai", "add", "anthropic", "--endpoint", r.provider.URL)
+	if !strings.Contains(errOut, "the provider accepted it") {
+		t.Fatalf("ley ai add said %q", errOut)
+	}
+	return r
+}
+
+// startAskDaemon starts a daemon whose `--ley` is the real ley, with no key added. scripted sets
+// LEY_ASSISTANT_SCRIPT to askScriptPath in its environment; unscripted it is empty.
+func startAskDaemon(t *testing.T, scripted bool) *aiRig {
+	t.Helper()
 	leyBin := os.Getenv("LEY_BIN")
 	if leyBin == "" || os.Getenv("LEYLINED_BIN") == "" {
 		t.Skip("set LEYLINED_BIN and LEY_BIN to run the cross-language e2e")
 	}
 	dir := t.TempDir()
-	r := &askRig{script: filepath.Join(dir, "assistant-script.jsonl")}
-	r.provider = httptest.NewServer(http.HandlerFunc(r.serveProvider))
-	t.Cleanup(r.provider.Close)
-	if scripted {
-		t.Setenv(assistant.ScriptEnv, r.script)
-	} else {
-		t.Setenv(assistant.ScriptEnv, "")
-	}
-
 	ar := &aiRig{
 		t: t, dir: dir, data: filepath.Join(dir, "data"), store: filepath.Join(dir, "store"),
 		logFile: filepath.Join(dir, "leylined.log"), workerBin: leyBin,
+	}
+	if scripted {
+		t.Setenv(assistant.ScriptEnv, askScriptPath(ar))
+	} else {
+		t.Setenv(assistant.ScriptEnv, "")
 	}
 	ar.daemonArgs = []string{
 		"--no-hardware", "--data", ar.data, "--store", ar.store, "--ley", leyBin, "--log-file", ar.logFile,
@@ -77,15 +91,11 @@ func newAskRig(t *testing.T, scripted bool) *askRig {
 		}
 	})
 	ar.start()
-	r.aiRig = ar
-
-	// The check is the real `ley worker check`, against the test's provider.
-	_, errOut := r.mustLey(anthropicKey+"\n", "ai", "add", "anthropic", "--endpoint", r.provider.URL)
-	if !strings.Contains(errOut, "the provider accepted it") {
-		t.Fatalf("ley ai add said %q", errOut)
-	}
-	return r
+	return ar
 }
+
+// askScriptPath is the file a scripted daemon's workers play.
+func askScriptPath(r *aiRig) string { return filepath.Join(r.dir, "assistant-script.jsonl") }
 
 // serveProvider is the Messages API as far as the worker and the check use it: GET /v1/models
 // accepts the test's key; POST /v1/messages answers messagesStatus with Anthropic's error shape.
