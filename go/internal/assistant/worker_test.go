@@ -27,7 +27,7 @@ func TestATurnRunsReadsAndAskedForChanges(t *testing.T) {
 	}})
 	w.say("t1", "put on the calling frequency")
 	turn := w.doneTurn()
-	if turn.GetTurnId() != "t1"+assistant.AssistantTurnSuffix || turn.GetRole() != leylinev1.Role_ROLE_ASSISTANT {
+	if turn.GetTurnId() != "t2" || turn.GetRole() != leylinev1.Role_ROLE_ASSISTANT {
 		t.Errorf("turn id %q role %v", turn.GetTurnId(), turn.GetRole())
 	}
 	if turn.GetText() != "Looking.\n\nTuned 146.520 MHz NFM. ley stop ends it." {
@@ -232,7 +232,7 @@ func TestUndo(t *testing.T) {
 	if sq := w.state().GetChannels()[0].GetSquelchDb(); sq != -45 {
 		t.Fatalf("squelch %v after the set", sq)
 	}
-	w.say("t2", "undo that")
+	w.say("t3", "undo that")
 	turn := w.doneTurn()
 	undo := callNamed(turn, "undo")
 	if undo.GetIsError() || !strings.Contains(undo.GetResultText(), "put back -60") || !strings.Contains(undo.GetResultText(), "→") {
@@ -241,7 +241,7 @@ func TestUndo(t *testing.T) {
 	if sq := w.state().GetChannels()[0].GetSquelchDb(); sq != -60 {
 		t.Errorf("squelch %v after undo, want -60", sq)
 	}
-	w.say("t3", "undo the tune too")
+	w.say("t5", "undo the tune too")
 	turn = w.doneTurn()
 	if c := turn.GetTools()[0]; c.GetIsError() || !strings.Contains(c.GetResultText(), "undid the tune") {
 		t.Errorf("undo of the tune: %v", c)
@@ -273,8 +273,8 @@ func TestStopDuringAResponse(t *testing.T) {
 	if turn.GetText() != "" {
 		t.Errorf("a stopped response wrote text: %q", turn.GetText())
 	}
-	w.say("t2", "again")
-	if turn := w.doneTurn(); turn.GetTurnId() != "t2-a" || turn.GetText() != "next" {
+	w.say("t3", "again")
+	if turn := w.doneTurn(); turn.GetTurnId() != "t4" || turn.GetText() != "next" {
 		t.Errorf("after the stop: %v", turn)
 	}
 }
@@ -287,8 +287,60 @@ func TestStopWhileAsking(t *testing.T) {
 	call := w.asking()
 	w.stop()
 	turn := w.doneTurn()
-	if c := lastCall(turn); c.GetCallId() != call.GetCallId() || c.GetState() != leylinev1.ToolCallState_TOOL_CALL_REFUSED {
+	if c := lastCall(turn); c.GetCallId() != call.GetCallId() || c.GetState() != leylinev1.ToolCallState_TOOL_CALL_REFUSED || c.GetResultText() != assistant.Stopped {
 		t.Errorf("the waiting call after a stop: %v", c)
+	}
+}
+
+// WorkerStop while a tool runs ends the call as an error, "stopped", and the turn within 2 s.
+func TestStopWhileAToolRuns(t *testing.T) {
+	t.Parallel()
+	w := startWorker(t, workerConfig{script: []string{
+		toolLine("record", map[string]any{"target": "146.52", "duration_s": 30}),
+		line(map[string]any{"text": "next"}),
+	}})
+	w.say("t1", "record for a while")
+	w.until(func(t *leylinev1.Turn) bool {
+		return lastCall(t).GetTool() == "record" && lastCall(t).GetState() == leylinev1.ToolCallState_TOOL_CALL_RUNNING
+	})
+	began := time.Now()
+	w.stop()
+	turn := w.doneTurn()
+	if took := time.Since(began); took > 2*time.Second {
+		t.Errorf("the stop took %v", took)
+	}
+	if c := lastCall(turn); c.GetState() != leylinev1.ToolCallState_TOOL_CALL_DONE || !c.GetIsError() || c.GetResultText() != assistant.Stopped {
+		t.Errorf("the running call after a stop: %v", c)
+	}
+	w.say("t3", "go on")
+	if turn := w.doneTurn(); turn.GetTurnId() != "t4" || turn.GetText() != "next" {
+		t.Errorf("after the stop: %v", turn)
+	}
+}
+
+// Turn ids follow the daemon's numbering, and call ids are the worker's own, unique within the
+// conversation.
+func TestTurnAndCallIDs(t *testing.T) {
+	t.Parallel()
+	for in, want := range map[string]string{"t1": "t2", "t3": "t4", "t41": "t42", "u7": "u7-a", "t": "t-a"} {
+		if got := assistant.ReplyTurnID(in); got != want {
+			t.Errorf("ReplyTurnID(%q) = %q, want %q", in, got, want)
+		}
+	}
+	w := startWorker(t, workerConfig{script: []string{
+		toolLine("get_state", nil), toolLine("list_devices", nil), line(map[string]any{"text": "a"}),
+		toolLine("get_state", nil), line(map[string]any{"text": "b"}),
+	}})
+	w.say("t1", "one")
+	first := w.doneTurn()
+	w.say("t3", "two")
+	second := w.doneTurn()
+	var ids []string
+	for _, c := range append(first.GetTools(), second.GetTools()...) {
+		ids = append(ids, c.GetCallId())
+	}
+	if strings.Join(ids, ",") != "c1,c2,c3" || second.GetTurnId() != "t4" {
+		t.Errorf("call ids %v, second turn %q", ids, second.GetTurnId())
 	}
 }
 

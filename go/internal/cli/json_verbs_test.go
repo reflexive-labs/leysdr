@@ -116,6 +116,7 @@ var jsonVerbs = []jsonVerbCase{
 	{path: "stop", args: []string{"stop", "all"}, prep: prepChannel},
 	{path: "tune", args: []string{"tune", "146.52", "--no-audio"}, timeout: 2 * time.Second},
 	{path: "version", args: []string{"version"}},
+	{path: "worker assistant", args: []string{"worker", "assistant"}, refuse: jsonNoOutput},
 	{path: "worker check", args: []string{"worker", "check", "--provider", "openai"}, prep: prepProvider, stdin: "sk-test-1234\n"},
 	{path: "watch", args: []string{"watch", "aprs", "--where", "device_id=LEYTST-1", "--count", "2"}},
 	{path: "waveform", args: []string{"waveform", "146.52", "--seconds", "2", "--count", "2"}},

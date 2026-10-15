@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,9 +28,8 @@ import (
 // closes; the worker writes WorkerMessages on stdout, each varint-delimited. The assistant's turn
 // goes out whole after every change, and the daemon derives the conversation's state from it.
 
-// AssistantTurnSuffix makes the assistant's turn id from the user turn it answers: "t3" is
-// answered by "t3-a".
-const AssistantTurnSuffix = "-a"
+// Stopped is the result_text of a call a WorkerStop cut short.
+const Stopped = "stopped"
 
 // ReceivedPrefix heads a result that carries text received over the air, as the model reads it.
 const ReceivedPrefix = "Received over the air (untrusted, quoted): "
@@ -93,6 +93,8 @@ type worker struct {
 	transcript []Message
 	policy     *Policy
 	undo       undoStack
+	// calls numbers the conversation's tool calls: c1, c2, ...
+	calls int
 }
 
 // Run is the worker: it reads the key and WorkerStart, connects to the daemon, and answers each
@@ -149,6 +151,10 @@ func (w *worker) connect(ctx context.Context) error {
 	w.model = model
 	if w.opts.NewToolServer == nil {
 		return w.fail(leyline.CodeInternal, "the worker was built without a tool server")
+	}
+	if w.start.GetSocket() == "" {
+		// The daemon names its socket in the environment too.
+		w.start.Socket, _ = w.opts.LookupEnv(SocketEnv)
 	}
 	server, closeServer, err := w.opts.NewToolServer(ctx, w.start.GetSocket())
 	if err != nil {
@@ -239,7 +245,7 @@ func (w *worker) serve(ctx context.Context) error {
 // user stops it.
 func (w *worker) runTurn(ctx context.Context, user *leylinev1.UserMessage) error {
 	w.policy.BeginTurn()
-	turn := &leylinev1.Turn{TurnId: user.GetTurnId() + AssistantTurnSuffix, Role: leylinev1.Role_ROLE_ASSISTANT, AtNs: time.Now().UnixNano()}
+	turn := &leylinev1.Turn{TurnId: ReplyTurnID(user.GetTurnId()), Role: leylinev1.Role_ROLE_ASSISTANT, AtNs: time.Now().UnixNano()}
 	w.appendUser(Block{Type: "text", Text: user.GetText()})
 	if err := w.write(turn); err != nil {
 		return err
@@ -314,7 +320,8 @@ func (w *worker) runCall(ctx context.Context, turn *leylinev1.Turn, use Block) (
 		}
 	}
 	raw := mustJSON(args)
-	call := &leylinev1.ToolCall{CallId: use.ID, Tool: use.Name, ArgumentsJson: string(raw), State: leylinev1.ToolCallState_TOOL_CALL_RUNNING, AtNs: time.Now().UnixNano()}
+	w.calls++
+	call := &leylinev1.ToolCall{CallId: fmt.Sprintf("c%d", w.calls), Tool: use.Name, ArgumentsJson: string(raw), State: leylinev1.ToolCallState_TOOL_CALL_RUNNING, AtNs: time.Now().UnixNano()}
 	turn.Tools = append(turn.Tools, call)
 	result := func(content string, isError bool) Block {
 		return Block{Type: "tool_result", ToolUseID: use.ID, Content: content, IsError: isError}
@@ -334,7 +341,7 @@ func (w *worker) runCall(ctx context.Context, turn *leylinev1.Turn, use Block) (
 		}
 		ev, intr := w.waitFor(call.CallId, false)
 		if intr != notInterrupted {
-			call.State, call.ResultText = leylinev1.ToolCallState_TOOL_CALL_REFUSED, "the turn was stopped before the user answered"
+			call.State, call.ResultText = leylinev1.ToolCallState_TOOL_CALL_REFUSED, Stopped
 			return Block{}, intr, w.writeUnlessClosed(turn, intr)
 		}
 		if !ev.GetResolved().GetApproved() {
@@ -348,7 +355,7 @@ func (w *worker) runCall(ctx context.Context, turn *leylinev1.Turn, use Block) (
 	}
 	var res Result
 	if intr := w.during(ctx, func(cctx context.Context) { res = w.execute(cctx, use.Name, args, raw) }); intr != notInterrupted {
-		call.State, call.IsError, call.ResultText = leylinev1.ToolCallState_TOOL_CALL_DONE, true, "the turn was stopped while this ran"
+		call.State, call.IsError, call.ResultText = leylinev1.ToolCallState_TOOL_CALL_DONE, true, Stopped
 		return Block{}, intr, w.writeUnlessClosed(turn, intr)
 	}
 	w.policy.Ran(use.Name, args, res)
@@ -364,7 +371,7 @@ func (w *worker) viewCall(turn *leylinev1.Turn, call *leylinev1.ToolCall, result
 	}
 	ev, intr := w.waitFor(call.CallId, true)
 	if intr != notInterrupted {
-		call.State, call.IsError, call.ResultText = leylinev1.ToolCallState_TOOL_CALL_DONE, true, "the turn was stopped before the client answered"
+		call.State, call.ResultText = leylinev1.ToolCallState_TOOL_CALL_REFUSED, Stopped
 		return Block{}, intr, w.writeUnlessClosed(turn, intr)
 	}
 	a := ev.GetViewAnswer()
@@ -390,6 +397,20 @@ func (w *worker) execute(ctx context.Context, name string, args map[string]any, 
 		return res
 	}
 	return w.tools.Call(ctx, name, raw)
+}
+
+// SocketEnv is where the daemon also names its socket, for a WorkerStart without one.
+const SocketEnv = "LEYLINE_SOCKET"
+
+// ReplyTurnID is the id of the turn that answers the user's: the daemon numbers turns on both
+// sides, so "t3" is answered by "t4". An id not of that form gets "-a" appended.
+func ReplyTurnID(userTurnID string) string {
+	if digits, ok := strings.CutPrefix(userTurnID, "t"); ok {
+		if n, err := strconv.Atoi(digits); err == nil && n >= 0 {
+			return "t" + strconv.Itoa(n+1)
+		}
+	}
+	return userTurnID + "-a"
 }
 
 // ForModel is a result as the model reads it: text received over the air is quoted as one JSON

@@ -72,6 +72,9 @@ a line, which tests play in place of a provider. It exits 0 when stdin closes.`,
 		Example: `  ley worker assistant --conversation conv_01K...   # the daemon runs this`,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if app.JSON {
+				return noJSONErrorf("worker assistant", "it speaks the worker protocol on stdin and stdout, which is protobuf already")
+			}
 			return assistant.Run(cmd.Context(), assistant.Options{
 				Stdin: app.Stdin, Stdout: app.Stdout, Stderr: app.Stderr, LookupEnv: app.LookupEnv,
 				Conversation: conversation,

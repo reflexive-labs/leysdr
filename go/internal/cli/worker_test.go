@@ -262,7 +262,7 @@ func TestWorkerAssistantCommand(t *testing.T) {
 			t.Fatalf("stdout ended before the turn did: %v; stderr: %s", err, errb.String())
 		}
 		if m.GetTurn().GetDone() {
-			if m.GetTurn().GetText() != "hello" || m.GetTurn().GetTurnId() != "t1-a" {
+			if m.GetTurn().GetText() != "hello" || m.GetTurn().GetTurnId() != "t2" {
 				t.Errorf("turn: %v", m.GetTurn())
 			}
 			break
