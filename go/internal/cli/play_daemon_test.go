@@ -420,3 +420,37 @@ func TestDaemonStartPidfileUnwritable(t *testing.T) {
 		return strings.Contains(string(log), "fake leylined stopped")
 	})
 }
+
+// --over plays one over of a gated part, cut from the part's sidecar as a speech decoder hears it,
+// through the daemon's StartPlayback range; an over the part does not have, --over beside --from,
+// and a range on a file path are usage errors that say why.
+func TestPlayOneOverOfAPart(t *testing.T) {
+	t.Parallel()
+	sock, _ := harness(t, transcribeOpts(t, false))
+	_, errOut, err := run(t, t.Context(), sock, "play", transcribeID, "--part", "1", "--over", "3")
+	if err != nil {
+		t.Fatalf("play --over: %v\n%s", err, errOut)
+	}
+	// Over 3 opens at 4.0 s and closes at 5.0 s: half a second of pre-roll and of hang is 2 s.
+	if !strings.Contains(errOut, transcribeID+", part 1 of 2, over 3 through the daemon's audio") || !strings.Contains(errOut, "2 s. Ctrl-C stops") {
+		t.Errorf("play --over must name the over and play its two seconds:\n%s", errOut)
+	}
+
+	_, _, err = run(t, t.Context(), sock, "play", transcribeID, "--part", "2", "--over", "2")
+	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "part 2 has 1 overs; choose one from 1 to 1") {
+		t.Errorf("an over the part lacks: exit %d, %v", exitCode(err), err)
+	}
+	_, _, err = run(t, t.Context(), sock, "play", transcribeID, "--over", "1", "--from", "5")
+	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "not both") {
+		t.Errorf("--over beside --from: exit %d, %v", exitCode(err), err)
+	}
+	_, _, err = run(t, t.Context(), sock, "play", "fixtures/nfm_tone.cf32", "--over", "1")
+	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "play part of a recording ley kept") {
+		t.Errorf("--over on a file: exit %d, %v", exitCode(err), err)
+	}
+	// --from and --to reach the daemon as given, and its refusal is the reader's to fix.
+	_, _, err = run(t, t.Context(), sock, "play", transcribeID, "--part", "1", "--from", "1", "--to", "999999999")
+	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "not a range inside part 1") {
+		t.Errorf("a range past the part: exit %d, %v", exitCode(err), err)
+	}
+}

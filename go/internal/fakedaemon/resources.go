@@ -5,6 +5,7 @@ package fakedaemon
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -301,6 +302,18 @@ func (d *Daemon) StartPlayback(ctx context.Context, req *leylinev1.StartPlayback
 		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, req.GetResourceUri(),
 			fmt.Sprintf("%s has no part %d", jobID, part)))
 	}
+	// A range is capture samples, as the daemon takes it: the fake places it by the same rates and
+	// refuses what the daemon refuses, so a client's range is tested against the real rule.
+	samples := chosen.Samples
+	var rangeStart, rangeEnd uint64
+	if req.GetStartSample() != 0 || req.GetEndSample() != 0 {
+		var err error
+		rangeStart, rangeEnd, samples, err = playbackRange(m, j.record.dir, *chosen, req.GetStartSample(), req.GetEndSample())
+		if err != nil {
+			d.mu.Unlock()
+			return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, req.GetResourceUri(), err.Error()))
+		}
+	}
 	volume := 1.0
 	if req.Volume != nil {
 		volume = req.GetVolume()
@@ -312,7 +325,9 @@ func (d *Daemon) StartPlayback(ctx context.Context, req *leylinev1.StartPlayback
 			ResourceUri: leyline.RecordingPartURI(jobID, part),
 			Path:        filepath.Join(j.record.dir, chosen.File),
 			SampleRate:  uint32(m.SampleRate),
-			Samples:     chosen.Samples,
+			Samples:     samples,
+			StartSample: rangeStart,
+			EndSample:   rangeEnd,
 			Volume:      volume,
 			CreatedBy:   ci,
 			State:       leylinev1.PlaybackState_PLAYBACK_PLAYING,
@@ -324,6 +339,35 @@ func (d *Daemon) StartPlayback(ctx context.Context, req *leylinev1.StartPlayback
 	d.mu.Unlock()
 	go d.runPlayback(p)
 	return reply, nil
+}
+
+// playbackRange is the daemon's PlaybackRange.resolve: start..<end of part p in capture samples (0
+// for the part's start or end), and the frames of audio it covers, placed by the capture rate the
+// part's sidecar or the manifest gives.
+func playbackRange(m *leyline.RecordingManifest, dir string, p leyline.RecordingPart, start, end uint64) (from, to, frames uint64, err error) {
+	from, to = start, end
+	if from == 0 {
+		from = p.StartSample
+	}
+	if to == 0 {
+		to = p.EndSample
+	}
+	if from < p.StartSample || to > p.EndSample || to <= from {
+		return 0, 0, 0, fmt.Errorf("samples %d..<%d are not a range inside part %d, which holds samples %d..<%d",
+			from, to, p.Part, p.StartSample, p.EndSample)
+	}
+	sc, _ := leyline.ReadPartSidecar(dir, p)
+	rate := m.PartCaptureRate(sc, p)
+	if rate <= 0 || m.SampleRate == 0 {
+		return 0, 0, 0, fmt.Errorf("part %d gives no rate to place a range in", p.Part)
+	}
+	frame := func(s uint64) uint64 {
+		return min(p.Samples, uint64(math.Round(float64(s-p.StartSample)*float64(m.SampleRate)/rate)))
+	}
+	if frames = frame(to) - frame(from); frames == 0 {
+		return 0, 0, 0, fmt.Errorf("samples %d..<%d are shorter than one frame of part %d's audio", from, to, p.Part)
+	}
+	return from, to, frames, nil
 }
 
 // StopPlayback implements Control.

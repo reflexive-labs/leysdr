@@ -94,7 +94,15 @@ func (c *Client) DeleteRecording(ctx context.Context, uri string) (*leylinev1.De
 // the sound comes out where the radio is and no samples cross the socket.
 // The playback belongs to this client and stops when it goes.
 func (c *Client) StartPlayback(ctx context.Context, uri string, volume float64) (*leylinev1.Playback, error) {
-	req := &leylinev1.StartPlaybackRequest{ResourceUri: uri}
+	return c.StartPlaybackRange(ctx, uri, volume, 0, 0)
+}
+
+// StartPlaybackRange plays capture samples start..<end of the part uri names,
+// on the capture's timeline as the part's sidecar dates it: one over, say,
+// rather than the whole exchange. 0 for start is the part's start and 0 for end
+// its end; a range outside the part is INVALID_ARGUMENT.
+func (c *Client) StartPlaybackRange(ctx context.Context, uri string, volume float64, start, end uint64) (*leylinev1.Playback, error) {
+	req := &leylinev1.StartPlaybackRequest{ResourceUri: uri, StartSample: start, EndSample: end}
 	if volume >= 0 {
 		req.Volume = &volume
 	}

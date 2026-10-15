@@ -15,6 +15,12 @@ A recording 'ley record' made is named by its id or its ley://recordings/
 URI. An IQ recording is tuned as above; an audio one is played by the daemon
 through its own speakers, and on a terminal space pauses and resumes it.
 
+--over plays one over of a gated audio recording's part: the over's number in
+the part (1 is the first time the squelch opened), from the recording's
+pre-roll before it to half a second after it closed, as a speech decoder heard
+it. --from and --to play a stretch of the part instead, in capture samples on
+the timeline 'ley recordings show --json' and the part's sidecar give.
+
 Usage:
   ley play <file.cf32> [flags]
 
@@ -23,18 +29,22 @@ Examples:
   ley play recording.cf32 --loop               # keep playing until Ctrl-C
   ley play recording.cf32 --freq 146.52 --mode nfm
   ley play recording.cf32 --persistent --json  # leave it running, print ids
+  ley play job_01J... --part 2 --over 3        # the third over of part 2
 
 Flags:
       --bw string        how wide a slice of spectrum to listen to: a bare number is kHz (12.5), or 200k, 12500 (default: the mode's usual width)
       --freq string      frequency to listen to within the recording; a bare number is MHz, e.g. 146.52 (default: the file's centre plus its first expect offset)
+      --from uint        play the part from this capture sample on (default: its start)
       --gain string      receiver gain: auto, dB such as 30 for the first stage, or stages such as LNA=0,VGA=20 (ley help gain); default: leave the radio's setting
   -h, --help             help for play
       --loop             start over when the file ends, until Ctrl-C (default: stop at the end)
       --mode string      how to decode: nfm (two-way voice), wfm (broadcast), am (airband), usb, lsb, cw, raw; fm or ssb pick by frequency (default: by band; ley help modes)
       --no-audio         decode but do not play through the speakers (use with --persistent or --json)
+      --over int         play one over of the part, by its number in the part, e.g. 3 (default: the whole part)
       --part int         which part of a ley://recordings/ recording to play, e.g. 2 (default: the first)
       --persistent       leave the channel running after the command exits and print its ids (for scripts)
       --squelch string   mute the audio when the signal is weaker than this level: auto (default for voice modes), off, or a level like -40 (dBFS; 0 is the loudest possible)
+      --to uint          play the part up to this capture sample (default: its end)
       --volume string    speaker volume: 0 to 1, or a percentage like 50% (default "1")
 
 Global Flags:
