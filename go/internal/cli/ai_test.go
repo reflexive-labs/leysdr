@@ -235,8 +235,18 @@ func TestAIAddSetsTheDefaults(t *testing.T) {
 		t.Errorf("first key: %v\ngot  %q\nwant %q", err, errOut, want)
 	}
 	_, errOut, err = runLey(t, sock, 80, false, "sk-ant-0042\n", "ai", "add", "anthropic")
-	if err != nil || errOut != "anthropic key …0042 added; the provider accepted it\n" {
+	if err != nil || errOut != "anthropic key …0042 added; the provider accepted it. No feature changed; ley ai lists what each calls\n" {
 		t.Errorf("second key, nothing left to set: %v %q", err, errOut)
+	}
+	// A key at an endpoint sets nothing, since the defaults are the provider's own models.
+	sockE, cE := harness(t, fakedaemon.Options{})
+	_, errOut, err = runLey(t, sockE, 80, false, "sk-oa-0042\n", "ai", "add", "openai", "--endpoint", "http://localhost:11434")
+	if err != nil || errOut != "openai key …0042 added; the provider accepted it. It names an endpoint, so no model was set; "+
+		"choose the server's with ley ai use assistant openai <model>\n" {
+		t.Errorf("a key at an endpoint: %v %q", err, errOut)
+	}
+	if st, _ := cE.Credentials.GetAIState(t.Context(), &leylinev1.GetAIStateRequest{}); len(st.GetFeatures()) != 0 {
+		t.Errorf("a key at an endpoint set %v", st.GetFeatures())
 	}
 	st, _ := c.Credentials.GetAIState(t.Context(), &leylinev1.GetAIStateRequest{})
 	got := []string{}
@@ -409,7 +419,9 @@ func TestAIUseForms(t *testing.T) {
 	}
 	cases := []struct {
 		args          []string
+		ollamaKey     bool // an ollama key at an endpoint is stored first
 		want, errWant string
+		errNot        string
 		code          int
 	}{
 		{args: []string{"openai"}, want: "assistant openai gpt-5, speech openai whisper-1"},
@@ -417,15 +429,31 @@ func TestAIUseForms(t *testing.T) {
 		{args: []string{"speech", "openai"}, want: "speech openai whisper-1"},
 		{args: []string{"assistant", "anthropic"}, want: "assistant anthropic claude-sonnet-5-5"},
 		{args: []string{"anthropic", "claude-opus-5-5"}, want: "assistant anthropic claude-opus-5-5"},
-		{args: []string{"ollama", "llama3"}, want: "assistant ollama llama3"},
+		{args: []string{"ollama", "llama3"}, ollamaKey: true, want: "assistant ollama llama3"},
 		{args: []string{"assistant", "ollama", "llama3"}, want: "assistant ollama llama3"},
 		{
+			args: []string{"ollama", "llama3"}, code: ExitUsage,
+			errWant: "ley does not know which feature ollama serves; say which: ley ai use speech ollama llama3, or ley ai use assistant ollama llama3",
+		},
+		{
+			args: []string{"deepgram"}, code: ExitUsage,
+			errWant: "say which: ley ai use speech deepgram <model>, or ley ai use assistant deepgram <model>",
+		},
+		{
 			args: []string{"openai", "gpt-5"}, code: ExitUsage,
-			errWant: "gpt-5 could be a model for assistant or speech, since openai serves both; say which: ley ai use assistant openai gpt-5",
+			errWant: "gpt-5 could be a model for assistant or speech, since openai serves both; say which: ley ai use assistant openai gpt-5", errNot: "use speech",
+		},
+		{
+			args: []string{"openai", "whisper-1"}, code: ExitUsage,
+			errWant: "since openai serves both; say which: ley ai use speech openai whisper-1", errNot: "use assistant",
+		},
+		{
+			args: []string{"openai", "gpt-4o"}, code: ExitUsage,
+			errWant: "say which: ley ai use assistant openai gpt-4o, or ley ai use speech openai gpt-4o",
 		},
 		{args: []string{"speech"}, code: ExitUsage, errWant: "name the provider speech should call: ley ai add openai"},
 		{
-			args: []string{"ollama"}, code: ExitUsage,
+			args: []string{"ollama"}, ollamaKey: true, code: ExitUsage,
 			errWant: "ollama has no default model for the assistant; name one: ley ai use assistant ollama <model>",
 		},
 		{args: []string{"assistant", "ollama"}, code: ExitUsage, errWant: "ley ai use assistant ollama <model>"},
@@ -440,9 +468,17 @@ func TestAIUseForms(t *testing.T) {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			t.Parallel()
 			sock, c := harness(t, fakedaemon.Options{})
+			if tc.ollamaKey {
+				if _, err := c.Credentials.SetCredential(t.Context(), &leylinev1.SetCredentialRequest{
+					Provider: "ollama", Secret: "ollama-0042", Endpoint: "http://localhost:11434",
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
 			out, _, err := runLey(t, sock, 80, false, "", append([]string{"--json", "ai", "use"}, tc.args...)...)
 			if tc.code != 0 {
-				if exitCode(err) != tc.code || !strings.Contains(err.Error(), tc.errWant) {
+				if exitCode(err) != tc.code || !strings.Contains(err.Error(), tc.errWant) ||
+					(tc.errNot != "" && strings.Contains(err.Error(), tc.errNot)) {
 					t.Errorf("exit %d (%v), want %d saying %q", exitCode(err), err, tc.code, tc.errWant)
 				}
 				return

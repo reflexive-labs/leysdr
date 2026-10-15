@@ -244,6 +244,14 @@ func TestAKeySetsTheDefaultsAndOverwritesNoChoice(t *testing.T) {
 	if _, err := c.Credentials.SetFeatureModel(ctx, &leylinev1.FeatureModel{Feature: "assistant", Provider: "anthropic", Model: "claude-opus-5-5"}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := c.Credentials.SetCredential(ctx, &leylinev1.SetCredentialRequest{
+		Provider: "openai", Secret: testSecret, Endpoint: "http://localhost:11434",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := features(); got != "assistant anthropic claude-opus-5-5" {
+		t.Errorf("a key at an endpoint set defaults: %q", got)
+	}
 	set("openai", testSecret)
 	if got := features(); got != "assistant anthropic claude-opus-5-5, speech openai whisper-1" {
 		t.Errorf("after the openai key: %q", got)
@@ -258,6 +266,12 @@ func TestAFeatureItsProviderCannotServeIsRefused(t *testing.T) {
 	_, err := c.Credentials.SetFeatureModel(ctx, &leylinev1.FeatureModel{Feature: "speech", Provider: "anthropic", Model: "nova-3"})
 	if leyline.Code(err) != leyline.CodeInvalidArgument || !strings.Contains(err.Error(), "anthropic does not serve speech; openai does: ley ai use speech openai") {
 		t.Errorf("speech on anthropic: %v", err)
+	}
+	// A choice with no model names the feature's own providers.
+	_, err = c.Credentials.SetFeatureModel(ctx, &leylinev1.FeatureModel{Feature: "speech", Provider: "openai"})
+	if leyline.Code(err) != leyline.CodeInvalidArgument || !strings.Contains(err.Error(), "ley ai use speech openai <model>") ||
+		strings.Contains(err.Error(), "anthropic") {
+		t.Errorf("speech with no model: %v", err)
 	}
 	// A speech decoder installed for a provider makes it a speech provider.
 	c, _ = harness(t, fakedaemon.Options{SpeechProvider: "deepgram"})

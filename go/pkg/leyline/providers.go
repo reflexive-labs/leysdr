@@ -14,7 +14,7 @@ import (
 // when it has none (docs/dev/engine-internals.md, "Credentials and usage"). The daemon keeps the
 // same table in engine/Sources/LeylineServer/AI/ProviderDefaults.swift and the app in its
 // provider catalogue; TestProviderTablesAgree reads both. The model names are placeholders until
-// the AI-12 run and the speech spike confirm them (docs/plans/ai-features.md, AI-16).
+// the assistant evals and the speech spike confirm them (docs/plans/ai-features.md).
 
 // ProviderDefault is one provider in the table: the default model of every feature it serves.
 type ProviderDefault struct {

@@ -60,10 +60,11 @@ struct CredentialsService: Leyline_V1_Credentials.SimpleServiceProtocol {
     /// Gives the features the key's provider serves, and that have no model chosen, the default
     /// table's (`ProviderDefaults`), so one added key is enough to start. A key the provider
     /// rejected sets nothing; one whose check could not run does, since the check is retried with
-    /// `ley ai check` and nothing else would set them then. The reply is unchanged: a client sees
-    /// what was set in the published `AIState`.
+    /// `ley ai check` and nothing else would set them then. A key with an endpoint sets nothing
+    /// either: the table's models are the provider's own, and a gateway or a local server names
+    /// its own. The reply is unchanged: a client sees what was set in the published `AIState`.
     private func setDefaults(after checked: Leyline_V1_Credential, by client: ClientContext) async {
-        guard checked.lastCheck.outcome != .rejected else { return }
+        guard checked.lastCheck.outcome != .rejected, checked.endpoint.isEmpty else { return }
         let set = await credentials.setDefaults(for: checked.provider)
         guard !set.isEmpty else { return }
         log.info("\(set.map { "\($0.feature) now calls \($0.provider) \($0.model)" }.joined(separator: ", "))")

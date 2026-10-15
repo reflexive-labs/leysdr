@@ -182,6 +182,13 @@ final class CredentialsServiceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(atPath: dir) }
         let ley = try writeScriptedLey(in: dir, outcome: "accepted", message: "")
         try await withDaemon(leyPath: ley) { c in
+            // A key at an endpoint sets nothing: the defaults are the provider's own models.
+            _ = try await c.credentials.setCredential(self.setRequest("openai", endpoint: "http://localhost:11434"),
+                                                      metadata: testMetadata)
+            let atEndpoint = try await c.credentials.getAIState(Leyline_V1_GetAIStateRequest(), metadata: testMetadata)
+            XCTAssertEqual(atEndpoint.features, [])
+            _ = try await c.credentials.deleteCredential(self.ref("openai"), metadata: testMetadata)
+
             let events = await EventCollector.start(c.control, daemon: c.daemon)
             let anthropic = try await c.credentials.setCredential(self.setRequest("anthropic"), metadata: testMetadata)
             XCTAssertEqual(anthropic.provider, "anthropic")

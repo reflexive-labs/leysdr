@@ -7,7 +7,10 @@ provider's default model (openai: the assistant gpt-5 and speech
 whisper-1; anthropic: the assistant claude-sonnet-5-5). With a feature and a
 provider, that feature calls it with the default model. A provider and a
 model with no feature is taken when the provider serves one feature, and
-refused when it serves two, since the model could be either's.
+refused when it serves two, since the model could be either's. A provider
+ley does not know needs the feature and the model named, unless its key
+was added with --endpoint: then it is an OpenAI-compatible server, which
+serves the assistant.
 
 The model is the provider's own name for it, passed on as typed, so a model
 the provider has not heard of fails on the first call rather than here. A
@@ -28,7 +31,8 @@ Examples:
   ley ai use openai                                # the assistant and speech
   ley ai use assistant anthropic                   # its default model
   ley ai use assistant anthropic claude-opus-5-5
-  ley ai use assistant ollama llama3               # added with --endpoint
+  ley ai use assistant openai llama3               # a key added with --endpoint
+  ley ai use speech deepgram nova-3                # a speech decoder's provider
 
 Flags:
   -h, --help   help for use

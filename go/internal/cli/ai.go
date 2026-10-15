@@ -243,7 +243,9 @@ Unless the provider refuses the key, every feature the provider serves and
 that has no model yet gets the provider's default (openai: the assistant
 gpt-5 and speech whisper-1; anthropic: the assistant claude-sonnet-5-5),
 and the line says so. A model already chosen is kept; 'ley ai use'
-changes one.
+changes one. A key added with --endpoint sets none, since the defaults are
+the provider's own models and a server names its own; the line gives the
+'ley ai use' that chooses one.
 
 --label is a name for the key in 'ley ai' (which account it is), and
 --endpoint points the provider at a gateway or an OpenAI-compatible server
@@ -292,12 +294,18 @@ func runAIAdd(ctx context.Context, app *App, provider, label, endpoint string) e
 	}
 	line := addedLine(app.ErrStyle, cred)
 	if after, err := c.Credentials.GetAIState(ctx, &leylinev1.GetAIStateRequest{}); err == nil {
-		if set := newlySet(before, after, provider); len(set) > 0 {
-			sep := ". "
-			if cred.GetLastCheck().GetOutcome() != leylinev1.CredentialCheck_ACCEPTED {
-				sep = "\n" // the line already ends with its own next command
-			}
-			line += sep + defaultsSentence(app.ErrStyle, set)
+		accepted := cred.GetLastCheck().GetOutcome() == leylinev1.CredentialCheck_ACCEPTED
+		switch set := newlySet(before, after, provider); {
+		case len(set) > 0 && accepted:
+			line += ". " + defaultsSentence(app.ErrStyle, set)
+		case len(set) > 0:
+			line += "\n" + defaultsSentence(app.ErrStyle, set) // the line already ends with its own next command
+		case accepted && cred.GetEndpoint() != "":
+			// The table's models are the provider's own; a server at an endpoint names its own.
+			line += fmt.Sprintf(". It names an endpoint, so no model was set; choose the server's with %s",
+				app.ErrStyle.Cmd("ley ai use assistant "+provider+" <model>"))
+		case accepted:
+			line += ". No feature changed; " + app.ErrStyle.Cmd("ley ai") + " lists what each calls"
 		}
 	}
 	fmt.Fprintln(app.Stderr, line)
@@ -532,7 +540,10 @@ provider's default model (openai: the assistant gpt-5 and speech
 whisper-1; anthropic: the assistant claude-sonnet-5-5). With a feature and a
 provider, that feature calls it with the default model. A provider and a
 model with no feature is taken when the provider serves one feature, and
-refused when it serves two, since the model could be either's.
+refused when it serves two, since the model could be either's. A provider
+ley does not know needs the feature and the model named, unless its key
+was added with --endpoint: then it is an OpenAI-compatible server, which
+serves the assistant.
 
 The model is the provider's own name for it, passed on as typed, so a model
 the provider has not heard of fails on the first call rather than here. A
@@ -548,7 +559,8 @@ prints the command that adds it.
 		Example: `  ley ai use openai                                # the assistant and speech
   ley ai use assistant anthropic                   # its default model
   ley ai use assistant anthropic claude-opus-5-5
-  ley ai use assistant ollama llama3               # added with --endpoint`,
+  ley ai use assistant openai llama3               # a key added with --endpoint
+  ley ai use speech deepgram nova-3                # a speech decoder's provider`,
 		Args: cobra.RangeArgs(1, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAIUse(cmd.Context(), app, args)
@@ -557,9 +569,9 @@ prints the command that adds it.
 }
 
 // useChoices turns use's arguments into the feature models to set, filling in the default
-// models (leyline.ProviderDefaults). Whether the provider can serve each feature is the daemon's
-// to say: it knows which speech decoders are installed.
-func useChoices(args []string) ([]*leylinev1.FeatureModel, error) {
+// models (leyline.ProviderDefaults) from the keys there are. Whether the provider can serve each
+// feature is the daemon's to say: it knows which speech decoders are installed.
+func useChoices(args []string, keys []*leylinev1.Credential) ([]*leylinev1.FeatureModel, error) {
 	if leyline.IsAIFeature(args[0]) && len(args) == 1 {
 		return nil, usageErrorf("name the provider %s should call: %s", leyline.FeatureWords(args[0]),
 			leyline.ChooseCommand(args[0], nil))
@@ -592,17 +604,25 @@ func useChoices(args []string) ([]*leylinev1.FeatureModel, error) {
 	case leyline.IsAIFeature(args[0]):
 		return choice(args[0], args[1], "")
 	}
-	provider := args[0]
+	provider, model := args[0], ""
+	if len(args) == 2 {
+		model = args[1]
+	}
 	served := leyline.TableFeatures(provider)
 	if !leyline.IsKnownProvider(provider) {
-		served = []string{"assistant"} // an OpenAI-compatible server
+		// Only a key at an endpoint says what an unknown provider is: an OpenAI-compatible
+		// server, which serves the assistant. Anything else could be a speech decoder's.
+		if !hasEndpointKey(keys, provider) {
+			return nil, usageErrorf("ley does not know which feature %s serves; say which: %s, or %s", provider,
+				useForm("speech", provider, model), useForm("assistant", provider, model))
+		}
+		served = []string{"assistant"}
 	}
 	if len(args) == 2 {
 		if len(served) > 1 {
-			return nil, usageErrorf("%s could be a model for %s, since %s serves both; say which: ley ai use %s %s %s",
-				args[1], strings.Join(served, " or "), provider, served[0], provider, args[1])
+			return nil, ambiguousModel(provider, model, served)
 		}
-		return choice(served[0], provider, args[1])
+		return choice(served[0], provider, model)
 	}
 	var out []*leylinev1.FeatureModel
 	for _, f := range served {
@@ -615,16 +635,52 @@ func useChoices(args []string) ([]*leylinev1.FeatureModel, error) {
 	return out, nil
 }
 
-func runAIUse(ctx context.Context, app *App, args []string) error {
-	choices, err := useChoices(args)
-	if err != nil {
-		return err
+// ambiguousModel refuses a model given with no feature to a provider that serves several: it
+// suggests the feature whose default model it is, and otherwise lists the form for each.
+func ambiguousModel(provider, model string, served []string) error {
+	var forms []string
+	for _, f := range served {
+		if leyline.DefaultModel(provider, f) == model {
+			forms = []string{useForm(f, provider, model)}
+			break
+		}
+		forms = append(forms, useForm(f, provider, model))
 	}
+	return usageErrorf("%s could be a model for %s, since %s serves both; say which: %s",
+		model, strings.Join(served, " or "), provider, strings.Join(forms, ", or "))
+}
+
+// useForm is the three-word use, with <model> for a model not given.
+func useForm(feature, provider, model string) string {
+	if model == "" {
+		model = "<model>"
+	}
+	return "ley ai use " + feature + " " + provider + " " + model
+}
+
+func hasEndpointKey(keys []*leylinev1.Credential, provider string) bool {
+	for _, k := range keys {
+		if k.GetProvider() == provider && k.GetEndpoint() != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func runAIUse(ctx context.Context, app *App, args []string) error {
 	c, err := app.dial(ctx)
 	if err != nil {
 		return app.notRunning(err)
 	}
 	defer c.Close()
+	st, err := c.Credentials.GetAIState(ctx, &leylinev1.GetAIStateRequest{})
+	if err != nil {
+		return app.notRunning(err)
+	}
+	choices, err := useChoices(args, st.GetCredentials())
+	if err != nil {
+		return err
+	}
 	var set []*leylinev1.FeatureModel
 	for _, want := range choices {
 		fm, err := c.Credentials.SetFeatureModel(ctx, want)
@@ -635,7 +691,7 @@ func runAIUse(ctx context.Context, app *App, args []string) error {
 		fmt.Fprintf(app.Stderr, "%s now calls %s %s\n", fm.GetFeature(), fm.GetProvider(), fm.GetModel())
 	}
 	s, provider := app.ErrStyle, choices[0].GetProvider()
-	if st, err := c.Credentials.GetAIState(ctx, &leylinev1.GetAIStateRequest{}); err == nil && !hasKey(st, provider) {
+	if !hasKey(st, provider) {
 		fmt.Fprintf(app.Stderr, "  %s %s\n", s.Muted("no "+provider+" key is set yet; add one with:"), s.Cmd("ley ai add "+provider))
 	}
 	if !app.JSON {

@@ -4,8 +4,8 @@
 // when it has none (docs/dev/engine-internals.md, "Credentials and usage"). `ley` and the fake
 // daemon keep the same table in go/pkg/leyline/providers.go, and the app in its provider
 // catalogue; Go's TestProviderTablesAgree reads this file as text, so `table` stays one literal
-// with one provider per line. The model names are placeholders until the AI-12 run and the
-// speech spike confirm them (docs/plans/ai-features.md, AI-16).
+// with one provider per line. The model names are placeholders until the assistant evals and the
+// speech spike confirm them (docs/plans/ai-features.md).
 
 import LeylineProto
 

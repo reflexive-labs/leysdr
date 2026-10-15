@@ -13,7 +13,9 @@ Unless the provider refuses the key, every feature the provider serves and
 that has no model yet gets the provider's default (openai: the assistant
 gpt-5 and speech whisper-1; anthropic: the assistant claude-sonnet-5-5),
 and the line says so. A model already chosen is kept; 'ley ai use'
-changes one.
+changes one. A key added with --endpoint sets none, since the defaults are
+the provider's own models and a server names its own; the line gives the
+'ley ai use' that chooses one.
 
 --label is a name for the key in 'ley ai' (which account it is), and
 --endpoint points the provider at a gateway or an OpenAI-compatible server

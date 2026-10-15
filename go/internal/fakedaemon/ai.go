@@ -146,9 +146,10 @@ func (d *Daemon) SetCredential(ctx context.Context, req *leylinev1.SetCredential
 
 // setDefaults gives every feature the key's provider serves by the default table, and that has
 // no provider chosen, the table's model, as the daemon does after a check: never over a choice,
-// and nothing for a key the provider rejected.
+// and nothing for a key the provider rejected or one with an endpoint, whose server names its
+// own models.
 func (d *Daemon) setDefaults(by *leylinev1.ClientInfo, cred *leylinev1.Credential) {
-	if cred.GetLastCheck().GetOutcome() == leylinev1.CredentialCheck_REJECTED {
+	if cred.GetLastCheck().GetOutcome() == leylinev1.CredentialCheck_REJECTED || cred.GetEndpoint() != "" {
 		return
 	}
 	d.mu.Lock()
@@ -264,8 +265,13 @@ func (d *Daemon) SetFeatureModel(ctx context.Context, req *leylinev1.FeatureMode
 	}
 	clearing := req.GetProvider() == "" && req.GetModel() == ""
 	if !clearing && (req.GetProvider() == "" || req.GetModel() == "") {
+		providers := leyline.FeatureProviders(req.GetFeature(), d.installedDecoders())
+		var forms []string
+		for _, p := range providers {
+			forms = append(forms, "ley ai use "+req.GetFeature()+" "+p+" <model>")
+		}
 		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, req.GetFeature(),
-			"a feature needs a provider and a model: ley ai use "+req.GetFeature()+" anthropic <model>"))
+			"a feature needs a provider and a model: "+strings.Join(forms, ", or ")))
 	}
 	fm := &leylinev1.FeatureModel{Feature: req.GetFeature(), Provider: req.GetProvider(), Model: req.GetModel()}
 	d.mu.Lock()
