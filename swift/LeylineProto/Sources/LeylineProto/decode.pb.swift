@@ -265,7 +265,11 @@ public nonisolated enum Leyline_V1_PredicateOp: SwiftProtobuf.Enum, Swift.CaseIt
   case predIn // = 7
   case predNotIn // = 8
 
-  /// The field is a delimited list (a SAME alert's FIPS county codes) and one of `values` is in it.
+  /// The field is a delimited list (a SAME alert's FIPS county codes, or the words of a speech
+  /// record's text) and one of `values` is in it: the field and each value split into tokens on
+  /// ',', space and '-', and a value matches when its tokens appear among the field's, whole,
+  /// consecutive and in order, case-folded. "net control" matches "Net Control here"; "contr"
+  /// matches nothing.
   case predContains // = 9
 
   /// The field is present and non-empty; `values` is ignored.

@@ -244,7 +244,11 @@ enum PredicateOp {
   PRED_GTE = 6;
   PRED_IN = 7;
   PRED_NOT_IN = 8;
-  // The field is a delimited list (a SAME alert's FIPS county codes) and one of `values` is in it.
+  // The field is a delimited list (a SAME alert's FIPS county codes, or the words of a speech
+  // record's text) and one of `values` is in it: the field and each value split into tokens on
+  // ',', space and '-', and a value matches when its tokens appear among the field's, whole,
+  // consecutive and in order, case-folded. "net control" matches "Net Control here"; "contr"
+  // matches nothing.
   PRED_CONTAINS = 9;
   // The field is present and non-empty; `values` is ignored.
   PRED_EXISTS = 10;

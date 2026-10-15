@@ -305,7 +305,11 @@ const (
 	PredicateOp_PRED_GTE                 PredicateOp = 6
 	PredicateOp_PRED_IN                  PredicateOp = 7
 	PredicateOp_PRED_NOT_IN              PredicateOp = 8
-	// The field is a delimited list (a SAME alert's FIPS county codes) and one of `values` is in it.
+	// The field is a delimited list (a SAME alert's FIPS county codes, or the words of a speech
+	// record's text) and one of `values` is in it: the field and each value split into tokens on
+	// ',', space and '-', and a value matches when its tokens appear among the field's, whole,
+	// consecutive and in order, case-folded. "net control" matches "Net Control here"; "contr"
+	// matches nothing.
 	PredicateOp_PRED_CONTAINS PredicateOp = 9
 	// The field is present and non-empty; `values` is ignored.
 	PredicateOp_PRED_EXISTS PredicateOp = 10
