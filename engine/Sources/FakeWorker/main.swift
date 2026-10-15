@@ -26,6 +26,14 @@
 //                             (capitals and underscores), and nothing else
 //   exit <n>                  exits with status n at once
 //   sleep <ms>                waits
+//   turnid <id>               renames the turn the following lines write
+//   echokey                   the worst a worker can do with its key: puts it as it stands,
+//                             JSON-escaped and percent-encoded into the turn's text, a RUNNING
+//                             call's tool name, call id, arguments and result, and a stderr line
+//   deaf                      as a block's first line, only in the first block: the worker reads
+//                             its key and WorkerStart, then never reads stdin again
+//
+// `{key}` anywhere in a line is replaced with the key, so `fail` can carry it too.
 //
 // The assistant's turn for user turn `tN` is `tN+1`, and call ids count up across the
 // conversation. WorkerStop marks the turn done at once, mid-sleep or mid-wait, and skips the rest
@@ -94,13 +102,15 @@ if arguments.starts(with: ["worker", "check"]) {
     exit(0)
 }
 
-var lastFour = ""
+/// The key, held only so `echokey` and `{key}` can play a worker that leaks it.
+var secret = ""
 if environment["LEYLINE_KEY_ON_STDIN"] == "1" {
     guard let bytes = readDelimited(), let key = try? Leyline_V1_SetCredentialRequest(serializedBytes: bytes),
           !key.secret.isEmpty
     else { exit(6) }
-    lastFour = String(key.secret.suffix(4))
+    secret = key.secret
 }
+let lastFour = String(secret.suffix(4))
 
 guard let head = readDelimited(), let first = try? Leyline_V1_WorkerEvent(serializedBytes: head),
       case .start(let start)? = first.event
@@ -177,6 +187,11 @@ final class Inbox: @unchecked Sendable {
     }
 }
 
+// A worker that has stopped reading its input: the daemon's writes fill the pipe and stay there.
+if blocks.first?.first == "deaf" {
+    while true { sleep(60) }
+}
+
 let inbox = Inbox()
 Thread.detachNewThread {
     while let bytes = readDelimited() {
@@ -237,7 +252,7 @@ func play(_ lines: [String], userTurnID: String) {
     }
 
     for raw in lines {
-        var line = raw
+        var line = raw.replacingOccurrences(of: "{key}", with: secret)
         if line.hasPrefix("approved ") || line.hasPrefix("declined ") {
             guard lastApproved == line.hasPrefix("approved ") else { continue }
             line = String(line.dropFirst("approved ".count))
@@ -296,6 +311,17 @@ func play(_ lines: [String], userTurnID: String) {
             send()
         case "end":
             turn.done = true
+            send()
+        case "turnid":
+            turn.turnID = rest
+        case "echokey":
+            let json = (try? JSONEncoder().encode(secret)).map { String(decoding: $0.dropFirst().dropLast(), as: UTF8.self) } ?? ""
+            let url = secret.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
+            turn.text += "key \(secret) json \(json) url \(url)"
+            let i = addCall("echo_\(secret)", #"{"key": "\#(json)"}"#, .toolCallRunning)
+            turn.tools[i].callID = "call_\(secret)"
+            turn.tools[i].resultText = "sent ?key=\(url) and \(secret)"
+            FileHandle.standardError.write(Data("fake worker leaks \(secret) and \(url)\n".utf8))
             send()
         case "fail":
             let (first, after) = split(rest, words: 1)

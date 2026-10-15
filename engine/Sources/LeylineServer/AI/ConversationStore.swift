@@ -13,8 +13,9 @@
 //
 // A conversation is not kept (invariant 8): it ends when a client ends it, after `idleLimit` with
 // nothing asked, when its worker exits between turns, and when the daemon stops. A worker that
-// exits mid-turn fails its own conversation and no other. Ended and failed conversations stay
-// listed, the newest `keptFinished` of them, so a client that comes back sees how one finished.
+// exits mid-turn, or stops reading, fails its own conversation and no other. Ended and failed
+// conversations stay listed, the `keptFinished` that finished last, so a client that comes back
+// sees how one finished; an older one is forgotten and its id is then unknown.
 
 import EngineCore
 import Foundation
@@ -32,6 +33,8 @@ actor ConversationStore {
 
     /// Publishes a conversation on the event plane, caused by a client (`SessionStore.publishConversation`).
     typealias Publisher = @Sendable (Leyline_V1_Conversation, ClientContext) async -> Void
+    /// Hears that a finished conversation has been forgotten (`SessionStore.forgetConversation`).
+    typealias Forgetter = @Sendable (String) async -> Void
 
     /// Finished conversations kept for listing; older ones are forgotten.
     static let keptFinished = 32
@@ -49,22 +52,31 @@ actor ConversationStore {
         var idleSince: ContinuousClock.Instant?
         var watchers: [UUID: AsyncStream<Leyline_V1_Conversation>.Continuation] = [:]
         /// The newest `keptVersions` states, oldest first, for `watch(_:sinceSeq:)` to replay.
+        /// Emptied when the conversation finishes: nothing follows to replay.
         var history: [Leyline_V1_Conversation] = []
+        /// When the conversation ended or failed, which orders the forgetting.
+        var finishedAt: ContinuousClock.Instant?
+        /// Assistant turns a `StopTurn` closed: the worker's later writes to them are ignored.
+        var closedTurns: Set<String> = []
     }
 
     private let credentials: CredentialStore
     private let spawner: WorkerProcess
     private let publish: Publisher
+    private let forget: Forgetter
     private let timing: Timing
     private var entries: [String: Entry] = [:]
     private var sweeper: Task<Void, Never>?
     private var closed = false
     private let log = Logger(label: "leyline.assistant")
 
-    init(credentials: CredentialStore, spawner: WorkerProcess, timing: Timing = Timing(), publish: @escaping Publisher) {
+    init(credentials: CredentialStore, spawner: WorkerProcess, timing: Timing = Timing(),
+         forget: @escaping Forgetter = { _ in }, publish: @escaping Publisher)
+    {
         self.credentials = credentials
         self.spawner = spawner
         self.timing = timing
+        self.forget = forget
         self.publish = publish
     }
 
@@ -117,7 +129,12 @@ actor ConversationStore {
         start.endpoint = credential.endpoint
         start.viewTools = request.viewTools
         start.socket = spawner.socketPath
-        let worker = try spawner.startAssistant(credential: credential, start: start)
+        // The lookups above suspend, and `endAll` may have run meanwhile. Nothing suspends from here
+        // until the conversation is in `entries`, where a later `endAll` finds it.
+        guard !closed else { throw EngineError.failedPrecondition("the daemon is stopping") }
+        let worker = try spawner.startAssistant(credential: credential, start: start) { [weak self] error in
+            Task { await self?.writeFailed(id, error) }
+        }
 
         var conversation = Leyline_V1_Conversation()
         conversation.conversationID = id
@@ -169,7 +186,7 @@ actor ConversationStore {
         event.resolved.callID = callID
         event.resolved.approved = approve
         try write(event, to: current)
-        log.info("\(id): \(client.kind) \(client.label) \(approve ? "approved" : "declined") \(current.conversation.pending.tool)")
+        log.info("\(id): \(client.kind) \(client.label) \(approve ? "approved" : "declined") call \(callID)")
         return await commit(id, by: client) { e in
             e.conversation.updateCall(callID) { $0.state = approve ? .toolCallRunning : .toolCallRefused }
             e.conversation.state = .conversationThinking
@@ -199,35 +216,46 @@ actor ConversationStore {
         }
     }
 
-    /// Asks the worker to stop the running turn, waits up to `stopWaitSeconds` for it to mark the
-    /// turn done, then closes the turn whatever the worker did (`closeStoppedTurn`). An IDLE
-    /// conversation is returned as it is; an ended or failed one is FAILED_PRECONDITION.
+    /// Asks the worker to stop the running turn and waits up to `stopWaitSeconds` for the
+    /// conversation to leave THINKING and WAITING, then closes that turn whatever the worker did
+    /// (`closeStoppedTurn`), unless a newer turn has begun meanwhile. A later write from the worker
+    /// to the closed turn is ignored. An IDLE conversation is returned as it is; an ended or failed
+    /// one is FAILED_PRECONDITION.
     func stopTurn(_ id: String, by client: ClientContext) async throws -> Leyline_V1_Conversation {
         let current = try entry(id)
         switch current.conversation.state {
         case .conversationThinking, .conversationWaiting:
-            var event = Leyline_V1_WorkerEvent()
-            event.stop = Leyline_V1_WorkerStop()
-            try write(event, to: current)
-            log.info("\(id): \(client.kind) \(client.label) stopped the turn")
+            break
         case .conversationIdle:
             return current.conversation
         default:
             throw EngineError.failedPrecondition("\(Self.describe(current.conversation.state)); there is no turn to stop", target: id)
         }
+        // The turn being stopped: the assistant's newest, or the one it has yet to write for the
+        // user's newest (`t<n+1>`, the worker protocol's numbering).
+        let turns = current.conversation.turns
+        let answering = turns.last(where: { $0.role == .user })?.turnID
+        let target = turns.last?.role == .assistant ? turns.last!.turnID : Self.nextTurnID(after: turns)
+        var event = Leyline_V1_WorkerEvent()
+        event.stop = Leyline_V1_WorkerStop()
+        try write(event, to: current)
+        log.info("\(id): \(client.kind) \(client.label) stopped turn \(target)")
         let deadline = ContinuousClock.now.advanced(by: .seconds(Self.stopWaitSeconds))
         while ContinuousClock.now < deadline, let state = entries[id]?.conversation.state,
               state == .conversationThinking || state == .conversationWaiting
         {
             try? await Task.sleep(nanoseconds: 20_000_000)
         }
-        // Whether the worker marked the turn done or never answered, the turn is over: nothing in
-        // it may still look as if it runs or waits.
         guard let after = entries[id]?.conversation, !Self.isFinished(after.state) else { return try entry(id).conversation }
-        var closed = after
-        closed.closeStoppedTurn()
-        guard closed != after else { return after }
-        return await commit(id, by: client) { $0.conversation.closeStoppedTurn() }
+        entries[id]?.closedTurns.insert(target)
+        let last = after.turns.last
+        let stillOnIt = (last?.role == .assistant && last?.turnID == target)
+            || (last?.role == .user && last?.turnID == answering)
+        guard stillOnIt else { return after }
+        var closedTurn = after
+        closedTurn.closeStoppedTurn(target)
+        guard closedTurn != after else { return after }
+        return await commit(id, by: client) { $0.conversation.closeStoppedTurn(target) }
     }
 
     /// Ends the conversation and stops its worker: stdin closed, then `SIGTERM` and `SIGKILL`
@@ -242,6 +270,7 @@ actor ConversationStore {
         }
         log.info("ended \(id) for \(client.kind) \(client.label)")
         await stopWorker(of: id)
+        await forgetOldFinished()
         return ended
     }
 
@@ -278,6 +307,10 @@ actor ConversationStore {
         switch message.message {
         case .turn(let raw)?:
             let turn = Self.redacted(raw, secret: current.secret)
+            if current.closedTurns.contains(turn.turnID) {
+                log.info("\(id): the worker wrote to \(turn.turnID) after it was stopped; ignoring it")
+                return
+            }
             if let existing = current.conversation.turns.first(where: { $0.turnID == turn.turnID }), existing.role == .user {
                 log.warning("\(id): the worker wrote a turn as \(turn.turnID), which is the user's; ignoring it")
                 return
@@ -286,8 +319,9 @@ actor ConversationStore {
         case .failure(let failure)?:
             var error = failure.error
             if error.code.isEmpty { error.code = EngineError.Code.internalError }
+            error.code = WorkerProcess.redacting(current.secret, in: error.code)
             error.message = WorkerProcess.redacting(current.secret, in: error.message)
-            if error.target.isEmpty { error.target = id }
+            error.target = error.target.isEmpty ? id : WorkerProcess.redacting(current.secret, in: error.target)
             log.warning("\(id) failed: \(error.code): \(error.message)")
             _ = await commit(id, by: .daemon) { e in
                 e.conversation.state = .conversationFailed
@@ -295,6 +329,7 @@ actor ConversationStore {
                 e.conversation.clearPending()
             }
             await stopWorker(of: id)
+            await forgetOldFinished()
         case nil:
             return
         }
@@ -317,8 +352,23 @@ actor ConversationStore {
             log.info("\(id): the worker exited between turns with status \(status); ending it")
             _ = await commit(id, by: .daemon) { e in e.conversation.state = .conversationEnded }
         default:
-            return
+            break
         }
+        await forgetOldFinished()
+    }
+
+    /// A write did not reach the worker: it stopped reading, or its stdin closed under it. The
+    /// conversation fails and the worker is stopped.
+    func writeFailed(_ id: String, _ error: EngineError) async {
+        guard let current = entries[id], !Self.isFinished(current.conversation.state) else { return }
+        log.warning("\(id): \(error.message); failing it")
+        _ = await commit(id, by: .daemon) { e in
+            e.conversation.state = .conversationFailed
+            e.conversation.error = ProtoMapping.errorDetail(EngineError(code: error.code, message: error.message, target: id))
+            e.conversation.clearPending()
+        }
+        await stopWorker(of: id)
+        await forgetOldFinished()
     }
 
     // MARK: Internals
@@ -345,9 +395,10 @@ actor ConversationStore {
             for watcher in e.watchers.values { watcher.finish() }
             e.watchers = [:]
             e.secret = ""
+            e.history = []
+            e.finishedAt = timing.now()
         }
         entries[id] = e
-        if Self.isFinished(conversation.state) { forgetOldFinished() }
         await publish(conversation, client)
         return conversation
     }
@@ -386,12 +437,19 @@ actor ConversationStore {
         entries[id]?.watchers[key] = nil
     }
 
-    private func forgetOldFinished() {
-        // One whose worker is still being stopped stays until the next pass.
-        let finished = entries.values.filter { Self.isFinished($0.conversation.state) && $0.worker == nil }.map(\.conversation)
+    /// Forgets the finished conversations beyond the `keptFinished` that finished last. Called
+    /// after a worker has been stopped, so one whose worker is still going is never dropped with it.
+    private func forgetOldFinished() async {
+        let finished = entries.compactMap { id, e -> (id: String, at: ContinuousClock.Instant)? in
+            guard let at = e.finishedAt, e.worker == nil else { return nil }
+            return (id, at)
+        }
         guard finished.count > Self.keptFinished else { return }
-        let oldest = finished.sorted { $0.startedAtNs < $1.startedAtNs }.prefix(finished.count - Self.keptFinished)
-        for conversation in oldest { entries[conversation.conversationID] = nil }
+        let oldest = finished.sorted { $0.at < $1.at }.prefix(finished.count - Self.keptFinished)
+        for (id, _) in oldest {
+            entries[id] = nil
+            await forget(id)
+        }
     }
 
     /// What a watcher that has `sinceSeq` is sent before the live changes: 0 is the current state
@@ -431,7 +489,7 @@ actor ConversationStore {
         guard let worker = entry.worker else {
             throw EngineError.internalError("the assistant's worker has gone", target: entry.conversation.conversationID)
         }
-        try worker.write(event)
+        worker.send(event)
     }
 
     /// Resolves the request's provider and model: the request's own, else the `assistant`
@@ -499,8 +557,11 @@ actor ConversationStore {
     private static func redacted(_ turn: Leyline_V1_Turn, secret: String) -> Leyline_V1_Turn {
         guard !secret.isEmpty else { return turn }
         var out = turn
+        out.turnID = WorkerProcess.redacting(secret, in: turn.turnID)
         out.text = WorkerProcess.redacting(secret, in: turn.text)
         for i in out.tools.indices {
+            out.tools[i].callID = WorkerProcess.redacting(secret, in: out.tools[i].callID)
+            out.tools[i].tool = WorkerProcess.redacting(secret, in: out.tools[i].tool)
             out.tools[i].argumentsJson = WorkerProcess.redacting(secret, in: out.tools[i].argumentsJson)
             out.tools[i].resultText = WorkerProcess.redacting(secret, in: out.tools[i].resultText)
             out.tools[i].resultJson = WorkerProcess.redacting(secret, in: out.tools[i].resultJson)
@@ -544,11 +605,11 @@ extension Leyline_V1_Conversation {
         }
     }
 
-    /// Ends a stopped turn: the newest turn, when it is the assistant's, is marked done, a call
-    /// still waiting on someone is REFUSED and one still running is DONE as an error, "stopped".
-    /// The conversation is IDLE.
-    mutating func closeStoppedTurn() {
-        if let last = turns.indices.last, turns[last].role == .assistant {
+    /// Ends the stopped turn `turnID`: when it is the newest turn and the assistant's, it is marked
+    /// done, a call still waiting on someone is REFUSED and one still running is DONE as an error,
+    /// "stopped". The conversation is IDLE.
+    mutating func closeStoppedTurn(_ turnID: String) {
+        if let last = turns.indices.last, turns[last].role == .assistant, turns[last].turnID == turnID {
             turns[last].done = true
             for c in turns[last].tools.indices {
                 switch turns[last].tools[c].state {

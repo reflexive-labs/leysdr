@@ -147,7 +147,8 @@ package final class Daemon: Sendable {
                         recordings: recordings, usage: usage, credentials: credentials)
         let worker = WorkerProcess(leyPath: config.leyPath, locator: config.programLocator, socketPath: config.socketPath)
         let session = store
-        conversations = ConversationStore(credentials: credentials, spawner: worker, timing: config.conversationTiming) {
+        conversations = ConversationStore(credentials: credentials, spawner: worker, timing: config.conversationTiming,
+                                          forget: { await session.forgetConversation($0) }) {
             await session.publishConversation($0, by: $1)
         }
         // Transport policy for a local, user-trusted socket. The default keepalive policy counts any

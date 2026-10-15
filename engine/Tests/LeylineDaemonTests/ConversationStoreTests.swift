@@ -134,7 +134,10 @@ final class ConversationStoreTests: XCTestCase {
         var conversation = Leyline_V1_Conversation()
         conversation.fold(turn("t2", lastCall: .toolCallAwaitingApproval))
         conversation.turns[0].tools[0].state = .toolCallRunning
-        conversation.closeStoppedTurn()
+        var other = conversation
+        other.closeStoppedTurn("t5")
+        XCTAssertEqual(other.turns, conversation.turns, "a turn that is not the one stopped is left alone")
+        conversation.closeStoppedTurn("t2")
         XCTAssertEqual(conversation.state, .conversationIdle)
         XCTAssertFalse(conversation.hasPending)
         XCTAssertEqual(conversation.turns[0].done, true)
@@ -182,6 +185,42 @@ final class ConversationStoreTests: XCTestCase {
         let ended = try await store.get(id)
         XCTAssertEqual(ended.state, .conversationEnded)
         XCTAssertFalse(ended.hasError, "leaving between turns is not a failure")
+    }
+
+    func testOnlyTheThirtyTwoLastFinishedAreKept() async throws {
+        let dir = try makeTempDir("conversations")
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let forgotten = Mutex<[String]>([])
+        let credentials = CredentialStore(path: dir + "/data/ai.json", secrets: FileSecrets(inData: dir + "/data"))
+        _ = try await credentials.set(provider: "anthropic", secret: "sk-test-store-key-0042", label: "", endpoint: "")
+        let spawner = WorkerProcess(leyPath: try writeFakeWorkerLey(in: dir, scripts: ["end"]),
+                                    locator: ProgramLocator(directories: [], searchPath: []), socketPath: dir + "/d.sock")
+        let store = ConversationStore(credentials: credentials, spawner: spawner,
+                                      forget: { id in forgotten.withLock { $0.append(id) } }) { _, _ in }
+        // Started newest-last but ended oldest-last: the first one started is the last to finish,
+        // so the rule must go by when each finished, not when it began.
+        var ids: [String] = []
+        for _ in 0...ConversationStore.keptFinished {
+            ids.append(try await store.start(request(), by: client).conversationID)
+        }
+        for id in ids.dropFirst() { _ = try await store.end(id, by: client) }
+        _ = try await store.end(ids[0], by: client)
+        let listed = await store.list()
+        XCTAssertEqual(listed.count, ConversationStore.keptFinished)
+        XCTAssertEqual(forgotten.withLock { $0 }, [ids[1]], "the one that finished first is forgotten")
+        XCTAssertTrue(listed.contains { $0.conversationID == ids[0] })
+        for call in ["get", "end", "stop"] {
+            do {
+                switch call {
+                case "get": _ = try await store.get(ids[1])
+                case "end": _ = try await store.end(ids[1], by: client)
+                default: _ = try await store.stopTurn(ids[1], by: client)
+                }
+                XCTFail("\(call) found a forgotten conversation")
+            } catch let error as EngineError {
+                XCTAssertEqual(error.code, EngineError.Code.invalidArgument, call)
+            }
+        }
     }
 
     func testNoLeyIsProviderUnavailableAndSaysSo() async throws {

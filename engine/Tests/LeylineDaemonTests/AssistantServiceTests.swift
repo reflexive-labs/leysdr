@@ -16,7 +16,9 @@ import XCTest
 
 final class AssistantServiceTests: XCTestCase {
     /// The suffix is what every assertion greps for, so it must appear nowhere else.
-    static let secret = "sk-test-SECRETMARKER9f3"
+    /// The slash makes the key's JSON-escaped form differ from the key; the dash, its
+    /// percent-encoded one.
+    static let secret = "sk-test/SECRETMARKER9f3"
     static let marker = "SECRETMARKER"
 
     // MARK: Helpers
@@ -303,6 +305,7 @@ final class AssistantServiceTests: XCTestCase {
             XCTAssertFalse(stopped.hasPending)
             XCTAssertEqual(stopped.turns.last?.done, true)
             XCTAssertEqual(stopped.turns.last?.text, "working on it")
+            XCTAssertEqual(stopped.turns.last?.turnID, "t2")
             let calls = stopped.turns.last?.tools ?? []
             XCTAssertEqual(calls.map(\.state), [.toolCallDone, .toolCallRefused],
                            "a running call is done as stopped, a waiting one refused")
@@ -314,6 +317,34 @@ final class AssistantServiceTests: XCTestCase {
             let next = try await self.conversation(c, id) { $0.state == .conversationIdle && $0.turns.count == 4 }
             XCTAssertEqual(next.turns.map(\.turnID), ["t1", "t2", "t3", "t4"])
             XCTAssertEqual(next.turns.last?.text, "second")
+        }
+    }
+
+    func testAStopDoesNotCloseATurnThatBeganAfterIt() async throws {
+        let script = """
+        text working on it
+        sleep 10000
+        end
+
+        tool scan_band {}
+        sleep 300
+        done scan_band found 3
+        end
+        """
+        try await withAssistant(scripts: [script]) { c, _ in
+            let id = try await self.start(c).conversationID
+            _ = try await self.send(c, id, "scan the band")
+            _ = try await self.conversation(c, id) { $0.turns.last?.text == "working on it" }
+            let stopper = Task { try await c.assistant.stopTurn(self.ref(id), metadata: testMetadata) }
+            // The worker marks the turn done; the next message goes in while StopTurn may still be
+            // deciding what to close.
+            _ = try await self.conversation(c, id) { $0.state == .conversationIdle }
+            _ = try await self.send(c, id, "again")
+            _ = try await stopper.value
+            let next = try await self.conversation(c, id) { $0.state == .conversationIdle && $0.turns.count == 4 }
+            XCTAssertEqual(next.turns[3].tools.first?.state, .toolCallDone)
+            XCTAssertEqual(next.turns[3].tools.first?.isError, false, "the stopper did not close the new turn")
+            XCTAssertEqual(next.turns[3].tools.first?.resultText, "found 3")
         }
     }
 
@@ -387,6 +418,75 @@ final class AssistantServiceTests: XCTestCase {
             XCTAssertEqual(listed.conversations.first?.state, .conversationEnded, "an ended conversation stays listed")
             let unknown = await self.failure { _ = try await c.assistant.endConversation(self.ref("conv_nope"), metadata: testMetadata) }
             XCTAssertEqual(unknown.code, EngineError.Code.invalidArgument)
+            let noTurn = await self.failure { _ = try await c.assistant.stopTurn(self.ref(id), metadata: testMetadata) }
+            XCTAssertEqual(noTurn.code, EngineError.Code.failedPrecondition, "an ended conversation has no turn to stop")
+        }
+    }
+
+    func testAnUnknownConversationIsInvalidArgumentOnEveryCall() async throws {
+        try await withAssistant(scripts: ["end"]) { c, _ in
+            let nope = "conv_01NOSUCHCONVERSATION0000"
+            var answer = Leyline_V1_AnswerViewToolRequest()
+            answer.conversationID = nope
+            answer.callID = "call1"
+            var watch = Leyline_V1_WatchConversationRequest()
+            watch.conversationID = nope
+            let calls: [(String, () async throws -> Void)] = [
+                ("SendMessage", { _ = try await self.send(c, nope, "hello") }),
+                ("ResolveAction", { _ = try await self.resolve(c, nope, call: "call1", approve: true) }),
+                ("AnswerViewTool", { _ = try await c.assistant.answerViewTool(answer, metadata: testMetadata) }),
+                ("StopTurn", { _ = try await c.assistant.stopTurn(self.ref(nope), metadata: testMetadata) }),
+                ("EndConversation", { _ = try await c.assistant.endConversation(self.ref(nope), metadata: testMetadata) }),
+                ("WatchConversation", {
+                    try await c.assistant.watchConversation(watch, metadata: testMetadata) { response in
+                        for try await _ in response.messages {}
+                    }
+                }),
+            ]
+            for (name, call) in calls {
+                let refused = await self.failure(call)
+                XCTAssertEqual(refused.code, EngineError.Code.invalidArgument, name)
+            }
+        }
+    }
+
+    func testTwoViewToolsWithOneNameAreInvalidArgument() async throws {
+        try await withAssistant(scripts: ["end"]) { c, _ in
+            let refused = await self.failure { _ = try await self.start(c, viewTools: ["move_view", "move_view"]) }
+            XCTAssertEqual(refused.code, EngineError.Code.invalidArgument)
+            XCTAssertTrue(refused.text.contains("move_view"), refused.text)
+        }
+    }
+
+    func testATurnWrittenUnderTheUsersTurnIdIsIgnored() async throws {
+        try await withAssistant(scripts: ["turnid t1\ntext hijacked\nturnid t2\ntext answered\nend"]) { c, _ in
+            let id = try await self.start(c).conversationID
+            _ = try await self.send(c, id, "hello")
+            let done = try await self.conversation(c, id) { $0.state == .conversationIdle && $0.turns.count == 2 }
+            XCTAssertEqual(done.turns[0].role, .user)
+            XCTAssertEqual(done.turns[0].text, "hello", "the user's turn is the user's")
+            XCTAssertEqual(done.turns[1].turnID, "t2")
+            XCTAssertEqual(done.turns[1].text, "hijacked answered")
+        }
+    }
+
+    func testAWorkerThatStopsReadingFailsAloneAndHoldsUpNoOtherConversation() async throws {
+        try await withAssistant(scripts: ["deaf", "text quick\nend"]) { c, _ in
+            let deaf = try await self.start(c).conversationID
+            let steady = try await self.start(c).conversationID
+            // Far more than a pipe holds, so the write to the deaf worker waits for room.
+            let flood = String(repeating: "x", count: 1 << 20)
+            let sentAt = ContinuousClock.now
+            let flooded = try await self.send(c, deaf, flood)
+            XCTAssertEqual(flooded.state, .conversationThinking)
+            _ = try await self.send(c, steady, "hello")
+            let fine = try await self.conversation(c, steady) { $0.state == .conversationIdle && $0.turns.count == 2 }
+            XCTAssertEqual(fine.turns.last?.text, "quick")
+            XCTAssertLessThan(ContinuousClock.now - sentAt, .seconds(1),
+                              "the other conversation did not wait out the deaf worker's write")
+            let failed = try await self.conversation(c, deaf, within: 10) { $0.state == .conversationFailed }
+            XCTAssertEqual(failed.error.code, EngineError.Code.internalError)
+            XCTAssertTrue(failed.error.message.contains("not reading"), failed.error.message)
         }
     }
 
@@ -455,11 +555,12 @@ final class AssistantServiceTests: XCTestCase {
     func testTheKeyIsInNoReplyEventOrLogLine() async throws {
         let script = """
         text checking
+        echokey
         ask delete_recording {"id":"rec_1"} deleting a recording asks every time
         approved done delete_recording deleted
         end
 
-        fail the provider said no
+        fail PROVIDER_REFUSED the provider refused {key}
         """
         try await withAssistant(scripts: [script]) { c, _ in
             let events = await EventCollector.start(c.control, daemon: c.daemon)
@@ -489,7 +590,15 @@ final class AssistantServiceTests: XCTestCase {
             for text in seen { XCTAssertFalse(text.contains(Self.marker), "the key reached a client: \(text)") }
             XCTAssertTrue(log.contains("leyline.assistant.\(id)"), "the worker's stderr is logged under its conversation")
             XCTAssertTrue(log.contains("fake worker up for \(id)"))
+            XCTAssertTrue(log.contains("fake worker leaks [key] and [key]"), "the leaking stderr line was logged, redacted")
             XCTAssertFalse(log.contains(Self.marker), "the key reached the log")
+            let failed = try await c.daemon.conversations.get(id)
+            XCTAssertEqual(failed.error.message, "the provider refused [key]")
+            let leaked = failed.turns.first { $0.role == .assistant }
+            XCTAssertTrue(leaked?.text.contains("key [key] json [key] url [key]") ?? false, leaked?.text ?? "no turn")
+            XCTAssertEqual(leaked?.tools.first?.tool, "echo_[key]")
+            XCTAssertEqual(leaked?.tools.first?.callID, "call_[key]")
+            XCTAssertEqual(leaked?.tools.first?.argumentsJson, #"{"key": "[key]"}"#)
         }
     }
 }

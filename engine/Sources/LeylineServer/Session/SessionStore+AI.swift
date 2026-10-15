@@ -53,4 +53,9 @@ extension SessionStore {
         conversationPublishedSeqs[id] = conversation.seq
         emit(.conversation(conversation), captureID: nil, by: by)
     }
+
+    /// Drops what `publishConversation` remembers of a conversation the store has forgotten.
+    func forgetConversation(_ id: String) {
+        conversationPublishedSeqs[id] = nil
+    }
 }
