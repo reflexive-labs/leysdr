@@ -486,7 +486,7 @@ func checkPaidSpeech(t *testing.T, r *transcribeRig) {
 // callWithin is aiRig.call with no stdin and a deadline: a transcription whose job never ends
 // would otherwise hold the test until go test's own timeout. Past the deadline ley is killed and
 // the test fails with what it had written.
-func (r *transcribeRig) callWithin(d time.Duration, args ...string) (stdout, stderr string, code int) {
+func (r *aiRig) callWithin(d time.Duration, args ...string) (stdout, stderr string, code int) {
 	r.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), d)
 	defer cancel()
