@@ -55,7 +55,8 @@ blank line or Ctrl-D. The conversation stays in the daemon after ask exits:
 it, and starts a new one when there is none.
 
 Ctrl-C stops the assistant's turn and keeps the conversation; a second
-Ctrl-C, or one at the prompt, ends the conversation.
+Ctrl-C, or one at the prompt, ends the conversation. SIGTERM leaves the
+conversation as it is, and the daemon ends it after 30 idle minutes.
 
 The assistant calls the provider and model chosen with 'ley ai use
 assistant'; --provider and --model choose others for a new conversation.
@@ -141,6 +142,13 @@ func runAsk(ctx context.Context, app *App, o askOptions, request string, interru
 	if err := r.watch(wctx); err != nil {
 		return app.notRunning(err)
 	}
+	// A conversation --continue found mid-turn is followed to the end of that turn, answering
+	// what it waits for, before anything is sent.
+	if st := r.conv.GetState(); st != leylinev1.ConversationState_CONVERSATION_IDLE {
+		if err := r.follow(r.conv.GetSeq()); err != nil {
+			return err
+		}
+	}
 	if request != "" {
 		return r.turn(request)
 	}
@@ -155,20 +163,9 @@ func (r *askRun) open() error {
 		if err != nil {
 			return r.app.notRunning(err)
 		}
-		for _, cv := range list.GetConversations() {
-			if cv.GetState() == leylinev1.ConversationState_CONVERSATION_IDLE {
-				r.conv = cv
-				break
-			}
-		}
+		r.conv = newestOpenConversation(list.GetConversations())
 		if !r.app.JSON {
-			s := r.app.ErrStyle
-			if r.conv != nil {
-				fmt.Fprintln(r.app.Stderr, s.Muted(fmt.Sprintf("Continuing the conversation started %s (%s)",
-					recordingClock(r.conv.GetStartedAtNs()), words.Count(len(r.conv.GetTurns()), "turn"))))
-			} else {
-				fmt.Fprintln(r.app.Stderr, s.Muted("No idle conversation to continue; starting a new one"))
-			}
+			fmt.Fprintln(r.app.Stderr, r.app.ErrStyle.Muted(continuingLine(r.conv)))
 		}
 	}
 	if r.conv == nil {
@@ -181,6 +178,42 @@ func (r *askRun) open() error {
 	r.seen = r.conv.GetSeq()
 	r.view.adopt(r.conv)
 	return nil
+}
+
+// newestOpenConversation is the conversation --continue carries on: of those not ended or failed,
+// the one whose last turn is newest, then the one started last. The daemon's listing order is not
+// relied on, since a conversation started long ago may be the one in use. nil when there is none.
+func newestOpenConversation(list []*leylinev1.Conversation) *leylinev1.Conversation {
+	var best *leylinev1.Conversation
+	for _, cv := range list {
+		switch cv.GetState() {
+		case leylinev1.ConversationState_CONVERSATION_IDLE, leylinev1.ConversationState_CONVERSATION_THINKING,
+			leylinev1.ConversationState_CONVERSATION_WAITING:
+		default:
+			continue
+		}
+		if best == nil || cv.GetLastTurnAtNs() > best.GetLastTurnAtNs() ||
+			(cv.GetLastTurnAtNs() == best.GetLastTurnAtNs() && cv.GetStartedAtNs() > best.GetStartedAtNs()) {
+			best = cv
+		}
+	}
+	return best
+}
+
+// continuingLine says which conversation --continue carries on, and what it waits for first.
+func continuingLine(cv *leylinev1.Conversation) string {
+	if cv == nil {
+		return "No conversation to continue; starting a new one"
+	}
+	line := fmt.Sprintf("Continuing the conversation started %s (%s)", recordingClock(cv.GetStartedAtNs()),
+		words.Count(len(cv.GetTurns()), "turn"))
+	switch cv.GetState() {
+	case leylinev1.ConversationState_CONVERSATION_WAITING:
+		line += ", which is waiting for an answer"
+	case leylinev1.ConversationState_CONVERSATION_THINKING:
+		line += "; the assistant's turn finishes first"
+	}
+	return line
 }
 
 // watch follows the conversation from the state open found, for the rest of the run.
@@ -242,7 +275,23 @@ func (r *askRun) turn(request string) error {
 		return r.app.notRunning(err)
 	}
 	r.view.adopt(sent)
+	return r.follow(sent.GetSeq())
+}
+
+// follow prints the conversation and answers what it asks until the assistant's turn is done in
+// a state newer than seq after.
+func (r *askRun) follow(after uint64) error {
 	stops := 0
+	if r.conv.GetState() == leylinev1.ConversationState_CONVERSATION_WAITING {
+		if err := r.answer(r.conv.GetPending()); errors.Is(err, errInterrupted) {
+			stops++
+			if err := r.interrupt(stops); err != nil {
+				return err
+			}
+		} else if err != nil {
+			return err
+		}
+	}
 	for {
 		// A Ctrl-C already pressed is handled before anything else arrives, so a second one is
 		// not lost behind the states the first one caused.
@@ -260,7 +309,7 @@ func (r *askRun) turn(request string) error {
 		}
 		select {
 		case cv := <-r.updates:
-			done, err := r.handle(cv, sent.GetSeq())
+			done, err := r.handle(cv, after)
 			if errors.Is(err, errInterrupted) {
 				stops++
 				if err := r.interrupt(stops); err != nil {
@@ -277,7 +326,7 @@ func (r *askRun) turn(request string) error {
 			for {
 				select {
 				case cv := <-r.updates:
-					if done, herr := r.handle(cv, sent.GetSeq()); done || herr != nil {
+					if done, herr := r.handle(cv, after); done || herr != nil {
 						return herr
 					}
 					continue
@@ -303,6 +352,10 @@ func (r *askRun) interrupt(stops int) error {
 	if stops > 1 {
 		return r.end()
 	}
+	if terminalConversation(r.conv) {
+		// The daemon has ended it already; its last state, on its way, ends the run.
+		return nil
+	}
 	r.view.breakLine(r.app)
 	fmt.Fprintln(r.app.Stderr, r.app.ErrStyle.Muted("Stopping the assistant; Ctrl-C again ends the conversation"))
 	if _, err := r.c.Assistant.StopTurn(r.ctx, &leylinev1.ConversationRef{ConversationId: r.conv.GetConversationId()}); err != nil {
@@ -311,9 +364,17 @@ func (r *askRun) interrupt(stops int) error {
 	return nil
 }
 
+func terminalConversation(cv *leylinev1.Conversation) bool {
+	st := cv.GetState()
+	return st == leylinev1.ConversationState_CONVERSATION_ENDED || st == leylinev1.ConversationState_CONVERSATION_FAILED
+}
+
 // end ends the conversation and leaves with the interrupted status.
 func (r *askRun) end() error {
 	r.view.breakLine(r.app)
+	if terminalConversation(r.conv) {
+		return &ExitError{Code: ExitInterrupted}
+	}
 	if _, err := r.c.Assistant.EndConversation(r.ctx, &leylinev1.ConversationRef{ConversationId: r.conv.GetConversationId()}); err != nil {
 		return r.app.notRunning(err)
 	}
@@ -405,6 +466,8 @@ func (r *askRun) answer(p *leylinev1.PendingAction) error {
 		fmt.Fprint(r.app.Stderr, strings.Join(wrapWords(what+". Allow? [y/N]", max(s.Width-len(" yes"), 0)), "\n")+" ")
 		line, err := r.readLine()
 		if err != nil {
+			// The cursor is still after the question.
+			fmt.Fprintln(r.app.Stderr)
 			return err
 		}
 		if line == nil {
@@ -489,9 +552,15 @@ func compactArgs(args string) string {
 // state each tool call was last shown in. The text goes to stdout and the calls to stderr, so a
 // line of text is ended before a call is printed.
 type askView struct {
-	text    map[string]string
-	calls   map[string]leylinev1.ToolCallState
+	text  map[string]string
+	calls map[string]leylinev1.ToolCallState
+	// revised holds the turns whose text the worker rewrote rather than added to; the new text
+	// is printed whole once the turn is done.
+	revised map[string]bool
 	midLine bool
+	// afterTool is set by a tool line and cleared by the text after it, which alone loses its
+	// leading whitespace, since it starts a line of its own.
+	afterTool bool
 }
 
 // adopt marks everything in cv as shown: what was said before this run, and the user's turns.
@@ -527,24 +596,46 @@ func (v *askView) render(app *App, cv *leylinev1.Conversation) {
 }
 
 func (v *askView) renderText(app *App, t *leylinev1.Turn) {
-	was, now := v.text[t.GetTurnId()], t.GetText()
-	if now == was {
+	id, was, now := t.GetTurnId(), v.text[t.GetTurnId()], t.GetText()
+	switch {
+	case v.revised[id]:
+		if !t.GetDone() {
+			return
+		}
+		// The rewritten text, whole, once the worker has finished it.
+		delete(v.revised, id)
+		v.text[id] = now
+		v.breakLine(app)
+		fmt.Fprintln(app.Stderr, app.ErrStyle.Muted("(revised)"))
+		v.write(app, now)
+		return
+	case strings.HasPrefix(was, now):
+		// Nothing new, or a shorter state of what is already on the screen.
+		return
+	case !strings.HasPrefix(now, was):
+		// The worker rewrote the text rather than adding to it. Text on a terminal cannot be
+		// taken back, so the new version waits for the end of the turn.
+		if v.revised == nil {
+			v.revised = map[string]bool{}
+		}
+		v.revised[id] = true
+		v.renderText(app, t)
 		return
 	}
-	v.text[t.GetTurnId()] = now
-	add := strings.TrimPrefix(now, was)
-	if !strings.HasPrefix(now, was) {
-		// The worker rewrote the turn's text rather than adding to it: start it again.
-		v.breakLine(app)
-		add = now
-	}
-	if !v.midLine {
-		// A turn's text that goes on after a tool call starts a line of its own.
+	v.text[id] = now
+	v.write(app, strings.TrimPrefix(now, was))
+}
+
+// write prints text on stdout, dropping the leading whitespace of the first text after a tool
+// line.
+func (v *askView) write(app *App, add string) {
+	if v.afterTool {
 		add = strings.TrimLeft(add, " \n")
 	}
 	if add == "" {
 		return
 	}
+	v.afterTool = false
 	fmt.Fprint(app.Stdout, add)
 	v.midLine = !strings.HasSuffix(add, "\n")
 }
@@ -560,6 +651,7 @@ func (v *askView) renderCall(app *App, c *leylinev1.ToolCall) {
 	line := func(text string) {
 		v.breakLine(app)
 		fmt.Fprintln(app.Stderr, text)
+		v.afterTool = true
 	}
 	switch now {
 	case leylinev1.ToolCallState_TOOL_CALL_AWAITING_APPROVAL, leylinev1.ToolCallState_TOOL_CALL_AWAITING_CLIENT:
@@ -567,7 +659,7 @@ func (v *askView) renderCall(app *App, c *leylinev1.ToolCall) {
 		return
 	}
 	if !seen {
-		line(s.Cmd(fitWidth(s, askGlyph(s, "→", "->")+" "+strings.TrimSpace(c.GetTool()+" "+compactArgs(c.GetArgumentsJson())), 0)))
+		line(s.Muted(fitWidth(s, askGlyph(s, "→", "->")+" "+strings.TrimSpace(c.GetTool()+" "+compactArgs(c.GetArgumentsJson())), 0)))
 	}
 	switch now {
 	case leylinev1.ToolCallState_TOOL_CALL_DONE:

@@ -15,7 +15,8 @@ blank line or Ctrl-D. The conversation stays in the daemon after ask exits:
 it, and starts a new one when there is none.
 
 Ctrl-C stops the assistant's turn and keeps the conversation; a second
-Ctrl-C, or one at the prompt, ends the conversation.
+Ctrl-C, or one at the prompt, ends the conversation. SIGTERM leaves the
+conversation as it is, and the daemon ends it after 30 idle minutes.
 
 The assistant calls the provider and model chosen with 'ley ai use
 assistant'; --provider and --model choose others for a new conversation.

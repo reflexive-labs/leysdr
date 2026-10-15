@@ -4,6 +4,7 @@ package session
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
@@ -80,9 +81,41 @@ func TestFoldConversations(t *testing.T) {
 		ConversationId: "conv_1", State: leylinev1.ConversationState_CONVERSATION_ENDED, Seq: 3,
 	}}})
 	got := s.State.GetConversations()
-	if len(got) != 2 || got[0].ConversationId != "conv_1" || got[0].State != leylinev1.ConversationState_CONVERSATION_ENDED ||
-		got[0].Seq != 3 || got[1].ConversationId != "conv_2" {
+	if len(got) != 2 || got[1].ConversationId != "conv_1" || got[1].State != leylinev1.ConversationState_CONVERSATION_ENDED ||
+		got[1].Seq != 3 || got[0].ConversationId != "conv_2" {
 		t.Errorf("conversations: %v", got)
+	}
+}
+
+// TestFoldConversationsNewestFirst: a conversation the mirror has not seen goes before the
+// others, as GetState and ListConversations list them.
+func TestFoldConversationsNewestFirst(t *testing.T) {
+	s := &Session{State: &leylinev1.GetStateResponse{
+		Conversations: []*leylinev1.Conversation{{ConversationId: "conv_2", Seq: 1}, {ConversationId: "conv_1", Seq: 4}},
+	}}
+	s.Apply(&leylinev1.Event{Seq: 1, Body: &leylinev1.Event_Conversation{Conversation: &leylinev1.Conversation{ConversationId: "conv_3", Seq: 1}}})
+	var ids []string
+	for _, cv := range s.State.GetConversations() {
+		ids = append(ids, cv.ConversationId)
+	}
+	if strings.Join(ids, " ") != "conv_3 conv_2 conv_1" {
+		t.Errorf("order: %v", ids)
+	}
+}
+
+// TestFoldConversationsSkipsAnOlderState: an event whose conversation seq is not above the one
+// held is a state the mirror has already passed, and is ignored.
+func TestFoldConversationsSkipsAnOlderState(t *testing.T) {
+	s := &Session{State: &leylinev1.GetStateResponse{
+		Conversations: []*leylinev1.Conversation{{ConversationId: "conv_1", State: leylinev1.ConversationState_CONVERSATION_IDLE, Seq: 5}},
+	}}
+	for i, seq := range []uint64{4, 5} {
+		s.Apply(&leylinev1.Event{Seq: uint64(i + 1), Body: &leylinev1.Event_Conversation{Conversation: &leylinev1.Conversation{
+			ConversationId: "conv_1", State: leylinev1.ConversationState_CONVERSATION_THINKING, Seq: seq,
+		}}})
+	}
+	if got := s.State.GetConversations()[0]; got.State != leylinev1.ConversationState_CONVERSATION_IDLE || got.Seq != 5 {
+		t.Errorf("an older state replaced the newer one: %v", got)
 	}
 }
 

@@ -245,8 +245,8 @@ func TestAskApproval(t *testing.T) {
 	}
 }
 
-// --continue carries on the newest IDLE conversation, passing over a newer one that has ended,
-// and starts one when none is idle.
+// --continue carries on the conversation with the newest turn, passing over a newer one that has
+// ended, and starts one when none is open.
 func TestAskContinue(t *testing.T) {
 	t.Parallel()
 	sock, c := askHarness(t)
@@ -284,11 +284,175 @@ func TestAskContinue(t *testing.T) {
 		}
 	}
 	_, errOut, err = runAskLey(t, sock, askRunOpts{width: 80}, "ask", "--continue", "hello")
-	if err != nil || !strings.Contains(errOut, "No idle conversation to continue; starting a new one") {
+	if err != nil || !strings.Contains(errOut, "No conversation to continue; starting a new one") {
 		t.Fatalf("stderr %q, err %v", errOut, err)
 	}
 	if n := len(newestConversation(t, c).Turns); n != 2 {
 		t.Errorf("the new conversation has %d turns", n)
+	}
+}
+
+// --continue picks by the last turn, not by when a conversation started: one started earlier and
+// used since is the one carried on.
+func TestAskContinuePicksTheLastTurn(t *testing.T) {
+	t.Parallel()
+	sock, c := askHarness(t)
+	ctx := t.Context()
+	used, err := c.Assistant.StartConversation(ctx, &leylinev1.StartConversationRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Assistant.StartConversation(ctx, &leylinev1.StartConversationRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runAskLey(t, sock, askRunOpts{width: 80}, "ask", "--continue", "first"); err != nil {
+		t.Fatal(err)
+	}
+	// The newer conversation got that turn; send the older one a turn of its own, after it.
+	newer := newestConversation(t, c)
+	if len(newer.Turns) != 2 {
+		t.Fatalf("the newest conversation was not continued: %v", newer)
+	}
+	time.Sleep(2 * time.Millisecond)
+	if _, err := c.Assistant.SendMessage(ctx, &leylinev1.SendMessageRequest{ConversationId: used.ConversationId, Text: "from the app"}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the app's turn to end", func() bool {
+		list, err := c.Assistant.ListConversations(ctx, &leylinev1.ListConversationsRequest{})
+		return err == nil && list.Conversations[1].State == leylinev1.ConversationState_CONVERSATION_IDLE && len(list.Conversations[1].Turns) == 2
+	})
+	out, _, err := runAskLey(t, sock, askRunOpts{width: 80}, "ask", "--continue", "second")
+	if err != nil || out != "You said: second\n" {
+		t.Fatalf("stdout %q, err %v", out, err)
+	}
+	list, err := c.Assistant.ListConversations(ctx, &leylinev1.ListConversationsRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := list.Conversations[1]; got.ConversationId != used.ConversationId || len(got.Turns) != 4 {
+		t.Errorf("the conversation used last has %d turns: %v", len(got.Turns), got)
+	}
+}
+
+// --continue on a conversation waiting for an answer asks its question first, then sends the
+// request once the turn is done.
+func TestAskContinueAnswersAWaitingConversation(t *testing.T) {
+	t.Parallel()
+	sock, c := askHarness(t, deleteTurn)
+	ctx := t.Context()
+	cv, err := c.Assistant.StartConversation(ctx, &leylinev1.StartConversationRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Assistant.SendMessage(ctx, &leylinev1.SendMessageRequest{ConversationId: cv.ConversationId, Text: "delete it"}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the question", func() bool {
+		return newestConversation(t, c).State == leylinev1.ConversationState_CONVERSATION_WAITING
+	})
+	out, _, err := runAskLey(t, sock, askRunOpts{width: 160, merged: true}, "ask", "--continue", "--yes", "thanks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"which is waiting for an answer", "Allowed by --yes.", "  Deleted job_01K", "Done.\nYou said: thanks\n"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("lacks %q:\n%s", want, out)
+		}
+	}
+	got := newestConversation(t, c)
+	if len(got.Turns) != 4 || got.Turns[1].Tools[0].State != leylinev1.ToolCallState_TOOL_CALL_DONE {
+		t.Errorf("conversation: %v", got)
+	}
+}
+
+// renderTurns feeds a turn's states, one text each, to a fresh view and returns stdout and stderr.
+func renderTurns(states ...*leylinev1.Turn) (string, string) {
+	var out, errb strings.Builder
+	app := &App{Stdout: &out, Stderr: &errb}
+	v := askView{text: map[string]string{}, calls: map[string]leylinev1.ToolCallState{}}
+	for _, t := range states {
+		v.render(app, &leylinev1.Conversation{Turns: []*leylinev1.Turn{t}})
+	}
+	v.breakLine(app)
+	return out.String(), errb.String()
+}
+
+func assistantTurn(text string, done bool, tools ...*leylinev1.ToolCall) *leylinev1.Turn {
+	return &leylinev1.Turn{TurnId: "t2", Role: leylinev1.Role_ROLE_ASSISTANT, Text: text, Done: done, Tools: tools}
+}
+
+// A state whose text is a prefix of what is shown prints nothing; a rewrite prints the new text
+// whole, once the turn is done, after a dim "(revised)" on stderr.
+func TestAskRenderTextRewrites(t *testing.T) {
+	out, errOut := renderTurns(assistantTurn("Tuning to 162.4", false), assistantTurn("Tuning", false), assistantTurn("Tuning to 162.4 MHz.", true))
+	if out != "Tuning to 162.4 MHz.\n" || errOut != "" {
+		t.Errorf("a shorter state: stdout %q, stderr %q", out, errOut)
+	}
+	out, errOut = renderTurns(assistantTurn("Tuning to 162.4", false), assistantTurn("Scanning instead", false),
+		assistantTurn("Scanning instead.", true))
+	if out != "Tuning to 162.4\nScanning instead.\n" || errOut != "(revised)\n" {
+		t.Errorf("a rewrite: stdout %q, stderr %q", out, errOut)
+	}
+}
+
+// Leading whitespace is dropped from the first text after a tool line only.
+func TestAskRenderTextTrimsOnlyAfterATool(t *testing.T) {
+	call := &leylinev1.ToolCall{CallId: "c1", Tool: "tune", State: leylinev1.ToolCallState_TOOL_CALL_DONE, ResultText: "Tuned"}
+	out, errOut := renderTurns(assistantTurn("Tuned.", false, call), assistantTurn("Tuned. Now listening.", true, call))
+	if out != "Tuned.\nNow listening.\n" || errOut != "-> tune\n  Tuned\n" {
+		t.Errorf("after a tool: stdout %q, stderr %q", out, errOut)
+	}
+	out, _ = renderTurns(assistantTurn("Steps:\n", false), assistantTurn("Steps:\n  1. tune", true))
+	if out != "Steps:\n  1. tune\n" {
+		t.Errorf("an indented line lost its indent: %q", out)
+	}
+}
+
+// The transcripts in docs/reference/cli.md's `ley ask` section are what ask renders at 80
+// columns, so the reference cannot drift from the renderer.
+func TestAskReferenceTranscripts(t *testing.T) {
+	t.Parallel()
+	doc, err := os.ReadFile("../../../docs/reference/cli.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, section, ok := strings.Cut(string(doc), "**The assistant**")
+	_, block, ok2 := strings.Cut(section, "```\n")
+	block, _, ok3 := strings.Cut(block, "```")
+	if !ok || !ok2 || !ok3 {
+		t.Fatal("docs/reference/cli.md has no `ley ask` section with a transcript block")
+	}
+	documented := map[string]string{}
+	var cmd string
+	for _, line := range strings.SplitAfter(block, "\n") {
+		if strings.HasPrefix(line, "$ ") {
+			cmd = strings.TrimSpace(line)
+			continue
+		}
+		documented[cmd] += line
+	}
+	for _, tc := range []struct {
+		cmd    string
+		script fakedaemon.AssistantTurn
+		o      askRunOpts
+		args   []string
+	}{
+		{`$ ley ask "listen to the NOAA weather radio"`, twoToolsTurn, askRunOpts{}, []string{"ask", "listen to the NOAA weather radio"}},
+		{`$ ley ask "delete the last recording"`, deleteTurn, askRunOpts{inTTY: true, stdin: "y\n"}, []string{"ask", "delete the last recording"}},
+		{`$ ley ask "delete the last recording" < /dev/null`, deleteTurn, askRunOpts{}, []string{"ask", "delete the last recording"}},
+	} {
+		want, ok := documented[tc.cmd]
+		if !ok {
+			t.Errorf("the reference has no transcript for %s", tc.cmd)
+			continue
+		}
+		got := checkAskScreens(t, []fakedaemon.AssistantTurn{tc.script}, tc.o, tc.args...)[80]
+		if strings.TrimRight(want, "\n") != strings.TrimRight(got, "\n") {
+			t.Errorf("%s: the reference shows\n%s\nask renders\n%s", tc.cmd, want, got)
+		}
+	}
+	if len(documented) != 3 {
+		t.Errorf("the reference has %d transcripts; this test checks 3", len(documented))
 	}
 }
 

@@ -293,15 +293,19 @@ func replaceUsage(st *leylinev1.GetStateResponse, l *leylinev1.UsageLine) {
 	st.Usage = append(st.Usage, l)
 }
 
-// replaceConversation puts a conversation in place of the one with its id.
+// replaceConversation puts a conversation in place of the one with its id, unless the mirror
+// already holds a state at least as new by the conversation's own seq. A new conversation goes
+// first, so the mirror stays newest first as GetState and ListConversations list them.
 func replaceConversation(st *leylinev1.GetStateResponse, c *leylinev1.Conversation) {
 	for i, x := range st.Conversations {
 		if x.ConversationId == c.ConversationId {
-			st.Conversations[i] = c
+			if c.Seq > x.Seq {
+				st.Conversations[i] = c
+			}
 			return
 		}
 	}
-	st.Conversations = append(st.Conversations, c)
+	st.Conversations = append([]*leylinev1.Conversation{c}, st.Conversations...)
 }
 
 // withoutCapture, withoutChannel and withoutSink drop a destroyed object from

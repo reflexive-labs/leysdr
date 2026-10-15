@@ -35,7 +35,8 @@ type AssistantStep struct {
 	Ask, Reason, ResultApproved string
 	// View adds a view tool call that waits for AnswerViewTool, which supplies its result.
 	View string
-	// Fail fails the conversation with INTERNAL and this message, as a worker that stops does.
+	// Fail marks the turn done and fails the conversation with INTERNAL and this message, as a
+	// worker that stops does.
 	Fail string
 }
 
@@ -323,6 +324,7 @@ func (d *Daemon) applyStepLocked(fc *fakeConversation, step AssistantStep, by *l
 	}
 	switch {
 	case step.Fail != "":
+		turn.Done = true
 		fc.conv.Error = &leylinev1.ErrorDetail{Code: leyline.CodeInternal, Message: step.Fail}
 		d.settleLocked(fc, leylinev1.ConversationState_CONVERSATION_FAILED)
 	case step.Tool != "":

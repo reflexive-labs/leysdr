@@ -663,18 +663,26 @@ script runs `ask`; when stdin is not a terminal and `--yes` is absent, the call 
 line that says so and names `--yes`. `ask` declares no view tools, so a view tool call (one an app
 declared, in a conversation `ask` continues) is answered with the error `ley ask has no view`.
 
-The conversation outlives the process: `--continue` sends the request to the newest `IDLE`
-conversation the daemon lists, whether `ask` or the app started it, and starts one when none is
-idle. A conversation ends when a client ends it, after 30 idle minutes, or when the daemon stops.
+The conversation outlives the process: `--continue` carries on the conversation whose last turn
+is newest (then the one started last) among those not ended or failed, whether `ask` or the app
+started it, and starts one when there is none. When that conversation is waiting for an answer,
+`ask` asks the pending question first, and when the assistant is still on a turn, `ask` follows
+the turn to its end; the request is sent after either. A conversation ends when a client ends it,
+after 30 idle minutes, or when the daemon stops.
 Ctrl-C during a turn stops the turn (`StopTurn`) and `ask` follows the conversation until the daemon
 reports the turn done, then exits 0; a second Ctrl-C, or one at the `> ` prompt, ends the
-conversation (`EndConversation`) and exits 130. A conversation that fails exits 1 with the daemon's
-words and code (`ley: the assistant stopped unexpectedly [INTERNAL]`). `--json` prints every
+conversation (`EndConversation`) and exits 130. SIGTERM exits 130 and leaves the conversation as it
+is, so the daemon ends it after 30 idle minutes unless `--continue` carries it on. A conversation that fails exits 1 with the daemon's
+words and code (`ley: the assistant stopped unexpectedly [INTERNAL]`). When the assistant rewrites
+text it has already sent rather than adding to it, the screen keeps what was printed, and the new
+text follows whole once the turn is done, after a dim `(revised)` line on stderr. `--json` prints every
 `Conversation` the watch delivers, one per line, from the state after the request was sent to the
 one in which the turn is done, and no prose; the question and the decline line still go to stderr.
 
-Recorded against the contract's fake daemon, whose assistant plays a scripted conversation, at 80
-columns; the tool names and results are the script's, and times will differ:
+From runs against the contract's fake daemon, whose assistant plays a scripted conversation, at 80
+columns, with stderr and stdout merged as a terminal shows them; the tool names and results are the
+script's. In the second, stdin is a simulated terminal on which `y` is typed.
+`TestAskReferenceTranscripts` renders each and compares it with this block:
 
 ```
 $ ley ask "listen to the NOAA weather radio"
@@ -685,8 +693,7 @@ Tuning to the NOAA station.
   Squelch -45.0 dBFS on 162.400 MHz
 It is playing now; ley stop ends it.
 
-$ ley ask --continue "delete the last recording"
-Continuing the conversation started 01:17:07 (2 turns)
+$ ley ask "delete the last recording"
 The assistant wants to delete_recording {"recording":"job_01K"}: deleting a
 recording asks every time. Allow? [y/N] y
   Deleted job_01K, 12.0 MB freed
