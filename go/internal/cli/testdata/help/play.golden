@@ -16,9 +16,8 @@ URI. An IQ recording is tuned as above; an audio one is played by the daemon
 through its own speakers, and on a terminal space pauses and resumes it.
 
 --over plays one over of a gated audio recording's part: the over's number in
-the part (1 is the first time the squelch opened), from the recording's
-pre-roll before it to half a second after it closed, as a speech decoder heard
-it. --from and --to play a stretch of the part instead, in capture samples on
+the part (1 is the first time the squelch opened), from half a second before it
+to half a second after it closed, as the speech decoder heard it. --from and --to play a stretch of the part instead, in capture samples on
 the timeline 'ley recordings show --json' and the part's sidecar give.
 
 Usage:

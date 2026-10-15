@@ -437,8 +437,13 @@ func TestPlayOneOverOfAPart(t *testing.T) {
 	}
 
 	_, _, err = run(t, t.Context(), sock, "play", transcribeID, "--part", "2", "--over", "2")
-	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "part 2 has 1 overs; choose one from 1 to 1") {
+	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "part 2 has one over; --over 1 plays it") {
 		t.Errorf("an over the part lacks: exit %d, %v", exitCode(err), err)
+	}
+	// LocalPath, what --json prints, has no room for a range, so the two are refused together.
+	_, _, err = run(t, t.Context(), sock, "--json", "play", transcribeID, "--over", "1")
+	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "--json prints the part's path") {
+		t.Errorf("--over with --json: exit %d, %v", exitCode(err), err)
 	}
 	_, _, err = run(t, t.Context(), sock, "play", transcribeID, "--over", "1", "--from", "5")
 	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "not both") {

@@ -105,13 +105,15 @@ func anchorRateFor(m *RecordingManifest, p RecordingPart) uint64 {
 	return rate
 }
 
-// OverHangMs is how long after an over's close its segment runs on, and how
-// soon a re-opening must follow to continue it: the speech decoder's default
-// hang (decode.proto, InputMode SEGMENTED). DefaultPreRollMs is the pre-roll
-// when a recording's manifest names none, the gated recorder's default.
+// OverPreRollMs and OverHangMs are how far before an over's first opening its
+// segment starts, and how long after its last close it runs on (a re-opening
+// sooner continues it): the speech decoder's defaults (decode.proto, InputMode
+// SEGMENTED; the daemon's Segmenter.defaultPreRollMs and defaultHangMs), which
+// the speech manifest does not override. The recording's own gate pre-roll does
+// not apply: an over plays exactly what was transcribed.
 const (
-	OverHangMs       = 500
-	DefaultPreRollMs = 500
+	OverPreRollMs = 500
+	OverHangMs    = 500
 )
 
 // OverSpan is one segment of a part: capture samples Start..<End, holding the
@@ -181,8 +183,8 @@ func (m *RecordingManifest) PartCaptureRate(sc *RecordingSidecar, p RecordingPar
 
 // OverRange is the capture samples that play over `over` of part p (1-based,
 // its index in the sidecar's squelch_opens): the segment that holds that
-// opening, from the recording's pre-roll before its first opening to
-// OverHangMs after its last close, as a speech decoder heard it. sc is the
+// opening, from OverPreRollMs before its first opening to OverHangMs after its
+// last close, as the speech decoder heard it. sc is the
 // part's sidecar. An over the part does not list is an error that says how
 // many it has.
 func (m *RecordingManifest) OverRange(sc *RecordingSidecar, p RecordingPart, over int) (start, end uint64, err error) {
@@ -191,18 +193,17 @@ func (m *RecordingManifest) OverRange(sc *RecordingSidecar, p RecordingPart, ove
 		return 0, 0, fmt.Errorf("part %d lists no squelch openings, so it has no overs to choose from; only a gated recording records them", p.Part)
 	}
 	if over < 1 || over > len(opens) {
+		if len(opens) == 1 {
+			return 0, 0, fmt.Errorf("part %d has one over; --over 1 plays it", p.Part)
+		}
 		return 0, 0, fmt.Errorf("part %d has %d overs; choose one from 1 to %d", p.Part, len(opens), len(opens))
 	}
 	rate := m.PartCaptureRate(sc, p)
 	if rate <= 0 {
 		return 0, 0, fmt.Errorf("part %d gives no capture rate to place its overs by", p.Part)
 	}
-	preRollMs := uint32(DefaultPreRollMs)
-	if m.Gate != nil && m.Gate.PreRollMs > 0 {
-		preRollMs = m.Gate.PreRollMs
-	}
 	perMs := rate / 1000
-	for _, s := range Segments(opens, p.StartSample, p.EndSample, uint64(float64(preRollMs)*perMs), uint64(OverHangMs*perMs)) {
+	for _, s := range Segments(opens, p.StartSample, p.EndSample, uint64(OverPreRollMs*perMs), uint64(OverHangMs*perMs)) {
 		if s.First <= over && over <= s.Last {
 			return s.Start, s.End, nil
 		}

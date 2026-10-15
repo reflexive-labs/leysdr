@@ -480,16 +480,17 @@ and `xdg-open` elsewhere), saying which happened. Under `--json` nothing is play
 
 **Part of an audio part plays with `--over`, or `--from` and `--to`.** `ley play <recording>
 --part N --over O` plays over `O` of the part, counted from 1 as the part sidecar's
-`squelch_opens` lists them: the segment that holds that opening, from the recording's pre-roll
-(`gate.pre_roll_ms`, 500 ms when absent) before its first opening to half a second after its last
-close, with an opening less than half a second after a close continuing the segment. That is the
-audio a speech decoder heard, so a speech record's `over` plays exactly what was transcribed.
+`squelch_opens` lists them: the segment that holds that opening, from half a second before its
+first opening to half a second after its last close, with an opening less than half a second after
+a close continuing the segment. Those are the speech decoder's pre-roll and hang, not the
+recording's own `gate.pre_roll_ms`, so a speech record's `over` plays exactly what was transcribed.
 `--from` and `--to` take capture samples on the part's timeline (`start_sample`, `end_sample` and
 `squelch_opens` in `ley recordings show --json` and the sidecar) and go to the daemon as given,
 either left out meaning the part's own end. The banner names the stretch (`job_…, part 1 of 2, over
-3`). An over the part does not list (`part 2 has 1 overs; choose one from 1 to 1`), `--over` beside
-`--from` or `--to`, a range on a file path or an IQ recording, and a range the daemon refuses are
-usage errors. With a daemon that has no audio device the local player gets the whole part, and a
+3`). An over the part does not list (`part 1 has 3 overs; choose one from 1 to 3`), `--over` beside
+`--from` or `--to`, any of the three with `--json` (which prints the part's `LocalPath`, with no room
+for a range), a range on a file path or an IQ recording, and a range the daemon refuses are usage
+errors. With a daemon that has no audio device the local player gets the whole part, and a
 line says so.
 
 A **`Playback`** is daemon state like everything else (`playback_id`, `resource_uri`, `path`,

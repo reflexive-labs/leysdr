@@ -650,8 +650,9 @@ space when stdin is a terminal, and its progress line reads `0:02 / 0:05, paused
 **A playback can be one stretch of a part.** `StartPlaybackRequest.start_sample` and `end_sample`
 name capture samples on the part's timeline, the same numbers as the sidecar's `start_sample`,
 `end_sample` and `squelch_opens`, so a client plays one over of a gated part rather than the whole
-exchange: the Library's speech lines and `ley play --over` play the segment a speech decoder heard
-(the recording's pre-roll before the over's first opening to half a second after its last close).
+exchange: the Library's speech lines and `ley play --over` play the segment the speech decoder
+heard, cut with the decoder's pre-roll and hang (half a second each by default) rather than the
+recording's gate pre-roll, so what plays is what was transcribed.
 0 for either end is the part's own. The daemon places the range in the WAV by the audio rate and
 the capture rate of the part's sidecar anchor (else the manifest's anchor, else the part's own
 span over its frames), seeks the reader to the first frame and stops at the last; a range that is

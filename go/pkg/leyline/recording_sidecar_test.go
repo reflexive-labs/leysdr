@@ -65,10 +65,11 @@ func TestSegments(t *testing.T) {
 	}
 }
 
-// OverRange plays the segment that holds the over, at the recording's pre-roll and the
-// decoder's half-second hang, and says how many overs a part has when asked for one it lacks.
+// OverRange plays the segment that holds the over, at the speech decoder's half-second pre-roll
+// and hang whatever the recording's own gate pre-roll (1000 ms here), so what plays is what was
+// transcribed; and says how many overs a part has when asked for one it lacks.
 func TestOverRange(t *testing.T) {
-	m := &RecordingManifest{SampleRate: 48000, Gate: &RecordingGate{Kind: "squelch", PreRollMs: 500, HangMs: 5000}}
+	m := &RecordingManifest{SampleRate: 48000, Gate: &RecordingGate{Kind: "squelch", PreRollMs: 1000, HangMs: 5000}}
 	p := RecordingPart{Part: 1, StartSample: 0, EndSample: 6000 * 2400, Samples: 6 * 48000}
 	ms := func(v uint64) uint64 { return v * 2400 }
 	sc := &RecordingSidecar{Anchor: SidecarAnchor{SampleRate: 2_400_000}, Recording: SidecarPartInfo{SquelchOpens: []SquelchOpen{
