@@ -103,6 +103,65 @@ struct WAVReader {
     func close() { try? handle.close() }
 }
 
+/// A stretch of one part to play: capture samples on the part's timeline, as its sidecar dates
+/// them, and the WAV frames they fall on (control.proto, `StartPlaybackRequest.start_sample`).
+/// Playing one over of a gated part is the use: the sidecar's `squelch_opens` say where each over
+/// is, in capture samples, and the file is at the audio rate.
+struct PlaybackRange: Equatable, Sendable {
+    var startSample: UInt64
+    var endSample: UInt64
+    /// Frames of the part's WAV, at the file's own rate.
+    var frames: Range<UInt64>
+
+    /// The range `start` and `end` name inside `part`, placed in its file by `audioRate` (the
+    /// manifest's) and `captureRate` (the rate the part's samples count in; 0 when nothing says,
+    /// and the part's own span over its frames stands in). Nil for 0 and 0, the whole part; a 0
+    /// start is the part's start and a 0 end its end. A range that is empty, not inside the part,
+    /// or shorter than one frame of audio is INVALID_ARGUMENT naming `target`.
+    static func resolve(start: UInt64, end: UInt64, part: RecordingPart, audioRate: UInt64,
+                        captureRate: Double, target: String) throws -> PlaybackRange?
+    {
+        guard start != 0 || end != 0 else { return nil }
+        let from = start == 0 ? part.startSample : start
+        let to = end == 0 ? part.endSample : end
+        guard from >= part.startSample, to <= part.endSample, to > from else {
+            throw EngineError.invalidArgument(
+                "samples \(from)..<\(to) are not a range inside part \(part.part), which holds samples \(part.startSample)..<\(part.endSample)",
+                target: target)
+        }
+        var rate = captureRate
+        if rate <= 0, part.samples > 0 {
+            rate = Double(part.endSample - part.startSample) / Double(part.samples) * Double(audioRate)
+        }
+        guard rate > 0, audioRate > 0 else {
+            throw EngineError.invalidArgument("part \(part.part) gives no rate to place a range in", target: target)
+        }
+        func frame(_ sample: UInt64) -> UInt64 {
+            Swift.min(part.samples, UInt64((Double(sample - part.startSample) * Double(audioRate) / rate).rounded()))
+        }
+        let frames = frame(from)..<frame(to)
+        guard !frames.isEmpty else {
+            throw EngineError.invalidArgument(
+                "samples \(from)..<\(to) are shorter than one frame of part \(part.part)'s audio", target: target)
+        }
+        return PlaybackRange(startSample: from, endSample: to, frames: frames)
+    }
+
+    /// The rate `part`'s samples count in: its sidecar's anchor, else the manifest's newest anchor
+    /// that applies from a sample not past the part's start, else 0. `directory` is the
+    /// recording's.
+    static func captureRate(of part: RecordingPart, in manifest: RecordingManifest, directory: String) -> Double {
+        let sidecar = directory + "/" + (part.file as NSString).deletingPathExtension + ".json"
+        if let data = FileManager.default.contents(atPath: sidecar),
+           let decoded = try? JSONDecoder().decode(PartSidecar.self, from: data), decoded.anchor.sampleRate > 0
+        {
+            return Double(decoded.anchor.sampleRate)
+        }
+        let anchor = manifest.anchors.last { $0.fromSample <= part.startSample && $0.sampleRate > 0 }
+        return Double(anchor?.sampleRate ?? 0)
+    }
+}
+
 /// Opens a playback's audio output: the sink's id, the file's rate, the volume and the output
 /// device's UID (nil for the default).
 typealias PlaybackSinkFactory = @Sendable (SinkID, UInt32, Double, String?) throws -> any AudioSink
@@ -122,8 +181,11 @@ actor PlaybackEngine {
     nonisolated let path: String
     nonisolated let resourceURI: String
     nonisolated let sampleRate: UInt32
+    /// Frames this playback plays: the file's, or the range's.
     nonisolated let frames: UInt64
     nonisolated let volume: Double
+    /// The stretch of the part asked for; nil plays the whole file.
+    nonisolated let range: PlaybackRange?
 
     private let reader: WAVReader
     private let sink: any AudioSink
@@ -141,7 +203,10 @@ actor PlaybackEngine {
 
     /// `makeSink` opens the audio output: the daemon's audio device in the daemon, a sink that
     /// discards the audio in a test on a host with none (`SessionStore.setPlaybackSinkFactory`).
+    /// `range`, when given, plays only those frames: the reader starts at its first and the loop
+    /// stops at its end, clamped to what the file holds.
     init(id: PlaybackID, path: String, resourceURI: String, volume: Double, deviceUID: String?,
+         range: PlaybackRange? = nil,
          makeSink: PlaybackSinkFactory = systemPlaybackSink,
          onEnd: @escaping @Sendable (PlaybackID) async -> Void) throws
     {
@@ -149,10 +214,17 @@ actor PlaybackEngine {
         self.path = path
         self.resourceURI = resourceURI
         self.volume = volume
+        self.range = range
         self.onEnd = onEnd
         reader = try WAVReader(path: path)
         sampleRate = reader.sampleRate
-        frames = reader.frames
+        if let range {
+            let first = Swift.min(range.frames.lowerBound, reader.frames)
+            frames = Swift.min(range.frames.upperBound, reader.frames) - first
+            reader.seek(toFrame: first)
+        } else {
+            frames = reader.frames
+        }
         do {
             sink = try makeSink(SinkID(), reader.sampleRate, volume, deviceUID)
         } catch {
@@ -198,7 +270,9 @@ actor PlaybackEngine {
                 if !paused { started = ContinuousClock.now - .seconds(Double(pushed) / Double(sampleRate)) }
                 continue
             }
-            let block = reader.read(frames: Self.blockFrames)
+            // A range ends at its last frame rather than at the end of the file.
+            guard pushed < frames else { break }
+            let block = reader.read(frames: Int(Swift.min(UInt64(Self.blockFrames), frames - pushed)))
             if block.isEmpty { break }
             block.withUnsafeBufferPointer { buf in
                 buf.withMemoryRebound(to: Float.self) { floats in
