@@ -292,6 +292,69 @@ func writeScriptedLey(in dir: String, outcome: String, message: String) throws -
     """)
 }
 
+/// The scripted assistant worker SwiftPM builds from the `leyline-fake-worker` executable target.
+func fakeWorkerPath() -> String {
+    productsDirectory.appendingPathComponent("leyline-fake-worker").path
+}
+
+/// Writes `<dir>/ley`, a wrapper that runs the fake worker for `ley worker assistant` and `ley
+/// worker check` alike. The nth assistant worker the daemon starts plays `scripts[n-1]` (the last
+/// script again once they run out) and dumps what it was given to `<dir>/dump.<n>`
+/// (`Sources/FakeWorker/main.swift` has the script language and the dump's lines). A wrapper rather
+/// than the daemon's environment keeps each test's script its own.
+@discardableResult
+func writeFakeWorkerLey(in dir: String, scripts: [String]) throws -> String {
+    for (i, script) in scripts.enumerated() {
+        try script.write(toFile: dir + "/script.\(i + 1)", atomically: true, encoding: .utf8)
+    }
+    let path = dir + "/ley"
+    let wrapper = """
+    #!/bin/sh
+    n=0
+    if [ "$2" = assistant ]; then
+        n=$(cat "\(dir)/started" 2>/dev/null || echo 0)
+        n=$((n + 1))
+        echo "$n" > "\(dir)/started"
+    fi
+    script="\(dir)/script.$n"
+    [ -f "$script" ] || script="\(dir)/script.\(scripts.count)"
+    FAKE_WORKER_SCRIPT="$script" FAKE_WORKER_DUMP="\(dir)/dump.$n" exec "\(fakeWorkerPath())" "$@"
+
+    """
+    try wrapper.write(toFile: path, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path)
+    return path
+}
+
+/// The fake worker's dump as `name -> value`, once it has been written (nil after `seconds`).
+func fakeWorkerDump(_ path: String, within seconds: Double = 5) async -> [String: String]? {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(seconds))
+    while ContinuousClock.now < deadline {
+        if let text = try? String(contentsOfFile: path, encoding: .utf8) {
+            var out: [String: String] = [:]
+            for line in text.split(separator: "\n") {
+                guard let eq = line.firstIndex(of: "=") else { continue }
+                out[String(line[..<eq])] = String(line[line.index(after: eq)...])
+            }
+            return out
+        }
+        try? await Task.sleep(nanoseconds: 20_000_000)
+    }
+    return nil
+}
+
+/// A clock a test moves by hand, for the conversation store's idle limit.
+final class TestClock: Sendable {
+    private let start = ContinuousClock.now
+    private let offset = Mutex<Duration>(.zero)
+
+    func advance(by duration: Duration) { offset.withLock { $0 += duration } }
+
+    var now: @Sendable () -> ContinuousClock.Instant {
+        { [self] in start.advanced(by: offset.withLock { $0 }) }
+    }
+}
+
 // MARK: The daemon's log
 
 /// Every line any `Logger` writes while `capture` runs, for tests that must show something never

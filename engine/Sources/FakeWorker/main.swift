@@ -28,9 +28,9 @@
 //
 // The assistant's turn for user turn `tN` is `tN+1`, and call ids count up across the
 // conversation. WorkerStop marks the turn done at once, mid-sleep or mid-wait, and skips the rest
-// of the block. FAKE_WORKER_DUMP names a file the worker writes after its WorkerStart: the key's
-// last four, its arguments, the WorkerStart and its environment, one `name=value` per line. The
-// key itself is never written anywhere.
+// of the block. FAKE_WORKER_DUMP names a file the worker writes after its WorkerStart: its pid,
+// the key's last four, its arguments, the WorkerStart and its environment, one `name=value` per
+// line. The key itself is never written anywhere.
 
 import Foundation
 import LeylineProto
@@ -110,7 +110,7 @@ else {
 FileHandle.standardError.write(Data("fake worker up for \(start.conversationID)\n".utf8))
 
 if let dump = environment["FAKE_WORKER_DUMP"] {
-    var lines = ["last4=\(lastFour)", "argv=\(arguments.joined(separator: " "))",
+    var lines = ["pid=\(getpid())", "last4=\(lastFour)", "argv=\(arguments.joined(separator: " "))",
                  "start.conversation=\(start.conversationID)", "start.provider=\(start.provider)",
                  "start.model=\(start.model)", "start.endpoint=\(start.endpoint)", "start.socket=\(start.socket)",
                  "start.view_tools=\(start.viewTools.map(\.name).joined(separator: ","))"]
