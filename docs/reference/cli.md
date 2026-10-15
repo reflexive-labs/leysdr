@@ -575,14 +575,21 @@ One key is enough to start. Unless the provider rejects it, the daemon gives eve
 provider serves, and that has no provider chosen yet, the provider's default model: `openai`
 serves the assistant (`gpt-5`) and speech (`whisper-1`), `anthropic` the assistant
 (`claude-sonnet-5-5`). A choice already made is never overwritten. `add` compares `ley ai`'s state
-before and after and ends its line with what was set and the command that changes it; a provider
-`ley` does not know (a gateway or a local server added with `--endpoint`) gets no default.
+before and after and ends its line with what was set and the command that changes it, or, when
+every feature already had a choice, with `ley ai` to list them. A key added with `--endpoint` sets
+nothing, since the defaults are the provider's own models and a gateway or a local server names
+its own, so its line ends with `ley ai use assistant <provider> <model>`; neither does a provider
+`ley` does not know, which has no defaults.
 `ley ai use` chooses what the `assistant` and `speech` features call, in three forms:
 `ley ai use <provider>` sets every feature the provider serves with its default models,
 `ley ai use <feature> <provider>` one feature with the default, and
 `ley ai use <feature> <provider> <model>` one feature with the model named. `ley ai use <provider>
 <model>` is taken when the provider serves one feature and refused as ambiguous when it serves two,
-naming the form to use. A provider that cannot serve the feature is refused by the daemon with
+naming the feature whose default the model is, or both forms. A provider `ley` does not know is
+taken in the short forms only when its key was added with `--endpoint`, which makes it an
+OpenAI-compatible server for the assistant; otherwise the refusal names the three-word form for
+each feature (`ley ai use speech deepgram nova-3` for a speech decoder's provider). A provider
+that cannot serve the feature is refused by the daemon with
 `INVALID_ARGUMENT` naming those that can: speech is served by `openai` and by the provider of any
 speech decoder installed, and a provider `ley` does not know serves the assistant as an
 OpenAI-compatible server, so once its key is added it must have an endpoint. `use` may name a
@@ -617,7 +624,7 @@ Paste the openai key and press Enter:
 openai key …7c2e added; the provider accepted it. The assistant and speech now use openai (gpt-5, whisper-1); change one with ley ai use <feature> <provider> [<model>]
 
 $ ley ai add anthropic --label work < anthropic.key
-anthropic key …9f10 added; the provider accepted it
+anthropic key …9f10 added; the provider accepted it. No feature changed; ley ai lists what each calls
 
 $ ley ai use assistant anthropic
 assistant now calls anthropic claude-sonnet-5-5

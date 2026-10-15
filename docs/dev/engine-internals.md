@@ -646,7 +646,7 @@ or `speech`; an empty provider and model clears the choice.
 
 Which provider serves which feature, and the model a feature gets when nobody named one, is one
 table (`ProviderDefaults`): `openai` serves the assistant with `gpt-5` and speech with `whisper-1`,
-`anthropic` the assistant with `claude-sonnet-5-5`. The names are placeholders until the AI-12 run
+`anthropic` the assistant with `claude-sonnet-5-5`. The names are placeholders until the assistant evals
 and the speech spike confirm them. `ley` and the fake daemon keep the same table in
 `go/pkg/leyline/providers.go` and the app in its provider catalogue (`ProviderCatalog`), and Go's
 `TestProviderTablesAgree` reads the two Swift sources as text and holds all three equal, so a
@@ -654,7 +654,8 @@ change to one is a change to the three. After `SetCredential`'s check, every fea
 provider serves and that has no provider chosen gets the table's model, and the `AIState` is
 published again; a choice is never overwritten, and a key the provider rejected sets nothing. A
 key whose check could not run does set them, since nothing else would once a later check
-succeeds. The reply is the `Credential` as before; `ley ai add` and the app see what was set in
+succeeds. A key with an endpoint sets nothing: the table's models are the provider's own, and a
+gateway or a local server names its own. The reply is the `Credential` as before; `ley ai add` and the app see what was set in
 the state. `SetFeatureModel` refuses with `INVALID_ARGUMENT` a provider that cannot serve the
 feature, naming those that can: a provider serves a feature the table gives it, speech is also
 served by the `credential_provider` of any installed `SEGMENTED` decoder (so a third-party speech

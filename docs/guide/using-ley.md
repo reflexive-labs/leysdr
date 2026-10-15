@@ -814,7 +814,8 @@ it is billed by the minute of audio, and `ley ai usage` shows how much was sent.
 `ley ai use speech openai <model>` chooses another model, and `transcribe --model` does the same
 for one run and the ones after it. A key added with
 `--endpoint` sends the audio to that OpenAI-compatible server instead, such as a Whisper server on
-your own network. What leaves the Mac is the audio of each over, half a second either side, and a
+your own network; it chooses no model, since the server names its own, so choose one with
+`ley ai use speech openai <model>`. What leaves the Mac is the audio of each over, half a second either side, and a
 vocabulary hint that helps the model spell callsigns: the phonetic alphabet and a few net phrases.
 Where passing on what you received is restricted, keep speech off or transcribe on a server of
 your own. A decoder named `speech-scripted` is installed beside it: it replays a file of lines,
@@ -1082,7 +1083,9 @@ The key gives every feature its provider serves, and that has no model yet, the 
 an `openai` key serves both, an `anthropic` key the assistant (`claude-sonnet-5-5`). A model
 already chosen is kept, so a second key changes nothing until you ask: `ley ai use anthropic`
 moves every feature anthropic serves to it, `ley ai use assistant anthropic claude-opus-5-5` one
-feature to a model you name, and `ley ai` shows what each feature calls.
+feature to a model you name, and `ley ai` shows what each feature calls. A key added with
+`--endpoint`, for a gateway or a server on your own network, sets no model, since its server names
+its own: `ley ai use assistant <provider> <model>` chooses one.
 
 In the app, Leyline > Settings… (⌘,), AI does the same: paste the key into Add a key, see the
 models it set under Features, change one there, and read under each choice what it sends and to
