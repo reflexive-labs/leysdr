@@ -1121,7 +1121,7 @@ a 16384-token output limit because reasoning models count their hidden reasoning
 policy row run on both models, and an e2e on `openai` and on a gateway named `acme`. A key is
 always required, local servers included.
 
-### AI-16 `[ ]` First-run ergonomics of `ley ai`
+### AI-16 `[x]` First-run ergonomics of `ley ai`
 
 From the ergonomics review of 2026-10-15 (`ley ai add` ended with no next step; a user had to
 know two model names and run `ley ai use` twice; `transcribe --model` and `ask --model` meant
@@ -1151,7 +1151,14 @@ LeylineServer/AI/CredentialStore.swift`, `Services/CredentialsService.swift`,
 ai.go`, goldens, `docs/reference/cli.md`, `docs/guide/using-ley.md`, the app's
 `AISettings` catalogue (the same default table). Verify: `ley ai add openai` on a fresh daemon
 followed by `ley ask` and `ley transcribe --yes` with no `use` in between, in e2e; the fake and
-the daemon agree on the table (one test reads both).
+the daemon agree on the table (one test reads both). **Done 2026-10-15.** Beyond the text: a key
+added with an `--endpoint` sets no defaults, because the table's models are the provider's own; a
+key whose check could not run still sets them, since nothing later would; a provider the table
+does not list is accepted in the short `use` forms only once a key with an endpoint exists for
+it, and otherwise the refusal names both three-word forms; the ambiguity refusal suggests the
+feature whose default model matches the given one; speech counts any installed segmented decoder
+that names the provider, so a plugin's provider works without a table row. The Go, Swift and app
+tables are held equal by a test that reads the Swift sources as text.
 
 ## Lanes
 
