@@ -24,10 +24,10 @@ struct PartSpeechLines: View {
 
     var body: some View {
         let lines = session.speech(for: row.jobID)?.shown(part: row.part) ?? []
-        let status =
-            row.bracket == .none || row.bracket == .first
-            ? session.transcriptionStatus(for: row.jobID) : nil
-        if !lines.isEmpty || status != nil {
+        let first = row.bracket == .none || row.bracket == .first
+        let status = first ? session.transcriptionStatus(for: row.jobID) : nil
+        let cut = first && session.speechTruncated.contains(row.jobID)
+        if !lines.isEmpty || status != nil || cut {
             VStack(alignment: .leading, spacing: Theme.Layout.speechLineGap) {
                 if let status {
                     Text(status.line).font(Theme.Font.footnote)
@@ -37,6 +37,13 @@ struct PartSpeechLines: View {
                 ForEach(lines) { line in
                     SpeechLineView(line: line)
                         .id(SpeechLineView.scrollID(partURI: line.partURI, over: line.over))
+                }
+                if cut {
+                    // The daemon cut the read at its limit: the lines here are kept, and some are
+                    // missing.
+                    Text("(more words not loaded)").font(Theme.Font.footnote)
+                        .foregroundStyle(Theme.inkFaintest)
+                        .padding(.horizontal, Theme.Layout.speechLinePaddingX)
                 }
             }
             .padding(.leading, Theme.Layout.speechIndent)
@@ -173,12 +180,16 @@ enum SpeechExportPanel {
 }
 
 /// Transcribe again…: the speech model to use, picked from the ones the catalogue lists with the
-/// one in use first, or typed, as `ley transcribe --model` takes it; Continue asks the question.
+/// one in use first, or Custom… and typed, as `ley transcribe --model` takes it; Continue asks the
+/// question. The field shows only for Custom…, so the picker and the field never disagree.
 struct TranscribeAgainSheet: View {
     let recordingID: String
     @Environment(AppSession.self) private var session
-    /// The model being chosen, transient to the sheet.
-    @State private var model = ""
+    /// The picker's choice and the typed model, transient to the sheet.
+    @State private var picked = ""
+    @State private var typed = ""
+    /// The picker's tag for a typed model; no model is called this.
+    private static let customTag = "\u{0}custom"
 
     var body: some View {
         let models = session.speechModels
@@ -189,29 +200,34 @@ struct TranscribeAgainSheet: View {
             )
             .font(Theme.Font.label).foregroundStyle(Theme.inkMuted)
             .fixedSize(horizontal: false, vertical: true)
-            if !models.offered.isEmpty {
-                Picker("Model", selection: $model) {
-                    ForEach(models.offered, id: \.self) { Text($0).tag($0) }
-                }
+            Picker("Model", selection: $picked) {
+                ForEach(models.offered, id: \.self) { Text($0).tag($0) }
+                Text("Custom…").tag(Self.customTag)
             }
-            TextField("Model", text: $model).textFieldStyle(.roundedBorder)
+            if picked == Self.customTag {
+                TextField("Model", text: $typed).textFieldStyle(.roundedBorder)
+            }
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) { session.transcribeAgainFor = nil }
                     .keyboardShortcut(.cancelAction)
                 Button("Continue") {
                     session.transcribeAgainFor = nil
-                    let chosen = model.trimmingCharacters(in: .whitespaces)
+                    let chosen =
+                        picked == Self.customTag
+                        ? typed.trimmingCharacters(in: .whitespaces) : picked
                     session.askTranscribe(
                         recordingID: recordingID, model: chosen == models.current ? "" : chosen)
                 }
                 .keyboardShortcut(.defaultAction)
+                .disabled(
+                    picked == Self.customTag && typed.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(20)
         .frame(width: Theme.Layout.transcribeSheetWidth)
         .background(Theme.panel)
-        .onAppear { model = models.current.isEmpty ? (models.offered.first ?? "") : models.current }
+        .onAppear { picked = models.offered.first ?? Self.customTag }
     }
 }
 

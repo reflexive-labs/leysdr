@@ -68,7 +68,9 @@ struct RecordingsPage: View {
                 }
                 // The search selected an over: bring its line into view.
                 .onChange(of: scrollTarget) { _, target in
-                    guard let target else { return }
+                    guard let target, let uri = session.selectedPartURI else { return }
+                    // A hit on an EARLIER day: open it first, so the line exists to scroll to.
+                    session.openDay(holding: uri)
                     withAnimation { proxy.scrollTo(target, anchor: .center) }
                 }
             }

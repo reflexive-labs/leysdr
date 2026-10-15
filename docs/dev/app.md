@@ -316,36 +316,42 @@ tested in `RecordingPagesTests` and against the
 daemon's manifest in the daemon-backed suite.
 
 **The Library's speech** (`SpeechViews.swift`, the façade's `SpeechRecords.swift`). The speech
-decoder's records (protocol `speech`, one per over) are read per recording with
-`Decoders.QueryRecords`: protocol `speech` over the recording's span with a minute either side,
-because a record query has no filter on `clip_uri`, and `SpeechRecords.byRecording` keeps the
-records whose `clip_uri` names the recording (`AppSession.loadSpeech(for:)`, on the page's
-recordings and again on each event of a transcription job of the recording). `RecordingSpeech`
+decoder's records (protocol `speech`, one per over) are read with `Decoders.QueryRecords`, one
+query for a channel's unread recordings: protocol `speech` over their span with a minute either
+side, because a record query has no filter on `clip_uri`, and `SpeechRecords.byRecording` sorts the
+records to the recordings their `clip_uri` names (`AppSession.loadSpeech`, for the page's channel
+and again on each event of a transcription job of a recording, never twice at once; a failed read
+waits for the next listing). A read the daemon cut at its limit keeps its lines and the page adds
+`(more words not loaded)`. Each recording's `RecordingSpeech` is built once and dropped when its
+lines or its manifest change. `RecordingSpeech`
 folds them onto parts and overs by `clip_uri` and `over`, dated through the manifest's anchors;
 each over shows its newest transcription's line (job ids are ULIDs, so the greatest is the
 newest), and the earlier ones stay (`versions`, `shown(job:)`), because records are immutable and
 transcribing again adds records. Under each part row (`PartSpeechLines`) are its lines
 (`SpeechLineView`: the text in `body`, the model and confidence in `footnote` `inkFaint`, the
 callsigns as chips), each a button beside the row's, not inside it; a click plays that over alone
-(`AppSession.play(part:over:)`): `RecordingManifest.read(at:)` reads the sidecar of each part whose
-squelch opened for its openings (`RecordingPart.squelchIntervals`), `SpeechRecords.range` cuts the
-over's segment by the daemon's own `Segmenter` rule (the recording's pre-roll, the decoder's
-half-second hang), and `StartPlayback` takes it as a sample range; `PartPlayback.playingOver` marks
-the line playing. On a recording's first row a running transcription shows `Transcribing · 3 overs
+(`AppSession.play(part:over:)`): `RecordingManifest.read(at:reusing:)` reads, off the main actor,
+the sidecar of each part whose squelch opened for its openings (`RecordingPart.squelchIntervals`),
+and on a re-read only the sidecars of parts it did not have; `SpeechRecords.range` cuts the over's
+segment by the daemon's own `Segmenter` rule with the speech decoder's pre-roll and hang (half a
+second each unless its manifest says otherwise), not the recording's gate pre-roll, so what plays is
+what was transcribed; `StartPlayback` takes it as a sample range, and `PartPlayback.playingOver`
+marks the line playing. A part whose openings were not read plays whole and marks no line. On a recording's first row a running transcription shows `Transcribing · 3 overs
 so far`, a held-up one the daemon's `status_detail` in `caution`, a failed one its reason in
 `accentRec`. A part row's context menu and the part inspector hold Transcribe, Transcribe again…
 and Export words… (`SpeechActions`). Transcribe asks `ley transcribe`'s question in a confirmation
 dialog (the minutes from `squelch_open_ms`, else the sidecars, and the decoder's hosts), then starts
 the kept decode job with `source_uri`; Transcribe again… first offers the speech model (the one in
-use, then the catalogue's), sets it as the speech feature's model, and puts it back if the daemon
-refuses the job. Transcribe is absent while no speech decoder is installed or it needs a key and
+use, then the catalogue's, or Custom… and typed), sets it as the speech feature's model, and puts
+it back if the daemon refuses the job, clearing it when none was set before. Transcribe is absent while no speech decoder is installed or it needs a key and
 none is set (`SpeechRecords.canTranscribe`), and on a recording with no openings. Export words…
 writes the shown lines through `NSSavePanel`: plain text, `[14:03:20] text (W6ABC)` a line, or SRT
-timed from the recording's first sample through the anchors, so the gaps between parts are kept.
-The sidebar's search also matches what was said: while the field holds words every listed
-recording's speech is read, a channel matches when one of its shown lines holds the words
-(case-blind), and a row's click or Return selects the part and the over and scrolls the page to the
-line (`selectedOver`). Unverified until the Mac; the fold, the ranges, the search and both exports
+timed from the recording's first sample through each part's capture's anchor, so the gaps between
+parts are kept; a line nothing dates is left out of the SRT and counted in the log. The sidebar's
+search also matches what was said: while the field holds words each channel's unread speech is
+read, one query a channel, and a channel matches when one of its shown lines holds the words
+(case-blind), and a row's click or Return selects the part and the over, opens its day if it is
+under EARLIER, and scrolls the page to the line (`selectedOver`). Unverified until the Mac; the fold, the ranges, the search and both exports
 are tested in `SpeechRecordsTests`.
 
 **The audio ladder** (`AudioLevelsView.swift`, `AudioLevelsFeed`). Between the reading and the

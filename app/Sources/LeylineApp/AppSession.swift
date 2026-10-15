@@ -285,7 +285,9 @@ final class AppSession {
     /// and the time gutter's bars come from (`tunedManifests`). Each is kept while the listing
     /// holds the recording, read once, and read again on each event of its job, which is how a
     /// running card grows and a new row is kept as parts land.
-    private(set) var manifests: [String: RecordingManifest] = [:]
+    private(set) var manifests: [String: RecordingManifest] = [:] {
+        didSet { forgetSpeech(changedIn: oldValue, manifests) }
+    }
     @ObservationIgnored private var manifestLoads: [String: Task<Void, Never>] = [:]
     /// Job ids whose manifest a job event made stale.
     @ObservationIgnored private var staleManifests: Set<String> = []
@@ -315,8 +317,23 @@ final class AppSession {
     /// Speech lines by recording id, from the daemon's speech records (`SpeechRecords.byRecording`),
     /// read for each recording on the channel page and, while the search field holds words, for
     /// every recording listed; read again on each event of a transcription of the recording.
-    private(set) var speechLines: [String: [SpeechLine]] = [:]
-    @ObservationIgnored private var speechLoads: [String: Task<Void, Never>] = [:]
+    private(set) var speechLines: [String: [SpeechLine]] = [:] {
+        didSet { forgetSpeech(changedIn: oldValue, speechLines) }
+    }
+    /// Recordings whose last speech read the daemon cut at the query's limit: their lines are
+    /// kept and the page says more were not loaded.
+    private(set) var speechTruncated: Set<String> = []
+    /// The read in flight for each recording, by a token that one read shares across the
+    /// recordings it covers; a result is applied only to recordings still waiting on it.
+    @ObservationIgnored private var speechLoads: [String: UUID] = [:]
+    /// Recordings whose speech read failed, not read again until the listing is read again: a
+    /// mirror change arrives four times a second while a part plays.
+    @ObservationIgnored private var failedSpeech: Set<String> = []
+    /// Recordings a transcription event asked to read again while a read was in flight.
+    @ObservationIgnored private var staleSpeech: Set<String> = []
+    /// `RecordingSpeech` per recording, built once and dropped when its lines or its manifest
+    /// change (`forgetSpeech`), so a render of the page or the search does not rebuild it.
+    @ObservationIgnored private var speechCache: [String: RecordingSpeech] = [:]
     /// The transcription jobs as last seen, so a change to one reads its recording's speech again.
     @ObservationIgnored private var transcriptionsSeen: [Leyline_V1_Job] = []
     /// The speech decoder as `ListDecoders` lists it, nil until read or when none is installed.
@@ -2925,6 +2942,7 @@ final class AppSession {
                 if list != self.recordings { self.recordings = list }
                 self.prunePage()
                 self.failedManifests = []
+                self.failedSpeech = []
                 if self.place == .library, self.selectedRecordingChannel == nil {
                     self.selectFirstChannel()
                 }
@@ -2999,10 +3017,9 @@ final class AppSession {
     /// the page while it is not showing.
     private func followPage() {
         guard recordingsPageShown, let c = selectedChannel else { return }
-        for r in c.recordings {
-            readManifestIfNeeded(r.jobID)
-            if speechLines[r.jobID] == nil { loadSpeech(for: r.jobID) }
-        }
+        for r in c.recordings { readManifestIfNeeded(r.jobID) }
+        // One read for the channel's recordings whose speech has not been read.
+        loadSpeech(of: c.recordings.map(\.jobID).filter { speechLines[$0] == nil })
         readSpeechDecoderIfNeeded()
     }
 
@@ -3017,7 +3034,13 @@ final class AppSession {
             ref.uri = "ley://recordings/\(id)"
             do {
                 let local: Leyline_V1_LocalPath = try await daemon.resources.resolveLocalPath(ref)
-                let manifest = try RecordingManifest.read(at: URL(fileURLWithPath: local.path))
+                // The sidecar reads are file I/O: off the main actor, and only the sidecars of parts
+                // the earlier read did not have.
+                let earlier = self?.manifests[id]
+                let url = URL(fileURLWithPath: local.path)
+                let manifest = try await Task.detached(priority: .utility) {
+                    try RecordingManifest.read(at: url, reusing: earlier)
+                }.value
                 guard let self, !Task.isCancelled else { return }
                 self.manifestLoads[id] = nil
                 if self.manifests[id] != manifest {
@@ -3495,48 +3518,89 @@ final class AppSession {
     /// A recording's speech as the page shows it: its lines dated through its manifest, the
     /// newest transcription of each over shown (`RecordingSpeech.shown`). nil until read.
     func speech(for recordingID: String) -> RecordingSpeech? {
-        speechLines[recordingID].map {
-            RecordingSpeech(lines: $0, manifest: manifests[recordingID])
+        if let held = speechCache[recordingID] { return held }
+        guard let lines = speechLines[recordingID] else { return nil }
+        let built = RecordingSpeech(lines: lines, manifest: manifests[recordingID])
+        speechCache[recordingID] = built
+        return built
+    }
+
+    /// Drops the cached speech of every recording whose entry differs between `old` and `new`.
+    private func forgetSpeech<V: Equatable>(changedIn old: [String: V], _ new: [String: V]) {
+        guard !speechCache.isEmpty else { return }
+        for id in Set(old.keys).union(new.keys) where old[id] != new[id] {
+            speechCache[id] = nil
         }
     }
 
-    /// Every recording's speech read so far, for the search.
-    var loadedSpeech: [String: RecordingSpeech] {
-        Dictionary(
-            uniqueKeysWithValues: speechLines.keys.compactMap { id in
-                speech(for: id).map { (id, $0) }
-            })
-    }
-
-    /// `Decoders.QueryRecords` for `recordingID`'s speech: protocol `speech` over the recording's
-    /// span (`SpeechRecords.query`), since a record query has no filter on `clip_uri`, and the
-    /// recording's own kept by `SpeechRecords.byRecording`. A read in flight is replaced. A
-    /// failure is logged and leaves what was read before: the words are an addition to the page.
+    /// Reads `recordingID`'s speech again now, or once the read in flight lands: a transcription
+    /// of it changed.
     func loadSpeech(for recordingID: String) {
-        guard let daemon, let summary = recordings.first(where: { $0.jobID == recordingID }) else {
+        if speechLoads[recordingID] != nil {
+            staleSpeech.insert(recordingID)
             return
         }
-        speechLoads[recordingID]?.cancel()
-        let query = SpeechRecords.query(for: summary, now: Date())
-        speechLoads[recordingID] = Task { [weak self] in
-            do {
-                let page = try await daemon.decoders.queryRecords(query)
-                guard let self, !Task.isCancelled else { return }
-                self.speechLoads[recordingID] = nil
-                let lines = SpeechRecords.byRecording(page.records)[recordingID] ?? []
-                if page.truncated {
-                    log("speech", "\(recordingID): speech query cut at \(query.limit) records")
-                }
-                if self.speechLines[recordingID] != lines {
-                    log("speech", "\(recordingID): \(lines.count) speech lines")
-                    self.speechLines[recordingID] = lines
-                }
-            } catch {
-                guard let self, !Task.isCancelled else { return }
-                self.speechLoads[recordingID] = nil
-                log("speech", "speech of \(recordingID) not read: \(LeylineError(error))")
-            }
+        failedSpeech.remove(recordingID)
+        loadSpeech(of: [recordingID])
+    }
+
+    /// `Decoders.QueryRecords` for some recordings' speech in one call: protocol `speech` over
+    /// their span (`SpeechRecords.query`), since a record query has no filter on `clip_uri`, and
+    /// each recording's own sorted out by `SpeechRecords.byRecording`. A recording whose read is
+    /// in flight, or whose last read failed, is left out. A failure is logged and leaves what was
+    /// read before: the words are an addition to the page.
+    private func loadSpeech(of ids: [String]) {
+        guard let daemon else { return }
+        let summaries = recordings.filter {
+            ids.contains($0.jobID) && speechLoads[$0.jobID] == nil
+                && !failedSpeech.contains($0.jobID)
         }
+        guard !summaries.isEmpty else { return }
+        let token = UUID()
+        let covered = summaries.map(\.jobID)
+        for id in covered { speechLoads[id] = token }
+        let query = SpeechRecords.query(for: summaries, now: Date())
+        Task { [weak self] in
+            let result: Result<Leyline_V1_RecordPage, LeylineError>
+            do {
+                result = .success(try await daemon.decoders.queryRecords(query))
+            } catch {
+                result = .failure(LeylineError(error))
+            }
+            self?.landSpeech(result, for: covered, token: token)
+        }
+    }
+
+    /// A speech read landed: each recording still waiting on it takes its lines (none is an
+    /// answer too), or on a failure is not read again until the listing is.
+    private func landSpeech(
+        _ result: Result<Leyline_V1_RecordPage, LeylineError>, for ids: [String], token: UUID
+    ) {
+        let mine = ids.filter { speechLoads[$0] == token }
+        for id in mine { speechLoads[id] = nil }
+        switch result {
+        case .success(let page):
+            let byRecording = SpeechRecords.byRecording(page.records)
+            for id in mine {
+                let lines = byRecording[id] ?? []
+                if speechLines[id] != lines { speechLines[id] = lines }
+                if page.truncated {
+                    speechTruncated.insert(id)
+                } else {
+                    speechTruncated.remove(id)
+                }
+            }
+            log(
+                "speech",
+                "\(page.records.count) speech records for \(mine.count) recordings"
+                    + (page.truncated ? ", cut at the query's limit" : ""))
+        case .failure(let e):
+            failedSpeech.formUnion(mine)
+            log("speech", "speech of \(mine.joined(separator: ", ")) not read: \(e)")
+        }
+        let again = staleSpeech.intersection(mine)
+        staleSpeech.subtract(again)
+        for id in again { loadSpeech(for: id) }
     }
 
     /// A transcription job (a decode job reading a recording) changed: its recording's speech is
@@ -3606,7 +3670,7 @@ final class AppSession {
     }
 
     /// Whether the Library offers Transcribe: a speech decoder is installed, and it needs no key
-    /// or a key is set. While false no speech control shows (docs/design/ai.md, K1).
+    /// or a key is set. While false no speech control shows (docs/design/ai.md).
     var canTranscribe: Bool { SpeechRecords.canTranscribe(decoder: speechDecoder, ai: state.ai) }
 
     /// The speech model in use and the models "Transcribe again…" offers.
@@ -3662,7 +3726,13 @@ final class AppSession {
             let e = LeylineError(error)
             log("speech", "\(recordingID) not transcribed: \(e.code) \(e.message)")
             notice = "Could not transcribe: \(e.message.isEmpty ? e.code : e.message)"
-            if !model.isEmpty { _ = try? await daemon.credentials.setFeatureModel(previous) }
+            // An empty provider and model clear the choice, which is what it was if none was set.
+            if !model.isEmpty {
+                let restore =
+                    previous.model.isEmpty
+                    ? Leyline_V1_FeatureModel.with { $0.feature = SpeechRecords.feature } : previous
+                _ = try? await daemon.credentials.setFeatureModel(restore)
+            }
         }
     }
 
@@ -3670,9 +3740,15 @@ final class AppSession {
     /// the view's save panel chose the file. A failure is the session's notice.
     func exportSpeech(recordingID: String, format: SpeechExportFormat, to url: URL) {
         guard let s = speech(for: recordingID), let m = manifests[recordingID] else { return }
+        let t = SpeechRecords.timings(speechDecoder)
+        let out = SpeechRecords.export(
+            s, manifest: m, format: format, preRollMs: t.preRollMs, hangMs: t.hangMs)
         do {
-            try Data(SpeechRecords.export(s, manifest: m, format: format).utf8).write(to: url)
+            try Data(out.text.utf8).write(to: url)
             log("speech", "\(recordingID) exported as \(format.rawValue) to \(url.path)")
+            if out.skipped > 0 {
+                log("speech", "\(out.skipped) lines left out of the SRT: nothing dates them")
+            }
         } catch {
             notice = "Could not export the words: \(error.localizedDescription)"
         }
@@ -3694,32 +3770,49 @@ final class AppSession {
         if let ref = RecordingPartRef(uri: uri), let m = manifests[ref.jobID],
             let part = m.parts.first(where: { $0.part == ref.part })
         {
-            range = SpeechRecords.range(over: over, of: part, in: m)
+            let t = SpeechRecords.timings(speechDecoder)
+            range = SpeechRecords.range(
+                over: over, of: part, in: m, preRollMs: t.preRollMs, hangMs: t.hangMs)
         }
         log("playback", "over \(over) of \(uri)\(range == nil ? ", whole part" : "")")
-        await startPlayback(uri, over: over, range: range)
+        // Without a range the whole part plays, and no one line is what is playing.
+        await startPlayback(uri, over: range == nil ? nil : over, range: range)
     }
 
-    /// The search field's words changed: while it holds some, every listed recording's speech is
-    /// read once, so a channel is found by what was said in it.
+    /// The search field's words changed: while it holds some, each channel's unread speech is
+    /// read, one query a channel, once (a read in flight or failed is not sent again), so a
+    /// channel is found by what was said in it.
     func searchSpeech() {
         guard !recordingsQuery.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        for r in recordings where speechLines[r.jobID] == nil && speechLoads[r.jobID] == nil {
-            loadSpeech(for: r.jobID)
+        for c in recordingChannels {
+            loadSpeech(of: c.recordings.map(\.jobID).filter { speechLines[$0] == nil })
         }
     }
 
     /// The speech line the search finds in `c`, or nil.
     func speechHit(in c: RecordingChannel) -> SpeechHit? {
-        SpeechRecords.hit(recordingsQuery, in: c, speech: loadedSpeech)
+        var speech: [String: RecordingSpeech] = [:]
+        for r in c.recordings { speech[r.jobID] = self.speech(for: r.jobID) }
+        return SpeechRecords.hit(recordingsQuery, in: c, speech: speech)
     }
 
     /// The search's hit chosen: the channel, the part and the over are selected, and the page
-    /// scrolls to the over (`selectedOver`).
+    /// scrolls to the over (`selectedOver`), its EARLIER day opened first.
     func select(hit: SpeechHit, in c: RecordingChannel) {
         if selectedRecordingChannel != c.id { selectedRecordingChannel = c.id }
         selectedPartURI = hit.partURI
         selectedOver = hit.over
+        openDay(holding: hit.partURI)
+    }
+
+    /// Opens the EARLIER day that holds `partURI`, so a row the page is asked to show is not
+    /// folded away; a recent day is always open.
+    func openDay(holding partURI: String) {
+        guard let c = selectedChannel,
+            let day = pageDays(for: c).first(where: { d in d.rows.contains { $0.uri == partURI } }),
+            day.earlier, !openedDays.contains(day.id)
+        else { return }
+        openedDays.insert(day.id)
     }
 
     // MARK: Moving the radio over a recording

@@ -236,7 +236,13 @@ public struct RecordingManifest: Sendable, Equatable, Codable {
     /// part sidecar's `anchor.capture_id`, which only a recording spanning two captures needs read.
     /// A part whose squelch opened has its sidecar read for the openings themselves
     /// (`RecordingPart.squelchIntervals`), which is where one over is found to play it.
-    public static func read(at url: URL) throws -> RecordingManifest {
+    ///
+    /// `reusing` is the same recording as read before: a part it already holds, with the same
+    /// file and end, keeps what its sidecar gave then, so a running recording's re-read opens only
+    /// the sidecar of the part that just closed. Call it off the main actor: it reads files.
+    public static func read(at url: URL, reusing earlier: RecordingManifest? = nil) throws
+        -> RecordingManifest
+    {
         var isDirectory: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
         let file = exists && isDirectory.boolValue ? url.appendingPathComponent(fileName) : url
@@ -246,6 +252,15 @@ public struct RecordingManifest: Sendable, Equatable, Codable {
         for i in manifest.parts.indices {
             let manyCaptures = captures.count > 1
             guard manyCaptures || manifest.parts[i].squelchOpens > 0 else { continue }
+            if let held = earlier?.parts.first(where: {
+                $0.part == manifest.parts[i].part && $0.file == manifest.parts[i].file
+                    && $0.endSample == manifest.parts[i].endSample && $0.squelchIntervals != nil
+            }) {
+                if manyCaptures { manifest.parts[i].captureID = held.captureID }
+                manifest.parts[i].squelchIntervals = held.squelchIntervals
+                manifest.parts[i].captureRate = held.captureRate
+                continue
+            }
             let sidecar = PartSidecar.read(
                 beside: directory.appendingPathComponent(manifest.parts[i].file))
             if manyCaptures { manifest.parts[i].captureID = sidecar?.captureID }

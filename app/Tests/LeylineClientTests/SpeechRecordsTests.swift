@@ -19,13 +19,14 @@ final class SpeechRecordsTests: XCTestCase {
 
     private func ms(_ v: UInt64) -> UInt64 { v * rate / 1000 }
 
-    /// Two parts on `cap_a`: part 1 from 0 to 6 s with three openings, the first two inside the
+    /// Two parts on `cap_a`, recorded with a 1 s gate pre-roll that an over's audio must not use:
+    /// part 1 from 0 to 6 s with three openings, the first two inside the
     /// half-second hang of each other, so the decoder heard them as one segment; part 2 from 16 s
     /// to 18 s with one.
     private func manifest() -> RecordingManifest {
         let json = """
             {"job_id": "job_rec", "kind": "audio", "frequency_hz": 146520000, "mode": "NFM",
-             "sample_rate": 48000, "gate": {"kind": "squelch", "pre_roll_ms": 500, "hang_ms": 5000},
+             "sample_rate": 48000, "gate": {"kind": "squelch", "pre_roll_ms": 1000, "hang_ms": 5000},
              "anchors": [{"capture_id": "cap_a", "host_time_ns": \(hostNs), "sample_rate": 2400000,
                           "drift_ppm": 0, "from_sample": 0}],
              "parts": [
@@ -134,8 +135,9 @@ final class SpeechRecordsTests: XCTestCase {
         XCTAssertEqual(speech(firstJob() + [resent]).shown(part: 1).last?.recordID, "rec_4")
     }
 
-    /// An over plays its segment: the recording's pre-roll before its first opening to half a
-    /// second after its last close. Over 2 lies inside over 1's segment and plays the same.
+    /// An over plays its segment as the speech decoder cut it: half a second before its first
+    /// opening, not the recording's 1 s gate pre-roll, to half a second after its last close.
+    /// Over 2 lies inside over 1's segment and plays the same.
     func testAnOverPlaysItsSegment() throws {
         let m = manifest()
         let one = try XCTUnwrap(SpeechRecords.range(over: 1, of: m.parts[0], in: m))
@@ -190,7 +192,8 @@ final class SpeechRecordsTests: XCTestCase {
 
     func testTheTextExportIsOneLinePerOver() {
         let text = SpeechRecords.export(
-            speech(firstJob()), manifest: manifest(), format: .text, timeZone: utc)
+            speech(firstJob()), manifest: manifest(), format: .text, timeZone: utc
+        ).text
         XCTAssertEqual(
             text,
             """
@@ -205,7 +208,8 @@ final class SpeechRecordsTests: XCTestCase {
     /// between the parts are kept; each cue lasts as long as its over plays.
     func testTheSRTExportIsTimedFromTheAnchor() {
         let srt = SpeechRecords.export(
-            speech(firstJob()), manifest: manifest(), format: .srt, timeZone: utc)
+            speech(firstJob()), manifest: manifest(), format: .srt, timeZone: utc
+        ).text
         XCTAssertEqual(
             srt,
             """
@@ -347,5 +351,142 @@ final class SpeechRecordsTests: XCTestCase {
         XCTAssertNil(RecordingPartRef.recordingID(of: "ley://recordings/job_rec/2"))
         XCTAssertNil(RecordingPartRef.recordingID(of: "ley://records/job_rec"))
         XCTAssertNil(RecordingPartRef.recordingID(of: "ley://recordings/"))
+    }
+
+    /// A recording across two captures: each part's cues are timed through its own capture's
+    /// anchor, the second one's drift included, from the first part's first sample; a line
+    /// nothing dates is left out of the SRT and counted, not given a cue at 0.
+    func testSRTFollowsEachCapturesAnchorAndSkipsUndatedLines() throws {
+        let json = """
+            {"job_id": "job_two", "kind": "audio", "frequency_hz": 146520000, "mode": "NFM",
+             "sample_rate": 48000,
+             "anchors": [
+               {"capture_id": "cap_a", "host_time_ns": \(hostNs), "sample_rate": 2400000, "from_sample": 0},
+               {"capture_id": "cap_b", "host_time_ns": \(hostNs + 100_000_000_000), "sample_rate": 2400000,
+                "drift_ppm": 100, "from_sample": 0}],
+             "parts": [
+               {"part": 1, "file": "p1.wav", "start_sample": 0, "end_sample": 2400000,
+                "samples": 48000, "squelch_opens": 1},
+               {"part": 2, "file": "p2.wav", "start_sample": 0, "end_sample": 720000000,
+                "samples": 14400000, "squelch_opens": 1}]}
+            """
+        var m = try RecordingManifest.decode(Data(json.utf8))
+        m.parts[0].captureID = "cap_a"
+        m.parts[0].squelchIntervals = [.init(openSample: ms(200), closeSample: ms(800))]
+        m.parts[1].captureID = "cap_b"
+        m.parts[1].squelchIntervals = [.init(openSample: ms(100_000), closeSample: ms(101_000))]
+        func line(_ id: String, part: Int, over: UInt32, capture: String, at sample: UInt64)
+            -> Leyline_V1_DecodeRecord
+        {
+            var r = record(
+                job: "job_t", id: id, part: part, over: over, at: sample, text: id,
+                recording: "job_two")
+            r.time.captureID = capture
+            return r
+        }
+        let records = [
+            line("first", part: 1, over: 1, capture: "cap_a", at: 0),
+            line("undated", part: 1, over: 2, capture: "cap_z", at: 0),
+            line("second", part: 2, over: 1, capture: "cap_b", at: ms(99_500)),
+        ]
+        let speech = RecordingSpeech(
+            lines: SpeechRecords.byRecording(records)["job_two"] ?? [], manifest: m)
+        let srt = SpeechRecords.export(speech, manifest: m, format: .srt, timeZone: utc)
+        XCTAssertEqual(srt.skipped, 1)
+        // Part 1 ends at 1 s, which ends its cue short of the hang. Part 2's over starts 99.5 s into capture b, which runs 100 ppm slow against the clock:
+        // 99.50995 s after its anchor, which is 100 s after the first part's first sample.
+        XCTAssertEqual(
+            srt.text,
+            """
+            1
+            00:00:00,000 --> 00:00:01,000
+            first
+
+            2
+            00:03:19,510 --> 00:03:21,510
+            second
+
+
+            """)
+    }
+
+    /// One query covers a channel's recordings: from a minute before the first began to a minute
+    /// after the last ended; a recording nothing dates leaves the start open.
+    func testOneQueryCoversSeveralRecordings() {
+        func summary(_ id: String, _ from: Int64, _ to: Int64) -> RecordingSummary {
+            RecordingSummary(
+                .with {
+                    $0.uri = "ley://recordings/\(id)"
+                    $0.originatingJobID = id
+                    $0.metadata = [
+                        "started_at_ns": "\(from * 1_000_000_000)",
+                        "ended_at_ns": "\(to * 1_000_000_000)",
+                    ]
+                })
+        }
+        let now = Date(timeIntervalSince1970: 5_000)
+        let q = SpeechRecords.query(
+            for: [summary("job_b", 2_000, 2_100), summary("job_a", 1_000, 1_100)], now: now)
+        XCTAssertEqual(q.protocol, "speech")
+        XCTAssertEqual(q.sinceNs, 940_000_000_000)
+        XCTAssertEqual(q.untilNs, 2_160_000_000_000)
+        let open = SpeechRecords.query(for: [summary("job_c", 0, 0)], now: now)
+        XCTAssertEqual(open.sinceNs, 0, "undated: no lower bound")
+        XCTAssertEqual(open.untilNs, 5_060_000_000_000, "still running as far as anyone knows")
+    }
+
+    /// Re-reading a recording keeps what an earlier read took from the sidecars of parts that have
+    /// not changed, and reads only the new part's.
+    func testAReReadOpensOnlyTheNewPartsSidecar() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        func part(_ n: Int, _ from: Int) -> String {
+            """
+            {"part": \(n), "file": "p\(n).wav", "start_sample": \(from), "end_sample": \(from + 2_400_000),
+             "samples": 48000, "squelch_opens": 1}
+            """
+        }
+        func sidecar(_ open: Int) -> String {
+            """
+            {"anchor": {"capture_id": "cap_a", "sample_rate": 2400000},
+             "recording": {"squelch_opens": [{"open_sample": \(open), "close_sample": \(open + 1000)}]}}
+            """
+        }
+        func manifest(_ parts: [String]) -> String {
+            """
+            {"job_id": "job_r", "sample_rate": 48000,
+             "anchors": [{"capture_id": "cap_a", "host_time_ns": 1, "sample_rate": 2400000}],
+             "parts": [\(parts.joined(separator: ","))]}
+            """
+        }
+        let file = dir.appendingPathComponent("recording.json")
+        try Data(manifest([part(1, 0)]).utf8).write(to: file)
+        try Data(sidecar(100).utf8).write(to: dir.appendingPathComponent("p1.json"))
+        let first = try RecordingManifest.read(at: dir)
+        XCTAssertEqual(first.parts[0].squelchIntervals?.first?.openSample, 100)
+
+        // Part 2 closes. Part 1's sidecar is gone, so a value for it can only be the earlier one.
+        try FileManager.default.removeItem(at: dir.appendingPathComponent("p1.json"))
+        try Data(manifest([part(1, 0), part(2, 4_800_000)]).utf8).write(to: file)
+        try Data(sidecar(4_800_500).utf8).write(to: dir.appendingPathComponent("p2.json"))
+        let again = try RecordingManifest.read(at: dir, reusing: first)
+        XCTAssertEqual(again.parts[0].squelchIntervals?.first?.openSample, 100)
+        XCTAssertEqual(again.parts[1].squelchIntervals?.first?.openSample, 4_800_500)
+        XCTAssertNil(
+            try RecordingManifest.read(at: dir).parts[0].squelchIntervals,
+            "without the earlier read, part 1's sidecar is looked for")
+    }
+
+    /// The decoder's own pre-roll and hang, 0 read as the half-second defaults.
+    func testTheDecodersTimingsCutTheOvers() throws {
+        XCTAssertEqual(SpeechRecords.timings(nil).preRollMs, 500)
+        var d = Leyline_V1_DecoderManifest()
+        d.input.preRollMs = 250
+        XCTAssertEqual(SpeechRecords.timings(d).preRollMs, 250)
+        XCTAssertEqual(SpeechRecords.timings(d).hangMs, 500)
+        let m = manifest()
+        let r = try XCTUnwrap(SpeechRecords.range(over: 3, of: m.parts[0], in: m, preRollMs: 250))
+        XCTAssertEqual(r.start, ms(3750))
     }
 }

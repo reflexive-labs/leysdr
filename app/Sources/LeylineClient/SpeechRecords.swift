@@ -91,6 +91,8 @@ public struct RecordingSpeech: Sendable, Equatable {
     public var all: [SpeechLine]
     /// The transcription jobs, newest first (a job id is a ULID, so its order is its age).
     public var jobs: [String]
+    /// `shown()`, worked out once: the page and the search read it on every render.
+    public private(set) var newest: [SpeechLine]
 
     public init(lines: [SpeechLine], manifest: RecordingManifest?) {
         all = lines.map { line in
@@ -101,6 +103,8 @@ public struct RecordingSpeech: Sendable, Equatable {
             return l
         }
         jobs = Array(Set(all.map(\.jobID))).sorted(by: >)
+        newest = []
+        newest = pick(job: nil)
     }
 
     /// The lines shown: for each over, the newest transcription's line, so transcribing again
@@ -108,6 +112,10 @@ public struct RecordingSpeech: Sendable, Equatable {
     /// only. In part order, then over order. Two records of one over from one job (a segment the
     /// daemon sent again after a restart) show the later one.
     public func shown(job: String? = nil) -> [SpeechLine] {
+        job == nil ? newest : pick(job: job)
+    }
+
+    private func pick(job: String?) -> [SpeechLine] {
         var best: [String: SpeechLine] = [:]
         for l in all where job == nil || l.jobID == job {
             let key = "\(l.part)/\(l.over)"
@@ -151,11 +159,10 @@ public enum SpeechRecords {
     public static let protocolName = "speech"
     /// The feature whose provider and model the speech decoder calls (`ley ai use speech`).
     public static let feature = "speech"
-    /// How long after an over's close its segment runs on, and how soon a re-opening continues
-    /// it: the speech decoder's default hang (`decode.proto`, SEGMENTED). The pre-roll is the
-    /// recording's own, else this.
-    public static let hangMs: UInt64 = 500
+    /// The speech decoder's pre-roll and hang when its manifest sets none (`decode.proto`,
+    /// SEGMENTED; the daemon's `Segmenter.defaultPreRollMs` and `defaultHangMs`).
     public static let defaultPreRollMs: UInt64 = 500
+    public static let defaultHangMs: UInt64 = 500
 
     // MARK: The fold
 
@@ -171,19 +178,23 @@ public enum SpeechRecords {
         return out
     }
 
-    /// The query that finds a recording's speech: protocol `speech` between a minute before the
-    /// recording began and a minute after it ended (now while it runs), because `RecordQuery`
-    /// has no filter on `clip_uri`; `byRecording` then keeps the recording's own. A
-    /// transcription of a stored recording is dated by the recording's anchors, so its records
-    /// fall inside the recording's span.
-    public static func query(for summary: RecordingSummary, now: Date) -> Leyline_V1_RecordQuery {
+    /// The query that finds some recordings' speech in one call: protocol `speech` between a
+    /// minute before the first began and a minute after the last ended (now while one runs),
+    /// because `RecordQuery` has no filter on `clip_uri`; `byRecording` then sorts the records
+    /// to their recordings. A transcription of a stored recording is dated by the recording's
+    /// anchors, so its records fall inside the recording's span. A recording nothing dates
+    /// leaves the start unbounded.
+    public static func query(for summaries: [RecordingSummary], now: Date)
+        -> Leyline_V1_RecordQuery
+    {
         .with {
             $0.protocol = protocolName
             $0.limit = queryLimit
-            if let from = summary.startedAt {
+            let starts = summaries.map(\.startedAt)
+            if !starts.contains(nil), let from = starts.compactMap({ $0 }).min() {
                 $0.sinceNs = Int64((from.timeIntervalSince1970 - 60) * 1e9)
             }
-            let to = summary.endedAt ?? now
+            let to = summaries.map { $0.endedAt ?? now }.max() ?? now
             $0.untilNs = Int64((to.timeIntervalSince1970 + 60) * 1e9)
         }
     }
@@ -263,19 +274,29 @@ public enum SpeechRecords {
         }
     }
 
+    /// The pre-roll and hang `decoder` cuts overs with, in ms: its manifest's, 0 read as the
+    /// defaults, which is what the speech manifest leaves them.
+    public static func timings(_ decoder: Leyline_V1_DecoderManifest?) -> (
+        preRollMs: UInt64, hangMs: UInt64
+    ) {
+        let input = decoder?.input
+        let preRoll = UInt64(input?.preRollMs ?? 0)
+        let hang = UInt64(input?.hangMs ?? 0)
+        return (preRoll == 0 ? defaultPreRollMs : preRoll, hang == 0 ? defaultHangMs : hang)
+    }
+
     /// The capture samples that play over `over` of `part`: the segment that holds that opening,
-    /// from the recording's pre-roll before its first opening to `hangMs` after its last close,
-    /// as the speech decoder heard it. Nil when the part's openings were not read, it has no such
-    /// over, or nothing gives its capture rate; the caller then plays the whole part.
-    public static func range(over: Int, of part: RecordingPart, in m: RecordingManifest)
-        -> (start: UInt64, end: UInt64)?
-    {
+    /// cut with the speech decoder's pre-roll and hang (`timings`), never the recording's own gate
+    /// pre-roll, so what plays is exactly what was transcribed. Nil when the part's openings were
+    /// not read, it has no such over, or nothing gives its capture rate; the caller then plays
+    /// the whole part.
+    public static func range(
+        over: Int, of part: RecordingPart, in m: RecordingManifest,
+        preRollMs: UInt64 = defaultPreRollMs, hangMs: UInt64 = defaultHangMs
+    ) -> (start: UInt64, end: UInt64)? {
         guard let opens = part.squelchIntervals, over >= 1, over <= opens.count else { return nil }
         let rate = captureRate(of: part, in: m)
         guard rate > 0 else { return nil }
-        let preRollMs =
-            m.gate.map { UInt64($0.preRollMs) }.flatMap { $0 > 0 ? $0 : nil }
-            ?? defaultPreRollMs
         let perMs = rate / 1000
         let spans = segments(
             opens, partStart: part.startSample, partEnd: part.endSample,
@@ -319,7 +340,7 @@ public enum SpeechRecords {
         _ query: String, in channel: RecordingChannel, speech: [String: RecordingSpeech]
     ) -> SpeechHit? {
         for r in channel.recordings {
-            guard let s = speech[r.jobID], let line = search(query, in: s.shown()) else { continue }
+            guard let s = speech[r.jobID], let line = search(query, in: s.newest) else { continue }
             return SpeechHit(line: line)
         }
         return nil
@@ -331,25 +352,37 @@ public enum SpeechRecords {
     /// time of day through the anchors in `timeZone` (`[--:--:--]` when nothing dates it) and the
     /// callsigns only when there are some; or SRT, whose times run from the recording's first
     /// sample, through the anchors, so the gaps between parts are kept, each cue lasting as long
-    /// as its over plays. Lines end in `\n`, and an SRT cue is followed by a blank line.
+    /// as its over plays (cut with `preRollMs` and `hangMs`, the decoder's). A line nothing dates
+    /// has no place on SRT's clock and is left out of it, counted in `skipped`. Lines end in `\n`,
+    /// and an SRT cue is followed by a blank line.
     public static func export(
         _ speech: RecordingSpeech, manifest: RecordingManifest, format: SpeechExportFormat,
-        timeZone: TimeZone = .current
-    ) -> String {
-        let lines = speech.shown()
+        timeZone: TimeZone = .current, preRollMs: UInt64 = defaultPreRollMs,
+        hangMs: UInt64 = defaultHangMs
+    ) -> (text: String, skipped: Int) {
+        let lines = speech.newest
         switch format {
         case .text:
-            return lines.map { textLine($0, timeZone: timeZone) + "\n" }.joined()
+            return (lines.map { textLine($0, timeZone: timeZone) + "\n" }.joined(), 0)
         case .srt:
             let origin = manifest.parts.sorted { $0.part < $1.part }.first.flatMap {
                 manifest.startTime(of: $0)
             }
             var out = ""
-            for (i, l) in lines.enumerated() {
-                let (from, to) = cueSeconds(l, manifest: manifest, origin: origin)
-                out += "\(i + 1)\n\(srtTime(from)) --> \(srtTime(to))\n\(l.text)\n\n"
+            var cue = 0
+            var skipped = 0
+            for l in lines {
+                guard
+                    let span = cueSeconds(
+                        l, manifest: manifest, origin: origin, preRollMs: preRollMs, hangMs: hangMs)
+                else {
+                    skipped += 1
+                    continue
+                }
+                cue += 1
+                out += "\(cue)\n\(srtTime(span.0)) --> \(srtTime(span.1))\n\(l.text)\n\n"
             }
-            return out
+            return (out, skipped)
         }
     }
 
@@ -362,15 +395,16 @@ public enum SpeechRecords {
     }
 
     /// A cue's start and end in seconds from `origin`: the line's wall time, and the end of its
-    /// over's segment, else three seconds on. A line nothing dates starts at 0.
-    static func cueSeconds(_ l: SpeechLine, manifest m: RecordingManifest, origin: Date?)
-        -> (Double, Double)
-    {
-        guard let origin, let at = l.wallTime else { return (0, cueFallbackSeconds) }
+    /// over's segment, else three seconds on. Nil when nothing dates the line or the recording.
+    static func cueSeconds(
+        _ l: SpeechLine, manifest m: RecordingManifest, origin: Date?, preRollMs: UInt64,
+        hangMs: UInt64
+    ) -> (Double, Double)? {
+        guard let origin, let at = l.wallTime else { return nil }
         let from = max(0, at.timeIntervalSince(origin))
         var to = from + cueFallbackSeconds
         if let part = m.parts.first(where: { $0.part == l.part }),
-            let r = range(over: l.over, of: part, in: m),
+            let r = range(over: l.over, of: part, in: m, preRollMs: preRollMs, hangMs: hangMs),
             let end = part.captureID.flatMap({ m.wallTime(ofSample: r.end, capture: $0) })
         {
             to = max(from, end.timeIntervalSince(origin))
