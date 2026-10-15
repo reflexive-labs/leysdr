@@ -2332,10 +2332,13 @@ type Playback struct {
 	ResourceUri string                 `protobuf:"bytes,2,opt,name=resource_uri,json=resourceUri,proto3" json:"resource_uri,omitempty"` // ley://recordings/<id>/<part>
 	Path        string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`                                  // the file the daemon opened, for a client on the same machine
 	SampleRate  uint32                 `protobuf:"varint,4,opt,name=sample_rate,json=sampleRate,proto3" json:"sample_rate,omitempty"`
-	Samples     uint64                 `protobuf:"varint,5,opt,name=samples,proto3" json:"samples,omitempty"` // frames in the file; 0 when it could not be counted
-	// Frames played so far, published on Event.playback four times a second while it plays. A
-	// client renders elapsed time from this and the rate rather than from a clock of its own, and
-	// it is reported rather than written: seeking is not in v1.
+	// Frames this playback plays: the whole file, or the range `start_sample` and `end_sample`
+	// name. 0 when it could not be counted.
+	Samples uint64 `protobuf:"varint,5,opt,name=samples,proto3" json:"samples,omitempty"`
+	// Frames played so far, from the start of the range (the file's first frame when there is no
+	// range), published on Event.playback four times a second while it plays. A client renders
+	// elapsed time from this and the rate rather than from a clock of its own, and it is reported
+	// rather than written: seeking is not in v1.
 	Position  uint64      `protobuf:"varint,6,opt,name=position,proto3" json:"position,omitempty"`
 	Volume    float64     `protobuf:"fixed64,7,opt,name=volume,proto3" json:"volume,omitempty"`
 	CreatedBy *ClientInfo `protobuf:"bytes,8,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
@@ -2346,7 +2349,11 @@ type Playback struct {
 	// True while the playback is paused (Control.SetPlaybackPaused): `position` holds, and the
 	// four-a-second event is not sent until it resumes. The playback still belongs to its client
 	// and still ends when that client goes. The tombstone carries the value it had.
-	Paused        bool `protobuf:"varint,10,opt,name=paused,proto3" json:"paused,omitempty"`
+	Paused bool `protobuf:"varint,10,opt,name=paused,proto3" json:"paused,omitempty"`
+	// The range StartPlaybackRequest asked for, on the capture's timeline at the capture rate, as
+	// the part's sidecar dates it; both 0 when the whole part plays.
+	StartSample   uint64 `protobuf:"varint,11,opt,name=start_sample,json=startSample,proto3" json:"start_sample,omitempty"`
+	EndSample     uint64 `protobuf:"varint,12,opt,name=end_sample,json=endSample,proto3" json:"end_sample,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2451,6 +2458,20 @@ func (x *Playback) GetPaused() bool {
 	return false
 }
 
+func (x *Playback) GetStartSample() uint64 {
+	if x != nil {
+		return x.StartSample
+	}
+	return 0
+}
+
+func (x *Playback) GetEndSample() uint64 {
+	if x != nil {
+		return x.EndSample
+	}
+	return 0
+}
+
 type StartPlaybackRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// What to play: ley://recordings/<id> takes the first part, ley://recordings/<id>/<part> that
@@ -2458,8 +2479,15 @@ type StartPlaybackRequest struct {
 	ResourceUri    string   `protobuf:"bytes,1,opt,name=resource_uri,json=resourceUri,proto3" json:"resource_uri,omitempty"`
 	Volume         *float64 `protobuf:"fixed64,2,opt,name=volume,proto3,oneof" json:"volume,omitempty"`                                 // 0..1; absent = 1.0 (full), explicit 0 = muted
 	AudioDeviceUid string   `protobuf:"bytes,3,opt,name=audio_device_uid,json=audioDeviceUid,proto3" json:"audio_device_uid,omitempty"` // empty = the daemon's default output
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Play only capture samples start_sample..<end_sample of the part, on the capture's timeline
+	// at the capture rate (the part sidecar's start_sample, end_sample and squelch_opens), so one
+	// over plays rather than the whole exchange. The daemon places them in the file by the rates
+	// the sidecar gives. Both 0 = the whole part; start_sample 0 = from the part's start, end_sample
+	// 0 = to its end. A range that is empty or not inside the part is INVALID_ARGUMENT.
+	StartSample   uint64 `protobuf:"varint,4,opt,name=start_sample,json=startSample,proto3" json:"start_sample,omitempty"`
+	EndSample     uint64 `protobuf:"varint,5,opt,name=end_sample,json=endSample,proto3" json:"end_sample,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *StartPlaybackRequest) Reset() {
@@ -2511,6 +2539,20 @@ func (x *StartPlaybackRequest) GetAudioDeviceUid() string {
 		return x.AudioDeviceUid
 	}
 	return ""
+}
+
+func (x *StartPlaybackRequest) GetStartSample() uint64 {
+	if x != nil {
+		return x.StartSample
+	}
+	return 0
+}
+
+func (x *StartPlaybackRequest) GetEndSample() uint64 {
+	if x != nil {
+		return x.EndSample
+	}
+	return 0
 }
 
 type StopPlaybackRequest struct {
@@ -3485,7 +3527,7 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"\rstarted_at_ns\x18\x03 \x01(\x03R\vstartedAtNs\x12\x1f\n" +
 	"\vsocket_path\x18\x04 \x01(\tR\n" +
 	"socketPath\x120\n" +
-	"\x14recordings_cap_bytes\x18\x05 \x01(\x04R\x12recordingsCapBytes\"\xd1\x02\n" +
+	"\x14recordings_cap_bytes\x18\x05 \x01(\x04R\x12recordingsCapBytes\"\x93\x03\n" +
 	"\bPlayback\x12\x1f\n" +
 	"\vplayback_id\x18\x01 \x01(\tR\n" +
 	"playbackId\x12!\n" +
@@ -3500,11 +3542,17 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"created_by\x18\b \x01(\v2\x16.leyline.v1.ClientInfoR\tcreatedBy\x12/\n" +
 	"\x05state\x18\t \x01(\x0e2\x19.leyline.v1.PlaybackStateR\x05state\x12\x16\n" +
 	"\x06paused\x18\n" +
-	" \x01(\bR\x06paused\"\x8b\x01\n" +
+	" \x01(\bR\x06paused\x12!\n" +
+	"\fstart_sample\x18\v \x01(\x04R\vstartSample\x12\x1d\n" +
+	"\n" +
+	"end_sample\x18\f \x01(\x04R\tendSample\"\xcd\x01\n" +
 	"\x14StartPlaybackRequest\x12!\n" +
 	"\fresource_uri\x18\x01 \x01(\tR\vresourceUri\x12\x1b\n" +
 	"\x06volume\x18\x02 \x01(\x01H\x00R\x06volume\x88\x01\x01\x12(\n" +
-	"\x10audio_device_uid\x18\x03 \x01(\tR\x0eaudioDeviceUidB\t\n" +
+	"\x10audio_device_uid\x18\x03 \x01(\tR\x0eaudioDeviceUid\x12!\n" +
+	"\fstart_sample\x18\x04 \x01(\x04R\vstartSample\x12\x1d\n" +
+	"\n" +
+	"end_sample\x18\x05 \x01(\x04R\tendSampleB\t\n" +
 	"\a_volume\"6\n" +
 	"\x13StopPlaybackRequest\x12\x1f\n" +
 	"\vplayback_id\x18\x01 \x01(\tR\n" +

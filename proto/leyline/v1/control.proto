@@ -281,10 +281,13 @@ message Playback {
   string resource_uri = 2;      // ley://recordings/<id>/<part>
   string path = 3;              // the file the daemon opened, for a client on the same machine
   uint32 sample_rate = 4;
-  uint64 samples = 5;           // frames in the file; 0 when it could not be counted
-  // Frames played so far, published on Event.playback four times a second while it plays. A
-  // client renders elapsed time from this and the rate rather than from a clock of its own, and
-  // it is reported rather than written: seeking is not in v1.
+  // Frames this playback plays: the whole file, or the range `start_sample` and `end_sample`
+  // name. 0 when it could not be counted.
+  uint64 samples = 5;
+  // Frames played so far, from the start of the range (the file's first frame when there is no
+  // range), published on Event.playback four times a second while it plays. A client renders
+  // elapsed time from this and the rate rather than from a clock of its own, and it is reported
+  // rather than written: seeking is not in v1.
   uint64 position = 6;
   double volume = 7;
   ClientInfo created_by = 8;
@@ -296,6 +299,10 @@ message Playback {
   // four-a-second event is not sent until it resumes. The playback still belongs to its client
   // and still ends when that client goes. The tombstone carries the value it had.
   bool paused = 10;
+  // The range StartPlaybackRequest asked for, on the capture's timeline at the capture rate, as
+  // the part's sidecar dates it; both 0 when the whole part plays.
+  uint64 start_sample = 11;
+  uint64 end_sample = 12;
 }
 enum PlaybackState { PLAYBACK_STATE_UNSPECIFIED = 0; PLAYBACK_PLAYING = 1; }
 
@@ -305,6 +312,13 @@ message StartPlaybackRequest {
   string resource_uri = 1;
   optional double volume = 2;   // 0..1; absent = 1.0 (full), explicit 0 = muted
   string audio_device_uid = 3;  // empty = the daemon's default output
+  // Play only capture samples start_sample..<end_sample of the part, on the capture's timeline
+  // at the capture rate (the part sidecar's start_sample, end_sample and squelch_opens), so one
+  // over plays rather than the whole exchange. The daemon places them in the file by the rates
+  // the sidecar gives. Both 0 = the whole part; start_sample 0 = from the part's start, end_sample
+  // 0 = to its end. A range that is empty or not inside the part is INVALID_ARGUMENT.
+  uint64 start_sample = 4;
+  uint64 end_sample = 5;
 }
 message StopPlaybackRequest { string playback_id = 1; }
 message SetPlaybackPausedRequest {

@@ -1201,12 +1201,14 @@ public nonisolated struct Leyline_V1_Playback: Sendable {
 
   public var sampleRate: UInt32 = 0
 
-  /// frames in the file; 0 when it could not be counted
+  /// Frames this playback plays: the whole file, or the range `start_sample` and `end_sample`
+  /// name. 0 when it could not be counted.
   public var samples: UInt64 = 0
 
-  /// Frames played so far, published on Event.playback four times a second while it plays. A
-  /// client renders elapsed time from this and the rate rather than from a clock of its own, and
-  /// it is reported rather than written: seeking is not in v1.
+  /// Frames played so far, from the start of the range (the file's first frame when there is no
+  /// range), published on Event.playback four times a second while it plays. A client renders
+  /// elapsed time from this and the rate rather than from a clock of its own, and it is reported
+  /// rather than written: seeking is not in v1.
   public var position: UInt64 = 0
 
   public var volume: Double = 0
@@ -1229,6 +1231,12 @@ public nonisolated struct Leyline_V1_Playback: Sendable {
   /// four-a-second event is not sent until it resumes. The playback still belongs to its client
   /// and still ends when that client goes. The tombstone carries the value it had.
   public var paused: Bool = false
+
+  /// The range StartPlaybackRequest asked for, on the capture's timeline at the capture rate, as
+  /// the part's sidecar dates it; both 0 when the whole part plays.
+  public var startSample: UInt64 = 0
+
+  public var endSample: UInt64 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1258,6 +1266,15 @@ public nonisolated struct Leyline_V1_StartPlaybackRequest: Sendable {
 
   /// empty = the daemon's default output
   public var audioDeviceUid: String = String()
+
+  /// Play only capture samples start_sample..<end_sample of the part, on the capture's timeline
+  /// at the capture rate (the part sidecar's start_sample, end_sample and squelch_opens), so one
+  /// over plays rather than the whole exchange. The daemon places them in the file by the rates
+  /// the sidecar gives. Both 0 = the whole part; start_sample 0 = from the part's start, end_sample
+  /// 0 = to its end. A range that is empty or not inside the part is INVALID_ARGUMENT.
+  public var startSample: UInt64 = 0
+
+  public var endSample: UInt64 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -2956,7 +2973,7 @@ nonisolated extension Leyline_V1_DaemonInfo: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension Leyline_V1_Playback: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Playback"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}playback_id\0\u{3}resource_uri\0\u{1}path\0\u{3}sample_rate\0\u{1}samples\0\u{1}position\0\u{1}volume\0\u{3}created_by\0\u{1}state\0\u{1}paused\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}playback_id\0\u{3}resource_uri\0\u{1}path\0\u{3}sample_rate\0\u{1}samples\0\u{1}position\0\u{1}volume\0\u{3}created_by\0\u{1}state\0\u{1}paused\0\u{3}start_sample\0\u{3}end_sample\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2974,6 +2991,8 @@ nonisolated extension Leyline_V1_Playback: SwiftProtobuf.Message, SwiftProtobuf.
       case 8: try { try decoder.decodeSingularMessageField(value: &self._createdBy) }()
       case 9: try { try decoder.decodeSingularEnumField(value: &self.state) }()
       case 10: try { try decoder.decodeSingularBoolField(value: &self.paused) }()
+      case 11: try { try decoder.decodeSingularUInt64Field(value: &self.startSample) }()
+      case 12: try { try decoder.decodeSingularUInt64Field(value: &self.endSample) }()
       default: break
       }
     }
@@ -3014,6 +3033,12 @@ nonisolated extension Leyline_V1_Playback: SwiftProtobuf.Message, SwiftProtobuf.
     if self.paused != false {
       try visitor.visitSingularBoolField(value: self.paused, fieldNumber: 10)
     }
+    if self.startSample != 0 {
+      try visitor.visitSingularUInt64Field(value: self.startSample, fieldNumber: 11)
+    }
+    if self.endSample != 0 {
+      try visitor.visitSingularUInt64Field(value: self.endSample, fieldNumber: 12)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -3028,6 +3053,8 @@ nonisolated extension Leyline_V1_Playback: SwiftProtobuf.Message, SwiftProtobuf.
     if lhs._createdBy != rhs._createdBy {return false}
     if lhs.state != rhs.state {return false}
     if lhs.paused != rhs.paused {return false}
+    if lhs.startSample != rhs.startSample {return false}
+    if lhs.endSample != rhs.endSample {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -3035,7 +3062,7 @@ nonisolated extension Leyline_V1_Playback: SwiftProtobuf.Message, SwiftProtobuf.
 
 nonisolated extension Leyline_V1_StartPlaybackRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".StartPlaybackRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}resource_uri\0\u{1}volume\0\u{3}audio_device_uid\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}resource_uri\0\u{1}volume\0\u{3}audio_device_uid\0\u{3}start_sample\0\u{3}end_sample\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -3046,6 +3073,8 @@ nonisolated extension Leyline_V1_StartPlaybackRequest: SwiftProtobuf.Message, Sw
       case 1: try { try decoder.decodeSingularStringField(value: &self.resourceUri) }()
       case 2: try { try decoder.decodeSingularDoubleField(value: &self._volume) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self.audioDeviceUid) }()
+      case 4: try { try decoder.decodeSingularUInt64Field(value: &self.startSample) }()
+      case 5: try { try decoder.decodeSingularUInt64Field(value: &self.endSample) }()
       default: break
       }
     }
@@ -3065,6 +3094,12 @@ nonisolated extension Leyline_V1_StartPlaybackRequest: SwiftProtobuf.Message, Sw
     if !self.audioDeviceUid.isEmpty {
       try visitor.visitSingularStringField(value: self.audioDeviceUid, fieldNumber: 3)
     }
+    if self.startSample != 0 {
+      try visitor.visitSingularUInt64Field(value: self.startSample, fieldNumber: 4)
+    }
+    if self.endSample != 0 {
+      try visitor.visitSingularUInt64Field(value: self.endSample, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -3072,6 +3107,8 @@ nonisolated extension Leyline_V1_StartPlaybackRequest: SwiftProtobuf.Message, Sw
     if lhs.resourceUri != rhs.resourceUri {return false}
     if lhs._volume != rhs._volume {return false}
     if lhs.audioDeviceUid != rhs.audioDeviceUid {return false}
+    if lhs.startSample != rhs.startSample {return false}
+    if lhs.endSample != rhs.endSample {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
