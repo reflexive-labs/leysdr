@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // One connection to one daemon: the gRPC client over the Unix socket, the identity interceptor,
-// and the eight typed service clients. Lazy like the Go client (`go/pkg/leyline/client.go`): nothing
-// connects until the first RPC, and a socket with no listener fails that RPC with `UNAVAILABLE`.
-// Everything else in this module is built on it.
+// and the eight typed service clients. Lazy like the Go client (`go/pkg/leyline/client.go`):
+// nothing connects until the first RPC, and a socket with no listener fails that RPC with
+// `UNAVAILABLE`. Everything else in this module is built on it.
 
 import Foundation
 import GRPCCore

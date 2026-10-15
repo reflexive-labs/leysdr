@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Settings, AI: the keys the daemon holds, the provider and model each feature calls, and what
-// the calls used (`docs/design/ai.md`; `docs/plans/ai-features.md`, stories K1 to K5 and U1). The
-// pane renders the mirror's `ai` and `usage` through the façade's rows (`AISettings.swift`) and
+// the calls used (`docs/design/ai.md`). The pane renders the mirror's `ai` and `usage` through the façade's rows (`AISettings.swift`) and
 // writes through `AppSession`'s unary calls, as `ley ai` does; a key it adds appears when the
 // daemon's `ai` event carries it, and a key `ley ai add` stored appears the same way. With no key
-// and no on-device engine (K1) the pane shows what each feature would do and send, and the Add
+// and no on-device engine the pane shows what each feature would do and send, and the Add
 // form, and nothing else.
 
+import AppKit
 import LeylineClient
 import LeylineProto
 import SwiftUI
@@ -89,7 +89,7 @@ private struct SettingsNoticeLine: View {
     }
 }
 
-/// K1: what each feature does, what each provider it can use would be sent and where, and which
+/// With nothing set up: what each feature does, what each provider it can use would be sent and where, and which
 /// key enables it. Shown only while no key or on-device engine is set.
 private struct WhatAIDoes: View {
     let rows: [FeatureRow]
@@ -201,8 +201,10 @@ private struct KeyRowView: View {
 }
 
 /// Add a key: the provider, a label, the key in a secure field and, for a provider that takes
-/// one, the endpoint. The key is held in this form's state only until the daemon has it: the
-/// field clears when Add succeeds and when the pane closes.
+/// one, the endpoint. The field clears the moment Add is pressed, and the key comes back only if
+/// the daemon did not store it, so a mistyped key can be corrected. It also clears when any window
+/// closes: `onDisappear` is not reliably sent to a `Settings` scene's content when its window
+/// closes, and `willCloseNotification` is.
 private struct AddKeyForm: View {
     @Environment(AppSession.self) private var session
     @State private var providerID = ProviderCatalog.anthropic.id
@@ -245,6 +247,9 @@ private struct AddKeyForm: View {
             }
         }
         .onDisappear { secret = "" }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) {
+            _ in secret = ""
+        }
     }
 
     private func field<Control: View>(_ title: String, @ViewBuilder _ control: () -> Control)
@@ -259,16 +264,18 @@ private struct AddKeyForm: View {
 
     private func add() {
         adding = true
+        let typed = secret.trimmingCharacters(in: .whitespacesAndNewlines)
+        secret = ""
         let showsEndpoint = provider?.takesEndpoint == true
         Task {
             let stored = await session.addKey(
-                provider: providerID,
-                secret: secret.trimmingCharacters(in: .whitespacesAndNewlines),
-                label: label, endpoint: showsEndpoint ? endpoint : "")
+                provider: providerID, secret: typed, label: label,
+                endpoint: showsEndpoint ? endpoint : "")
             if stored {
-                secret = ""
                 label = ""
                 endpoint = ""
+            } else {
+                secret = typed
             }
             adding = false
         }
@@ -380,7 +387,13 @@ private struct FeatureRowView: View {
     }
 
     private func pick(provider id: String) {
-        guard !id.isEmpty, id != shownProvider else { return }
+        guard !id.isEmpty else { return }
+        // Back to the provider the daemon holds: drop the half-made choice, keep its model.
+        if id == row.provider {
+            typedProvider = nil
+            return
+        }
+        guard id != shownProvider else { return }
         let models = ProviderCatalog.provider(id)?.models ?? []
         if let first = models.first {
             typedProvider = nil
@@ -407,7 +420,7 @@ private struct FeatureRowView: View {
 
 // MARK: Usage
 
-/// U1: requests, tokens and audio minutes per provider, model and feature, by UTC day over the
+/// Requests, tokens and audio minutes per provider, model and feature, by UTC day over the
 /// last 30 days or by month over the whole ledger, with the total and the note that the numbers
 /// are the workers' and the cost is the provider's. A column empty in every row is left out, as
 /// `ley ai usage` leaves it out.
@@ -448,42 +461,15 @@ private struct UsageTable: View {
     let fold: UsageFold
     let period: UsageFold.Period
 
-    private struct Column {
-        let head: String
-        let value: (UsageRow) -> String
-    }
-
-    /// The numeric columns, each kept only when some row has a value in it; requests always.
-    private var columns: [Column] {
-        let all: [(Column, (UsageRow) -> Bool)] = [
-            (Column(head: "REQUESTS") { UsageFold.count($0.requests) }, { _ in true }),
-            (Column(head: "IN") { UsageFold.count($0.inputTokens) }, { $0.inputTokens > 0 }),
-            (Column(head: "OUT") { UsageFold.count($0.outputTokens) }, { $0.outputTokens > 0 }),
-            (
-                Column(head: "CACHE RD") { UsageFold.count($0.cacheReadTokens) },
-                { $0.cacheReadTokens > 0 }
-            ),
-            (
-                Column(head: "CACHE WR") { UsageFold.count($0.cacheWriteTokens) },
-                { $0.cacheWriteTokens > 0 }
-            ),
-            (
-                Column(head: "AUDIO MIN") { UsageFold.minutes($0.audioSeconds) },
-                { $0.audioSeconds > 0 }
-            ),
-        ]
-        return all.filter { entry in fold.rows.contains(where: entry.1) }.map { $0.0 }
-    }
-
     var body: some View {
-        let numbers = columns
+        let numbers: [UsageFold.Column] = fold.columns
         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 5) {
             GridRow {
                 head(period == .day ? "DAY" : "MONTH")
                 head("MODEL")
                 head("FEATURE")
-                ForEach(numbers.indices, id: \.self) { i in
-                    head(numbers[i].head).gridColumnAlignment(.trailing)
+                ForEach(numbers, id: \.self) { column in
+                    head(column.head).gridColumnAlignment(.trailing)
                 }
             }
             ForEach(fold.rows) { r in
@@ -495,8 +481,8 @@ private struct UsageTable: View {
                             .foregroundStyle(Theme.inkMuted)
                     }
                     Text(r.feature).font(Theme.Font.value).foregroundStyle(Theme.inkTertiary)
-                    ForEach(numbers.indices, id: \.self) { i in
-                        Text(numbers[i].value(r)).font(Theme.Font.value)
+                    ForEach(numbers, id: \.self) { column in
+                        Text(column.value(r)).font(Theme.Font.value)
                             .foregroundStyle(Theme.inkSecondary)
                     }
                 }
@@ -506,8 +492,8 @@ private struct UsageTable: View {
                 Text("total").font(Theme.Font.value).foregroundStyle(Theme.ink)
                 Text("")
                 Text("")
-                ForEach(numbers.indices, id: \.self) { i in
-                    Text(numbers[i].value(fold.total)).font(Theme.Font.value)
+                ForEach(numbers, id: \.self) { column in
+                    Text(column.value(fold.total)).font(Theme.Font.value)
                         .foregroundStyle(Theme.ink)
                 }
             }

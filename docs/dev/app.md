@@ -335,8 +335,10 @@ and `setFeatureModel`. A row changes when the daemon's `ai` or `usage` event arr
 each call is one line, `settingsNotice`, at the top of the pane; the window's own `notice` shows
 over the waterfall, where a person in Settings would not see it. The key typed into the
 `SecureField` is held in the form's state until the daemon has it and in `addKey`'s request,
-and nowhere else: not in the session, not in a log line. The field clears when Add succeeds and
-when the pane closes.
+and nowhere else: not in the session, not in a log line. The field clears the moment Add is
+pressed and gets the key back only if the daemon did not store it, so a mistyped key can be
+corrected. It also clears when a window closes, on `NSWindow.willCloseNotification`, because
+`onDisappear` is not reliably sent to a `Settings` scene's content when its window closes.
 
 The pane has three groups. **Keys** lists each key with its provider, label, last four characters,
 when it was added, last used and last checked, the check's outcome (`good` accepted, `recording`
@@ -345,9 +347,10 @@ first, because the daemon ends every job and conversation using the key. The Add
 provider from `ProviderCatalog`, a label, the key and, for an OpenAI-compatible server, its
 endpoint. **Features** has a provider picker and a model picker per feature (a field for a
 provider whose models are typed), and under them what the shown choice sends to which host, so a
-choice is read before it is made: the conversation and tool results for the assistant, the
-squelch-open audio for speech, the endpoint's host when the key has one, and "nothing leaves the
-Mac" for an on-device engine. **Usage** is a table by UTC day over the last 30 days or by month
+choice is read before it is made: for the assistant, the conversation and the tool results,
+which include frequencies, decoded records and speech text; for speech, the squelch-open audio;
+the endpoint's host when the key has one; and "nothing leaves the Mac" for an on-device engine.
+**Usage** is a table by UTC day since the day 30 days back (`ley ai usage`'s default) or by month
 over the whole ledger, summed over jobs and conversations as `ley ai usage` sums them, its empty
 columns left out, with a total row and the note that the numbers are what the workers reported.
 

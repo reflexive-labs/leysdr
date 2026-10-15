@@ -7,7 +7,7 @@
 // shows its last four characters; usage is in the provider's units and never a price; days are
 // UTC, as the providers' consoles count them (`ley ai usage`, `go/internal/cli/ai_usage.go`, sums
 // the same way); and no AI control shows anywhere but Settings until a key or an on-device engine
-// is set ("Keys live in the daemon"; `docs/plans/ai-features.md`, story K1).
+// is set (`docs/design/ai.md`, "Context").
 
 import Foundation
 import LeylineProto
@@ -227,18 +227,62 @@ public struct UsageFold: Equatable, Sendable {
         self.total = total
     }
 
-    /// The first UTC day the day view shows: `days` days back from `now`'s, inclusive, so the
-    /// day `now` falls in is the last of them.
+    /// The first UTC day the day view shows: the day `days` days before `now` falls in, which
+    /// is how `ley ai usage --since 30d` counts (`now - 30d`, whole UTC days, that day included).
     public static func sinceDay(now: Date, days: Int = dayViewDays) -> String {
         var utc = Calendar(identifier: .gregorian)
         utc.timeZone = TimeZone(identifier: "UTC")!
-        let start = utc.date(byAdding: .day, value: -(days - 1), to: now) ?? now
+        let start = now.addingTimeInterval(-Double(days) * 86_400)
         let f = DateFormatter()
         f.calendar = utc
         f.timeZone = utc.timeZone
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyy-MM-dd"
         return f.string(from: start)
+    }
+
+    /// A numeric column of the table. Requests always shows; every other column shows only when
+    /// some row has a value in it, as `ley ai usage` leaves an empty column out.
+    public enum Column: CaseIterable, Sendable {
+        case requests, input, output, cacheRead, cacheWrite, audio
+
+        public var head: String {
+            switch self {
+            case .requests: "REQUESTS"
+            case .input: "IN"
+            case .output: "OUT"
+            case .cacheRead: "CACHE RD"
+            case .cacheWrite: "CACHE WR"
+            case .audio: "AUDIO MIN"
+            }
+        }
+
+        public func value(_ r: UsageRow) -> String {
+            switch self {
+            case .requests: UsageFold.count(r.requests)
+            case .input: UsageFold.count(r.inputTokens)
+            case .output: UsageFold.count(r.outputTokens)
+            case .cacheRead: UsageFold.count(r.cacheReadTokens)
+            case .cacheWrite: UsageFold.count(r.cacheWriteTokens)
+            case .audio: UsageFold.minutes(r.audioSeconds)
+            }
+        }
+
+        func has(_ r: UsageRow) -> Bool {
+            switch self {
+            case .requests: true
+            case .input: r.inputTokens > 0
+            case .output: r.outputTokens > 0
+            case .cacheRead: r.cacheReadTokens > 0
+            case .cacheWrite: r.cacheWriteTokens > 0
+            case .audio: r.audioSeconds > 0
+            }
+        }
+    }
+
+    /// The numeric columns this fold's table shows.
+    public var columns: [Column] {
+        Column.allCases.filter { c in c == .requests || rows.contains { c.has($0) } }
     }
 
     /// A count as the table prints it: thousands grouped with commas, a dash for none.
@@ -262,7 +306,7 @@ public struct UsageFold: Equatable, Sendable {
 
 /// The pane's derived rows and words.
 public enum AISettings {
-    /// K1: whether any AI feature can run, which is when a key is set or a feature names a
+    /// Whether any AI feature can run, which is when a key is set or a feature names a
     /// provider that runs on the Mac. While false, the pane shows what each feature does and the
     /// Add form only, and no other screen shows an AI control.
     public static func hasAnyAI(
@@ -336,7 +380,8 @@ public enum AISettings {
     /// What a feature sends to its provider, without the host.
     static func sends(_ feature: String) -> String {
         switch feature {
-        case "assistant": "the conversation and tool results"
+        case "assistant":
+            "the conversation and the tool results, which include frequencies, decoded records and speech text,"
         case "speech": "squelch-open audio"
         default: "its requests"
         }

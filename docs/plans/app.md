@@ -1543,8 +1543,12 @@ off the Mac. The pane is forced dark like the window rather than giving `Theme` 
 - The pane is dark under both system appearances, with no light-on-light text or controls.
 - K1: with no key, only the explanation and the Add form show; adding one brings Features and
   Usage in, and removing it takes them out again; nothing in the main window changes.
-- The `SecureField` hides the key, clears after a successful Add and when the window closes; the
+- The `SecureField` hides the key and clears the moment Add is pressed; a refused Add (the daemon
+  not running) puts the key back. Closing the Settings window clears it: check that
+  `willCloseNotification` fires for the Settings window, since `onDisappear` may not. The
   Endpoint field shows for OpenAI-compatible only; Add is disabled while the key is empty.
+- Choosing another provider and then the one the daemon holds again drops the model field and
+  rewrites nothing.
 - Check updates the row's outcome and the top line; Remove asks, then the row leaves.
 - The provider picker writes Anthropic's first model at once; OpenAI-compatible shows a model
   field that writes on Return; the model picker writes; the sentence under the pickers follows

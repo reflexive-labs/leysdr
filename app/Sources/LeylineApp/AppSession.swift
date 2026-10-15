@@ -3455,7 +3455,7 @@ final class AppSession {
 
     // MARK: Settings, AI
 
-    /// K1: an AI control shows outside Settings only while this holds, which is when the daemon
+    /// An AI control shows outside Settings only while this holds, which is when the daemon
     /// holds a key or a feature names an on-device engine (`AISettings.hasAnyAI`).
     var hasAnyAI: Bool { AISettings.hasAnyAI(state.ai) }
 

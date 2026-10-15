@@ -54,7 +54,8 @@ final class AISettingsDaemonTests: XCTestCase {
         let running = Task { await mirror.run() }
         defer { running.cancel() }
         await assertEventually("mirror never went live") { mirror.connection == .live }
-        XCTAssertFalse(AISettings.hasAnyAI(mirror.state.ai), "a fresh daemon holds no key (K1)")
+        XCTAssertFalse(
+            AISettings.hasAnyAI(mirror.state.ai), "a fresh daemon holds no key, so no AI can run")
 
         var add = Leyline_V1_SetCredentialRequest()
         add.provider = "anthropic"
@@ -66,6 +67,8 @@ final class AISettingsDaemonTests: XCTestCase {
             AISettings.addedWords(stored),
             "anthropic key \u{2026}0042 added; the provider accepted it.",
             "the scripted worker accepts the key: \(stored.lastCheck.message)")
+        // The pane's line after Add is `addedWords`; the key's text is never in it.
+        XCTAssertFalse(AISettings.addedWords(stored).contains(Self.canary))
 
         await assertEventually("the key never reached the mirror") {
             mirror.state.ai.credentials.count == 1
@@ -84,12 +87,16 @@ final class AISettingsDaemonTests: XCTestCase {
         ref.provider = "anthropic"
         let checked = try await app.credentials.checkCredential(ref)
         XCTAssertEqual(KeyOutcome(checked.lastCheck), .accepted)
+        XCTAssertFalse(AISettings.checkedWords(checked).contains(Self.canary))
 
         _ = try await app.credentials.deleteCredential(ref)
         await assertEventually("the removed key stayed in the mirror") {
             mirror.state.ai.credentials.isEmpty
         }
         XCTAssertFalse(AISettings.hasAnyAI(mirror.state.ai))
+        let log = daemon.logText()
+        XCTAssertFalse(log.isEmpty, "the harness captured no daemon log to search")
+        XCTAssertFalse(log.contains(Self.canary), "the daemon logged the key's text")
     }
 
     @MainActor

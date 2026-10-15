@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Settings, AI without a daemon: the key rows on hand-made credentials, the feature rows and the
-// privacy sentence for each kind of provider, K1's flag, the relative words, and the usage fold
+// privacy sentence for each kind of provider, whether any AI feature can run, the relative words, and the usage fold
 // by UTC day and month with its total, each against the exact string the pane prints.
 
 import Foundation
@@ -119,7 +119,8 @@ final class AISettingsTests: XCTestCase {
     func testPrivacySentencePerKindOfProvider() {
         XCTAssertEqual(
             AISettings.privacy(feature: "assistant", provider: "anthropic"),
-            "Sends the conversation and tool results to api.anthropic.com.")
+            "Sends the conversation and the tool results, which include frequencies, decoded records and speech text, to api.anthropic.com."
+        )
         XCTAssertEqual(
             AISettings.privacy(feature: "speech", provider: "deepgram"),
             "Sends squelch-open audio to deepgram's servers.")
@@ -136,10 +137,12 @@ final class AISettingsTests: XCTestCase {
         XCTAssertEqual(
             AISettings.privacy(
                 feature: "assistant", provider: "openai", endpoint: "http://gpu.lan:8080/v1"),
-            "Sends the conversation and tool results to gpu.lan.")
+            "Sends the conversation and the tool results, which include frequencies, decoded records and speech text, to gpu.lan."
+        )
         XCTAssertEqual(
             AISettings.privacy(feature: "assistant", provider: "openai"),
-            "Sends the conversation and tool results to api.openai.com.")
+            "Sends the conversation and the tool results, which include frequencies, decoded records and speech text, to api.openai.com."
+        )
     }
 
     func testEveryFeatureIsListedWhetherOrNotChosen() {
@@ -151,7 +154,9 @@ final class AISettingsTests: XCTestCase {
         XCTAssertEqual(rows[0].provider, "anthropic")
         XCTAssertEqual(rows[0].model, "claude-sonnet-5-5")
         XCTAssertEqual(
-            rows[0].privacy, "Sends the conversation and tool results to api.anthropic.com.")
+            rows[0].privacy,
+            "Sends the conversation and the tool results, which include frequencies, decoded records and speech text, to api.anthropic.com."
+        )
         XCTAssertEqual(rows[0].missingKey, "No anthropic key is set yet; add one under Keys.")
         XCTAssertEqual(rows[0].choices.map(\.provider.id), ["anthropic", "openai"])
         XCTAssertEqual(rows[1].provider, "")
@@ -168,10 +173,14 @@ final class AISettingsTests: XCTestCase {
         ai.features = [feature("assistant", "openai", "local-model")]
         let row = AISettings.featureRows(ai)[0]
         XCTAssertNil(row.missingKey)
-        XCTAssertEqual(row.privacy, "Sends the conversation and tool results to llm.example.org.")
+        XCTAssertEqual(
+            row.privacy,
+            "Sends the conversation and the tool results, which include frequencies, decoded records and speech text, to llm.example.org."
+        )
         XCTAssertEqual(
             row.choices.first { $0.provider.id == "openai" }?.privacy,
-            "Sends the conversation and tool results to llm.example.org.")
+            "Sends the conversation and the tool results, which include frequencies, decoded records and speech text, to llm.example.org."
+        )
     }
 
     func testTheCatalogOffersAnthropicsModelsAndAnEndpointForOpenAI() {
@@ -183,7 +192,7 @@ final class AISettingsTests: XCTestCase {
         XCTAssertTrue(ProviderCatalog.speech.isEmpty)
     }
 
-    // MARK: K1
+    // MARK: Whether any AI feature can run
 
     func testNoKeyAndNoOnDeviceEngineMeansNoAI() {
         var ai = Leyline_V1_AIState()
@@ -263,7 +272,9 @@ final class AISettingsTests: XCTestCase {
     }
 
     func testTheDayViewKeepsTheLastThirtyUTCDays() {
-        XCTAssertEqual(UsageFold.sinceDay(now: now), "2026-09-16")
+        XCTAssertEqual(
+            UsageFold.sinceDay(now: now), "2026-09-15",
+            "the day 30 days before now, included, as ley ai usage --since 30d counts")
         let fold = UsageFold(lines: ledger, by: .day, sinceDay: "2026-10-01")
         XCTAssertEqual(fold.rows.map(\.period), ["2026-10-14", "2026-10-14"])
         XCTAssertEqual(fold.total.requests, 8)
@@ -273,6 +284,17 @@ final class AISettingsTests: XCTestCase {
         let fold = UsageFold(lines: [], by: .month)
         XCTAssertTrue(fold.rows.isEmpty)
         XCTAssertEqual(fold.total.requests, 0)
+    }
+
+    func testAColumnEmptyInEveryRowIsLeftOutButRequestsStays() {
+        XCTAssertEqual(
+            UsageFold(lines: ledger, by: .day).columns, [.requests, .input, .output, .audio])
+        let assistantOnly = UsageFold(lines: Array(ledger.prefix(3)), by: .day)
+        XCTAssertEqual(assistantOnly.columns, [.requests, .input, .output])
+        XCTAssertEqual(UsageFold(lines: [], by: .day).columns, [.requests])
+        XCTAssertEqual(UsageFold.Column.audio.head, "AUDIO MIN")
+        XCTAssertEqual(UsageFold.Column.input.value(assistantOnly.total), "3,500")
+        XCTAssertEqual(UsageFold.Column.audio.value(assistantOnly.total), "—")
     }
 
     func testCountsAndMinutesPrintAsTheTableDoes() {
