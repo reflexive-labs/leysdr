@@ -148,7 +148,7 @@ func runMode(ctx context.Context, env Env, s *Scenario, mode, dir string) *Resul
 	}
 	res.Dir = dir
 	env.Log("%s: starting the daemon", s.Name)
-	d, err := startDaemon(ctx, env, dir)
+	d, err := startDaemon(ctx, env, dir, s.SpeechScript)
 	if err != nil {
 		res.Error = err.Error()
 		return res

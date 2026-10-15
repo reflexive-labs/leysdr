@@ -207,6 +207,9 @@ func newCheckCommand() *cobra.Command {
 			}
 			for _, s := range all {
 				fmt.Printf("%s: %d fixture(s), %d setup step(s), %d check(s)", s.Name, len(s.Fixtures), len(s.Setup), len(s.Checks))
+				if len(s.SpeechScript) > 0 {
+					fmt.Printf(", %d spoken line(s)", len(s.SpeechScript))
+				}
 				if len(s.Modes) > 0 {
 					fmt.Printf(", modes %s", strings.Join(s.Modes, ", "))
 				} else if s.Mode != "" {

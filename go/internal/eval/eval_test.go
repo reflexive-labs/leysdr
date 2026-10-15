@@ -148,6 +148,10 @@ func TestScenariosParse(t *testing.T) {
 	if _, err := Load(bad); err == nil || !strings.Contains(err.Error(), "unknown type") {
 		t.Errorf("an unknown check type must be refused when the scenario loads: %v", err)
 	}
+	_ = os.WriteFile(bad, []byte("task: x\nchecks:\n  - type: answered\nspeech_script:\n  - \"one over\\ntwo overs\"\n"), 0o644)
+	if _, err := Load(bad); err == nil || !strings.Contains(err.Error(), "speech_script line 1") {
+		t.Errorf("a speech_script line with a line break would be two overs, and must be refused: %v", err)
+	}
 }
 
 // The runner end to end with the real daemon and a fake agent: the fixture is attached under

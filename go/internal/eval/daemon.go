@@ -57,10 +57,19 @@ type daemon struct {
 	run    *daemonrun.Daemon
 }
 
+// SpeechScriptEnv is what the daemon's environment names the scripted speech engine's file with
+// (go/cmd/leydec-speech); the plugin inherits it from the daemon.
+const SpeechScriptEnv = "LEYDEC_SPEECH_SCRIPT"
+
+// speechScriptFile is where a scenario's speech_script is written in its run directory.
+const speechScriptFile = "speech-script.txt"
+
 // startDaemon starts the run's daemon. Its environment names the ley the assistant's workers run
 // (LEYLINE_LEY) and the run directory's bookmarks file, which the assistant's tools inherit
-// from it as `ley mcp` gets them from mcp.json; a scripted run adds the script.
-func startDaemon(ctx context.Context, env Env, dir string) (*daemon, error) {
+// from it as `ley mcp` gets them from mcp.json; a scripted run adds the script, and a scenario
+// with a speech_script the speech engine's words. The runner's own LEYDEC_SPEECH_SCRIPT is never
+// inherited, so a scenario without one hears the engine's default and nothing from the shell.
+func startDaemon(ctx context.Context, env Env, dir string, speechScript []string) (*daemon, error) {
 	ley, err := exec.LookPath(env.Ley)
 	if err != nil {
 		return nil, fmt.Errorf("ley: %w", err)
@@ -76,9 +85,20 @@ func startDaemon(ctx context.Context, env Env, dir string) (*daemon, error) {
 		}
 		daemonEnv = append(daemonEnv, ScriptEnv+"="+script)
 	}
+	if len(speechScript) > 0 {
+		path, err := filepath.Abs(filepath.Join(dir, speechScriptFile))
+		if err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(path, []byte(strings.Join(speechScript, "\n")+"\n"), 0o644); err != nil {
+			return nil, fmt.Errorf("speech script: %w", err)
+		}
+		daemonEnv = append(daemonEnv, SpeechScriptEnv+"="+path)
+	}
 	// The key reaches the daemon through `ley ai add` on stdin alone, never its environment.
 	run, err := daemonrun.Start(ctx, daemonrun.Options{
-		Bin: env.Daemon, Dir: dir, Decoders: env.Decoders, Label: "leyeval", Env: daemonEnv, Unset: []string{KeyEnv},
+		Bin: env.Daemon, Dir: dir, Decoders: env.Decoders, Label: "leyeval", Env: daemonEnv,
+		Unset: []string{KeyEnv, SpeechScriptEnv},
 	})
 	if err != nil {
 		return nil, err
