@@ -771,7 +771,7 @@ transcribe` against the fake states the minutes and refuses without a terminal a
 test transcribes a gated fixture recording through the scripted engine and `ley records
 --protocol speech` shows one record per over with its `clip_uri` and `over`.
 
-### AI-9 `[ ]` The assistant service and worker
+### AI-9 `[x]` The assistant service and worker
 
 **The contract**, settled 2026-10-15 in `ai.proto` (numbers are the next free ones in each
 message; `Event.body` gains `conversation = 13` and `GetStateResponse` `conversations = 11`):
@@ -885,6 +885,20 @@ attribution hold unchanged. A channel the assistant tunes is persistent, and the
 how to stop it (`ley stop`), because the worker's connection ends with the conversation; the
 app's panel can declare a view tool to retune its own channel instead (AI-11).
 
+**Done 2026-10-15.** What the build settled beyond the text: turn ids count both sides (`t1` user,
+`t2` reply), the daemon assigns the user's and takes the worker's; an unknown conversation is
+`INVALID_ARGUMENT` and a start with no model is `FAILED_PRECONDITION` naming `ley ai use
+assistant`; the daemon writes to a worker from a per-worker queue with a 2 s deadline, after
+which that conversation alone fails; `StopTurn` closes only the turn it set out to stop; the
+newest 32 finished conversations stay listed; the worker speaks the Messages API with the
+standard library rather than `anthropic-sdk-go`, whose module graph pulls in the AWS and Google
+Cloud SDKs; the worker's `tune` keeps its channel; the speech decoder's alias is resolved before
+the paid-transcription row; tool results reach the model cut at 32 KB; a received-text read
+taints the rest of the conversation. The e2e test (`go/internal/e2e/ask_test.go`) drives a real
+daemon, worker and `ley ask` through tuning with attribution, a refused and an approved delete,
+`--continue`, the received-text ask, Ctrl-C, a 401 and a 429 from a fake provider, a restart,
+and reads the worker's argv and environment from `/proc` to show the key is in neither.
+
 **The daemon.** A `ConversationStore` actor: `StartConversation` resolves the provider and model
 (the request's, else the `assistant` feature model, else `CREDENTIAL_MISSING` naming `ley ai
 add`), spawns `ley worker assistant` through `WorkerProcess` with the key on stdin and
@@ -928,7 +942,7 @@ Verify: a test per policy row with the scripted model against the fake daemon (t
 an `Assistant` server that runs the same Go worker loop in process, so `ley ask` is testable
 without the daemon); undo; the received-text rule; `WorkerStop` mid-call; `make license-check`.
 
-### AI-10 `[ ]` `ley ask`
+### AI-10 `[x]` `ley ask`
 
 One request on the command line or a prompt loop when none is given; the assistant's text as it
 arrives on stdout, each tool call as one dim line (`→ tune 162.400 MHz NFM`) and its result's
@@ -936,7 +950,11 @@ first line; a pending action as a `[y/N]` question on stderr answered with `Reso
 (`--yes` approves everything, which is how an agent uses it); `--continue` resumes the newest
 `IDLE` conversation the daemon has, else starts one; `--json` prints every `Conversation` the
 watch delivers, one per line; Ctrl-C stops the turn (`StopTurn`) and a second ends the
-conversation; exit 1 with the error when the conversation fails. Files: `go/internal/cli/ask.go`, goldens, `docs/reference/cli.md`,
+conversation; exit 1 with the error when the conversation fails. **Done 2026-10-15**: the
+assistant's words go to stdout and everything else to stderr; `--continue` picks the newest
+unfinished conversation by last turn and answers its pending question first; a rewritten text
+prints whole once the turn is done; the reference transcripts are produced by a test against
+the fake. Files: `go/internal/cli/ask.go`, goldens, `docs/reference/cli.md`,
 `docs/guide/using-ley.md`. Verify: help goldens; transcripts recorded against the fake with a
 scripted conversation.
 

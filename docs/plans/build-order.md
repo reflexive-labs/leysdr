@@ -143,7 +143,9 @@ Each task lands with: tests (fixture-based where DSP), os_signpost instrumentati
 Started 2026-10-14; the live plan is `docs/plans/ai-features.md` (items AI-0 to AI-13, with what
 each landed). The contract (`ai.proto`: keys that the daemon holds and never returns, a usage
 ledger in the provider's units, segmented decoder input and a recording as a decode source) and
-the first five items are done: the design doc, keys and `ley ai`, the ledger, the `ley mcp` tools
-the assistant needs, and speech-to-text on stored recordings through a scripted engine. What
-remains waits on the Mac (AI-0, the speech-engine spike that picks the real plugin; the Settings
-pane and the Library views) or on the assistant (AI-9 to AI-13).
+seven items are done: the design doc, keys and `ley ai`, the ledger, the `ley mcp` tools the
+assistant needs, speech-to-text on stored recordings through a scripted engine, the assistant
+service and its worker, and `ley ask`. What remains waits on the Mac (AI-0, the speech-engine
+spike that picks the real plugin; the Settings pane, the Library views and the assistant panel)
+or on a key (the assistant evals and the injection scenarios, AI-12 and AI-13), with live speech
+(AI-7) the one item that needs neither.
