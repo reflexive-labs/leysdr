@@ -258,7 +258,8 @@ func sortedKeys[V any](m map[string]V) []string {
 }
 
 // matchesWrite reports whether the event is of the check's kind and meets every where clause.
-// Values compare case-insensitively; state also matches on the suffix after an underscore.
+// Values compare case-insensitively, a value may list alternatives separated by |, and state
+// also matches on the suffix after an underscore.
 func matchesWrite(c Check, ev *leylinev1.Event) bool {
 	if eventKind(ev) != c.Kind {
 		return false
@@ -268,16 +269,28 @@ func matchesWrite(c Check, ev *leylinev1.Event) bool {
 		if !ok {
 			return false
 		}
-		got, want = strings.ToLower(got), strings.ToLower(strings.TrimSpace(want))
-		switch {
-		case got == want:
-		case key == "notify" && want == "any" && got != "none":
-		case key == "state" && strings.HasSuffix(got, "_"+want):
-		default:
+		if !matchesValue(key, strings.ToLower(got), want) {
 			return false
 		}
 	}
 	return true
+}
+
+// matchesValue compares one where clause's value, which may list alternatives separated by |
+// ("assistant|ley mcp"), with what the event holds, already lower-cased.
+func matchesValue(key, got, want string) bool {
+	for _, alt := range strings.Split(want, "|") {
+		alt = strings.ToLower(strings.TrimSpace(alt))
+		switch {
+		case got == alt:
+		case key == "notify" && alt == "any" && got != "none":
+		case key == "state" && strings.HasSuffix(got, "_"+alt):
+		default:
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // describeEvent is one event as a verdict names it: seq, kind, id, state and cause.

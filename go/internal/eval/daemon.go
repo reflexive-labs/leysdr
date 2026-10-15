@@ -76,7 +76,10 @@ func startDaemon(ctx context.Context, env Env, dir string) (*daemon, error) {
 		}
 		daemonEnv = append(daemonEnv, ScriptEnv+"="+script)
 	}
-	run, err := daemonrun.Start(ctx, daemonrun.Options{Bin: env.Daemon, Dir: dir, Decoders: env.Decoders, Label: "leyeval", Env: daemonEnv})
+	// The key reaches the daemon through `ley ai add` on stdin alone, never its environment.
+	run, err := daemonrun.Start(ctx, daemonrun.Options{
+		Bin: env.Daemon, Dir: dir, Decoders: env.Decoders, Label: "leyeval", Env: daemonEnv, Unset: []string{KeyEnv},
+	})
 	if err != nil {
 		return nil, err
 	}

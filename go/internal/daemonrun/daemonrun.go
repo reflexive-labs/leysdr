@@ -12,6 +12,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
@@ -21,8 +23,7 @@ import (
 type Options struct {
 	// Bin is the leylined binary.
 	Bin string
-	// Dir holds the socket, pidfile, store, recordings, data directory and log. It is created if
-	// missing.
+	// Dir holds the socket, pidfile, store, recordings and log. It is created if missing.
 	Dir string
 	// Decoders is a plugin directory the daemon searches before its default, or empty.
 	Decoders string
@@ -32,6 +33,9 @@ type Options struct {
 	Label string
 	// Env is added to the daemon's environment, as KEY=value.
 	Env []string
+	// Unset names variables of this process's environment the daemon must not inherit: a key the
+	// caller holds, say.
+	Unset []string
 }
 
 // Daemon is a running hermetic daemon.
@@ -44,7 +48,9 @@ type Daemon struct {
 	cmd *exec.Cmd
 	// socketDir is the short temp directory the socket was moved to, or empty; removed on Stop.
 	socketDir string
-	logFile   *os.File
+	// dataDir is the daemon's --data, a temp directory of its own; removed on Stop.
+	dataDir string
+	logFile *os.File
 }
 
 // socketPathMax is the longest Unix socket path both platforms accept (104 bytes on macOS,
@@ -74,6 +80,14 @@ func Start(ctx context.Context, o Options) (*Daemon, error) {
 		d.Socket = filepath.Join(short, "d.sock")
 		_ = os.WriteFile(filepath.Join(o.Dir, "socket.txt"), []byte(d.Socket+"\n"), 0o644)
 	}
+	// The AI data directory (keys, feature models) is a temp directory outside Dir, removed on
+	// Stop, so a key a caller adds never lands in a run directory a person keeps or shares.
+	data, err := os.MkdirTemp("", "leydata")
+	if err != nil {
+		d.Stop()
+		return nil, err
+	}
+	d.dataDir = data
 	f, err := os.Create(d.Log)
 	if err != nil {
 		d.Stop()
@@ -85,10 +99,7 @@ func Start(ctx context.Context, o Options) (*Daemon, error) {
 	args := []string{
 		"--socket", d.Socket, "--pidfile", filepath.Join(o.Dir, "leylined.pid"),
 		"--store", d.Store, "--recordings", d.Recordings, "--log-level", "info", "--no-hardware",
-		// The AI keys' metadata and each feature's model, and the keys themselves off macOS: a
-		// key an eval adds stays in this directory. On macOS the keys go to the login keychain
-		// whatever this says (docs/dev/evals.md, "The assistant as the agent").
-		"--data", filepath.Join(o.Dir, "data"),
+		"--data", d.dataDir,
 	}
 	if o.Decoders != "" {
 		args = append(args, "--decoders", o.Decoders)
@@ -98,9 +109,7 @@ func Start(ctx context.Context, o Options) (*Daemon, error) {
 	}
 	d.cmd = exec.Command(o.Bin, args...)
 	d.cmd.Stdout, d.cmd.Stderr = f, f
-	if len(o.Env) > 0 {
-		d.cmd.Env = append(os.Environ(), o.Env...)
-	}
+	d.cmd.Env = daemonEnv(os.Environ(), o)
 	if err := d.cmd.Start(); err != nil {
 		d.Stop()
 		return nil, fmt.Errorf("start %s: %w", o.Bin, err)
@@ -145,10 +154,32 @@ func (d *Daemon) Stop() {
 			<-done
 		}
 	}
+	if d.dataDir != "" {
+		_ = os.RemoveAll(d.dataDir)
+	}
 	if d.socketDir != "" {
 		_ = os.RemoveAll(d.socketDir)
 	}
 	if d.logFile != nil {
 		_ = d.logFile.Close()
 	}
+}
+
+// secretsEnv asks the daemon to keep provider keys in a file in its --data directory rather than
+// the macOS login keychain, so a hermetic daemon's keys go when its data directory does. A
+// daemon that does not know the variable ignores it.
+const secretsEnv = "LEYLINE_SECRETS=file"
+
+// daemonEnv is the daemon's environment: this process's without the names o.Unset lists, then
+// secretsEnv and o.Env.
+func daemonEnv(environ []string, o Options) []string {
+	out := make([]string, 0, len(environ)+len(o.Env)+1)
+	for _, kv := range environ {
+		name, _, _ := strings.Cut(kv, "=")
+		if !slices.Contains(o.Unset, name) {
+			out = append(out, kv)
+		}
+	}
+	out = append(out, secretsEnv)
+	return append(out, o.Env...)
 }

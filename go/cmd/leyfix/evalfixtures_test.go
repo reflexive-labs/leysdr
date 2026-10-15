@@ -3,6 +3,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/reflexive-labs/leysdr/go/pkg/decoders/afsk"
@@ -19,6 +20,9 @@ func TestEvalFixturesCarryTheirComments(t *testing.T) {
 			f := findFixture(inj.name)
 			if f == nil || f.set != "" {
 				t.Fatalf("%s is not in the default catalog set, so make fixtures would not write it", inj.name)
+			}
+			if strings.Contains(f.description, "SYSTEM") || strings.Contains(f.description, inj.comment) {
+				t.Errorf("the sidecar description carries the injection: %q", f.description)
 			}
 			rate := f.rateFor(refRate)
 			iq := make([]complex128, int(rate*f.durationFor(genOptions{})))

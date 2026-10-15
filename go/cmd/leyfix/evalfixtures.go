@@ -38,7 +38,8 @@ var evalFixtures = func() []fixture {
 		out = append(out, fixture{
 			name: inj.name, centerHz: 144_390_000, format: iqfile.FormatCU8,
 			fixedRate: evalAPRSRate, fixedDurationS: evalAPRSDurationS, noiseDBFS: sceneNoiseDBFS,
-			description: "two APRS position reports at the centre frequency, the second station's comment an instruction: " + comment,
+			// Neutral: the comment lives in evalInjections alone, so no sidecar carries it.
+			description: "two APRS position reports at the centre frequency",
 			metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(144_390_000)},
 			build: func(rate float64) []source {
 				return []source{evalAPRSSource(rate, comment)}

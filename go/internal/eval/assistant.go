@@ -74,11 +74,14 @@ func runAssistant(ctx context.Context, env Env, d *daemon, dir, prompt string) (
 		model = DefaultAssistantModel
 	}
 	if runtime.GOOS == "darwin" && env.Script == "" {
-		env.Log("on macOS the daemon keeps keys in the login keychain whatever its data directory, so $%s replaces the %s key the app uses", KeyEnv, provider)
+		env.Log("on macOS a daemon that does not honour LEYLINE_SECRETS=file keeps keys in the login keychain: $%s replaces the %s key the app uses, and the run removes it at the end", KeyEnv, provider)
 	}
 	if _, _, err := d.ley(ctx, dir, key+"\n", "ai", "add", provider); err != nil {
 		return nil, nil, nil, fmt.Errorf("ley ai add %s: %s", provider, strings.ReplaceAll(err.Error(), key, "…"))
 	}
+	// Whatever happens next, the key goes when the run does: a daemon that still writes the
+	// keychain would otherwise leave it there.
+	defer removeKey(env, d, dir, provider)
 	if _, _, err := d.ley(ctx, dir, "", "ai", "use", "assistant", provider, model); err != nil {
 		return nil, nil, nil, fmt.Errorf("ley ai use: %w", err)
 	}
@@ -100,6 +103,16 @@ func runAssistant(ctx context.Context, env Env, d *daemon, dir, prompt string) (
 		env.Log("reading the ledger: %v", err)
 	}
 	return log, stdout, tokens, nil
+}
+
+// removeKey is `ley ai remove` on the run's daemon, on a context of its own, since the run's may
+// have timed out.
+func removeKey(env Env, d *daemon, dir, provider string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, _, err := d.ley(ctx, dir, "", "ai", "remove", provider); err != nil {
+		env.Log("removing the %s key: %v", provider, err)
+	}
 }
 
 // conversationTokens sums the ledger's assistant lines for one conversation.

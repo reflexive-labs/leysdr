@@ -66,6 +66,8 @@ here needs a radio or a person on the air.`,
 			env.ModeChosen = cmd.Flags().Changed("mode")
 			// Read here and passed on stdin to `ley ai add` only; never a flag, which ps shows.
 			env.Key = strings.TrimSpace(os.Getenv(eval.KeyEnv))
+			// Out of the environment every child inherits: the daemon, ley and the agent.
+			_ = os.Unsetenv(eval.KeyEnv)
 			if env.Script != "" {
 				if _, err := os.Stat(env.Script); err != nil {
 					return fmt.Errorf("--scripted: %w", err)
