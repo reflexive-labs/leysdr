@@ -130,6 +130,21 @@ final class AppSession {
             followAudioLevels()
         }
     }
+    /// Whether the assistant's panel is on the window's right, beside the inspector. Remembered
+    /// in the defaults under `assistantShownKey`, as `inspectorShown` is; hidden until someone
+    /// opens it, and drawn only while `hasAnyAI` holds (`assistantPanelShown`).
+    var assistantShown =
+        UserDefaults.standard.object(forKey: AppSession.assistantShownKey) as? Bool ?? false
+    {
+        didSet {
+            if staging == nil {
+                UserDefaults.standard.set(assistantShown, forKey: Self.assistantShownKey)
+            }
+        }
+    }
+    /// Where a view tool centred the zoomed waterfall, while the radio stays tuned where it was
+    /// then (`ViewFocus`); nil centres the window on the tuned frequency, as it always has.
+    private(set) var viewFocus: ViewFocus?
     /// The Library's selected channel row (`RecordingChannel.id`), or nil. While one is selected
     /// and the Library shows, the centre column is that channel's page (`RecordingsPage`), and
     /// the manifests of its recordings are read. Another row, or none, clears the selected part:
@@ -197,6 +212,22 @@ final class AppSession {
             if let n = settingsNotice, n != oldValue { log("shown", "settings: \(n)") }
         }
     }
+    // The assistant (`AssistantController`): the conversation this window started, copied out
+    // of the controller on every change as `state` is copied out of the mirror.
+    @ObservationIgnored private var assistant: AssistantController?
+    /// The conversation as the daemon last sent it, or nil before the first message and after
+    /// New Conversation.
+    private(set) var conversation: Leyline_V1_Conversation?
+    /// Why the last start, message or answer failed, or that the daemon forgot the conversation.
+    private(set) var assistantNotice: AssistantNotice? {
+        didSet {
+            if let n = assistantNotice, n != oldValue { log("shown", "assistant: \(n.text)") }
+        }
+    }
+    /// A start or a message is on its way, and the field waits.
+    private(set) var assistantSending = false
+    /// The daemon no longer knows the conversation shown; only a new one can follow.
+    private(set) var assistantLost = false
     /// The empty-state and out-of-capture messages last logged, so a change logs one line.
     private var shownEmptyWords: String?
     private var shownOutOfCapture: String?
@@ -320,6 +351,7 @@ final class AppSession {
     }
     private static let inspectorShownKey = "inspectorShown"
     private static let placeKey = "place"
+    private static let assistantShownKey = "assistantShown"
 
     // MARK: Derived
 
@@ -609,16 +641,14 @@ final class AppSession {
     var fineStepHz: UInt32 { band?.fineStepHz ?? 1_000 }
 
     /// The frequencies the spectrum and waterfall show: the capture's span at zoom 1, a window
-    /// of it centred on the tuned frequency when zoomed, clamped inside the capture.
+    /// of it when zoomed, centred on where the assistant's `show_band` put it while the radio
+    /// stays tuned there and on the tuned frequency otherwise, clamped inside the capture
+    /// (`ViewWindow.visible`).
     var visibleRange: ClosedRange<UInt64>? {
-        guard let cap = capture, cap.sampleRate > 0 else { return nil }
-        let span = cap.sampleRate
-        let lo = cap.centerHz > span / 2 ? cap.centerHz - span / 2 : 0
-        let hi = cap.centerHz + span / 2
-        if zoom <= 1 { return lo...hi }
-        let width = span / UInt64(zoom)
-        let centre = (tunedHz ?? cap.centerHz).clamped(to: (lo + width / 2)...(hi - width / 2))
-        return (centre - width / 2)...(centre + width / 2)
+        guard let cap = capture else { return nil }
+        let focus = viewFocus?.centre(tunedHz: tunedHz) ?? tunedHz ?? cap.centerHz
+        return ViewWindow.visible(
+            centerHz: cap.centerHz, sampleRate: cap.sampleRate, zoom: zoom, focusHz: focus)
     }
 
     /// The empty-state message, worded as in the guide, shown when there is nothing to draw.
@@ -701,6 +731,11 @@ final class AppSession {
             mirror.onChange = { [weak self] m in self?.mirrorChanged(m) }
             self.mirror = mirror
             self.writes = WriteCoalescer(connection: daemon)
+            let assistant = AssistantController(connection: daemon)
+            assistant.performer = self
+            assistant.onChange = { [weak self] a in self?.assistantChanged(a) }
+            assistant.log = { line in log("assistant", line) }
+            self.assistant = assistant
             running = Task { await mirror.run() }
             await running?.value
         } catch {
@@ -719,6 +754,12 @@ final class AppSession {
         let wasLive = isLive
         state = m.state
         connection = m.connection
+        // The conversation's event, which the watch may not have delivered yet.
+        if let id = assistant?.conversationID,
+            let c = state.conversations.first(where: { $0.conversationID == id })
+        {
+            assistant?.absorb(c)
+        }
         if wasLive != isLive {
             log(
                 "session",
@@ -3553,6 +3594,104 @@ final class AppSession {
         return "Could not \(what): \(e.message.isEmpty ? e.code : e.message)"
     }
 
+    // MARK: The assistant
+
+    /// The panel shows while it is switched on and any AI feature can run (`hasAnyAI`): no AI
+    /// control appears outside Settings until a key or an on-device engine is set
+    /// (`docs/design/ai.md`, "Context").
+    var assistantPanelShown: Bool { assistantShown && hasAnyAI }
+
+    /// A provider is chosen for the assistant (`ley ai use assistant`, or the Settings pane);
+    /// without one a start is refused, so the empty panel says where to choose it.
+    var hasAssistantModel: Bool {
+        state.ai.features.contains { $0.feature == "assistant" && !$0.provider.isEmpty }
+    }
+
+    var conversationView: ConversationView? { conversation.map(ConversationView.init) }
+
+    /// The tokens the conversation shown has used, from the mirror's usage lines.
+    var assistantUsage: UsageSoFar {
+        UsageSoFar(lines: state.usage, conversationID: conversation?.conversationID ?? "")
+    }
+
+    /// The inspector's line under the channel's parameters: the newest change to the tuned
+    /// channel when another client made it (`ChangeNote`).
+    var changeNote: ChangeNote? {
+        guard let ch = channel, let id = daemon?.identity.id else { return nil }
+        return ChangeNote.latest(for: ch, in: state, selfClientID: id)
+    }
+
+    func toggleAssistant() {
+        assistantShown.toggle()
+        log("session", assistantShown ? "assistant shown" : "assistant hidden")
+    }
+
+    /// Starts a conversation with the app's view tools, on the assistant feature's provider and
+    /// model: the request names neither, so the daemon uses the feature's. No key or no model is
+    /// a notice that points to Settings (`AssistantWords.failed`).
+    func startConversation() async {
+        guard let assistant else {
+            assistantNotice = AssistantNotice(text: Self.notDialledWords)
+            return
+        }
+        await assistant.start()
+    }
+
+    /// The field's Return: the message, starting a conversation first when none is going.
+    /// Returns whether the daemon took it, so the field keeps what was typed when it did not.
+    func send(_ text: String) async -> Bool {
+        guard let assistant else {
+            assistantNotice = AssistantNotice(text: Self.notDialledWords)
+            return false
+        }
+        return await assistant.send(text)
+    }
+
+    func approve(callID: String) async {
+        await assistant?.resolve(callID: callID, approve: true)
+    }
+
+    func decline(callID: String) async {
+        await assistant?.resolve(callID: callID, approve: false)
+    }
+
+    func stopTurn() async { await assistant?.stopTurn() }
+    func endConversation() async { await assistant?.end() }
+
+    /// New Conversation: the one shown ends, if it is still going, and the panel empties.
+    func newConversation() async { await assistant?.clear() }
+
+    private func assistantChanged(_ a: AssistantController) {
+        if conversation != a.conversation { conversation = a.conversation }
+        if assistantNotice != a.notice { assistantNotice = a.notice }
+        if assistantSending != a.sending { assistantSending = a.sending }
+        if assistantLost != a.isLost { assistantLost = a.isLost }
+    }
+
+    /// Opens the Library on recording `id` (its job id), and on its part `part` when one is
+    /// given, as a click on its channel's row and then on the part's row would. Returns false
+    /// when the listing has no such recording. A part whose manifest has not been read yet is
+    /// selected anyway; the inspector shows it once the read lands, as after a click.
+    @discardableResult
+    func selectRecording(id: String, part: Int?) -> Bool {
+        guard
+            let row = recordingChannels.first(where: { c in
+                c.recordings.contains { $0.jobID == id }
+            })
+        else { return false }
+        place = .library
+        // A new channel row clears the selected part, so the part is set after it.
+        selectedRecordingChannel = row.id
+        selectedPartURI = part.map { "ley://recordings/\(id)/\($0)" }
+        log("session", "select recording \(id)\(part.map { " part \($0)" } ?? "")")
+        return true
+    }
+
+    /// The Library row's title for recording `id`: its bookmark's name, else its frequency.
+    private func recordingTitle(_ id: String) -> String? {
+        recordingChannels.first { c in c.recordings.contains { $0.jobID == id } }?.title
+    }
+
     // MARK: The daemon's launch agent
 
     /// Registers the launch agent the bundle carries, unless a source build's job holds the label
@@ -3658,4 +3797,36 @@ enum WindowPlace: String, CaseIterable, Identifiable {
     var title: String { self == .radio ? "Radio" : "Library" }
     /// ⌘1 and ⌘2, the View menu's items and the switch's tooltip.
     var shortcut: Character { self == .radio ? "1" : "2" }
+}
+
+/// The view tools the window declares (`AppViewTools`), performed on the main actor when the
+/// assistant calls one. None of them moves the radio: `show_band` zooms and centres the view
+/// inside the span the radio captures and says to tune when the band is outside it (story A19).
+extension AppSession: ViewToolPerformer {
+    func perform(_ request: AppViewTools.Request) async -> ViewToolAnswer {
+        switch request {
+        case .showRange(let lowHz, let highHz, let label):
+            let (answer, fit) = AppViewTools.showRange(
+                lowHz: lowHz, highHz: highHz, label: label, centerHz: capture?.centerHz,
+                sampleRate: capture?.sampleRate ?? 0)
+            if let fit {
+                place = .radio
+                zoom = fit.zoom
+                viewFocus = ViewFocus(hz: fit.focusHz, tunedHz: tunedHz)
+                log("assistant", "view \(fit.shown.lowerBound)-\(fit.shown.upperBound) Hz")
+            }
+            return answer
+        case .selectRecording(let id, let part):
+            if let part, let m = manifests[id], !m.parts.contains(where: { $0.part == part }) {
+                return AppViewTools.unknownRecording(id, part: part)
+            }
+            guard selectRecording(id: id, part: part), let title = recordingTitle(id) else {
+                return AppViewTools.unknownRecording(id)
+            }
+            return AppViewTools.selected(recording: id, part: part, title: title)
+        case .showPlace(let p):
+            place = p == .library ? .library : .radio
+            return AppViewTools.shown(p)
+        }
+    }
 }

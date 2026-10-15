@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // One connection to one daemon: the gRPC client over the Unix socket, the identity interceptor,
-// and the eight typed service clients. Lazy like the Go client (`go/pkg/leyline/client.go`):
+// and the nine typed service clients. Lazy like the Go client (`go/pkg/leyline/client.go`):
 // nothing connects until the first RPC, and a socket with no listener fails that RPC with
 // `UNAVAILABLE`. Everything else in this module is built on it.
 
@@ -25,6 +25,7 @@ public final class DaemonConnection: Sendable {
     public let decoders: Leyline_V1_Decoders.Client<Transport>
     public let credentials: Leyline_V1_Credentials.Client<Transport>
     public let usage: Leyline_V1_Usage.Client<Transport>
+    public let assistant: Leyline_V1_Assistant.Client<Transport>
 
     let client: GRPCClient<Transport>
     private let runner: Task<Void, any Error>
@@ -50,6 +51,7 @@ public final class DaemonConnection: Sendable {
         self.decoders = .init(wrapping: client)
         self.credentials = .init(wrapping: client)
         self.usage = .init(wrapping: client)
+        self.assistant = .init(wrapping: client)
         self.runner = Task { try await client.runConnections() }
     }
 
@@ -116,6 +118,24 @@ public final class DaemonConnection: Sendable {
         pump(bufferingPolicy: .bufferingNewest(buffer)) { deliver in
             try await self.telemetry.subscribe(subscription) { response in
                 for try await msg in response.messages { await deliver(msg) }
+            }
+        }
+    }
+
+    /// `Assistant.WatchConversation` as a stream: the conversation whole on every change, from
+    /// `sinceSeq` on (0 sends the current state first), ending after it delivers `ENDED` or
+    /// `FAILED`. Unbounded, because each message is a whole state and a dropped one would leave a
+    /// question unanswered until the next change.
+    public func conversation(_ id: String, sinceSeq: UInt64 = 0) -> AsyncThrowingStream<
+        Leyline_V1_Conversation, any Error
+    > {
+        var req = Leyline_V1_WatchConversationRequest()
+        req.conversationID = id
+        req.sinceSeq = sinceSeq
+        let request = req
+        return pump(bufferingPolicy: .unbounded) { deliver in
+            try await self.assistant.watchConversation(request) { response in
+                for try await c in response.messages { await deliver(c) }
             }
         }
     }
