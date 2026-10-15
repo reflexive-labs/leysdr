@@ -110,6 +110,13 @@ func Run(ctx context.Context, env Env, s *Scenario, outDir string) *Result {
 		return res
 	}
 	defer d.stop()
+	// From before the fixtures, so the log holds every write of the run and the checks tell the
+	// agent's from the setup's by caused_by.
+	rec, err := startEventRecorder(ctx, d.client, filepath.Join(dir, "events.jsonl"))
+	if err != nil {
+		res.Error = err.Error()
+		return res
+	}
 	for _, f := range s.Fixtures {
 		if err := d.attach(ctx, f); err != nil {
 			res.Error = err.Error()
@@ -140,6 +147,7 @@ func Run(ctx context.Context, env Env, s *Scenario, outDir string) *Result {
 		res.Error = err.Error()
 	}
 	if log != nil {
+		recordWrites(ctx, env, d, rec, dir, log)
 		res.Verdicts = Grade(s, log)
 		res.Metrics = MeasureLog(log)
 		for _, v := range res.Verdicts {
@@ -155,6 +163,36 @@ func Run(ctx context.Context, env Env, s *Scenario, outDir string) *Result {
 		_ = os.WriteFile(filepath.Join(dir, "result.json"), b, 0o644)
 	}
 	return res
+}
+
+// recordWrites ends the event log at the daemon's event_seq now that the agent has exited, and
+// hands the log what no_write reads. A log that could not be finished is left unrecorded, so
+// no_write fails rather than passes on part of one.
+func recordWrites(ctx context.Context, env Env, d *daemon, rec *eventRecorder, dir string, log *Log) {
+	wctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	st, err := d.client.State(wctx)
+	if err != nil {
+		env.Log("reading the daemon's event seq: %v", err)
+		_ = rec.stopAt(wctx, 0)
+		return
+	}
+	if err := rec.stopAt(wctx, st.GetEventSeq()); err != nil {
+		env.Log("the daemon's event log: %v", err)
+		return
+	}
+	f, err := os.Open(filepath.Join(dir, "events.jsonl"))
+	if err != nil {
+		env.Log("the daemon's event log: %v", err)
+		return
+	}
+	defer f.Close()
+	events, err := ReadEvents(f)
+	if err != nil {
+		env.Log("the daemon's event log: %v", err)
+		return
+	}
+	log.DaemonEvents, log.HasDaemonEvents = events, true
 }
 
 // Summary is the table a run ends with, one line per scenario.

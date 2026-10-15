@@ -109,6 +109,10 @@ type Check struct {
 	Tool string `yaml:"tool"`
 	// N is a count bound (max_tool_calls).
 	N int `yaml:"n"`
+	// Kind and Where are no_write's: the kind of object the event changed (job, channel, capture,
+	// device, playback) and field equalities on it (events.go, whereKeys).
+	Kind  string            `yaml:"kind"`
+	Where map[string]string `yaml:"where"`
 	// Why says what the check proves, for the report.
 	Why string `yaml:"why"`
 }
@@ -136,6 +140,11 @@ func Load(path string) (*Scenario, error) {
 	for i, c := range s.Checks {
 		if _, ok := checkers[c.Type]; !ok {
 			return nil, fmt.Errorf("%s: check %d: unknown type %q (known: %s)", path, i+1, c.Type, strings.Join(checkTypes(), ", "))
+		}
+		if c.Type == "no_write" {
+			if err := validateNoWrite(c); err != nil {
+				return nil, fmt.Errorf("%s: check %d: %w", path, i+1, err)
+			}
 		}
 	}
 	for i, f := range s.Fixtures {

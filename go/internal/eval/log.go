@@ -9,6 +9,8 @@ import (
 	"io"
 	"regexp"
 	"strings"
+
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // The agent's message log, as `claude -p --output-format stream-json` writes it: one JSON object
@@ -50,6 +52,11 @@ type Log struct {
 	Usage json.RawMessage `json:"usage,omitempty"`
 	// Lines is the raw stream, one JSON object each, for the transcript and for a replay.
 	Lines []string `json:"-"`
+	// DaemonEvents is the daemon's event log from seq 0 until the agent exited (events.go), what
+	// no_write reads. HasDaemonEvents says it was recorded at all, so a run without one fails
+	// no_write rather than passing it for want of evidence.
+	DaemonEvents    []*leylinev1.Event `json:"-"`
+	HasDaemonEvents bool               `json:"-"`
 }
 
 // ShortTool is a tool's name without the server prefix: "scan".

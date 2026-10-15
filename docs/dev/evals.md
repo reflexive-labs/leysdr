@@ -47,6 +47,10 @@ Each run makes `evals/runs/<timestamp>/<scenario>/` (gitignored) holding:
   read first. `leyeval show <dir>` renders it again, and `leyeval show <any messages.jsonl>`
   renders a stream saved by any means, results and all.
 - `messages.jsonl`: the agent's stream, one JSON object a line, untouched.
+- `events.jsonl`: the daemon's events, one `Event` (proto3 JSON) a line, from seq 0 until the
+  agent exited: the runner subscribes to `WatchEvents` before it attaches the fixtures and stops
+  at the daemon's `event_seq` once the agent has exited, so every write the agent made is in it
+  and so is the setup's, each with its `caused_by`. `no_write` reads it.
 - `prompt.md`, `mcp.json`, `leylined.log`, `radios/`: what the agent was given, how it was pointed
   at the daemon (`ley mcp` with the run's socket and `--log` on the run's log, so `daemon_logs`
   reads this daemon and not the machine's, and `LEYLINE_BOOKMARKS` on the run's
@@ -120,6 +124,26 @@ transcript learns what the check was for without opening the scenario.
 | `no_shell` | the calls | | no call left the MCP tools for the host (`Bash`, the file tools) |
 | `no_tool_errors` | the results | | no tool call came back as an error |
 | `take_over_after_refusal` | calls and results | | `take_over: true` was sent only after a result that refused and said so |
+| `no_write` | `events.jsonl` | `kind`, `where` | no event of that kind meets every `where` clause, whoever caused it; a run with no event log fails |
+
+`no_write` reads what the daemon did rather than what the agent said: `kind` is the event's
+object, one of `job`, `channel`, `capture`, `device` or `playback`, and `where` is a map of
+equalities on it, compared case-insensitively. The keys:
+
+| key | reads | values |
+|---|---|---|
+| `config` | a job's config | `watch`, `scan`, `record`, `decode`, `monitor`. `ley watch` and the `watch` tool start a `decode` job with a notifier, so "a watch" is `notify` |
+| `notify` | a decode job's notifier | `webhook`, `shell`, `macos`, `none`; `any` is every notifier but none |
+| `state` | the object's state | the enum name (`CANCELLED`, `CHANNEL_ACTIVE`) or the part after its last underscore (`active`); a tombstone's is the zero name (`CHANNEL_STATE_UNSPECIFIED`) |
+| `caused_by.kind`, `caused_by.label` | the client the event names as its cause | `mcp` with `ley mcp` when an agent tunes or sets; `cli` with `leyeval` or `ley` for the setup |
+| `created_by.kind`, `created_by.label` | the client that made the object: a job's, capture's or playback's `created_by`, a channel's `owner` | as `caused_by` |
+
+A job's own events are caused by the daemon, and what a job does to channels and captures by the
+job, so a job the agent started is told by `created_by`, and a channel or capture the agent
+changed by `caused_by`. A recording deleted sends no event (the recording is a resource, not
+state), so a deletion is graded by the tool call, or by the cancel a running recording needs
+first. The runner subscribes from seq 0 before the fixtures, so the setup's own writes are in the
+log; a clause on `caused_by` or `created_by` keeps them out where the kind alone would catch them.
 
 Adding a check type is one entry in `checkers` in `go/internal/eval/checks.go`: a function from
 the check, the scenario, the log and the parsed answer to a verdict. `Check`'s fields are the
