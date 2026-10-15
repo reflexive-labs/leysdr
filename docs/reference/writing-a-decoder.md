@@ -163,9 +163,11 @@ Under `input.mode = SEGMENTED` you get one over at a time, never the audio betwe
   carries a `gap` covering it. Stdin closing inside a segment is the job stopping; the segment is
   incomplete.
 
-The daemon fills `over` on your records: within a recording part, the index of the segment's
-first opening in the part's `squelch_opens`; on a live job, the count of segments since the job
-began. It fills `clip_uri` with the recording part that holds the audio when there is one.
+The daemon fills `clip_uri` and `over` on your records: `clip_uri` is the recording part that
+holds the segment's audio, and `over` the index of the segment's first opening in that part's
+`squelch_opens`. On a live job the recording is the one the daemon writes of the channel under the
+job's id, so a record from a live job and one from transcribing that recording later name the same
+part and over.
 
 ### Reading a stored recording
 

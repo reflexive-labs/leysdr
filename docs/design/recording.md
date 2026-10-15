@@ -42,6 +42,16 @@ part length is two parts, contiguous on the sample timebase.
 This is the shape the semantic-tier doc gives a watch job's transcript, so when the durable job store builds the
 watch job its `record_clips` is this sink and this manifest, not a second format.
 
+**A live speech job's clips are a recording.** A decode job whose decoder reads overs (a
+`SEGMENTED` manifest, such as `speech`) on a live channel writes a gated audio recording of that
+channel under its own id, with the standard gate, so `ley://recordings/<job_id>` holds the audio
+and `ley://records/<job_id>` the words. Each record's `clip_uri` names the part that holds its
+over and `over` that over's index in the part's `squelch_opens`, which is what transcribing the
+recording later reproduces. The recorder reads the job's own channel, so the job allocates once.
+The recording follows the job's intent (invariant 8): kept with the job's `keep`, deleted when an
+unkept job ends, and the one recording that a daemon restart does not end, since a resumed kept
+job carries it on with new parts under the same id (docs/dev/engine-internals.md, "Decoders").
+
 **Time is never edited.** Silence is not removed from a file; the file is not written while the
 squelch is closed, and each part records where on the capture's timeline it starts. A recording
 that is played back therefore keeps the original timing, with the gaps between parts stated in the
@@ -448,7 +458,7 @@ runner closes the open part, records a coverage gap, marks the job `DEGRADED`, a
 a new part when the capture comes back to cover it. It does not hunt for another device; that
 rebinding belongs to the durable job store, and the control-plane doc's "the human is never blocked by a job" is
 honoured by degrading, not refusing. A device detach is the same story through the capture's
-`detached` state. A daemon restart does not resume a recording: the next daemon finds the job in
+`detached` state. A daemon restart does not resume a record job's recording: the next daemon finds the job in
 `kept-jobs.json`, repairs the last part's WAV header from the file length, closes the manifest
 with `ended_by = restart`, and marks the job `COMPLETED` with "ended by a daemon restart". A
 recording is a bounded artefact; whoever wanted a longer one starts another. The reserved

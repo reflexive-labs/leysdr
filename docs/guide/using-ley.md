@@ -951,6 +951,34 @@ contract every decoder speaks is in
 the others (ADS-B aircraft, 433 MHz sensors, FT8) is `docs/plans/decoders.md`, and `ley help
 roadmap` names what is next.
 
+### Listening with words
+
+`ley decode speech` transcribes a channel as it plays, one line per over, the way `ley transcribe`
+does a recording. Speech has no frequency of its own, so `--freq` says where to listen. While it
+runs, the daemon records the overs as a gated recording under the job's id, so each line names the
+part and the over that hold the words, and `ley play` plays them when one looks doubtful. This was
+recorded against the real daemon playing the `nfm_keyed` fixture, with the scripted engine
+reading three lines:
+
+```console
+$ ley decode speech --freq 146.62 --job --count 2
+decoding speech on 146.620 MHz. The overs are recorded as ley://recordings/job_01M4YPPH53MVHM3WWX83TDNP0A. kept: it runs on after ley exits
+02:36:45 part 1 over 1  this is whiskey six alpha bravo charlie (W6ABC)
+02:36:48 part 1 over 2  kilo delta two x-ray yankee zulu, go ahead (KD2XYZ)
+left running; ley jobs cancel 2 stops it
+$ ley records --protocol speech
+TIME      PROTOCOL  DEVICE  KIND  CLIP  SUMMARY
+02:36:47  speech    -       -     1/2   kilo delta two x-ray yankee zulu, go ahead
+02:36:43  speech    -       -     1/1   this is whiskey six alpha bravo charlie
+```
+
+With `--job` the job transcribes until `ley jobs cancel`, and the words and the recording are both
+kept; without it, the recording goes when the job ends. Once the job has ended, `ley transcribe`
+can read its recording again with another model and gives the same parts and overs. A watch works
+on the words too: `ley watch speech --freq 146.52 --where 'text~net control' --notify --detach`
+shows a notification whenever an over says "net control", since `~` matches whole words in order
+and ignores case.
+
 ## 13. For scripts and agents
 
 `ley help scripting` is the authoritative short version; every `--json` shape and exit code is

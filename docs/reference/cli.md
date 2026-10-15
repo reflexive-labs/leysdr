@@ -54,9 +54,12 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # Jobs.StartJob(DecodeConfig): the daemon finds or makes the capture,
 │                                    # adds the channel the job owns and spawns the plugin; records arrive
 │                                    # on Decoders.SubscribeRecords, one line each; --job keeps them as
-│                                    # the resource ley://records/<job_id>
+│                                    # the resource ley://records/<job_id>; a decoder with no frequency
+│                                    # of its own (speech) needs --freq; speech also records its overs
+│                                    # as ley://recordings/<job_id>, kept only with --job
 ├── records [--protocol P] [--job-id ID] [--device-id ID] [--kind K] [--since 1h] [--near LAT,LON --radius 10km] [--in-effect] [--limit N]
-│                                    # Decoders.QueryRecords over what kept jobs wrote, newest first
+│                                    # Decoders.QueryRecords over what kept jobs wrote, newest first;
+│                                    # a CLIP column (<part>/<over>) when a record names a clip
 ├── transcribe <recording> [--engine D] [--model M] [--yes]
 │                                    # a kept decode job with DecodeConfig.source_uri: a speech decoder reads
 │                                    # a gated recording one over at a time; states the minutes of
@@ -244,14 +247,21 @@ band table from `app/Sources/LeylineClient/Resources/bands.json`, the checked-in
 found, the directories it looked in, and the store's path, cap and age. `ley decode <name> --json`
 prints one `DecodeRecord` per line (NDJSON) and nothing else on stdout; the banner naming the
 decoder, the frequency and the channel it got is stderr prose, as is the line a `--job` run ends
-with. `ley watch <decoder> --json` prints the same NDJSON `DecodeRecord`s as `decode`, but only
+with. A decoder whose manifest names no frequency (`speech`) needs `--freq`, and `decode` and
+`watch` refuse it without one as a usage error naming the flag. `ley decode speech --freq F`
+prints each over as `ley transcribe` does, `HH:MM:SS part P over O  <text> (<callsigns>)`, from the
+record's `clip_uri` and `over`: a live speech job records its overs as a gated recording under its
+own id, which the banner names (`ley://recordings/<job_id>`, listed in `Job.result_uris`), kept
+with `--job` and deleted when an unkept job ends. `ley watch <decoder> --json` prints the same NDJSON `DecodeRecord`s as `decode`, but only
 the ones its predicate matched: `--where field=value` (with `!=`, `~` for contains, and `>`, `>=`,
-`<`, `<=` numeric), `--county FIPS` (a `PRED_CONTAINS` on the `fips` field, repeatable; the five-digit FIPS code or the six-digit SAME code, whose leading part digit is dropped), and
+`<`, `<=` numeric; `~` matches a whole word or words in order, ignoring case, so `ley watch speech
+--freq 146.52 --where 'text~net control' --notify --detach` fires on the over that says it), `--county FIPS` (a `PRED_CONTAINS` on the `fips` field, repeatable; the five-digit FIPS code or the six-digit SAME code, whose leading part digit is dropped), and
 `--near LAT,LON --radius R` (a `GeoTest`) become a `DecodeConfig.predicate`; `--notify` (bare for a
 macOS notification, `--notify=webhook:URL` or `--notify=shell:CMD`) becomes a
 `DecodeConfig.notify` the daemon fires on each match. Attached it streams and cancels on exit;
 `--detach` (alias `--job`) keeps the job so the notifier fires unattended, printing the id and
-`ley jobs cancel` on stderr. `ley records --json` prints a `RecordPage`: the records newest first plus the
+`ley jobs cancel` on stderr. The `ley records` table adds a CLIP column, `<part>/<over>` of the
+recording named by the record's `clip_uri`, when any record on the page has one. `ley records --json` prints a `RecordPage`: the records newest first plus the
 `RecordAnchor`s that date them, because no record carries a clock of its own and wall time is
 derived from the anchor whose `from_sample` is not past the record's (`docs/design/decoders.md`,
 "Decisions"). `ley track --json` is the fourth documented exception to the proto3 rule, beside the

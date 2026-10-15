@@ -950,10 +950,44 @@ START the pipe cannot take skips the segment, an END it cannot take is owed befo
 and a restarted plugin gets nothing of a segment opened on the one before. A segmented job's own
 channel gets the recorder's auto squelch when it has none, because a squelch that is off has no
 edges; when no level can be measured, or the channel refuses it, the job runs `DEGRADED` with
-"no level measured; squelch left as it was" (or the refusal) for its whole run. A record from a
-live segmented job carries `over`, the 1-based count of segments since the job began, matched by
-the record's `time` to the newest segment that started at or before it, or less than 1 ms after
-it (`Segmenter.overTolerance`), so a plugin's rounding does not move a record into the over before.
+"no level measured; squelch left as it was" (or the refusal) for its whole run.
+
+**The clips.** A live segmented job also records its channel as a gated audio recording under its
+own id (`Jobs/LiveClips.swift`), so `ley://recordings/<job_id>` holds the audio of the overs whose
+words `ley://records/<job_id>` holds. The recorder is `RecordRunner` itself, driven as a component
+rather than through a record job: `JobStore.openClips` builds it on a `BorrowedChannelLease` over
+the decode job's own `ChannelLease`, so the job makes one allocation and the channel carries two
+sinks, the decoder's and the recorder's (invariant 9). Its gate is a record job's default, 500 ms
+of pre-roll, a 5 s hang and one part per exchange, with the sidecar's `squelch_opens` and the
+manifest's `squelch_open_ms` as any gated recording has them. The recorder starts before the
+decoder's sink is attached, so its first frame is never later than the segmenter's, and it stops
+before the lease is released. Its status is not the job's: the job's state is the decoder's, and
+a recorder that stops on its own (a full disk) is logged while the words go on without clips. The
+job's `result_uris` lists `ley://recordings/<job_id>` while it runs, after `ley://records/<job_id>`
+when it is kept.
+
+A record from a live segmented job carries `clip_uri`, the part that holds its segment, and
+`over`, the 1-based index of the segment's first opening in that part's `squelch_opens`: the
+stored path's rule, so transcribing the clips later gives the same overs. The record's `time` finds
+its segment, the newest that started at or before it or less than 1 ms after it
+(`Segmenter.overTolerance`), so a plugin's rounding does not move a record into the over before.
+The segment's first sample then finds the opening (`PartWriter.clip(forSegmentAt:)`): the first
+interval in the recording that was still open at that sample. A segment reaches back a pre-roll
+before its first opening and never before the previous segment ended, a hang after that segment's
+last close, so every earlier interval had closed by then. The recorder's part boundaries (a 5 s
+hang) and the segmenter's (500 ms) differ by design; `over` indexes openings, which both read from
+the same squelch records. A record waits up to 2 s for a recorder that has not reached its opening
+yet, and goes out with no clip and `over` 0 if it never does. The writer keeps the intervals of the
+last 64 closed parts for this.
+
+The clips persist only when the job is kept (invariant 8): an unkept job's recording is deleted
+when the job ends, however it ends, a daemon shutdown included. A kept job the daemon takes down
+closes its recording with `ended_by = restart`; when `kept-jobs.json` brings the job back,
+`RecordingStore.carryOn` opens the same recording again, clears `ended_by`, adds the new capture's
+anchor beside the old, and numbers the new parts after the old ones. A kept job whose recording is
+gone (the last run heard nothing, or retention took it) starts a new one under the same id. A
+recording whose job is still running cannot be decoded (`FAILED_PRECONDITION`) or deleted, so
+`ley transcribe <job_id>` reads the clips once the job has been cancelled.
 
 **A stored recording.** `DecodeConfig.source_uri = ley://recordings/<id>` decodes an audio
 recording instead of a radio (`Jobs/RecordingSource.swift`). `startDecode` reads the manifest and
@@ -1078,7 +1112,8 @@ reading a running recording always sees a consistent file. `RecordingStore` is t
 20 GiB; `--recordings-age`, default 0) and the restart repair: at boot, any manifest with no
 `ended_by` has its unlisted part files' headers patched from their lengths, those parts joined to
 it, and `ended_by = restart` written. A recording is a bounded artefact and does not resume;
-whoever wanted a longer one starts another. Retention runs when a recording opens and when one
+whoever wanted a longer one starts another. The one exception is a kept speech job's clips, which
+go on with the job ("Decoders", "The clips"). Retention runs when a recording opens and when one
 ends, and never removes a recording whose job is running.
 
 **Playing one back.** `PlaybackEngine` (`Recording/PlaybackEngine.swift`) is the one place the

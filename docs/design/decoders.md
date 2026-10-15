@@ -166,8 +166,10 @@ there is no second mechanism.
 ## 7. Predicates and delivery
 
 `DecodeConfig.predicate` is a daemon-side filter evaluated before a record is published or stored.
-Field equality, inequality, substring, numeric comparison, geographic radius and county matching
-are implemented. `ley watch` builds these predicates from `--where`, `--near` and `--county`.
+Field equality, inequality, containment, numeric comparison, geographic radius and county matching
+are implemented. Containment splits the field into words at commas, spaces and hyphens and matches
+a value as a whole word or as words in order, ignoring case: a FIPS code in a SAME county list, or
+"net control" in a speech record's text, but never part of a word. `ley watch` builds these predicates from `--where`, `--near` and `--county`.
 
 `DecodeConfig.notify` runs for each match. The daemon supports macOS notifications, HTTP webhooks
 and shell commands, so a kept watch can notify with no client attached. Stateful predicates that
