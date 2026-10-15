@@ -65,7 +65,7 @@ func TestKeepSpeechModelRestores(t *testing.T) {
 		previous *leylinev1.FeatureModel
 	}{
 		{"none before", nil},
-		{"a model before", &leylinev1.FeatureModel{Feature: "speech", Provider: "deepgram", Model: "nova-3"}},
+		{"a model before", &leylinev1.FeatureModel{Feature: "speech", Provider: "openai", Model: "gpt-4o-transcribe"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := fakeSession(t)
