@@ -603,10 +603,11 @@ stdout.
 
 `--engine` picks the speech decoder, by name or alias (default `speech`); a decoder whose input is
 not `SEGMENTED` is a usage error. `--model` sets the speech feature's model for the decoder's
-provider, as `ley ai use speech <provider> <model>` does, once the job has started, so a job the
-daemon refuses changes nothing. The daemon passes the model to the decoder when it starts it, so
-the job `--model` is given on runs with the model set before it, and later jobs run with this one;
-the statement says so. It is a usage error with a decoder that calls no provider. A decoder whose manifest names a provider with
+provider, as `ley ai use speech <provider> <model>` does, before the job starts, because the
+daemon passes the speech model to the decoder when it starts it; this job and later ones use it,
+and the statement says so. When the daemon refuses the job, `ley` puts the previous choice back,
+or clears it (`SetFeatureModel` with an empty provider and model) when there was none. It is a
+usage error with a decoder that calls no provider. A decoder whose manifest names a provider with
 no key set is refused by the daemon with `CREDENTIAL_MISSING`, whose message names `ley ai add`. A
 recording that lists no squelch openings (one recorded without `--gate squelch`) and an IQ
 recording are refused before anything is asked, each with the `ley record` command that makes one

@@ -50,10 +50,9 @@ and transcribing again with another model adds records beside these.
 
 --engine picks the speech decoder ('ley decoders' lists them; the default is
 speech). --model sets the model the speech feature uses with the decoder's
-provider, as 'ley ai use speech' does, once the job has started. The daemon
-fixes a job's model when it starts the decoder, so this job runs with the
-model set before it and later jobs with this one; a decoder that calls no
-provider has no model to choose.
+provider, as 'ley ai use speech' does, so this job and later ones use it; if
+the daemon refuses the job, the previous choice is put back. A decoder that
+calls no provider has no model to choose.
 
 The recording is a job id, an id prefix, or a ley://recordings/ URI.
 
@@ -79,7 +78,7 @@ The recording is a job id, an id prefix, or a ley://recordings/ URI.
 		},
 	}
 	cmd.Flags().StringVar(&o.decoder, "engine", "speech", "the speech decoder to run ('ley decoders' lists them)")
-	cmd.Flags().StringVar(&o.model, "model", "", "the speech model for later jobs, set once this one starts, as 'ley ai use speech' sets it")
+	cmd.Flags().StringVar(&o.model, "model", "", "the speech model for this and later jobs, as 'ley ai use speech' sets it")
 	cmd.Flags().BoolVarP(&o.yes, "yes", "y", false, "start without asking")
 	return cmd
 }
@@ -101,20 +100,51 @@ func runTranscribe(ctx context.Context, s *verbSession, o transcribeOptions) err
 	if ok, err := confirmTranscribe(s, run, open, o); !ok || err != nil {
 		return err
 	}
+	// The daemon hands the speech model to the decoder when it starts it, so --model is set
+	// before the job and put back if the job is refused.
+	restore, err := setSpeechModel(ctx, s, run, o.model)
+	if err != nil {
+		return err
+	}
 	job, err := s.Client.StartDecode(ctx, &leylinev1.DecodeConfig{
 		Decoder: run.decoder.GetName(), SourceUri: leyline.RecordingURI(run.jobID), Keep: true,
 	})
 	if err != nil {
+		restore()
 		return decodeFailure(s, decodeOptions{decoder: run.decoder.GetName()}, err)
 	}
-	// Set only once the job is running, so a refused job leaves the speech feature as it was.
-	if o.model != "" {
-		fm := &leylinev1.FeatureModel{Feature: "speech", Provider: run.decoder.GetCredentialProvider(), Model: o.model}
-		if _, err := s.Client.Credentials.SetFeatureModel(ctx, fm); err != nil {
-			return err
+	return followTranscribe(ctx, s, run, job)
+}
+
+// setSpeechModel makes model the speech feature's model for the decoder's provider and returns
+// the function that puts the previous choice back, or clears it when there was none. With no
+// model it changes nothing.
+func setSpeechModel(ctx context.Context, s *verbSession, run *transcribeRun, model string) (func(), error) {
+	if model == "" {
+		return func() {}, nil
+	}
+	st, err := s.Client.Credentials.GetAIState(ctx, &leylinev1.GetAIStateRequest{})
+	if err != nil {
+		return nil, err
+	}
+	previous := &leylinev1.FeatureModel{Feature: "speech"} // empty provider and model clear it
+	for _, f := range st.GetFeatures() {
+		if f.GetFeature() == "speech" {
+			previous = f
 		}
 	}
-	return followTranscribe(ctx, s, run, job)
+	fm := &leylinev1.FeatureModel{Feature: "speech", Provider: run.decoder.GetCredentialProvider(), Model: model}
+	if _, err := s.Client.Credentials.SetFeatureModel(ctx, fm); err != nil {
+		return nil, err
+	}
+	return func() {
+		cctx, cancel := session.CleanupContext(ctx, confirmTimeout)
+		defer cancel()
+		if _, err := s.Client.Credentials.SetFeatureModel(cctx, previous); err != nil {
+			s.say("the speech model is still %s: %s puts it back\n", model,
+				s.app.ErrStyle.Cmd("ley ai use speech "+previous.GetProvider()+" "+previous.GetModel()))
+		}
+	}, nil
 }
 
 // confirmTranscribe states what will be sent and where, and asks unless --yes. Without a terminal
@@ -232,7 +262,7 @@ func transcribeStatement(lead string, run *transcribeRun, open time.Duration, mo
 	statement := fmt.Sprintf("%s %s, %.1f min of squelch-open audio from %s %s, with %s (%s)", lead,
 		words.Count(len(m.Parts), "part"), open.Minutes(), units.FormatFrequency(m.FrequencyHz), m.Mode, with, where)
 	if model != "" {
-		statement += "; the speech model becomes " + model + " for later jobs"
+		statement += "; the speech model is set to " + model + " for this and later jobs"
 	}
 	return statement
 }

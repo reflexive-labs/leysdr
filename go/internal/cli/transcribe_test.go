@@ -170,6 +170,10 @@ func TestTranscribeNamesTheHostAndNeedsTheKey(t *testing.T) {
 	opts := transcribeOpts(t, false)
 	opts.SpeechProvider, opts.SpeechHosts = "deepgram", []string{"api.deepgram.com"}
 	sock, c := harness(t, opts)
+	// A speech model chosen earlier is what a refused job leaves in place.
+	if _, err := c.Credentials.SetFeatureModel(t.Context(), &leylinev1.FeatureModel{Feature: "speech", Provider: "deepgram", Model: "nova-2"}); err != nil {
+		t.Fatal(err)
+	}
 	_, errOut, err := runLey(t, sock, 80, false, "", "transcribe", transcribeID, "--yes", "--model", "nova-3")
 	if exitCode(err) != 1 || leyline.Code(err) != leyline.CodeCredentialMissing || !strings.Contains(err.Error(), "ley ai add deepgram") {
 		t.Errorf("want CREDENTIAL_MISSING naming ley ai add deepgram, got exit %d: %v", exitCode(err), err)
@@ -189,28 +193,45 @@ func TestTranscribeNamesTheHostAndNeedsTheKey(t *testing.T) {
 		}
 		return ""
 	}
-	if m := speechModel(); m != "" {
-		t.Errorf("a refused job set the speech model to %q", m)
+	if m := speechModel(); m != "nova-2" {
+		t.Errorf("a refused job left the speech model at %q, want nova-2 put back", m)
 	}
 
-	// With a key, --model becomes the speech model once the job has started. The daemon fixed this
-	// job's model when it started the plugin, so the next job is the first to carry it.
+	// With a key, --model becomes the speech model before the job starts, so its records carry it.
 	if _, err := c.Credentials.SetCredential(t.Context(), &leylinev1.SetCredentialRequest{Provider: "deepgram", Secret: "dg-1234"}); err != nil {
 		t.Fatal(err)
 	}
-	_, errOut, err = runLey(t, sock, 80, false, "", "--json", "transcribe", transcribeID, "--yes", "--model", "nova-3")
+	out, errOut, err := runLey(t, sock, 80, false, "", "--json", "transcribe", transcribeID, "--yes", "--model", "nova-3")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, errOut)
 	}
-	if !strings.Contains(errOut, "with speech, model nova-3 (sends the audio to api.deepgram.com); the speech model becomes nova-3 for later jobs.") {
-		t.Errorf("--model: stderr\n%s", errOut)
+	if !strings.Contains(errOut, "with speech, model nova-3 (sends the audio to api.deepgram.com); the speech model is set to nova-3 for this and later jobs.") ||
+		strings.Count(out, `"model":{"text":"nova-3"}`) != 3 {
+		t.Errorf("--model: stderr\n%s\nstdout\n%s", errOut, out)
 	}
 	if m := speechModel(); m != "nova-3" {
 		t.Errorf("the speech model is %q, want nova-3", m)
 	}
-	out, _, err := runLey(t, sock, 80, false, "", "--json", "transcribe", transcribeID, "--yes")
-	if err != nil || strings.Count(out, `"model":{"text":"nova-3"}`) != 3 {
-		t.Errorf("the next job does not use nova-3: %v\n%s", err, out)
+}
+
+// A refused job with --model and no speech model chosen before clears the choice again.
+func TestTranscribeClearsTheModelItSetWhenRefused(t *testing.T) {
+	t.Parallel()
+	opts := transcribeOpts(t, false)
+	opts.SpeechProvider = "deepgram"
+	sock, c := harness(t, opts)
+	_, _, err := runLey(t, sock, 80, false, "", "transcribe", transcribeID, "--yes", "--model", "nova-3")
+	if leyline.Code(err) != leyline.CodeCredentialMissing {
+		t.Fatalf("want CREDENTIAL_MISSING, got %v", err)
+	}
+	st, err := c.Credentials.GetAIState(t.Context(), &leylinev1.GetAIStateRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range st.GetFeatures() {
+		if f.GetFeature() == "speech" {
+			t.Errorf("a refused job left a speech model: %v", f)
+		}
 	}
 }
 

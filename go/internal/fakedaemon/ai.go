@@ -241,14 +241,20 @@ func (d *Daemon) SetFeatureModel(ctx context.Context, req *leylinev1.FeatureMode
 		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, req.GetFeature(),
 			fmt.Sprintf("no feature named %q; the features are assistant and speech", req.GetFeature())))
 	}
-	if req.GetProvider() == "" || req.GetModel() == "" {
+	clearing := req.GetProvider() == "" && req.GetModel() == ""
+	if !clearing && (req.GetProvider() == "" || req.GetModel() == "") {
 		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, req.GetFeature(),
 			"a feature needs a provider and a model: ley ai use "+req.GetFeature()+" anthropic <model>"))
 	}
 	fm := &leylinev1.FeatureModel{Feature: req.GetFeature(), Provider: req.GetProvider(), Model: req.GetModel()}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.ai.features[fm.Feature] = fm
+	// An empty provider and model clear the feature's choice, as the daemon does.
+	if clearing {
+		delete(d.ai.features, fm.Feature)
+	} else {
+		d.ai.features[fm.Feature] = fm
+	}
 	d.emit(ci, d.aiSnapshot())
 	return proto.Clone(fm).(*leylinev1.FeatureModel), nil
 }
