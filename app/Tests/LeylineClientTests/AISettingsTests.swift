@@ -162,7 +162,9 @@ final class AISettingsTests: XCTestCase {
         XCTAssertEqual(rows[1].provider, "")
         XCTAssertEqual(rows[1].privacy, "Sends nothing until a provider is chosen.")
         XCTAssertNil(rows[1].missingKey)
-        XCTAssertTrue(rows[1].choices.isEmpty, "no speech provider is offered yet")
+        XCTAssertEqual(
+            rows[1].choices.map(\.provider.id), ["openai"],
+            "only an OpenAI key serves speech, through the bundled decoder")
     }
 
     func testAFeatureWithItsKeySetNamesNoMissingKeyAndUsesTheKeysEndpoint() {
@@ -190,6 +192,18 @@ final class AISettingsTests: XCTestCase {
         XCTAssertFalse(ProviderCatalog.anthropic.takesEndpoint)
         XCTAssertTrue(ProviderCatalog.openAICompatible.takesEndpoint)
         XCTAssertTrue(ProviderCatalog.speech.isEmpty)
+    }
+
+    /// The defaults the daemon sets on an added key; Go's TestProviderTablesAgree holds this
+    /// literal equal to the daemon's and `ley`'s.
+    func testTheCatalogKnowsTheDefaultModelOfEveryFeatureItServes() {
+        XCTAssertEqual(ProviderCatalog.anthropic.defaultModels, ["assistant": "claude-sonnet-5-5"])
+        XCTAssertEqual(
+            ProviderCatalog.openAICompatible.defaultModels,
+            ["assistant": "gpt-5", "speech": "whisper-1"])
+        for p in ProviderCatalog.all {
+            XCTAssertEqual(Set(p.defaultModels.keys), Set(p.features), p.id)
+        }
     }
 
     // MARK: Whether any AI feature can run

@@ -13,7 +13,7 @@ import Foundation
 import LeylineProto
 
 /// A provider the pane offers: a kind of endpoint, the features it can serve, the models it
-/// offers by default, and where its calls go.
+/// offers, and where its calls go.
 public struct AIProvider: Equatable, Sendable, Identifiable {
     /// Where a provider's calls go: a host on the internet, or nowhere off the Mac.
     public enum Reach: Equatable, Sendable {
@@ -25,6 +25,11 @@ public struct AIProvider: Equatable, Sendable, Identifiable {
     public let id: String
     public let name: String
     public let features: [String]
+    /// The model each feature gets when this provider's key is added and the feature has none.
+    /// The daemon sets it from its own table (`ProviderDefaults.swift`), and the pane shows the
+    /// result; it is here so the catalogue cannot drift from that table unnoticed (Go's
+    /// `TestProviderTablesAgree` reads both and `go/pkg/leyline/providers.go`).
+    public let defaultModels: [String: String]
     /// The models the pane lists; empty means the model is typed, as `ley ai use` takes it.
     public let models: [String]
     public let reach: Reach
@@ -33,12 +38,13 @@ public struct AIProvider: Equatable, Sendable, Identifiable {
     public let takesEndpoint: Bool
 
     public init(
-        id: String, name: String, features: [String], models: [String], reach: Reach,
-        takesEndpoint: Bool
+        id: String, name: String, features: [String], defaultModels: [String: String] = [:],
+        models: [String], reach: Reach, takesEndpoint: Bool
     ) {
         self.id = id
         self.name = name
         self.features = features
+        self.defaultModels = defaultModels
         self.models = models
         self.reach = reach
         self.takesEndpoint = takesEndpoint
@@ -52,13 +58,17 @@ public struct AIProvider: Equatable, Sendable, Identifiable {
 public enum ProviderCatalog {
     public static let anthropic = AIProvider(
         id: "anthropic", name: "Anthropic", features: ["assistant"],
+        defaultModels: ["assistant": "claude-sonnet-5-5"],
         models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
         reach: .cloud(host: "api.anthropic.com"), takesEndpoint: false)
-    /// OpenAI's API or any server that speaks it; the endpoint names the server.
+    /// OpenAI's API or any server that speaks it; the endpoint names the server. Its key serves
+    /// speech too, through the bundled `speech` decoder.
     public static let openAICompatible = AIProvider(
-        id: "openai", name: "OpenAI-compatible", features: ["assistant"], models: [],
+        id: "openai", name: "OpenAI-compatible", features: ["assistant", "speech"],
+        defaultModels: ["assistant": "gpt-5", "speech": "whisper-1"], models: [],
         reach: .cloud(host: "api.openai.com"), takesEndpoint: true)
-    /// None yet: the speech engine is chosen by measurement, so no provider is offered before it.
+    /// Providers for speech alone. None yet: a dedicated speech engine is chosen by measurement,
+    /// so none is offered before it.
     public static let speech: [AIProvider] = []
 
     public static let all: [AIProvider] = [anthropic, openAICompatible] + speech
