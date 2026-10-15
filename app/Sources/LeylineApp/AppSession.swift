@@ -4195,6 +4195,7 @@ extension AppSession: ViewToolPerformer {
             return AppViewTools.shown(p)
         }
     }
+}
 
 /// Transcribe's question while it is asked: the recording, the model chosen (empty for the
 /// speech feature's own) and `ley transcribe`'s words.
