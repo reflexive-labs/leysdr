@@ -79,3 +79,34 @@ func TestDecodePredicateCountyContains(t *testing.T) {
 		t.Fatal("no county match arrived")
 	}
 }
+
+// TestContainsMatchesWordsInOrder mirrors the Swift PredicateEvalTests table for PRED_CONTAINS:
+// a value matches a whole token of the field, or its tokens appear consecutive and in order,
+// case-folded; part of a word, the words reordered and an empty value never match.
+func TestContainsMatchesWordsInOrder(t *testing.T) {
+	said := &leylinev1.DecodeRecord{Fields: map[string]*leylinev1.FieldValue{
+		"text": {Value: &leylinev1.FieldValue_Text{Text: "This is the Net Control station for tonight"}},
+		"fips": {Value: &leylinev1.FieldValue_Text{Text: "006001-006013"}},
+	}}
+	for _, tc := range []struct {
+		field, value string
+		want         bool
+	}{
+		{"text", "net control", true},
+		{"text", "NET", true},
+		{"text", "control net", false},
+		{"text", "contr", false},
+		{"text", "", false},
+		{"fips", "006013", true},
+		{"fips", "06001", false},
+		{"fips", "006009", false},
+	} {
+		pred := &leylinev1.Predicate{All: []*leylinev1.Clause{{Test: &leylinev1.Clause_Field{Field: &leylinev1.FieldTest{
+			Field: tc.field, Op: leylinev1.PredicateOp_PRED_CONTAINS,
+			Values: []*leylinev1.FieldValue{{Value: &leylinev1.FieldValue_Text{Text: tc.value}}},
+		}}}}}
+		if got := fakedaemon.MatchPredicate(pred, said); got != tc.want {
+			t.Errorf("%s~%q: %v, want %v", tc.field, tc.value, got, tc.want)
+		}
+	}
+}

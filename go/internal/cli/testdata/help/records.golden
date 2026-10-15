@@ -5,7 +5,7 @@ nothing, so an empty table usually means no kept job has run.
 Rows are newest first. TIME is wall clock derived from the capture's anchor,
 the way every time in ley is; a record whose capture the daemon no longer has
 an anchor for shows no time rather than a guessed one. Speech records add
-CLIP, the part and over of the recording that holds the words' audio:
+OVER, the part and over of the recording that holds the words' audio:
 3/2 is the second over in part 3, which 'ley play' plays.
 
 --since takes a duration: 90s, 30m, 1h, 2d. --near takes a latitude and a

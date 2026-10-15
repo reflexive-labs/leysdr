@@ -81,7 +81,7 @@ func TestDecodeSpeechOnTheAir(t *testing.T) {
 }
 
 // A kept job's clips stay a resource: ley recordings lists them, and ley records shows each
-// record's CLIP as part/over beside its words.
+// record's OVER as part/over beside its words, DEVICE going first when the terminal is narrow.
 func TestDecodeSpeechKeepsItsClips(t *testing.T) {
 	t.Parallel()
 	opts := speechLiveOpts(t)
@@ -110,15 +110,35 @@ func TestDecodeSpeechKeepsItsClips(t *testing.T) {
 	if !strings.Contains(listed, id[:12]) && !strings.Contains(listed, id) {
 		t.Errorf("ley recordings does not list the kept job's clips:\n%s", listed)
 	}
-	table := mustRun(t, sock, "records", "--protocol", "speech")
-	for _, want := range []string{"CLIP", "1/1", "2/1", "3/1", "net control", "bravo two"} {
-		if !strings.Contains(table, want) {
-			t.Errorf("ley records --protocol speech lacks %q:\n%s", want, table)
+	for _, width := range []int{40, 80, 160} {
+		table, errOut, err := runLey(t, sock, width, false, "", "records", "--protocol", "speech")
+		if err != nil {
+			t.Fatalf("ley records at %d: %v\n%s", width, err, errOut)
+		}
+		t.Logf("ley records --protocol speech at %d columns:\n%s", width, table)
+		for _, want := range []string{"OVER", "1/1", "2/1", "3/1"} {
+			if !strings.Contains(table, want) {
+				t.Errorf("ley records --protocol speech at %d columns lacks %q:\n%s", width, want, table)
+			}
+		}
+		if width >= 80 && !strings.Contains(table, "bravo two") {
+			t.Errorf("at %d columns the words fit:\n%s", width, table)
+		}
+		if width == 40 && strings.Contains(table, "DEVICE") {
+			t.Errorf("at 40 columns DEVICE, empty on every speech row, goes first:\n%s", table)
+		}
+		if width == 160 && !strings.Contains(table, "DEVICE") {
+			t.Errorf("at 160 columns every column fits:\n%s", table)
+		}
+		for _, line := range strings.Split(strings.TrimRight(table, "\n"), "\n") {
+			if n := len([]rune(line)); n > width {
+				t.Errorf("a line of %d runes at %d columns: %q", n, width, line)
+			}
 		}
 	}
 	plain := mustRun(t, sock, "records", "--protocol", "aprs")
-	if strings.Contains(plain, "CLIP") {
-		t.Errorf("a page with no clips has no CLIP column:\n%s", plain)
+	if strings.Contains(plain, "OVER") {
+		t.Errorf("a page with no clips has no OVER column:\n%s", plain)
 	}
 }
 
