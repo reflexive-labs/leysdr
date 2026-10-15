@@ -1527,6 +1527,32 @@ once and files fixes as new items.
 - `ley bookmarks` has no edit verb, so the terminal cannot clear a tone or note the app wrote.
   Add `ley bookmarks edit` rather than changing `add`'s update contract.
 
+### Settings, AI `[x]` (built under `ai-features.md`, AI-4)
+
+The Settings scene (⌘,) and its AI pane: keys, the provider and model per feature with what each
+choice sends to which host, and usage by UTC day and month (`../dev/app.md`, "Settings"). The
+façade's rows are Linux-tested and the RPCs run in `make app-e2e`; the views are not compiled
+off the Mac. The pane is forced dark like the window rather than giving `Theme` light values.
+
+#### Unverified on the Mac
+
+- The pane compiles: `AISettingsView.swift`, `SettingsView.swift`, the `Settings` scene in
+  `LeylineApp.swift`, `AppSession`'s AI section and `hasAnyAI`, the `Theme.Layout.settings*`
+  tokens.
+- ⌘, and the app menu's Settings… open the window, at `settingsWindow`'s size, with the AI tab.
+- The pane is dark under both system appearances, with no light-on-light text or controls.
+- K1: with no key, only the explanation and the Add form show; adding one brings Features and
+  Usage in, and removing it takes them out again; nothing in the main window changes.
+- The `SecureField` hides the key, clears after a successful Add and when the window closes; the
+  Endpoint field shows for OpenAI-compatible only; Add is disabled while the key is empty.
+- Check updates the row's outcome and the top line; Remove asks, then the row leaves.
+- The provider picker writes Anthropic's first model at once; OpenAI-compatible shows a model
+  field that writes on Return; the model picker writes; the sentence under the pickers follows
+  the provider shown.
+- The usage `Grid`: the numeric columns right-aligned, the divider across the table, the total
+  row, and the day and month switch.
+- The relative words move on each minute (`TimelineView(.everyMinute)`).
+
 ## Backlog
 
 - **Two frequency affine maps remain separate.** `SquelchTrack` and `GainSlider` share

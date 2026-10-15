@@ -1054,6 +1054,10 @@ assistant anthropic claude-sonnet-5-5`), then ask it in words:
 $ ley ask "tune to the NOAA weather radio"
 ```
 
+In the app, Leyline > Settings… (⌘,), AI does the same: paste the key into Add a key, pick the
+assistant's model under Features, and read under each choice what it sends and to which host. The
+daemon holds the key, so one added in either place shows in the other.
+
 Its answer prints as it arrives, and each tool it calls is one line on stderr, `→ tune
 {"freq":"162.4M"}`, with the first line of the result beneath it. Reading state and the tuning,
 setting, stopping, scanning and recording you asked for run at once. Deleting a recording, taking

@@ -12,9 +12,9 @@ One SwiftPM package at `app/`, beside the engine's and never inside it:
 
 | target | what | builds on |
 |---|---|---|
-| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the session's state machines, which hold no I/O so the Linux tests reach them (`HeldObject.swift`: the window's capture and channel until the mirror carries them; `RetuneQueue.swift`: one centre move at a time; `PartPlayback.swift`: the window's playback of a recorded part and Play all's queue); the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`), and which waterfall rows were captured while the radio clipped and which a recording's parts hold (`ClippedRows.swift`); the transmissions log, one per frequency for the session, and the sample clock (`Transmissions.swift`, `SampleClock.swift`); the audio ladder's bands, scale and ballistics (`AudioLevels.swift`); recordings: the manifest reader, the part-to-transmission match, the window's `RecordConfig`, the switch's job and status line, the question before a move off a recording, a listing's summary, the Library's channel rows and search, the store footer's words and the day words (`Recordings.swift`); the channel page's cards, day groups and chips, the inspector's words for a part, the player's words and its previous and next part, the delete words and Play all's queue (`RecordingPages.swift`); a staged run's stage file and regions file (`ShotStage.swift`); the daemon's launch agent as the app owns it, which holds the decisions without ServiceManagement: what to do per `SMAppService` status, the Login Items words, and whether the daemon runs the bundle's build after an update (`DaemonAgent.swift`); the CLI link's path checks and restricted install command (`CommandLineTool.swift`); when the updater starts (`AppUpdates.swift`) | macOS and Linux |
-| `LeylineApp` | the SwiftUI app: `AppSession` (the composition root: the mirror copied, the selection, the façade's state machines it owns, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones; `CaptureLevelFeed`, the radio's clipping count; `AudioLevelsFeed`, the tuned channel's audio spectrum in octave bands), the views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the inspector (`InspectorView.swift`, `InspectorGroups.swift`, `AudioLevelsView.swift`), recording from the window (the log's Record transmissions switch and kept rows, the bookmark dot, the waterfall's time gutter and kept bars, the volume caption, the retune question, the File items), the window's two places (`MainWindow.swift`: the toolbar's `Radio \| Library` switch and the two bodies; the Library in `LibraryView.swift`, its sidebar, store footer and inspector, with the channel page in `RecordingsPage.swift`, the inspector on a part in `PartInspector.swift` and the player in `PlayerBar.swift`), a staged run (`Staging.swift`, "Staged runs" below), the calls behind `DaemonAgent`'s decisions (`EngineAgent.swift`: `SMAppService` registration and status, opening Login Items, `launchctl kickstart -k`), the CLI link's administrator request and result dialogs (`CommandLineInstaller.swift`), Sparkle's updater and the Check for Updates… menu item (`Updater.swift`), `Theme.swift` | macOS only; the manifest declares it, and its Sparkle dependency, under `#if os(macOS)` |
-| `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer and its write order, the session's state machines, the decoders, the bands and bookmarks files, the spectrum folds, the transmissions log and the clock, the audio bands and their ballistics, a hand-written recording manifest, the part match, the switch's job and status line and the retune question, the channel page's cards and day groups, a part's words and table, and Play all's order | both |
+| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the session's state machines, which hold no I/O so the Linux tests reach them (`HeldObject.swift`: the window's capture and channel until the mirror carries them; `RetuneQueue.swift`: one centre move at a time; `PartPlayback.swift`: the window's playback of a recorded part and Play all's queue); the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`), and which waterfall rows were captured while the radio clipped and which a recording's parts hold (`ClippedRows.swift`); the transmissions log, one per frequency for the session, and the sample clock (`Transmissions.swift`, `SampleClock.swift`); the audio ladder's bands, scale and ballistics (`AudioLevels.swift`); recordings: the manifest reader, the part-to-transmission match, the window's `RecordConfig`, the switch's job and status line, the question before a move off a recording, a listing's summary, the Library's channel rows and search, the store footer's words and the day words (`Recordings.swift`); the channel page's cards, day groups and chips, the inspector's words for a part, the player's words and its previous and next part, the delete words and Play all's queue (`RecordingPages.swift`); a staged run's stage file and regions file (`ShotStage.swift`); the daemon's launch agent as the app owns it, which holds the decisions without ServiceManagement: what to do per `SMAppService` status, the Login Items words, and whether the daemon runs the bundle's build after an update (`DaemonAgent.swift`); the CLI link's path checks and restricted install command (`CommandLineTool.swift`); when the updater starts (`AppUpdates.swift`); Settings, AI as words: the key rows, the feature rows with what each choice sends to which host, the usage fold by UTC day and month, whether any AI feature can run, and the providers the pane offers (`AISettings.swift`) | macOS and Linux |
+| `LeylineApp` | the SwiftUI app: `AppSession` (the composition root: the mirror copied, the selection, the façade's state machines it owns, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones; `CaptureLevelFeed`, the radio's clipping count; `AudioLevelsFeed`, the tuned channel's audio spectrum in octave bands), the views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the inspector (`InspectorView.swift`, `InspectorGroups.swift`, `AudioLevelsView.swift`), recording from the window (the log's Record transmissions switch and kept rows, the bookmark dot, the waterfall's time gutter and kept bars, the volume caption, the retune question, the File items), the window's two places (`MainWindow.swift`: the toolbar's `Radio \| Library` switch and the two bodies; the Library in `LibraryView.swift`, its sidebar, store footer and inspector, with the channel page in `RecordingsPage.swift`, the inspector on a part in `PartInspector.swift` and the player in `PlayerBar.swift`), a staged run (`Staging.swift`, "Staged runs" below), the calls behind `DaemonAgent`'s decisions (`EngineAgent.swift`: `SMAppService` registration and status, opening Login Items, `launchctl kickstart -k`), the CLI link's administrator request and result dialogs (`CommandLineInstaller.swift`), Sparkle's updater and the Check for Updates… menu item (`Updater.swift`), the Settings window and its AI pane (`SettingsView.swift`, `AISettingsView.swift`; "Settings" below), `Theme.swift` | macOS only; the manifest declares it, and its Sparkle dependency, under `#if os(macOS)` |
+| `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer and its write order, the session's state machines, the decoders, the bands and bookmarks files, the spectrum folds, the transmissions log and the clock, the audio bands and their ballistics, a hand-written recording manifest, the part match, the switch's job and status line and the retune question, the channel page's cards and day groups, a part's words and table, and Play all's order; the AI pane's rows, privacy sentences and usage fold | both |
 | `LeylineClientDaemonTests` | the façade against a real `leylined --no-hardware` playing a fixture | both; skips itself without `LEYLINED_BIN` |
 
 The package depends on the generated contract (`.package(path: "../swift/LeylineProto")`) and on
@@ -41,7 +41,7 @@ added by an interceptor on the connection. The id is an `app_` ULID minted once 
 **Connection** (`DaemonConnection`). One gRPC client over the Unix socket (`SocketPath.default()`:
 `LEYLINE_SOCKET`, else the platform path the daemon uses), lazy like the Go client: nothing
 connects until the first RPC, and a socket with no listener fails that RPC with `UNAVAILABLE`,
-which maps to `LeylineError.daemonUnreachable`. The six typed service clients are properties;
+which maps to `LeylineError.daemonUnreachable`. The eight typed service clients are properties;
 `state()` is a sorted daemon-scoped `GetState`; `events(sinceSeq:)` and `telemetry(_:)` are
 server streams as `AsyncThrowingStream`s. Ending the consumer cancels the RPC. Holding
 `events()` open is what keeps the client's non-persistent channels alive (5 s grace after the
@@ -318,6 +318,50 @@ while the panel is shown, summed into nine octave bands by the façade's `BandLe
 demod tap carries the discriminator's noise between transmissions. The view was written in the
 container and is unverified until it runs on a Mac.
 
+## Settings
+
+The app menu's Settings… (⌘,) is SwiftUI's `Settings` scene, which `LeylineApp` declares beside
+the window with the same `AppSession` in its environment. `SettingsView` is the window: a tab per
+pane, one today, AI. It is forced dark with `.preferredColorScheme(.dark)`, as the main window is,
+whatever the system's appearance: `Theme`'s colours are literals drawn for a dark ground, and a
+Settings window that followed a light system would put that ink on a light ground. Giving every
+token a light value is the larger change and waits for a pane that needs it.
+
+**The AI pane** (`AISettingsView`) renders the mirror's `ai` and `usage` through the façade's rows
+in `AISettings.swift` and writes through four session calls, each one unary RPC as recordings and
+bookmarks write (the coalescer carries parameter writes only): `addKey`, `checkKey`, `removeKey`
+and `setFeatureModel`. A row changes when the daemon's `ai` or `usage` event arrives, so a key
+`ley ai add` stored appears at once and one the pane added appears the same way. The outcome of
+each call is one line, `settingsNotice`, at the top of the pane; the window's own `notice` shows
+over the waterfall, where a person in Settings would not see it. The key typed into the
+`SecureField` is held in the form's state until the daemon has it and in `addKey`'s request,
+and nowhere else: not in the session, not in a log line. The field clears when Add succeeds and
+when the pane closes.
+
+The pane has three groups. **Keys** lists each key with its provider, label, last four characters,
+when it was added, last used and last checked, the check's outcome (`good` accepted, `recording`
+rejected, `caution` unavailable) and the provider's words, with Check and Remove; Remove asks
+first, because the daemon ends every job and conversation using the key. The Add form takes the
+provider from `ProviderCatalog`, a label, the key and, for an OpenAI-compatible server, its
+endpoint. **Features** has a provider picker and a model picker per feature (a field for a
+provider whose models are typed), and under them what the shown choice sends to which host, so a
+choice is read before it is made: the conversation and tool results for the assistant, the
+squelch-open audio for speech, the endpoint's host when the key has one, and "nothing leaves the
+Mac" for an on-device engine. **Usage** is a table by UTC day over the last 30 days or by month
+over the whole ledger, summed over jobs and conversations as `ley ai usage` sums them, its empty
+columns left out, with a total row and the note that the numbers are what the workers reported.
+
+With no key and no on-device engine set, the pane shows what each feature does and would send,
+and the Add form, and nothing else; `AppSession.hasAnyAI` is that flag, and any AI control
+outside Settings shows only while it holds (`../design/ai.md`, "Context"). The catalog lists
+Anthropic with its three models and an OpenAI-compatible server; no speech provider is listed
+until one is chosen by measuring the candidates on receiver audio (`../design/ai.md`,
+"Providers").
+
+On Linux the rows, the privacy sentences, the flag and the usage fold are tested in
+`AISettingsTests`, and the calls the session makes against the daemon in
+`AISettingsDaemonTests`; the pane itself and the scene are never compiled there.
+
 ## Palette and type
 
 Every value below is in `Theme.swift`, under the names given here, and a view uses no colour or
@@ -566,7 +610,11 @@ keeps its code; a socket with no listener is `UNAVAILABLE` and the mirror keeps 
 `nfm_keyed.cf32`, the window's record job rides the window's capture, so a move off it asks and
 one inside does not, writes a manifest the façade reads, whose newest part holds the newest
 transmission heard live and flags the waterfall row inside it, and the finished recording
-deletes.
+deletes. `AISettingsDaemonTests` starts its daemon with `--data` in the test's own directory and
+`--ley` naming a script that accepts the test's key as the check worker, so no key reaches the
+keychain: a key added reaches the mirror as its last four characters and never its text, and
+leaves it when removed; a feature's model round trips; usage reported over the socket folds into
+the pane's day and month rows.
 
 A bare `swift test` in `app/` runs the daemon suite too and skips it silently without
 `LEYLINED_BIN`, which is why the Makefile names the suites: `app-test` skips it, `app-e2e` is
