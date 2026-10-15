@@ -7,6 +7,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // transcript is one segment's text as an engine returns it.
@@ -31,30 +33,57 @@ type engine interface {
 	model() string
 }
 
+// stopError is a failure that ends the plugin rather than costing one segment its record. exit is
+// the status: 75 (EX_TEMPFAIL) when the provider turned the call away for its own reason, a rate
+// or spend limit or an outage, which the daemon waits out; 1 when trying again cannot help, a
+// rejected key or an endpoint that is not one. msg is the plugin's last line on stderr, which the
+// daemon reports as the job's reason.
+type stopError struct {
+	exit int
+	msg  string
+}
+
+func (e *stopError) Error() string { return e.msg }
+
+// exitTempFail is EX_TEMPFAIL from sysexits.h, the status the daemon reads as a provider's
+// refusal (docs/reference/writing-a-decoder.md, "The wire").
+const exitTempFail = 75
+
 // engineConfig is what the flags say about the engine.
 type engineConfig struct {
 	model    string
 	language string
-	getenv   func(string) string
+	// prompt is the vocabulary hint an engine that takes one sends with the audio.
+	prompt string
+	getenv func(string) string
 }
 
-// engines are the engines this build has, by --engine name.
-var engines = map[string]func(engineConfig) engine{
+// engines are the engines this build has, by --engine name. cred is the key the daemon handed
+// over, nil when it sent none.
+var engines = map[string]func(engineConfig, *leylinev1.SetCredentialRequest) (engine, error){
+	"openai":   newOpenAI,
 	"scripted": newScripted,
 }
 
-// newEngine builds the engine --engine names, or says which ones there are.
-func newEngine(name string, cfg engineConfig) (engine, error) {
-	build, ok := engines[name]
-	if !ok {
-		names := make([]string, 0, len(engines))
-		for n := range engines {
-			names = append(names, n)
-		}
-		sort.Strings(names)
-		return nil, fmt.Errorf("no engine %s; the engines are: %s", name, strings.Join(names, ", "))
+// checkEngine refuses an --engine name this build does not have, naming the ones it has.
+func checkEngine(name string) error {
+	if _, ok := engines[name]; ok {
+		return nil
 	}
-	return build(cfg), nil
+	names := make([]string, 0, len(engines))
+	for n := range engines {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return fmt.Errorf("no engine %s; the engines are: %s", name, strings.Join(names, ", "))
+}
+
+// newEngine builds the engine --engine names.
+func newEngine(name string, cfg engineConfig, cred *leylinev1.SetCredentialRequest) (engine, error) {
+	if err := checkEngine(name); err != nil {
+		return nil, err
+	}
+	return engines[name](cfg, cred)
 }
 
 // scriptEnv names the file the scripted engine reads.
@@ -70,7 +99,7 @@ type scripted struct {
 	language string
 }
 
-func newScripted(cfg engineConfig) engine {
+func newScripted(cfg engineConfig, _ *leylinev1.SetCredentialRequest) (engine, error) {
 	s := &scripted{modelID: cfg.model, language: cfg.language}
 	if s.modelID == "" {
 		s.modelID = "scripted"
@@ -82,7 +111,7 @@ func newScripted(cfg engineConfig) engine {
 			}
 		}
 	}
-	return s
+	return s, nil
 }
 
 func (s *scripted) transcribe(_ []float32, _ float64, seq int) (transcript, error) {

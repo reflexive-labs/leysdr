@@ -43,33 +43,35 @@ func TestManifestMatchesTheFile(t *testing.T) {
 func TestAnUnknownEngineIsRefused(t *testing.T) {
 	var stderr bytes.Buffer
 	_, err := parseArgs([]string{"--engine", "whisper"}, func(string) string { return "" }, &stderr)
-	if err == nil || err.Error() != "no engine whisper; the engines are: scripted" {
+	if err == nil || err.Error() != "no engine whisper; the engines are: openai, scripted" {
 		t.Errorf("err = %v", err)
 	}
-	if eng, err := parseArgs([]string{"--manifest", "--engine", "whisper"}, func(string) string { return "" }, &stderr); err != nil || eng != nil {
-		t.Errorf("--manifest should print the manifest whatever the engine: %v, %v", eng, err)
+	if opts, err := parseArgs([]string{"--manifest", "--engine", "whisper"}, func(string) string { return "" }, &stderr); err != nil || !opts.printManifest {
+		t.Errorf("--manifest should print the manifest whatever the engine: %v, %v", opts, err)
 	}
 }
 
-// runPlugin runs the plugin over n scripted segments of the given lengths, the way the daemon
-// does, and returns the records.
-func runPlugin(t *testing.T, args []string, env map[string]string, lengths ...int) []*leylinev1.DecodeRecord {
+// The rates segmentStream writes at: the daemon's audio rate and a capture's.
+const testAudioRate, testCaptureRate = 48000, 2_400_000
+
+// segmentStream is what the daemon writes a speech plugin: the key when cred is set, the
+// descriptor, then each segment as a START frame holding all its audio, a constant 0.1, and an
+// END frame.
+func segmentStream(t *testing.T, cred *leylinev1.SetCredentialRequest, lengths ...int) []byte {
 	t.Helper()
-	const audioRate, captureRate = 48000, 2_400_000
-	eng, err := parseArgs(args, func(k string) string { return env[k] }, io.Discard)
-	if err != nil {
-		t.Fatal(err)
-	}
 	var in bytes.Buffer
 	write := func(m proto.Message) {
 		if _, err := protodelim.MarshalTo(&in, m); err != nil {
 			t.Fatal(err)
 		}
 	}
+	if cred != nil {
+		write(cred)
+	}
 	write(&leylinev1.StreamDescriptor{
 		StreamId: "str_test", Kind: leylinev1.StreamKind_AUDIO,
-		Params: &leylinev1.StreamDescriptor_Audio{Audio: &leylinev1.AudioParams{SampleRate: audioRate, Format: leylinev1.AudioSampleFormat_F32}},
-		SpanHz: captureRate,
+		Params: &leylinev1.StreamDescriptor_Audio{Audio: &leylinev1.AudioParams{SampleRate: testAudioRate, Format: leylinev1.AudioSampleFormat_F32}},
+		SpanHz: testCaptureRate,
 	})
 	at := uint64(1_000_000)
 	for i, n := range lengths {
@@ -79,28 +81,47 @@ func runPlugin(t *testing.T, args []string, env map[string]string, lengths ...in
 		}
 		tm := &leylinev1.SampleTime{CaptureId: "cap_test", SampleIndex: at}
 		write(&leylinev1.Frame{Seq: uint64(2 * i), Time: tm, Segment: leylinev1.SegmentMark_SEGMENT_START, Payload: payload})
-		end := at + uint64(n*captureRate/audioRate)
+		end := at + uint64(n*testCaptureRate/testAudioRate)
 		write(&leylinev1.Frame{Seq: uint64(2*i + 1), Time: &leylinev1.SampleTime{CaptureId: "cap_test", SampleIndex: end}, Segment: leylinev1.SegmentMark_SEGMENT_END})
-		at = end + captureRate
+		at = end + testCaptureRate
+	}
+	return in.Bytes()
+}
+
+// readRecords is every delimited record in a plugin's stdout.
+func readRecords(out []byte) []*leylinev1.DecodeRecord {
+	var recs []*leylinev1.DecodeRecord
+	r := bufio.NewReader(bytes.NewReader(out))
+	for {
+		var rec leylinev1.DecodeRecord
+		if err := protodelim.UnmarshalFrom(r, &rec); err != nil {
+			return recs
+		}
+		recs = append(recs, &rec)
+	}
+}
+
+// runPlugin runs the plugin over segments of the given lengths, the way the daemon does, with no
+// key, and returns the records.
+func runPlugin(t *testing.T, args []string, env map[string]string, lengths ...int) []*leylinev1.DecodeRecord {
+	t.Helper()
+	opts, err := parseArgs(args, func(k string) string { return env[k] }, io.Discard)
+	if err != nil {
+		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	err = plugin.RunSegmentedStreams(t.Context(), &in, &out, manifest().GetCredentialProvider(),
-		func(rate uint32, _ *leylinev1.SetCredentialRequest) plugin.SegmentDecoder {
-			return newDecoder(eng, float64(rate))
+	err = plugin.RunSegmentedStreams(t.Context(), bytes.NewReader(segmentStream(t, nil, lengths...)), &out, "",
+		func(rate uint32, cred *leylinev1.SetCredentialRequest) plugin.SegmentDecoder {
+			eng, err := newEngine(opts.engine, opts.config, cred)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return newDecoder(eng, float64(rate), io.Discard, func(code int) { t.Errorf("the plugin exited %d", code) })
 		})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var recs []*leylinev1.DecodeRecord
-	r := bufio.NewReader(&out)
-	for {
-		var rec leylinev1.DecodeRecord
-		if err := protodelim.UnmarshalFrom(r, &rec); err != nil {
-			break
-		}
-		recs = append(recs, &rec)
-	}
-	return recs
+	return readRecords(out.Bytes())
 }
 
 // The scripted engine gives one record per segment from the script's lines in order, repeating

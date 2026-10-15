@@ -267,11 +267,39 @@ phonetically, so `B2B` and `C3PO` are not callsigns. A four-letter suffix such a
 matched.
 
 The bundled `leydec-speech` (`go/cmd/leydec-speech`) is the worked example. Its `--engine` picks the
-engine, and this build has one: `scripted`, which ignores the audio and returns the lines of the
-file `LEYDEC_SPEECH_SCRIPT` names, one per segment, repeating the last line when they run out and
-returning `segment N` with no file. It calls no provider, so its manifest names none, and it exists
-so that a test of the whole path knows the words in advance. `--model` is recorded on each record
-and `--language` (default `en`) is the language asked for.
+engine; `--model` is the model asked for and recorded on each record, and `--language` (default
+`en`; empty lets the engine detect it) is the language asked for. It has two engines:
+
+- **`openai`** sends each over to an OpenAI-compatible transcription endpoint,
+  `POST {base}/v1/audio/transcriptions`, on the key the daemon hands over. The base is
+  `https://api.openai.com`, or the endpoint the key was added with (`ley ai add openai --endpoint
+  URL`), which is how a gateway or a local Whisper server is reached; a trailing `/` or `/v1` on it
+  is ignored, it must be `https` unless it is this machine, and a redirect is refused rather than
+  followed, so the key reaches no other host. The request is a multipart form: `file`, the
+  segment as a 16-bit mono WAV at the descriptor's rate; `model` (default `whisper-1`);
+  `response_format` `verbose_json`; `language`; and `prompt`, the vocabulary hint (below). The
+  record's `text` is the response's, trimmed; `language` is the language the response names, as
+  its code; `confidence` is 1 less the mean of the response segments' `no_speech_prob`, absent
+  when none reports one; `raw` is the response body; and `usage` names `openai`, or the
+  endpoint's host when the key has one, with the model, one request and the segment's length in
+  `audio_seconds`. A model that answers only plain `json` (`gpt-4o-transcribe` and its kin) is
+  asked again in it, and its records have no confidence. Each call has 60 s. OpenAI takes at most
+  25 MB in one call, about 4.5 minutes of WAV at 48 kHz, and a longer over is logged and not sent.
+  How a call that fails ends:
+
+  | the provider answers | the plugin |
+  |---|---|
+  | 401 or 403 | exits 1: the key was rejected, and the last stderr line says to run `ley ai check openai` |
+  | 429, a 5xx, a 400 about credit or billing, or nothing (offline, a timeout) | exits 75 with the provider's words as the last stderr line |
+  | a redirect or a 404 | exits 1: the endpoint is not a transcription API |
+  | any other 4xx (audio too short, say) | logs it; that over has no record, and the next is sent |
+
+  The key goes in the `Authorization` header and nowhere else, and is cut out of any provider
+  message before it is logged.
+- **`scripted`** ignores the audio and returns the lines of the file `LEYDEC_SPEECH_SCRIPT` names,
+  one per segment, repeating the last line when they run out and returning `segment N` with no
+  file. It calls no provider, and it exists so that a test of the whole path knows the words in
+  advance.
 
 ## Wrapping an existing tool
 
