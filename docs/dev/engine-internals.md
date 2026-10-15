@@ -679,8 +679,11 @@ view tools and the socket), then `WorkerEvent`s until stdin closes. Both are wri
 reply, into the pipe, so the worker may read them at its own pace; the key is never an argument
 or a variable. On stdout it writes `WorkerMessage`s. Its tool calls and its `ReportUsage` go over
 the socket like any client's, with the conversation id as the usage scope; the daemon reports no
-usage for a conversation itself. A worker that cannot be found or started, or does not take its key,
-is `PROVIDER_UNAVAILABLE` and leaves no conversation behind. The reply is the conversation `IDLE`.
+usage for a conversation itself. A worker that cannot be found or started is
+`PROVIDER_UNAVAILABLE` and leaves no conversation behind. The reply is the conversation `IDLE`.
+Every write to the worker goes through a queue of its own, in order, so no RPC waits on a pipe;
+a write the worker takes nothing of for 2 s fails that conversation alone, `INTERNAL` "the
+assistant is not reading its input", and stops its worker.
 
 The daemon derives the state from the turns the worker writes. A `Turn` replaces the turn with
 its id, or is appended when the id is new; its role is set to the assistant's whatever the worker
@@ -689,7 +692,8 @@ makes the conversation `IDLE`; one whose last call is `AWAITING_APPROVAL` or `AW
 makes it `WAITING` with that call copied into `pending`; any other makes it `THINKING`. A
 `WorkerFailure` makes it `FAILED` with the worker's error (`INTERNAL` when the worker gives no
 code). What the worker writes, turns and errors alike, has the key replaced as a check's answer
-does.
+does: the text, each call's tool name, id, arguments, result and reason, and the error's code,
+message and target.
 
 The clients move it only by what they send. `SendMessage` is `FAILED_PRECONDITION` unless `IDLE`;
 it adds the user turn `t<n>`, one past the highest `tN` so far, writes `UserMessage` with that id
@@ -702,8 +706,11 @@ says otherwise, and makes the conversation `THINKING`. `StopTurn` writes `Worker
 worker answers by marking the turn done, and waits up to 2 s for that. Then, whether the worker
 answered or not, the daemon closes the turn: it is marked done, a call still `AWAITING_APPROVAL`
 or `AWAITING_CLIENT` becomes `REFUSED`, one still `RUNNING` becomes `DONE` with `is_error` and
-the result "stopped", and the conversation is `IDLE`. On an `IDLE` conversation `StopTurn` changes
-nothing, and on an ended or failed one it is `FAILED_PRECONDITION`.
+the result "stopped", and the conversation is `IDLE`. It closes only the turn it stopped (the
+assistant's newest, or `t<n+1>` when the worker had not written one yet), and only while that turn
+is still the newest, so a message sent in the meantime keeps its own turn; a later `Turn` from the
+worker for the closed turn is ignored. On an `IDLE` conversation `StopTurn` changes nothing, and on
+an ended or failed one it is `FAILED_PRECONDITION`.
 
 Every change bumps the conversation's own `seq` and goes out whole (invariant 6): to each
 `WatchConversation` stream, then as `Event.conversation`. The event is version-guarded like
@@ -712,8 +719,8 @@ Every change bumps the conversation's own `seq` and goes out whole (invariant 6)
 `since_seq`: 0 sends the current state alone, the current `seq` sends nothing, and any other
 sends every version after it from the last 64 the daemon keeps per conversation; a `since_seq`
 older than those, or newer than the conversation, sends the current state. The stream then goes
-live and ends after it delivers `ENDED` or `FAILED`. `ListConversations` is newest first; `GetState.conversations` is the same
-list.
+live and ends after it delivers `ENDED` or `FAILED`. `ListConversations` is newest first;
+`GetState.conversations` is the same list.
 
 A conversation is not kept (invariant 8). It ends (`ENDED`) when a client calls
 `EndConversation`, after 30 minutes `IDLE` (a sweep every 30 s; `ConversationStore.Timing` takes
@@ -722,7 +729,9 @@ which ends every conversation straight after the listener stops. A worker that e
 `THINKING` or `WAITING` fails its own conversation, `INTERNAL` "the assistant stopped
 unexpectedly (status N)", and no other. Ending closes the worker's stdin, gives it 2 s to exit,
 then sends `SIGTERM` and, a second later, `SIGKILL`; `EndConversation` replies once the worker has
-gone. An ended or failed conversation stays listed, the newest 32 of them. An unknown
+gone. An ended or failed conversation stays listed, without its replay history: the 32 that
+finished last, counted once each one's worker has gone. An older one is forgotten, and its id is
+then unknown to every RPC, `EndConversation` and `StopTurn` included. An unknown
 `conversation_id` is `INVALID_ARGUMENT`. The worker's stderr is logged a line at a time under
 `leyline.assistant.<conversation id>` with the key replaced; the store's own lines are
 `leyline.assistant`.
