@@ -186,40 +186,54 @@ func TestPolicyRowsAskTheUser(t *testing.T) {
 			changed:    func(w *worker) bool { return len(w.state().GetChannels()) > 0 },
 		},
 	}
+	// Each row runs on the scripted model in process and on the OpenAI model against an endpoint
+	// that plays the same script, so the gate holds whichever API the calls come from.
 	for _, tc := range cases {
-		for _, approve := range []bool{false, true} {
-			name := tc.name + "/declined"
-			if approve {
-				name = tc.name + "/approved"
-			}
-			t.Run(name, func(t *testing.T) {
-				t.Parallel()
-				w := startWorker(t, workerConfig{daemon: tc.daemon, setup: tc.setup})
-				w.say("t1", "do it")
-				call := w.asking()
-				if !strings.Contains(call.GetReason(), tc.wantReason) {
-					t.Errorf("reason %q lacks %q", call.GetReason(), tc.wantReason)
-				}
-				w.resolve(call.GetCallId(), approve)
-				turn := w.doneTurn()
-				var got *leylinev1.ToolCall
-				for _, c := range turn.GetTools() {
-					if c.GetCallId() == call.GetCallId() {
-						got = c
-					}
-				}
+		for _, via := range []string{"scripted", "openai"} {
+			for _, approve := range []bool{false, true} {
+				name := via + "/" + tc.name + "/declined"
 				if approve {
-					if got.GetState() != leylinev1.ToolCallState_TOOL_CALL_DONE {
-						t.Errorf("approved call: %v", got)
+					name = via + "/" + tc.name + "/approved"
+				}
+				t.Run(name, func(t *testing.T) {
+					t.Parallel()
+					cfg := workerConfig{daemon: tc.daemon, setup: tc.setup}
+					if via == "openai" {
+						cfg.via = via
 					}
-				} else if got.GetState() != leylinev1.ToolCallState_TOOL_CALL_REFUSED || got.GetResultText() != assistant.Declined {
-					t.Errorf("declined call: %v", got)
-				}
-				if changed := tc.changed(w); changed != approve {
-					t.Errorf("the daemon changed = %v after approve = %v; call: %v", changed, approve, got)
-				}
-			})
+					runPolicyRow(t, cfg, tc.wantReason, tc.changed, approve)
+				})
+			}
 		}
+	}
+}
+
+// runPolicyRow asks for the row's call, answers it, and checks the call and the daemon.
+func runPolicyRow(t *testing.T, cfg workerConfig, wantReason string, changed func(*worker) bool, approve bool) {
+	t.Helper()
+	w := startWorker(t, cfg)
+	w.say("t1", "do it")
+	call := w.asking()
+	if !strings.Contains(call.GetReason(), wantReason) {
+		t.Errorf("reason %q lacks %q", call.GetReason(), wantReason)
+	}
+	w.resolve(call.GetCallId(), approve)
+	turn := w.doneTurn()
+	var got *leylinev1.ToolCall
+	for _, c := range turn.GetTools() {
+		if c.GetCallId() == call.GetCallId() {
+			got = c
+		}
+	}
+	if approve {
+		if got.GetState() != leylinev1.ToolCallState_TOOL_CALL_DONE {
+			t.Errorf("approved call: %v", got)
+		}
+	} else if got.GetState() != leylinev1.ToolCallState_TOOL_CALL_REFUSED || got.GetResultText() != assistant.Declined {
+		t.Errorf("declined call: %v", got)
+	}
+	if changed(w) != approve {
+		t.Errorf("the daemon changed = %v after approve = %v; call: %v", !approve, approve, got)
 	}
 }
 

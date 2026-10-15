@@ -67,6 +67,14 @@ type workerConfig struct {
 	resume     bool
 	// record is LEY_ASSISTANT_RECORD, the file the scripted model appends what it is sent to.
 	record string
+	// via is "openai" to play the script through the OpenAI model, from a chat completions
+	// endpoint that answers with its lines (openai_loop_test.go); empty plays it in process.
+	via string
+	// chat is the endpoint via "openai" plays from; nil starts one for the script. A test that
+	// resumes passes the first worker's, so the second plays on through the same lines.
+	chat *chatScript
+	// noModel sends WorkerStart with no model.
+	noModel bool
 }
 
 type lockedBuffer struct {
@@ -118,6 +126,18 @@ func startWorker(t *testing.T, cfg workerConfig) *worker {
 	}
 	if cfg.setup != nil {
 		cfg.script = cfg.setup(w)
+	}
+	if cfg.via == "openai" {
+		if cfg.chat == nil {
+			cfg.chat = newChatScript(t, cfg.script)
+		}
+		cfg.endpoint, cfg.script = cfg.chat.URL(), nil
+		if cfg.provider == "" {
+			cfg.provider = "openai"
+		}
+		if cfg.key == "" {
+			cfg.key = chatKey
+		}
 	}
 	env := map[string]string{bookmarks.BookmarksEnv: w.bookmarksPath}
 	if cfg.script != nil {
@@ -178,8 +198,12 @@ func startWorker(t *testing.T, cfg workerConfig) *worker {
 	if provider == "" {
 		provider = "anthropic"
 	}
+	model := "claude-test"
+	if cfg.noModel {
+		model = ""
+	}
 	w.send(&leylinev1.WorkerEvent{Event: &leylinev1.WorkerEvent_Start{Start: &leylinev1.WorkerStart{
-		ConversationId: convID, Provider: provider, Model: "claude-test", Endpoint: cfg.endpoint,
+		ConversationId: convID, Provider: provider, Model: model, Endpoint: cfg.endpoint,
 		ViewTools: cfg.viewTools, Socket: sock, TranscriptPath: cfg.transcript, Resume: cfg.resume,
 	}}})
 	return w
