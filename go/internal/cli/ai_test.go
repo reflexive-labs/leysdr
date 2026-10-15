@@ -419,16 +419,22 @@ func TestAIUseForms(t *testing.T) {
 		{args: []string{"anthropic", "claude-opus-5-5"}, want: "assistant anthropic claude-opus-5-5"},
 		{args: []string{"ollama", "llama3"}, want: "assistant ollama llama3"},
 		{args: []string{"assistant", "ollama", "llama3"}, want: "assistant ollama llama3"},
-		{args: []string{"openai", "gpt-5"}, code: ExitUsage,
-			errWant: "gpt-5 could be a model for assistant or speech, since openai serves both; say which: ley ai use assistant openai gpt-5"},
+		{
+			args: []string{"openai", "gpt-5"}, code: ExitUsage,
+			errWant: "gpt-5 could be a model for assistant or speech, since openai serves both; say which: ley ai use assistant openai gpt-5",
+		},
 		{args: []string{"speech"}, code: ExitUsage, errWant: "name the provider speech should call: ley ai add openai"},
-		{args: []string{"ollama"}, code: ExitUsage,
-			errWant: "ollama has no default model for the assistant; name one: ley ai use assistant ollama <model>"},
+		{
+			args: []string{"ollama"}, code: ExitUsage,
+			errWant: "ollama has no default model for the assistant; name one: ley ai use assistant ollama <model>",
+		},
 		{args: []string{"assistant", "ollama"}, code: ExitUsage, errWant: "ley ai use assistant ollama <model>"},
 		{args: []string{"assistnat", "openai"}, code: ExitUsage, errWant: `no feature named "assistnat"`},
 		{args: []string{"speech", "anthropic"}, code: ExitUsage, errWant: "anthropic has no default model for speech"},
-		{args: []string{"speech", "anthropic", "nova-3"}, code: 1,
-			errWant: "anthropic does not serve speech; openai does: ley ai use speech openai"},
+		{
+			args: []string{"speech", "anthropic", "nova-3"}, code: 1,
+			errWant: "anthropic does not serve speech; openai does: ley ai use speech openai",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {

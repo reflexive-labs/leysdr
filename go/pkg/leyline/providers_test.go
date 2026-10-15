@@ -66,8 +66,10 @@ func TestFeatureRefusal(t *testing.T) {
 		Name: "speechpaid", CredentialProvider: "deepgram",
 		Input: &leylinev1.DecoderInput{Mode: leylinev1.InputMode_SEGMENTED},
 	}
-	aprs := &leylinev1.DecoderManifest{Name: "aprs", CredentialProvider: "mapco",
-		Input: &leylinev1.DecoderInput{Mode: leylinev1.InputMode_CONTINUOUS}}
+	aprs := &leylinev1.DecoderManifest{
+		Name: "aprs", CredentialProvider: "mapco",
+		Input: &leylinev1.DecoderInput{Mode: leylinev1.InputMode_CONTINUOUS},
+	}
 	cases := []struct {
 		feature, provider string
 		key               *leylinev1.Credential
@@ -79,13 +81,18 @@ func TestFeatureRefusal(t *testing.T) {
 		{"assistant", "anthropic", nil, nil, ""},
 		{"speech", "anthropic", nil, nil, "anthropic does not serve speech; openai does: ley ai use speech openai"},
 		{"speech", "deepgram", nil, []*leylinev1.DecoderManifest{scripted}, ""},
-		{"speech", "mapco", nil, []*leylinev1.DecoderManifest{scripted, aprs},
-			"mapco does not serve speech; openai and deepgram do: ley ai use speech openai"},
+		{
+			"speech", "mapco", nil,
+			[]*leylinev1.DecoderManifest{scripted, aprs},
+			"mapco does not serve speech; openai and deepgram do: ley ai use speech openai",
+		},
 		{"assistant", "ollama", nil, nil, ""},
 		{"assistant", "ollama", &leylinev1.Credential{Endpoint: "http://localhost:11434"}, nil, ""},
-		{"assistant", "ollama", &leylinev1.Credential{}, nil,
+		{
+			"assistant", "ollama", &leylinev1.Credential{}, nil,
 			"ollama serves the assistant only as an OpenAI-compatible server, and its key names no endpoint; " +
-				"add it again with ley ai add ollama --endpoint <url>"},
+				"add it again with ley ai add ollama --endpoint <url>",
+		},
 	}
 	for _, tc := range cases {
 		if got := FeatureRefusal(tc.feature, tc.provider, tc.key, tc.decoders); got != tc.want {
@@ -105,10 +112,14 @@ func TestMissingModelMessageNamesAPasteableCommand(t *testing.T) {
 		{nil, "no model is chosen for the assistant, and no key is set for a provider that serves it; " +
 			"add one with ley ai add openai (or anthropic)"},
 		{[]*leylinev1.Credential{key("anthropic", "")}, "no model is chosen for the assistant; choose one with ley ai use assistant anthropic"},
-		{[]*leylinev1.Credential{key("anthropic", ""), key("openai", "")},
-			"no model is chosen for the assistant; choose one with ley ai use assistant openai"},
-		{[]*leylinev1.Credential{key("ollama", "http://localhost:11434")},
-			"no model is chosen for the assistant; choose one with ley ai use assistant ollama <model>"},
+		{
+			[]*leylinev1.Credential{key("anthropic", ""), key("openai", "")},
+			"no model is chosen for the assistant; choose one with ley ai use assistant openai",
+		},
+		{
+			[]*leylinev1.Credential{key("ollama", "http://localhost:11434")},
+			"no model is chosen for the assistant; choose one with ley ai use assistant ollama <model>",
+		},
 	}
 	for _, tc := range cases {
 		if got := MissingModelMessage("assistant", tc.keys); got != tc.want {
