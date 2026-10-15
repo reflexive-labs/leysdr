@@ -24,7 +24,9 @@ type scriptLine struct {
 	Tool    string          `json:"tool"`
 	Args    json.RawMessage `json:"args"`
 	SleepMs int             `json:"sleep_ms"`
-	Usage   *Usage          `json:"usage"`
+	// StopReason overrides the stop reason, so a test can play a response cut at max_tokens.
+	StopReason string `json:"stop_reason"`
+	Usage      *Usage `json:"usage"`
 }
 
 // Scripted is the Model every test uses: a file of JSON lines, one response each, played in
@@ -90,6 +92,9 @@ func (s *Scripted) Respond(ctx context.Context, _ string, _ []ToolDef, _ []Messa
 		}
 		resp.Content = append(resp.Content, Block{Type: "tool_use", ID: fmt.Sprintf("toolu_s%d", n+1), Name: l.Tool, Input: args})
 		resp.StopReason = "tool_use"
+	}
+	if l.StopReason != "" {
+		resp.StopReason = l.StopReason
 	}
 	return resp, nil
 }

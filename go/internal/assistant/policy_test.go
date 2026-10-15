@@ -3,6 +3,7 @@
 package assistant
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -110,8 +111,50 @@ func TestPolicyRows(t *testing.T) {
 			prepare: func(p *Policy) { p.Ran("list_entities", nil, Result{JSON: `{"entities":[]}`}) },
 		},
 		{
-			name: "a new turn forgets received text", tool: "tune", args: map[string]any{"frequency": "146.52"}, isWrite: true,
-			prepare: func(p *Policy) { p.Ran("query_records", nil, Result{JSON: `{"records":[]}`}); p.BeginTurn() },
+			name: "received text taints the rest of the conversation", tool: "tune", args: map[string]any{"frequency": "146.52"}, isWrite: true,
+			prepare: func(p *Policy) {
+				p.Ran("query_records", nil, Result{JSON: `{"records":[]}`})
+				p.BeginTurn()
+				p.BeginTurn()
+			},
+			wantAsk: true, wantSays: []string{"earlier in this conversation"},
+		},
+		{
+			name: "a view tool's answer taints too", tool: "set", args: map[string]any{"param": "squelch", "value": "-40"}, isWrite: true,
+			prepare: func(p *Policy) { p.Received() },
+			wantAsk: true, wantSays: []string{ReceivedReason},
+		},
+		{
+			name: "the speech decoder's alias asks", tool: "start_decode_job", args: map[string]any{"decoder": "transcribe"}, isWrite: true,
+			prepare: func(p *Policy) {
+				p.ResolveDecoder = func(name string) (string, error) {
+					if name == "transcribe" {
+						return "speech", nil
+					}
+					return name, nil
+				}
+			},
+			wantAsk: true, wantSays: []string{"paid transcription"},
+		},
+		{
+			name: "a watch on the speech alias asks", tool: "watch", args: map[string]any{"decoder": "Transcribe"}, isWrite: true,
+			prepare: func(p *Policy) { p.ResolveDecoder = func(string) (string, error) { return "speech", nil } },
+			wantAsk: true, wantSays: []string{"paid transcription"},
+		},
+		{
+			name: "a decoder that cannot be checked asks", tool: "start_decode_job", args: map[string]any{"decoder": "aprs"}, isWrite: true,
+			prepare: func(p *Policy) {
+				p.ResolveDecoder = func(string) (string, error) { return "", errors.New("daemon gone") }
+			},
+			wantAsk: true, wantSays: []string{`could not check whether "aprs" is paid transcription`},
+		},
+		{
+			name: "a call that works clears a stale refusal", tool: "tune", args: map[string]any{"frequency": "150", "take_over": true}, isWrite: true,
+			prepare: func(p *Policy) {
+				p.Ran("tune", nil, Result{Text: refusal, IsError: true})
+				p.Ran("get_state", nil, Result{JSON: `{}`})
+			},
+			wantAsk: true, wantSays: []string{"did not try without take_over first"},
 		},
 		{
 			name: "several rows give every reason", tool: "watch", args: map[string]any{"decoder": "same", "keep": true, "notify": "webhook:http://h/x"}, isWrite: true,

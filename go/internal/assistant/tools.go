@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -31,7 +32,12 @@ type Tools struct {
 	server, view map[string]bool
 	// instructions is the server's own note to an agent, which goes into the system prompt.
 	instructions string
+	// Dropped is each view tool left out, and why.
+	Dropped []string
 }
+
+// viewToolName is what the Messages API accepts as a tool name.
+var viewToolName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // Result is one tool call's outcome: the prose and the JSON the server returned, as two strings.
 type Result struct {
@@ -77,8 +83,16 @@ func NewTools(ctx context.Context, server *mcp.Server, viewTools []*leylinev1.Vi
 		}
 	}
 	for _, v := range viewTools {
-		if t.server[v.GetName()] || v.GetName() == UndoTool || t.view[v.GetName()] || v.GetName() == "" {
-			continue // a client cannot shadow a radio tool or undo
+		switch name := v.GetName(); {
+		case !viewToolName.MatchString(name):
+			t.Dropped = append(t.Dropped, fmt.Sprintf("%q: a tool name is 1 to 64 letters, digits, _ or -", name))
+			continue
+		case t.server[name] || name == UndoTool:
+			t.Dropped = append(t.Dropped, fmt.Sprintf("%s: a client cannot take the name of a radio tool or undo", name))
+			continue
+		case t.view[name]:
+			t.Dropped = append(t.Dropped, fmt.Sprintf("%s: declared twice", name))
+			continue
 		}
 		schema := json.RawMessage(v.GetInputSchemaJson())
 		if !json.Valid(schema) || len(schema) == 0 {

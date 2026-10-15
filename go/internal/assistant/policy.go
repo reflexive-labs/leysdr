@@ -22,14 +22,22 @@ type Policy struct {
 	// lastRefusal is the newest refusal that offered take_over, which names who would be
 	// silenced.
 	lastRefusal string
-	// readReceived is set once the turn has read text received over the air.
+	// readReceived is set once the conversation has read text received over the air, and stays
+	// set: what the model read in one turn is still in its context in the next.
 	readReceived bool
 	// bookmarkWrites counts the bookmark changes that ran this turn.
 	bookmarkWrites int
+	// ResolveDecoder turns a decoder name or alias into the decoder's own name, so an alias of
+	// the speech decoder is gated as speech. nil leaves names as given.
+	ResolveDecoder func(name string) (string, error)
 }
 
-// ReceivedReason is the reason every write asks with once a turn has read received text.
-const ReceivedReason = "the assistant read text received over the air this turn"
+// ReceivedReason is the reason every write asks with once the conversation has read received
+// text.
+const ReceivedReason = "the assistant read text received over the air earlier in this conversation"
+
+// SpeechDecoder is the decoder whose jobs send audio to a paid provider.
+const SpeechDecoder = "speech"
 
 // receivedTools return records, whose fields are whatever a transmitter put in them.
 var receivedTools = map[string]bool{"query_records": true, "list_entities": true}
@@ -37,11 +45,14 @@ var receivedTools = map[string]bool{"query_records": true, "list_entities": true
 // NewPolicy is a gate for a new conversation.
 func NewPolicy() *Policy { return &Policy{ownJobs: map[string]bool{}} }
 
-// BeginTurn forgets what the last turn read and wrote.
+// BeginTurn forgets what the last turn wrote. Received text is not forgotten.
 func (p *Policy) BeginTurn() {
-	p.readReceived = false
 	p.bookmarkWrites = 0
 }
+
+// Received marks the conversation as having read text it cannot trust: records, or a view
+// tool's answer, which may carry decoded text the client shows.
+func (p *Policy) Received() { p.readReceived = true }
 
 // row is one policy row: when it asks, and the reason in words.
 type row struct {
@@ -109,14 +120,31 @@ var rows = []row{
 		}
 		return fmt.Sprintf("a third bookmark change this turn: add %q at %s", strArg(args, "name"), strArg(args, "frequency")), true
 	}},
-	{"paid transcription", func(_ *Policy, tool string, args map[string]any) (string, bool) {
-		if (tool != "start_decode_job" && tool != "watch") || !strings.EqualFold(strArg(args, "decoder"), "speech") {
+	{"paid transcription", func(p *Policy, tool string, args map[string]any) (string, bool) {
+		if tool != "start_decode_job" && tool != "watch" {
+			return "", false
+		}
+		name := strArg(args, "decoder")
+		canonical, err := p.decoder(name)
+		if err != nil {
+			// Fail closed: a name that cannot be checked may be the speech decoder's alias.
+			return fmt.Sprintf("the assistant could not check whether %q is paid transcription: %v", name, err), true
+		}
+		if !strings.EqualFold(canonical, SpeechDecoder) {
 			return "", false
 		}
 		// The tools take no recording source, so a speech job here is live: what it sends
 		// depends on how often the squelch opens, and it runs until it is stopped.
 		return "start paid transcription, live and unbounded: every over the channel hears is sent to the speech provider until the job stops", true
 	}},
+}
+
+// decoder is the decoder's own name for a name or alias.
+func (p *Policy) decoder(name string) (string, error) {
+	if p.ResolveDecoder == nil || name == "" {
+		return name, nil
+	}
+	return p.ResolveDecoder(name)
 }
 
 // Check is the gate for one call. An empty reason runs it; otherwise the call waits for the user,
@@ -143,6 +171,9 @@ func (p *Policy) Ran(tool string, args map[string]any, res Result) {
 		}
 		return
 	}
+	// A refusal names who was listening then; after any call that worked, the radio may have
+	// changed hands, so a later take_over must not name them.
+	p.lastRefusal = ""
 	switch tool {
 	case "add_bookmark", "remove_bookmark":
 		p.bookmarkWrites++

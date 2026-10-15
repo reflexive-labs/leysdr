@@ -41,6 +41,12 @@ const Declined = "the user declined"
 // finishing ends the turn rather than running the radio until the user stops it.
 const maxSteps = 40
 
+// cutShort is the stop reasons that end a turn early, and the line the turn ends with.
+var cutShort = map[string]string{
+	"max_tokens": "(The response reached the model's output limit and was cut off. Ask again, for less at once.)",
+	"refusal":    "(The model declined to answer this.)",
+}
+
 // usageTimeout bounds one ReportUsage.
 const usageTimeout = 5 * time.Second
 
@@ -165,11 +171,20 @@ func (w *worker) connect(ctx context.Context) error {
 		closeServer()
 		return w.fail(leyline.CodeInternal, err.Error())
 	}
+	for _, dropped := range w.tools.Dropped {
+		w.logf("left out the view tool %s", dropped)
+	}
 	w.closeTools = func() { _ = w.tools.Close(); closeServer() }
 	w.client, err = leyline.Dial(ctx, w.start.GetSocket(), leyline.WithKind("mcp"), leyline.WithLabel("assistant"))
 	if err != nil {
 		w.closeTools()
 		return w.fail(leyline.CodeInternal, "the assistant cannot reach the daemon: "+err.Error())
+	}
+	w.policy.ResolveDecoder = func(name string) (string, error) {
+		rctx, cancel := context.WithTimeout(ctx, usageTimeout)
+		defer cancel()
+		canonical, _, err := w.client.ResolveDecoder(rctx, name)
+		return canonical, err
 	}
 	w.system = SystemPrompt(w.tools.instructions)
 	return nil
@@ -193,6 +208,9 @@ func (w *worker) pickModel() (Model, error) {
 	}
 	if w.secret == "" {
 		return nil, &ModelError{Code: leyline.CodeCredentialMissing, Message: "the assistant has no key for anthropic; ley ai add anthropic stores one"}
+	}
+	if err := CheckEndpoint(w.start.GetEndpoint()); err != nil {
+		return nil, err
 	}
 	return &Anthropic{Key: w.secret, Endpoint: w.start.GetEndpoint(), Model: w.start.GetModel(), HTTP: w.opts.HTTP}, nil
 }
@@ -271,6 +289,15 @@ func (w *worker) runTurn(ctx context.Context, user *leylinev1.UserMessage) error
 			return w.fail(leyline.CodeProviderUnavailable, err.Error())
 		}
 		w.reportUsage(ctx, resp.Usage)
+		if note, ends := cutShort[resp.StopReason]; ends {
+			// A response cut at the output limit may end in a half-made tool call, and a refusal
+			// has nothing to run: keep the text, drop the calls, and end the turn saying why.
+			if text := resp.Text(); text != "" {
+				w.transcript = append(w.transcript, Message{Role: "assistant", Content: []Block{{Type: "text", Text: text}}})
+			}
+			turn.Text = joinText(joinText(turn.Text, resp.Text()), note)
+			return w.finish(turn)
+		}
 		if len(resp.Content) > 0 {
 			w.transcript = append(w.transcript, Message{Role: "assistant", Content: resp.Content})
 		}
@@ -332,14 +359,14 @@ func (w *worker) runCall(ctx context.Context, turn *leylinev1.Turn, use Block) (
 		return result(call.ResultText, true), notInterrupted, w.write(turn)
 	}
 	if w.tools.IsView(use.Name) {
-		return w.viewCall(turn, call, result)
+		return w.viewCall(ctx, turn, call, result)
 	}
 	if reason := w.policy.Check(use.Name, args, w.tools.IsWrite(use.Name)); reason != "" {
 		call.State, call.Reason = leylinev1.ToolCallState_TOOL_CALL_AWAITING_APPROVAL, reason
 		if err := w.write(turn); err != nil {
 			return Block{}, notInterrupted, err
 		}
-		ev, intr := w.waitFor(call.CallId, false)
+		ev, intr := w.waitFor(ctx, call.CallId, false)
 		if intr != notInterrupted {
 			call.State, call.ResultText = leylinev1.ToolCallState_TOOL_CALL_REFUSED, Stopped
 			return Block{}, intr, w.writeUnlessClosed(turn, intr)
@@ -364,12 +391,12 @@ func (w *worker) runCall(ctx context.Context, turn *leylinev1.Turn, use Block) (
 }
 
 // viewCall hands a view tool to the client that declared it and waits for its answer.
-func (w *worker) viewCall(turn *leylinev1.Turn, call *leylinev1.ToolCall, result func(string, bool) Block) (Block, interrupt, error) {
+func (w *worker) viewCall(ctx context.Context, turn *leylinev1.Turn, call *leylinev1.ToolCall, result func(string, bool) Block) (Block, interrupt, error) {
 	call.State = leylinev1.ToolCallState_TOOL_CALL_AWAITING_CLIENT
 	if err := w.write(turn); err != nil {
 		return Block{}, notInterrupted, err
 	}
-	ev, intr := w.waitFor(call.CallId, true)
+	ev, intr := w.waitFor(ctx, call.CallId, true)
 	if intr != notInterrupted {
 		call.State, call.ResultText = leylinev1.ToolCallState_TOOL_CALL_REFUSED, Stopped
 		return Block{}, intr, w.writeUnlessClosed(turn, intr)
@@ -377,7 +404,10 @@ func (w *worker) viewCall(turn *leylinev1.Turn, call *leylinev1.ToolCall, result
 	a := ev.GetViewAnswer()
 	res := Result{Text: a.GetResultText(), JSON: a.GetResultJson(), IsError: a.GetIsError()}
 	call.State, call.ResultText, call.ResultJson, call.IsError = leylinev1.ToolCallState_TOOL_CALL_DONE, res.Text, res.JSON, res.IsError
-	return result(res.ForModel(), res.IsError), notInterrupted, w.write(turn)
+	// A client's answer may carry decoded text it shows (a record in the Library, a label), so
+	// it is quoted and taints the conversation as records do.
+	w.policy.Received()
+	return result(modelContent(res, true), res.IsError), notInterrupted, w.write(turn)
 }
 
 // execute runs a call the gate let through: undo from the stack, set and tune with what undo
@@ -416,12 +446,31 @@ func ReplyTurnID(userTurnID string) string {
 // ForModel is a result as the model reads it: text received over the air is quoted as one JSON
 // string behind a line that says where it came from, so nothing in it reads as an instruction.
 func ForModel(tool string, res Result) string {
+	return modelContent(res, IsReceived(tool, res))
+}
+
+// ModelResultLimit bounds what the model reads of one result: a 20 MHz scan or a page of records
+// is more JSON than a turn should spend its context on. The client's ToolCall keeps it whole.
+const ModelResultLimit = 32 << 10
+
+// CutNote ends a result cut at ModelResultLimit.
+const CutNote = "(result cut at 32 KB; ask for fewer)"
+
+// modelContent cuts a result at ModelResultLimit and quotes it when it cannot be trusted.
+func modelContent(res Result, received bool) string {
 	text := res.ForModel()
-	if !IsReceived(tool, res) {
-		return text
+	cut := len(text) > ModelResultLimit
+	if cut {
+		text = strings.ToValidUTF8(text[:ModelResultLimit], "")
 	}
-	quoted, _ := json.Marshal(text)
-	return ReceivedPrefix + string(quoted)
+	if received {
+		quoted, _ := json.Marshal(text)
+		text = ReceivedPrefix + string(quoted)
+	}
+	if cut {
+		text += "\n" + CutNote
+	}
+	return text
 }
 
 // during runs fn while watching stdin for a stop, which cancels fn's context.
@@ -437,6 +486,10 @@ func (w *worker) during(ctx context.Context, fn func(context.Context)) interrupt
 		select {
 		case <-done:
 			return notInterrupted
+		case <-ctx.Done():
+			// The worker is told to end (SIGTERM); fn's context is already cancelled.
+			<-done
+			return closed
 		case ev, ok := <-w.events:
 			switch {
 			case !ok:
@@ -454,8 +507,18 @@ func (w *worker) during(ctx context.Context, fn func(context.Context)) interrupt
 }
 
 // waitFor waits for the answer to one call: ActionResolved, or ViewToolAnswer when view is set.
-func (w *worker) waitFor(callID string, view bool) (*leylinev1.WorkerEvent, interrupt) {
-	for ev := range w.events {
+func (w *worker) waitFor(ctx context.Context, callID string, view bool) (*leylinev1.WorkerEvent, interrupt) {
+	for {
+		var ev *leylinev1.WorkerEvent
+		select {
+		case <-ctx.Done():
+			return nil, closed
+		case e, ok := <-w.events:
+			if !ok {
+				return nil, closed
+			}
+			ev = e
+		}
 		switch {
 		case ev.GetStop() != nil:
 			return nil, stopped
@@ -466,7 +529,6 @@ func (w *worker) waitFor(callID string, view bool) (*leylinev1.WorkerEvent, inte
 		}
 		w.logf("ignored %s while waiting on %s", eventName(ev), callID)
 	}
-	return nil, closed
 }
 
 // appendUser adds blocks to the transcript as the user's, joining the last message when it is the

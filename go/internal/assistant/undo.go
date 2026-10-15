@@ -19,8 +19,9 @@ import (
 
 // Undo puts back what the assistant changed, newest first ("undo that", story A2). A set is undone
 // by setting the value it replaced, read from get_state before the write; a tune made a channel of
-// its own, so it is undone by stopping that channel. Volume is not undone: the state does not
-// carry a sink's volume, so there is nothing to read before the write.
+// its own, so it is undone by stopping that channel. Volume cannot be undone: the state does not
+// carry a sink's volume, so its entry only lets undo say so. A channel stopped since is popped
+// with a sentence, so one gone channel does not block every undo behind it.
 
 // undoEntry is one change the assistant can put back.
 type undoEntry struct {
@@ -30,6 +31,7 @@ type undoEntry struct {
 	old      string // set's value before, in the form set takes
 	takeOver bool   // the set needed take_over, so putting it back does too
 	shown    string // tune: the frequency, for the report
+	cannot   bool   // the old value was not read (volume): undo says so and pops it
 }
 
 // undoStack is the conversation's changes, newest last.
@@ -54,12 +56,8 @@ func readState(ctx context.Context, tools *Tools) *leylinev1.GetStateResponse {
 
 // noteSet records a set that ran, from the state read before it and the event that confirmed it.
 func (u *undoStack) noteSet(before *leylinev1.GetStateResponse, args map[string]any, res Result) {
-	if before == nil || res.IsError {
-		return
-	}
-	var ev leylinev1.Event
-	if unmarshal.Unmarshal([]byte(res.JSON), &ev) != nil {
-		return
+	if res.IsError {
+		return // nothing changed
 	}
 	param := strings.ToLower(strArg(args, "param"))
 	switch param {
@@ -70,16 +68,21 @@ func (u *undoStack) noteSet(before *leylinev1.GetStateResponse, args map[string]
 	}
 	channel := strArg(args, "channel")
 	var old string
-	if id := ev.GetChannel().GetChannelId(); id != "" {
-		channel = id
-		old = channelValue(before, id, param)
-	} else if c := ev.GetCapture(); c != nil && param == "gain" {
-		old = gainValue(before, c.GetCaptureId())
+	var ev leylinev1.Event
+	if before != nil && unmarshal.Unmarshal([]byte(res.JSON), &ev) == nil {
+		if id := ev.GetChannel().GetChannelId(); id != "" {
+			channel = id
+			old = channelValue(before, id, param)
+		} else if c := ev.GetCapture(); c != nil && param == "gain" {
+			old = gainValue(before, c.GetCaptureId())
+		}
 	}
-	if old == "" {
-		return
-	}
-	u.entries = append(u.entries, undoEntry{tool: "set", channel: channel, param: param, old: old, takeOver: boolArg(args, "take_over")})
+	// A change whose old value was not read still goes on the stack, so "undo that" says it
+	// cannot rather than undoing the change before it.
+	u.entries = append(u.entries, undoEntry{
+		tool: "set", channel: channel, param: param, old: old,
+		takeOver: boolArg(args, "take_over"), cannot: old == "",
+	})
 }
 
 // noteTune records the channel a tune made.
@@ -110,6 +113,15 @@ func (u *undoStack) undo(ctx context.Context, tools *Tools) Result {
 		return Result{Text: "nothing to undo: the assistant has not tuned or changed a setting in this conversation", IsError: true}
 	}
 	e := u.entries[len(u.entries)-1]
+	pop := func() { u.entries = u.entries[:len(u.entries)-1] }
+	if e.cannot {
+		pop()
+		return Result{Text: fmt.Sprintf("cannot undo %s: its value before the change could not be read", e.param), IsError: true}
+	}
+	if e.channel != "" && channelGone(ctx, tools, e.channel) {
+		pop()
+		return Result{Text: fmt.Sprintf("that channel was already stopped: %s is gone, so there is nothing to put back on it", e.channel)}
+	}
 	var res Result
 	switch e.tool {
 	case "tune":
@@ -127,10 +139,30 @@ func (u *undoStack) undo(ctx context.Context, tools *Tools) Result {
 			res.Text = joinLine(fmt.Sprintf("undid the %s change: put back %s.", e.param, e.old), res.Text)
 		}
 	}
-	if !res.IsError {
-		u.entries = u.entries[:len(u.entries)-1]
+	switch {
+	case !res.IsError:
+		pop()
+	case strings.Contains(res.Text, leyline.CodeChannelNotFound):
+		// The channel went between the check and the call.
+		pop()
+		return Result{Text: fmt.Sprintf("that channel was already stopped: %s is gone, so there is nothing to put back on it", e.channel)}
 	}
 	return res
+}
+
+// channelGone reports whether the state, read now, lacks the channel. A state that cannot be
+// read says nothing, and the undo goes ahead.
+func channelGone(ctx context.Context, tools *Tools, channelID string) bool {
+	st := readState(ctx, tools)
+	if st == nil {
+		return false
+	}
+	for _, ch := range st.GetChannels() {
+		if ch.GetChannelId() == channelID {
+			return false
+		}
+	}
+	return true
 }
 
 // channelValue is a channel's setting in the form set takes, or "" when the state lacks it.

@@ -122,6 +122,9 @@ func TestAnthropicErrors(t *testing.T) {
 		{529, `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`, leyline.CodeProviderRefused, "Overloaded"},
 		{500, `{"type":"error","error":{"type":"overloaded_error","message":"busy"}}`, leyline.CodeProviderRefused, "busy"},
 		{500, `{"type":"error","error":{"type":"api_error","message":"boom"}}`, leyline.CodeProviderUnavailable, "500 Internal Server Error: boom"},
+		{400, `{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}`, leyline.CodeProviderRefused, "credit balance is too low"},
+		{400, `{"type":"error","error":{"type":"invalid_request_error","message":"Check your Billing settings."}}`, leyline.CodeProviderRefused, "Billing"},
+		{400, `{"type":"error","error":{"type":"invalid_request_error","message":"messages: roles must alternate"}}`, leyline.CodeProviderUnavailable, "roles must alternate"},
 		{302, ``, leyline.CodeProviderUnavailable, "redirected"},
 		{502, `<html>bad gateway</html>`, leyline.CodeProviderUnavailable, "502 Bad Gateway"},
 	}

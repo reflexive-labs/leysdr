@@ -168,6 +168,16 @@ func TestPolicyRowsAskTheUser(t *testing.T) {
 			},
 		},
 		{
+			name: "paid transcription by the speech decoder's alias",
+			setup: func(*worker) []string {
+				return []string{toolLine("start_decode_job", map[string]any{"decoder": "transcribe"})}
+			},
+			wantReason: "start paid transcription, live and unbounded",
+			changed: func(w *worker) bool {
+				return callNamed(w.last, "start_decode_job").GetResultText() != assistant.Declined
+			},
+		},
+		{
 			name: "a write after received text",
 			setup: func(*worker) []string {
 				return []string{toolLine("query_records", map[string]any{"protocol": "aprs"}), toolLine("tune", map[string]any{"frequency": "146.94"})}
@@ -374,7 +384,7 @@ func TestViewTool(t *testing.T) {
 	t.Parallel()
 	w := startWorker(t, workerConfig{
 		viewTools: []*leylinev1.ViewTool{{Name: "show_band", Description: "move the waterfall", InputSchemaJson: `{"type":"object","properties":{"from_mhz":{"type":"number"},"to_mhz":{"type":"number"}}}`}},
-		script:    []string{toolLine("show_band", map[string]any{"from_mhz": 118, "to_mhz": 137}), line(map[string]any{"text": "shown"})},
+		script:    []string{toolLine("show_band", map[string]any{"from_mhz": 118, "to_mhz": 137}), line(map[string]any{"text": "shown"}), toolLine("tune", map[string]any{"frequency": "146.52"})},
 	})
 	w.say("t1", "show me airband")
 	turn := w.until(func(t *leylinev1.Turn) bool {
@@ -393,6 +403,11 @@ func TestViewTool(t *testing.T) {
 	}
 	if n := len(w.state().GetCaptures()); n != 0 {
 		t.Errorf("a view tool touched the radio: %d captures", n)
+	}
+	// The client's answer may carry decoded text, so it taints the conversation as records do.
+	w.say("t3", "now tune 146.52")
+	if call := w.asking(); call.GetTool() != "tune" || call.GetReason() != assistant.ReceivedReason {
+		t.Errorf("a write after a view tool's answer: %v", call)
 	}
 }
 
@@ -428,5 +443,93 @@ func TestReceivedTextMakesWritesAsk(t *testing.T) {
 	}
 	if q := callNamed(w.last, "query_records"); strings.HasPrefix(q.GetResultText(), assistant.ReceivedPrefix) {
 		t.Errorf("the client sees the result as the tool returned it, not as the model reads it: %q", q.GetResultText())
+	}
+}
+
+// The taint outlasts the turn: a write in a later turn still asks.
+func TestReceivedTextTaintsLaterTurns(t *testing.T) {
+	t.Parallel()
+	w := startWorker(t, workerConfig{script: []string{
+		toolLine("query_records", map[string]any{"protocol": "aprs"}),
+		line(map[string]any{"text": "nothing heard"}),
+		toolLine("tune", map[string]any{"frequency": "146.94"}),
+	}})
+	w.say("t1", "what did APRS hear?")
+	w.doneTurn()
+	w.say("t3", "tune the repeater")
+	if call := w.asking(); call.GetTool() != "tune" || call.GetReason() != assistant.ReceivedReason {
+		t.Errorf("a write a turn later: %v", call)
+	}
+}
+
+// A response cut at the output limit ends the turn with a line saying so, and its tool call does
+// not run.
+func TestMaxTokensEndsTheTurn(t *testing.T) {
+	t.Parallel()
+	w := startWorker(t, workerConfig{script: []string{
+		line(map[string]any{"text": "Tuning", "tool": "tune", "args": map[string]any{"frequency": "146.52"}, "stop_reason": "max_tokens"}),
+		line(map[string]any{"text": "again"}),
+	}})
+	w.say("t1", "tune")
+	turn := w.doneTurn()
+	if len(turn.GetTools()) != 0 || !strings.HasPrefix(turn.GetText(), "Tuning\n\n(The response reached the model's output limit") {
+		t.Errorf("turn: %v", turn)
+	}
+	if n := len(w.state().GetChannels()); n != 0 {
+		t.Errorf("a cut-off tool call ran: %d channels", n)
+	}
+	w.say("t3", "go on")
+	if turn := w.doneTurn(); turn.GetText() != "again" {
+		t.Errorf("after the cut: %v", turn)
+	}
+}
+
+// Undo of a channel the user has stopped since says so and moves on to the change before it.
+func TestUndoAStoppedChannel(t *testing.T) {
+	t.Parallel()
+	w := startWorker(t, workerConfig{script: []string{
+		toolLine("tune", map[string]any{"frequency": "146.52"}),
+		toolLine("set", map[string]any{"param": "squelch", "value": "-45"}),
+		line(map[string]any{"text": "done"}),
+		toolLine("undo", nil),
+		toolLine("undo", nil),
+		toolLine("undo", nil),
+		line(map[string]any{"text": "ok"}),
+	}})
+	w.say("t1", "tune and set")
+	w.doneTurn()
+	ch := w.state().GetChannels()[0]
+	if _, err := w.client.Control.DestroyChannel(t.Context(), &leylinev1.DestroyChannelRequest{ChannelId: ch.GetChannelId()}); err != nil {
+		t.Fatal(err)
+	}
+	w.say("t3", "undo everything")
+	turn := w.doneTurn()
+	var said []string
+	for _, c := range turn.GetTools() {
+		said = append(said, c.GetResultText())
+		if strings.Contains(c.GetResultText(), "already stopped") && c.GetIsError() {
+			t.Errorf("a stopped channel is not an error: %v", c)
+		}
+	}
+	if len(said) != 3 || !strings.Contains(said[0], "that channel was already stopped") ||
+		!strings.Contains(said[1], "that channel was already stopped") || !strings.Contains(said[2], "nothing to undo") {
+		t.Errorf("undo results: %q", said)
+	}
+}
+
+// A view tool name the Messages API would refuse is left out, with a line on stderr.
+func TestBadViewToolNamesAreDropped(t *testing.T) {
+	t.Parallel()
+	w := startWorker(t, workerConfig{
+		viewTools: []*leylinev1.ViewTool{{Name: "move view!"}, {Name: "show_band"}},
+		script:    []string{toolLine("move view!", nil)},
+	})
+	w.say("t1", "move")
+	turn := w.doneTurn()
+	if c := turn.GetTools()[0]; !c.GetIsError() || !strings.Contains(c.GetResultText(), "no tool called") {
+		t.Errorf("a dropped view tool ran: %v", c)
+	}
+	if !strings.Contains(w.stderr.String(), `left out the view tool "move view!"`) {
+		t.Errorf("stderr: %s", w.stderr.String())
 	}
 }

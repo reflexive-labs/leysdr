@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -87,6 +88,9 @@ type apiError struct {
 
 // Respond makes one Messages call.
 func (a *Anthropic) Respond(ctx context.Context, system string, tools []ToolDef, messages []Message) (Response, error) {
+	if err := CheckEndpoint(a.Endpoint); err != nil {
+		return Response{}, err
+	}
 	body, err := json.Marshal(a.request(system, tools, messages))
 	if err != nil {
 		return Response{}, err
@@ -162,6 +166,10 @@ func (a *Anthropic) statusError(resp *http.Response, raw []byte) error {
 		return a.fail(leyline.CodeCredentialRejected, msg)
 	case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == 529 || shaped.Error.Type == "overloaded_error":
 		return a.fail(leyline.CodeProviderRefused, msg)
+	case resp.StatusCode == http.StatusBadRequest && shaped.Error.Type == "invalid_request_error" && mentionsBilling(msg):
+		// An account out of credit is refused as a bad request; it is the provider's limit,
+		// not a fault in the request.
+		return a.fail(leyline.CodeProviderRefused, msg)
 	case resp.StatusCode >= 300 && resp.StatusCode < 400:
 		return a.fail(leyline.CodeProviderUnavailable, "redirected, and the key is not sent on: "+resp.Status)
 	}
@@ -180,6 +188,30 @@ func (a *Anthropic) fail(code, msg string) error {
 		msg = string(r[:299]) + "…"
 	}
 	return &ModelError{Code: code, Message: msg}
+}
+
+func mentionsBilling(msg string) bool {
+	msg = strings.ToLower(msg)
+	return strings.Contains(msg, "credit") || strings.Contains(msg, "billing")
+}
+
+// CheckEndpoint refuses an endpoint the key would cross the network in the clear to: https, or
+// plain http to this machine only (a local gateway or a test server).
+func CheckEndpoint(endpoint string) error {
+	if endpoint == "" {
+		return nil
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Host == "" {
+		return &ModelError{Code: leyline.CodeProviderUnavailable, Message: fmt.Sprintf("the endpoint %q is not a URL", endpoint)}
+	}
+	switch {
+	case u.Scheme == "https":
+		return nil
+	case u.Scheme == "http" && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1" || u.Hostname() == "::1"):
+		return nil
+	}
+	return &ModelError{Code: leyline.CodeProviderUnavailable, Message: fmt.Sprintf("the endpoint must be https: %s would send the key in the clear", u.Redacted())}
 }
 
 func (a *Anthropic) client() *http.Client {
