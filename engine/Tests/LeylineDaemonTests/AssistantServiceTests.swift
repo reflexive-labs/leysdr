@@ -337,6 +337,19 @@ final class AssistantServiceTests: XCTestCase {
         }
     }
 
+    func testAFailureWrittenBeforeTheWorkerExitsKeepsItsCode() async throws {
+        // What the real worker does on a model error: the failure, then exit 1.
+        try await withAssistant(scripts: ["text one moment\nfail PROVIDER_REFUSED anthropic refused the request: rate limit\nexit 1"]) { c, _ in
+            let id = try await self.start(c).conversationID
+            _ = try await self.send(c, id, "hello")
+            _ = try await self.conversation(c, id) { $0.state == .conversationFailed }
+            try await Task.sleep(nanoseconds: 300_000_000)
+            let failed = try await c.daemon.conversations.get(id)
+            XCTAssertEqual(failed.error.code, EngineError.Code.providerRefused, "the exit after the failure does not replace it")
+            XCTAssertEqual(failed.error.message, "anthropic refused the request: rate limit")
+        }
+    }
+
     func testAWorkerThatExitsMidTurnFailsOnlyItsOwnConversation() async throws {
         try await withAssistant(scripts: ["text starting\nexit 3", "text still here\nend"]) { c, _ in
             let crashing = try await self.start(c).conversationID

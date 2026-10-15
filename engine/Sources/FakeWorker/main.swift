@@ -22,7 +22,8 @@
 //   view <name> <json>        adds an AWAITING_CLIENT call and waits for ViewToolAnswer, which
 //                             marks it DONE with the answer
 //   end                       marks the turn done
-//   fail <message>            writes a WorkerFailure (INTERNAL) and nothing else
+//   fail [CODE] <message>     writes a WorkerFailure, INTERNAL unless the first word is a code
+//                             (capitals and underscores), and nothing else
 //   exit <n>                  exits with status n at once
 //   sleep <ms>                waits
 //
@@ -297,9 +298,11 @@ func play(_ lines: [String], userTurnID: String) {
             turn.done = true
             send()
         case "fail":
+            let (first, after) = split(rest, words: 1)
+            let isCode = first[0].count > 1 && first[0].allSatisfy { $0.isUppercase || $0 == "_" }
             var message = Leyline_V1_WorkerMessage()
-            message.failure.error.code = "INTERNAL"
-            message.failure.error.message = rest
+            message.failure.error.code = isCode ? first[0] : "INTERNAL"
+            message.failure.error.message = isCode ? after : rest
             writeDelimited(message)
         case "exit":
             exit(Int32(rest) ?? 1)
