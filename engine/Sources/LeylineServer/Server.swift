@@ -52,6 +52,8 @@ package final class Daemon: Sendable {
         /// `programLocator`: beside `leylined`, then `PATH`.
         var leyPath: String?
         var programLocator: ProgramLocator = .init()
+        /// When an idle conversation ends; a test shortens it and brings its own clock.
+        var conversationTiming = ConversationStore.Timing()
         /// Reported in `DaemonInfo` and the startup log line: the executable passes its generated
         /// `leylinedVersion`, a test its own string.
         var version: String
@@ -117,6 +119,8 @@ package final class Daemon: Sendable {
     let credentials: CredentialStore
     /// What every provider call used, as its worker or plugin reported it.
     let ledger: Ledger
+    /// The assistant's conversations and their workers.
+    let conversations: ConversationStore
     private let server: GRPCServer<HTTP2ServerTransport.Posix>
     private let log = Logger(label: "leyline.daemon")
     private let teardown = TeardownGate()
@@ -141,6 +145,11 @@ package final class Daemon: Sendable {
         let usage = UsageRecorder(ledger: ledger, credentials: credentials, store: store)
         jobs = JobStore(store: store, allocator: allocator, decoders: decoders, records: recordStore,
                         recordings: recordings, usage: usage, credentials: credentials)
+        let worker = WorkerProcess(leyPath: config.leyPath, locator: config.programLocator, socketPath: config.socketPath)
+        let session = store
+        conversations = ConversationStore(credentials: credentials, spawner: worker, timing: config.conversationTiming) {
+            await session.publishConversation($0, by: $1)
+        }
         // Transport policy for a local, user-trusted socket. The default keepalive policy counts any
         // client PING arriving sooner than five minutes after the previous one as a strike while a
         // stream is open and sends GOAWAY on the third strike — but grpc-go pings for bandwidth
@@ -157,10 +166,7 @@ package final class Daemon: Sendable {
                 JobsService(jobs: jobs, store: store),
                 DecodersService(jobs: jobs, store: store),
                 ResourcesService(jobs: jobs, store: store),
-                CredentialsService(credentials: credentials,
-                                   worker: WorkerProcess(leyPath: config.leyPath, locator: config.programLocator,
-                                                         socketPath: config.socketPath),
-                                   store: store, jobs: jobs),
+                CredentialsService(credentials: credentials, worker: worker, store: store, jobs: jobs),
                 UsageService(recorder: usage, store: store),
             ],
             interceptors: [ClientContextInterceptor()]
@@ -237,6 +243,8 @@ package final class Daemon: Sendable {
         let ledger = ledger
         await ledger.load()
         await store.setUsageProvider { await ledger.lines() }
+        let conversations = conversations
+        await store.setConversationsProvider { await conversations.list() }
         log.info("leylined \(config.version) listening on \(config.socketPath)")
         var served: (any Error)?
         do { try await server.serve() } catch { served = error }
@@ -310,6 +318,8 @@ package final class Daemon: Sendable {
         // First of all: teardown takes seconds (a running sweep can hold a capture for ~3 s), and an
         // RPC accepted during that window would build state after the store that owns it is gone.
         server.beginGracefulShutdown()
+        // A conversation is not kept: each one ends, its watchers see ENDED and its worker goes.
+        await conversations.endAll()
         // Before the store: a running sweep holds a lease on a capture and must give it back
         // while there is still a store to give it back to.
         await jobs.cancelAll()

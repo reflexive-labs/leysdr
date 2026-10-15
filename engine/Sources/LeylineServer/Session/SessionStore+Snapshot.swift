@@ -46,6 +46,9 @@ extension SessionStore {
         if capFilter == nil, let provider = usageProvider {
             out.usage = await provider()
         }
+        if capFilter == nil, let provider = conversationsProvider {
+            out.conversations = await provider()
+        }
         out.eventSeq = at
         return out
     }

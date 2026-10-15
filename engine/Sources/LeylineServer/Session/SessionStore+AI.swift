@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Keys, feature models and the ledger on the event plane (docs/dev/engine-internals.md, "Credentials and
-// usage"). `CredentialStore` owns them; the store publishes them like any other state, the whole
-// `AIState` every time, so a deleted key is a shorter list and needs no tombstone (invariant 6).
+// Keys, feature models, the ledger and the assistant's conversations on the event plane
+// (docs/dev/engine-internals.md, "Credentials and usage" and "Assistant"). `CredentialStore`,
+// `Ledger` and `ConversationStore` own them; the store publishes them like any other state, whole
+// every time, so a deleted key is a shorter list and needs no tombstone (invariant 6).
 
 import EngineCore
 import Foundation
@@ -36,5 +37,20 @@ extension SessionStore {
         guard version > usagePublishedVersions[key, default: 0] else { return }
         usagePublishedVersions[key] = version
         emit(.usage(line), captureID: nil, by: by)
+    }
+
+    /// Installed by the daemon so `GetState` carries the assistant's conversations.
+    func setConversationsProvider(_ provider: @escaping @Sendable () async -> [Leyline_V1_Conversation]) {
+        conversationsProvider = provider
+    }
+
+    /// Publishes one conversation, unless a newer state of it is already out: the conversation
+    /// store's changes cross an actor hop to get here and can arrive out of order, as two key
+    /// changes can (`publishAI`). Its own `seq` orders them.
+    func publishConversation(_ conversation: Leyline_V1_Conversation, by: ClientContext) {
+        let id = conversation.conversationID
+        guard conversation.seq > conversationPublishedSeqs[id, default: 0] else { return }
+        conversationPublishedSeqs[id] = conversation.seq
+        emit(.conversation(conversation), captureID: nil, by: by)
     }
 }

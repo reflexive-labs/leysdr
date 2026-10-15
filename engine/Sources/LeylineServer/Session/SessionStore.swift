@@ -177,6 +177,10 @@ actor SessionStore {
     /// The ledger version each line was last published at (`publishUsage`), keyed by
     /// `Ledger.key(of:)`. One entry per line the daemon has published since it started.
     var usagePublishedVersions: [String: UInt64] = [:]
+    /// Installed by the daemon: the assistant's conversations `GetState` carries.
+    var conversationsProvider: (@Sendable () async -> [Leyline_V1_Conversation])?
+    /// The `Conversation.seq` last published for each conversation (`publishConversation`).
+    var conversationPublishedSeqs: [String: UInt64] = [:]
     private var clientGoneHook: (@Sendable (String) async -> Void)?
     /// Captures a sweep currently holds. Invariant 9 puts jobs behind the allocator; this is the
     /// other half of it -- without it a client can join a capture that is walking a band, and its
