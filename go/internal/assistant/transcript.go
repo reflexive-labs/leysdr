@@ -39,9 +39,17 @@ func AppendTranscript(path string, m Message, secret string) error {
 			line = bytes.ReplaceAll(line, escaped[1:len(escaped)-1], []byte(redactedKey))
 		}
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0o600)
 	if err != nil {
 		return err
+	}
+	// A line a crash left torn has no newline; without one first, this line would join it and be
+	// skipped with it on the next load.
+	if fi, err := f.Stat(); err == nil && fi.Size() > 0 {
+		last := make([]byte, 1)
+		if _, err := f.ReadAt(last, fi.Size()-1); err == nil && last[0] != '\n' {
+			line = append([]byte{'\n'}, line...)
+		}
 	}
 	// One write, so a crash leaves at most this line torn.
 	_, werr := f.Write(append(line, '\n'))

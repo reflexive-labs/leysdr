@@ -83,6 +83,25 @@ func TestATornLastLineIsSkipped(t *testing.T) {
 	}
 }
 
+// A message appended after a torn line starts a line of its own, so it is kept and only the torn
+// line is lost.
+func TestAnAppendAfterATornLineIsKept(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "transcript.jsonl")
+	appendAll(t, path, text("user", "hello"), text("assistant", "hi"))
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString(`{"role":"user","content":[{"type":"te`)
+	_ = f.Close()
+	appendAll(t, path, text("user", "after the crash"))
+	got, skipped, err := assistant.LoadTranscript(path)
+	if err != nil || skipped != 1 || len(got) != 3 || got[1].Content[0].Text != "hi" || got[2].Content[0].Text != "after the crash" {
+		t.Errorf("load after a torn line and an append: %+v, %d skipped, %v", got, skipped, err)
+	}
+}
+
 // A call the transcript holds no result for (its worker was stopped mid-call) is given one, so the
 // next request is not refused for a tool_use without a tool_result.
 func TestACallWithoutAResultIsAnsweredOnLoad(t *testing.T) {
