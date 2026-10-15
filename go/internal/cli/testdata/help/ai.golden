@@ -17,9 +17,9 @@ Usage:
   ley ai [command]
 
 Examples:
+  ley ai add openai                    # paste a key; the assistant and speech use it
   ley ai                               # which keys are set, and do they work?
-  ley ai add anthropic                 # paste a key at the prompt
-  ley ai use assistant anthropic claude-sonnet-5-5
+  ley ai use assistant anthropic       # switch a feature, with the default model
   ley ai usage                         # requests and tokens, last 30 days
   ley ai --json | jq -r '.credentials[].provider'
 

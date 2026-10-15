@@ -174,7 +174,8 @@ while it plays, 'ley spectrum' to see what is on the air, and 'ley help
 		Example: `  ley                      # what is the daemon doing right now?
   ley devices              # is my radio visible?
   ley tune 146.52          # listen to 146.520 MHz (a bare number is MHz)
-  ley spectrum 101.1       # what is on the air around the FM broadcast band?`,
+  ley spectrum 101.1       # what is on the air around the FM broadcast band?
+  ley ask "tune to the NOAA weather radio"   # after ley ai add openai`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// Cobra only sets this inside its own unknown-command path; rootArgs

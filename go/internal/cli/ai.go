@@ -54,9 +54,9 @@ feature calls, and 'ley ai usage' prints what the calls used.
 
 --json prints the AIState: every key's description (never its text) and
 every feature's model.`,
-		Example: `  ley ai                               # which keys are set, and do they work?
-  ley ai add anthropic                 # paste a key at the prompt
-  ley ai use assistant anthropic claude-sonnet-5-5
+		Example: `  ley ai add openai                    # paste a key; the assistant and speech use it
+  ley ai                               # which keys are set, and do they work?
+  ley ai use assistant anthropic       # switch a feature, with the default model
   ley ai usage                         # requests and tokens, last 30 days
   ley ai --json | jq -r '.credentials[].provider'`,
 		GroupID: GroupDaemon,
@@ -251,7 +251,7 @@ in place of the provider's own API.
 
 --json prints the stored Credential: its description and the check's
 outcome, never the key.`,
-		Example: `  ley ai add anthropic                         # paste at the prompt
+		Example: `  ley ai add openai                            # paste at the prompt
   ley ai add anthropic --label work < ~/.config/anthropic.key
   pbpaste | ley ai add openai
   ley ai add openai --endpoint http://localhost:11434 --label ollama`,

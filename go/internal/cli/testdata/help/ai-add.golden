@@ -26,7 +26,7 @@ Usage:
   ley ai add <provider> [--label L] [--endpoint URL] [flags]
 
 Examples:
-  ley ai add anthropic                         # paste at the prompt
+  ley ai add openai                            # paste at the prompt
   ley ai add anthropic --label work < ~/.config/anthropic.key
   pbpaste | ley ai add openai
   ley ai add openai --endpoint http://localhost:11434 --label ollama
