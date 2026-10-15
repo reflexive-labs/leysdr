@@ -809,9 +809,10 @@ folded into letters, so check a doubtful one by ear: `ley play job_01SEED --part
 plays just that over. `ley transcribe --help` lists the rest.
 
 The `speech` decoder sends each over to OpenAI's transcription API on your own key, so add one
-first with `ley ai add openai`; it is billed by the minute of audio, and `ley ai usage` shows how
-much was sent. `ley ai use speech openai whisper-1` chooses the model (`whisper-1` is the default), and
-`transcribe --model` does the same for one run and the ones after it. A key added with
+first with `ley ai add openai`, which also makes `whisper-1` the speech model when none is chosen;
+it is billed by the minute of audio, and `ley ai usage` shows how much was sent.
+`ley ai use speech openai <model>` chooses another model, and `transcribe --model` does the same
+for one run and the ones after it. A key added with
 `--endpoint` sends the audio to that OpenAI-compatible server instead, such as a Whisper server on
 your own network. What leaves the Mac is the audio of each over, half a second either side, and a
 vocabulary hint that helps the model spell callsigns: the phonetic alphabet and a few net phrases.
@@ -1066,16 +1067,27 @@ $ ley daemon status --json                               # DaemonInfo; exit 3 an
 ### Asking the assistant
 
 The assistant is Leyline's own agent, running on your provider key with the same tools `ley mcp`
-gives any agent. Add a key and choose its model once (`ley ai add anthropic`, then `ley ai use
-assistant anthropic claude-sonnet-5-5`), then ask it in words:
+gives any agent. One key is the whole setup: add it, then ask in words, and transcribe a gated
+recording with the same key:
 
 ```console
+$ ley ai add openai
+Paste the openai key and press Enter:
+openai key …7c2e added; the provider accepted it. The assistant and speech now use openai (gpt-5, whisper-1); change one with ley ai use <feature> <provider> [<model>]
 $ ley ask "tune to the NOAA weather radio"
+$ ley transcribe job_01SEED
 ```
 
-In the app, Leyline > Settings… (⌘,), AI does the same: paste the key into Add a key, pick the
-assistant's model under Features, and read under each choice what it sends and to which host. The
-daemon holds the key, so one added in either place shows in the other.
+The key gives every feature its provider serves, and that has no model yet, the provider's default:
+an `openai` key serves both, an `anthropic` key the assistant (`claude-sonnet-5-5`). A model
+already chosen is kept, so a second key changes nothing until you ask: `ley ai use anthropic`
+moves every feature anthropic serves to it, `ley ai use assistant anthropic claude-opus-5-5` one
+feature to a model you name, and `ley ai` shows what each feature calls.
+
+In the app, Leyline > Settings… (⌘,), AI does the same: paste the key into Add a key, see the
+models it set under Features, change one there, and read under each choice what it sends and to
+which host. The daemon holds the key and makes the choices, so one added in either place shows in
+the other.
 
 Its answer prints as it arrives, and each tool it calls is one line on stderr, `→ tune
 {"freq":"162.4M"}`, with the first line of the result beneath it. Reading state and the tuning,

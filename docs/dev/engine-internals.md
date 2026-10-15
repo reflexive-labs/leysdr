@@ -644,6 +644,27 @@ ends every live decode job whose manifest names that `credential_provider`, `FAI
 at start with `CREDENTIAL_REJECTED` in the provider's words. `SetFeatureModel` takes `assistant`
 or `speech`; an empty provider and model clears the choice.
 
+Which provider serves which feature, and the model a feature gets when nobody named one, is one
+table (`ProviderDefaults`): `openai` serves the assistant with `gpt-5` and speech with `whisper-1`,
+`anthropic` the assistant with `claude-sonnet-5-5`. The names are placeholders until the AI-12 run
+and the speech spike confirm them. `ley` and the fake daemon keep the same table in
+`go/pkg/leyline/providers.go` and the app in its provider catalogue (`ProviderCatalog`), and Go's
+`TestProviderTablesAgree` reads the two Swift sources as text and holds all three equal, so a
+change to one is a change to the three. After `SetCredential`'s check, every feature the
+provider serves and that has no provider chosen gets the table's model, and the `AIState` is
+published again; a choice is never overwritten, and a key the provider rejected sets nothing. A
+key whose check could not run does set them, since nothing else would once a later check
+succeeds. The reply is the `Credential` as before; `ley ai add` and the app see what was set in
+the state. `SetFeatureModel` refuses with `INVALID_ARGUMENT` a provider that cannot serve the
+feature, naming those that can: a provider serves a feature the table gives it, speech is also
+served by the `credential_provider` of any installed `SEGMENTED` decoder (so a third-party speech
+plugin's choice stands), and a provider the table does not list serves the assistant as an
+OpenAI-compatible server, refused once its key is stored with no endpoint. A conversation started
+with no assistant model chosen is `FAILED_PRECONDITION` naming the command to paste, built from
+the keys there are: `ley ai use assistant openai` for the table's first provider with a key, `ley
+ai use assistant <provider> <model>` for a server's key, else `ley ai add openai (or
+anthropic)`.
+
 The ledger is `<store>/usage.jsonl`: one `UsageReport` per line as proto3 JSON, appended as each
 arrives with one `write(2)` (`Ledger`). That reaches the kernel, not the disk: a power cut can
 lose the last reports, a daemon crash cannot. The append happens on the path of the record that
@@ -670,7 +691,7 @@ store, and any client may watch, answer, end or delete any conversation, so `ley
 picks up one the app started, before a restart or after.
 
 `StartConversation` takes the request's provider and model, else the `assistant` feature's; with
-neither it is `FAILED_PRECONDITION` naming `ley ai use assistant <provider> <model>`. No key for the provider is `CREDENTIAL_MISSING`, and a key whose last check was `REJECTED`
+neither it is `FAILED_PRECONDITION` naming the command that chooses one ("Credentials and usage"). No key for the provider is `CREDENTIAL_MISSING`, and a key whose last check was `REJECTED`
 is `CREDENTIAL_REJECTED` in the provider's words. An empty model is the worker's default for the
 provider. The daemon then mints `conv_<ulid>` and runs `ley worker assistant --conversation <id>`
 (`WorkerProcess.startAssistant`, the same `ley` lookup as a check) with the daemon's environment

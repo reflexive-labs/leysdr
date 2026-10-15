@@ -570,10 +570,27 @@ key: invalid x-api-key. Paste a working key with: ley ai add openai`, and for a 
 not run it gives the reason and `ley ai check <provider>` to try again. The daemon answers both with the `Credential` and its
 outcome, not an error; `CREDENTIAL_REJECTED` is what a job gets when it starts on a key whose last
 check was refused. A provider with no key is `CREDENTIAL_MISSING` from `check` and `remove`.
-`ley ai use <feature> <provider> <model>` chooses what the `assistant` and `speech` features call,
-and may name a provider whose key is not added yet. Under `--json`, `ley ai` prints the
-`AIState`, `add` and `check` the `Credential`, `use` the `FeatureModel` and `remove` `{}`; every
-sentence goes to stderr.
+
+One key is enough to start. Unless the provider rejects it, the daemon gives every feature the
+provider serves, and that has no provider chosen yet, the provider's default model: `openai`
+serves the assistant (`gpt-5`) and speech (`whisper-1`), `anthropic` the assistant
+(`claude-sonnet-5-5`). A choice already made is never overwritten. `add` compares `ley ai`'s state
+before and after and ends its line with what was set and the command that changes it; a provider
+`ley` does not know (a gateway or a local server added with `--endpoint`) gets no default.
+`ley ai use` chooses what the `assistant` and `speech` features call, in three forms:
+`ley ai use <provider>` sets every feature the provider serves with its default models,
+`ley ai use <feature> <provider>` one feature with the default, and
+`ley ai use <feature> <provider> <model>` one feature with the model named. `ley ai use <provider>
+<model>` is taken when the provider serves one feature and refused as ambiguous when it serves two,
+naming the form to use. A provider that cannot serve the feature is refused by the daemon with
+`INVALID_ARGUMENT` naming those that can: speech is served by `openai` and by the provider of any
+speech decoder installed, and a provider `ley` does not know serves the assistant as an
+OpenAI-compatible server, so once its key is added it must have an endpoint. `use` may name a
+provider whose key is not added yet, and says so. Bare `ley ai` ends with the next command for
+what is missing: with no key, `ley ai add openai, or anthropic`; with keys, a `ley ai use` line for
+each feature with no model, or the `ley ai add` of a key that serves it. Under `--json`, `ley ai`
+prints the `AIState`, `add` and `check` the `Credential`, `use` the `FeatureModel` (one line per
+feature it set) and `remove` `{}`; every sentence goes to stderr.
 
 `ley ai usage [--since 30d] [--by day|month]` prints the ledger in the provider's units: one row
 per day (or month), provider, model and feature, summed over the jobs and conversations that made
@@ -587,34 +604,48 @@ but the one it names, and it cuts the key out of any message the provider echoes
 columns, so your keys, dates and counts will differ:
 
 ```
-$ ley ai add anthropic --label work
-Paste the anthropic key and press Enter:
-anthropic key …7c2e added; the provider accepted it
+$ ley ai
+PROVIDER  LABEL  KEY  ENDPOINT  LAST USED  CHECKED
+(no keys; add one with: ley ai add openai, or anthropic)
 
-$ ley ai add openai < openai.key
-openai key added; the provider rejected it: invalid x-api-key. Paste a working key with: ley ai add openai
+FEATURE    PROVIDER  MODEL
+assistant  -         -
+speech     -         -
 
-$ ley ai use speech deepgram nova-3
-speech now calls deepgram nova-3
-  no deepgram key is set yet; add one with: ley ai add deepgram
+$ ley ai add openai
+Paste the openai key and press Enter:
+openai key …7c2e added; the provider accepted it. The assistant and speech now use openai (gpt-5, whisper-1); change one with ley ai use <feature> <provider> [<model>]
+
+$ ley ai add anthropic --label work < anthropic.key
+anthropic key …9f10 added; the provider accepted it
+
+$ ley ai use assistant anthropic
+assistant now calls anthropic claude-sonnet-5-5
+
+$ ley ai use speech anthropic nova-3
+ley: anthropic does not serve speech; openai does: ley ai use speech openai (anthropic) [INVALID_ARGUMENT]
+
+$ ley ai use openai gpt-5
+ley: gpt-5 could be a model for assistant or speech, since openai serves both; say which: ley ai use assistant openai gpt-5
 
 $ ley ai
 PROVIDER   LABEL  KEY    LAST USED  CHECKED
-anthropic  work   …7c2e  -          accepted 23:01:18
-openai     -      -      -          rejected 23:01:18
+anthropic  work   …9f10  -          accepted 23:01:18
+openai     -      …7c2e  -          accepted 23:01:18
 
 FEATURE    PROVIDER   MODEL
 assistant  anthropic  claude-sonnet-5-5
-speech     deepgram   nova-3
+speech     openai     whisper-1
 
 $ ley ai usage
 Days are UTC, as the providers count them. The numbers are what the workers reported, from
 2026-09-14.
 DAY         PROVIDER   MODEL              FEATURE    REQUESTS      IN    OUT  CACHE RD  AUDIO (min)
 2026-10-13  anthropic  /v1/models         check             1       -      -         -            -
-2026-10-13  deepgram   nova-3             speech           40       -      -         -         20.6
+2026-10-13  openai     /v1/models         check             1       -      -         -            -
+2026-10-13  openai     whisper-1          speech           40       -      -         -         20.6
 2026-10-14  anthropic  claude-sonnet-5-5  assistant        15  49,210  4,104   120,000            -
-total                                                      56  49,210  4,104   120,000         20.6
+total                                                      57  49,210  4,104   120,000         20.6
 ```
 
 The KEY column reads `-` for a key of four characters or fewer, which shows none of itself. On a
