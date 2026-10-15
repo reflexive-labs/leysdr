@@ -36,6 +36,25 @@ final class CredentialStoreTests: XCTestCase {
         XCTAssertEqual(try mode(path), 0o600)
     }
 
+    /// `LEYLINE_SECRETS=file` puts the keys in the data directory on every platform, which is what
+    /// keeps a test or eval daemon on a Mac out of the login keychain; any other value is the
+    /// platform's choice, and `--secrets` wins over the variable.
+    func testLeylineSecretsFileSelectsTheFileStore() throws {
+        XCTAssertEqual(SecretsKind.fromEnvironment(["LEYLINE_SECRETS": "file"]), .file)
+        XCTAssertEqual(SecretsKind.fromEnvironment(["LEYLINE_SECRETS": "keychain"]), .keychain)
+        XCTAssertNil(SecretsKind.fromEnvironment(["LEYLINE_SECRETS": "vault"]))
+        XCTAssertNil(SecretsKind.fromEnvironment([:]))
+
+        let dir = try makeTempDir("secrets")
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let data = dir + "/data"
+        let store = defaultSecretStore(dataPath: data, kind: SecretsKind.fromEnvironment(["LEYLINE_SECRETS": "file"]))
+        XCTAssertTrue(store is FileSecrets, "LEYLINE_SECRETS=file is the file store, not \(type(of: store))")
+        try store.set(provider: "anthropic", secret: secret)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: data + "/secrets/credentials.json"), "the key is under --data")
+        XCTAssertEqual(try store.get(provider: "anthropic"), secret)
+    }
+
     func testSecretsRoundTripPerProvider() throws {
         let dir = try makeTempDir("secrets")
         defer { try? FileManager.default.removeItem(atPath: dir) }

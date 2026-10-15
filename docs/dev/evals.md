@@ -25,7 +25,9 @@ go run ./cmd/leyeval show evals/runs/<run>/survey-2m | less
 `make eval` builds `ley` and the daemon, then runs `leyeval run` with the fixtures and decoders
 wired up. Each scenario's daemon starts with `--no-hardware`, so a dongle plugged into the
 machine stays out of the run: without it, an agent that tunes "146.52" with no device named can
-use the machine's own radio and spend calls noticing and undoing it. A run costs tokens, so it is not part of `make check`. The agent is `claude` on `PATH`
+use the machine's own radio and spend calls noticing and undoing it. The runner also sets
+`LEYLINE_SECRETS=file` on each daemon, so a key a scenario adds goes to a file under the run's
+data directory and never to the Mac's login keychain. A run costs tokens, so it is not part of `make check`. The agent is `claude` on `PATH`
 in headless mode (`-p --output-format stream-json`), which needs a credential on the machine
 running it; `--claude` or `LEYEVAL_AGENT` names another command, which receives the same flags
 and the prompt on stdin. `--model` passes through.

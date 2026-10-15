@@ -48,6 +48,9 @@ package final class Daemon: Sendable {
         /// Where provider keys are kept; nil is the platform's (`defaultSecretStore`). A test
         /// passes a file store in its own directory so it never writes to the Mac's keychain.
         var secretStore: (any SecretStore)?
+        /// `--secrets`: which store `defaultSecretStore` makes when `secretStore` is nil; nil reads
+        /// `LEYLINE_SECRETS`, then takes the platform's.
+        package var secrets: SecretsKind?
         /// The `ley` the daemon runs for its workers (`--ley`, `LEYLINE_LEY`); nil finds one with
         /// `programLocator`: beside `leylined`, then `PATH`.
         var leyPath: String?
@@ -140,7 +143,9 @@ package final class Daemon: Sendable {
         let recordings = RecordingStore(directory: config.recordingsPath, capBytes: config.recordingsCapBytes,
                                         ageDays: config.recordingsAgeDays)
         credentials = CredentialStore(path: CredentialStore.path(inData: config.dataPath),
-                                      secrets: config.secretStore ?? defaultSecretStore(dataPath: config.dataPath))
+                                      secrets: config.secretStore
+                                          ?? defaultSecretStore(dataPath: config.dataPath,
+                                                                kind: config.secrets ?? SecretsKind.fromEnvironment()))
         ledger = Ledger(path: Ledger.path(inStore: config.storePath))
         let usage = UsageRecorder(ledger: ledger, credentials: credentials, store: store)
         jobs = JobStore(store: store, allocator: allocator, decoders: decoders, records: recordStore,

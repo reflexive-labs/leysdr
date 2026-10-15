@@ -31,9 +31,24 @@ struct SecretStoreError: Error, CustomStringConvertible {
     var description: String { message }
 }
 
-/// The platform's store: the login keychain on macOS, `secrets/credentials.json` in `dataPath`
-/// elsewhere.
-func defaultSecretStore(dataPath: String) -> any SecretStore {
+/// Which store holds the keys: `leylined --secrets`, else `LEYLINE_SECRETS`, else the platform's.
+package enum SecretsKind: String, CaseIterable, Sendable {
+    /// `secrets/credentials.json` in the data directory, on every platform. A daemon a test or an
+    /// eval starts uses it, so a key it is given never reaches the Mac's login keychain.
+    case file
+    /// The login keychain. Only macOS has one; elsewhere this is the file.
+    case keychain
+
+    /// `LEYLINE_SECRETS` from `environment`; a value that is neither kind is the platform default.
+    package static func fromEnvironment(_ environment: [String: String] = ProcessInfo.processInfo.environment) -> SecretsKind? {
+        environment["LEYLINE_SECRETS"].flatMap { SecretsKind(rawValue: $0.lowercased()) }
+    }
+}
+
+/// The store `kind` names, or the platform's when it names none: the login keychain on macOS,
+/// `secrets/credentials.json` in `dataPath` elsewhere.
+func defaultSecretStore(dataPath: String, kind: SecretsKind? = SecretsKind.fromEnvironment()) -> any SecretStore {
+    if kind == .file { return FileSecrets(inData: dataPath) }
     #if canImport(Security)
     return KeychainSecrets()
     #else

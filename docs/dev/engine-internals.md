@@ -621,7 +621,10 @@ proto3 JSON of `AIState`, so a listing never opens the keychain (`CredentialStor
 old one, so each stays 0600 (`writePrivateFile(_:to:)`); a temporary key file a crash left is
 removed the next time the key file is read. The data directory is `--data`, by default
 `~/Library/Application Support/Leyline` on macOS and `$XDG_DATA_HOME/leyline` (or
-`~/.local/share/leyline`) elsewhere.
+`~/.local/share/leyline`) elsewhere. `--secrets file` (or `LEYLINE_SECRETS=file`, which the flag
+overrides) keeps the keys in that file on macOS too, so a daemon that tests or the eval runner start
+never writes to the login keychain; `--secrets keychain` names the keychain, and any other value of
+the variable is the platform default (`SecretsKind`, `defaultSecretStore`).
 
 The daemon makes no model call. A check runs `ley worker check --provider P [--endpoint E]` with
 `LEYLINE_SOCKET` set to the daemon's socket, writes the secret and a newline to its stdin and reads
