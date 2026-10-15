@@ -3,14 +3,21 @@
 package cli
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/spf13/pflag"
+	"google.golang.org/protobuf/encoding/protodelim"
+	"google.golang.org/protobuf/proto"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
@@ -207,6 +214,66 @@ func TestWorkerCheckRefusesRedirects(t *testing.T) {
 	}
 	if path, _ := p.last(); path != "" {
 		t.Errorf("the redirect was followed to %s", path)
+	}
+}
+
+// `ley worker assistant` takes the key on stdin only, plays a scripted turn on the worker
+// protocol, and exits 0 when stdin closes.
+func TestWorkerAssistantCommand(t *testing.T) {
+	t.Parallel()
+	newWorkerAssistantCommand(&App{}).Flags().VisitAll(func(f *pflag.Flag) {
+		for _, word := range []string{"key", "secret", "token"} {
+			if strings.Contains(f.Name, word) {
+				t.Errorf("--%s would put the key on the command line", f.Name)
+			}
+		}
+	})
+	sock, _ := harness(t, fakedaemon.Options{})
+	script := filepath.Join(t.TempDir(), "script.jsonl")
+	if err := os.WriteFile(script, []byte(`{"text": "hello"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{
+		"LEYLINE_KEY_ON_STDIN": "1", "LEY_ASSISTANT_SCRIPT": script,
+		"LEYLINE_BOOKMARKS": filepath.Join(t.TempDir(), "b.json"),
+	}
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	var errb bytes.Buffer
+	app := &App{Stdout: outW, Stderr: &errb, Stdin: inR, LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }}
+	done := make(chan error, 1)
+	go func() {
+		done <- Execute(t.Context(), app, []string{"--socket", sock, "worker", "assistant", "--conversation", "conv_cli"})
+		_ = outW.Close()
+	}()
+	for _, m := range []proto.Message{
+		&leylinev1.SetCredentialRequest{Provider: "anthropic", Secret: workerSecret},
+		&leylinev1.WorkerEvent{Event: &leylinev1.WorkerEvent_Start{Start: &leylinev1.WorkerStart{ConversationId: "conv_cli", Provider: "anthropic", Socket: sock}}},
+		&leylinev1.WorkerEvent{Event: &leylinev1.WorkerEvent_User{User: &leylinev1.UserMessage{TurnId: "t1", Text: "hi"}}},
+	} {
+		if _, err := protodelim.MarshalTo(inW, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	br := bufio.NewReader(outR)
+	for {
+		var m leylinev1.WorkerMessage
+		if err := protodelim.UnmarshalFrom(br, &m); err != nil {
+			t.Fatalf("stdout ended before the turn did: %v; stderr: %s", err, errb.String())
+		}
+		if m.GetTurn().GetDone() {
+			if m.GetTurn().GetText() != "hello" || m.GetTurn().GetTurnId() != "t1-a" {
+				t.Errorf("turn: %v", m.GetTurn())
+			}
+			break
+		}
+	}
+	_ = inW.Close()
+	if err := <-done; err != nil {
+		t.Errorf("exit after stdin closed: %v", err)
+	}
+	if strings.Contains(errb.String(), workerSecret) {
+		t.Error("the key is on stderr")
 	}
 }
 
