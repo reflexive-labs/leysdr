@@ -177,6 +177,12 @@ say so without opening every sidecar. A continuous recording has no intervals an
 `squelch_open_ms`, and a part written by an older daemon lacks it; a client sums that part's
 sidecar instead.
 
+A transmission that straddles a cut made by `part_ms` is listed in the first part's
+`squelch_opens` with its close at the cut, and is not listed in the next part, which begins with
+the squelch already open. So a decode of the stored recording ends that over's segment at the
+first part's end and does not send the rest, where the live cut continued through the cut. The
+next part's audio still holds it; only the listing does not.
+
 ### Nothing heard
 
 A record job that ends with no part written is discarded: a gated recording switched on and off while the squelch never opened, or a

@@ -855,15 +855,20 @@ the drain and follows the squelch the way `RecordRunner.followSquelch` does: squ
 meters arrive by the telemetry subscription, frames wait until the telemetry has been heard through
 their end, and each frame is walked in sample order, so an edge or a hang that ends inside a frame
 cuts it at its own sample. While the squelch is shut the audio goes into a pre-roll ring of
-`pre_roll_ms`; a segment never reaches back before the last one ended. The first meter opens a
+`pre_roll_ms`; a segment never reaches back before the last one ended, and the pre-roll goes out
+in frames of at most 4096 samples, the first marked START, so the 2 s stall limit, which applies
+to each frame, is never one slow read of a large frame. The first meter opens a
 segment at once when the squelch was already open, and a meter that disagrees with the state is
 the edge the follower missed. A frame left waiting 2 s behind the newest audio goes on without
 its telemetry. On the wire a segment exists only between a START the plugin took and its END: a
 START the pipe cannot take skips the segment, an END it cannot take is owed before anything else,
 and a restarted plugin gets nothing of a segment opened on the one before. A segmented job's own
 channel gets the recorder's auto squelch when it has none, because a squelch that is off has no
-edges. A record from a live segmented job carries `over`, the 1-based count of segments since the
-job began, matched by the record's `time` to the newest segment that started at or before it.
+edges; when no level can be measured, or the channel refuses it, the job runs `DEGRADED` with
+"no level measured; squelch left as it was" (or the refusal) for its whole run. A record from a
+live segmented job carries `over`, the 1-based count of segments since the job began, matched by
+the record's `time` to the newest segment that started at or before it, or less than 1 ms after
+it (`Segmenter.overTolerance`), so a plugin's rounding does not move a record into the over before.
 
 **A stored recording.** `DecodeConfig.source_uri = ley://recordings/<id>` decodes an audio
 recording instead of a radio (`Jobs/RecordingSource.swift`). `startDecode` reads the manifest and
@@ -879,13 +884,23 @@ input each part goes whole, with a `Gap` for the time between parts. A capture s
 the WAV by the sidecar's two rates (the anchor's capture rate and the file's audio rate), and a
 START is dated by its segment's exact first sample. `WAVReader` reads 4096 samples a frame and the
 runner writes them patiently: a full pipe is waited out rather than dropped, since nothing here is
-live and the plugin sets the pace. When every part has gone the plugin's stdin is closed, its
+live and the plugin sets the pace. The fd lock covers one non-blocking write at a time, never the
+wait for room, and the wait watches a closing flag, so a cancel or a daemon shutdown never queues
+behind a plugin that has stopped reading; such a plugin gets 0.5 s after its input closes and is
+then killed. When every part has gone the plugin's stdin is closed, its
 records are read until it exits, and the job ends `COMPLETED`; a recording with no squelch
-openings sends nothing and ends `COMPLETED` with no records. A plugin that dies on the way is
-restarted from the segment it had last; a part that cannot be read fails the job. The descriptor is
+openings sends nothing and ends `COMPLETED` with no records. A plugin that has not exited 30 s plus
+2 s per unanswered segment after its input closed (`DecodeRunner.sourceExitAllowance`) is stopped
+and the job fails `DECODER_FAILED` naming the decoder. An item counts as done when a record for it
+comes back (a segment's record arrives at its END, so the segment and every one before it are
+done; a whole part only every one before it), so a plugin that dies is restarted at the first item
+it has not answered: a segment it took but died on is sent again, and an item that legitimately
+yields no record may be sent twice. Duplicates are preferred to losses. A part that cannot be read
+fails the job. The descriptor is
 `AUDIO`, `F32` mono at the recording's rate, centred on its frequency. Records carry `clip_uri`
 (`ley://recordings/<id>/<part>`) and `over` (the index in that part's `squelch_opens` of the
-segment's first opening, 0 when not segmented); `channel_id` is empty and the levels are NaN. A kept
+segment's first opening, 0 when not segmented), found by the record's `time` with the same 1 ms
+tolerance as the live path; `channel_id` is empty and the levels are NaN. A kept
 job's records are dated by the recording's own anchors. A kept source job the daemon restarts reads
 the recording again from the start.
 
@@ -964,7 +979,11 @@ minutes running for ever.
 from the file's own size on close, a cf32 is appended raw, and the part's sidecar and the manifest
 are written when it closes. Closing a gated part also writes its `squelch_open_ms`: the sidecar's
 `squelch_opens` intervals summed on the capture's timeline and turned into milliseconds once at the
-anchor's rate, so the figure is the sidecar's sum and not a sum of rounded intervals. The manifest is rewritten atomically on every change, so a client
+anchor's rate, so the figure is the sidecar's sum and not a sum of rounded intervals. A
+transmission that straddles a cut made by `part_ms` is listed in the first part with its close at
+the cut, and is not listed in the next part, which opens with the squelch already open and no
+entry for it. A stored decode therefore ends that over's segment at the first part's end and sends
+nothing of its rest, where the live cut carried on through it. The manifest is rewritten atomically on every change, so a client
 reading a running recording always sees a consistent file. `RecordingStore` is the directory
 (`--recordings`, default beside the record store), its retention (`--recordings-cap`, default
 20 GiB; `--recordings-age`, default 0) and the restart repair: at boot, any manifest with no

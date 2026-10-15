@@ -134,9 +134,10 @@ own units, `audio_seconds` for speech); the daemon fills in `feature` and `job_i
 the ledger `ley ai usage` prints.
 
 The daemon's write to you is non-blocking. A decoder that stops reading has its audio dropped and
-gapped, not queued, so keep up with the stream or expect gaps. A frame the pipe has taken part of
-must finish within 2 s or the daemon replaces your program, so a decoder that does slow work, such
-as a call to a provider, keeps reading stdin while it works.
+gapped, not queued, so keep up with the stream or expect gaps. The stall rule is per frame: a
+frame the pipe has taken part of must finish within 2 s or the daemon replaces your program. No
+frame carries more than 4096 samples, so a decoder that does slow work, such as a call to a
+provider, keeps reading stdin while it works.
 
 ### Segmented input
 
@@ -145,7 +146,8 @@ Under `input.mode = SEGMENTED` you get one over at a time, never the audio betwe
 - **The first frame of a segment** carries `segment = SEGMENT_START` and audio. Its `time` is the
   segment's first sample, `preRollMs` before the squelch opened (or the start of the recording
   part, or the end of the segment before, whichever is later). Stamp the record for the segment
-  with this `time`: it is how the daemon matches the record to its over.
+  with this `time`: it is how the daemon matches the record to its over, allowing up to 1 ms early.
+  The pre-roll may span several frames; only the first is marked.
 - **The frames after it** carry audio and no mark. A `gap` on one of them is audio inside the
   segment that was lost.
 - **One last frame** carries `segment = SEGMENT_END`, no payload, and the `time` of the sample after
@@ -167,7 +169,10 @@ A decode job can read a recording instead of a radio (`ley://recordings/<id>` as
 `DecodeConfig.source_uri`). Nothing changes for you: the descriptor is `AUDIO`, `F32` mono at the
 recording's rate, and the frames come as fast as you read them rather than at the speed of the air,
 with segments cut by the same rule. When the recording has all gone your stdin closes: write the
-records you still owe and exit 0, and the job ends once you have.
+records you still owe and exit 0, and the job ends once you have. You have 30 s, plus 2 s for each
+segment you have not answered yet; after that the daemon stops you and the job fails. If you die
+part way, you are started again at the first segment you had not answered, so answer each segment
+with at least one record (an empty `text` will do) or expect it again.
 
 Stamping `time` precisely means turning a sample offset within a frame into a `SampleTime` on the
 capture's timeline, which runs at `span_hz` while your audio runs at `sample_rate`. The Go SDK's
