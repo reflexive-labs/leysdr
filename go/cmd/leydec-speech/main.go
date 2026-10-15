@@ -9,7 +9,8 @@
 // --engine picks the engine. `openai` sends each over to an OpenAI-compatible transcription
 // endpoint on the key the daemon hands over on stdin; `scripted` replays the lines of the file
 // LEYDEC_SPEECH_SCRIPT names, so that a test knows the words in advance. --model is the model
-// asked for and recorded on each record; --language (default en) is the language asked for.
+// asked for and recorded on each record; --language (default en) is the language asked for; --hint
+// adds words to the vocabulary hint the openai engine sends with the audio.
 package main
 
 import (
@@ -56,13 +57,16 @@ func parseArgs(args []string, getenv func(string) string, stderr io.Writer) (opt
 	name := fs.String("engine", "scripted", "the speech engine: openai or scripted")
 	model := fs.String("model", "", "the model to ask the engine for, recorded on each record (default: the engine's own)")
 	language := fs.String("language", "en", "the language spoken, as an ISO 639-1 code; empty lets the engine detect it")
+	hint := fs.String("hint", "", "words to add to the vocabulary hint sent with the audio, after the built-in phonetic alphabet and net phrases; "+hintEnv+" takes its place when set")
 	printManifest := fs.Bool("manifest", false, "print the manifest as proto3 JSON and exit")
 	if err := fs.Parse(args); err != nil {
 		return options{}, err
 	}
 	opts := options{
-		engine:        *name,
-		config:        engineConfig{model: *model, language: *language, getenv: getenv},
+		engine: *name,
+		config: engineConfig{
+			model: *model, language: *language, prompt: vocabularyHint(*hint, getenv), getenv: getenv,
+		},
 		printManifest: *printManifest,
 	}
 	if opts.printManifest {

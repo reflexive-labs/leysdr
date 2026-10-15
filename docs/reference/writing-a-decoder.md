@@ -296,6 +296,15 @@ engine; `--model` is the model asked for and recorded on each record, and `--lan
 
   The key goes in the `Authorization` header and nowhere else, and is cut out of any provider
   message before it is logged.
+
+  The vocabulary hint is sent to the provider with the audio, as the `prompt` field, so it is
+  never somewhere to put what should stay on the Mac. It starts with the phonetic alphabet,
+  spelled the way `go/pkg/callsign` reads it, and the words of a net ("net control", "check-in",
+  "go ahead", "73"), which steer a model towards writing a spoken callsign as the words the pattern
+  folds back. `--hint <text>`, which a manifest's `args` can carry, adds words after those: a
+  club's callsigns, a repeater's name. `LEYDEC_SPEECH_HINT` in the daemon's environment takes the
+  place of `--hint` when it is set, so a measurement can vary the hint without reinstalling the
+  manifest. Whisper reads only the last 224 tokens of a prompt, so keep the addition short.
 - **`scripted`** ignores the audio and returns the lines of the file `LEYDEC_SPEECH_SCRIPT` names,
   one per segment, repeating the last line when they run out and returning `segment N` with no
   file. It calls no provider, and it exists so that a test of the whole path knows the words in

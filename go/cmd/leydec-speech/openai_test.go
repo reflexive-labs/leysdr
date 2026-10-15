@@ -139,6 +139,9 @@ func TestOpenAIRequestAndRecord(t *testing.T) {
 	if c.model != "whisper-1" || c.format != "verbose_json" || c.language != "en" {
 		t.Errorf("form: model %q response_format %q language %q", c.model, c.format, c.language)
 	}
+	if c.prompt != defaultHint {
+		t.Errorf("prompt %q, want the default vocabulary hint", c.prompt)
+	}
 	rate, samples := decodeTestWAV(t, c.wav)
 	if rate != testAudioRate || len(samples) != testAudioRate {
 		t.Errorf("the WAV is %d samples at %d Hz, want %d at %d", len(samples), rate, testAudioRate, testAudioRate)
@@ -428,4 +431,33 @@ func decodeTestWAV(t *testing.T, wav []byte) (uint32, []float32) {
 		out[i] = float32(int16(le.Uint16(wav[44+2*i:]))) / math.MaxInt16
 	}
 	return rate, out
+}
+
+// The hint is the default vocabulary, then LEYDEC_SPEECH_HINT when it is set and --hint when it is
+// not; and it reaches the provider as the prompt.
+func TestVocabularyHint(t *testing.T) {
+	for _, tc := range []struct {
+		name, flag, env, want string
+	}{
+		{"neither", "", "", defaultHint},
+		{"--hint", "K6XYZ, Saturday net", "", defaultHint + " K6XYZ, Saturday net"},
+		{"the variable takes --hint's place", "K6XYZ", "W1AW bulletin", defaultHint + " W1AW bulletin"},
+		{"a blank variable is unset", "K6XYZ", "  ", defaultHint + " K6XYZ"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := map[string]string{hintEnv: tc.env}
+			opts, err := parseArgs([]string{"--engine", "openai", "--hint", tc.flag}, func(k string) string { return env[k] }, io.Discard)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if opts.config.prompt != tc.want {
+				t.Errorf("prompt %q, want %q", opts.config.prompt, tc.want)
+			}
+		})
+	}
+	p := newFakeProvider(t, func(int, transcriptionCall) (int, string) { return http.StatusOK, verboseBody })
+	runOpenAI(t, []string{"--hint", "K6XYZ"}, p.URL, 4800)
+	if got := p.seen()[0].prompt; got != defaultHint+" K6XYZ" {
+		t.Errorf("the provider got prompt %q", got)
+	}
 }
