@@ -36,6 +36,7 @@ struct DaemonClients {
     let resources: Leyline_V1_Resources.Client<HTTP2ClientTransport.Posix>
     let credentials: Leyline_V1_Credentials.Client<HTTP2ClientTransport.Posix>
     let usage: Leyline_V1_Usage.Client<HTTP2ClientTransport.Posix>
+    let assistant: Leyline_V1_Assistant.Client<HTTP2ClientTransport.Posix>
     let daemon: Daemon
     /// The daemon's data directory: `ai.json`, and `secrets/credentials.json` for the test's file store.
     let dataPath: String
@@ -55,7 +56,7 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
                 rtltcp: [Daemon.RTLTCPEndpoint] = [],
                 decoderSearchPath: [String]? = nil, storePath: String? = nil,
                 recordingsPath: String? = nil, recordingsCapBytes: UInt64 = 20 << 30,
-                leyPath: String? = nil,
+                leyPath: String? = nil, conversationTiming: ConversationStore.Timing? = nil,
                 _ body: @escaping @Sendable (DaemonClients) async throws -> Void) async throws {
     // Every logger the daemon makes goes through the capture's handler, so a test can read the log.
     _ = LogCapture.shared
@@ -78,6 +79,7 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
     // `ley` is whatever the test names and nothing else: never one on the machine's PATH.
     config.leyPath = leyPath
     config.programLocator = ProgramLocator(directories: [], searchPath: [])
+    if let conversationTiming { config.conversationTiming = conversationTiming }
     let daemon = Daemon(config: config)
     let serverTask = Task { try await daemon.run() }
     let listening = await daemon.waitUntilListening()
@@ -91,7 +93,8 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
             let clients = DaemonClients(
                 control: .init(wrapping: client), decoders: .init(wrapping: client), telemetry: .init(wrapping: client),
                 bulk: .init(wrapping: client), jobs: .init(wrapping: client), resources: .init(wrapping: client),
-                credentials: .init(wrapping: client), usage: .init(wrapping: client), daemon: daemon, dataPath: dir + "/data", socketPath: socket
+                credentials: .init(wrapping: client), usage: .init(wrapping: client),
+                assistant: .init(wrapping: client), daemon: daemon, dataPath: dir + "/data", socketPath: socket
             )
             do { try await body(clients) } catch { bodyError = error }
         }

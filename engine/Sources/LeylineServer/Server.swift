@@ -168,6 +168,7 @@ package final class Daemon: Sendable {
                 ResourcesService(jobs: jobs, store: store),
                 CredentialsService(credentials: credentials, worker: worker, store: store, jobs: jobs),
                 UsageService(recorder: usage, store: store),
+                AssistantService(conversations: conversations, store: store),
             ],
             interceptors: [ClientContextInterceptor()]
         )
