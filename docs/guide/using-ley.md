@@ -1016,6 +1016,30 @@ $ ley spectrum 101.1 --json                              # {seq, sample_index, c
 $ ley daemon status --json                               # DaemonInfo; exit 3 and no pid when not running
 ```
 
+### Asking the assistant
+
+The assistant is Leyline's own agent, running on your provider key with the same tools `ley mcp`
+gives any agent. Add a key and choose its model once (`ley ai add anthropic`, then `ley ai use
+assistant anthropic claude-sonnet-5-5`), then ask it in words:
+
+```console
+$ ley ask "tune to the NOAA weather radio"
+```
+
+Its answer prints as it arrives, and each tool it calls is one line on stderr, `→ tune
+{"freq":"162.4M"}`, with the first line of the result beneath it. Reading state and the tuning,
+setting, stopping, scanning and recording you asked for run at once. Deleting a recording, taking
+over a radio someone else is using, keeping a job, adding a webhook and paid transcription ask
+first: answer `y` at the `[y/N]` question, or pass `--yes` to allow everything, which is how a
+script or another agent runs `ask`. Without a terminal to answer on and without `--yes`, such a
+call is declined.
+
+`ley ask` with no request is a `> ` prompt that takes one request per line until a blank line or
+Ctrl-D. The conversation stays in the daemon when `ask` exits, so `ley ask --continue "now record
+it"` carries it on, including one started in the app. Ctrl-C stops the assistant's turn; a second
+Ctrl-C ends the conversation. The [`ley` reference](../reference/cli.md) has the full behaviour
+and a recorded session. Try it with `ley ask "what is on the air around 146.52?"`.
+
 ## 14. When things go wrong
 
 Every error is one line that says what happened and what to run next, and the exit status says

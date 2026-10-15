@@ -109,6 +109,10 @@ ley                                  # bare: orientation screen on a TTY (see be
 ├── ai [add <provider> [--label L] [--endpoint URL] | check <provider> | remove <provider> | use <feature> <provider> <model> | usage [--since D] [--by day|month]]
 │                                    # the model-provider keys the daemon holds (never printed: the last four
 │                                    # characters tell them apart), the model each feature calls, and the usage ledger
+├── ask [request] [--yes] [--continue] [--provider P] [--model M]
+│                                    # a request to the assistant, a conversation the daemon holds: its words on
+│                                    # stdout as they arrive, each tool call on stderr, a [y/N] question for
+│                                    # what asks first; no request is a prompt loop
 ├── version
 ├── help [command|topic]             # topics: squelch, frequencies, modes, gain, presets, glossary, scripting, roadmap
 └── (planned) transcript             # arrives with the durable job store
@@ -637,6 +641,64 @@ Oct 13 14:03  speech    -       -     this is whiskey six alpha bravo charlie
 
 Part 1's first two overs are 300 ms apart, inside the half-second hang, so they are one segment
 and one record, numbered by its first over; that is why the next line is over 3.
+
+**The assistant** (`docs/design/ai.md`, "The assistant"). `ley ask "<request>"` sends one
+request to the assistant and follows the conversation until the assistant's turn is done, then
+exits 0. The conversation is daemon state behind the `Assistant` service, run by a worker the daemon
+starts on the key for the assistant feature's provider (`ley ai use assistant`); `--provider` and
+`--model` choose others for a new conversation. Without a key for the provider, the daemon refuses
+the conversation with `CREDENTIAL_MISSING`, whose message names `ley ai add <provider>`. With no
+request, `ask` prints `> ` on stderr and reads one request per line, each sent in the same
+conversation once the previous turn is done, until a blank line or the end of stdin.
+
+The assistant's text goes to stdout as it grows, so the terminal shows it arrive and `ley ask ... >
+answer.txt` keeps only the words. Each tool call is one line on stderr, `→ <tool> <arguments>`,
+when it starts, with the first line of its result indented beneath it when it is done, `✗` and the
+error for a call that failed, and `✗ declined` for one that was refused. A call that asks first
+(taking over a radio, deleting a recording, keeping a job, a webhook notifier, several bookmark
+writes, paid transcription; `docs/design/ai.md`, "What the assistant may do") is a question on
+stderr, `The assistant wants to <tool> <arguments>: <reason>. Allow? [y/N]`, and the answer goes to
+the daemon with `ResolveAction`. `--yes` (`-y`) allows every such call, which is how an agent or a
+script runs `ask`; when stdin is not a terminal and `--yes` is absent, the call is declined with a
+line that says so and names `--yes`. `ask` declares no view tools, so a view tool call (one an app
+declared, in a conversation `ask` continues) is answered with the error `ley ask has no view`.
+
+The conversation outlives the process: `--continue` sends the request to the newest `IDLE`
+conversation the daemon lists, whether `ask` or the app started it, and starts one when none is
+idle. A conversation ends when a client ends it, after 30 idle minutes, or when the daemon stops.
+Ctrl-C during a turn stops the turn (`StopTurn`) and `ask` follows the conversation until the daemon
+reports the turn done, then exits 0; a second Ctrl-C, or one at the `> ` prompt, ends the
+conversation (`EndConversation`) and exits 130. A conversation that fails exits 1 with the daemon's
+words and code (`ley: the assistant stopped unexpectedly [INTERNAL]`). `--json` prints every
+`Conversation` the watch delivers, one per line, from the state after the request was sent to the
+one in which the turn is done, and no prose; the question and the decline line still go to stderr.
+
+Recorded against the contract's fake daemon, whose assistant plays a scripted conversation, at 80
+columns; the tool names and results are the script's, and times will differ:
+
+```
+$ ley ask "listen to the NOAA weather radio"
+Tuning to the NOAA station.
+→ tune {"freq":"162.4M","mode":"nfm"}
+  Tuned to 162.400 MHz NFM on chan_01K
+→ set {"param":"squelch","value":"-45","channel":"chan_01K"}
+  Squelch -45.0 dBFS on 162.400 MHz
+It is playing now; ley stop ends it.
+
+$ ley ask --continue "delete the last recording"
+Continuing the conversation started 01:17:07 (2 turns)
+The assistant wants to delete_recording {"recording":"job_01K"}: deleting a
+recording asks every time. Allow? [y/N] y
+  Deleted job_01K, 12.0 MB freed
+Done.
+
+$ ley ask "delete the last recording" < /dev/null
+The assistant wants to delete_recording {"recording":"job_01K"}: deleting a
+recording asks every time. Declined: stdin is not a terminal, so nobody can
+answer. Pass --yes to allow what the assistant asks.
+  ✗ declined
+Done.
+```
 
 **Exit status** (also `ley help scripting`): 0 on success, including a Ctrl-C that ends a live
 `tune`/`play`/`spectrum --watch`/`fft`/`listen`/`devices --watch` session; 1 when the daemon refused or
