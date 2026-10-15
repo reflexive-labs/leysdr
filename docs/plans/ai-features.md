@@ -974,13 +974,18 @@ recordings and bookmarks do (the coalescer carries parameter writes only). Verif
 on Linux for the mirror and the usage fold by day and month; `make app-e2e` against the daemon
 with a scripted `ley` worker; on the Mac, the pane read in both appearances, and K1.
 
-### AI-6 `[ ]` Speech in the Library
+### AI-6 `[x]` Speech in the Library
 
 T1, T2, T8, T9 and T12: `StartPlaybackRequest` gains a sample range so one over can play; the
 Swift manifest reader takes the sidecar's per-over intervals; speech records fold onto parts and
 overs by `clip_uri` and `over`; the words under each over with the model and confidence; search
 by text; transcribe again; export as text and SRT from the capture's anchor. Verify: façade
-tests on Linux for the fold and the SRT times; the views read on the Mac.
+tests on Linux for the fold and the SRT times; the views read on the Mac. **Done 2026-10-15 on
+Linux**: `StartPlaybackRequest` and `Playback` carry `start_sample`/`end_sample` (4, 5 and 11,
+12), `ley play --over` cuts with the speech decoder's own pre-roll so it plays what was
+transcribed, the façade folds speech records onto parts and overs with the newest job shown
+and older versions kept, searches by words once per channel, and exports text and SRT (two-anchor
+test with drift); the views are unverified and listed in `docs/plans/app.md`.
 
 ### AI-7 `[x]` Live speech and speech watches
 
@@ -997,13 +1002,20 @@ tokens in order, case-folded, so `text~net control` fires. `ley records` shows a
 scripted engine, a `text~` predicate firing on the expected over, a kept job resuming with the
 same id after a daemon restart.
 
-### AI-11 `[ ]` The app's assistant panel
+### AI-11 `[x]` The app's assistant panel
 
 A third column beside the inspector: the conversation, each step expandable to its tool call and
 result (A16), confirmations as buttons, stop, the tokens used so far, and the view tools for the
 waterfall and the Library (A19). A15 needs the mirror to keep each object's last `caused_by`,
 which no view reads today. Verify: façade tests; the panel read on the Mac; a story test in
-which the assistant retunes and the mirror shows the change attributed to it.
+which the assistant retunes and the mirror shows the change attributed to it. **Done 2026-10-15
+on Linux**: the panel is a third column beside either place, the app declares `show_band`,
+`select_recording` and `show_place` as view tools and answers them on the main actor without
+retuning, the mirror keeps who changed each object from `caused_by` and the inspector says "The
+assistant set the squelch to -45 dBFS" (and `ley` now says "the assistant" too); the e2e drives
+a conversation with the scripted fake worker, including a view tool, against the real daemon.
+The attribution e2e uses a stand-in connection labelled `assistant`, because the fake worker
+makes no real write; the views are unverified and listed in `docs/plans/app.md`.
 
 ### AI-12 `[ ]` Assistant evals and the default model
 
