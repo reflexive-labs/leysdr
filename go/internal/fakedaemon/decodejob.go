@@ -71,6 +71,16 @@ func (d *Daemon) startDecode(ctx context.Context, cfg *leylinev1.DecodeConfig) (
 	if cfg.GetKeep() {
 		d.storeFor(fj)
 	}
+	if man.GetInput().GetMode() == leylinev1.InputMode_SEGMENTED {
+		// A speech job on a radio records its overs as a gated recording under its own id, as the
+		// daemon's LiveClips does, so its records name a clip `ley recordings` lists.
+		if err := d.openClipsLocked(fj, hz, man.GetRecipe().GetMode()); err != nil {
+			delete(d.jobs, job.JobId)
+			d.jobOrder = d.jobOrder[:len(d.jobOrder)-1]
+			d.mu.Unlock()
+			return nil, fail(ctx, errorf(leyline.CodeInternal, "", err.Error()))
+		}
+	}
 	d.emit(byDaemon(), job)
 	reply := proto.Clone(job).(*leylinev1.Job)
 	spawned := d.withSpeechModel(man)
@@ -283,6 +293,8 @@ func numberField(v float64) *leylinev1.FieldValue {
 // runDecode emits a record every RecordInterval until the job is cancelled, stamping each one the
 // way the daemon does: record id, job, seq, channel, and the levels the channel's meter read.
 func (d *Daemon) runDecode(jobID string, man *leylinev1.DecoderManifest) {
+	began := time.Now()
+	var clipEndMs int64
 	for n := uint64(0); ; n++ {
 		time.Sleep(RecordInterval)
 		if d.jobCancelled(jobID) {
@@ -297,10 +309,20 @@ func (d *Daemon) runDecode(jobID string, man *leylinev1.DecoderManifest) {
 		}
 		rec := fakeStations[n%uint64(len(fakeStations))](n)
 		if man.GetInput().GetMode() == leylinev1.InputMode_SEGMENTED {
-			// A speech decoder on a radio hears overs, not stations. No recording holds them, so
-			// the record names no clip and no over.
-			rec = d.speechRecord(man, "", speechSegment{audioSecs: fakeOverSeconds}, n+1)
+			// A speech decoder on a radio hears overs, not stations. Each over is a part of the
+			// job's clips with one opening in it, so its record names that part and over 1.
+			nowMs := time.Since(began).Milliseconds()
+			fromMs := max(clipEndMs, nowMs-int64(fakeOverSeconds*1000))
+			rec = d.speechRecord(man, jobID, speechSegment{audioSecs: float64(nowMs-fromMs) / 1000}, n+1)
 			rec.ClipUri, rec.Over = "", 0
+			if r := j.record; r != nil {
+				parts := len(r.manifest.Parts)
+				r.closePart(fromMs, nowMs, false)
+				if len(r.manifest.Parts) > parts {
+					rec.ClipUri, rec.Over = leyline.RecordingPartURI(jobID, len(r.manifest.Parts)), 1
+				}
+			}
+			clipEndMs = nowMs
 			rec.Usage.JobId = jobID
 		}
 		rec.Protocol = man.GetName()
@@ -364,6 +386,7 @@ func (d *Daemon) failDecodeLocked(j *fakeJob, why *leylinev1.ErrorDetail) {
 		d.destroyCaptureLocked(j.captureID, by)
 		j.createdCapture = false
 	}
+	d.endClipsLocked(j, "error")
 	j.proto.State = leylinev1.JobState_FAILED
 	j.proto.StatusDetail = why.GetMessage()
 	j.proto.Error = why
@@ -392,6 +415,7 @@ func (d *Daemon) finishDecode(jobID string) {
 	if j.proto.State != leylinev1.JobState_RUNNING {
 		return
 	}
+	d.endClipsLocked(j, "cancelled")
 	j.proto.State = leylinev1.JobState_CANCELLED
 	j.proto.StatusDetail = fmt.Sprintf("stopped after %d records", j.seq)
 	d.emit(byDaemon(), j.proto)

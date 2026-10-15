@@ -61,7 +61,9 @@ form and works on any field a decoder emits; --near and --county are shortcuts
 for two common cases:
 
   --where field=value   the general test: any field, by name. Also field!=value
-                        (not equal), field~value (contains), and field>value,
+                        (not equal), field~value (contains: a whole word, or
+                        words in order, ignoring case, so 'text~net control'
+                        finds a speech record that says it), and field>value,
                         >=, <, <= (numeric). Repeat for more tests.
   --near LAT,LON --radius R   records with a position within R of a point
                         (R is 10km, 500m, 5nm, 3mi). Position is a field every
@@ -83,7 +85,8 @@ notifier, so it fires whether or not ley is attached.
   ley watch aprs --where device_id=LEYTST-1     # one station
   ley watch aprs --where 'temp_c>25'            # only when it is warm
   ley watch aprs --near 37.76,-122.42 --radius 10km
-  ley watch same --county 06009 --notify=shell:'say alert' --detach`,
+  ley watch same --county 06009 --notify=shell:'say alert' --detach
+  ley watch speech --freq 146.52 --where 'text~net control' --notify --detach`,
 		GroupID: GroupLooking,
 		Args:    cobra.ExactArgs(1),
 		ValidArgsFunction: func(_ *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
@@ -178,6 +181,9 @@ func runWatch(ctx context.Context, s *verbSession, o watchOptions) error {
 	if name, _, err := s.Client.ResolveDecoder(ctx, o.decoder); err == nil {
 		o.decoder = name
 	}
+	if err := requireFrequency(ctx, s, o.decoder, o.freqHz); err != nil {
+		return err
+	}
 	job, err := s.Client.StartDecode(ctx, o.config())
 	if err != nil {
 		return decodeFailure(s, decodeOptions{decoder: o.decoder}, err)
@@ -259,6 +265,9 @@ func watchWhat(ctx context.Context, s *verbSession, job *leylinev1.Job, o watchO
 	line += "\n  " + st.Muted("filter: "+o.predWords)
 	if o.notify != nil {
 		line += "\n  " + st.Muted("notify: "+notifierWords(o.notify))
+	}
+	if clips := clipsURI(job); clips != "" {
+		line += "\n  " + st.Muted("overs recorded as "+clips)
 	}
 	return line
 }

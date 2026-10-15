@@ -7,6 +7,13 @@ decode needs no tune flags: 'ley decode aprs' tunes 144.390 MHz NFM because
 that is where APRS lives in North America. --freq puts it somewhere else,
 which is what a region with another allocation needs.
 
+A decoder with no frequency of its own, such as speech, needs --freq to say
+where to listen. A speech decoder hears overs: the daemon cuts the channel's
+audio at the squelch, records it as a gated recording under the job's id
+(ley://recordings/<job>), and each line gives the words with the part and over
+of that recording that hold them. The recording is kept with --job and goes
+when an unkept job ends.
+
 The daemon finds a capture that already covers the frequency, or makes one on
 an idle radio, or says who has the radio instead; --take-over insists. All of
 the decoding happens in the daemon, so an agent or a script reading --json
@@ -22,10 +29,11 @@ Usage:
   ley decode <decoder> [flags]
 
 Examples:
-  ley decode aprs                     # what is on 144.390 MHz?
-  ley decode aprs --count 5           # five packets, then stop
-  ley decode aprs --freq 144.8        # the European allocation
-  ley decode aprs --job               # keep decoding after ley exits
+  ley decode aprs                         # what is on 144.390 MHz?
+  ley decode aprs --count 5               # five packets, then stop
+  ley decode aprs --freq 144.8            # the European allocation
+  ley decode aprs --job                   # keep decoding after ley exits
+  ley decode speech --freq 146.94 --job   # transcribe a repeater all day
   ley decode aprs --json | jq -r .deviceId
 
 Flags:

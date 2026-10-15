@@ -15,6 +15,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/session"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"github.com/reflexive-labs/leysdr/go/internal/words"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 	"github.com/reflexive-labs/leysdr/go/pkg/records"
@@ -368,13 +369,19 @@ func printSpeechRecord(s *verbSession, run *transcribeRun, rec *leylinev1.Decode
 	if at, ok := leyline.RecordWallTime(rec, run.anchors); ok {
 		when = at.Format("15:04:05")
 	}
+	_, err := fmt.Fprintln(s.app.Stdout, overLine(st, when, rec))
+	return err
+}
+
+// overLine is one over's words as transcribe and a live speech decode print them: the time, the
+// part and over of the clip that holds the audio, the text, and any callsigns in parentheses.
+func overLine(st ui.Style, when string, rec *leylinev1.DecodeRecord) string {
 	_, part, _ := leyline.ParseRecordingURI(rec.GetClipUri())
 	line := fmt.Sprintf("%s %s  %s", st.Muted(when), st.Muted(fmt.Sprintf("part %d over %d", part, rec.GetOver())), records.Text(rec, "text"))
 	if calls := records.Text(rec, "callsigns"); calls != "" {
 		line += " (" + strings.ReplaceAll(calls, ",", ", ") + ")"
 	}
-	_, err := fmt.Fprintln(s.app.Stdout, line)
-	return err
+	return line
 }
 
 // transcribeInterrupted stops the job on Ctrl-C: the audio not yet sent is not sent, and the

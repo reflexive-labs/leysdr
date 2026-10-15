@@ -45,6 +45,13 @@ decode needs no tune flags: 'ley decode aprs' tunes 144.390 MHz NFM because
 that is where APRS lives in North America. --freq puts it somewhere else,
 which is what a region with another allocation needs.
 
+A decoder with no frequency of its own, such as speech, needs --freq to say
+where to listen. A speech decoder hears overs: the daemon cuts the channel's
+audio at the squelch, records it as a gated recording under the job's id
+(ley://recordings/<job>), and each line gives the words with the part and over
+of that recording that hold them. The recording is kept with --job and goes
+when an unkept job ends.
+
 The daemon finds a capture that already covers the frequency, or makes one on
 an idle radio, or says who has the radio instead; --take-over insists. All of
 the decoding happens in the daemon, so an agent or a script reading --json
@@ -55,10 +62,11 @@ running after ley exits and its records become a resource 'ley records'
 reads; 'ley jobs cancel' is how to stop one.
 
 --json prints one DecodeRecord per line (NDJSON) and nothing else on stdout.`,
-		Example: `  ley decode aprs                     # what is on 144.390 MHz?
-  ley decode aprs --count 5           # five packets, then stop
-  ley decode aprs --freq 144.8        # the European allocation
-  ley decode aprs --job               # keep decoding after ley exits
+		Example: `  ley decode aprs                         # what is on 144.390 MHz?
+  ley decode aprs --count 5               # five packets, then stop
+  ley decode aprs --freq 144.8            # the European allocation
+  ley decode aprs --job                   # keep decoding after ley exits
+  ley decode speech --freq 146.94 --job   # transcribe a repeater all day
   ley decode aprs --json | jq -r .deviceId`,
 		GroupID: GroupLooking,
 		Args:    cobra.ExactArgs(1),
@@ -110,6 +118,9 @@ func runDecode(ctx context.Context, s *verbSession, o decodeOptions) error {
 	if name, _, err := s.Client.ResolveDecoder(ctx, o.decoder); err == nil {
 		o.decoder = name
 	}
+	if err := requireFrequency(ctx, s, o.decoder, o.freqHz); err != nil {
+		return err
+	}
 	cfg := &leylinev1.DecodeConfig{
 		Decoder:     o.decoder,
 		FrequencyHz: o.freqHz,
@@ -156,6 +167,25 @@ func runDecode(ctx context.Context, s *verbSession, o decodeOptions) error {
 	}
 }
 
+// requireFrequency refuses, before anything starts, a decoder whose manifest names no frequency
+// when --freq names none either: speech decodes whatever it is pointed at, so there is nothing
+// to default to. A decoder ley cannot look up is left for the daemon to refuse.
+func requireFrequency(ctx context.Context, s *verbSession, decoder string, hz uint64) error {
+	if hz != 0 {
+		return nil
+	}
+	resp, err := s.Client.ListDecoders(ctx)
+	if err != nil {
+		return nil
+	}
+	for _, m := range resp.GetDecoders() {
+		if m.GetName() == decoder && len(m.GetRecipe().GetFrequenciesHz()) == 0 {
+			return usageErrorf("%s has no frequency of its own; say where to listen with --freq, e.g. --freq 146.94", decoder)
+		}
+	}
+	return nil
+}
+
 // decodeFailure turns the daemon's refusal into an error that says what to do next.
 func decodeFailure(s *verbSession, o decodeOptions, err error) error {
 	st := s.app.ErrStyle
@@ -195,10 +225,29 @@ func decodeBanner(ctx context.Context, s *verbSession, job *leylinev1.Job, o dec
 	if ch := decodeChannel(ctx, s); ch != nil {
 		line += ", " + st.Muted(ch.GetChannelId()+" on "+ch.GetCaptureId())
 	}
-	if o.keep {
-		return line + ". " + st.Muted("kept: it runs on after ley exits")
+	line += "."
+	if clips := clipsURI(job); clips != "" {
+		line += " The overs are recorded as " + clips
+		if !o.keep {
+			line += " until the job ends"
+		}
+		line += "."
 	}
-	return line + ". Ctrl-C stops"
+	if o.keep {
+		return line + " " + st.Muted("kept: it runs on after ley exits")
+	}
+	return line + " Ctrl-C stops"
+}
+
+// clipsURI is the recording a live speech job writes its overs to, from the job's result URIs, or
+// "" for a decoder that records nothing.
+func clipsURI(job *leylinev1.Job) string {
+	for _, uri := range job.GetResultUris() {
+		if id, part, ok := leyline.ParseRecordingURI(uri); ok && part == 0 {
+			return leyline.RecordingURI(id)
+		}
+	}
+	return ""
 }
 
 // decodeFrequency is where the job is listening: what was asked for, else the channel the daemon
@@ -251,6 +300,10 @@ func printRecord(s *verbSession, rec *leylinev1.DecodeRecord) error {
 	}
 	st := s.app.Style
 	when := recordClock(s, rec)
+	if rec.GetClipUri() != "" {
+		_, err := fmt.Fprintln(s.app.Stdout, overLine(st, when, rec))
+		return err
+	}
 	line := fmt.Sprintf("%s  %s  %s  %s",
 		st.Muted(when),
 		st.Pad(st.Truncate(rec.GetDeviceId(), 12), 12),

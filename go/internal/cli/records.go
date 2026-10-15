@@ -5,6 +5,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -44,7 +45,9 @@ nothing, so an empty table usually means no kept job has run.
 
 Rows are newest first. TIME is wall clock derived from the capture's anchor,
 the way every time in ley is; a record whose capture the daemon no longer has
-an anchor for shows no time rather than a guessed one.
+an anchor for shows no time rather than a guessed one. Speech records add
+CLIP, the part and over of the recording that holds the words' audio:
+3/2 is the second over in part 3, which 'ley play' plays.
 
 --since takes a duration: 90s, 30m, 1h, 2d. --near takes a latitude and a
 longitude ('37.76,-122.42') and --radius a distance with its unit (10km, 500m,
@@ -53,6 +56,7 @@ longitude ('37.76,-122.42') and --radius a distance with its unit (10km, 500m,
 --json prints a RecordPage: the records and the anchors that date them.`,
 		Example: `  ley records                              # everything kept, newest first
   ley records --protocol aprs --since 1h   # the last hour of APRS
+  ley records --protocol speech --since 12h # what a repeater said today
   ley records --device-id LEYTST-1         # one transmitter
   ley records --near 37.76,-122.42 --radius 10km
   ley records --json | jq -r '.records[].deviceId'`,
@@ -130,10 +134,21 @@ func printRecordTable(app *App, page *leylinev1.RecordPage) {
 		{head: "KIND", drop: 1},
 		{head: "SUMMARY", min: 16},
 	}
+	// Speech records name the clip that holds their audio: CLIP is the part and over, which
+	// 'ley play' and 'ley transcribe' read, shown only when a record on the page has one.
+	clips := slices.ContainsFunc(page.GetRecords(), func(r *leylinev1.DecodeRecord) bool { return r.GetClipUri() != "" })
+	if clips {
+		cols = slices.Insert(cols, 4, column{head: "CLIP"})
+	}
 	for _, rec := range page.GetRecords() {
-		add(cols, recordTime(rec, page.GetAnchors()), absentIfEmpty(s, rec.GetProtocol()),
+		cells := []string{
+			recordTime(rec, page.GetAnchors()), absentIfEmpty(s, rec.GetProtocol()),
 			absentIfEmpty(s, rec.GetDeviceId()), absentIfEmpty(s, rec.GetKind()),
-			absentIfEmpty(s, records.Summary(rec)))
+		}
+		if clips {
+			cells = append(cells, absentIfEmpty(s, clipCell(rec)))
+		}
+		add(cols, append(cells, absentIfEmpty(s, records.Summary(rec)))...)
 	}
 	_, _ = printColumns(app.Stdout, s, cols, nil)
 	if len(page.GetRecords()) == 0 {
@@ -143,6 +158,15 @@ func printRecordTable(app *App, page *leylinev1.RecordPage) {
 	if page.GetTruncated() {
 		fmt.Fprintf(app.Stderr, "%s\n", app.ErrStyle.Muted("more records matched than were returned; --limit asks for more"))
 	}
+}
+
+// clipCell is "<part>/<over>" for a record whose audio a recording holds, or "" for one without.
+func clipCell(rec *leylinev1.DecodeRecord) string {
+	_, part, ok := leyline.ParseRecordingURI(rec.GetClipUri())
+	if !ok || part == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d/%d", part, rec.GetOver())
 }
 
 // recordTime is the record's wall clock through the page's anchors. A record no anchor covers

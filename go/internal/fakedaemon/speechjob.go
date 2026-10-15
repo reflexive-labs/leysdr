@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -255,4 +256,36 @@ func speechSegments(dir string, m *leyline.RecordingManifest, in *leylinev1.Deco
 		closeSeg()
 	}
 	return out, nil
+}
+
+// openClipsLocked starts the gated recording a live speech job writes under its own id: the
+// record job's own files and manifest, with the recorder's 500 ms pre-roll and 5 s hang, listed by
+// `ley recordings` while the job runs. Caller holds the lock.
+func (d *Daemon) openClipsLocked(j *fakeJob, hz uint64, mode leylinev1.DemodMode) error {
+	rec, err := d.openRecordingLocked(j, &leylinev1.RecordConfig{Mode: mode, Gate: leylinev1.RecordGate_SQUELCH}, hz, false, true)
+	if err != nil {
+		return err
+	}
+	j.record = rec
+	j.proto.ResultUris = append(j.proto.ResultUris, leyline.RecordingURI(j.proto.GetJobId()))
+	return nil
+}
+
+// endClipsLocked ends a live speech job's clips with the job: a kept job's recording is closed
+// with how it ended and stays a resource, and an unkept job's goes, because persistence follows
+// intent. The fake has no restart, so a kept job's clips are never carried on. Caller holds the
+// lock.
+func (d *Daemon) endClipsLocked(j *fakeJob, endedBy string) {
+	r := j.record
+	if r == nil || j.proto.GetDecode() == nil {
+		return
+	}
+	if !j.keep || len(r.manifest.Parts) == 0 {
+		_ = os.RemoveAll(r.dir)
+		j.record = nil
+		return
+	}
+	r.manifest.EndedBy = endedBy
+	r.manifest.EndedAtNS = time.Now().UnixNano()
+	_ = writeManifest(r)
 }
