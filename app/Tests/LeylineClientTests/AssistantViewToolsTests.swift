@@ -144,6 +144,17 @@ final class AssistantViewToolsTests: XCTestCase {
             ViewWindow.visible(centerHz: 1, sampleRate: 0, zoom: 1, focusHz: 0))
     }
 
+    func testTheSessionKeepsAFocusOnlyWhileTunedThereAndZoomed() {
+        let focus = ViewFocus(hz: 146_500_000, tunedHz: 146_000_000)
+        XCTAssertEqual(ViewFocus.kept(focus, tunedHz: 146_000_000, zoom: 4), focus)
+        // A tune from any client clears it, and coming back does not bring it back.
+        XCTAssertNil(ViewFocus.kept(focus, tunedHz: 146_520_000, zoom: 4))
+        XCTAssertNil(ViewFocus.kept(focus, tunedHz: nil, zoom: 4))
+        // Zoomed back out to the whole span, there is nothing to centre.
+        XCTAssertNil(ViewFocus.kept(focus, tunedHz: 146_000_000, zoom: 1))
+        XCTAssertNil(ViewFocus.kept(nil, tunedHz: 146_000_000, zoom: 4))
+    }
+
     func testAFocusLastsUntilTheRadioIsTunedElsewhere() {
         let focus = ViewFocus(hz: 146_500_000, tunedHz: 146_000_000)
         XCTAssertEqual(focus.centre(tunedHz: 146_000_000), 146_500_000)

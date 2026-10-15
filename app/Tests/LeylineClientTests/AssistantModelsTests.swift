@@ -108,8 +108,10 @@ final class AssistantModelsTests: XCTestCase {
         XCTAssertFalse(q.isViewTool)
         XCTAssertEqual(view.stateWord, "waiting for you")
 
+        XCTAssertFalse(view.canStop, "a question the person decides has Decline, not Stop")
         c.pending.viewTool = true
         XCTAssertEqual(ConversationView(c).stateWord, "working")
+        XCTAssertTrue(ConversationView(c).canStop, "a view tool the app runs can be cut short")
         XCTAssertEqual(ConversationView(c).pending?.isViewTool, true)
 
         // A pending action left on a conversation that has moved on is not a question.

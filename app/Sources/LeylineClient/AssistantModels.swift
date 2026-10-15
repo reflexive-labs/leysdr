@@ -47,6 +47,10 @@ public struct ConversationView: Sendable, Equatable {
     public var canSend: Bool { state == .conversationIdle }
     /// The assistant is on a turn and Stop ends it.
     public var isThinking: Bool { state == .conversationThinking }
+    /// Stop shows: while the assistant thinks, and while it waits on one of the app's view tools,
+    /// which the person did not decide and may want to cut short. A question the person decides
+    /// has Decline instead.
+    public var canStop: Bool { isThinking || pending?.isViewTool == true }
     /// Ended or failed: nothing more happens in it, and the panel offers a new one.
     public var isOver: Bool { state == .conversationEnded || state == .conversationFailed }
 
@@ -86,7 +90,7 @@ public struct TurnRow: Sendable, Equatable, Identifiable {
 }
 
 /// One tool call: a disclosure row whose line is the tool and its arguments and whose body is the
-/// arguments in full and the result (story A16).
+/// arguments in full and the result.
 public struct StepRow: Sendable, Equatable, Identifiable {
     public var id: String { callID }
     public let callID: String

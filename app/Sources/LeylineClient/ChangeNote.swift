@@ -47,6 +47,22 @@ public struct AttributedChange: Sendable, Equatable {
             causedBy: causedBy, seq: seq, object: .capture(before: before, after: after))
     }
 
+    /// Whether the settings this change set are still the object's, so a note never names a
+    /// value something since changed without saying who (the daemon's own events carry no
+    /// author and are not kept as changes).
+    func isCurrent(channel: Leyline_V1_Channel, capture: Leyline_V1_Capture?) -> Bool {
+        switch object {
+        case .channel(_, let after):
+            return after.channelID == channel.channelID && after.offsetHz == channel.offsetHz
+                && after.mode == channel.mode && after.bandwidthHz == channel.bandwidthHz
+                && !ChangeNote.squelchMoved(after.squelchDb, channel.squelchDb)
+        case .capture(_, let after):
+            guard let capture else { return false }
+            return after.captureID == capture.captureID && after.centerHz == capture.centerHz
+                && after.sampleRate == capture.sampleRate && after.gains == capture.gains
+        }
+    }
+
     /// The change an event makes to a channel, or nil when no setting moved (a state change
     /// alone, such as `OUT_OF_CAPTURE`, is the inspector's own line).
     static func channel(
@@ -78,8 +94,10 @@ public struct ChangeNote: Sendable, Equatable {
     public static func latest(
         for channel: Leyline_V1_Channel, in state: MirrorState, selfClientID: String
     ) -> ChangeNote? {
+        let capture = state.capture(channel.captureID)
         let candidates = [state.changes[channel.channelID], state.changes[channel.captureID]]
             .compactMap { $0 }
+            .filter { $0.isCurrent(channel: channel, capture: capture) }
         guard let newest = candidates.max(by: { $0.seq < $1.seq }),
             newest.causedBy.clientID != selfClientID
         else { return nil }
@@ -89,13 +107,14 @@ public struct ChangeNote: Sendable, Equatable {
         return ChangeNote(text: capitalised(who) + " " + sentence(what) + ".", author: who)
     }
 
-    /// A readable name for a client: the assistant by its label, the rest by kind, as `ley`
-    /// names them (`whoChanged` in `go/internal/cli/change.go`).
+    /// A readable name for a client, as `ley` names them (`whoChanged` in
+    /// `go/internal/cli/change.go`): the assistant's tool server, an MCP client labelled
+    /// `assistant`, as itself, and the rest by kind.
     public static func author(_ client: Leyline_V1_ClientInfo) -> String {
-        if client.label == "assistant" { return "the assistant" }
+        if client.kind == "mcp" && client.label == "assistant" { return "the assistant" }
         switch client.kind {
         case "cli": return "another terminal"
-        case "app": return "another app"
+        case "app": return "the app"
         case "mcp": return "an agent"
         case "job": return "a job"
         case "daemon": return "the daemon"

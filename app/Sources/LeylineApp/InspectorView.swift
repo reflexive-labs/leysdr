@@ -143,7 +143,7 @@ struct IdentityView: View {
                 .lineLimit(1)
             if let note = session.changeNote {
                 // Who changed the channel last when it was not this window: the assistant, a
-                // terminal, an agent (`ChangeNote`, story A15). It goes when this window writes.
+                // terminal, an agent (`ChangeNote`). It goes when this window writes.
                 Text(note.text).font(Theme.Font.aside).foregroundStyle(Theme.inkTertiary)
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }

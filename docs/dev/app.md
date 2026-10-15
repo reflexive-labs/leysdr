@@ -64,10 +64,9 @@ removed, only `DISCONNECTED`; a job is never removed, it finishes; an event at o
 held `seq` is skipped, except a `WriteRejected`, which no snapshot could have carried. A `seq`
 gap means the snapshot fell out of the daemon's 256-event window, and the mirror takes another
 snapshot without leaving the stream (`snapshots` counts them, so a test can check that a resync
-happened). The fold also keeps who caused each capture's, channel's, sink's and job's newest
-event (`lastCausedBy`, from `Event.caused_by`; an event without one leaves the entry, a tombstone
-removes it) and, for each capture and channel, the newest attributed event that moved a setting
-together with the object before it (`changes`), because an event carries the whole object and a
+happened). The fold also keeps, for each capture and channel, the newest event with a
+`caused_by` that moved a setting, together with the object before it (`changes`; a tombstone
+removes the entry), because an event carries the whole object and a
 change is a diff of two copies, as `ley`'s change lines are (`go/internal/cli/change.go`). An
 activity-clock stamp moves no setting, so the squelch write that caused it stays the newest
 change. `MirrorState` is a value with no daemon in it, and that is where the rules are tested.
@@ -377,12 +376,16 @@ The assistant's conversation is daemon state (`../design/ai.md`, "The assistant"
 is one more client of it, beside `ley ask`: it renders the conversation and moves it only through
 the `Assistant` RPCs. It is a column of `Theme.Layout.assistantPanel` on the window's right, beside
 the inspector, shown while `AppSession.assistantShown` (the toolbar's toggle beside the inspector's,
-and View ▸ Show Assistant, ⇧⌘A; remembered in the defaults) and `hasAnyAI` both hold, so no
-assistant control appears before a key or an on-device engine is set. The column is in
+and View ▸ Show Assistant, ⇧⌘A; remembered in the defaults) and `hasAnyAI` both hold, so the
+panel and its toggle appear only once a key or an on-device engine is set; the menu item is
+disabled until then rather than left out, because a `Commands` body is not re-evaluated. The
+window's minimum width (`Theme.Layout.windowMinWidth`) grows by the column's while it shows, so
+the canvas keeps its room beside the sidebar, the inspector and the column. The column is in
 `MainWindow` beside both places' bodies rather than inside each, so a switch of place, the
 assistant's own `show_place` included, leaves the transcript, its scroll and the field alone.
 
-**The conversation** (`AssistantController`, in the façade). The window starts a conversation
+**The conversation** (`AssistantController`, in the façade, with the RPCs behind
+`AssistantCalls` so its rules are tested without a daemon). The window starts a conversation
 with `StartConversation`, declaring the app's view tools and naming no provider or model, so the
 daemon uses the assistant feature's; the first message starts one when none is going, and New
 Conversation ends the one shown and empties the panel. `SendMessage`, `ResolveAction` (Allow,
@@ -402,10 +405,12 @@ value` pairs, cut at 80 characters), a state word (`running`, `done`, `failed`, 
 app`, `declined`, `stopped`) and the result's first line; opened, the step shows the arguments as
 indented JSON, the whole result and its JSON. A call waiting for approval is a card with the
 question, the gate's reason (`assistant.md`, "The gate") and Allow and Decline, neither on Return.
-Stop shows while the assistant thinks. The usage line under the transcript is the mirror's usage
+Stop shows while the assistant thinks and while it waits on one of the app's view tools. The
+usage line under the transcript is the mirror's usage
 lines whose scope is the conversation, summed: `3 requests, 1.2k in, 400 out`, with the tokens the
 provider's cache served when there were any; never a price. The field sends on Return, keeps the
-text when the daemon did not take it, and is disabled while the assistant thinks or waits;
+text when the daemon did not take it, is disabled while the assistant thinks or waits, and takes
+the focus back when it can be typed in again if it had it when the message went;
 `TuningKeyGuard` keeps Space and the arrows in it.
 
 **The view tools** (`AssistantViewTools.swift`). The app declares three, each named by the
@@ -413,13 +418,17 @@ worker's rule (1 to 64 letters, digits, `_` or `-`, no radio tool's name; `assis
 tools"): `show_band` (`{band}` by name or alias, or `{from_hz, to_hz}`), `select_recording`
 (`{recording, part?}`, an id or a `ley://recordings/` URI) and `show_place` (`{place: radio |
 library}`). The daemon routes each call to the app as a call awaiting the client; the controller
-answers each call id once: the input is parsed, and a bad one is an error answer the model reads,
+performs each call id once: the input is parsed, and a bad one is an error answer the model reads,
 never a crash; the session performs the rest on the main actor (`ViewToolPerformer`) and the answer
-goes back with `AnswerViewTool`, prose and JSON. None of them moves the radio. `show_band` fits the
+goes back with `AnswerViewTool`, prose and JSON. An answer that does not reach the daemon is kept
+and sent again after the watch's backoff, without performing the call again; a
+`FAILED_PRECONDITION` means the conversation moved on and ends it. None of them moves the radio. `show_band` fits the
 part of the range inside the span the radio captures, at the highest zoom whose window holds it,
 and centres the window there (`ViewWindow.fit`; the session's `viewFocus`, which `visibleRange`
-reads through `ViewWindow.visible` only while the radio stays tuned where it was, so any tune puts
-the window back on the tuned frequency); a range the span does not reach is an error answer
+reads through `ViewWindow.visible`). The session clears the focus after every mirror change in
+which the tuned frequency is no longer the one it was set against, and when the zoom returns to 1
+(`ViewFocus.kept`), so any tune, from any client, puts the window back on the tuned frequency; a
+range the span does not reach is an error answer
 saying to tune, because retuning goes through the radio tools and their don't-disturb check.
 `select_recording` goes through `AppSession.selectRecording(id:part:)`, which sets the place, the
 Library's channel row and the part URI as the Library's own clicks do, and is the one way to
@@ -428,13 +437,18 @@ select a recording from outside the Library's views. `show_place` sets the place
 **Attribution** (`ChangeNote.swift`). The inspector's identity has one line under the channel's
 frequency and mode when another client changed the channel or its radio last, from the mirror's
 `changes`: "The assistant set the squelch to -45 dBFS.", "Another terminal set the mode to AM and
-the width to 25.0 kHz." The words are `ley`'s change lines with the assistant (the worker's tool
-server dials with the label `assistant`) named as itself; the line goes as soon as this window
-changes the channel.
+the width to 25.0 kHz." The words and the names are `ley`'s change lines (`whoChanged`): the
+assistant is the MCP client labelled `assistant`, as the worker's tool server dials. A change is
+shown only while the channel and its radio still hold the values it set, so an unattributed
+change since (the daemon's own) never leaves the note naming a stale value, and the line goes as
+soon as this window changes the channel.
 
-On Linux the rows, the view tools' parsing and answers, the view window and the attribution fold
-are tested in `AssistantModelsTests`, `AssistantViewToolsTests` and `ChangeNoteTests`, and the
-conversation against the daemon in `AssistantDaemonTests`; the panel, the toggle and the session's
+On Linux the rows, the view tools' parsing and answers, the view window, the focus rule and the
+attribution fold are tested in `AssistantModelsTests`, `AssistantViewToolsTests` and
+`ChangeNoteTests`; the controller's rules (the watch resuming from its `seq`, a forgotten
+conversation, a call performed once and its answer sent again, another conversation ignored) in
+`AssistantControllerTests` against a fake `AssistantCalls`; and the conversation against the
+daemon in `AssistantDaemonTests`; the panel, the toggle and the session's
 side are never compiled there.
 
 
@@ -693,7 +707,8 @@ leaves it when removed; a feature's model round trips; usage reported over the s
 the pane's day and month rows. `AssistantDaemonTests` names as `--ley` a script that runs the
 engine's `leyline-fake-worker` (built beside `leylined`) on a script of its own, and drives
 `AssistantController` through a refused start, a message with a tool step, a question allowed, a
-`show_band` call answered by a test performer, Stop and End; its second case writes the squelch
+`show_band` call, then `select_recording` and `show_place` in one turn, each answered by a test
+performer, Stop and End; its second case writes the squelch
 as a client labelled `assistant` and reads the inspector's note from the app's mirror.
 
 A bare `swift test` in `app/` runs the daemon suite too and skips it silently without

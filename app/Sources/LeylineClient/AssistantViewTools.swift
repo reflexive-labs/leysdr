@@ -7,7 +7,7 @@
 // View state stays in the client, and a view tool never moves the radio: the waterfall's view
 // moves only inside the span the radio is capturing, and the answer says to tune when the band is
 // outside it, because retuning goes only through the radio tools and their don't-disturb check
-// (`docs/plans/ai-features.md`, story A19). The names follow the worker's rule for a view tool, 1
+// (`docs/design/ai.md`, "The assistant"). The names follow the worker's rule for a view tool, 1
 // to 64 letters, digits, `_` or `-` and no radio tool's name (`docs/dev/assistant.md`, "The
 // tools"). Every input is parsed here, so a malformed call is answered as an error and never
 // reaches the window.
@@ -321,7 +321,8 @@ public enum ViewWindow {
 }
 
 /// Where a view tool centred the zoomed window, held only while the radio stays tuned where it was
-/// then: a tune, from this window or any client, puts the window back on the tuned frequency.
+/// then and the view is zoomed: a tune, from this window or any client, puts the window back on the
+/// tuned frequency, and so does zooming back out to the whole span.
 public struct ViewFocus: Sendable, Equatable {
     public let hz: UInt64
     public let tunedHz: UInt64?
@@ -335,5 +336,13 @@ public struct ViewFocus: Sendable, Equatable {
     /// was set against, else nil.
     public func centre(tunedHz now: UInt64?) -> UInt64? {
         now == tunedHz ? hz : nil
+    }
+
+    /// The focus the session keeps after a mirror change or a zoom: `focus` while the radio is
+    /// tuned where it was set and the view is zoomed in, else nil, so it is cleared rather than
+    /// left to come back the next time the frequency or the zoom returns.
+    public static func kept(_ focus: ViewFocus?, tunedHz: UInt64?, zoom: Int) -> ViewFocus? {
+        guard let focus, zoom > 1, focus.tunedHz == tunedHz else { return nil }
+        return focus
     }
 }

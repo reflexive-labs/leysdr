@@ -4,7 +4,7 @@
 // conversation with the assistant (`docs/design/ai.md`, "The assistant"). It renders the session's
 // copy of the conversation through the façade's rows (`ConversationView`) and moves it only through
 // the session's calls, which are the `Assistant` RPCs `ley ask` makes too: each step opens to the
-// call's arguments and result (story A16), a question is a card with Allow and Decline, Stop ends
+// call's arguments and result, a question is a card with Allow and Decline, Stop ends
 // a running turn, and the usage line counts the tokens so far in the provider's units. The column
 // sits outside both places' bodies, so `show_place` and ⌘1/⌘2 switch the body beside it without
 // remaking the transcript or the field. It is drawn only while an AI feature can run
@@ -182,7 +182,7 @@ struct TurnView: View {
 }
 
 /// One tool call: `→ tool arguments` and its state word, the result's first line under it, and
-/// when opened the arguments and the whole result (story A16).
+/// when opened the arguments and the whole result.
 struct StepView: View {
     let step: StepRow
     @State private var open = false
@@ -308,7 +308,9 @@ struct AssistantNoticeLine: View {
 }
 
 /// The usage line, then the field: Return sends; the field waits while the assistant is on a turn
-/// or a question, and Stop takes the send button's place while it thinks. The text stays in the
+/// or a question, and Stop shows beside it while it thinks or runs one of the app's view tools.
+/// The field takes the focus back when it can be typed in again, if it had it when the message
+/// went. The text stays in the
 /// field until the daemon has taken it. `TuningKeyGuard` hands Space and the arrows to the field,
 /// or typing would mute and tune the radio through the Tune menu's keys.
 struct AssistantField: View {
@@ -316,6 +318,9 @@ struct AssistantField: View {
     let view: ConversationView?
     @State private var draft = ""
     @FocusState private var focused: Bool
+    /// The field had the focus when the message went, so it takes it back when it can be typed
+    /// in again; a field the person had left alone does not take the focus from elsewhere.
+    @State private var refocus = false
 
     private var canType: Bool {
         guard !session.assistantSending else { return false }
@@ -337,7 +342,12 @@ struct AssistantField: View {
                     .disabled(!canType)
                     .onSubmit(send)
                     .modifier(TuningKeyGuard(focused: focused))
-                if view?.isThinking == true {
+                    .onChange(of: canType) { _, now in
+                        guard now, refocus else { return }
+                        refocus = false
+                        focused = true
+                    }
+                if view?.canStop == true {
                     Button("Stop") { Task { await session.stopTurn() } }
                         .buttonStyle(.bordered).controlSize(.small)
                         .help("Ends this turn; the conversation goes on")
@@ -358,6 +368,7 @@ struct AssistantField: View {
             return
         }
         draft = ""
+        refocus = focused
         Task {
             if !(await session.send(text)) { draft = text }
         }

@@ -25,7 +25,12 @@ struct LeylineApp: App {
             MainWindow()
                 .environment(session)
                 .task { await session.start() }
-                .frame(minWidth: 900, minHeight: 560)
+                // The assistant's column adds its width, so opening it never squeezes the
+                // canvas between the sidebar, the inspector and the column to nothing.
+                .frame(
+                    minWidth: Theme.Layout.windowMinWidth
+                        + (session.assistantPanelShown ? Theme.Layout.assistantPanel + 1 : 0),
+                    minHeight: 560)
         }
         .defaultSize(
             width: Theme.Layout.defaultWindow.width, height: Theme.Layout.defaultWindow.height
@@ -164,14 +169,14 @@ struct TuneCommands: Commands {
                 session.toggleInspector()
             }
             .keyboardShortcut("i", modifiers: [.command, .option])
-            // No AI control shows outside Settings until one can run (`hasAnyAI`); the toolbar's
-            // toggle is the live one, as for the inspector.
-            if session.hasAnyAI {
-                Button(session.assistantShown ? "Hide Assistant" : "Show Assistant") {
-                    session.toggleAssistant()
-                }
-                .keyboardShortcut("a", modifiers: [.command, .shift])
+            // Disabled until an AI feature can run (`hasAnyAI`) rather than left out: a
+            // Commands body is not guaranteed to re-evaluate, so an item left out at launch could
+            // stay out after a key is added. The toolbar's toggle is the live one.
+            Button(session.assistantShown ? "Hide Assistant" : "Show Assistant") {
+                session.toggleAssistant()
             }
+            .keyboardShortcut("a", modifiers: [.command, .shift])
+            .disabled(!session.hasAnyAI)
         }
         CommandGroup(after: .toolbar) {
             Button("Zoom In") { session.zoomIn() }.keyboardShortcut("=", modifiers: [.command])

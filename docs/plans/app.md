@@ -1572,8 +1572,13 @@ and the fake worker in `make app-e2e`. The views are not compiled off the Mac.
   `ViewToolPerformer` conformance, the `visibleRange` rewrite onto `ViewWindow.visible`, the
   column and toggle in `MainWindow.swift`, Show Assistant in `LeylineApp.swift`, the change note in
   `InspectorView.swift`, the `Theme.Layout.assistant*` tokens.
-- K1: with no key, no toggle, no menu item and no column; adding a key in Settings brings the
-  toggle, and removing it takes the column away even while it was open.
+- K1: with no key, no toggle and no column, and View ▸ Show Assistant is disabled; adding a key
+  in Settings brings the toggle and enables the item, and removing the key takes the column away
+  even while it was open.
+- With the column open the window cannot be made narrower than 900 pt plus the column, and
+  opening it in a narrow window widens the window rather than squeezing the canvas.
+- Stop shows while the assistant waits on a view tool; after a message the field takes the focus
+  back once the turn ends.
 - ⇧⌘A and the toolbar toggle open and close the column in both places, and the choice survives
   a relaunch; ⌘1 and ⌘2 with the column open keep the transcript, its scroll and the field's text.
 - The empty panel's words wrap inside 320 pt; with no model chosen, Open Settings opens the AI

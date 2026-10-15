@@ -86,7 +86,11 @@ final class AppSession {
 
     // View state local to the window: presentation only, never radio state.
     var maxHold = true
-    var zoom = 1
+    /// The waterfall's zoom, 1 to 8. Back at 1 the whole span shows, and a view tool's focus has
+    /// nothing left to centre, so it goes.
+    var zoom = 1 {
+        didSet { keepViewFocus() }
+    }
     /// The frequency under the pointer on either chart, so the hairline shows on both; nil when
     /// the pointer is over neither.
     var pointerHz: UInt64?
@@ -731,7 +735,7 @@ final class AppSession {
             mirror.onChange = { [weak self] m in self?.mirrorChanged(m) }
             self.mirror = mirror
             self.writes = WriteCoalescer(connection: daemon)
-            let assistant = AssistantController(connection: daemon)
+            let assistant = AssistantController(calls: daemon)
             assistant.performer = self
             assistant.onChange = { [weak self] a in self?.assistantChanged(a) }
             assistant.log = { line in log("assistant", line) }
@@ -754,6 +758,7 @@ final class AppSession {
         let wasLive = isLive
         state = m.state
         connection = m.connection
+        keepViewFocus()
         // The conversation's event, which the watch may not have delivered yet.
         if let id = assistant?.conversationID,
             let c = state.conversations.first(where: { $0.conversationID == id })
@@ -3626,18 +3631,10 @@ final class AppSession {
         log("session", assistantShown ? "assistant shown" : "assistant hidden")
     }
 
-    /// Starts a conversation with the app's view tools, on the assistant feature's provider and
-    /// model: the request names neither, so the daemon uses the feature's. No key or no model is
-    /// a notice that points to Settings (`AssistantWords.failed`).
-    func startConversation() async {
-        guard let assistant else {
-            assistantNotice = AssistantNotice(text: Self.notDialledWords)
-            return
-        }
-        await assistant.start()
-    }
-
-    /// The field's Return: the message, starting a conversation first when none is going.
+    /// The field's Return: the message, starting a conversation first when none is going, with
+    /// the app's view tools and on the assistant feature's provider and model (the request names
+    /// neither). No key or no model is a notice that points to Settings
+    /// (`AssistantWords.failed`).
     /// Returns whether the daemon took it, so the field keeps what was typed when it did not.
     func send(_ text: String) async -> Bool {
         guard let assistant else {
@@ -3656,10 +3653,16 @@ final class AppSession {
     }
 
     func stopTurn() async { await assistant?.stopTurn() }
-    func endConversation() async { await assistant?.end() }
 
     /// New Conversation: the one shown ends, if it is still going, and the panel empties.
     func newConversation() async { await assistant?.clear() }
+
+    /// Clears `viewFocus` once the radio is tuned elsewhere or the view is zoomed back out
+    /// (`ViewFocus.kept`), after every mirror change and every zoom.
+    private func keepViewFocus() {
+        let kept = ViewFocus.kept(viewFocus, tunedHz: tunedHz, zoom: zoom)
+        if kept != viewFocus { viewFocus = kept }
+    }
 
     private func assistantChanged(_ a: AssistantController) {
         if conversation != a.conversation { conversation = a.conversation }
@@ -3801,7 +3804,8 @@ enum WindowPlace: String, CaseIterable, Identifiable {
 
 /// The view tools the window declares (`AppViewTools`), performed on the main actor when the
 /// assistant calls one. None of them moves the radio: `show_band` zooms and centres the view
-/// inside the span the radio captures and says to tune when the band is outside it (story A19).
+/// inside the span the radio captures and says to tune when the band is outside it, because
+/// retuning goes through the radio tools and their don't-disturb check.
 extension AppSession: ViewToolPerformer {
     func perform(_ request: AppViewTools.Request) async -> ViewToolAnswer {
         switch request {
@@ -3811,8 +3815,9 @@ extension AppSession: ViewToolPerformer {
                 sampleRate: capture?.sampleRate ?? 0)
             if let fit {
                 place = .radio
-                zoom = fit.zoom
+                // The focus first: zooming to 1 clears it, and a fit at zoom 1 needs none.
                 viewFocus = ViewFocus(hz: fit.focusHz, tunedHz: tunedHz)
+                zoom = fit.zoom
                 log("assistant", "view \(fit.shown.lowerBound)-\(fit.shown.upperBound) Hz")
             }
             return answer

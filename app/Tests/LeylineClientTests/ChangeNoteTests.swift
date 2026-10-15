@@ -62,40 +62,40 @@ final class ChangeNoteTests: XCTestCase {
         return s
     }
 
-    func testTheFoldKeepsWhoCausedEachObjectsNewestEvent() {
+    func testTheFoldKeepsTheNewestAttributedChangeThatMovedASetting() {
         var s = tuned()
-        XCTAssertEqual(s.lastCausedBy["cap_a"], app)
-        XCTAssertEqual(s.lastCausedBy["chan_1"], app)
         // A first sight has nothing to diff against.
         XCTAssertNil(s.changes["chan_1"])
 
         s.apply(event(3, .channel(channel(squelch: -45)), by: assistant))
-        XCTAssertEqual(s.lastCausedBy["chan_1"], assistant)
-        // The daemon's own event names nobody and leaves the author in place.
+        XCTAssertEqual(s.changes["chan_1"]?.causedBy, assistant)
+        XCTAssertEqual(s.changes["chan_1"]?.seq, 3)
+        // The daemon's own event names nobody and moves no setting: the change stays.
         var outside = channel(squelch: -45)
         outside.state = .outOfCapture
         s.apply(event(4, .channel(outside)))
-        XCTAssertEqual(s.lastCausedBy["chan_1"], assistant)
+        XCTAssertEqual(s.changes["chan_1"]?.seq, 3)
 
-        var job = Leyline_V1_Job()
-        job.jobID = "job_1"
-        job.state = .running
-        s.apply(event(5, .job(job), by: assistant))
-        XCTAssertEqual(s.lastCausedBy["job_1"], assistant)
-
-        var sink = Leyline_V1_Sink()
-        sink.sinkID = "sink_1"
-        sink.channelID = "chan_1"
-        sink.state = .sinkActive
-        s.apply(event(6, .sink(sink), by: app))
-        XCTAssertEqual(s.lastCausedBy["sink_1"], app)
-
-        // The tombstone takes the entries with the object.
+        // The tombstone takes the entry with the object.
         var gone = channel()
         gone.state = .unspecified
-        s.apply(event(7, .channel(gone), by: app))
-        XCTAssertNil(s.lastCausedBy["chan_1"])
+        s.apply(event(5, .channel(gone), by: app))
         XCTAssertNil(s.changes["chan_1"])
+    }
+
+    func testANoteNeverNamesAValueSinceChanged() {
+        var s = tuned()
+        s.apply(event(3, .channel(channel(squelch: -45)), by: assistant))
+        // An event with no author moves the squelch: it is not kept as a change, and the
+        // assistant's -45 is no longer what the channel holds, so nothing is said.
+        s.apply(event(4, .channel(channel(squelch: -30))))
+        XCTAssertEqual(s.changes["chan_1"]?.seq, 3)
+        XCTAssertNil(ChangeNote.latest(for: s.channel("chan_1")!, in: s, selfClientID: "app_self"))
+        // Back to the assistant's value, the note is true again.
+        s.apply(event(5, .channel(channel(squelch: -45))))
+        XCTAssertEqual(
+            ChangeNote.latest(for: s.channel("chan_1")!, in: s, selfClientID: "app_self")?.text,
+            "The assistant set the squelch to -45 dBFS.")
     }
 
     func testTheAssistantsSquelchChangeIsWordedForTheInspector() {
@@ -149,6 +149,12 @@ final class ChangeNoteTests: XCTestCase {
 
     func testAuthorsAreNamedAsLeyNamesThem() {
         XCTAssertEqual(ChangeNote.author(assistant), "the assistant")
+        // Only the MCP client labelled assistant is the assistant.
+        XCTAssertEqual(
+            ChangeNote.author(Self.client("x", kind: "cli", label: "assistant")),
+            "another terminal")
+        XCTAssertEqual(
+            ChangeNote.author(Self.client("x", kind: "app", label: "Leyline")), "the app")
         XCTAssertEqual(
             ChangeNote.author(Self.client("x", kind: "mcp", label: "claude")), "an agent")
         XCTAssertEqual(ChangeNote.author(Self.client("x", kind: "job", label: "")), "a job")

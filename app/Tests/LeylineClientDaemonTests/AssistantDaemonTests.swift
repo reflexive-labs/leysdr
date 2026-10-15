@@ -16,7 +16,8 @@ import LeylineProto
 import XCTest
 
 /// The window's part in a view tool call, played by the test: it records each request and
-/// answers `show_band` the way `AppSession` does, from the capture the mirror holds.
+/// answers with the façade's words as `AppSession` does: `show_band` from the capture the mirror
+/// holds, `select_recording` as a recording the Library does not have, `show_place` as shown.
 @MainActor
 final class RecordingPerformer: ViewToolPerformer {
     var requests: [AppViewTools.Request] = []
@@ -30,14 +31,18 @@ final class RecordingPerformer: ViewToolPerformer {
 
     func perform(_ request: AppViewTools.Request) async -> ViewToolAnswer {
         requests.append(request)
-        guard case .showRange(let lowHz, let highHz, let label) = request else {
-            return ViewToolAnswer(text: "not in this test", isError: true)
+        switch request {
+        case .showRange(let lowHz, let highHz, let label):
+            let cap = mirror.state.capture(captureID)
+            return AppViewTools.showRange(
+                lowHz: lowHz, highHz: highHz, label: label, centerHz: cap?.centerHz,
+                sampleRate: cap?.sampleRate ?? 0
+            ).answer
+        case .selectRecording(let id, _):
+            return AppViewTools.unknownRecording(id)
+        case .showPlace(let place):
+            return AppViewTools.shown(place)
         }
-        let cap = mirror.state.capture(captureID)
-        return AppViewTools.showRange(
-            lowHz: lowHz, highHz: highHz, label: label, centerHz: cap?.centerHz,
-            sampleRate: cap?.sampleRate ?? 0
-        ).answer
     }
 }
 
@@ -56,6 +61,11 @@ final class AssistantDaemonTests: XCTestCase {
 
         view show_band {"band":"2m"}
         text Shown.
+        end
+
+        view select_recording {"recording":"ley://recordings/job_9/2"}
+        view show_place {"place":"library"}
+        text Opened.
         end
 
         text Working
@@ -123,7 +133,7 @@ final class AssistantDaemonTests: XCTestCase {
         defer { presence.cancel() }
         let (capture, _) = try await ClientDaemonTests.tuneFixture(app, on: daemon)
 
-        let assistant = AssistantController(connection: app)
+        let assistant = AssistantController(calls: app)
         defer { assistant.close() }
         let performer = RecordingPerformer(mirror: mirror, captureID: capture.captureID)
         assistant.performer = performer
@@ -198,6 +208,24 @@ final class AssistantDaemonTests: XCTestCase {
         XCTAssertTrue(step.resultJSON.contains(#""place":"radio""#), step.resultJSON)
         XCTAssertTrue(view.turns[5].text.contains("Shown."), view.turns[5].text)
 
+        // The Library's two view tools, one after the other in one turn.
+        _ = await assistant.send("open job_9")
+        await assertEventually("the Library's turn never finished") {
+            assistant.conversation?.state == .conversationIdle
+                && assistant.conversation?.turns.count == 8
+        }
+        XCTAssertEqual(
+            Array(performer.requests.dropFirst()),
+            [.selectRecording(id: "job_9", part: 2), .showPlace(.library)])
+        view = ConversationView(try XCTUnwrap(assistant.conversation))
+        XCTAssertEqual(view.turns[7].steps.map(\.tool), ["select_recording", "show_place"])
+        XCTAssertEqual(view.turns[7].steps.map(\.stateWord), ["failed", "done"])
+        XCTAssertTrue(
+            view.turns[7].steps[0].resultText.contains("find_recordings"),
+            view.turns[7].steps[0].resultText)
+        XCTAssertEqual(view.turns[7].steps[1].resultText, "The window shows the Library.")
+        XCTAssertTrue(view.turns[7].text.contains("Opened."), view.turns[7].text)
+
         // Stop: the sleeping turn is closed before its last line.
         _ = await assistant.send("keep going")
         await assertEventually("the turn never started") {
@@ -239,13 +267,14 @@ final class AssistantDaemonTests: XCTestCase {
         }
 
         // The worker's tool server dials as kind `mcp`, label `assistant`
-        // (`docs/dev/assistant.md`, "The tools"); this connection stands in for it.
+        // (`docs/dev/assistant.md`, "The tools"); this connection stands in for it, because the
+        // engine's fake worker records a `tool` line in its turn and makes no call of its own.
         let worker = try DaemonConnection(
             socketPath: daemon.socketPath, identity: .fresh(kind: "mcp", label: "assistant"))
         defer { worker.close() }
         try await Harness.setSquelch(-45, channel: channel.channelID, via: worker, mirror: mirror)
 
-        XCTAssertEqual(mirror.state.lastCausedBy[channel.channelID]?.label, "assistant")
+        XCTAssertEqual(mirror.state.changes[channel.channelID]?.causedBy.label, "assistant")
         let note = ChangeNote.latest(
             for: try XCTUnwrap(mirror.state.channel(channel.channelID)), in: mirror.state,
             selfClientID: app.identity.id)

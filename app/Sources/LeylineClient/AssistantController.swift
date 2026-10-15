@@ -9,10 +9,11 @@
 //
 // A view tool call is answered here, once per call id: the call is parsed (`AppViewTools`), a
 // performer the window provides does what it asks on the main actor, and the answer goes back with
-// `AnswerViewTool`. The performer is a protocol so the daemon-backed tests answer with one of
-// their own, since the window is never compiled on Linux. Main-actor and free of UI frameworks for
-// the same reason as `DaemonMirror`: the session copies `conversation` and `notice` out on
-// `onChange`.
+// `AnswerViewTool`, again after a backoff when it did not reach the daemon. The performer is a
+// protocol so the daemon-backed tests answer with one of their own, since the window is never
+// compiled on Linux, and the RPCs are behind `AssistantCalls` so the rules here are tested without
+// a daemon. Main-actor and free of UI frameworks for the same reason as `DaemonMirror`: the session
+// copies `conversation` and `notice` out on `onChange`.
 
 import Foundation
 import LeylineProto
@@ -21,6 +22,63 @@ import LeylineProto
 @MainActor
 public protocol ViewToolPerformer: AnyObject {
     func perform(_ request: AppViewTools.Request) async -> ViewToolAnswer
+}
+
+/// The `Assistant` RPCs the controller makes. `DaemonConnection` is the one the app uses.
+public protocol AssistantCalls: Sendable {
+    func startConversation(_ request: Leyline_V1_StartConversationRequest) async throws
+        -> Leyline_V1_Conversation
+    func sendMessage(_ request: Leyline_V1_SendMessageRequest) async throws
+        -> Leyline_V1_Conversation
+    func resolveAction(_ request: Leyline_V1_ResolveActionRequest) async throws
+        -> Leyline_V1_Conversation
+    func answerViewTool(_ request: Leyline_V1_AnswerViewToolRequest) async throws
+        -> Leyline_V1_Conversation
+    func stopTurn(_ ref: Leyline_V1_ConversationRef) async throws -> Leyline_V1_Conversation
+    func endConversation(_ ref: Leyline_V1_ConversationRef) async throws
+        -> Leyline_V1_Conversation
+    /// `WatchConversation` from `sinceSeq`, ending after `ENDED` or `FAILED`.
+    func conversation(_ id: String, sinceSeq: UInt64) -> AsyncThrowingStream<
+        Leyline_V1_Conversation, any Error
+    >
+}
+
+extension DaemonConnection: AssistantCalls {
+    public func startConversation(_ request: Leyline_V1_StartConversationRequest) async throws
+        -> Leyline_V1_Conversation
+    {
+        try await assistant.startConversation(request)
+    }
+
+    public func sendMessage(_ request: Leyline_V1_SendMessageRequest) async throws
+        -> Leyline_V1_Conversation
+    {
+        try await assistant.sendMessage(request)
+    }
+
+    public func resolveAction(_ request: Leyline_V1_ResolveActionRequest) async throws
+        -> Leyline_V1_Conversation
+    {
+        try await assistant.resolveAction(request)
+    }
+
+    public func answerViewTool(_ request: Leyline_V1_AnswerViewToolRequest) async throws
+        -> Leyline_V1_Conversation
+    {
+        try await assistant.answerViewTool(request)
+    }
+
+    public func stopTurn(_ ref: Leyline_V1_ConversationRef) async throws
+        -> Leyline_V1_Conversation
+    {
+        try await assistant.stopTurn(ref)
+    }
+
+    public func endConversation(_ ref: Leyline_V1_ConversationRef) async throws
+        -> Leyline_V1_Conversation
+    {
+        try await assistant.endConversation(ref)
+    }
 }
 
 @MainActor
@@ -47,20 +105,26 @@ public final class AssistantController {
     /// window is answered as an error.
     public weak var performer: (any ViewToolPerformer)?
 
-    public let connection: DaemonConnection
+    public let calls: any AssistantCalls
     public let viewTools: [Leyline_V1_ViewTool]
     private let backoff: [Duration]
     private var watching: Task<Void, Never>?
-    /// View tool calls already answered or being answered, so a state seen twice (from the watch
-    /// and from the mirror) runs the call once.
-    private var answered: Set<String> = []
+    /// View tool calls performed, by call id, with the answer the window gave: a state seen twice
+    /// (from the watch and from the mirror) runs the call once, and an answer that did not reach
+    /// the daemon is sent again without running the call again.
+    private var answers: [String: ViewToolAnswer] = [:]
+    /// The call ids whose answer is on its way, or waiting out a backoff before it is sent again.
+    private var answering: Set<String> = []
+    /// How many times each call's answer failed to reach the daemon, for the backoff.
+    private var answerFailures: [String: Int] = [:]
 
-    /// `backoff` is how long the watch waits after a dropped stream, the last entry repeating.
+    /// `backoff` is how long the watch waits after a dropped stream, and an answer after a failed
+    /// send, the last entry repeating.
     public init(
-        connection: DaemonConnection, viewTools: [Leyline_V1_ViewTool] = AppViewTools.declarations,
+        calls: any AssistantCalls, viewTools: [Leyline_V1_ViewTool] = AppViewTools.declarations,
         backoff: [Duration] = [.milliseconds(250), .seconds(1), .seconds(2), .seconds(5)]
     ) {
-        self.connection = connection
+        self.calls = calls
         self.viewTools = viewTools
         self.backoff = backoff
     }
@@ -83,9 +147,9 @@ public final class AssistantController {
         sending = true
         defer { sending = false }
         do {
-            let c = try await connection.assistant.startConversation(req)
+            let c = try await calls.startConversation(req)
             watching?.cancel()
-            answered = []
+            forgetAnswers()
             isLost = false
             notice = nil
             conversation = c
@@ -113,7 +177,7 @@ public final class AssistantController {
         sending = true
         defer { sending = false }
         do {
-            absorb(try await connection.assistant.sendMessage(req))
+            absorb(try await calls.sendMessage(req))
             notice = nil
             return true
         } catch {
@@ -130,7 +194,9 @@ public final class AssistantController {
         req.callID = callID
         req.approve = approve
         log?("\(approve ? "allowed" : "declined") \(callID)")
-        await call(.resolve) { try await self.connection.assistant.resolveAction(req) }
+        let calls = calls
+        let request = req
+        await call(.resolve) { try await calls.resolveAction(request) }
     }
 
     /// Ends the running turn; the conversation goes on, waiting for the next message.
@@ -139,7 +205,9 @@ public final class AssistantController {
         var ref = Leyline_V1_ConversationRef()
         ref.conversationID = id
         log?("stop \(id)")
-        await call(.stop) { try await self.connection.assistant.stopTurn(ref) }
+        let calls = calls
+        let request = ref
+        await call(.stop) { try await calls.stopTurn(request) }
     }
 
     /// Ends the conversation and its worker; the transcript stays until `clear()`.
@@ -148,7 +216,9 @@ public final class AssistantController {
         var ref = Leyline_V1_ConversationRef()
         ref.conversationID = id
         log?("end \(id)")
-        await call(.end) { try await self.connection.assistant.endConversation(ref) }
+        let calls = calls
+        let request = ref
+        await call(.end) { try await calls.endConversation(request) }
     }
 
     /// New conversation: ends the one shown, if it is still going, and empties the panel.
@@ -156,7 +226,7 @@ public final class AssistantController {
         await end()
         watching?.cancel()
         watching = nil
-        answered = []
+        forgetAnswers()
         isLost = false
         notice = nil
         conversation = nil
@@ -171,7 +241,7 @@ public final class AssistantController {
 
     /// Takes a copy of the conversation from anywhere (an RPC's reply, the watch, the mirror's
     /// event) when it is this window's and newer than the one held, then answers a view tool
-    /// call it carries.
+    /// call it carries. Another conversation, `ley ask`'s say, is not this window's to answer.
     public func absorb(_ c: Leyline_V1_Conversation) {
         guard let held = conversation, c.conversationID == held.conversationID, c.seq > held.seq
         else { return }
@@ -183,21 +253,25 @@ public final class AssistantController {
 
     /// One unary call whose reply is the conversation. A `FAILED_PRECONDITION` means the
     /// conversation moved on first (another client answered, the turn ended): the watch brings
-    /// the state that shows how, and nothing is said.
+    /// the state that shows how, and nothing is said. Returns whether the call reached the
+    /// daemon, which includes that refusal.
+    @discardableResult
     private func call(
         _ action: AssistantAction,
-        _ rpc: @escaping @MainActor () async throws -> Leyline_V1_Conversation
-    ) async {
+        _ rpc: @escaping @Sendable () async throws -> Leyline_V1_Conversation
+    ) async -> Bool {
         do {
             absorb(try await rpc())
             notice = nil
+            return true
         } catch {
             let e = LeylineError(error)
             if e.code == "FAILED_PRECONDITION", action != .start {
                 log?("\(action.words): the conversation had moved on (\(e.message))")
-                return
+                return true
             }
             fail(action, error)
+            return false
         }
     }
 
@@ -218,6 +292,12 @@ public final class AssistantController {
         close()
     }
 
+    private func forgetAnswers() {
+        answers = [:]
+        answering = []
+        answerFailures = [:]
+    }
+
     /// Follows the conversation until it ends or fails, resuming from the held `seq` after a
     /// dropped stream. An unknown id ends the watch: the daemon restarted and the conversation,
     /// which is never kept, went with it.
@@ -227,9 +307,7 @@ public final class AssistantController {
             var attempt = 0
             while !Task.isCancelled {
                 guard let since = self?.heldSeq(id) else { return }
-                guard let stream = self?.connection.conversation(id, sinceSeq: since) else {
-                    return
-                }
+                guard let stream = self?.calls.conversation(id, sinceSeq: since) else { return }
                 do {
                     for try await c in stream {
                         self?.absorb(c)
@@ -262,39 +340,58 @@ public final class AssistantController {
         return c.seq
     }
 
-    /// Runs the view tool call the conversation is waiting on, once, and sends the answer.
+    /// Answers the view tool call the conversation is waiting on, unless its answer is already
+    /// on its way. The call is performed the first time only; a retry sends the answer kept.
     private func answerViewTool() {
         guard let c = conversation, c.state == .conversationWaiting, c.hasPending,
             c.pending.viewTool, !c.pending.callID.isEmpty,
-            !answered.contains(c.pending.callID)
+            !answering.contains(c.pending.callID)
         else { return }
         let pending = c.pending
-        answered.insert(pending.callID)
-        Task { await self.perform(pending, in: c.conversationID) }
+        answering.insert(pending.callID)
+        Task { await self.answer(pending, in: c.conversationID) }
     }
 
-    private func perform(_ pending: Leyline_V1_PendingAction, in id: String) async {
+    private func answer(_ pending: Leyline_V1_PendingAction, in id: String) async {
         let answer: ViewToolAnswer
-        switch AppViewTools.parse(tool: pending.tool, argumentsJSON: pending.argumentsJson) {
-        case .failure(let e):
-            answer = e.answer
-        case .success(let request):
-            if let performer {
-                answer = await performer.perform(request)
-            } else {
-                answer = ViewToolAnswer(
-                    text: "The app's window is closed, so nothing could be shown.", isError: true)
-            }
+        if let kept = answers[pending.callID] {
+            answer = kept
+        } else {
+            answer = await perform(pending)
+            answers[pending.callID] = answer
+            log?(
+                "view tool \(pending.tool) \(pending.callID): \(answer.isError ? "error: " : "")\(AssistantWords.firstLine(answer.text))"
+            )
         }
-        log?(
-            "view tool \(pending.tool) \(pending.callID): \(answer.isError ? "error: " : "")\(AssistantWords.firstLine(answer.text))"
-        )
         var req = Leyline_V1_AnswerViewToolRequest()
         req.conversationID = id
         req.callID = pending.callID
         req.resultText = answer.text
         req.resultJson = answer.json
         req.isError = answer.isError
-        await call(.answerViewTool) { try await self.connection.assistant.answerViewTool(req) }
+        let calls = calls
+        let request = req
+        if await call(.answerViewTool, { try await calls.answerViewTool(request) }) { return }
+        // The answer did not reach the daemon: after a backoff, the call the conversation then
+        // waits on is answered, which is this one unless it has moved on.
+        let failures = answerFailures[pending.callID, default: 0]
+        answerFailures[pending.callID] = failures + 1
+        try? await Task.sleep(for: delay(after: failures))
+        answering.remove(pending.callID)
+        guard conversationID == id else { return }
+        answerViewTool()
+    }
+
+    private func perform(_ pending: Leyline_V1_PendingAction) async -> ViewToolAnswer {
+        switch AppViewTools.parse(tool: pending.tool, argumentsJSON: pending.argumentsJson) {
+        case .failure(let e):
+            return e.answer
+        case .success(let request):
+            guard let performer else {
+                return ViewToolAnswer(
+                    text: "The app's window is closed, so nothing could be shown.", isError: true)
+            }
+            return await performer.perform(request)
+        }
     }
 }

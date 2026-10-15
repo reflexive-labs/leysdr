@@ -45,12 +45,10 @@ public struct MirrorState: Sendable, Equatable {
     /// The assistant's conversations, each whole. An ended or failed one stays listed with its
     /// state, as a finished job does.
     public var conversations: [Leyline_V1_Conversation] = []
-    /// The client that caused the newest event of each capture, channel, sink and job, by the
-    /// object's id (`Event.caused_by`). An event the daemon sends without one leaves the entry,
-    /// and a tombstone removes it. Empty after a snapshot, which names nobody.
-    public var lastCausedBy: [String: Leyline_V1_ClientInfo] = [:]
     /// The newest attributed event that moved a setting on each capture and channel, with the
-    /// object before it, by id (`AttributedChange`): what `ChangeNote` words for the inspector.
+    /// object before it, by id (`AttributedChange`, from `Event.caused_by`): what `ChangeNote`
+    /// words for the inspector. A tombstone removes the entry; a snapshot names nobody, so it
+    /// starts empty.
     public var changes: [String: AttributedChange] = [:]
     /// The newest event folded (the snapshot's `event_seq` at open). Events at or below it are
     /// already reflected and are skipped.
@@ -146,37 +144,25 @@ public struct MirrorState: Sendable, Equatable {
         return true
     }
 
-    /// Records who caused `event`, before it is folded, because the change is a diff against the
-    /// copy the mirror still holds.
+    /// Records the change `event` makes and who made it, before it is folded, because the
+    /// change is a diff against the copy the mirror still holds.
     private mutating func attribute(_ event: Leyline_V1_Event) {
         let by: Leyline_V1_ClientInfo? = event.hasCausedBy ? event.causedBy : nil
-        func note(_ id: String, gone: Bool) {
-            if gone {
-                lastCausedBy[id] = nil
-                changes[id] = nil
-            } else if let by {
-                lastCausedBy[id] = by
-            }
-        }
         switch event.body {
         case .capture(let c):
-            note(c.captureID, gone: c.state == .unspecified)
+            if c.state == .unspecified { changes[c.captureID] = nil }
             if let by, c.state != .unspecified, let was = capture(c.captureID),
                 let change = AttributedChange.capture(was, c, causedBy: by, seq: event.seq)
             {
                 changes[c.captureID] = change
             }
         case .channel(let c):
-            note(c.channelID, gone: c.state == .unspecified)
+            if c.state == .unspecified { changes[c.channelID] = nil }
             if let by, c.state != .unspecified, let was = channel(c.channelID),
                 let change = AttributedChange.channel(was, c, causedBy: by, seq: event.seq)
             {
                 changes[c.channelID] = change
             }
-        case .sink(let s):
-            note(s.sinkID, gone: s.state == .unspecified)
-        case .job(let j):
-            note(j.jobID, gone: false)
         default:
             break
         }

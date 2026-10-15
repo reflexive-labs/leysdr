@@ -159,6 +159,9 @@ enum Theme {
         /// The inspector, fixed on the right; the window works without it.
         static let inspectorWidth: CGFloat = 312
         static let inspectorHeaderHeight: CGFloat = 36
+        /// The window's narrowest, with the sidebar and the inspector; the assistant's column
+        /// adds its own width to it while it shows.
+        static let windowMinWidth: CGFloat = 900
         /// The assistant's panel, fixed beside the inspector; the window works without it. Wide
         /// enough for a step's `→ tool arguments` line and its state word at `Font.value`; a guess
         /// until the Mac.

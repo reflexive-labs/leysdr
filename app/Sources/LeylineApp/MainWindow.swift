@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The window's regions: chrome above and below a body of two panels, and a third on the right, the
-// inspector, with the assistant's column beside the whole body when it is open (`AssistantPanel`). The sidebar, the inspector and the transport bar are fixed; the waterfall
+// The window's regions: chrome above and below a body of two panels, and a third on the right,
+// the inspector, with the assistant's column beside the whole body when it is open
+// (`AssistantPanel`). The sidebar, the inspector and the transport bar are fixed; the waterfall
 // takes what is left. The inspector can be closed, and the window works without it. Two places
 // share the toolbar: the Radio is that window, and the Library replaces the
 // whole body under the toolbar with what has been kept (`LibraryView.swift`) while the radio keeps
