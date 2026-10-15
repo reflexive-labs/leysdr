@@ -241,7 +241,9 @@ actor JobStore {
         // A decode job's teardown is the runner's: the plugin goes, the store writer is closed and
         // the channel and any capture it built go back.
         if let runner = e.decode {
-            await runner.stop()
+            // A live speech job's clips record which: a kept job the daemon takes down with it
+            // carries its recording on when it is resumed.
+            await runner.stop(endedBy: shuttingDown ? "restart" : "cancelled")
             await finish(id, state: .cancelled, detail: "cancelled")
             return entries[id]?.proto
         }

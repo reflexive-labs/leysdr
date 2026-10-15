@@ -74,8 +74,10 @@ extension JobStore {
         job.createdBy = client.proto
         job.config = .decode(config)
         job.statusDetail = resuming == nil ? "starting" : "resuming after a daemon restart"
-        // Persistence follows intent (invariant 8): only a kept job has a resource.
+        // Persistence follows intent (invariant 8): only a kept job's records are a resource. A
+        // live segmented job's clips are one while it runs, and stay one only when it is kept.
         if config.keep { job.resultUris = ["ley://records/\(id.string)"] }
+        if Self.writesClips(config, installed.manifest) { job.resultUris.append("ley://recordings/\(id.string)") }
         let task = Task { await run(id) }
         entries[id] = Entry(proto: job, scan: nil, task: task, ownerClientID: client.id, decode: nil, keep: config.keep,
                             credentialProvider: installed.manifest.credentialProvider)
@@ -84,6 +86,12 @@ extension JobStore {
         if config.keep { persistKept() }
         await store.publishJob(job)
         return job
+    }
+
+    /// Whether the job records its audio as clips: a SEGMENTED decoder on a live channel. A job
+    /// that reads a stored recording already has its audio.
+    static func writesClips(_ config: Leyline_V1_DecodeConfig, _ manifest: Leyline_V1_DecoderManifest) -> Bool {
+        config.sourceUri.isEmpty && manifest.input.mode == .segmented && manifest.input.signal != .signalIq
     }
 
     // MARK: A stored recording
@@ -203,12 +211,25 @@ extension JobStore {
                          code: EngineError.Code.internalError)
             return
         }
+        var clips: LiveClips?
+        if Self.writesClips(config, installed.manifest) {
+            do {
+                clips = try await openClips(id, lease: lease, frequencyHz: frequencyHz, keep: config.keep)
+            } catch {
+                await writer?.close()
+                await lease.release()
+                await finish(id, state: .failed, detail: "the recordings store would not open: \(error)",
+                             code: EngineError.Code.internalError)
+                return
+            }
+        }
         let runner = DecodeRunner(
             jobID: id, installed: installed, lease: lease, hub: hub, writer: writer, store: store,
             frequencyHz: frequencyHz, captureRateHz: snapshot?.sampleRate ?? 0,
             tap: installed.manifest.input.tap == .tapDemod ? .demod : .audio,
             predicate: config.predicate, notify: config.hasNotify ? config.notify : nil,
             usage: usage, credentials: credentials, keep: config.keep, standingDegradation: squelchProblem,
+            clips: clips,
             onStatus: { [weak self] state, detail in
                 await self?.setDecodeStatus(id, state: state, detail: detail)
             },

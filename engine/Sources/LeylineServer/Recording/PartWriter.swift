@@ -215,6 +215,10 @@ actor PartWriter {
     private var sumSquares: Double = 0
     private var squelchOpens: [RecordingSquelchOpen] = []
     private var pendingOpen: UInt64?
+    /// The intervals of the parts closed most recently, newest last, so a live decode job can name
+    /// the part and over a segment's audio is in after the part has closed (`clip(forSegmentAt:)`).
+    private var closedOpens: [(part: Int, opens: [RecordingSquelchOpen])] = []
+    private static let keptClosedParts = 64
     /// The capture's clipping, matched against each part as it closes.
     private var clips = ClipLedger()
     /// The capture rate the ledger's samples are counted at; 0 until the first reading.
@@ -234,6 +238,8 @@ actor PartWriter {
         self.manifest = manifest
         self.captureID = captureID
         self.centerHz = centerHz
+        // A recording carried on after a daemon restart numbers its new parts after the old ones.
+        partNumber = manifest.parts.map(\.part).max() ?? 0
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
         try Self.writeManifest(manifest, to: directory)
     }
@@ -293,6 +299,24 @@ actor PartWriter {
             squelchOpens.append(RecordingSquelchOpen(openSample: from, closeSample: sample))
             pendingOpen = nil
         }
+    }
+
+    /// The part and over holding a segment that starts at capture sample `start`: the first squelch
+    /// opening, in the order they happened, that was still open at `start`, and its 1-based index
+    /// in its part's `squelch_opens`. A segment reaches back a pre-roll before its first opening
+    /// and never before the previous segment ended, which was a hang after that segment's last
+    /// close, so every earlier opening had closed by `start` and the first one open at it is the
+    /// segment's own (docs/dev/engine-internals.md, "Decoders"). The open part's opening that has
+    /// not closed yet counts as open. Nil when no opening the writer still holds was open at
+    /// `start`: the recorder has not reached it yet, or the part closed too long ago.
+    func clip(forSegmentAt start: UInt64) -> (part: Int, over: UInt32)? {
+        for (part, opens) in closedOpens {
+            if let i = opens.firstIndex(where: { $0.closeSample > start }) { return (part, UInt32(i + 1)) }
+        }
+        guard handle != nil else { return nil }
+        if let i = squelchOpens.firstIndex(where: { $0.closeSample > start }) { return (partNumber, UInt32(i + 1)) }
+        if pendingOpen != nil { return (partNumber, UInt32(squelchOpens.count + 1)) }
+        return nil
     }
 
     // MARK: Parts
@@ -405,6 +429,8 @@ actor PartWriter {
                                  clippedMs: clippedMs, squelchOpenMs: squelchOpenMs())
         manifest.parts.append(part)
         manifest.bytes += partBytes
+        closedOpens.append((partNumber, squelchOpens))
+        if closedOpens.count > Self.keptClosedParts { closedOpens.removeFirst(closedOpens.count - Self.keptClosedParts) }
         // The per-part accumulators belong to the part that just closed. `bytes` adds the open
         // part to the manifest's total, so leaving them set counts the last part twice -- which is
         // exactly the number a finished recording reports.

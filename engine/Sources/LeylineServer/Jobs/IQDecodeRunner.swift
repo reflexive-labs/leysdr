@@ -20,6 +20,13 @@ import Synchronization
 protocol DecodeRunning: AnyObject, Sendable {
     func start() async
     func stop() async
+    /// Ends the job, with the reason a recording the job writes records: "cancelled", or
+    /// "restart" for a daemon going down under it.
+    func stop(endedBy: String) async
+}
+
+extension DecodeRunning {
+    func stop(endedBy _: String) async { await stop() }
 }
 
 extension DecodeRunner: DecodeRunning {}

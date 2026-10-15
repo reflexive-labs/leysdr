@@ -180,7 +180,13 @@ struct Segmenter: Sendable {
     /// The segment a record stamped at `time` belongs to: the newest that started at or before it,
     /// or less than `overTolerance` after it.
     func over(at time: UInt64) -> UInt32? {
-        starts.last { $0.start <= time + toleranceSamples }?.index
+        segment(at: time)?.index
+    }
+
+    /// The first sample of the segment a record stamped at `time` belongs to, by the same rule as
+    /// `over(at:)`, with its count since the job began.
+    func segment(at time: UInt64) -> (start: UInt64, index: UInt32)? {
+        starts.last { $0.start <= time + toleranceSamples }
     }
 
     /// The waiting frames whose telemetry has been heard, cut into pieces for the plugin.

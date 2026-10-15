@@ -40,6 +40,21 @@ actor RecordingStore {
                               captureID: captureID, centerHz: centerHz)
     }
 
+    /// Opens the recording a kept decode job was writing before the daemon restarted, to carry it
+    /// on under the same id: the parts already there stay, the new ones are numbered after them,
+    /// and the manifest is open again (no `ended_by`) with the new capture's anchor beside the
+    /// old. Nil when there is none -- the last run heard nothing, or retention took it -- and the
+    /// caller opens a new one. Only a decode job's clips resume; a record job's recording ends at
+    /// a restart (docs/design/recording.md, "Retune, detach and restart").
+    func carryOn(job: JobID, anchor: StoredAnchor, captureID: String, centerHz: UInt64) throws -> PartWriter? {
+        guard var manifest = manifest(jobID: job.string) else { return nil }
+        retain(keeping: [job.string])
+        manifest.endedBy = ""
+        manifest.endedAtNs = 0
+        manifest.anchors.append(anchor)
+        return try PartWriter(directory: directory(for: job), manifest: manifest, captureID: captureID, centerHz: centerHz)
+    }
+
     // MARK: Reading
 
     /// Every manifest in the store, newest first by the time its recording started.

@@ -128,8 +128,9 @@ final class SegmentedDecodeTests: XCTestCase {
             let keyed: [(start: Double, seconds: Double)] = [(1.0, 1.0), (5.0, 0.5), (8.5, 2.0)]
             for (i, rec) in got.enumerated() {
                 let audioRate = Double(self.integer(rec, "rate"))
-                XCTAssertEqual(rec.over, UInt32(i + 1), "over counts the segments since the job began")
-                XCTAssertTrue(rec.clipUri.isEmpty, "no recording holds a live job's audio")
+                // The three keyings are 3 s and 3 s apart, inside the clips' 5 s hang: one part.
+                XCTAssertEqual(rec.over, UInt32(i + 1), "over is the opening's index in its part")
+                XCTAssertEqual(rec.clipUri, "ley://recordings/\(started.jobID)/1", "the job's own recording holds the over")
                 XCTAssertEqual(rec.fields["text"]?.text, "segment \(i + 1)")
                 XCTAssertEqual(self.integer(rec, "outside"), 0, "no frame arrives while the squelch is shut")
                 let startS = Double(rec.time.sampleIndex) / rate

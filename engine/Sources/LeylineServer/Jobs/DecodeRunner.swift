@@ -82,6 +82,9 @@ actor DecodeRunner {
     /// the squelch follower start, and shared by the two: the follower hands it records, the drain
     /// hands it audio and writes what it releases.
     private let segmenter = Mutex<Segmenter?>(nil)
+    /// A live segmented job's gated recording, which its records' `clip_uri` and `over` name; nil
+    /// for every other job.
+    private let clips: LiveClips?
     private var stopped = false
 
     /// Exactly one of `lease` and `source` is set: a channel to decode or a recording to read.
@@ -90,7 +93,7 @@ actor DecodeRunner {
          writer: RecordWriter?, store: SessionStore, frequencyHz: UInt64, captureRateHz: UInt64,
          tap: AudioTap, predicate: Leyline_V1_Predicate, notify: Leyline_V1_NotifyTarget?,
          usage: UsageRecorder? = nil, credentials: CredentialStore? = nil, keep: Bool = false,
-         standingDegradation: String? = nil,
+         standingDegradation: String? = nil, clips: LiveClips? = nil,
          onStatus: @escaping @Sendable (Leyline_V1_JobState, String) async -> Void,
          onFailure: (@Sendable (EngineError) async -> Void)? = nil,
          seqStart: UInt64 = 0)
@@ -111,6 +114,7 @@ actor DecodeRunner {
         self.credentials = credentials
         self.keep = keep
         self.standingDegradation = standingDegradation
+        self.clips = clips
         self.onStatus = onStatus
         self.onFailure = onFailure
         seq = seqStart
@@ -123,18 +127,26 @@ actor DecodeRunner {
 
     /// Ends the job: the plugin goes, the store writer is closed and the radio goes back.
     func stop() async {
+        await stop(endedBy: "cancelled")
+    }
+
+    /// `stop()`, with what the clips' manifest records as the reason: "cancelled" for a client's
+    /// cancel, "restart" for a daemon going down under a kept job that will be resumed.
+    func stop(endedBy reason: String) async {
         task?.cancel()
-        await teardown()
+        await teardown(endedBy: reason)
     }
 
     /// The same hand-back without cancelling the loop, for the paths that are already inside it.
-    /// Idempotent: cancel, a failure and shutdown can all arrive.
-    private func teardown() async {
+    /// Idempotent: cancel, a failure and shutdown can all arrive. The clips close before the
+    /// lease goes, because the recorder reads the channel the lease holds.
+    private func teardown(endedBy reason: String = "error") async {
         guard !stopped else { return }
         stopped = true
         if let plugin = currentPlugin.withLock({ $0 }) { await plugin.stop() }
         currentPlugin.withLock { $0 = nil }
         await writer?.close()
+        await clips?.stop(endedBy: reason)
         await lease?.release()
     }
 
@@ -147,6 +159,9 @@ actor DecodeRunner {
         }
         guard let lease else { return }
         let engine = lease.engine
+        // The recorder goes on first, so its first frame is no later than the segmenter's and
+        // every opening a segment starts at is one it has seen.
+        await clips?.start()
         let audio = AudioFrameSource(captureRate: captureRateHz, audioRate: engine.audioRate, tap: tap)
         do {
             try await engine.attach(audio.sink)
@@ -726,11 +741,18 @@ actor DecodeRunner {
             rec.snrDb = .nan
         } else {
             rec.channelID = lease?.channelID.string ?? ""
-            // Under SEGMENTED input the over is the segment the plugin stamped the record inside,
-            // counted from 1 since the job began. No recording holds a live job's audio yet, so
-            // there is no clip to name.
-            rec.over = segmenter.withLock { $0?.over(at: rec.time.sampleIndex) } ?? 0
+            // Under SEGMENTED input the clip is the part of the job's own recording that holds the
+            // segment the plugin stamped the record inside, and the over is the index of the
+            // segment's first opening in that part's squelch_opens: the stored path's rule, so
+            // transcribing the clips later gives the same overs.
+            rec.over = 0
             rec.clipUri = ""
+            if let clips, let segment = segmenter.withLock({ $0?.segment(at: rec.time.sampleIndex) }),
+               let found = await clips.locate(segmentStart: segment.start)
+            {
+                rec.clipUri = found.uri
+                rec.over = found.over
+            }
             rec.rssiDbfs = rssiDBFS
             rec.snrDb = snrDB
         }

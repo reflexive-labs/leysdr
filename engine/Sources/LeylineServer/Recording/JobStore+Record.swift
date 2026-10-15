@@ -240,6 +240,51 @@ extension JobStore {
         await runner.start()
     }
 
+    // MARK: A live decode job's clips
+
+    /// The gated recording a live segmented decode job writes beside its records, under the job's
+    /// own id (docs/dev/engine-internals.md, "Decoders"). The recorder reads the job's channel
+    /// through a borrowed lease, so the job's one allocation serves both and releasing the job's
+    /// lease is what hands the radio back. The gate is a record job's default: 500 ms of pre-roll,
+    /// a 5 s hang and one part per exchange. A kept job resumed after a restart carries on the
+    /// recording it had, with new parts.
+    func openClips(_ id: JobID, lease: any ChannelLease, frequencyHz: UInt64, keep: Bool) async throws -> LiveClips? {
+        guard let snapshot = await store.captureEngine(lease.captureID)?.snapshot else { return nil }
+        let channelConfig = await lease.engine.config
+        let first = anchor(snapshot, capture: lease.captureID)
+        let writer: PartWriter
+        if keep, let carried = try await recordings.carryOn(job: id, anchor: first, captureID: lease.captureID.string,
+                                                            centerHz: frequencyHz)
+        {
+            writer = carried
+        } else {
+            let manifest = RecordingManifest(
+                jobID: id.string, kind: "audio", frequencyHz: frequencyHz,
+                mode: modeName(channelConfig.mode), bandwidthHz: channelConfig.bandwidthHz,
+                sampleRate: UInt64(lease.engine.audioRate), format: "wav-s16",
+                device: await deviceInfo(lease.captureID), gains: gainInfo(snapshot),
+                squelchDbfs: channelConfig.squelchDB,
+                gate: RecordingGateInfo(kind: "squelch", preRollMs: Self.defaultPreRollMs, hangMs: Self.defaultHangMs),
+                partMs: 0, startedAtNs: WallClock.nowNs(), createdBy: recordingClient(id), anchors: [first])
+            writer = try await recordings.open(job: id, manifest: manifest, captureID: lease.captureID.string,
+                                               centerHz: frequencyHz)
+        }
+        let borrowed = BorrowedChannelLease(channelID: lease.channelID, captureID: lease.captureID, engine: lease.engine)
+        let log = self.log
+        let recorder = RecordRunner(
+            jobID: id, source: .audio(lease: borrowed, audioRate: lease.engine.audioRate), writer: writer,
+            store: store, recordings: recordings, captureRateHz: snapshot.sampleRate,
+            durationMs: 0, partMs: 0, gated: true, preRollMs: Self.defaultPreRollMs, hangMs: Self.defaultHangMs,
+            stopAfterQuietMs: 0,
+            onStatus: { state, detail, _ in
+                // The job's state is the decoder's; the recorder's running detail would only
+                // overwrite it. A recorder that stops on its own (a full disk) is logged, and
+                // the words go on without clips.
+                if !JobStore.isLive(state) { log.warning("\(id.string): the clips stopped: \(detail)") }
+            })
+        return LiveClips(recordingID: id.string, recorder: recorder, writer: writer, recordings: recordings, keep: keep)
+    }
+
     // MARK: Details
 
     private func declineRecord(_ id: JobID, _ allocation: AllocationResult) async {
