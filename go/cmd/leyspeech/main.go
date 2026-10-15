@@ -210,8 +210,11 @@ on. The delay includes the decoder's hang (half a second unless its manifest
 says otherwise): the daemon ends a segment only that long after the close, so
 no engine can answer sooner.
 
-The job's records and its recording are kept, so 'leyspeech run --recording
-<job>' can score the same overs once they are transcribed by hand.`,
+live takes the radio as 'ley decode' does and refuses when somebody else is
+using it. --model switches the speech model for the whole window and puts the
+previous choice back after. The job is cancelled on every way out, Ctrl-C
+included. Its records and its recording are kept, so 'leyspeech run
+--recording <job>' can score the same overs once they are transcribed by hand.`,
 		Example: `  leyspeech live --freq 146.94 --engine speech --seconds 600
   leyspeech live --freq 162.55 --engine <decoder> --model <model> --seconds 300 --json`,
 		Args: cobra.NoArgs,

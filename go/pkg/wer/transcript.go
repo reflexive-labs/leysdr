@@ -49,7 +49,7 @@ func ParseTranscript(r io.Reader, name string) (*Transcript, error) {
 		seen[key] = n
 		text = strings.TrimSpace(text)
 		if text == Unheard {
-			t.Skipped = append(t.Skipped, key)
+			t.Skipped = append(t.Skipped, Over{Key: key})
 			continue
 		}
 		t.Overs = append(t.Overs, Over{Key: key, Text: text})

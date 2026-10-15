@@ -92,7 +92,7 @@ func TestScore(t *testing.T) {
 			over(2, 1, "roger see you at six alpha"),                          // 6
 			over(2, 2, "seventy three"),                                       // 2, no record
 		},
-		Skipped: []Key{{3, 1}},
+		Skipped: []Over{{Key: Key{3, 1}}},
 	}
 	hyp := []Over{
 		over(1, 1, "This is W6ABC checking in."),           // exact
@@ -129,7 +129,7 @@ func TestScore(t *testing.T) {
 	if r.CallsignHits != 1 || r.CallsignTotal != 2 || r.Recall != 0.5 {
 		t.Errorf("callsigns %d/%d %.2f, want 1/2 0.5", r.CallsignHits, r.CallsignTotal, r.Recall)
 	}
-	if r.RefOvers != 4 || r.HypOvers != 4 || r.Missing != 1 || r.Extra != 1 || r.Skipped != 1 {
+	if r.RefOvers != 4 || r.HypOvers != 4 || r.Missing != 1 || r.Extra != 1 || r.Skipped != 1 || r.SkippedRecords != 1 {
 		t.Errorf("tallies %+v", r)
 	}
 }
@@ -149,5 +149,40 @@ func TestScoreJoinsDifferentCuts(t *testing.T) {
 	r = Score(&Transcript{Overs: []Over{joined}}, []Over{over(1, 1, "net control"), over(1, 2, "go ahead")})
 	if len(r.Overs) != 1 || r.Counts.Errors() != 0 || r.Extra != 0 {
 		t.Errorf("got %+v, want one stretch with no errors", r.Overs)
+	}
+}
+
+// A record whose segment holds an over marked "?" is left out with everything it overlaps,
+// whichever of its openings the "?" is on: part of its audio has no reference.
+func TestScoreSkipsAStretchHoldingAnUnheardOver(t *testing.T) {
+	joined := over(1, 1, "net control go ahead")
+	joined.Last = 2
+	for _, tc := range []struct {
+		name string
+		ref  *Transcript
+	}{
+		{"1/1 unheard, 1/2 transcribed", &Transcript{
+			Overs: []Over{over(1, 2, "go ahead"), over(1, 3, "thanks")}, Skipped: []Over{{Key: Key{1, 1}}},
+		}},
+		{"1/1 transcribed, 1/2 unheard", &Transcript{
+			Overs: []Over{over(1, 1, "net control"), over(1, 3, "thanks")}, Skipped: []Over{{Key: Key{1, 2}}},
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := Score(tc.ref, []Over{joined, over(1, 3, "thanks")})
+			if len(r.Overs) != 1 || r.Overs[0].Name != "1/3" || r.Counts.Errors() != 0 {
+				t.Errorf("scored %+v, want 1/3 alone with no errors", r.Overs)
+			}
+			if r.SkippedRefs != 1 || r.SkippedRecords != 1 || r.RefOvers != 1 || r.HypOvers != 1 {
+				t.Errorf("tallies %+v, want one line and one record left out, one of each scored", r)
+			}
+		})
+	}
+	// A "?" over that itself holds two openings leaves out a record for its second.
+	unheard := Over{Key: Key{1, 1}, Last: 2}
+	r := Score(&Transcript{Overs: []Over{over(1, 3, "thanks")}, Skipped: []Over{unheard}},
+		[]Over{over(1, 1, "net control"), over(1, 2, "go ahead"), over(1, 3, "thanks")})
+	if r.SkippedRecords != 2 || r.HypOvers != 1 || r.Counts.Errors() != 0 {
+		t.Errorf("a two-opening ? over: %+v, want both records under it left out", r)
 	}
 }

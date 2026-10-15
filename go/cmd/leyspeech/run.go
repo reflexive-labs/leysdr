@@ -58,19 +58,43 @@ func (s *session) transcribe(ctx context.Context, rec *recording, ref *wer.Trans
 	if e.model != "" {
 		args = append(args, "--model", e.model)
 	}
+	before, err := s.jobIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
 	cmd := s.ley.command(ctx, args...)
+	// On Ctrl-C ley transcribe gets an interrupt, as from a terminal, and cancels its kept job
+	// itself; WaitDelay bounds how long it may take.
+	cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
+	cmd.WaitDelay = 10 * time.Second
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, s.stderr
 	began := time.Now()
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("ley %s: %w", strings.Join(args, " "), err)
-	}
+	runErr := cmd.Run()
 	wall := time.Since(began)
+	isTranscription := func(j *leylinev1.Job) bool {
+		return j.GetDecode().GetSourceUri() == leyline.RecordingURI(rec.manifest.JobID)
+	}
+	if runErr != nil {
+		// A job ley could not end (killed past WaitDelay) is cancelled here.
+		if _, err := s.endNewJob(ctx, before, nil, isTranscription); err != nil {
+			fmt.Fprintf(s.stderr, "leyspeech: %v\n", err)
+		}
+		return nil, fmt.Errorf("ley %s: %w", strings.Join(args, " "), runErr)
+	}
 	recs, err := parseRecords(out.Bytes())
 	if err != nil {
 		return nil, err
 	}
-	res, err := s.measure(ctx, rec, dec, e, recs)
+	// The job's id comes from its records; a job that made none is found in ListJobs, so its
+	// usage line is still read.
+	jobID := ""
+	if len(recs) > 0 {
+		jobID = recs[0].GetJobId()
+	} else if jobID, err = s.newJob(ctx, before, isTranscription); err != nil {
+		return nil, err
+	}
+	res, err := s.measure(ctx, rec, dec, e, jobID, recs)
 	if err != nil {
 		return nil, err
 	}
@@ -128,10 +152,14 @@ func recordKey(rec *leylinev1.DecodeRecord) (wer.Key, bool) {
 func score(rec *recording, dec *leylinev1.DecoderManifest, ref *wer.Transcript, recs []*leylinev1.DecodeRecord) *wer.Report {
 	refLast := lastOpenings(rec.overs(leyline.OverPreRollMs, leyline.OverHangMs))
 	hypLast := lastOpenings(rec.overs(segmentRule(dec)))
-	withRefSpans := &wer.Transcript{Skipped: ref.Skipped}
+	withRefSpans := &wer.Transcript{}
 	for _, o := range ref.Overs {
 		o.Last = refLast[o.Key]
 		withRefSpans.Overs = append(withRefSpans.Overs, o)
+	}
+	for _, o := range ref.Skipped {
+		o.Last = refLast[o.Key]
+		withRefSpans.Skipped = append(withRefSpans.Skipped, o)
 	}
 	var hyp []wer.Over
 	for _, r := range recs {
@@ -147,12 +175,9 @@ func score(rec *recording, dec *leylinev1.DecoderManifest, ref *wer.Transcript, 
 
 // measure is what every run reports: the engine and model, the records, the squelch-open audio
 // and what the provider counted for the job.
-func (s *session) measure(ctx context.Context, rec *recording, dec *leylinev1.DecoderManifest, e engineSpec, recs []*leylinev1.DecodeRecord) (*result, error) {
-	res := &result{Engine: dec.GetName(), Model: e.model, Recording: rec.manifest.JobID, Records: len(recs)}
+func (s *session) measure(ctx context.Context, rec *recording, dec *leylinev1.DecoderManifest, e engineSpec, jobID string, recs []*leylinev1.DecodeRecord) (*result, error) {
+	res := &result{Engine: dec.GetName(), Model: e.model, Recording: rec.manifest.JobID, JobID: jobID, Records: len(recs)}
 	for _, r := range recs {
-		if res.JobID == "" {
-			res.JobID = r.GetJobId()
-		}
 		if res.Model == "" {
 			res.Model = r.GetFields()["model"].GetText()
 		}

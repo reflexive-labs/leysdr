@@ -33,7 +33,7 @@ func TestParseTranscript(t *testing.T) {
 			{Key: Key{2, 1}, Text: ""},
 			{Key: Key{2, 4}, Text: "written with a space"},
 		},
-		Skipped: []Key{{2, 2}},
+		Skipped: []Over{{Key: Key{2, 2}}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v\nwant %+v", got, want)

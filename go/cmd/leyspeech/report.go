@@ -109,7 +109,7 @@ func (r *result) speedCell() string {
 		if len(l.Overs) == 0 {
 			return "no overs"
 		}
-		return fmt.Sprintf("%.1f s median, %.1f s p90", l.MedianSeconds, l.P90Seconds)
+		return fmt.Sprintf("%.1f s median (%.1f s hang), %.1f s p90", l.MedianSeconds, float64(l.HangMs)/1000, l.P90Seconds)
 	}
 	if r.Speed > 0 {
 		return fmt.Sprintf("%.1fx real time", r.Speed)
@@ -125,11 +125,15 @@ func writeNotes(w io.Writer, results []*result) {
 			fmt.Fprintf(w, "\n%s: no hand transcript, so nothing was scored. Start one with: leyspeech ref %s\n", r.Engine, r.Recording)
 			continue
 		}
+		if l := r.Latency; l != nil {
+			writeLatencyNotes(w, r.Engine, l)
+		}
 		if r.Score == nil {
 			continue
 		}
 		if r.Score.Skipped > 0 {
-			fmt.Fprintf(w, "\n%s: %d over(s) of %s are marked ? and were left out.\n", r.Engine, r.Score.Skipped, r.Ref)
+			fmt.Fprintf(w, "\n%s: %d over(s) of %s are marked ?; they were left out with %d transcribed line(s) and %d record(s) whose audio overlaps them.\n",
+				r.Engine, r.Score.Skipped, r.Ref, r.Score.SkippedRefs, r.Score.SkippedRecords)
 		}
 		var bad []wer.OverScore
 		for _, o := range r.Score.Overs {
@@ -151,6 +155,15 @@ func writeNotes(w io.Writer, results []*result) {
 			}
 			fmt.Fprintf(w, "  %s  %s\n    ref: %s\n    hyp: %s\n", o.Name, why, orDash(o.Ref), orDash(o.Hyp))
 		}
+	}
+}
+
+// writeLatencyNotes says what a live delay holds, and how many records it could not place.
+func writeLatencyNotes(w io.Writer, engine string, l *latency) {
+	fmt.Fprintf(w, "\n%s: each delay runs from the squelch close to the record's arrival, so it includes the %.1f s hang the daemon waits before it ends an over.\n",
+		engine, float64(l.HangMs)/1000)
+	if l.Unplaced > 0 {
+		fmt.Fprintf(w, "%s: %d record(s) name an over the recording's sidecars do not hold, so their delay is not counted.\n", engine, l.Unplaced)
 	}
 }
 

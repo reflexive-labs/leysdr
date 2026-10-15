@@ -7,13 +7,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/daemonrun"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 	"github.com/reflexive-labs/leysdr/go/pkg/wer"
@@ -140,6 +143,11 @@ func TestSpeechSpikeAgainstRealDaemon(t *testing.T) {
 	t.Run("a hermetic daemon on a copy", func(t *testing.T) {
 		ref := filepath.Join(t.TempDir(), "ref.txt")
 		writeRef(t, ref, overs, -1)
+		source := dirDigest(t, dir)
+		jobsBefore, err := d.Client.Jobs.ListJobs(ctx, &leylinev1.ListJobsRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
 		root := newRoot()
 		var out, stderr bytes.Buffer
 		root.SetOut(&out)
@@ -158,6 +166,13 @@ func TestSpeechSpikeAgainstRealDaemon(t *testing.T) {
 		checkScore(t, results[0], len(overs), 0, 0)
 		if !strings.Contains(stderr.String(), "a hermetic daemon on") {
 			t.Errorf("stderr does not name the hermetic daemon:\n%s", stderr.String())
+		}
+		if !reflect.DeepEqual(dirDigest(t, dir), source) {
+			t.Errorf("the hermetic run changed the source recording %s", dir)
+		}
+		// Nothing reached the running daemon: no job, so no records or ledger lines either.
+		if jobsAfter, err := d.Client.Jobs.ListJobs(ctx, &leylinev1.ListJobsRequest{}); err != nil || len(jobsAfter.GetJobs()) != len(jobsBefore.GetJobs()) {
+			t.Errorf("the running daemon has %d jobs after a hermetic run, %d before (%v)", len(jobsAfter.GetJobs()), len(jobsBefore.GetJobs()), err)
 		}
 	})
 
@@ -185,7 +200,60 @@ func TestSpeechSpikeAgainstRealDaemon(t *testing.T) {
 		if l.HangMs != leyline.OverHangMs {
 			t.Errorf("hang %d ms, want %d", l.HangMs, leyline.OverHangMs)
 		}
+		// The kept job is cancelled, not left holding the radio.
+		j, err := d.Client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: r.JobID})
+		if err != nil || j.GetState() != leylinev1.JobState_CANCELLED {
+			t.Errorf("the live job %s ended %v (%v), want CANCELLED", r.JobID, j.GetState(), err)
+		}
 	})
+
+	t.Run("Ctrl-C leaves no job", func(t *testing.T) {
+		var stderr bytes.Buffer
+		s, err := openLiveSession(ctx, g, &stderr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.close()
+		// The interrupt arrives as the context ending, as signal.NotifyContext delivers it.
+		ictx, interrupt := context.WithTimeout(ctx, 4*time.Second)
+		defer interrupt()
+		if _, err := s.live(ictx, spikeFreq, engineSpec{name: "speech"}, 30*time.Second); err == nil {
+			t.Errorf("an interrupted live run reported success\n%s", stderr.String())
+		}
+		running(ctx, t, d)
+	})
+}
+
+// running fails the test if the daemon has a decode job still running.
+func running(ctx context.Context, t *testing.T, d *daemonrun.Daemon) {
+	t.Helper()
+	resp, err := d.Client.Jobs.ListJobs(ctx, &leylinev1.ListJobsRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, j := range resp.GetJobs() {
+		if j.GetDecode() != nil && j.GetState() == leylinev1.JobState_RUNNING {
+			t.Errorf("decode job %s is still running: %v", j.GetJobId(), j)
+		}
+	}
+}
+
+// dirDigest is every file under dir with its contents, so a copy that wrote back would show.
+func dirDigest(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	err := filepath.WalkDir(dir, func(path string, e fs.DirEntry, err error) error {
+		if err != nil || e.IsDir() {
+			return err
+		}
+		b, err := os.ReadFile(path)
+		out[path] = string(b)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 func keyedFixture(t *testing.T) string {

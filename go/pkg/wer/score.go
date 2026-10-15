@@ -36,8 +36,9 @@ func (o Over) last() int { return max(o.Last, o.Key.Over) }
 // Transcript is the reference for one recording: the words of each over as a person heard them.
 type Transcript struct {
 	Overs []Over
-	// Skipped is the overs not transcribed yet, which the score leaves out.
-	Skipped []Key
+	// Skipped is the overs not transcribed yet ("?"), which the score leaves out with every
+	// record whose audio overlaps them. Their Text is empty; Last says which openings they hold.
+	Skipped []Over
 }
 
 // OverScore is one scored stretch of the recording. It is usually one over. When the engine
@@ -68,12 +69,17 @@ type Report struct {
 	CallsignHits  int         `json:"callsign_hits"`
 	CallsignTotal int         `json:"callsign_total"`
 	Recall        float64     `json:"callsign_recall"`
-	RefOvers      int         `json:"ref_overs"`
-	HypOvers      int         `json:"hyp_overs"`
-	Missing       int         `json:"missing"`
-	Extra         int         `json:"extra"`
-	// Skipped is the transcript lines marked "?", left out with the record that starts there.
-	Skipped int `json:"skipped"`
+	// RefOvers and HypOvers are the transcript lines and the records scored, after the skipped
+	// stretches are left out.
+	RefOvers int `json:"ref_overs"`
+	HypOvers int `json:"hyp_overs"`
+	Missing  int `json:"missing"`
+	Extra    int `json:"extra"`
+	// Skipped is the transcript lines marked "?". SkippedRefs and SkippedRecords are the
+	// transcribed lines and the records left out with them, because their audio overlaps one.
+	Skipped        int `json:"skipped"`
+	SkippedRefs    int `json:"skipped_refs"`
+	SkippedRecords int `json:"skipped_records"`
 }
 
 // Score matches the engine's overs to the transcript's by (part, over) and scores each pair. An
@@ -81,16 +87,19 @@ type Report struct {
 // record the transcript does not list counts its words as insertions. When the two sides cut a
 // part differently, which Over.Last says, the overs whose openings overlap are joined into one
 // stretch and scored together, so an engine whose segments hang on longer is not charged a
-// deletion for the opening it heard inside the one before. A record whose over the transcript
-// marks "?" is dropped with it.
+// deletion for the opening it heard inside the one before. A stretch that holds an over the
+// transcript marks "?" is left out whole, transcribed lines and records alike, because part of
+// its audio has no reference to score against.
 func Score(ref *Transcript, hyp []Over) Report {
-	skipped := map[Key]bool{}
-	for _, k := range ref.Skipped {
-		skipped[k] = true
-	}
-	refBy, hypBy := group(ref.Overs, nil), group(hyp, skipped)
-	r := Report{RefOvers: len(refBy), HypOvers: len(hypBy), Skipped: len(ref.Skipped)}
-	for _, st := range stretches(refBy, hypBy) {
+	r := Report{Skipped: len(ref.Skipped)}
+	for _, st := range stretches(group(ref.Overs), group(ref.Skipped), group(hyp)) {
+		if st.skipped {
+			r.SkippedRefs += st.refs
+			r.SkippedRecords += st.hyps
+			continue
+		}
+		r.RefOvers += st.refs
+		r.HypOvers += st.hyps
 		s := scoreStretch(st)
 		r.Overs = append(r.Overs, s)
 		r.Counts = r.Counts.Add(s.Counts)
@@ -111,14 +120,10 @@ func Score(ref *Transcript, hyp []Over) Report {
 	return r
 }
 
-// group joins the overs that share a key, texts in the order given and the widest Last, leaving
-// out the skipped keys.
-func group(overs []Over, skip map[Key]bool) map[Key]Over {
+// group joins the overs that share a key, texts in the order given and the widest Last.
+func group(overs []Over) map[Key]Over {
 	out := map[Key]Over{}
 	for _, o := range overs {
-		if skip[o.Key] {
-			continue
-		}
 		if prev, ok := out[o.Key]; ok {
 			prev.Text = strings.TrimSpace(prev.Text + " " + o.Text)
 			prev.Last = max(prev.last(), o.last())
@@ -130,31 +135,38 @@ func group(overs []Over, skip map[Key]bool) map[Key]Over {
 	return out
 }
 
-// side says which list an over came from.
+// sideKind says which list an over came from, in the order a stretch lists them.
+type sideKind int
+
+const (
+	refSide sideKind = iota
+	skipSide
+	hypSide
+)
+
 type side struct {
 	Over
-	isRef bool
+	kind sideKind
 }
 
 // stretch is a run of overlapping overs in one part, scored as one.
 type stretch struct {
-	part     int
-	last     int
-	overs    []int
-	ref, hyp []string
-	hasRef   bool
-	hasHyp   bool
+	part       int
+	last       int
+	overs      []int
+	ref, hyp   []string
+	refs, hyps int
+	skipped    bool
 }
 
-// stretches sorts both sides by part and first opening and joins every over whose first opening
-// falls inside the stretch so far.
-func stretches(refBy, hypBy map[Key]Over) []stretch {
-	all := make([]side, 0, len(refBy)+len(hypBy))
-	for _, o := range refBy {
-		all = append(all, side{o, true})
-	}
-	for _, o := range hypBy {
-		all = append(all, side{o, false})
+// stretches sorts the three lists by part and first opening and joins every over whose first
+// opening falls inside the stretch so far.
+func stretches(refBy, skipBy, hypBy map[Key]Over) []stretch {
+	var all []side
+	for kind, by := range map[sideKind]map[Key]Over{refSide: refBy, skipSide: skipBy, hypSide: hypBy} {
+		for _, o := range by {
+			all = append(all, side{o, kind})
+		}
 	}
 	slices.SortFunc(all, func(a, b side) int {
 		switch {
@@ -162,13 +174,8 @@ func stretches(refBy, hypBy map[Key]Over) []stretch {
 			return a.Key.Part - b.Key.Part
 		case a.Key.Over != b.Key.Over:
 			return a.Key.Over - b.Key.Over
-		case a.isRef != b.isRef:
-			if a.isRef {
-				return -1
-			}
-			return 1
 		}
-		return 0
+		return int(a.kind) - int(b.kind)
 	})
 	var out []stretch
 	for _, o := range all {
@@ -182,10 +189,15 @@ func stretches(refBy, hypBy map[Key]Over) []stretch {
 		if !slices.Contains(st.overs, o.Key.Over) {
 			st.overs = append(st.overs, o.Key.Over)
 		}
-		if o.isRef {
-			st.ref, st.hasRef = append(st.ref, o.Text), true
-		} else {
-			st.hyp, st.hasHyp = append(st.hyp, o.Text), true
+		switch o.kind {
+		case refSide:
+			st.ref = append(st.ref, o.Text)
+			st.refs++
+		case skipSide:
+			st.skipped = true
+		case hypSide:
+			st.hyp = append(st.hyp, o.Text)
+			st.hyps++
 		}
 	}
 	return out
@@ -202,7 +214,7 @@ func scoreStretch(st stretch) OverScore {
 		Ref:  refText, Hyp: hypText,
 		Counts:       Align(Words(refText), Words(hypText)),
 		RefCallsigns: callsign.Find(refText), HypCallsigns: callsign.Find(hypText),
-		Missing: !st.hasHyp, Extra: !st.hasRef,
+		Missing: st.hyps == 0, Extra: st.refs == 0,
 	}
 	s.Rate = s.Counts.Rate()
 	s.CallsignHits, s.CallsignTotal, _ = CallsignRecall(s.RefCallsigns, s.HypCallsigns)

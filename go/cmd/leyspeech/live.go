@@ -69,22 +69,20 @@ func (s *session) live(ctx context.Context, freq string, e engineSpec, d time.Du
 	if err != nil {
 		return nil, err
 	}
-	arrivals, err := s.decodeFor(ctx, dec.GetName(), freq, d)
-	if err != nil {
+	arrivals, decodeErr := s.decodeFor(ctx, dec.GetName(), freq, d)
+	// The job is kept (--job), so it outlives ley: it is cancelled here on every path, a failed
+	// decode and Ctrl-C included, or it would run on in the owner's daemon holding the radio.
+	jobID, err := s.endNewJob(ctx, before, arrivals, func(j *leylinev1.Job) bool {
+		return j.GetDecode().GetDecoder() == dec.GetName()
+	})
+	switch {
+	case decodeErr != nil:
+		return nil, decodeErr
+	case err != nil:
 		return nil, err
-	}
-	jobID := ""
-	if len(arrivals) > 0 {
-		jobID = arrivals[0].rec.GetJobId()
-	} else if jobID, err = s.newDecodeJob(ctx, before, dec.GetName()); err != nil {
-		return nil, err
-	}
-	if jobID == "" {
+	case jobID == "":
 		return nil, fmt.Errorf("ley decode %s started no job leyspeech can find; 'ley jobs' lists what is running", dec.GetName())
 	}
-	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	_, _ = s.client.Jobs.CancelJob(cctx, &leylinev1.JobRef{JobId: jobID})
-	cancel()
 	res := &result{Engine: dec.GetName(), Model: e.model, Recording: jobID, JobID: jobID, Records: len(arrivals), WallSeconds: d.Seconds()}
 	_, hangMs := segmentRule(dec)
 	res.Latency = &latency{HangMs: hangMs}
@@ -99,7 +97,7 @@ func (s *session) live(ctx context.Context, freq string, e engineSpec, d time.Du
 	for i, a := range arrivals {
 		recs[i] = a.rec
 	}
-	measured, err := s.measure(ctx, rec, dec, e, recs)
+	measured, err := s.measure(ctx, rec, dec, e, jobID, recs)
 	if err != nil {
 		return nil, err
 	}
@@ -162,14 +160,43 @@ func (s *session) jobIDs(ctx context.Context) (map[string]bool, error) {
 	return ids, nil
 }
 
-// newDecodeJob is the decode job for decoder that was not in before: the one ley started.
-func (s *session) newDecodeJob(ctx context.Context, before map[string]bool, decoder string) (string, error) {
+// jobCleanup bounds the lookups and the cancel that end a run's job, which run after ctx may
+// have ended (Ctrl-C).
+const jobCleanup = 5 * time.Second
+
+// endNewJob finds the job ley started, from its first record or else as the job matching it that
+// was not in before, and cancels it if it is still running. It returns the job's id, or "" when
+// ley started none.
+func (s *session) endNewJob(ctx context.Context, before map[string]bool, arrivals []arrival, match func(*leylinev1.Job) bool) (string, error) {
+	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), jobCleanup)
+	defer cancel()
+	jobID := ""
+	if len(arrivals) > 0 {
+		jobID = arrivals[0].rec.GetJobId()
+	} else {
+		var err error
+		if jobID, err = s.newJob(cctx, before, match); err != nil || jobID == "" {
+			return "", err
+		}
+	}
+	if _, err := s.client.Jobs.CancelJob(cctx, &leylinev1.JobRef{JobId: jobID}); err != nil && leyline.Code(err) != leyline.CodeJobNotFound {
+		// A job that has ended already refuses a cancel; ask for it and only report one still
+		// running.
+		if j, gerr := s.client.Jobs.GetJob(cctx, &leylinev1.JobRef{JobId: jobID}); gerr != nil || j.GetState() == leylinev1.JobState_RUNNING {
+			return jobID, fmt.Errorf("%s is still running and leyspeech could not cancel it (%w); 'ley jobs cancel %s' stops it", jobID, err, jobID)
+		}
+	}
+	return jobID, nil
+}
+
+// newJob is the job that matches and was not in before: the one ley started. "" when none is.
+func (s *session) newJob(ctx context.Context, before map[string]bool, match func(*leylinev1.Job) bool) (string, error) {
 	resp, err := s.client.Jobs.ListJobs(ctx, &leylinev1.ListJobsRequest{})
 	if err != nil {
 		return "", err
 	}
 	for _, j := range resp.GetJobs() {
-		if !before[j.GetJobId()] && j.GetDecode().GetDecoder() == decoder {
+		if !before[j.GetJobId()] && match(j) {
 			return j.GetJobId(), nil
 		}
 	}
