@@ -509,6 +509,28 @@ func (a assistantSvc) EndConversation(ctx context.Context, req *leylinev1.Conver
 	return proto.Clone(fc.conv).(*leylinev1.Conversation), nil
 }
 
+// DeleteConversation implements Assistant: a conversation still going is ended first, so its
+// watchers and the event plane see it ENDED, and then it is no longer listed. The fake keeps
+// nothing on disk, so there is nothing else to remove and nothing survives the fake.
+func (a assistantSvc) DeleteConversation(ctx context.Context, req *leylinev1.ConversationRef) (*leylinev1.Empty, error) {
+	d := a.d
+	ci := clientFrom(ctx)
+	d.touchUnary(ci)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	fc, err := d.conversation(req.GetConversationId())
+	if err != nil {
+		return nil, fail(ctx, err)
+	}
+	if !terminal(fc.conv.State) {
+		d.stopTurnLocked(fc)
+		d.settleLocked(fc, leylinev1.ConversationState_CONVERSATION_ENDED)
+		d.publishConvLocked(fc, ci)
+	}
+	delete(d.talk.convs, fc.conv.ConversationId)
+	return &leylinev1.Empty{}, nil
+}
+
 // ListConversations implements Assistant: newest first, ended ones included.
 func (a assistantSvc) ListConversations(ctx context.Context, _ *leylinev1.ListConversationsRequest) (*leylinev1.ListConversationsResponse, error) {
 	a.d.touchUnary(clientFrom(ctx))

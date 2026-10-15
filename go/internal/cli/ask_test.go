@@ -603,3 +603,101 @@ func TestAskAnswersAViewToolWithAnError(t *testing.T) {
 		t.Errorf("call: %v", call)
 	}
 }
+
+// startConversations has the fake daemon's assistant answer each request in a conversation of its
+// own, oldest first, and returns their ids.
+func startConversations(t *testing.T, sock string, c *leyline.Client, requests ...string) []string {
+	t.Helper()
+	var ids []string
+	for _, r := range requests {
+		if _, errOut, err := runAskLey(t, sock, askRunOpts{width: 80}, "ask", r); err != nil {
+			t.Fatalf("ley ask %q: %v\n%s", r, err, errOut)
+		}
+		ids = append(ids, newestConversation(t, c).GetConversationId())
+	}
+	return ids
+}
+
+// --list is a table of the conversations, the one used last first, that fits 40, 80 and 160
+// columns: the times go before the id or the first words do.
+func TestAskList(t *testing.T) {
+	t.Parallel()
+	sock, c := askHarness(t)
+	ids := startConversations(t, sock, c, "what is on two metres tonight, and is anyone talking on the calling frequency", "tune the weather radio")
+	screens := checkScreen(t, sock, "ask", "--list")
+	wide := screens[160]
+	for _, want := range []string{"ID", "STARTED", "LAST TURN", "STATE", "FIRST WORDS", ids[0], ids[1], "idle", "tune the weather radio"} {
+		if !strings.Contains(wide, want) {
+			t.Errorf("160 columns lack %q:\n%s", want, wide)
+		}
+	}
+	if strings.Index(wide, ids[1]) > strings.Index(wide, ids[0]) {
+		t.Errorf("the conversation used last is not first:\n%s", wide)
+	}
+	if narrow := screens[40]; strings.Contains(narrow, "STARTED") || !strings.Contains(narrow, "FIRST WORDS") {
+		t.Errorf("40 columns keep the times over the first words:\n%s", narrow)
+	}
+
+	out, _, err := runLey(t, sock, 80, false, "", "ask", "--list", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed leylinev1.ListConversationsResponse
+	if err := protojson.Unmarshal([]byte(out), &listed); err != nil || len(listed.GetConversations()) != 2 ||
+		listed.GetConversations()[0].GetConversationId() != ids[1] {
+		t.Errorf("--list --json: %v (%v)", out, err)
+	}
+	if _, _, err := runLey(t, sock, 80, false, "", "ask", "--list", "hello"); exitCode(err) != ExitUsage {
+		t.Errorf("--list with a request: %v", err)
+	}
+	if _, _, err := runLey(t, sock, 80, false, "", "ask", "--list", "--continue"); exitCode(err) != ExitUsage {
+		t.Errorf("--list with --continue: %v", err)
+	}
+}
+
+func TestAskListEmpty(t *testing.T) {
+	t.Parallel()
+	sock, _ := askHarness(t)
+	for w, screen := range checkScreen(t, sock, "ask", "--list") {
+		if !strings.Contains(strings.Join(strings.Fields(screen), " "), "no conversations; start one with: ley ask") {
+			t.Errorf("width %d:\n%s", w, screen)
+		}
+	}
+}
+
+// --delete asks on a terminal and needs --yes off one; it takes the start of an id, and the
+// conversation is gone from the list after.
+func TestAskDelete(t *testing.T) {
+	t.Parallel()
+	sock, c := askHarness(t)
+	ids := startConversations(t, sock, c, "first", "second")
+
+	_, errOut, err := runLey(t, sock, 80, false, "", "ask", "--delete", ids[0])
+	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "ley ask --delete "+ids[0]+" --yes") {
+		t.Errorf("off a terminal without --yes: %v\n%s", err, errOut)
+	}
+	_, errOut, err = runAskLey(t, sock, askRunOpts{width: 80, inTTY: true, stdin: "n\n"}, "ask", "--delete", ids[0])
+	if err != nil || !strings.Contains(errOut, `Delete the conversation started`) || !strings.Contains(errOut, `"first"? [y/N]`) ||
+		!strings.Contains(errOut, "Kept "+ids[0]+"; nothing was deleted.") {
+		t.Errorf("answered no: %v\n%s", err, errOut)
+	}
+	_, errOut, err = runAskLey(t, sock, askRunOpts{width: 80, inTTY: true, stdin: "y\n"}, "ask", "--delete", ids[0])
+	if err != nil || !strings.Contains(errOut, "Deleted "+ids[0]) {
+		t.Errorf("answered yes: %v\n%s", err, errOut)
+	}
+	if got := newestConversation(t, c).GetConversationId(); got != ids[1] {
+		t.Errorf("the list after the delete starts with %s", got)
+	}
+	out, errOut, err := runLey(t, sock, 80, false, "", "--json", "ask", "--delete", strings.TrimSuffix(ids[1], ids[1][len(ids[1])-4:]), "--yes")
+	if err != nil || strings.TrimSpace(out) != "{}" || !strings.Contains(errOut, "Deleted "+ids[1]) {
+		t.Errorf("--yes by prefix: %v\nstdout %q\nstderr %s", err, out, errOut)
+	}
+	list, err := c.Assistant.ListConversations(t.Context(), &leylinev1.ListConversationsRequest{})
+	if err != nil || len(list.GetConversations()) != 0 {
+		t.Errorf("left after both deletes: %v %v", list, err)
+	}
+	if _, _, err := runLey(t, sock, 80, false, "", "ask", "--delete", "conv_nope", "--yes"); exitCode(err) != ExitUsage ||
+		!strings.Contains(err.Error(), "no conversation called conv_nope") {
+		t.Errorf("an unknown id: %v", err)
+	}
+}

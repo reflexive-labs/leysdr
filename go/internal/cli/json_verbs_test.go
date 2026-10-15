@@ -76,6 +76,11 @@ var jsonVerbs = []jsonVerbCase{
 	{path: "ai use", args: []string{"ai", "use", "assistant", "anthropic", "claude-sonnet-5-5"}},
 	{path: "ai usage", args: []string{"ai", "usage"}},
 	{path: "ask", args: []string{"ask", "hello"}, prep: prepAssistant},
+	{path: "ask", args: []string{"ask", "--list"}, prep: func(t *testing.T, sock string, c *leyline.Client) []string {
+		prepConversation(t, sock, c)
+		return nil
+	}},
+	{path: "ask", args: []string{"ask", "--yes", "--delete"}, prep: prepConversation},
 	{path: "decode", args: []string{"decode", "aprs", "--count", "2"}},
 	{path: "decoders", args: []string{"decoders"}},
 	// start against a daemon already answering reports it rather than
@@ -163,6 +168,18 @@ func prepAssistant(t *testing.T, sock string, c *leyline.Client) []string {
 		t.Fatal(err)
 	}
 	return nil
+}
+
+// prepConversation starts a conversation with the assistant and names it, for `ask --delete`
+// (`ask --list` lists it).
+func prepConversation(t *testing.T, sock string, c *leyline.Client) []string {
+	t.Helper()
+	prepAssistant(t, sock, c)
+	cv, err := c.Assistant.StartConversation(t.Context(), &leylinev1.StartConversationRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return []string{cv.GetConversationId()}
 }
 
 // prepProvider starts a model API that accepts every key, and names it for `worker check`.

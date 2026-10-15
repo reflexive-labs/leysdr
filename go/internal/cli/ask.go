@@ -28,6 +28,9 @@ type askOptions struct {
 	cont     bool
 	provider string
 	model    string
+	list     bool
+	// remove is --delete's conversation id or id prefix.
+	remove string
 }
 
 // newAskCommand builds `ley ask`: a request to the assistant, whose conversation is daemon state
@@ -50,24 +53,34 @@ on stderr; --yes allows all of them, and with no terminal to answer on and
 no --yes they are declined.
 
 With no request, ask reads one request per line at a '> ' prompt until a
-blank line or Ctrl-D. The conversation stays in the daemon after ask exits:
---continue carries on the newest idle one, whether ask or the app started
-it, and starts a new one when there is none.
+blank line or Ctrl-D. The conversation stays in the daemon after ask exits,
+which keeps it on disk across restarts: --continue carries on the newest
+idle one, whether ask or the app started it, and starts a new one when there
+is none.
 
 Ctrl-C stops the assistant's turn and keeps the conversation; a second
 Ctrl-C, or one at the prompt, ends the conversation. SIGTERM leaves the
-conversation as it is, and the daemon ends it after 30 idle minutes.
+conversation as it is. An ended conversation can still be listed and read.
+
+--list prints the conversations the daemon keeps, newest first: the id, when
+each started and was last used, its state and the first words asked.
+--delete removes one and its files, by id or the start of one; on a terminal
+it asks first, and --yes is required when stdin is not a terminal. The
+daemon keeps the newest 100 and drops any unused for 90 days.
 
 The assistant calls the provider and model chosen with 'ley ai use
 assistant'; --provider and --model choose others for a new conversation.
 
 --json prints every state of the conversation as it changes, one
-Conversation per line (NDJSON), and no prose.`,
+Conversation per line (NDJSON), and no prose; with --list it prints one
+ListConversationsResponse, and with --delete the reply, which is empty.`,
 		Example: `  ley ask "tune to the NOAA weather radio"
   ley ask                                    # a prompt, one request per line
   ley ask --continue "now record it for ten minutes"
   ley ask --yes "delete yesterday's recordings"   # allow what it asks
-  ley ask --json "what is on 2m?" | jq -r .state`,
+  ley ask --json "what is on 2m?" | jq -r .state
+  ley ask --list
+  ley ask --delete conv_01K... --yes`,
 		GroupID: GroupListening,
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -77,14 +90,30 @@ Conversation per line (NDJSON), and no prose.`,
 					return usageErrorf("the request is empty; say what you want, such as: ley ask \"tune to 146.52\"")
 				}
 			}
+			switch {
+			case o.list && cmd.Flags().Changed("delete"):
+				return usageErrorf("--list and --delete are separate runs of ley ask; give one")
+			case (o.list || cmd.Flags().Changed("delete")) && o.cont:
+				return usageErrorf("--continue carries on a conversation, which --list and --delete do not; give one")
+			case o.list && len(args) == 1:
+				return usageErrorf("--list takes no request; run ley ask --list on its own")
+			case o.list:
+				return runAskList(cmd.Context(), app)
+			case cmd.Flags().Changed("delete") && len(args) == 1:
+				return usageErrorf("--delete takes no request; run ley ask --delete %s on its own", o.remove)
+			case cmd.Flags().Changed("delete"):
+				return runAskDelete(cmd.Context(), app, o.remove, o.yes)
+			}
 			interrupts := make(chan os.Signal, 2)
 			signal.Notify(interrupts, os.Interrupt, syscall.SIGTERM)
 			defer signal.Stop(interrupts)
 			return runAsk(cmd.Context(), app, o, request, interrupts)
 		},
 	}
-	cmd.Flags().BoolVarP(&o.yes, "yes", "y", false, "allow everything the assistant asks to do, without a question")
-	cmd.Flags().BoolVar(&o.cont, "continue", false, "carry on the newest idle conversation instead of starting one")
+	cmd.Flags().BoolVarP(&o.yes, "yes", "y", false, "allow everything the assistant asks to do, and --delete, without a question")
+	cmd.Flags().BoolVar(&o.cont, "continue", false, "carry on the newest idle conversation, from before a restart too, instead of starting one")
+	cmd.Flags().BoolVar(&o.list, "list", false, "list the conversations the daemon keeps, newest first")
+	cmd.Flags().StringVar(&o.remove, "delete", "", "delete a conversation and its files, by `id` or the start of one")
 	cmd.Flags().StringVar(&o.provider, "provider", "", "the provider a new conversation calls (default: ley ai use assistant's)")
 	cmd.Flags().StringVar(&o.model, "model", "", "the model a new conversation calls (default: ley ai use assistant's)")
 	return cmd

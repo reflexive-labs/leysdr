@@ -293,6 +293,37 @@ func TestAssistantStopAndEnd(t *testing.T) {
 	}
 }
 
+// DeleteConversation ends a conversation still going, which its watchers see, then it is no
+// longer listed; an unknown id is INVALID_ARGUMENT.
+func TestAssistantDelete(t *testing.T) {
+	t.Parallel()
+	c, _ := harness(t, fakedaemon.Options{})
+	assistantKey(t, c)
+	ctx := t.Context()
+	cv, err := c.Assistant.StartConversation(ctx, &leylinev1.StartConversationRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ended := make(chan []*leylinev1.Conversation, 1)
+	go func() {
+		ended <- watchUntil(t, c, cv.ConversationId, cv.Seq, isState(leylinev1.ConversationState_CONVERSATION_ENDED))
+	}()
+	time.Sleep(100 * time.Millisecond)
+	if _, err := c.Assistant.DeleteConversation(ctx, &leylinev1.ConversationRef{ConversationId: cv.ConversationId}); err != nil {
+		t.Fatal(err)
+	}
+	if seen := <-ended; len(seen) != 1 {
+		t.Errorf("the watch saw %v", seen)
+	}
+	list, err := c.Assistant.ListConversations(ctx, &leylinev1.ListConversationsRequest{})
+	if err != nil || len(list.Conversations) != 0 {
+		t.Errorf("listed after the delete: %v %v", list, err)
+	}
+	if _, err := c.Assistant.DeleteConversation(ctx, &leylinev1.ConversationRef{ConversationId: cv.ConversationId}); leyline.Code(err) != leyline.CodeInvalidArgument {
+		t.Errorf("a second delete: %v", err)
+	}
+}
+
 // StartConversation without a key for the provider is CREDENTIAL_MISSING naming the command that
 // adds one; the request's provider wins over the feature model's.
 func TestAssistantConversationNeedsAKey(t *testing.T) {

@@ -10,19 +10,27 @@ on stderr; --yes allows all of them, and with no terminal to answer on and
 no --yes they are declined.
 
 With no request, ask reads one request per line at a '> ' prompt until a
-blank line or Ctrl-D. The conversation stays in the daemon after ask exits:
---continue carries on the newest idle one, whether ask or the app started
-it, and starts a new one when there is none.
+blank line or Ctrl-D. The conversation stays in the daemon after ask exits,
+which keeps it on disk across restarts: --continue carries on the newest
+idle one, whether ask or the app started it, and starts a new one when there
+is none.
 
 Ctrl-C stops the assistant's turn and keeps the conversation; a second
 Ctrl-C, or one at the prompt, ends the conversation. SIGTERM leaves the
-conversation as it is, and the daemon ends it after 30 idle minutes.
+conversation as it is. An ended conversation can still be listed and read.
+
+--list prints the conversations the daemon keeps, newest first: the id, when
+each started and was last used, its state and the first words asked.
+--delete removes one and its files, by id or the start of one; on a terminal
+it asks first, and --yes is required when stdin is not a terminal. The
+daemon keeps the newest 100 and drops any unused for 90 days.
 
 The assistant calls the provider and model chosen with 'ley ai use
 assistant'; --provider and --model choose others for a new conversation.
 
 --json prints every state of the conversation as it changes, one
-Conversation per line (NDJSON), and no prose.
+Conversation per line (NDJSON), and no prose; with --list it prints one
+ListConversationsResponse, and with --delete the reply, which is empty.
 
 Usage:
   ley ask [request] [flags]
@@ -33,13 +41,17 @@ Examples:
   ley ask --continue "now record it for ten minutes"
   ley ask --yes "delete yesterday's recordings"   # allow what it asks
   ley ask --json "what is on 2m?" | jq -r .state
+  ley ask --list
+  ley ask --delete conv_01K... --yes
 
 Flags:
-      --continue          carry on the newest idle conversation instead of starting one
+      --continue          carry on the newest idle conversation, from before a restart too, instead of starting one
+      --delete id         delete a conversation and its files, by id or the start of one
   -h, --help              help for ask
+      --list              list the conversations the daemon keeps, newest first
       --model string      the model a new conversation calls (default: ley ai use assistant's)
       --provider string   the provider a new conversation calls (default: ley ai use assistant's)
-  -y, --yes               allow everything the assistant asks to do, without a question
+  -y, --yes               allow everything the assistant asks to do, and --delete, without a question
 
 Global Flags:
       --ascii           draw with ASCII only (no box, bar or tree glyphs)
