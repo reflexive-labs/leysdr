@@ -330,6 +330,26 @@ final class ConversationStoreTests: XCTestCase {
         XCTAssertTrue(listed.isEmpty)
     }
 
+    func testAHalfWrittenConversationIsSkippedAndTheDaemonStarts() async throws {
+        let dir = try makeTempDir("conversations")
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        try keep(kept(1, daysAgo: 1), in: dir)
+        let whole = try kept(2, daysAgo: 1).jsonUTF8Data()
+        let torn = dir + "/data/conversations/conv_0002"
+        try FileManager.default.createDirectory(atPath: torn, withIntermediateDirectories: true)
+        try whole.prefix(whole.count / 2).write(to: URL(fileURLWithPath: torn + "/conversation.json"))
+        let listed = Mutex<[String]>([])
+        let log = try await LogCapture.shared.capture {
+            try await withDaemon(dir: dir) { c in
+                let reply = try await c.assistant.listConversations(Leyline_V1_ListConversationsRequest(), metadata: testMetadata)
+                listed.withLock { $0 = reply.conversations.map(\.conversationID) }
+            }
+        }
+        XCTAssertEqual(listed.withLock { $0 }, ["conv_0001"], "the whole one is listed and the torn one is not")
+        XCTAssertTrue(log.contains("\(torn)/conversation.json is not a conversation; leaving it out"), log)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: torn + "/conversation.json"), "a torn file is left for a person to look at")
+    }
+
     func testTheDaemonsShutdownStopsEveryWorkerAndKeepsEveryConversation() async throws {
         let dir = try makeTempDir("conversations")
         defer { try? FileManager.default.removeItem(atPath: dir) }
