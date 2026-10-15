@@ -19,9 +19,11 @@ Four numbers per engine:
 | seconds from squelch close to text | for each over, the time from the squelch closing to the record arriving | `leyspeech live` on the air |
 
 Any decoder that `ley decoders` lists with `SEGMENTED` input can be measured: the bundled `speech`
-decoder (whose only engine replays a script, for tests) and any decoder that calls a provider or
-runs on the Mac. A decoder that calls a provider needs its key in the daemon (`ley ai add
-<provider>`) and takes a model with `--model`.
+decoder (OpenAI's transcription API, `whisper-1` unless `--model` says otherwise), any other
+decoder that calls a provider or runs on the Mac, and `speech-scripted`, the keyless test engine
+that replays a script and is how the tool itself is tested. A decoder that calls a provider needs
+its key in the daemon (`ley ai add <provider>`; `openai` for `speech`) and takes a model with
+`--model`.
 
 ## Recording the corpus
 
@@ -85,8 +87,8 @@ On the Mac, against the running daemon:
 ```sh
 make go
 leyspeech run --recording job_01J... --engine speech
-leyspeech run --recording job_01J... --engine <decoder> --model <model>
-make speech-spike RECORDING=job_01J... ENGINES="<decoder>=<model-a> <decoder>=<model-b> <other-decoder>"
+leyspeech run --recording job_01J... --engine speech --model gpt-4o-transcribe
+make speech-spike RECORDING=job_01J... ENGINES="speech=whisper-1 speech=gpt-4o-transcribe"
 ```
 
 `make speech-spike` runs `leyspeech compare` once over every engine in `ENGINES` (a decoder, or
@@ -99,14 +101,14 @@ there. `--model` makes `ley transcribe` choose the model for later jobs too; `le
 previous choice back after each run, or clears it when there was none. Ctrl-C interrupts `ley
 transcribe`, which cancels its job and keeps the records it made.
 
-The scripted engine is how the tool itself is tested. Its output, from the end-to-end test against
-the real daemon with one wrong word in the transcript:
+The scripted engine, `speech-scripted`, is how the tool itself is tested. Its output, from the
+end-to-end test against the real daemon with one wrong word in the transcript:
 
 ```
-ENGINE  MODEL     OVERS  WER   S/D/I  CALLSIGNS  OPEN     REQUESTS  BILLED     PER OPEN HOUR  SPEED
-speech  scripted  4/4    8.3%  1/0/0  4/4        0.1 min  4         9 s audio  6769 s audio   24.2x real time
+ENGINE           MODEL     OVERS  WER   S/D/I  CALLSIGNS  OPEN     REQUESTS  BILLED     PER OPEN HOUR  SPEED
+speech-scripted  scripted  4/4    8.3%  1/0/0  4/4        0.1 min  4         9 s audio  6769 s audio   40.3x real time
 
-speech scripted, the overs with errors:
+speech-scripted scripted, the overs with errors:
   1/1  S1 D0 I0
     ref: whiskey six alpha bravo charlie checking out
     hyp: whiskey six alpha bravo charlie checking in
@@ -147,7 +149,7 @@ passed to `ley ai add` on stdin); the owner's daemon and recordings are not touc
 Latency is the live number, so it is measured on the air, on the 2 m net:
 
 ```sh
-leyspeech live --freq 146.94 --engine <decoder> --model <model> --seconds 1800
+leyspeech live --freq 146.94 --engine speech --model whisper-1 --seconds 1800
 ```
 
 `live` runs `ley decode <decoder> --freq F --job --json` for `--seconds`, stamps each record as it

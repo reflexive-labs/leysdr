@@ -17,7 +17,7 @@
 #   make eval       the agent evals: an agent on `ley mcp` against fixtures, graded (costs tokens)
 #   make eval-test  the eval runner's own tests against a locally built leylined: scripted agents,
 #                   no tokens
-#   make speech-spike RECORDING=<id> ENGINES="speech <decoder>=<model>"
+#   make speech-spike RECORDING=<id> ENGINES="speech=whisper-1 speech=gpt-4o-transcribe"
 #                   one row per speech engine on a gated recording, scored against its hand
 #                   transcript (docs/dev/speech-spike.md); a cloud engine costs what it bills
 #   make shots      the site's screenshots into tmp/shots (docs/plans/site-shots.md): only the scenes
@@ -228,7 +228,7 @@ eval-test: go swift fixtures
 # space-separated, each a decoder or decoder=model; SPIKE_ARGS passes more flags (--json, --ref F,
 # --daemon). Costs whatever a cloud engine bills, so it is not in `check`.
 speech-spike: go
-	@test -n "$(RECORDING)" || { echo 'usage: make speech-spike RECORDING=<id> ENGINES="speech <decoder>=<model>"' >&2; exit 2; }
+	@test -n "$(RECORDING)" || { echo 'usage: make speech-spike RECORDING=<id> ENGINES="speech=whisper-1 speech=gpt-4o-transcribe"' >&2; exit 2; }
 	$(GOBIN)/leyspeech compare --ley $(GOBIN)/ley --recording $(RECORDING) \
 		$(foreach e,$(or $(ENGINES),speech),--engine $(e)) $(SPIKE_ARGS)
 

@@ -38,8 +38,8 @@ own, so its records and its ledger line are its own, and a model chosen for a
 run is put back before the next.
 
 A failed run stops the comparison and prints the rows that finished.`,
-		Example: `  leyspeech compare --recording job_01J... --engine speech --engine <decoder>=<model>
-  make speech-spike RECORDING=job_01J... ENGINES="speech <decoder>=<model>"`,
+		Example: `  leyspeech compare --recording job_01J... --engine speech=whisper-1 --engine speech=gpt-4o-transcribe
+  make speech-spike RECORDING=job_01J... ENGINES="speech=whisper-1 speech=gpt-4o-transcribe"`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var specs []engineSpec

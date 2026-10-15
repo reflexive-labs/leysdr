@@ -166,8 +166,8 @@ $LEYSPEECH_KEY can be measured without touching the user's daemon.
 
 --json prints the results as a JSON array.`,
 		Example: `  leyspeech run --recording job_01J... --engine speech
-  leyspeech run --recording job_01J... --engine <decoder> --model <model>   # one that calls a provider
-  LEYDEC_SPEECH_SCRIPT=script.txt leyspeech run --daemon --recording ./job_01J... --engine speech`,
+  leyspeech run --recording job_01J... --engine speech --model gpt-4o-transcribe
+  LEYDEC_SPEECH_SCRIPT=script.txt leyspeech run --daemon --recording ./job_01J... --engine speech-scripted   # the keyless test engine`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			results, err := measureRecording(cmd.Context(), g, o, recordingRef, refArg, []engineSpec{e}, cmd.ErrOrStderr())
@@ -216,7 +216,7 @@ previous choice back after. The job is cancelled on every way out, Ctrl-C
 included. Its records and its recording are kept, so 'leyspeech run
 --recording <job>' can score the same overs once they are transcribed by hand.`,
 		Example: `  leyspeech live --freq 146.94 --engine speech --seconds 600
-  leyspeech live --freq 162.55 --engine <decoder> --model <model> --seconds 300 --json`,
+  leyspeech live --freq 162.55 --engine speech --model gpt-4o-transcribe --seconds 300 --json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if seconds <= 0 {

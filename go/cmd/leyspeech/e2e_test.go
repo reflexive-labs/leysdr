@@ -28,6 +28,9 @@ import (
 // repeats for every over, so the transcript is known before the run.
 const spikeScript = "whiskey six alpha bravo charlie checking in"
 
+// testEngine is the keyless scripted speech decoder; speech itself calls OpenAI and needs a key.
+const testEngine = "speech-scripted"
+
 // spikeFreq is where the keyed fixture's carrier is.
 const spikeFreq = "146.62"
 
@@ -111,8 +114,8 @@ func TestSpeechSpikeAgainstRealDaemon(t *testing.T) {
 		ref := filepath.Join(t.TempDir(), "ref.txt")
 		writeRef(t, ref, overs, -1)
 		var stderr bytes.Buffer
-		// transcribe is the speech decoder's alias: two jobs, two rows, one decoder.
-		results, err := measureRecording(ctx, g, daemonOptions{}, id, ref, []engineSpec{{name: "speech"}, {name: "transcribe"}}, &stderr)
+		// The same decoder twice: two jobs, two rows.
+		results, err := measureRecording(ctx, g, daemonOptions{}, id, ref, []engineSpec{{name: testEngine}, {name: testEngine}}, &stderr)
 		if err != nil {
 			t.Fatalf("%v\n%s", err, stderr.String())
 		}
@@ -154,7 +157,7 @@ func TestSpeechSpikeAgainstRealDaemon(t *testing.T) {
 		root.SetErr(&stderr)
 		root.SetArgs([]string{
 			"--ley", leyBin, "run", "--daemon", "--leylined", daemonBin, "--decoders", decoders,
-			"--recording", dir, "--engine", "speech", "--ref", ref, "--json",
+			"--recording", dir, "--engine", testEngine, "--ref", ref, "--json",
 		})
 		if err := root.ExecuteContext(ctx); err != nil {
 			t.Fatalf("leyspeech run --daemon: %v\n%s", err, stderr.String())
@@ -183,7 +186,7 @@ func TestSpeechSpikeAgainstRealDaemon(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer s.close()
-		r, err := s.live(ctx, spikeFreq, engineSpec{name: "speech"}, 14*time.Second)
+		r, err := s.live(ctx, spikeFreq, engineSpec{name: testEngine}, 14*time.Second)
 		if err != nil {
 			t.Fatalf("%v\n%s", err, stderr.String())
 		}
@@ -217,7 +220,7 @@ func TestSpeechSpikeAgainstRealDaemon(t *testing.T) {
 		// The interrupt arrives as the context ending, as signal.NotifyContext delivers it.
 		ictx, interrupt := context.WithTimeout(ctx, 4*time.Second)
 		defer interrupt()
-		if _, err := s.live(ictx, spikeFreq, engineSpec{name: "speech"}, 30*time.Second); err == nil {
+		if _, err := s.live(ictx, spikeFreq, engineSpec{name: testEngine}, 30*time.Second); err == nil {
 			t.Errorf("an interrupted live run reported success\n%s", stderr.String())
 		}
 		running(ctx, t, d)
@@ -327,7 +330,7 @@ func writeRef(t *testing.T, path string, overs []overSpan, wrong int) {
 func measureOne(ctx context.Context, t *testing.T, g *globals, o daemonOptions, recordingRef, ref string) *result {
 	t.Helper()
 	var stderr bytes.Buffer
-	results, err := measureRecording(ctx, g, o, recordingRef, ref, []engineSpec{{name: "speech"}}, &stderr)
+	results, err := measureRecording(ctx, g, o, recordingRef, ref, []engineSpec{{name: testEngine}}, &stderr)
 	if err != nil {
 		t.Fatalf("%v\n%s", err, stderr.String())
 	}
