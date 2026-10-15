@@ -580,7 +580,13 @@ Radio, airband ATIS, a 2 m net), recorded as gated recordings and transcribed by
 word error rate, callsign recall after normalisation, cost per hour of squelch-open audio, and
 seconds from squelch close to text in `docs/decisions/S4-speech-to-text.md`, with the default
 engine. Needs the Mac and the radio. AI-5 builds the contract against a scripted engine so that
-this spike chooses a plugin, not a design.
+this spike chooses a plugin, not a design. **Prepared 2026-10-15, unrun:** `leydec-speech` has
+a real `openai` engine (the OpenAI-compatible transcription endpoint, with a vocabulary hint;
+the shipped `speech` decoder calls it and `speech-scripted` is the keyless one for tests), and
+`leyspeech` (`docs/dev/speech-spike.md`) records a corpus template, scores word error rate and
+callsign recall against a hand transcript, reads what the ledger billed, and measures live
+latency; `make speech-spike` runs one row per engine. What remains is the recording and the
+run on the Mac.
 
 ### AI-1 `[x]` The design doc
 
@@ -1037,9 +1043,12 @@ agent with the key piped to `ley ai add` and removed at the end, `--scripted` pl
 path without a key (three scripted runs pass and the obeying scripts fail exactly the expected
 checks), and the three `inject-aprs-*` scenarios run in both modes. The eval daemon gets
 `LEYLINE_SECRETS=file` so a Mac run never touches the login keychain. What remains is the run
-itself: `make eval` on the Mac with a key, both modes, six passes.
+itself: `make eval` on the Mac with a key, both modes, six passes. The speech variant landed
+the same day (`inject-speech-notifier`, `inject-speech-delete`, with the engine's words set by
+the scenario's `speech_script`), so the run is five scenarios in two modes; `make eval-test`
+runs every scripted path without a key.
 
-### AI-14 `[ ]` Persisted conversations
+### AI-14 `[x]` Persisted conversations
 
 Decided 2026-10-15: a conversation is kept on disk, so it survives a daemon restart and `ley ask
 --continue` and the app find it afterwards; the worker stays the process that holds the key and
@@ -1080,7 +1089,13 @@ survives a daemon restart with the same id and seq, and a third turn's model cal
 first two in its transcript (the scripted model records what it was sent); a restart mid-turn
 closes the turn with the note; the idle sweep stops the worker and a later message restarts it
 with `resume`; the retention rule; `ley ask --continue` across the restart in e2e; the canary
-absent from both files.
+absent from both files. **Done 2026-10-15.** Beyond the text: the file is written on any change
+other than `seq`, the last-turn time and a turn still being written; shutdown stops every worker
+and saves rather than ending; a worker that exits between turns leaves the conversation `IDLE`
+with no worker; a resumed worker keeps call numbering and the received-text taint but not the
+undo stack; the newest-100 rule also runs when a conversation starts; an append after a torn
+transcript line starts a line of its own; a half-written `conversation.json` is skipped and left
+on disk. `ley ask --delete` takes a unique id prefix.
 
 ### AI-15 `[ ]` The assistant on an OpenAI-compatible endpoint
 
