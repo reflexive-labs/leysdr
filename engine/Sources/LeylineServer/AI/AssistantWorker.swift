@@ -183,7 +183,7 @@ extension WorkerProcess {
             if let leyPath, !leyPath.isEmpty {
                 throw Self.cannotStart(provider, "the ley named by --ley or LEYLINE_LEY (\(leyPath)) is not an executable file, so the assistant cannot start")
             }
-            throw Self.cannotStart(provider, "no ley executable was found beside leylined or on PATH, so the assistant cannot start")
+            throw Self.cannotStart(provider, "no ley executable was found beside leylined, on PATH or by --ley, so the assistant cannot start")
         }
         var environment = PluginProcess.environment(sendingKey: true)
         environment["LEYLINE_SOCKET"] = socketPath

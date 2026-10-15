@@ -46,7 +46,7 @@ struct WorkerProcess: Sendable {
             if let leyPath, !leyPath.isEmpty {
                 return Self.unavailable("the ley named by --ley or LEYLINE_LEY (\(leyPath)) is not an executable file, so the key could not be checked")
             }
-            return Self.unavailable("no ley executable was found beside leylined or on PATH, so the key could not be checked")
+            return Self.unavailable("no ley executable was found beside leylined, on PATH or by --ley, so the key could not be checked")
         }
         var args = ["worker", "check", "--provider", provider]
         if !endpoint.isEmpty { args += ["--endpoint", endpoint] }

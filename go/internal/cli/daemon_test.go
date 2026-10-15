@@ -23,9 +23,11 @@ import (
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 )
 
-// A home directory with &, < or > in it must not break the LaunchAgent XML.
+// A home directory with &, < or > in it must not break the LaunchAgent XML,
+// and the ley that installs the daemon is named as its --ley, because launchd's
+// PATH holds no Go bin.
 func TestPlistEscapesPaths(t *testing.T) {
-	got := plist("/Users/a&b/bin/leylined", "/Users/a<b>/Library/Application Support/Leyline/leyline.sock", "/Users/a&b<c>/Library/Logs/Leyline/leylined.log")
+	got := plist("/Users/a&b/bin/leylined", "/Users/a&b/go/bin/ley", "/Users/a<b>/Library/Application Support/Leyline/leyline.sock", "/Users/a&b<c>/Library/Logs/Leyline/leylined.log")
 	path := filepath.Join("testdata", "launchagent.plist.golden")
 	if *update {
 		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
@@ -43,6 +45,12 @@ func TestPlistEscapesPaths(t *testing.T) {
 		if strings.Contains(got, raw) {
 			t.Errorf("plist contains unescaped %q", raw)
 		}
+	}
+	if !strings.Contains(got, "<string>--ley</string>\n\t\t<string>/Users/a&amp;b/go/bin/ley</string>") {
+		t.Errorf("plist does not pass the installing ley as --ley:\n%s", got)
+	}
+	if strings.Contains(plist("/opt/leylined", "", "/tmp/s", "/tmp/l"), "--ley") {
+		t.Errorf("plist names --ley with no ley to name")
 	}
 }
 
