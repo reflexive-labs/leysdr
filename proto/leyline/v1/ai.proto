@@ -128,9 +128,11 @@ service Usage {
 }
 
 // ---------- Assistant ----------
-// A conversation with the model, held by the daemon. The daemon spawns one worker per
-// conversation, passes it what the user says and decides, and derives the conversation's state
-// from the turns the worker writes back. Any client may watch, answer or end any conversation.
+// A conversation with the model, held by the daemon and kept on disk, so it outlives a restart.
+// The daemon spawns a worker for a conversation while it is in use, passes it what the user says
+// and decides, and derives the conversation's state from the turns the worker writes back; a
+// conversation idle for a while keeps its state and loses only its worker, which the next message
+// starts again. Any client may watch, answer, end or delete any conversation.
 
 // One conversation, whole on every event and every reply.
 message Conversation {
@@ -160,7 +162,7 @@ enum ConversationState {
   CONVERSATION_IDLE = 1;               // waiting for the user
   CONVERSATION_THINKING = 2;           // the worker is on a turn
   CONVERSATION_WAITING = 3;            // the assistant asked; ResolveAction or AnswerViewTool answers
-  CONVERSATION_ENDED = 4;              // a client ended it, it sat idle, or the daemon stopped
+  CONVERSATION_ENDED = 4;              // a client ended it; it stays listed and readable
   CONVERSATION_FAILED = 5;             // the worker failed or exited mid-turn; `error` says why
 }
 
@@ -252,9 +254,15 @@ service Assistant {
   rpc AnswerViewTool(AnswerViewToolRequest) returns (Conversation);
   // Ends the running turn; the conversation stays and becomes IDLE.
   rpc StopTurn(ConversationRef) returns (Conversation);
-  // Stops the worker; the conversation is ENDED and stays listed.
+  // Stops the worker; the conversation is ENDED and stays listed, on disk, until it is deleted.
   rpc EndConversation(ConversationRef) returns (Conversation);
+  // Every conversation the daemon keeps, those from before its last restart included, newest
+  // first.
   rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse);
+  // Removes a conversation and its files. One still going is ended first, and its ENDED state is
+  // the last event about it; after that it is simply not listed. INVALID_ARGUMENT for an id the
+  // daemon does not keep.
+  rpc DeleteConversation(ConversationRef) returns (Empty);
 }
 
 // ---------- Assistant worker ----------
@@ -281,6 +289,12 @@ message WorkerStart {
   string endpoint = 4;                 // the key's endpoint; empty = the provider's own API
   repeated ViewTool view_tools = 5;
   string socket = 6;                   // the daemon's socket, for tool calls and ReportUsage
+  // The worker's own model transcript, one message per line, which it appends to as it goes and
+  // only it reads. The daemon names it and keeps it beside the conversation.
+  string transcript_path = 7;
+  // The conversation went on before this worker: load transcript_path before the first model
+  // call. False for a new conversation, whose transcript starts empty.
+  bool resume = 8;
 }
 message UserMessage { string turn_id = 1; string text = 2; }
 message ActionResolved { string call_id = 1; bool approved = 2; }

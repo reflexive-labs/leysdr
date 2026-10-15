@@ -41,7 +41,7 @@ const (
 	ConversationState_CONVERSATION_IDLE              ConversationState = 1 // waiting for the user
 	ConversationState_CONVERSATION_THINKING          ConversationState = 2 // the worker is on a turn
 	ConversationState_CONVERSATION_WAITING           ConversationState = 3 // the assistant asked; ResolveAction or AnswerViewTool answers
-	ConversationState_CONVERSATION_ENDED             ConversationState = 4 // a client ended it, it sat idle, or the daemon stopped
+	ConversationState_CONVERSATION_ENDED             ConversationState = 4 // a client ended it; it stays listed and readable
 	ConversationState_CONVERSATION_FAILED            ConversationState = 5 // the worker failed or exited mid-turn; `error` says why
 )
 
@@ -2091,8 +2091,14 @@ type WorkerStart struct {
 	Endpoint       string                 `protobuf:"bytes,4,opt,name=endpoint,proto3" json:"endpoint,omitempty"` // the key's endpoint; empty = the provider's own API
 	ViewTools      []*ViewTool            `protobuf:"bytes,5,rep,name=view_tools,json=viewTools,proto3" json:"view_tools,omitempty"`
 	Socket         string                 `protobuf:"bytes,6,opt,name=socket,proto3" json:"socket,omitempty"` // the daemon's socket, for tool calls and ReportUsage
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The worker's own model transcript, one message per line, which it appends to as it goes and
+	// only it reads. The daemon names it and keeps it beside the conversation.
+	TranscriptPath string `protobuf:"bytes,7,opt,name=transcript_path,json=transcriptPath,proto3" json:"transcript_path,omitempty"`
+	// The conversation went on before this worker: load transcript_path before the first model
+	// call. False for a new conversation, whose transcript starts empty.
+	Resume        bool `protobuf:"varint,8,opt,name=resume,proto3" json:"resume,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WorkerStart) Reset() {
@@ -2165,6 +2171,20 @@ func (x *WorkerStart) GetSocket() string {
 		return x.Socket
 	}
 	return ""
+}
+
+func (x *WorkerStart) GetTranscriptPath() string {
+	if x != nil {
+		return x.TranscriptPath
+	}
+	return ""
+}
+
+func (x *WorkerStart) GetResume() bool {
+	if x != nil {
+		return x.Resume
+	}
+	return false
 }
 
 type UserMessage struct {
@@ -2658,7 +2678,7 @@ const file_leyline_v1_ai_proto_rawDesc = "" +
 	"\vview_answer\x18\x04 \x01(\v2\x1a.leyline.v1.ViewToolAnswerH\x00R\n" +
 	"viewAnswer\x12,\n" +
 	"\x04stop\x18\x05 \x01(\v2\x16.leyline.v1.WorkerStopH\x00R\x04stopB\a\n" +
-	"\x05event\"\xd1\x01\n" +
+	"\x05event\"\x92\x02\n" +
 	"\vWorkerStart\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x1a\n" +
 	"\bprovider\x18\x02 \x01(\tR\bprovider\x12\x14\n" +
@@ -2666,7 +2686,9 @@ const file_leyline_v1_ai_proto_rawDesc = "" +
 	"\bendpoint\x18\x04 \x01(\tR\bendpoint\x123\n" +
 	"\n" +
 	"view_tools\x18\x05 \x03(\v2\x14.leyline.v1.ViewToolR\tviewTools\x12\x16\n" +
-	"\x06socket\x18\x06 \x01(\tR\x06socket\":\n" +
+	"\x06socket\x18\x06 \x01(\tR\x06socket\x12'\n" +
+	"\x0ftranscript_path\x18\a \x01(\tR\x0etranscriptPath\x12\x16\n" +
+	"\x06resume\x18\b \x01(\bR\x06resume\":\n" +
 	"\vUserMessage\x12\x17\n" +
 	"\aturn_id\x18\x01 \x01(\tR\x06turnId\x12\x12\n" +
 	"\x04text\x18\x02 \x01(\tR\x04text\"E\n" +
@@ -2715,7 +2737,7 @@ const file_leyline_v1_ai_proto_rawDesc = "" +
 	"\x0fSetFeatureModel\x12\x18.leyline.v1.FeatureModel\x1a\x18.leyline.v1.FeatureModel2\x89\x01\n" +
 	"\x05Usage\x12E\n" +
 	"\bGetUsage\x12\x1b.leyline.v1.GetUsageRequest\x1a\x1c.leyline.v1.GetUsageResponse\x129\n" +
-	"\vReportUsage\x12\x17.leyline.v1.UsageReport\x1a\x11.leyline.v1.Empty2\x8b\x05\n" +
+	"\vReportUsage\x12\x17.leyline.v1.UsageReport\x1a\x11.leyline.v1.Empty2\xd1\x05\n" +
 	"\tAssistant\x12S\n" +
 	"\x11StartConversation\x12$.leyline.v1.StartConversationRequest\x1a\x18.leyline.v1.Conversation\x12G\n" +
 	"\vSendMessage\x12\x1e.leyline.v1.SendMessageRequest\x1a\x18.leyline.v1.Conversation\x12U\n" +
@@ -2724,7 +2746,8 @@ const file_leyline_v1_ai_proto_rawDesc = "" +
 	"\x0eAnswerViewTool\x12!.leyline.v1.AnswerViewToolRequest\x1a\x18.leyline.v1.Conversation\x12A\n" +
 	"\bStopTurn\x12\x1b.leyline.v1.ConversationRef\x1a\x18.leyline.v1.Conversation\x12H\n" +
 	"\x0fEndConversation\x12\x1b.leyline.v1.ConversationRef\x1a\x18.leyline.v1.Conversation\x12`\n" +
-	"\x11ListConversations\x12$.leyline.v1.ListConversationsRequest\x1a%.leyline.v1.ListConversationsResponseB>Z<github.com/reflexive-labs/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
+	"\x11ListConversations\x12$.leyline.v1.ListConversationsRequest\x1a%.leyline.v1.ListConversationsResponse\x12D\n" +
+	"\x12DeleteConversation\x12\x1b.leyline.v1.ConversationRef\x1a\x11.leyline.v1.EmptyB>Z<github.com/reflexive-labs/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
 
 var (
 	file_leyline_v1_ai_proto_rawDescOnce sync.Once
@@ -2822,23 +2845,25 @@ var file_leyline_v1_ai_proto_depIdxs = []int32{
 	22, // 37: leyline.v1.Assistant.StopTurn:input_type -> leyline.v1.ConversationRef
 	22, // 38: leyline.v1.Assistant.EndConversation:input_type -> leyline.v1.ConversationRef
 	26, // 39: leyline.v1.Assistant.ListConversations:input_type -> leyline.v1.ListConversationsRequest
-	4,  // 40: leyline.v1.Credentials.SetCredential:output_type -> leyline.v1.Credential
-	38, // 41: leyline.v1.Credentials.DeleteCredential:output_type -> leyline.v1.Empty
-	4,  // 42: leyline.v1.Credentials.CheckCredential:output_type -> leyline.v1.Credential
-	9,  // 43: leyline.v1.Credentials.GetAIState:output_type -> leyline.v1.AIState
-	8,  // 44: leyline.v1.Credentials.SetFeatureModel:output_type -> leyline.v1.FeatureModel
-	14, // 45: leyline.v1.Usage.GetUsage:output_type -> leyline.v1.GetUsageResponse
-	38, // 46: leyline.v1.Usage.ReportUsage:output_type -> leyline.v1.Empty
-	15, // 47: leyline.v1.Assistant.StartConversation:output_type -> leyline.v1.Conversation
-	15, // 48: leyline.v1.Assistant.SendMessage:output_type -> leyline.v1.Conversation
-	15, // 49: leyline.v1.Assistant.WatchConversation:output_type -> leyline.v1.Conversation
-	15, // 50: leyline.v1.Assistant.ResolveAction:output_type -> leyline.v1.Conversation
-	15, // 51: leyline.v1.Assistant.AnswerViewTool:output_type -> leyline.v1.Conversation
-	15, // 52: leyline.v1.Assistant.StopTurn:output_type -> leyline.v1.Conversation
-	15, // 53: leyline.v1.Assistant.EndConversation:output_type -> leyline.v1.Conversation
-	27, // 54: leyline.v1.Assistant.ListConversations:output_type -> leyline.v1.ListConversationsResponse
-	40, // [40:55] is the sub-list for method output_type
-	25, // [25:40] is the sub-list for method input_type
+	22, // 40: leyline.v1.Assistant.DeleteConversation:input_type -> leyline.v1.ConversationRef
+	4,  // 41: leyline.v1.Credentials.SetCredential:output_type -> leyline.v1.Credential
+	38, // 42: leyline.v1.Credentials.DeleteCredential:output_type -> leyline.v1.Empty
+	4,  // 43: leyline.v1.Credentials.CheckCredential:output_type -> leyline.v1.Credential
+	9,  // 44: leyline.v1.Credentials.GetAIState:output_type -> leyline.v1.AIState
+	8,  // 45: leyline.v1.Credentials.SetFeatureModel:output_type -> leyline.v1.FeatureModel
+	14, // 46: leyline.v1.Usage.GetUsage:output_type -> leyline.v1.GetUsageResponse
+	38, // 47: leyline.v1.Usage.ReportUsage:output_type -> leyline.v1.Empty
+	15, // 48: leyline.v1.Assistant.StartConversation:output_type -> leyline.v1.Conversation
+	15, // 49: leyline.v1.Assistant.SendMessage:output_type -> leyline.v1.Conversation
+	15, // 50: leyline.v1.Assistant.WatchConversation:output_type -> leyline.v1.Conversation
+	15, // 51: leyline.v1.Assistant.ResolveAction:output_type -> leyline.v1.Conversation
+	15, // 52: leyline.v1.Assistant.AnswerViewTool:output_type -> leyline.v1.Conversation
+	15, // 53: leyline.v1.Assistant.StopTurn:output_type -> leyline.v1.Conversation
+	15, // 54: leyline.v1.Assistant.EndConversation:output_type -> leyline.v1.Conversation
+	27, // 55: leyline.v1.Assistant.ListConversations:output_type -> leyline.v1.ListConversationsResponse
+	38, // 56: leyline.v1.Assistant.DeleteConversation:output_type -> leyline.v1.Empty
+	41, // [41:57] is the sub-list for method output_type
+	25, // [25:41] is the sub-list for method input_type
 	25, // [25:25] is the sub-list for extension type_name
 	25, // [25:25] is the sub-list for extension extendee
 	0,  // [0:25] is the sub-list for field type_name

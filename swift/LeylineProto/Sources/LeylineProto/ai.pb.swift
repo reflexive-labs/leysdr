@@ -46,7 +46,7 @@ public nonisolated enum Leyline_V1_ConversationState: SwiftProtobuf.Enum, Swift.
   /// the assistant asked; ResolveAction or AnswerViewTool answers
   case conversationWaiting // = 3
 
-  /// a client ended it, it sat idle, or the daemon stopped
+  /// a client ended it; it stays listed and readable
   case conversationEnded // = 4
 
   /// the worker failed or exited mid-turn; `error` says why
@@ -884,6 +884,14 @@ public nonisolated struct Leyline_V1_WorkerStart: Sendable {
 
   /// the daemon's socket, for tool calls and ReportUsage
   public var socket: String = String()
+
+  /// The worker's own model transcript, one message per line, which it appends to as it goes and
+  /// only it reads. The daemon names it and keeps it beside the conversation.
+  public var transcriptPath: String = String()
+
+  /// The conversation went on before this worker: load transcript_path before the first model
+  /// call. False for a new conversation, whose transcript starts empty.
+  public var resume: Bool = false
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -2305,7 +2313,7 @@ nonisolated extension Leyline_V1_WorkerEvent: SwiftProtobuf.Message, SwiftProtob
 
 nonisolated extension Leyline_V1_WorkerStart: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".WorkerStart"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}conversation_id\0\u{1}provider\0\u{1}model\0\u{1}endpoint\0\u{3}view_tools\0\u{1}socket\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}conversation_id\0\u{1}provider\0\u{1}model\0\u{1}endpoint\0\u{3}view_tools\0\u{1}socket\0\u{3}transcript_path\0\u{1}resume\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2319,6 +2327,8 @@ nonisolated extension Leyline_V1_WorkerStart: SwiftProtobuf.Message, SwiftProtob
       case 4: try { try decoder.decodeSingularStringField(value: &self.endpoint) }()
       case 5: try { try decoder.decodeRepeatedMessageField(value: &self.viewTools) }()
       case 6: try { try decoder.decodeSingularStringField(value: &self.socket) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.transcriptPath) }()
+      case 8: try { try decoder.decodeSingularBoolField(value: &self.resume) }()
       default: break
       }
     }
@@ -2343,6 +2353,12 @@ nonisolated extension Leyline_V1_WorkerStart: SwiftProtobuf.Message, SwiftProtob
     if !self.socket.isEmpty {
       try visitor.visitSingularStringField(value: self.socket, fieldNumber: 6)
     }
+    if !self.transcriptPath.isEmpty {
+      try visitor.visitSingularStringField(value: self.transcriptPath, fieldNumber: 7)
+    }
+    if self.resume != false {
+      try visitor.visitSingularBoolField(value: self.resume, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2353,6 +2369,8 @@ nonisolated extension Leyline_V1_WorkerStart: SwiftProtobuf.Message, SwiftProtob
     if lhs.endpoint != rhs.endpoint {return false}
     if lhs.viewTools != rhs.viewTools {return false}
     if lhs.socket != rhs.socket {return false}
+    if lhs.transcriptPath != rhs.transcriptPath {return false}
+    if lhs.resume != rhs.resume {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

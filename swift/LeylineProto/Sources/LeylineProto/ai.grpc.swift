@@ -1802,6 +1802,19 @@ public enum Leyline_V1_Assistant: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "DeleteConversation" metadata.
+        public enum DeleteConversation: Sendable {
+            /// Request type for "DeleteConversation".
+            public typealias Input = Leyline_V1_ConversationRef
+            /// Response type for "DeleteConversation".
+            public typealias Output = Leyline_V1_Empty
+            /// Descriptor for "DeleteConversation".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "leyline.v1.Assistant"),
+                method: "DeleteConversation",
+                type: .unary
+            )
+        }
         /// Descriptors for all methods in the "leyline.v1.Assistant" service.
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
             StartConversation.descriptor,
@@ -1811,7 +1824,8 @@ public enum Leyline_V1_Assistant: Sendable {
             AnswerViewTool.descriptor,
             StopTurn.descriptor,
             EndConversation.descriptor,
-            ListConversations.descriptor
+            ListConversations.descriptor,
+            DeleteConversation.descriptor
         ]
     }
 }
@@ -1952,7 +1966,7 @@ extension Leyline_V1_Assistant {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Stops the worker; the conversation is ENDED and stays listed.
+        /// > Stops the worker; the conversation is ENDED and stays listed, on disk, until it is deleted.
         ///
         /// - Parameters:
         ///   - request: A streaming request of `Leyline_V1_ConversationRef` messages.
@@ -1968,6 +1982,11 @@ extension Leyline_V1_Assistant {
 
         /// Handle the "ListConversations" method.
         ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Every conversation the daemon keeps, those from before its last restart included, newest
+        /// > first.
+        ///
         /// - Parameters:
         ///   - request: A streaming request of `Leyline_V1_ListConversationsRequest` messages.
         ///   - context: Context providing information about the RPC.
@@ -1979,6 +1998,26 @@ extension Leyline_V1_Assistant {
             request: GRPCCore.StreamingServerRequest<Leyline_V1_ListConversationsRequest>,
             context: GRPCCore.ServerContext
         ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_ListConversationsResponse>
+
+        /// Handle the "DeleteConversation" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Removes a conversation and its files. One still going is ended first, and its ENDED state is
+        /// > the last event about it; after that it is simply not listed. INVALID_ARGUMENT for an id the
+        /// > daemon does not keep.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Leyline_V1_ConversationRef` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Leyline_V1_Empty` messages.
+        func deleteConversation(
+            request: GRPCCore.StreamingServerRequest<Leyline_V1_ConversationRef>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Empty>
     }
 
     /// Service protocol for the "leyline.v1.Assistant" service.
@@ -2103,7 +2142,7 @@ extension Leyline_V1_Assistant {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Stops the worker; the conversation is ENDED and stays listed.
+        /// > Stops the worker; the conversation is ENDED and stays listed, on disk, until it is deleted.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Leyline_V1_ConversationRef` message.
@@ -2119,6 +2158,11 @@ extension Leyline_V1_Assistant {
 
         /// Handle the "ListConversations" method.
         ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Every conversation the daemon keeps, those from before its last restart included, newest
+        /// > first.
+        ///
         /// - Parameters:
         ///   - request: A request containing a single `Leyline_V1_ListConversationsRequest` message.
         ///   - context: Context providing information about the RPC.
@@ -2130,6 +2174,26 @@ extension Leyline_V1_Assistant {
             request: GRPCCore.ServerRequest<Leyline_V1_ListConversationsRequest>,
             context: GRPCCore.ServerContext
         ) async throws -> GRPCCore.ServerResponse<Leyline_V1_ListConversationsResponse>
+
+        /// Handle the "DeleteConversation" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Removes a conversation and its files. One still going is ended first, and its ENDED state is
+        /// > the last event about it; after that it is simply not listed. INVALID_ARGUMENT for an id the
+        /// > daemon does not keep.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_ConversationRef` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Leyline_V1_Empty` message.
+        func deleteConversation(
+            request: GRPCCore.ServerRequest<Leyline_V1_ConversationRef>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Empty>
     }
 
     /// Simple service protocol for the "leyline.v1.Assistant" service.
@@ -2253,7 +2317,7 @@ extension Leyline_V1_Assistant {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Stops the worker; the conversation is ENDED and stays listed.
+        /// > Stops the worker; the conversation is ENDED and stays listed, on disk, until it is deleted.
         ///
         /// - Parameters:
         ///   - request: A `Leyline_V1_ConversationRef` message.
@@ -2269,6 +2333,11 @@ extension Leyline_V1_Assistant {
 
         /// Handle the "ListConversations" method.
         ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Every conversation the daemon keeps, those from before its last restart included, newest
+        /// > first.
+        ///
         /// - Parameters:
         ///   - request: A `Leyline_V1_ListConversationsRequest` message.
         ///   - context: Context providing information about the RPC.
@@ -2280,6 +2349,26 @@ extension Leyline_V1_Assistant {
             request: Leyline_V1_ListConversationsRequest,
             context: GRPCCore.ServerContext
         ) async throws -> Leyline_V1_ListConversationsResponse
+
+        /// Handle the "DeleteConversation" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Removes a conversation and its files. One still going is ended first, and its ENDED state is
+        /// > the last event about it; after that it is simply not listed. INVALID_ARGUMENT for an id the
+        /// > daemon does not keep.
+        ///
+        /// - Parameters:
+        ///   - request: A `Leyline_V1_ConversationRef` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Leyline_V1_Empty` to respond with.
+        func deleteConversation(
+            request: Leyline_V1_ConversationRef,
+            context: GRPCCore.ServerContext
+        ) async throws -> Leyline_V1_Empty
     }
 }
 
@@ -2375,6 +2464,17 @@ extension Leyline_V1_Assistant.StreamingServiceProtocol {
                 )
             }
         )
+        router.registerHandler(
+            forMethod: Leyline_V1_Assistant.Method.DeleteConversation.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_ConversationRef>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_Empty>(),
+            handler: { request, context in
+                try await self.deleteConversation(
+                    request: request,
+                    context: context
+                )
+            }
+        )
     }
 }
 
@@ -2463,6 +2563,17 @@ extension Leyline_V1_Assistant.ServiceProtocol {
         context: GRPCCore.ServerContext
     ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_ListConversationsResponse> {
         let response = try await self.listConversations(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
+
+    public func deleteConversation(
+        request: GRPCCore.StreamingServerRequest<Leyline_V1_ConversationRef>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Empty> {
+        let response = try await self.deleteConversation(
             request: GRPCCore.ServerRequest(stream: request),
             context: context
         )
@@ -2574,6 +2685,19 @@ extension Leyline_V1_Assistant.SimpleServiceProtocol {
     ) async throws -> GRPCCore.ServerResponse<Leyline_V1_ListConversationsResponse> {
         return GRPCCore.ServerResponse<Leyline_V1_ListConversationsResponse>(
             message: try await self.listConversations(
+                request: request.message,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+
+    public func deleteConversation(
+        request: GRPCCore.ServerRequest<Leyline_V1_ConversationRef>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Empty> {
+        return GRPCCore.ServerResponse<Leyline_V1_Empty>(
+            message: try await self.deleteConversation(
                 request: request.message,
                 context: context
             ),
@@ -2735,7 +2859,7 @@ extension Leyline_V1_Assistant {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Stops the worker; the conversation is ENDED and stays listed.
+        /// > Stops the worker; the conversation is ENDED and stays listed, on disk, until it is deleted.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Leyline_V1_ConversationRef` message.
@@ -2756,6 +2880,11 @@ extension Leyline_V1_Assistant {
 
         /// Call the "ListConversations" method.
         ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Every conversation the daemon keeps, those from before its last restart included, newest
+        /// > first.
+        ///
         /// - Parameters:
         ///   - request: A request containing a single `Leyline_V1_ListConversationsRequest` message.
         ///   - serializer: A serializer for `Leyline_V1_ListConversationsRequest` messages.
@@ -2771,6 +2900,31 @@ extension Leyline_V1_Assistant {
             deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_ListConversationsResponse>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_ListConversationsResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "DeleteConversation" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Removes a conversation and its files. One still going is ended first, and its ENDED state is
+        /// > the last event about it; after that it is simply not listed. INVALID_ARGUMENT for an id the
+        /// > daemon does not keep.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_ConversationRef` message.
+        ///   - serializer: A serializer for `Leyline_V1_ConversationRef` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func deleteConversation<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_ConversationRef>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_ConversationRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Empty>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Empty>) async throws -> Result
         ) async throws -> Result where Result: Sendable
     }
 
@@ -2998,7 +3152,7 @@ extension Leyline_V1_Assistant {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Stops the worker; the conversation is ENDED and stays listed.
+        /// > Stops the worker; the conversation is ENDED and stays listed, on disk, until it is deleted.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Leyline_V1_ConversationRef` message.
@@ -3030,6 +3184,11 @@ extension Leyline_V1_Assistant {
 
         /// Call the "ListConversations" method.
         ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Every conversation the daemon keeps, those from before its last restart included, newest
+        /// > first.
+        ///
         /// - Parameters:
         ///   - request: A request containing a single `Leyline_V1_ListConversationsRequest` message.
         ///   - serializer: A serializer for `Leyline_V1_ListConversationsRequest` messages.
@@ -3051,6 +3210,42 @@ extension Leyline_V1_Assistant {
             try await self.client.unary(
                 request: request,
                 descriptor: Leyline_V1_Assistant.Method.ListConversations.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "DeleteConversation" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Removes a conversation and its files. One still going is ended first, and its ENDED state is
+        /// > the last event about it; after that it is simply not listed. INVALID_ARGUMENT for an id the
+        /// > daemon does not keep.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_ConversationRef` message.
+        ///   - serializer: A serializer for `Leyline_V1_ConversationRef` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func deleteConversation<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_ConversationRef>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_ConversationRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Empty>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Empty>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Leyline_V1_Assistant.Method.DeleteConversation.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -3236,7 +3431,7 @@ extension Leyline_V1_Assistant.ClientProtocol {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > Stops the worker; the conversation is ENDED and stays listed.
+    /// > Stops the worker; the conversation is ENDED and stays listed, on disk, until it is deleted.
     ///
     /// - Parameters:
     ///   - request: A request containing a single `Leyline_V1_ConversationRef` message.
@@ -3263,6 +3458,11 @@ extension Leyline_V1_Assistant.ClientProtocol {
 
     /// Call the "ListConversations" method.
     ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Every conversation the daemon keeps, those from before its last restart included, newest
+    /// > first.
+    ///
     /// - Parameters:
     ///   - request: A request containing a single `Leyline_V1_ListConversationsRequest` message.
     ///   - options: Options to apply to this RPC.
@@ -3281,6 +3481,37 @@ extension Leyline_V1_Assistant.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_ListConversationsRequest>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_ListConversationsResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "DeleteConversation" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Removes a conversation and its files. One still going is ended first, and its ENDED state is
+    /// > the last event about it; after that it is simply not listed. INVALID_ARGUMENT for an id the
+    /// > daemon does not keep.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Leyline_V1_ConversationRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func deleteConversation<Result>(
+        request: GRPCCore.ClientRequest<Leyline_V1_ConversationRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.deleteConversation(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_ConversationRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_Empty>(),
             options: options,
             onResponse: handleResponse
         )
@@ -3487,7 +3718,7 @@ extension Leyline_V1_Assistant.ClientProtocol {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > Stops the worker; the conversation is ENDED and stays listed.
+    /// > Stops the worker; the conversation is ENDED and stays listed, on disk, until it is deleted.
     ///
     /// - Parameters:
     ///   - message: request message to send.
@@ -3518,6 +3749,11 @@ extension Leyline_V1_Assistant.ClientProtocol {
 
     /// Call the "ListConversations" method.
     ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Every conversation the daemon keeps, those from before its last restart included, newest
+    /// > first.
+    ///
     /// - Parameters:
     ///   - message: request message to send.
     ///   - metadata: Additional metadata to send, defaults to empty.
@@ -3539,6 +3775,41 @@ extension Leyline_V1_Assistant.ClientProtocol {
             metadata: metadata
         )
         return try await self.listConversations(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "DeleteConversation" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Removes a conversation and its files. One still going is ended first, and its ENDED state is
+    /// > the last event about it; after that it is simply not listed. INVALID_ARGUMENT for an id the
+    /// > daemon does not keep.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func deleteConversation<Result>(
+        _ message: Leyline_V1_ConversationRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Leyline_V1_ConversationRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.deleteConversation(
             request: request,
             options: options,
             onResponse: handleResponse

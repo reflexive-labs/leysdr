@@ -433,14 +433,15 @@ var Usage_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	Assistant_StartConversation_FullMethodName = "/leyline.v1.Assistant/StartConversation"
-	Assistant_SendMessage_FullMethodName       = "/leyline.v1.Assistant/SendMessage"
-	Assistant_WatchConversation_FullMethodName = "/leyline.v1.Assistant/WatchConversation"
-	Assistant_ResolveAction_FullMethodName     = "/leyline.v1.Assistant/ResolveAction"
-	Assistant_AnswerViewTool_FullMethodName    = "/leyline.v1.Assistant/AnswerViewTool"
-	Assistant_StopTurn_FullMethodName          = "/leyline.v1.Assistant/StopTurn"
-	Assistant_EndConversation_FullMethodName   = "/leyline.v1.Assistant/EndConversation"
-	Assistant_ListConversations_FullMethodName = "/leyline.v1.Assistant/ListConversations"
+	Assistant_StartConversation_FullMethodName  = "/leyline.v1.Assistant/StartConversation"
+	Assistant_SendMessage_FullMethodName        = "/leyline.v1.Assistant/SendMessage"
+	Assistant_WatchConversation_FullMethodName  = "/leyline.v1.Assistant/WatchConversation"
+	Assistant_ResolveAction_FullMethodName      = "/leyline.v1.Assistant/ResolveAction"
+	Assistant_AnswerViewTool_FullMethodName     = "/leyline.v1.Assistant/AnswerViewTool"
+	Assistant_StopTurn_FullMethodName           = "/leyline.v1.Assistant/StopTurn"
+	Assistant_EndConversation_FullMethodName    = "/leyline.v1.Assistant/EndConversation"
+	Assistant_ListConversations_FullMethodName  = "/leyline.v1.Assistant/ListConversations"
+	Assistant_DeleteConversation_FullMethodName = "/leyline.v1.Assistant/DeleteConversation"
 )
 
 // AssistantClient is the client API for Assistant service.
@@ -462,9 +463,15 @@ type AssistantClient interface {
 	AnswerViewTool(ctx context.Context, in *AnswerViewToolRequest, opts ...grpc.CallOption) (*Conversation, error)
 	// Ends the running turn; the conversation stays and becomes IDLE.
 	StopTurn(ctx context.Context, in *ConversationRef, opts ...grpc.CallOption) (*Conversation, error)
-	// Stops the worker; the conversation is ENDED and stays listed.
+	// Stops the worker; the conversation is ENDED and stays listed, on disk, until it is deleted.
 	EndConversation(ctx context.Context, in *ConversationRef, opts ...grpc.CallOption) (*Conversation, error)
+	// Every conversation the daemon keeps, those from before its last restart included, newest
+	// first.
 	ListConversations(ctx context.Context, in *ListConversationsRequest, opts ...grpc.CallOption) (*ListConversationsResponse, error)
+	// Removes a conversation and its files. One still going is ended first, and its ENDED state is
+	// the last event about it; after that it is simply not listed. INVALID_ARGUMENT for an id the
+	// daemon does not keep.
+	DeleteConversation(ctx context.Context, in *ConversationRef, opts ...grpc.CallOption) (*Empty, error)
 }
 
 type assistantClient struct {
@@ -564,6 +571,16 @@ func (c *assistantClient) ListConversations(ctx context.Context, in *ListConvers
 	return out, nil
 }
 
+func (c *assistantClient) DeleteConversation(ctx context.Context, in *ConversationRef, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Assistant_DeleteConversation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AssistantServer is the server API for Assistant service.
 // All implementations must embed UnimplementedAssistantServer
 // for forward compatibility.
@@ -583,9 +600,15 @@ type AssistantServer interface {
 	AnswerViewTool(context.Context, *AnswerViewToolRequest) (*Conversation, error)
 	// Ends the running turn; the conversation stays and becomes IDLE.
 	StopTurn(context.Context, *ConversationRef) (*Conversation, error)
-	// Stops the worker; the conversation is ENDED and stays listed.
+	// Stops the worker; the conversation is ENDED and stays listed, on disk, until it is deleted.
 	EndConversation(context.Context, *ConversationRef) (*Conversation, error)
+	// Every conversation the daemon keeps, those from before its last restart included, newest
+	// first.
 	ListConversations(context.Context, *ListConversationsRequest) (*ListConversationsResponse, error)
+	// Removes a conversation and its files. One still going is ended first, and its ENDED state is
+	// the last event about it; after that it is simply not listed. INVALID_ARGUMENT for an id the
+	// daemon does not keep.
+	DeleteConversation(context.Context, *ConversationRef) (*Empty, error)
 	mustEmbedUnimplementedAssistantServer()
 }
 
@@ -619,6 +642,9 @@ func (UnimplementedAssistantServer) EndConversation(context.Context, *Conversati
 }
 func (UnimplementedAssistantServer) ListConversations(context.Context, *ListConversationsRequest) (*ListConversationsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListConversations not implemented")
+}
+func (UnimplementedAssistantServer) DeleteConversation(context.Context, *ConversationRef) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteConversation not implemented")
 }
 func (UnimplementedAssistantServer) mustEmbedUnimplementedAssistantServer() {}
 func (UnimplementedAssistantServer) testEmbeddedByValue()                   {}
@@ -778,6 +804,24 @@ func _Assistant_ListConversations_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Assistant_DeleteConversation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConversationRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AssistantServer).DeleteConversation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Assistant_DeleteConversation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AssistantServer).DeleteConversation(ctx, req.(*ConversationRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Assistant_ServiceDesc is the grpc.ServiceDesc for Assistant service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -812,6 +856,10 @@ var Assistant_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListConversations",
 			Handler:    _Assistant_ListConversations_Handler,
+		},
+		{
+			MethodName: "DeleteConversation",
+			Handler:    _Assistant_DeleteConversation_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

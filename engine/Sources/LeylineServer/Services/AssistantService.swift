@@ -85,4 +85,9 @@ struct AssistantService: Leyline_V1_Assistant.SimpleServiceProtocol {
         response.conversations = await conversations.list()
         return response
     }
+
+    func deleteConversation(request _: Leyline_V1_ConversationRef, context _: ServerContext) async throws -> Leyline_V1_Empty {
+        await store.touchUnary(ClientContext.current)
+        return try await mapErrors { throw EngineError.unimplemented("deleting a conversation") }
+    }
 }
