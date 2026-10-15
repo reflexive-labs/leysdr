@@ -43,6 +43,7 @@ Contributors and coding agents. Read first, in this order:
 | [Swift style](dev/swift-style.md) | writing Swift anywhere in the repository: file headers and SPDX, comment and doc-comment voice, naming and unit suffixes, isolation and `Task`, the session, mirror and coalescer patterns, what only the Mac can check |
 | [Release checklist](dev/release-checklist.md) | tagging a release: the mechanical gate, licence obligations, the acceptance pass on a real dongle |
 | [Agent evals](dev/evals.md) | measuring an agent's use of `ley mcp` against fixtures: running `leyeval`, reading a transcript, adding a scenario and its checks |
+| [The speech-to-text spike](dev/speech-spike.md) | measuring a speech engine on receiver audio: recording the corpus, writing the hand transcript, running `leyspeech` for word error rate, callsign recall, cost per hour and latency, and the decision record's template |
 | [The assistant worker](dev/assistant.md) | touching `ley worker assistant`: the worker protocol, the loop, the policy gate, received text, undo, the scripted model and the Messages API client |
 | [App internals](dev/app.md) | touching the Mac app: the `app/` package, the client façade (identity, mirror, coalescer, streams), building, bundling and testing it against the daemon |
 
@@ -125,6 +126,6 @@ docs/
 ├── reference/             lookup: cli, iq-files, clients, mcp, writing-a-decoder
 ├── design/                why it is built this way, with the measured numbers; brand/
 ├── decisions/             decision records (D2, S2, S3)
-├── dev/                   contributor contracts: setup, engine-internals, cli-style, swift-style, app, assistant, evals, release-checklist
+├── dev/                   contributor contracts: setup, engine-internals, cli-style, swift-style, app, assistant, evals, speech-spike, release-checklist
 └── plans/                 build-order, user-stories, live plans; archive/ for finished ones
 ```
