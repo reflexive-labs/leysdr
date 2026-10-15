@@ -103,7 +103,13 @@ final class ChildProcess: @unchecked Sendable {
     func terminate() async {
         if process.isRunning { process.terminate() }
         if await waitForExit(seconds: 1) { return }
-        if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        if process.isRunning { sendSignal(process.processIdentifier, SIGKILL) }
+        _ = await waitForExit(seconds: 1)
+    }
+
+    /// `SIGKILL` at once, for a child that has already had its grace.
+    func kill() async {
+        if process.isRunning { sendSignal(process.processIdentifier, SIGKILL) }
         _ = await waitForExit(seconds: 1)
     }
 
@@ -116,4 +122,9 @@ final class ChildProcess: @unchecked Sendable {
         }
         return !process.isRunning
     }
+}
+
+/// `kill(2)`, under a name `ChildProcess` does not shadow with its own `kill()`.
+private func sendSignal(_ pid: Int32, _ signal: Int32) {
+    _ = kill(pid, signal)
 }

@@ -69,6 +69,9 @@ actor DecodeRunner {
     /// move, and the count's two-second republish would otherwise put a degraded job back to
     /// RUNNING while the capture is still away.
     private var awayDetail: String?
+    /// A fault the job lives with for its whole run, published as DEGRADED wherever RUNNING would
+    /// be: a segmented job whose squelch could not be measured or set has no edges to cut at.
+    private let standingDegradation: String?
     private var rssiDBFS = Double.nan
     private var snrDB = Double.nan
     private var task: Task<Void, Never>?
@@ -87,6 +90,7 @@ actor DecodeRunner {
          writer: RecordWriter?, store: SessionStore, frequencyHz: UInt64, captureRateHz: UInt64,
          tap: AudioTap, predicate: Leyline_V1_Predicate, notify: Leyline_V1_NotifyTarget?,
          usage: UsageRecorder? = nil, credentials: CredentialStore? = nil, keep: Bool = false,
+         standingDegradation: String? = nil,
          onStatus: @escaping @Sendable (Leyline_V1_JobState, String) async -> Void,
          onFailure: (@Sendable (EngineError) async -> Void)? = nil,
          seqStart: UInt64 = 0)
@@ -106,6 +110,7 @@ actor DecodeRunner {
         self.usage = usage
         self.credentials = credentials
         self.keep = keep
+        self.standingDegradation = standingDegradation
         self.onStatus = onStatus
         self.onFailure = onFailure
         seq = seqStart
@@ -211,6 +216,11 @@ actor DecodeRunner {
 
     // MARK: A stored recording
 
+    /// How long a plugin may take to exit once a recording has all gone: a base, plus a share for
+    /// each segment it has not yet answered, since a speech plugin may still be transcribing them.
+    /// Settable so a test need not wait half a minute.
+    static let sourceExitAllowance = Mutex<(baseSeconds: Double, perItemSeconds: Double)>((30, 2))
+
     /// The restart loop for a job that reads a recording. It ends on its own: once every item has
     /// reached the plugin and the plugin has exited cleanly with its last records written, the job
     /// is COMPLETED.
@@ -226,6 +236,12 @@ actor DecodeRunner {
             case .unreadable(let why):
                 await teardown()
                 await fail(EngineError.failedPrecondition("\(source.uri) could not be read: \(why)", target: source.uri))
+                return
+            case .noExit(let seconds):
+                await teardown()
+                await fail(EngineError.decoderFailed(
+                    "\(installed.manifest.name) did not exit within \(Int(seconds)) s of the end of \(source.uri)",
+                    target: installed.manifest.name))
                 return
             case .all where exit.status == 0:
                 let records = liveness.records
@@ -243,26 +259,38 @@ actor DecodeRunner {
 
     /// One plugin over the recording: fed from the cursor on, its input closed when everything has
     /// gone, and read until it exits. A clean run ends with the plugin's stdout closed, so every
-    /// record it wrote has been emitted before this returns.
+    /// record it wrote has been emitted before this returns. A plugin that does not exit within
+    /// `sourceExitAllowance` of its input closing is stopped, and the feed says so.
     private func runSourcePlugin(_ source: RecordingSource) async -> (status: Int32, lastErrorLine: String?, fed: FeedOutcome) {
         guard let process = await spawnPlugin() else { return (-1, nil, .stopped) }
+        let recordsDone = DoneFlag()
         let fed = await withTaskGroup(of: FeedOutcome?.self) { group in
             group.addTask { [weak self] in
                 guard let self else { return .stopped }
                 let outcome = await self.feed(source, to: process)
-                if case .all = outcome {
-                    process.closeInput()
-                } else {
+                guard case .all = outcome else {
                     // The plugin's input will not finish, so it is stopped rather than left
                     // waiting for more; its stdout then closes and the reader below ends.
                     await process.stop()
+                    return outcome
                 }
-                return outcome
+                process.closeInput()
+                let allowance = self.exitAllowance(source)
+                let deadline = ContinuousClock.now.advanced(by: .seconds(allowance))
+                while !recordsDone.isSet, ContinuousClock.now < deadline {
+                    do { try await Task.sleep(for: .milliseconds(50)) } catch { return .stopped }
+                }
+                guard recordsDone.isSet else {
+                    await process.stop()
+                    return .noExit(seconds: allowance)
+                }
+                return .all
             }
             group.addTask { [weak self] in
                 for await record in process.records {
                     await self?.emit(record)
                 }
+                recordsDone.set()
                 return nil
             }
             var fed = FeedOutcome.stopped
@@ -282,22 +310,40 @@ actor DecodeRunner {
         return (status, said, fed)
     }
 
+    /// `sourceExitAllowance` for the items from the cursor on, which have no record yet.
+    private nonisolated func exitAllowance(_ source: RecordingSource) -> Double {
+        let outstanding = source.items.count - sourceCursor.withLock { $0 }
+        let a = Self.sourceExitAllowance.withLock { $0 }
+        return a.baseSeconds + a.perItemSeconds * Double(Swift.max(0, outstanding))
+    }
+
+    /// Set once, read from another task.
+    private final class DoneFlag: Sendable {
+        private let value = Atomic<Bool>(false)
+        var isSet: Bool { value.load(ordering: .acquiring) }
+        func set() { value.store(true, ordering: .releasing) }
+    }
+
     /// How feeding a plugin from a recording ended.
     private enum FeedOutcome: Sendable {
-        /// Every item reached the plugin.
+        /// Every item reached the plugin, and it exited.
         case all
         /// The plugin stopped taking input, or the job was cancelled.
         case stopped
         /// A part could not be read; restarting the plugin would not change that.
         case unreadable(String)
+        /// Every item reached the plugin, and it had not exited this many seconds later.
+        case noExit(seconds: Double)
     }
 
     /// The source's items from the cursor on, each written whole: a full pipe is waited out rather
-    /// than dropped, because nothing here is live and the plugin sets the pace.
+    /// than dropped, because nothing here is live and the plugin sets the pace. The cursor is not
+    /// moved here: an item counts as done when a record for it comes back (`emit`), so a plugin
+    /// that dies after an item's END but before its record gets that item again.
     private nonisolated func feed(_ source: RecordingSource, to process: PluginProcess) async -> FeedOutcome {
         var seq: UInt64 = 0
+        var index = sourceCursor.withLock { $0 }
         while !Task.isCancelled {
-            let index = sourceCursor.withLock { $0 }
             guard index < source.items.count else { return .all }
             let item = source.items[index]
             // Under continuous input the time between two parts is not in the recording: a gap.
@@ -322,7 +368,7 @@ actor DecodeRunner {
                     return .stopped
                 }
             }
-            sourceCursor.withLock { $0 = index + 1 }
+            index += 1
         }
         return .stopped
     }
@@ -616,6 +662,14 @@ actor DecodeRunner {
         // Where the record came from in a stored recording, found before the time is filled in so
         // an unstamped capture matches any part.
         let located = source?.locate(rec.time)
+        if let located, let source {
+            // The plugin has answered this item, and so every one before it, which it was given
+            // first. A segment's record comes at its END, so the segment is done; a continuous
+            // part may have more to come, so a restart gives it again. Before any filter: the
+            // plugin answered whether or not the record is delivered.
+            let done = source.segmented ? located.item + 1 : located.item
+            sourceCursor.withLock { $0 = Swift.max($0, done) }
+        }
         if rec.time.captureID.isEmpty {
             rec.time.captureID = lease?.captureID.string ?? located?.captureID ?? ""
         }
@@ -719,6 +773,8 @@ actor DecodeRunner {
     private func publishRunning(_ detail: String) async {
         if let awayDetail {
             await onStatus(.degraded, awayDetail)
+        } else if let standingDegradation {
+            await onStatus(.degraded, standingDegradation)
         } else {
             await onStatus(.running, detail)
         }

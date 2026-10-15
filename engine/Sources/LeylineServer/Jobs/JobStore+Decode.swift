@@ -186,8 +186,11 @@ extension JobStore {
             await lease.release()
             return
         }
+        // A squelch that could not be measured or set leaves a segmented job with no edges to cut
+        // at; it runs, DEGRADED with the reason, rather than looking healthy.
+        var squelchProblem: String?
         if installed.manifest.input.mode == .segmented {
-            await squelchForSegments(id, lease: lease)
+            squelchProblem = await squelchForSegments(id, lease: lease)
         }
         let snapshot = await store.captureEngine(lease.captureID)?.snapshot
         let writer: RecordWriter?
@@ -205,7 +208,7 @@ extension JobStore {
             frequencyHz: frequencyHz, captureRateHz: snapshot?.sampleRate ?? 0,
             tap: installed.manifest.input.tap == .tapDemod ? .demod : .audio,
             predicate: config.predicate, notify: config.hasNotify ? config.notify : nil,
-            usage: usage, credentials: credentials, keep: config.keep,
+            usage: usage, credentials: credentials, keep: config.keep, standingDegradation: squelchProblem,
             onStatus: { [weak self] state, detail in
                 await self?.setDecodeStatus(id, state: state, detail: detail)
             },
@@ -259,14 +262,22 @@ extension JobStore {
     /// every meter says open, and the plugin would get one segment that never ends. The job's own
     /// channel gets the gated recorder's auto squelch, the band's floor plus 10 dB, measured where
     /// the channel is (`autoSquelch`). A channel whose meter never arrives keeps its squelch off.
-    private func squelchForSegments(_ id: JobID, lease: any ChannelLease) async {
+    /// Returns what went wrong, for the job to stay DEGRADED with, or nil.
+    private func squelchForSegments(_ id: JobID, lease: any ChannelLease) async -> String? {
         var channelConfig = await lease.engine.config
-        guard channelConfig.squelchDB.isNaN else { return }
+        guard channelConfig.squelchDB.isNaN else { return nil }
         await setDetail(id, "measuring the noise floor")
-        guard let measured = await autoSquelch(lease) else { return }
+        guard let measured = await autoSquelch(lease) else {
+            return "no level measured; squelch left as it was"
+        }
         channelConfig.squelchDB = measured
-        try? await lease.engine.update(channelConfig)
+        do {
+            try await lease.engine.update(channelConfig)
+        } catch {
+            return "the squelch could not be set (\((error as? EngineError)?.message ?? "\(error)")); squelch left as it was"
+        }
         await store.publishChannel(lease.channelID)
+        return nil
     }
 
     /// Fails the job with the allocator's decline reason and code (or a fallback when it declined

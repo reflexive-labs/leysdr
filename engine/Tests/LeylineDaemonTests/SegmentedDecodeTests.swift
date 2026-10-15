@@ -25,7 +25,7 @@ final class SegmentedDecodeTests: XCTestCase {
     }
 
     /// A fake whose manifest asks for SEGMENTED audio, on nfm_keyed's carrier.
-    func writeSegmentedPlugin(in dir: String, credentialProvider: String = "") throws {
+    func writeSegmentedPlugin(in dir: String, credentialProvider: String = "", args: [String] = []) throws {
         try writeFakePlugin(in: dir, json: """
         {
           "name": "fake",
@@ -35,7 +35,8 @@ final class SegmentedDecodeTests: XCTestCase {
           "input": {"mode": "SEGMENTED", "tap": "TAP_AUDIO", "signal": "SIGNAL_AUDIO"},
           "outputs": ["SHAPE_RECORDS"],
           "credentialProvider": "\(credentialProvider)",
-          "executable": "\(fakeDecoderPath())"
+          "executable": "\(fakeDecoderPath())",
+          "args": [\(args.map { "\"\($0)\"" }.joined(separator: ", "))]
         }
         """)
     }
@@ -368,6 +369,78 @@ final class SegmentedDecodeTests: XCTestCase {
             XCTAssertEqual(Set(got.prefix(perPart).map(\.clipUri)), ["ley://recordings/\(id)/1"])
             XCTAssertEqual(Set(got.suffix(perPart).map(\.clipUri)), ["ley://recordings/\(id)/2"])
             XCTAssertEqual(Set(got.map(\.over)), [0], "an over is a SEGMENTED notion")
+        }
+    }
+
+    // MARK: A plugin that misbehaves on a recording
+
+    func testAPluginThatStopsReadingDoesNotHoldUpACancel() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        defer {
+            for d in [plugins, recordings] { try? FileManager.default.removeItem(atPath: d) }
+        }
+        // The plain fake reads one frame and then never reads again, so the pipe fills and the
+        // source's write waits on it.
+        try writeFakePlugin(in: plugins, args: ["--deaf-after=1"])
+        unsetenv("FAKE_DECODER_SEGMENTS")
+        let id = try await writeRecording(in: recordings)
+        try await withDaemon(decoderSearchPath: [plugins], recordingsPath: recordings) { c in
+            let started = try await self.startDecode(c, self.sourceConfig(id))
+            _ = try await self.records(c, job: started.jobID, count: 1, timeoutMs: 5000)
+            try await Task.sleep(nanoseconds: 300_000_000)
+            let began = ContinuousClock.now
+            try await self.cancel(c, started.jobID)
+            let took = ContinuousClock.now - began
+            XCTAssertLessThan(took, .milliseconds(1200), "a cancel waits on no plugin that has stopped reading: \(took)")
+            let j = try await self.job(c, started.jobID)
+            XCTAssertEqual(j.state, .cancelled)
+        }
+    }
+
+    func testAPluginThatNeverExitsFailsTheJobRatherThanHangingIt() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        defer {
+            for d in [plugins, recordings] { try? FileManager.default.removeItem(atPath: d) }
+        }
+        try writeSegmentedPlugin(in: plugins)
+        setenv("FAKE_DECODER_IGNORE_EOF", "1", 1)
+        defer { unsetenv("FAKE_DECODER_IGNORE_EOF") }
+        DecodeRunner.sourceExitAllowance.withLock { $0 = (0.5, 0.1) }
+        defer { DecodeRunner.sourceExitAllowance.withLock { $0 = (30, 2) } }
+        let id = try await writeRecording(in: recordings)
+        try await withDaemon(decoderSearchPath: [plugins], recordingsPath: recordings) { c in
+            let started = try await self.startDecode(c, self.sourceConfig(id))
+            let done = try await self.waitForEnd(c, started.jobID, timeoutMs: 15000)
+            XCTAssertEqual(done.state, .failed)
+            XCTAssertEqual(done.error.code, EngineError.Code.decoderFailed)
+            XCTAssertTrue(done.statusDetail.hasPrefix("fake did not exit within"), done.statusDetail)
+            let got = try await self.records(c, job: started.jobID, count: Self.syntheticSegments.count, timeoutMs: 2000)
+            XCTAssertEqual(got.count, Self.syntheticSegments.count, "what it answered before it hung is kept")
+        }
+    }
+
+    func testAPluginThatDiesBeforeAnsweringASegmentIsGivenItAgain() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        defer {
+            for d in [plugins, recordings] { try? FileManager.default.removeItem(atPath: d) }
+        }
+        // It answers two segments, then dies on the third's END without answering it, once.
+        try writeSegmentedPlugin(in: plugins, args: ["--die-after=2"])
+        let id = try await writeRecording(in: recordings)
+        try await withDaemon(decoderSearchPath: [plugins], recordingsPath: recordings) { c in
+            let started = try await self.startDecode(c, self.sourceConfig(id))
+            let done = try await self.waitForEnd(c, started.jobID, timeoutMs: 15000)
+            XCTAssertEqual(done.state, .completed, done.statusDetail)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: plugins + "/fake/.died-once"), "the first plugin was the one set to die")
+            let got = try await self.records(c, job: started.jobID, count: Self.syntheticSegments.count, timeoutMs: 3000)
+            // Exactly once: the restart starts at the first segment with no record, and every one
+            // before it had its record.
+            XCTAssertEqual(got.map { "\($0.clipUri) \($0.over)" },
+                           Self.syntheticSegments.map { "ley://recordings/\(id)/\($0.part) \($0.over)" },
+                           "every over answered once, the one in flight when the plugin died included")
         }
     }
 

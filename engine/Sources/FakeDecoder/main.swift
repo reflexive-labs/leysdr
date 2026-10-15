@@ -97,7 +97,6 @@ guard let head = readDelimited(), let descriptor = try? Leyline_V1_StreamDescrip
     exit(1)
 }
 FileHandle.standardError.write(Data("fake decoder up on \(descriptor.streamID)\n".utf8))
-
 /// `--die-after=N` exits after N frames, the way a decoder with a bug in it would. A decode job's
 /// restart path has no other way to be provoked: every frame the daemon sends is a real one. It
 /// dies once: a marker file in the working directory (the plugin's own directory, per test) records
@@ -190,6 +189,9 @@ func runSegmented() -> Never {
                 continue
             }
             open = nil
+            // `--die-after=N`: having answered N segments, die on the next one's END before
+            // answering it, the case that loses a segment if the daemon counts it as done.
+            if dieAfter > 0, count == Int64(dieAfter) { exit(3) }
             count += 1
             var rec = Leyline_V1_DecodeRecord()
             rec.protocol = "fake"
@@ -214,6 +216,15 @@ func runSegmented() -> Never {
             open!.frames += 1
             open!.samples += Int64(frame.payload.count / 4)
         }
+    }
+    exitAtEOF()
+}
+
+/// `FAKE_DECODER_IGNORE_EOF=1` never exits when stdin closes, the way a plugin with a bug in its
+/// shutdown hangs; the daemon must not wait on it for ever.
+func exitAtEOF() -> Never {
+    if ProcessInfo.processInfo.environment["FAKE_DECODER_IGNORE_EOF"] == "1" {
+        while true { sleep(3600) }
     }
     exit(0)
 }
@@ -251,3 +262,5 @@ while let bytes = readDelimited() {
         exit(75)
     }
 }
+
+exitAtEOF()

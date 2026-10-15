@@ -66,7 +66,7 @@ final class SegmenterTests: XCTestCase {
         XCTAssertEqual(got.spans.first?.samples, (400..<900).map(Float.init),
                        "exactly the audio from the pre-roll to the end of the hang, in order")
         XCTAssertEqual(s.over(at: 4000), 1)
-        XCTAssertNil(s.over(at: 3999))
+        XCTAssertNil(s.over(at: 3989), "more than 1 ms before the first segment is none")
     }
 
     func testAReopeningInsideTheHangContinuesTheSegment() {
@@ -148,6 +148,60 @@ final class SegmenterTests: XCTestCase {
         let live = segments(s.release())
         XCTAssertEqual(live.spans.map(\.start), [4000, 8500, 18_800])
         XCTAssertEqual(live.spans.map(\.end), [8000, 11_000, 20_900])
+    }
+
+    func testARecordDatedJustBeforeItsSegmentStillBelongsToIt() {
+        var s = segmenter()
+        s.hear(.meter(open: false, at: 0))
+        s.hear(.squelch(open: true, at: 5000))
+        s.hear(.squelch(open: false, at: 6000))
+        s.hear(.squelch(open: true, at: 9000))
+        s.hear(.meter(open: false, at: 20_000))
+        push(&s, from: 0, to: 20_000)
+        _ = s.release()
+        // Starts at 4000 and 8000; 10 samples is 1 ms at this capture rate.
+        XCTAssertEqual(s.over(at: 7990), 2, "10 samples early is still the second segment")
+        XCTAssertEqual(s.over(at: 7900), 1)
+
+        var manifest = RecordingManifest(
+            jobID: "job_x", kind: "audio", frequencyHz: 0, mode: "NFM", bandwidthHz: 0, sampleRate: 48_000,
+            format: "wav-s16", device: nil, gains: [], squelchDbfs: .nan, gate: nil, partMs: 0, startedAtNs: 0,
+            createdBy: RecordingClient(clientID: "", kind: "", label: ""), anchors: [])
+        manifest.parts = []
+        let part = RecordingSource.Part(number: 1, path: "", startSample: 0, endSample: 480_000, frames: 48_000,
+                                        captureID: "cap_x", captureRate: 480_000)
+        let source = RecordingSource(
+            recordingID: "job_x", manifest: manifest, parts: [part],
+            items: [.init(part: 0, span: .init(start: 1000, end: 2000, over: 1)),
+                    .init(part: 0, span: .init(start: 5000, end: 9000, over: 2))],
+            segmented: true)
+        var time = Leyline_V1_SampleTime()
+        time.captureID = "cap_x"
+        time.sampleIndex = 4990
+        XCTAssertEqual(source.locate(time)?.over, 2, "10 samples before a span takes the span")
+        time.sampleIndex = 990
+        XCTAssertEqual(source.locate(time)?.over, 1, "and before the first span too")
+        time.sampleIndex = 3000
+        XCTAssertEqual(source.locate(time)?.over, 1, "between spans, the one that started before")
+    }
+
+    func testAPreRollLongerThanAFrameIsSentInFrames() {
+        var s = Segmenter(preRollMs: 500, hangMs: 100, captureRateHz: 480_000, audioRateHz: 48_000, heardSlack: 0)
+        s.hear(.meter(open: false, at: 0))
+        s.hear(.squelch(open: true, at: 480_000))
+        s.hear(.meter(open: true, at: 500_000))
+        var at: UInt64 = 0
+        while at < 500_000 {
+            s.push(Segmenter.Frame(start: at, count: 10_000, floats: [Float](repeating: 0, count: 1000), dropped: 0))
+            at += 10_000
+        }
+        let pieces = s.release()
+        let preRoll = pieces.prefix { $0.time < 480_000 }
+        XCTAssertEqual(preRoll.reduce(0) { $0 + $1.floats.count }, 24_000, "half a second at 48 kHz")
+        XCTAssertTrue(preRoll.allSatisfy { $0.floats.count <= AudioFrameSource.maxFrame })
+        XCTAssertEqual(preRoll.first?.mark, .segmentStart)
+        XCTAssertEqual(preRoll.first?.time, 240_000)
+        XCTAssertEqual(preRoll.dropFirst().filter { $0.mark != .unspecified }.count, 0, "only the first is marked")
     }
 
     func testTheDefaultsApplyWhenTheManifestLeavesThemZero() {

@@ -24,6 +24,11 @@ struct Segmenter: Sendable {
     static let defaultPreRollMs: UInt32 = 500
     static let defaultHangMs: UInt32 = 500
 
+    /// How far before a segment's first sample a record may be dated and still belong to it, in
+    /// seconds: a plugin that rounds its own arithmetic should not move its record into the over
+    /// before.
+    static let overTolerance = 0.001
+
     /// The manifest's pre-roll and hang, with 0 read as the defaults.
     static func timings(_ input: Leyline_V1_DecoderInput) -> (preRollMs: UInt32, hangMs: UInt32) {
         (input.preRollMs == 0 ? defaultPreRollMs : input.preRollMs,
@@ -122,6 +127,8 @@ struct Segmenter: Sendable {
     /// A frame older than this, behind the newest audio, goes on without waiting for telemetry
     /// that has stopped coming.
     let maxHoldSamples: UInt64
+    /// `overTolerance` in capture samples.
+    let toleranceSamples: UInt64
 
     private var state = State.closed
     private var waiting: [Frame] = []
@@ -156,6 +163,7 @@ struct Segmenter: Sendable {
         ringCapacity = Int(Double(preRollMs) / 1000 * Double(audioRateHz))
         self.heardSlack = heardSlack
         maxHoldSamples = UInt64(2 * Double(captureRateHz))
+        toleranceSamples = UInt64(Self.overTolerance * Double(captureRateHz))
         ring.reserveCapacity(ringCapacity + AudioFrameSource.maxFrame)
     }
 
@@ -169,9 +177,10 @@ struct Segmenter: Sendable {
         waiting.append(frame)
     }
 
-    /// The segment a record stamped at `time` belongs to: the newest that started at or before it.
+    /// The segment a record stamped at `time` belongs to: the newest that started at or before it,
+    /// or less than `overTolerance` after it.
     func over(at time: UInt64) -> UInt32? {
-        starts.last { $0.start <= time }?.index
+        starts.last { $0.start <= time + toleranceSamples }?.index
     }
 
     /// The waiting frames whose telemetry has been heard, cut into pieces for the plugin.
@@ -316,8 +325,17 @@ struct Segmenter: Sendable {
         if preRoll.isEmpty {
             starts[starts.count - 1].start = cursor
             startOwed = true
-        } else {
-            out.append(Piece(time: start, floats: preRoll, mark: .segmentStart, gap: nil))
+            return
+        }
+        // The pre-roll goes out in frames no longer than the drain's own, the first marked START,
+        // so no single frame is big enough for one slow read to trip the plugin's stall limit.
+        var offset = 0
+        while offset < preRoll.count {
+            let end = Swift.min(preRoll.count, offset + AudioFrameSource.maxFrame)
+            let at = start + UInt64((Double(offset) * perAudio).rounded())
+            out.append(Piece(time: at, floats: Array(preRoll[offset..<end]),
+                             mark: offset == 0 ? .segmentStart : .unspecified, gap: nil))
+            offset = end
         }
     }
 

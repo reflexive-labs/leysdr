@@ -122,11 +122,36 @@ struct RecordingSource: Sendable {
 
     /// The part and over a record stamped at `time` came from: the item that holds it on its
     /// capture's timeline, else the newest that started before it. Nil before the first.
-    func locate(_ time: Leyline_V1_SampleTime) -> (part: Int, over: UInt32, captureID: String)? {
-        let mine = items.filter { time.captureID.isEmpty || parts[$0.part].captureID == time.captureID }
-        let hit = mine.first { $0.span.start <= time.sampleIndex && time.sampleIndex < $0.span.end }
-            ?? mine.last { $0.span.start <= time.sampleIndex }
-        return hit.map { (parts[$0.part].number, $0.span.over, parts[$0.part].captureID) }
+    ///
+    /// A plugin that dates a record a little before the segment's first sample -- a rounding of
+    /// its own -- still means that segment: a time less than a millisecond before a span's start
+    /// takes the span (`Segmenter.overTolerance`).
+    func locate(_ time: Leyline_V1_SampleTime) -> Location? {
+        let at = time.sampleIndex
+        var hit: Int?
+        for (i, item) in items.enumerated() {
+            let part = parts[item.part]
+            guard time.captureID.isEmpty || part.captureID == time.captureID else { continue }
+            let slack = UInt64(part.captureRate * Segmenter.overTolerance)
+            if at < item.span.end, at + slack >= item.span.start {
+                hit = i
+                break
+            }
+            if item.span.start <= at { hit = i }
+        }
+        return hit.map { i in
+            let item = items[i]
+            return Location(item: i, part: parts[item.part].number, over: item.span.over, captureID: parts[item.part].captureID)
+        }
+    }
+
+    /// Where a record came from: the item's index in `items`, the part's number, the over, and the
+    /// capture whose timeline the part is on.
+    struct Location: Sendable {
+        var item: Int
+        var part: Int
+        var over: UInt32
+        var captureID: String
     }
 
     /// The frames one item sends, in order, read from its part's WAV as they are asked for. Under
