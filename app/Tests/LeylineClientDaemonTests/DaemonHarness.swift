@@ -41,9 +41,12 @@ enum Harness {
             .appendingPathComponent("fixtures").path
     }
 
-    /// Starts a daemon and waits until it answers `GetState`. `XCTSkip`s without LEYLINED_BIN or
+    /// Starts a daemon and waits until it answers `GetState`, with `arguments` after the
+    /// harness's own (`--data` and `--ley` for the AI tests). `XCTSkip`s without LEYLINED_BIN or
     /// the fixture (`make fixtures` generates it).
-    static func start(fixture name: String = "nfm_tone.cf32") async throws -> DaemonUnderTest {
+    static func start(fixture name: String = "nfm_tone.cf32", arguments: [String] = [])
+        async throws -> DaemonUnderTest
+    {
         guard let bin = daemonBinary else {
             throw XCTSkip("set LEYLINED_BIN to run the app's daemon-backed tests (make app-e2e)")
         }
@@ -59,11 +62,12 @@ enum Harness {
         FileManager.default.createFile(atPath: log.path, contents: nil)
         let p = Process()
         p.executableURL = URL(fileURLWithPath: bin)
-        p.arguments = [
-            "--socket", socket, "--no-hardware", "--log-level", "debug",
-            "--pidfile", dir + "/leylined.pid", "--store", dir + "/store", "--recordings",
-            dir + "/recordings",
-        ]
+        p.arguments =
+            [
+                "--socket", socket, "--no-hardware", "--log-level", "debug",
+                "--pidfile", dir + "/leylined.pid", "--store", dir + "/store", "--recordings",
+                dir + "/recordings",
+            ] + arguments
         let handle = try FileHandle(forWritingTo: log)
         p.standardError = handle
         p.standardOutput = handle
