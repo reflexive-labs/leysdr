@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
@@ -31,10 +30,6 @@ const anthropicVersion = "2023-06-01"
 // anthropicMaxTokens bounds one response. A turn is a few sentences and tool calls; a response
 // that reaches it stops with "max_tokens" and the turn ends with what it had.
 const anthropicMaxTokens = 4096
-
-// anthropicTimeout bounds one call. A long response takes tens of seconds; a call that takes
-// minutes is a provider that is not answering.
-const anthropicTimeout = 3 * time.Minute
 
 // Anthropic is the Model that calls Claude with the user's key.
 type Anthropic struct {
@@ -99,7 +94,7 @@ func (a *Anthropic) Respond(ctx context.Context, system string, tools []ToolDef,
 	if base == "" {
 		base = AnthropicAPI
 	}
-	ctx, cancel := context.WithTimeout(ctx, anthropicTimeout)
+	ctx, cancel := context.WithTimeout(ctx, modelCallTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSuffix(base, "/v1")+"/v1/messages", bytes.NewReader(body))
 	if err != nil {
@@ -108,7 +103,7 @@ func (a *Anthropic) Respond(ctx context.Context, system string, tools []ToolDef,
 	req.Header.Set("content-type", "application/json")
 	req.Header.Set("x-api-key", a.Key)
 	req.Header.Set("anthropic-version", anthropicVersion)
-	resp, err := a.client().Do(req)
+	resp, err := noRedirects(a.HTTP).Do(req)
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) {
 			return Response{}, ctx.Err()
@@ -116,7 +111,7 @@ func (a *Anthropic) Respond(ctx context.Context, system string, tools []ToolDef,
 		return Response{}, a.fail(leyline.CodeProviderUnavailable, err.Error())
 	}
 	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
 		return Response{}, a.fail(leyline.CodeProviderUnavailable, "reading the response: "+err.Error())
 	}
@@ -176,19 +171,8 @@ func (a *Anthropic) statusError(resp *http.Response, raw []byte) error {
 	return a.fail(leyline.CodeProviderUnavailable, resp.Status+": "+msg)
 }
 
-// fail builds the error with the provider's words on one line and the key cut out of them: a
-// gateway may echo the request back, header and all, and the message travels on to every client
-// that watches the conversation.
-func (a *Anthropic) fail(code, msg string) error {
-	msg = strings.Join(strings.Fields(msg), " ")
-	if a.Key != "" {
-		msg = strings.ReplaceAll(msg, a.Key, "…")
-	}
-	if r := []rune(msg); len(r) > 300 {
-		msg = string(r[:299]) + "…"
-	}
-	return &ModelError{Code: code, Message: msg}
-}
+// fail builds the error with the key cut out of the provider's words.
+func (a *Anthropic) fail(code, msg string) error { return providerError(code, msg, a.Key) }
 
 func mentionsBilling(msg string) bool {
 	msg = strings.ToLower(msg)
@@ -212,11 +196,4 @@ func CheckEndpoint(endpoint string) error {
 		return nil
 	}
 	return &ModelError{Code: leyline.CodeProviderUnavailable, Message: fmt.Sprintf("the endpoint must be https: %s would send the key in the clear", u.Redacted())}
-}
-
-func (a *Anthropic) client() *http.Client {
-	if a.HTTP != nil {
-		return a.HTTP
-	}
-	return &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 }

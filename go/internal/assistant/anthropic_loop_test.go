@@ -117,10 +117,10 @@ func TestAnthropicWithoutAKey(t *testing.T) {
 	w.done <- nil
 }
 
-// A provider the worker cannot call fails at start.
+// A provider the worker cannot call, one it has no API for and no endpoint, fails at start.
 func TestUnknownProvider(t *testing.T) {
 	t.Parallel()
-	w := startWorker(t, workerConfig{provider: "openai", key: "k"})
+	w := startWorker(t, workerConfig{provider: "mistral", key: "k"})
 	m := w.next()
 	if m.GetFailure().GetError().GetCode() != leyline.CodeProviderUnavailable {
 		t.Errorf("got %v", m)

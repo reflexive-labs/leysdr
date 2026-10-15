@@ -10,10 +10,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"strings"
+	"time"
 )
 
-// The transcript is kept in the Messages API's own shapes, because Anthropic is the one provider
-// the assistant calls and a second shape would only be translated back on every request.
+// The transcript is kept in the Messages API's shapes, the worker's own form whatever the
+// provider: the Anthropic model sends it as it is, and the OpenAI model converts it to chat
+// messages on every request and its responses back. A conversation keeps one provider, and the
+// transcript file holds this form, so a resumed worker reads it the same way for either.
 
 // Block is one content block: text, a tool call the model made (tool_use), or what the call
 // returned (tool_result).
@@ -93,6 +98,36 @@ type ModelError struct {
 }
 
 func (e *ModelError) Error() string { return fmt.Sprintf("%s [%s]", e.Message, e.Code) }
+
+// modelCallTimeout bounds one call. A long response takes tens of seconds; a call that takes
+// minutes is a provider that is not answering.
+const modelCallTimeout = 3 * time.Minute
+
+// maxResponseBytes bounds what is read of one response body.
+const maxResponseBytes = 8 << 20
+
+// providerError builds a ModelError with the provider's words on one line and the key cut out of
+// them: a gateway may echo the request back, header and all, and the message travels on to every
+// client that watches the conversation.
+func providerError(code, msg, key string) error {
+	msg = strings.Join(strings.Fields(msg), " ")
+	if key != "" {
+		msg = strings.ReplaceAll(msg, key, "…")
+	}
+	if r := []rune(msg); len(r) > 300 {
+		msg = string(r[:299]) + "…"
+	}
+	return &ModelError{Code: code, Message: msg}
+}
+
+// noRedirects is c, or when c is nil a client that never follows a redirect: Go re-sends a header
+// set by hand to a redirect's host, and the key must reach no other host.
+func noRedirects(c *http.Client) *http.Client {
+	if c != nil {
+		return c
+	}
+	return &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+}
 
 // joinText adds a paragraph to text the turn already has.
 func joinText(text, more string) string {

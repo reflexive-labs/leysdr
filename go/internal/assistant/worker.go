@@ -67,7 +67,7 @@ type Options struct {
 	NewToolServer ToolServerFunc
 	// Conversation is --conversation, checked against WorkerStart.
 	Conversation string
-	// HTTP is the Anthropic model's client; nil is one that never follows a redirect.
+	// HTTP is the model's client; nil is one that never follows a redirect.
 	HTTP *http.Client
 }
 
@@ -201,7 +201,9 @@ func (w *worker) close() {
 	w.closeTools()
 }
 
-// pickModel is the scripted model when LEY_ASSISTANT_SCRIPT names one, else the provider's.
+// pickModel is the scripted model when LEY_ASSISTANT_SCRIPT names one, else the provider's: the
+// Messages API for anthropic, and chat completions for openai and for any other provider whose
+// key names an endpoint, which is how gateways and local model servers are added.
 func (w *worker) pickModel() (Model, error) {
 	if path, ok := w.opts.LookupEnv(ScriptEnv); ok && path != "" {
 		script, err := LoadScript(path)
@@ -211,19 +213,35 @@ func (w *worker) pickModel() (Model, error) {
 		script.Record, _ = w.opts.LookupEnv(RecordEnv)
 		return script, nil
 	}
-	if w.start.GetProvider() != "anthropic" {
+	provider, endpoint := w.start.GetProvider(), w.start.GetEndpoint()
+	openAICompatible := provider == "openai" || (provider != "anthropic" && provider != "" && endpoint != "")
+	if provider != "anthropic" && !openAICompatible {
 		return nil, &ModelError{
-			Code:    leyline.CodeProviderUnavailable,
-			Message: fmt.Sprintf("the assistant cannot call %q: it calls anthropic only; ley ai use assistant <provider> <model> chooses another", w.start.GetProvider()),
+			Code: leyline.CodeProviderUnavailable,
+			Message: fmt.Sprintf("the assistant cannot call %q: it calls anthropic, openai, or an OpenAI-compatible server added with an endpoint; "+
+				"ley ai use assistant <provider> <model> chooses another", provider),
 		}
 	}
 	if w.secret == "" {
-		return nil, &ModelError{Code: leyline.CodeCredentialMissing, Message: "the assistant has no key for anthropic; ley ai add anthropic stores one"}
+		return nil, &ModelError{Code: leyline.CodeCredentialMissing, Message: fmt.Sprintf("the assistant has no key for %s; ley ai add %s stores one", provider, provider)}
 	}
-	if err := CheckEndpoint(w.start.GetEndpoint()); err != nil {
+	if err := CheckEndpoint(endpoint); err != nil {
 		return nil, err
 	}
-	return &Anthropic{Key: w.secret, Endpoint: w.start.GetEndpoint(), Model: w.start.GetModel(), HTTP: w.opts.HTTP}, nil
+	if provider == "anthropic" {
+		return &Anthropic{Key: w.secret, Endpoint: endpoint, Model: w.start.GetModel(), HTTP: w.opts.HTTP}, nil
+	}
+	if w.start.GetModel() == "" {
+		if provider != "openai" {
+			return nil, &ModelError{
+				Code:    leyline.CodeFailedPrecondition,
+				Message: fmt.Sprintf("the assistant has no model for %s; ley ai use assistant %s <model> chooses one", provider, provider),
+			}
+		}
+		// The usage reports name the model that ran.
+		w.start.Model = OpenAIDefaultModel
+	}
+	return &OpenAI{Key: w.secret, Endpoint: endpoint, Model: w.start.GetModel(), HTTP: w.opts.HTTP}, nil
 }
 
 // readEvents forwards stdin's events and closes out when stdin ends.
@@ -347,8 +365,11 @@ func (w *worker) runTurn(ctx context.Context, user *leylinev1.UserMessage) error
 // each change, and returns what the model is told.
 func (w *worker) runCall(ctx context.Context, turn *leylinev1.Turn, use Block) (Block, interrupt, error) {
 	args := map[string]any{}
-	if len(use.Input) > 0 {
-		_ = json.Unmarshal(use.Input, &args)
+	// A model on a chat completions API writes its arguments as a string, which may not be a JSON
+	// object; such a call is refused below rather than run with none.
+	badArgs := len(use.Input) > 0 && json.Unmarshal(use.Input, &args) != nil
+	if args == nil || badArgs { // null is no arguments
+		args = map[string]any{}
 	}
 	if use.Name == "tune" {
 		if _, set := args["keep"]; !set {
@@ -367,6 +388,11 @@ func (w *worker) runCall(ctx context.Context, turn *leylinev1.Turn, use Block) (
 
 	if !w.tools.IsServer(use.Name) && !w.tools.IsView(use.Name) && use.Name != UndoTool {
 		call.State, call.IsError, call.ResultText = leylinev1.ToolCallState_TOOL_CALL_DONE, true, fmt.Sprintf("there is no tool called %s", use.Name)
+		return result(call.ResultText, true), notInterrupted, w.write(turn)
+	}
+	if badArgs {
+		call.ArgumentsJson = string(use.Input)
+		call.State, call.IsError, call.ResultText = leylinev1.ToolCallState_TOOL_CALL_DONE, true, "the arguments are not a JSON object"
 		return result(call.ResultText, true), notInterrupted, w.write(turn)
 	}
 	if w.tools.IsView(use.Name) {
