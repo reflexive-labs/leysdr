@@ -741,8 +741,10 @@ the daemon only names and removes (`docs/dev/assistant.md`, "The transcript"). N
 key: the turns are redacted as above before they are kept, and the worker redacts its lines.
 
 At start, before the listener opens, `load()` reads every `conv_*` directory: each conversation
-comes back with its `seq` and no worker, and one whose file cannot be read, or names another id, is
-logged and left on disk unlisted. One the last daemon left `THINKING` or `WAITING` is closed: its
+comes back with its `seq` and no worker, and one whose file is missing, cannot be parsed (a write
+a crash cut short cannot leave one, since the file is replaced by a rename, but a disk fault or a
+hand edit can) or names another id, is logged and left on disk unlisted. Such a directory is not
+counted against the retention below and stays until it is removed by hand. One the last daemon left `THINKING` or `WAITING` is closed: its
 last turn, the assistant's, is marked done with "(the daemon restarted during this turn)" after its
 text, a call still waiting on someone is `REFUSED` and one still running is `DONE` as an error,
 "stopped"; when the worker had not written its turn yet, a done assistant turn `t<n+1>` with the

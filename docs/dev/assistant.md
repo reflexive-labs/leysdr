@@ -41,13 +41,18 @@ The daemon starts a worker with `resume` set when the conversation went on befor
 idle sweep stopped the last worker, after a worker exited between turns, or after a restart. Such a
 worker loads the file before its first model call (`LoadTranscript`): lines of one role in a row
 join into one message (the loop writes the user's next text as a line of its own after a turn's
-tool results), a line that is not a message (one a crash cut short) is skipped, and a `tool_use`
+tool results), a line that is not a message (one a crash cut short) is skipped, and the next
+append starts on a line of its own when the file does not end in a newline, so a torn line never
+takes a whole one with it; a `tool_use`
 left without a `tool_result`, from a worker stopped mid-call, is given one that says the call was
 cut short, since the Messages API refuses a transcript without it. The call ids go on from the
 `tool_use` blocks the file holds, so they stay unique within the conversation, and a
 `tool_result` that quotes received text makes later writes ask, as it did before. A missing or
 unreadable file is logged and the worker starts from an empty transcript; it never fails the
-conversation for it. The undo stack is not kept: a resumed worker undoes only what it did.
+conversation for it. The worker appends a user message as soon as it has it and the daemon saves
+the conversation on its own schedule, so a crash between the two can leave a user line in the
+transcript that the conversation lacks; the next user line is then joined to it on load, and the
+model reads both. The undo stack is not kept: a resumed worker undoes only what it did.
 
 **Ids.** The daemon numbers turns on both sides and sends the user's in `UserMessage.turn_id`;
 the assistant's turn that answers it takes the next number, so `t3` is answered by `t4` (an id
