@@ -1095,11 +1095,43 @@ for input, output and cached tokens). `WorkerStart.provider` selects the impleme
 `anthropic` as today, anything else with an endpoint or `openai` as this one, so gateways and
 local servers are covered. The default provider for both features is chosen by the AI-12 run;
 until then `ley ai add openai` as the only key makes `openai` the default for both features
-(see the ergonomics item). Files: `go/internal/assistant/openai.go` (new), `model.go`,
+(AI-16). Files: `go/internal/assistant/openai.go` (new), `model.go`,
 `worker.go` (selection), tests with `httptest` pinning the request shape and the tool-result
 ordering, `docs/dev/assistant.md`, `docs/design/ai.md` "Providers". Verify: the policy-row tests
 run against both models through the scripted harness; the `ask` e2e runs once per provider
 against a fake endpoint.
+
+### AI-16 `[ ]` First-run ergonomics of `ley ai`
+
+From the ergonomics review of 2026-10-15 (`ley ai add` ended with no next step; a user had to
+know two model names and run `ley ai use` twice; `transcribe --model` and `ask --model` meant
+different things). In order:
+
+1. **Defaults on add.** When a provider accepts a key, `SetCredential` sets every feature that
+   provider can serve and that has no choice yet, from a per-provider table of default models
+   (`openai`: assistant `gpt-5`, speech `whisper-1`; `anthropic`: assistant `claude-sonnet-5-5`;
+   the names are placeholders until the AI-12 run and the speech spike confirm them), never
+   overwriting a choice; the `ley ai add` banner says what was set and how to change it; the
+   Settings pane shows the same because the daemon did it. The `--json` shapes do not change.
+2. **A shorter `use`.** `ley ai use <provider>` sets every feature the provider can serve, with
+   the default models; `ley ai use <feature> <provider>` sets one with the default model;
+   `ley ai use <feature> <provider> <model>` stays; `ley ai use <provider> <model>` is refused as
+   ambiguous when the provider serves two features, naming the two forms. A provider that
+   cannot serve the feature is refused at `use` time, not on the first call.
+3. **Concrete hints.** The daemon's missing-model error names a pasteable command
+   (`ley ai use assistant openai`), as the fake's does; bare `ley ai` hints from the state it
+   sees rather than hard-coding `anthropic`.
+4. **Help pass.** Example order, the blank line missing in `ai use`'s help, an `ask` example in
+   the root help.
+
+Deferred: a per-run `transcribe --model` needs `DecodeConfig.model` in the contract; until then
+its help says it sets the speech model for later jobs too. Files: `engine/Sources/
+LeylineServer/AI/CredentialStore.swift`, `Services/CredentialsService.swift`,
+`AI/ConversationStore.swift` (the message), `go/internal/cli/ai.go`, `go/internal/fakedaemon/
+ai.go`, goldens, `docs/reference/cli.md`, `docs/guide/using-ley.md`, the app's
+`AISettings` catalogue (the same default table). Verify: `ley ai add openai` on a fresh daemon
+followed by `ley ask` and `ley transcribe --yes` with no `use` in between, in e2e; the fake and
+the daemon agree on the table (one test reads both).
 
 ## Lanes
 
