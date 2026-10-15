@@ -58,6 +58,10 @@ struct PartInspector: View {
                 }
                 .padding(.bottom, 4)
                 PartTable(rows: words.recording, ink: { _ in Theme.inkSecondary })
+                // Transcribe, Transcribe again… and Export words…, when any applies.
+                HStack(spacing: 8) { SpeechActions(recordingID: group.jobID) }
+                    .buttonStyle(.bordered)
+                    .padding(.top, 4)
             }
             .padding(.horizontal, 16).padding(.vertical, 14)
             Rectangle().fill(Theme.hairline).frame(height: 1)

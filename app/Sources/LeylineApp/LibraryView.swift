@@ -36,6 +36,7 @@ struct LibraryBody: View {
             PlayerBar()
                 .frame(height: Theme.Layout.transportHeight)
         }
+        .modifier(SpeechDialogs())
     }
 }
 
@@ -50,7 +51,11 @@ struct LibrarySidebar: View {
     var body: some View {
         let now = Date()
         let all = session.recordingChannels
-        let rows = all.filter { $0.matches(session.recordingsQuery, now: now) }
+        // A channel matches by its name, frequency and days, or by what was said on it
+        // (`SpeechRecords.hit`), once its recordings' speech has been read.
+        let rows = all.filter {
+            $0.matches(session.recordingsQuery, now: now) || session.speechHit(in: $0) != nil
+        }
         VStack(alignment: .leading, spacing: 0) {
             if all.isEmpty {
                 Text(
@@ -75,7 +80,7 @@ struct LibrarySidebar: View {
                                 now: now
                             )
                             .contentShape(Rectangle())
-                            .onTapGesture { session.selectedRecordingChannel = c.id }
+                            .onTapGesture { choose(c) }
                         }
                         Spacer(minLength: 12)
                     }
@@ -85,10 +90,22 @@ struct LibrarySidebar: View {
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.panel)
+        .onChange(of: session.recordingsQuery) { session.searchSpeech() }
+    }
+
+    /// A row's click: the channel is selected, and when the search's words were said on it, the
+    /// part and the over that hold them, which the page scrolls to.
+    private func choose(_ c: RecordingChannel) {
+        if let hit = session.speechHit(in: c) {
+            session.select(hit: hit, in: c)
+        } else {
+            session.selectedRecordingChannel = c.id
+        }
     }
 
     /// `⌕ Search recordings` on `ground` with a `border`: matches a channel's name, its frequency
-    /// and the days its recordings started (`RecordingChannel.matches`).
+    /// and the days its recordings started (`RecordingChannel.matches`), and the words said on it;
+    /// Return chooses the first row that matches.
     private var search: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass").font(.system(size: 10))
@@ -99,6 +116,15 @@ struct LibrarySidebar: View {
                     get: { session.recordingsQuery }, set: { session.recordingsQuery = $0 })
             )
             .textFieldStyle(.plain).font(Theme.Font.label).foregroundStyle(Theme.ink)
+            .onSubmit {
+                let now = Date()
+                if let first = session.recordingChannels.first(where: {
+                    $0.matches(session.recordingsQuery, now: now)
+                        || session.speechHit(in: $0) != nil
+                }) {
+                    choose(first)
+                }
+            }
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
         .background(Theme.ground, in: RoundedRectangle(cornerRadius: 6))

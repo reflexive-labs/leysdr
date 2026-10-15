@@ -328,6 +328,8 @@ final class AppSession {
     /// Transcribe's question while its dialog is up: the recording, the question's words, and the
     /// model "Transcribe again…" chose (empty: the speech feature's own).
     var transcribeAsk: TranscribeAsk?
+    /// The recording whose Transcribe again sheet is up, or nil. Presentation only.
+    var transcribeAgainFor: String?
     var playingURI: String? { partPlayback.playingURI }
     var playingRowStart: Leyline_V1_SampleTime? { partPlayback.playingRowStart }
     var playQueue: PlayQueue { partPlayback.queue }
@@ -3595,6 +3597,12 @@ final class AppSession {
                 log("speech", "decoders not listed: \(LeylineError(error))")
             }
         }
+    }
+
+    /// Whether a recording's manifest lists squelch openings: speech is cut at the squelch, so only
+    /// a gated recording can be transcribed. False until the manifest has been read.
+    func isGated(recordingID: String) -> Bool {
+        manifests[recordingID]?.parts.contains { $0.squelchOpens > 0 } ?? false
     }
 
     /// Whether the Library offers Transcribe: a speech decoder is installed, and it needs no key

@@ -48,24 +48,37 @@ struct RecordingsPage: View {
             RecordingsPageHeader(channel: channel, groups: groups)
                 .frame(height: Theme.Layout.pageHeaderHeight)
             Rectangle().fill(Theme.border).frame(height: 1)
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(recent) { day in
-                        DaySection(day: day)
-                            .padding(.top, Theme.Layout.pageDayGap)
-                    }
-                    if !earlier.isEmpty {
-                        SectionHeader(text: "Earlier")
-                            .padding(.top, Theme.Layout.pageDayGap).padding(.bottom, 8)
-                        ForEach(earlier) { day in
-                            EarlierDay(day: day, opened: session.openedDays.contains(day.id))
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(recent) { day in
+                            DaySection(day: day)
+                                .padding(.top, Theme.Layout.pageDayGap)
+                        }
+                        if !earlier.isEmpty {
+                            SectionHeader(text: "Earlier")
+                                .padding(.top, Theme.Layout.pageDayGap).padding(.bottom, 8)
+                            ForEach(earlier) { day in
+                                EarlierDay(day: day, opened: session.openedDays.contains(day.id))
+                            }
                         }
                     }
+                    .padding(.horizontal, Theme.Layout.pageInset)
+                    .padding(.bottom, Theme.Layout.pageInset)
                 }
-                .padding(.horizontal, Theme.Layout.pageInset)
-                .padding(.bottom, Theme.Layout.pageInset)
+                // The search selected an over: bring its line into view.
+                .onChange(of: scrollTarget) { _, target in
+                    guard let target else { return }
+                    withAnimation { proxy.scrollTo(target, anchor: .center) }
+                }
             }
         }
+    }
+
+    /// The selected over's line id, while an over is selected.
+    private var scrollTarget: String? {
+        guard let uri = session.selectedPartURI, let over = session.selectedOver else { return nil }
+        return SpeechLineView.scrollID(partURI: uri, over: over)
     }
 }
 
@@ -181,6 +194,7 @@ struct DayBody: View {
             ForEach(day.rows) { row in
                 PartRowView(row: row)
                     .padding(.top, row.gapBefore ? Theme.Layout.recordingGap : 0)
+                PartSpeechLines(row: row)
             }
         }
     }
@@ -339,6 +353,7 @@ struct PartRowView: View {
         }
         .buttonStyle(.plain)
         .help(playing ? (paused ? "Resume" : "Pause") : "Play")
+        .contextMenu { SpeechActions(recordingID: row.jobID) }
         .onAppear { session.loadLevelGraph(row) }
     }
 

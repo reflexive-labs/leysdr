@@ -278,6 +278,19 @@ enum Theme {
         static let stripHeight: CGFloat = 24
         /// An EARLIER line's day name column, wide enough for `Wednesday` and `12 Sep`.
         static let earlierDayWidth: CGFloat = 120
+        /// A part's speech lines: indented to the row's `STARTS` column, the gap between two
+        /// lines and inside one, a line's corners when it is selected or playing, and a callsign
+        /// chip's padding and corners. Guesses until the Mac.
+        static let speechIndent: CGFloat = partRowInset + ringColumnWidth + bracketColumnWidth
+        static let speechLineGap: CGFloat = 2
+        static let speechLinePaddingY: CGFloat = 4
+        static let speechLinePaddingX: CGFloat = 6
+        static let speechLineRadius: CGFloat = 4
+        static let chipPaddingX: CGFloat = 5
+        static let chipPaddingY: CGFloat = 1
+        static let chipRadius: CGFloat = 3
+        /// The Transcribe again sheet's width.
+        static let transcribeSheetWidth: CGFloat = 380
         /// The player's progress track, and the inspector's tables' label column at the reading
         /// rows' 62 pt so the two panels line up.
         static let partProgressHeight: CGFloat = 3
