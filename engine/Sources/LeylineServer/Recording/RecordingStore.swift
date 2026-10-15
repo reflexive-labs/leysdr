@@ -132,6 +132,14 @@ actor RecordingStore {
     func repairUnfinished() -> [String] {
         var repaired: [String] = []
         for entry in entries() where entry.manifest.endedBy.isEmpty {
+            // An unkept speech job's clips that the last daemon died before removing: nobody
+            // asked to keep them (invariant 8), so they go rather than being closed as a restart.
+            if entry.manifest.keep == false {
+                log.info("dropping \(entry.path): the clips of a decode job that was not kept, left by the last daemon")
+                try? FileManager.default.removeItem(atPath: entry.path)
+                repaired.append(entry.manifest.jobID)
+                continue
+            }
             var manifest = entry.manifest
             // Any part file the manifest does not list is one the last daemon had open. Its header
             // is patched from the file's own length, and it joins the manifest with what it holds.

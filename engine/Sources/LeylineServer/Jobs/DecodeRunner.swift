@@ -747,8 +747,9 @@ actor DecodeRunner {
             // transcribing the clips later gives the same overs.
             rec.over = 0
             rec.clipUri = ""
-            if let clips, let segment = segmenter.withLock({ $0?.segment(at: rec.time.sampleIndex) }),
-               let found = await clips.locate(segmentStart: segment.start)
+            let segment = segmenter.withLock { s in s?.segment(at: rec.time.sampleIndex).map { ($0.start, s!.preRollSamples) } }
+            if let clips, let (start, preRoll) = segment,
+               let found = await clips.locate(segmentStart: start, preRoll: preRoll)
             {
                 rec.clipUri = found.uri
                 rec.over = found.over

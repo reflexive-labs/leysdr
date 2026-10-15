@@ -301,22 +301,61 @@ actor PartWriter {
         }
     }
 
+    /// Where a segment's audio is, as far as the writer can tell.
+    enum ClipLookup: Equatable, Sendable {
+        /// The part and the 1-based index of the segment's first opening in its `squelch_opens`.
+        case found(part: Int, over: UInt32)
+        /// The recorder has not reached the segment's opening yet.
+        case notYet
+        /// It never will: the recording has moved past the segment without it.
+        case never
+    }
+
     /// The part and over holding a segment that starts at capture sample `start`: the first squelch
     /// opening, in the order they happened, that was still open at `start`, and its 1-based index
     /// in its part's `squelch_opens`. A segment reaches back a pre-roll before its first opening
     /// and never before the previous segment ended, which was a hang after that segment's last
     /// close, so every earlier opening had closed by `start` and the first one open at it is the
     /// segment's own (docs/dev/engine-internals.md, "Decoders"). The open part's opening that has
-    /// not closed yet counts as open. Nil when no opening the writer still holds was open at
-    /// `start`: the recorder has not reached it yet, or the part closed too long ago.
-    func clip(forSegmentAt start: UInt64) -> (part: Int, over: UInt32)? {
+    /// not closed yet counts as open.
+    ///
+    /// Not found, it is `never` when no part is open and the segment's opening, at most `preRoll`
+    /// after its start, came before the last closed part ended: that part would have listed it.
+    /// Otherwise the recorder may still be on its way, and it is `notYet`.
+    func clip(forSegmentAt start: UInt64, preRoll: UInt64) -> ClipLookup {
         for (part, opens) in closedOpens {
-            if let i = opens.firstIndex(where: { $0.closeSample > start }) { return (part, UInt32(i + 1)) }
+            if let i = opens.firstIndex(where: { $0.closeSample > start }) { return .found(part: part, over: UInt32(i + 1)) }
         }
-        guard handle != nil else { return nil }
-        if let i = squelchOpens.firstIndex(where: { $0.closeSample > start }) { return (partNumber, UInt32(i + 1)) }
-        if pendingOpen != nil { return (partNumber, UInt32(squelchOpens.count + 1)) }
-        return nil
+        guard handle != nil else {
+            if closed { return .never }
+            if let last = manifest.parts.last, start + preRoll < last.endSample { return .never }
+            return .notYet
+        }
+        if let i = squelchOpens.firstIndex(where: { $0.closeSample > start }) { return .found(part: partNumber, over: UInt32(i + 1)) }
+        if pendingOpen != nil { return .found(part: partNumber, over: UInt32(squelchOpens.count + 1)) }
+        return .notYet
+    }
+
+    /// A ceiling on the recording's closed parts, in bytes: past it the oldest parts are removed
+    /// as each new one closes, the newest always kept. Nil is no ceiling of its own; the store's
+    /// cap still applies. A kept speech job's clips get one, so a job that runs for weeks keeps
+    /// its latest overs rather than evicting the user's other recordings.
+    private(set) var capBytes: UInt64?
+
+    func setCap(_ bytes: UInt64?) { capBytes = bytes }
+
+    /// Removes the oldest closed parts, files and sidecars, until the closed parts fit the cap.
+    private func trimToCap() {
+        guard let capBytes else { return }
+        while manifest.bytes > capBytes, manifest.parts.count > 1 {
+            let oldest = manifest.parts.removeFirst()
+            manifest.bytes -= Swift.min(manifest.bytes, oldest.bytes)
+            let base = (oldest.file as NSString).deletingPathExtension
+            try? FileManager.default.removeItem(atPath: directory + "/" + oldest.file)
+            try? FileManager.default.removeItem(atPath: directory + "/" + base + ".json")
+            closedOpens.removeAll { $0.part == oldest.part }
+            log.info("\(directory): dropped part \(oldest.part), the oldest, to keep the clips under \(capBytes) bytes")
+        }
     }
 
     // MARK: Parts
@@ -437,6 +476,7 @@ actor PartWriter {
         partBytes = 0
         partSamples = 0
         writeSidecar(for: part, peak: peakDb, mean: meanDb)
+        trimToCap()
         persist()
     }
 

@@ -13,6 +13,7 @@
 import EngineCore
 import Foundation
 import Logging
+import Synchronization
 
 final class LiveClips: Sendable {
     /// How long a record waits for the recorder to have noted its segment's opening. The record
@@ -21,29 +22,44 @@ final class LiveClips: Sendable {
     static let locateWaitMs = 2000
     static let locatePollMs = 50
 
+    /// Set once the recorder has stopped, on its own (a full disk, the channel closing) or by
+    /// `stop`: no record waits for a clip after that.
+    final class Gone: Sendable {
+        private let flag = Atomic<Bool>(false)
+        var isSet: Bool { flag.load(ordering: .acquiring) }
+        func set() { flag.store(true, ordering: .releasing) }
+    }
+
     let recordingID: String
-    let recorder: RecordRunner
+    let recorder: any RecordRunning
     private let writer: PartWriter
     private let recordings: RecordingStore
     /// `keep`: whether the recording outlives the job (invariant 8).
     private let keep: Bool
+    private let gone: Gone
     private let log = Logger(label: "leyline.jobs.decode")
 
-    init(recordingID: String, recorder: RecordRunner, writer: PartWriter, recordings: RecordingStore, keep: Bool) {
+    init(recordingID: String, recorder: any RecordRunning, writer: PartWriter, recordings: RecordingStore, keep: Bool,
+         gone: Gone = Gone())
+    {
         self.recordingID = recordingID
         self.recorder = recorder
         self.writer = writer
         self.recordings = recordings
         self.keep = keep
+        self.gone = gone
     }
 
     var uri: String { "ley://recordings/\(recordingID)" }
 
     func start() async { await recorder.start() }
 
-    /// Ends the recording. An unkept job's clips go with it: persistence follows intent, and a
-    /// job nobody kept leaves nothing behind but what its client printed.
+    /// Ends the recording. `RecordRunner.stop` returns once the files are final, a teardown the
+    /// recorder began on its own included, so an unkept job's clips are removed after the last
+    /// write rather than under it: persistence follows intent, and a job nobody kept leaves
+    /// nothing behind but what its client printed.
     func stop(endedBy: String) async {
+        gone.set()
         await recorder.stop(endedBy: endedBy)
         guard !keep else { return }
         do {
@@ -54,14 +70,21 @@ final class LiveClips: Sendable {
     }
 
     /// The part and over of the segment that starts at capture sample `start`, waiting a little
-    /// for a recorder that has not reached it yet. Nil when it never does.
-    func locate(segmentStart start: UInt64) async -> (uri: String, over: UInt32)? {
+    /// for a recorder that has not reached it yet. Nil at once when the recorder has stopped or
+    /// has moved past the segment without it (`PartWriter.clip(forSegmentAt:preRoll:)`), and nil
+    /// after `locateWaitMs` otherwise. `preRoll` is the segment's, in capture samples.
+    func locate(segmentStart start: UInt64, preRoll: UInt64) async -> (uri: String, over: UInt32)? {
         var waited = 0
         while true {
-            if let found = await writer.clip(forSegmentAt: start) {
-                return ("\(uri)/\(found.part)", found.over)
+            switch await writer.clip(forSegmentAt: start, preRoll: preRoll) {
+            case .found(let part, let over):
+                return ("\(uri)/\(part)", over)
+            case .never:
+                return nil
+            case .notYet:
+                break
             }
-            guard waited < Self.locateWaitMs else { return nil }
+            guard !gone.isSet, waited < Self.locateWaitMs else { return nil }
             try? await Task.sleep(nanoseconds: UInt64(Self.locatePollMs) * 1_000_000)
             waited += Self.locatePollMs
         }

@@ -18,6 +18,10 @@ extension JobStore {
     /// An IQ recording is cut into parts by default because it is large: 19.2 MB/s at 2.4 MSPS.
     /// Audio keeps one part unless asked otherwise.
     static let defaultIQPartMs: Int64 = 60_000
+    /// A live speech job's clips may hold this fraction of the record store's cap (`--store-cap`),
+    /// a tenth: past it the job's own oldest parts go, so the clips of a job that runs for weeks
+    /// never evict the user's other recordings.
+    static let clipsShareOfStoreCap: UInt64 = 10
 
     func startRecord(config: Leyline_V1_RecordConfig, by client: ClientContext) async throws -> Leyline_V1_Job {
         if config.startAtNs != 0 {
@@ -252,37 +256,50 @@ extension JobStore {
         guard let snapshot = await store.captureEngine(lease.captureID)?.snapshot else { return nil }
         let channelConfig = await lease.engine.config
         let first = anchor(snapshot, capture: lease.captureID)
+        // The clips' own ceiling, a share of the record store's cap, and parts cut at half of it
+        // so the part still being written can never take more than that share either.
+        let cap = Swift.max(records.capBytes / Self.clipsShareOfStoreCap, 1)
+        let bytesPerMs = Double(lease.engine.audioRate) * 2 / 1000
+        let partMs = bytesPerMs > 0 ? Swift.max(Int64(Double(cap / 2) / bytesPerMs), 1000) : 0
         let writer: PartWriter
         if keep, let carried = try await recordings.carryOn(job: id, anchor: first, captureID: lease.captureID.string,
                                                             centerHz: frequencyHz)
         {
             writer = carried
         } else {
-            let manifest = RecordingManifest(
+            var manifest = RecordingManifest(
                 jobID: id.string, kind: "audio", frequencyHz: frequencyHz,
                 mode: modeName(channelConfig.mode), bandwidthHz: channelConfig.bandwidthHz,
                 sampleRate: UInt64(lease.engine.audioRate), format: "wav-s16",
                 device: await deviceInfo(lease.captureID), gains: gainInfo(snapshot),
                 squelchDbfs: channelConfig.squelchDB,
                 gate: RecordingGateInfo(kind: "squelch", preRollMs: Self.defaultPreRollMs, hangMs: Self.defaultHangMs),
-                partMs: 0, startedAtNs: WallClock.nowNs(), createdBy: recordingClient(id), anchors: [first])
+                partMs: partMs, startedAtNs: WallClock.nowNs(), createdBy: recordingClient(id), anchors: [first])
+            // Unkept clips say so on disk, so a daemon that dies before removing them leaves
+            // nothing the next boot keeps.
+            if !keep { manifest.keep = false }
             writer = try await recordings.open(job: id, manifest: manifest, captureID: lease.captureID.string,
                                                centerHz: frequencyHz)
         }
+        await writer.setCap(cap)
+        let gone = LiveClips.Gone()
         let borrowed = BorrowedChannelLease(channelID: lease.channelID, captureID: lease.captureID, engine: lease.engine)
         let log = self.log
         let recorder = RecordRunner(
             jobID: id, source: .audio(lease: borrowed, audioRate: lease.engine.audioRate), writer: writer,
             store: store, recordings: recordings, captureRateHz: snapshot.sampleRate,
-            durationMs: 0, partMs: 0, gated: true, preRollMs: Self.defaultPreRollMs, hangMs: Self.defaultHangMs,
+            durationMs: 0, partMs: partMs, gated: true, preRollMs: Self.defaultPreRollMs, hangMs: Self.defaultHangMs,
             stopAfterQuietMs: 0,
-            onStatus: { state, detail, _ in
+            onStatus: { [gone] state, detail, _ in
                 // The job's state is the decoder's; the recorder's running detail would only
-                // overwrite it. A recorder that stops on its own (a full disk) is logged, and
-                // the words go on without clips.
-                if !JobStore.isLive(state) { log.warning("\(id.string): the clips stopped: \(detail)") }
+                // overwrite it. A recorder that stops on its own (a full disk) is logged, the
+                // words go on without clips, and no record waits for one.
+                guard !JobStore.isLive(state) else { return }
+                gone.set()
+                log.warning("\(id.string): the clips stopped: \(detail)")
             })
-        return LiveClips(recordingID: id.string, recorder: recorder, writer: writer, recordings: recordings, keep: keep)
+        return LiveClips(recordingID: id.string, recorder: recorder, writer: writer, recordings: recordings,
+                         keep: keep, gone: gone)
     }
 
     // MARK: Details

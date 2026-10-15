@@ -101,6 +101,8 @@ extension SegmentedDecodeTests {
             XCTAssertEqual(got.first?.clipUri.hasPrefix("ley://recordings/\(started.jobID)/"), true)
             let dir = recordings + "/" + started.jobID
             XCTAssertTrue(FileManager.default.fileExists(atPath: dir + "/recording.json"), "the clips are written while it runs")
+            let running = try JSONDecoder().decode(RecordingManifest.self, from: Data(contentsOf: URL(fileURLWithPath: dir + "/recording.json")))
+            XCTAssertEqual(running.keep, false, "unkept clips say so on disk, for a boot after a crash")
             try await self.cancel(c, started.jobID)
             XCTAssertFalse(FileManager.default.fileExists(atPath: dir), "an unkept job's clips are gone when it ends")
         }
