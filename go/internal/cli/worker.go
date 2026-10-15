@@ -13,9 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/assistant"
 )
 
 // The workers are the processes the daemon spawns to make a call on the user's key. Each one reads the key from stdin -- an argument is
@@ -50,7 +52,36 @@ func newWorkerCommand(app *App) *cobra.Command {
 		Hidden: true,
 		Args:   cobra.NoArgs,
 	}
-	cmd.AddCommand(newWorkerCheckCommand(app))
+	cmd.AddCommand(newWorkerCheckCommand(app), newWorkerAssistantCommand(app))
+	return cmd
+}
+
+func newWorkerAssistantCommand(app *App) *cobra.Command {
+	var conversation string
+	cmd := &cobra.Command{
+		Use:   "assistant --conversation ID",
+		Short: "Run the assistant for one conversation the daemon holds",
+		Long: `assistant is the worker the daemon starts for each assistant conversation. With
+LEYLINE_KEY_ON_STDIN=1 it reads the provider's key from stdin as one
+SetCredentialRequest, then a WorkerStart and the conversation's events, each
+varint-delimited; it writes the assistant's turns on stdout the same way, and
+logs on stderr. It drives the radio through the ley mcp tools over the
+daemon's socket, as client kind mcp with the label assistant.
+LEY_ASSISTANT_SCRIPT names a file of scripted model responses, one JSON object
+a line, which tests play in place of a provider. It exits 0 when stdin closes.`,
+		Example: `  ley worker assistant --conversation conv_01K...   # the daemon runs this`,
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return assistant.Run(cmd.Context(), assistant.Options{
+				Stdin: app.Stdin, Stdout: app.Stdout, Stderr: app.Stderr, LookupEnv: app.LookupEnv,
+				Conversation: conversation,
+				NewToolServer: func(ctx context.Context, socket string) (*mcp.Server, func(), error) {
+					return NewAssistantToolServer(ctx, socket, app.LookupEnv, app.Stderr)
+				},
+			})
+		},
+	}
+	cmd.Flags().StringVar(&conversation, "conversation", "", "the conversation this worker runs, so it shows in ps and in the log")
 	return cmd
 }
 
