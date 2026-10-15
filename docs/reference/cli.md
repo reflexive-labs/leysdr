@@ -478,8 +478,23 @@ machine's own player (`$LEYLINE_PLAYER` when set — `afplay`, `mpv`, `vlc` — 
 and `xdg-open` elsewhere), saying which happened. Under `--json` nothing is played at all and the
 `LocalPath` is printed instead: a script wants the path, not a sound.
 
+**Part of an audio part plays with `--over`, or `--from` and `--to`.** `ley play <recording>
+--part N --over O` plays over `O` of the part, counted from 1 as the part sidecar's
+`squelch_opens` lists them: the segment that holds that opening, from the recording's pre-roll
+(`gate.pre_roll_ms`, 500 ms when absent) before its first opening to half a second after its last
+close, with an opening less than half a second after a close continuing the segment. That is the
+audio a speech decoder heard, so a speech record's `over` plays exactly what was transcribed.
+`--from` and `--to` take capture samples on the part's timeline (`start_sample`, `end_sample` and
+`squelch_opens` in `ley recordings show --json` and the sidecar) and go to the daemon as given,
+either left out meaning the part's own end. The banner names the stretch (`job_…, part 1 of 2, over
+3`). An over the part does not list (`part 2 has 1 overs; choose one from 1 to 1`), `--over` beside
+`--from` or `--to`, a range on a file path or an IQ recording, and a range the daemon refuses are
+usage errors. With a daemon that has no audio device the local player gets the whole part, and a
+line says so.
+
 A **`Playback`** is daemon state like everything else (`playback_id`, `resource_uri`, `path`,
-`sample_rate`, `samples`, `position`, `volume`, `created_by`, `state`, `paused`), so it appears in
+`sample_rate`, `samples`, `position`, `volume`, `created_by`, `state`, `paused`, `start_sample`,
+`end_sample`), so it appears in
 `GetState` and on the event stream, `ley state` lists what is playing and how far in, and a second
 client — the Mac app — renders a position and a stop button without polling. It is not a job (a
 job's output is a resource; a playback produces nothing) and not a sink (a sink is where a
@@ -488,8 +503,11 @@ stops when that client goes, which is what makes Ctrl-C stop the sound; `Control
 stops one early, and the final event carries `state` unset as the tombstone, so a client can tell
 "it reached the end" from "somebody stopped it". `Control.SetPlaybackPaused` pauses and resumes
 one, and any client may: `position` holds while `paused` is true, resuming continues from it, and
-the four-a-second event is not sent while paused. Seeking and looping are not in v1: `position` is
-reported and not writable.
+the four-a-second event is not sent while paused. `StartPlaybackRequest.start_sample` and
+`end_sample` play a range of the part, in capture samples (0 for either is the part's own end);
+the playback carries the range, and `samples` and `position` then count the range's frames. A
+range outside the part is `INVALID_ARGUMENT` naming the samples the part holds. Seeking and looping
+are not in v1: `position` is reported and not writable.
 
 **A recording that heard nothing is not kept.** A record job that ends with no part written (a
 gated recording whose squelch never opened) ends `COMPLETED` with `status_detail` `nothing was

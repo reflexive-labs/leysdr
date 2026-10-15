@@ -805,7 +805,8 @@ Next: ley records --protocol speech --job-id job_01M4YD5AKAGK8S2QREFDM9RV91
 
 Each line is one over: when it was heard, which part of the recording holds it, and the words. The
 callsigns in parentheses are what a pattern found in the text after the phonetic alphabet was
-folded into letters, so check a doubtful one by ear with `ley play`. The speech decoder in this
+folded into letters, so check a doubtful one by ear: `ley play job_01SEED --part 1 --over 3`
+plays just that over. The speech decoder in this
 build has no speech engine yet: it replays a script of lines and is what the tests transcribe
 with, so a real recording gets `segment 1`, `segment 2` and so on. `ley transcribe --help` lists
 the rest.

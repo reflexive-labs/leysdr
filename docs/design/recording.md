@@ -622,6 +622,8 @@ message Playback {
   ClientInfo created_by = 8;
   PlaybackState state = 9;      // PLAYBACK_PLAYING; unset on the final event is the tombstone
   bool paused = 10;             // position held (SetPlaybackPaused)
+  uint64 start_sample = 11;     // the range asked for, on the capture's timeline; 0 and 0 when
+  uint64 end_sample = 12;       //   the whole part plays
 }
 ```
 
@@ -644,6 +646,19 @@ moved and repeating it would only push real events out of the replay window. Any
 a playback, as any client may stop one; the event names who did. `ley play` pauses and resumes on
 space when stdin is a terminal, and its progress line reads `0:02 / 0:05, paused; space resumes`.
 `RecordingJobTests` holds the position across half a second paused and sees it move after resume.
+
+**A playback can be one stretch of a part.** `StartPlaybackRequest.start_sample` and `end_sample`
+name capture samples on the part's timeline, the same numbers as the sidecar's `start_sample`,
+`end_sample` and `squelch_opens`, so a client plays one over of a gated part rather than the whole
+exchange: the Library's speech lines and `ley play --over` play the segment a speech decoder heard
+(the recording's pre-roll before the over's first opening to half a second after its last close).
+0 for either end is the part's own. The daemon places the range in the WAV by the audio rate and
+the capture rate of the part's sidecar anchor (else the manifest's anchor, else the part's own
+span over its frames), seeks the reader to the first frame and stops at the last; a range that is
+empty, outside the part, or shorter than one frame of audio is `INVALID_ARGUMENT` with the samples
+the part holds. The playback carries the range, and `samples` and `position` count its frames, so a
+client's progress line reads the same for a range as for a part. `RecordingJobTests` plays a
+quarter of a part and sees every frame of the range played before the tombstone.
 
 **A playback belongs to the client that started it**, like a non-persistent channel: it stops when
 that client goes, which is what makes Ctrl-C in `ley play` stop the sound. There is no `persistent`
@@ -683,8 +698,9 @@ then passes the local file to the configured player.
   no samples over the socket either: the daemon opens the file itself and the client sees a
   position.
 - **Seeking and looping a playback.** `position` is reported and not writable; a person who wants
-  to hear a passage again plays the part again. A seek is one additive request field when somebody
-  asks. Pausing exists ("Playing a recording back").
+  to hear a passage again plays it again, the whole part or a range of it. A seek within a playing
+  one is one additive request when somebody asks. Pausing and ranges exist ("Playing a recording
+  back").
 - **Opus or any compressed audio.** Tied to the remote-access milestone, as the data-planes doc
   says, and measurement (2026-09-18) shows disk space is not a reason for it. On real
   captures, lossless compression buys 25% on NFM transmissions (75% of PCM) and 39% on
