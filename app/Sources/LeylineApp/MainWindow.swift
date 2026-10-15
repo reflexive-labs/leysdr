@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The window's regions: chrome above and below a body of two panels, and a third on the right, the
-// inspector. The sidebar, the inspector and the transport bar are fixed; the waterfall
+// inspector, with the assistant's column beside the whole body when it is open (`AssistantPanel`). The sidebar, the inspector and the transport bar are fixed; the waterfall
 // takes what is left. The inspector can be closed, and the window works without it. Two places
 // share the toolbar: the Radio is that window, and the Library replaces the
 // whole body under the toolbar with what has been kept (`LibraryView.swift`) while the radio keeps
@@ -38,9 +38,15 @@ struct MainWindow: View {
         // One container for both places, so the toolbar and the alert stay put across a switch.
         VStack(spacing: 0) {
             if session.engineUpdatePending { EngineUpdateStrip() }
-            switch session.place {
-            case .radio: RadioBody()
-            case .library: LibraryBody().stageRegion(.library)
+            // The assistant's column is beside both places rather than inside each body, so a
+            // switch of place (⌘1, ⌘2, or the assistant's own `show_place`) leaves the
+            // conversation, its scroll and its field where they are.
+            HStack(spacing: 0) {
+                switch session.place {
+                case .radio: RadioBody()
+                case .library: LibraryBody().stageRegion(.library)
+                }
+                AssistantColumn()
             }
         }
         .background(Theme.ground)
@@ -72,6 +78,8 @@ struct MainWindow: View {
                 .sharedBackgroundVisibility(.hidden)
             ToolbarSpacer(.fixed, placement: .primaryAction)
             ToolbarItem(placement: .primaryAction) { InspectorToggle().shown(chromeShown) }
+                .sharedBackgroundVisibility(.hidden)
+            ToolbarItem(placement: .primaryAction) { AssistantToggle().shown(chromeShown) }
                 .sharedBackgroundVisibility(.hidden)
         }
         // `Leyline` is drawn by `BrandTitle`, so the window's own title is removed from the

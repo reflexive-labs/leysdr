@@ -164,6 +164,14 @@ struct TuneCommands: Commands {
                 session.toggleInspector()
             }
             .keyboardShortcut("i", modifiers: [.command, .option])
+            // No AI control shows outside Settings until one can run (`hasAnyAI`); the toolbar's
+            // toggle is the live one, as for the inspector.
+            if session.hasAnyAI {
+                Button(session.assistantShown ? "Hide Assistant" : "Show Assistant") {
+                    session.toggleAssistant()
+                }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
+            }
         }
         CommandGroup(after: .toolbar) {
             Button("Zoom In") { session.zoomIn() }.keyboardShortcut("=", modifiers: [.command])

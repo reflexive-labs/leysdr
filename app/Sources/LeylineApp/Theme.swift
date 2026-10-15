@@ -159,6 +159,18 @@ enum Theme {
         /// The inspector, fixed on the right; the window works without it.
         static let inspectorWidth: CGFloat = 312
         static let inspectorHeaderHeight: CGFloat = 36
+        /// The assistant's panel, fixed beside the inspector; the window works without it. Wide
+        /// enough for a step's `→ tool arguments` line and its state word at `Font.value`; a guess
+        /// until the Mac.
+        static let assistantPanel: CGFloat = 320
+        /// The space between two turns of the transcript.
+        static let assistantTurnGap: CGFloat = 14
+        /// A user's turn keeps at least this much of the row free on its left, so it reads as
+        /// the other side of the conversation.
+        static let assistantUserInset: CGFloat = 40
+        /// An opened step's body and a closed step's result line sit under the tool's name,
+        /// past the chevron.
+        static let assistantStepIndent: CGFloat = 14
         /// The inspector's reading rows are four fixed columns (label, meter, word, number), so
         /// no meter or number moves when a word beside it changes. The label column is 62 pt,
         /// narrower than the design's 74, to make room for the number; `Deviation`, the longest
