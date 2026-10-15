@@ -284,6 +284,16 @@ enum Theme {
         static let audioLabelHeight: CGFloat = 14
         static let audioNumberHeight: CGFloat = 13
         static let defaultWindow = CGSize(width: 1360, height: 820)
+        /// The Settings window: wide enough for the usage table's ten columns at `value`'s size,
+        /// tall enough for the three AI groups without a scroll on a 13-inch display.
+        static let settingsWindow = CGSize(width: 680, height: 640)
+        /// The gap between two groups of a Settings pane, and between two rows inside one.
+        static let settingsGroupGap: CGFloat = 22
+        static let settingsRowGap: CGFloat = 10
+        /// The Add form's labels sit in one column this wide, so the fields line up.
+        static let settingsLabelWidth: CGFloat = 72
+        /// The feature rows' two pickers.
+        static let settingsPickerWidth: CGFloat = 190
     }
 }
 

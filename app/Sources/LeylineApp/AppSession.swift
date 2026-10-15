@@ -3455,6 +3455,10 @@ final class AppSession {
 
     // MARK: Settings, AI
 
+    /// K1: an AI control shows outside Settings only while this holds, which is when the daemon
+    /// holds a key or a feature names an on-device engine (`AISettings.hasAnyAI`).
+    var hasAnyAI: Bool { AISettings.hasAnyAI(state.ai) }
+
     /// Stores `secret` as the key for `provider` and has the daemon check it once
     /// (`Credentials.SetCredential`). The secret lives in this call's request and nowhere else:
     /// never in the session's state and never in a log line. The reply's check is worded into

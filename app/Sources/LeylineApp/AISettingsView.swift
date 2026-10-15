@@ -1,0 +1,520 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// Settings, AI: the keys the daemon holds, the provider and model each feature calls, and what
+// the calls used (`docs/design/ai.md`; `docs/plans/ai-features.md`, stories K1 to K5 and U1). The
+// pane renders the mirror's `ai` and `usage` through the façade's rows (`AISettings.swift`) and
+// writes through `AppSession`'s unary calls, as `ley ai` does; a key it adds appears when the
+// daemon's `ai` event carries it, and a key `ley ai add` stored appears the same way. With no key
+// and no on-device engine (K1) the pane shows what each feature would do and send, and the Add
+// form, and nothing else.
+
+import LeylineClient
+import LeylineProto
+import SwiftUI
+
+struct AISettingsView: View {
+    @Environment(AppSession.self) private var session
+
+    var body: some View {
+        // Everything observed is read here and handed to the timeline's closure as values
+        // (`docs/dev/swift-style.md`, "SwiftUI and layout"); the closure only adds the minute, so
+        // the relative words ("2 min ago") move on while nothing else changes.
+        let ai = session.state.ai
+        let usage = session.state.usage
+        let notice = session.settingsNotice
+        let daemonDown: Bool = {
+            if case .unavailable = session.connection { return true }
+            return false
+        }()
+        TimelineView(.everyMinute) { context in
+            AIPaneContent(
+                ai: ai, usage: usage, notice: notice, daemonDown: daemonDown, now: context.date)
+        }
+        .background(Theme.ground)
+    }
+}
+
+private struct AIPaneContent: View {
+    @Environment(AppSession.self) private var session
+    let ai: Leyline_V1_AIState
+    let usage: [Leyline_V1_UsageLine]
+    let notice: String?
+    let daemonDown: Bool
+    let now: Date
+
+    var body: some View {
+        let hasAI = AISettings.hasAnyAI(ai)
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.Layout.settingsGroupGap) {
+                if daemonDown {
+                    Text(
+                        "The daemon is not running. Keys and usage live in the daemon, so this pane is empty until it starts."
+                    )
+                    .font(Theme.Font.label).foregroundStyle(Theme.caution)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                if let notice {
+                    SettingsNoticeLine(text: notice) { session.clearSettingsNotice() }
+                }
+                if !hasAI { WhatAIDoes(rows: AISettings.featureRows(ai)) }
+                KeysGroup(rows: AISettings.keyRows(ai, now: now))
+                if hasAI {
+                    Divider().overlay(Theme.hairline)
+                    FeaturesGroup(rows: AISettings.featureRows(ai))
+                    Divider().overlay(Theme.hairline)
+                    UsageGroup(lines: usage, now: now)
+                }
+            }
+            .padding(Theme.Layout.pageInset)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// The last write's line, with a close button, as the window's notice strip draws one.
+private struct SettingsNoticeLine: View {
+    let text: String
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(text).font(Theme.Font.label).foregroundStyle(Theme.inkTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            Button(action: dismiss) { Image(systemName: "xmark").font(.system(size: 9)) }
+                .buttonStyle(.plain).foregroundStyle(Theme.inkFaint)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(Theme.chrome)
+    }
+}
+
+/// K1: what each feature does, what each provider it can use would be sent and where, and which
+/// key enables it. Shown only while no key or on-device engine is set.
+private struct WhatAIDoes: View {
+    let rows: [FeatureRow]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Layout.settingsRowGap) {
+            Text(
+                "Leyline can call a model on your own provider account. Nothing here runs until you add a key, and until then no other screen shows an AI control. The daemon keeps the key and never shows or returns it."
+            )
+            .font(Theme.Font.body).foregroundStyle(Theme.inkSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+            ForEach(rows) { row in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(row.title).font(Theme.Font.label).foregroundStyle(Theme.ink)
+                    Text(row.does).font(Theme.Font.aside).foregroundStyle(Theme.inkTertiary)
+                    if row.choices.isEmpty {
+                        Text("No provider is offered for it yet.")
+                            .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+                    }
+                    ForEach(row.choices) { choice in
+                        Text(choiceWords(choice))
+                            .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+    }
+
+    private func choiceWords(_ c: FeatureRow.Choice) -> String {
+        let key = c.provider.needsKey ? " Needs a key for \(c.provider.name)." : ""
+        return "\(c.provider.name): \(c.privacy)\(key)"
+    }
+}
+
+// MARK: Keys
+
+private struct KeysGroup: View {
+    let rows: [KeyRow]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Layout.settingsRowGap) {
+            SectionHeader(text: "Keys")
+            ForEach(rows) { row in
+                KeyRowView(row: row)
+                Divider().overlay(Theme.hairline)
+            }
+            AddKeyForm()
+        }
+    }
+}
+
+/// One stored key: who it is for, its last four characters, when it was added, used and checked,
+/// what the provider said, and Check and Remove.
+private struct KeyRowView: View {
+    @Environment(AppSession.self) private var session
+    let row: KeyRow
+    @State private var confirmingRemove = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(row.providerName).font(Theme.Font.label).foregroundStyle(Theme.ink)
+                    if !row.label.isEmpty {
+                        Text(row.label).font(Theme.Font.label).foregroundStyle(Theme.inkTertiary)
+                    }
+                    Text(row.maskedKey).font(Theme.Font.value).foregroundStyle(Theme.inkSecondary)
+                }
+                if !row.endpoint.isEmpty {
+                    Text(row.endpoint).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkMuted)
+                }
+                Text("added \(row.added) · last used \(row.lastUsed)")
+                    .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaint)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(row.outcome.word).font(Theme.Font.footnote)
+                        .foregroundStyle(outcomeColour)
+                    Text(row.outcome == .unchecked ? "" : row.lastChecked)
+                        .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaint)
+                }
+                if !row.message.isEmpty {
+                    Text(row.message).font(Theme.Font.footnote).foregroundStyle(Theme.inkTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 8)
+            Button("Check") { Task { await session.checkKey(provider: row.provider) } }
+            Button("Remove") { confirmingRemove = true }
+        }
+        .confirmationDialog(
+            "Remove the \(row.provider) key?", isPresented: $confirmingRemove
+        ) {
+            Button("Remove", role: .destructive) {
+                Task { await session.removeKey(provider: row.provider) }
+            }
+        } message: {
+            Text("Every job and conversation using it stops.")
+        }
+    }
+
+    private var outcomeColour: Color {
+        switch row.outcome {
+        case .accepted: Theme.good
+        case .rejected: Theme.recording
+        case .unavailable: Theme.caution
+        case .unchecked: Theme.inkFaint
+        }
+    }
+}
+
+/// Add a key: the provider, a label, the key in a secure field and, for a provider that takes
+/// one, the endpoint. The key is held in this form's state only until the daemon has it: the
+/// field clears when Add succeeds and when the pane closes.
+private struct AddKeyForm: View {
+    @Environment(AppSession.self) private var session
+    @State private var providerID = ProviderCatalog.anthropic.id
+    @State private var label = ""
+    @State private var secret = ""
+    @State private var endpoint = ""
+    @State private var adding = false
+
+    private var providers: [AIProvider] { ProviderCatalog.all.filter(\.needsKey) }
+    private var provider: AIProvider? { ProviderCatalog.provider(providerID) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Add a key").font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
+            field("Provider") {
+                Picker("", selection: $providerID) {
+                    ForEach(providers) { p in Text(p.name).tag(p.id) }
+                }
+                .labelsHidden()
+                .frame(width: Theme.Layout.settingsPickerWidth)
+            }
+            field("Label") {
+                TextField("optional, such as home", text: $label).textFieldStyle(.roundedBorder)
+            }
+            field("Key") {
+                SecureField("paste the key", text: $secret).textFieldStyle(.roundedBorder)
+            }
+            if provider?.takesEndpoint == true {
+                field("Endpoint") {
+                    TextField("empty for the provider's own API", text: $endpoint)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+            HStack {
+                Spacer().frame(width: Theme.Layout.settingsLabelWidth)
+                Button(adding ? "Checking…" : "Add") { add() }
+                    .disabled(adding || secret.trimmingCharacters(in: .whitespaces).isEmpty)
+                Text("Adding a key replaces any key for that provider, then checks it once.")
+                    .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+            }
+        }
+        .onDisappear { secret = "" }
+    }
+
+    private func field<Control: View>(_ title: String, @ViewBuilder _ control: () -> Control)
+        -> some View
+    {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(title).font(Theme.Font.label).foregroundStyle(Theme.inkTertiary)
+                .frame(width: Theme.Layout.settingsLabelWidth, alignment: .trailing)
+            control()
+        }
+    }
+
+    private func add() {
+        adding = true
+        let showsEndpoint = provider?.takesEndpoint == true
+        Task {
+            let stored = await session.addKey(
+                provider: providerID,
+                secret: secret.trimmingCharacters(in: .whitespacesAndNewlines),
+                label: label, endpoint: showsEndpoint ? endpoint : "")
+            if stored {
+                secret = ""
+                label = ""
+                endpoint = ""
+            }
+            adding = false
+        }
+    }
+}
+
+// MARK: Features
+
+private struct FeaturesGroup: View {
+    let rows: [FeatureRow]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Layout.settingsRowGap) {
+            SectionHeader(text: "Features")
+            ForEach(rows) { row in FeatureRowView(row: row) }
+        }
+    }
+}
+
+/// One feature: what it does, its provider and model pickers, and what the chosen provider is
+/// sent. A provider whose models are typed (OpenAI-compatible) shows a field instead of the model
+/// picker, and is written only once a model is entered.
+private struct FeatureRowView: View {
+    @Environment(AppSession.self) private var session
+    let row: FeatureRow
+    /// A provider picked whose model is typed, until the model is entered.
+    @State private var typedProvider: String?
+    @State private var typedModel = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(row.title).font(Theme.Font.label).foregroundStyle(Theme.ink)
+            Text(row.does).font(Theme.Font.aside).foregroundStyle(Theme.inkTertiary)
+            if row.choices.isEmpty && row.provider.isEmpty {
+                Text("No provider is offered for it yet.")
+                    .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+            } else {
+                HStack(spacing: 8) {
+                    providerPicker
+                    modelControl
+                }
+                .padding(.vertical, 2)
+            }
+            Text(privacy).font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+                .fixedSize(horizontal: false, vertical: true)
+            if let missing = row.missingKey {
+                Text(missing).font(Theme.Font.footnote).foregroundStyle(Theme.caution)
+            }
+        }
+    }
+
+    private var shownProvider: String { typedProvider ?? row.provider }
+
+    /// The sentence for the provider shown in the picker, so a choice is read before it is made.
+    private var privacy: String {
+        row.choices.first { $0.provider.id == shownProvider }?.privacy ?? row.privacy
+    }
+
+    /// The catalog's providers for the feature, plus one `ley ai use` set that the catalog does
+    /// not list, so the picker always shows what the daemon holds.
+    private var providerIDs: [String] {
+        var ids = row.choices.map(\.provider.id)
+        if !row.provider.isEmpty, !ids.contains(row.provider) { ids.append(row.provider) }
+        return ids
+    }
+
+    private var providerPicker: some View {
+        Picker(
+            "",
+            selection: Binding(
+                get: { shownProvider },
+                set: { pick(provider: $0) })
+        ) {
+            if shownProvider.isEmpty { Text("Not chosen").tag("") }
+            ForEach(providerIDs, id: \.self) { id in
+                Text(ProviderCatalog.provider(id)?.name ?? id).tag(id)
+            }
+        }
+        .labelsHidden()
+        .frame(width: Theme.Layout.settingsPickerWidth)
+    }
+
+    @ViewBuilder
+    private var modelControl: some View {
+        let models = ProviderCatalog.provider(shownProvider)?.models ?? []
+        if typedProvider != nil || (models.isEmpty && !shownProvider.isEmpty) {
+            TextField("model", text: $typedModel)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: Theme.Layout.settingsPickerWidth)
+                .onSubmit { writeTyped() }
+                .onAppear { if typedProvider == nil { typedModel = row.model } }
+        } else if !models.isEmpty {
+            Picker(
+                "",
+                selection: Binding(
+                    get: { row.model },
+                    set: { write(provider: row.provider, model: $0) })
+            ) {
+                ForEach(modelChoices(models), id: \.self) { m in Text(m).tag(m) }
+            }
+            .labelsHidden()
+            .frame(width: Theme.Layout.settingsPickerWidth)
+        }
+    }
+
+    /// The provider's models, plus the one the daemon holds if it is not among them.
+    private func modelChoices(_ models: [String]) -> [String] {
+        row.model.isEmpty || models.contains(row.model) ? models : models + [row.model]
+    }
+
+    private func pick(provider id: String) {
+        guard !id.isEmpty, id != shownProvider else { return }
+        let models = ProviderCatalog.provider(id)?.models ?? []
+        if let first = models.first {
+            typedProvider = nil
+            write(provider: id, model: first)
+        } else {
+            typedProvider = id
+            typedModel = ""
+        }
+    }
+
+    private func writeTyped() {
+        let model = typedModel.trimmingCharacters(in: .whitespaces)
+        guard !model.isEmpty, !shownProvider.isEmpty else { return }
+        write(provider: shownProvider, model: model)
+        typedProvider = nil
+    }
+
+    private func write(provider: String, model: String) {
+        Task {
+            await session.setFeatureModel(feature: row.feature, provider: provider, model: model)
+        }
+    }
+}
+
+// MARK: Usage
+
+/// U1: requests, tokens and audio minutes per provider, model and feature, by UTC day over the
+/// last 30 days or by month over the whole ledger, with the total and the note that the numbers
+/// are the workers' and the cost is the provider's. A column empty in every row is left out, as
+/// `ley ai usage` leaves it out.
+private struct UsageGroup: View {
+    let lines: [Leyline_V1_UsageLine]
+    let now: Date
+    @State private var period = UsageFold.Period.day
+
+    var body: some View {
+        let fold = UsageFold(
+            lines: lines, by: period,
+            sinceDay: period == .day ? UsageFold.sinceDay(now: now) : nil)
+        VStack(alignment: .leading, spacing: Theme.Layout.settingsRowGap) {
+            HStack {
+                SectionHeader(text: "Usage")
+                Spacer()
+                Picker("", selection: $period) {
+                    Text("By day").tag(UsageFold.Period.day)
+                    Text("By month").tag(UsageFold.Period.month)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            }
+            if fold.rows.isEmpty {
+                Text("No usage reported yet; calls made with these keys are counted here.")
+                    .font(Theme.Font.aside).foregroundStyle(Theme.inkTertiary)
+            } else {
+                UsageTable(fold: fold, period: period)
+            }
+            Text(UsageFold.note).font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private struct UsageTable: View {
+    let fold: UsageFold
+    let period: UsageFold.Period
+
+    private struct Column {
+        let head: String
+        let value: (UsageRow) -> String
+    }
+
+    /// The numeric columns, each kept only when some row has a value in it; requests always.
+    private var columns: [Column] {
+        let all: [(Column, (UsageRow) -> Bool)] = [
+            (Column(head: "REQUESTS") { UsageFold.count($0.requests) }, { _ in true }),
+            (Column(head: "IN") { UsageFold.count($0.inputTokens) }, { $0.inputTokens > 0 }),
+            (Column(head: "OUT") { UsageFold.count($0.outputTokens) }, { $0.outputTokens > 0 }),
+            (
+                Column(head: "CACHE RD") { UsageFold.count($0.cacheReadTokens) },
+                { $0.cacheReadTokens > 0 }
+            ),
+            (
+                Column(head: "CACHE WR") { UsageFold.count($0.cacheWriteTokens) },
+                { $0.cacheWriteTokens > 0 }
+            ),
+            (
+                Column(head: "AUDIO MIN") { UsageFold.minutes($0.audioSeconds) },
+                { $0.audioSeconds > 0 }
+            ),
+        ]
+        return all.filter { entry in fold.rows.contains(where: entry.1) }.map { $0.0 }
+    }
+
+    var body: some View {
+        let numbers = columns
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 5) {
+            GridRow {
+                head(period == .day ? "DAY" : "MONTH")
+                head("MODEL")
+                head("FEATURE")
+                ForEach(numbers.indices, id: \.self) { i in
+                    head(numbers[i].head).gridColumnAlignment(.trailing)
+                }
+            }
+            ForEach(fold.rows) { r in
+                GridRow {
+                    Text(r.period).font(Theme.Font.value).foregroundStyle(Theme.inkTertiary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(r.model).font(Theme.Font.value).foregroundStyle(Theme.inkSecondary)
+                        Text(r.provider).font(Theme.Font.valueSmall)
+                            .foregroundStyle(Theme.inkMuted)
+                    }
+                    Text(r.feature).font(Theme.Font.value).foregroundStyle(Theme.inkTertiary)
+                    ForEach(numbers.indices, id: \.self) { i in
+                        Text(numbers[i].value(r)).font(Theme.Font.value)
+                            .foregroundStyle(Theme.inkSecondary)
+                    }
+                }
+            }
+            Divider().overlay(Theme.hairline).gridCellUnsizedAxes(.horizontal)
+            GridRow {
+                Text("total").font(Theme.Font.value).foregroundStyle(Theme.ink)
+                Text("")
+                Text("")
+                ForEach(numbers.indices, id: \.self) { i in
+                    Text(numbers[i].value(fold.total)).font(Theme.Font.value)
+                        .foregroundStyle(Theme.ink)
+                }
+            }
+        }
+    }
+
+    private func head(_ text: String) -> some View {
+        Text(text).font(Theme.Font.columnHead).foregroundStyle(Theme.inkFaint)
+    }
+}

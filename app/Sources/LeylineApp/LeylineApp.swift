@@ -5,7 +5,8 @@
 // is the sidebar, spectrum, waterfall, transport bar, the device menu, the inspector on the right
 // and a Tune menu that lists every gesture, plus the Library, the window's second place, with its
 // own menu. The app menu checks for updates through Sparkle (`Updater.swift`), installs the
-// bundled `ley` command, and its about panel names the build's tree (`AboutPanel`).
+// bundled `ley` command, and its about panel names the build's tree (`AboutPanel`). Settings (⌘,)
+// holds the AI pane (`SettingsView`, `AISettingsView`).
 
 import AppKit
 import LeylineClient
@@ -40,6 +41,10 @@ struct LeylineApp: App {
             TuneCommands(session: session)
             LibraryCommands(session: session)
             RecordCommands(session: session)
+        }
+        // App menu ▸ Settings… and ⌘, come with the scene.
+        Settings {
+            SettingsView().environment(session)
         }
     }
 }
