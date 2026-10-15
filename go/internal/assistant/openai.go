@@ -28,7 +28,7 @@ import (
 const OpenAIAPI = "https://api.openai.com"
 
 // OpenAIDefaultModel is the model the openai provider runs when WorkerStart names none. It is a
-// placeholder until the evals choose one (docs/plans/ai-features.md, AI-12).
+// placeholder until the evals choose one (the model comparison in docs/plans/ai-features.md).
 const OpenAIDefaultModel = "gpt-5"
 
 // openaiMaxTokens bounds one response. It is larger than the Anthropic bound because on a
