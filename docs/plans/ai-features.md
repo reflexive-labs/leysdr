@@ -713,9 +713,18 @@ destructive tools asks before every removal, one more than the policy table asks
 runner now gives `ley mcp` its own `LEYLINE_BOOKMARKS` file. The scenarios have not run (no key
 in the container).
 
-### AI-5 `[ ]` Speech on stored recordings
+### AI-5 `[x]` Speech on stored recordings
 
-**AI-5a, the segmenter and the recording source (daemon).** `SEGMENTED` in `startDecode`: a
+**AI-5a, the segmenter and the recording source (daemon).** Done 2026-10-15. What the build
+settled: a START frame's `time` is the segment's first sample and a record is matched to its over
+by that time (1 ms tolerance); the pre-roll goes out in frames of at most 4096 samples; a plugin
+that leaves a frame half-written for 2 s on a live job is replaced; after a recording's last part
+the plugin has 30 s plus 2 s per unanswered segment to exit; a restart resumes at the first segment
+with no record, so a segment that yields none is sent again (at least once, exactly once when every
+segment answers); a source job's plugin that exits four times without a record fails the job with
+`DECODER_FAILED`; a plugin is told a key is coming by `LEYLINE_KEY_ON_STDIN=1` in its environment,
+because the installed manifest, not the one compiled into the plugin, decides; a transmission that
+straddles a size-based part cut is listed to the cut only. `SEGMENTED` in `startDecode`: a
 `Segmenter` that follows the channel's squelch edges as `RecordRunner.followSquelch` does, keeps a
 pre-roll ring while shut, and writes `SEGMENT_START`, the over's frames, and an empty
 `SEGMENT_END` to the plugin; audio while the squelch is shut is never written. `source_uri`: a
@@ -736,7 +745,13 @@ exactly the samples the sidecar's interval covers plus pre-roll and tail; no fra
 the squelch is shut; a recording source transcribes a 60 s recording in under 5 s; a manifest
 naming `anthropic` with no key is `CREDENTIAL_MISSING` and names the command.
 
-**AI-5b, the plugin side and `ley transcribe` (Go).** `go/pkg/plugin` gains `Segmented`: a
+**AI-5b, the plugin side and `ley transcribe` (Go).** Done 2026-10-15. The SDK decodes segments
+on a worker behind a queue of eight so stdin is always read; `ley transcribe --model` sets the
+speech feature model before the job and restores it on a refusal, because the model reaches the
+plugin as `--model` at spawn; the callsign pattern accepts a one-letter prefix only from the
+letters issued alone and never `I`, and a four-letter suffix is not matched. The e2e test
+(`go/internal/e2e/transcribe_test.go`) transcribes a 14 s gated recording of three parts and four
+overs in under 15 s including the daemon start. `go/pkg/plugin` gains `Segmented`: a
 `SegmentDecoder` interface (`Segment(samples, at, emit)`) and the START/END framing, plus the
 credential read; `go/cmd/leydec-speech` with `--engine scripted` (reads a `LEYDEC_SPEECH_SCRIPT`
 file of lines, one per segment, and emits a record with `text`, `language`, `model`,
