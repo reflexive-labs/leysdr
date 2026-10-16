@@ -1286,7 +1286,7 @@ type ToolCall struct {
 	ResultText    string                 `protobuf:"bytes,5,opt,name=result_text,json=resultText,proto3" json:"result_text,omitempty"` // the tool's prose, once DONE
 	ResultJson    string                 `protobuf:"bytes,6,opt,name=result_json,json=resultJson,proto3" json:"result_json,omitempty"` // the tool's JSON, once DONE
 	IsError       bool                   `protobuf:"varint,7,opt,name=is_error,json=isError,proto3" json:"is_error,omitempty"`         // the tool ran and failed; result_text says why
-	Reason        string                 `protobuf:"bytes,8,opt,name=reason,proto3" json:"reason,omitempty"`                           // why it asks: the policy row, in words; AWAITING_APPROVAL only
+	Reason        string                 `protobuf:"bytes,8,opt,name=reason,proto3" json:"reason,omitempty"`                           // why it asked: the policy row, in words; set when the call asks first and kept after it runs, so a reader knows the call was one the user allowed
 	AtNs          int64                  `protobuf:"varint,9,opt,name=at_ns,json=atNs,proto3" json:"at_ns,omitempty"`                  // CLOCK_REALTIME the call was made
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

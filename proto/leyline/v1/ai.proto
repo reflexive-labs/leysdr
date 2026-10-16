@@ -187,7 +187,7 @@ message ToolCall {
   string result_text = 5;              // the tool's prose, once DONE
   string result_json = 6;              // the tool's JSON, once DONE
   bool is_error = 7;                   // the tool ran and failed; result_text says why
-  string reason = 8;                   // why it asks: the policy row, in words; AWAITING_APPROVAL only
+  string reason = 8;                   // why it asked: the policy row, in words; set when the call asks first and kept after it runs, so a reader knows the call was one the user allowed
   int64 at_ns = 9;                     // CLOCK_REALTIME the call was made
 }
 enum ToolCallState {
