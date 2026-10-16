@@ -183,7 +183,8 @@ Ranges read `24.000 MHz to 1.766 GHz`, never with a dash, so a dash always means
 - **A conversation is blocks.** `ley ask` prints the assistant's text on stdout and its tool calls
   on stderr; a blank line goes between a block of one and a block of the other, and after a turn
   before the next prompt. The blank lines go to stderr, so a redirected stdout holds the words and
-  nothing else, and a call that ran prints only its own line, since the text reports the result.
+  nothing else, and a call that ran prints only its own line, since the text reports the result;
+  a call the user allowed keeps its result's first line beneath it, the daemon's receipt.
 - **A chart draws its trace, not its area.** One glyph per column, on the row that column's
   value falls in, with a thin stem beneath it only where it stands above the reference line.
   Filling every cell under a column adds area without information: a flat noise floor covers

@@ -1093,7 +1093,8 @@ which host. The daemon holds the key and makes the choices, so one added in eith
 the other.
 
 Its answer prints as it arrives, and each tool it calls is one dim line on stderr, `→ tune
-{"freq":"162.4M"}`, with the error beneath it when the call fails. Reading state and the tuning,
+{"freq":"162.4M"}`, with the error beneath it when the call fails and the result beneath one you
+allowed. Reading state and the tuning,
 setting, stopping, scanning and recording you asked for run at once. Deleting a recording, taking
 over a radio someone else is using, keeping a job, adding a webhook and paid transcription ask
 first: answer `y` at the `[y/N]` question, or pass `--yes` to allow everything, which is how a

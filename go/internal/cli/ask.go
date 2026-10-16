@@ -43,7 +43,8 @@ func newAskCommand(app *App) *cobra.Command {
 		Short: "Ask the assistant to run the radio for you",
 		Long: `ask hands a request to the assistant, Leyline's own agent running on your
 provider key, and prints its answer as it arrives on stdout, with each tool
-it calls as one line on stderr and the error beneath it when a call fails.
+it calls as one line on stderr, with the error beneath it when a call fails
+and the result's first line beneath one that asked first.
 
 Reading the radio's state, and the tuning, setting, stopping, scanning and
 recording you ask for, run at once and are reported. Taking over a radio
@@ -720,7 +721,9 @@ func (v *askView) write(app *App, add string) {
 // renderCall prints a call as one muted line when it starts, and beneath it why a call failed, or
 // that it was declined. A call that ran is not followed by its result: the assistant's text
 // reports it, and no one line of a verb's output stands for the rest (get_state's first line is
-// the daemon's version, tune's the mode it chose, a listing's its header).
+// the daemon's version, tune's the mode it chose, a listing's its header). The exception is a
+// call that asked first: what the user allowed is one the daemon's receipt has to confirm
+// ("Deleted job_01K, 12.0 MB freed"), since the assistant's word for it is not evidence.
 func (v *askView) renderCall(app *App, c *leylinev1.ToolCall) {
 	was, seen := v.calls[c.GetCallId()]
 	now := c.GetState()
@@ -744,8 +747,12 @@ func (v *askView) renderCall(app *App, c *leylinev1.ToolCall) {
 	}
 	switch now {
 	case leylinev1.ToolCallState_TOOL_CALL_DONE:
-		if c.GetIsError() {
-			line("  " + s.Err(fitWidth(s, g.Fail+" "+firstLine(c.GetResultText()), 2)))
+		first := firstLine(c.GetResultText())
+		switch {
+		case c.GetIsError():
+			line("  " + s.Err(fitWidth(s, g.Fail+" "+first, 2)))
+		case was == leylinev1.ToolCallState_TOOL_CALL_AWAITING_APPROVAL && first != "":
+			line("  " + s.Muted(fitWidth(s, first, 2)))
 		}
 	case leylinev1.ToolCallState_TOOL_CALL_REFUSED:
 		line("  " + s.Warn(g.Fail+" declined"))

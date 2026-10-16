@@ -197,7 +197,7 @@ func TestAskApproval(t *testing.T) {
 	}{
 		{
 			name: "y on a terminal", o: askRunOpts{inTTY: true, stdin: "y\n"}, approved: true,
-			says: []string{question + " Allow? [y/N] y\n\nDone.\n"},
+			says: []string{question + " Allow? [y/N] y\n  Deleted job_01K, 12.0 MB freed\n\nDone.\n"},
 		},
 		{
 			name: "n on a terminal", o: askRunOpts{inTTY: true, stdin: "n\n"},
@@ -209,7 +209,7 @@ func TestAskApproval(t *testing.T) {
 		},
 		{
 			name: "--yes", flags: []string{"--yes"}, approved: true,
-			says: []string{question + " Allowed by --yes.\n\nDone.\n"},
+			says: []string{question + " Allowed by --yes.\n  Deleted job_01K, 12.0 MB freed\n\nDone.\n"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -352,7 +352,7 @@ func TestAskContinueAnswersAWaitingConversation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"which is waiting for an answer", "Allowed by --yes.\n\nDone.\n\nYou said: thanks\n"} {
+	for _, want := range []string{"which is waiting for an answer", "Allowed by --yes.\n  Deleted job_01K, 12.0 MB freed\n\nDone.\n\nYou said: thanks\n"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("lacks %q:\n%s", want, out)
 		}
@@ -417,6 +417,26 @@ func TestAskRenderFailedCall(t *testing.T) {
 	out, errOut := renderTurns(assistantTurn("Looking.\n\n", false, call), assistantTurn("Looking.\n\nIt is down.", true, call))
 	if out != "Looking.\n\nIt is down.\n" || errOut != "-> get_state\n  x the daemon is not running\n\n" {
 		t.Errorf("stdout %q, stderr %q", out, errOut)
+	}
+}
+
+// A call that asked first keeps the first line of its result under it once it is done, the
+// daemon's receipt for what the user allowed; the same call that did not ask shows none.
+func TestAskRenderReceiptForAnAskedCall(t *testing.T) {
+	call := func(st leylinev1.ToolCallState) *leylinev1.ToolCall {
+		return &leylinev1.ToolCall{CallId: "c1", Tool: "delete_recording", State: st, ResultText: "Deleted job_01K, 12.0 MB freed\nmanifest removed"}
+	}
+	out, errOut := renderTurns(assistantTurn("", false, call(leylinev1.ToolCallState_TOOL_CALL_AWAITING_APPROVAL)),
+		assistantTurn("", false, call(leylinev1.ToolCallState_TOOL_CALL_DONE)),
+		assistantTurn("Done.", true, call(leylinev1.ToolCallState_TOOL_CALL_DONE)))
+	if out != "Done.\n" || errOut != "  Deleted job_01K, 12.0 MB freed\n\n" {
+		t.Errorf("asked first: stdout %q, stderr %q", out, errOut)
+	}
+	_, errOut = renderTurns(assistantTurn("", false, call(leylinev1.ToolCallState_TOOL_CALL_RUNNING)),
+		assistantTurn("", false, call(leylinev1.ToolCallState_TOOL_CALL_DONE)),
+		assistantTurn("Done.", true, call(leylinev1.ToolCallState_TOOL_CALL_DONE)))
+	if errOut != "-> delete_recording\n\n" {
+		t.Errorf("did not ask: stderr %q", errOut)
 	}
 }
 

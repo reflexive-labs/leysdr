@@ -732,8 +732,9 @@ conversation once the previous turn is done, until a blank line or the end of st
 The assistant's text goes to stdout as it grows, so the terminal shows it arrive and `ley ask ... >
 answer.txt` keeps only the words. Each tool call is one dim line on stderr, `→ <tool> <arguments>`
 (`->` under `--ascii`), when it starts. A call that runs adds nothing more, since the assistant's
-text reports what it did; one that failed has `✗` and the first line of the error indented beneath
-it, and one that was refused `✗ declined`. The calls, the questions and the text are blocks with a
+text reports what it did, except one that asked first and was allowed: the first line of its
+result, the daemon's receipt for what the user allowed, is indented beneath it. One that failed
+has `✗` and the first line of the error indented beneath it, and one that was refused `✗ declined`. The calls, the questions and the text are blocks with a
 blank line on stderr between a block of calls and a block of text, and between a turn and the next
 `> ` prompt, so the blank lines never reach stdout. A call that asks first
 (taking over a radio, deleting a recording, keeping a job, a webhook notifier, several bookmark
@@ -791,6 +792,7 @@ It is playing now; ley stop ends it.
 $ ley ask "delete the last recording"
 The assistant wants to delete_recording {"recording":"job_01K"}: deleting a
 recording asks every time. Allow? [y/N] y
+  Deleted job_01K, 12.0 MB freed
 
 Done.
 
