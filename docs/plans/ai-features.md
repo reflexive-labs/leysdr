@@ -631,7 +631,12 @@ the key replaced, verbatim, JSON-escaped and percent-encoded, before they reach 
 event; the daemon's check path reports no usage because the worker does. The keychain store was
 written on Linux and never compiled: the Mac check is that `SetCredential` makes a login-keychain
 item (`com.leysdr.leyline`, account the provider) a launchd-started `leylined` reads without a
-prompt. A `CredentialStore` actor holding `ai.json` (metadata and feature models)
+prompt. Checked 2026-10-16: the item is made and the launchd daemon reads it, after one prompt per
+rebuilt `leylined`, because `swift build` signs ad hoc and the keychain's access list names that
+one build; "Always Allow" quiets it until the next `make reload`, and a Developer ID build has a
+stable identity, so the release will not prompt. Left as is by the owner. The first check under
+launchd also found no `ley`, since launchd's `PATH` has no Go bin: `ley daemon install` and
+`start` now pass their own path as `--ley`. A `CredentialStore` actor holding `ai.json` (metadata and feature models)
 and a `SecretStore` protocol with two implementations: `KeychainSecrets` under
 `#if canImport(Security)` (service `com.leysdr.leyline`, account = provider) and `FileSecrets`
 (`credentials.json`, 0600, atomic). `CredentialsService` with the five RPCs; `SetCredential`

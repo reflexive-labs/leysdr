@@ -144,6 +144,11 @@ ley daemon logs --follow
 ley daemon uninstall                                            # stops it and removes the plist
 ```
 
+A source build is signed ad hoc, so the login keychain treats each rebuilt `leylined` as a new
+program: the first time a rebuilt daemon reads a key it stored (`ley ai add`), macOS asks once.
+Choose Always Allow and it stays quiet until the next rebuild. The signed release has a stable
+identity and never asks.
+
 `ley daemon start|stop` work with or without the plist; without it they spawn and kill the binary
 directly. A clean `stop` stays stopped; only a crash is relaunched.
 
