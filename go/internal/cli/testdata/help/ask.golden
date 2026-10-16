@@ -1,6 +1,6 @@
 ask hands a request to the assistant, Leyline's own agent running on your
 provider key, and prints its answer as it arrives on stdout, with each tool
-it calls as one line on stderr and the first line of the result beneath it.
+it calls as one line on stderr and the error beneath it when a call fails.
 
 Reading the radio's state, and the tuning, setting, stopping, scanning and
 recording you ask for, run at once and are reported. Taking over a radio

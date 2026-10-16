@@ -152,17 +152,15 @@ var twoToolsTurn = fakedaemon.AssistantTurn{
 	{Text: "Tuning to the NOAA station. It is playing now; ley stop ends it."},
 }
 
-// Each tool call is one line on stderr when it starts and the first line of its result beneath
-// it when it is done; the turn's text goes on after them on a line of its own.
+// Each tool call is one line on stderr when it starts, and a call that ran adds nothing more; the
+// calls and the text are blocks with a blank line on stderr between them.
 func TestAskToolCalls(t *testing.T) {
 	t.Parallel()
 	screens := checkAskScreens(t, []fakedaemon.AssistantTurn{twoToolsTurn}, askRunOpts{}, "ask", "listen to the weather")
 	t.Logf("ley ask at 80 columns:\n%s", screens[80])
-	want := "Tuning to the NOAA station.\n" +
+	want := "Tuning to the NOAA station.\n\n" +
 		"→ tune {\"freq\":\"162.4M\",\"mode\":\"nfm\"}\n" +
-		"  Tuned to 162.400 MHz NFM on chan_01K\n" +
-		"→ set {\"param\":\"squelch\",\"value\":\"-45\",\"channel\":\"chan_01K\"}\n" +
-		"  Squelch -45.0 dBFS on 162.400 MHz\n" +
+		"→ set {\"param\":\"squelch\",\"value\":\"-45\",\"channel\":\"chan_01K\"}\n\n" +
 		"It is playing now; ley stop ends it.\n"
 	if screens[80] != want {
 		t.Errorf("80 columns:\n%s\nwant:\n%s", screens[80], want)
@@ -175,7 +173,7 @@ func TestAskToolCalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(out, "→") || !strings.Contains(errOut, "→ tune") {
+	if out != "Tuning to the NOAA station.\nIt is playing now; ley stop ends it.\n" || !strings.Contains(errOut, "→ tune") {
 		t.Errorf("the calls belong on stderr, the text on stdout\nstdout:\n%s\nstderr:\n%s", out, errOut)
 	}
 }
@@ -199,7 +197,7 @@ func TestAskApproval(t *testing.T) {
 	}{
 		{
 			name: "y on a terminal", o: askRunOpts{inTTY: true, stdin: "y\n"}, approved: true,
-			says: []string{question + " Allow? [y/N] y\n", "  Deleted job_01K, 12.0 MB freed"},
+			says: []string{question + " Allow? [y/N] y\n\nDone.\n"},
 		},
 		{
 			name: "n on a terminal", o: askRunOpts{inTTY: true, stdin: "n\n"},
@@ -211,7 +209,7 @@ func TestAskApproval(t *testing.T) {
 		},
 		{
 			name: "--yes", flags: []string{"--yes"}, approved: true,
-			says: []string{question + " Allowed by --yes.", "  Deleted job_01K"},
+			says: []string{question + " Allowed by --yes.\n\nDone.\n"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -354,7 +352,7 @@ func TestAskContinueAnswersAWaitingConversation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"which is waiting for an answer", "Allowed by --yes.", "  Deleted job_01K", "Done.\nYou said: thanks\n"} {
+	for _, want := range []string{"which is waiting for an answer", "Allowed by --yes.\n\nDone.\n\nYou said: thanks\n"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("lacks %q:\n%s", want, out)
 		}
@@ -390,21 +388,35 @@ func TestAskRenderTextRewrites(t *testing.T) {
 	}
 	out, errOut = renderTurns(assistantTurn("Tuning to 162.4", false), assistantTurn("Scanning instead", false),
 		assistantTurn("Scanning instead.", true))
-	if out != "Tuning to 162.4\nScanning instead.\n" || errOut != "(revised)\n" {
+	if out != "Tuning to 162.4\nScanning instead.\n" || errOut != "\n(revised)\n" {
 		t.Errorf("a rewrite: stdout %q, stderr %q", out, errOut)
 	}
 }
 
-// Leading whitespace is dropped from the first text after a tool line only.
+// Leading whitespace is dropped from the first text after a tool line only. A call that ran shows
+// no result, and a blank line on stderr separates the calls from the text on either side.
 func TestAskRenderTextTrimsOnlyAfterATool(t *testing.T) {
 	call := &leylinev1.ToolCall{CallId: "c1", Tool: "tune", State: leylinev1.ToolCallState_TOOL_CALL_DONE, ResultText: "Tuned"}
 	out, errOut := renderTurns(assistantTurn("Tuned.", false, call), assistantTurn("Tuned. Now listening.", true, call))
-	if out != "Tuned.\nNow listening.\n" || errOut != "-> tune\n  Tuned\n" {
+	if out != "Tuned.\nNow listening.\n" || errOut != "\n-> tune\n\n" {
 		t.Errorf("after a tool: stdout %q, stderr %q", out, errOut)
 	}
 	out, _ = renderTurns(assistantTurn("Steps:\n", false), assistantTurn("Steps:\n  1. tune", true))
 	if out != "Steps:\n  1. tune\n" {
 		t.Errorf("an indented line lost its indent: %q", out)
+	}
+}
+
+// A failed call shows the first line of why under it; text that already ends in a blank line gets
+// no second one before the calls.
+func TestAskRenderFailedCall(t *testing.T) {
+	call := &leylinev1.ToolCall{
+		CallId: "c1", Tool: "get_state", State: leylinev1.ToolCallState_TOOL_CALL_DONE, IsError: true,
+		ResultText: "the daemon is not running\nstart it with: ley daemon start",
+	}
+	out, errOut := renderTurns(assistantTurn("Looking.\n\n", false, call), assistantTurn("Looking.\n\nIt is down.", true, call))
+	if out != "Looking.\n\nIt is down.\n" || errOut != "-> get_state\n  x the daemon is not running\n\n" {
+		t.Errorf("stdout %q, stderr %q", out, errOut)
 	}
 }
 
@@ -524,7 +536,7 @@ func TestAskPromptLoop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "> Tuning to the weather station.\n> Squelch is at -45 dBFS.\n> \n"
+	want := "> Tuning to the weather station.\n\n> Squelch is at -45 dBFS.\n\n> \n"
 	if out != want {
 		t.Errorf("transcript %q, want %q", out, want)
 	}
@@ -535,7 +547,7 @@ func TestAskPromptLoop(t *testing.T) {
 	// A blank line ends the loop too.
 	sock, _ = askHarness(t)
 	out, _, err = runAskLey(t, sock, askRunOpts{width: 80, merged: true, stdin: "hi\n\nnot sent\n"}, "ask")
-	if err != nil || out != "> You said: hi\n> " {
+	if err != nil || out != "> You said: hi\n\n> " {
 		t.Errorf("transcript %q, err %v", out, err)
 	}
 }

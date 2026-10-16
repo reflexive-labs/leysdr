@@ -72,8 +72,8 @@ Six roles. Use the role, never a colour name, at the call site.
 
 | Role | Rendering | Use for |
 |---|---|---|
-| `Label` | bold | table headers, field labels, the left column of a label block, verb names in help |
-| `Muted` | dim | ids the user is not being asked to read, units, hints, scaffolding, values below the noise floor |
+| `Label` | bold | table headers, field labels, the left column of a label block, verb names in help, the `ley ask` prompt |
+| `Muted` | dim | ids the user is not being asked to read, units, hints, scaffolding, values below the noise floor, the assistant's tool calls in `ley ask` |
 | `Ok` | green | `ACTIVE`, `AVAILABLE`, audio flowing, squelch open, a successful action |
 | `Warn` | yellow | `OUT_OF_CAPTURE`, `IN_USE` by another program, muted audio, a degraded but working state |
 | `Err` | red | `DISCONNECTED`, `CAPTURE_DETACHED`, the `ley:` error prefix, a rejected write |
@@ -151,6 +151,9 @@ survives as height.
 | Frame | `╭╮╰╯│─` | `+|-` | `ui.Style.Box`, for a chart that deserves one |
 | Tree branch / last / trunk | `├─` `└─` `│` | `+-` `\-` `|` | `ley state` hierarchy |
 | Absent value | `-` | `-` | never blank, never the same glyph as a range separator |
+| Tool call | `→` | `->` | leads a `ley ask` line naming a call the assistant made |
+| Failed call | `✗` | `x` | under a `ley ask` call that failed (`Err`) or was declined (`Warn`) |
+| Prompt | `>` | `>` | `ley ask`'s request prompt |
 
 Ranges read `24.000 MHz to 1.766 GHz`, never with a dash, so a dash always means
 "no value".
@@ -177,6 +180,10 @@ Ranges read `24.000 MHz to 1.766 GHz`, never with a dash, so a dash always means
 - **A screen ends with what to do next** when the user is likely to be mid-task:
   one `Cmd` line, never a paragraph.
 - **Blank lines group**; rules separate sections only when a blank line is not enough.
+- **A conversation is blocks.** `ley ask` prints the assistant's text on stdout and its tool calls
+  on stderr; a blank line goes between a block of one and a block of the other, and after a turn
+  before the next prompt. The blank lines go to stderr, so a redirected stdout holds the words and
+  nothing else, and a call that ran prints only its own line, since the text reports the result.
 - **A chart draws its trace, not its area.** One glyph per column, on the row that column's
   value falls in, with a thin stem beneath it only where it stands above the reference line.
   Filling every cell under a column adds area without information: a flat noise floor covers

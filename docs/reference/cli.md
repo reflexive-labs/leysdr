@@ -730,9 +730,12 @@ request, `ask` prints `> ` on stderr and reads one request per line, each sent i
 conversation once the previous turn is done, until a blank line or the end of stdin.
 
 The assistant's text goes to stdout as it grows, so the terminal shows it arrive and `ley ask ... >
-answer.txt` keeps only the words. Each tool call is one line on stderr, `→ <tool> <arguments>`,
-when it starts, with the first line of its result indented beneath it when it is done, `✗` and the
-error for a call that failed, and `✗ declined` for one that was refused. A call that asks first
+answer.txt` keeps only the words. Each tool call is one dim line on stderr, `→ <tool> <arguments>`
+(`->` under `--ascii`), when it starts. A call that runs adds nothing more, since the assistant's
+text reports what it did; one that failed has `✗` and the first line of the error indented beneath
+it, and one that was refused `✗ declined`. The calls, the questions and the text are blocks with a
+blank line on stderr between a block of calls and a block of text, and between a turn and the next
+`> ` prompt, so the blank lines never reach stdout. A call that asks first
 (taking over a radio, deleting a recording, keeping a job, a webhook notifier, several bookmark
 writes, paid transcription; `docs/design/ai.md`, "What the assistant may do") is a question on
 stderr, `The assistant wants to <tool> <arguments>: <reason>. Allow? [y/N]`, and the answer goes to
@@ -779,16 +782,16 @@ script's. In the second, stdin is a simulated terminal on which `y` is typed.
 ```
 $ ley ask "listen to the NOAA weather radio"
 Tuning to the NOAA station.
+
 → tune {"freq":"162.4M","mode":"nfm"}
-  Tuned to 162.400 MHz NFM on chan_01K
 → set {"param":"squelch","value":"-45","channel":"chan_01K"}
-  Squelch -45.0 dBFS on 162.400 MHz
+
 It is playing now; ley stop ends it.
 
 $ ley ask "delete the last recording"
 The assistant wants to delete_recording {"recording":"job_01K"}: deleting a
 recording asks every time. Allow? [y/N] y
-  Deleted job_01K, 12.0 MB freed
+
 Done.
 
 $ ley ask "delete the last recording" < /dev/null
@@ -796,6 +799,7 @@ The assistant wants to delete_recording {"recording":"job_01K"}: deleting a
 recording asks every time. Declined: stdin is not a terminal, so nobody can
 answer. Pass --yes to allow what the assistant asks.
   ✗ declined
+
 Done.
 ```
 

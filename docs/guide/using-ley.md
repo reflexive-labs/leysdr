@@ -1092,8 +1092,8 @@ models it set under Features, change one there, and read under each choice what 
 which host. The daemon holds the key and makes the choices, so one added in either place shows in
 the other.
 
-Its answer prints as it arrives, and each tool it calls is one line on stderr, `→ tune
-{"freq":"162.4M"}`, with the first line of the result beneath it. Reading state and the tuning,
+Its answer prints as it arrives, and each tool it calls is one dim line on stderr, `→ tune
+{"freq":"162.4M"}`, with the error beneath it when the call fails. Reading state and the tuning,
 setting, stopping, scanning and recording you asked for run at once. Deleting a recording, taking
 over a radio someone else is using, keeping a job, adding a webhook and paid transcription ask
 first: answer `y` at the `[y/N]` question, or pass `--yes` to allow everything, which is how a

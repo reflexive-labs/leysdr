@@ -356,8 +356,9 @@ func checkAskTune(t *testing.T, r *askRig) string {
 	if !toolLine(errOut, `tune {"frequency":"146.52M","keep":true,"mode":"nfm"}`) {
 		t.Errorf("ley ask stderr lacks the tune line: %q", errOut)
 	}
-	if !strings.Contains(errOut, "\n  ") || strings.Contains(errOut, "✗") {
-		t.Errorf("ley ask stderr lacks the tune's result line, or shows an error: %q", errOut)
+	// A call that ran is its one line; the assistant's text reports the result.
+	if strings.Contains(errOut, "\n  ") || strings.Contains(errOut, "✗") {
+		t.Errorf("ley ask stderr shows a result under a call that ran, or an error: %q", errOut)
 	}
 
 	cvs := r.conversations()

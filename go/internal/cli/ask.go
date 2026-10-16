@@ -43,7 +43,7 @@ func newAskCommand(app *App) *cobra.Command {
 		Short: "Ask the assistant to run the radio for you",
 		Long: `ask hands a request to the assistant, Leyline's own agent running on your
 provider key, and prints its answer as it arrives on stdout, with each tool
-it calls as one line on stderr and the first line of the result beneath it.
+it calls as one line on stderr and the error beneath it when a call fails.
 
 Reading the radio's state, and the tuning, setting, stopping, scanning and
 recording you ask for, run at once and are reported. Taking over a radio
@@ -179,6 +179,7 @@ func runAsk(ctx context.Context, app *App, o askOptions, request string, interru
 		}
 	}
 	if request != "" {
+		r.view.endTurn(app)
 		return r.turn(request)
 	}
 	return r.promptLoop()
@@ -275,7 +276,8 @@ func (r *askRun) watch(ctx context.Context) error {
 // stdin. Ctrl-C at the prompt ends the conversation.
 func (r *askRun) promptLoop() error {
 	for {
-		fmt.Fprint(r.app.Stderr, "> ")
+		r.view.endTurn(r.app)
+		fmt.Fprint(r.app.Stderr, r.app.ErrStyle.Label(">")+" ")
 		line, err := r.readLine()
 		if errors.Is(err, errInterrupted) {
 			fmt.Fprintln(r.app.Stderr)
@@ -385,7 +387,7 @@ func (r *askRun) interrupt(stops int) error {
 		// The daemon has ended it already; its last state, on its way, ends the run.
 		return nil
 	}
-	r.view.breakLine(r.app)
+	r.view.group(r.app, askTrace)
 	fmt.Fprintln(r.app.Stderr, r.app.ErrStyle.Muted("Stopping the assistant; Ctrl-C again ends the conversation"))
 	if _, err := r.c.Assistant.StopTurn(r.ctx, &leylinev1.ConversationRef{ConversationId: r.conv.GetConversationId()}); err != nil {
 		return r.app.notRunning(err)
@@ -475,7 +477,7 @@ func (r *askRun) answer(p *leylinev1.PendingAction) error {
 		})
 		return r.settled(err)
 	}
-	r.view.breakLine(r.app)
+	r.view.group(r.app, askTrace)
 	s := r.app.ErrStyle
 	what := "The assistant wants to " + strings.TrimSpace(p.GetTool()+" "+compactArgs(p.GetArgumentsJson()))
 	if reason := strings.TrimRight(strings.TrimSpace(p.GetReason()), "."); reason != "" {
@@ -580,6 +582,11 @@ func compactArgs(args string) string {
 // askView is what ask has printed of the conversation: each assistant turn's text so far and the
 // state each tool call was last shown in. The text goes to stdout and the calls to stderr, so a
 // line of text is ended before a call is printed.
+//
+// The screen is in blocks: the assistant's text is one kind, and the trace (the calls, the
+// questions, ask's own notes) the other. A blank line on stderr goes between two blocks of
+// different kinds and between a turn and the next prompt, so stdout keeps only the assistant's
+// words (docs/dev/cli-style.md, "Blank lines group").
 type askView struct {
 	text  map[string]string
 	calls map[string]leylinev1.ToolCallState
@@ -587,10 +594,21 @@ type askView struct {
 	// is printed whole once the turn is done.
 	revised map[string]bool
 	midLine bool
-	// afterTool is set by a tool line and cleared by the text after it, which alone loses its
-	// leading whitespace, since it starts a line of its own.
-	afterTool bool
+	// last is the kind of block printed last; askNone at the start of a turn.
+	last askBlock
+	// blankEnd is set when the text printed last ends in a blank line of its own, so no second
+	// one is added after it.
+	blankEnd bool
 }
+
+// askBlock is a kind of block on ask's screen.
+type askBlock int
+
+const (
+	askNone askBlock = iota
+	askText
+	askTrace
+)
 
 // adopt marks everything in cv as shown: what was said before this run, and the user's turns.
 func (v *askView) adopt(cv *leylinev1.Conversation) {
@@ -608,6 +626,32 @@ func (v *askView) breakLine(app *App) {
 		fmt.Fprintln(app.Stdout)
 		v.midLine = false
 	}
+}
+
+// separate ends the open line and leaves a blank one on stderr, unless nothing has been printed
+// since the last separation or the text already ends in one.
+func (v *askView) separate(app *App) {
+	v.breakLine(app)
+	if v.last != askNone && (v.last != askText || !v.blankEnd) {
+		fmt.Fprintln(app.Stderr)
+	}
+}
+
+// endTurn leaves a blank line after a turn that printed anything, before the next prompt or
+// request.
+func (v *askView) endTurn(app *App) {
+	v.separate(app)
+	v.last = askNone
+}
+
+// group starts a block of kind b, after a blank line when the block before it is of the other
+// kind.
+func (v *askView) group(app *App, b askBlock) {
+	if v.last != b {
+		v.separate(app)
+	}
+	v.breakLine(app)
+	v.last = b
 }
 
 // render prints what cv adds to what has been shown: the new end of each assistant turn's text,
@@ -631,11 +675,12 @@ func (v *askView) renderText(app *App, t *leylinev1.Turn) {
 		if !t.GetDone() {
 			return
 		}
-		// The rewritten text, whole, once the worker has finished it.
+		// The rewritten text, whole, once the worker has finished it, directly under its note.
 		delete(v.revised, id)
 		v.text[id] = now
-		v.breakLine(app)
+		v.group(app, askTrace)
 		fmt.Fprintln(app.Stderr, app.ErrStyle.Muted("(revised)"))
+		v.last = askNone
 		v.write(app, now)
 		return
 	case strings.HasPrefix(was, now):
@@ -655,20 +700,27 @@ func (v *askView) renderText(app *App, t *leylinev1.Turn) {
 	v.write(app, strings.TrimPrefix(now, was))
 }
 
-// write prints text on stdout, dropping the leading whitespace of the first text after a tool
-// line.
+// write prints text on stdout. Text that starts a block loses its leading whitespace, since the
+// block starts a line of its own.
 func (v *askView) write(app *App, add string) {
-	if v.afterTool {
-		add = strings.TrimLeft(add, " \n")
+	if v.last != askText {
+		if add = strings.TrimLeft(add, " \n"); add == "" {
+			return
+		}
+		v.group(app, askText)
 	}
 	if add == "" {
 		return
 	}
-	v.afterTool = false
 	fmt.Fprint(app.Stdout, add)
 	v.midLine = !strings.HasSuffix(add, "\n")
+	v.blankEnd = strings.HasSuffix(add, "\n\n")
 }
 
+// renderCall prints a call as one muted line when it starts, and beneath it why a call failed, or
+// that it was declined. A call that ran is not followed by its result: the assistant's text
+// reports it, and no one line of a verb's output stands for the rest (get_state's first line is
+// the daemon's version, tune's the mode it chose, a listing's its header).
 func (v *askView) renderCall(app *App, c *leylinev1.ToolCall) {
 	was, seen := v.calls[c.GetCallId()]
 	now := c.GetState()
@@ -677,10 +729,10 @@ func (v *askView) renderCall(app *App, c *leylinev1.ToolCall) {
 	}
 	v.calls[c.GetCallId()] = now
 	s := app.ErrStyle
+	g := s.Glyphs()
 	line := func(text string) {
-		v.breakLine(app)
+		v.group(app, askTrace)
 		fmt.Fprintln(app.Stderr, text)
-		v.afterTool = true
 	}
 	switch now {
 	case leylinev1.ToolCallState_TOOL_CALL_AWAITING_APPROVAL, leylinev1.ToolCallState_TOOL_CALL_AWAITING_CLIENT:
@@ -688,19 +740,15 @@ func (v *askView) renderCall(app *App, c *leylinev1.ToolCall) {
 		return
 	}
 	if !seen {
-		line(s.Muted(fitWidth(s, askGlyph(s, "→", "->")+" "+strings.TrimSpace(c.GetTool()+" "+compactArgs(c.GetArgumentsJson())), 0)))
+		line(s.Muted(fitWidth(s, g.Call+" "+strings.TrimSpace(c.GetTool()+" "+compactArgs(c.GetArgumentsJson())), 0)))
 	}
 	switch now {
 	case leylinev1.ToolCallState_TOOL_CALL_DONE:
-		first := firstLine(c.GetResultText())
-		switch {
-		case c.GetIsError():
-			line("  " + s.Err(fitWidth(s, askGlyph(s, "✗", "x")+" "+first, 2)))
-		case first != "":
-			line("  " + s.Muted(fitWidth(s, first, 2)))
+		if c.GetIsError() {
+			line("  " + s.Err(fitWidth(s, g.Fail+" "+firstLine(c.GetResultText()), 2)))
 		}
 	case leylinev1.ToolCallState_TOOL_CALL_REFUSED:
-		line("  " + s.Warn(askGlyph(s, "✗", "x")+" declined"))
+		line("  " + s.Warn(g.Fail+" declined"))
 	}
 }
 
@@ -718,12 +766,4 @@ func firstLine(text string) string {
 		return strings.TrimSpace(text[:i])
 	}
 	return text
-}
-
-// askGlyph is a glyph of ask's own, with its ASCII stand-in.
-func askGlyph(s ui.Style, unicode, ascii string) string {
-	if s.Unicode {
-		return unicode
-	}
-	return ascii
 }

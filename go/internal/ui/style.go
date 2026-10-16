@@ -96,6 +96,9 @@ type Glyphs struct {
 	Absent string
 	// Ellipsis marks text Truncate had to cut.
 	Ellipsis string
+	// Call leads a line that names a tool the assistant called (ley ask), and
+	// Fail marks a call that failed or was declined.
+	Call, Fail string
 }
 
 var (
@@ -115,6 +118,8 @@ var (
 		TreeTrunk:   "│",
 		Absent:      "-",
 		Ellipsis:    "…",
+		Call:        "→",
+		Fail:        "✗",
 	}
 	asciiGlyphs = Glyphs{
 		Ramp:        " .:-=+*#%",
@@ -132,6 +137,8 @@ var (
 		TreeTrunk:   "|",
 		Absent:      "-",
 		Ellipsis:    "...",
+		Call:        "->",
+		Fail:        "x",
 	}
 )
 
