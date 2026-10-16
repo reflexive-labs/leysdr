@@ -490,6 +490,12 @@ func checkAskReceivedText(t *testing.T, r *askRig) {
 		!strings.Contains(tune.GetReason(), "received over the air") {
 		t.Errorf("tune after reading records: %v", tune)
 	}
+	// The allowed call keeps the daemon's receipt beneath it: the worker runs it through RUNNING,
+	// and the reason it asked with is what ask reads.
+	if receipt := strings.TrimSpace(strings.SplitN(strings.TrimSpace(cs[1].GetResultText()), "\n", 2)[0]); receipt == "" ||
+		!strings.Contains(errOut, "\n  "+receipt) {
+		t.Errorf("ley ask stderr lacks the tune's receipt %q: %q", receipt, errOut)
+	}
 	r.mustLey("", "stop", "all")
 }
 

@@ -597,9 +597,10 @@ type askView struct {
 	midLine bool
 	// last is the kind of block printed last; askNone at the start of a turn.
 	last askBlock
-	// blankEnd is set when the text printed last ends in a blank line of its own, so no second
-	// one is added after it.
+	// blankEnd is set when the text block printed last ends in a blank line of its own, so no
+	// second one is added after it; tail is that block's last two bytes.
 	blankEnd bool
+	tail     string
 }
 
 // askBlock is a kind of block on ask's screen.
@@ -701,29 +702,38 @@ func (v *askView) renderText(app *App, t *leylinev1.Turn) {
 	v.write(app, strings.TrimPrefix(now, was))
 }
 
-// write prints text on stdout. Text that starts a block loses its leading whitespace, since the
-// block starts a line of its own.
+// write prints text on stdout. The first text after a tool line loses its leading whitespace,
+// since it starts a line of its own; text anywhere else keeps it, so an answer that opens with an
+// indented command keeps the indent.
 func (v *askView) write(app *App, add string) {
-	if v.last != askText {
-		if add = strings.TrimLeft(add, " \n"); add == "" {
-			return
-		}
-		v.group(app, askText)
+	if v.last == askTrace {
+		add = strings.TrimLeft(add, " \n")
 	}
 	if add == "" {
 		return
 	}
+	if v.last != askText {
+		v.group(app, askText)
+		v.tail = ""
+	}
 	fmt.Fprint(app.Stdout, add)
 	v.midLine = !strings.HasSuffix(add, "\n")
-	v.blankEnd = strings.HasSuffix(add, "\n\n")
+	// The end of the block so far, not of this piece: a blank line may arrive split in two.
+	v.tail += add
+	if n := len(v.tail); n > 2 {
+		v.tail = v.tail[n-2:]
+	}
+	v.blankEnd = v.tail == "\n\n"
 }
 
 // renderCall prints a call as one muted line when it starts, and beneath it why a call failed, or
 // that it was declined. A call that ran is not followed by its result: the assistant's text
 // reports it, and no one line of a verb's output stands for the rest (get_state's first line is
 // the daemon's version, tune's the mode it chose, a listing's its header). The exception is a
-// call that asked first: what the user allowed is one the daemon's receipt has to confirm
-// ("Deleted job_01K, 12.0 MB freed"), since the assistant's word for it is not evidence.
+// call that asked first, which keeps its reason once it has run: what the user allowed is one the
+// daemon's receipt has to confirm ("Deleted job_01K, 12.0 MB freed"), since the assistant's word
+// for it is not evidence. The reason is read rather than the states the view saw, since the
+// worker runs an allowed call through RUNNING and one update may carry the question and the end.
 func (v *askView) renderCall(app *App, c *leylinev1.ToolCall) {
 	was, seen := v.calls[c.GetCallId()]
 	now := c.GetState()
@@ -751,7 +761,7 @@ func (v *askView) renderCall(app *App, c *leylinev1.ToolCall) {
 		switch {
 		case c.GetIsError():
 			line("  " + s.Err(fitWidth(s, g.Fail+" "+first, 2)))
-		case was == leylinev1.ToolCallState_TOOL_CALL_AWAITING_APPROVAL && first != "":
+		case c.GetReason() != "" && first != "":
 			line("  " + s.Muted(fitWidth(s, first, 2)))
 		}
 	case leylinev1.ToolCallState_TOOL_CALL_REFUSED:

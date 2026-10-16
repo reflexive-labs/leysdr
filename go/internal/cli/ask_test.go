@@ -421,22 +421,49 @@ func TestAskRenderFailedCall(t *testing.T) {
 }
 
 // A call that asked first keeps the first line of its result under it once it is done, the
-// daemon's receipt for what the user allowed; the same call that did not ask shows none.
+// daemon's receipt for what the user allowed, whatever states the view saw on the way: the
+// worker's own (waiting, running, done) or the end alone in one update. A call that did not ask
+// shows none.
 func TestAskRenderReceiptForAnAskedCall(t *testing.T) {
-	call := func(st leylinev1.ToolCallState) *leylinev1.ToolCall {
-		return &leylinev1.ToolCall{CallId: "c1", Tool: "delete_recording", State: st, ResultText: "Deleted job_01K, 12.0 MB freed\nmanifest removed"}
+	const reason = "deleting a recording asks every time."
+	call := func(st leylinev1.ToolCallState, reason string) *leylinev1.ToolCall {
+		return &leylinev1.ToolCall{
+			CallId: "c1", Tool: "delete_recording", State: st, Reason: reason,
+			ResultText: "Deleted job_01K, 12.0 MB freed\nmanifest removed",
+		}
 	}
-	out, errOut := renderTurns(assistantTurn("", false, call(leylinev1.ToolCallState_TOOL_CALL_AWAITING_APPROVAL)),
-		assistantTurn("", false, call(leylinev1.ToolCallState_TOOL_CALL_DONE)),
-		assistantTurn("Done.", true, call(leylinev1.ToolCallState_TOOL_CALL_DONE)))
+	const (
+		waiting = leylinev1.ToolCallState_TOOL_CALL_AWAITING_APPROVAL
+		running = leylinev1.ToolCallState_TOOL_CALL_RUNNING
+		done    = leylinev1.ToolCallState_TOOL_CALL_DONE
+	)
+	out, errOut := renderTurns(assistantTurn("", false, call(waiting, reason)), assistantTurn("", false, call(running, reason)),
+		assistantTurn("", false, call(done, reason)), assistantTurn("Done.", true, call(done, reason)))
 	if out != "Done.\n" || errOut != "  Deleted job_01K, 12.0 MB freed\n\n" {
-		t.Errorf("asked first: stdout %q, stderr %q", out, errOut)
+		t.Errorf("waiting, running, done: stdout %q, stderr %q", out, errOut)
 	}
-	_, errOut = renderTurns(assistantTurn("", false, call(leylinev1.ToolCallState_TOOL_CALL_RUNNING)),
-		assistantTurn("", false, call(leylinev1.ToolCallState_TOOL_CALL_DONE)),
-		assistantTurn("Done.", true, call(leylinev1.ToolCallState_TOOL_CALL_DONE)))
+	_, errOut = renderTurns(assistantTurn("", false, call(done, reason)), assistantTurn("Done.", true, call(done, reason)))
+	if errOut != "-> delete_recording\n  Deleted job_01K, 12.0 MB freed\n\n" {
+		t.Errorf("done in one update: stderr %q", errOut)
+	}
+	_, errOut = renderTurns(assistantTurn("", false, call(running, "")), assistantTurn("", false, call(done, "")),
+		assistantTurn("Done.", true, call(done, "")))
 	if errOut != "-> delete_recording\n\n" {
 		t.Errorf("did not ask: stderr %q", errOut)
+	}
+}
+
+// A blank line that arrives split across two pieces of text still counts, so no second one is
+// added before the calls; and text that opens a turn keeps its indent on stdout.
+func TestAskRenderTextBlankAndIndent(t *testing.T) {
+	call := &leylinev1.ToolCall{CallId: "c1", Tool: "tune", State: leylinev1.ToolCallState_TOOL_CALL_DONE}
+	out, errOut := renderTurns(assistantTurn("Hi\n", false), assistantTurn("Hi\n\n", false), assistantTurn("Hi\n\n", true, call))
+	if out != "Hi\n\n" || errOut != "-> tune\n" {
+		t.Errorf("a split blank line: stdout %q, stderr %q", out, errOut)
+	}
+	out, _ = renderTurns(assistantTurn("  ley tune 1\n", true))
+	if out != "  ley tune 1\n" {
+		t.Errorf("the opening indent was lost: %q", out)
 	}
 }
 

@@ -734,11 +734,12 @@ answer.txt` keeps only the words. Each tool call is one dim line on stderr, `→
 (`->` under `--ascii`), when it starts. A call that runs adds nothing more, since the assistant's
 text reports what it did, except one that asked first and was allowed: the first line of its
 result, the daemon's receipt for what the user allowed, is indented beneath it. One that failed
-has `✗` and the first line of the error indented beneath it, and one that was refused `✗ declined`. The calls, the questions and the text are blocks with a
-blank line on stderr between a block of calls and a block of text, and between a turn and the next
-`> ` prompt, so the blank lines never reach stdout. A call that asks first
-(taking over a radio, deleting a recording, keeping a job, a webhook notifier, several bookmark
-writes, paid transcription; `docs/design/ai.md`, "What the assistant may do") is a question on
+has `✗` and the first line of the error indented beneath it, and one that was refused
+`✗ declined`. The calls, the questions and the text are blocks with a blank line on stderr between
+a block of calls and a block of text, and between a turn and the next `> ` prompt, so the blank
+lines never reach stdout. A call that asks first (taking over a radio, deleting a recording,
+keeping a job, a webhook notifier, several bookmark writes, paid transcription;
+`docs/design/ai.md`, "What the assistant may do") is a question on
 stderr, `The assistant wants to <tool> <arguments>: <reason>. Allow? [y/N]`, and the answer goes to
 the daemon with `ResolveAction`. `--yes` (`-y`) allows every such call, which is how an agent or a
 script runs `ask`; when stdin is not a terminal and `--yes` is absent, the call is declined with a
