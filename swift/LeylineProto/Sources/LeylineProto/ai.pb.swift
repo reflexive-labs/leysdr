@@ -622,7 +622,7 @@ public nonisolated struct Leyline_V1_ToolCall: Sendable {
   /// the tool ran and failed; result_text says why
   public var isError: Bool = false
 
-  /// why it asks: the policy row, in words; AWAITING_APPROVAL only
+  /// why it asked: the policy row, in words; set when the call asks first and kept after it runs, so a reader knows the call was one the user allowed
   public var reason: String = String()
 
   /// CLOCK_REALTIME the call was made
