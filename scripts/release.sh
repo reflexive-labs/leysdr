@@ -167,12 +167,13 @@ rehearse() {
 
 # build: the release, from the Go build to the appcast.
 build() {
-  local version=$1 out=$2 identity app dmg json id status stage d tagged
+  local version=$1 out=$2 identity identities app dmg json id status stage d tagged
   identity=${CODESIGN_IDENTITY:-}
   [ -n "$identity" ] && [ "$identity" != "-" ] \
     || die "CODESIGN_IDENTITY must name the Developer ID Application identity (security find-identity -v -p codesigning)"
   [ -n "${NOTARY_PROFILE:-}" ] || die "NOTARY_PROFILE must name the notarytool keychain profile (xcrun notarytool store-credentials)"
-  security find-identity -v -p codesigning | grep -qF "\"$identity\"" \
+  identities=$(security find-identity -v -p codesigning)
+  grep -qF "\"$identity\"" <<<"$identities" \
     || die "no valid signing identity \"$identity\" in the keychain"
   [ "$(engine_version engine/Sources/LeylineDaemon/Version.swift)" = "$version" ] \
     || die "engine/Sources/LeylineDaemon/Version.swift does not say $version; run make version and commit it"
