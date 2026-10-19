@@ -1619,13 +1619,20 @@ the Mac, and the system-audio sink cannot attach on Linux.
   moves the readout, the inspector, the rail's selection and the transmissions log to the
   assistant's channel, the audio with them (one stream, no echo), and the inspector reads "The
   assistant tuned to 162.400 MHz NFM." (with the squelch it set, when it set one).
-- The sidebar's out-of-capture flag on the old channel ("Outside the radio's 20 MHz around …")
-  goes, because the window's GMRS channel is ended; `ley state` lists one channel for the app at
-  most.
+- With no recording on it, the window's GMRS channel is ended, so the sidebar's out-of-capture
+  flag on it ("Outside the radio's 20 MHz around …") goes and `ley state` lists no channel of the
+  app's beside the assistant's. With a recording on it, the channel stays (next item).
 - "Listen to NOAA" in the window's own assistant panel does the same.
 - `ley tune 146.52` in a terminal on the window's radio: the window follows it, with no second
-  sink (the terminal's plays), and when the terminal is stopped with Ctrl-C the window makes a
-  channel of its own on 146.520 MHz about 5 s later and plays it.
+  sink after the 1 s settle (the terminal's plays), the inspector reads "The audio plays through
+  another terminal.", and the mute button and volume slider are disabled; when the terminal is
+  stopped with Ctrl-C the window makes a channel of its own on 146.520 MHz about 5 s later and
+  plays it at the window's volume.
+- Mute, unmute and the volume act on the window's own sink only; after unmuting, the volume is
+  the one set before.
+- Quit the daemon (or let it restart) while the window is open, then `ley ask "listen to the
+  weather radio"`: the window still follows. With the window disconnected, a terminal that
+  moves the radio and tunes leaves the window, on reconnecting, on the terminal's channel.
 - With Record transmissions on for the window's channel, a tune from `ley ask` leaves the
   recording running and the inspector shows "Your channel on … stays open while it records.";
   switching the recording off ends that channel and the line goes.

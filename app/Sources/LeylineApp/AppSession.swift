@@ -46,9 +46,13 @@ final class AppSession {
     /// (`ChannelFollow`). Not observed: every tune moves its floor, and what a view reads from it
     /// (`followKeptWords`) changes only inside `mirrorChanged`, beside `state`, which is.
     @ObservationIgnored private var follow = ChannelFollow()
-    /// The sink this window attached last, so a follow detaches its own sink and never another
-    /// client's.
-    @ObservationIgnored private var ownSinkID: String?
+    /// The sink this window attached, held as the capture and channel are: a `Sink` names no
+    /// owner, and after a follow another client's sink may play the held channel, which mute,
+    /// volume, a sweep and a part's playback must never detach or change.
+    private var heldSink = HeldObject<Leyline_V1_Sink>()
+    /// The window's volume, given to every sink it attaches, so an unmute or a follow does not
+    /// come back at full volume.
+    @ObservationIgnored private var volume: Double = 1
     private(set) var selectedBandID: String?
     private var adopted = false
     /// The frequency this app last asked for, until the daemon confirms it or two seconds pass:
@@ -408,11 +412,20 @@ final class AppSession {
     var capture: Leyline_V1_Capture? { heldCapture.current { state.capture($0) } }
     var channel: Leyline_V1_Channel? { heldChannel.current { state.channel($0) } }
     var device: Leyline_V1_DeviceDescriptor? { capture.flatMap { state.device($0.deviceID) } }
+    /// The window's own sink on the held channel; nil when it has none there, even while
+    /// another client's sink plays the channel (`audioElsewhere`).
     var sink: Leyline_V1_Sink? {
-        guard let channelID else { return nil }
-        return state.sinks(of: channelID).first {
-            if case .systemAudio? = $0.kind { true } else { false }
-        }
+        guard let channelID,
+            let s = heldSink.current({ id in state.sinks.first { $0.sinkID == id } }),
+            s.channelID == channelID
+        else { return nil }
+        return s
+    }
+    /// "The audio plays through another terminal.": another client's sink plays the held
+    /// channel and the window has none, so mute and volume have nothing of the window's to act
+    /// on.
+    var audioElsewhere: String? {
+        ChannelFollow.playsThroughWords(in: state, held: channelID, windowSinkID: heldSink.id)
     }
     var tunedHz: UInt64? { channel.flatMap { state.frequencyHz(of: $0) } }
     /// The frequency to show: the one asked for while it is in flight, else the daemon's.
@@ -421,7 +434,7 @@ final class AppSession {
     var displayHz: UInt64? { requestedHz ?? tunedHz ?? (sweeping ? sweep?.paused?.hz : nil) }
     /// The transport bar's speaker: muted is no sink on the channel (the daemon has no mute), and
     /// the channel, its squelch and the meter carry on.
-    var isMuted: Bool { sink == nil }
+    var isMuted: Bool { sink == nil && audioElsewhere == nil }
     var meter: Leyline_V1_Meter? { telemetry.meter }
     /// The inspector's reading, steadied (`ChannelReading`): folded from every meter in
     /// `foldReading`. Presentation only; the raw meter is `meter`.
@@ -822,6 +835,8 @@ final class AppSession {
                 staleManifests.formUnion(manifests.keys)
                 reloadRecordings()
                 followUpdate()
+                // A restarted daemon counts its seq from 0 again.
+                follow.connected(atSeq: state.seq)
             }
         }
         // Switched on or off in System Settings while the window waited: launchd starts or stops
@@ -880,6 +895,14 @@ final class AppSession {
                 break
             }
         }
+        if let id = heldSink.id {
+            var folded = heldSink
+            let verdict = folded.observe(
+                inMirror: state.sinks.contains { $0.sinkID == id }, now: Date(),
+                dropAfter: Self.neverSeenDropSeconds)
+            if folded != heldSink { heldSink = folded }
+            if verdict == .lost || verdict == .neverArrived { heldSink.drop() }
+        }
         if case .live = connection {
             // A sweep with no capture opens the daemon's own; adopting it would put a channel
             // on a radio being swept.
@@ -888,10 +911,13 @@ final class AppSession {
             adopted = false
             var capturesCopy = heldCapture
             var channelsCopy = heldChannel
+            var sinkCopy = heldSink
             capturesCopy.disconnected()
             channelsCopy.disconnected()
+            sinkCopy.disconnected()
             if capturesCopy != heldCapture { heldCapture = capturesCopy }
             if channelsCopy != heldChannel { heldChannel = channelsCopy }
+            if sinkCopy != heldSink { heldSink = sinkCopy }
         }
         followOtherClients()
         spectrum.follow(capture, connection: daemon)
@@ -963,7 +989,10 @@ final class AppSession {
                 ?? state.captures.first
         {
             heldCapture.adopted(id: cap.captureID, at: Date())
-            if channelID == nil, let ch = state.channels(in: cap.captureID).first {
+            if channelID == nil,
+                let ch = ChannelFollow.adoptable(in: state, captureID: cap.captureID, except: nil)
+                    ?? state.channels(in: cap.captureID).first
+            {
                 heldChannel.adopted(id: ch.channelID, at: Date())
             }
             log(
@@ -973,6 +1002,16 @@ final class AppSession {
             if channelID == nil, state.channels(in: cap.captureID).isEmpty {
                 Task { await tuneCreating(hz: cap.centerHz) }
             }
+            return
+        }
+        if captureID != nil, let daemon {
+            // Back after a disconnect: when another client moved the radio or tuned while the
+            // window was away, its own channel is gone or out of capture, and the newest channel
+            // on the capture is taken as a follow takes one (`ChannelFollow.stepOnConnect`).
+            let step = follow.stepOnConnect(
+                in: state, captureID: captureID, held: channel, windowSinkID: heldSink.id,
+                audioHeld: playbackID != nil, selfClientID: daemon.identity.id)
+            if let step { perform(step, daemon: daemon, why: "on reconnecting") }
             return
         }
         guard captureID == nil, hasRadio else { return }
@@ -1235,11 +1274,16 @@ final class AppSession {
 
     private func ensureSink(on ch: Leyline_V1_Channel) async throws {
         guard let daemon else { throw LeylineError.notDialled }
-        if let s = sink, s.channelID == ch.channelID { return }
+        // The window's own sink, or another client's: a second one would echo.
+        if sink != nil || state.plays(ch.channelID) { return }
         var req = Leyline_V1_AttachSinkRequest()
         req.channelID = ch.channelID
         req.sink.systemAudio = Leyline_V1_SystemAudioSink()
-        do { ownSinkID = try await daemon.control.attachSink(req).sinkID } catch {
+        req.sink.systemAudio.volume = volume
+        do {
+            let s = try await daemon.control.attachSink(req)
+            heldSink.made(s, id: s.sinkID, at: Date())
+        } catch {
             throw LeylineError(error)
         }
     }
@@ -1255,36 +1299,62 @@ final class AppSession {
             return
         }
         let step = follow.step(
-            in: state, captureID: captureID, held: channel, windowSinkID: ownSinkID,
+            in: state, captureID: captureID, held: channel, windowSinkID: heldSink.id,
             audioHeld: playbackID != nil, selfClientID: daemon.identity.id)
         let endKept = step == nil ? follow.keptToEnd(in: state) : nil
         if let endKept {
             log("session", "channel \(endKept) no longer records; ended")
             Task { await destroyChannel(endKept) }
         }
+        // Another client attached its sink to the channel the window plays: two sinks echo, so
+        // the window's goes and the channel plays through theirs.
+        if let extra = ChannelFollow.redundantSink(
+            in: state, held: channelID, windowSinkID: heldSink.id)
+        {
+            heldSink.drop()
+            log("session", "sink \(extra) detached: another client's sink plays this channel")
+            Task { await detachSink(extra) }
+        }
         guard let step else { return }
+        perform(step, daemon: daemon, why: "")
+    }
+
+    /// Carries out a follow: the new channel held, the window's own ended or kept, its sink
+    /// detached from a channel that keeps running, and after `ChannelFollow.attachSettle` a sink
+    /// attached when the window wanted audio and nothing plays the channel by then (the maker
+    /// may attach its own a moment after making it).
+    private func perform(_ step: ChannelFollow.Step, daemon: DaemonConnection, why: String) {
         let by = state.made[step.follow.channelID].map { ChangeNote.author($0.causedBy) } ?? ""
         log(
             "session",
-            "following \(step.follow.channelID), made by \(by), from \(step.from ?? "no channel")\(step.endFrom ? ", ended" : step.keepFrom ? ", kept for its recording" : "")"
+            "following \(step.follow.channelID)\(by.isEmpty ? "" : ", made by \(by)")\(why.isEmpty ? "" : " " + why), from \(step.from ?? "no channel")\(step.endFrom ? ", ended" : step.keepFrom ? ", kept for its recording" : "")"
         )
         heldChannel.drop()
         heldChannel.adopted(id: step.follow.channelID, at: Date())
         clearRequested()
+        if let s = step.detachSink, s == heldSink.id { heldSink.drop() }
         Task {
-            if let s = step.detachSink {
-                var req = Leyline_V1_DetachSinkRequest()
-                req.sinkID = s
-                do { _ = try await daemon.control.detachSink(req) } catch {
-                    log("session", "sink \(s) not detached: \(LeylineError(error))")
-                }
-            }
+            if let s = step.detachSink { await detachSink(s) }
             if step.endFrom, let from = step.from { await destroyChannel(from) }
-            if step.attachSink {
-                do { try await ensureSink(on: step.follow) } catch {
-                    lastError = LeylineError(error)
-                }
+            guard step.attachSink else { return }
+            try? await Task.sleep(for: ChannelFollow.attachSettle)
+            guard
+                ChannelFollow.shouldAttach(
+                    in: state, channelID: step.follow.channelID, held: channelID),
+                playbackID == nil, !sweeping
+            else { return }
+            do { try await ensureSink(on: step.follow) } catch {
+                lastError = LeylineError(error)
             }
+        }
+    }
+
+    private func detachSink(_ id: String) async {
+        guard let daemon else { return }
+        var req = Leyline_V1_DetachSinkRequest()
+        req.sinkID = id
+        do { _ = try await daemon.control.detachSink(req) } catch {
+            log("session", "sink \(id) not detached: \(LeylineError(error))")
         }
     }
 
@@ -1744,13 +1814,16 @@ final class AppSession {
 
     func setVolume(_ v: Double) {
         guard let s = sink, let writes else { return }
-        writes.volume(v.clamped(to: 0...1), sink: s.sinkID)
+        volume = v.clamped(to: 0...1)
+        writes.volume(volume, sink: s.sinkID)
     }
 
     /// Mute detaches the sink and unmute attaches one; the channel and its squelch stay, and so
     /// does the radio: the button is the audio control.
     func toggleMute() async {
-        guard let daemon, let ch = channel else { return }
+        // Another client's sink plays the channel: the window has nothing of its own to mute,
+        // and attaching one would echo.
+        guard let daemon, let ch = channel, audioElsewhere == nil else { return }
         do {
             if let s = sink {
                 var req = Leyline_V1_DetachSinkRequest()

@@ -117,17 +117,35 @@ followed again. The window does not take ownership. It ends its own channel, unl
 runs on it (a running record job that borrowed the channel, or one on its frequency and mode,
 the frequency read before the move that took it out of the capture): then the channel stays, the
 window's sink leaves it, the inspector says `Your channel on 162.550 MHz stays open while it
-records.`, and the window ends it when the recording stops. The audio moves by sink, not by
-channel: when the window was playing (or held no channel) and nothing plays the new channel,
-the window attaches a system-audio sink to it (the daemon checks the channel, not who made it);
-a terminal's `ley tune` channel already plays and gets no second sink; a muted window stays muted;
-a recorded part playing holds the audio and its end attaches it. When the maker ends the
-channel (a terminal's 5 s after its presence goes; `ley stop`), the held channel's `.lost` path
-makes the window a channel of its own with the last copy's offset, mode, width and squelch. A
-capture another client moved with no new channel is not followed: the out-of-capture caution
-under "Failure states" covers it. Nothing is followed while the window makes a channel itself,
-sweeps, or has stopped listening. The rule is tested in `ChannelFollowTests` and against the
-daemon in `AssistantDaemonTests`.
+records.`, and the window ends it when the recording stops. A recording counts only when it
+rides the window's capture or asks for its device; one on another radio at the same frequency
+does not. The audio moves by sink, not by channel. A `Sink` names no owner, so the window holds
+the id of the sink it attached (`heldSink`, a `HeldObject` like the capture and channel), and
+mute, volume, a sweep's pause and a part's playback act on that sink only, never on another
+client's. The window wants audio on the followed channel when it was hearing the one before
+(through its own sink, or through another client's, which it cannot mute) or held none, and no
+recorded part holds the audio. It then waits `ChannelFollow.attachSettle` (1 s) and attaches
+its sink, at the window's volume, only if nothing plays the channel by then, because the maker
+may attach its own a moment after making the channel: `ley tune` makes the channel, measures the
+squelch from one spectrum row and then attaches, usually well inside the second. A client that attaches
+its sink later than that doubles up only until the window sees it, because two sinks on the held
+channel make the window detach its own (`redundantSink`), so the channel plays through the
+other. While another client's sink plays the held channel and the window has none, the
+inspector says so (`The audio plays through another terminal.`, named from the mirror's
+`sinkAttachedBy`, the `caused_by` of each sink's first event), and the mute button and the
+volume slider are disabled. A muted window stays muted. When the maker ends the channel (a
+terminal's 5 s after its presence goes; `ley stop`), the held channel's `.lost` path makes the
+window a channel of its own with the last copy's offset, mode, width and squelch. A capture
+another client moved with no new channel is not followed: the out-of-capture caution under
+"Failure states" covers it. Nothing is followed while the window makes a channel itself, sweeps,
+or has stopped listening. A restarted daemon counts its `seq` from 0 again, so on every connect
+the floor becomes the snapshot's `seq`. A snapshot says who made a channel but not when, so a
+channel another client made while the window was away is not followed by `seq`; instead
+`adopt()` on reconnecting, when the window's own channel is gone or out of capture, takes the
+newest active channel on the capture that is not a job's, newest by id because channel ids are
+ULIDs (`ChannelFollow.stepOnConnect`, `adoptable`), and treats it as a follow. The first
+adoption at launch prefers the same channel. The rule is tested in `ChannelFollowTests` and
+against the daemon in `AssistantDaemonTests`.
 
 **Streams** (`Streams.swift`). `subscribe(_:)` is `Bulk.Subscribe` then `Bulk.Stream`;
 `fft(capture:bins:rowsPerSecond:)` is the FFT of a band decoded to dBFS per bin against the
@@ -786,7 +804,8 @@ as a client labelled `assistant` and reads the inspector's note from the app's m
 third has that client make a kept channel on the app's capture, and the follow rule takes it,
 the app's own channel ends, the note says "tuned to", a sink on the other client's channel is
 refused for no reason but the host's audio, and the channel's end hands the window its last
-copy.
+copy. That test drives the fold and the held ids by hand, as `AppSession` would, because
+`AppSession` does not compile on Linux.
 
 A bare `swift test` in `app/` runs the daemon suite too and skips it silently without
 `LEYLINED_BIN`, which is why the Makefile names the suites: `app-test` skips it, `app-e2e` is

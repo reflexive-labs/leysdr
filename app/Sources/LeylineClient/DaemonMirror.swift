@@ -57,6 +57,9 @@ public struct MirrorState: Sendable, Equatable {
     /// removes the entry, and a snapshot, which says who made a channel but not when, starts it
     /// empty.
     public var made: [String: AttributedChange] = [:]
+    /// The client that attached each sink, from the `caused_by` of the sink's first event, for
+    /// as long as it lives: a `Sink` names no owner. A snapshot starts it empty.
+    public var sinkAttachedBy: [String: Leyline_V1_ClientInfo] = [:]
     /// The newest event folded (the snapshot's `event_seq` at open). Events at or below it are
     /// already reflected and are skipped.
     public var seq: UInt64 = 0
@@ -162,6 +165,12 @@ public struct MirrorState: Sendable, Equatable {
                 let change = AttributedChange.capture(was, c, causedBy: by, seq: event.seq)
             {
                 changes[c.captureID] = change
+            }
+        case .sink(let k):
+            if k.state == .unspecified {
+                sinkAttachedBy[k.sinkID] = nil
+            } else if let by, !sinks.contains(where: { $0.sinkID == k.sinkID }) {
+                sinkAttachedBy[k.sinkID] = by
             }
         case .channel(let c):
             if c.state == .unspecified {

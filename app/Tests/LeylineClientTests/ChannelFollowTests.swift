@@ -18,6 +18,7 @@ final class ChannelFollowTests: XCTestCase {
     func capture(center: UInt64 = 162_000_000) -> Leyline_V1_Capture {
         .with {
             $0.captureID = "cap_a"
+            $0.deviceID = "dev_a"
             $0.centerHz = center
             $0.sampleRate = 2_400_000
             $0.state = .captureActive
@@ -49,7 +50,9 @@ final class ChannelFollowTests: XCTestCase {
         }
     }
 
-    func recording(hz: UInt64, channel: String = "") -> Leyline_V1_Job {
+    func recording(hz: UInt64, channel: String = "", device: String = "dev_a")
+        -> Leyline_V1_Job
+    {
         .with {
             $0.jobID = "job_rec"
             $0.state = .running
@@ -58,6 +61,7 @@ final class ChannelFollowTests: XCTestCase {
                 $0.mode = .nfm
                 $0.bandwidthHz = 12_500
                 $0.channelID = channel
+                $0.deviceID = device
             }
         }
     }
@@ -219,12 +223,18 @@ final class ChannelFollowTests: XCTestCase {
         var f = ChannelFollow()
         XCTAssertEqual(step(&f, s, held: "chan_own")?.attachSink, false)
 
-        // A terminal's channel that already plays gets no second sink.
+        // A terminal's channel that already plays gets no second sink: the window wants audio,
+        // and the check at attach time, after the settle, finds the terminal's sink.
         s = windowListening()
         s.apply(event(4, .channel(channel("chan_t", offset: 100_000, by: terminal)), by: terminal))
-        s.apply(event(5, .sink(sink("sink_t", on: "chan_t")), by: terminal))
         f = ChannelFollow()
-        XCTAssertEqual(step(&f, s, held: "chan_own")?.attachSink, false)
+        XCTAssertEqual(step(&f, s, held: "chan_own")?.attachSink, true)
+        XCTAssertTrue(ChannelFollow.shouldAttach(in: s, channelID: "chan_t", held: "chan_t"))
+        s.apply(event(5, .sink(sink("sink_t", on: "chan_t")), by: terminal))
+        XCTAssertFalse(ChannelFollow.shouldAttach(in: s, channelID: "chan_t", held: "chan_t"))
+        XCTAssertFalse(
+            ChannelFollow.shouldAttach(in: s, channelID: "chan_x", held: "chan_t"),
+            "the window moved on during the settle")
 
         // A recorded part holds the audio: none is attached; the part's end attaches it.
         s = windowListening()
@@ -300,5 +310,110 @@ final class ChannelFollowTests: XCTestCase {
         s.apply(event(7, .channel(mine), by: app))
         XCTAssertNil(
             ChangeNote.latest(for: s.channel("chan_wx")!, in: s, selfClientID: "app_self"))
+    }
+
+    func testARecordingOnAnotherRadioDoesNotKeepTheChannel() {
+        var s = windowListening()
+        var f = ChannelFollow()
+        _ = step(&f, s, held: "chan_own")
+        s.apply(event(4, .job(recording(hz: 162_550_000, device: "dev_b")), by: terminal))
+        s.apply(
+            event(5, .channel(channel("chan_wx", offset: 400_000, by: assistant)), by: assistant))
+        let st = step(&f, s, held: "chan_own")
+        XCTAssertEqual(st?.keepFrom, false)
+        XCTAssertEqual(st?.endFrom, true)
+    }
+
+    func testTheWindowsSinkOnlyAndTheWordsWhenAnotherPlays() {
+        var s = windowListening()
+        XCTAssertEqual(s.sinkAttachedBy["sink_own"], app)
+        s.apply(event(4, .sink(sink("sink_t", on: "chan_own")), by: terminal))
+        XCTAssertEqual(s.sinkAttachedBy["sink_t"], terminal)
+        // Two sinks on the window's channel: the window's goes.
+        XCTAssertEqual(
+            ChannelFollow.redundantSink(in: s, held: "chan_own", windowSinkID: "sink_own"),
+            "sink_own")
+        XCTAssertNil(
+            ChannelFollow.playsThroughWords(in: s, held: "chan_own", windowSinkID: "sink_own"),
+            "the window still has its own")
+        var gone = sink("sink_own", on: "chan_own")
+        gone.state = .unspecified
+        s.apply(event(5, .sink(gone), by: app))
+        XCTAssertNil(s.sinkAttachedBy["sink_own"])
+        XCTAssertNil(ChannelFollow.redundantSink(in: s, held: "chan_own", windowSinkID: nil))
+        XCTAssertEqual(
+            ChannelFollow.playsThroughWords(in: s, held: "chan_own", windowSinkID: nil),
+            "The audio plays through another terminal.")
+        // Following on from a channel that played through the terminal: the window was
+        // hearing it, so it wants audio on the next.
+        s.apply(
+            event(6, .channel(channel("chan_wx", offset: 400_000, by: assistant)), by: assistant))
+        var f = ChannelFollow()
+        let st = f.step(
+            in: s, captureID: "cap_a", held: s.channel("chan_own"), windowSinkID: nil,
+            audioHeld: false, selfClientID: "app_self")
+        XCTAssertEqual(st?.attachSink, true)
+        XCTAssertNil(st?.detachSink, "the terminal's sink is never the window's to detach")
+    }
+
+    func testARestartedDaemonsChannelsAreFollowed() {
+        var s = windowListening()
+        var f = ChannelFollow()
+        f.tuned(at: 500)
+        // The daemon restarted: its seq counts from 0, and the snapshot carries 2.
+        var snap = Leyline_V1_GetStateResponse()
+        snap.captures = [capture()]
+        snap.channels = [channel("chan_own", offset: 550_000, by: app)]
+        snap.eventSeq = 2
+        s = MirrorState(snapshot: snap)
+        f.connected(atSeq: s.seq)
+        XCTAssertEqual(f.floor, 2)
+        s.apply(
+            event(3, .channel(channel("chan_wx", offset: 400_000, by: assistant)), by: assistant))
+        XCTAssertEqual(step(&f, s, held: "chan_own")?.follow.channelID, "chan_wx")
+    }
+
+    func testOnConnectTheNewestChannelIsTakenWhenTheWindowsIsNotInTheCapture() {
+        var snap = Leyline_V1_GetStateResponse()
+        snap.captures = [capture(center: 160_000_000)]
+        snap.channels = [
+            channel("chan_01A", offset: 550_000, by: app, state: .outOfCapture),
+            channel("chan_01B", offset: 100_000, by: terminal),
+            channel("chan_01C", offset: 400_000, by: assistant),
+            channel("chan_01D", offset: 200_000, by: job),
+            channel("chan_01E", offset: 300_000, by: terminal, state: .outOfCapture),
+        ]
+        let s = MirrorState(snapshot: snap)
+        XCTAssertEqual(
+            ChannelFollow.adoptable(in: s, captureID: "cap_a", except: "chan_01A")?.channelID,
+            "chan_01C", "newest by id, active, not a job's")
+        var f = ChannelFollow()
+        let st = f.stepOnConnect(
+            in: s, captureID: "cap_a", held: s.channel("chan_01A"), windowSinkID: nil,
+            audioHeld: false, selfClientID: "app_self")
+        XCTAssertEqual(st?.follow.channelID, "chan_01C")
+        XCTAssertEqual(st?.endFrom, true)
+        XCTAssertEqual(f.followed?.channelID, "chan_01C")
+
+        // The window's channel in the capture: nothing is taken.
+        var t = snap
+        t.channels[0].state = .channelActive
+        var g = ChannelFollow()
+        XCTAssertNil(
+            g.stepOnConnect(
+                in: MirrorState(snapshot: t), captureID: "cap_a",
+                held: MirrorState(snapshot: t).channel("chan_01A"), windowSinkID: nil,
+                audioHeld: false, selfClientID: "app_self"))
+        // The window's channel gone with the daemon: nothing to end, the newest is taken.
+        var u = snap
+        u.channels.removeFirst()
+        let gone = channel("chan_01A", offset: 550_000, by: app)
+        let su = MirrorState(snapshot: u)
+        let st2 = g.stepOnConnect(
+            in: su, captureID: "cap_a", held: gone, windowSinkID: nil, audioHeld: false,
+            selfClientID: "app_self")
+        XCTAssertEqual(st2?.follow.channelID, "chan_01C")
+        XCTAssertNil(st2?.from)
+        XCTAssertEqual(st2?.endFrom, false)
     }
 }

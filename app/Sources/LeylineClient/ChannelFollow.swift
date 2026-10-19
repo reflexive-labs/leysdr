@@ -50,11 +50,17 @@ public struct ChannelFollow: Sendable, Equatable {
         public var keepFrom: Bool
         /// The window's sink to detach from `from`, when `from` keeps running.
         public var detachSink: String?
-        /// Whether to attach a sink on the followed channel: the window was playing `from` (or
-        /// held no channel), nothing plays the new one yet, and the audio is not held for a
-        /// recorded part or a sweep.
+        /// Whether the window wants audio on the followed channel: it was hearing `from`
+        /// (through its own sink, or through another client's, which it cannot mute), or held
+        /// no channel, and the audio is not held for a recorded part. The sink is attached only
+        /// after `attachSettle`, and only if `shouldAttach` still holds then.
         public var attachSink: Bool
     }
+
+    /// How long the window waits after a follow before attaching its sink: the maker may attach
+    /// its own a moment after making the channel (`ley tune` makes the channel, measures the
+    /// squelch from one spectrum row, then attaches), and two sinks on one channel echo.
+    public static let attachSettle: Duration = .seconds(1)
 
     public init() {}
 
@@ -63,6 +69,12 @@ public struct ChannelFollow: Sendable, Equatable {
     /// from is not followed again.
     public mutating func tuned(at seq: UInt64) {
         floor = max(floor, seq)
+    }
+
+    /// The mirror took a snapshot on connecting: the floor becomes its `seq`, since a restarted
+    /// daemon counts from 0 again and a floor from before would hide every channel it makes.
+    public mutating func connected(atSeq seq: UInt64) {
+        floor = seq
     }
 
     /// The channel to follow, or nil: the newest by event `seq` that another client made on the
@@ -114,12 +126,53 @@ public struct ChannelFollow: Sendable, Equatable {
             let made = state.made[next.channelID]
         else { return nil }
         floor = max(floor, made.seq)
-        followed = next
+        return take(
+            next, in: state, captureID: captureID, held: held, windowSinkID: windowSinkID,
+            audioHeld: audioHeld, selfClientID: selfClientID)
+    }
 
+    /// On connecting: when the window's channel is not in its capture (gone, or out of capture
+    /// because another client moved the radio while the window was away), the newest channel
+    /// left on the capture is taken, the way a follow takes one. A snapshot says who made a
+    /// channel but not at which `seq`, so the newest is the greatest id (channel ids are ULIDs).
+    /// A job's channel is never taken.
+    public mutating func stepOnConnect(
+        in state: MirrorState, captureID: String?, held: Leyline_V1_Channel?,
+        windowSinkID: String?, audioHeld: Bool, selfClientID: String
+    ) -> Step? {
+        let present = held.flatMap { state.channel($0.channelID) }
+        guard present?.state != .channelActive,
+            let next = Self.adoptable(in: state, captureID: captureID, except: held?.channelID)
+        else { return nil }
+        // A held channel the mirror no longer lists is nothing to end or keep.
+        return take(
+            next, in: state, captureID: captureID, held: present, windowSinkID: windowSinkID,
+            audioHeld: audioHeld, selfClientID: selfClientID)
+    }
+
+    /// The channel the window takes on a capture it adopts or reconnects to: the newest by id
+    /// that is active and not a job's, other than `except`.
+    public static func adoptable(in state: MirrorState, captureID: String?, except: String?)
+        -> Leyline_V1_Channel?
+    {
+        guard let captureID else { return nil }
+        return state.channels(in: captureID)
+            .filter {
+                $0.channelID != except && $0.state == .channelActive && $0.owner.kind != "job"
+            }
+            .max { $0.channelID < $1.channelID }
+    }
+
+    private mutating func take(
+        _ next: Leyline_V1_Channel, in state: MirrorState, captureID: String?,
+        held: Leyline_V1_Channel?, windowSinkID: String?, audioHeld: Bool, selfClientID: String
+    ) -> Step {
+        followed = next.owner.clientID == selfClientID ? nil : next
         let own = held.map { $0.owner.clientID == selfClientID } ?? false
         let recording =
-            held.map { own && Self.recording(on: $0, tuning: ownTuning, in: state) }
-            ?? false
+            held.map {
+                own && Self.recording(on: $0, tuning: ownTuning, captureID: captureID, in: state)
+            } ?? false
         if own, recording, let held {
             kept =
                 ownTuning?.channelID == held.channelID
@@ -129,15 +182,52 @@ public struct ChannelFollow: Sendable, Equatable {
                     mode: held.mode)
         }
         let endFrom = own && !recording
-        let fromPlays = held.map { state.plays($0.channelID) } ?? true
-        let detach = windowSinkID.flatMap { id in
+        let ownSinkOnFrom = windowSinkID.flatMap { id in
             state.sinks.contains { $0.sinkID == id && $0.channelID == held?.channelID }
                 ? id : nil
         }
+        // Hearing `from`: through the window's own sink, or through another client's that the
+        // window cannot mute (a terminal's `ley tune`). A window that muted itself has neither.
+        let heard = held.map { ownSinkOnFrom != nil || state.plays($0.channelID) } ?? true
         return Step(
             follow: next, from: held?.channelID, endFrom: endFrom, keepFrom: own && recording,
-            detachSink: endFrom ? nil : detach,
-            attachSink: fromPlays && !state.plays(next.channelID) && !audioHeld)
+            detachSink: endFrom ? nil : ownSinkOnFrom, attachSink: heard && !audioHeld)
+    }
+
+    /// Whether the window attaches its sink to `channelID` now, after the settle: it still holds
+    /// the channel and nothing plays it, neither its own sink nor another client's.
+    public static func shouldAttach(in state: MirrorState, channelID: String, held: String?)
+        -> Bool
+    {
+        held == channelID && state.channel(channelID) != nil && !state.plays(channelID)
+    }
+
+    /// The window's sink when another client's also plays the held channel: two sinks echo, so
+    /// the window's goes and the channel plays through the other. nil otherwise.
+    public static func redundantSink(in state: MirrorState, held: String?, windowSinkID: String?)
+        -> String?
+    {
+        guard let held, let mine = windowSinkID,
+            state.sinks.contains(where: { $0.sinkID == mine && $0.channelID == held })
+        else { return nil }
+        let others = state.sinks(of: held).contains { $0.sinkID != mine && $0.isSystemAudio }
+        return others ? mine : nil
+    }
+
+    /// When another client's sink plays the held channel and the window has none of its own:
+    /// "The audio plays through another terminal." Mute and volume act on the window's own sink
+    /// only, so they have nothing to act on then.
+    public static func playsThroughWords(
+        in state: MirrorState, held: String?, windowSinkID: String?
+    ) -> String? {
+        guard let held else { return nil }
+        let sinks = state.sinks(of: held).filter(\.isSystemAudio)
+        guard !sinks.isEmpty, !sinks.contains(where: { $0.sinkID == windowSinkID }) else {
+            return nil
+        }
+        let by = sinks.lazy.compactMap { state.sinkAttachedBy[$0.sinkID] }.first
+        let who = by.map { ChangeNote.author($0) } ?? "another client"
+        return "The audio plays through \(who)."
     }
 
     /// The window's kept channel once nothing records on it any more, for the session to end;
@@ -149,7 +239,7 @@ public struct ChannelFollow: Sendable, Equatable {
             kept = nil
             return nil
         }
-        if Self.recording(on: ch, tuning: k, in: state) { return nil }
+        if Self.recording(on: ch, tuning: k, captureID: ch.captureID, in: state) { return nil }
         kept = nil
         return k.channelID
     }
@@ -172,11 +262,12 @@ public struct ChannelFollow: Sendable, Equatable {
 
     /// Whether a recording runs on `channel`: an active record job that borrowed it, or one in
     /// the frequency form on its frequency and mode (the window's Record switch starts that
-    /// form; `Recordings.activeJob`). `tuning` is the channel's frequency before a move took it
-    /// out of the capture.
-    static func recording(on channel: Leyline_V1_Channel, tuning: Kept?, in state: MirrorState)
-        -> Bool
-    {
+    /// form; `Recordings.activeJob`) riding the window's capture or asking for its device. A
+    /// job on another radio at the same frequency is not this channel's. `tuning` is the
+    /// channel's frequency before a move took it out of the capture.
+    static func recording(
+        on channel: Leyline_V1_Channel, tuning: Kept?, captureID: String?, in state: MirrorState
+    ) -> Bool {
         let borrowed = state.jobs.contains {
             $0.isActive && $0.recordConfig?.channelID == channel.channelID
         }
@@ -185,15 +276,26 @@ public struct ChannelFollow: Sendable, Equatable {
             tuning.flatMap { $0.channelID == channel.channelID ? $0.hz : nil }
             ?? state.frequencyHz(of: channel)
         guard let hz else { return false }
-        return Recordings.activeJob(in: state.jobs, frequencyHz: hz, mode: channel.mode) != nil
+        let capID = captureID ?? channel.captureID
+        let device = state.capture(capID)?.deviceID
+        let riding = Set(Recordings.jobs(riding: capID, in: state).map(\.jobID))
+        let here = state.jobs.filter { j in
+            riding.contains(j.jobID) || (device != nil && j.recordConfig?.deviceID == device)
+        }
+        return Recordings.activeJob(in: here, frequencyHz: hz, mode: channel.mode) != nil
     }
 }
 
 extension MirrorState {
     /// Whether a system-audio sink plays `channelID`, whoever attached it.
-    func plays(_ channelID: String) -> Bool {
-        sinks(of: channelID).contains {
-            if case .systemAudio? = $0.kind { true } else { false }
-        }
+    public func plays(_ channelID: String) -> Bool {
+        sinks(of: channelID).contains(where: \.isSystemAudio)
+    }
+}
+
+extension Leyline_V1_Sink {
+    /// Whether the daemon plays this sink through an audio output.
+    public var isSystemAudio: Bool {
+        if case .systemAudio? = kind { true } else { false }
     }
 }

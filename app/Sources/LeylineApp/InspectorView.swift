@@ -147,6 +147,12 @@ struct IdentityView: View {
                 Text(note.text).font(Theme.Font.aside).foregroundStyle(Theme.inkTertiary)
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
+            if let through = session.audioElsewhere {
+                // Another client's sink plays the channel; mute and volume act on the window's
+                // own sink only (`ChannelFollow.playsThroughWords`).
+                Text(through).font(Theme.Font.aside).foregroundStyle(Theme.inkTertiary)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+            }
             if let kept = session.followKeptWords {
                 // The window follows another client's channel while its own records
                 // (`ChannelFollow`). It goes when the recording stops and the window ends it.

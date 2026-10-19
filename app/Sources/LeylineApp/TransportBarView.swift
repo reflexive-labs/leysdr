@@ -66,7 +66,7 @@ struct PlayButton: View {
             }
         }
         .buttonStyle(.plain)
-        .disabled(session.channel == nil)
+        .disabled(session.channel == nil || session.audioElsewhere != nil)
         .help(
             session.isMuted
                 ? "Unmute: the channel's audio is attached again"
@@ -614,6 +614,7 @@ struct VolumeControl: View {
         guard let name = session.listeningName else { return "not playing" }
         if session.playingURI != nil { return "playing a part · \(name) held" }
         if library, sink != nil { return "\(name) · live" }
+        if sink == nil, session.audioElsewhere != nil { return "playing \(name)" }
         return sink == nil ? "muted · \(name)" : "playing \(name)"
     }
 

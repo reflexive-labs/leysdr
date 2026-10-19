@@ -1197,9 +1197,12 @@ Done 2026-10-19 on Linux: the mirror keeps who made each channel and at which `s
 (`MirrorState.made`, from the creation event's `caused_by`), `ChannelFollow` folds it into the
 channel to follow, whether the window ends its own or keeps it for a recording (a record job that
 borrowed the channel or one on its frequency and mode, the frequency read before the move that
-took it out of the capture), and the sink move (detach the window's own sink from a channel that
-keeps running, attach one on the new channel only when the window was playing and nothing plays
-it yet); `ChangeNote` words a made channel as "The assistant tuned to 162.400 MHz NFM." and
+took it out of the capture, and only a job on the window's capture or device), and the sink move
+(the window holds the sink it attached and acts on no other; it detaches its own from a channel
+that keeps running, and attaches one on the new channel 1 s after the follow only if nothing plays
+it by then, and drops its own whenever another client's sink plays the held channel); the floor
+resets to the snapshot's `seq` on every connect, and on reconnecting with its own channel gone or
+out of capture the window takes the newest channel on the capture; `ChangeNote` words a made channel as "The assistant tuned to 162.400 MHz NFM." and
 folds the same client's squelch into the sentence. "The window's own" is its client id, as
 creation cause and as owner; a job's channel is never followed. `AppSession` holds the followed
 id, ends or keeps its own, moves the sink, and on the followed channel's `.lost` makes its own
