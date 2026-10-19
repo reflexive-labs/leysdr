@@ -767,10 +767,12 @@ func TestAskDelete(t *testing.T) {
 }
 
 // stepClock is the waiting line's clock in a test: each timer the line sets arrives on armed, and
-// fires when the test says, at the time the test sets.
+// fires when the test says, at the time the test sets. The first prefire timers have fired already
+// when the line gets them.
 type stepClock struct {
-	at    time.Time
-	armed chan stepTimer
+	at       time.Time
+	armed    chan stepTimer
+	prefired int
 }
 
 type stepTimer struct {
@@ -786,7 +788,12 @@ func (c *stepClock) clock() *askClock {
 	return &askClock{
 		now: func() time.Time { return c.at },
 		after: func(d time.Duration) <-chan time.Time {
-			fire := make(chan time.Time)
+			// Buffered, so a timer the line no longer waits on can still be fired.
+			fire := make(chan time.Time, 1)
+			if c.prefired > 0 {
+				c.prefired--
+				fire <- c.at
+			}
 			c.armed <- stepTimer{d, fire}
 			return fire
 		},
@@ -805,9 +812,14 @@ type waitRun struct {
 	sig   chan os.Signal
 }
 
-func startWaitRun(t *testing.T) *waitRun {
+// startWaitRun follows a turn as turn does, with the wait started first. A state queued sits
+// waiting for follow, and so does a first timer that has fired, when prefired is set.
+func startWaitRun(t *testing.T, queued *leylinev1.Conversation, prefired bool) *waitRun {
 	t.Helper()
 	out, clk, sig := &bytes.Buffer{}, newStepClock(), make(chan os.Signal, 1)
+	if prefired {
+		clk.prefired = 1
+	}
 	app := &App{
 		Stdout: out, Stderr: out, askClock: clk.clock(),
 		IsTTY: func() bool { return true }, IsErrTTY: func() bool { return true },
@@ -816,10 +828,14 @@ func startWaitRun(t *testing.T) *waitRun {
 		app: app, ctx: t.Context(), interrupts: sig, answered: map[string]bool{},
 		conv:    &leylinev1.Conversation{Seq: 1, State: leylinev1.ConversationState_CONVERSATION_THINKING},
 		seen:    1,
-		updates: make(chan *leylinev1.Conversation), watchErr: make(chan error, 1),
+		updates: make(chan *leylinev1.Conversation, 1), watchErr: make(chan error, 1),
 		view: askView{text: map[string]string{}, calls: map[string]leylinev1.ToolCallState{}},
 	}
 	r.useWaitLine()
+	if queued != nil {
+		r.updates <- queued
+	}
+	r.wait.start()
 	w := &waitRun{t: t, r: r, out: out, clk: clk, start: clk.at, done: make(chan error, 1), sig: sig}
 	go func() { w.done <- r.follow(1) }()
 	return w
@@ -870,7 +886,7 @@ func TestAskWaitingLine(t *testing.T) {
 		erase    = "\r\x1b[K"
 		thinking = leylinev1.ConversationState_CONVERSATION_THINKING
 	)
-	w := startWaitRun(t)
+	w := startWaitRun(t, nil, false)
 	tm := w.next(waitDelay)
 	w.check("before the delay", "")
 	tm = w.fire(tm, 300*time.Millisecond, time.Second)
@@ -911,7 +927,7 @@ func TestAskWaitingLine(t *testing.T) {
 // shell.
 func TestAskWaitingLineErasedOnExit(t *testing.T) {
 	const erase = "\r\x1b[K"
-	w := startWaitRun(t)
+	w := startWaitRun(t, nil, false)
 	_ = w.fire(w.next(waitDelay), 300*time.Millisecond, time.Second)
 	w.send(thinkingState(2, leylinev1.ConversationState_CONVERSATION_IDLE, nil))
 	if err := <-w.done; err != nil {
@@ -919,7 +935,7 @@ func TestAskWaitingLineErasedOnExit(t *testing.T) {
 	}
 	w.check("a turn that ends with no more words", erase+"thinking..."+erase)
 
-	w = startWaitRun(t)
+	w = startWaitRun(t, nil, false)
 	_ = w.fire(w.next(waitDelay), 300*time.Millisecond, time.Second)
 	w.sig <- syscall.SIGTERM
 	if err := <-w.done; !errors.Is(err, errTerminated) {
@@ -946,5 +962,59 @@ func TestAskWaitingLineOnlyOnATerminal(t *testing.T) {
 		if r.wait != nil || r.app != app || r.wait.timer() != nil {
 			t.Errorf("tty %v, json %v: the waiting line is on", app.IsErrTTY != nil && app.IsErrTTY(), app.JSON)
 		}
+	}
+}
+
+// A state already queued when the timer fires is printed, and the line is not drawn for the one
+// frame before that state would erase it. select picks at random, so the race is run many times.
+func TestAskWaitingLinePrefersAQueuedState(t *testing.T) {
+	for range 50 {
+		w := startWaitRun(t, thinkingState(2, leylinev1.ConversationState_CONVERSATION_THINKING, assistantTurn("Tuning\n", false)), true)
+		w.next(waitDelay)
+		w.next(waitDelay)
+		w.check("a state queued behind the timer", "Tuning\n")
+		w.send(thinkingState(3, leylinev1.ConversationState_CONVERSATION_IDLE, assistantTurn("Tuning\n", true)))
+		if err := <-w.done; err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// The wait counts from before the request is sent, so the count includes the send's round trip:
+// the waiting line first reads the clock while the conversation has no turns yet.
+func TestAskWaitingLineCountsFromTheRequest(t *testing.T) {
+	_, c := askHarness(t)
+	clk := newStepClock()
+	go func() {
+		for range clk.armed { //nolint:revive // the timers never fire; the turn ends on its own
+		}
+	}()
+	defer close(clk.armed)
+	ck := clk.clock()
+	turns := -1
+	now := ck.now
+	ck.now = func() time.Time {
+		if turns < 0 {
+			turns = len(newestConversation(t, c).GetTurns())
+		}
+		return now()
+	}
+	app := &App{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}, IsErrTTY: func() bool { return true }, askClock: ck}
+	r := &askRun{
+		app: app, ctx: t.Context(), c: c, interrupts: make(chan os.Signal), answered: map[string]bool{},
+		view: askView{text: map[string]string{}, calls: map[string]leylinev1.ToolCallState{}},
+	}
+	r.useWaitLine()
+	if err := r.open(); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.watch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.turn("hi"); err != nil {
+		t.Fatal(err)
+	}
+	if turns != 0 {
+		t.Errorf("the wait started with %d turns in the conversation, after the request was sent", turns)
 	}
 }

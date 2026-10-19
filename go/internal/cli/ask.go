@@ -179,6 +179,7 @@ func runAsk(ctx context.Context, app *App, o askOptions, request string, interru
 	// A conversation --continue found mid-turn is followed to the end of that turn, answering
 	// what it waits for, before anything is sent.
 	if st := r.conv.GetState(); st != leylinev1.ConversationState_CONVERSATION_IDLE {
+		r.wait.start()
 		if err := r.follow(r.conv.GetSeq()); err != nil {
 			return err
 		}
@@ -306,6 +307,8 @@ func (r *askRun) promptLoop() error {
 
 // turn sends one request and follows the conversation until the assistant's turn is done.
 func (r *askRun) turn(request string) error {
+	// The wait counts from the request, so the send's round trip is in it.
+	r.wait.start()
 	sent, err := r.c.Assistant.SendMessage(r.ctx, &leylinev1.SendMessageRequest{ConversationId: r.conv.GetConversationId(), Text: request})
 	if err != nil {
 		return r.app.notRunning(err)
@@ -315,11 +318,18 @@ func (r *askRun) turn(request string) error {
 }
 
 // follow prints the conversation and answers what it asks until the assistant's turn is done in
-// a state newer than seq after.
+// a state newer than seq after. The waiting line's wait has been started by the caller.
 func (r *askRun) follow(after uint64) error {
-	r.wait.start()
 	defer r.wait.clear()
 	stops := 0
+	update := func(cv *leylinev1.Conversation) (bool, error) {
+		done, err := r.handle(cv, after)
+		if errors.Is(err, errInterrupted) {
+			stops++
+			return false, r.interrupt(stops)
+		}
+		return done, err
+	}
 	if r.conv.GetState() == leylinev1.ConversationState_CONVERSATION_WAITING {
 		if err := r.answer(r.conv.GetPending()); errors.Is(err, errInterrupted) {
 			stops++
@@ -347,15 +357,7 @@ func (r *askRun) follow(after uint64) error {
 		}
 		select {
 		case cv := <-r.updates:
-			done, err := r.handle(cv, after)
-			if errors.Is(err, errInterrupted) {
-				stops++
-				if err := r.interrupt(stops); err != nil {
-					return err
-				}
-				continue
-			}
-			if done || err != nil {
+			if done, err := update(cv); done || err != nil {
 				return err
 			}
 		case err := <-r.watchErr:
@@ -381,7 +383,17 @@ func (r *askRun) follow(after uint64) error {
 				return err
 			}
 		case <-r.wait.timer():
-			r.wait.draw()
+			r.wait.fired()
+			// select picks at random among ready cases; a state already queued is printed
+			// rather than a line it would erase at once.
+			select {
+			case cv := <-r.updates:
+				if done, err := update(cv); done || err != nil {
+					return err
+				}
+			default:
+				r.wait.draw()
+			}
 		}
 	}
 }
@@ -814,7 +826,7 @@ type askClock struct {
 }
 
 // waitLine is the waiting line's state. A nil *waitLine is the line turned off, and every method
-// but draw, which only a timer it set calls, does nothing on it.
+// but fired and draw, which only a timer it set leads to, does nothing on it.
 type waitLine struct {
 	stderr io.Writer // the terminal, not the erasing writer
 	style  ui.Style
@@ -901,9 +913,13 @@ func (w *waitLine) timer() <-chan time.Time {
 	return w.tick
 }
 
+// fired is the pending timer having fired, so timer sets the next one.
+func (w *waitLine) fired() {
+	w.tick = nil
+}
+
 // draw puts the line on the screen, or brings its count up to date.
 func (w *waitLine) draw() {
-	w.tick = nil
 	if w.hold() {
 		return
 	}
