@@ -350,7 +350,7 @@ func TestMCPToolTextLeadsWithTheOutcome(t *testing.T) {
 		{"tune", map[string]any{"frequency": "162.55", "take_over": true}, "listening to 162.550 MHz NFM, squelch ", "retuning capture"},
 		{"listen_summary", map[string]any{"target": "146.52", "duration_s": 1, "take_over": true}, "146.520 MHz NFM for 1.0 s", "retuning capture"},
 		{"snapshot", map[string]any{"frequency": "162.55", "no_image": true, "take_over": true}, "2.400 MHz wide around 162.550 MHz", "retuning capture"},
-		{"scan", map[string]any{"range": "145M..147M", "take_over": true}, "3 carriers over 145.000 MHz to 147.000 MHz, floor ", "FREQUENCY"},
+		{"scan", map[string]any{"range": "145M..147M", "take_over": true}, "3 signals over 145.000 MHz to 147.000 MHz, floor ", "FREQUENCY"},
 	}
 	for _, c := range cases {
 		text := resultText(h.must(t, c.tool, c.args))

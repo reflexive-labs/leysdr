@@ -740,8 +740,10 @@ a block of calls and a block of text, and between a turn and the next `> ` promp
 lines never reach stdout. A call that asks first (taking over a radio, deleting a recording,
 keeping a job, a webhook notifier, several bookmark writes, paid transcription;
 `docs/design/ai.md`, "What the assistant may do") is a question on
-stderr in three parts: the call's line (`→ <tool> <arguments>`, cut to the width as every call
-line is, and not printed again once answered), the reason beneath it, indented and wrapped, and
+stderr in three parts: the call (`→ <tool> <arguments>`, wrapped to the width after a comma with
+its continuation lines indented, where a call that did not ask is cut, so every argument the
+user allows is on screen; it is not printed again once answered), the reason beneath it, indented
+and wrapped, and
 `Allow? [y/N]` on a line of its own; the answer goes to the daemon with `ResolveAction`. `--yes`
 (`-y`) allows every such call, which is how an agent or a script runs `ask`, and prints `Allowed
 by --yes.` where the question would be; when stdin is not a terminal and `--yes` is absent, the

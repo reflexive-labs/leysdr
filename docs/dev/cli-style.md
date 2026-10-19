@@ -199,7 +199,8 @@ Ranges read `24.000 MHz to 1.766 GHz`, never with a dash, so a dash always means
 - **A question about a call is the call, then why, then the question.** The call's own line comes
   first, the reason beneath it indented as a receipt is, and `Allow? [y/N]` on a line of its own,
   so the arguments are never wrapped into the middle of a sentence. The answer (`Allowed by
-  --yes.`, `Declined: …`) takes the question's line.
+  --yes.`, `Declined: …`) takes the question's line. The call is wrapped, never cut, with its
+  continuation lines indented two columns: what the user allows is all on screen.
 - **A chart draws its trace, not its area.** One glyph per column, on the row that column's
   value falls in, with a thin stem beneath it only where it stands above the reference line.
   Filling every cell under a column adds area without information: a flat noise floor covers

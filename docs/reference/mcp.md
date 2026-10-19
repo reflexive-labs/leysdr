@@ -58,7 +58,7 @@ the job kept, and it outlives the agent.
 Every tool's result is two text blocks. The first is what the verb would have printed on a
 terminal: the decisions a tune made, the scan table, one line per record, the squelch that never
 opened. Its first line is the outcome (the channel a tune made, with its mode and squelch; how
-many carriers a scan found over which range, above its table; what a listen counted), because a
+many signals a scan found over which range, above its table; what a listen counted), because a
 client such as `ley ask` shows that line under the call. What the verb says on the way, the band's
 default mode, a retune, how the squelch was measured, follows it, where the terminal prints it
 first. The second is the proto3 JSON mapping of the `leyline.v1` messages, the same shape
@@ -344,7 +344,7 @@ $ ley --socket /tmp/ley-mcp-rec.sock mcp
    {"type":"text","text":"{\"devices\":[{\"deviceId\":\"dev_01K…\",\"driver\":\"file\",\"model\":\"scan_band.cf32\",…}]}"}]}}
 → {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"scan","arguments":{"range":"145M..147M","dwell_ms":300}}}
 ← {"jsonrpc":"2.0","id":4,"result":{"content":[{"type":"text","text":
-   "FREQUENCY    WIDTH            SNR (dB)  SEEN  BAND\n145.200 MHz  5.954 kHz              66   2/2  2 m amateur\n145.398 MHz  under 2.344 kHz         4   1/2  2 m amateur\n145.600 MHz  6.182 kHz              58   2/2  2 m amateur\n146.400 MHz  under 2.344 kHz        52   2/2  2 m amateur\n146.805 MHz  187.624 kHz            35   2/2  2 m amateur\n5 signals, floor -88 dBFS per 2.344 kHz bin\n  ley listen 145.2"}],
+   "5 signals over 145.000 MHz to 147.000 MHz, floor -88 dBFS per 2.344 kHz bin\nFREQUENCY    WIDTH            SNR (dB)  SEEN  BAND\n145.200 MHz  5.954 kHz              66   2/2  2 m amateur\n145.398 MHz  under 2.344 kHz         4   1/2  2 m amateur\n145.600 MHz  6.182 kHz              58   2/2  2 m amateur\n146.400 MHz  under 2.344 kHz        52   2/2  2 m amateur\n146.805 MHz  187.624 kHz            35   2/2  2 m amateur\n  ley listen 145.2"}],
    {"type":"text","text":"{\"scanId\":\"scan_01K…\",\"config\":{…},\"detections\":[{\"centerHz\":\"145200000\",\"bandwidthHz\":5954,\"snrDb\":66.…,\"looks\":2,\"looksPossible\":2,\"floorDbfs\":-88.…},…],\"noiseFloor\":[…],\"resolutionHz\":2344,\"covered\":{…}}"}]}}
 ```
 

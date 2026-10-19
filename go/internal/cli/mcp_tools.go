@@ -180,7 +180,8 @@ func gainSchema[T any](tail string) *jsonschema.Schema {
 
 // gainToolNote is what an agent cannot learn from gainHelp alone: which radios take auto, and
 // where to read it. A first sweep sent auto to a HackRF, which has no automatic gain, and failed.
-const gainToolNote = "; auto only on a radio with a gain element that supportsAuto (get_state's devices list them): an RTL-SDR's TUNER has it, and a HackRF has none and takes its stages, such as LNA=24,VGA=24 with AMP=0 (off) or AMP=11 (on)"
+// It is on four tools' schemas, so it stays one clause.
+const gainToolNote = "; auto only where get_state lists a gain element with supportsAuto (an RTL-SDR's TUNER); a HackRF takes LNA=24,VGA=24,AMP=0|11"
 
 // registerResources exposes the ley:// resources the daemon can answer: a
 // recording, which has a store and outlives the daemon; a kept decode job's
@@ -549,7 +550,7 @@ func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanA
 }
 
 // scanToolText is printScan's output in the order a tool result reads: the outcome first (how
-// many carriers over which range, at what floor and gain), then the table, then the notes. On a
+// many signals over which range, at what floor and gain, in ley scan's words), then the table, then the notes. On a
 // terminal the table comes first because it is the answer on stdout and the sentence follows on
 // stderr; a result's first line is what a client shows under the call.
 func scanToolText(app *App, scan *leylinev1.Scan, o scanOptions, els []*leylinev1.GainElement, out, errb *bytes.Buffer) string {
@@ -560,10 +561,10 @@ func scanToolText(app *App, scan *leylinev1.Scan, o scanOptions, els []*leylinev
 	}
 	var outcome string
 	if len(rows) == 0 {
-		outcome = fmt.Sprintf("0 carriers over %s: %s\n", over, emptyScanLine(scan, o, els))
+		outcome = fmt.Sprintf("0 signals over %s: %s\n", over, emptyScanLine(scan, o, els))
 		emptyScanHints(app, scan, o)
 	} else {
-		outcome = fmt.Sprintf("%s over %s%s%s\n", words.Count(len(rows), "carrier"), over, floorPhrase(scan), gainPhrase(scan, els))
+		outcome = fmt.Sprintf("%s over %s%s%s\n", words.Count(len(rows), "signal"), over, floorPhrase(scan), gainPhrase(scan, els))
 		printScanTable(app, scan, o, rows)
 		printScanNotes(app, scan, o, rows)
 	}

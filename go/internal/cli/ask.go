@@ -536,13 +536,21 @@ func (r *askRun) answer(p *leylinev1.PendingAction) error {
 	return r.settled(err)
 }
 
-// questionCard is a call that asks first, before its answer: the call on one line, as the call
-// line it becomes once answered (so it is not printed again), and the reason beneath it, wrapped
-// and indented as the receipt under an allowed call is. A question as one paragraph put the
-// arguments' JSON in the middle of the sentence.
+// questionCard is a call that asks first, before its answer: the call, as the call line it
+// becomes once answered (so it is not printed again), and the reason beneath it, wrapped and
+// indented as the receipt under an allowed call is. A question as one paragraph put the
+// arguments' JSON in the middle of the sentence. Unlike a call line, the call is wrapped rather
+// than cut: an argument past the cut (keep, say, which is itself why a call asks) would be one
+// the user allows without seeing.
 func questionCard(s ui.Style, p *leylinev1.PendingAction) string {
 	g := s.Glyphs()
-	card := s.Muted(fitWidth(s, g.Call+" "+strings.TrimSpace(p.GetTool()+" "+compactArgs(p.GetArgumentsJson())), 0)) + "\n"
+	var card string
+	for i, line := range wrapCall(g.Call+" "+strings.TrimSpace(p.GetTool()+" "+compactArgs(p.GetArgumentsJson())), s.Width) {
+		if i > 0 {
+			line = "  " + line
+		}
+		card += s.Muted(line) + "\n"
+	}
 	if reason := strings.TrimRight(strings.TrimSpace(p.GetReason()), "."); reason != "" {
 		width := 0
 		if s.Width > 0 {
@@ -553,6 +561,49 @@ func questionCard(s ui.Style, p *leylinev1.PendingAction) string {
 		}
 	}
 	return card
+}
+
+// wrapCall breaks a call's line to width, continuation lines two columns narrower for their
+// indent. Compact JSON has no spaces, so it breaks after a comma, and a piece longer than a line
+// is split where the line ends. Nothing is dropped; width 0 (unknown) is one line.
+func wrapCall(text string, width int) []string {
+	if width <= 0 || ui.Visible(text) <= width {
+		return []string{text}
+	}
+	var pieces []string
+	for rest := text; rest != ""; {
+		i := strings.IndexByte(rest, ',')
+		if i < 0 {
+			pieces = append(pieces, rest)
+			break
+		}
+		pieces = append(pieces, rest[:i+1])
+		rest = rest[i+1:]
+	}
+	var lines []string
+	line := ""
+	room := func() int {
+		if len(lines) == 0 {
+			return width
+		}
+		return max(width-2, 1)
+	}
+	for _, piece := range pieces {
+		if line != "" && ui.Visible(line)+ui.Visible(piece) > room() {
+			lines = append(lines, line)
+			line = ""
+		}
+		line += piece
+		for ui.Visible(line) > room() {
+			r, n := []rune(line), room()
+			lines = append(lines, string(r[:n]))
+			line = string(r[n:])
+		}
+	}
+	if line != "" {
+		lines = append(lines, line)
+	}
+	return lines
 }
 
 // settled passes an answer's error on, unless another client answered first: the conversation

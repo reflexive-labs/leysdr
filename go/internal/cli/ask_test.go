@@ -250,6 +250,55 @@ func TestAskApproval(t *testing.T) {
 	}
 }
 
+// A question shows every argument of the call it asks about: the call line is wrapped, not cut as
+// a plain call line is, since keep past the cut would be allowed unseen. The --yes and declined
+// forms show the same card.
+func TestAskQuestionShowsEveryArgument(t *testing.T) {
+	t.Parallel()
+	call0 := `{"frequency":"146.52","take_over":true,"squelch":"auto","mode":"nfm","keep":true,"bandwidth":"12.5k"}`
+	turn := fakedaemon.AssistantTurn{
+		{Ask: "tune", Args: call0, Reason: "keeping a channel after the conversation asks first.", ResultApproved: "listening to 146.520 MHz NFM"},
+		{Text: "Done."},
+	}
+	for _, tc := range []struct {
+		name  string
+		o     askRunOpts
+		flags []string
+		then  string
+	}{
+		{"y on a terminal", askRunOpts{inTTY: true, stdin: "y\n"}, nil, "Allow? [y/N] y"},
+		{"--yes", askRunOpts{}, []string{"--yes"}, "Allowed by --yes."},
+		{"no terminal", askRunOpts{}, nil, "Declined: stdin is not a terminal"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			args := append([]string{"ask", "keep 146.52"}, tc.flags...)
+			checkAskScreens(t, []fakedaemon.AssistantTurn{turn}, tc.o, args...)
+			sock, _ := askHarness(t, turn)
+			o := tc.o
+			o.width, o.merged = 60, true
+			screen, _, err := runAskLey(t, sock, o, args...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			call, _, ok := strings.Cut(screen, "\n  keeping a channel")
+			if !ok || !strings.Contains(screen, "\n"+tc.then) {
+				t.Fatalf("at 60 columns:\n%s", screen)
+			}
+			joined := ""
+			for i, line := range strings.Split(call, "\n") {
+				if i > 0 && !strings.HasPrefix(line, "  ") {
+					t.Errorf("continuation line %q is not indented", line)
+				}
+				joined += strings.TrimPrefix(line, "  ")
+			}
+			if want := "→ tune " + call0; joined != want {
+				t.Errorf("the call at 60 columns reads\n%s\nwant every argument of\n%s", call, want)
+			}
+		})
+	}
+}
+
 // --continue carries on the conversation with the newest turn, passing over a newer one that has
 // ended, and starts one when none is open.
 func TestAskContinue(t *testing.T) {
