@@ -905,6 +905,20 @@ func (sum *listenSummary) finish() {
 func (sum *listenSummary) text(s *verbSession, dur time.Duration) string {
 	var b strings.Builder
 	what := audioWhat(s)
+	m := sum.meter
+	// With the squelch off nothing opens or closes, so "0 transmissions" would be a count of
+	// nothing that reads as an empty channel: say that nothing was counted and give the level,
+	// which is what was measured.
+	if units.SquelchOff(m.SquelchDb) {
+		fmt.Fprintf(&b, "%s for %s, squelch off: transmissions are not counted", what, fmtDuration(dur.Seconds()))
+		if m.Samples > 0 {
+			fmt.Fprintf(&b, "; level %.0f to %.0f dBFS (mean %.0f).", m.MinPowerDbfs, m.MaxPowerDbfs, m.MeanPowerDbfs)
+		} else {
+			b.WriteString(", and no meter readings arrived.")
+		}
+		sum.toneLine(&b)
+		return b.String() + "\n"
+	}
 	segs := sum.transcript.GetSegments()
 	fmt.Fprintf(&b, "%s for %s: %s", what, fmtDuration(dur.Seconds()), words.Count(len(segs), "transmission"))
 	if len(segs) > 0 {
@@ -933,32 +947,33 @@ func (sum *listenSummary) text(s *verbSession, dur time.Duration) string {
 	if sum.meter.OpenAtEnd {
 		b.WriteString(" A transmission was still in progress when the window ended.")
 	}
-	m := sum.meter
 	// A squelch that never opened while the level sat just under it is the 10 dB margin of the
 	// auto squelch excluding a weak, steady signal, not silence: say so, or the agent reads
 	// "0 transmissions" as an empty channel and listens again to find out.
-	if m.Samples > 0 && !units.SquelchOff(m.SquelchDb) && m.SquelchOpenFraction == 0 && !math.IsNaN(m.MaxPowerDbfs) &&
+	if m.Samples > 0 && m.SquelchOpenFraction == 0 && !math.IsNaN(m.MaxPowerDbfs) &&
 		m.SquelchDb-m.MaxPowerDbfs <= squelchNearMissDb {
 		fmt.Fprintf(&b, " The squelch never opened, but the level reached %.0f dBFS against a threshold of %.0f: a steady signal just under the margin, not an empty channel. squelch: off (or a lower squelch) hears it.",
 			m.MaxPowerDbfs, m.SquelchDb)
 	}
-	switch {
-	case m.Samples > 0 && units.SquelchOff(m.SquelchDb):
-		fmt.Fprintf(&b, "\nsignal %.0f to %.0f dBFS (mean %.0f), squelch off: the level range is the whole story.",
-			m.MinPowerDbfs, m.MaxPowerDbfs, m.MeanPowerDbfs)
-	case m.Samples > 0:
+	if m.Samples > 0 {
 		fmt.Fprintf(&b, "\nsignal %.0f to %.0f dBFS (mean %.0f), squelch %s, open %.0f%% of the time.",
 			m.MinPowerDbfs, m.MaxPowerDbfs, m.MeanPowerDbfs, squelchString(m.SquelchDb), 100*m.SquelchOpenFraction)
-	default:
+	} else {
 		b.WriteString("\nno meter readings arrived.")
 	}
-	if sum.tone != nil {
-		var tr subAudibleTracker
-		if line, ok := tr.line(sum.tone, ui.Style{}); ok {
-			b.WriteString("\n" + line)
-		}
-	}
+	sum.toneLine(&b)
 	return b.String() + "\n"
+}
+
+// toneLine adds the sub-audible tone or code on a line of its own, as `ley tune` prints it.
+func (sum *listenSummary) toneLine(b *strings.Builder) {
+	if sum.tone == nil {
+		return
+	}
+	var tr subAudibleTracker
+	if line, ok := tr.line(sum.tone, ui.Style{}); ok {
+		b.WriteString("\n" + line)
+	}
 }
 
 type snapshotArgs struct {

@@ -178,7 +178,10 @@ Notes a table cell cannot hold:
   daemon's own close edge as an `ActivitySegment` (start and end on the capture's timeline,
   `peakDbfs` the loudest block, `meanDbfs` the mean of the meter readings while open), so the
   default squelch is `auto` for voice modes as `ley tune`'s is; with `squelch: off` there are no
-  edges and the meter statistics form the result. A close edge with no open edge before it in the
+  edges and the meter statistics form the result, and the text says that transmissions are not
+  counted and gives the level range (`49.856 MHz NFM for 20.0 s, squelch off: transmissions are not
+  counted; level -62 to -58 dBFS`), since "0 transmissions" from a squelch-off run was read as a
+  channel with nothing intelligible on it. A close edge with no open edge before it in the
   window is the squelch having been open when listening began (a channel made with the squelch off
   starts open, and the threshold written a moment later closes it on the first quiet block), not a
   transmission this call observed: it is reported as `meter.open_at_start` and never as a segment. A

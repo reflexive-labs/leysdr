@@ -934,9 +934,18 @@ func TestListenSummarySquelchOffReportsNoOpenFraction(t *testing.T) {
 	if err != nil || !strings.Contains(string(raw), `"squelch_open_fraction":null`) || !strings.Contains(string(raw), `"squelch_db":null`) {
 		t.Errorf("meter JSON: %s (%v)", raw, err)
 	}
+	// A transmission is a squelch-open interval, so with the squelch off none is counted: the
+	// text says so rather than "0 transmissions", which an agent read as an empty channel, and
+	// gives the level, which is what was measured.
 	text := sum.text(&verbSession{Session: &session.Session{Channel: &leylinev1.Channel{}, State: &leylinev1.GetStateResponse{}}}, 3*time.Second)
-	if !strings.Contains(text, "squelch off") || strings.Contains(text, "% of the time") {
+	if !strings.Contains(text, "for 3.0 s, squelch off: transmissions are not counted; level -83 to -82 dBFS") ||
+		strings.Contains(text, "0 transmissions") || strings.Contains(text, "% of the time") {
 		t.Errorf("text:\n%s", text)
+	}
+	quiet := newListenSummary(math.NaN(), 2_400_000)
+	quiet.finish()
+	if text := quiet.text(&verbSession{Session: &session.Session{Channel: &leylinev1.Channel{}, State: &leylinev1.GetStateResponse{}}}, 3*time.Second); !strings.Contains(text, "transmissions are not counted, and no meter readings arrived") {
+		t.Errorf("text with no readings:\n%s", text)
 	}
 }
 
