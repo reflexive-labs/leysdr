@@ -174,9 +174,13 @@ func gainSchema[T any](tail string) *jsonschema.Schema {
 	if err != nil {
 		panic(fmt.Sprintf("mcp: the %T schema: %v", *new(T), err))
 	}
-	sch.Properties["gain"].Description = gainHelp + tail
+	sch.Properties["gain"].Description = gainHelp + gainToolNote + tail
 	return sch
 }
+
+// gainToolNote is what an agent cannot learn from gainHelp alone: which radios take auto, and
+// where to read it. A first sweep sent auto to a HackRF, which has no automatic gain, and failed.
+const gainToolNote = "; auto only on a radio with a gain element that supportsAuto (get_state's devices list them): an RTL-SDR's TUNER has it, and a HackRF has none and takes its stages, such as LNA=24,VGA=24 with AMP=0 (off) or AMP=11 (on)"
 
 // registerResources exposes the ley:// resources the daemon can answer: a
 // recording, which has a store and outlives the daemon; a kept decode job's
