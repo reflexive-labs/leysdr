@@ -1165,6 +1165,34 @@ feature whose default model matches the given one; speech counts any installed s
 that names the provider, so a plugin's provider works without a table row. The Go, Swift and app
 tables are held equal by a test that reads the Swift sources as text.
 
+### AI-17 `[ ]` The window follows the radio
+
+Decided 2026-10-19 from the owner's Mac pass. Driving the radio from `ley ask` left the window
+inconsistent: the waterfall followed the capture, because the capture is shared, while the
+readout, the inspector, the rail's selection and the audio stayed on the window's own channel,
+and the sidebar flagged the old GMRS channel as outside the radio's span. The rule: one radio,
+one picture. When another client makes a channel on the window's capture, the window follows it.
+
+- **A channel another client makes on the window's capture becomes the tuned channel:** the
+  readout, the inspector, the rail's selection, the transmissions log and the audio (the
+  window's sink moves to it) read it, and the attribution line names who tuned ("The assistant
+  tuned to 162.400 MHz NFM"). The window does not take ownership: the channel stays its maker's
+  and persists as it did, and when the maker ends it the held channel's `.lost` path makes the
+  window a channel of its own where it was, as today.
+- **The window's own channel is ended by the window** once it follows another, unless a recording
+  runs on it: then it stays, as the retune question keeps it today, and the inspector says so.
+- **Several candidates:** the newest channel (by event `seq`) another client made on the
+  window's capture since the window's own last tune. A channel the window made itself is never
+  "another client's".
+- **A capture moved without a new channel** (another client narrowed or moved the radio and tuned
+  nothing) keeps today's out-of-capture caution and its Tune inside button.
+- **The panel's assistant** is another client too, so the same rule makes "listen to NOAA" in the
+  panel move the window; the view tool the plan once imagined for it is not needed.
+
+Verify: façade tests for the fold that picks the channel to follow, the sink move and the
+recording exception; `make app-e2e` with a second client tuning on the window's capture and the
+window's held channel changing to it; the views by eye on the Mac, listed in `docs/plans/app.md`.
+
 ## Lanes
 
 What can be built at once, each lane in its own worktree, merged in this order:
