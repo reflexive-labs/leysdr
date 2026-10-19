@@ -73,7 +73,7 @@ Six roles. Use the role, never a colour name, at the call site.
 | Role | Rendering | Use for |
 |---|---|---|
 | `Label` | bold | table headers, field labels, the left column of a label block, verb names in help, the `ley ask` prompt |
-| `Muted` | dim | ids the user is not being asked to read, units, hints, scaffolding, values below the noise floor, the assistant's tool calls in `ley ask` |
+| `Muted` | dim | ids the user is not being asked to read, units, hints, scaffolding, values below the noise floor, the assistant's tool calls and waiting line in `ley ask` |
 | `Ok` | green | `ACTIVE`, `AVAILABLE`, audio flowing, squelch open, a successful action |
 | `Warn` | yellow | `OUT_OF_CAPTURE`, `IN_USE` by another program, muted audio, a degraded but working state |
 | `Err` | red | `DISCONNECTED`, `CAPTURE_DETACHED`, the `ley:` error prefix, a rejected write |
@@ -151,6 +151,7 @@ survives as height.
 | Frame | `╭╮╰╯│─` | `+|-` | `ui.Style.Box`, for a chart that deserves one |
 | Tree branch / last / trunk | `├─` `└─` `│` | `+-` `\-` `|` | `ley state` hierarchy |
 | Absent value | `-` | `-` | never blank, never the same glyph as a range separator |
+| Ellipsis | `…` | `...` | the end of text `Truncate` cut, and of `ley ask`'s waiting line |
 | Tool call | `→` | `->` | leads a `ley ask` line naming a call the assistant made |
 | Failed call | `✗` | `x` | under a `ley ask` call that failed (`Err`) or was declined (`Warn`) |
 | Prompt | `>` | `>` | `ley ask`'s request prompt |
@@ -185,6 +186,16 @@ Ranges read `24.000 MHz to 1.766 GHz`, never with a dash, so a dash always means
   before the next prompt. The blank lines go to stderr, so a redirected stdout holds the words and
   nothing else, and a call that ran prints only its own line, since the text reports the result;
   a call the user allowed keeps its result's first line beneath it, the daemon's receipt.
+- **A wait says so, and leaves nothing behind.** While `ley ask` waits on the assistant and
+  nothing has been printed for 300 ms, one `Muted` line on stderr says what it waits on,
+  `thinking…` (`stopping…` after a Ctrl-C). The delay keeps an answer that comes at once from
+  flickering a line. From three seconds it carries the count since the last output, `thinking…
+  4s`, redrawn once a second, so a long wait reads as a wait and not as a hang; a spinner would
+  say no more and redraw ten times as often. The line is drawn with `\r\033[K`, as `ley scan`'s
+  progress line is, and erased the same way before anything else is printed and at exit. It is
+  drawn only when stderr is a terminal and never under `--json`, since it is prose (principle 3)
+  and a pipe has no line to erase, and never while text on the same terminal is part-way through
+  a line, which the erase would wipe.
 - **A chart draws its trace, not its area.** One glyph per column, on the row that column's
   value falls in, with a thin stem beneath it only where it stands above the reference line.
   Filling every cell under a column adds area without information: a flat noise floor covers

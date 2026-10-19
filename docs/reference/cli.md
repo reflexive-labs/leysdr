@@ -745,6 +745,12 @@ the daemon with `ResolveAction`. `--yes` (`-y`) allows every such call, which is
 script runs `ask`; when stdin is not a terminal and `--yes` is absent, the call is declined with a
 line that says so and names `--yes`. `ask` declares no view tools, so a view tool call (one an app
 declared, in a conversation `ask` continues) is answered with the error `ley ask has no view`.
+While a turn is under way and nothing has been printed for 300 ms, a dim `thinking…` line
+(`thinking...` under `--ascii`) waits on stderr, with the seconds since the last output once there
+are three (`thinking… 4s`), and `stopping…` after a Ctrl-C. It is erased before anything else is
+printed and when `ask` exits, and is not drawn while the assistant's text is part-way through a line
+on the terminal. It is drawn only when stderr is a terminal and never under `--json`, so a pipe or a
+file never holds it; the transcripts below leave it out.
 
 The conversation outlives the process, and the daemon keeps it on disk, so it outlives a restart
 too: `--continue` carries on the conversation whose last turn is newest (then the one started

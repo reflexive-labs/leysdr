@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -141,6 +142,8 @@ type askRun struct {
 	asked    bool
 	answered map[string]bool
 	view     askView
+	// wait is the waiting line, nil when it is not drawn (no terminal on stderr, or --json).
+	wait *waitLine
 }
 
 // errInterrupted reports a Ctrl-C that arrived while ask waited on stdin.
@@ -164,6 +167,7 @@ func runAsk(ctx context.Context, app *App, o askOptions, request string, interru
 		app: app, ctx: base, c: c, o: o, interrupts: interrupts, answered: map[string]bool{},
 		view: askView{text: map[string]string{}, calls: map[string]leylinev1.ToolCallState{}},
 	}
+	r.useWaitLine()
 	if err := r.open(); err != nil {
 		return err
 	}
@@ -313,6 +317,8 @@ func (r *askRun) turn(request string) error {
 // follow prints the conversation and answers what it asks until the assistant's turn is done in
 // a state newer than seq after.
 func (r *askRun) follow(after uint64) error {
+	r.wait.start()
+	defer r.wait.clear()
 	stops := 0
 	if r.conv.GetState() == leylinev1.ConversationState_CONVERSATION_WAITING {
 		if err := r.answer(r.conv.GetPending()); errors.Is(err, errInterrupted) {
@@ -374,6 +380,8 @@ func (r *askRun) follow(after uint64) error {
 			if err := r.interrupt(stops); err != nil {
 				return err
 			}
+		case <-r.wait.timer():
+			r.wait.draw()
 		}
 	}
 }
@@ -390,6 +398,7 @@ func (r *askRun) interrupt(stops int) error {
 	}
 	r.view.group(r.app, askTrace)
 	fmt.Fprintln(r.app.Stderr, r.app.ErrStyle.Muted("Stopping the assistant; Ctrl-C again ends the conversation"))
+	r.wait.stopping()
 	if _, err := r.c.Assistant.StopTurn(r.ctx, &leylinev1.ConversationRef{ConversationId: r.conv.GetConversationId()}); err != nil {
 		return r.app.notRunning(err)
 	}
@@ -497,6 +506,8 @@ func (r *askRun) answer(p *leylinev1.PendingAction) error {
 	default:
 		fmt.Fprint(r.app.Stderr, strings.Join(wrapWords(what+". Allow? [y/N]", max(s.Width-len(" yes"), 0)), "\n")+" ")
 		line, err := r.readLine()
+		// The wait for the assistant starts again from the answer, not from the question.
+		r.wait.restart()
 		if err != nil {
 			// The cursor is still after the question.
 			fmt.Fprintln(r.app.Stderr)
@@ -783,4 +794,135 @@ func firstLine(text string) string {
 		return strings.TrimSpace(text[:i])
 	}
 	return text
+}
+
+// The waiting line (docs/dev/cli-style.md, "A wait says so"): a muted "thinking…" on stderr while
+// a turn is under way and nothing has been printed for waitDelay, with the seconds since the last
+// output once there have been waitCount of them. It is drawn only from follow's loop, the one
+// goroutine that prints the conversation, and every write ask makes passes through waitWriter,
+// which erases the line first; so the line is never drawn after the next output has begun.
+const (
+	waitDelay = 300 * time.Millisecond
+	waitCount = 3 * time.Second
+)
+
+// askClock is the time the waiting line reads. nil on App means the wall clock; a test steps its
+// own.
+type askClock struct {
+	now   func() time.Time
+	after func(time.Duration) <-chan time.Time
+}
+
+// waitLine is the waiting line's state. A nil *waitLine is the line turned off, and every method
+// but draw, which only a timer it set calls, does nothing on it.
+type waitLine struct {
+	stderr io.Writer // the terminal, not the erasing writer
+	style  ui.Style
+	clock  askClock
+	// hold reports that the line may not be drawn now: text on stdout is mid-line on the same
+	// terminal, and "\r\033[K" would wipe it.
+	hold func() bool
+	// since is when ask last printed anything; tick is the pending timer, nil when none is set.
+	since time.Time
+	tick  <-chan time.Time
+	// word is what the assistant is doing, and shown the line on the screen, "" for none.
+	word, shown string
+}
+
+// useWaitLine turns the waiting line on when stderr is a terminal and the output is not --json,
+// and routes the run's stdout and stderr through it, so anything ask prints erases it first.
+func (r *askRun) useWaitLine() {
+	app := r.app
+	if app.JSON || app.IsErrTTY == nil || !app.IsErrTTY() {
+		return
+	}
+	clock := askClock{now: time.Now, after: time.After}
+	if app.askClock != nil {
+		clock = *app.askClock
+	}
+	stdoutTTY := app.IsTTY != nil && app.IsTTY()
+	w := &waitLine{
+		stderr: app.Stderr, style: app.ErrStyle, clock: clock,
+		hold: func() bool { return stdoutTTY && r.view.midLine },
+	}
+	routed := *app
+	routed.Stdout, routed.Stderr = waitWriter{app.Stdout, w}, waitWriter{app.Stderr, w}
+	r.app, r.wait = &routed, w
+}
+
+// waitWriter erases the waiting line before a write and restarts its wait.
+type waitWriter struct {
+	w    io.Writer
+	line *waitLine
+}
+
+func (ww waitWriter) Write(p []byte) (int, error) {
+	ww.line.clear()
+	ww.line.restart()
+	return ww.w.Write(p)
+}
+
+// start begins the wait of a turn.
+func (w *waitLine) start() {
+	if w == nil {
+		return
+	}
+	w.word = "thinking"
+	w.restart()
+}
+
+// stopping is the rest of a turn after a Ctrl-C, which the assistant is ending.
+func (w *waitLine) stopping() {
+	if w != nil {
+		w.word = "stopping"
+	}
+}
+
+// restart begins the wait for the next output from now.
+func (w *waitLine) restart() {
+	if w != nil {
+		w.since, w.tick = w.clock.now(), nil
+	}
+}
+
+// timer fires when the line is next due: waitDelay after the last output, then every second for
+// the count. A nil channel, which never fires, when the line is off.
+func (w *waitLine) timer() <-chan time.Time {
+	if w == nil {
+		return nil
+	}
+	if w.tick == nil {
+		next := waitDelay
+		if w.shown != "" {
+			next = time.Second
+		}
+		w.tick = w.clock.after(next)
+	}
+	return w.tick
+}
+
+// draw puts the line on the screen, or brings its count up to date.
+func (w *waitLine) draw() {
+	w.tick = nil
+	if w.hold() {
+		return
+	}
+	text := w.word + w.style.Glyphs().Ellipsis
+	if waited := w.clock.now().Sub(w.since); waited >= waitCount {
+		text += fmt.Sprintf(" %ds", int(waited/time.Second))
+	}
+	if text == w.shown {
+		return
+	}
+	fmt.Fprint(w.stderr, "\r\033[K"+w.style.Muted(text))
+	w.shown = text
+}
+
+// clear erases the line if it is on the screen.
+func (w *waitLine) clear() {
+	if w == nil || w.shown == "" {
+		return
+	}
+	fmt.Fprint(w.stderr, "\r\033[K")
+	w.shown = ""
 }

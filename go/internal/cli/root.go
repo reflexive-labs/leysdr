@@ -126,6 +126,9 @@ type App struct {
 	// verbs a job the Leyline app registered.
 	launchctlPrint func(ctx context.Context, target string) (string, error)
 	launchctlRun   func(ctx context.Context, args ...string) error
+	// askClock, when set, is the time `ley ask`'s waiting line reads in place of the wall clock,
+	// so a test decides when it is due.
+	askClock *askClock
 	// echoOff, when set, stands in for turning echo off on a terminal stdin, so a test can take
 	// the prompt path of `ley ai add` with a reader that is not a terminal.
 	echoOff func(io.Reader) (restore func(), err error)

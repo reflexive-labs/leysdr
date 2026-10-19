@@ -4,9 +4,11 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -67,6 +69,9 @@ func runAskLey(t *testing.T, sock string, o askRunOpts, args ...string) (string,
 		Stdout: &out, Stderr: stderr, Stdin: stdin,
 		IsTTY: func() bool { return true }, IsErrTTY: func() bool { return true }, IsInTTY: func() bool { return o.inTTY },
 		TermWidth: func() int { return o.width }, ErrTermWidth: func() int { return o.width },
+		// The fake assistant answers at once; a waiting line drawn because the machine running
+		// the test was slow would change the transcript.
+		askClock: &askClock{now: time.Now, after: func(time.Duration) <-chan time.Time { return nil }},
 		LookupEnv: func(k string) (string, bool) {
 			if k == "LANG" {
 				return "en_US.UTF-8", true
@@ -758,5 +763,188 @@ func TestAskDelete(t *testing.T) {
 	if _, _, err := runLey(t, sock, 80, false, "", "ask", "--delete", "conv_nope", "--yes"); exitCode(err) != ExitUsage ||
 		!strings.Contains(err.Error(), "no conversation called conv_nope") {
 		t.Errorf("an unknown id: %v", err)
+	}
+}
+
+// stepClock is the waiting line's clock in a test: each timer the line sets arrives on armed, and
+// fires when the test says, at the time the test sets.
+type stepClock struct {
+	at    time.Time
+	armed chan stepTimer
+}
+
+type stepTimer struct {
+	d    time.Duration
+	fire chan time.Time
+}
+
+func newStepClock() *stepClock {
+	return &stepClock{at: time.Unix(1_000_000, 0), armed: make(chan stepTimer)}
+}
+
+func (c *stepClock) clock() *askClock {
+	return &askClock{
+		now: func() time.Time { return c.at },
+		after: func(d time.Duration) <-chan time.Time {
+			fire := make(chan time.Time)
+			c.armed <- stepTimer{d, fire}
+			return fire
+		},
+	}
+}
+
+// waitRun is a `ley ask` following a turn on a terminal (stdout and stderr merged, as one shows
+// them), fed the conversation's states by the test, with the waiting line on a step clock.
+type waitRun struct {
+	t     *testing.T
+	r     *askRun
+	out   *bytes.Buffer
+	clk   *stepClock
+	start time.Time
+	done  chan error
+	sig   chan os.Signal
+}
+
+func startWaitRun(t *testing.T) *waitRun {
+	t.Helper()
+	out, clk, sig := &bytes.Buffer{}, newStepClock(), make(chan os.Signal, 1)
+	app := &App{
+		Stdout: out, Stderr: out, askClock: clk.clock(),
+		IsTTY: func() bool { return true }, IsErrTTY: func() bool { return true },
+	}
+	r := &askRun{
+		app: app, ctx: t.Context(), interrupts: sig, answered: map[string]bool{},
+		conv:    &leylinev1.Conversation{Seq: 1, State: leylinev1.ConversationState_CONVERSATION_THINKING},
+		seen:    1,
+		updates: make(chan *leylinev1.Conversation), watchErr: make(chan error, 1),
+		view: askView{text: map[string]string{}, calls: map[string]leylinev1.ToolCallState{}},
+	}
+	r.useWaitLine()
+	w := &waitRun{t: t, r: r, out: out, clk: clk, start: clk.at, done: make(chan error, 1), sig: sig}
+	go func() { w.done <- r.follow(1) }()
+	return w
+}
+
+// next is the timer the line sets next, which must be d long.
+func (w *waitRun) next(d time.Duration) stepTimer {
+	w.t.Helper()
+	tm := <-w.clk.armed
+	if tm.d != d {
+		w.t.Fatalf("the line set a %v timer, want %v", tm.d, d)
+	}
+	return tm
+}
+
+// fire sets the clock to at after the start and fires tm, then waits for the timer after it.
+func (w *waitRun) fire(tm stepTimer, at, next time.Duration) stepTimer {
+	w.t.Helper()
+	w.clk.at = w.start.Add(at)
+	tm.fire <- w.clk.at
+	return w.next(next)
+}
+
+func (w *waitRun) send(cv *leylinev1.Conversation) {
+	w.r.updates <- cv
+}
+
+func (w *waitRun) check(what, want string) {
+	w.t.Helper()
+	if got := w.out.String(); got != want {
+		w.t.Fatalf("%s:\n got %q\nwant %q", what, got, want)
+	}
+}
+
+func thinkingState(seq uint64, st leylinev1.ConversationState, turn *leylinev1.Turn) *leylinev1.Conversation {
+	cv := &leylinev1.Conversation{Seq: seq, State: st}
+	if turn != nil {
+		cv.Turns = []*leylinev1.Turn{turn}
+	}
+	return cv
+}
+
+// The waiting line shows on stderr once nothing has been printed for 300 ms, counts the seconds
+// from 3, and is erased before the text on stdout and before a call line, and comes back after the
+// call line. It is not drawn while the text is mid-line, which "\r\033[K" would wipe.
+func TestAskWaitingLine(t *testing.T) {
+	const (
+		erase    = "\r\x1b[K"
+		thinking = leylinev1.ConversationState_CONVERSATION_THINKING
+	)
+	w := startWaitRun(t)
+	tm := w.next(waitDelay)
+	w.check("before the delay", "")
+	tm = w.fire(tm, 300*time.Millisecond, time.Second)
+	want := erase + "thinking..."
+	w.check("after the delay", want)
+	tm = w.fire(tm, 1300*time.Millisecond, time.Second)
+	w.check("a second later", want)
+	_ = w.fire(tm, 3300*time.Millisecond, time.Second)
+	want += erase + "thinking... 3s"
+	w.check("after three seconds", want)
+
+	w.send(thinkingState(2, thinking, assistantTurn("Tuning", false)))
+	tm = w.next(waitDelay)
+	want += erase + "Tuning"
+	w.check("the first text", want)
+	_ = w.fire(tm, 3600*time.Millisecond, waitDelay)
+	w.check("mid-line", want)
+
+	call := &leylinev1.ToolCall{CallId: "c1", Tool: "tune", State: leylinev1.ToolCallState_TOOL_CALL_RUNNING}
+	w.send(thinkingState(3, thinking, assistantTurn("Tuning.\n", false, call)))
+	tm = w.next(waitDelay)
+	want += ".\n\n-> tune\n"
+	w.check("the call line", want)
+	_ = w.fire(tm, 4000*time.Millisecond, time.Second)
+	want += erase + "thinking..."
+	w.check("after the call line", want)
+
+	done := &leylinev1.ToolCall{CallId: "c1", Tool: "tune", State: leylinev1.ToolCallState_TOOL_CALL_DONE}
+	w.send(thinkingState(4, leylinev1.ConversationState_CONVERSATION_IDLE, assistantTurn("Tuning.\nTuned.", true, done)))
+	if err := <-w.done; err != nil {
+		t.Fatal(err)
+	}
+	want += erase + "\nTuned.\n"
+	w.check("the answer", want)
+}
+
+// A turn that ends while the line is up, or SIGTERM, leaves no line behind for the prompt or the
+// shell.
+func TestAskWaitingLineErasedOnExit(t *testing.T) {
+	const erase = "\r\x1b[K"
+	w := startWaitRun(t)
+	_ = w.fire(w.next(waitDelay), 300*time.Millisecond, time.Second)
+	w.send(thinkingState(2, leylinev1.ConversationState_CONVERSATION_IDLE, nil))
+	if err := <-w.done; err != nil {
+		t.Fatal(err)
+	}
+	w.check("a turn that ends with no more words", erase+"thinking..."+erase)
+
+	w = startWaitRun(t)
+	_ = w.fire(w.next(waitDelay), 300*time.Millisecond, time.Second)
+	w.sig <- syscall.SIGTERM
+	if err := <-w.done; !errors.Is(err, errTerminated) {
+		t.Fatalf("SIGTERM: %v", err)
+	}
+	w.check("SIGTERM", erase+"thinking..."+erase)
+}
+
+// With stderr off a terminal, or under --json, there is no waiting line and nothing is routed
+// through it.
+func TestAskWaitingLineOnlyOnATerminal(t *testing.T) {
+	for _, app := range []*App{
+		{IsErrTTY: func() bool { return false }, IsTTY: func() bool { return true }},
+		{IsErrTTY: func() bool { return true }, JSON: true},
+		{},
+	} {
+		app.Stdout, app.Stderr = io.Discard, io.Discard
+		app.askClock = &askClock{now: time.Now, after: func(time.Duration) <-chan time.Time {
+			t.Error("the line set a timer")
+			return nil
+		}}
+		r := &askRun{app: app}
+		r.useWaitLine()
+		if r.wait != nil || r.app != app || r.wait.timer() != nil {
+			t.Errorf("tty %v, json %v: the waiting line is on", app.IsErrTTY != nil && app.IsErrTTY(), app.JSON)
+		}
 	}
 }
