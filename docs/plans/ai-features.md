@@ -1165,7 +1165,7 @@ feature whose default model matches the given one; speech counts any installed s
 that names the provider, so a plugin's provider works without a table row. The Go, Swift and app
 tables are held equal by a test that reads the Swift sources as text.
 
-### AI-17 `[ ]` The window follows the radio
+### AI-17 `[x]` The window follows the radio
 
 Decided 2026-10-19 from the owner's Mac pass. Driving the radio from `ley ask` left the window
 inconsistent: the waterfall followed the capture, because the capture is shared, while the
