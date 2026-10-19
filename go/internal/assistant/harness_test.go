@@ -102,6 +102,11 @@ func startWorker(t *testing.T, cfg workerConfig) *worker {
 	if cfg.daemon.PresenceGrace == 0 {
 		cfg.daemon.PresenceGrace = 200 * time.Millisecond
 	}
+	// The fake's recordings default to one fixed directory under /tmp, which tests in another
+	// checkout share; each daemon gets its own.
+	if cfg.daemon.RecordingsDir == "" {
+		cfg.daemon.RecordingsDir = t.TempDir()
+	}
 	d := fakedaemon.New(cfg.daemon)
 	served := make(chan error, 1)
 	go func() { served <- d.Serve(ctx, sock) }()

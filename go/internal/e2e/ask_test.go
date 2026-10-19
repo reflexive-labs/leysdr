@@ -492,9 +492,9 @@ func checkAskReceivedText(t *testing.T, r *askRig) {
 	}
 	// The allowed call keeps the daemon's receipt beneath it: the worker runs it through RUNNING,
 	// and the reason it asked with is what ask reads. The line is cut to the width, and tune's
-	// names its channel and capture, so only its start is compared.
-	if receipt := strings.TrimSpace(strings.SplitN(strings.TrimSpace(cs[1].GetResultText()), "\n", 2)[0]); receipt == "" ||
-		!strings.Contains(errOut, "\n  "+receipt[:min(len(receipt), 40)]) {
+	// names its channel and capture, so only its start is compared, cut by runes.
+	if receipt := []rune(strings.TrimSpace(strings.SplitN(strings.TrimSpace(cs[1].GetResultText()), "\n", 2)[0])); len(receipt) == 0 ||
+		!strings.Contains(errOut, "\n  "+string(receipt[:min(len(receipt), 40)])) {
 		t.Errorf("ley ask stderr lacks the tune's receipt %q: %q", receipt, errOut)
 	}
 	r.mustLey("", "stop", "all")

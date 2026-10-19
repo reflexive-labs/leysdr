@@ -23,6 +23,11 @@ func harnessStop(t *testing.T, opts fakedaemon.Options) (sock string, c *leyline
 	if opts.PresenceGrace == 0 {
 		opts.PresenceGrace = 200 * time.Millisecond
 	}
+	// The fake's recordings default to one fixed directory under /tmp, which tests in another
+	// checkout share; each daemon gets its own.
+	if opts.RecordingsDir == "" {
+		opts.RecordingsDir = t.TempDir()
+	}
 	served := make(chan error, 1)
 	go func() { served <- fakedaemon.New(opts).Serve(ctx, sock) }()
 	c, err := leyline.Dial(ctx, sock, leyline.WithKind("cli"), leyline.WithLabel("test"), leyline.WithClientID("cli_test"))
