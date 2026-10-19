@@ -19,6 +19,8 @@ public struct AttributedChange: Sendable, Equatable {
     public enum Object: Sendable, Equatable {
         case capture(before: Leyline_V1_Capture, after: Leyline_V1_Capture)
         case channel(before: Leyline_V1_Channel, after: Leyline_V1_Channel)
+        /// The channel's first event: another client tuned (`MirrorState.made`).
+        case made(Leyline_V1_Channel)
     }
 
     public var causedBy: Leyline_V1_ClientInfo
@@ -52,6 +54,9 @@ public struct AttributedChange: Sendable, Equatable {
     /// author and are not kept as changes).
     func isCurrent(channel: Leyline_V1_Channel, capture: Leyline_V1_Capture?) -> Bool {
         switch object {
+        case .made(let made):
+            return made.channelID == channel.channelID && made.offsetHz == channel.offsetHz
+                && made.mode == channel.mode
         case .channel(_, let after):
             return after.channelID == channel.channelID && after.offsetHz == channel.offsetHz
                 && after.mode == channel.mode && after.bandwidthHz == channel.bandwidthHz
@@ -90,18 +95,29 @@ public struct ChangeNote: Sendable, Equatable {
     /// The note for `channel`, or nil when nothing attributed has moved on it or its capture, or
     /// when the newest change was this client's own (`selfClientID`, `ClientIdentity.id`): a
     /// person does not need telling what they just did, and an older change by someone else is no
-    /// longer what the channel shows.
+    /// longer what the channel shows. A channel another client made reads "tuned to" its
+    /// frequency and mode, and keeps saying so when the same client then set something on it, as
+    /// the assistant's tune sets the squelch it measured: "The assistant tuned to 162.400 MHz NFM
+    /// and set the squelch to -42 dBFS."
     public static func latest(
         for channel: Leyline_V1_Channel, in state: MirrorState, selfClientID: String
     ) -> ChangeNote? {
         let capture = state.capture(channel.captureID)
-        let candidates = [state.changes[channel.channelID], state.changes[channel.captureID]]
+        let made = state.made[channel.channelID].flatMap {
+            $0.isCurrent(channel: channel, capture: capture) ? $0 : nil
+        }
+        let candidates = [state.changes[channel.channelID], state.changes[channel.captureID], made]
             .compactMap { $0 }
             .filter { $0.isCurrent(channel: channel, capture: capture) }
         guard let newest = candidates.max(by: { $0.seq < $1.seq }),
             newest.causedBy.clientID != selfClientID
         else { return nil }
-        let what = phrases(newest.object, in: state)
+        var what = phrases(newest.object, in: state)
+        if let made, made.seq < newest.seq, made.causedBy.clientID == newest.causedBy.clientID,
+            case .channel = newest.object
+        {
+            what = phrases(made.object, in: state) + what
+        }
         guard !what.isEmpty else { return nil }
         let who = author(newest.causedBy)
         return ChangeNote(text: capitalised(who) + " " + sentence(what) + ".", author: who)
@@ -131,6 +147,12 @@ public struct ChangeNote: Sendable, Equatable {
 
     static func phrases(_ object: AttributedChange.Object, in state: MirrorState) -> [Phrase] {
         switch object {
+        case .made(let made):
+            // "tuned to 162.400 MHz NFM": the channel as it is now, since the note shows only
+            // while its frequency and mode are still the ones it was made with.
+            let now = state.channel(made.channelID) ?? made
+            guard let hz = state.frequencyHz(of: now) else { return [] }
+            return [Phrase(verb: "tuned", what: "to \(hzWords(hz)) \(now.mode.word)")]
         case .channel(let was, let now):
             var out: [Phrase] = []
             if was.offsetHz != now.offsetHz, let hz = state.frequencyHz(of: now) {

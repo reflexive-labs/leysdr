@@ -50,6 +50,13 @@ public struct MirrorState: Sendable, Equatable {
     /// words for the inspector. A tombstone removes the entry; a snapshot names nobody, so it
     /// starts empty.
     public var changes: [String: AttributedChange] = [:]
+    /// The event that first put each channel in the mirror, when it named who caused it: the
+    /// client that made the channel and the `seq` it was made at (`AttributedChange.Object.made`),
+    /// which is what `ChannelFollow` picks a channel to follow by and `ChangeNote` words as "tuned
+    /// to". Kept for the channel's life, so a setting moved later does not lose it; a tombstone
+    /// removes the entry, and a snapshot, which says who made a channel but not when, starts it
+    /// empty.
+    public var made: [String: AttributedChange] = [:]
     /// The newest event folded (the snapshot's `event_seq` at open). Events at or below it are
     /// already reflected and are skipped.
     public var seq: UInt64 = 0
@@ -157,7 +164,14 @@ public struct MirrorState: Sendable, Equatable {
                 changes[c.captureID] = change
             }
         case .channel(let c):
-            if c.state == .unspecified { changes[c.channelID] = nil }
+            if c.state == .unspecified {
+                changes[c.channelID] = nil
+                made[c.channelID] = nil
+            }
+            if let by, c.state != .unspecified, channel(c.channelID) == nil {
+                made[c.channelID] = AttributedChange(
+                    causedBy: by, seq: event.seq, object: .made(c))
+            }
             if let by, c.state != .unspecified, let was = channel(c.channelID),
                 let change = AttributedChange.channel(was, c, causedBy: by, seq: event.seq)
             {

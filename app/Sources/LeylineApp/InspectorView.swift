@@ -147,6 +147,12 @@ struct IdentityView: View {
                 Text(note.text).font(Theme.Font.aside).foregroundStyle(Theme.inkTertiary)
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
+            if let kept = session.followKeptWords {
+                // The window follows another client's channel while its own records
+                // (`ChannelFollow`). It goes when the recording stops and the window ends it.
+                Text(kept).font(Theme.Font.aside).foregroundStyle(Theme.inkTertiary)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+            }
             if let b = bookmark {
                 BookmarkFieldsView(bookmark: b)
             }

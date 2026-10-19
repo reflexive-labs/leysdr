@@ -1193,6 +1193,24 @@ Verify: façade tests for the fold that picks the channel to follow, the sink mo
 recording exception; `make app-e2e` with a second client tuning on the window's capture and the
 window's held channel changing to it; the views by eye on the Mac, listed in `docs/plans/app.md`.
 
+Done 2026-10-19 on Linux: the mirror keeps who made each channel and at which `seq`
+(`MirrorState.made`, from the creation event's `caused_by`), `ChannelFollow` folds it into the
+channel to follow, whether the window ends its own or keeps it for a recording (a record job that
+borrowed the channel or one on its frequency and mode, the frequency read before the move that
+took it out of the capture), and the sink move (detach the window's own sink from a channel that
+keeps running, attach one on the new channel only when the window was playing and nothing plays
+it yet); `ChangeNote` words a made channel as "The assistant tuned to 162.400 MHz NFM." and
+folds the same client's squelch into the sentence. "The window's own" is its client id, as
+creation cause and as owner; a job's channel is never followed. `AppSession` holds the followed
+id, ends or keeps its own, moves the sink, and on the followed channel's `.lost` makes its own
+channel with the last copy's settings. Tested in `ChannelFollowTests` and against the daemon in
+`AssistantDaemonTests` (a stand-in `assistant` client's kept channel on the app's capture); the
+daemon takes a sink on another client's channel (it checks only the channel), which Linux can
+show only as `PLATFORM_UNSUPPORTED`. The views and the session's half are unverified, listed in
+`docs/plans/app.md`. The assistant's `listen_summary` makes a short-lived channel of its own on the
+radio, and the rule follows it too: when it ends, the window has its own channel on that
+frequency.
+
 ## Lanes
 
 What can be built at once, each lane in its own worktree, merged in this order:

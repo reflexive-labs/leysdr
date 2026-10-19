@@ -287,4 +287,100 @@ final class AssistantDaemonTests: XCTestCase {
                 for: try XCTUnwrap(mirror.state.channel(channel.channelID)), in: mirror.state,
                 selfClientID: app.identity.id))
     }
+
+    /// The follow rule against the daemon: the assistant (a stand-in connection, as above) makes
+    /// a kept channel on the window's capture, the window's held channel changes to it and its
+    /// own is ended, the note says who tuned, and when the assistant ends its channel the window
+    /// gets the copy to make its own where it was.
+    @MainActor
+    func testTheWindowFollowsAChannelTheAssistantMakesOnItsCapture() async throws {
+        let app = try DaemonConnection(
+            socketPath: daemon.socketPath, identity: .fresh(kind: "app", label: "test-app"))
+        defer { app.close() }
+        let mirror = DaemonMirror(connection: app)
+        let running = Task { await mirror.run() }
+        defer { running.cancel() }
+        await assertEventually("mirror never went live") { mirror.connection == .live }
+        let presence = Task { for try await _ in app.events() {} }
+        defer { presence.cancel() }
+        let (capture, own) = try await ClientDaemonTests.tuneFixture(app, on: daemon)
+        var held = HeldObject<Leyline_V1_Channel>()
+        held.made(own, id: own.channelID, at: Date())
+        var follow = ChannelFollow()
+        func step() -> ChannelFollow.Step? {
+            _ = held.observe(
+                inMirror: held.id.map { mirror.state.channel($0) != nil } ?? false, now: Date(),
+                dropAfter: 3)
+            return follow.step(
+                in: mirror.state, captureID: capture.captureID,
+                held: held.current { mirror.state.channel($0) }, windowSinkID: nil,
+                audioHeld: false, selfClientID: app.identity.id)
+        }
+        await assertEventually("the window's channel never reached the mirror") {
+            mirror.state.channel(own.channelID) != nil
+        }
+        XCTAssertNil(step(), "the window's own channel is never another client's")
+
+        let worker = try DaemonConnection(
+            socketPath: daemon.socketPath, identity: .fresh(kind: "mcp", label: "assistant"))
+        defer { worker.close() }
+        let workerPresence = Task { for try await _ in worker.events() {} }
+        defer { workerPresence.cancel() }
+        var req = Leyline_V1_CreateChannelRequest()
+        req.captureID = capture.captureID
+        req.offsetHz = -200_000
+        req.mode = .nfm
+        req.persistent = true  // `ley ask`'s tune keeps its channel
+        let theirs = try await worker.control.createChannel(req)
+        await assertEventually("the assistant's channel never reached the mirror") {
+            mirror.state.channel(theirs.channelID) != nil
+        }
+
+        let taken = try XCTUnwrap(step())
+        XCTAssertEqual(taken.follow.channelID, theirs.channelID)
+        XCTAssertEqual(taken.from, own.channelID)
+        XCTAssertTrue(taken.endFrom)
+        XCTAssertFalse(taken.keepFrom)
+        XCTAssertEqual(mirror.state.made[theirs.channelID]?.causedBy.label, "assistant")
+        // What `AppSession` does with the step: hold the new channel, end its own.
+        held.drop()
+        held.adopted(id: taken.follow.channelID, at: Date())
+        var destroy = Leyline_V1_DestroyChannelRequest()
+        destroy.channelID = own.channelID
+        _ = try await app.control.destroyChannel(destroy)
+        await assertEventually("the window's own channel was never ended") {
+            mirror.state.channel(own.channelID) == nil
+        }
+        XCTAssertNil(step(), "followed once")
+        XCTAssertEqual(held.id, theirs.channelID)
+        XCTAssertEqual(
+            ChangeNote.latest(
+                for: try XCTUnwrap(mirror.state.channel(theirs.channelID)), in: mirror.state,
+                selfClientID: app.identity.id)?.text,
+            "The assistant tuned to 146.320 MHz NFM.")
+
+        // The window's sink on another client's channel: the daemon checks the channel, not who
+        // made it. A host with no system audio refuses for that reason alone.
+        var attach = Leyline_V1_AttachSinkRequest()
+        attach.channelID = theirs.channelID
+        attach.sink.systemAudio = Leyline_V1_SystemAudioSink()
+        do {
+            let sink = try await app.control.attachSink(attach)
+            XCTAssertEqual(sink.channelID, theirs.channelID)
+        } catch {
+            XCTAssertEqual(LeylineError(error).code, "PLATFORM_UNSUPPORTED")
+        }
+
+        // The assistant ends its channel: the window gets its last copy back.
+        destroy.channelID = theirs.channelID
+        _ = try await worker.control.destroyChannel(destroy)
+        await assertEventually("the assistant's channel never left the mirror") {
+            mirror.state.channel(theirs.channelID) == nil
+        }
+        XCTAssertEqual(
+            held.observe(inMirror: false, now: Date(), dropAfter: 3), .lost)
+        let was = try XCTUnwrap(follow.lost(theirs.channelID))
+        XCTAssertEqual(was.offsetHz, -200_000)
+        XCTAssertEqual(was.mode, .nfm)
+    }
 }

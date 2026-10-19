@@ -42,6 +42,13 @@ final class AppSession {
     private var heldChannel = HeldObject<Leyline_V1_Channel>()
     var captureID: String? { heldCapture.id }
     var channelID: String? { heldChannel.id }
+    /// The follow rule: another client's channel on this capture becomes the window's
+    /// (`ChannelFollow`). Not observed: every tune moves its floor, and what a view reads from it
+    /// (`followKeptWords`) changes only inside `mirrorChanged`, beside `state`, which is.
+    @ObservationIgnored private var follow = ChannelFollow()
+    /// The sink this window attached last, so a follow detaches its own sink and never another
+    /// client's.
+    @ObservationIgnored private var ownSinkID: String?
     private(set) var selectedBandID: String?
     private var adopted = false
     /// The frequency this app last asked for, until the daemon confirms it or two seconds pass:
@@ -861,7 +868,11 @@ final class AppSession {
             switch verdict {
             case .lost:
                 log("session", "channel \(id) is gone")
+                let followed = follow.lost(id)
                 dropChannel()
+                // Its maker ended the channel the window followed: the window makes its own
+                // where it was, so the picture stays on the frequency.
+                if let followed { Task { await listenOnOwn(like: followed) } }
             case .neverArrived:
                 log("session", "the mirror has no channel \(id) 3 s after the window took it")
                 dropChannel()
@@ -882,6 +893,7 @@ final class AppSession {
             if capturesCopy != heldCapture { heldCapture = capturesCopy }
             if channelsCopy != heldChannel { heldChannel = channelsCopy }
         }
+        followOtherClients()
         spectrum.follow(capture, connection: daemon)
         telemetry.follow(
             channelID, offsetHz: channel?.offsetHz, centerHz: capture?.centerHz,
@@ -923,6 +935,7 @@ final class AppSession {
     /// than until the mirror happens to change.
     private func request(_ hz: UInt64) {
         requestedHz = hz
+        follow.tuned(at: state.seq)
         requestedExpiry?.cancel()
         requestedExpiry = Task { [weak self] in
             try? await Task.sleep(for: .seconds(2))
@@ -1216,6 +1229,7 @@ final class AppSession {
             "session",
             "created channel \(ch.channelID): \(mode.word) \(bandwidthHz) Hz at offset \(offsetHz)")
         heldChannel.made(ch, id: ch.channelID, at: Date())
+        follow.tuned(at: state.seq)
         return ch
     }
 
@@ -1225,7 +1239,84 @@ final class AppSession {
         var req = Leyline_V1_AttachSinkRequest()
         req.channelID = ch.channelID
         req.sink.systemAudio = Leyline_V1_SystemAudioSink()
-        do { _ = try await daemon.control.attachSink(req) } catch { throw LeylineError(error) }
+        do { ownSinkID = try await daemon.control.attachSink(req).sinkID } catch {
+            throw LeylineError(error)
+        }
+    }
+
+    // MARK: Following another client's channel
+
+    /// The follow rule over the latest mirror state (`ChannelFollow`): a channel another client
+    /// made on this capture becomes the held channel, the window's own is ended unless a
+    /// recording runs on it, and the window's audio moves with it. Not while the window is making
+    /// a channel itself, sweeping, or stopped.
+    private func followOtherClients() {
+        guard let daemon, isLive, !busy, !creatingChannel, !sweeping, !listeningStopped else {
+            return
+        }
+        let step = follow.step(
+            in: state, captureID: captureID, held: channel, windowSinkID: ownSinkID,
+            audioHeld: playbackID != nil, selfClientID: daemon.identity.id)
+        let endKept = step == nil ? follow.keptToEnd(in: state) : nil
+        if let endKept {
+            log("session", "channel \(endKept) no longer records; ended")
+            Task { await destroyChannel(endKept) }
+        }
+        guard let step else { return }
+        let by = state.made[step.follow.channelID].map { ChangeNote.author($0.causedBy) } ?? ""
+        log(
+            "session",
+            "following \(step.follow.channelID), made by \(by), from \(step.from ?? "no channel")\(step.endFrom ? ", ended" : step.keepFrom ? ", kept for its recording" : "")"
+        )
+        heldChannel.drop()
+        heldChannel.adopted(id: step.follow.channelID, at: Date())
+        clearRequested()
+        Task {
+            if let s = step.detachSink {
+                var req = Leyline_V1_DetachSinkRequest()
+                req.sinkID = s
+                do { _ = try await daemon.control.detachSink(req) } catch {
+                    log("session", "sink \(s) not detached: \(LeylineError(error))")
+                }
+            }
+            if step.endFrom, let from = step.from { await destroyChannel(from) }
+            if step.attachSink {
+                do { try await ensureSink(on: step.follow) } catch {
+                    lastError = LeylineError(error)
+                }
+            }
+        }
+    }
+
+    /// Ends one of the window's own channels; one already gone is not an error.
+    private func destroyChannel(_ id: String) async {
+        guard let daemon else { return }
+        var req = Leyline_V1_DestroyChannelRequest()
+        req.channelID = id
+        do { _ = try await daemon.control.destroyChannel(req) } catch {
+            let e = LeylineError(error)
+            if e.code != "CHANNEL_NOT_FOUND" { log("session", "channel \(id) not ended: \(e)") }
+        }
+    }
+
+    /// A channel of the window's own with the settings of the one its maker ended, and a sink
+    /// unless a recorded part holds the audio.
+    private func listenOnOwn(like was: Leyline_V1_Channel) async {
+        guard let cap = capture, let writes, !creatingChannel, channelID == nil else { return }
+        creatingChannel = true
+        defer { creatingChannel = false }
+        do {
+            let ch = try await ensureChannel(
+                in: cap, offsetHz: was.offsetHz, mode: was.mode, bandwidthHz: was.bandwidthHz)
+            if !was.squelchDb.isNaN { writes.squelchDb(was.squelchDb, channel: ch.channelID) }
+            if playbackID == nil { try await ensureSink(on: ch) }
+            log("session", "own channel \(ch.channelID) where \(was.channelID) was")
+        } catch {
+            lastError = LeylineError(error)
+            log(
+                "session",
+                "no channel of its own where \(was.channelID) was: \(LeylineError(error))")
+        }
     }
 
     /// `ley tune`'s auto squelch from the next fresh row: 10 dB above the floor scaled to the
@@ -3979,6 +4070,10 @@ final class AppSession {
     var assistantUsage: UsageSoFar {
         UsageSoFar(lines: state.usage, conversationID: conversation?.conversationID ?? "")
     }
+
+    /// The inspector's line while the window follows another client's channel and its own stays
+    /// for a recording (`ChannelFollow.keptWords`).
+    var followKeptWords: String? { follow.keptWords(in: state) }
 
     /// The inspector's line under the channel's parameters: the newest change to the tuned
     /// channel when another client made it (`ChangeNote`).

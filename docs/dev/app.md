@@ -12,7 +12,7 @@ One SwiftPM package at `app/`, beside the engine's and never inside it:
 
 | target | what | builds on |
 |---|---|---|
-| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the session's state machines, which hold no I/O so the Linux tests reach them (`HeldObject.swift`: the window's capture and channel until the mirror carries them; `RetuneQueue.swift`: one centre move at a time; `PartPlayback.swift`: the window's playback of a recorded part and Play all's queue); the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`), and which waterfall rows were captured while the radio clipped and which a recording's parts hold (`ClippedRows.swift`); the transmissions log, one per frequency for the session, and the sample clock (`Transmissions.swift`, `SampleClock.swift`); the audio ladder's bands, scale and ballistics (`AudioLevels.swift`); recordings: the manifest reader, the part-to-transmission match, the window's `RecordConfig`, the switch's job and status line, the question before a move off a recording, a listing's summary, the Library's channel rows and search, the store footer's words and the day words (`Recordings.swift`); the channel page's cards, day groups and chips, the inspector's words for a part, the player's words and its previous and next part, the delete words and Play all's queue (`RecordingPages.swift`); a staged run's stage file and regions file (`ShotStage.swift`); the daemon's launch agent as the app owns it, which holds the decisions without ServiceManagement: what to do per `SMAppService` status, the Login Items words, and whether the daemon runs the bundle's build after an update (`DaemonAgent.swift`); the CLI link's path checks and restricted install command (`CommandLineTool.swift`); when the updater starts (`AppUpdates.swift`); Settings, AI as words: the key rows, the feature rows with what each choice sends to which host, the usage fold by UTC day and month, whether any AI feature can run, and the providers the pane offers (`AISettings.swift`); speech records folded onto a recording's parts and overs, one over's sample range, the search by words, the text and SRT exports and the transcription job (`SpeechRecords.swift`); the assistant panel's rows, usage line and failure words (`AssistantModels.swift`), its view tools, their parsing and the waterfall's view window (`AssistantViewTools.swift`), its side of one conversation and the view tool executor's protocol (`AssistantController.swift`), and who changed the tuned channel last (`ChangeNote.swift`) | macOS and Linux |
+| `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the session's state machines, which hold no I/O so the Linux tests reach them (`HeldObject.swift`: the window's capture and channel until the mirror carries them; `RetuneQueue.swift`: one centre move at a time; `PartPlayback.swift`: the window's playback of a recorded part and Play all's queue); the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`), and which waterfall rows were captured while the radio clipped and which a recording's parts hold (`ClippedRows.swift`); the transmissions log, one per frequency for the session, and the sample clock (`Transmissions.swift`, `SampleClock.swift`); the audio ladder's bands, scale and ballistics (`AudioLevels.swift`); recordings: the manifest reader, the part-to-transmission match, the window's `RecordConfig`, the switch's job and status line, the question before a move off a recording, a listing's summary, the Library's channel rows and search, the store footer's words and the day words (`Recordings.swift`); the channel page's cards, day groups and chips, the inspector's words for a part, the player's words and its previous and next part, the delete words and Play all's queue (`RecordingPages.swift`); a staged run's stage file and regions file (`ShotStage.swift`); the daemon's launch agent as the app owns it, which holds the decisions without ServiceManagement: what to do per `SMAppService` status, the Login Items words, and whether the daemon runs the bundle's build after an update (`DaemonAgent.swift`); the CLI link's path checks and restricted install command (`CommandLineTool.swift`); when the updater starts (`AppUpdates.swift`); Settings, AI as words: the key rows, the feature rows with what each choice sends to which host, the usage fold by UTC day and month, whether any AI feature can run, and the providers the pane offers (`AISettings.swift`); speech records folded onto a recording's parts and overs, one over's sample range, the search by words, the text and SRT exports and the transcription job (`SpeechRecords.swift`); the assistant panel's rows, usage line and failure words (`AssistantModels.swift`), its view tools, their parsing and the waterfall's view window (`AssistantViewTools.swift`), its side of one conversation and the view tool executor's protocol (`AssistantController.swift`), and who changed the tuned channel last (`ChangeNote.swift`); the rule that has the window follow a channel another client makes on its capture (`ChannelFollow.swift`) | macOS and Linux |
 | `LeylineApp` | the SwiftUI app: `AppSession` (the composition root: the mirror copied, the selection, the façade's state machines it owns, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones; `CaptureLevelFeed`, the radio's clipping count; `AudioLevelsFeed`, the tuned channel's audio spectrum in octave bands), the views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the inspector (`InspectorView.swift`, `InspectorGroups.swift`, `AudioLevelsView.swift`), recording from the window (the log's Record transmissions switch and kept rows, the bookmark dot, the waterfall's time gutter and kept bars, the volume caption, the retune question, the File items), the window's two places (`MainWindow.swift`: the toolbar's `Radio \| Library` switch and the two bodies; the Library in `LibraryView.swift`, its sidebar, store footer and inspector, with the channel page in `RecordingsPage.swift`, the inspector on a part in `PartInspector.swift`, the player in `PlayerBar.swift` and the speech lines and their actions in `SpeechViews.swift`), a staged run (`Staging.swift`, "Staged runs" below), the calls behind `DaemonAgent`'s decisions (`EngineAgent.swift`: `SMAppService` registration and status, opening Login Items, `launchctl kickstart -k`), the CLI link's administrator request and result dialogs (`CommandLineInstaller.swift`), Sparkle's updater and the Check for Updates… menu item (`Updater.swift`), the Settings window and its AI pane (`SettingsView.swift`, `AISettingsView.swift`; "Settings" below), the assistant's panel (`AssistantPanel.swift`; "The assistant panel" below), `Theme.swift` | macOS only; the manifest declares it, and its Sparkle dependency, under `#if os(macOS)` |
 | `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer and its write order, the session's state machines, the decoders, the bands and bookmarks files, the spectrum folds, the transmissions log and the clock, the audio bands and their ballistics, a hand-written recording manifest, the part match, the switch's job and status line and the retune question, the channel page's cards and day groups, a part's words and table, and Play all's order; the AI pane's rows, privacy sentences and usage fold | both |
 | `LeylineClientDaemonTests` | the façade against a real `leylined --no-hardware` playing a fixture | both; skips itself without `LEYLINED_BIN` |
@@ -100,6 +100,34 @@ arrives. `RetuneQueue` keeps one centre move in flight: a move asked for meanwhi
 one wins, and a superseded move's offset is never written. `PartPlayback` is the window's
 playback of a recorded part, its end on the tombstone (or after 3 s unseen), Play all's queue,
 and whether the live sink goes back on after the last part.
+
+**The window follows the radio** (`ChannelFollow`, `AppSession.followOtherClients`). One radio,
+one picture: when another client makes a channel on the capture the window shows (the assistant
+on `ley ask`, the window's own assistant panel, a terminal's `ley tune`), the window holds that
+channel, so the readout, the inspector, the rail's selection, the transmissions log and the
+audio read it. The mirror keeps, for each channel, the event that first put it in the mirror
+when that event named its cause (`MirrorState.made`: the client and the `seq`, for the
+channel's life; a snapshot starts it empty, because it says who made a channel but not when).
+"Another client" is any client id other than the window's (`ClientIdentity.id`), both as the
+creation's `caused_by` and as the channel's `owner`, and never a job: a recording's or a scan's
+channel is not a tune. Of several, the newest by `seq` wins, and only channels made after the
+window's own last tune count (`floor`: raised by every frequency the window asks for, every
+channel it makes and every channel it follows), so a channel the window moved away from is not
+followed again. The window does not take ownership. It ends its own channel, unless a recording
+runs on it (a running record job that borrowed the channel, or one on its frequency and mode,
+the frequency read before the move that took it out of the capture): then the channel stays, the
+window's sink leaves it, the inspector says `Your channel on 162.550 MHz stays open while it
+records.`, and the window ends it when the recording stops. The audio moves by sink, not by
+channel: when the window was playing (or held no channel) and nothing plays the new channel,
+the window attaches a system-audio sink to it (the daemon checks the channel, not who made it);
+a terminal's `ley tune` channel already plays and gets no second sink; a muted window stays muted;
+a recorded part playing holds the audio and its end attaches it. When the maker ends the
+channel (a terminal's 5 s after its presence goes; `ley stop`), the held channel's `.lost` path
+makes the window a channel of its own with the last copy's offset, mode, width and squelch. A
+capture another client moved with no new channel is not followed: the out-of-capture caution
+under "Failure states" covers it. Nothing is followed while the window makes a channel itself,
+sweeps, or has stopped listening. The rule is tested in `ChannelFollowTests` and against the
+daemon in `AssistantDaemonTests`.
 
 **Streams** (`Streams.swift`). `subscribe(_:)` is `Bulk.Subscribe` then `Bulk.Stream`;
 `fft(capture:bins:rowsPerSecond:)` is the FFT of a band decoded to dBFS per bin against the
@@ -479,7 +507,10 @@ select a recording from outside the Library's views. `show_place` sets the place
 **Attribution** (`ChangeNote.swift`). The inspector's identity has one line under the channel's
 frequency and mode when another client changed the channel or its radio last, from the mirror's
 `changes`: "The assistant set the squelch to -45 dBFS.", "Another terminal set the mode to AM and
-the width to 25.0 kHz." The words and the names are `ley`'s change lines (`whoChanged`): the
+the width to 25.0 kHz." A channel another client made, which the window follows, reads as a tune
+from the mirror's `made`: "The assistant tuned to 162.400 MHz NFM.", and with the squelch the
+same client set right after, "The assistant tuned to 162.400 MHz NFM and set the squelch to -42
+dBFS." The words and the names are `ley`'s change lines (`whoChanged`): the
 assistant is the MCP client labelled `assistant`, as the worker's tool server dials. A change is
 shown only while the channel and its radio still hold the values it set, so an unattributed
 change since (the daemon's own) never leaves the note naming a stale value, and the line goes as
@@ -751,7 +782,11 @@ engine's `leyline-fake-worker` (built beside `leylined`) on a script of its own,
 `AssistantController` through a refused start, a message with a tool step, a question allowed, a
 `show_band` call, then `select_recording` and `show_place` in one turn, each answered by a test
 performer, Stop and End; its second case writes the squelch
-as a client labelled `assistant` and reads the inspector's note from the app's mirror.
+as a client labelled `assistant` and reads the inspector's note from the app's mirror; its
+third has that client make a kept channel on the app's capture, and the follow rule takes it,
+the app's own channel ends, the note says "tuned to", a sink on the other client's channel is
+refused for no reason but the host's audio, and the channel's end hands the window its last
+copy.
 
 A bare `swift test` in `app/` runs the daemon suite too and skips it silently without
 `LEYLINED_BIN`, which is why the Makefile names the suites: `app-test` skips it, `app-e2e` is

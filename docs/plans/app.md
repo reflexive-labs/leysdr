@@ -1600,6 +1600,42 @@ and the fake worker in `make app-e2e`. The views are not compiled off the Mac.
 - With `ley set squelch -45` from a terminal, the inspector's identity reads "Another terminal
   set the squelch to -45 dBFS.", and the line goes on the window's own next change.
 
+### The window follows the radio `[x]` (built under `ai-features.md`, AI-17)
+
+When another client makes a channel on the window's capture, the window follows it: the
+readout, the inspector, the rail's selection, the transmissions log and the audio move to it,
+and the inspector says who tuned (`../dev/app.md`, "The window follows the radio"). The rule
+(`ChannelFollow`), the mirror's `made` and the "tuned to" note are Linux-tested, and the follow
+runs against the daemon with a stand-in `assistant` client in `make app-e2e`; the session's half
+(`AppSession.followOtherClients`, `listenOnOwn`) and the inspector's line are not compiled off
+the Mac, and the system-audio sink cannot attach on Linux.
+
+#### Unverified on the Mac
+
+- It compiles: `AppSession`'s "Following another client's channel" section, the `.lost` branch
+  in `mirrorChanged`, `ensureSink` keeping `ownSinkID`, `followKeptWords` and its line in
+  `InspectorView.swift`.
+- With the window on a GMRS channel, `ley ask "listen to the weather radio"` from a terminal
+  moves the readout, the inspector, the rail's selection and the transmissions log to the
+  assistant's channel, the audio with them (one stream, no echo), and the inspector reads "The
+  assistant tuned to 162.400 MHz NFM." (with the squelch it set, when it set one).
+- The sidebar's out-of-capture flag on the old channel ("Outside the radio's 20 MHz around …")
+  goes, because the window's GMRS channel is ended; `ley state` lists one channel for the app at
+  most.
+- "Listen to NOAA" in the window's own assistant panel does the same.
+- `ley tune 146.52` in a terminal on the window's radio: the window follows it, with no second
+  sink (the terminal's plays), and when the terminal is stopped with Ctrl-C the window makes a
+  channel of its own on 146.520 MHz about 5 s later and plays it.
+- With Record transmissions on for the window's channel, a tune from `ley ask` leaves the
+  recording running and the inspector shows "Your channel on … stays open while it records.";
+  switching the recording off ends that channel and the line goes.
+- `ley stop` on the assistant's channel puts the window back on a channel of its own at the
+  same frequency, mode and squelch.
+- A muted window stays muted after following; a part playing in the log keeps playing, and the
+  live audio comes back on the followed channel when it ends.
+- Another client moving the radio without making a channel still leaves the window on its own
+  channel with the out-of-capture caution and its Tune inside button.
+
 ## Backlog
 
 - **Two frequency affine maps remain separate.** `SquelchTrack` and `GainSlider` share
