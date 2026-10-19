@@ -86,11 +86,13 @@ final class ChannelFollowTests: XCTestCase {
     }
 
     func step(
-        _ f: inout ChannelFollow, _ s: MirrorState, held: String?, audioHeld: Bool = false
+        _ f: inout ChannelFollow, _ s: MirrorState, held: String?, muted: Bool = false,
+        audioHeld: Bool = false
     ) -> ChannelFollow.Step? {
         f.step(
             in: s, captureID: "cap_a", held: held.flatMap { s.channel($0) },
-            windowSinkID: "sink_own", audioHeld: audioHeld, selfClientID: "app_self")
+            windowSinkID: "sink_own", muted: muted, audioHeld: audioHeld,
+            selfClientID: "app_self")
     }
 
     func testTheMirrorKeepsWhoMadeEachChannel() {
@@ -213,7 +215,8 @@ final class ChannelFollowTests: XCTestCase {
     }
 
     func testTheSinkMove() {
-        // Muted (no sink on the window's channel): the followed channel is not made to play.
+        // Muted: the followed channel is not made to play, and a mute during the settle stops
+        // the attach.
         var s = windowListening()
         var gone = sink("sink_own", on: "chan_own")
         gone.state = .unspecified
@@ -221,7 +224,9 @@ final class ChannelFollowTests: XCTestCase {
         s.apply(
             event(5, .channel(channel("chan_wx", offset: 400_000, by: assistant)), by: assistant))
         var f = ChannelFollow()
-        XCTAssertEqual(step(&f, s, held: "chan_own")?.attachSink, false)
+        XCTAssertEqual(step(&f, s, held: "chan_own", muted: true)?.attachSink, false)
+        XCTAssertFalse(
+            ChannelFollow.shouldAttach(in: s, channelID: "chan_wx", held: "chan_wx", muted: true))
 
         // A terminal's channel that already plays gets no second sink: the window wants audio,
         // and the check at attach time, after the settle, finds the terminal's sink.
@@ -229,11 +234,13 @@ final class ChannelFollowTests: XCTestCase {
         s.apply(event(4, .channel(channel("chan_t", offset: 100_000, by: terminal)), by: terminal))
         f = ChannelFollow()
         XCTAssertEqual(step(&f, s, held: "chan_own")?.attachSink, true)
-        XCTAssertTrue(ChannelFollow.shouldAttach(in: s, channelID: "chan_t", held: "chan_t"))
+        XCTAssertTrue(
+            ChannelFollow.shouldAttach(in: s, channelID: "chan_t", held: "chan_t", muted: false))
         s.apply(event(5, .sink(sink("sink_t", on: "chan_t")), by: terminal))
-        XCTAssertFalse(ChannelFollow.shouldAttach(in: s, channelID: "chan_t", held: "chan_t"))
         XCTAssertFalse(
-            ChannelFollow.shouldAttach(in: s, channelID: "chan_x", held: "chan_t"),
+            ChannelFollow.shouldAttach(in: s, channelID: "chan_t", held: "chan_t", muted: false))
+        XCTAssertFalse(
+            ChannelFollow.shouldAttach(in: s, channelID: "chan_x", held: "chan_t", muted: false),
             "the window moved on during the settle")
 
         // A recorded part holds the audio: none is attached; the part's end attaches it.
@@ -254,7 +261,7 @@ final class ChannelFollowTests: XCTestCase {
             event(6, .channel(channel("chan_wx", offset: 400_000, by: assistant)), by: assistant))
         let st = f.step(
             in: s, captureID: "cap_a", held: s.channel("chan_t"), windowSinkID: "sink_own2",
-            audioHeld: false, selfClientID: "app_self")
+            muted: false, audioHeld: false, selfClientID: "app_self")
         XCTAssertEqual(st?.from, "chan_t")
         XCTAssertEqual(st?.endFrom, false)
         XCTAssertEqual(st?.keepFrom, false)
@@ -331,27 +338,34 @@ final class ChannelFollowTests: XCTestCase {
         XCTAssertEqual(s.sinkAttachedBy["sink_t"], terminal)
         // Two sinks on the window's channel: the window's goes.
         XCTAssertEqual(
-            ChannelFollow.redundantSink(in: s, held: "chan_own", windowSinkID: "sink_own"),
+            ChannelFollow.redundantSink(
+                in: s, held: "chan_own", windowSinkID: "sink_own",
+                selfClientID: "app_self"),
             "sink_own")
         XCTAssertNil(
-            ChannelFollow.playsThroughWords(in: s, held: "chan_own", windowSinkID: "sink_own"),
+            ChannelFollow.playsThroughWords(
+                in: s, held: "chan_own", windowSinkID: "sink_own",
+                selfClientID: "app_self"),
             "the window still has its own")
         var gone = sink("sink_own", on: "chan_own")
         gone.state = .unspecified
         s.apply(event(5, .sink(gone), by: app))
         XCTAssertNil(s.sinkAttachedBy["sink_own"])
-        XCTAssertNil(ChannelFollow.redundantSink(in: s, held: "chan_own", windowSinkID: nil))
+        XCTAssertNil(
+            ChannelFollow.redundantSink(
+                in: s, held: "chan_own", windowSinkID: nil, selfClientID: "app_self"))
         XCTAssertEqual(
-            ChannelFollow.playsThroughWords(in: s, held: "chan_own", windowSinkID: nil),
+            ChannelFollow.playsThroughWords(
+                in: s, held: "chan_own", windowSinkID: nil, selfClientID: "app_self"),
             "The audio plays through another terminal.")
-        // Following on from a channel that played through the terminal: the window was
-        // hearing it, so it wants audio on the next.
+        // Following on from a channel that played through the terminal: the window is not
+        // muted, so it wants audio on the next.
         s.apply(
             event(6, .channel(channel("chan_wx", offset: 400_000, by: assistant)), by: assistant))
         var f = ChannelFollow()
         let st = f.step(
             in: s, captureID: "cap_a", held: s.channel("chan_own"), windowSinkID: nil,
-            audioHeld: false, selfClientID: "app_self")
+            muted: false, audioHeld: false, selfClientID: "app_self")
         XCTAssertEqual(st?.attachSink, true)
         XCTAssertNil(st?.detachSink, "the terminal's sink is never the window's to detach")
     }
@@ -390,7 +404,7 @@ final class ChannelFollowTests: XCTestCase {
         var f = ChannelFollow()
         let st = f.stepOnConnect(
             in: s, captureID: "cap_a", held: s.channel("chan_01A"), windowSinkID: nil,
-            audioHeld: false, selfClientID: "app_self")
+            muted: false, audioHeld: false, selfClientID: "app_self")
         XCTAssertEqual(st?.follow.channelID, "chan_01C")
         XCTAssertEqual(st?.endFrom, true)
         XCTAssertEqual(f.followed?.channelID, "chan_01C")
@@ -403,17 +417,69 @@ final class ChannelFollowTests: XCTestCase {
             g.stepOnConnect(
                 in: MirrorState(snapshot: t), captureID: "cap_a",
                 held: MirrorState(snapshot: t).channel("chan_01A"), windowSinkID: nil,
-                audioHeld: false, selfClientID: "app_self"))
+                muted: false, audioHeld: false, selfClientID: "app_self"))
         // The window's channel gone with the daemon: nothing to end, the newest is taken.
         var u = snap
         u.channels.removeFirst()
         let gone = channel("chan_01A", offset: 550_000, by: app)
         let su = MirrorState(snapshot: u)
         let st2 = g.stepOnConnect(
-            in: su, captureID: "cap_a", held: gone, windowSinkID: nil, audioHeld: false,
+            in: su, captureID: "cap_a", held: gone, windowSinkID: nil, muted: false,
+            audioHeld: false,
             selfClientID: "app_self")
         XCTAssertEqual(st2?.follow.channelID, "chan_01C")
         XCTAssertNil(st2?.from)
         XCTAssertEqual(st2?.endFrom, false)
+    }
+
+    func testAMutedWindowReconnectingOntoAnotherChannelAttachesNothing() {
+        var snap = Leyline_V1_GetStateResponse()
+        snap.captures = [capture()]
+        snap.channels = [channel("chan_01C", offset: 400_000, by: assistant)]
+        let s = MirrorState(snapshot: snap)
+        var f = ChannelFollow()
+        // The held channel is already dropped when the reconnect runs.
+        let st = f.stepOnConnect(
+            in: s, captureID: "cap_a", held: nil, windowSinkID: nil, muted: true,
+            audioHeld: false, selfClientID: "app_self")
+        XCTAssertEqual(st?.follow.channelID, "chan_01C")
+        XCTAssertEqual(st?.attachSink, false)
+        XCTAssertFalse(
+            ChannelFollow.shouldAttach(in: s, channelID: "chan_01C", held: "chan_01C", muted: true))
+        var g = ChannelFollow()
+        XCTAssertEqual(
+            g.stepOnConnect(
+                in: s, captureID: "cap_a", held: nil, windowSinkID: nil, muted: false,
+                audioHeld: false, selfClientID: "app_self")?.attachSink, true)
+    }
+
+    func testTheWindowsOwnUnheldSinkIsTakenBackAndNeverAnotherClients() {
+        // The window attached two sinks (an overlap, or a reply after the never-seen limit) and
+        // holds neither.
+        var s = windowListening()
+        s.apply(event(4, .sink(sink("sink_own2", on: "chan_own")), by: app))
+        XCTAssertEqual(
+            ChannelFollow.ownSink(in: s, held: "chan_own", selfClientID: "app_self"), "sink_own")
+        XCTAssertNil(ChannelFollow.ownSink(in: s, held: "chan_other", selfClientID: "app_self"))
+        XCTAssertNil(
+            ChannelFollow.playsThroughWords(
+                in: s, held: "chan_own", windowSinkID: nil, selfClientID: "app_self"),
+            "the window's own sinks are not another client's")
+        // Holding one, the other is a stray to detach, and is not "another client's" either.
+        XCTAssertNil(
+            ChannelFollow.redundantSink(
+                in: s, held: "chan_own", windowSinkID: "sink_own", selfClientID: "app_self"))
+        XCTAssertEqual(
+            ChannelFollow.strayOwnSinks(in: s, windowSinkID: "sink_own", selfClientID: "app_self"),
+            ["sink_own2"])
+        // Another client's sink is never the window's to take or detach.
+        s.apply(event(5, .sink(sink("sink_t", on: "chan_own")), by: terminal))
+        XCTAssertEqual(
+            ChannelFollow.strayOwnSinks(in: s, windowSinkID: "sink_own", selfClientID: "app_self"),
+            ["sink_own2"])
+        XCTAssertEqual(
+            ChannelFollow.redundantSink(
+                in: s, held: "chan_own", windowSinkID: "sink_own", selfClientID: "app_self"),
+            "sink_own")
     }
 }

@@ -314,7 +314,7 @@ final class AssistantDaemonTests: XCTestCase {
             return follow.step(
                 in: mirror.state, captureID: capture.captureID,
                 held: held.current { mirror.state.channel($0) }, windowSinkID: nil,
-                audioHeld: false, selfClientID: app.identity.id)
+                muted: false, audioHeld: false, selfClientID: app.identity.id)
         }
         await assertEventually("the window's channel never reached the mirror") {
             mirror.state.channel(own.channelID) != nil

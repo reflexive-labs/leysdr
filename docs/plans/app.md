@@ -1629,7 +1629,13 @@ the Mac, and the system-audio sink cannot attach on Linux.
   stopped with Ctrl-C the window makes a channel of its own on 146.520 MHz about 5 s later and
   plays it at the window's volume.
 - Mute, unmute and the volume act on the window's own sink only; after unmuting, the volume is
-  the one set before.
+  the one set before. A muted window that follows, or reconnects onto another client's channel,
+  stays muted.
+- Launch the app while a terminal's `ley tune` plays on the radio: the window holds that channel
+  with no sink of its own, the inspector reads "The audio plays through another terminal.", and
+  the mute button and volume slider are disabled.
+- With several channels on the radio at launch (a terminal's, the assistant's, a recording's),
+  the window takes the newest that is not a recording's or a scan's.
 - Quit the daemon (or let it restart) while the window is open, then `ley ask "listen to the
   weather radio"`: the window still follows. With the window disconnected, a terminal that
   moves the radio and tunes leaves the window, on reconnecting, on the terminal's channel.

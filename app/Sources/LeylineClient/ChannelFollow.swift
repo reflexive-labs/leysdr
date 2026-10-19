@@ -50,10 +50,9 @@ public struct ChannelFollow: Sendable, Equatable {
         public var keepFrom: Bool
         /// The window's sink to detach from `from`, when `from` keeps running.
         public var detachSink: String?
-        /// Whether the window wants audio on the followed channel: it was hearing `from`
-        /// (through its own sink, or through another client's, which it cannot mute), or held
-        /// no channel, and the audio is not held for a recorded part. The sink is attached only
-        /// after `attachSettle`, and only if `shouldAttach` still holds then.
+        /// Whether the window wants audio on the followed channel: it is not muted and the
+        /// audio is not held for a recorded part. The sink is attached only after
+        /// `attachSettle`, and only if `shouldAttach` still holds then.
         public var attachSink: Bool
     }
 
@@ -101,11 +100,12 @@ public struct ChannelFollow: Sendable, Equatable {
 
     /// Folds one mirror state. Returns the step to take when a channel is to be followed, and
     /// nil otherwise. `held` is the window's channel as it reads it (the mirror's copy, else
-    /// the RPC's), `windowSinkID` the sink the window attached, and `audioHeld` whether the live
+    /// the RPC's), `windowSinkID` the sink the window attached, `muted` whether the person muted
+    /// the window (no sink is attached then, whatever is followed), and `audioHeld` whether the live
     /// sink is detached on purpose (a recorded part plays, a sweep runs), so none is attached.
     public mutating func step(
         in state: MirrorState, captureID: String?, held: Leyline_V1_Channel?,
-        windowSinkID: String?, audioHeld: Bool, selfClientID: String
+        windowSinkID: String?, muted: Bool, audioHeld: Bool, selfClientID: String
     ) -> Step? {
         if let f = followed {
             if f.channelID != held?.channelID {
@@ -128,7 +128,7 @@ public struct ChannelFollow: Sendable, Equatable {
         floor = max(floor, made.seq)
         return take(
             next, in: state, captureID: captureID, held: held, windowSinkID: windowSinkID,
-            audioHeld: audioHeld, selfClientID: selfClientID)
+            muted: muted, audioHeld: audioHeld, selfClientID: selfClientID)
     }
 
     /// On connecting: when the window's channel is not in its capture (gone, or out of capture
@@ -138,7 +138,7 @@ public struct ChannelFollow: Sendable, Equatable {
     /// A job's channel is never taken.
     public mutating func stepOnConnect(
         in state: MirrorState, captureID: String?, held: Leyline_V1_Channel?,
-        windowSinkID: String?, audioHeld: Bool, selfClientID: String
+        windowSinkID: String?, muted: Bool, audioHeld: Bool, selfClientID: String
     ) -> Step? {
         let present = held.flatMap { state.channel($0.channelID) }
         guard present?.state != .channelActive,
@@ -147,7 +147,7 @@ public struct ChannelFollow: Sendable, Equatable {
         // A held channel the mirror no longer lists is nothing to end or keep.
         return take(
             next, in: state, captureID: captureID, held: present, windowSinkID: windowSinkID,
-            audioHeld: audioHeld, selfClientID: selfClientID)
+            muted: muted, audioHeld: audioHeld, selfClientID: selfClientID)
     }
 
     /// The channel the window takes on a capture it adopts or reconnects to: the newest by id
@@ -165,7 +165,8 @@ public struct ChannelFollow: Sendable, Equatable {
 
     private mutating func take(
         _ next: Leyline_V1_Channel, in state: MirrorState, captureID: String?,
-        held: Leyline_V1_Channel?, windowSinkID: String?, audioHeld: Bool, selfClientID: String
+        held: Leyline_V1_Channel?, windowSinkID: String?, muted: Bool, audioHeld: Bool,
+        selfClientID: String
     ) -> Step {
         followed = next.owner.clientID == selfClientID ? nil : next
         let own = held.map { $0.owner.clientID == selfClientID } ?? false
@@ -186,31 +187,66 @@ public struct ChannelFollow: Sendable, Equatable {
             state.sinks.contains { $0.sinkID == id && $0.channelID == held?.channelID }
                 ? id : nil
         }
-        // Hearing `from`: through the window's own sink, or through another client's that the
-        // window cannot mute (a terminal's `ley tune`). A window that muted itself has neither.
-        let heard = held.map { ownSinkOnFrom != nil || state.plays($0.channelID) } ?? true
+        // Mute is the person's intent, held by the session, not the absence of a sink: a
+        // channel playing through another client's sink, or one the window reconnected to, has
+        // no sink of the window's either.
         return Step(
             follow: next, from: held?.channelID, endFrom: endFrom, keepFrom: own && recording,
-            detachSink: endFrom ? nil : ownSinkOnFrom, attachSink: heard && !audioHeld)
+            detachSink: endFrom ? nil : ownSinkOnFrom, attachSink: !muted && !audioHeld)
     }
 
     /// Whether the window attaches its sink to `channelID` now, after the settle: it still holds
-    /// the channel and nothing plays it, neither its own sink nor another client's.
-    public static func shouldAttach(in state: MirrorState, channelID: String, held: String?)
-        -> Bool
+    /// the channel, it was not muted meanwhile, and nothing plays it, neither its own sink nor
+    /// another client's.
+    public static func shouldAttach(
+        in state: MirrorState, channelID: String, held: String?, muted: Bool
+    ) -> Bool {
+        !muted && held == channelID && state.channel(channelID) != nil && !state.plays(channelID)
+    }
+
+    /// Whether this client attached `sink`, by the `caused_by` of its first event.
+    static func isOwn(_ sink: Leyline_V1_Sink, in state: MirrorState, selfClientID: String) -> Bool
     {
-        held == channelID && state.channel(channelID) != nil && !state.plays(channelID)
+        state.sinkAttachedBy[sink.sinkID]?.clientID == selfClientID
+    }
+
+    /// A sink of the window's own on the held channel, for the session to hold again when it
+    /// holds none: one whose attach reply came after the never-seen limit, one left by an attach
+    /// that overlapped another, or one whose detach failed. Without it such a sink would play
+    /// with nothing to mute it.
+    public static func ownSink(in state: MirrorState, held: String?, selfClientID: String)
+        -> String?
+    {
+        guard let held else { return nil }
+        return state.sinks(of: held).first {
+            $0.isSystemAudio && isOwn($0, in: state, selfClientID: selfClientID)
+        }?.sinkID
+    }
+
+    /// The window's own sinks other than the one it holds, on any channel: each plays audio the
+    /// window cannot mute, so the session detaches them. Not asked while an attach is in flight,
+    /// since the new sink's event can arrive before its reply.
+    public static func strayOwnSinks(
+        in state: MirrorState, windowSinkID: String?, selfClientID: String
+    ) -> [String] {
+        state.sinks.filter {
+            $0.isSystemAudio && $0.sinkID != windowSinkID
+                && isOwn($0, in: state, selfClientID: selfClientID)
+        }.map(\.sinkID)
     }
 
     /// The window's sink when another client's also plays the held channel: two sinks echo, so
     /// the window's goes and the channel plays through the other. nil otherwise.
-    public static func redundantSink(in state: MirrorState, held: String?, windowSinkID: String?)
-        -> String?
-    {
+    public static func redundantSink(
+        in state: MirrorState, held: String?, windowSinkID: String?, selfClientID: String
+    ) -> String? {
         guard let held, let mine = windowSinkID,
             state.sinks.contains(where: { $0.sinkID == mine && $0.channelID == held })
         else { return nil }
-        let others = state.sinks(of: held).contains { $0.sinkID != mine && $0.isSystemAudio }
+        let others = state.sinks(of: held).contains {
+            $0.sinkID != mine && $0.isSystemAudio
+                && !isOwn($0, in: state, selfClientID: selfClientID)
+        }
         return others ? mine : nil
     }
 
@@ -218,13 +254,14 @@ public struct ChannelFollow: Sendable, Equatable {
     /// "The audio plays through another terminal." Mute and volume act on the window's own sink
     /// only, so they have nothing to act on then.
     public static func playsThroughWords(
-        in state: MirrorState, held: String?, windowSinkID: String?
+        in state: MirrorState, held: String?, windowSinkID: String?, selfClientID: String
     ) -> String? {
         guard let held else { return nil }
-        let sinks = state.sinks(of: held).filter(\.isSystemAudio)
-        guard !sinks.isEmpty, !sinks.contains(where: { $0.sinkID == windowSinkID }) else {
-            return nil
-        }
+        let all = state.sinks(of: held).filter(\.isSystemAudio)
+        // A sink of the window's own, held or not, is never "another client's".
+        guard !all.contains(where: { $0.sinkID == windowSinkID }) else { return nil }
+        let sinks = all.filter { !isOwn($0, in: state, selfClientID: selfClientID) }
+        guard !sinks.isEmpty, sinks.count == all.count else { return nil }
         let by = sinks.lazy.compactMap { state.sinkAttachedBy[$0.sinkID] }.first
         let who = by.map { ChangeNote.author($0) } ?? "another client"
         return "The audio plays through \(who)."

@@ -240,7 +240,8 @@ public final class DaemonMirror {
     public private(set) var state = MirrorState() { didSet { onChange?(self) } }
     public private(set) var connection: MirrorConnection = .idle { didSet { onChange?(self) } }
     /// Counts snapshots taken: one per (re)connect, plus one per seq gap. A test reads it to know
-    /// the mirror re-synced rather than guessed.
+    /// the mirror re-synced rather than guessed, and `onChange` sees it already counted when the
+    /// snapshot's state arrives, so a client can tell a replaced state from a folded event.
     public private(set) var snapshots = 0
     /// Called on the main actor after `state` or `connection` changes.
     public var onChange: (@MainActor (DaemonMirror) -> Void)?
@@ -285,8 +286,8 @@ public final class DaemonMirror {
     /// fresh snapshot only if their seq says so, and `apply` skips the rest.
     private func syncAndFollow() async throws {
         let snapshot = try await connectionToDaemon.state()
-        state = MirrorState(snapshot: snapshot)
         snapshots += 1
+        state = MirrorState(snapshot: snapshot)
         connection = .live
         var expected = state.seq &+ 1
         for try await event in connectionToDaemon.events(sinceSeq: snapshot.eventSeq) {
@@ -296,9 +297,10 @@ public final class DaemonMirror {
                 // complete (docs/dev/engine-internals.md, "SessionStore").
                 let again = try await connectionToDaemon.state()
                 let rejections = state.rejections
-                state = MirrorState(snapshot: again)
-                state.rejections = rejections
                 snapshots += 1
+                var fresh = MirrorState(snapshot: again)
+                fresh.rejections = rejections
+                state = fresh
             }
             state.apply(event)
             if event.seq != 0 { expected = max(expected, event.seq &+ 1) }

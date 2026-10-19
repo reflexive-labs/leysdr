@@ -122,10 +122,18 @@ rides the window's capture or asks for its device; one on another radio at the s
 does not. The audio moves by sink, not by channel. A `Sink` names no owner, so the window holds
 the id of the sink it attached (`heldSink`, a `HeldObject` like the capture and channel), and
 mute, volume, a sweep's pause and a part's playback act on that sink only, never on another
-client's. The window wants audio on the followed channel when it was hearing the one before
-(through its own sink, or through another client's, which it cannot mute) or held none, and no
-recorded part holds the audio. It then waits `ChannelFollow.attachSettle` (1 s) and attaches
-its sink, at the window's volume, only if nothing plays the channel by then, because the maker
+client's. A sink the mirror says this client attached (`sinkAttachedBy`) is the window's own
+whether or not it is held: one on the held channel is held again when none is and the window is
+not muted, and any other is detached (`ChannelFollow.ownSink`, `strayOwnSinks`), so a reply
+that came after the never-seen limit, an attach that overlapped another, or a detach that
+failed never leaves a sink nothing can mute; a held sink is let go on its tombstone, never
+before its detach, and one attach runs at a time. Mute is an intent the session holds
+(`muted`, set by Mute and cleared by any attach), not the absence of a sink, because a channel
+playing through another client's sink, a part playing and a channel just reconnected to have no
+sink of the window's either. The window wants audio on the followed channel when it is not
+muted and no recorded part holds the audio. It then waits `ChannelFollow.attachSettle` (1 s) and attaches
+its sink, at the window's volume, only if it was not muted meanwhile and nothing plays the
+channel by then, because the maker
 may attach its own a moment after making the channel: `ley tune` makes the channel, measures the
 squelch from one spectrum row and then attaches, usually well inside the second. A client that attaches
 its sink later than that doubles up only until the window sees it, because two sinks on the held
@@ -138,8 +146,10 @@ terminal's 5 s after its presence goes; `ley stop`), the held channel's `.lost` 
 window a channel of its own with the last copy's offset, mode, width and squelch. A capture
 another client moved with no new channel is not followed: the out-of-capture caution under
 "Failure states" covers it. Nothing is followed while the window makes a channel itself, sweeps,
-or has stopped listening. A restarted daemon counts its `seq` from 0 again, so on every connect
-the floor becomes the snapshot's `seq`. A snapshot says who made a channel but not when, so a
+or has stopped listening. A restarted daemon counts its `seq` from 0 again, so on every snapshot
+the mirror takes (a connect, or a resync after a `seq` gap, which a fast restart can look like)
+the floor becomes the snapshot's `seq`; `DaemonMirror` counts `snapshots` before it replaces the
+state, so the session tells a replaced state from a folded event. A snapshot says who made a channel but not when, so a
 channel another client made while the window was away is not followed by `seq`; instead
 `adopt()` on reconnecting, when the window's own channel is gone or out of capture, takes the
 newest active channel on the capture that is not a job's, newest by id because channel ids are
