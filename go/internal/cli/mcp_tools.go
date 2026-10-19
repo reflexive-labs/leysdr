@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -390,8 +391,15 @@ func (srv *mcpServer) tune(ctx context.Context, _ *mcp.CallToolRequest, in tuneA
 	if s.failureNote != "" {
 		fmt.Fprintln(app.Stderr, s.failureNote)
 	}
-	fmt.Fprintf(app.Stdout, "listening to %s (%s) on %s: channel %s on capture %s.\n",
-		units.FormatFrequency(o.freq), strings.ToUpper(leyline.ModeName(o.mode)), deviceName(s.device),
+	sq := "squelch off"
+	if !units.SquelchOff(o.squelch) {
+		sq = fmt.Sprintf("squelch %.0f dBFS", o.squelch)
+		if o.squelchAuto {
+			sq += " (auto)"
+		}
+	}
+	fmt.Fprintf(app.Stdout, "listening to %s %s, %s, on %s: channel %s on capture %s.\n",
+		units.FormatFrequency(o.freq), strings.ToUpper(leyline.ModeName(o.mode)), sq, deviceName(s.device),
 		s.Channel.GetChannelId(), s.Capture.GetCaptureId())
 	switch {
 	case in.Keep:
@@ -404,7 +412,10 @@ func (srv *mcpServer) tune(ctx context.Context, _ *mcp.CallToolRequest, in tuneA
 		return nil, nil, err
 	}
 	srv.touched(s.Capture.GetCaptureId())
-	return jsonResult(errb.String()+out.String(), raw), nil, nil
+	// The tuned line leads and what the session said on the way (the band's default mode, a
+	// retune, how the squelch was measured) follows: a result's first line is what a client shows
+	// under the call.
+	return jsonResult(out.String()+errb.String(), raw), nil, nil
 }
 
 // sinkOrNil is a sink for composite, or JSON null when there is none: a typed
@@ -510,8 +521,7 @@ func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanA
 		return nil, nil, errors.New(strings.TrimSpace(errb.String()))
 	}
 	errb.Reset()
-	printScan(app, scan, o, scanGainElements(s.State, o.deviceID, scan))
-	text := note + out.String() + errb.String()
+	text := scanToolText(app, scan, o, scanGainElements(s.State, o.deviceID, scan), out, errb) + note
 	// min_snr trims the Scan the way `ley scan --min-snr` trims its rows: the message is still a
 	// Scan, with fewer detections. A 20 MHz sweep is hundreds of detections and more JSON than
 	// an agent's result budget holds, and detections under the requested floor are ones it asked
@@ -532,6 +542,28 @@ func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanA
 		scan = kept
 	}
 	return protoResult(scan, text)
+}
+
+// scanToolText is printScan's output in the order a tool result reads: the outcome first (how
+// many carriers over which range, at what floor and gain), then the table, then the notes. On a
+// terminal the table comes first because it is the answer on stdout and the sentence follows on
+// stderr; a result's first line is what a client shows under the call.
+func scanToolText(app *App, scan *leylinev1.Scan, o scanOptions, els []*leylinev1.GainElement, out, errb *bytes.Buffer) string {
+	rows := scanRows(scan, o)
+	over := units.FormatFrequency(o.minHz) + " to " + units.FormatFrequency(o.maxHz)
+	if o.bandName != "" {
+		over = "the " + o.bandName + " band, " + over
+	}
+	var outcome string
+	if len(rows) == 0 {
+		outcome = fmt.Sprintf("0 carriers over %s: %s\n", over, emptyScanLine(scan, o, els))
+		emptyScanHints(app, scan, o)
+	} else {
+		outcome = fmt.Sprintf("%s over %s%s%s\n", words.Count(len(rows), "carrier"), over, floorPhrase(scan), gainPhrase(scan, els))
+		printScanTable(app, scan, o, rows)
+		printScanNotes(app, scan, o, rows)
+	}
+	return outcome + out.String() + errb.String()
 }
 
 // scanToolFailure rewrites the remedies scanFailure phrases as flags and verbs into the tool's
@@ -686,7 +718,8 @@ func (srv *mcpServer) listenSummary(ctx context.Context, _ *mcp.CallToolRequest,
 		return nil, nil, err
 	}
 	srv.touched(s.Capture.GetCaptureId())
-	return jsonResult(errb.String()+sum.text(s, dur), raw), nil, nil
+	// The count leads and a retune note follows, as tune's line does.
+	return jsonResult(sum.text(s, dur)+errb.String(), raw), nil, nil
 }
 
 func subAudibleOrNil(sa *leylinev1.SubAudible) any {
@@ -1009,7 +1042,7 @@ func (srv *mcpServer) snapshot(ctx context.Context, _ *mcp.CallToolRequest, in s
 	if err != nil {
 		return nil, nil, err
 	}
-	text := errb.String() + snapshotText(row, s)
+	text := snapshotText(row, s)
 	if bo.freq != 0 {
 		text += levelAtText(row, bo.freq)
 	}
@@ -1023,6 +1056,8 @@ func (srv *mcpServer) snapshot(ctx context.Context, _ *mcp.CallToolRequest, in s
 			units.FormatFrequency(b.MinHz), units.FormatFrequency(b.MaxHz),
 			fmt.Sprintf("%.0f%%", 100*float64(row.SpanHz)/float64(b.WidthHz())))
 	}
+	// What the session said on the way (a retune) follows the row's own lines.
+	text += errb.String()
 	res := jsonResult(text, raw)
 	if !in.NoImage {
 		png, err := renderSpectrumPNG(row.Bins, row.FloorDb, row.CenterHz, row.SpanHz, row.Peaks, bo.freq)
@@ -1388,15 +1423,15 @@ func (srv *mcpServer) startDecodeJob(ctx context.Context, _ *mcp.CallToolRequest
 		}
 		cfg.DeviceId = d.GetDeviceId()
 	}
-	var b strings.Builder
+	var note string
 	if !cfg.TakeOver && srv.ownGrace(st, cfg.DeviceId) {
-		cfg.TakeOver = true
-		b.WriteString(ownGraceNote)
+		cfg.TakeOver, note = true, ownGraceNote
 	}
 	job, err := c.StartDecode(ctx, cfg)
 	if err != nil {
 		return nil, nil, toolError(decodeToolFailure(cfg.Decoder, err))
 	}
+	var b strings.Builder
 	fmt.Fprintf(&b, "%s: job %s", job.GetStatusDetail(), job.GetJobId())
 	if in.Keep {
 		fmt.Fprintf(&b, ", kept: it runs on after this server exits and its records are ley://records/%s, which query_records reads.", job.GetJobId())
@@ -1404,7 +1439,7 @@ func (srv *mcpServer) startDecodeJob(ctx context.Context, _ *mcp.CallToolRequest
 		b.WriteString(", running until this server exits; list_entities folds its records, and keep: true would store them for query_records.")
 	}
 	b.WriteString("\ncancel_job stops it.")
-	return protoResult(job, b.String())
+	return protoResult(job, afterOutcome(b.String(), note))
 }
 
 // decodeToolFailure is decodeFailure's sentence with the tool's remedies in

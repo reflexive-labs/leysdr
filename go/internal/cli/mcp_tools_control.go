@@ -103,7 +103,7 @@ func (srv *mcpServer) set(ctx context.Context, _ *mcp.CallToolRequest, in setArg
 	}
 	fmt.Fprintln(out, confirmLine(ui.Style{}, s.State, p.name, res.stages, res.event, ch, capture))
 	srv.touched(capture.GetCaptureId())
-	return protoResult(res.event, errb.String()+out.String())
+	return protoResult(res.event, out.String()+errb.String())
 }
 
 // refuseSetRetune is tune's don't-disturb refusal for a set freq: a frequency the capture does
@@ -175,7 +175,7 @@ func (srv *mcpServer) stop(ctx context.Context, _ *mcp.CallToolRequest, in stopA
 	if err != nil {
 		return nil, nil, toolError(err)
 	}
-	return protoResult(&leylinev1.Empty{}, errb.String()+out.String())
+	return protoResult(&leylinev1.Empty{}, out.String()+errb.String())
 }
 
 // stopOne is `ley stop <channel>`, refused when the channel is another client's.

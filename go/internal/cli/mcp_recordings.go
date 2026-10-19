@@ -81,16 +81,16 @@ func (srv *mcpServer) record(ctx context.Context, _ *mcp.CallToolRequest, in rec
 		o.deviceID = d.GetDeviceId()
 	}
 	cfg := o.config()
-	var b strings.Builder
+	var note string
 	if !cfg.TakeOver && srv.ownGrace(st, cfg.DeviceId) {
-		cfg.TakeOver = true
-		b.WriteString(ownGraceNote)
+		cfg.TakeOver, note = true, ownGraceNote
 	}
 	job, err := c.StartRecord(ctx, cfg)
 	if err != nil {
 		return nil, nil, toolError(recordToolFailure(err))
 	}
 	uri := recordURI(job)
+	var b strings.Builder
 	// Wait it out: polling would cost the agent extra calls to learn what one call can return.
 	// The duration is the bound, with a little slack for the daemon's own teardown.
 	final := srv.awaitJob(ctx, job, o.forDur+10*time.Second)
@@ -102,14 +102,14 @@ func (srv *mcpServer) record(ctx context.Context, _ *mcp.CallToolRequest, in rec
 	if final.GetStatusDetail() == leyline.NothingHeard {
 		fmt.Fprintf(&b, "Recorded nothing: %s The daemon keeps no recording that heard nothing, so %s does not exist.",
 			nothingHeardReason(o.gated), uri)
-		return protoResult(final, b.String())
+		return protoResult(final, afterOutcome(b.String(), note))
 	}
 	fmt.Fprintf(&b, "%s: %s", final.GetStatusDetail(), uri)
 	if m, merr := srv.manifestFor(ctx, job.GetJobId()); merr == nil {
 		fmt.Fprintf(&b, "\n%s", recordingSummary(m))
 		fmt.Fprintf(&b, "\nget_recording %s gives every part's path on this machine.", job.GetJobId())
 	}
-	return protoResult(final, b.String())
+	return protoResult(final, afterOutcome(b.String(), note))
 }
 
 // awaitJob polls the job until it ends or the bound elapses. The event stream

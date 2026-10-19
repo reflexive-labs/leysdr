@@ -175,7 +175,17 @@ func (srv *mcpServer) ownGrace(state *leylinev1.GetStateResponse, deviceID strin
 	return false
 }
 
-// ownGraceNote is what the text says when a job went ahead over this server's own grace.
+// afterOutcome puts a note on the line after a result's text, which ends without a newline: the
+// outcome leads, because a result's first line is what a client shows under the call.
+func afterOutcome(text, note string) string {
+	if note == "" {
+		return text
+	}
+	return text + "\n" + note
+}
+
+// ownGraceNote is what the text says when a job went ahead over this server's own grace. It
+// follows the outcome, never leads it.
 const ownGraceNote = "the radio's grace after a tune was this server's own earlier call, so this went ahead without take_over.\n"
 
 // mcpInstructions is what the agent reads about the server before its first

@@ -84,9 +84,9 @@ func (srv *mcpServer) watch(ctx context.Context, _ *mcp.CallToolRequest, in watc
 		}
 		o.deviceID = d.DeviceId
 	}
+	var note string
 	if !o.takeOver && srv.ownGrace(s.State, o.deviceID) {
-		o.takeOver = true
-		fmt.Fprint(out, ownGraceNote)
+		o.takeOver, note = true, ownGraceNote
 	}
 	if name, _, rerr := s.Client.ResolveDecoder(ctx, o.decoder); rerr == nil {
 		o.decoder = name
@@ -101,5 +101,5 @@ func (srv *mcpServer) watch(ctx context.Context, _ *mcp.CallToolRequest, in watc
 	} else {
 		fmt.Fprint(out, ", running until this server exits; cancel_job stops it sooner, and keep: true would leave it running.\n")
 	}
-	return protoResult(job, errb.String()+out.String())
+	return protoResult(job, out.String()+errb.String()+note)
 }

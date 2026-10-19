@@ -57,7 +57,11 @@ the job kept, and it outlives the agent.
 
 Every tool's result is two text blocks. The first is what the verb would have printed on a
 terminal: the decisions a tune made, the scan table, one line per record, the squelch that never
-opened. The second is the proto3 JSON mapping of the `leyline.v1` messages, the same shape
+opened. Its first line is the outcome (the channel a tune made, with its mode and squelch; how
+many carriers a scan found over which range, above its table; what a listen counted), because a
+client such as `ley ask` shows that line under the call. What the verb says on the way, the band's
+default mode, a retune, how the squelch was measured, follows it, where the terminal prints it
+first. The second is the proto3 JSON mapping of the `leyline.v1` messages, the same shape
 `ley <verb> --json` prints for the mirror verb (lowerCamelCase keys, 64-bit integers as strings),
 and the compatibility test of every tool is that mirror: the fake-daemon tests hold `list_devices`
 against `ley devices --json` message for message. An agent reasons over the text and parses the

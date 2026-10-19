@@ -333,6 +333,41 @@ func TestMCPTuneRefusesAnActiveCaptureAndNamesWhy(t *testing.T) {
 	}
 }
 
+// A tool's text leads with its outcome: `ley ask` shows the first line under a call the user
+// allowed, and a retune note or the band's default mode there read as the result. What the
+// session said on the way follows.
+func TestMCPToolTextLeadsWithTheOutcome(t *testing.T) {
+	t.Parallel()
+	h := newMCPHarness(t)
+	firstLine := func(text string) string { line, _, _ := strings.Cut(text, "\n"); return line }
+	h.must(t, "tune", map[string]any{"frequency": "146.52"})
+	cases := []struct {
+		tool  string
+		args  map[string]any
+		first string // the first line's start
+		later string // a preliminary that follows it
+	}{
+		{"tune", map[string]any{"frequency": "162.55", "take_over": true}, "listening to 162.550 MHz NFM, squelch ", "retuning capture"},
+		{"listen_summary", map[string]any{"target": "146.52", "duration_s": 1, "take_over": true}, "146.520 MHz NFM for 1.0 s", "retuning capture"},
+		{"snapshot", map[string]any{"frequency": "162.55", "no_image": true, "take_over": true}, "2.400 MHz wide around 162.550 MHz", "retuning capture"},
+		{"scan", map[string]any{"range": "145M..147M", "take_over": true}, "3 carriers over 145.000 MHz to 147.000 MHz, floor ", "FREQUENCY"},
+	}
+	for _, c := range cases {
+		text := resultText(h.must(t, c.tool, c.args))
+		if !strings.HasPrefix(firstLine(text), c.first) {
+			t.Errorf("%s's text does not lead with %q:\n%s", c.tool, c.first, text)
+		}
+		if !strings.Contains(text, c.later) {
+			t.Errorf("%s's text lost %q:\n%s", c.tool, c.later, text)
+		}
+	}
+	// The tuned line names the squelch, and the note on how it was measured comes after it.
+	text := resultText(h.must(t, "tune", map[string]any{"frequency": "146.52", "take_over": true}))
+	if !strings.Contains(firstLine(text), "squelch -80 dBFS (auto)") || !strings.Contains(text, "\nSquelch auto") {
+		t.Errorf("tune's text:\n%s", text)
+	}
+}
+
 // A channel tune makes ends when the server does; keep leaves it.
 func TestMCPTunedChannelsFollowTheServersPresence(t *testing.T) {
 	h := newMCPHarness(t)
