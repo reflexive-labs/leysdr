@@ -740,10 +740,12 @@ a block of calls and a block of text, and between a turn and the next `> ` promp
 lines never reach stdout. A call that asks first (taking over a radio, deleting a recording,
 keeping a job, a webhook notifier, several bookmark writes, paid transcription;
 `docs/design/ai.md`, "What the assistant may do") is a question on
-stderr, `The assistant wants to <tool> <arguments>: <reason>. Allow? [y/N]`, and the answer goes to
-the daemon with `ResolveAction`. `--yes` (`-y`) allows every such call, which is how an agent or a
-script runs `ask`; when stdin is not a terminal and `--yes` is absent, the call is declined with a
-line that says so and names `--yes`. `ask` declares no view tools, so a view tool call (one an app
+stderr in three parts: the call's line (`→ <tool> <arguments>`, cut to the width as every call
+line is, and not printed again once answered), the reason beneath it, indented and wrapped, and
+`Allow? [y/N]` on a line of its own; the answer goes to the daemon with `ResolveAction`. `--yes`
+(`-y`) allows every such call, which is how an agent or a script runs `ask`, and prints `Allowed
+by --yes.` where the question would be; when stdin is not a terminal and `--yes` is absent, the
+call is declined with a line there that says so and names `--yes`. `ask` declares no view tools, so a view tool call (one an app
 declared, in a conversation `ask` continues) is answered with the error `ley ask has no view`.
 While a turn is under way and nothing has been printed for 300 ms, a dim `thinking…` line
 (`thinking...` under `--ascii`) waits on stderr, with the seconds since the last output once there
@@ -797,16 +799,18 @@ Tuning to the NOAA station.
 It is playing now; ley stop ends it.
 
 $ ley ask "delete the last recording"
-The assistant wants to delete_recording {"recording":"job_01K"}: deleting a
-recording asks every time. Allow? [y/N] y
+→ delete_recording {"recording":"job_01K"}
+  deleting a recording asks every time.
+Allow? [y/N] y
   Deleted job_01K, 12.0 MB freed
 
 Done.
 
 $ ley ask "delete the last recording" < /dev/null
-The assistant wants to delete_recording {"recording":"job_01K"}: deleting a
-recording asks every time. Declined: stdin is not a terminal, so nobody can
-answer. Pass --yes to allow what the assistant asks.
+→ delete_recording {"recording":"job_01K"}
+  deleting a recording asks every time.
+Declined: stdin is not a terminal, so nobody can answer. Pass --yes to allow
+what the assistant asks.
   ✗ declined
 
 Done.

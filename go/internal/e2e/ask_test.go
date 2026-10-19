@@ -429,8 +429,8 @@ func checkAskDelete(t *testing.T, r *askRig, recordings []string) {
 		t.Fatalf("ley ask (declined): exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
 	}
 	const declined = "Declined: stdin is not a terminal, so nobody can answer. Pass --yes to allow what the assistant asks."
-	if s := oneLine(errOut); !strings.Contains(s, `The assistant wants to delete_recording {"recording":"job_nonexistent"}: `) ||
-		!strings.Contains(s, declined) || !strings.Contains(s, "declined") {
+	if !strings.Contains(errOut, "delete_recording {\"recording\":\"job_nonexistent\"}\n  ") ||
+		!strings.Contains(oneLine(errOut), declined) || !strings.Contains(errOut, " declined\n") {
 		t.Errorf("ley ask stderr lacks the question and the decline: %q", errOut)
 	}
 	cv := r.newest()
@@ -474,7 +474,7 @@ func checkAskReceivedText(t *testing.T, r *askRig) {
 	if code != 0 {
 		t.Fatalf("ley ask: exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
 	}
-	if s := oneLine(errOut); !strings.Contains(s, "The assistant wants to tune") || !strings.Contains(s, "Allowed by --yes") {
+	if !toolLine(errOut, "tune") || !strings.Contains(errOut, "\nAllowed by --yes.\n") {
 		t.Errorf("ley ask stderr lacks the tune's question: %q", errOut)
 	}
 	cs := calls(r.newest())

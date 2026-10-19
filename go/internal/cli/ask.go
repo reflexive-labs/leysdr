@@ -501,22 +501,21 @@ func (r *askRun) answer(p *leylinev1.PendingAction) error {
 	}
 	r.view.group(r.app, askTrace)
 	s := r.app.ErrStyle
-	what := "The assistant wants to " + strings.TrimSpace(p.GetTool()+" "+compactArgs(p.GetArgumentsJson()))
-	if reason := strings.TrimRight(strings.TrimSpace(p.GetReason()), "."); reason != "" {
-		what += ": " + reason
-	}
 	approve := false
 	switch {
 	case r.o.yes:
 		approve = true
 		if !r.app.JSON {
-			fmt.Fprintln(r.app.Stderr, strings.Join(wrapWords(what+". "+s.Ok("Allowed")+" by --yes.", s.Width), "\n"))
+			fmt.Fprint(r.app.Stderr, questionCard(s, p))
+			fmt.Fprintln(r.app.Stderr, s.Ok("Allowed")+" by --yes.")
 		}
 	case !r.app.IsInTTY():
-		fmt.Fprintln(r.app.Stderr, strings.Join(wrapWords(what+". "+s.Warn("Declined")+
+		fmt.Fprint(r.app.Stderr, questionCard(s, p))
+		fmt.Fprintln(r.app.Stderr, strings.Join(wrapWords(s.Warn("Declined")+
 			": stdin is not a terminal, so nobody can answer. Pass --yes to allow what the assistant asks.", s.Width), "\n"))
 	default:
-		fmt.Fprint(r.app.Stderr, strings.Join(wrapWords(what+". Allow? [y/N]", max(s.Width-len(" yes"), 0)), "\n")+" ")
+		fmt.Fprint(r.app.Stderr, questionCard(s, p))
+		fmt.Fprint(r.app.Stderr, s.Label("Allow? [y/N]")+" ")
 		line, err := r.readLine()
 		// The wait for the assistant starts again from the answer, not from the question.
 		r.wait.restart()
@@ -535,6 +534,25 @@ func (r *askRun) answer(p *leylinev1.PendingAction) error {
 	}
 	_, err := r.c.Assistant.ResolveAction(r.ctx, &leylinev1.ResolveActionRequest{ConversationId: ref, CallId: p.GetCallId(), Approve: approve})
 	return r.settled(err)
+}
+
+// questionCard is a call that asks first, before its answer: the call on one line, as the call
+// line it becomes once answered (so it is not printed again), and the reason beneath it, wrapped
+// and indented as the receipt under an allowed call is. A question as one paragraph put the
+// arguments' JSON in the middle of the sentence.
+func questionCard(s ui.Style, p *leylinev1.PendingAction) string {
+	g := s.Glyphs()
+	card := s.Muted(fitWidth(s, g.Call+" "+strings.TrimSpace(p.GetTool()+" "+compactArgs(p.GetArgumentsJson())), 0)) + "\n"
+	if reason := strings.TrimRight(strings.TrimSpace(p.GetReason()), "."); reason != "" {
+		width := 0
+		if s.Width > 0 {
+			width = max(s.Width-2, 1)
+		}
+		for _, line := range wrapWords(reason+".", width) {
+			card += "  " + line + "\n"
+		}
+	}
+	return card
 }
 
 // settled passes an answer's error on, unless another client answered first: the conversation

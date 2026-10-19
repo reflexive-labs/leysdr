@@ -189,10 +189,12 @@ var deleteTurn = fakedaemon.AssistantTurn{
 }
 
 // A call that asks is a [y/N] question on a terminal, answered with ResolveAction; without a
-// terminal it is declined with a line saying how to allow it, and --yes allows it unasked.
+// terminal it is declined with a line saying how to allow it, and --yes allows it unasked. Each
+// form is the call on its line, the reason beneath it, and the question or the answer on a line
+// of its own.
 func TestAskApproval(t *testing.T) {
 	t.Parallel()
-	question := "The assistant wants to delete_recording {\"recording\":\"job_01K\"}: deleting a recording asks every time."
+	question := "→ delete_recording {\"recording\":\"job_01K\"}\n  deleting a recording asks every time.\n"
 	for _, tc := range []struct {
 		name     string
 		o        askRunOpts
@@ -202,19 +204,19 @@ func TestAskApproval(t *testing.T) {
 	}{
 		{
 			name: "y on a terminal", o: askRunOpts{inTTY: true, stdin: "y\n"}, approved: true,
-			says: []string{question + " Allow? [y/N] y\n  Deleted job_01K, 12.0 MB freed\n\nDone.\n"},
+			says: []string{question + "Allow? [y/N] y\n  Deleted job_01K, 12.0 MB freed\n\nDone.\n"},
 		},
 		{
 			name: "n on a terminal", o: askRunOpts{inTTY: true, stdin: "n\n"},
-			says: []string{"Allow? [y/N] ", "  ✗ declined"},
+			says: []string{question + "Allow? [y/N] ", "  ✗ declined"},
 		},
 		{
 			name: "no terminal", o: askRunOpts{},
-			says: []string{question + " Declined: stdin is not a terminal, so nobody can answer.", "Pass --yes to allow what the assistant asks.", "  ✗ declined"},
+			says: []string{question + "Declined: stdin is not a terminal, so nobody can answer. Pass --yes to allow what the assistant asks.\n  ✗ declined"},
 		},
 		{
 			name: "--yes", flags: []string{"--yes"}, approved: true,
-			says: []string{question + " Allowed by --yes.\n  Deleted job_01K, 12.0 MB freed\n\nDone.\n"},
+			says: []string{question + "Allowed by --yes.\n  Deleted job_01K, 12.0 MB freed\n\nDone.\n"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
