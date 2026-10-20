@@ -115,11 +115,11 @@ var grantRowTurn = append(append(fakedaemon.AssistantTurn{}, takeOverTurn[:2]...
 // group grants the worker would keep apart.
 func TestAskScriptRowsAreTheGatesRows(t *testing.T) {
 	t.Parallel()
-	real := assistant.Rows()
+	gateRows := assistant.Rows()
 	for _, turn := range []fakedaemon.AssistantTurn{takeOverTurn, grantRowTurn, deleteTurn} {
 		for _, step := range turn {
-			if step.Row != "" && !slices.Contains(real, step.Row) {
-				t.Errorf("the %s step names the row %q, which the gate does not have (assistant.Rows: %q)", step.Ask, step.Row, real)
+			if step.Row != "" && !slices.Contains(gateRows, step.Row) {
+				t.Errorf("the %s step names the row %q, which the gate does not have (assistant.Rows: %q)", step.Ask, step.Row, gateRows)
 			}
 		}
 	}
