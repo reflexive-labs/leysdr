@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -50,9 +51,12 @@ and the result's first line beneath one that asked first.
 Reading the radio's state, and the tuning, setting, stopping, scanning and
 recording you ask for, run at once and are reported. Taking over a radio
 someone else is using, deleting a recording, keeping a job, adding a webhook
-or several bookmarks, and paid transcription ask first with a [y/N] question
-on stderr; --yes allows all of them, and with no terminal to answer on and
-no --yes they are declined.
+or several bookmarks, and paid transcription ask first with a question on
+stderr: y allows the call once, a (offered as [y/N/a]) allows that kind of
+call for the rest of the conversation, and anything else declines; a delete
+is asked every time. --yes starts a conversation that allows all of them
+without asking, and with no terminal to answer on and no --yes they are
+declined.
 
 With no request, ask reads one request per line at a '> ' prompt until a
 blank line or Ctrl-D. The conversation stays in the daemon after ask exits,
@@ -205,7 +209,13 @@ func (r *askRun) open() error {
 		}
 	}
 	if r.conv == nil {
-		cv, err := r.c.Assistant.StartConversation(r.ctx, &leylinev1.StartConversationRequest{Provider: r.o.provider, Model: r.o.model})
+		// --yes starts the conversation in AUTO, so the worker runs what it would have asked about
+		// and reports it; nothing waits on this run's stdin.
+		mode := leylinev1.ApprovalMode_APPROVAL_MODE_ASK
+		if r.o.yes {
+			mode = leylinev1.ApprovalMode_APPROVAL_MODE_AUTO
+		}
+		cv, err := r.c.Assistant.StartConversation(r.ctx, &leylinev1.StartConversationRequest{Provider: r.o.provider, Model: r.o.model, Mode: mode})
 		if err != nil {
 			return r.app.notRunning(err)
 		}
@@ -248,6 +258,9 @@ func continuingLine(cv *leylinev1.Conversation) string {
 		line += ", which is waiting for an answer"
 	case leylinev1.ConversationState_CONVERSATION_THINKING:
 		line += "; the assistant's turn finishes first"
+	}
+	if cv.GetMode() == leylinev1.ApprovalMode_APPROVAL_MODE_AUTO {
+		line += "; it was started with --yes, so the assistant asks nothing"
 	}
 	return line
 }
@@ -486,7 +499,10 @@ func (r *askRun) watchEnded(err error) error {
 }
 
 // answer settles a pending call: a view tool is answered with an error, since ask has no view;
-// an action is allowed by --yes, asked about on a terminal, and declined without one.
+// an action is allowed by --yes, asked about on a terminal, and declined without one. A
+// conversation this run started with --yes is AUTO and never asks; a question reaches --yes only
+// in one --continue carries on that was started without it, whose mode cannot change, and there
+// --yes allows each call once.
 func (r *askRun) answer(p *leylinev1.PendingAction) error {
 	if p == nil || r.answered[p.GetCallId()] {
 		return nil
@@ -501,10 +517,10 @@ func (r *askRun) answer(p *leylinev1.PendingAction) error {
 	}
 	r.view.group(r.app, askTrace)
 	s := r.app.ErrStyle
-	approve := false
+	approve, scope := false, leylinev1.ApprovalScope_APPROVAL_SCOPE_UNSPECIFIED
 	switch {
 	case r.o.yes:
-		approve = true
+		approve, scope = true, leylinev1.ApprovalScope_APPROVAL_SCOPE_ONCE
 		if !r.app.JSON {
 			fmt.Fprint(r.app.Stderr, questionCard(s, p))
 			fmt.Fprintln(r.app.Stderr, s.Ok("Allowed")+" by --yes.")
@@ -515,7 +531,7 @@ func (r *askRun) answer(p *leylinev1.PendingAction) error {
 			": stdin is not a terminal, so nobody can answer. Pass --yes to allow what the assistant asks.", s.Width), "\n"))
 	default:
 		fmt.Fprint(r.app.Stderr, questionCard(s, p))
-		fmt.Fprint(r.app.Stderr, s.Label("Allow? [y/N]")+" ")
+		fmt.Fprint(r.app.Stderr, s.Label(allowPrompt(p))+" ")
 		line, err := r.readLine()
 		// The wait for the assistant starts again from the answer, not from the question.
 		r.wait.restart()
@@ -528,12 +544,38 @@ func (r *askRun) answer(p *leylinev1.PendingAction) error {
 			fmt.Fprintln(r.app.Stderr)
 		}
 		if line != nil {
-			a := strings.ToLower(strings.TrimSpace(*line))
-			approve = a == "y" || a == "yes"
+			approve, scope = parseAllow(*line, p)
 		}
 	}
-	_, err := r.c.Assistant.ResolveAction(r.ctx, &leylinev1.ResolveActionRequest{ConversationId: ref, CallId: p.GetCallId(), Approve: approve})
+	_, err := r.c.Assistant.ResolveAction(r.ctx, &leylinev1.ResolveActionRequest{ConversationId: ref, CallId: p.GetCallId(), Approve: approve, Scope: scope})
 	return r.settled(err)
+}
+
+// allowPrompt is the question's last line: the letters the call offers, `a` when it can be allowed
+// for the rest of the conversation (docs/dev/cli-style.md, "Layout rules").
+func allowPrompt(p *leylinev1.PendingAction) string {
+	if offersConversation(p) {
+		return "Allow? [y/N/a]"
+	}
+	return "Allow? [y/N]"
+}
+
+func offersConversation(p *leylinev1.PendingAction) bool {
+	return slices.Contains(p.GetOffers(), leylinev1.ApprovalScope_APPROVAL_SCOPE_CONVERSATION)
+}
+
+// parseAllow is the answer typed at the question: y or yes allows the call once; a, all or always
+// allows it for the rest of the conversation when the call offers that; anything else declines.
+func parseAllow(line string, p *leylinev1.PendingAction) (bool, leylinev1.ApprovalScope) {
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "y", "yes":
+		return true, leylinev1.ApprovalScope_APPROVAL_SCOPE_ONCE
+	case "a", "all", "always":
+		if offersConversation(p) {
+			return true, leylinev1.ApprovalScope_APPROVAL_SCOPE_CONVERSATION
+		}
+	}
+	return false, leylinev1.ApprovalScope_APPROVAL_SCOPE_UNSPECIFIED
 }
 
 // questionCard is a call that asks first, before its answer: the call, as the call line it

@@ -115,7 +115,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # characters tell them apart), the model each feature calls, and the usage ledger
 ├── ask [request] [--yes] [--continue] [--provider P] [--model M]
 │                                    # a request to the assistant, a conversation the daemon holds: its words on
-│                                    # stdout as they arrive, each tool call on stderr, a [y/N] question for
+│                                    # stdout as they arrive, each tool call on stderr, a [y/N/a] question for
 │                                    # what asks first; no request is a prompt loop
 ├── version
 ├── help [command|topic]             # topics: squelch, frequencies, modes, gain, presets, glossary, scripting, roadmap
@@ -744,10 +744,18 @@ stderr in three parts: the call (`→ <tool> <arguments>`, wrapped to the width 
 its continuation lines indented, where a call that did not ask is cut, so every argument the
 user allows is on screen; it is not printed again once answered), the reason beneath it, indented
 and wrapped, and
-`Allow? [y/N]` on a line of its own; the answer goes to the daemon with `ResolveAction`. `--yes`
-(`-y`) allows every such call, which is how an agent or a script runs `ask`, and prints `Allowed
-by --yes.` where the question would be; when stdin is not a terminal and `--yes` is absent, the
-call is declined with a line there that says so and names `--yes`. `ask` declares no view tools, so a view tool call (one an app
+`Allow? [y/N/a]` on a line of its own, or `Allow? [y/N]` for a call that cannot be allowed for the
+rest of the conversation (a delete, which asks every time). `y` or `yes` allows the call once;
+`a`, `all` or `always` allows it and every later call of the same kind in the conversation (a
+take-over by `tune` covers one by `scan`), across `--continue` and a restart; anything else, or an empty line, declines. The answer
+goes to the daemon with `ResolveAction`. A call that runs because of an earlier `a` is not asked
+about, and shows its receipt as an allowed call does. Words in a request ("you can drive the
+radio") allow nothing. `--yes` (`-y`) starts the conversation in the mode in which nothing asks
+and every such call runs and shows its receipt, which is how an agent or a script runs `ask`; in a
+conversation `--continue` carries on that was started without it, whose mode stays, `--yes`
+allows each question once and prints `Allowed by --yes.` where the question would be. When stdin
+is not a terminal and `--yes` is absent, the call is declined with a line there that says so and
+names `--yes`. `ask` declares no view tools, so a view tool call (one an app
 declared, in a conversation `ask` continues) is answered with the error `ley ask has no view`.
 While a turn is under way and nothing has been printed for 300 ms, a dim `thinking…` line
 (`thinking...` under `--ascii`) waits on stderr, with the seconds since the last output once there
@@ -788,7 +796,8 @@ prints the empty reply, `{}`. `--list` and `--delete` take no request and no `--
 
 From runs against the contract's fake daemon, whose assistant plays a scripted conversation, at 80
 columns, with stderr and stdout merged as a terminal shows them; the tool names and results are the
-script's. In the second, stdin is a simulated terminal on which `y` is typed.
+script's. In the second, stdin is a simulated terminal on which `y` is typed, and in the fourth
+`a`, after which the second take-over runs without a question and shows its receipt.
 `TestAskReferenceTranscripts` renders each and compares it with this block:
 
 ```
@@ -814,6 +823,15 @@ $ ley ask "delete the last recording" < /dev/null
 Declined: stdin is not a terminal, so nobody can answer. Pass --yes to allow
 what the assistant asks.
   ✗ declined
+
+Done.
+$ ley ask "take the radio, try 150 then 151"
+→ tune {"frequency":"150","take_over":true}
+  another client is using the radio: chan_01J (146.520 MHz, ley tune).
+Allow? [y/N/a] a
+  Tuned to 150.000 MHz NFM on chan_01K
+→ tune {"frequency":"151","take_over":true}
+  Tuned to 151.000 MHz NFM on chan_01K
 
 Done.
 ```

@@ -462,8 +462,9 @@ func checkAskDelete(t *testing.T, r *askRig, recordings []string) {
 	}
 }
 
-// checkAskReceivedText: once the conversation has read records, a tune asks first, with the
-// received-text reason, even though a tune alone runs.
+// checkAskReceivedText: once the conversation has read records, a tune would ask first, with the
+// received-text reason, even though a tune alone runs. --yes starts the conversation in AUTO, so
+// it runs unasked and keeps that reason, and ask shows its receipt.
 func checkAskReceivedText(t *testing.T, r *askRig) {
 	r.setScript(
 		`{"tool":"query_records","args":{"protocol":"aprs","limit":5}}`,
@@ -474,8 +475,11 @@ func checkAskReceivedText(t *testing.T, r *askRig) {
 	if code != 0 {
 		t.Fatalf("ley ask: exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
 	}
-	if !toolLine(errOut, "tune") || !strings.Contains(errOut, "\nAllowed by --yes.\n") {
-		t.Errorf("ley ask stderr lacks the tune's question: %q", errOut)
+	if !toolLine(errOut, "tune") || strings.Contains(errOut, "Allow") {
+		t.Errorf("ley ask --yes asked, or lacks the tune: %q", errOut)
+	}
+	if mode := r.newest().GetMode(); mode != leylinev1.ApprovalMode_APPROVAL_MODE_AUTO {
+		t.Errorf("ley ask --yes started a conversation in %v", mode)
 	}
 	cs := calls(r.newest())
 	if len(cs) != 2 || cs[0].GetTool() != "query_records" || cs[1].GetTool() != "tune" {
@@ -490,9 +494,9 @@ func checkAskReceivedText(t *testing.T, r *askRig) {
 		!strings.Contains(tune.GetReason(), "received over the air") {
 		t.Errorf("tune after reading records: %v", tune)
 	}
-	// The allowed call keeps the daemon's receipt beneath it: the worker runs it through RUNNING,
-	// and the reason it asked with is what ask reads. The line is cut to the width, and tune's
-	// names its channel and capture, so only its start is compared, cut by runes.
+	// The allowed call keeps the daemon's receipt beneath it: the reason it would have asked with
+	// is what ask reads. The line is cut to the width, and tune's names its channel and capture,
+	// so only its start is compared, cut by runes.
 	if receipt := []rune(strings.TrimSpace(strings.SplitN(strings.TrimSpace(cs[1].GetResultText()), "\n", 2)[0])); len(receipt) == 0 ||
 		!strings.Contains(errOut, "\n  "+string(receipt[:min(len(receipt), 40)])) {
 		t.Errorf("ley ask stderr lacks the tune's receipt %q: %q", receipt, errOut)

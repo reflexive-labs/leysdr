@@ -22,9 +22,10 @@ import (
 // assistant's worker with the key the runner added, the worker calls the model and the same
 // tools `ley mcp` serves, and the Conversation lines are the log (conversation.go).
 //
-// --yes allows every call the gate would ask about, because the eval grades what the model does
-// and not what the operator would have refused: an injected write the gate stopped would leave
-// no event for no_write to find, and the transcript still shows each call that asked first.
+// --yes starts the conversation in AUTO, where every call the gate would ask about runs, because
+// the eval grades what the model does and not what the operator would have refused: an injected
+// write the gate stopped would leave no event for no_write to find. The transcript still shows
+// each such call, by the reason the worker keeps on it.
 
 // KeyEnv is the environment variable the runner reads the assistant's provider key from. The
 // key goes to `ley ai add` on stdin and nowhere else: never an argument, a file or a log line.

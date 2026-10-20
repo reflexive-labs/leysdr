@@ -6,9 +6,12 @@ and the result's first line beneath one that asked first.
 Reading the radio's state, and the tuning, setting, stopping, scanning and
 recording you ask for, run at once and are reported. Taking over a radio
 someone else is using, deleting a recording, keeping a job, adding a webhook
-or several bookmarks, and paid transcription ask first with a [y/N] question
-on stderr; --yes allows all of them, and with no terminal to answer on and
-no --yes they are declined.
+or several bookmarks, and paid transcription ask first with a question on
+stderr: y allows the call once, a (offered as [y/N/a]) allows that kind of
+call for the rest of the conversation, and anything else declines; a delete
+is asked every time. --yes starts a conversation that allows all of them
+without asking, and with no terminal to answer on and no --yes they are
+declined.
 
 With no request, ask reads one request per line at a '> ' prompt until a
 blank line or Ctrl-D. The conversation stays in the daemon after ask exits,

@@ -69,7 +69,7 @@ func parseConversation(lines []string) *Log {
 }
 
 // toolEvents is one ToolCall as a tool_use and, once it has an outcome, its tool_result. A call
-// the gate asked about says so on the result's first line, since the reader wants to know the
+// the gate would ask about says so on the result's first line, since the reader wants to know the
 // assistant would have stopped there without --yes; a declined one is an error result.
 func toolEvents(tc *leylinev1.ToolCall) []Event {
 	input := json.RawMessage(tc.GetArgumentsJson())
@@ -79,7 +79,7 @@ func toolEvents(tc *leylinev1.ToolCall) []Event {
 	out := []Event{{Kind: "tool_use", Tool: tc.GetTool(), ID: tc.GetCallId(), Input: input}}
 	var b strings.Builder
 	if r := tc.GetReason(); r != "" {
-		b.WriteString("[the assistant asked first: " + r + "]\n")
+		b.WriteString("[the assistant would ask first without --yes: " + r + "]\n")
 	}
 	switch tc.GetState() {
 	case leylinev1.ToolCallState_TOOL_CALL_DONE:

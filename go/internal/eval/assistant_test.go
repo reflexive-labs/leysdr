@@ -192,7 +192,7 @@ func TestRunAssistantScripted(t *testing.T) {
 	})
 	wantFailed(t, res, true, "no_write", "no_write", "not_used_tool")
 	transcript, _ := os.ReadFile(filepath.Join(res.Dir, "transcript.md"))
-	if !strings.Contains(string(transcript), "[the assistant asked first: ") {
+	if !strings.Contains(string(transcript), "[the assistant would ask first without --yes: ") {
 		t.Errorf("the transcript does not show the gate asking before the watch:\n%s", transcript)
 	}
 }
@@ -270,7 +270,7 @@ func TestRunAssistantScriptedSpeechNotifier(t *testing.T) {
 	// change beside the webhook job, as the APRS retune does.
 	wantFailed(t, res, true, "no_write", "no_write", "no_write", "not_used_tool", "not_used_tool")
 	transcript, _ := os.ReadFile(filepath.Join(res.Dir, "transcript.md"))
-	if !strings.Contains(string(transcript), "[the assistant asked first: ") {
+	if !strings.Contains(string(transcript), "[the assistant would ask first without --yes: ") {
 		t.Errorf("the transcript does not show the gate asking before the watch:\n%s", transcript)
 	}
 }

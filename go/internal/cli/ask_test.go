@@ -189,9 +189,9 @@ var deleteTurn = fakedaemon.AssistantTurn{
 }
 
 // A call that asks is a [y/N] question on a terminal, answered with ResolveAction; without a
-// terminal it is declined with a line saying how to allow it, and --yes allows it unasked. Each
-// form is the call on its line, the reason beneath it, and the question or the answer on a line
-// of its own.
+// terminal it is declined with a line saying how to allow it. Each form is the call on its line,
+// the reason beneath it, and the question or the answer on a line of its own. --yes starts the
+// conversation in AUTO, where the call runs unasked and shows its receipt.
 func TestAskApproval(t *testing.T) {
 	t.Parallel()
 	question := "→ delete_recording {\"recording\":\"job_01K\"}\n  deleting a recording asks every time.\n"
@@ -216,7 +216,7 @@ func TestAskApproval(t *testing.T) {
 		},
 		{
 			name: "--yes", flags: []string{"--yes"}, approved: true,
-			says: []string{question + "Allowed by --yes.\n  Deleted job_01K, 12.0 MB freed\n\nDone.\n"},
+			says: []string{"→ delete_recording {\"recording\":\"job_01K\"}\n  Deleted job_01K, 12.0 MB freed\n\nDone.\n"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -238,6 +238,16 @@ func TestAskApproval(t *testing.T) {
 					t.Errorf("lacks %q:\n%s", want, out)
 				}
 			}
+			if tc.name == "--yes" && strings.Contains(out, "Allow") {
+				t.Errorf("--yes asked:\n%s", out)
+			}
+			wantMode := leylinev1.ApprovalMode_APPROVAL_MODE_ASK
+			if tc.name == "--yes" {
+				wantMode = leylinev1.ApprovalMode_APPROVAL_MODE_AUTO
+			}
+			if got := newestConversation(t, c).GetMode(); got != wantMode {
+				t.Errorf("the conversation's mode is %v, want %v", got, wantMode)
+			}
 			call := newestConversation(t, c).Turns[1].Tools[0]
 			want := leylinev1.ToolCallState_TOOL_CALL_REFUSED
 			if tc.approved {
@@ -251,8 +261,8 @@ func TestAskApproval(t *testing.T) {
 }
 
 // A question shows every argument of the call it asks about: the call line is wrapped, not cut as
-// a plain call line is, since keep past the cut would be allowed unseen. The --yes and declined
-// forms show the same card.
+// a plain call line is, since keep past the cut would be allowed unseen. The declined form shows
+// the same card.
 func TestAskQuestionShowsEveryArgument(t *testing.T) {
 	t.Parallel()
 	call0 := `{"frequency":"146.52","take_over":true,"squelch":"auto","mode":"nfm","keep":true,"bandwidth":"12.5k"}`
@@ -267,7 +277,6 @@ func TestAskQuestionShowsEveryArgument(t *testing.T) {
 		then  string
 	}{
 		{"y on a terminal", askRunOpts{inTTY: true, stdin: "y\n"}, nil, "Allow? [y/N] y"},
-		{"--yes", askRunOpts{}, []string{"--yes"}, "Allowed by --yes."},
 		{"no terminal", askRunOpts{}, nil, "Declined: stdin is not a terminal"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -555,6 +564,7 @@ func TestAskReferenceTranscripts(t *testing.T) {
 		{`$ ley ask "listen to the NOAA weather radio"`, twoToolsTurn, askRunOpts{}, []string{"ask", "listen to the NOAA weather radio"}},
 		{`$ ley ask "delete the last recording"`, deleteTurn, askRunOpts{inTTY: true, stdin: "y\n"}, []string{"ask", "delete the last recording"}},
 		{`$ ley ask "delete the last recording" < /dev/null`, deleteTurn, askRunOpts{}, []string{"ask", "delete the last recording"}},
+		{`$ ley ask "take the radio, try 150 then 151"`, takeOverTurn, askRunOpts{inTTY: true, stdin: "a\n"}, []string{"ask", "take the radio, try 150 then 151"}},
 	} {
 		want, ok := documented[tc.cmd]
 		if !ok {
@@ -566,8 +576,8 @@ func TestAskReferenceTranscripts(t *testing.T) {
 			t.Errorf("%s: the reference shows\n%s\nask renders\n%s", tc.cmd, want, got)
 		}
 	}
-	if len(documented) != 3 {
-		t.Errorf("the reference has %d transcripts; this test checks 3", len(documented))
+	if len(documented) != 4 {
+		t.Errorf("the reference has %d transcripts; this test checks 4", len(documented))
 	}
 }
 

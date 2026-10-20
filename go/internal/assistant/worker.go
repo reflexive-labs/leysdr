@@ -424,7 +424,6 @@ func (w *worker) runCall(ctx context.Context, turn *leylinev1.Turn, use Block) (
 		// reader sees it was one the user allowed, and allowed_by says which answer allowed it.
 		call.Reason, call.AllowedBy = d.Reported, d.AllowedBy
 	}
-
 	if err := w.write(turn); err != nil {
 		return Block{}, notInterrupted, err
 	}

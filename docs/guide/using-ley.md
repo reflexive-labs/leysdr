@@ -1097,7 +1097,10 @@ Its answer prints as it arrives, and each tool it calls is one dim line on stder
 allowed. Reading state and the tuning,
 setting, stopping, scanning and recording you asked for run at once. Deleting a recording, taking
 over a radio someone else is using, keeping a job, adding a webhook and paid transcription ask
-first: answer `y` at the `[y/N]` question, or pass `--yes` to allow everything, which is how a
+first: answer `y` at the `[y/N/a]` question to allow that call, or `a` to allow that kind of
+call for the rest of the conversation (a delete asks every time, so its question is `[y/N]`).
+Telling the assistant "you can drive the radio" in a request allows nothing; only the answer
+does. Pass `--yes` to start a conversation that allows everything without asking, which is how a
 script or another agent runs `ask`. Without a terminal to answer on and without `--yes`, such a
 call is declined.
 

@@ -72,7 +72,7 @@ Six roles. Use the role, never a colour name, at the call site.
 
 | Role | Rendering | Use for |
 |---|---|---|
-| `Label` | bold | table headers, field labels, the left column of a label block, verb names in help, the `ley ask` prompt and its `Allow? [y/N]` |
+| `Label` | bold | table headers, field labels, the left column of a label block, verb names in help, the `ley ask` prompt and its `Allow? [y/N/a]` |
 | `Muted` | dim | ids the user is not being asked to read, units, hints, scaffolding, values below the noise floor, the assistant's tool calls and waiting line in `ley ask` |
 | `Ok` | green | `ACTIVE`, `AVAILABLE`, audio flowing, squelch open, a successful action |
 | `Warn` | yellow | `OUT_OF_CAPTURE`, `IN_USE` by another program, muted audio, a degraded but working state |
@@ -197,10 +197,13 @@ Ranges read `24.000 MHz to 1.766 GHz`, never with a dash, so a dash always means
   and a pipe has no line to erase, and never while text on the same terminal is part-way through
   a line, which the erase would wipe.
 - **A question about a call is the call, then why, then the question.** The call's own line comes
-  first, the reason beneath it indented as a receipt is, and `Allow? [y/N]` on a line of its own,
-  so the arguments are never wrapped into the middle of a sentence. The answer (`Allowed by
-  --yes.`, `Declined: …`) takes the question's line. The call is wrapped, never cut, with its
-  continuation lines indented two columns: what the user allows is all on screen.
+  first, the reason beneath it indented as a receipt is, and the question on a line of its own,
+  so the arguments are never wrapped into the middle of a sentence. The question shows only the
+  letters the call offers: `Allow? [y/N/a]` when it can be allowed for the rest of the
+  conversation, `Allow? [y/N]` when it cannot, so no letter is offered that the daemon would
+  refuse. The answer (`Allowed by --yes.`, `Declined: …`) takes the question's line. The call is
+  wrapped, never cut, with its continuation lines indented two columns: what the user allows is
+  all on screen.
 - **A chart draws its trace, not its area.** One glyph per column, on the row that column's
   value falls in, with a thin stem beneath it only where it stands above the reference line.
   Filling every cell under a column adds area without information: a flat noise floor covers

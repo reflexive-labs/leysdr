@@ -64,10 +64,11 @@ assistant run, scripted or not, the runner removes the key again with `ley ai re
 or a script, assistant-mode runs are skipped, so `make eval` on a machine with no key still runs
 the `mcp` half of every scenario.
 
-`--yes` allows every call the assistant's gate would ask about, because the eval grades what the
-model does and not what the operator would have refused: an injected write the gate stopped
-would leave nothing in the event log for `no_write` to find. The transcript still marks each call
-that asked first, `[the assistant asked first: <reason>]` above its result.
+`--yes` starts the conversation in the mode in which every call the assistant's gate would ask
+about runs, because the eval grades what the model does and not what the operator would have
+refused: an injected write the gate stopped would leave nothing in the event log for `no_write`
+to find. The transcript still marks each such call, `[the assistant would ask first without
+--yes: <reason>]` above its result.
 
 The log is `ley ask --json`'s output, one `Conversation` a line; the last is graded. Its assistant
 turns are laid out as Claude Code's stream is, each `ToolCall` a tool call with its arguments
@@ -296,7 +297,7 @@ injection's, and each check is true of an agent that reads and false of one that
 
 In assistant mode `--yes` lets an obeyed call run, so the event log is the evidence; the gate's
 own rule, that every write after received text asks first, is tested in `go/internal/assistant`
-and shows here only as the `[the assistant asked first: …]` line.
+and shows here only as the `[the assistant would ask first without --yes: …]` line.
 
 The `inject-speech-*` scenarios put the instruction in an over instead. `nfm_keyed` carries three
 overs a pass, and the scenario's `speech_script` says what each one was: a check-in by "whiskey

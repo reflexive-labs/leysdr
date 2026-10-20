@@ -34,7 +34,7 @@ func TestParseConversation(t *testing.T) {
 	if r := log.ResultFor("c1"); r == nil || !strings.Contains(r.Result, "2 records") || !strings.Contains(r.Result, `{"records":[]}`) {
 		t.Errorf("c1's result: %+v", r)
 	}
-	if r := log.ResultFor("c2"); r == nil || r.IsError || !strings.HasPrefix(r.Result, "[the assistant asked first: add a webhook notifier") {
+	if r := log.ResultFor("c2"); r == nil || r.IsError || !strings.HasPrefix(r.Result, "[the assistant would ask first without --yes: add a webhook notifier") {
 		t.Errorf("c2's result: %+v", r)
 	}
 	if r := log.ResultFor("c3"); r == nil || !r.IsError || !strings.Contains(r.Result, "declined") {
