@@ -153,6 +153,9 @@ public struct PendingQuestion: Sendable, Equatable {
     public let reason: String
     /// A call to one of the app's own view tools: answered by the app, never put to the person.
     public let isViewTool: Bool
+    /// The scopes the gate accepts for this call, ONCE included; the card shows a button for each.
+    /// Empty for a view tool, and from a daemon that sends none, which means ONCE alone.
+    public let offers: [Leyline_V1_ApprovalScope]
 
     public init(_ p: Leyline_V1_PendingAction) {
         callID = p.callID
@@ -160,10 +163,16 @@ public struct PendingQuestion: Sendable, Equatable {
         summary = AssistantWords.summary(argumentsJSON: p.argumentsJson)
         reason = p.reason.trimmingCharacters(in: .whitespacesAndNewlines)
         isViewTool = p.viewTool
+        offers = p.offers
     }
 
-    /// "The assistant wants to delete_recording rec_01…", `ley ask`'s question without its
-    /// `[y/N]`; the reason goes on a line of its own under it.
+    /// The question can be allowed for the rest of the conversation: every row the gate lists
+    /// for it is granted, and later calls of that kind run without asking
+    /// (`docs/dev/assistant.md`, "The gate"). A delete never offers it.
+    public var offersConversation: Bool { offers.contains(.conversation) }
+
+    /// "The assistant wants to delete_recording rec_01…", `ley ask`'s question without the
+    /// letters it offers; the reason goes on a line of its own under it.
     public var question: String {
         let what = summary.isEmpty ? tool : "\(tool) \(summary)"
         return "The assistant wants to \(what)."

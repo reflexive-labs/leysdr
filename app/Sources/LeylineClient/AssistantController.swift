@@ -186,14 +186,21 @@ public final class AssistantController {
         }
     }
 
-    /// Allow or Decline on the question the assistant is waiting on.
-    public func resolve(callID: String, approve: Bool) async {
+    /// Allow, Allow for this conversation, or Decline on the question the assistant is waiting
+    /// on. `scope` is one of the question's offers (`PendingQuestion.offers`); unset is once.
+    public func resolve(
+        callID: String, approve: Bool, scope: Leyline_V1_ApprovalScope = .unspecified
+    ) async {
         guard let id = conversationID else { return }
         var req = Leyline_V1_ResolveActionRequest()
         req.conversationID = id
         req.callID = callID
         req.approve = approve
-        log?("\(approve ? "allowed" : "declined") \(callID)")
+        if approve { req.scope = scope }
+        let answer =
+            !approve
+            ? "declined" : scope == .conversation ? "allowed for the conversation" : "allowed"
+        log?("\(answer) \(callID)")
         let calls = calls
         let request = req
         await call(.resolve) { try await calls.resolveAction(request) }

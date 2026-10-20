@@ -259,8 +259,10 @@ struct StepBlock: View {
     }
 }
 
-/// What the assistant asks to do, the reason in its gate's words, and Allow or Decline. Neither
-/// button takes Return: a delete or a takeover is answered with a click, never a stray key.
+/// What the assistant asks to do, the reason in its gate's words, and a button per answer the
+/// question offers: Decline, Allow for this conversation when it can be granted for the rest of
+/// the conversation (never for a delete), and Allow. No button takes Return: a delete or a
+/// takeover is answered with a click, never a stray key.
 struct PendingCard: View {
     @Environment(AppSession.self) private var session
     let question: PendingQuestion
@@ -276,6 +278,13 @@ struct PendingCard: View {
             HStack(spacing: 8) {
                 Spacer()
                 Button("Decline") { Task { await session.decline(callID: question.callID) } }
+                if question.offersConversation {
+                    Button("Allow for this conversation") {
+                        Task {
+                            await session.approve(callID: question.callID, forConversation: true)
+                        }
+                    }
+                }
                 Button("Allow") { Task { await session.approve(callID: question.callID) } }
             }
             .buttonStyle(.bordered).controlSize(.small)

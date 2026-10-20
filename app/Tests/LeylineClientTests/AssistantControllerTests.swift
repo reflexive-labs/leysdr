@@ -16,6 +16,7 @@ final class FakeAssistantCalls: AssistantCalls {
     struct State {
         var started = Leyline_V1_Conversation()
         var answers: [Leyline_V1_AnswerViewToolRequest] = []
+        var resolves: [Leyline_V1_ResolveActionRequest] = []
         /// Thrown by the next `AnswerViewTool`s, one each, before one succeeds.
         var answerErrors: [LeylineError] = []
         var watches: [(id: String, since: UInt64)] = []
@@ -43,7 +44,9 @@ final class FakeAssistantCalls: AssistantCalls {
     func resolveAction(_ request: Leyline_V1_ResolveActionRequest) async throws
         -> Leyline_V1_Conversation
     {
-        throw LeylineError(code: "FAILED_PRECONDITION", message: "not in this test")
+        state.withLock { $0.resolves.append(request) }
+        // The test reads the requests; the daemon's reply is not what it checks.
+        throw LeylineError(code: "FAILED_PRECONDITION", message: "resolved")
     }
 
     func answerViewTool(_ request: Leyline_V1_AnswerViewToolRequest) async throws
@@ -82,6 +85,7 @@ final class FakeAssistantCalls: AssistantCalls {
 
     var watches: [(id: String, since: UInt64)] { state.withLock { $0.watches } }
     var answers: [Leyline_V1_AnswerViewToolRequest] { state.withLock { $0.answers } }
+    var resolves: [Leyline_V1_ResolveActionRequest] { state.withLock { $0.resolves } }
 
     /// The newest watch stream.
     func stream() -> AsyncThrowingStream<Leyline_V1_Conversation, any Error>.Continuation? {
@@ -190,6 +194,23 @@ final class AssistantControllerTests: XCTestCase {
         XCTAssertFalse(fake.answers.last?.isError ?? true)
         try await Task.sleep(for: .milliseconds(30))
         XCTAssertEqual(fake.answers.count, 2, "an answer the daemon took is not sent again")
+    }
+
+    @MainActor
+    func testTheScopeLeavesResolve() async throws {
+        let fake = FakeAssistantCalls(started: Self.conversation(seq: 1))
+        let controller = try await started(fake)
+        defer { controller.close() }
+        await controller.resolve(callID: "c2", approve: true, scope: .conversation)
+        await controller.resolve(callID: "c3", approve: true)
+        await controller.resolve(callID: "c4", approve: false, scope: .conversation)
+        let sent = fake.resolves
+        XCTAssertEqual(sent.map(\.callID), ["c2", "c3", "c4"])
+        XCTAssertEqual(sent.map(\.conversationID), ["conv_1", "conv_1", "conv_1"])
+        XCTAssertEqual(sent.map(\.approve), [true, true, false])
+        XCTAssertEqual(
+            sent.map(\.scope), [.conversation, .unspecified, .unspecified],
+            "unset is once, and a decline carries no scope")
     }
 
     @MainActor

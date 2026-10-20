@@ -484,7 +484,7 @@ assistant's own `show_place` included, leaves the transcript, its scroll and the
 with `StartConversation`, declaring the app's view tools and naming no provider or model, so the
 daemon uses the assistant feature's; the first message starts one when none is going, and New
 Conversation ends the one shown and empties the panel. `SendMessage`, `ResolveAction` (Allow,
-Decline), `StopTurn` and `EndConversation` are the other calls. The controller holds the newest
+Allow for this conversation, Decline), `StopTurn` and `EndConversation` are the other calls. The controller holds the newest
 copy of the conversation by `seq`, from the replies, from a `WatchConversation` stream that
 resumes from the `seq` it holds after a drop, and from the mirror's `conversation` events, which
 the session passes on. A refusal is a notice: `CREDENTIAL_MISSING`, `CREDENTIAL_REJECTED` and a
@@ -502,7 +502,11 @@ step: `→ tool arguments` on one line (a single argument is its value alone, se
 value` pairs, cut at 80 characters), a state word (`running`, `done`, `failed`, `asks`, `in the
 app`, `declined`, `stopped`) and the result's first line; opened, the step shows the arguments as
 indented JSON, the whole result and its JSON. A call waiting for approval is a card with the
-question, the gate's reason (`assistant.md`, "The gate") and Allow and Decline, neither on Return.
+question, the gate's reason (`assistant.md`, "The gate") and a button per answer the call offers
+(`PendingQuestion.offers`): Decline, Allow for this conversation when the call can be granted for
+the rest of the conversation (never a delete), and Allow, none on Return. The app starts every
+conversation in the default mode, in which questions are asked; the panel has no switch for the
+mode that asks nothing.
 Stop shows while the assistant thinks and while it waits on one of the app's view tools. The
 usage line under the transcript is the mirror's usage
 lines whose scope is the conversation, summed: `3 requests, 1.2k in, 400 out`, with the tokens the

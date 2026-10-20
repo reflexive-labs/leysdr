@@ -106,7 +106,16 @@ final class AssistantModelsTests: XCTestCase {
         XCTAssertEqual(q.question, "The assistant wants to delete_recording rec_1.")
         XCTAssertEqual(q.reason, "delete the recording and its files; this cannot be undone")
         XCTAssertFalse(q.isViewTool)
+        XCTAssertEqual(q.offers, [], "a daemon that sends no offers offers once alone")
+        XCTAssertFalse(q.offersConversation)
         XCTAssertEqual(view.stateWord, "waiting for you")
+
+        c.pending.offers = [.once]
+        XCTAssertEqual(ConversationView(c).pending?.offers, [.once])
+        XCTAssertEqual(ConversationView(c).pending?.offersConversation, false, "a delete")
+        c.pending.offers = [.once, .conversation]
+        XCTAssertEqual(ConversationView(c).pending?.offers, [.once, .conversation])
+        XCTAssertEqual(ConversationView(c).pending?.offersConversation, true, "a take-over")
 
         XCTAssertFalse(view.canStop, "a question the person decides has Decline, not Stop")
         c.pending.viewTool = true

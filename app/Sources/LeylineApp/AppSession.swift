@@ -4223,8 +4223,11 @@ final class AppSession {
         return await assistant.send(text)
     }
 
-    func approve(callID: String) async {
-        await assistant?.resolve(callID: callID, approve: true)
+    /// Allow, once or, with `forConversation`, for the rest of the conversation: the worker then
+    /// runs later calls of that kind without asking (`docs/dev/assistant.md`, "The gate").
+    func approve(callID: String, forConversation: Bool = false) async {
+        await assistant?.resolve(
+            callID: callID, approve: true, scope: forConversation ? .conversation : .once)
     }
 
     func decline(callID: String) async {

@@ -381,6 +381,27 @@ The take-over row is the don't-disturb refusal `ley mcp` already returns, put to
 question. Each step of a conversation shows the tool the assistant called and its result, and the
 user can stop it mid-task.
 
+A question can be answered once or for the rest of the conversation. Answered for the
+conversation, it grants each row it listed, and a later call on a granted row runs without asking
+and is reported with the call id of the question that granted it (`ToolCall.allowed_by`), so a
+reader of the conversation sees why it did not ask. A grant is kept by row, not by tool: one
+answer to a take-over by `tune` covers a take-over by `scan` or `record`. The worker keeps grants
+with its transcript, so they hold across `ley ask --continue` and a daemon restart. Each question
+carries the scopes it accepts (`PendingAction.offers`), and a client shows only those: deleting a
+recording offers once alone, because a delete cannot be undone; every other row, and the
+received-text rule below, offers both, since otherwise a conversation that read one APRS page
+would ask again before every write. Only an answer to a question grants anything: a user who
+writes "you can drive the radio" has granted nothing, because the gate reads `ResolveAction` and
+never the user's words.
+
+A conversation also has a mode, set when it starts (`StartConversationRequest.mode`). In `ASK`,
+the default, the table and the grants decide. In `AUTO` every row runs and is reported with the
+reason it would have asked with, so the conversation never waits; `ley ask --yes` starts one, for
+scripts and agents that cannot answer. The rows outside the tool list (a shell command, a shell
+notifier, the keys) stay outside in every mode. The policy, the mode's effect and the grants live
+in the worker's gate alone: the daemon passes the mode, the offers and the answer through, and a
+client renders a question and sends one answer.
+
 ### Received text is untrusted input
 
 Anyone with a transmitter can put words into an APRS comment, an AIS field or a speech record, and

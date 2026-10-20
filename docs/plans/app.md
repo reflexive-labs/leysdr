@@ -1591,6 +1591,11 @@ and the fake worker in `make app-e2e`. The views are not compiled off the Mac.
   its JSON; long results wrap and can be selected.
 - A question shows as a card under the transcript; Allow and Decline answer it and the card
   goes; Return does not answer it.
+- A take-over question ("take the radio from the terminal on 146.52") shows a third button,
+  Allow for this conversation, between Decline and Allow, and the three fit the panel at its
+  narrowest without clipping. After it, a second take-over in the same conversation runs without
+  a card, and its step reads `done` with the receipt. A delete's card shows only Decline and
+  Allow.
 - Stop shows only while the assistant thinks and ends the turn; New Conversation ends the
   conversation and empties the panel.
 - "Show me 2 m" with the radio on 146.52 MHz zooms the waterfall and the rail's window onto the
