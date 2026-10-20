@@ -1577,15 +1577,24 @@ and the fake worker in `make app-e2e`. The views are not compiled off the Mac.
   even while it was open.
 - With the column open the window cannot be made narrower than 900 pt plus the column, and
   opening it in a narrow window widens the window rather than squeezing the canvas.
-- Stop shows while the assistant waits on a view tool; after a message the field takes the focus
-  back once the turn ends.
+- Stop shows while the assistant waits on a view tool; after a message the field keeps the focus
+  through the turn.
 - ⇧⌘A and the toolbar toggle open and close the column in both places, and the choice survives
   a relaunch; ⌘1 and ⌘2 with the column open keep the transcript, its scroll and the field's text.
 - The empty panel's words wrap inside 320 pt; with no model chosen, Open Settings opens the AI
   pane.
 - Return in the field sends and clears it; Option-Return makes a new line; Space and the arrows
-  type into the field rather than muting and tuning the radio; the field is disabled while the
-  assistant thinks or asks, and a refused send puts the text back.
+  type into the field rather than muting and tuning the radio; a refused send puts the text back.
+- While the assistant thinks the field takes typing; Return then does nothing and keeps the text,
+  also while a question card waits, and sends it once the turn ends. A lost conversation (deleted
+  from `ley ask` while the panel shows it) still takes a message, which starts a new one.
+- The waiting row: after a message, a small spinner and `thinking…` appear under the turns and stay
+  in view at the bottom of the transcript; from 3 s it reads `thinking… 3s`, `4s`, once a second;
+  while a step reads `running` the row is gone, and it comes back counting from 0 when the model
+  thinks again; when the reply arrives, a question shows or Stop is pressed, nothing of it stays.
+  VoiceOver reads it as one element, "The assistant is thinking".
+- The assistant's reply text is in `inkSecondary`, dimmer than the field's typing and brighter
+  than the steps and the user's turn, and no longer stands out against the rest of the panel.
 - The transcript stays scrolled to the newest turn as text and steps arrive; a user turn sits on
   the right in muted ink; a step's row opens and closes and shows the arguments, the result and
   its JSON; long results wrap and can be selected.

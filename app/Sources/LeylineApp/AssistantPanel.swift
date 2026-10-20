@@ -145,6 +145,9 @@ struct AssistantTranscript: View {
                 ForEach(view.turns) { turn in
                     TurnView(turn: turn)
                 }
+                if view.isWaitingOnModel {
+                    WaitingRow(since: view.waitingSince(now: Date()))
+                }
             }
             .padding(16)
         }
@@ -152,7 +155,33 @@ struct AssistantTranscript: View {
     }
 }
 
-/// A user turn right-aligned in muted ink; an assistant turn in body text with its steps.
+/// The sign that the assistant is thinking: a spinner and `thinking…`, with the seconds once a
+/// wait has gone on for three, as `ley ask`'s waiting line counts them. It sits under the newest
+/// turn only while `ConversationView.isWaitingOnModel`, and nothing of it stays when the turn
+/// moves on (`docs/dev/cli-style.md`, "A wait says so, and leaves nothing behind").
+struct WaitingRow: View {
+    let since: Date
+
+    var body: some View {
+        TimelineView(.periodic(from: since, by: 1)) { context in
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text(words(at: context.date)).font(Theme.Font.valueSmall)
+                    .foregroundStyle(Theme.inkFaint)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("The assistant is thinking")
+    }
+
+    private func words(at now: Date) -> String {
+        let seconds = Int(now.timeIntervalSince(since).rounded(.down))
+        return seconds >= 3 ? "thinking\u{2026} \(seconds)s" : "thinking\u{2026}"
+    }
+}
+
+/// A user turn right-aligned in muted ink; an assistant turn's steps, then its text in secondary
+/// ink, the brightest in the column after the field's own typing, which keeps `ink`.
 struct TurnView: View {
     let turn: TurnRow
 
@@ -172,7 +201,7 @@ struct TurnView: View {
                     StepView(step: step)
                 }
                 if !turn.text.isEmpty {
-                    Text(turn.text).font(Theme.Font.body).foregroundStyle(Theme.ink)
+                    Text(turn.text).font(Theme.Font.body).foregroundStyle(Theme.inkSecondary)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -334,22 +363,22 @@ struct AssistantNoticeLine: View {
     }
 }
 
-/// The usage line, then the field: Return sends; the field waits while the assistant is on a turn
-/// or a question, and Stop shows beside it while it thinks or runs one of the app's view tools.
-/// The field takes the focus back when it can be typed in again, if it had it when the message
-/// went. The text stays in the
-/// field until the daemon has taken it. `TuningKeyGuard` hands Space and the arrows to the field,
-/// or typing would mute and tune the radio through the Tune menu's keys.
+/// The usage line, then the field: it is never disabled, so the next message is written while the
+/// assistant is on a turn or a question, and Return sends only once the daemon would take it;
+/// until then the text stays. Stop shows beside the field while the assistant thinks or runs one
+/// of the app's view tools. The text also comes back when the daemon did not take it.
+/// `TuningKeyGuard` hands Space and the arrows to the field, or typing would mute and tune the
+/// radio through the Tune menu's keys.
 struct AssistantField: View {
     @Environment(AppSession.self) private var session
     let view: ConversationView?
     @State private var draft = ""
     @FocusState private var focused: Bool
-    /// The field had the focus when the message went, so it takes it back when it can be typed
-    /// in again; a field the person had left alone does not take the focus from elsewhere.
-    @State private var refocus = false
 
-    private var canType: Bool {
+    /// Return sends only while the daemon would take the message: not while one is on its way,
+    /// and not while the assistant thinks or asks. With no conversation, or one that is over or
+    /// lost, the message starts a new one (`AssistantController.needsStart`).
+    private var canSend: Bool {
         guard !session.assistantSending else { return false }
         guard let view, !session.assistantLost else { return true }
         return view.canSend || view.isOver
@@ -366,14 +395,8 @@ struct AssistantField: View {
                     .font(Theme.Font.body).foregroundStyle(Theme.ink)
                     .lineLimit(1...4)
                     .focused($focused)
-                    .disabled(!canType)
                     .onSubmit(send)
                     .modifier(TuningKeyGuard(focused: focused))
-                    .onChange(of: canType) { _, now in
-                        guard now, refocus else { return }
-                        refocus = false
-                        focused = true
-                    }
                 if view?.canStop == true {
                     Button("Stop") { Task { await session.stopTurn() } }
                         .buttonStyle(.bordered).controlSize(.small)
@@ -391,13 +414,13 @@ struct AssistantField: View {
 
     private func send() {
         let text = draft
-        guard canType, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard canSend, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
         }
         draft = ""
-        refocus = focused
         Task {
-            if !(await session.send(text)) { draft = text }
+            // What was typed while the message was on its way stays, under the text that failed.
+            if !(await session.send(text)) { draft = draft.isEmpty ? text : text + "\n" + draft }
         }
     }
 }

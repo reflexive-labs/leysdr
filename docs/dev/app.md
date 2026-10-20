@@ -497,12 +497,19 @@ contract sends no event for the deletion itself. The session copies the controll
 every change, as it copies the mirror's.
 
 **The rows** (`AssistantModels.swift`). `ConversationView` turns the conversation into turns, a
-user's right-aligned in muted ink and the assistant's in body text, and each tool call into a step:
+user's right-aligned in `inkMuted` and the assistant's text in `inkSecondary`, under its steps
+(`ink`, the brightest, is kept for the field's typing), and each tool call into a step:
 `→ tool arguments` on one line (a single argument is its value alone, several are `name value`
 pairs, cut at 80 characters), a state word (`running`, `done`, `failed`, `asks`, `in the app`,
 `declined`, `stopped`) and the result's first line; opened, the step shows the arguments as indented
-JSON, the whole result and its JSON. A call waiting for approval is a card with the question, the
-gate's reason (`assistant.md`, "The gate") and a button per answer the call offers
+JSON, the whole result and its JSON. While the assistant is on a turn and no step of its newest
+turn is `running` (`ConversationView.isWaitingOnModel`), the model is thinking, and a waiting row
+under the turns says so: a small spinner and `thinking…`, with the seconds from three on
+(`thinking… 4s`), counted from the conversation's `last_turn_at_ns`, so the count starts again
+after each step as `ley ask`'s waiting line does (`cli-style.md`, "A wait says so, and leaves
+nothing behind"). A running step is its own sign, so the row is absent then, and nothing of it
+stays once the turn moves on. It appears at once, without the terminal's 300 ms delay. A call
+waiting for approval is a card with the question, the gate's reason (`assistant.md`, "The gate") and a button per answer the call offers
 (`PendingQuestion.offers`): Decline, Allow for this conversation when the call can be granted for
 the rest of the conversation (never a delete or a cancel of another client's job), and Allow, none
 on Return. Once one is pressed all three are disabled, and a click meanwhile is dropped, until the
@@ -512,9 +519,12 @@ in which questions are asked; the panel has no switch for the mode that asks not
 while the assistant thinks and while it waits on one of the app's view tools. The usage line under
 the transcript is the mirror's usage lines whose scope is the conversation, summed: `3 requests,
 1.2k in, 400 out`, with the tokens the provider's cache served when there were any; never a price.
-The field sends on Return, keeps the text when the daemon did not take it, is disabled while the
-assistant thinks or waits, and takes the focus back when it can be typed in again if it had it when
-the message went; `TuningKeyGuard` keeps Space and the arrows in it.
+The field is never disabled, so the next message can be written while the assistant thinks or
+waits. Return sends only when the daemon would take the message: the conversation is idle, over
+or lost (an over or lost one is replaced by a new one), and no message is on its way. Otherwise
+Return does nothing and the text stays. A message the daemon did not take goes back into the
+field, above anything typed while it was on its way. `TuningKeyGuard` keeps Space and the arrows
+in the field.
 
 **The view tools** (`AssistantViewTools.swift`). The app declares three, each named by the
 worker's rule (1 to 64 letters, digits, `_` or `-`, no radio tool's name; `assistant.md`, "The

@@ -23,12 +23,17 @@ public struct ConversationView: Sendable, Equatable {
     public let pending: PendingQuestion?
     /// Why a failed conversation stopped, in the daemon's words.
     public let errorText: String?
+    /// When the newest turn last changed, from the daemon's clock; nil when it sent none.
+    public let lastChangeAt: Date?
 
     public init(_ c: Leyline_V1_Conversation) {
         conversationID = c.conversationID
         state = c.state
         model = [c.provider, c.model].filter { !$0.isEmpty }.joined(separator: " ")
         turns = c.turns.map(TurnRow.init)
+        lastChangeAt =
+            c.lastTurnAtNs > 0
+            ? Date(timeIntervalSince1970: Double(c.lastTurnAtNs) / 1_000_000_000) : nil
         pending =
             c.state == .conversationWaiting && c.hasPending && !c.pending.callID.isEmpty
             ? PendingQuestion(c.pending) : nil
@@ -53,6 +58,21 @@ public struct ConversationView: Sendable, Equatable {
     public var canStop: Bool { isThinking || pending?.isViewTool == true }
     /// Ended or failed: nothing more happens in it, and the panel offers a new one.
     public var isOver: Bool { state == .conversationEnded || state == .conversationFailed }
+
+    /// The panel shows a waiting row under the transcript while the assistant is on a turn and
+    /// nothing is running for it: the model is thinking, and without the row the panel looks
+    /// stuck (`docs/dev/cli-style.md`, "A wait says so, and leaves nothing behind").
+    /// While a tool call runs, its step's `running` is the sign, so the row stays away.
+    public var isWaitingOnModel: Bool {
+        guard isThinking, let last = turns.last, last.role == .assistant else {
+            return isThinking
+        }
+        return !last.steps.contains { $0.state == .toolCallRunning }
+    }
+
+    /// The seconds the waiting row counts from: the newest turn's last change, so the count
+    /// starts again after each step, as the terminal's does; `now` when the daemon sent no time.
+    public func waitingSince(now: Date) -> Date { lastChangeAt ?? now }
 
     /// The state in one word for the panel's header.
     public var stateWord: String {

@@ -92,6 +92,35 @@ final class AssistantModelsTests: XCTestCase {
         XCTAssertEqual(view.model, "anthropic claude-sonnet-5-5")
     }
 
+    func testTheWaitingRowShowsWhileTheModelThinksAndNotWhileAToolRuns() {
+        let running = call("c1", "tune", args: #"{"frequency":"noaa"}"#, state: .toolCallRunning)
+        let done = call("c2", "get_state", state: .toolCallDone, result: "1 capture")
+        var c = conversation(
+            .conversationThinking,
+            turns: [
+                turn("t1", .user, "put on the weather radio"),
+                turn("t2", .assistant, "", done: false),
+            ])
+        XCTAssertTrue(ConversationView(c).isWaitingOnModel, "a turn with nothing yet")
+        c.turns[1].tools = [done]
+        XCTAssertTrue(ConversationView(c).isWaitingOnModel, "thinking again after a step")
+        c.turns[1].tools = [done, running]
+        XCTAssertFalse(ConversationView(c).isWaitingOnModel, "the step's running is the sign")
+        c.turns = [turn("t1", .user, "put on the weather radio")]
+        XCTAssertTrue(ConversationView(c).isWaitingOnModel, "no assistant turn yet")
+        c.state = .conversationIdle
+        XCTAssertFalse(ConversationView(c).isWaitingOnModel)
+        c.state = .conversationWaiting
+        XCTAssertFalse(ConversationView(c).isWaitingOnModel, "a question is not a wait")
+
+        let now = Date(timeIntervalSince1970: 1_000)
+        XCTAssertEqual(ConversationView(c).waitingSince(now: now), now, "no time sent")
+        c.lastTurnAtNs = 1_700_000_000_500_000_000
+        XCTAssertEqual(
+            ConversationView(c).waitingSince(now: now),
+            Date(timeIntervalSince1970: 1_700_000_000.5))
+    }
+
     func testThePendingQuestionComesFromAWaitingConversation() throws {
         var c = conversation(.conversationWaiting)
         var p = Leyline_V1_PendingAction()
