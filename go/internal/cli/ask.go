@@ -3,25 +3,18 @@
 package cli
 
 import (
-	"bufio"
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
-	"slices"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
-	"github.com/reflexive-labs/leysdr/go/internal/ui"
-	"github.com/reflexive-labs/leysdr/go/internal/words"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
@@ -35,62 +28,29 @@ type askOptions struct {
 	remove string
 }
 
-// newAskCommand builds `ley ask`: a request to the assistant, whose conversation is daemon state
-// (proto/leyline/v1/ai.proto, "Assistant"). ask renders the conversation the daemon sends and
-// answers what the assistant asks; the assistant itself runs in a worker the daemon starts.
+// newAskCommand builds `ley ask`, the hidden harness that drives the assistant's contract
+// (proto/leyline/v1/ai.proto, "Assistant") from Go, so the end-to-end tests and the evals prove it
+// across languages (docs/design/ai.md, "The assistant"). People talk to the assistant in the app's
+// panel. ask writes every state of the conversation as a JSON line and never asks anyone
+// anything; the assistant itself runs in a worker the daemon starts.
 func newAskCommand(app *App) *cobra.Command {
 	var o askOptions
 	cmd := &cobra.Command{
-		Use:   "ask [request]",
-		Short: "Ask the assistant to run the radio for you",
-		Long: `ask hands a request to the assistant, Leyline's own agent running on your
-provider key, and prints its answer as it arrives on stdout, with each tool
-it calls as one line on stderr, with the error beneath it when a call fails
-and the result's first line beneath one that asked first.
-
-Reading the radio's state, and the tuning, setting, stopping, scanning and
-recording you ask for, run at once and are reported. Taking over a radio
-someone else is using, deleting a recording, keeping a job, adding a webhook
-or several bookmarks, and paid transcription ask first with a question on
-stderr: y or yes allows the call once, a or all (offered as [y/N/a]) allows
-that kind of call for the rest of the conversation, and anything else
-declines; a delete, or cancelling a job the assistant did not start, is asked
-every time. --yes makes the conversation, new or continued, allow all of them
-without asking, and with no terminal to answer on and no --yes they are
-declined. The conversation keeps its mode until a client changes it, and ask
-sets it on every run, so --continue without --yes asks first again.
-
-With no request, ask reads one request per line at a '> ' prompt until a
-blank line or Ctrl-D. The conversation stays in the daemon after ask exits,
-which keeps it on disk across restarts: --continue carries on the newest
-idle one, whether ask or the app started it, and starts a new one when there
-is none.
-
-Ctrl-C stops the assistant's turn and keeps the conversation; a second
-Ctrl-C, or one at the prompt, ends the conversation. SIGTERM leaves the
-conversation as it is. An ended conversation can still be listed and read.
-
---list prints the conversations the daemon keeps, newest first: the id, when
-each started and was last used, its state and the first words asked.
---delete removes one and its files, by id or the start of one; on a terminal
-it asks first, and --yes is required when stdin is not a terminal. The
-daemon keeps the newest 100 and drops any unused for 90 days.
-
-The assistant calls the provider and model chosen with 'ley ai use
-assistant'; --provider and --model choose others for a new conversation.
-
---json prints every state of the conversation as it changes, one
-Conversation per line (NDJSON), and no prose; with --list it prints one
-ListConversationsResponse, and with --delete the reply, which is empty.`,
-		Example: `  ley ask "tune to the NOAA weather radio"
-  ley ask                                    # a prompt, one request per line
-  ley ask --continue "now record it for ten minutes"
-  ley ask --yes "delete yesterday's recordings"   # allow what it asks
-  ley ask --json "what is on 2m?" | jq -r .state
-  ley ask --list
-  ley ask --delete conv_01K... --yes`,
-		GroupID: GroupListening,
-		Args:    cobra.MaximumNArgs(1),
+		Use:    "ask request",
+		Short:  "The assistant's test harness",
+		Hidden: true,
+		Long: `ask is the test harness for the assistant: the end-to-end tests and the evals
+drive the daemon, its worker and the approval gate with it. People talk to the
+assistant in the app's panel (View ▸ Show Assistant, ⇧⌘A), and agents use ley
+mcp. ask sends the request to a new conversation, or with --continue to the
+newest idle one, and prints every state of the conversation, one Conversation
+a line (NDJSON); --json is implied. A call the assistant would ask about is
+declined unless --yes, which sets the conversation to allow everything. Ctrl-C
+stops the turn and a second ends the conversation. --list prints the
+conversations the daemon keeps and --delete removes one.`,
+		Example: `  ley ask --yes "tune to the NOAA weather radio"
+  ley ask --list`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			request := ""
 			if len(args) == 1 {
@@ -111,6 +71,8 @@ ListConversationsResponse, and with --delete the reply, which is empty.`,
 				return usageErrorf("--delete takes no request; run ley ask --delete %s on its own", o.remove)
 			case cmd.Flags().Changed("delete"):
 				return runAskDelete(cmd.Context(), app, o.remove, o.yes)
+			case request == "":
+				return usageErrorf("ley ask needs a request, such as: ley ask --yes \"tune to 146.52\"")
 			}
 			interrupts := make(chan os.Signal, 2)
 			signal.Notify(interrupts, os.Interrupt, syscall.SIGTERM)
@@ -127,8 +89,7 @@ ListConversationsResponse, and with --delete the reply, which is empty.`,
 	return cmd
 }
 
-// askRun is one `ley ask`: the conversation it follows, what it has printed of it, and where the
-// answers to the assistant's questions come from.
+// askRun is one `ley ask`: the conversation it follows and what it has printed of it.
 type askRun struct {
 	app        *App
 	ctx        context.Context
@@ -140,26 +101,15 @@ type askRun struct {
 	updates  chan *leylinev1.Conversation
 	watchErr chan error
 	// seen is the newest seq handled, so a state that arrives twice is handled once.
-	seen uint64
-	// stdin reads a line each time want is sent on, and sends it on lines; lines is closed at
-	// EOF. A line is read only when one is asked for, so nothing typed ahead is taken early.
-	want     chan struct{}
-	lines    chan string
-	asked    bool
+	seen     uint64
 	answered map[string]bool
-	view     askView
-	// wait is the waiting line, nil when it is not drawn (no terminal on stderr, or --json).
-	wait *waitLine
 }
-
-// errInterrupted reports a Ctrl-C that arrived while ask waited on stdin.
-var errInterrupted = errors.New("interrupted")
 
 // errTerminated reports SIGTERM: ask leaves at once and the conversation stays as it is.
 var errTerminated = &ExitError{Code: ExitInterrupted}
 
-// runAsk opens the conversation, then sends the request and follows the turn, or runs the prompt
-// loop when there is no request. interrupts delivers Ctrl-C (and SIGTERM); a test sends on it.
+// runAsk opens the conversation, sends the request and follows the turn, writing each state as a
+// JSON line. interrupts delivers Ctrl-C (and SIGTERM); a test sends on it.
 func runAsk(ctx context.Context, app *App, o askOptions, request string, interrupts <-chan os.Signal) error {
 	// Ctrl-C cancels the command's context as well as reaching interrupts, and the first one
 	// only stops the turn, so the calls run on a context the signal does not end.
@@ -169,11 +119,7 @@ func runAsk(ctx context.Context, app *App, o askOptions, request string, interru
 		return app.notRunning(err)
 	}
 	defer c.Close()
-	r := &askRun{
-		app: app, ctx: base, c: c, o: o, interrupts: interrupts, answered: map[string]bool{},
-		view: askView{text: map[string]string{}, calls: map[string]leylinev1.ToolCallState{}},
-	}
-	r.useWaitLine()
+	r := &askRun{app: app, ctx: base, c: c, o: o, interrupts: interrupts, answered: map[string]bool{}}
 	if err := r.open(); err != nil {
 		return err
 	}
@@ -185,20 +131,19 @@ func runAsk(ctx context.Context, app *App, o askOptions, request string, interru
 	// A conversation --continue found mid-turn is followed to the end of that turn, answering
 	// what it waits for, before anything is sent.
 	if st := r.conv.GetState(); st != leylinev1.ConversationState_CONVERSATION_IDLE {
-		r.wait.start()
 		if err := r.follow(r.conv.GetSeq()); err != nil {
 			return err
 		}
 	}
-	if request != "" {
-		r.view.endTurn(app)
-		return r.turn(request)
+	sent, err := r.c.Assistant.SendMessage(r.ctx, &leylinev1.SendMessageRequest{ConversationId: r.conv.GetConversationId(), Text: request})
+	if err != nil {
+		return r.app.notRunning(err)
 	}
-	return r.promptLoop()
+	return r.follow(sent.GetSeq())
 }
 
-// open finds the conversation to carry on (--continue) or starts one, and marks what it already
-// holds as shown, so only what happens from here is printed.
+// open finds the conversation to carry on (--continue) or starts one. Only the states after it
+// are printed.
 func (r *askRun) open() error {
 	if r.o.cont {
 		list, err := r.c.Assistant.ListConversations(r.ctx, &leylinev1.ListConversationsRequest{})
@@ -206,7 +151,6 @@ func (r *askRun) open() error {
 			return r.app.notRunning(err)
 		}
 		r.conv = newestOpenConversation(list.GetConversations())
-		changed := false
 		if r.conv != nil && modeOf(r.conv) != r.mode() {
 			// The mode is the conversation's until a client changes it, and --yes is this run's:
 			// the conversation carried on takes the run's mode before anything else is sent. Set
@@ -217,15 +161,12 @@ func (r *askRun) open() error {
 			if err != nil {
 				return r.app.notRunning(err)
 			}
-			r.conv, changed = cv, true
-		}
-		if !r.app.JSON {
-			fmt.Fprintln(r.app.Stderr, r.app.ErrStyle.Muted(continuingLine(r.conv, changed)))
+			r.conv = cv
 		}
 	}
 	if r.conv == nil {
 		// --yes starts the conversation in AUTO, so the worker runs what it would have asked about
-		// and reports it; nothing waits on this run's stdin.
+		// and reports it.
 		cv, err := r.c.Assistant.StartConversation(r.ctx, &leylinev1.StartConversationRequest{Provider: r.o.provider, Model: r.o.model, Mode: r.mode()})
 		if err != nil {
 			return r.app.notRunning(err)
@@ -233,7 +174,6 @@ func (r *askRun) open() error {
 		r.conv = cv
 	}
 	r.seen = r.conv.GetSeq()
-	r.view.adopt(r.conv)
 	return nil
 }
 
@@ -273,32 +213,6 @@ func modeOf(cv *leylinev1.Conversation) leylinev1.ApprovalMode {
 	return leylinev1.ApprovalMode_APPROVAL_MODE_ASK
 }
 
-// continuingLine says which conversation --continue carries on, what it waits for first, and its
-// mode when that is not the default or this run changed it: the mode stays the conversation's
-// until a client changes it, and ask sets it on every run.
-func continuingLine(cv *leylinev1.Conversation, changed bool) string {
-	if cv == nil {
-		return "No conversation to continue; starting a new one"
-	}
-	line := fmt.Sprintf("Continuing the conversation started %s (%s)", recordingClock(cv.GetStartedAtNs()),
-		words.Count(len(cv.GetTurns()), "turn"))
-	switch cv.GetState() {
-	case leylinev1.ConversationState_CONVERSATION_WAITING:
-		line += ", which is waiting for an answer"
-	case leylinev1.ConversationState_CONVERSATION_THINKING:
-		line += "; the assistant's turn finishes first"
-	}
-	switch {
-	case modeOf(cv) == leylinev1.ApprovalMode_APPROVAL_MODE_AUTO && changed:
-		line += "; --yes sets it to allow everything without asking, until a client changes that"
-	case modeOf(cv) == leylinev1.ApprovalMode_APPROVAL_MODE_AUTO:
-		line += "; it allows everything without asking, until a client changes that"
-	case changed:
-		line += "; it asks first again, since this run has no --yes"
-	}
-	return line
-}
-
 // watch follows the conversation from the state open found, for the rest of the run.
 func (r *askRun) watch(ctx context.Context) error {
 	stream, err := r.c.Assistant.WatchConversation(ctx, &leylinev1.WatchConversationRequest{
@@ -325,65 +239,12 @@ func (r *askRun) watch(ctx context.Context) error {
 	return nil
 }
 
-// promptLoop reads a request a line at a time and runs each, until a blank line or the end of
-// stdin. Ctrl-C at the prompt ends the conversation.
-func (r *askRun) promptLoop() error {
-	for {
-		r.view.endTurn(r.app)
-		fmt.Fprint(r.app.Stderr, r.app.ErrStyle.Label(">")+" ")
-		line, err := r.readLine()
-		if errors.Is(err, errInterrupted) {
-			fmt.Fprintln(r.app.Stderr)
-			return r.end()
-		}
-		if err != nil {
-			return err
-		}
-		if line == nil || strings.TrimSpace(*line) == "" {
-			if line == nil {
-				// Ctrl-D leaves the cursor after the prompt.
-				fmt.Fprintln(r.app.Stderr)
-			}
-			return nil
-		}
-		if err := r.turn(strings.TrimSpace(*line)); err != nil {
-			return err
-		}
-	}
-}
-
-// turn sends one request and follows the conversation until the assistant's turn is done.
-func (r *askRun) turn(request string) error {
-	// The wait counts from the request, so the send's round trip is in it.
-	r.wait.start()
-	sent, err := r.c.Assistant.SendMessage(r.ctx, &leylinev1.SendMessageRequest{ConversationId: r.conv.GetConversationId(), Text: request})
-	if err != nil {
-		return r.app.notRunning(err)
-	}
-	r.view.adopt(sent)
-	return r.follow(sent.GetSeq())
-}
-
 // follow prints the conversation and answers what it asks until the assistant's turn is done in
-// a state newer than seq after. The waiting line's wait has been started by the caller.
+// a state newer than seq after.
 func (r *askRun) follow(after uint64) error {
-	defer r.wait.clear()
 	stops := 0
-	update := func(cv *leylinev1.Conversation) (bool, error) {
-		done, err := r.handle(cv, after)
-		if errors.Is(err, errInterrupted) {
-			stops++
-			return false, r.interrupt(stops)
-		}
-		return done, err
-	}
 	if r.conv.GetState() == leylinev1.ConversationState_CONVERSATION_WAITING {
-		if err := r.answer(r.conv.GetPending()); errors.Is(err, errInterrupted) {
-			stops++
-			if err := r.interrupt(stops); err != nil {
-				return err
-			}
-		} else if err != nil {
+		if err := r.answer(r.conv.GetPending()); err != nil {
 			return err
 		}
 	}
@@ -404,7 +265,7 @@ func (r *askRun) follow(after uint64) error {
 		}
 		select {
 		case cv := <-r.updates:
-			if done, err := update(cv); done || err != nil {
+			if done, err := r.handle(cv, after); done || err != nil {
 				return err
 			}
 		case err := <-r.watchErr:
@@ -429,18 +290,6 @@ func (r *askRun) follow(after uint64) error {
 			if err := r.interrupt(stops); err != nil {
 				return err
 			}
-		case <-r.wait.timer():
-			r.wait.fired()
-			// select picks at random among ready cases; a state already queued is printed
-			// rather than a line it would erase at once.
-			select {
-			case cv := <-r.updates:
-				if done, err := update(cv); done || err != nil {
-					return err
-				}
-			default:
-				r.wait.draw()
-			}
 		}
 	}
 }
@@ -455,9 +304,7 @@ func (r *askRun) interrupt(stops int) error {
 		// The daemon has ended it already; its last state, on its way, ends the run.
 		return nil
 	}
-	r.view.group(r.app, askTrace)
 	fmt.Fprintln(r.app.Stderr, r.app.ErrStyle.Muted("Stopping the assistant; Ctrl-C again ends the conversation"))
-	r.wait.stopping()
 	if _, err := r.c.Assistant.StopTurn(r.ctx, &leylinev1.ConversationRef{ConversationId: r.conv.GetConversationId()}); err != nil {
 		return r.app.notRunning(err)
 	}
@@ -471,7 +318,6 @@ func terminalConversation(cv *leylinev1.Conversation) bool {
 
 // end ends the conversation and leaves with the interrupted status.
 func (r *askRun) end() error {
-	r.view.breakLine(r.app)
 	if terminalConversation(r.conv) {
 		return &ExitError{Code: ExitInterrupted}
 	}
@@ -482,31 +328,22 @@ func (r *askRun) end() error {
 	return &ExitError{Code: ExitInterrupted}
 }
 
-// handle prints one state of the conversation and answers what it asks, and reports whether the
-// turn sent at seq sent is over.
+// handle prints one state of the conversation as a JSON line and answers what it asks, and
+// reports whether the turn sent at seq sent is over.
 func (r *askRun) handle(cv *leylinev1.Conversation, sent uint64) (bool, error) {
 	if cv.GetSeq() <= r.seen {
 		return false, nil
 	}
 	r.seen, r.conv = cv.GetSeq(), cv
-	if r.app.JSON {
-		if err := r.app.printJSON(cv); err != nil {
-			return false, err
-		}
-	} else {
-		r.view.render(r.app, cv)
+	if err := r.app.printJSON(cv); err != nil {
+		return false, err
 	}
 	switch cv.GetState() {
 	case leylinev1.ConversationState_CONVERSATION_WAITING:
 		return false, r.answer(cv.GetPending())
 	case leylinev1.ConversationState_CONVERSATION_IDLE:
-		if cv.GetSeq() <= sent {
-			return false, nil
-		}
-		r.view.breakLine(r.app)
-		return true, nil
+		return cv.GetSeq() > sent, nil
 	case leylinev1.ConversationState_CONVERSATION_FAILED:
-		r.view.breakLine(r.app)
 		e := cv.GetError()
 		msg := e.GetMessage()
 		if msg == "" {
@@ -517,7 +354,6 @@ func (r *askRun) handle(cv *leylinev1.Conversation, sent uint64) (bool, error) {
 		}
 		return true, &ExitError{Code: 1, Message: msg}
 	case leylinev1.ConversationState_CONVERSATION_ENDED:
-		r.view.breakLine(r.app)
 		return true, &ExitError{Code: 1, Message: "the conversation ended before the assistant finished its turn; start another with: ley ask"}
 	}
 	return false, nil
@@ -525,16 +361,14 @@ func (r *askRun) handle(cv *leylinev1.Conversation, sent uint64) (bool, error) {
 
 // watchEnded is the watch closing while a turn is under way, which only a daemon going away does.
 func (r *askRun) watchEnded(err error) error {
-	r.view.breakLine(r.app)
 	if err == nil || errors.Is(err, io.EOF) {
 		return &ExitError{Code: 1, Message: "the daemon stopped sending the conversation before the assistant finished; see where it stands with: ley ask --continue"}
 	}
 	return r.app.notRunning(err)
 }
 
-// answer settles a pending call: a view tool is answered with an error, since ask has no view;
-// an action is asked about on a terminal and declined without one. Under --yes the conversation
-// is AUTO, so no question reaches this run.
+// answer settles a pending call: a view tool is answered with an error, since ask has no view, and
+// an action is declined. Under --yes the conversation is AUTO, so no question reaches this run.
 func (r *askRun) answer(p *leylinev1.PendingAction) error {
 	if p == nil || r.answered[p.GetCallId()] {
 		return nil
@@ -547,131 +381,8 @@ func (r *askRun) answer(p *leylinev1.PendingAction) error {
 		})
 		return r.settled(err)
 	}
-	r.view.group(r.app, askTrace)
-	s := r.app.ErrStyle
-	approve, scope := false, leylinev1.ApprovalScope_APPROVAL_SCOPE_UNSPECIFIED
-	switch {
-	case !r.app.IsInTTY():
-		fmt.Fprint(r.app.Stderr, questionCard(s, p))
-		fmt.Fprintln(r.app.Stderr, strings.Join(wrapWords(s.Warn("Declined")+
-			": stdin is not a terminal, so nobody can answer. Pass --yes to allow what the assistant asks.", s.Width), "\n"))
-	default:
-		fmt.Fprint(r.app.Stderr, questionCard(s, p))
-		fmt.Fprint(r.app.Stderr, s.Label(allowPrompt(p))+" ")
-		line, err := r.readLine()
-		// The wait for the assistant starts again from the answer, not from the question.
-		r.wait.restart()
-		if err != nil {
-			// The cursor is still after the question.
-			fmt.Fprintln(r.app.Stderr)
-			return err
-		}
-		if line == nil {
-			fmt.Fprintln(r.app.Stderr)
-		}
-		if line != nil {
-			approve, scope = parseAllow(*line, p)
-		}
-	}
-	_, err := r.c.Assistant.ResolveAction(r.ctx, &leylinev1.ResolveActionRequest{ConversationId: ref, CallId: p.GetCallId(), Approve: approve, Scope: scope})
+	_, err := r.c.Assistant.ResolveAction(r.ctx, &leylinev1.ResolveActionRequest{ConversationId: ref, CallId: p.GetCallId()})
 	return r.settled(err)
-}
-
-// allowPrompt is the question's last line: the letters the call offers, `a` when it can be allowed
-// for the rest of the conversation (docs/dev/cli-style.md, "Layout rules").
-func allowPrompt(p *leylinev1.PendingAction) string {
-	if offersConversation(p) {
-		return "Allow? [y/N/a]"
-	}
-	return "Allow? [y/N]"
-}
-
-func offersConversation(p *leylinev1.PendingAction) bool {
-	return slices.Contains(p.GetOffers(), leylinev1.ApprovalScope_APPROVAL_SCOPE_CONVERSATION)
-}
-
-// parseAllow is the answer typed at the question: y or yes allows the call once; a or all
-// allows it for the rest of the conversation when the call offers that; anything else declines.
-func parseAllow(line string, p *leylinev1.PendingAction) (bool, leylinev1.ApprovalScope) {
-	switch strings.ToLower(strings.TrimSpace(line)) {
-	case "y", "yes":
-		return true, leylinev1.ApprovalScope_APPROVAL_SCOPE_ONCE
-	case "a", "all":
-		if offersConversation(p) {
-			return true, leylinev1.ApprovalScope_APPROVAL_SCOPE_CONVERSATION
-		}
-	}
-	return false, leylinev1.ApprovalScope_APPROVAL_SCOPE_UNSPECIFIED
-}
-
-// questionCard is a call that asks first, before its answer: the call, as the call line it
-// becomes once answered (so it is not printed again), and the reason beneath it, wrapped and
-// indented as the receipt under an allowed call is. A question as one paragraph put the
-// arguments' JSON in the middle of the sentence. Unlike a call line, the call is wrapped rather
-// than cut: an argument past the cut (keep, say, which is itself why a call asks) would be one
-// the user allows without seeing.
-func questionCard(s ui.Style, p *leylinev1.PendingAction) string {
-	g := s.Glyphs()
-	var card string
-	for i, line := range wrapCall(g.Call+" "+strings.TrimSpace(p.GetTool()+" "+compactArgs(p.GetArgumentsJson())), s.Width) {
-		if i > 0 {
-			line = "  " + line
-		}
-		card += s.Muted(line) + "\n"
-	}
-	if reason := strings.TrimRight(strings.TrimSpace(p.GetReason()), "."); reason != "" {
-		width := 0
-		if s.Width > 0 {
-			width = max(s.Width-2, 1)
-		}
-		for _, line := range wrapWords(reason+".", width) {
-			card += "  " + line + "\n"
-		}
-	}
-	return card
-}
-
-// wrapCall breaks a call's line to width, continuation lines two columns narrower for their
-// indent. Compact JSON has no spaces, so it breaks after a comma, and a piece longer than a line
-// is split where the line ends. Nothing is dropped; width 0 (unknown) is one line.
-func wrapCall(text string, width int) []string {
-	if width <= 0 || ui.Visible(text) <= width {
-		return []string{text}
-	}
-	var pieces []string
-	for rest := text; rest != ""; {
-		i := strings.IndexByte(rest, ',')
-		if i < 0 {
-			pieces = append(pieces, rest)
-			break
-		}
-		pieces = append(pieces, rest[:i+1])
-		rest = rest[i+1:]
-	}
-	var lines []string
-	line := ""
-	room := func() int {
-		if len(lines) == 0 {
-			return width
-		}
-		return max(width-2, 1)
-	}
-	for _, piece := range pieces {
-		if line != "" && ui.Visible(line)+ui.Visible(piece) > room() {
-			lines = append(lines, line)
-			line = ""
-		}
-		line += piece
-		for ui.Visible(line) > room() {
-			r, n := []rune(line), room()
-			lines = append(lines, string(r[:n]))
-			line = string(r[n:])
-		}
-	}
-	if line != "" {
-		lines = append(lines, line)
-	}
-	return lines
 }
 
 // settled passes an answer's error on, unless another client answered first: the conversation
@@ -681,401 +392,4 @@ func (r *askRun) settled(err error) error {
 		return nil
 	}
 	return r.app.notRunning(err)
-}
-
-// readLine is the next line of stdin, nil at its end. Ctrl-C while it waits is errInterrupted.
-func (r *askRun) readLine() (*string, error) {
-	if r.lines == nil {
-		r.want, r.lines = make(chan struct{}), make(chan string)
-		go func(in *bufio.Reader, want <-chan struct{}, out chan<- string) {
-			defer close(out)
-			for range want {
-				line, err := in.ReadString('\n')
-				if line != "" || err == nil {
-					out <- strings.TrimRight(line, "\r\n")
-				}
-				if err != nil {
-					return
-				}
-			}
-		}(bufio.NewReader(r.app.Stdin), r.want, r.lines)
-	}
-	// A read interrupted by Ctrl-C is still under way, and its line is the next one.
-	if !r.asked {
-		select {
-		case r.want <- struct{}{}:
-			r.asked = true
-		case line, ok := <-r.lines:
-			// The reader has ended; only its close is left to receive.
-			if !ok {
-				return nil, nil
-			}
-			return &line, nil
-		}
-	}
-	select {
-	case line, ok := <-r.lines:
-		r.asked = false
-		if !ok {
-			return nil, nil
-		}
-		return &line, nil
-	case sig := <-r.interrupts:
-		if sig == syscall.SIGTERM {
-			return nil, errTerminated
-		}
-		return nil, errInterrupted
-	}
-}
-
-// compactArgs is a call's arguments on one line: compact JSON, or nothing for none.
-func compactArgs(args string) string {
-	var b bytes.Buffer
-	if err := json.Compact(&b, []byte(args)); err != nil {
-		return strings.Join(strings.Fields(args), " ")
-	}
-	if s := b.String(); s != "{}" && s != "null" {
-		return s
-	}
-	return ""
-}
-
-// askView is what ask has printed of the conversation: each assistant turn's text so far and the
-// state each tool call was last shown in. The text goes to stdout and the calls to stderr, so a
-// line of text is ended before a call is printed.
-//
-// The screen is in blocks: the assistant's text is one kind, and the trace (the calls, the
-// questions, ask's own notes) the other. A blank line on stderr goes between two blocks of
-// different kinds and between a turn and the next prompt, so stdout keeps only the assistant's
-// words (docs/dev/cli-style.md, "Blank lines group").
-type askView struct {
-	text  map[string]string
-	calls map[string]leylinev1.ToolCallState
-	// revised holds the turns whose text the worker rewrote rather than added to; the new text
-	// is printed whole once the turn is done.
-	revised map[string]bool
-	midLine bool
-	// last is the kind of block printed last; askNone at the start of a turn.
-	last askBlock
-	// blankEnd is set when the text block printed last ends in a blank line of its own, so no
-	// second one is added after it; tail is that block's last two bytes.
-	blankEnd bool
-	tail     string
-}
-
-// askBlock is a kind of block on ask's screen.
-type askBlock int
-
-const (
-	askNone askBlock = iota
-	askText
-	askTrace
-)
-
-// adopt marks everything in cv as shown: what was said before this run, and the user's turns.
-func (v *askView) adopt(cv *leylinev1.Conversation) {
-	for _, t := range cv.GetTurns() {
-		v.text[t.GetTurnId()] = t.GetText()
-		for _, c := range t.GetTools() {
-			v.calls[c.GetCallId()] = c.GetState()
-		}
-	}
-}
-
-// breakLine ends a line of the assistant's text that is still open.
-func (v *askView) breakLine(app *App) {
-	if v.midLine {
-		fmt.Fprintln(app.Stdout)
-		v.midLine = false
-	}
-}
-
-// separate ends the open line and leaves a blank one on stderr, unless nothing has been printed
-// since the last separation or the text already ends in one.
-func (v *askView) separate(app *App) {
-	v.breakLine(app)
-	if v.last != askNone && (v.last != askText || !v.blankEnd) {
-		fmt.Fprintln(app.Stderr)
-	}
-}
-
-// endTurn leaves a blank line after a turn that printed anything, before the next prompt or
-// request.
-func (v *askView) endTurn(app *App) {
-	v.separate(app)
-	v.last = askNone
-}
-
-// group starts a block of kind b, after a blank line when the block before it is of the other
-// kind.
-func (v *askView) group(app *App, b askBlock) {
-	if v.last != b {
-		v.separate(app)
-	}
-	v.breakLine(app)
-	v.last = b
-}
-
-// render prints what cv adds to what has been shown: the new end of each assistant turn's text,
-// and each tool call as it starts and as it finishes.
-func (v *askView) render(app *App, cv *leylinev1.Conversation) {
-	for _, t := range cv.GetTurns() {
-		if t.GetRole() != leylinev1.Role_ROLE_ASSISTANT {
-			continue
-		}
-		v.renderText(app, t)
-		for _, c := range t.GetTools() {
-			v.renderCall(app, c)
-		}
-	}
-}
-
-func (v *askView) renderText(app *App, t *leylinev1.Turn) {
-	id, was, now := t.GetTurnId(), v.text[t.GetTurnId()], t.GetText()
-	switch {
-	case v.revised[id]:
-		if !t.GetDone() {
-			return
-		}
-		// The rewritten text, whole, once the worker has finished it, directly under its note.
-		delete(v.revised, id)
-		v.text[id] = now
-		v.group(app, askTrace)
-		fmt.Fprintln(app.Stderr, app.ErrStyle.Muted("(revised)"))
-		v.last = askNone
-		v.write(app, now)
-		return
-	case strings.HasPrefix(was, now):
-		// Nothing new, or a shorter state of what is already on the screen.
-		return
-	case !strings.HasPrefix(now, was):
-		// The worker rewrote the text rather than adding to it. Text on a terminal cannot be
-		// taken back, so the new version waits for the end of the turn.
-		if v.revised == nil {
-			v.revised = map[string]bool{}
-		}
-		v.revised[id] = true
-		v.renderText(app, t)
-		return
-	}
-	v.text[id] = now
-	v.write(app, strings.TrimPrefix(now, was))
-}
-
-// write prints text on stdout. The first text after a tool line loses its leading whitespace,
-// since it starts a line of its own; text anywhere else keeps it, so an answer that opens with an
-// indented command keeps the indent.
-func (v *askView) write(app *App, add string) {
-	if v.last == askTrace {
-		add = strings.TrimLeft(add, " \n")
-	}
-	if add == "" {
-		return
-	}
-	if v.last != askText {
-		v.group(app, askText)
-		v.tail = ""
-	}
-	fmt.Fprint(app.Stdout, add)
-	v.midLine = !strings.HasSuffix(add, "\n")
-	// The end of the block so far, not of this piece: a blank line may arrive split in two.
-	v.tail += add
-	if n := len(v.tail); n > 2 {
-		v.tail = v.tail[n-2:]
-	}
-	v.blankEnd = v.tail == "\n\n"
-}
-
-// renderCall prints a call as one muted line when it starts, and beneath it why a call failed, or
-// that it was declined. A call that ran is not followed by its result: the assistant's text
-// reports it, and no one line of a verb's output stands for the rest (get_state's first line is
-// the daemon's version, tune's the mode it chose, a listing's its header). The exception is a
-// call that asked first, which keeps its reason once it has run: what the user allowed is one the
-// daemon's receipt has to confirm ("Deleted job_01K, 12.0 MB freed"), since the assistant's word
-// for it is not evidence. The reason is read rather than the states the view saw, since the
-// worker runs an allowed call through RUNNING and one update may carry the question and the end.
-func (v *askView) renderCall(app *App, c *leylinev1.ToolCall) {
-	was, seen := v.calls[c.GetCallId()]
-	now := c.GetState()
-	if seen && was == now {
-		return
-	}
-	v.calls[c.GetCallId()] = now
-	s := app.ErrStyle
-	g := s.Glyphs()
-	line := func(text string) {
-		v.group(app, askTrace)
-		fmt.Fprintln(app.Stderr, text)
-	}
-	switch now {
-	case leylinev1.ToolCallState_TOOL_CALL_AWAITING_APPROVAL, leylinev1.ToolCallState_TOOL_CALL_AWAITING_CLIENT:
-		// The question names the call; answer prints it.
-		return
-	}
-	if !seen {
-		line(s.Muted(fitWidth(s, g.Call+" "+strings.TrimSpace(c.GetTool()+" "+compactArgs(c.GetArgumentsJson())), 0)))
-	}
-	switch now {
-	case leylinev1.ToolCallState_TOOL_CALL_DONE:
-		first := firstLine(c.GetResultText())
-		switch {
-		case c.GetIsError():
-			line("  " + s.Err(fitWidth(s, g.Fail+" "+first, 2)))
-		case c.GetReason() != "" && first != "":
-			line("  " + s.Muted(fitWidth(s, first, 2)))
-		}
-	case leylinev1.ToolCallState_TOOL_CALL_REFUSED:
-		line("  " + s.Warn(g.Fail+" declined"))
-	}
-}
-
-// fitWidth cuts text to the terminal's width less indent, when the width is known.
-func fitWidth(s ui.Style, text string, indent int) string {
-	if s.Width <= 0 {
-		return text
-	}
-	return s.Truncate(text, s.Width-indent)
-}
-
-func firstLine(text string) string {
-	text = strings.TrimSpace(text)
-	if i := strings.IndexByte(text, '\n'); i >= 0 {
-		return strings.TrimSpace(text[:i])
-	}
-	return text
-}
-
-// The waiting line (docs/dev/cli-style.md, "A wait says so"): a muted "thinking…" on stderr while
-// a turn is under way and nothing has been printed for waitDelay, with the seconds since the last
-// output once there have been waitCount of them. It is drawn only from follow's loop, the one
-// goroutine that prints the conversation, and every write ask makes passes through waitWriter,
-// which erases the line first; so the line is never drawn after the next output has begun.
-const (
-	waitDelay = 300 * time.Millisecond
-	waitCount = 3 * time.Second
-)
-
-// askClock is the time the waiting line reads. nil on App means the wall clock; a test steps its
-// own.
-type askClock struct {
-	now   func() time.Time
-	after func(time.Duration) <-chan time.Time
-}
-
-// waitLine is the waiting line's state. A nil *waitLine is the line turned off, and every method
-// but fired and draw, which only a timer it set leads to, does nothing on it.
-type waitLine struct {
-	stderr io.Writer // the terminal, not the erasing writer
-	style  ui.Style
-	clock  askClock
-	// hold reports that the line may not be drawn now: text on stdout is mid-line on the same
-	// terminal, and "\r\033[K" would wipe it.
-	hold func() bool
-	// since is when ask last printed anything; tick is the pending timer, nil when none is set.
-	since time.Time
-	tick  <-chan time.Time
-	// word is what the assistant is doing, and shown the line on the screen, "" for none.
-	word, shown string
-}
-
-// useWaitLine turns the waiting line on when stderr is a terminal and the output is not --json,
-// and routes the run's stdout and stderr through it, so anything ask prints erases it first.
-func (r *askRun) useWaitLine() {
-	app := r.app
-	if app.JSON || app.IsErrTTY == nil || !app.IsErrTTY() {
-		return
-	}
-	clock := askClock{now: time.Now, after: time.After}
-	if app.askClock != nil {
-		clock = *app.askClock
-	}
-	stdoutTTY := app.IsTTY != nil && app.IsTTY()
-	w := &waitLine{
-		stderr: app.Stderr, style: app.ErrStyle, clock: clock,
-		hold: func() bool { return stdoutTTY && r.view.midLine },
-	}
-	routed := *app
-	routed.Stdout, routed.Stderr = waitWriter{app.Stdout, w}, waitWriter{app.Stderr, w}
-	r.app, r.wait = &routed, w
-}
-
-// waitWriter erases the waiting line before a write and restarts its wait.
-type waitWriter struct {
-	w    io.Writer
-	line *waitLine
-}
-
-func (ww waitWriter) Write(p []byte) (int, error) {
-	ww.line.clear()
-	ww.line.restart()
-	return ww.w.Write(p)
-}
-
-// start begins the wait of a turn.
-func (w *waitLine) start() {
-	if w == nil {
-		return
-	}
-	w.word = "thinking"
-	w.restart()
-}
-
-// stopping is the rest of a turn after a Ctrl-C, which the assistant is ending.
-func (w *waitLine) stopping() {
-	if w != nil {
-		w.word = "stopping"
-	}
-}
-
-// restart begins the wait for the next output from now.
-func (w *waitLine) restart() {
-	if w != nil {
-		w.since, w.tick = w.clock.now(), nil
-	}
-}
-
-// timer fires when the line is next due: waitDelay after the last output, then every second for
-// the count. A nil channel, which never fires, when the line is off.
-func (w *waitLine) timer() <-chan time.Time {
-	if w == nil {
-		return nil
-	}
-	if w.tick == nil {
-		next := waitDelay
-		if w.shown != "" {
-			next = time.Second
-		}
-		w.tick = w.clock.after(next)
-	}
-	return w.tick
-}
-
-// fired is the pending timer having fired, so timer sets the next one.
-func (w *waitLine) fired() {
-	w.tick = nil
-}
-
-// draw puts the line on the screen, or brings its count up to date.
-func (w *waitLine) draw() {
-	if w.hold() {
-		return
-	}
-	text := w.word + w.style.Glyphs().Ellipsis
-	if waited := w.clock.now().Sub(w.since); waited >= waitCount {
-		text += fmt.Sprintf(" %ds", int(waited/time.Second))
-	}
-	if text == w.shown {
-		return
-	}
-	fmt.Fprint(w.stderr, "\r\033[K"+w.style.Muted(text))
-	w.shown = text
-}
-
-// clear erases the line if it is on the screen.
-func (w *waitLine) clear() {
-	if w == nil || w.shown == "" {
-		return
-	}
-	fmt.Fprint(w.stderr, "\r\033[K")
-	w.shown = ""
 }

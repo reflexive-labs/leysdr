@@ -128,7 +128,7 @@ func (d *Daemon) conversationsLocked() []*leylinev1.Conversation {
 }
 
 func noConversation(id string) *leyline.Error {
-	return errorf(leyline.CodeInvalidArgument, id, fmt.Sprintf("there is no conversation %s; ley ask --continue finds the newest", id))
+	return errorf(leyline.CodeInvalidArgument, id, fmt.Sprintf("there is no conversation called %s; ListConversations lists them", id))
 }
 
 // conversation finds one by id. Call with d.mu held.

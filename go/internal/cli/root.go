@@ -126,9 +126,6 @@ type App struct {
 	// verbs a job the Leyline app registered.
 	launchctlPrint func(ctx context.Context, target string) (string, error)
 	launchctlRun   func(ctx context.Context, args ...string) error
-	// askClock, when set, is the time `ley ask`'s waiting line reads in place of the wall clock,
-	// so a test decides when it is due.
-	askClock *askClock
 	// echoOff, when set, stands in for turning echo off on a terminal stdin, so a test can take
 	// the prompt path of `ley ai add` with a reader that is not a terminal.
 	echoOff func(io.Reader) (restore func(), err error)
@@ -177,8 +174,7 @@ while it plays, 'ley spectrum' to see what is on the air, and 'ley help
 		Example: `  ley                      # what is the daemon doing right now?
   ley devices              # is my radio visible?
   ley tune 146.52          # listen to 146.520 MHz (a bare number is MHz)
-  ley spectrum 101.1       # what is on the air around the FM broadcast band?
-  ley ask "tune to the NOAA weather radio"   # after ley ai add openai`,
+  ley spectrum 101.1       # what is on the air around the FM broadcast band?`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// Cobra only sets this inside its own unknown-command path; rootArgs

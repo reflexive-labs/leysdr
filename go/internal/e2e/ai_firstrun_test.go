@@ -85,8 +85,12 @@ exec "`+leyBin+`" "$@"
 	}
 
 	out, errOut, code := r.callWithin(20*time.Second, "ask", "hi", "--yes")
-	if code != 0 || !strings.Contains(out, "Hello from the first run.") {
+	if code != 0 {
 		t.Fatalf("ley ask: exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
+	}
+	if last := lastState(t, out); !strings.Contains(said(last), "Hello from the first run.") ||
+		last.GetProvider() != "openai" || last.GetModel() != "gpt-5" {
+		t.Errorf("ley ask's last line: %v", last)
 	}
 	shown, _ := r.mustLey("", "ask", "--list", "--json")
 	if !strings.Contains(shown, `"provider":"openai"`) || !strings.Contains(shown, `"model":"gpt-5"`) {

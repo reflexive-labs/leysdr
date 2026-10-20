@@ -77,7 +77,7 @@ func TestGlyphsAlphabets(t *testing.T) {
 	if u.Absent != "-" || a.Absent != "-" {
 		t.Error("the absent value is - in both alphabets")
 	}
-	for _, r := range append([]rune(u.Ramp+u.Call+u.Fail), u.BarFull, u.BarEmpty, u.Marker, u.Rule, u.RuleHeavy) {
+	for _, r := range append([]rune(u.Ramp), u.BarFull, u.BarEmpty, u.Marker, u.Rule, u.RuleHeavy) {
 		if w := runeWidth(r); w != 1 {
 			t.Errorf("glyph %q measures %d columns, want 1", r, w)
 		}

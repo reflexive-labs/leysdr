@@ -25,9 +25,9 @@ import (
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
-// The assistant end to end (docs/plans/ai-features.md, AI-9 and AI-10): the real daemon spawns
-// the real `ley worker assistant` for each conversation, with the key on its stdin, and the real
-// `ley ask` drives it. The worker plays LEY_ASSISTANT_SCRIPT, which the daemon's environment
+// The assistant end to end (docs/plans/ai-features.md, AI-9, AI-10 and AI-20): the real daemon
+// spawns the real `ley worker assistant` for each conversation, with the key on its stdin, and the
+// real `ley ask`, the harness, drives it and prints each state of the conversation as a JSON line. The worker plays LEY_ASSISTANT_SCRIPT, which the daemon's environment
 // hands it, so the model's answers are fixed and no provider is called; the tools it calls are
 // the real `ley mcp` tools against the daemon. The key is the aiRig's canary key, checked
 // against an httptest provider, so a leak anywhere is found by substring.
@@ -188,18 +188,44 @@ func calls(cv *leylinev1.Conversation) []*leylinev1.ToolCall {
 	return out
 }
 
-// oneLine is text with its line breaks and runs of spaces as single spaces, so a sentence ley
-// wrapped to the terminal is matched whole.
-func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+// askStates is `ley ask`'s stdout, one Conversation a line.
+func askStates(t *testing.T, out string) []*leylinev1.Conversation {
+	t.Helper()
+	var states []*leylinev1.Conversation
+	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		cv := &leylinev1.Conversation{}
+		unmarshalProto(t, l, cv)
+		states = append(states, cv)
+	}
+	return states
+}
 
-// toolLine reports whether stderr holds the start line of a call to tool, in either glyph.
-func toolLine(stderr, tool string) bool {
-	for _, l := range strings.Split(stderr, "\n") {
-		if strings.HasPrefix(l, "→ "+tool) || strings.HasPrefix(l, "-> "+tool) {
-			return true
+// lastState is the last Conversation `ley ask` printed.
+func lastState(t *testing.T, out string) *leylinev1.Conversation {
+	t.Helper()
+	states := askStates(t, out)
+	return states[len(states)-1]
+}
+
+// said is everything the assistant's turns of cv say, one turn a line.
+func said(cv *leylinev1.Conversation) string {
+	var b strings.Builder
+	for _, turn := range cv.GetTurns() {
+		if turn.GetRole() == leylinev1.Role_ROLE_ASSISTANT {
+			b.WriteString(turn.GetText() + "\n")
 		}
 	}
-	return false
+	return b.String()
+}
+
+// compactJSON is a call's arguments as compact JSON, in the order the worker wrote them.
+func compactJSON(t *testing.T, s string) string {
+	t.Helper()
+	var b bytes.Buffer
+	if err := json.Compact(&b, []byte(s)); err != nil {
+		t.Fatalf("arguments %q: %v", s, err)
+	}
+	return b.String()
 }
 
 func atoi(t *testing.T, v any) int64 {
@@ -346,19 +372,16 @@ func checkAskTune(t *testing.T, r *askRig) string {
 	if code != 0 {
 		t.Fatalf("ley ask: exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
 	}
-	if !strings.Contains(out, "Tuning to the tone.") || !strings.Contains(out, "Tuned. ley stop ends it.") {
-		t.Errorf("ley ask stdout lacks the assistant's text: %q", out)
+	last := lastState(t, out)
+	if text := said(last); !strings.Contains(text, "Tuning to the tone.") || !strings.Contains(text, "Tuned. ley stop ends it.") {
+		t.Errorf("ley ask's last line lacks the assistant's text: %q", text)
 	}
-	if strings.Contains(out, "tune {") {
-		t.Errorf("a tool line reached stdout: %q", out)
+	if errOut != "" {
+		t.Errorf("ley ask wrote on stderr: %q", errOut)
 	}
 	// The worker keeps a channel it tunes, since the conversation's connection ends with it.
-	if !toolLine(errOut, `tune {"frequency":"146.52M","keep":true,"mode":"nfm"}`) {
-		t.Errorf("ley ask stderr lacks the tune line: %q", errOut)
-	}
-	// A call that ran is its one line; the assistant's text reports the result.
-	if strings.Contains(errOut, "\n  ") || strings.Contains(errOut, "✗") {
-		t.Errorf("ley ask stderr shows a result under a call that ran, or an error: %q", errOut)
+	if cs := calls(last); len(cs) != 1 || compactJSON(t, cs[0].GetArgumentsJson()) != `{"frequency":"146.52M","keep":true,"mode":"nfm"}` {
+		t.Errorf("ley ask's last line lacks the kept tune: %v", cs)
 	}
 
 	cvs := r.conversations()
@@ -366,6 +389,9 @@ func checkAskTune(t *testing.T, r *askRig) string {
 		t.Fatalf("want one conversation, got %d", len(cvs))
 	}
 	cv := cvs[0]
+	if cv.GetConversationId() != last.GetConversationId() {
+		t.Errorf("ley ask printed %s, the daemon lists %s", last.GetConversationId(), cv.GetConversationId())
+	}
 	if cv.GetState() != leylinev1.ConversationState_CONVERSATION_IDLE || len(cv.GetTurns()) != 2 ||
 		cv.GetProvider() != "anthropic" || cv.GetModel() != "claude-sonnet-5-5" {
 		t.Errorf("the conversation after ley ask: %v", cv)
@@ -396,11 +422,13 @@ func checkAskTune(t *testing.T, r *askRig) string {
 // checkAskContinue: --continue carries on the same conversation, and its stop ends the channel.
 func checkAskContinue(t *testing.T, r *askRig, convID string) {
 	out, errOut, code := r.ask("--continue", "and now stop it", "--yes")
-	if code != 0 || !strings.Contains(out, "Stopped.") || !toolLine(errOut, "stop") {
+	if code != 0 {
 		t.Fatalf("ley ask --continue: exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
 	}
-	if !strings.Contains(errOut, "Continuing the conversation") {
-		t.Errorf("ley ask --continue did not say it continues: %q", errOut)
+	last := lastState(t, out)
+	if cs := calls(last); last.GetConversationId() != convID || !strings.Contains(said(last), "Stopped.") ||
+		len(cs) != 2 || cs[1].GetTool() != "stop" {
+		t.Errorf("ley ask --continue's last line: %v", last)
 	}
 	cvs := r.conversations()
 	if len(cvs) != 1 || cvs[0].GetConversationId() != convID {
@@ -425,13 +453,19 @@ func checkAskDelete(t *testing.T, r *askRig, recordings []string) {
 	script := []string{`{"tool":"delete_recording","args":{"recording":"job_nonexistent"}}`, `{"text":"ok"}`}
 	r.setScript(script...)
 	out, errOut, code := r.ask("delete it")
-	if code != 0 || !strings.Contains(out, "ok") {
+	if code != 0 || errOut != "" {
 		t.Fatalf("ley ask (declined): exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
 	}
-	const declined = "Declined: stdin is not a terminal, so nobody can answer. Pass --yes to allow what the assistant asks."
-	if !strings.Contains(errOut, "delete_recording {\"recording\":\"job_nonexistent\"}\n  ") ||
-		!strings.Contains(oneLine(errOut), declined) || !strings.Contains(errOut, " declined\n") {
-		t.Errorf("ley ask stderr lacks the question and the decline: %q", errOut)
+	// One line is the question, the call and its reason; the last is the call declined.
+	asked := false
+	for _, st := range askStates(t, out) {
+		p := st.GetPending()
+		asked = asked || (st.GetState() == leylinev1.ConversationState_CONVERSATION_WAITING && p.GetTool() == "delete_recording" &&
+			compactJSON(t, p.GetArgumentsJson()) == `{"recording":"job_nonexistent"}` && p.GetReason() != "")
+	}
+	last := lastState(t, out)
+	if lc := calls(last); !asked || !strings.Contains(said(last), "ok") || len(lc) != 1 || lc[0].GetState() != leylinev1.ToolCallState_TOOL_CALL_REFUSED {
+		t.Errorf("ley ask's lines lack the question and the decline:\n%s", out)
 	}
 	cv := r.newest()
 	cs := calls(cv)
@@ -445,15 +479,13 @@ func checkAskDelete(t *testing.T, r *askRig, recordings []string) {
 	if code != 0 {
 		t.Fatalf("ley ask --yes --json: exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
 	}
-	lines := strings.Split(strings.TrimSpace(out), "\n")
-	last := &leylinev1.Conversation{}
-	unmarshalProto(t, lines[len(lines)-1], last)
+	last = lastState(t, out)
 	cs = calls(last)
 	if last.GetState() != leylinev1.ConversationState_CONVERSATION_IDLE || len(cs) != 1 ||
 		cs[0].GetState() != leylinev1.ToolCallState_TOOL_CALL_DONE || !cs[0].GetIsError() {
-		t.Errorf("the allowed delete's last state: %s", lines[len(lines)-1])
+		t.Errorf("the allowed delete's last state: %v", last)
 	}
-	// --json prints no prose: an allowed call is in the JSON, not on stderr.
+	// ask prints no prose: an allowed call is in the JSON, not on stderr.
 	if errOut != "" {
 		t.Errorf("ley ask --yes --json wrote on stderr: %q", errOut)
 	}
@@ -464,7 +496,7 @@ func checkAskDelete(t *testing.T, r *askRig, recordings []string) {
 
 // checkAskReceivedText: once the conversation has read records, a tune would ask first, with the
 // received-text reason, even though a tune alone runs. --yes starts the conversation in AUTO, so
-// it runs unasked and keeps that reason, and ask shows its receipt.
+// it runs unasked and keeps that reason beside the daemon's receipt.
 func checkAskReceivedText(t *testing.T, r *askRig) {
 	r.setScript(
 		`{"tool":"query_records","args":{"protocol":"aprs","limit":5}}`,
@@ -475,13 +507,18 @@ func checkAskReceivedText(t *testing.T, r *askRig) {
 	if code != 0 {
 		t.Fatalf("ley ask: exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
 	}
-	if !toolLine(errOut, "tune") || strings.Contains(errOut, "Allow") {
-		t.Errorf("ley ask --yes asked, or lacks the tune: %q", errOut)
+	for _, st := range askStates(t, out) {
+		if st.GetState() == leylinev1.ConversationState_CONVERSATION_WAITING {
+			t.Errorf("ley ask --yes asked: %v", st)
+		}
+	}
+	if errOut != "" {
+		t.Errorf("ley ask wrote on stderr: %q", errOut)
 	}
 	if mode := r.newest().GetMode(); mode != leylinev1.ApprovalMode_APPROVAL_MODE_AUTO {
 		t.Errorf("ley ask --yes started a conversation in %v", mode)
 	}
-	cs := calls(r.newest())
+	cs := calls(lastState(t, out))
 	if len(cs) != 2 || cs[0].GetTool() != "query_records" || cs[1].GetTool() != "tune" {
 		t.Fatalf("calls: %v", cs)
 	}
@@ -491,15 +528,8 @@ func checkAskReceivedText(t *testing.T, r *askRig) {
 		t.Errorf("query_records: %v", q)
 	}
 	if tune := cs[1]; tune.GetState() != leylinev1.ToolCallState_TOOL_CALL_DONE || tune.GetIsError() ||
-		!strings.Contains(tune.GetReason(), "received over the air") {
+		!strings.Contains(tune.GetReason(), "received over the air") || strings.TrimSpace(tune.GetResultText()) == "" {
 		t.Errorf("tune after reading records: %v", tune)
-	}
-	// The allowed call keeps the daemon's receipt beneath it: the reason it would have asked with
-	// is what ask reads. The line is cut to the width, and tune's names its channel and capture,
-	// so only its start is compared, cut by runes.
-	if receipt := []rune(strings.TrimSpace(strings.SplitN(strings.TrimSpace(cs[1].GetResultText()), "\n", 2)[0])); len(receipt) == 0 ||
-		!strings.Contains(errOut, "\n  "+string(receipt[:min(len(receipt), 40)])) {
-		t.Errorf("ley ask stderr lacks the tune's receipt %q: %q", receipt, errOut)
 	}
 	r.mustLey("", "stop", "all")
 }
@@ -559,8 +589,11 @@ func checkAskStopTurn(t *testing.T, r *askRig) {
 	}
 
 	stdout, stderr, code := r.ask("--continue", "again", "--yes")
-	if code != 0 || !strings.Contains(stdout, "done") {
+	if code != 0 {
 		t.Fatalf("ley ask --continue after a stop: exit %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	if last := lastState(t, stdout); last.GetConversationId() != cv.GetConversationId() || !strings.HasSuffix(said(last), "done\n") {
+		t.Errorf("ley ask --continue after a stop printed %v", last)
 	}
 	if again := r.conversation(cv.GetConversationId()); len(again.GetTurns()) != 4 || again.GetState() != leylinev1.ConversationState_CONVERSATION_IDLE {
 		t.Errorf("--continue did not carry on the stopped conversation: %v", again)
@@ -642,7 +675,7 @@ func TestAskConversationSurvivesARestart(t *testing.T) {
 		`{"text":"That is every radio."}`,
 		`{"text":"Still every radio."}`,
 	)
-	if out, errOut, code := r.ask("what radios are there", "--yes"); code != 0 || !strings.Contains(out, "That is every radio.") {
+	if out, errOut, code := r.ask("what radios are there", "--yes"); code != 0 || !strings.Contains(said(lastState(t, out)), "That is every radio.") {
 		t.Fatalf("ley ask: exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
 	}
 	cv := r.newest()
@@ -661,8 +694,11 @@ func TestAskConversationSurvivesARestart(t *testing.T) {
 	}
 
 	out, errOut, code := r.ask("--continue", "again", "--yes")
-	if code != 0 || !strings.Contains(out, "Still every radio.") || !strings.Contains(errOut, "Continuing the conversation") {
+	if code != 0 {
 		t.Fatalf("ley ask --continue after the restart: exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
+	}
+	if last := lastState(t, out); last.GetConversationId() != id || !strings.Contains(said(last), "Still every radio.") {
+		t.Errorf("ley ask --continue after the restart printed %v", last)
 	}
 	var ids []string
 	for _, turn := range r.conversation(id).GetTurns() {
