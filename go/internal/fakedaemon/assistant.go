@@ -36,8 +36,9 @@ type AssistantStep struct {
 	// with ResultApproved; refused, it is REFUSED. In an AUTO conversation, or once an earlier Ask
 	// on the same Row in the conversation was approved for the conversation, it does not wait:
 	// it is DONE with ResultApproved at once, its reason set, and allowed_by naming the call whose
-	// answer granted it (none in AUTO). Row is the policy row the worker would grant, so a grant
-	// for a take-over by tune covers one by scan; empty, the tool stands in for it.
+	// answer granted it (none in AUTO). Row is the policy row the worker would grant, one of
+	// assistant.Rows, so a grant for a take-over by tune covers one by scan; empty, the tool
+	// stands in for it.
 	Ask, Reason, ResultApproved, Row string
 	Offers                           []leylinev1.ApprovalScope
 	// View adds a view tool call that waits for AnswerViewTool, which supplies its result.
@@ -502,11 +503,17 @@ func approvedResult(fc *fakeConversation, call *leylinev1.ToolCall) string {
 }
 
 // stepFor is the Ask step that made call, found by its tool and arguments in the turn the
-// conversation is playing; empty when there is none.
+// conversation is playing, else the first Ask step for its tool, so the step's Row is kept;
+// a bare step for the tool when the turn has none.
 func stepFor(fc *fakeConversation, call *leylinev1.ToolCall) AssistantStep {
 	for _, s := range fc.playing {
 		if s.Ask == call.Tool && s.Args == call.ArgumentsJson {
 			return s
+		}
+	}
+	for _, s := range fc.playing {
+		if s.Ask == call.Tool {
+			return AssistantStep{Ask: s.Ask, Row: s.Row}
 		}
 	}
 	return AssistantStep{Ask: call.Tool}

@@ -57,7 +57,8 @@ that kind of call for the rest of the conversation, and anything else
 declines; a delete, or cancelling a job the assistant did not start, is asked
 every time. --yes makes the conversation, new or continued, allow all of them
 without asking, and with no terminal to answer on and no --yes they are
-declined.
+declined. The conversation keeps its mode until a client changes it, and ask
+sets it on every run, so --continue without --yes asks first again.
 
 With no request, ask reads one request per line at a '> ' prompt until a
 blank line or Ctrl-D. The conversation stays in the daemon after ask exits,
@@ -205,29 +206,27 @@ func (r *askRun) open() error {
 			return r.app.notRunning(err)
 		}
 		r.conv = newestOpenConversation(list.GetConversations())
-		if r.conv != nil && r.o.yes && r.conv.GetMode() != leylinev1.ApprovalMode_APPROVAL_MODE_AUTO {
-			// --yes means nothing waits on this run's stdin, so the conversation carried on is
-			// set to AUTO before anything else; a question it waits on now runs, approved once.
+		changed := false
+		if r.conv != nil && modeOf(r.conv) != r.mode() {
+			// The mode is the conversation's until a client changes it, and --yes is this run's:
+			// the conversation carried on takes the run's mode before anything else is sent. Set
+			// to AUTO, a question it waits on runs, approved once.
 			cv, err := r.c.Assistant.SetApprovalMode(r.ctx, &leylinev1.SetApprovalModeRequest{
-				ConversationId: r.conv.GetConversationId(), Mode: leylinev1.ApprovalMode_APPROVAL_MODE_AUTO,
+				ConversationId: r.conv.GetConversationId(), Mode: r.mode(),
 			})
 			if err != nil {
 				return r.app.notRunning(err)
 			}
-			r.conv = cv
+			r.conv, changed = cv, true
 		}
 		if !r.app.JSON {
-			fmt.Fprintln(r.app.Stderr, r.app.ErrStyle.Muted(continuingLine(r.conv)))
+			fmt.Fprintln(r.app.Stderr, r.app.ErrStyle.Muted(continuingLine(r.conv, changed)))
 		}
 	}
 	if r.conv == nil {
 		// --yes starts the conversation in AUTO, so the worker runs what it would have asked about
 		// and reports it; nothing waits on this run's stdin.
-		mode := leylinev1.ApprovalMode_APPROVAL_MODE_ASK
-		if r.o.yes {
-			mode = leylinev1.ApprovalMode_APPROVAL_MODE_AUTO
-		}
-		cv, err := r.c.Assistant.StartConversation(r.ctx, &leylinev1.StartConversationRequest{Provider: r.o.provider, Model: r.o.model, Mode: mode})
+		cv, err := r.c.Assistant.StartConversation(r.ctx, &leylinev1.StartConversationRequest{Provider: r.o.provider, Model: r.o.model, Mode: r.mode()})
 		if err != nil {
 			return r.app.notRunning(err)
 		}
@@ -258,8 +257,26 @@ func newestOpenConversation(list []*leylinev1.Conversation) *leylinev1.Conversat
 	return best
 }
 
-// continuingLine says which conversation --continue carries on, and what it waits for first.
-func continuingLine(cv *leylinev1.Conversation) string {
+// mode is the approval mode this run wants: AUTO under --yes, ASK otherwise.
+func (r *askRun) mode() leylinev1.ApprovalMode {
+	if r.o.yes {
+		return leylinev1.ApprovalMode_APPROVAL_MODE_AUTO
+	}
+	return leylinev1.ApprovalMode_APPROVAL_MODE_ASK
+}
+
+// modeOf is a conversation's mode, unset read as ASK, as the daemon reads it.
+func modeOf(cv *leylinev1.Conversation) leylinev1.ApprovalMode {
+	if cv.GetMode() == leylinev1.ApprovalMode_APPROVAL_MODE_AUTO {
+		return leylinev1.ApprovalMode_APPROVAL_MODE_AUTO
+	}
+	return leylinev1.ApprovalMode_APPROVAL_MODE_ASK
+}
+
+// continuingLine says which conversation --continue carries on, what it waits for first, and its
+// mode when that is not the default or this run changed it: the mode stays the conversation's
+// until a client changes it, and ask sets it on every run.
+func continuingLine(cv *leylinev1.Conversation, changed bool) string {
 	if cv == nil {
 		return "No conversation to continue; starting a new one"
 	}
@@ -271,8 +288,13 @@ func continuingLine(cv *leylinev1.Conversation) string {
 	case leylinev1.ConversationState_CONVERSATION_THINKING:
 		line += "; the assistant's turn finishes first"
 	}
-	if cv.GetMode() == leylinev1.ApprovalMode_APPROVAL_MODE_AUTO {
-		line += "; it allows everything without asking"
+	switch {
+	case modeOf(cv) == leylinev1.ApprovalMode_APPROVAL_MODE_AUTO && changed:
+		line += "; --yes sets it to allow everything without asking, until a client changes that"
+	case modeOf(cv) == leylinev1.ApprovalMode_APPROVAL_MODE_AUTO:
+		line += "; it allows everything without asking, until a client changes that"
+	case changed:
+		line += "; it asks first again, since this run has no --yes"
 	}
 	return line
 }

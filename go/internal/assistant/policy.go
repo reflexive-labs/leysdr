@@ -276,6 +276,16 @@ func (p *Policy) Grant(g Grant) {
 	}
 }
 
+// Rows is the name of every row a grant can list, in table order, the received-text rule last:
+// what a Grant's rows hold, and what a test script names a row by.
+func Rows() []string {
+	names := make([]string, 0, len(rows)+1)
+	for _, r := range rows {
+		names = append(names, r.name)
+	}
+	return append(names, ReceivedRow)
+}
+
 // onceOnlyRow reports whether the row with that name asks every time.
 func onceOnlyRow(name string) bool {
 	for _, r := range rows {

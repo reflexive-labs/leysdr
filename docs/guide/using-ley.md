@@ -1101,7 +1101,9 @@ or `a` (or `all`) to allow that kind of call for the rest of the conversation (a
 time, so its question is `[y/N]`). Telling the assistant "you can drive the radio" in a request
 allows nothing; only the answer does. Pass `--yes` to make the conversation, new or carried on with
 `--continue`, allow everything without asking, which is how a script or another agent runs `ask`.
-Without a terminal to answer on and without `--yes`, such a call is declined.
+The conversation keeps that until a client changes it, and `ley ask` sets it on every run, so a
+later `ley ask --continue` without `--yes` asks first again. Without a terminal to answer on and
+without `--yes`, such a call is declined.
 
 `ley ask` with no request is a `> ` prompt that takes one request per line until a blank line or
 Ctrl-D. The conversation stays in the daemon when `ask` exits, and on disk when the daemon

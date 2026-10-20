@@ -3,10 +3,12 @@
 package cli
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/assistant"
 	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
 )
 
@@ -80,15 +82,7 @@ func TestAskOffersTheLetters(t *testing.T) {
 // and a kept job, another row, still asks.
 func TestAskGrantCoversOnlyItsRow(t *testing.T) {
 	t.Parallel()
-	turn := append(fakedaemon.AssistantTurn{}, takeOverTurn[:2]...)
-	turn = append(turn,
-		fakedaemon.AssistantStep{
-			Ask: "watch", Args: `{"decoder":"aprs","keep":true}`, Offers: bothScopes, Row: "start a kept job",
-			Reason: "start a kept aprs job that runs on after this conversation ends.", ResultApproved: "watching aprs",
-		},
-		fakedaemon.AssistantStep{Text: "Done."},
-	)
-	sock, c := askHarness(t, turn)
+	sock, c := askHarness(t, grantRowTurn)
 	out, _, err := runAskLey(t, sock, askRunOpts{width: 160, merged: true, inTTY: true, stdin: "a\nn\n"}, "ask", "take the radio and keep a watch")
 	if err != nil {
 		t.Fatal(err)
@@ -105,6 +99,29 @@ func TestAskGrantCoversOnlyItsRow(t *testing.T) {
 	}
 	if watch := tools[2]; watch.GetState() != leylinev1.ToolCallState_TOOL_CALL_REFUSED || watch.GetAllowedBy() != "" {
 		t.Errorf("the kept watch, another row, should have asked and been declined: %v", watch)
+	}
+}
+
+// grantRowTurn is takeOverTurn's two take-overs, then a kept job, a row of its own.
+var grantRowTurn = append(append(fakedaemon.AssistantTurn{}, takeOverTurn[:2]...),
+	fakedaemon.AssistantStep{
+		Ask: "watch", Args: `{"decoder":"aprs","keep":true}`, Offers: bothScopes, Row: "start a kept job",
+		Reason: "start a kept aprs job that runs on after this conversation ends.", ResultApproved: "watching aprs",
+	},
+	fakedaemon.AssistantStep{Text: "Done."},
+)
+
+// Every Row a script in these tests names is a row the gate has, so a misspelt row cannot
+// group grants the worker would keep apart.
+func TestAskScriptRowsAreTheGatesRows(t *testing.T) {
+	t.Parallel()
+	real := assistant.Rows()
+	for _, turn := range []fakedaemon.AssistantTurn{takeOverTurn, grantRowTurn, deleteTurn} {
+		for _, step := range turn {
+			if step.Row != "" && !slices.Contains(real, step.Row) {
+				t.Errorf("the %s step names the row %q, which the gate does not have (assistant.Rows: %q)", step.Ask, step.Row, real)
+			}
+		}
 	}
 }
 
@@ -136,12 +153,60 @@ func TestParseAllow(t *testing.T) {
 	}
 }
 
-// --continue says when the conversation it carries on asks nothing, so the reader knows before the
-// request goes.
-func TestContinuingLineNamesAuto(t *testing.T) {
+// --continue says the mode of the conversation it carries on when it asks nothing or this run
+// changed it, so the reader knows before the request goes; a conversation that asks, as it did,
+// gets no word.
+func TestContinuingLineNamesTheMode(t *testing.T) {
 	t.Parallel()
-	cv := &leylinev1.Conversation{Mode: leylinev1.ApprovalMode_APPROVAL_MODE_AUTO, State: leylinev1.ConversationState_CONVERSATION_IDLE}
-	if got := continuingLine(cv); !strings.HasSuffix(got, "; it allows everything without asking") {
-		t.Errorf("continuingLine = %q", got)
+	auto := &leylinev1.Conversation{Mode: leylinev1.ApprovalMode_APPROVAL_MODE_AUTO, State: leylinev1.ConversationState_CONVERSATION_IDLE}
+	ask := &leylinev1.Conversation{Mode: leylinev1.ApprovalMode_APPROVAL_MODE_ASK, State: leylinev1.ConversationState_CONVERSATION_IDLE}
+	for _, tc := range []struct {
+		cv      *leylinev1.Conversation
+		changed bool
+		suffix  string
+	}{
+		{auto, true, "; --yes sets it to allow everything without asking, until a client changes that"},
+		{auto, false, "; it allows everything without asking, until a client changes that"},
+		{ask, true, "; it asks first again, since this run has no --yes"},
+		{ask, false, "(0 turns)"},
+	} {
+		if got := continuingLine(tc.cv, tc.changed); !strings.HasSuffix(got, tc.suffix) {
+			t.Errorf("mode %v, changed %v: %q", tc.cv.GetMode(), tc.changed, got)
+		}
+	}
+}
+
+// --continue sets the conversation to the run's mode: a conversation left in AUTO by an earlier
+// --yes asks again on a run without it, and one in ASK allows everything on a run with it.
+func TestAskContinueSetsTheRunsMode(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		start leylinev1.ApprovalMode
+		flags []string
+		want  leylinev1.ApprovalMode
+		says  string
+	}{
+		{"auto, then a run without --yes", leylinev1.ApprovalMode_APPROVAL_MODE_AUTO, nil, leylinev1.ApprovalMode_APPROVAL_MODE_ASK, "it asks first again"},
+		{"ask, then a run with --yes", leylinev1.ApprovalMode_APPROVAL_MODE_ASK, []string{"--yes"}, leylinev1.ApprovalMode_APPROVAL_MODE_AUTO, "--yes sets it to allow everything"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			sock, c := askHarness(t, weatherTurn)
+			if _, err := c.Assistant.StartConversation(t.Context(), &leylinev1.StartConversationRequest{Mode: tc.start}); err != nil {
+				t.Fatal(err)
+			}
+			args := append([]string{"ask", "--continue", "hello"}, tc.flags...)
+			out, _, err := runAskLey(t, sock, askRunOpts{width: 160, merged: true}, args...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out, tc.says) {
+				t.Errorf("lacks %q:\n%s", tc.says, out)
+			}
+			if got := newestConversation(t, c).GetMode(); got != tc.want {
+				t.Errorf("mode after the run: %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

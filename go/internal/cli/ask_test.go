@@ -419,7 +419,7 @@ func TestAskContinueAnswersAWaitingConversation(t *testing.T) {
 	}
 	// --yes sets the conversation to AUTO before anything else, so the daemon runs the call it
 	// waited on and ask answers no question itself.
-	for _, want := range []string{"; it allows everything without asking", "Done.\n\nYou said: thanks\n"} {
+	for _, want := range []string{"; --yes sets it to allow everything without asking, until a client changes that", "Done.\n\nYou said: thanks\n"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("lacks %q:\n%s", want, out)
 		}

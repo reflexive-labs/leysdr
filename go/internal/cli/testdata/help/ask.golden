@@ -12,7 +12,8 @@ that kind of call for the rest of the conversation, and anything else
 declines; a delete, or cancelling a job the assistant did not start, is asked
 every time. --yes makes the conversation, new or continued, allow all of them
 without asking, and with no terminal to answer on and no --yes they are
-declined.
+declined. The conversation keeps its mode until a client changes it, and ask
+sets it on every run, so --continue without --yes asks first again.
 
 With no request, ask reads one request per line at a '> ' prompt until a
 blank line or Ctrl-D. The conversation stays in the daemon after ask exits,
