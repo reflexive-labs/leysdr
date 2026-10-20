@@ -271,8 +271,11 @@ struct PendingCard: View {
     /// refuse. Kept by call id, so a new question is answerable at once.
     @State private var answering: String?
 
-    /// Sends one answer, with the buttons disabled while it goes.
+    /// Sends one answer, with the buttons disabled while it goes. A click while one is on its
+    /// way is dropped: two clicks in one run-loop turn both reach here before SwiftUI applies
+    /// `.disabled`.
     private func answer(_ send: @escaping @MainActor @Sendable () async -> Void) {
+        guard answering != question.callID else { return }
         let id = question.callID
         answering = id
         Task {

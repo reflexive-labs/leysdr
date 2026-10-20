@@ -505,15 +505,16 @@ JSON, the whole result and its JSON. A call waiting for approval is a card with 
 gate's reason (`assistant.md`, "The gate") and a button per answer the call offers
 (`PendingQuestion.offers`): Decline, Allow for this conversation when the call can be granted for
 the rest of the conversation (never a delete or a cancel of another client's job), and Allow, none
-on Return. Once one is pressed all three are disabled until the question changes, so a second click
-sends no second answer. The app starts every conversation in the default mode, in which questions
-are asked; the panel has no switch for the mode that asks nothing. Stop shows while the assistant
-thinks and while it waits on one of the app's view tools. The usage line under the transcript is the
-mirror's usage lines whose scope is the conversation, summed: `3 requests, 1.2k in, 400 out`, with
-the tokens the provider's cache served when there were any; never a price. The field sends on
-Return, keeps the text when the daemon did not take it, is disabled while the assistant thinks or
-waits, and takes the focus back when it can be typed in again if it had it when the message went;
-`TuningKeyGuard` keeps Space and the arrows in it.
+on Return. Once one is pressed all three are disabled, and a click meanwhile is dropped, until the
+daemon replies to that answer, so a second click sends no second answer; a question still pending
+after a failed answer can be answered again. The app starts every conversation in the default mode,
+in which questions are asked; the panel has no switch for the mode that asks nothing. Stop shows
+while the assistant thinks and while it waits on one of the app's view tools. The usage line under
+the transcript is the mirror's usage lines whose scope is the conversation, summed: `3 requests,
+1.2k in, 400 out`, with the tokens the provider's cache served when there were any; never a price.
+The field sends on Return, keeps the text when the daemon did not take it, is disabled while the
+assistant thinks or waits, and takes the focus back when it can be typed in again if it had it when
+the message went; `TuningKeyGuard` keeps Space and the arrows in it.
 
 **The view tools** (`AssistantViewTools.swift`). The app declares three, each named by the
 worker's rule (1 to 64 letters, digits, `_` or `-`, no radio tool's name; `assistant.md`, "The
