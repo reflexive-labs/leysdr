@@ -121,7 +121,7 @@ var rows = []row{
 		}
 		return fmt.Sprintf("remove the bookmark %q from your bookmarks", strArg(args, "bookmark")), true
 	}},
-	{"cancel another client's job", false, func(p *Policy, tool string, args map[string]any) (string, bool) {
+	{"cancel another client's job", true, func(p *Policy, tool string, args map[string]any) (string, bool) {
 		if tool != "cancel_job" || p.ownJobs[strArg(args, "job")] {
 			return "", false
 		}

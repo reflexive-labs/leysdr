@@ -20,7 +20,7 @@ func approveWith(scope leylinev1.ApprovalScope) *leylinev1.ActionResolved {
 	return &leylinev1.ActionResolved{Approved: true, Scope: scope}
 }
 
-// What each question offers: a delete once only, every other row and the received-text rule
+// What each question offers: a delete and a foreign job's cancel once only, every other row and the received-text rule
 // once or for the conversation, and a question listing a delete with another row once only.
 func TestPolicyOffers(t *testing.T) {
 	t.Parallel()
@@ -41,6 +41,7 @@ func TestPolicyOffers(t *testing.T) {
 		{"a write after received text", "set", map[string]any{"param": "squelch", "value": "-40"}, true, both},
 		{"delete a recording", "delete_recording", map[string]any{"recording": "job_1"}, false, onlyOnce},
 		{"a delete after received text", "delete_recording", map[string]any{"recording": "job_1"}, true, onlyOnce},
+		{"cancel another client's job", "cancel_job", map[string]any{"job": "job_other"}, false, onlyOnce},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
