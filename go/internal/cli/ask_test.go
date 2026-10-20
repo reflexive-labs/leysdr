@@ -417,13 +417,23 @@ func TestAskContinueAnswersAWaitingConversation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"which is waiting for an answer", "Allowed by --yes.\n  Deleted job_01K, 12.0 MB freed\n\nDone.\n\nYou said: thanks\n"} {
+	// --yes sets the conversation to AUTO before anything else, so the daemon runs the call it
+	// waited on and ask answers no question itself.
+	for _, want := range []string{"; it allows everything without asking", "Done.\n\nYou said: thanks\n"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("lacks %q:\n%s", want, out)
 		}
 	}
+	if strings.Contains(out, "Allow") {
+		t.Errorf("ask answered a question itself:\n%s", out)
+	}
 	got := newestConversation(t, c)
-	if len(got.Turns) != 4 || got.Turns[1].Tools[0].State != leylinev1.ToolCallState_TOOL_CALL_DONE {
+	if got.GetMode() != leylinev1.ApprovalMode_APPROVAL_MODE_AUTO {
+		t.Errorf("the conversation's mode is %v, want AUTO", got.GetMode())
+	}
+	call := got.Turns[1].Tools[0]
+	if len(got.Turns) != 4 || call.State != leylinev1.ToolCallState_TOOL_CALL_DONE || call.AllowedBy != "" ||
+		call.ResultText != "Deleted job_01K, 12.0 MB freed" {
 		t.Errorf("conversation: %v", got)
 	}
 }
@@ -564,7 +574,7 @@ func TestAskReferenceTranscripts(t *testing.T) {
 		{`$ ley ask "listen to the NOAA weather radio"`, twoToolsTurn, askRunOpts{}, []string{"ask", "listen to the NOAA weather radio"}},
 		{`$ ley ask "delete the last recording"`, deleteTurn, askRunOpts{inTTY: true, stdin: "y\n"}, []string{"ask", "delete the last recording"}},
 		{`$ ley ask "delete the last recording" < /dev/null`, deleteTurn, askRunOpts{}, []string{"ask", "delete the last recording"}},
-		{`$ ley ask "take the radio, try 150 then 151"`, takeOverTurn, askRunOpts{inTTY: true, stdin: "a\n"}, []string{"ask", "take the radio, try 150 then 151"}},
+		{`$ ley ask "take the radio, then scan 2 m"`, takeOverTurn, askRunOpts{inTTY: true, stdin: "a\n"}, []string{"ask", "take the radio, then scan 2 m"}},
 	} {
 		want, ok := documented[tc.cmd]
 		if !ok {

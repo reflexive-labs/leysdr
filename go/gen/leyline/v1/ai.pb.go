@@ -2032,6 +2032,59 @@ func (x *AnswerViewToolRequest) GetIsError() bool {
 	return false
 }
 
+// mode unset is ASK.
+type SetApprovalModeRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	Mode           ApprovalMode           `protobuf:"varint,2,opt,name=mode,proto3,enum=leyline.v1.ApprovalMode" json:"mode,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SetApprovalModeRequest) Reset() {
+	*x = SetApprovalModeRequest{}
+	mi := &file_leyline_v1_ai_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetApprovalModeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetApprovalModeRequest) ProtoMessage() {}
+
+func (x *SetApprovalModeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_leyline_v1_ai_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetApprovalModeRequest.ProtoReflect.Descriptor instead.
+func (*SetApprovalModeRequest) Descriptor() ([]byte, []int) {
+	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *SetApprovalModeRequest) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+func (x *SetApprovalModeRequest) GetMode() ApprovalMode {
+	if x != nil {
+		return x.Mode
+	}
+	return ApprovalMode_APPROVAL_MODE_UNSPECIFIED
+}
+
 type ListConversationsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -2040,7 +2093,7 @@ type ListConversationsRequest struct {
 
 func (x *ListConversationsRequest) Reset() {
 	*x = ListConversationsRequest{}
-	mi := &file_leyline_v1_ai_proto_msgTypes[22]
+	mi := &file_leyline_v1_ai_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2052,7 +2105,7 @@ func (x *ListConversationsRequest) String() string {
 func (*ListConversationsRequest) ProtoMessage() {}
 
 func (x *ListConversationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_ai_proto_msgTypes[22]
+	mi := &file_leyline_v1_ai_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2065,7 +2118,7 @@ func (x *ListConversationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListConversationsRequest.ProtoReflect.Descriptor instead.
 func (*ListConversationsRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{22}
+	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{23}
 }
 
 type ListConversationsResponse struct {
@@ -2077,7 +2130,7 @@ type ListConversationsResponse struct {
 
 func (x *ListConversationsResponse) Reset() {
 	*x = ListConversationsResponse{}
-	mi := &file_leyline_v1_ai_proto_msgTypes[23]
+	mi := &file_leyline_v1_ai_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2089,7 +2142,7 @@ func (x *ListConversationsResponse) String() string {
 func (*ListConversationsResponse) ProtoMessage() {}
 
 func (x *ListConversationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_ai_proto_msgTypes[23]
+	mi := &file_leyline_v1_ai_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2102,7 +2155,7 @@ func (x *ListConversationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListConversationsResponse.ProtoReflect.Descriptor instead.
 func (*ListConversationsResponse) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{23}
+	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ListConversationsResponse) GetConversations() []*Conversation {
@@ -2122,6 +2175,7 @@ type WorkerEvent struct {
 	//	*WorkerEvent_Resolved
 	//	*WorkerEvent_ViewAnswer
 	//	*WorkerEvent_Stop
+	//	*WorkerEvent_SetMode
 	Event         isWorkerEvent_Event `protobuf_oneof:"event"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2129,7 +2183,7 @@ type WorkerEvent struct {
 
 func (x *WorkerEvent) Reset() {
 	*x = WorkerEvent{}
-	mi := &file_leyline_v1_ai_proto_msgTypes[24]
+	mi := &file_leyline_v1_ai_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2141,7 +2195,7 @@ func (x *WorkerEvent) String() string {
 func (*WorkerEvent) ProtoMessage() {}
 
 func (x *WorkerEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_ai_proto_msgTypes[24]
+	mi := &file_leyline_v1_ai_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2154,7 +2208,7 @@ func (x *WorkerEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerEvent.ProtoReflect.Descriptor instead.
 func (*WorkerEvent) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{24}
+	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *WorkerEvent) GetEvent() isWorkerEvent_Event {
@@ -2209,6 +2263,15 @@ func (x *WorkerEvent) GetStop() *WorkerStop {
 	return nil
 }
 
+func (x *WorkerEvent) GetSetMode() *SetMode {
+	if x != nil {
+		if x, ok := x.Event.(*WorkerEvent_SetMode); ok {
+			return x.SetMode
+		}
+	}
+	return nil
+}
+
 type isWorkerEvent_Event interface {
 	isWorkerEvent_Event()
 }
@@ -2233,6 +2296,10 @@ type WorkerEvent_Stop struct {
 	Stop *WorkerStop `protobuf:"bytes,5,opt,name=stop,proto3,oneof"` // stop the running turn
 }
 
+type WorkerEvent_SetMode struct {
+	SetMode *SetMode `protobuf:"bytes,6,opt,name=set_mode,json=setMode,proto3,oneof"` // the conversation's mode changed
+}
+
 func (*WorkerEvent_Start) isWorkerEvent_Event() {}
 
 func (*WorkerEvent_User) isWorkerEvent_Event() {}
@@ -2242,6 +2309,8 @@ func (*WorkerEvent_Resolved) isWorkerEvent_Event() {}
 func (*WorkerEvent_ViewAnswer) isWorkerEvent_Event() {}
 
 func (*WorkerEvent_Stop) isWorkerEvent_Event() {}
+
+func (*WorkerEvent_SetMode) isWorkerEvent_Event() {}
 
 type WorkerStart struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
@@ -2264,7 +2333,7 @@ type WorkerStart struct {
 
 func (x *WorkerStart) Reset() {
 	*x = WorkerStart{}
-	mi := &file_leyline_v1_ai_proto_msgTypes[25]
+	mi := &file_leyline_v1_ai_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2276,7 +2345,7 @@ func (x *WorkerStart) String() string {
 func (*WorkerStart) ProtoMessage() {}
 
 func (x *WorkerStart) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_ai_proto_msgTypes[25]
+	mi := &file_leyline_v1_ai_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2289,7 +2358,7 @@ func (x *WorkerStart) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerStart.ProtoReflect.Descriptor instead.
 func (*WorkerStart) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{25}
+	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *WorkerStart) GetConversationId() string {
@@ -2365,7 +2434,7 @@ type UserMessage struct {
 
 func (x *UserMessage) Reset() {
 	*x = UserMessage{}
-	mi := &file_leyline_v1_ai_proto_msgTypes[26]
+	mi := &file_leyline_v1_ai_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2377,7 +2446,7 @@ func (x *UserMessage) String() string {
 func (*UserMessage) ProtoMessage() {}
 
 func (x *UserMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_ai_proto_msgTypes[26]
+	mi := &file_leyline_v1_ai_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2390,7 +2459,7 @@ func (x *UserMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserMessage.ProtoReflect.Descriptor instead.
 func (*UserMessage) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{26}
+	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *UserMessage) GetTurnId() string {
@@ -2419,7 +2488,7 @@ type ActionResolved struct {
 
 func (x *ActionResolved) Reset() {
 	*x = ActionResolved{}
-	mi := &file_leyline_v1_ai_proto_msgTypes[27]
+	mi := &file_leyline_v1_ai_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2431,7 +2500,7 @@ func (x *ActionResolved) String() string {
 func (*ActionResolved) ProtoMessage() {}
 
 func (x *ActionResolved) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_ai_proto_msgTypes[27]
+	mi := &file_leyline_v1_ai_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2444,7 +2513,7 @@ func (x *ActionResolved) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActionResolved.ProtoReflect.Descriptor instead.
 func (*ActionResolved) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{27}
+	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ActionResolved) GetCallId() string {
@@ -2480,7 +2549,7 @@ type ViewToolAnswer struct {
 
 func (x *ViewToolAnswer) Reset() {
 	*x = ViewToolAnswer{}
-	mi := &file_leyline_v1_ai_proto_msgTypes[28]
+	mi := &file_leyline_v1_ai_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2492,7 +2561,7 @@ func (x *ViewToolAnswer) String() string {
 func (*ViewToolAnswer) ProtoMessage() {}
 
 func (x *ViewToolAnswer) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_ai_proto_msgTypes[28]
+	mi := &file_leyline_v1_ai_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2505,7 +2574,7 @@ func (x *ViewToolAnswer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ViewToolAnswer.ProtoReflect.Descriptor instead.
 func (*ViewToolAnswer) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{28}
+	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ViewToolAnswer) GetCallId() string {
@@ -2544,7 +2613,7 @@ type WorkerStop struct {
 
 func (x *WorkerStop) Reset() {
 	*x = WorkerStop{}
-	mi := &file_leyline_v1_ai_proto_msgTypes[29]
+	mi := &file_leyline_v1_ai_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2556,7 +2625,7 @@ func (x *WorkerStop) String() string {
 func (*WorkerStop) ProtoMessage() {}
 
 func (x *WorkerStop) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_ai_proto_msgTypes[29]
+	mi := &file_leyline_v1_ai_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2569,7 +2638,52 @@ func (x *WorkerStop) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerStop.ProtoReflect.Descriptor instead.
 func (*WorkerStop) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{29}
+	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{30}
+}
+
+// The gate's mode from now on. AUTO while the worker waits on a question approves that call once.
+type SetMode struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Mode          ApprovalMode           `protobuf:"varint,1,opt,name=mode,proto3,enum=leyline.v1.ApprovalMode" json:"mode,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetMode) Reset() {
+	*x = SetMode{}
+	mi := &file_leyline_v1_ai_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetMode) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetMode) ProtoMessage() {}
+
+func (x *SetMode) ProtoReflect() protoreflect.Message {
+	mi := &file_leyline_v1_ai_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetMode.ProtoReflect.Descriptor instead.
+func (*SetMode) Descriptor() ([]byte, []int) {
+	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *SetMode) GetMode() ApprovalMode {
+	if x != nil {
+		return x.Mode
+	}
+	return ApprovalMode_APPROVAL_MODE_UNSPECIFIED
 }
 
 // The worker to the daemon.
@@ -2586,7 +2700,7 @@ type WorkerMessage struct {
 
 func (x *WorkerMessage) Reset() {
 	*x = WorkerMessage{}
-	mi := &file_leyline_v1_ai_proto_msgTypes[30]
+	mi := &file_leyline_v1_ai_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2598,7 +2712,7 @@ func (x *WorkerMessage) String() string {
 func (*WorkerMessage) ProtoMessage() {}
 
 func (x *WorkerMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_ai_proto_msgTypes[30]
+	mi := &file_leyline_v1_ai_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2611,7 +2725,7 @@ func (x *WorkerMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerMessage.ProtoReflect.Descriptor instead.
 func (*WorkerMessage) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{30}
+	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *WorkerMessage) GetMessage() isWorkerMessage_Message {
@@ -2664,7 +2778,7 @@ type WorkerFailure struct {
 
 func (x *WorkerFailure) Reset() {
 	*x = WorkerFailure{}
-	mi := &file_leyline_v1_ai_proto_msgTypes[31]
+	mi := &file_leyline_v1_ai_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2676,7 +2790,7 @@ func (x *WorkerFailure) String() string {
 func (*WorkerFailure) ProtoMessage() {}
 
 func (x *WorkerFailure) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_ai_proto_msgTypes[31]
+	mi := &file_leyline_v1_ai_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2689,7 +2803,7 @@ func (x *WorkerFailure) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerFailure.ProtoReflect.Descriptor instead.
 func (*WorkerFailure) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{31}
+	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *WorkerFailure) GetError() *ErrorDetail {
@@ -2852,17 +2966,21 @@ const file_leyline_v1_ai_proto_rawDesc = "" +
 	"resultText\x12\x1f\n" +
 	"\vresult_json\x18\x04 \x01(\tR\n" +
 	"resultJson\x12\x19\n" +
-	"\bis_error\x18\x05 \x01(\bR\aisError\"\x1a\n" +
+	"\bis_error\x18\x05 \x01(\bR\aisError\"o\n" +
+	"\x16SetApprovalModeRequest\x12'\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12,\n" +
+	"\x04mode\x18\x02 \x01(\x0e2\x18.leyline.v1.ApprovalModeR\x04mode\"\x1a\n" +
 	"\x18ListConversationsRequest\"[\n" +
 	"\x19ListConversationsResponse\x12>\n" +
-	"\rconversations\x18\x01 \x03(\v2\x18.leyline.v1.ConversationR\rconversations\"\x9d\x02\n" +
+	"\rconversations\x18\x01 \x03(\v2\x18.leyline.v1.ConversationR\rconversations\"\xcf\x02\n" +
 	"\vWorkerEvent\x12/\n" +
 	"\x05start\x18\x01 \x01(\v2\x17.leyline.v1.WorkerStartH\x00R\x05start\x12-\n" +
 	"\x04user\x18\x02 \x01(\v2\x17.leyline.v1.UserMessageH\x00R\x04user\x128\n" +
 	"\bresolved\x18\x03 \x01(\v2\x1a.leyline.v1.ActionResolvedH\x00R\bresolved\x12=\n" +
 	"\vview_answer\x18\x04 \x01(\v2\x1a.leyline.v1.ViewToolAnswerH\x00R\n" +
 	"viewAnswer\x12,\n" +
-	"\x04stop\x18\x05 \x01(\v2\x16.leyline.v1.WorkerStopH\x00R\x04stopB\a\n" +
+	"\x04stop\x18\x05 \x01(\v2\x16.leyline.v1.WorkerStopH\x00R\x04stop\x120\n" +
+	"\bset_mode\x18\x06 \x01(\v2\x13.leyline.v1.SetModeH\x00R\asetModeB\a\n" +
 	"\x05event\"\xc0\x02\n" +
 	"\vWorkerStart\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x1a\n" +
@@ -2890,7 +3008,9 @@ const file_leyline_v1_ai_proto_rawDesc = "" +
 	"resultJson\x12\x19\n" +
 	"\bis_error\x18\x04 \x01(\bR\aisError\"\f\n" +
 	"\n" +
-	"WorkerStop\"y\n" +
+	"WorkerStop\"7\n" +
+	"\aSetMode\x12,\n" +
+	"\x04mode\x18\x01 \x01(\x0e2\x18.leyline.v1.ApprovalModeR\x04mode\"y\n" +
 	"\rWorkerMessage\x12&\n" +
 	"\x04turn\x18\x01 \x01(\v2\x10.leyline.v1.TurnH\x00R\x04turn\x125\n" +
 	"\afailure\x18\x02 \x01(\v2\x19.leyline.v1.WorkerFailureH\x00R\afailureB\t\n" +
@@ -2932,7 +3052,7 @@ const file_leyline_v1_ai_proto_rawDesc = "" +
 	"\x0fSetFeatureModel\x12\x18.leyline.v1.FeatureModel\x1a\x18.leyline.v1.FeatureModel2\x89\x01\n" +
 	"\x05Usage\x12E\n" +
 	"\bGetUsage\x12\x1b.leyline.v1.GetUsageRequest\x1a\x1c.leyline.v1.GetUsageResponse\x129\n" +
-	"\vReportUsage\x12\x17.leyline.v1.UsageReport\x1a\x11.leyline.v1.Empty2\xd1\x05\n" +
+	"\vReportUsage\x12\x17.leyline.v1.UsageReport\x1a\x11.leyline.v1.Empty2\xa2\x06\n" +
 	"\tAssistant\x12S\n" +
 	"\x11StartConversation\x12$.leyline.v1.StartConversationRequest\x1a\x18.leyline.v1.Conversation\x12G\n" +
 	"\vSendMessage\x12\x1e.leyline.v1.SendMessageRequest\x1a\x18.leyline.v1.Conversation\x12U\n" +
@@ -2942,7 +3062,8 @@ const file_leyline_v1_ai_proto_rawDesc = "" +
 	"\bStopTurn\x12\x1b.leyline.v1.ConversationRef\x1a\x18.leyline.v1.Conversation\x12H\n" +
 	"\x0fEndConversation\x12\x1b.leyline.v1.ConversationRef\x1a\x18.leyline.v1.Conversation\x12`\n" +
 	"\x11ListConversations\x12$.leyline.v1.ListConversationsRequest\x1a%.leyline.v1.ListConversationsResponse\x12D\n" +
-	"\x12DeleteConversation\x12\x1b.leyline.v1.ConversationRef\x1a\x11.leyline.v1.EmptyB>Z<github.com/reflexive-labs/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
+	"\x12DeleteConversation\x12\x1b.leyline.v1.ConversationRef\x1a\x11.leyline.v1.Empty\x12O\n" +
+	"\x0fSetApprovalMode\x12\".leyline.v1.SetApprovalModeRequest\x1a\x18.leyline.v1.ConversationB>Z<github.com/reflexive-labs/leysdr/go/gen/leyline/v1;leylinev1b\x06proto3"
 
 var (
 	file_leyline_v1_ai_proto_rawDescOnce sync.Once
@@ -2957,7 +3078,7 @@ func file_leyline_v1_ai_proto_rawDescGZIP() []byte {
 }
 
 var file_leyline_v1_ai_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_leyline_v1_ai_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
+var file_leyline_v1_ai_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
 var file_leyline_v1_ai_proto_goTypes = []any{
 	(ApprovalMode)(0),                 // 0: leyline.v1.ApprovalMode
 	(ApprovalScope)(0),                // 1: leyline.v1.ApprovalScope
@@ -2987,19 +3108,21 @@ var file_leyline_v1_ai_proto_goTypes = []any{
 	(*WatchConversationRequest)(nil),  // 25: leyline.v1.WatchConversationRequest
 	(*ResolveActionRequest)(nil),      // 26: leyline.v1.ResolveActionRequest
 	(*AnswerViewToolRequest)(nil),     // 27: leyline.v1.AnswerViewToolRequest
-	(*ListConversationsRequest)(nil),  // 28: leyline.v1.ListConversationsRequest
-	(*ListConversationsResponse)(nil), // 29: leyline.v1.ListConversationsResponse
-	(*WorkerEvent)(nil),               // 30: leyline.v1.WorkerEvent
-	(*WorkerStart)(nil),               // 31: leyline.v1.WorkerStart
-	(*UserMessage)(nil),               // 32: leyline.v1.UserMessage
-	(*ActionResolved)(nil),            // 33: leyline.v1.ActionResolved
-	(*ViewToolAnswer)(nil),            // 34: leyline.v1.ViewToolAnswer
-	(*WorkerStop)(nil),                // 35: leyline.v1.WorkerStop
-	(*WorkerMessage)(nil),             // 36: leyline.v1.WorkerMessage
-	(*WorkerFailure)(nil),             // 37: leyline.v1.WorkerFailure
-	(*ErrorDetail)(nil),               // 38: leyline.v1.ErrorDetail
-	(*ClientInfo)(nil),                // 39: leyline.v1.ClientInfo
-	(*Empty)(nil),                     // 40: leyline.v1.Empty
+	(*SetApprovalModeRequest)(nil),    // 28: leyline.v1.SetApprovalModeRequest
+	(*ListConversationsRequest)(nil),  // 29: leyline.v1.ListConversationsRequest
+	(*ListConversationsResponse)(nil), // 30: leyline.v1.ListConversationsResponse
+	(*WorkerEvent)(nil),               // 31: leyline.v1.WorkerEvent
+	(*WorkerStart)(nil),               // 32: leyline.v1.WorkerStart
+	(*UserMessage)(nil),               // 33: leyline.v1.UserMessage
+	(*ActionResolved)(nil),            // 34: leyline.v1.ActionResolved
+	(*ViewToolAnswer)(nil),            // 35: leyline.v1.ViewToolAnswer
+	(*WorkerStop)(nil),                // 36: leyline.v1.WorkerStop
+	(*SetMode)(nil),                   // 37: leyline.v1.SetMode
+	(*WorkerMessage)(nil),             // 38: leyline.v1.WorkerMessage
+	(*WorkerFailure)(nil),             // 39: leyline.v1.WorkerFailure
+	(*ErrorDetail)(nil),               // 40: leyline.v1.ErrorDetail
+	(*ClientInfo)(nil),                // 41: leyline.v1.ClientInfo
+	(*Empty)(nil),                     // 42: leyline.v1.Empty
 }
 var file_leyline_v1_ai_proto_depIdxs = []int32{
 	7,  // 0: leyline.v1.Credential.last_check:type_name -> leyline.v1.CredentialCheck
@@ -3010,8 +3133,8 @@ var file_leyline_v1_ai_proto_depIdxs = []int32{
 	2,  // 5: leyline.v1.Conversation.state:type_name -> leyline.v1.ConversationState
 	18, // 6: leyline.v1.Conversation.turns:type_name -> leyline.v1.Turn
 	20, // 7: leyline.v1.Conversation.pending:type_name -> leyline.v1.PendingAction
-	38, // 8: leyline.v1.Conversation.error:type_name -> leyline.v1.ErrorDetail
-	39, // 9: leyline.v1.Conversation.started_by:type_name -> leyline.v1.ClientInfo
+	40, // 8: leyline.v1.Conversation.error:type_name -> leyline.v1.ErrorDetail
+	41, // 9: leyline.v1.Conversation.started_by:type_name -> leyline.v1.ClientInfo
 	21, // 10: leyline.v1.Conversation.view_tools:type_name -> leyline.v1.ViewTool
 	0,  // 11: leyline.v1.Conversation.mode:type_name -> leyline.v1.ApprovalMode
 	3,  // 12: leyline.v1.Turn.role:type_name -> leyline.v1.Role
@@ -3022,55 +3145,60 @@ var file_leyline_v1_ai_proto_depIdxs = []int32{
 	21, // 17: leyline.v1.StartConversationRequest.view_tools:type_name -> leyline.v1.ViewTool
 	0,  // 18: leyline.v1.StartConversationRequest.mode:type_name -> leyline.v1.ApprovalMode
 	1,  // 19: leyline.v1.ResolveActionRequest.scope:type_name -> leyline.v1.ApprovalScope
-	17, // 20: leyline.v1.ListConversationsResponse.conversations:type_name -> leyline.v1.Conversation
-	31, // 21: leyline.v1.WorkerEvent.start:type_name -> leyline.v1.WorkerStart
-	32, // 22: leyline.v1.WorkerEvent.user:type_name -> leyline.v1.UserMessage
-	33, // 23: leyline.v1.WorkerEvent.resolved:type_name -> leyline.v1.ActionResolved
-	34, // 24: leyline.v1.WorkerEvent.view_answer:type_name -> leyline.v1.ViewToolAnswer
-	35, // 25: leyline.v1.WorkerEvent.stop:type_name -> leyline.v1.WorkerStop
-	21, // 26: leyline.v1.WorkerStart.view_tools:type_name -> leyline.v1.ViewTool
-	0,  // 27: leyline.v1.WorkerStart.mode:type_name -> leyline.v1.ApprovalMode
-	1,  // 28: leyline.v1.ActionResolved.scope:type_name -> leyline.v1.ApprovalScope
-	18, // 29: leyline.v1.WorkerMessage.turn:type_name -> leyline.v1.Turn
-	37, // 30: leyline.v1.WorkerMessage.failure:type_name -> leyline.v1.WorkerFailure
-	38, // 31: leyline.v1.WorkerFailure.error:type_name -> leyline.v1.ErrorDetail
-	8,  // 32: leyline.v1.Credentials.SetCredential:input_type -> leyline.v1.SetCredentialRequest
-	9,  // 33: leyline.v1.Credentials.DeleteCredential:input_type -> leyline.v1.CredentialRef
-	9,  // 34: leyline.v1.Credentials.CheckCredential:input_type -> leyline.v1.CredentialRef
-	12, // 35: leyline.v1.Credentials.GetAIState:input_type -> leyline.v1.GetAIStateRequest
-	10, // 36: leyline.v1.Credentials.SetFeatureModel:input_type -> leyline.v1.FeatureModel
-	15, // 37: leyline.v1.Usage.GetUsage:input_type -> leyline.v1.GetUsageRequest
-	13, // 38: leyline.v1.Usage.ReportUsage:input_type -> leyline.v1.UsageReport
-	22, // 39: leyline.v1.Assistant.StartConversation:input_type -> leyline.v1.StartConversationRequest
-	23, // 40: leyline.v1.Assistant.SendMessage:input_type -> leyline.v1.SendMessageRequest
-	25, // 41: leyline.v1.Assistant.WatchConversation:input_type -> leyline.v1.WatchConversationRequest
-	26, // 42: leyline.v1.Assistant.ResolveAction:input_type -> leyline.v1.ResolveActionRequest
-	27, // 43: leyline.v1.Assistant.AnswerViewTool:input_type -> leyline.v1.AnswerViewToolRequest
-	24, // 44: leyline.v1.Assistant.StopTurn:input_type -> leyline.v1.ConversationRef
-	24, // 45: leyline.v1.Assistant.EndConversation:input_type -> leyline.v1.ConversationRef
-	28, // 46: leyline.v1.Assistant.ListConversations:input_type -> leyline.v1.ListConversationsRequest
-	24, // 47: leyline.v1.Assistant.DeleteConversation:input_type -> leyline.v1.ConversationRef
-	6,  // 48: leyline.v1.Credentials.SetCredential:output_type -> leyline.v1.Credential
-	40, // 49: leyline.v1.Credentials.DeleteCredential:output_type -> leyline.v1.Empty
-	6,  // 50: leyline.v1.Credentials.CheckCredential:output_type -> leyline.v1.Credential
-	11, // 51: leyline.v1.Credentials.GetAIState:output_type -> leyline.v1.AIState
-	10, // 52: leyline.v1.Credentials.SetFeatureModel:output_type -> leyline.v1.FeatureModel
-	16, // 53: leyline.v1.Usage.GetUsage:output_type -> leyline.v1.GetUsageResponse
-	40, // 54: leyline.v1.Usage.ReportUsage:output_type -> leyline.v1.Empty
-	17, // 55: leyline.v1.Assistant.StartConversation:output_type -> leyline.v1.Conversation
-	17, // 56: leyline.v1.Assistant.SendMessage:output_type -> leyline.v1.Conversation
-	17, // 57: leyline.v1.Assistant.WatchConversation:output_type -> leyline.v1.Conversation
-	17, // 58: leyline.v1.Assistant.ResolveAction:output_type -> leyline.v1.Conversation
-	17, // 59: leyline.v1.Assistant.AnswerViewTool:output_type -> leyline.v1.Conversation
-	17, // 60: leyline.v1.Assistant.StopTurn:output_type -> leyline.v1.Conversation
-	17, // 61: leyline.v1.Assistant.EndConversation:output_type -> leyline.v1.Conversation
-	29, // 62: leyline.v1.Assistant.ListConversations:output_type -> leyline.v1.ListConversationsResponse
-	40, // 63: leyline.v1.Assistant.DeleteConversation:output_type -> leyline.v1.Empty
-	48, // [48:64] is the sub-list for method output_type
-	32, // [32:48] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	0,  // 20: leyline.v1.SetApprovalModeRequest.mode:type_name -> leyline.v1.ApprovalMode
+	17, // 21: leyline.v1.ListConversationsResponse.conversations:type_name -> leyline.v1.Conversation
+	32, // 22: leyline.v1.WorkerEvent.start:type_name -> leyline.v1.WorkerStart
+	33, // 23: leyline.v1.WorkerEvent.user:type_name -> leyline.v1.UserMessage
+	34, // 24: leyline.v1.WorkerEvent.resolved:type_name -> leyline.v1.ActionResolved
+	35, // 25: leyline.v1.WorkerEvent.view_answer:type_name -> leyline.v1.ViewToolAnswer
+	36, // 26: leyline.v1.WorkerEvent.stop:type_name -> leyline.v1.WorkerStop
+	37, // 27: leyline.v1.WorkerEvent.set_mode:type_name -> leyline.v1.SetMode
+	21, // 28: leyline.v1.WorkerStart.view_tools:type_name -> leyline.v1.ViewTool
+	0,  // 29: leyline.v1.WorkerStart.mode:type_name -> leyline.v1.ApprovalMode
+	1,  // 30: leyline.v1.ActionResolved.scope:type_name -> leyline.v1.ApprovalScope
+	0,  // 31: leyline.v1.SetMode.mode:type_name -> leyline.v1.ApprovalMode
+	18, // 32: leyline.v1.WorkerMessage.turn:type_name -> leyline.v1.Turn
+	39, // 33: leyline.v1.WorkerMessage.failure:type_name -> leyline.v1.WorkerFailure
+	40, // 34: leyline.v1.WorkerFailure.error:type_name -> leyline.v1.ErrorDetail
+	8,  // 35: leyline.v1.Credentials.SetCredential:input_type -> leyline.v1.SetCredentialRequest
+	9,  // 36: leyline.v1.Credentials.DeleteCredential:input_type -> leyline.v1.CredentialRef
+	9,  // 37: leyline.v1.Credentials.CheckCredential:input_type -> leyline.v1.CredentialRef
+	12, // 38: leyline.v1.Credentials.GetAIState:input_type -> leyline.v1.GetAIStateRequest
+	10, // 39: leyline.v1.Credentials.SetFeatureModel:input_type -> leyline.v1.FeatureModel
+	15, // 40: leyline.v1.Usage.GetUsage:input_type -> leyline.v1.GetUsageRequest
+	13, // 41: leyline.v1.Usage.ReportUsage:input_type -> leyline.v1.UsageReport
+	22, // 42: leyline.v1.Assistant.StartConversation:input_type -> leyline.v1.StartConversationRequest
+	23, // 43: leyline.v1.Assistant.SendMessage:input_type -> leyline.v1.SendMessageRequest
+	25, // 44: leyline.v1.Assistant.WatchConversation:input_type -> leyline.v1.WatchConversationRequest
+	26, // 45: leyline.v1.Assistant.ResolveAction:input_type -> leyline.v1.ResolveActionRequest
+	27, // 46: leyline.v1.Assistant.AnswerViewTool:input_type -> leyline.v1.AnswerViewToolRequest
+	24, // 47: leyline.v1.Assistant.StopTurn:input_type -> leyline.v1.ConversationRef
+	24, // 48: leyline.v1.Assistant.EndConversation:input_type -> leyline.v1.ConversationRef
+	29, // 49: leyline.v1.Assistant.ListConversations:input_type -> leyline.v1.ListConversationsRequest
+	24, // 50: leyline.v1.Assistant.DeleteConversation:input_type -> leyline.v1.ConversationRef
+	28, // 51: leyline.v1.Assistant.SetApprovalMode:input_type -> leyline.v1.SetApprovalModeRequest
+	6,  // 52: leyline.v1.Credentials.SetCredential:output_type -> leyline.v1.Credential
+	42, // 53: leyline.v1.Credentials.DeleteCredential:output_type -> leyline.v1.Empty
+	6,  // 54: leyline.v1.Credentials.CheckCredential:output_type -> leyline.v1.Credential
+	11, // 55: leyline.v1.Credentials.GetAIState:output_type -> leyline.v1.AIState
+	10, // 56: leyline.v1.Credentials.SetFeatureModel:output_type -> leyline.v1.FeatureModel
+	16, // 57: leyline.v1.Usage.GetUsage:output_type -> leyline.v1.GetUsageResponse
+	42, // 58: leyline.v1.Usage.ReportUsage:output_type -> leyline.v1.Empty
+	17, // 59: leyline.v1.Assistant.StartConversation:output_type -> leyline.v1.Conversation
+	17, // 60: leyline.v1.Assistant.SendMessage:output_type -> leyline.v1.Conversation
+	17, // 61: leyline.v1.Assistant.WatchConversation:output_type -> leyline.v1.Conversation
+	17, // 62: leyline.v1.Assistant.ResolveAction:output_type -> leyline.v1.Conversation
+	17, // 63: leyline.v1.Assistant.AnswerViewTool:output_type -> leyline.v1.Conversation
+	17, // 64: leyline.v1.Assistant.StopTurn:output_type -> leyline.v1.Conversation
+	17, // 65: leyline.v1.Assistant.EndConversation:output_type -> leyline.v1.Conversation
+	30, // 66: leyline.v1.Assistant.ListConversations:output_type -> leyline.v1.ListConversationsResponse
+	42, // 67: leyline.v1.Assistant.DeleteConversation:output_type -> leyline.v1.Empty
+	17, // 68: leyline.v1.Assistant.SetApprovalMode:output_type -> leyline.v1.Conversation
+	52, // [52:69] is the sub-list for method output_type
+	35, // [35:52] is the sub-list for method input_type
+	35, // [35:35] is the sub-list for extension type_name
+	35, // [35:35] is the sub-list for extension extendee
+	0,  // [0:35] is the sub-list for field type_name
 }
 
 func init() { file_leyline_v1_ai_proto_init() }
@@ -3079,14 +3207,15 @@ func file_leyline_v1_ai_proto_init() {
 		return
 	}
 	file_leyline_v1_common_proto_init()
-	file_leyline_v1_ai_proto_msgTypes[24].OneofWrappers = []any{
+	file_leyline_v1_ai_proto_msgTypes[25].OneofWrappers = []any{
 		(*WorkerEvent_Start)(nil),
 		(*WorkerEvent_User)(nil),
 		(*WorkerEvent_Resolved)(nil),
 		(*WorkerEvent_ViewAnswer)(nil),
 		(*WorkerEvent_Stop)(nil),
+		(*WorkerEvent_SetMode)(nil),
 	}
-	file_leyline_v1_ai_proto_msgTypes[30].OneofWrappers = []any{
+	file_leyline_v1_ai_proto_msgTypes[32].OneofWrappers = []any{
 		(*WorkerMessage_Turn)(nil),
 		(*WorkerMessage_Failure)(nil),
 	}
@@ -3096,7 +3225,7 @@ func file_leyline_v1_ai_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_leyline_v1_ai_proto_rawDesc), len(file_leyline_v1_ai_proto_rawDesc)),
 			NumEnums:      6,
-			NumMessages:   32,
+			NumMessages:   34,
 			NumExtensions: 0,
 			NumServices:   3,
 		},

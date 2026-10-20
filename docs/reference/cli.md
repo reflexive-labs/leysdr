@@ -732,31 +732,29 @@ conversation once the previous turn is done, until a blank line or the end of st
 The assistant's text goes to stdout as it grows, so the terminal shows it arrive and `ley ask ... >
 answer.txt` keeps only the words. Each tool call is one dim line on stderr, `→ <tool> <arguments>`
 (`->` under `--ascii`), when it starts. A call that runs adds nothing more, since the assistant's
-text reports what it did, except one that asked first and was allowed: the first line of its
-result, the daemon's receipt for what the user allowed, is indented beneath it. One that failed
-has `✗` and the first line of the error indented beneath it, and one that was refused
-`✗ declined`. The calls, the questions and the text are blocks with a blank line on stderr between
-a block of calls and a block of text, and between a turn and the next `> ` prompt, so the blank
-lines never reach stdout. A call that asks first (taking over a radio, deleting a recording,
-keeping a job, a webhook notifier, several bookmark writes, paid transcription;
-`docs/design/ai.md`, "What the assistant may do") is a question on
-stderr in three parts: the call (`→ <tool> <arguments>`, wrapped to the width after a comma with
-its continuation lines indented, where a call that did not ask is cut, so every argument the
-user allows is on screen; it is not printed again once answered), the reason beneath it, indented
-and wrapped, and
-`Allow? [y/N/a]` on a line of its own, or `Allow? [y/N]` for a call that cannot be allowed for the
-rest of the conversation (a delete, which asks every time). `y` or `yes` allows the call once;
-`a`, `all` or `always` allows it and every later call of the same kind in the conversation (a
-take-over by `tune` covers one by `scan`), across `--continue` and a restart; anything else, or an empty line, declines. The answer
-goes to the daemon with `ResolveAction`. A call that runs because of an earlier `a` is not asked
-about, and shows its receipt as an allowed call does. Words in a request ("you can drive the
-radio") allow nothing. `--yes` (`-y`) starts the conversation in the mode in which nothing asks
-and every such call runs and shows its receipt, which is how an agent or a script runs `ask`; in a
-conversation `--continue` carries on that was started without it, whose mode stays, `--yes`
-allows each question once and prints `Allowed by --yes.` where the question would be. When stdin
-is not a terminal and `--yes` is absent, the call is declined with a line there that says so and
-names `--yes`. `ask` declares no view tools, so a view tool call (one an app
-declared, in a conversation `ask` continues) is answered with the error `ley ask has no view`.
+text reports what it did, except one that asked first and was allowed: the first line of its result,
+the daemon's receipt for what the user allowed, is indented beneath it. One that failed has `✗` and
+the first line of the error indented beneath it, and one that was refused `✗ declined`. The calls,
+the questions and the text are blocks with a blank line on stderr between a block of calls and a
+block of text, and between a turn and the next `> ` prompt, so the blank lines never reach stdout. A
+call that asks first (taking over a radio, deleting a recording, keeping a job, a webhook notifier,
+several bookmark writes, paid transcription; `docs/design/ai.md`, "What the assistant may do") is a
+question on stderr in three parts: the call (`→ <tool> <arguments>`, wrapped to the width after a
+comma with its continuation lines indented, where a call that did not ask is cut, so every argument
+the user allows is on screen; it is not printed again once answered), the reason beneath it,
+indented and wrapped, and `Allow? [y/N/a]` on a line of its own, or `Allow? [y/N]` for a call that
+cannot be allowed for the rest of the conversation (a delete, or cancelling a job the assistant did
+not start, which ask every time). `y` or `yes` allows the call once; `a` or `all` allows it and
+every later call of the same kind in the conversation (a take-over by `tune` covers one by `scan`),
+across `--continue` and a restart; anything else, or an empty line, declines. The answer goes to the
+daemon with `ResolveAction`. A call that runs because of an earlier `a` is not asked about, and
+shows its receipt as an allowed call does. Words in a request ("you can drive the radio") allow
+nothing. `--yes` (`-y`) puts the conversation, new or carried on with `--continue`, in the mode in
+which nothing asks (`SetApprovalMode`), before anything else is sent: every such call runs and shows
+its receipt, a question the conversation was waiting on runs too, and this is how an agent or a
+script runs `ask`. When stdin is not a terminal and `--yes` is absent, the call is declined with a
+line there that says so and names `--yes`. `ask` declares no view tools, so a view tool call (one an
+app declared, in a conversation `ask` continues) is answered with the error `ley ask has no view`.
 While a turn is under way and nothing has been printed for 300 ms, a dim `thinking…` line
 (`thinking...` under `--ascii`) waits on stderr, with the seconds since the last output once there
 are three (`thinking… 4s`), and `stopping…` after a Ctrl-C. It is erased before anything else is
@@ -797,7 +795,7 @@ prints the empty reply, `{}`. `--list` and `--delete` take no request and no `--
 From runs against the contract's fake daemon, whose assistant plays a scripted conversation, at 80
 columns, with stderr and stdout merged as a terminal shows them; the tool names and results are the
 script's. In the second, stdin is a simulated terminal on which `y` is typed, and in the fourth
-`a`, after which the second take-over runs without a question and shows its receipt.
+`a`, after which the take-over by `scan` runs without a question and shows its receipt.
 `TestAskReferenceTranscripts` renders each and compares it with this block:
 
 ```
@@ -825,13 +823,13 @@ what the assistant asks.
   ✗ declined
 
 Done.
-$ ley ask "take the radio, try 150 then 151"
+$ ley ask "take the radio, then scan 2 m"
 → tune {"frequency":"150","take_over":true}
   another client is using the radio: chan_01J (146.520 MHz, ley tune).
 Allow? [y/N/a] a
   Tuned to 150.000 MHz NFM on chan_01K
-→ tune {"frequency":"151","take_over":true}
-  Tuned to 151.000 MHz NFM on chan_01K
+→ scan {"range":"2m","take_over":true}
+  Scanned 144.000 MHz to 148.000 MHz: 3 detections
 
 Done.
 ```

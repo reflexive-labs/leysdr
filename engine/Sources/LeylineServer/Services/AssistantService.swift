@@ -74,6 +74,12 @@ struct AssistantService: Leyline_V1_Assistant.SimpleServiceProtocol {
         return try await mapErrors { try await conversations.stopTurn(request.conversationID, by: client) }
     }
 
+    func setApprovalMode(request: Leyline_V1_SetApprovalModeRequest, context _: ServerContext) async throws -> Leyline_V1_Conversation {
+        let client = ClientContext.current
+        await store.touchUnary(client)
+        return try await mapErrors { try await conversations.setMode(request.conversationID, mode: request.mode, by: client) }
+    }
+
     func endConversation(request: Leyline_V1_ConversationRef, context _: ServerContext) async throws -> Leyline_V1_Conversation {
         let client = ClientContext.current
         await store.touchUnary(client)

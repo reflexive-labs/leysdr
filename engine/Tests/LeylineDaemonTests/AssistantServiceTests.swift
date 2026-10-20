@@ -323,6 +323,46 @@ final class AssistantServiceTests: XCTestCase {
         }
     }
 
+    private func setMode(_ c: DaemonClients, _ id: String, _ mode: Leyline_V1_ApprovalMode) async throws
+        -> Leyline_V1_Conversation
+    {
+        var request = Leyline_V1_SetApprovalModeRequest()
+        request.conversationID = id
+        request.mode = mode
+        return try await c.assistant.setApprovalMode(request, metadata: testMetadata)
+    }
+
+    func testSettingAutoOnAWaitingConversationRunsTheCall() async throws {
+        let script = """
+        offers once
+        ask delete_recording {"id":"rec_1"} deleting a recording asks every time
+        approved done delete_recording deleted
+        declined text left it alone
+        end
+        """
+        try await withAssistant(scripts: [script]) { c, _ in
+            let id = try await self.start(c).conversationID
+            _ = try await self.send(c, id, "delete rec_1")
+            let waiting = try await self.conversation(c, id) { $0.state == .conversationWaiting }
+            let set = try await self.setMode(c, id, .auto)
+            XCTAssertEqual(set.mode, .auto)
+            XCTAssertEqual(set.state, .conversationThinking)
+            XCTAssertFalse(set.hasPending)
+            XCTAssertEqual(set.turns.last?.tools.first?.state, .toolCallRunning)
+            let done = try await self.conversation(c, id) { $0.state == .conversationIdle }
+            let call = try XCTUnwrap(done.turns.last?.tools.first)
+            XCTAssertEqual(call.callID, waiting.pending.callID)
+            XCTAssertEqual(call.state, .toolCallDone, "the worker ran the call it waited on")
+            XCTAssertEqual(call.resultText, "deleted")
+            XCTAssertEqual(call.allowedBy, "")
+            XCTAssertEqual(call.reason, "deleting a recording asks every time")
+
+            _ = try await c.assistant.endConversation(self.ref(id), metadata: testMetadata)
+            let ended = await self.failure { _ = try await self.setMode(c, id, .ask) }
+            XCTAssertEqual(ended.code, EngineError.Code.failedPrecondition)
+        }
+    }
+
     func testADeclinedAskIsRefused() async throws {
         let script = """
         ask delete_recording {"id":"rec_1"} deleting a recording asks every time
@@ -668,6 +708,33 @@ final class AssistantServiceTests: XCTestCase {
             let resumed = await fakeWorkerDump(dir + "/dump.2")
             XCTAssertEqual(resumed?["start.mode"], "auto")
             XCTAssertEqual(resumed?["start.resume"], "true")
+        }
+    }
+
+    func testASetModeIsKeptAcrossARestart() async throws {
+        let script = """
+        text one
+        end
+
+        text two
+        end
+        """
+        let id = Mutex("")
+        try await acrossRestart(scripts: [script, script]) { c, _ in
+            let started = try await self.start(c)
+            id.withLock { $0 = started.conversationID }
+            _ = try await self.send(c, started.conversationID, "one")
+            _ = try await self.conversation(c, started.conversationID) { $0.state == .conversationIdle && $0.turns.count == 2 }
+            let set = try await self.setMode(c, started.conversationID, .auto)
+            XCTAssertEqual(set.mode, .auto)
+        } then: { c, dir in
+            let kept = id.withLock { $0 }
+            let loaded = try await c.daemon.conversations.get(kept)
+            XCTAssertEqual(loaded.mode, .auto, "the mode set after the start is kept on disk")
+            _ = try await self.send(c, kept, "two")
+            _ = try await self.conversation(c, kept) { $0.state == .conversationIdle && $0.turns.count == 4 }
+            let resumed = await fakeWorkerDump(dir + "/dump.2")
+            XCTAssertEqual(resumed?["start.mode"], "auto")
         }
     }
 

@@ -355,6 +355,38 @@ actor ConversationStore {
         return await commit(id, by: client) { $0.conversation.closeStoppedTurn(target) }
     }
 
+    /// Changes the conversation's mode from now on, keeps it on disk with the conversation, and
+    /// tells the worker, if one is running; one started later gets it in `WorkerStart`. The daemon
+    /// holds no policy: on a WAITING conversation set to AUTO the worker approves the pending
+    /// call once and runs it, and the call shows RUNNING here until the worker's next turn.
+    /// FAILED_PRECONDITION on an ended or failed conversation.
+    func setMode(_ id: String, mode requested: Leyline_V1_ApprovalMode, by client: ClientContext) async throws
+        -> Leyline_V1_Conversation
+    {
+        let current = try entry(id)
+        guard !Self.isFinished(current.conversation.state) else {
+            throw EngineError.failedPrecondition("\(Self.describe(current.conversation.state)); its mode cannot change", target: id)
+        }
+        let mode: Leyline_V1_ApprovalMode = requested == .auto ? .auto : .ask
+        let hasWorker = current.worker != nil
+        if hasWorker {
+            var event = Leyline_V1_WorkerEvent()
+            event.setMode.mode = mode
+            try write(event, to: current)
+        }
+        log.info("\(id): \(client.kind) \(client.label) set the mode to \(mode == .auto ? "auto" : "ask")")
+        return await commit(id, by: client) { e in
+            e.conversation.mode = mode
+            let pending = e.conversation.pending
+            guard hasWorker, mode == .auto, e.conversation.state == .conversationWaiting, e.conversation.hasPending,
+                  !pending.viewTool
+            else { return }
+            e.conversation.updateCall(pending.callID) { $0.state = .toolCallRunning }
+            e.conversation.state = .conversationThinking
+            e.conversation.clearPending()
+        }
+    }
+
     /// Ends the conversation and stops its worker: stdin closed, then `SIGTERM` and `SIGKILL`
     /// (`AssistantWorker.stop`). Returns once the worker has gone. Ending an ended or failed
     /// conversation returns it unchanged.

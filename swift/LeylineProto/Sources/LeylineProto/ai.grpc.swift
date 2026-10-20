@@ -1815,6 +1815,19 @@ public enum Leyline_V1_Assistant: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "SetApprovalMode" metadata.
+        public enum SetApprovalMode: Sendable {
+            /// Request type for "SetApprovalMode".
+            public typealias Input = Leyline_V1_SetApprovalModeRequest
+            /// Response type for "SetApprovalMode".
+            public typealias Output = Leyline_V1_Conversation
+            /// Descriptor for "SetApprovalMode".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "leyline.v1.Assistant"),
+                method: "SetApprovalMode",
+                type: .unary
+            )
+        }
         /// Descriptors for all methods in the "leyline.v1.Assistant" service.
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
             StartConversation.descriptor,
@@ -1825,7 +1838,8 @@ public enum Leyline_V1_Assistant: Sendable {
             StopTurn.descriptor,
             EndConversation.descriptor,
             ListConversations.descriptor,
-            DeleteConversation.descriptor
+            DeleteConversation.descriptor,
+            SetApprovalMode.descriptor
         ]
     }
 }
@@ -2018,6 +2032,26 @@ extension Leyline_V1_Assistant {
             request: GRPCCore.StreamingServerRequest<Leyline_V1_ConversationRef>,
             context: GRPCCore.ServerContext
         ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Empty>
+
+        /// Handle the "SetApprovalMode" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Changes the conversation's mode from now on, kept across a restart. Allowed in any state but
+        /// > ENDED and FAILED: set to AUTO on a WAITING conversation, the call it waits on runs, approved
+        /// > once. FAILED_PRECONDITION on an ended or failed conversation.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Leyline_V1_SetApprovalModeRequest` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Leyline_V1_Conversation` messages.
+        func setApprovalMode(
+            request: GRPCCore.StreamingServerRequest<Leyline_V1_SetApprovalModeRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Conversation>
     }
 
     /// Service protocol for the "leyline.v1.Assistant" service.
@@ -2194,6 +2228,26 @@ extension Leyline_V1_Assistant {
             request: GRPCCore.ServerRequest<Leyline_V1_ConversationRef>,
             context: GRPCCore.ServerContext
         ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Empty>
+
+        /// Handle the "SetApprovalMode" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Changes the conversation's mode from now on, kept across a restart. Allowed in any state but
+        /// > ENDED and FAILED: set to AUTO on a WAITING conversation, the call it waits on runs, approved
+        /// > once. FAILED_PRECONDITION on an ended or failed conversation.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_SetApprovalModeRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Leyline_V1_Conversation` message.
+        func setApprovalMode(
+            request: GRPCCore.ServerRequest<Leyline_V1_SetApprovalModeRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Conversation>
     }
 
     /// Simple service protocol for the "leyline.v1.Assistant" service.
@@ -2369,6 +2423,26 @@ extension Leyline_V1_Assistant {
             request: Leyline_V1_ConversationRef,
             context: GRPCCore.ServerContext
         ) async throws -> Leyline_V1_Empty
+
+        /// Handle the "SetApprovalMode" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Changes the conversation's mode from now on, kept across a restart. Allowed in any state but
+        /// > ENDED and FAILED: set to AUTO on a WAITING conversation, the call it waits on runs, approved
+        /// > once. FAILED_PRECONDITION on an ended or failed conversation.
+        ///
+        /// - Parameters:
+        ///   - request: A `Leyline_V1_SetApprovalModeRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Leyline_V1_Conversation` to respond with.
+        func setApprovalMode(
+            request: Leyline_V1_SetApprovalModeRequest,
+            context: GRPCCore.ServerContext
+        ) async throws -> Leyline_V1_Conversation
     }
 }
 
@@ -2475,6 +2549,17 @@ extension Leyline_V1_Assistant.StreamingServiceProtocol {
                 )
             }
         )
+        router.registerHandler(
+            forMethod: Leyline_V1_Assistant.Method.SetApprovalMode.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_SetApprovalModeRequest>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_Conversation>(),
+            handler: { request, context in
+                try await self.setApprovalMode(
+                    request: request,
+                    context: context
+                )
+            }
+        )
     }
 }
 
@@ -2574,6 +2659,17 @@ extension Leyline_V1_Assistant.ServiceProtocol {
         context: GRPCCore.ServerContext
     ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Empty> {
         let response = try await self.deleteConversation(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
+
+    public func setApprovalMode(
+        request: GRPCCore.StreamingServerRequest<Leyline_V1_SetApprovalModeRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Conversation> {
+        let response = try await self.setApprovalMode(
             request: GRPCCore.ServerRequest(stream: request),
             context: context
         )
@@ -2698,6 +2794,19 @@ extension Leyline_V1_Assistant.SimpleServiceProtocol {
     ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Empty> {
         return GRPCCore.ServerResponse<Leyline_V1_Empty>(
             message: try await self.deleteConversation(
+                request: request.message,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+
+    public func setApprovalMode(
+        request: GRPCCore.ServerRequest<Leyline_V1_SetApprovalModeRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Conversation> {
+        return GRPCCore.ServerResponse<Leyline_V1_Conversation>(
+            message: try await self.setApprovalMode(
                 request: request.message,
                 context: context
             ),
@@ -2925,6 +3034,31 @@ extension Leyline_V1_Assistant {
             deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Empty>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Empty>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "SetApprovalMode" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Changes the conversation's mode from now on, kept across a restart. Allowed in any state but
+        /// > ENDED and FAILED: set to AUTO on a WAITING conversation, the call it waits on runs, approved
+        /// > once. FAILED_PRECONDITION on an ended or failed conversation.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_SetApprovalModeRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_SetApprovalModeRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Conversation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func setApprovalMode<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_SetApprovalModeRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_SetApprovalModeRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Conversation>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result
         ) async throws -> Result where Result: Sendable
     }
 
@@ -3252,6 +3386,42 @@ extension Leyline_V1_Assistant {
                 onResponse: handleResponse
             )
         }
+
+        /// Call the "SetApprovalMode" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Changes the conversation's mode from now on, kept across a restart. Allowed in any state but
+        /// > ENDED and FAILED: set to AUTO on a WAITING conversation, the call it waits on runs, approved
+        /// > once. FAILED_PRECONDITION on an ended or failed conversation.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_SetApprovalModeRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_SetApprovalModeRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_Conversation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func setApprovalMode<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_SetApprovalModeRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_SetApprovalModeRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Conversation>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Leyline_V1_Assistant.Method.SetApprovalMode.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
     }
 }
 
@@ -3512,6 +3682,37 @@ extension Leyline_V1_Assistant.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_ConversationRef>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_Empty>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SetApprovalMode" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Changes the conversation's mode from now on, kept across a restart. Allowed in any state but
+    /// > ENDED and FAILED: set to AUTO on a WAITING conversation, the call it waits on runs, approved
+    /// > once. FAILED_PRECONDITION on an ended or failed conversation.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Leyline_V1_SetApprovalModeRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func setApprovalMode<Result>(
+        request: GRPCCore.ClientRequest<Leyline_V1_SetApprovalModeRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.setApprovalMode(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_SetApprovalModeRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_Conversation>(),
             options: options,
             onResponse: handleResponse
         )
@@ -3810,6 +4011,41 @@ extension Leyline_V1_Assistant.ClientProtocol {
             metadata: metadata
         )
         return try await self.deleteConversation(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SetApprovalMode" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Changes the conversation's mode from now on, kept across a restart. Allowed in any state but
+    /// > ENDED and FAILED: set to AUTO on a WAITING conversation, the call it waits on runs, approved
+    /// > once. FAILED_PRECONDITION on an ended or failed conversation.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func setApprovalMode<Result>(
+        _ message: Leyline_V1_SetApprovalModeRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Conversation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Leyline_V1_SetApprovalModeRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.setApprovalMode(
             request: request,
             options: options,
             onResponse: handleResponse

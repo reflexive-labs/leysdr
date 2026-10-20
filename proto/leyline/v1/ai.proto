@@ -272,6 +272,8 @@ message AnswerViewToolRequest {
   string result_json = 4;
   bool is_error = 5;
 }
+// mode unset is ASK.
+message SetApprovalModeRequest { string conversation_id = 1; ApprovalMode mode = 2; }
 message ListConversationsRequest {}
 message ListConversationsResponse { repeated Conversation conversations = 1; }
 
@@ -299,6 +301,10 @@ service Assistant {
   // the last event about it; after that it is simply not listed. INVALID_ARGUMENT for an id the
   // daemon does not keep.
   rpc DeleteConversation(ConversationRef) returns (Empty);
+  // Changes the conversation's mode from now on, kept across a restart. Allowed in any state but
+  // ENDED and FAILED: set to AUTO on a WAITING conversation, the call it waits on runs, approved
+  // once. FAILED_PRECONDITION on an ended or failed conversation.
+  rpc SetApprovalMode(SetApprovalModeRequest) returns (Conversation);
 }
 
 // ---------- Assistant worker ----------
@@ -316,6 +322,7 @@ message WorkerEvent {
     ActionResolved resolved = 3;       // the user approved or refused a call that asked
     ViewToolAnswer view_answer = 4;    // a client answered a view tool call
     WorkerStop stop = 5;               // stop the running turn
+    SetMode set_mode = 6;              // the conversation's mode changed
   }
 }
 message WorkerStart {
@@ -343,6 +350,8 @@ message ViewToolAnswer {
   bool is_error = 4;
 }
 message WorkerStop {}
+// The gate's mode from now on. AUTO while the worker waits on a question approves that call once.
+message SetMode { ApprovalMode mode = 1; }
 
 // The worker to the daemon.
 message WorkerMessage {

@@ -237,6 +237,12 @@ func (w *worker) resolve(callID string, approve bool) {
 	w.send(&leylinev1.WorkerEvent{Event: &leylinev1.WorkerEvent_Resolved{Resolved: &leylinev1.ActionResolved{CallId: callID, Approved: approve}}})
 }
 
+// setMode changes the conversation's mode, as SetApprovalMode makes the daemon do.
+func (w *worker) setMode(mode leylinev1.ApprovalMode) {
+	w.t.Helper()
+	w.send(&leylinev1.WorkerEvent{Event: &leylinev1.WorkerEvent_SetMode{SetMode: &leylinev1.SetMode{Mode: mode}}})
+}
+
 // allow approves a call with scope.
 func (w *worker) allow(callID string, scope leylinev1.ApprovalScope) {
 	w.t.Helper()

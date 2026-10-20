@@ -16,7 +16,8 @@
 //   tool <name> <json>        adds a RUNNING call
 //   done <name> <result>      marks the newest call to <name> DONE with result_text
 //   ask <name> <json> <why>   adds an AWAITING_APPROVAL call and waits for ActionResolved; a
-//                             declined call goes REFUSED, an approved one RUNNING
+//                             declined call goes REFUSED, an approved one RUNNING; a SetMode to
+//                             AUTO meanwhile approves it once, as the worker does
 //   offers <scope> ...        the scopes later asks in the block offer (once, conversation)
 //   approved <line>           the line, only if the last ask was approved
 //   declined <line>           the line, only if the last ask was declined
@@ -336,6 +337,11 @@ func play(_ lines: [String], userTurnID: String) {
             var approved = false
             var scope = Leyline_V1_ApprovalScope.unspecified
             let answered = wait {
+                if case .setMode(let m)? = $0.event, m.mode == .auto {
+                    approved = true
+                    scope = .once
+                    return true
+                }
                 guard case .resolved(let r)? = $0.event, r.callID == id else { return false }
                 approved = r.approved
                 scope = r.scope

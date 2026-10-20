@@ -889,6 +889,21 @@ public nonisolated struct Leyline_V1_AnswerViewToolRequest: Sendable {
   public init() {}
 }
 
+/// mode unset is ASK.
+public nonisolated struct Leyline_V1_SetApprovalModeRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var conversationID: String = String()
+
+  public var mode: Leyline_V1_ApprovalMode = .unspecified
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 public nonisolated struct Leyline_V1_ListConversationsRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -964,6 +979,15 @@ public nonisolated struct Leyline_V1_WorkerEvent: Sendable {
     set {event = .stop(newValue)}
   }
 
+  /// the conversation's mode changed
+  public var setMode: Leyline_V1_SetMode {
+    get {
+      if case .setMode(let v)? = event {return v}
+      return Leyline_V1_SetMode()
+    }
+    set {event = .setMode(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Event: Equatable, Sendable {
@@ -977,6 +1001,8 @@ public nonisolated struct Leyline_V1_WorkerEvent: Sendable {
     case viewAnswer(Leyline_V1_ViewToolAnswer)
     /// stop the running turn
     case stop(Leyline_V1_WorkerStop)
+    /// the conversation's mode changed
+    case setMode(Leyline_V1_SetMode)
 
   }
 
@@ -1071,6 +1097,19 @@ public nonisolated struct Leyline_V1_WorkerStop: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// The gate's mode from now on. AUTO while the worker waits on a question approves that call once.
+public nonisolated struct Leyline_V1_SetMode: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var mode: Leyline_V1_ApprovalMode = .unspecified
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -2307,6 +2346,41 @@ nonisolated extension Leyline_V1_AnswerViewToolRequest: SwiftProtobuf.Message, S
   }
 }
 
+nonisolated extension Leyline_V1_SetApprovalModeRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".SetApprovalModeRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}conversation_id\0\u{1}mode\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.conversationID) }()
+      case 2: try { try decoder.decodeSingularEnumField(value: &self.mode) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.conversationID.isEmpty {
+      try visitor.visitSingularStringField(value: self.conversationID, fieldNumber: 1)
+    }
+    if self.mode != .unspecified {
+      try visitor.visitSingularEnumField(value: self.mode, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_SetApprovalModeRequest, rhs: Leyline_V1_SetApprovalModeRequest) -> Bool {
+    if lhs.conversationID != rhs.conversationID {return false}
+    if lhs.mode != rhs.mode {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 nonisolated extension Leyline_V1_ListConversationsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ListConversationsRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
@@ -2358,7 +2432,7 @@ nonisolated extension Leyline_V1_ListConversationsResponse: SwiftProtobuf.Messag
 
 nonisolated extension Leyline_V1_WorkerEvent: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".WorkerEvent"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}start\0\u{1}user\0\u{1}resolved\0\u{3}view_answer\0\u{1}stop\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}start\0\u{1}user\0\u{1}resolved\0\u{3}view_answer\0\u{1}stop\0\u{3}set_mode\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2431,6 +2505,19 @@ nonisolated extension Leyline_V1_WorkerEvent: SwiftProtobuf.Message, SwiftProtob
           self.event = .stop(v)
         }
       }()
+      case 6: try {
+        var v: Leyline_V1_SetMode?
+        var hadOneofValue = false
+        if let current = self.event {
+          hadOneofValue = true
+          if case .setMode(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.event = .setMode(v)
+        }
+      }()
       default: break
       }
     }
@@ -2461,6 +2548,10 @@ nonisolated extension Leyline_V1_WorkerEvent: SwiftProtobuf.Message, SwiftProtob
     case .stop?: try {
       guard case .stop(let v)? = self.event else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+    }()
+    case .setMode?: try {
+      guard case .setMode(let v)? = self.event else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
     }()
     case nil: break
     }
@@ -2678,6 +2769,36 @@ nonisolated extension Leyline_V1_WorkerStop: SwiftProtobuf.Message, SwiftProtobu
   }
 
   public static func ==(lhs: Leyline_V1_WorkerStop, rhs: Leyline_V1_WorkerStop) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_SetMode: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".SetMode"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}mode\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularEnumField(value: &self.mode) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.mode != .unspecified {
+      try visitor.visitSingularEnumField(value: self.mode, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_SetMode, rhs: Leyline_V1_SetMode) -> Bool {
+    if lhs.mode != rhs.mode {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

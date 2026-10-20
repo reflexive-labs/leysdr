@@ -16,7 +16,7 @@ Everything on stdin and stdout is varint-delimited protobuf, framed as a decoder
 2. stdin: one `WorkerEvent.start` (`WorkerStart`): the conversation id, provider, model,
    endpoint, the view tools the starting client declared, the daemon's socket, the transcript
    path, `resume`, and the conversation's `mode`.
-3. stdin, until it closes: `UserMessage`, `ActionResolved`, `ViewToolAnswer`, `WorkerStop`.
+3. stdin, until it closes: `UserMessage`, `ActionResolved`, `ViewToolAnswer`, `WorkerStop`, `SetMode`.
 4. stdout: a `WorkerMessage.turn` each time the assistant's turn changes, whole, or one
    `WorkerMessage.failure` when the conversation cannot go on.
 
@@ -145,20 +145,25 @@ told "the user declined". An approved call runs.
 
 A call that waits also carries `offers`, the scopes `ResolveAction` may approve it with, which the
 daemon copies into `PendingAction.offers`: `ONCE` and `CONVERSATION`, or `ONCE` alone when one of
-the rows it lists is a delete, which asks every time. An approval with scope `CONVERSATION`
-grants every row the question listed for the rest of the conversation. The gate keeps grants by
-row, not by tool, so one answer to a take-over by `tune` lets a take-over by `scan` or `record`
-run too. A later call whose rows are all granted runs without asking, with `reason` set as it
-would have asked and `allowed_by` set to the call id of the question that granted it; a call with
-a granted row and one that is not asks about the one that is not, and its answer can grant that
-one. A grant comes only from `ActionResolved`: words in a user message grant nothing. An approval
-for the conversation that the question did not offer is taken as once and logged.
+the rows it lists asks every time: a delete, which cannot be undone, and cancelling a job the
+assistant did not start, where a grant would cover every other client's job while the question named
+one. An approval with scope `CONVERSATION` grants every row the question listed for the rest of the
+conversation. The gate keeps grants by row, not by tool, so one answer to a take-over by `tune` lets
+a take-over by `scan` or `record` run too. A later call whose rows are all granted runs without
+asking, with `reason` set as it would have asked and `allowed_by` set to the call id of the question
+that granted it; a call with a granted row and one that is not asks about the one that is not, and
+its answer can grant that one. A grant comes only from `ActionResolved`: words in a user message
+grant nothing. An approval for the conversation that the question did not offer is taken as once and
+logged.
 
-`WorkerStart.mode` sets the baseline. In `ASK`, the default, the table below decides. In `AUTO`
-every row runs, the delete and the received-text rule included, with `reason` set and
-`allowed_by` empty, so the conversation never waits; `ley ask --yes` starts a conversation in
-`AUTO`. The shell notifier and the keys stay outside in every mode, because they are not among
-the tools.
+`WorkerStart.mode` sets the baseline, and `WorkerEvent.set_mode` (which `SetApprovalMode` sends)
+changes it from the next call on. In `ASK`, the default, the table below decides. In `AUTO` every
+row runs, the delete and the received-text rule included, with `reason` set and `allowed_by` empty,
+so the conversation never waits; a call waiting on a question when the mode becomes `AUTO` is
+approved once and runs. `ley ask --yes` starts a conversation in `AUTO`, or sets it on the one
+`--continue` carries on. The system prompt's paragraph on approval follows the mode, so the model
+is not told a call will wait when none does. The shell notifier and the keys stay outside in every
+mode, because they are not among the tools.
 
 | call | decision | reason it asks with |
 |---|---|---|
@@ -169,7 +174,7 @@ the tools.
 | `watch` with `notify: webhook:URL` | asks | add a webhook notifier: every matching record is sent to the URL |
 | `delete_recording` | asks every time; offers once only | delete the recording and its files; this cannot be undone |
 | `remove_bookmark` | asks | remove the bookmark from your bookmarks |
-| `cancel_job` of a job no call in this conversation started | asks | cancel the job, which the assistant did not start |
+| `cancel_job` of a job no call in this conversation started | asks every time; offers once only | cancel the job, which the assistant did not start |
 | `import_chirp` without `dry_run` | asks | import every channel in the file into your bookmarks |
 | the third and later `add_bookmark` in one turn | asks | a third bookmark change this turn |
 | `start_decode_job` or `watch` whose decoder is `speech` or one of its aliases (`transcribe`) | asks | paid transcription, live and unbounded |

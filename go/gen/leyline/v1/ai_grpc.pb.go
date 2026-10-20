@@ -442,6 +442,7 @@ const (
 	Assistant_EndConversation_FullMethodName    = "/leyline.v1.Assistant/EndConversation"
 	Assistant_ListConversations_FullMethodName  = "/leyline.v1.Assistant/ListConversations"
 	Assistant_DeleteConversation_FullMethodName = "/leyline.v1.Assistant/DeleteConversation"
+	Assistant_SetApprovalMode_FullMethodName    = "/leyline.v1.Assistant/SetApprovalMode"
 )
 
 // AssistantClient is the client API for Assistant service.
@@ -472,6 +473,10 @@ type AssistantClient interface {
 	// the last event about it; after that it is simply not listed. INVALID_ARGUMENT for an id the
 	// daemon does not keep.
 	DeleteConversation(ctx context.Context, in *ConversationRef, opts ...grpc.CallOption) (*Empty, error)
+	// Changes the conversation's mode from now on, kept across a restart. Allowed in any state but
+	// ENDED and FAILED: set to AUTO on a WAITING conversation, the call it waits on runs, approved
+	// once. FAILED_PRECONDITION on an ended or failed conversation.
+	SetApprovalMode(ctx context.Context, in *SetApprovalModeRequest, opts ...grpc.CallOption) (*Conversation, error)
 }
 
 type assistantClient struct {
@@ -581,6 +586,16 @@ func (c *assistantClient) DeleteConversation(ctx context.Context, in *Conversati
 	return out, nil
 }
 
+func (c *assistantClient) SetApprovalMode(ctx context.Context, in *SetApprovalModeRequest, opts ...grpc.CallOption) (*Conversation, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Conversation)
+	err := c.cc.Invoke(ctx, Assistant_SetApprovalMode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AssistantServer is the server API for Assistant service.
 // All implementations must embed UnimplementedAssistantServer
 // for forward compatibility.
@@ -609,6 +624,10 @@ type AssistantServer interface {
 	// the last event about it; after that it is simply not listed. INVALID_ARGUMENT for an id the
 	// daemon does not keep.
 	DeleteConversation(context.Context, *ConversationRef) (*Empty, error)
+	// Changes the conversation's mode from now on, kept across a restart. Allowed in any state but
+	// ENDED and FAILED: set to AUTO on a WAITING conversation, the call it waits on runs, approved
+	// once. FAILED_PRECONDITION on an ended or failed conversation.
+	SetApprovalMode(context.Context, *SetApprovalModeRequest) (*Conversation, error)
 	mustEmbedUnimplementedAssistantServer()
 }
 
@@ -645,6 +664,9 @@ func (UnimplementedAssistantServer) ListConversations(context.Context, *ListConv
 }
 func (UnimplementedAssistantServer) DeleteConversation(context.Context, *ConversationRef) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteConversation not implemented")
+}
+func (UnimplementedAssistantServer) SetApprovalMode(context.Context, *SetApprovalModeRequest) (*Conversation, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetApprovalMode not implemented")
 }
 func (UnimplementedAssistantServer) mustEmbedUnimplementedAssistantServer() {}
 func (UnimplementedAssistantServer) testEmbeddedByValue()                   {}
@@ -822,6 +844,24 @@ func _Assistant_DeleteConversation_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Assistant_SetApprovalMode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetApprovalModeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AssistantServer).SetApprovalMode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Assistant_SetApprovalMode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AssistantServer).SetApprovalMode(ctx, req.(*SetApprovalModeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Assistant_ServiceDesc is the grpc.ServiceDesc for Assistant service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -860,6 +900,10 @@ var Assistant_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteConversation",
 			Handler:    _Assistant_DeleteConversation_Handler,
+		},
+		{
+			MethodName: "SetApprovalMode",
+			Handler:    _Assistant_SetApprovalMode_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

@@ -52,9 +52,10 @@ Reading the radio's state, and the tuning, setting, stopping, scanning and
 recording you ask for, run at once and are reported. Taking over a radio
 someone else is using, deleting a recording, keeping a job, adding a webhook
 or several bookmarks, and paid transcription ask first with a question on
-stderr: y allows the call once, a (offered as [y/N/a]) allows that kind of
-call for the rest of the conversation, and anything else declines; a delete
-is asked every time. --yes starts a conversation that allows all of them
+stderr: y or yes allows the call once, a or all (offered as [y/N/a]) allows
+that kind of call for the rest of the conversation, and anything else
+declines; a delete, or cancelling a job the assistant did not start, is asked
+every time. --yes makes the conversation, new or continued, allow all of them
 without asking, and with no terminal to answer on and no --yes they are
 declined.
 
@@ -204,6 +205,17 @@ func (r *askRun) open() error {
 			return r.app.notRunning(err)
 		}
 		r.conv = newestOpenConversation(list.GetConversations())
+		if r.conv != nil && r.o.yes && r.conv.GetMode() != leylinev1.ApprovalMode_APPROVAL_MODE_AUTO {
+			// --yes means nothing waits on this run's stdin, so the conversation carried on is
+			// set to AUTO before anything else; a question it waits on now runs, approved once.
+			cv, err := r.c.Assistant.SetApprovalMode(r.ctx, &leylinev1.SetApprovalModeRequest{
+				ConversationId: r.conv.GetConversationId(), Mode: leylinev1.ApprovalMode_APPROVAL_MODE_AUTO,
+			})
+			if err != nil {
+				return r.app.notRunning(err)
+			}
+			r.conv = cv
+		}
 		if !r.app.JSON {
 			fmt.Fprintln(r.app.Stderr, r.app.ErrStyle.Muted(continuingLine(r.conv)))
 		}
@@ -260,7 +272,7 @@ func continuingLine(cv *leylinev1.Conversation) string {
 		line += "; the assistant's turn finishes first"
 	}
 	if cv.GetMode() == leylinev1.ApprovalMode_APPROVAL_MODE_AUTO {
-		line += "; it was started with --yes, so the assistant asks nothing"
+		line += "; it allows everything without asking"
 	}
 	return line
 }
@@ -499,10 +511,8 @@ func (r *askRun) watchEnded(err error) error {
 }
 
 // answer settles a pending call: a view tool is answered with an error, since ask has no view;
-// an action is allowed by --yes, asked about on a terminal, and declined without one. A
-// conversation this run started with --yes is AUTO and never asks; a question reaches --yes only
-// in one --continue carries on that was started without it, whose mode cannot change, and there
-// --yes allows each call once.
+// an action is asked about on a terminal and declined without one. Under --yes the conversation
+// is AUTO, so no question reaches this run.
 func (r *askRun) answer(p *leylinev1.PendingAction) error {
 	if p == nil || r.answered[p.GetCallId()] {
 		return nil
@@ -519,12 +529,6 @@ func (r *askRun) answer(p *leylinev1.PendingAction) error {
 	s := r.app.ErrStyle
 	approve, scope := false, leylinev1.ApprovalScope_APPROVAL_SCOPE_UNSPECIFIED
 	switch {
-	case r.o.yes:
-		approve, scope = true, leylinev1.ApprovalScope_APPROVAL_SCOPE_ONCE
-		if !r.app.JSON {
-			fmt.Fprint(r.app.Stderr, questionCard(s, p))
-			fmt.Fprintln(r.app.Stderr, s.Ok("Allowed")+" by --yes.")
-		}
 	case !r.app.IsInTTY():
 		fmt.Fprint(r.app.Stderr, questionCard(s, p))
 		fmt.Fprintln(r.app.Stderr, strings.Join(wrapWords(s.Warn("Declined")+
@@ -564,13 +568,13 @@ func offersConversation(p *leylinev1.PendingAction) bool {
 	return slices.Contains(p.GetOffers(), leylinev1.ApprovalScope_APPROVAL_SCOPE_CONVERSATION)
 }
 
-// parseAllow is the answer typed at the question: y or yes allows the call once; a, all or always
+// parseAllow is the answer typed at the question: y or yes allows the call once; a or all
 // allows it for the rest of the conversation when the call offers that; anything else declines.
 func parseAllow(line string, p *leylinev1.PendingAction) (bool, leylinev1.ApprovalScope) {
 	switch strings.ToLower(strings.TrimSpace(line)) {
 	case "y", "yes":
 		return true, leylinev1.ApprovalScope_APPROVAL_SCOPE_ONCE
-	case "a", "all", "always":
+	case "a", "all":
 		if offersConversation(p) {
 			return true, leylinev1.ApprovalScope_APPROVAL_SCOPE_CONVERSATION
 		}

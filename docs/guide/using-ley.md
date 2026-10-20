@@ -1094,15 +1094,14 @@ the other.
 
 Its answer prints as it arrives, and each tool it calls is one dim line on stderr, `→ tune
 {"freq":"162.4M"}`, with the error beneath it when the call fails and the result beneath one you
-allowed. Reading state and the tuning,
-setting, stopping, scanning and recording you asked for run at once. Deleting a recording, taking
-over a radio someone else is using, keeping a job, adding a webhook and paid transcription ask
-first: answer `y` at the `[y/N/a]` question to allow that call, or `a` to allow that kind of
-call for the rest of the conversation (a delete asks every time, so its question is `[y/N]`).
-Telling the assistant "you can drive the radio" in a request allows nothing; only the answer
-does. Pass `--yes` to start a conversation that allows everything without asking, which is how a
-script or another agent runs `ask`. Without a terminal to answer on and without `--yes`, such a
-call is declined.
+allowed. Reading state and the tuning, setting, stopping, scanning and recording you asked for run
+at once. Deleting a recording, taking over a radio someone else is using, keeping a job, adding a
+webhook and paid transcription ask first: answer `y` at the `[y/N/a]` question to allow that call,
+or `a` (or `all`) to allow that kind of call for the rest of the conversation (a delete asks every
+time, so its question is `[y/N]`). Telling the assistant "you can drive the radio" in a request
+allows nothing; only the answer does. Pass `--yes` to make the conversation, new or carried on with
+`--continue`, allow everything without asking, which is how a script or another agent runs `ask`.
+Without a terminal to answer on and without `--yes`, such a call is declined.
 
 `ley ask` with no request is a `> ` prompt that takes one request per line until a blank line or
 Ctrl-D. The conversation stays in the daemon when `ask` exits, and on disk when the daemon

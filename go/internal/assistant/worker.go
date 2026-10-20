@@ -193,7 +193,7 @@ func (w *worker) connect(ctx context.Context) error {
 		canonical, _, err := w.client.ResolveDecoder(rctx, name)
 		return canonical, err
 	}
-	w.system = SystemPrompt(w.tools.instructions)
+	w.system = SystemPrompt(w.tools.instructions, w.policy.Mode)
 	return nil
 }
 
@@ -272,6 +272,10 @@ func (w *worker) serve(ctx context.Context) error {
 				return nil
 			}
 			ev = e
+		}
+		if sm := ev.GetSetMode(); sm != nil {
+			w.setMode(sm.GetMode())
+			continue
 		}
 		user := ev.GetUser()
 		if user == nil {
@@ -547,6 +551,10 @@ func (w *worker) during(ctx context.Context, fn func(context.Context)) interrupt
 				cancel()
 				<-done
 				return stopped
+			case ev.GetSetMode() != nil:
+				// The next call's gate reads the new mode; the call running now goes on.
+				w.setMode(ev.GetSetMode().GetMode())
+				continue
 			}
 			w.logf("ignored %s while the turn runs", eventName(ev))
 		}
@@ -569,6 +577,16 @@ func (w *worker) waitFor(ctx context.Context, callID string, view bool) (*leylin
 		switch {
 		case ev.GetStop() != nil:
 			return nil, stopped
+		case ev.GetSetMode() != nil:
+			w.setMode(ev.GetSetMode().GetMode())
+			if !view && w.policy.Mode == leylinev1.ApprovalMode_APPROVAL_MODE_AUTO {
+				// In AUTO nothing waits: the question is answered as an approval once, which
+				// grants nothing, so the call runs with its reason and no allowed_by.
+				return &leylinev1.WorkerEvent{Event: &leylinev1.WorkerEvent_Resolved{Resolved: &leylinev1.ActionResolved{
+					CallId: callID, Approved: true, Scope: leylinev1.ApprovalScope_APPROVAL_SCOPE_ONCE,
+				}}}, notInterrupted
+			}
+			continue
 		case !view && ev.GetResolved().GetCallId() == callID:
 			return ev, notInterrupted
 		case view && ev.GetViewAnswer().GetCallId() == callID:
@@ -633,6 +651,16 @@ func (w *worker) reportUsage(ctx context.Context, u Usage) {
 	}
 }
 
+// setMode takes the conversation's new mode into the gate and the system prompt.
+func (w *worker) setMode(mode leylinev1.ApprovalMode) {
+	if mode != leylinev1.ApprovalMode_APPROVAL_MODE_AUTO {
+		mode = leylinev1.ApprovalMode_APPROVAL_MODE_ASK
+	}
+	w.policy.Mode = mode
+	w.system = SystemPrompt(w.tools.instructions, mode)
+	w.logf("the conversation's mode is now %s", mode)
+}
+
 func (w *worker) logf(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	if w.secret != "" {
@@ -654,6 +682,8 @@ func eventName(ev *leylinev1.WorkerEvent) string {
 		return "ViewToolAnswer for " + ev.GetViewAnswer().GetCallId()
 	case ev.GetStop() != nil:
 		return "WorkerStop"
+	case ev.GetSetMode() != nil:
+		return "SetMode"
 	}
 	return "an empty event"
 }

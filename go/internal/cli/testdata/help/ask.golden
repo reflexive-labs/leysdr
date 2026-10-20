@@ -7,9 +7,10 @@ Reading the radio's state, and the tuning, setting, stopping, scanning and
 recording you ask for, run at once and are reported. Taking over a radio
 someone else is using, deleting a recording, keeping a job, adding a webhook
 or several bookmarks, and paid transcription ask first with a question on
-stderr: y allows the call once, a (offered as [y/N/a]) allows that kind of
-call for the rest of the conversation, and anything else declines; a delete
-is asked every time. --yes starts a conversation that allows all of them
+stderr: y or yes allows the call once, a or all (offered as [y/N/a]) allows
+that kind of call for the rest of the conversation, and anything else
+declines; a delete, or cancelling a job the assistant did not start, is asked
+every time. --yes makes the conversation, new or continued, allow all of them
 without asking, and with no terminal to answer on and no --yes they are
 declined.
 
