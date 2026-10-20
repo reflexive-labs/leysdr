@@ -87,7 +87,9 @@ tokens in and out, and pricing them is done from the provider's list on the day.
 **`--scripted <file>`** sets `LEY_ASSISTANT_SCRIPT` on the daemon, so every assistant worker it
 spawns plays the file (one JSON model response a line, `docs/dev/assistant.md`, "The model")
 and calls no provider. The key is a placeholder filed under the provider `leyeval-scripted`,
-which `ley ai add` cannot check, so nothing reaches the network. The whole path is tested this
+added with `--endpoint` at a server the runner starts on 127.0.0.1, because a provider the
+default table does not list serves the assistant only at an endpoint; that server answers the
+check's models call and nothing else, so nothing reaches the network. The whole path is tested this
 way: `TestRunAssistantScripted`, `TestRunAssistantScriptedDelete`,
 `TestRunAssistantScriptedRetune`, `TestRunAssistantScriptedSpeechNotifier` and
 `TestRunAssistantScriptedSpeechDelete` in `go/internal/eval` run each injection scenario against

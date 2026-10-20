@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,10 +41,30 @@ const ScriptEnv = "LEY_ASSISTANT_SCRIPT"
 const DefaultAssistantModel = "claude-sonnet-5-5"
 
 // scriptedProvider is the provider a scripted run files its placeholder key under: not a real
-// provider, so `ley ai add` checks nothing over the network, and on a Mac, where the daemon
-// keeps keys in the login keychain whatever its data directory, the placeholder never replaces
-// a real provider's key.
+// provider, so on a Mac, where the daemon keeps keys in the login keychain whatever its data
+// directory, the placeholder never replaces a real provider's key. A provider the default table
+// does not list serves the assistant only at its key's endpoint (pkg/leyline, FeatureRefusal), so
+// the key is added at scriptedEndpoint's address; the scripted worker never calls it.
 const scriptedProvider = "leyeval-scripted"
+
+// scriptedEndpoint serves, on this machine only, the one call `ley ai add` makes with a key at an
+// endpoint, the models list, so the check is accepted and nothing leaves the machine. stop closes
+// it.
+func scriptedEndpoint() (url string, stop func(), err error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", nil, err
+	}
+	srv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		}),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	go func() { _ = srv.Serve(ln) }()
+	return "http://" + ln.Addr().String() + "/v1", func() { _ = srv.Close() }, nil
+}
 
 // assistantSkip is why assistant mode cannot run with this Env, or "".
 func (env Env) assistantSkip() string {
@@ -77,7 +99,16 @@ func runAssistant(ctx context.Context, env Env, d *daemon, dir, prompt string) (
 	if runtime.GOOS == "darwin" && env.Script == "" {
 		env.Log("on macOS a daemon that does not honour LEYLINE_SECRETS=file keeps keys in the login keychain: $%s replaces the %s key the app uses, and the run removes it at the end", KeyEnv, provider)
 	}
-	if _, _, err := d.ley(ctx, dir, key+"\n", "ai", "add", provider); err != nil {
+	add := []string{"ai", "add", provider}
+	if env.Script != "" {
+		endpoint, stop, err := scriptedEndpoint()
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("serve the scripted provider's endpoint: %w", err)
+		}
+		defer stop()
+		add = append(add, "--endpoint", endpoint)
+	}
+	if _, _, err := d.ley(ctx, dir, key+"\n", add...); err != nil {
 		return nil, nil, nil, fmt.Errorf("ley ai add %s: %s", provider, strings.ReplaceAll(err.Error(), key, "…"))
 	}
 	// Whatever happens next, the key goes when the run does: a daemon that still writes the
