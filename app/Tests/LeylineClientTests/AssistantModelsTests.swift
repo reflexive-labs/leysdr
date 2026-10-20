@@ -121,6 +121,22 @@ final class AssistantModelsTests: XCTestCase {
             Date(timeIntervalSince1970: 1_700_000_000.5))
     }
 
+    func testTheLineUnderTheFieldSaysWhatReturnWaitsFor() {
+        var c = conversation(.conversationThinking)
+        XCTAssertEqual(
+            AssistantWords.returnWaits(ConversationView(c)),
+            "Return sends once the assistant is done.")
+        c.state = .conversationWaiting
+        c.pending.callID = "c1"
+        c.pending.tool = "tune"
+        XCTAssertEqual(
+            AssistantWords.returnWaits(ConversationView(c)), "Return sends once you have answered.")
+        c.pending.viewTool = true
+        XCTAssertEqual(
+            AssistantWords.returnWaits(ConversationView(c)),
+            "Return sends once the assistant is done.", "a view tool has no card to answer")
+    }
+
     func testThePendingQuestionComesFromAWaitingConversation() throws {
         var c = conversation(.conversationWaiting)
         var p = Leyline_V1_PendingAction()

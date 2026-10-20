@@ -1586,12 +1586,16 @@ and the fake worker in `make app-e2e`. The views are not compiled off the Mac.
 - Return in the field sends and clears it; Option-Return makes a new line; Space and the arrows
   type into the field rather than muting and tuning the radio; a refused send puts the text back.
 - While the assistant thinks the field takes typing; Return then does nothing and keeps the text,
-  also while a question card waits, and sends it once the turn ends. A lost conversation (deleted
+  also while a question card waits, and the line under the field reads `Return sends once the
+  assistant is done.` (`Return sends once you have answered.` under a card). Once the turn ends,
+  Return sends it and the line goes. Two quick Returns on an idle conversation send one message. A lost conversation (deleted
   from `ley ask` while the panel shows it) still takes a message, which starts a new one.
-- The waiting row: after a message, a small spinner and `thinking…` appear under the turns and stay
+- The waiting row: an answer that comes back within 300 ms shows no row at all; after a slower
+  message, a small spinner and `thinking…` appear under the turns and stay
   in view at the bottom of the transcript; from 3 s it reads `thinking… 3s`, `4s`, once a second;
   while a step reads `running` the row is gone, and it comes back counting from 0 when the model
-  thinks again; when the reply arrives, a question shows or Stop is pressed, nothing of it stays.
+  thinks again; after a Decline on a card that sat for a while, the count starts from 0, not from
+  when the question was asked; when the reply arrives, a question shows or Stop is pressed, nothing of it stays.
   VoiceOver reads it as one element, "The assistant is thinking".
 - The assistant's reply text is in `inkSecondary`, dimmer than the field's typing and brighter
   than the steps and the user's turn, and no longer stands out against the rest of the panel.

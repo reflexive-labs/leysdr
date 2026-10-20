@@ -507,9 +507,11 @@ turn is `running` (`ConversationView.isWaitingOnModel`), the model is thinking, 
 under the turns says so: a small spinner and `thinking…`, with the seconds from three on
 (`thinking… 4s`), counted from the conversation's `last_turn_at_ns`, so the count starts again
 after each step as `ley ask`'s waiting line does (`cli-style.md`, "A wait says so, and leaves
-nothing behind"). A running step is its own sign, so the row is absent then, and nothing of it
-stays once the turn moves on. It appears at once, without the terminal's 300 ms delay. A call
-waiting for approval is a card with the question, the gate's reason (`assistant.md`, "The gate") and a button per answer the call offers
+nothing behind"). Like that line, it is drawn only once the wait has gone on for 300 ms, so an
+answer that comes straight back does not flicker it; unlike it, it has a spinner, which a window
+can draw without redrawing text. A running step is its own sign, so the row is absent then, and
+nothing of it stays once the turn moves on. A call waiting for approval is a card with the
+question, the gate's reason (`assistant.md`, "The gate") and a button per answer the call offers
 (`PendingQuestion.offers`): Decline, Allow for this conversation when the call can be granted for
 the rest of the conversation (never a delete or a cancel of another client's job), and Allow, none
 on Return. Once one is pressed all three are disabled, and a click meanwhile is dropped, until the
@@ -522,7 +524,13 @@ the transcript is the mirror's usage lines whose scope is the conversation, summ
 The field is never disabled, so the next message can be written while the assistant thinks or
 waits. Return sends only when the daemon would take the message: the conversation is idle, over
 or lost (an over or lost one is replaced by a new one), and no message is on its way. Otherwise
-Return does nothing and the text stays. A message the daemon did not take goes back into the
+Return does nothing and the text stays, and while the field holds text a line under it says what
+Return waits for (`AssistantWords.returnWaits`): `Return sends once the assistant is done.`, or
+`Return sends once you have answered.` while a question card shows. Return does not queue the
+message: once the turn ends, Return sends it. The field also keeps its own flag from Return until
+the daemon replies, because `assistantSending` reaches the view only once the controller's change
+is copied to the session, and a second Return in that gap would send the message twice. A message
+the daemon did not take goes back into the
 field, above anything typed while it was on its way. `TuningKeyGuard` keeps Space and the arrows
 in the field.
 
@@ -588,7 +596,7 @@ font that is not one of them.
 | `borderStrong` | `#2A3034` | a control that accepts a drag; a popover's ground edge |
 | `borderFocus` | `#3A4044` | the tuning field, an open popover |
 | `ink` | `#E7E9EA` | primary text, the tuned frequency |
-| `inkSecondary` | `#C5CACD` | a row's label |
+| `inkSecondary` | `#C5CACD` | a row's label, the assistant's reply in its panel |
 | `inkTertiary` | `#9BA1A6` | a value beside a label, a descriptive clause |
 | `inkMuted` | `#7A8185` | a unit, a subtitle |
 | `inkFaint` | `#6B7276` | a section header |

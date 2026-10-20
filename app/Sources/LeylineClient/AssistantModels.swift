@@ -266,6 +266,16 @@ public struct AssistantNotice: Sendable, Equatable {
 
 /// The panel's words.
 public enum AssistantWords {
+    /// The line under the field while it holds text Return would not send yet: the assistant is
+    /// on a turn, or asks a question the person answers on the card. Return does not queue the
+    /// message, so the line says that Return, pressed again, is what sends it.
+    public static func returnWaits(_ view: ConversationView?) -> String {
+        if let q = view?.pending, !q.isViewTool {
+            return "Return sends once you have answered."
+        }
+        return "Return sends once the assistant is done."
+    }
+
     /// Where keys and models are set, as the menu names it.
     public static let settingsPlace = "Settings (\u{2318},), under AI"
 

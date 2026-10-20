@@ -157,17 +157,23 @@ struct AssistantTranscript: View {
 
 /// The sign that the assistant is thinking: a spinner and `thinking…`, with the seconds once a
 /// wait has gone on for three, as `ley ask`'s waiting line counts them. It sits under the newest
-/// turn only while `ConversationView.isWaitingOnModel`, and nothing of it stays when the turn
-/// moves on (`docs/dev/cli-style.md`, "A wait says so, and leaves nothing behind").
+/// turn only while `ConversationView.isWaitingOnModel`, is drawn only once the wait has gone on
+/// for 300 ms, so an answer that comes straight back does not flicker it, and nothing of it stays
+/// when the turn moves on (`docs/dev/cli-style.md`, "A wait says so, and leaves nothing behind").
 struct WaitingRow: View {
     let since: Date
 
+    /// The terminal's delay before its waiting line.
+    private static let delay: TimeInterval = 0.3
+
     var body: some View {
-        TimelineView(.periodic(from: since, by: 1)) { context in
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.mini)
-                Text(words(at: context.date)).font(Theme.Font.valueSmall)
-                    .foregroundStyle(Theme.inkFaint)
+        TimelineView(.periodic(from: since + Self.delay, by: 1)) { context in
+            if context.date >= since + Self.delay {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.mini)
+                    Text(words(at: context.date)).font(Theme.Font.valueSmall)
+                        .foregroundStyle(Theme.inkFaint)
+                }
             }
         }
         .accessibilityElement(children: .ignore)
@@ -374,12 +380,16 @@ struct AssistantField: View {
     let view: ConversationView?
     @State private var draft = ""
     @FocusState private var focused: Bool
+    /// A message has left `send()` and its reply is not back. `assistantSending` says the same
+    /// only once the controller's change is copied to the session, and a second Return in that
+    /// gap would send the message twice.
+    @State private var submitting = false
 
     /// Return sends only while the daemon would take the message: not while one is on its way,
     /// and not while the assistant thinks or asks. With no conversation, or one that is over or
     /// lost, the message starts a new one (`AssistantController.needsStart`).
     private var canSend: Bool {
-        guard !session.assistantSending else { return false }
+        guard !submitting, !session.assistantSending else { return false }
         guard let view, !session.assistantLost else { return true }
         return view.canSend || view.isOver
     }
@@ -408,6 +418,10 @@ struct AssistantField: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
                     .strokeBorder(focused ? Theme.borderFocus : Theme.border))
+            if !canSend, !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(AssistantWords.returnWaits(view)).font(Theme.Font.valueSmall)
+                    .foregroundStyle(Theme.inkFaint)
+            }
         }
         .padding(12)
     }
@@ -418,9 +432,11 @@ struct AssistantField: View {
             return
         }
         draft = ""
+        submitting = true
         Task {
             // What was typed while the message was on its way stays, under the text that failed.
             if !(await session.send(text)) { draft = draft.isEmpty ? text : text + "\n" + draft }
+            submitting = false
         }
     }
 }
