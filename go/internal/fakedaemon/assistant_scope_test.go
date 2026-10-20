@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/internal/assistant"
 	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
@@ -112,5 +113,75 @@ func TestAssistantAutoModeAsksNothing(t *testing.T) {
 		if call.GetState() != leylinev1.ToolCallState_TOOL_CALL_DONE || call.GetReason() == "" || call.GetAllowedBy() != "" {
 			t.Errorf("a call in AUTO: %v", call)
 		}
+	}
+}
+
+// rowGrantTurn takes the radio over by tune and then by scan, both on the gate's take-over row,
+// then starts a kept job, a row of its own.
+var rowGrantTurn = fakedaemon.AssistantTurn{
+	{
+		Ask: "tune", Args: `{"frequency":"150","take_over":true}`, Row: "take over a radio",
+		Reason: "another client is using the radio", ResultApproved: "tuned", Offers: []leylinev1.ApprovalScope{scopeOnce, scopeConversation},
+	},
+	{
+		Ask: "scan", Args: `{"range":"2m","take_over":true}`, Row: "take over a radio",
+		Reason: "another client is using the radio", ResultApproved: "scanned", Offers: []leylinev1.ApprovalScope{scopeOnce, scopeConversation},
+	},
+	{
+		Ask: "watch", Args: `{"decoder":"aprs","keep":true}`, Row: "start a kept job",
+		Reason: "a kept job runs on after the conversation", ResultApproved: "watching", Offers: []leylinev1.ApprovalScope{scopeOnce, scopeConversation},
+	},
+	{Text: "Done."},
+}
+
+// Every Row a script in these tests names is a row the worker's gate has, so a misspelt row
+// cannot group grants the worker would keep apart.
+func TestAssistantScriptRowsAreTheGatesRows(t *testing.T) {
+	t.Parallel()
+	gate := assistant.Rows()
+	for _, turn := range []fakedaemon.AssistantTurn{takeOverTurn, rowGrantTurn} {
+		for _, step := range turn {
+			if step.Row != "" && !slices.Contains(gate, step.Row) {
+				t.Errorf("the %s step names the row %q, which the gate does not have (assistant.Rows: %q)", step.Ask, step.Row, gate)
+			}
+		}
+	}
+}
+
+// A grant covers its row and no other: allowed for the conversation, a take-over by tune lets a
+// take-over by scan run unasked, and a kept job, another row, still asks.
+func TestAssistantGrantCoversOnlyItsRow(t *testing.T) {
+	t.Parallel()
+	c, _ := harness(t, fakedaemon.Options{AssistantScript: []fakedaemon.AssistantTurn{rowGrantTurn}})
+	assistantKey(t, c)
+	ctx := t.Context()
+	cv, err := c.Assistant.StartConversation(ctx, &leylinev1.StartConversationRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := cv.GetConversationId()
+	sent, err := c.Assistant.SendMessage(ctx, &leylinev1.SendMessageRequest{ConversationId: id, Text: "take the radio and keep a watch"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	states := watchUntil(t, c, id, sent.Seq, isState(leylinev1.ConversationState_CONVERSATION_WAITING))
+	tune := states[len(states)-1].GetPending()
+	resolved, err := c.Assistant.ResolveAction(ctx, &leylinev1.ResolveActionRequest{ConversationId: id, CallId: tune.GetCallId(), Approve: true, Scope: scopeConversation})
+	if err != nil {
+		t.Fatal(err)
+	}
+	states = watchUntil(t, c, id, resolved.Seq, isState(leylinev1.ConversationState_CONVERSATION_WAITING))
+	if watch := states[len(states)-1].GetPending(); watch.GetTool() != "watch" {
+		t.Fatalf("the second question is %v, want the watch", watch)
+	}
+	tools := states[len(states)-1].Turns[1].GetTools()
+	if len(tools) != 3 {
+		t.Fatalf("calls: %v", tools)
+	}
+	if scan := tools[1]; scan.GetTool() != "scan" || scan.GetState() != leylinev1.ToolCallState_TOOL_CALL_DONE || scan.GetAllowedBy() != tune.GetCallId() {
+		t.Errorf("the scan on the granted row: %v", scan)
+	}
+	if watch := tools[2]; watch.GetAllowedBy() != "" {
+		t.Errorf("the kept watch, another row, was allowed by %q", watch.GetAllowedBy())
 	}
 }
