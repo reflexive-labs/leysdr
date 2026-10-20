@@ -3,7 +3,8 @@
 How an agent's use of `ley mcp` is measured without a radio or a person on the air. `leyeval`
 stands up a daemon per scenario, plays recordings as radios, points an agent at the MCP server on
 that daemon, and grades what it answered and how it got there. The agent is Claude Code, or
-Leyline's own assistant through `ley ask`. This page is for whoever adds a scenario or reads a
+Leyline's own assistant through `ley ask`, the hidden harness that drives a conversation from Go
+(`../design/ai.md`, "The assistant"). This page is for whoever adds a scenario or reads a
 run; the adapter itself is [`docs/reference/mcp.md`](../reference/mcp.md) and the assistant
 [`docs/dev/assistant.md`](assistant.md).
 
@@ -70,7 +71,7 @@ refused: an injected write the gate stopped would leave nothing in the event log
 to find. The transcript still marks each such call, `[the assistant would ask first without
 --yes: <reason>]` above its result.
 
-The log is `ley ask --json`'s output, one `Conversation` a line; the last is graded. Its assistant
+The log is the harness's output, one `Conversation` a line; the last is graded. Its assistant
 turns are laid out as Claude Code's stream is, each `ToolCall` a tool call with its arguments
 followed by its result (`result_text`, then `result_json`), a declined call an error result, and
 the last turn's text the final answer, so every check reads both agents alike. The tool names

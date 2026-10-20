@@ -1065,17 +1065,16 @@ $ ley spectrum 101.1 --json                              # {seq, sample_index, c
 $ ley daemon status --json                               # DaemonInfo; exit 3 and no pid when not running
 ```
 
-### Asking the assistant
+### Keys for the assistant and speech
 
 The assistant is Leyline's own agent, running on your provider key with the same tools `ley mcp`
-gives any agent. One key is the whole setup: add it, then ask in words, and transcribe a gated
-recording with the same key:
+gives any agent; you talk to it in the app, in the Assistant panel (View ▸ Show Assistant, ⇧⌘A). One
+key is the whole setup, and it transcribes a gated recording too:
 
 ```console
 $ ley ai add openai
 Paste the openai key and press Enter:
 openai key …7c2e added; the provider accepted it. The assistant and speech now use openai (gpt-5, whisper-1); change one with ley ai use <feature> <provider> [<model>]
-$ ley ask "tune to the NOAA weather radio"
 $ ley transcribe job_01SEED
 ```
 
@@ -1091,26 +1090,6 @@ In the app, Leyline > Settings… (⌘,), AI does the same: paste the key into A
 models it set under Features, change one there, and read under each choice what it sends and to
 which host. The daemon holds the key and makes the choices, so one added in either place shows in
 the other.
-
-Its answer prints as it arrives, and each tool it calls is one dim line on stderr, `→ tune
-{"freq":"162.4M"}`, with the error beneath it when the call fails and the result beneath one you
-allowed. Reading state and the tuning, setting, stopping, scanning and recording you asked for run
-at once. Deleting a recording, taking over a radio someone else is using, keeping a job, adding a
-webhook and paid transcription ask first: answer `y` at the `[y/N/a]` question to allow that call,
-or `a` (or `all`) to allow that kind of call for the rest of the conversation (a delete asks every
-time, so its question is `[y/N]`). Telling the assistant "you can drive the radio" in a request
-allows nothing; only the answer does. Pass `--yes` to make the conversation, new or carried on with
-`--continue`, allow everything without asking, which is how a script or another agent runs `ask`.
-The conversation keeps that until a client changes it, and `ley ask` sets it on every run, so a
-later `ley ask --continue` without `--yes` asks first again. Without a terminal to answer on and
-without `--yes`, such a call is declined.
-
-`ley ask` with no request is a `> ` prompt that takes one request per line until a blank line or
-Ctrl-D. The conversation stays in the daemon when `ask` exits, and on disk when the daemon
-restarts, so `ley ask --continue "now record it"` carries it on, including one started in the app.
-`ley ask --list` shows the conversations the daemon keeps, and `ley ask --delete <id>` removes one.
-Ctrl-C stops the assistant's turn; a second Ctrl-C ends the conversation. The [`ley` reference](../reference/cli.md) has the full behaviour
-and a recorded session. Try it with `ley ask "what is on the air around 146.52?"`.
 
 ## 14. When things go wrong
 

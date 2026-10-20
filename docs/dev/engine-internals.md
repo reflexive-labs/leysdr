@@ -688,8 +688,8 @@ in the order they were made: each carries its store's version, and an older one 
 A conversation with the assistant is daemon state the daemon keeps on disk (`ConversationStore`),
 and the model runs in a worker the daemon spawns for it, as a key check does: the daemon makes no
 model call and holds no provider SDK. `Assistant` (`AssistantService`) maps the RPCs onto the
-store, and any client may watch, answer, end or delete any conversation, so `ley ask --continue`
-picks up one the app started, before a restart or after.
+store, and any client may watch, answer, end or delete any conversation, so one client carries
+on a conversation another started, before a restart or after.
 
 `StartConversation` takes the request's provider and model, else the `assistant` feature's; with
 neither it is `FAILED_PRECONDITION` naming the command that chooses one ("Credentials and usage"). No key for the provider is `CREDENTIAL_MISSING`, and a key whose last check was `REJECTED`

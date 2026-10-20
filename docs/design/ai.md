@@ -18,9 +18,8 @@ inside Leyline, paid for on the user's own provider account:
    against them.
 2. **Speech-to-text.** The words spoken on a recording or a live channel, as records tied to the
    over they came from.
-3. **The assistant.** A conversation panel in the app, and `ley ask` in a terminal, that runs the
-   radio and its configuration from plain requests such as "put on the weather radio" or "why
-   can't I hear anything?".
+3. **The assistant.** A conversation panel in the app that runs the radio and its configuration
+   from plain requests such as "put on the weather radio" or "why can't I hear anything?".
 
 Leyline runs no service of its own, so every model call goes from the user's Mac to a provider the
 user chose, on the user's account, or to an engine on the Mac itself. With no key set and no
@@ -157,6 +156,14 @@ recording made before that field existed, `ley transcribe` sums the part sidecar
 
 ## The assistant
 
+People talk to the assistant in the app's panel, and only there: it is the one interface for
+people, and how a conversation looks and feels is decided for the panel alone. Other agents use
+`ley mcp`, which gives them the same tools without a second agent in between. `ley ask` is a
+hidden verb, the test harness: it starts or carries on a conversation, writes every state of it
+as a JSON line and declines what the gate would ask unless `--yes`, so the end-to-end tests and the
+evals drive the daemon, the worker and the gate from Go on Linux, where the panel cannot run. That
+harness is how the assistant keeps `AGENTS.md`'s rule that a feature works from more than Swift.
+
 The assistant's loop runs in Go, in a `ley` worker the daemon starts for each conversation with the
 provider's key on stdin. Its tools are the `ley mcp` tools, called in-process from one registry
 that both `ley mcp` and the worker build, so the assistant uses the tool surface the evals grade,
@@ -167,28 +174,28 @@ client kind, so the don't-disturb rule counts its writes as interactive, which m
 asking.
 
 The conversation is daemon state, behind an `Assistant` service: start, send a message, watch,
-approve or refuse a pending action, cancel, list, delete. The app's panel and `ley ask` render the same
-subscription, so `ley ask --continue` continues a conversation started in the app, and a
+approve or refuse a pending action, cancel, list, delete. Every client follows the same
+subscription, so the harness's `--continue` carries on a conversation started in the app, and a
 conversation outlives the window it started in. Each event carries the whole conversation so far
 (invariant 6), so a client that reconnects reads it and resumes from its `seq`.
 
 A conversation is kept, because the user started it and comes back to it (invariant 8): the
-daemon writes it to its data directory, so it survives a restart, and `ley ask --continue` and the
-app find it afterwards. It ends only when the user ends it, and an ended conversation stays
+daemon writes it to its data directory, so it survives a restart, and the app finds it
+afterwards. It ends only when the user ends it, and an ended conversation stays
 readable until the user deletes it; the daemon keeps the newest 100 and drops any unused for 90
 days. After 30 idle minutes the daemon stops the worker behind a conversation, not the
 conversation, and the next message starts a worker that reloads the model transcript the last one
 kept beside it, so the model has the same context. A daemon that stops mid-turn leaves that turn
 to be closed with a note when it starts again, and the call it was waiting on is refused. What a
 conversation used stays in the ledger under its id. It is not tied to the presence of the client
-that started it, because `ley ask` exits between turns and `ley ask --continue` must find the
-conversation again. A worker that crashes mid-turn fails its own conversation with `INTERNAL` and
-leaves the others running.
+that started it, because a client may go between turns (a window closes, the harness exits after
+each) and must find the conversation again. A worker that crashes mid-turn fails its own
+conversation with `INTERNAL` and leaves the others running.
 
 A client attached to a conversation may declare view tools that it performs itself, such as moving
 the app's waterfall to a band or selecting a recording in the Library. The worker offers them to
 the model for that conversation, and the daemon routes each call to the client that declared it.
-`ley ask` declares none. View state stays in the client, and retuning the radio goes only through
+The harness declares none. View state stays in the client, and retuning the radio goes only through
 the radio tools and their don't-disturb check.
 
 The tools the assistant needs and `ley mcp` lacks are written as MCP tools first, each with its
@@ -339,7 +346,6 @@ ley ai use assistant anthropic claude-sonnet-5-5    # the provider and model a f
 ley ai usage [--since 30d] [--by day|month] [--json]
 ley transcribe <recording> [--yes]
 ley decode speech --freq 146.94 [--job]
-ley ask "<request>" [--continue]
 ```
 
 `ley ai add` reads the key from stdin so that it stays out of the shell history and `ps`. The app's
@@ -386,21 +392,21 @@ it grants each row it listed, and a later call on a granted row runs without ask
 with the call id of the question that granted it (`ToolCall.allowed_by`), so a reader of the
 conversation sees why it did not ask. A grant is kept by row, not by tool: one answer to a take-over
 by `tune` covers a take-over by `scan` or `record`. The worker keeps grants with its transcript, so
-they hold across `ley ask --continue` and a daemon restart. Each question carries the scopes it
-accepts (`PendingAction.offers`), and a client shows only those: deleting a recording offers once
-alone, because a delete cannot be undone, and so does cancelling a job the assistant did not start,
-because a grant would cover every other client's job while the question named one; every other row,
-and the received-text rule below, offers both, since otherwise a conversation that read one APRS
-page would ask again before every write. Only an answer to a question grants anything: a user who
-writes "you can drive the radio" has granted nothing, because the gate reads `ResolveAction` and
-never the user's words.
+they hold when a client carries the conversation on and across a daemon restart. Each question
+carries the scopes it accepts (`PendingAction.offers`), and a client shows only those: deleting a
+recording offers once alone, because a delete cannot be undone, and so does cancelling a job the
+assistant did not start, because a grant would cover every other client's job while the question
+named one; every other row, and the received-text rule below, offers both, since otherwise a
+conversation that read one APRS page would ask again before every write. Only an answer to a
+question grants anything: a user who writes "you can drive the radio" has granted nothing, because
+the gate reads `ResolveAction` and never the user's words.
 
 A conversation also has a mode, set when it starts (`StartConversationRequest.mode`) and changed
 by any client with `SetApprovalMode`, which the daemon keeps across a restart. In `ASK`, the
 default, the table and the grants decide. In `AUTO` every row runs and is reported with the
 reason it would have asked with, so the conversation never waits; a question pending when the
-mode becomes `AUTO` is approved once and runs. `ley ask --yes` puts the conversation it starts or
-continues in `AUTO`, for scripts and agents that cannot answer, and the model's prompt says
+mode becomes `AUTO` is approved once and runs. The harness's `--yes` puts the conversation it starts
+or continues in `AUTO`, so a test or an eval never waits on a question, and the model's prompt says
 nothing waits. The rows outside the tool list (a shell command, a shell
 notifier, the keys) stay outside in every mode. The policy, the mode's effect and the grants live
 in the worker's gate alone: the daemon passes the mode, the offers and the answer through, and a
@@ -495,7 +501,7 @@ Invariants 3, 10 and 13 are not affected.
 - **Who owns a channel the assistant makes.** A channel belongs to the client that created it and
   ends 5 s after that client's presence does (`docs/dev/engine-internals.md`, "Client identity and
   ownership"), so "put on the weather radio" would go silent when the conversation ends. Leaning:
-  in the app the assistant retunes the app's own channel; from `ley ask` it makes the channel
+  in the app the assistant retunes the app's own channel; outside it, it makes the channel
   persistent and says how to stop it. The `Assistant` service settles this when it is built.
 - **The keychain from an SSH session.** Whether a daemon started by hand outside the login session
   can read its keychain item. Until a test on a Mac answers it, the daemon reports

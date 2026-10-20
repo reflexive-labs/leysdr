@@ -160,10 +160,10 @@ logged.
 changes it from the next call on. In `ASK`, the default, the table below decides. In `AUTO` every
 row runs, the delete and the received-text rule included, with `reason` set and `allowed_by` empty,
 so the conversation never waits; a call waiting on a question when the mode becomes `AUTO` is
-approved once and runs. `ley ask --yes` starts a conversation in `AUTO`, or sets it on the one
-`--continue` carries on. The system prompt's paragraph on approval follows the mode, so the model
-is not told a call will wait when none does. The shell notifier and the keys stay outside in every
-mode, because they are not among the tools.
+approved once and runs. `ley ask --yes`, the test harness (`../design/ai.md`, "The assistant"),
+starts a conversation in `AUTO`, or sets it on the one `--continue` carries on. The system prompt's
+paragraph on approval follows the mode, so the model is not told a call will wait when none does.
+The shell notifier and the keys stay outside in every mode, because they are not among the tools.
 
 | call | decision | reason it asks with |
 |---|---|---|

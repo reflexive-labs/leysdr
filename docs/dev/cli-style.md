@@ -72,8 +72,8 @@ Six roles. Use the role, never a colour name, at the call site.
 
 | Role | Rendering | Use for |
 |---|---|---|
-| `Label` | bold | table headers, field labels, the left column of a label block, verb names in help, the `ley ask` prompt and its `Allow? [y/N/a]` |
-| `Muted` | dim | ids the user is not being asked to read, units, hints, scaffolding, values below the noise floor, the assistant's tool calls and waiting line in `ley ask` |
+| `Label` | bold | table headers, field labels, the left column of a label block, verb names in help |
+| `Muted` | dim | ids the user is not being asked to read, units, hints, scaffolding, values below the noise floor, a waiting line |
 | `Ok` | green | `ACTIVE`, `AVAILABLE`, audio flowing, squelch open, a successful action |
 | `Warn` | yellow | `OUT_OF_CAPTURE`, `IN_USE` by another program, muted audio, a degraded but working state |
 | `Err` | red | `DISCONNECTED`, `CAPTURE_DETACHED`, the `ley:` error prefix, a rejected write |
@@ -151,10 +151,7 @@ survives as height.
 | Frame | `╭╮╰╯│─` | `+|-` | `ui.Style.Box`, for a chart that deserves one |
 | Tree branch / last / trunk | `├─` `└─` `│` | `+-` `\-` `|` | `ley state` hierarchy |
 | Absent value | `-` | `-` | never blank, never the same glyph as a range separator |
-| Ellipsis | `…` | `...` | the end of text `Truncate` cut, and of `ley ask`'s waiting line |
-| Tool call | `→` | `->` | leads a `ley ask` line naming a call the assistant made |
-| Failed call | `✗` | `x` | under a `ley ask` call that failed (`Err`) or was declined (`Warn`) |
-| Prompt | `>` | `>` | `ley ask`'s request prompt |
+| Ellipsis | `…` | `...` | the end of text `Truncate` cut, and of a waiting line |
 
 Ranges read `24.000 MHz to 1.766 GHz`, never with a dash, so a dash always means
 "no value".
@@ -181,28 +178,17 @@ Ranges read `24.000 MHz to 1.766 GHz`, never with a dash, so a dash always means
 - **A screen ends with what to do next** when the user is likely to be mid-task:
   one `Cmd` line, never a paragraph.
 - **Blank lines group**; rules separate sections only when a blank line is not enough.
-- **A conversation is blocks.** `ley ask` prints the assistant's text on stdout and its tool calls
-  on stderr; a blank line goes between a block of one and a block of the other, and after a turn
-  before the next prompt. The blank lines go to stderr, so a redirected stdout holds the words and
-  nothing else, and a call that ran prints only its own line, since the text reports the result;
-  a call the user allowed keeps its result's first line beneath it, the daemon's receipt.
-- **A wait says so, and leaves nothing behind.** While `ley ask` waits on the assistant and
-  nothing has been printed for 300 ms, one `Muted` line on stderr says what it waits on,
-  `thinking…` (`stopping…` after a Ctrl-C). The delay keeps an answer that comes at once from
-  flickering a line. From three seconds it carries the count since the last output, `thinking…
-  4s`, redrawn once a second, so a long wait reads as a wait and not as a hang; a spinner would
-  say no more and redraw ten times as often. The line is drawn with `\r\033[K`, as `ley scan`'s
-  progress line is, and erased the same way before anything else is printed and at exit. It is
-  drawn only when stderr is a terminal and never under `--json`, since it is prose (principle 3)
-  and a pipe has no line to erase, and never while text on the same terminal is part-way through
-  a line, which the erase would wipe.
-- **A question about a call is the call, then why, then the question.** The call's own line comes
-  first, the reason beneath it indented as a receipt is, and the question on a line of its own, so
-  the arguments are never wrapped into the middle of a sentence. The question shows only the letters
-  the call offers: `Allow? [y/N/a]` when it can be allowed for the rest of the conversation,
-  `Allow? [y/N]` when it cannot, so no letter is offered that the daemon would refuse. The answer
-  (`y`, `a`, or `Declined: …` off a terminal) takes the question's line. The call is wrapped, never
-  cut, with its continuation lines indented two columns: what the user allows is all on screen.
+- **A wait says so, and leaves nothing behind.** While a client waits on something slow, such as
+  the assistant, and nothing has been shown for 300 ms, one line says what it waits on,
+  `thinking…`; the app's assistant panel draws it as its waiting row (`app.md`, "The assistant
+  panel"). The delay keeps an answer that comes at once from flickering a line. From three seconds
+  it carries the count since the last output, `thinking… 4s`, redrawn once a second, so a long
+  wait reads as a wait and not as a hang. In a terminal the line is `Muted` on stderr with no
+  spinner, which would say no more and redraw ten times as often; it is drawn with `\r\033[K`, as
+  `ley scan`'s progress line is, and erased the same way before anything else is printed and at
+  exit. It is drawn only when stderr is a terminal and never under `--json`, since it is prose
+  (principle 3) and a pipe has no line to erase, and never while text on the same terminal is
+  part-way through a line, which the erase would wipe.
 - **A chart draws its trace, not its area.** One glyph per column, on the row that column's
   value falls in, with a thin stem beneath it only where it stands above the reference line.
   Filling every cell under a column adds area without information: a flat noise floor covers

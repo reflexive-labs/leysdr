@@ -102,60 +102,58 @@ playback of a recorded part, its end on the tombstone (or after 3 s unseen), Pla
 and whether the live sink goes back on after the last part.
 
 **The window follows the radio** (`ChannelFollow`, `AppSession.followOtherClients`). One radio,
-one picture: when another client makes a channel on the capture the window shows (the assistant
-on `ley ask`, the window's own assistant panel, a terminal's `ley tune`), the window holds that
-channel, so the readout, the inspector, the rail's selection, the transmissions log and the
-audio read it. The mirror keeps, for each channel, the event that first put it in the mirror
-when that event named its cause (`MirrorState.made`: the client and the `seq`, for the
-channel's life; a snapshot starts it empty, because it says who made a channel but not when).
-"Another client" is any client id other than the window's (`ClientIdentity.id`), both as the
-creation's `caused_by` and as the channel's `owner`, and never a job: a recording's or a scan's
-channel is not a tune. Of several, the newest by `seq` wins, and only channels made after the
-window's own last tune count (`floor`: raised by every frequency the window asks for, every
-channel it makes and every channel it follows), so a channel the window moved away from is not
-followed again. The window does not take ownership. It ends its own channel, unless a recording
-runs on it (a running record job that borrowed the channel, or one on its frequency and mode,
-the frequency read before the move that took it out of the capture): then the channel stays, the
-window's sink leaves it, the inspector says `Your channel on 162.550 MHz stays open while it
-records.`, and the window ends it when the recording stops. A recording counts only when it
-rides the window's capture or asks for its device; one on another radio at the same frequency
-does not. The audio moves by sink, not by channel. A `Sink` names no owner, so the window holds
-the id of the sink it attached (`heldSink`, a `HeldObject` like the capture and channel), and
-mute, volume, a sweep's pause and a part's playback act on that sink only, never on another
-client's. A sink the mirror says this client attached (`sinkAttachedBy`) is the window's own
-whether or not it is held: one on the held channel is held again when none is and the window is
-not muted, and any other is detached (`ChannelFollow.ownSink`, `strayOwnSinks`), so a reply
-that came after the never-seen limit, an attach that overlapped another, or a detach that
-failed never leaves a sink nothing can mute; a held sink is let go on its tombstone, never
-before its detach, and one attach runs at a time. Mute is an intent the session holds
-(`muted`, set by Mute and cleared by any attach), not the absence of a sink, because a channel
-playing through another client's sink, a part playing and a channel just reconnected to have no
-sink of the window's either. The window wants audio on the followed channel when it is not
-muted and no recorded part holds the audio. It then waits `ChannelFollow.attachSettle` (1 s) and attaches
-its sink, at the window's volume, only if it was not muted meanwhile and nothing plays the
-channel by then, because the maker
-may attach its own a moment after making the channel: `ley tune` makes the channel, measures the
-squelch from one spectrum row and then attaches, usually well inside the second. A client that attaches
-its sink later than that doubles up only until the window sees it, because two sinks on the held
-channel make the window detach its own (`redundantSink`), so the channel plays through the
-other. While another client's sink plays the held channel and the window has none, the
-inspector says so (`The audio plays through another terminal.`, named from the mirror's
-`sinkAttachedBy`, the `caused_by` of each sink's first event), and the mute button and the
+one picture: when another client makes a channel on the capture the window shows (the assistant,
+in the window's own panel or another client's conversation, a terminal's `ley tune`), the window
+holds that channel, so the readout, the inspector, the rail's selection, the transmissions log and
+the audio read it. The mirror keeps, for each channel, the event that first put it in the mirror
+when that event named its cause (`MirrorState.made`: the client and the `seq`, for the channel's
+life; a snapshot starts it empty, because it says who made a channel but not when). "Another client"
+is any client id other than the window's (`ClientIdentity.id`), both as the creation's `caused_by`
+and as the channel's `owner`, and never a job: a recording's or a scan's channel is not a tune. Of
+several, the newest by `seq` wins, and only channels made after the window's own last tune count
+(`floor`: raised by every frequency the window asks for, every channel it makes and every channel it
+follows), so a channel the window moved away from is not followed again. The window does not take
+ownership. It ends its own channel, unless a recording runs on it (a running record job that
+borrowed the channel, or one on its frequency and mode, the frequency read before the move that took
+it out of the capture): then the channel stays, the window's sink leaves it, the inspector says
+`Your channel on 162.550 MHz stays open while it records.`, and the window ends it when the
+recording stops. A recording counts only when it rides the window's capture or asks for its device;
+one on another radio at the same frequency does not. The audio moves by sink, not by channel. A
+`Sink` names no owner, so the window holds the id of the sink it attached (`heldSink`, a
+`HeldObject` like the capture and channel), and mute, volume, a sweep's pause and a part's playback
+act on that sink only, never on another client's. A sink the mirror says this client attached
+(`sinkAttachedBy`) is the window's own whether or not it is held: one on the held channel is held
+again when none is and the window is not muted, and any other is detached (`ChannelFollow.ownSink`,
+`strayOwnSinks`), so a reply that came after the never-seen limit, an attach that overlapped
+another, or a detach that failed never leaves a sink nothing can mute; a held sink is let go on its
+tombstone, never before its detach, and one attach runs at a time. Mute is an intent the session
+holds (`muted`, set by Mute and cleared by any attach), not the absence of a sink, because a channel
+playing through another client's sink, a part playing and a channel just reconnected to have no sink
+of the window's either. The window wants audio on the followed channel when it is not muted and no
+recorded part holds the audio. It then waits `ChannelFollow.attachSettle` (1 s) and attaches its
+sink, at the window's volume, only if it was not muted meanwhile and nothing plays the channel by
+then, because the maker may attach its own a moment after making the channel: `ley tune` makes the
+channel, measures the squelch from one spectrum row and then attaches, usually well inside the
+second. A client that attaches its sink later than that doubles up only until the window sees it,
+because two sinks on the held channel make the window detach its own (`redundantSink`), so the
+channel plays through the other. While another client's sink plays the held channel and the window
+has none, the inspector says so (`The audio plays through another terminal.`, named from the
+mirror's `sinkAttachedBy`, the `caused_by` of each sink's first event), and the mute button and the
 volume slider are disabled. A muted window stays muted. When the maker ends the channel (a
 terminal's 5 s after its presence goes; `ley stop`), the held channel's `.lost` path makes the
-window a channel of its own with the last copy's offset, mode, width and squelch. A capture
-another client moved with no new channel is not followed: the out-of-capture caution under
-"Failure states" covers it. Nothing is followed while the window makes a channel itself, sweeps,
-or has stopped listening. A restarted daemon counts its `seq` from 0 again, so on every snapshot
-the mirror takes (a connect, or a resync after a `seq` gap, which a fast restart can look like)
-the floor becomes the snapshot's `seq`; `DaemonMirror` counts `snapshots` before it replaces the
-state, so the session tells a replaced state from a folded event. A snapshot says who made a channel but not when, so a
-channel another client made while the window was away is not followed by `seq`; instead
-`adopt()` on reconnecting, when the window's own channel is gone or out of capture, takes the
-newest active channel on the capture that is not a job's, newest by id because channel ids are
-ULIDs (`ChannelFollow.stepOnConnect`, `adoptable`), and treats it as a follow. The first
-adoption at launch prefers the same channel. The rule is tested in `ChannelFollowTests` and
-against the daemon in `AssistantDaemonTests`.
+window a channel of its own with the last copy's offset, mode, width and squelch. A capture another
+client moved with no new channel is not followed: the out-of-capture caution under "Failure states"
+covers it. Nothing is followed while the window makes a channel itself, sweeps, or has stopped
+listening. A restarted daemon counts its `seq` from 0 again, so on every snapshot the mirror takes
+(a connect, or a resync after a `seq` gap, which a fast restart can look like) the floor becomes the
+snapshot's `seq`; `DaemonMirror` counts `snapshots` before it replaces the state, so the session
+tells a replaced state from a folded event. A snapshot says who made a channel but not when, so a
+channel another client made while the window was away is not followed by `seq`; instead `adopt()` on
+reconnecting, when the window's own channel is gone or out of capture, takes the newest active
+channel on the capture that is not a job's, newest by id because channel ids are ULIDs
+(`ChannelFollow.stepOnConnect`, `adoptable`), and treats it as a follow. The first adoption at
+launch prefers the same channel. The rule is tested in `ChannelFollowTests` and against the daemon
+in `AssistantDaemonTests`.
 
 **Streams** (`Streams.swift`). `subscribe(_:)` is `Bulk.Subscribe` then `Bulk.Stream`;
 `fft(capture:bins:rowsPerSecond:)` is the FFT of a band decoded to dBFS per bin against the
@@ -468,15 +466,15 @@ On Linux the rows, the privacy sentences, the flag and the usage fold are tested
 ## The assistant panel
 
 The assistant's conversation is daemon state (`../design/ai.md`, "The assistant"), and the panel
-is one more client of it, beside `ley ask`: it renders the conversation and moves it only through
-the `Assistant` RPCs. It is a column of `Theme.Layout.assistantPanel` on the window's right, beside
-the inspector, shown while `AppSession.assistantShown` (the toolbar's toggle beside the inspector's,
-and View ▸ Show Assistant, ⇧⌘A; remembered in the defaults) and `hasAnyAI` both hold, so the
-panel and its toggle appear only once a key or an on-device engine is set; the menu item is
-disabled until then rather than left out, because a `Commands` body is not re-evaluated. The
-window's minimum width (`Theme.Layout.windowMinWidth`) grows by the column's while it shows, so
-the canvas keeps its room beside the sidebar, the inspector and the column. The column is in
-`MainWindow` beside both places' bodies rather than inside each, so a switch of place, the
+is one client of it, as the test harness `ley ask` is another: it renders the conversation and moves
+it only through the `Assistant` RPCs. It is a column of `Theme.Layout.assistantPanel` on the
+window's right, beside the inspector, shown while `AppSession.assistantShown` (the toolbar's toggle
+beside the inspector's, and View ▸ Show Assistant, ⇧⌘A; remembered in the defaults) and `hasAnyAI`
+both hold, so the panel and its toggle appear only once a key or an on-device engine is set; the
+menu item is disabled until then rather than left out, because a `Commands` body is not
+re-evaluated. The window's minimum width (`Theme.Layout.windowMinWidth`) grows by the column's while
+it shows, so the canvas keeps its room beside the sidebar, the inspector and the column. The column
+is in `MainWindow` beside both places' bodies rather than inside each, so a switch of place, the
 assistant's own `show_place` included, leaves the transcript, its scroll and the field alone.
 
 **The conversation** (`AssistantController`, in the façade, with the RPCs behind `AssistantCalls` so
@@ -506,10 +504,10 @@ JSON, the whole result and its JSON. While the assistant is on a turn and no ste
 turn is `running` (`ConversationView.isWaitingOnModel`), the model is thinking, and a waiting row
 under the turns says so: a small spinner and `thinking…`, with the seconds from three on
 (`thinking… 4s`), counted from the conversation's `last_turn_at_ns`, so the count starts again
-after each step as `ley ask`'s waiting line does (`cli-style.md`, "A wait says so, and leaves
-nothing behind"). Like that line, it is drawn only once the wait has gone on for 300 ms, so an
-answer that comes straight back does not flicker it; unlike it, it has a spinner, which a window
-can draw without redrawing text. A running step is its own sign, so the row is absent then, and
+after each step (`cli-style.md`, "A wait says so, and leaves nothing behind"). As that rule asks,
+it is drawn only once the wait has gone on for 300 ms, so an answer that comes straight back does
+not flicker it; unlike a terminal's waiting line, it has a spinner, which a window can draw
+without redrawing text. A running step is its own sign, so the row is absent then, and
 nothing of it stays once the turn moves on. A call waiting for approval is a card with the
 question, the gate's reason (`assistant.md`, "The gate") and a button per answer the call offers
 (`PendingQuestion.offers`): Decline, Allow for this conversation when the call can be granted for

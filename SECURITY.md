@@ -61,8 +61,8 @@ the provider or endpoint you set with `ley ai add`.
   `conversation.json`, what every client sees of it (the turns, the tool calls and their results),
   and `transcript.jsonl`, the worker's model transcript, which is what was sent to the provider.
   Both can hold frequencies, decoded records and speech text, and neither holds a key. They stay
-  until the conversation is deleted (`ley ask --delete`); the daemon keeps the newest 100 and drops
-  any unused for 90 days.
+  until the conversation is deleted (`DeleteConversation`, which the hidden `ley ask --delete`
+  makes); the daemon keeps the newest 100 and drops any unused for 90 days.
 
 ## What the daemon runs
 

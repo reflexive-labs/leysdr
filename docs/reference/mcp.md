@@ -59,17 +59,17 @@ Every tool's result is two text blocks. The first is what the verb would have pr
 terminal: the decisions a tune made, the scan table, one line per record, the squelch that never
 opened. Its first line is the outcome (the channel a tune made, with its mode and squelch; how
 many signals a scan found over which range, above its table; what a listen counted), because a
-client such as `ley ask` shows that line under the call. What the verb says on the way, the band's
-default mode, a retune, how the squelch was measured, follows it, where the terminal prints it
-first. The second is the proto3 JSON mapping of the `leyline.v1` messages, the same shape
+client such as the app's assistant panel shows that line beside the call. What the verb says on the
+way, the band's default mode, a retune, how the squelch was measured, follows it, where the terminal
+prints it first. The second is the proto3 JSON mapping of the `leyline.v1` messages, the same shape
 `ley <verb> --json` prints for the mirror verb (lowerCamelCase keys, 64-bit integers as strings),
 and the compatibility test of every tool is that mirror: the fake-daemon tests hold `list_devices`
 against `ley devices --json` message for message. An agent reasons over the text and parses the
-JSON. Nothing is sent as `structuredContent`: the server began by putting the JSON
-there with the text beside it, the way the MCP specification suggests, and the first agent evals
-showed that Claude Code hands the model only `structuredContent` when there is one and drops the
-content blocks ([anthropics/claude-code#55677](https://github.com/anthropics/claude-code/issues/55677)),
-so none of the tools' text had reached an agent. Content is what every client shows.
+JSON. Nothing is sent as `structuredContent`: the server began by putting the JSON there with the
+text beside it, the way the MCP specification suggests, and the first agent evals showed that Claude
+Code hands the model only `structuredContent` when there is one and drops the content blocks
+([anthropics/claude-code#55677](https://github.com/anthropics/claude-code/issues/55677)), so none of
+the tools' text had reached an agent. Content is what every client shows.
 
 Three results are composites, one message under each key, each still its message's proto3 JSON:
 `tune` returns `{capture, channel, sink}` (`sink` is `null` unless `audio` was asked for),
