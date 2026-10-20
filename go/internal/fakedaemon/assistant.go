@@ -487,6 +487,8 @@ func (a assistantSvc) answer(ctx context.Context, convID, callID string, view bo
 		return nil, fail(ctx, err)
 	}
 	settle(call, approvedResult(fc, call))
+	// An answer dates the turn, as the daemon's does, so --continue and the app's list order by it.
+	fc.conv.LastTurnAtNs = time.Now().UnixNano()
 	fc.conv.State, fc.conv.Pending = leylinev1.ConversationState_CONVERSATION_THINKING, nil
 	d.publishConvLocked(fc, ci)
 	select {
@@ -549,6 +551,7 @@ func (a assistantSvc) SetApprovalMode(ctx context.Context, req *leylinev1.SetApp
 	if fc.conv.Mode == leylinev1.ApprovalMode_APPROVAL_MODE_AUTO && fc.conv.State == leylinev1.ConversationState_CONVERSATION_WAITING && !p.GetViewTool() {
 		call := lastCall(fc)
 		call.State, call.ResultText = leylinev1.ToolCallState_TOOL_CALL_DONE, approvedResult(fc, call)
+		fc.conv.LastTurnAtNs = time.Now().UnixNano()
 		fc.conv.State, fc.conv.Pending = leylinev1.ConversationState_CONVERSATION_THINKING, nil
 		d.publishConvLocked(fc, ci)
 		select {
