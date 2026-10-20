@@ -309,7 +309,10 @@ func (w *worker) runTurn(ctx context.Context, user *leylinev1.UserMessage) error
 		}
 		var resp Response
 		var err error
-		switch w.during(ctx, func(cctx context.Context) { resp, err = w.model.Respond(cctx, w.system, w.tools.Defs(), w.transcript) }) {
+		// The call runs on during's goroutine while this one may take a set_mode, which rewrites
+		// w.system; the call reads copies made here, and a new mode reaches the next call.
+		system, defs, transcript := w.system, w.tools.Defs(), w.transcript
+		switch w.during(ctx, func(cctx context.Context) { resp, err = w.model.Respond(cctx, system, defs, transcript) }) {
 		case stopped:
 			return w.finish(turn)
 		case closed:
