@@ -1318,6 +1318,42 @@ the switch to AUTO on a waiting conversation now set it too, with a daemon test 
 fake daemon still sets it only on a message and a turn. The views are not compiled on Linux and
 are on the Mac checklist in `docs/plans/app.md`.
 
+### AI-20 `[ ]` `ley ask` steps back
+
+Decided 2026-10-20 by the owner: the assistant's human interface is the app's panel, and the
+work on how a conversation feels goes there alone. The CLI is for taking the controls by hand;
+`ley mcp` stays the surface for other agents. Two conversation interfaces meant every question of
+feel answered twice, and the terminal's answer never shipped to anyone but the owner. Of the three
+ways to do it (hide `ask` and freeze it as the test harness; remove it and write the harness
+again under another name; keep both) the owner chose the first: `ley ask --yes --json` is what
+the assistant-mode evals and the end-to-end tests drive the daemon, worker and gate with on Linux,
+where the panel cannot run, and that stays.
+
+- **`ley ask` is hidden and writes JSON only.** It leaves `ley --help`, the user guide and the
+  reference; `ley ask --help` still works. Every run writes conversation lines as `--json` does
+  today (the flag stays, accepted and implied), and a question is declined unless `--yes`. What
+  goes, with its tests: the block rendering, the receipts, the question card and the typed
+  answer, the waiting line and its clock hook, the continuing line's prose, and the ink it used.
+  `--continue`, `--provider`, `--model`, `--delete` and the listing stay as they are, as harness.
+- **The style guide loses what existed for `ask` alone:** the §5 rules "A conversation is
+  blocks" and "A question about a call is the call, then why, then the question", and the ink
+  table's `Allow? [y/N]` row. "A wait says so, and leaves nothing behind" stays: it is the rule
+  the panel's waiting row follows.
+- **The docs say who talks to the assistant.** `docs/design/ai.md` "The assistant" states the
+  decision: the panel for people, `ley mcp` for agents, `ley ask` a hidden harness that proves the
+  contract from Go, which is how the cross-language rule in `AGENTS.md` is kept. `docs/dev/assistant.md`
+  and `docs/dev/evals.md` call it the harness. The reference's `ask` section and the guide's go;
+  `docs/reference/cli.md` keeps no transcript of it. Anything `ley ai` prints that points at
+  `ley ask` points at the app's panel instead (View ▸ Show Assistant, ⇧⌘A).
+- **The fake daemon dates a turn as the daemon does** (`last_turn_at_ns` on an answer, a declined
+  question and the switch to the mode that asks nothing), left over from AI-19.
+- **Not changed:** the Assistant service, the worker, the gate, the panel, and the AI-10 item,
+  which stays as the record of what was built.
+
+Verify: `ley --help` and the root help golden without `ask`; the e2e assistant tests and the
+`leyeval` assistant-mode test on the JSON output; `make docs-check`; a grep for `ley ask` in
+`docs/guide`, `docs/reference` and the Go help text finding only the harness note.
+
 ## Lanes
 
 What can be built at once, each lane in its own worktree, merged in this order:
@@ -1339,9 +1375,9 @@ finding goes back to the lane's author; a lane merges when the reviewer has noth
 
 ## Deliberately not
 
-- **An assistant inside the app only.** A Swift loop would be a feature that works only from
-  Swift, a second tool surface beside the one the evals grade, and a conversation lost when the
-  window closes.
+- **An assistant loop inside the app.** The loop is the Go worker on the one contract, so the
+  evals grade the tool surface the panel uses and a conversation outlives the window. The
+  panel is the one interface for people (AI-20); the terminal's `ley ask` is a hidden harness.
 - **Model calls from the daemon's process.** Provider SDKs and HTTP clients stay out of the
   process that carries the hot path, and a provider change needs no daemon release.
 - **A key the contract returns.** Anything that opens the socket could copy it.
