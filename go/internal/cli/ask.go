@@ -36,16 +36,16 @@ type askOptions struct {
 func newAskCommand(app *App) *cobra.Command {
 	var o askOptions
 	cmd := &cobra.Command{
-		Use:    "ask request",
+		Use:    "ask [request]",
 		Short:  "The assistant's test harness",
 		Hidden: true,
 		Long: `ask is the test harness for the assistant: the end-to-end tests and the evals
 drive the daemon, its worker and the approval gate with it. People talk to the
-assistant in the app's panel (View ▸ Show Assistant, ⇧⌘A), and agents use ley
-mcp. ask takes its request as an argument, never from stdin, as a harness
-does: it sends the request to a new conversation, or with --continue to the
-newest idle one, and prints every state of the conversation, one Conversation
-a line (NDJSON); --json is implied. A call the assistant would ask about is
+assistant in the Assistant panel in the app, under the View menu, and agents
+use ley mcp. ask takes its request as an argument, never from stdin, as a
+harness does: it sends the request to a new conversation, or with --continue
+to the newest idle one, and prints every state of the conversation, one
+Conversation a line (NDJSON); --json is implied. A call the assistant would ask about is
 declined unless --yes, which sets the conversation to allow everything. Ctrl-C
 stops the turn and a second ends the conversation. --list prints the
 conversations the daemon keeps and --delete removes one.`,

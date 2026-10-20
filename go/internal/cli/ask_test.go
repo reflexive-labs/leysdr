@@ -584,3 +584,29 @@ func TestAskDelete(t *testing.T) {
 		t.Errorf("an unknown id: %v", err)
 	}
 }
+
+// ask is hidden, so the help goldens leave it out; its help still says it is the harness, that
+// the request is an argument and never read from stdin, that --list and --delete need none, and
+// it is plain ASCII, since help goes through --ascii unchanged.
+func TestAskHelp(t *testing.T) {
+	t.Parallel()
+	out, errOut, err := runApp(t, helpApp(), "ask", "--help")
+	if err != nil || errOut != "" {
+		t.Fatalf("ley ask --help: err=%v stderr=%q", err, errOut)
+	}
+	for _, want := range []string{"test harness", "as an argument", "never from stdin", "ley ask [request] [flags]", "the Assistant panel in the app"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the help lacks %q:\n%s", want, out)
+		}
+	}
+	for _, r := range out {
+		if r > 127 {
+			t.Errorf("the help holds %q, which --ascii cannot draw:\n%s", r, out)
+			break
+		}
+	}
+	root := NewRootCommand(helpApp())
+	if cmd, _, err := root.Find([]string{"ask"}); err != nil || !cmd.Hidden {
+		t.Errorf("ask is not hidden (err %v)", err)
+	}
+}
