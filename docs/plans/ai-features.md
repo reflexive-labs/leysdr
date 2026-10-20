@@ -1214,7 +1214,7 @@ show only as `PLATFORM_UNSUPPORTED`. The views and the session's half are unveri
 radio, and the rule follows it too: when it ends, the window has its own channel on that
 frequency.
 
-### AI-18 `[ ]` Allowing more than once: a mode and grants
+### AI-18 `[x]` Allowing more than once: a mode and grants
 
 Decided 2026-10-20 from a real `ley ask` thread: six take-over questions in a row after the user
 had said "you can drive the radio", each answered `y`. The gate is right to ask; it is wrong to
@@ -1260,6 +1260,22 @@ back; `ley ask` tests for the offered letters, `a`, and `--yes` starting `auto`;
 eye on the Mac (`docs/plans/app.md`). `docs/design/ai.md` "What the assistant may do" and
 `docs/dev/assistant.md` describe the mode, the grant and the offers; `docs/reference/cli.md`
 shows the new question line.
+
+Done 2026-10-20 on Linux. The gate keeps grants by row name and a mode; `Check` lists only the
+ungranted rows, offers once alone when any of them is once-only (delete a recording, and cancel
+another client's job, which the item did not name and a review added, since one grant would have
+covered every foreign job), and a call a grant covers runs with `reason` kept and `allowed_by`
+naming the question. A grant is a line in the worker's transcript file with a role the adapters
+never send to the model, so it survives `--continue` and a restart. Beyond the item's list the
+contract gained `ToolCall.offers` (the daemon builds `pending` by copying the call) and
+`Assistant.SetApprovalMode` with `WorkerEvent.set_mode`, so a mode can change on a live
+conversation: `ley ask --continue` sets the mode its run wants (AUTO with `--yes`, ASK without)
+and the CLI no longer approves anything itself; a WAITING call runs once when the mode becomes
+AUTO. The prompt is rebuilt for the mode, and the model call reads copies of the prompt and
+transcript taken before it starts. The fake daemon keys grants by a step's row, checked against
+the gate's names. The panel's card shows a button per offer and drops a second click while an
+answer is on its way; the card is unverified on Linux and on the Mac checklist in
+`docs/plans/app.md`.
 
 ## Lanes
 
