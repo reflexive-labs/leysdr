@@ -1318,7 +1318,7 @@ the switch to AUTO on a waiting conversation now set it too, with a daemon test 
 fake daemon still sets it only on a message and a turn. The views are not compiled on Linux and
 are on the Mac checklist in `docs/plans/app.md`.
 
-### AI-20 `[ ]` `ley ask` steps back
+### AI-20 `[x]` `ley ask` steps back
 
 Decided 2026-10-20 by the owner: the assistant's human interface is the app's panel, and the
 work on how a conversation feels goes there alone. The CLI is for taking the controls by hand;
@@ -1353,6 +1353,20 @@ where the panel cannot run, and that stays.
 Verify: `ley --help` and the root help golden without `ask`; the e2e assistant tests and the
 `leyeval` assistant-mode test on the JSON output; `make docs-check`; a grep for `ley ask` in
 `docs/guide`, `docs/reference` and the Go help text finding only the harness note.
+
+Done 2026-10-20. `ask` is hidden, takes its request as an argument (the terminal's request loop
+went with the rendering), writes the conversation as JSON lines whether or not `--json` is given
+(a test holds the lines byte-identical), declines a question without `--yes` and prints nothing
+for it; `--continue` still sets the run's mode, Ctrl-C and the view-tool answer are unchanged and
+tested. The rendering, its tests, the reference transcripts, the guide's `ask` sections, the two
+§5 rules and the ask glyphs are gone; "A wait says so" is now the general rule with `ley scan`'s
+progress line and the panel's waiting row as its two instances. The design doc records who
+talks to the assistant. On the way the lane found and fixed the assistant-mode evals, broken since
+the provider-defaults change refused the scripted provider's key without an endpoint: the eval
+runner now serves the models check on a loopback stub and adds the key against it. The fake
+daemon dates a turn on an answer as the daemon does, and its script rows are checked against the
+gate's names again. The app has no way to delete a conversation; the hidden `ask --delete` is the
+only one, noted under "Open questions".
 
 ## Lanes
 
@@ -1395,6 +1409,10 @@ finding goes back to the lane's author; a lane merges when the reviewer has noth
 
 ## Open questions
 
+- **Deleting a conversation from the app.** New Conversation ends one; nothing in the app
+  deletes one, so a conversation stays on disk until the daemon's retention drops it or the hidden
+  `ley ask --delete` is run. Whether the panel needs a delete, and where (a history list the
+  panel does not have yet), is open.
 - **Who owns a channel the assistant makes.** A channel belongs to the client that created it and
   ends 5 s after that client's presence does (`docs/dev/engine-internals.md`, "Client identity and
   ownership"), so "put on the weather radio" would go silent when the conversation ends. Leaning:
