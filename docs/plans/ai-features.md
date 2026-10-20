@@ -1214,6 +1214,53 @@ show only as `PLATFORM_UNSUPPORTED`. The views and the session's half are unveri
 radio, and the rule follows it too: when it ends, the window has its own channel on that
 frequency.
 
+### AI-18 `[ ]` Allowing more than once: a mode and grants
+
+Decided 2026-10-20 from a real `ley ask` thread: six take-over questions in a row after the user
+had said "you can drive the radio", each answered `y`. The gate is right to ask; it is wrong to
+forget the answer. The shape follows what agent permission prompts have settled on (Claude Code's
+modes and "don't ask again for this session", Codex's approval policies, macOS's "allow once /
+while running"): rules decide when to ask, a mode sets the baseline, a memory holds what the user
+granted, and all three live in one place, the worker's gate. The clients render a question and
+send back one answer; neither learns any policy.
+
+- **A grant.** The user answers a question with a scope: once, or this kind of action for the
+  rest of the conversation. "This kind" is the policy row, not the tool, so one grant for "take
+  over a radio" covers `tune`, `scan`, `record` and `listen_summary` with `take_over`. A question
+  that lists several rows grants every row it listed. A call a grant covers runs with `reason` set
+  as before and `allowed_by` naming the question whose answer covered it, so a transcript reader
+  sees why it did not ask. A grant survives `--continue` and a daemon restart: the worker keeps it
+  with its transcript, not only in memory.
+- **The question carries its offers.** `PendingAction.offers` lists the scopes the gate accepts
+  for that call. Delete a recording offers once only, as the table says; every other row offers
+  once and the conversation; the received-text rule offers both too, since otherwise a
+  conversation that read one APRS page is back to a question per write. `ley ask` shows the
+  letters it was offered (`Allow? [y/N/a]` on a take-over, `Allow? [y/N]` on a delete, `a` for
+  the rest of the conversation) and the panel's card shows a button per offer. Adding a scope
+  later (a persistent allow list in Settings) is one enum value and one label per client.
+- **A mode.** `StartConversationRequest.mode`: `ask` (the default) or `auto`, in which every row
+  runs and is reported, so the conversation never waits. `ley ask --yes` sets `auto` instead of
+  answering each question in the CLI; the help keeps saying what it said ("allow everything the
+  assistant asks to do"). What is outside the tool list (shell, keys) stays outside in every mode.
+  The conversation reports its mode so a client can show it.
+- **No grant comes from words.** "You can drive the radio" in a user message grants nothing; the
+  gate reads only `ResolveAction`. The prompt may tell the model that the user can answer a
+  question with "for the rest of the conversation", so it need not apologise for asking.
+- **The contract gains**, all additive: `ApprovalScope` and `ApprovalMode` enums,
+  `ResolveActionRequest.scope` (unset with `approve` true means once), `PendingAction.offers`,
+  `StartConversationRequest.mode`, `Conversation.mode`, `ToolCall.allowed_by`, and on the
+  worker protocol `ActionResolved.scope` and `WorkerStart.mode`.
+- **Not now:** a persistent allow list, a classifier judging actions (the rows are a table and a
+  table suffices), a mode on the panel (the contract allows it; the card's grant is enough first).
+
+Verify: gate tests for a grant covering a later call on the same row and not another, several
+rows granted at once, delete never offered, `auto` running every row, and a grant surviving a
+resume; a fake-daemon and a daemon test of the scope reaching the worker and `allowed_by` coming
+back; `ley ask` tests for the offered letters, `a`, and `--yes` starting `auto`; the panel card by
+eye on the Mac (`docs/plans/app.md`). `docs/design/ai.md` "What the assistant may do" and
+`docs/dev/assistant.md` describe the mode, the grant and the offers; `docs/reference/cli.md`
+shows the new question line.
+
 ## Lanes
 
 What can be built at once, each lane in its own worktree, merged in this order:
