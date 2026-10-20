@@ -194,6 +194,11 @@ Not scoped further here; each depends on something this plan does not build.
 - Help identifying a signal from a spectrum image and its measurements, once `identify_signal`
   (MCP-8) defines what may be claimed.
 - The V2 dashboard composed on request (`user-stories.md`).
+- Live or automatic transcription from the app: a switch on the tuned channel that starts
+  `ley decode speech`'s live job for it, the words shown on the rows of the app's transmissions
+  log, and a decision on whether a kept recording may be transcribed as its parts are written.
+  Each send is audio leaving the Mac on the user's key, so it stays an explicit choice per channel
+  or per recording, never a default, and the switch states the rate at which audio is sent.
 
 ## The shape
 
@@ -1276,6 +1281,37 @@ transcript taken before it starts. The fake daemon keys grants by a step's row, 
 the gate's names. The panel's card shows a button per offer and drops a second click while an
 answer is on its way; the card is unverified on Linux and on the Mac checklist in
 `docs/plans/app.md`.
+
+### AI-19 `[x]` The panel's feel
+
+Decided 2026-10-20 from a pass over the panel on the Mac: between a message and the reply, and
+between steps, the panel showed nothing moving and looked stuck; the field could not be typed in
+while the assistant worked; and the reply's text, in the brightest ink, did not sit with the rest
+of the column.
+
+- **A waiting row.** While the conversation is THINKING and no step of the newest turn is
+  running, a spinner and `thinking…` sit under the turns, with the seconds from 3 s on, counted
+  from `last_turn_at_ns`, as `ley ask`'s waiting line counts them. A running step is the sign
+  while a tool runs, and nothing of the row stays once the turn moves on. The header's state word
+  stays as it is.
+- **Typing during a turn.** The field takes typing whenever it is shown; Return sends only while
+  the daemon would take the message (idle, over or lost, and nothing on its way) and otherwise
+  keeps the text.
+- **The reply's ink.** The assistant's text moves from `ink` to `inkSecondary`; the steps stay in
+  `inkTertiary` and the user's turn in `inkMuted`, so the order of the column is unchanged.
+
+Verify: façade tests for when the row shows (a turn with no step, after a done step, not while a
+step runs, not while idle or waiting) and the time it counts from; the views by eye on the Mac
+(`docs/plans/app.md`, "The assistant panel"). `docs/dev/app.md`, "The assistant panel",
+describes the row, the field and the ink.
+
+Done 2026-10-20 on Linux. `ConversationView` gained `isWaitingOnModel`, `lastChangeAt` and
+`waitingSince(now:)`, tested in `AssistantModelsTests`. The panel draws `WaitingRow`, a
+`TimelineView` redrawn once a second, as the transcript's last item; the field is never disabled,
+`canSend` gates Return, and the focus-return mechanism the disabled field needed is gone. A
+message the daemon refused goes back above anything typed while it was on its way. The row
+appears at once rather than after the terminal's 300 ms. The views are not compiled on Linux and
+are on the Mac checklist in `docs/plans/app.md`.
 
 ## Lanes
 
