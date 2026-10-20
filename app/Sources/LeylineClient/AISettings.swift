@@ -380,7 +380,7 @@ public enum AISettings {
     public static func does(_ feature: String) -> String {
         switch feature {
         case "assistant":
-            "Runs the radio from plain requests, in the app and with ley ask."
+            "Runs the radio from plain requests in the Assistant panel."
         case "speech":
             "Writes down what is said on received audio, one record per over."
         default: ""

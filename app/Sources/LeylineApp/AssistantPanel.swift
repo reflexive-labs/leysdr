@@ -156,14 +156,16 @@ struct AssistantTranscript: View {
 }
 
 /// The sign that the assistant is thinking: a spinner and `thinking…`, with the seconds once a
-/// wait has gone on for three, as `ley ask`'s waiting line counts them. It sits under the newest
-/// turn only while `ConversationView.isWaitingOnModel`, is drawn only once the wait has gone on
-/// for 300 ms, so an answer that comes straight back does not flicker it, and nothing of it stays
-/// when the turn moves on (`docs/dev/cli-style.md`, "A wait says so, and leaves nothing behind").
+/// wait has gone on for three. It sits under the newest turn only while
+/// `ConversationView.isWaitingOnModel`, is drawn only once the wait has gone on for 300 ms, so an
+/// answer that comes straight back does not flicker it, and nothing of it stays when the turn
+/// moves on. The 300 ms and the count from three seconds are the style guide's
+/// (`docs/dev/cli-style.md`, "A wait says so, and leaves nothing behind").
 struct WaitingRow: View {
     let since: Date
 
-    /// The terminal's delay before its waiting line.
+    /// The wait before the row shows (`docs/dev/cli-style.md`, "A wait says so, and leaves nothing
+    /// behind").
     private static let delay: TimeInterval = 0.3
 
     var body: some View {
