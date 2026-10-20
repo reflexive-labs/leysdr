@@ -25,11 +25,12 @@ import (
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
-// The assistant end to end (docs/plans/ai-features.md, AI-9, AI-10 and AI-20): the real daemon
-// spawns the real `ley worker assistant` for each conversation, with the key on its stdin, and the
-// real `ley ask`, the harness, drives it and prints each state of the conversation as a JSON line. The worker plays LEY_ASSISTANT_SCRIPT, which the daemon's environment
-// hands it, so the model's answers are fixed and no provider is called; the tools it calls are
-// the real `ley mcp` tools against the daemon. The key is the aiRig's canary key, checked
+// The assistant end to end (docs/plans/ai-features.md, AI-9 and AI-10): the real daemon spawns
+// the real `ley worker assistant` for each conversation, with the key on its stdin, and the real
+// `ley ask`, the harness, drives it and prints each state of the conversation as a JSON line. The
+// worker plays LEY_ASSISTANT_SCRIPT, which the daemon's environment hands it, so the model's
+// answers are fixed and no provider is called; the tools it calls are the real `ley mcp` tools
+// against the daemon. The key is the aiRig's canary key, checked
 // against an httptest provider, so a leak anywhere is found by substring.
 
 // askRig is an aiRig whose `--ley` is the real ley, with a looping fixture as an idle radio, a

@@ -333,8 +333,8 @@ func TestMCPTuneRefusesAnActiveCaptureAndNamesWhy(t *testing.T) {
 	}
 }
 
-// A tool's text leads with its outcome: `ley ask` shows the first line under a call the user
-// allowed, and a retune note or the band's default mode there read as the result. What the
+// A tool's text leads with its outcome: the app's assistant panel shows the first line beside the
+// call, and a retune note or the band's default mode there read as the result. What the
 // session said on the way follows.
 func TestMCPToolTextLeadsWithTheOutcome(t *testing.T) {
 	t.Parallel()
