@@ -42,7 +42,8 @@ func newAskCommand(app *App) *cobra.Command {
 		Long: `ask is the test harness for the assistant: the end-to-end tests and the evals
 drive the daemon, its worker and the approval gate with it. People talk to the
 assistant in the app's panel (View ▸ Show Assistant, ⇧⌘A), and agents use ley
-mcp. ask sends the request to a new conversation, or with --continue to the
+mcp. ask takes its request as an argument, never from stdin, as a harness
+does: it sends the request to a new conversation, or with --continue to the
 newest idle one, and prints every state of the conversation, one Conversation
 a line (NDJSON); --json is implied. A call the assistant would ask about is
 declined unless --yes, which sets the conversation to allow everything. Ctrl-C
