@@ -55,15 +55,20 @@ func scriptedEndpoint() (url string, stop func(), err error) {
 	if err != nil {
 		return "", nil, err
 	}
-	srv := &http.Server{
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"data":[]}`))
-		}),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+	srv := &http.Server{Handler: http.HandlerFunc(serveScriptedModels), ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	return "http://" + ln.Addr().String() + "/v1", func() { _ = srv.Close() }, nil
+}
+
+// serveScriptedModels answers GET /v1/models with 200 and an empty list, which the key check
+// (`ley worker check`, checkKey) takes as accepted, and anything else with 404.
+func serveScriptedModels(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet || r.URL.Path != "/v1/models" {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"data":[]}`))
 }
 
 // assistantSkip is why assistant mode cannot run with this Env, or "".
