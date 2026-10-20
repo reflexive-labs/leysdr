@@ -261,11 +261,25 @@ struct StepBlock: View {
 
 /// What the assistant asks to do, the reason in its gate's words, and a button per answer the
 /// question offers: Decline, Allow for this conversation when it can be granted for the rest of
-/// the conversation (never for a delete), and Allow. No button takes Return: a delete or a
-/// takeover is answered with a click, never a stray key.
+/// the conversation (never for a delete or a cancel of another client's job), and Allow. No
+/// button takes Return: a delete or a takeover is answered with a click, never a stray key.
 struct PendingCard: View {
     @Environment(AppSession.self) private var session
     let question: PendingQuestion
+    /// The call an answer is on its way for. Every button is disabled until the daemon has
+    /// replied, so a quick second click never sends a second ResolveAction, which the daemon would
+    /// refuse. Kept by call id, so a new question is answerable at once.
+    @State private var answering: String?
+
+    /// Sends one answer, with the buttons disabled while it goes.
+    private func answer(_ send: @escaping @MainActor @Sendable () async -> Void) {
+        let id = question.callID
+        answering = id
+        Task {
+            await send()
+            if answering == id { answering = nil }
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -277,17 +291,18 @@ struct PendingCard: View {
             }
             HStack(spacing: 8) {
                 Spacer()
-                Button("Decline") { Task { await session.decline(callID: question.callID) } }
+                let session = session
+                let id = question.callID
+                Button("Decline") { answer { await session.decline(callID: id) } }
                 if question.offersConversation {
                     Button("Allow for this conversation") {
-                        Task {
-                            await session.approve(callID: question.callID, forConversation: true)
-                        }
+                        answer { await session.approve(callID: id, forConversation: true) }
                     }
                 }
-                Button("Allow") { Task { await session.approve(callID: question.callID) } }
+                Button("Allow") { answer { await session.approve(callID: id) } }
             }
             .buttonStyle(.bordered).controlSize(.small)
+            .disabled(answering == question.callID)
         }
         .padding(12)
         .background(Theme.raised, in: RoundedRectangle(cornerRadius: 6))

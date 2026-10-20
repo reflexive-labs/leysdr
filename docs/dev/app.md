@@ -479,40 +479,40 @@ the canvas keeps its room beside the sidebar, the inspector and the column. The 
 `MainWindow` beside both places' bodies rather than inside each, so a switch of place, the
 assistant's own `show_place` included, leaves the transcript, its scroll and the field alone.
 
-**The conversation** (`AssistantController`, in the façade, with the RPCs behind
-`AssistantCalls` so its rules are tested without a daemon). The window starts a conversation
-with `StartConversation`, declaring the app's view tools and naming no provider or model, so the
-daemon uses the assistant feature's; the first message starts one when none is going, and New
-Conversation ends the one shown and empties the panel. `SendMessage`, `ResolveAction` (Allow,
-Allow for this conversation, Decline), `StopTurn` and `EndConversation` are the other calls. The controller holds the newest
-copy of the conversation by `seq`, from the replies, from a `WatchConversation` stream that
-resumes from the `seq` it holds after a drop, and from the mirror's `conversation` events, which
-the session passes on. A refusal is a notice: `CREDENTIAL_MISSING`, `CREDENTIAL_REJECTED` and a
-start's `FAILED_PRECONDITION` (no model chosen) point to Settings with an Open Settings button; a
-`FAILED_PRECONDITION` on any other call means the conversation moved on first and says nothing;
-an unknown id marks the conversation gone, deleted by another client or dropped by the daemon's
+**The conversation** (`AssistantController`, in the façade, with the RPCs behind `AssistantCalls` so
+its rules are tested without a daemon). The window starts a conversation with `StartConversation`,
+declaring the app's view tools and naming no provider or model, so the daemon uses the assistant
+feature's; the first message starts one when none is going, and New Conversation ends the one shown
+and empties the panel. `SendMessage`, `ResolveAction` (Allow, Allow for this conversation, Decline),
+`StopTurn` and `EndConversation` are the other calls. The controller holds the newest copy of the
+conversation by `seq`, from the replies, from a `WatchConversation` stream that resumes from the
+`seq` it holds after a drop, and from the mirror's `conversation` events, which the session passes
+on. A refusal is a notice: `CREDENTIAL_MISSING`, `CREDENTIAL_REJECTED` and a start's
+`FAILED_PRECONDITION` (no model chosen) point to Settings with an Open Settings button; a
+`FAILED_PRECONDITION` on any other call means the conversation moved on first and says nothing; an
+unknown id marks the conversation gone, deleted by another client or dropped by the daemon's
 retention; a daemon restart does not, because the daemon keeps conversations on disk. A deleted
 conversation stays in the mirror, last seen `ENDED`, until the next `GetState` snapshot, since the
 contract sends no event for the deletion itself. The session copies the controller's state out on
 every change, as it copies the mirror's.
 
 **The rows** (`AssistantModels.swift`). `ConversationView` turns the conversation into turns, a
-user's right-aligned in muted ink and the assistant's in body text, and each tool call into a
-step: `→ tool arguments` on one line (a single argument is its value alone, several are `name
-value` pairs, cut at 80 characters), a state word (`running`, `done`, `failed`, `asks`, `in the
-app`, `declined`, `stopped`) and the result's first line; opened, the step shows the arguments as
-indented JSON, the whole result and its JSON. A call waiting for approval is a card with the
-question, the gate's reason (`assistant.md`, "The gate") and a button per answer the call offers
+user's right-aligned in muted ink and the assistant's in body text, and each tool call into a step:
+`→ tool arguments` on one line (a single argument is its value alone, several are `name value`
+pairs, cut at 80 characters), a state word (`running`, `done`, `failed`, `asks`, `in the app`,
+`declined`, `stopped`) and the result's first line; opened, the step shows the arguments as indented
+JSON, the whole result and its JSON. A call waiting for approval is a card with the question, the
+gate's reason (`assistant.md`, "The gate") and a button per answer the call offers
 (`PendingQuestion.offers`): Decline, Allow for this conversation when the call can be granted for
-the rest of the conversation (never a delete), and Allow, none on Return. The app starts every
-conversation in the default mode, in which questions are asked; the panel has no switch for the
-mode that asks nothing.
-Stop shows while the assistant thinks and while it waits on one of the app's view tools. The
-usage line under the transcript is the mirror's usage
-lines whose scope is the conversation, summed: `3 requests, 1.2k in, 400 out`, with the tokens the
-provider's cache served when there were any; never a price. The field sends on Return, keeps the
-text when the daemon did not take it, is disabled while the assistant thinks or waits, and takes
-the focus back when it can be typed in again if it had it when the message went;
+the rest of the conversation (never a delete or a cancel of another client's job), and Allow, none
+on Return. Once one is pressed all three are disabled until the question changes, so a second click
+sends no second answer. The app starts every conversation in the default mode, in which questions
+are asked; the panel has no switch for the mode that asks nothing. Stop shows while the assistant
+thinks and while it waits on one of the app's view tools. The usage line under the transcript is the
+mirror's usage lines whose scope is the conversation, summed: `3 requests, 1.2k in, 400 out`, with
+the tokens the provider's cache served when there were any; never a price. The field sends on
+Return, keeps the text when the daemon did not take it, is disabled while the assistant thinks or
+waits, and takes the focus back when it can be typed in again if it had it when the message went;
 `TuningKeyGuard` keeps Space and the arrows in it.
 
 **The view tools** (`AssistantViewTools.swift`). The app declares three, each named by the

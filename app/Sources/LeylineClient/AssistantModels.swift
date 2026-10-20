@@ -168,7 +168,8 @@ public struct PendingQuestion: Sendable, Equatable {
 
     /// The question can be allowed for the rest of the conversation: every row the gate lists
     /// for it is granted, and later calls of that kind run without asking
-    /// (`docs/dev/assistant.md`, "The gate"). A delete never offers it.
+    /// (`docs/dev/assistant.md`, "The gate"). A delete, and a cancel of another client's job,
+    /// never offer it.
     public var offersConversation: Bool { offers.contains(.conversation) }
 
     /// "The assistant wants to delete_recording rec_01…", `ley ask`'s question without the

@@ -1596,6 +1596,9 @@ and the fake worker in `make app-e2e`. The views are not compiled off the Mac.
   narrowest without clipping. After it, a second take-over in the same conversation runs without
   a card, and its step reads `done` with the receipt. A delete's card shows only Decline and
   Allow.
+- A quick second click on the card, Allow then Allow for this conversation, sends nothing: the
+  three buttons are disabled from the first click until the daemon replies, and the panel shows
+  no failure notice. A new question's buttons are enabled at once.
 - Stop shows only while the assistant thinks and ends the turn; New Conversation ends the
   conversation and empties the panel.
 - "Show me 2 m" with the radio on 146.52 MHz zooms the waterfall and the rail's window onto the
