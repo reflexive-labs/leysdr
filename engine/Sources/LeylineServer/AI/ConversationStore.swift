@@ -286,6 +286,7 @@ actor ConversationStore {
         log.info("\(id): \(client.kind) \(client.label) \(approve ? "approved" : "declined") call \(callID)\(approve ? " " + Self.words(event.resolved.scope) : "")")
         return await commit(id, by: client) { e in
             e.conversation.updateCall(callID) { $0.state = approve ? .toolCallRunning : .toolCallRefused }
+            e.conversation.lastTurnAtNs = WallClock.nowNs()
             e.conversation.state = .conversationThinking
             e.conversation.clearPending()
         }
@@ -308,6 +309,7 @@ actor ConversationStore {
                 $0.resultJson = request.resultJson
                 $0.isError = request.isError
             }
+            e.conversation.lastTurnAtNs = WallClock.nowNs()
             e.conversation.state = .conversationThinking
             e.conversation.clearPending()
         }
@@ -382,6 +384,7 @@ actor ConversationStore {
                   !pending.viewTool
             else { return }
             e.conversation.updateCall(pending.callID) { $0.state = .toolCallRunning }
+            e.conversation.lastTurnAtNs = WallClock.nowNs()
             e.conversation.state = .conversationThinking
             e.conversation.clearPending()
         }

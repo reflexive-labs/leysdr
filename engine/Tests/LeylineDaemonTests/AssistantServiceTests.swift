@@ -376,6 +376,9 @@ final class AssistantServiceTests: XCTestCase {
             let waiting = try await self.conversation(c, id) { $0.state == .conversationWaiting }
             let declined = try await self.resolve(c, id, call: waiting.pending.callID, approve: false)
             XCTAssertEqual(declined.turns.last?.tools.first?.state, .toolCallRefused)
+            // The decline is a change to the newest turn, so a client's count of the model's
+            // thinking starts from it and not from when the question was asked.
+            XCTAssertGreaterThan(declined.lastTurnAtNs, waiting.lastTurnAtNs)
             let done = try await self.conversation(c, id) { $0.state == .conversationIdle }
             XCTAssertEqual(done.turns.last?.tools.first?.state, .toolCallRefused)
             XCTAssertEqual(done.turns.last?.text, "left it alone")
