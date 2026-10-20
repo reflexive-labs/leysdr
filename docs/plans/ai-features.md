@@ -1296,7 +1296,7 @@ of the column.
   stays as it is.
 - **Typing during a turn.** The field takes typing whenever it is shown; Return sends only while
   the daemon would take the message (idle, over or lost, and nothing on its way) and otherwise
-  keeps the text.
+  keeps the text, with a line under the field saying what Return waits for. Nothing is queued.
 - **The reply's ink.** The assistant's text moves from `ink` to `inkSecondary`; the steps stay in
   `inkTertiary` and the user's turn in `inkMuted`, so the order of the column is unchanged.
 
@@ -1306,11 +1306,16 @@ step runs, not while idle or waiting) and the time it counts from; the views by 
 describes the row, the field and the ink.
 
 Done 2026-10-20 on Linux. `ConversationView` gained `isWaitingOnModel`, `lastChangeAt` and
-`waitingSince(now:)`, tested in `AssistantModelsTests`. The panel draws `WaitingRow`, a
-`TimelineView` redrawn once a second, as the transcript's last item; the field is never disabled,
-`canSend` gates Return, and the focus-return mechanism the disabled field needed is gone. A
-message the daemon refused goes back above anything typed while it was on its way. The row
-appears at once rather than after the terminal's 300 ms. The views are not compiled on Linux and
+`waitingSince(now:)`, and `AssistantWords.returnWaits` the line under the field, tested in
+`AssistantModelsTests`. The panel draws `WaitingRow`, a `TimelineView` redrawn once a second and
+drawn from 300 ms, as the transcript's last item; the field is never disabled, `canSend` gates
+Return, with a flag of the field's own against a second Return before `assistantSending` arrives,
+and the focus-return mechanism the disabled field needed is gone. A message the daemon refused
+goes back above anything typed while it was on its way. A review found the count stale after a
+card: the daemon set `last_turn_at_ns` only on a message and on the worker's turns, so a Decline
+on a question that sat 40 s showed `thinking… 40s` at once. `ResolveAction`, `AnswerViewTool` and
+the switch to AUTO on a waiting conversation now set it too, with a daemon test for a decline. The
+fake daemon still sets it only on a message and a turn. The views are not compiled on Linux and
 are on the Mac checklist in `docs/plans/app.md`.
 
 ## Lanes
