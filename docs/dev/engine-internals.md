@@ -738,6 +738,16 @@ is still the newest, so a message sent in the meantime keeps its own turn; a lat
 worker for the closed turn is ignored. On an `IDLE` conversation `StopTurn` changes nothing, and on
 an ended or failed one it is `FAILED_PRECONDITION`.
 
+`SetApprovalMode` is allowed in every state but `ENDED` and `FAILED`, where it is
+`FAILED_PRECONDITION`. It sets `mode` (anything but `AUTO` is stored as `ASK`), which is saved with
+the conversation and goes into every later `WorkerStart`, and writes `WorkerEvent.set_mode` to a
+running worker. The daemon holds no policy, but on a `WAITING` conversation set to `AUTO` with a
+question pending (not a view tool) it marks that call `RUNNING`, clears `pending` and makes the
+conversation `THINKING` itself, as `ResolveAction` does, before the worker's next write; the worker
+approves the call once and its next turn says how it ended. `ResolveAction`'s `scope` must be one
+of the pending call's `offers` (unset is `ONCE`; a call with no offers accepts `ONCE`), or it is
+`INVALID_ARGUMENT` and the question stays open.
+
 Every change bumps the conversation's own `seq` and goes out whole (invariant 6): to each
 `WatchConversation` stream, then as `Event.conversation`. The event is version-guarded like
 `Event.ai`: a state no newer than the one last published for that conversation is dropped
