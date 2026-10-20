@@ -198,12 +198,15 @@ actor ConversationStore {
         let (provider, model) = try await resolveModel(request)
         let credential = try await key(for: provider)
         let id = "conv_" + ULID().string
+        // The daemon knows no policy; it only passes the mode on. Unset, or a value this build
+        // does not know, is ASK, so nothing runs without asking that the client did not ask for.
+        let mode: Leyline_V1_ApprovalMode = request.mode == .auto ? .auto : .ask
         // The lookups above suspend, and `stopAll` may have run meanwhile. Nothing suspends from
         // here until the conversation is in `entries`, where a later `stopAll` finds it.
         guard !closed else { throw EngineError.failedPrecondition("the daemon is stopping") }
         let worker: AssistantWorker
         do {
-            worker = try spawn(id, credential: credential, model: model, viewTools: request.viewTools, resume: false)
+            worker = try spawn(id, credential: credential, model: model, viewTools: request.viewTools, mode: mode, resume: false)
         } catch {
             removeFiles(of: id)
             throw error
@@ -217,8 +220,9 @@ actor ConversationStore {
         conversation.startedBy = client.proto
         conversation.startedAtNs = WallClock.nowNs()
         conversation.viewTools = request.viewTools
+        conversation.mode = mode
         entries[id] = Entry(conversation: conversation, worker: worker, secret: credential.secret)
-        log.info("started \(id) on \(provider) \(model.isEmpty ? "(the worker's default model)" : model) for \(client.kind) \(client.label)")
+        log.info("started \(id) on \(provider) \(model.isEmpty ? "(the worker's default model)" : model) in \(mode == .auto ? "auto" : "ask") mode for \(client.kind) \(client.label)")
         let started = await commit(id, by: client) { _ in }
         await trimToRetention()
         return started
@@ -257,15 +261,29 @@ actor ConversationStore {
         }
     }
 
-    /// Approves or refuses the pending call. FAILED_PRECONDITION unless WAITING on that call for
-    /// approval. The call shows RUNNING or REFUSED until the worker's next turn says otherwise.
-    func resolve(_ id: String, callID: String, approve: Bool, by client: ClientContext) async throws -> Leyline_V1_Conversation {
+    /// Approves or refuses the pending call. An approval's scope is one the call offered, unset
+    /// meaning ONCE; the worker decides what it grants. FAILED_PRECONDITION unless WAITING on that
+    /// call for approval, INVALID_ARGUMENT for a scope it did not offer. The call shows RUNNING or
+    /// REFUSED until the worker's next turn says otherwise.
+    func resolve(_ id: String, callID: String, approve: Bool, scope: Leyline_V1_ApprovalScope = .unspecified,
+                 by client: ClientContext) async throws -> Leyline_V1_Conversation
+    {
         let current = try waiting(id, on: callID, viewTool: false)
         var event = Leyline_V1_WorkerEvent()
         event.resolved.callID = callID
         event.resolved.approved = approve
+        if approve {
+            let given: Leyline_V1_ApprovalScope = scope == .unspecified ? .once : scope
+            // A pending call from a worker that sends no offers accepts ONCE, as every call did
+            // before there were scopes.
+            let offers = current.conversation.pending.offers.isEmpty ? [.once] : current.conversation.pending.offers
+            guard offers.contains(given) else {
+                throw EngineError.invalidArgument("call \(callID) cannot be allowed \(Self.words(given)); it offers \(offers.map(Self.words).joined(separator: " or "))", target: id)
+            }
+            event.resolved.scope = given
+        }
         try write(event, to: current)
-        log.info("\(id): \(client.kind) \(client.label) \(approve ? "approved" : "declined") call \(callID)")
+        log.info("\(id): \(client.kind) \(client.label) \(approve ? "approved" : "declined") call \(callID)\(approve ? " " + Self.words(event.resolved.scope) : "")")
         return await commit(id, by: client) { e in
             e.conversation.updateCall(callID) { $0.state = approve ? .toolCallRunning : .toolCallRefused }
             e.conversation.state = .conversationThinking
@@ -528,7 +546,7 @@ actor ConversationStore {
     /// told to resume from the transcript or to begin it. Nothing here suspends, so a caller that
     /// checked the store's state just before still holds it after.
     private func spawn(_ id: String, credential: Leyline_V1_SetCredentialRequest, model: String,
-                       viewTools: [Leyline_V1_ViewTool], resume: Bool) throws -> AssistantWorker
+                       viewTools: [Leyline_V1_ViewTool], mode: Leyline_V1_ApprovalMode, resume: Bool) throws -> AssistantWorker
     {
         let dir = directory + "/" + id
         guard ensurePrivateDirectory(directory), ensurePrivateDirectory(dir) else {
@@ -543,6 +561,7 @@ actor ConversationStore {
         start.socket = spawner.socketPath
         start.transcriptPath = dir + "/" + Self.transcriptFile
         start.resume = resume
+        start.mode = mode
         let worker = try spawner.startAssistant(credential: credential, start: start) { [weak self] error in
             Task { await self?.writeFailed(id, error) }
         }
@@ -561,7 +580,7 @@ actor ConversationStore {
         guard !closed else { throw EngineError.failedPrecondition("the daemon is stopping", target: id) }
         guard try entry(id).worker == nil else { return }
         let worker = try spawn(id, credential: credential, model: conversation.model,
-                               viewTools: conversation.viewTools, resume: true)
+                               viewTools: conversation.viewTools, mode: conversation.mode, resume: true)
         entries[id]?.worker = worker
         entries[id]?.secret = credential.secret
         log.info("\(id): started a worker to resume it")
@@ -685,6 +704,15 @@ actor ConversationStore {
         let newer = history.filter { $0.seq > sinceSeq }
         guard newer.first?.seq == sinceSeq + 1 else { return [current] }
         return newer
+    }
+
+    /// A scope in the words a log line or an error uses.
+    static func words(_ scope: Leyline_V1_ApprovalScope) -> String {
+        switch scope {
+        case .once: return "once"
+        case .conversation: return "for the conversation"
+        default: return "with scope \(scope.rawValue)"
+        }
     }
 
     private func entry(_ id: String) throws -> Entry {
@@ -826,6 +854,7 @@ extension Leyline_V1_Conversation {
             pending.argumentsJson = call.argumentsJson
             pending.reason = call.reason
             pending.viewTool = call.state == .toolCallAwaitingClient
+            pending.offers = call.offers
             self.pending = pending
         } else {
             state = .conversationThinking

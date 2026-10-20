@@ -57,7 +57,8 @@ struct AssistantService: Leyline_V1_Assistant.SimpleServiceProtocol {
         let client = ClientContext.current
         await store.touchUnary(client)
         return try await mapErrors {
-            try await conversations.resolve(request.conversationID, callID: request.callID, approve: request.approve, by: client)
+            try await conversations.resolve(request.conversationID, callID: request.callID, approve: request.approve,
+                                            scope: request.scope, by: client)
         }
     }
 

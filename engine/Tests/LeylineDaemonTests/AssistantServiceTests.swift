@@ -80,8 +80,9 @@ final class AssistantServiceTests: XCTestCase {
         return out
     }
 
-    private func start(_ c: DaemonClients, viewTools: [String] = []) async throws -> Leyline_V1_Conversation {
+    private func start(_ c: DaemonClients, viewTools: [String] = [], mode: Leyline_V1_ApprovalMode = .unspecified) async throws -> Leyline_V1_Conversation {
         var request = Leyline_V1_StartConversationRequest()
+        request.mode = mode
         request.viewTools = viewTools.map {
             var tool = Leyline_V1_ViewTool()
             tool.name = $0
@@ -99,11 +100,14 @@ final class AssistantServiceTests: XCTestCase {
         return try await c.assistant.sendMessage(request, metadata: testMetadata)
     }
 
-    private func resolve(_ c: DaemonClients, _ id: String, call: String, approve: Bool) async throws -> Leyline_V1_Conversation {
+    private func resolve(_ c: DaemonClients, _ id: String, call: String, approve: Bool,
+                         scope: Leyline_V1_ApprovalScope = .unspecified) async throws -> Leyline_V1_Conversation
+    {
         var request = Leyline_V1_ResolveActionRequest()
         request.conversationID = id
         request.callID = call
         request.approve = approve
+        request.scope = scope
         return try await c.assistant.resolveAction(request, metadata: testMetadata)
     }
 
@@ -262,6 +266,60 @@ final class AssistantServiceTests: XCTestCase {
             XCTAssertEqual(done.turns.last?.text, "", "the declined branch did not run")
             let late = await self.failure { _ = try await self.resolve(c, id, call: call, approve: true) }
             XCTAssertEqual(late.code, EngineError.Code.failedPrecondition, "a resolved call cannot be resolved again")
+        }
+    }
+
+    func testAnApprovalForTheConversationReachesTheWorkerAndAllowedByComesBack() async throws {
+        let script = """
+        offers once conversation
+        ask tune {"frequency":"150","take_over":true} another client is using the radio
+        forconversation granted scan {"range":"2m","take_over":true} another client is using the radio
+        end
+        """
+        try await withAssistant(scripts: [script]) { c, dir in
+            let started = try await self.start(c)
+            XCTAssertEqual(started.mode, .ask, "an unset mode is ASK")
+            let id = started.conversationID
+            _ = try await self.send(c, id, "take the radio")
+            let waiting = try await self.conversation(c, id) { $0.state == .conversationWaiting }
+            XCTAssertEqual(waiting.pending.offers, [.once, .conversation], "the daemon copies the call's offers")
+            let log = try await LogCapture.shared.capture {
+                _ = try await self.resolve(c, id, call: waiting.pending.callID, approve: true, scope: .conversation)
+            }
+            XCTAssertTrue(log.contains("approved call \(waiting.pending.callID) for the conversation"), log)
+            let done = try await self.conversation(c, id) { $0.state == .conversationIdle }
+            let scan = try XCTUnwrap(done.turns.last?.tools.last)
+            XCTAssertEqual(scan.tool, "scan", "the worker was told the scope")
+            XCTAssertEqual(scan.allowedBy, waiting.pending.callID)
+            XCTAssertEqual(scan.reason, "another client is using the radio")
+            let dump = await fakeWorkerDump(dir + "/dump.1")
+            XCTAssertEqual(dump?["start.mode"], "ask")
+        }
+    }
+
+    func testAScopeTheCallDidNotOfferIsInvalidArgument() async throws {
+        let script = """
+        offers once
+        ask delete_recording {"id":"rec_1"} deleting a recording asks every time
+        forconversation text granted
+        approved text allowed once
+        end
+        """
+        try await withAssistant(scripts: [script]) { c, _ in
+            let id = try await self.start(c).conversationID
+            _ = try await self.send(c, id, "delete rec_1")
+            let waiting = try await self.conversation(c, id) { $0.state == .conversationWaiting }
+            XCTAssertEqual(waiting.pending.offers, [.once])
+            let refused = await self.failure {
+                _ = try await self.resolve(c, id, call: waiting.pending.callID, approve: true, scope: .conversation)
+            }
+            XCTAssertEqual(refused.code, EngineError.Code.invalidArgument)
+            XCTAssertTrue(refused.text.contains("it offers once"), refused.text)
+            let still = try await c.daemon.conversations.get(id)
+            XCTAssertEqual(still.state, .conversationWaiting, "a refused answer leaves the question open")
+            _ = try await self.resolve(c, id, call: waiting.pending.callID, approve: true)
+            let done = try await self.conversation(c, id) { $0.state == .conversationIdle }
+            XCTAssertEqual(done.turns.last?.text, "allowed once", "an unset scope reaches the worker as ONCE")
         }
     }
 
@@ -581,6 +639,35 @@ final class AssistantServiceTests: XCTestCase {
             XCTAssertEqual(resumed?["start.transcript_path"], c.dataPath + "/conversations/\(kept.conversationID)/transcript.jsonl")
             XCTAssertEqual(resumed?["start.model"], "claude-test")
             XCTAssertEqual(resumed?["resumed.turns"], "1")
+        }
+    }
+
+    func testTheModeIsKeptAndReachesAResumedWorker() async throws {
+        let script = """
+        text one
+        end
+
+        text two
+        end
+        """
+        let id = Mutex("")
+        try await acrossRestart(scripts: [script, script]) { c, dir in
+            let started = try await self.start(c, mode: .auto)
+            XCTAssertEqual(started.mode, .auto)
+            id.withLock { $0 = started.conversationID }
+            _ = try await self.send(c, started.conversationID, "one")
+            _ = try await self.conversation(c, started.conversationID) { $0.state == .conversationIdle && $0.turns.count == 2 }
+            let dump = await fakeWorkerDump(dir + "/dump.1")
+            XCTAssertEqual(dump?["start.mode"], "auto")
+        } then: { c, dir in
+            let kept = id.withLock { $0 }
+            let loaded = try await c.daemon.conversations.get(kept)
+            XCTAssertEqual(loaded.mode, .auto, "the mode is kept on disk")
+            _ = try await self.send(c, kept, "two")
+            _ = try await self.conversation(c, kept) { $0.state == .conversationIdle && $0.turns.count == 4 }
+            let resumed = await fakeWorkerDump(dir + "/dump.2")
+            XCTAssertEqual(resumed?["start.mode"], "auto")
+            XCTAssertEqual(resumed?["start.resume"], "true")
         }
     }
 

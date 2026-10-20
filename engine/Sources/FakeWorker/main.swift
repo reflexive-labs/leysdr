@@ -17,8 +17,12 @@
 //   done <name> <result>      marks the newest call to <name> DONE with result_text
 //   ask <name> <json> <why>   adds an AWAITING_APPROVAL call and waits for ActionResolved; a
 //                             declined call goes REFUSED, an approved one RUNNING
+//   offers <scope> ...        the scopes later asks in the block offer (once, conversation)
 //   approved <line>           the line, only if the last ask was approved
 //   declined <line>           the line, only if the last ask was declined
+//   forconversation <line>    the line, only if the last ask was approved for the conversation
+//   granted <name> <json> <why>  adds a DONE call with the reason, allowed_by the last ask's id,
+//                             as a call a grant covered
 //   view <name> <json>        adds an AWAITING_CLIENT call and waits for ViewToolAnswer, which
 //                             marks it DONE with the answer
 //   end                       marks the turn done
@@ -157,6 +161,7 @@ if let dump = environment["FAKE_WORKER_DUMP"] {
                  "start.model=\(start.model)", "start.endpoint=\(start.endpoint)", "start.socket=\(start.socket)",
                  "start.view_tools=\(start.viewTools.map(\.name).joined(separator: ","))",
                  "start.transcript_path=\(start.transcriptPath)", "start.resume=\(start.resume)",
+                 "start.mode=\(start.mode)",
                  "resumed.turns=\(resumedLines.count)"]
     for (name, value) in environment.sorted(by: { $0.key < $1.key }) { lines.append("env.\(name)=\(value)") }
     try? (lines.joined(separator: "\n") + "\n").write(toFile: dump, atomically: true, encoding: .utf8)
@@ -250,6 +255,9 @@ func play(_ lines: [String], userTurnID: String) {
     turn.role = .assistant
     turn.atNs = nowNs()
     var lastApproved: Bool?
+    var lastScope = Leyline_V1_ApprovalScope.unspecified
+    var lastAskID = ""
+    var offers: [Leyline_V1_ApprovalScope] = []
 
     func send() {
         var message = Leyline_V1_WorkerMessage()
@@ -287,6 +295,10 @@ func play(_ lines: [String], userTurnID: String) {
             guard lastApproved == line.hasPrefix("approved ") else { continue }
             line = String(line.dropFirst("approved ".count))
         }
+        if line.hasPrefix("forconversation ") {
+            guard lastApproved == true, lastScope == .conversation else { continue }
+            line = String(line.dropFirst("forconversation ".count))
+        }
         // A stop that arrived while the worker was busy is honoured before the next line.
         while let event = inbox.next(within: 0) {
             if case .stop? = event.event { return stopped() }
@@ -307,19 +319,31 @@ func play(_ lines: [String], userTurnID: String) {
                 turn.tools[i].resultText = result
             }
             send()
+        case "offers":
+            offers = rest.split(separator: " ").map { $0 == "conversation" ? .conversation : .once }
+        case "granted":
+            let (args, reason) = split(rest, words: 2)
+            let i = addCall(args[0], args[1], .toolCallDone, reason: reason)
+            turn.tools[i].allowedBy = lastAskID
+            send()
         case "ask":
             let (args, reason) = split(rest, words: 2)
             let i = addCall(args[0], args[1], .toolCallAwaitingApproval, reason: reason)
+            turn.tools[i].offers = offers
             send()
             let id = turn.tools[i].callID
+            lastAskID = id
             var approved = false
+            var scope = Leyline_V1_ApprovalScope.unspecified
             let answered = wait {
                 guard case .resolved(let r)? = $0.event, r.callID == id else { return false }
                 approved = r.approved
+                scope = r.scope
                 return true
             }
             guard answered else { return stopped() }
             lastApproved = approved
+            lastScope = scope
             turn.tools[i].state = approved ? .toolCallRunning : .toolCallRefused
             send()
         case "view":

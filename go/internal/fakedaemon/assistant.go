@@ -5,6 +5,7 @@ package fakedaemon
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"time"
@@ -31,8 +32,14 @@ type AssistantStep struct {
 	// the call's arguments_json.
 	Tool, Args, Result string
 	// Ask adds a call to the tool it names that waits for ResolveAction, with Reason as why it
-	// asks. Approved, the call is DONE with ResultApproved; refused, it is REFUSED.
+	// asks and Offers as the scopes it accepts (nil offers ONCE alone). Approved, the call is DONE
+	// with ResultApproved; refused, it is REFUSED. In an AUTO conversation, or once an earlier Ask
+	// for the same tool in the conversation was approved for the conversation, it does not wait:
+	// it is DONE with ResultApproved at once, its reason set, and allowed_by naming the call whose
+	// answer granted it (none in AUTO). The worker keeps grants by policy row; the fake has no
+	// policy, so the tool stands in for the row.
 	Ask, Reason, ResultApproved string
+	Offers                      []leylinev1.ApprovalScope
 	// View adds a view tool call that waits for AnswerViewTool, which supplies its result.
 	View string
 	// Fail marks the turn done and fails the conversation with INTERNAL and this message, as a
@@ -63,6 +70,8 @@ type fakeConversation struct {
 	// playing is the scripted turn the conversation is on, which holds the approved results.
 	playing AssistantTurn
 	calls   int
+	// grants maps a tool to the call whose approval for the conversation granted it.
+	grants map[string]string
 }
 
 type convWatcher struct{ ch chan *leylinev1.Conversation }
@@ -162,9 +171,10 @@ func (a assistantSvc) StartConversation(ctx context.Context, req *leylinev1.Star
 		conv: &leylinev1.Conversation{
 			ConversationId: newID("conv_"), State: leylinev1.ConversationState_CONVERSATION_IDLE,
 			Provider: provider, Model: model, StartedBy: ci, StartedAtNs: now, LastTurnAtNs: now,
-			ViewTools: req.GetViewTools(),
+			ViewTools: req.GetViewTools(), Mode: approvalMode(req.GetMode()),
 		},
 		watchers: map[*convWatcher]struct{}{},
+		grants:   map[string]string{},
 	}
 	if d.talk.convs == nil {
 		d.talk.convs = map[string]*fakeConversation{}
@@ -330,10 +340,20 @@ func (d *Daemon) applyStepLocked(fc *fakeConversation, step AssistantStep, by *l
 	case step.Tool != "":
 		addCall(step.Tool, leylinev1.ToolCallState_TOOL_CALL_RUNNING)
 	case step.Ask != "":
+		granter, granted := fc.grants[step.Ask]
+		if granted || fc.conv.Mode == leylinev1.ApprovalMode_APPROVAL_MODE_AUTO {
+			c := addCall(step.Ask, leylinev1.ToolCallState_TOOL_CALL_DONE)
+			c.Reason, c.ResultText, c.AllowedBy = step.Reason, step.ResultApproved, granter
+			break
+		}
 		c := addCall(step.Ask, leylinev1.ToolCallState_TOOL_CALL_AWAITING_APPROVAL)
 		c.Reason = step.Reason
+		c.Offers = step.Offers
+		if len(c.Offers) == 0 {
+			c.Offers = []leylinev1.ApprovalScope{leylinev1.ApprovalScope_APPROVAL_SCOPE_ONCE}
+		}
 		fc.conv.State = leylinev1.ConversationState_CONVERSATION_WAITING
-		fc.conv.Pending = &leylinev1.PendingAction{CallId: c.CallId, Tool: c.Tool, ArgumentsJson: c.ArgumentsJson, Reason: c.Reason}
+		fc.conv.Pending = &leylinev1.PendingAction{CallId: c.CallId, Tool: c.Tool, ArgumentsJson: c.ArgumentsJson, Reason: c.Reason, Offers: c.Offers}
 		waits = true
 	case step.View != "":
 		c := addCall(step.View, leylinev1.ToolCallState_TOOL_CALL_AWAITING_CLIENT)
@@ -388,14 +408,56 @@ func pendingCall(fc *fakeConversation, callID string, view bool) (*leylinev1.Too
 }
 
 // ResolveAction implements Assistant: the pending call runs or is refused, and the turn goes on.
+// An approval's scope must be one the call offered, unset meaning ONCE, or it is INVALID_ARGUMENT
+// as the daemon makes it; one for the conversation grants the call's tool.
 func (a assistantSvc) ResolveAction(ctx context.Context, req *leylinev1.ResolveActionRequest) (*leylinev1.Conversation, error) {
+	if req.GetApprove() {
+		a.d.mu.Lock()
+		err := a.checkScope(req)
+		a.d.mu.Unlock()
+		if err != nil {
+			return nil, fail(ctx, err)
+		}
+	}
 	return a.answer(ctx, req.GetConversationId(), req.GetCallId(), false, func(c *leylinev1.ToolCall, step string) {
 		if req.GetApprove() {
 			c.State, c.ResultText = leylinev1.ToolCallState_TOOL_CALL_DONE, step
+			if req.GetScope() == leylinev1.ApprovalScope_APPROVAL_SCOPE_CONVERSATION {
+				if fc := a.d.talk.convs[req.GetConversationId()]; fc != nil {
+					fc.grants[c.Tool] = c.CallId
+				}
+			}
 			return
 		}
 		c.State = leylinev1.ToolCallState_TOOL_CALL_REFUSED
 	})
+}
+
+// checkScope refuses an approval with a scope the pending call did not offer. A call that is not
+// pending is left for answer to refuse. Call with d.mu held.
+func (a assistantSvc) checkScope(req *leylinev1.ResolveActionRequest) *leyline.Error {
+	fc := a.d.talk.convs[req.GetConversationId()]
+	if fc == nil || fc.conv.GetPending().GetCallId() != req.GetCallId() || fc.conv.GetPending().GetViewTool() {
+		return nil
+	}
+	scope := req.GetScope()
+	if scope == leylinev1.ApprovalScope_APPROVAL_SCOPE_UNSPECIFIED {
+		scope = leylinev1.ApprovalScope_APPROVAL_SCOPE_ONCE
+	}
+	if !slices.Contains(fc.conv.GetPending().GetOffers(), scope) {
+		return errorf(leyline.CodeInvalidArgument, req.GetCallId(),
+			fmt.Sprintf("call %s cannot be allowed with %s; it offers %v", req.GetCallId(), scope, fc.conv.GetPending().GetOffers()))
+	}
+	return nil
+}
+
+// approvalMode is the mode a conversation reports: AUTO when asked for, ASK for anything else,
+// as the daemon makes it.
+func approvalMode(m leylinev1.ApprovalMode) leylinev1.ApprovalMode {
+	if m == leylinev1.ApprovalMode_APPROVAL_MODE_AUTO {
+		return m
+	}
+	return leylinev1.ApprovalMode_APPROVAL_MODE_ASK
 }
 
 // AnswerViewTool implements Assistant: the client's answer is the pending view tool call's result.
