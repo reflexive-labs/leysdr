@@ -168,7 +168,7 @@ func TestPolicyRows(t *testing.T) {
 			if tc.prepare != nil {
 				tc.prepare(p)
 			}
-			reason := p.Check(tc.tool, tc.args, tc.isWrite)
+			reason := p.Check(tc.tool, tc.args, tc.isWrite).Reason
 			if (reason != "") != tc.wantAsk {
 				t.Fatalf("asks = %v (%q), want %v", reason != "", reason, tc.wantAsk)
 			}

@@ -75,6 +75,8 @@ type workerConfig struct {
 	chat *chatScript
 	// noModel sends WorkerStart with no model.
 	noModel bool
+	// mode is WorkerStart.mode.
+	mode leylinev1.ApprovalMode
 }
 
 type lockedBuffer struct {
@@ -210,6 +212,7 @@ func startWorker(t *testing.T, cfg workerConfig) *worker {
 	w.send(&leylinev1.WorkerEvent{Event: &leylinev1.WorkerEvent_Start{Start: &leylinev1.WorkerStart{
 		ConversationId: convID, Provider: provider, Model: model, Endpoint: cfg.endpoint,
 		ViewTools: cfg.viewTools, Socket: sock, TranscriptPath: cfg.transcript, Resume: cfg.resume,
+		Mode: cfg.mode,
 	}}})
 	return w
 }
@@ -232,6 +235,12 @@ func (w *worker) say(turnID, text string) {
 func (w *worker) resolve(callID string, approve bool) {
 	w.t.Helper()
 	w.send(&leylinev1.WorkerEvent{Event: &leylinev1.WorkerEvent_Resolved{Resolved: &leylinev1.ActionResolved{CallId: callID, Approved: approve}}})
+}
+
+// allow approves a call with scope.
+func (w *worker) allow(callID string, scope leylinev1.ApprovalScope) {
+	w.t.Helper()
+	w.send(&leylinev1.WorkerEvent{Event: &leylinev1.WorkerEvent_Resolved{Resolved: &leylinev1.ActionResolved{CallId: callID, Approved: true, Scope: scope}}})
 }
 
 func (w *worker) stop() {

@@ -31,6 +31,108 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// How a conversation treats a call the policy says asks first.
+type ApprovalMode int32
+
+const (
+	ApprovalMode_APPROVAL_MODE_UNSPECIFIED ApprovalMode = 0 // ASK
+	ApprovalMode_APPROVAL_MODE_ASK         ApprovalMode = 1 // the call waits for ResolveAction unless a grant covers it
+	ApprovalMode_APPROVAL_MODE_AUTO        ApprovalMode = 2 // every call runs and is reported with its reason; nothing waits
+)
+
+// Enum value maps for ApprovalMode.
+var (
+	ApprovalMode_name = map[int32]string{
+		0: "APPROVAL_MODE_UNSPECIFIED",
+		1: "APPROVAL_MODE_ASK",
+		2: "APPROVAL_MODE_AUTO",
+	}
+	ApprovalMode_value = map[string]int32{
+		"APPROVAL_MODE_UNSPECIFIED": 0,
+		"APPROVAL_MODE_ASK":         1,
+		"APPROVAL_MODE_AUTO":        2,
+	}
+)
+
+func (x ApprovalMode) Enum() *ApprovalMode {
+	p := new(ApprovalMode)
+	*p = x
+	return p
+}
+
+func (x ApprovalMode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ApprovalMode) Descriptor() protoreflect.EnumDescriptor {
+	return file_leyline_v1_ai_proto_enumTypes[0].Descriptor()
+}
+
+func (ApprovalMode) Type() protoreflect.EnumType {
+	return &file_leyline_v1_ai_proto_enumTypes[0]
+}
+
+func (x ApprovalMode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ApprovalMode.Descriptor instead.
+func (ApprovalMode) EnumDescriptor() ([]byte, []int) {
+	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{0}
+}
+
+// How far an approval reaches.
+type ApprovalScope int32
+
+const (
+	ApprovalScope_APPROVAL_SCOPE_UNSPECIFIED ApprovalScope = 0 // ONCE when it approves
+	ApprovalScope_APPROVAL_SCOPE_ONCE        ApprovalScope = 1 // this call only
+	// This call, and every later call in the conversation for which the question's policy rows are
+	// the reason to ask. A grant comes only from ResolveAction, never from the user's words.
+	ApprovalScope_APPROVAL_SCOPE_CONVERSATION ApprovalScope = 2
+)
+
+// Enum value maps for ApprovalScope.
+var (
+	ApprovalScope_name = map[int32]string{
+		0: "APPROVAL_SCOPE_UNSPECIFIED",
+		1: "APPROVAL_SCOPE_ONCE",
+		2: "APPROVAL_SCOPE_CONVERSATION",
+	}
+	ApprovalScope_value = map[string]int32{
+		"APPROVAL_SCOPE_UNSPECIFIED":  0,
+		"APPROVAL_SCOPE_ONCE":         1,
+		"APPROVAL_SCOPE_CONVERSATION": 2,
+	}
+)
+
+func (x ApprovalScope) Enum() *ApprovalScope {
+	p := new(ApprovalScope)
+	*p = x
+	return p
+}
+
+func (x ApprovalScope) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ApprovalScope) Descriptor() protoreflect.EnumDescriptor {
+	return file_leyline_v1_ai_proto_enumTypes[1].Descriptor()
+}
+
+func (ApprovalScope) Type() protoreflect.EnumType {
+	return &file_leyline_v1_ai_proto_enumTypes[1]
+}
+
+func (x ApprovalScope) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ApprovalScope.Descriptor instead.
+func (ApprovalScope) EnumDescriptor() ([]byte, []int) {
+	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{1}
+}
+
 // The daemon derives the state from the turns the worker writes: a turn whose last tool call is
 // AWAITING_APPROVAL or AWAITING_CLIENT makes the conversation WAITING with that call as
 // `pending`; a turn marked `done` makes it IDLE.
@@ -76,11 +178,11 @@ func (x ConversationState) String() string {
 }
 
 func (ConversationState) Descriptor() protoreflect.EnumDescriptor {
-	return file_leyline_v1_ai_proto_enumTypes[0].Descriptor()
+	return file_leyline_v1_ai_proto_enumTypes[2].Descriptor()
 }
 
 func (ConversationState) Type() protoreflect.EnumType {
-	return &file_leyline_v1_ai_proto_enumTypes[0]
+	return &file_leyline_v1_ai_proto_enumTypes[2]
 }
 
 func (x ConversationState) Number() protoreflect.EnumNumber {
@@ -89,7 +191,7 @@ func (x ConversationState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ConversationState.Descriptor instead.
 func (ConversationState) EnumDescriptor() ([]byte, []int) {
-	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{0}
+	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{2}
 }
 
 type Role int32
@@ -125,11 +227,11 @@ func (x Role) String() string {
 }
 
 func (Role) Descriptor() protoreflect.EnumDescriptor {
-	return file_leyline_v1_ai_proto_enumTypes[1].Descriptor()
+	return file_leyline_v1_ai_proto_enumTypes[3].Descriptor()
 }
 
 func (Role) Type() protoreflect.EnumType {
-	return &file_leyline_v1_ai_proto_enumTypes[1]
+	return &file_leyline_v1_ai_proto_enumTypes[3]
 }
 
 func (x Role) Number() protoreflect.EnumNumber {
@@ -138,7 +240,7 @@ func (x Role) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Role.Descriptor instead.
 func (Role) EnumDescriptor() ([]byte, []int) {
-	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{1}
+	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{3}
 }
 
 type ToolCallState int32
@@ -183,11 +285,11 @@ func (x ToolCallState) String() string {
 }
 
 func (ToolCallState) Descriptor() protoreflect.EnumDescriptor {
-	return file_leyline_v1_ai_proto_enumTypes[2].Descriptor()
+	return file_leyline_v1_ai_proto_enumTypes[4].Descriptor()
 }
 
 func (ToolCallState) Type() protoreflect.EnumType {
-	return &file_leyline_v1_ai_proto_enumTypes[2]
+	return &file_leyline_v1_ai_proto_enumTypes[4]
 }
 
 func (x ToolCallState) Number() protoreflect.EnumNumber {
@@ -196,7 +298,7 @@ func (x ToolCallState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ToolCallState.Descriptor instead.
 func (ToolCallState) EnumDescriptor() ([]byte, []int) {
-	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{2}
+	return file_leyline_v1_ai_proto_rawDescGZIP(), []int{4}
 }
 
 // UNAVAILABLE means the check could not run (no worker, the provider unreachable), which says
@@ -237,11 +339,11 @@ func (x CredentialCheck_Outcome) String() string {
 }
 
 func (CredentialCheck_Outcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_leyline_v1_ai_proto_enumTypes[3].Descriptor()
+	return file_leyline_v1_ai_proto_enumTypes[5].Descriptor()
 }
 
 func (CredentialCheck_Outcome) Type() protoreflect.EnumType {
-	return &file_leyline_v1_ai_proto_enumTypes[3]
+	return &file_leyline_v1_ai_proto_enumTypes[5]
 }
 
 func (x CredentialCheck_Outcome) Number() protoreflect.EnumNumber {
@@ -1071,7 +1173,10 @@ type Conversation struct {
 	ViewTools    []*ViewTool    `protobuf:"bytes,11,rep,name=view_tools,json=viewTools,proto3" json:"view_tools,omitempty"`               // declared by the client that started it
 	// Bumps on every change to this conversation; WatchConversation replays from since_seq. Its own
 	// count, not Event.seq.
-	Seq           uint64 `protobuf:"varint,12,opt,name=seq,proto3" json:"seq,omitempty"`
+	Seq uint64 `protobuf:"varint,12,opt,name=seq,proto3" json:"seq,omitempty"`
+	// How the conversation's calls are allowed, as StartConversationRequest.mode set it; ASK when
+	// the request left it unset.
+	Mode          ApprovalMode `protobuf:"varint,13,opt,name=mode,proto3,enum=leyline.v1.ApprovalMode" json:"mode,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1190,6 +1295,13 @@ func (x *Conversation) GetSeq() uint64 {
 	return 0
 }
 
+func (x *Conversation) GetMode() ApprovalMode {
+	if x != nil {
+		return x.Mode
+	}
+	return ApprovalMode_APPROVAL_MODE_UNSPECIFIED
+}
+
 // One turn of the conversation. A user turn is whole when the daemon adds it; an assistant turn
 // grows while the worker is on it and is replaced whole each time.
 type Turn struct {
@@ -1288,6 +1400,12 @@ type ToolCall struct {
 	IsError       bool                   `protobuf:"varint,7,opt,name=is_error,json=isError,proto3" json:"is_error,omitempty"`         // the tool ran and failed; result_text says why
 	Reason        string                 `protobuf:"bytes,8,opt,name=reason,proto3" json:"reason,omitempty"`                           // why it asked: the policy row, in words; set when the call asks first and kept after it runs, so a reader knows the call was one the user allowed
 	AtNs          int64                  `protobuf:"varint,9,opt,name=at_ns,json=atNs,proto3" json:"at_ns,omitempty"`                  // CLOCK_REALTIME the call was made
+	// Set when the call ran without asking because the user had granted its kind of action for the
+	// conversation: the call_id of the question whose answer granted it. `reason` is set as well.
+	AllowedBy string `protobuf:"bytes,10,opt,name=allowed_by,json=allowedBy,proto3" json:"allowed_by,omitempty"`
+	// Set when the call asks: the scopes the question offers, which PendingAction.offers copies.
+	// Kept after the call is answered.
+	Offers        []ApprovalScope `protobuf:"varint,11,rep,packed,name=offers,proto3,enum=leyline.v1.ApprovalScope" json:"offers,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1385,6 +1503,20 @@ func (x *ToolCall) GetAtNs() int64 {
 	return 0
 }
 
+func (x *ToolCall) GetAllowedBy() string {
+	if x != nil {
+		return x.AllowedBy
+	}
+	return ""
+}
+
+func (x *ToolCall) GetOffers() []ApprovalScope {
+	if x != nil {
+		return x.Offers
+	}
+	return nil
+}
+
 // What a WAITING conversation waits on: a copy of the call so a client need not search the turns.
 type PendingAction struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1393,6 +1525,9 @@ type PendingAction struct {
 	ArgumentsJson string                 `protobuf:"bytes,3,opt,name=arguments_json,json=argumentsJson,proto3" json:"arguments_json,omitempty"`
 	Reason        string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`                      // why it asks, as ToolCall.reason; empty for a view tool
 	ViewTool      bool                   `protobuf:"varint,5,opt,name=view_tool,json=viewTool,proto3" json:"view_tool,omitempty"` // true: AnswerViewTool answers it; false: ResolveAction
+	// Every scope ResolveAction may approve this call with, ONCE included, in the order a client
+	// shows them. Empty for a view tool.
+	Offers        []ApprovalScope `protobuf:"varint,6,rep,packed,name=offers,proto3,enum=leyline.v1.ApprovalScope" json:"offers,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1460,6 +1595,13 @@ func (x *PendingAction) GetViewTool() bool {
 		return x.ViewTool
 	}
 	return false
+}
+
+func (x *PendingAction) GetOffers() []ApprovalScope {
+	if x != nil {
+		return x.Offers
+	}
+	return nil
 }
 
 // A tool the client that starts a conversation offers the model, answered by that client and
@@ -1530,6 +1672,7 @@ type StartConversationRequest struct {
 	Provider      string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
 	Model         string                 `protobuf:"bytes,2,opt,name=model,proto3" json:"model,omitempty"`
 	ViewTools     []*ViewTool            `protobuf:"bytes,3,rep,name=view_tools,json=viewTools,proto3" json:"view_tools,omitempty"`
+	Mode          ApprovalMode           `protobuf:"varint,4,opt,name=mode,proto3,enum=leyline.v1.ApprovalMode" json:"mode,omitempty"` // unset: ASK
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1583,6 +1726,13 @@ func (x *StartConversationRequest) GetViewTools() []*ViewTool {
 		return x.ViewTools
 	}
 	return nil
+}
+
+func (x *StartConversationRequest) GetMode() ApprovalMode {
+	if x != nil {
+		return x.Mode
+	}
+	return ApprovalMode_APPROVAL_MODE_UNSPECIFIED
 }
 
 type SendMessageRequest struct {
@@ -1735,12 +1885,15 @@ func (x *WatchConversationRequest) GetSinceSeq() uint64 {
 	return 0
 }
 
-// approve false refuses the call; the model is told the user declined.
+// approve false refuses the call; the model is told the user declined. scope, with approve true,
+// is one of the pending call's offers; unset means ONCE. INVALID_ARGUMENT for a scope the call
+// did not offer.
 type ResolveActionRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	CallId         string                 `protobuf:"bytes,2,opt,name=call_id,json=callId,proto3" json:"call_id,omitempty"`
 	Approve        bool                   `protobuf:"varint,3,opt,name=approve,proto3" json:"approve,omitempty"`
+	Scope          ApprovalScope          `protobuf:"varint,4,opt,name=scope,proto3,enum=leyline.v1.ApprovalScope" json:"scope,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1794,6 +1947,13 @@ func (x *ResolveActionRequest) GetApprove() bool {
 		return x.Approve
 	}
 	return false
+}
+
+func (x *ResolveActionRequest) GetScope() ApprovalScope {
+	if x != nil {
+		return x.Scope
+	}
+	return ApprovalScope_APPROVAL_SCOPE_UNSPECIFIED
 }
 
 type AnswerViewToolRequest struct {
@@ -2096,7 +2256,8 @@ type WorkerStart struct {
 	TranscriptPath string `protobuf:"bytes,7,opt,name=transcript_path,json=transcriptPath,proto3" json:"transcript_path,omitempty"`
 	// The conversation went on before this worker: load transcript_path before the first model
 	// call. False for a new conversation, whose transcript starts empty.
-	Resume        bool `protobuf:"varint,8,opt,name=resume,proto3" json:"resume,omitempty"`
+	Resume        bool         `protobuf:"varint,8,opt,name=resume,proto3" json:"resume,omitempty"`
+	Mode          ApprovalMode `protobuf:"varint,9,opt,name=mode,proto3,enum=leyline.v1.ApprovalMode" json:"mode,omitempty"` // the conversation's mode; unset: ASK
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2187,6 +2348,13 @@ func (x *WorkerStart) GetResume() bool {
 	return false
 }
 
+func (x *WorkerStart) GetMode() ApprovalMode {
+	if x != nil {
+		return x.Mode
+	}
+	return ApprovalMode_APPROVAL_MODE_UNSPECIFIED
+}
+
 type UserMessage struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TurnId        string                 `protobuf:"bytes,1,opt,name=turn_id,json=turnId,proto3" json:"turn_id,omitempty"`
@@ -2239,10 +2407,12 @@ func (x *UserMessage) GetText() string {
 	return ""
 }
 
+// scope is the ResolveActionRequest's, unset when it refuses.
 type ActionResolved struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CallId        string                 `protobuf:"bytes,1,opt,name=call_id,json=callId,proto3" json:"call_id,omitempty"`
 	Approved      bool                   `protobuf:"varint,2,opt,name=approved,proto3" json:"approved,omitempty"`
+	Scope         ApprovalScope          `protobuf:"varint,3,opt,name=scope,proto3,enum=leyline.v1.ApprovalScope" json:"scope,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2289,6 +2459,13 @@ func (x *ActionResolved) GetApproved() bool {
 		return x.Approved
 	}
 	return false
+}
+
+func (x *ActionResolved) GetScope() ApprovalScope {
+	if x != nil {
+		return x.Scope
+	}
+	return ApprovalScope_APPROVAL_SCOPE_UNSPECIFIED
 }
 
 type ViewToolAnswer struct {
@@ -2597,7 +2774,7 @@ const file_leyline_v1_ai_proto_rawDesc = "" +
 	"\afeature\x18\x03 \x01(\tR\afeature\x12\x19\n" +
 	"\bscope_id\x18\x04 \x01(\tR\ascopeId\"?\n" +
 	"\x10GetUsageResponse\x12+\n" +
-	"\x05lines\x18\x01 \x03(\v2\x15.leyline.v1.UsageLineR\x05lines\"\xf3\x03\n" +
+	"\x05lines\x18\x01 \x03(\v2\x15.leyline.v1.UsageLineR\x05lines\"\xa1\x04\n" +
 	"\fConversation\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x123\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x1d.leyline.v1.ConversationStateR\x05state\x12\x1a\n" +
@@ -2613,14 +2790,15 @@ const file_leyline_v1_ai_proto_rawDesc = "" +
 	" \x01(\x03R\flastTurnAtNs\x123\n" +
 	"\n" +
 	"view_tools\x18\v \x03(\v2\x14.leyline.v1.ViewToolR\tviewTools\x12\x10\n" +
-	"\x03seq\x18\f \x01(\x04R\x03seq\"\xae\x01\n" +
+	"\x03seq\x18\f \x01(\x04R\x03seq\x12,\n" +
+	"\x04mode\x18\r \x01(\x0e2\x18.leyline.v1.ApprovalModeR\x04mode\"\xae\x01\n" +
 	"\x04Turn\x12\x17\n" +
 	"\aturn_id\x18\x01 \x01(\tR\x06turnId\x12$\n" +
 	"\x04role\x18\x02 \x01(\x0e2\x10.leyline.v1.RoleR\x04role\x12\x12\n" +
 	"\x04text\x18\x03 \x01(\tR\x04text\x12*\n" +
 	"\x05tools\x18\x04 \x03(\v2\x14.leyline.v1.ToolCallR\x05tools\x12\x13\n" +
 	"\x05at_ns\x18\x05 \x01(\x03R\x04atNs\x12\x12\n" +
-	"\x04done\x18\x06 \x01(\bR\x04done\"\x99\x02\n" +
+	"\x04done\x18\x06 \x01(\bR\x04done\"\xeb\x02\n" +
 	"\bToolCall\x12\x17\n" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x12\x12\n" +
 	"\x04tool\x18\x02 \x01(\tR\x04tool\x12%\n" +
@@ -2632,22 +2810,28 @@ const file_leyline_v1_ai_proto_rawDesc = "" +
 	"resultJson\x12\x19\n" +
 	"\bis_error\x18\a \x01(\bR\aisError\x12\x16\n" +
 	"\x06reason\x18\b \x01(\tR\x06reason\x12\x13\n" +
-	"\x05at_ns\x18\t \x01(\x03R\x04atNs\"\x98\x01\n" +
+	"\x05at_ns\x18\t \x01(\x03R\x04atNs\x12\x1d\n" +
+	"\n" +
+	"allowed_by\x18\n" +
+	" \x01(\tR\tallowedBy\x121\n" +
+	"\x06offers\x18\v \x03(\x0e2\x19.leyline.v1.ApprovalScopeR\x06offers\"\xcb\x01\n" +
 	"\rPendingAction\x12\x17\n" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x12\x12\n" +
 	"\x04tool\x18\x02 \x01(\tR\x04tool\x12%\n" +
 	"\x0earguments_json\x18\x03 \x01(\tR\rargumentsJson\x12\x16\n" +
 	"\x06reason\x18\x04 \x01(\tR\x06reason\x12\x1b\n" +
-	"\tview_tool\x18\x05 \x01(\bR\bviewTool\"l\n" +
+	"\tview_tool\x18\x05 \x01(\bR\bviewTool\x121\n" +
+	"\x06offers\x18\x06 \x03(\x0e2\x19.leyline.v1.ApprovalScopeR\x06offers\"l\n" +
 	"\bViewTool\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12*\n" +
-	"\x11input_schema_json\x18\x03 \x01(\tR\x0finputSchemaJson\"\x81\x01\n" +
+	"\x11input_schema_json\x18\x03 \x01(\tR\x0finputSchemaJson\"\xaf\x01\n" +
 	"\x18StartConversationRequest\x12\x1a\n" +
 	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x14\n" +
 	"\x05model\x18\x02 \x01(\tR\x05model\x123\n" +
 	"\n" +
-	"view_tools\x18\x03 \x03(\v2\x14.leyline.v1.ViewToolR\tviewTools\"Q\n" +
+	"view_tools\x18\x03 \x03(\v2\x14.leyline.v1.ViewToolR\tviewTools\x12,\n" +
+	"\x04mode\x18\x04 \x01(\x0e2\x18.leyline.v1.ApprovalModeR\x04mode\"Q\n" +
 	"\x12SendMessageRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x12\n" +
 	"\x04text\x18\x02 \x01(\tR\x04text\":\n" +
@@ -2655,11 +2839,12 @@ const file_leyline_v1_ai_proto_rawDesc = "" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\"`\n" +
 	"\x18WatchConversationRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x1b\n" +
-	"\tsince_seq\x18\x02 \x01(\x04R\bsinceSeq\"r\n" +
+	"\tsince_seq\x18\x02 \x01(\x04R\bsinceSeq\"\xa3\x01\n" +
 	"\x14ResolveActionRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x17\n" +
 	"\acall_id\x18\x02 \x01(\tR\x06callId\x12\x18\n" +
-	"\aapprove\x18\x03 \x01(\bR\aapprove\"\xb6\x01\n" +
+	"\aapprove\x18\x03 \x01(\bR\aapprove\x12/\n" +
+	"\x05scope\x18\x04 \x01(\x0e2\x19.leyline.v1.ApprovalScopeR\x05scope\"\xb6\x01\n" +
 	"\x15AnswerViewToolRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x17\n" +
 	"\acall_id\x18\x02 \x01(\tR\x06callId\x12\x1f\n" +
@@ -2678,7 +2863,7 @@ const file_leyline_v1_ai_proto_rawDesc = "" +
 	"\vview_answer\x18\x04 \x01(\v2\x1a.leyline.v1.ViewToolAnswerH\x00R\n" +
 	"viewAnswer\x12,\n" +
 	"\x04stop\x18\x05 \x01(\v2\x16.leyline.v1.WorkerStopH\x00R\x04stopB\a\n" +
-	"\x05event\"\x92\x02\n" +
+	"\x05event\"\xc0\x02\n" +
 	"\vWorkerStart\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x1a\n" +
 	"\bprovider\x18\x02 \x01(\tR\bprovider\x12\x14\n" +
@@ -2688,13 +2873,15 @@ const file_leyline_v1_ai_proto_rawDesc = "" +
 	"view_tools\x18\x05 \x03(\v2\x14.leyline.v1.ViewToolR\tviewTools\x12\x16\n" +
 	"\x06socket\x18\x06 \x01(\tR\x06socket\x12'\n" +
 	"\x0ftranscript_path\x18\a \x01(\tR\x0etranscriptPath\x12\x16\n" +
-	"\x06resume\x18\b \x01(\bR\x06resume\":\n" +
+	"\x06resume\x18\b \x01(\bR\x06resume\x12,\n" +
+	"\x04mode\x18\t \x01(\x0e2\x18.leyline.v1.ApprovalModeR\x04mode\":\n" +
 	"\vUserMessage\x12\x17\n" +
 	"\aturn_id\x18\x01 \x01(\tR\x06turnId\x12\x12\n" +
-	"\x04text\x18\x02 \x01(\tR\x04text\"E\n" +
+	"\x04text\x18\x02 \x01(\tR\x04text\"v\n" +
 	"\x0eActionResolved\x12\x17\n" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x12\x1a\n" +
-	"\bapproved\x18\x02 \x01(\bR\bapproved\"\x86\x01\n" +
+	"\bapproved\x18\x02 \x01(\bR\bapproved\x12/\n" +
+	"\x05scope\x18\x03 \x01(\x0e2\x19.leyline.v1.ApprovalScopeR\x05scope\"\x86\x01\n" +
 	"\x0eViewToolAnswer\x12\x17\n" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x12\x1f\n" +
 	"\vresult_text\x18\x02 \x01(\tR\n" +
@@ -2709,7 +2896,15 @@ const file_leyline_v1_ai_proto_rawDesc = "" +
 	"\afailure\x18\x02 \x01(\v2\x19.leyline.v1.WorkerFailureH\x00R\afailureB\t\n" +
 	"\amessage\">\n" +
 	"\rWorkerFailure\x12-\n" +
-	"\x05error\x18\x01 \x01(\v2\x17.leyline.v1.ErrorDetailR\x05error*\xb4\x01\n" +
+	"\x05error\x18\x01 \x01(\v2\x17.leyline.v1.ErrorDetailR\x05error*\\\n" +
+	"\fApprovalMode\x12\x1d\n" +
+	"\x19APPROVAL_MODE_UNSPECIFIED\x10\x00\x12\x15\n" +
+	"\x11APPROVAL_MODE_ASK\x10\x01\x12\x16\n" +
+	"\x12APPROVAL_MODE_AUTO\x10\x02*i\n" +
+	"\rApprovalScope\x12\x1e\n" +
+	"\x1aAPPROVAL_SCOPE_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13APPROVAL_SCOPE_ONCE\x10\x01\x12\x1f\n" +
+	"\x1bAPPROVAL_SCOPE_CONVERSATION\x10\x02*\xb4\x01\n" +
 	"\x11ConversationState\x12\"\n" +
 	"\x1eCONVERSATION_STATE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11CONVERSATION_IDLE\x10\x01\x12\x19\n" +
@@ -2761,112 +2956,121 @@ func file_leyline_v1_ai_proto_rawDescGZIP() []byte {
 	return file_leyline_v1_ai_proto_rawDescData
 }
 
-var file_leyline_v1_ai_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_leyline_v1_ai_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
 var file_leyline_v1_ai_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_leyline_v1_ai_proto_goTypes = []any{
-	(ConversationState)(0),            // 0: leyline.v1.ConversationState
-	(Role)(0),                         // 1: leyline.v1.Role
-	(ToolCallState)(0),                // 2: leyline.v1.ToolCallState
-	(CredentialCheck_Outcome)(0),      // 3: leyline.v1.CredentialCheck.Outcome
-	(*Credential)(nil),                // 4: leyline.v1.Credential
-	(*CredentialCheck)(nil),           // 5: leyline.v1.CredentialCheck
-	(*SetCredentialRequest)(nil),      // 6: leyline.v1.SetCredentialRequest
-	(*CredentialRef)(nil),             // 7: leyline.v1.CredentialRef
-	(*FeatureModel)(nil),              // 8: leyline.v1.FeatureModel
-	(*AIState)(nil),                   // 9: leyline.v1.AIState
-	(*GetAIStateRequest)(nil),         // 10: leyline.v1.GetAIStateRequest
-	(*UsageReport)(nil),               // 11: leyline.v1.UsageReport
-	(*UsageLine)(nil),                 // 12: leyline.v1.UsageLine
-	(*GetUsageRequest)(nil),           // 13: leyline.v1.GetUsageRequest
-	(*GetUsageResponse)(nil),          // 14: leyline.v1.GetUsageResponse
-	(*Conversation)(nil),              // 15: leyline.v1.Conversation
-	(*Turn)(nil),                      // 16: leyline.v1.Turn
-	(*ToolCall)(nil),                  // 17: leyline.v1.ToolCall
-	(*PendingAction)(nil),             // 18: leyline.v1.PendingAction
-	(*ViewTool)(nil),                  // 19: leyline.v1.ViewTool
-	(*StartConversationRequest)(nil),  // 20: leyline.v1.StartConversationRequest
-	(*SendMessageRequest)(nil),        // 21: leyline.v1.SendMessageRequest
-	(*ConversationRef)(nil),           // 22: leyline.v1.ConversationRef
-	(*WatchConversationRequest)(nil),  // 23: leyline.v1.WatchConversationRequest
-	(*ResolveActionRequest)(nil),      // 24: leyline.v1.ResolveActionRequest
-	(*AnswerViewToolRequest)(nil),     // 25: leyline.v1.AnswerViewToolRequest
-	(*ListConversationsRequest)(nil),  // 26: leyline.v1.ListConversationsRequest
-	(*ListConversationsResponse)(nil), // 27: leyline.v1.ListConversationsResponse
-	(*WorkerEvent)(nil),               // 28: leyline.v1.WorkerEvent
-	(*WorkerStart)(nil),               // 29: leyline.v1.WorkerStart
-	(*UserMessage)(nil),               // 30: leyline.v1.UserMessage
-	(*ActionResolved)(nil),            // 31: leyline.v1.ActionResolved
-	(*ViewToolAnswer)(nil),            // 32: leyline.v1.ViewToolAnswer
-	(*WorkerStop)(nil),                // 33: leyline.v1.WorkerStop
-	(*WorkerMessage)(nil),             // 34: leyline.v1.WorkerMessage
-	(*WorkerFailure)(nil),             // 35: leyline.v1.WorkerFailure
-	(*ErrorDetail)(nil),               // 36: leyline.v1.ErrorDetail
-	(*ClientInfo)(nil),                // 37: leyline.v1.ClientInfo
-	(*Empty)(nil),                     // 38: leyline.v1.Empty
+	(ApprovalMode)(0),                 // 0: leyline.v1.ApprovalMode
+	(ApprovalScope)(0),                // 1: leyline.v1.ApprovalScope
+	(ConversationState)(0),            // 2: leyline.v1.ConversationState
+	(Role)(0),                         // 3: leyline.v1.Role
+	(ToolCallState)(0),                // 4: leyline.v1.ToolCallState
+	(CredentialCheck_Outcome)(0),      // 5: leyline.v1.CredentialCheck.Outcome
+	(*Credential)(nil),                // 6: leyline.v1.Credential
+	(*CredentialCheck)(nil),           // 7: leyline.v1.CredentialCheck
+	(*SetCredentialRequest)(nil),      // 8: leyline.v1.SetCredentialRequest
+	(*CredentialRef)(nil),             // 9: leyline.v1.CredentialRef
+	(*FeatureModel)(nil),              // 10: leyline.v1.FeatureModel
+	(*AIState)(nil),                   // 11: leyline.v1.AIState
+	(*GetAIStateRequest)(nil),         // 12: leyline.v1.GetAIStateRequest
+	(*UsageReport)(nil),               // 13: leyline.v1.UsageReport
+	(*UsageLine)(nil),                 // 14: leyline.v1.UsageLine
+	(*GetUsageRequest)(nil),           // 15: leyline.v1.GetUsageRequest
+	(*GetUsageResponse)(nil),          // 16: leyline.v1.GetUsageResponse
+	(*Conversation)(nil),              // 17: leyline.v1.Conversation
+	(*Turn)(nil),                      // 18: leyline.v1.Turn
+	(*ToolCall)(nil),                  // 19: leyline.v1.ToolCall
+	(*PendingAction)(nil),             // 20: leyline.v1.PendingAction
+	(*ViewTool)(nil),                  // 21: leyline.v1.ViewTool
+	(*StartConversationRequest)(nil),  // 22: leyline.v1.StartConversationRequest
+	(*SendMessageRequest)(nil),        // 23: leyline.v1.SendMessageRequest
+	(*ConversationRef)(nil),           // 24: leyline.v1.ConversationRef
+	(*WatchConversationRequest)(nil),  // 25: leyline.v1.WatchConversationRequest
+	(*ResolveActionRequest)(nil),      // 26: leyline.v1.ResolveActionRequest
+	(*AnswerViewToolRequest)(nil),     // 27: leyline.v1.AnswerViewToolRequest
+	(*ListConversationsRequest)(nil),  // 28: leyline.v1.ListConversationsRequest
+	(*ListConversationsResponse)(nil), // 29: leyline.v1.ListConversationsResponse
+	(*WorkerEvent)(nil),               // 30: leyline.v1.WorkerEvent
+	(*WorkerStart)(nil),               // 31: leyline.v1.WorkerStart
+	(*UserMessage)(nil),               // 32: leyline.v1.UserMessage
+	(*ActionResolved)(nil),            // 33: leyline.v1.ActionResolved
+	(*ViewToolAnswer)(nil),            // 34: leyline.v1.ViewToolAnswer
+	(*WorkerStop)(nil),                // 35: leyline.v1.WorkerStop
+	(*WorkerMessage)(nil),             // 36: leyline.v1.WorkerMessage
+	(*WorkerFailure)(nil),             // 37: leyline.v1.WorkerFailure
+	(*ErrorDetail)(nil),               // 38: leyline.v1.ErrorDetail
+	(*ClientInfo)(nil),                // 39: leyline.v1.ClientInfo
+	(*Empty)(nil),                     // 40: leyline.v1.Empty
 }
 var file_leyline_v1_ai_proto_depIdxs = []int32{
-	5,  // 0: leyline.v1.Credential.last_check:type_name -> leyline.v1.CredentialCheck
-	3,  // 1: leyline.v1.CredentialCheck.outcome:type_name -> leyline.v1.CredentialCheck.Outcome
-	4,  // 2: leyline.v1.AIState.credentials:type_name -> leyline.v1.Credential
-	8,  // 3: leyline.v1.AIState.features:type_name -> leyline.v1.FeatureModel
-	12, // 4: leyline.v1.GetUsageResponse.lines:type_name -> leyline.v1.UsageLine
-	0,  // 5: leyline.v1.Conversation.state:type_name -> leyline.v1.ConversationState
-	16, // 6: leyline.v1.Conversation.turns:type_name -> leyline.v1.Turn
-	18, // 7: leyline.v1.Conversation.pending:type_name -> leyline.v1.PendingAction
-	36, // 8: leyline.v1.Conversation.error:type_name -> leyline.v1.ErrorDetail
-	37, // 9: leyline.v1.Conversation.started_by:type_name -> leyline.v1.ClientInfo
-	19, // 10: leyline.v1.Conversation.view_tools:type_name -> leyline.v1.ViewTool
-	1,  // 11: leyline.v1.Turn.role:type_name -> leyline.v1.Role
-	17, // 12: leyline.v1.Turn.tools:type_name -> leyline.v1.ToolCall
-	2,  // 13: leyline.v1.ToolCall.state:type_name -> leyline.v1.ToolCallState
-	19, // 14: leyline.v1.StartConversationRequest.view_tools:type_name -> leyline.v1.ViewTool
-	15, // 15: leyline.v1.ListConversationsResponse.conversations:type_name -> leyline.v1.Conversation
-	29, // 16: leyline.v1.WorkerEvent.start:type_name -> leyline.v1.WorkerStart
-	30, // 17: leyline.v1.WorkerEvent.user:type_name -> leyline.v1.UserMessage
-	31, // 18: leyline.v1.WorkerEvent.resolved:type_name -> leyline.v1.ActionResolved
-	32, // 19: leyline.v1.WorkerEvent.view_answer:type_name -> leyline.v1.ViewToolAnswer
-	33, // 20: leyline.v1.WorkerEvent.stop:type_name -> leyline.v1.WorkerStop
-	19, // 21: leyline.v1.WorkerStart.view_tools:type_name -> leyline.v1.ViewTool
-	16, // 22: leyline.v1.WorkerMessage.turn:type_name -> leyline.v1.Turn
-	35, // 23: leyline.v1.WorkerMessage.failure:type_name -> leyline.v1.WorkerFailure
-	36, // 24: leyline.v1.WorkerFailure.error:type_name -> leyline.v1.ErrorDetail
-	6,  // 25: leyline.v1.Credentials.SetCredential:input_type -> leyline.v1.SetCredentialRequest
-	7,  // 26: leyline.v1.Credentials.DeleteCredential:input_type -> leyline.v1.CredentialRef
-	7,  // 27: leyline.v1.Credentials.CheckCredential:input_type -> leyline.v1.CredentialRef
-	10, // 28: leyline.v1.Credentials.GetAIState:input_type -> leyline.v1.GetAIStateRequest
-	8,  // 29: leyline.v1.Credentials.SetFeatureModel:input_type -> leyline.v1.FeatureModel
-	13, // 30: leyline.v1.Usage.GetUsage:input_type -> leyline.v1.GetUsageRequest
-	11, // 31: leyline.v1.Usage.ReportUsage:input_type -> leyline.v1.UsageReport
-	20, // 32: leyline.v1.Assistant.StartConversation:input_type -> leyline.v1.StartConversationRequest
-	21, // 33: leyline.v1.Assistant.SendMessage:input_type -> leyline.v1.SendMessageRequest
-	23, // 34: leyline.v1.Assistant.WatchConversation:input_type -> leyline.v1.WatchConversationRequest
-	24, // 35: leyline.v1.Assistant.ResolveAction:input_type -> leyline.v1.ResolveActionRequest
-	25, // 36: leyline.v1.Assistant.AnswerViewTool:input_type -> leyline.v1.AnswerViewToolRequest
-	22, // 37: leyline.v1.Assistant.StopTurn:input_type -> leyline.v1.ConversationRef
-	22, // 38: leyline.v1.Assistant.EndConversation:input_type -> leyline.v1.ConversationRef
-	26, // 39: leyline.v1.Assistant.ListConversations:input_type -> leyline.v1.ListConversationsRequest
-	22, // 40: leyline.v1.Assistant.DeleteConversation:input_type -> leyline.v1.ConversationRef
-	4,  // 41: leyline.v1.Credentials.SetCredential:output_type -> leyline.v1.Credential
-	38, // 42: leyline.v1.Credentials.DeleteCredential:output_type -> leyline.v1.Empty
-	4,  // 43: leyline.v1.Credentials.CheckCredential:output_type -> leyline.v1.Credential
-	9,  // 44: leyline.v1.Credentials.GetAIState:output_type -> leyline.v1.AIState
-	8,  // 45: leyline.v1.Credentials.SetFeatureModel:output_type -> leyline.v1.FeatureModel
-	14, // 46: leyline.v1.Usage.GetUsage:output_type -> leyline.v1.GetUsageResponse
-	38, // 47: leyline.v1.Usage.ReportUsage:output_type -> leyline.v1.Empty
-	15, // 48: leyline.v1.Assistant.StartConversation:output_type -> leyline.v1.Conversation
-	15, // 49: leyline.v1.Assistant.SendMessage:output_type -> leyline.v1.Conversation
-	15, // 50: leyline.v1.Assistant.WatchConversation:output_type -> leyline.v1.Conversation
-	15, // 51: leyline.v1.Assistant.ResolveAction:output_type -> leyline.v1.Conversation
-	15, // 52: leyline.v1.Assistant.AnswerViewTool:output_type -> leyline.v1.Conversation
-	15, // 53: leyline.v1.Assistant.StopTurn:output_type -> leyline.v1.Conversation
-	15, // 54: leyline.v1.Assistant.EndConversation:output_type -> leyline.v1.Conversation
-	27, // 55: leyline.v1.Assistant.ListConversations:output_type -> leyline.v1.ListConversationsResponse
-	38, // 56: leyline.v1.Assistant.DeleteConversation:output_type -> leyline.v1.Empty
-	41, // [41:57] is the sub-list for method output_type
-	25, // [25:41] is the sub-list for method input_type
-	25, // [25:25] is the sub-list for extension type_name
-	25, // [25:25] is the sub-list for extension extendee
-	0,  // [0:25] is the sub-list for field type_name
+	7,  // 0: leyline.v1.Credential.last_check:type_name -> leyline.v1.CredentialCheck
+	5,  // 1: leyline.v1.CredentialCheck.outcome:type_name -> leyline.v1.CredentialCheck.Outcome
+	6,  // 2: leyline.v1.AIState.credentials:type_name -> leyline.v1.Credential
+	10, // 3: leyline.v1.AIState.features:type_name -> leyline.v1.FeatureModel
+	14, // 4: leyline.v1.GetUsageResponse.lines:type_name -> leyline.v1.UsageLine
+	2,  // 5: leyline.v1.Conversation.state:type_name -> leyline.v1.ConversationState
+	18, // 6: leyline.v1.Conversation.turns:type_name -> leyline.v1.Turn
+	20, // 7: leyline.v1.Conversation.pending:type_name -> leyline.v1.PendingAction
+	38, // 8: leyline.v1.Conversation.error:type_name -> leyline.v1.ErrorDetail
+	39, // 9: leyline.v1.Conversation.started_by:type_name -> leyline.v1.ClientInfo
+	21, // 10: leyline.v1.Conversation.view_tools:type_name -> leyline.v1.ViewTool
+	0,  // 11: leyline.v1.Conversation.mode:type_name -> leyline.v1.ApprovalMode
+	3,  // 12: leyline.v1.Turn.role:type_name -> leyline.v1.Role
+	19, // 13: leyline.v1.Turn.tools:type_name -> leyline.v1.ToolCall
+	4,  // 14: leyline.v1.ToolCall.state:type_name -> leyline.v1.ToolCallState
+	1,  // 15: leyline.v1.ToolCall.offers:type_name -> leyline.v1.ApprovalScope
+	1,  // 16: leyline.v1.PendingAction.offers:type_name -> leyline.v1.ApprovalScope
+	21, // 17: leyline.v1.StartConversationRequest.view_tools:type_name -> leyline.v1.ViewTool
+	0,  // 18: leyline.v1.StartConversationRequest.mode:type_name -> leyline.v1.ApprovalMode
+	1,  // 19: leyline.v1.ResolveActionRequest.scope:type_name -> leyline.v1.ApprovalScope
+	17, // 20: leyline.v1.ListConversationsResponse.conversations:type_name -> leyline.v1.Conversation
+	31, // 21: leyline.v1.WorkerEvent.start:type_name -> leyline.v1.WorkerStart
+	32, // 22: leyline.v1.WorkerEvent.user:type_name -> leyline.v1.UserMessage
+	33, // 23: leyline.v1.WorkerEvent.resolved:type_name -> leyline.v1.ActionResolved
+	34, // 24: leyline.v1.WorkerEvent.view_answer:type_name -> leyline.v1.ViewToolAnswer
+	35, // 25: leyline.v1.WorkerEvent.stop:type_name -> leyline.v1.WorkerStop
+	21, // 26: leyline.v1.WorkerStart.view_tools:type_name -> leyline.v1.ViewTool
+	0,  // 27: leyline.v1.WorkerStart.mode:type_name -> leyline.v1.ApprovalMode
+	1,  // 28: leyline.v1.ActionResolved.scope:type_name -> leyline.v1.ApprovalScope
+	18, // 29: leyline.v1.WorkerMessage.turn:type_name -> leyline.v1.Turn
+	37, // 30: leyline.v1.WorkerMessage.failure:type_name -> leyline.v1.WorkerFailure
+	38, // 31: leyline.v1.WorkerFailure.error:type_name -> leyline.v1.ErrorDetail
+	8,  // 32: leyline.v1.Credentials.SetCredential:input_type -> leyline.v1.SetCredentialRequest
+	9,  // 33: leyline.v1.Credentials.DeleteCredential:input_type -> leyline.v1.CredentialRef
+	9,  // 34: leyline.v1.Credentials.CheckCredential:input_type -> leyline.v1.CredentialRef
+	12, // 35: leyline.v1.Credentials.GetAIState:input_type -> leyline.v1.GetAIStateRequest
+	10, // 36: leyline.v1.Credentials.SetFeatureModel:input_type -> leyline.v1.FeatureModel
+	15, // 37: leyline.v1.Usage.GetUsage:input_type -> leyline.v1.GetUsageRequest
+	13, // 38: leyline.v1.Usage.ReportUsage:input_type -> leyline.v1.UsageReport
+	22, // 39: leyline.v1.Assistant.StartConversation:input_type -> leyline.v1.StartConversationRequest
+	23, // 40: leyline.v1.Assistant.SendMessage:input_type -> leyline.v1.SendMessageRequest
+	25, // 41: leyline.v1.Assistant.WatchConversation:input_type -> leyline.v1.WatchConversationRequest
+	26, // 42: leyline.v1.Assistant.ResolveAction:input_type -> leyline.v1.ResolveActionRequest
+	27, // 43: leyline.v1.Assistant.AnswerViewTool:input_type -> leyline.v1.AnswerViewToolRequest
+	24, // 44: leyline.v1.Assistant.StopTurn:input_type -> leyline.v1.ConversationRef
+	24, // 45: leyline.v1.Assistant.EndConversation:input_type -> leyline.v1.ConversationRef
+	28, // 46: leyline.v1.Assistant.ListConversations:input_type -> leyline.v1.ListConversationsRequest
+	24, // 47: leyline.v1.Assistant.DeleteConversation:input_type -> leyline.v1.ConversationRef
+	6,  // 48: leyline.v1.Credentials.SetCredential:output_type -> leyline.v1.Credential
+	40, // 49: leyline.v1.Credentials.DeleteCredential:output_type -> leyline.v1.Empty
+	6,  // 50: leyline.v1.Credentials.CheckCredential:output_type -> leyline.v1.Credential
+	11, // 51: leyline.v1.Credentials.GetAIState:output_type -> leyline.v1.AIState
+	10, // 52: leyline.v1.Credentials.SetFeatureModel:output_type -> leyline.v1.FeatureModel
+	16, // 53: leyline.v1.Usage.GetUsage:output_type -> leyline.v1.GetUsageResponse
+	40, // 54: leyline.v1.Usage.ReportUsage:output_type -> leyline.v1.Empty
+	17, // 55: leyline.v1.Assistant.StartConversation:output_type -> leyline.v1.Conversation
+	17, // 56: leyline.v1.Assistant.SendMessage:output_type -> leyline.v1.Conversation
+	17, // 57: leyline.v1.Assistant.WatchConversation:output_type -> leyline.v1.Conversation
+	17, // 58: leyline.v1.Assistant.ResolveAction:output_type -> leyline.v1.Conversation
+	17, // 59: leyline.v1.Assistant.AnswerViewTool:output_type -> leyline.v1.Conversation
+	17, // 60: leyline.v1.Assistant.StopTurn:output_type -> leyline.v1.Conversation
+	17, // 61: leyline.v1.Assistant.EndConversation:output_type -> leyline.v1.Conversation
+	29, // 62: leyline.v1.Assistant.ListConversations:output_type -> leyline.v1.ListConversationsResponse
+	40, // 63: leyline.v1.Assistant.DeleteConversation:output_type -> leyline.v1.Empty
+	48, // [48:64] is the sub-list for method output_type
+	32, // [32:48] is the sub-list for method input_type
+	32, // [32:32] is the sub-list for extension type_name
+	32, // [32:32] is the sub-list for extension extendee
+	0,  // [0:32] is the sub-list for field type_name
 }
 
 func init() { file_leyline_v1_ai_proto_init() }
@@ -2891,7 +3095,7 @@ func file_leyline_v1_ai_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_leyline_v1_ai_proto_rawDesc), len(file_leyline_v1_ai_proto_rawDesc)),
-			NumEnums:      4,
+			NumEnums:      6,
 			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   3,

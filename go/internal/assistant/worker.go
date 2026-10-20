@@ -135,6 +135,7 @@ func Run(ctx context.Context, opts Options) error {
 	if w.start = first.GetStart(); w.start == nil {
 		return w.fail(leyline.CodeInternal, "the first event after the key was not WorkerStart")
 	}
+	w.policy.Mode = w.start.GetMode()
 	if opts.Conversation != "" && opts.Conversation != w.start.GetConversationId() {
 		w.logf("started for %s, and WorkerStart names %s; going by WorkerStart", opts.Conversation, w.start.GetConversationId())
 	}
@@ -398,8 +399,8 @@ func (w *worker) runCall(ctx context.Context, turn *leylinev1.Turn, use Block) (
 	if w.tools.IsView(use.Name) {
 		return w.viewCall(ctx, turn, call, result)
 	}
-	if reason := w.policy.Check(use.Name, args, w.tools.IsWrite(use.Name)); reason != "" {
-		call.State, call.Reason = leylinev1.ToolCallState_TOOL_CALL_AWAITING_APPROVAL, reason
+	if d := w.policy.Check(use.Name, args, w.tools.IsWrite(use.Name)); d.Asks() {
+		call.State, call.Reason, call.Offers = leylinev1.ToolCallState_TOOL_CALL_AWAITING_APPROVAL, d.Reason, d.Offers
 		if err := w.write(turn); err != nil {
 			return Block{}, notInterrupted, err
 		}
@@ -412,8 +413,18 @@ func (w *worker) runCall(ctx context.Context, turn *leylinev1.Turn, use Block) (
 			call.State, call.ResultText = leylinev1.ToolCallState_TOOL_CALL_REFUSED, Declined
 			return result(Declined, true), notInterrupted, w.write(turn)
 		}
+		if g, granted := w.policy.Resolve(d, call.CallId, ev.GetResolved()); granted {
+			w.recordGrant(g)
+		} else if ev.GetResolved().GetScope() == leylinev1.ApprovalScope_APPROVAL_SCOPE_CONVERSATION {
+			w.logf("%s was approved for the conversation, which it did not offer; allowed once", call.CallId)
+		}
 		call.State = leylinev1.ToolCallState_TOOL_CALL_RUNNING
+	} else {
+		// A call a grant or AUTO lets through keeps the reason it would have asked with, so a
+		// reader sees it was one the user allowed, and allowed_by says which answer allowed it.
+		call.Reason, call.AllowedBy = d.Reported, d.AllowedBy
 	}
+
 	if err := w.write(turn); err != nil {
 		return Block{}, notInterrupted, err
 	}

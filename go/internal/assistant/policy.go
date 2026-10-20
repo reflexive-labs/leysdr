@@ -5,7 +5,10 @@ package assistant
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
+
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // The policy gate decides, before each tool call, whether it runs or waits for the user
@@ -13,10 +16,21 @@ import (
 // and is reported; the rows below ask first, and the reason names what will happen. A tool the
 // policy never allows (the shell notifier, a key) is not in the model's list at all: the watch
 // tool refuses a shell notifier for every agent.
+//
+// The conversation's mode sets the baseline: in AUTO every row runs and is reported. In ASK the
+// user may answer a question for the rest of the conversation, which grants every row the
+// question listed; a later call whose rows are all granted runs and is reported with the call_id
+// of the question that granted it. Grants are kept by row, not by tool, so one answer about
+// taking over a radio covers tune, scan and record alike. A grant comes only from
+// ActionResolved; the user's words in a message never make one.
 
 // Policy is the gate's memory: what this conversation started, the last don't-disturb refusal,
-// and what the running turn has done.
+// what the running turn has done, the conversation's mode, and what the user granted.
 type Policy struct {
+	// Mode is the conversation's, from WorkerStart: AUTO runs every row.
+	Mode leylinev1.ApprovalMode
+	// grants maps a row's name to the call_id of the question whose answer granted it.
+	grants map[string]string
 	// ownJobs is every job a call in this conversation started, so cancelling one of them runs.
 	ownJobs map[string]bool
 	// lastRefusal is the newest refusal that offered take_over, which names who would be
@@ -43,7 +57,7 @@ const SpeechDecoder = "speech"
 var receivedTools = map[string]bool{"query_records": true, "list_entities": true}
 
 // NewPolicy is a gate for a new conversation.
-func NewPolicy() *Policy { return &Policy{ownJobs: map[string]bool{}} }
+func NewPolicy() *Policy { return &Policy{ownJobs: map[string]bool{}, grants: map[string]string{}} }
 
 // BeginTurn forgets what the last turn wrote. Received text is not forgotten.
 func (p *Policy) BeginTurn() {
@@ -54,21 +68,26 @@ func (p *Policy) BeginTurn() {
 // tool's answer, which may carry decoded text the client shows.
 func (p *Policy) Received() { p.readReceived = true }
 
-// row is one policy row: when it asks, and the reason in words.
+// row is one policy row: when it asks, and the reason in words. A onceOnly row asks every time:
+// its question offers ONCE alone, and no answer grants it.
 type row struct {
-	name   string
-	reason func(p *Policy, tool string, args map[string]any) (string, bool)
+	name     string
+	onceOnly bool
+	reason   func(p *Policy, tool string, args map[string]any) (string, bool)
 }
+
+// ReceivedRow is the name the received-text rule is granted under, as a row's name is.
+const ReceivedRow = "write after received text"
 
 // rows is the table, in the order the reasons are listed when several apply.
 var rows = []row{
-	{"take over a radio", func(p *Policy, tool string, args map[string]any) (string, bool) {
+	{"take over a radio", false, func(p *Policy, tool string, args map[string]any) (string, bool) {
 		if !boolArg(args, "take_over") {
 			return "", false
 		}
 		return fmt.Sprintf("another channel or client is using the radio: %s; %s with take_over takes it from them", p.whoIsListening(), tool), true
 	}},
-	{"start a kept job", func(_ *Policy, tool string, args map[string]any) (string, bool) {
+	{"start a kept job", false, func(_ *Policy, tool string, args map[string]any) (string, bool) {
 		switch tool {
 		case "watch", "start_decode_job", "record":
 		default:
@@ -83,44 +102,44 @@ var rows = []row{
 		}
 		return fmt.Sprintf("start a kept %s job that runs on after this conversation ends, until it is cancelled", what), true
 	}},
-	{"add a webhook notifier", func(_ *Policy, _ string, args map[string]any) (string, bool) {
+	{"add a webhook notifier", false, func(_ *Policy, _ string, args map[string]any) (string, bool) {
 		n := strings.TrimSpace(strArg(args, "notify"))
 		if !strings.HasPrefix(strings.ToLower(n), "webhook:") {
 			return "", false
 		}
 		return fmt.Sprintf("add a webhook notifier: every matching record is sent to %s", strings.TrimSpace(n[len("webhook:"):])), true
 	}},
-	{"delete a recording", func(_ *Policy, tool string, args map[string]any) (string, bool) {
+	{"delete a recording", true, func(_ *Policy, tool string, args map[string]any) (string, bool) {
 		if tool != "delete_recording" {
 			return "", false
 		}
 		return fmt.Sprintf("delete the recording %s and its files; this cannot be undone", strArg(args, "recording")), true
 	}},
-	{"remove a bookmark", func(_ *Policy, tool string, args map[string]any) (string, bool) {
+	{"remove a bookmark", false, func(_ *Policy, tool string, args map[string]any) (string, bool) {
 		if tool != "remove_bookmark" {
 			return "", false
 		}
 		return fmt.Sprintf("remove the bookmark %q from your bookmarks", strArg(args, "bookmark")), true
 	}},
-	{"cancel another client's job", func(p *Policy, tool string, args map[string]any) (string, bool) {
+	{"cancel another client's job", false, func(p *Policy, tool string, args map[string]any) (string, bool) {
 		if tool != "cancel_job" || p.ownJobs[strArg(args, "job")] {
 			return "", false
 		}
 		return fmt.Sprintf("cancel %s, a job the assistant did not start", strArg(args, "job")), true
 	}},
-	{"import a CHIRP file", func(_ *Policy, tool string, args map[string]any) (string, bool) {
+	{"import a CHIRP file", false, func(_ *Policy, tool string, args map[string]any) (string, bool) {
 		if tool != "import_chirp" || boolArg(args, "dry_run") {
 			return "", false
 		}
 		return fmt.Sprintf("import every channel in %s into your bookmarks (dry_run would list them first)", strArg(args, "path")), true
 	}},
-	{"several bookmarks", func(p *Policy, tool string, args map[string]any) (string, bool) {
+	{"several bookmarks", false, func(p *Policy, tool string, args map[string]any) (string, bool) {
 		if tool != "add_bookmark" || p.bookmarkWrites < 2 {
 			return "", false
 		}
 		return fmt.Sprintf("a third bookmark change this turn: add %q at %s", strArg(args, "name"), strArg(args, "frequency")), true
 	}},
-	{"paid transcription", func(p *Policy, tool string, args map[string]any) (string, bool) {
+	{"paid transcription", false, func(p *Policy, tool string, args map[string]any) (string, bool) {
 		if tool != "start_decode_job" && tool != "watch" {
 			return "", false
 		}
@@ -147,19 +166,124 @@ func (p *Policy) decoder(name string) (string, error) {
 	return p.ResolveDecoder(name)
 }
 
-// Check is the gate for one call. An empty reason runs it; otherwise the call waits for the user,
-// and the reason lists every row that applies. isWrite comes from the tool's annotations.
-func (p *Policy) Check(tool string, args map[string]any, isWrite bool) string {
-	var reasons []string
+// Decision is the gate's answer for one call.
+type Decision struct {
+	// Reason is what the call asks with: the reason of every row that applies and is not
+	// granted, in table order. Empty: the call runs.
+	Reason string
+	// Rows names the rows Reason lists, which an answer for the conversation grants.
+	Rows []string
+	// Offers is every scope the question accepts, ONCE first: ONCE alone when any row it lists
+	// asks every time, ONCE and CONVERSATION otherwise. Empty when the call runs.
+	Offers []leylinev1.ApprovalScope
+	// Reported is, for a call that runs under a grant or in AUTO, the reason of every row that
+	// applied, so the call is reported as one the user allowed. Empty when it asks.
+	Reported string
+	// AllowedBy is the call_id of the question whose grant let the call run: the grant of the
+	// first applying row in table order. Empty in AUTO.
+	AllowedBy string
+}
+
+// Asks reports whether the call waits for the user.
+func (d Decision) Asks() bool { return d.Reason != "" }
+
+// applied is one row that applies to a call.
+type applied struct {
+	row, reason string
+	onceOnly    bool
+}
+
+// Check is the gate for one call: which rows apply, which of them the user has not granted, and
+// what the question offers. isWrite comes from the tool's annotations.
+func (p *Policy) Check(tool string, args map[string]any, isWrite bool) Decision {
+	var all []applied
 	for _, r := range rows {
 		if reason, asks := r.reason(p, tool, args); asks {
-			reasons = append(reasons, reason)
+			all = append(all, applied{r.name, reason, r.onceOnly})
 		}
 	}
 	if p.readReceived && isWrite {
-		reasons = append(reasons, ReceivedReason)
+		all = append(all, applied{ReceivedRow, ReceivedReason, false})
 	}
-	return strings.Join(reasons, "; ")
+	if len(all) == 0 {
+		return Decision{}
+	}
+	every := make([]string, 0, len(all))
+	for _, a := range all {
+		every = append(every, a.reason)
+	}
+	if p.Mode == leylinev1.ApprovalMode_APPROVAL_MODE_AUTO {
+		return Decision{Reported: strings.Join(every, "; ")}
+	}
+	var d Decision
+	var asking []string
+	onceOnly := false
+	for _, a := range all {
+		if by, granted := p.grants[a.row]; granted && !a.onceOnly {
+			if d.AllowedBy == "" {
+				d.AllowedBy = by
+			}
+			continue
+		}
+		asking = append(asking, a.reason)
+		d.Rows = append(d.Rows, a.row)
+		onceOnly = onceOnly || a.onceOnly
+	}
+	if len(asking) == 0 {
+		d.Reported = strings.Join(every, "; ")
+		return d
+	}
+	// A call that still asks is not one a grant allowed, even when some of its rows are granted.
+	d.AllowedBy = ""
+	d.Reason = strings.Join(asking, "; ")
+	d.Offers = []leylinev1.ApprovalScope{leylinev1.ApprovalScope_APPROVAL_SCOPE_ONCE}
+	if !onceOnly {
+		d.Offers = append(d.Offers, leylinev1.ApprovalScope_APPROVAL_SCOPE_CONVERSATION)
+	}
+	return d
+}
+
+// Resolve takes the answer to the question d asked as callID. An approval for the conversation,
+// when the question offered it, grants every row the question listed and returns the grant for
+// the worker to keep; any other answer grants nothing.
+func (p *Policy) Resolve(d Decision, callID string, resolved *leylinev1.ActionResolved) (Grant, bool) {
+	conversation := leylinev1.ApprovalScope_APPROVAL_SCOPE_CONVERSATION
+	if !resolved.GetApproved() || resolved.GetScope() != conversation || !slices.Contains(d.Offers, conversation) {
+		return Grant{}, false
+	}
+	g := Grant{Rows: slices.Clone(d.Rows), CallID: callID}
+	p.Grant(g)
+	return g, true
+}
+
+// Grant is an answer for the rest of the conversation: the rows the question listed and the
+// question's call_id.
+type Grant struct {
+	Rows   []string `json:"rows"`
+	CallID string   `json:"call_id"`
+}
+
+// Grant records g. A row that asks every time is never granted, whatever g lists, and a row
+// granted already keeps the question that granted it first.
+func (p *Policy) Grant(g Grant) {
+	for _, name := range g.Rows {
+		if onceOnlyRow(name) {
+			continue
+		}
+		if _, held := p.grants[name]; !held {
+			p.grants[name] = g.CallID
+		}
+	}
+}
+
+// onceOnlyRow reports whether the row with that name asks every time.
+func onceOnlyRow(name string) bool {
+	for _, r := range rows {
+		if r.name == name {
+			return r.onceOnly
+		}
+	}
+	return false
 }
 
 // Ran updates the gate after a call ran (refused calls are not passed): bookmark changes, the jobs

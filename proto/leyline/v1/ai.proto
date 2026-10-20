@@ -152,6 +152,25 @@ message Conversation {
   // Bumps on every change to this conversation; WatchConversation replays from since_seq. Its own
   // count, not Event.seq.
   uint64 seq = 12;
+  // How the conversation's calls are allowed, as StartConversationRequest.mode set it; ASK when
+  // the request left it unset.
+  ApprovalMode mode = 13;
+}
+
+// How a conversation treats a call the policy says asks first.
+enum ApprovalMode {
+  APPROVAL_MODE_UNSPECIFIED = 0;       // ASK
+  APPROVAL_MODE_ASK = 1;               // the call waits for ResolveAction unless a grant covers it
+  APPROVAL_MODE_AUTO = 2;              // every call runs and is reported with its reason; nothing waits
+}
+
+// How far an approval reaches.
+enum ApprovalScope {
+  APPROVAL_SCOPE_UNSPECIFIED = 0;      // ONCE when it approves
+  APPROVAL_SCOPE_ONCE = 1;             // this call only
+  // This call, and every later call in the conversation for which the question's policy rows are
+  // the reason to ask. A grant comes only from ResolveAction, never from the user's words.
+  APPROVAL_SCOPE_CONVERSATION = 2;
 }
 
 // The daemon derives the state from the turns the worker writes: a turn whose last tool call is
@@ -189,6 +208,12 @@ message ToolCall {
   bool is_error = 7;                   // the tool ran and failed; result_text says why
   string reason = 8;                   // why it asked: the policy row, in words; set when the call asks first and kept after it runs, so a reader knows the call was one the user allowed
   int64 at_ns = 9;                     // CLOCK_REALTIME the call was made
+  // Set when the call ran without asking because the user had granted its kind of action for the
+  // conversation: the call_id of the question whose answer granted it. `reason` is set as well.
+  string allowed_by = 10;
+  // Set when the call asks: the scopes the question offers, which PendingAction.offers copies.
+  // Kept after the call is answered.
+  repeated ApprovalScope offers = 11;
 }
 enum ToolCallState {
   TOOL_CALL_STATE_UNSPECIFIED = 0;
@@ -206,6 +231,9 @@ message PendingAction {
   string arguments_json = 3;
   string reason = 4;                   // why it asks, as ToolCall.reason; empty for a view tool
   bool view_tool = 5;                  // true: AnswerViewTool answers it; false: ResolveAction
+  // Every scope ResolveAction may approve this call with, ONCE included, in the order a client
+  // shows them. Empty for a view tool.
+  repeated ApprovalScope offers = 6;
 }
 
 // A tool the client that starts a conversation offers the model, answered by that client and
@@ -221,14 +249,22 @@ message StartConversationRequest {
   string provider = 1;
   string model = 2;
   repeated ViewTool view_tools = 3;
+  ApprovalMode mode = 4;               // unset: ASK
 }
 message SendMessageRequest { string conversation_id = 1; string text = 2; }
 message ConversationRef { string conversation_id = 1; }
 // since_seq is the seq of the Conversation the client already has (0 = none): what changed after
 // it is sent first, then the stream goes live.
 message WatchConversationRequest { string conversation_id = 1; uint64 since_seq = 2; }
-// approve false refuses the call; the model is told the user declined.
-message ResolveActionRequest { string conversation_id = 1; string call_id = 2; bool approve = 3; }
+// approve false refuses the call; the model is told the user declined. scope, with approve true,
+// is one of the pending call's offers; unset means ONCE. INVALID_ARGUMENT for a scope the call
+// did not offer.
+message ResolveActionRequest {
+  string conversation_id = 1;
+  string call_id = 2;
+  bool approve = 3;
+  ApprovalScope scope = 4;
+}
 message AnswerViewToolRequest {
   string conversation_id = 1;
   string call_id = 2;
@@ -295,9 +331,11 @@ message WorkerStart {
   // The conversation went on before this worker: load transcript_path before the first model
   // call. False for a new conversation, whose transcript starts empty.
   bool resume = 8;
+  ApprovalMode mode = 9;               // the conversation's mode; unset: ASK
 }
 message UserMessage { string turn_id = 1; string text = 2; }
-message ActionResolved { string call_id = 1; bool approved = 2; }
+// scope is the ResolveActionRequest's, unset when it refuses.
+message ActionResolved { string call_id = 1; bool approved = 2; ApprovalScope scope = 3; }
 message ViewToolAnswer {
   string call_id = 1;
   string result_text = 2;

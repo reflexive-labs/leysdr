@@ -30,6 +30,97 @@ fileprivate nonisolated struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobu
   typealias Version = _2
 }
 
+/// How a conversation treats a call the policy says asks first.
+public nonisolated enum Leyline_V1_ApprovalMode: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+
+  /// ASK
+  case unspecified // = 0
+
+  /// the call waits for ResolveAction unless a grant covers it
+  case ask // = 1
+
+  /// every call runs and is reported with its reason; nothing waits
+  case auto // = 2
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .ask
+    case 2: self = .auto
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .ask: return 1
+    case .auto: return 2
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Leyline_V1_ApprovalMode] = [
+    .unspecified,
+    .ask,
+    .auto,
+  ]
+
+}
+
+/// How far an approval reaches.
+public nonisolated enum Leyline_V1_ApprovalScope: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+
+  /// ONCE when it approves
+  case unspecified // = 0
+
+  /// this call only
+  case once // = 1
+
+  /// This call, and every later call in the conversation for which the question's policy rows are
+  /// the reason to ask. A grant comes only from ResolveAction, never from the user's words.
+  case conversation // = 2
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .once
+    case 2: self = .conversation
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .once: return 1
+    case .conversation: return 2
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Leyline_V1_ApprovalScope] = [
+    .unspecified,
+    .once,
+    .conversation,
+  ]
+
+}
+
 /// The daemon derives the state from the turns the worker writes: a turn whose last tool call is
 /// AWAITING_APPROVAL or AWAITING_CLIENT makes the conversation WAITING with that call as
 /// `pending`; a turn marked `done` makes it IDLE.
@@ -561,6 +652,13 @@ public nonisolated struct Leyline_V1_Conversation: @unchecked Sendable {
     set {_uniqueStorage()._seq = newValue}
   }
 
+  /// How the conversation's calls are allowed, as StartConversationRequest.mode set it; ASK when
+  /// the request left it unset.
+  public var mode: Leyline_V1_ApprovalMode {
+    get {_storage._mode}
+    set {_uniqueStorage()._mode = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -628,6 +726,14 @@ public nonisolated struct Leyline_V1_ToolCall: Sendable {
   /// CLOCK_REALTIME the call was made
   public var atNs: Int64 = 0
 
+  /// Set when the call ran without asking because the user had granted its kind of action for the
+  /// conversation: the call_id of the question whose answer granted it. `reason` is set as well.
+  public var allowedBy: String = String()
+
+  /// Set when the call asks: the scopes the question offers, which PendingAction.offers copies.
+  /// Kept after the call is answered.
+  public var offers: [Leyline_V1_ApprovalScope] = []
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -650,6 +756,10 @@ public nonisolated struct Leyline_V1_PendingAction: Sendable {
 
   /// true: AnswerViewTool answers it; false: ResolveAction
   public var viewTool: Bool = false
+
+  /// Every scope ResolveAction may approve this call with, ONCE included, in the order a client
+  /// shows them. Empty for a view tool.
+  public var offers: [Leyline_V1_ApprovalScope] = []
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -687,6 +797,9 @@ public nonisolated struct Leyline_V1_StartConversationRequest: Sendable {
   public var model: String = String()
 
   public var viewTools: [Leyline_V1_ViewTool] = []
+
+  /// unset: ASK
+  public var mode: Leyline_V1_ApprovalMode = .unspecified
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -735,7 +848,9 @@ public nonisolated struct Leyline_V1_WatchConversationRequest: Sendable {
   public init() {}
 }
 
-/// approve false refuses the call; the model is told the user declined.
+/// approve false refuses the call; the model is told the user declined. scope, with approve true,
+/// is one of the pending call's offers; unset means ONCE. INVALID_ARGUMENT for a scope the call
+/// did not offer.
 public nonisolated struct Leyline_V1_ResolveActionRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -746,6 +861,8 @@ public nonisolated struct Leyline_V1_ResolveActionRequest: Sendable {
   public var callID: String = String()
 
   public var approve: Bool = false
+
+  public var scope: Leyline_V1_ApprovalScope = .unspecified
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -893,6 +1010,9 @@ public nonisolated struct Leyline_V1_WorkerStart: Sendable {
   /// call. False for a new conversation, whose transcript starts empty.
   public var resume: Bool = false
 
+  /// the conversation's mode; unset: ASK
+  public var mode: Leyline_V1_ApprovalMode = .unspecified
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -912,6 +1032,7 @@ public nonisolated struct Leyline_V1_UserMessage: Sendable {
   public init() {}
 }
 
+/// scope is the ResolveActionRequest's, unset when it refuses.
 public nonisolated struct Leyline_V1_ActionResolved: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -920,6 +1041,8 @@ public nonisolated struct Leyline_V1_ActionResolved: Sendable {
   public var callID: String = String()
 
   public var approved: Bool = false
+
+  public var scope: Leyline_V1_ApprovalScope = .unspecified
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1017,6 +1140,14 @@ public nonisolated struct Leyline_V1_WorkerFailure: Sendable {
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 fileprivate nonisolated let _protobuf_package = "leyline.v1"
+
+nonisolated extension Leyline_V1_ApprovalMode: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0APPROVAL_MODE_UNSPECIFIED\0\u{1}APPROVAL_MODE_ASK\0\u{1}APPROVAL_MODE_AUTO\0")
+}
+
+nonisolated extension Leyline_V1_ApprovalScope: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0APPROVAL_SCOPE_UNSPECIFIED\0\u{1}APPROVAL_SCOPE_ONCE\0\u{1}APPROVAL_SCOPE_CONVERSATION\0")
+}
 
 nonisolated extension Leyline_V1_ConversationState: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CONVERSATION_STATE_UNSPECIFIED\0\u{1}CONVERSATION_IDLE\0\u{1}CONVERSATION_THINKING\0\u{1}CONVERSATION_WAITING\0\u{1}CONVERSATION_ENDED\0\u{1}CONVERSATION_FAILED\0")
@@ -1554,7 +1685,7 @@ nonisolated extension Leyline_V1_GetUsageResponse: SwiftProtobuf.Message, SwiftP
 
 nonisolated extension Leyline_V1_Conversation: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Conversation"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}conversation_id\0\u{1}state\0\u{1}provider\0\u{1}model\0\u{1}turns\0\u{1}pending\0\u{1}error\0\u{3}started_by\0\u{3}started_at_ns\0\u{3}last_turn_at_ns\0\u{3}view_tools\0\u{1}seq\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}conversation_id\0\u{1}state\0\u{1}provider\0\u{1}model\0\u{1}turns\0\u{1}pending\0\u{1}error\0\u{3}started_by\0\u{3}started_at_ns\0\u{3}last_turn_at_ns\0\u{3}view_tools\0\u{1}seq\0\u{1}mode\0")
 
   fileprivate class _StorageClass {
     var _conversationID: String = String()
@@ -1569,6 +1700,7 @@ nonisolated extension Leyline_V1_Conversation: SwiftProtobuf.Message, SwiftProto
     var _lastTurnAtNs: Int64 = 0
     var _viewTools: [Leyline_V1_ViewTool] = []
     var _seq: UInt64 = 0
+    var _mode: Leyline_V1_ApprovalMode = .unspecified
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -1591,6 +1723,7 @@ nonisolated extension Leyline_V1_Conversation: SwiftProtobuf.Message, SwiftProto
       _lastTurnAtNs = source._lastTurnAtNs
       _viewTools = source._viewTools
       _seq = source._seq
+      _mode = source._mode
     }
   }
 
@@ -1621,6 +1754,7 @@ nonisolated extension Leyline_V1_Conversation: SwiftProtobuf.Message, SwiftProto
         case 10: try { try decoder.decodeSingularInt64Field(value: &_storage._lastTurnAtNs) }()
         case 11: try { try decoder.decodeRepeatedMessageField(value: &_storage._viewTools) }()
         case 12: try { try decoder.decodeSingularUInt64Field(value: &_storage._seq) }()
+        case 13: try { try decoder.decodeSingularEnumField(value: &_storage._mode) }()
         default: break
         }
       }
@@ -1669,6 +1803,9 @@ nonisolated extension Leyline_V1_Conversation: SwiftProtobuf.Message, SwiftProto
       if _storage._seq != 0 {
         try visitor.visitSingularUInt64Field(value: _storage._seq, fieldNumber: 12)
       }
+      if _storage._mode != .unspecified {
+        try visitor.visitSingularEnumField(value: _storage._mode, fieldNumber: 13)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -1690,6 +1827,7 @@ nonisolated extension Leyline_V1_Conversation: SwiftProtobuf.Message, SwiftProto
         if _storage._lastTurnAtNs != rhs_storage._lastTurnAtNs {return false}
         if _storage._viewTools != rhs_storage._viewTools {return false}
         if _storage._seq != rhs_storage._seq {return false}
+        if _storage._mode != rhs_storage._mode {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -1756,7 +1894,7 @@ nonisolated extension Leyline_V1_Turn: SwiftProtobuf.Message, SwiftProtobuf._Mes
 
 nonisolated extension Leyline_V1_ToolCall: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ToolCall"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}call_id\0\u{1}tool\0\u{3}arguments_json\0\u{1}state\0\u{3}result_text\0\u{3}result_json\0\u{3}is_error\0\u{1}reason\0\u{3}at_ns\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}call_id\0\u{1}tool\0\u{3}arguments_json\0\u{1}state\0\u{3}result_text\0\u{3}result_json\0\u{3}is_error\0\u{1}reason\0\u{3}at_ns\0\u{3}allowed_by\0\u{1}offers\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1773,6 +1911,8 @@ nonisolated extension Leyline_V1_ToolCall: SwiftProtobuf.Message, SwiftProtobuf.
       case 7: try { try decoder.decodeSingularBoolField(value: &self.isError) }()
       case 8: try { try decoder.decodeSingularStringField(value: &self.reason) }()
       case 9: try { try decoder.decodeSingularInt64Field(value: &self.atNs) }()
+      case 10: try { try decoder.decodeSingularStringField(value: &self.allowedBy) }()
+      case 11: try { try decoder.decodeRepeatedEnumField(value: &self.offers) }()
       default: break
       }
     }
@@ -1806,6 +1946,12 @@ nonisolated extension Leyline_V1_ToolCall: SwiftProtobuf.Message, SwiftProtobuf.
     if self.atNs != 0 {
       try visitor.visitSingularInt64Field(value: self.atNs, fieldNumber: 9)
     }
+    if !self.allowedBy.isEmpty {
+      try visitor.visitSingularStringField(value: self.allowedBy, fieldNumber: 10)
+    }
+    if !self.offers.isEmpty {
+      try visitor.visitPackedEnumField(value: self.offers, fieldNumber: 11)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1819,6 +1965,8 @@ nonisolated extension Leyline_V1_ToolCall: SwiftProtobuf.Message, SwiftProtobuf.
     if lhs.isError != rhs.isError {return false}
     if lhs.reason != rhs.reason {return false}
     if lhs.atNs != rhs.atNs {return false}
+    if lhs.allowedBy != rhs.allowedBy {return false}
+    if lhs.offers != rhs.offers {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1826,7 +1974,7 @@ nonisolated extension Leyline_V1_ToolCall: SwiftProtobuf.Message, SwiftProtobuf.
 
 nonisolated extension Leyline_V1_PendingAction: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".PendingAction"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}call_id\0\u{1}tool\0\u{3}arguments_json\0\u{1}reason\0\u{3}view_tool\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}call_id\0\u{1}tool\0\u{3}arguments_json\0\u{1}reason\0\u{3}view_tool\0\u{1}offers\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1839,6 +1987,7 @@ nonisolated extension Leyline_V1_PendingAction: SwiftProtobuf.Message, SwiftProt
       case 3: try { try decoder.decodeSingularStringField(value: &self.argumentsJson) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.reason) }()
       case 5: try { try decoder.decodeSingularBoolField(value: &self.viewTool) }()
+      case 6: try { try decoder.decodeRepeatedEnumField(value: &self.offers) }()
       default: break
       }
     }
@@ -1860,6 +2009,9 @@ nonisolated extension Leyline_V1_PendingAction: SwiftProtobuf.Message, SwiftProt
     if self.viewTool != false {
       try visitor.visitSingularBoolField(value: self.viewTool, fieldNumber: 5)
     }
+    if !self.offers.isEmpty {
+      try visitor.visitPackedEnumField(value: self.offers, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1869,6 +2021,7 @@ nonisolated extension Leyline_V1_PendingAction: SwiftProtobuf.Message, SwiftProt
     if lhs.argumentsJson != rhs.argumentsJson {return false}
     if lhs.reason != rhs.reason {return false}
     if lhs.viewTool != rhs.viewTool {return false}
+    if lhs.offers != rhs.offers {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1916,7 +2069,7 @@ nonisolated extension Leyline_V1_ViewTool: SwiftProtobuf.Message, SwiftProtobuf.
 
 nonisolated extension Leyline_V1_StartConversationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".StartConversationRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{1}model\0\u{3}view_tools\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{1}model\0\u{3}view_tools\0\u{1}mode\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1927,6 +2080,7 @@ nonisolated extension Leyline_V1_StartConversationRequest: SwiftProtobuf.Message
       case 1: try { try decoder.decodeSingularStringField(value: &self.provider) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.model) }()
       case 3: try { try decoder.decodeRepeatedMessageField(value: &self.viewTools) }()
+      case 4: try { try decoder.decodeSingularEnumField(value: &self.mode) }()
       default: break
       }
     }
@@ -1942,6 +2096,9 @@ nonisolated extension Leyline_V1_StartConversationRequest: SwiftProtobuf.Message
     if !self.viewTools.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.viewTools, fieldNumber: 3)
     }
+    if self.mode != .unspecified {
+      try visitor.visitSingularEnumField(value: self.mode, fieldNumber: 4)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1949,6 +2106,7 @@ nonisolated extension Leyline_V1_StartConversationRequest: SwiftProtobuf.Message
     if lhs.provider != rhs.provider {return false}
     if lhs.model != rhs.model {return false}
     if lhs.viewTools != rhs.viewTools {return false}
+    if lhs.mode != rhs.mode {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2056,7 +2214,7 @@ nonisolated extension Leyline_V1_WatchConversationRequest: SwiftProtobuf.Message
 
 nonisolated extension Leyline_V1_ResolveActionRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ResolveActionRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}conversation_id\0\u{3}call_id\0\u{1}approve\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}conversation_id\0\u{3}call_id\0\u{1}approve\0\u{1}scope\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2067,6 +2225,7 @@ nonisolated extension Leyline_V1_ResolveActionRequest: SwiftProtobuf.Message, Sw
       case 1: try { try decoder.decodeSingularStringField(value: &self.conversationID) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.callID) }()
       case 3: try { try decoder.decodeSingularBoolField(value: &self.approve) }()
+      case 4: try { try decoder.decodeSingularEnumField(value: &self.scope) }()
       default: break
       }
     }
@@ -2082,6 +2241,9 @@ nonisolated extension Leyline_V1_ResolveActionRequest: SwiftProtobuf.Message, Sw
     if self.approve != false {
       try visitor.visitSingularBoolField(value: self.approve, fieldNumber: 3)
     }
+    if self.scope != .unspecified {
+      try visitor.visitSingularEnumField(value: self.scope, fieldNumber: 4)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2089,6 +2251,7 @@ nonisolated extension Leyline_V1_ResolveActionRequest: SwiftProtobuf.Message, Sw
     if lhs.conversationID != rhs.conversationID {return false}
     if lhs.callID != rhs.callID {return false}
     if lhs.approve != rhs.approve {return false}
+    if lhs.scope != rhs.scope {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2313,7 +2476,7 @@ nonisolated extension Leyline_V1_WorkerEvent: SwiftProtobuf.Message, SwiftProtob
 
 nonisolated extension Leyline_V1_WorkerStart: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".WorkerStart"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}conversation_id\0\u{1}provider\0\u{1}model\0\u{1}endpoint\0\u{3}view_tools\0\u{1}socket\0\u{3}transcript_path\0\u{1}resume\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}conversation_id\0\u{1}provider\0\u{1}model\0\u{1}endpoint\0\u{3}view_tools\0\u{1}socket\0\u{3}transcript_path\0\u{1}resume\0\u{1}mode\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2329,6 +2492,7 @@ nonisolated extension Leyline_V1_WorkerStart: SwiftProtobuf.Message, SwiftProtob
       case 6: try { try decoder.decodeSingularStringField(value: &self.socket) }()
       case 7: try { try decoder.decodeSingularStringField(value: &self.transcriptPath) }()
       case 8: try { try decoder.decodeSingularBoolField(value: &self.resume) }()
+      case 9: try { try decoder.decodeSingularEnumField(value: &self.mode) }()
       default: break
       }
     }
@@ -2359,6 +2523,9 @@ nonisolated extension Leyline_V1_WorkerStart: SwiftProtobuf.Message, SwiftProtob
     if self.resume != false {
       try visitor.visitSingularBoolField(value: self.resume, fieldNumber: 8)
     }
+    if self.mode != .unspecified {
+      try visitor.visitSingularEnumField(value: self.mode, fieldNumber: 9)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2371,6 +2538,7 @@ nonisolated extension Leyline_V1_WorkerStart: SwiftProtobuf.Message, SwiftProtob
     if lhs.socket != rhs.socket {return false}
     if lhs.transcriptPath != rhs.transcriptPath {return false}
     if lhs.resume != rhs.resume {return false}
+    if lhs.mode != rhs.mode {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2413,7 +2581,7 @@ nonisolated extension Leyline_V1_UserMessage: SwiftProtobuf.Message, SwiftProtob
 
 nonisolated extension Leyline_V1_ActionResolved: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ActionResolved"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}call_id\0\u{1}approved\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}call_id\0\u{1}approved\0\u{1}scope\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2423,6 +2591,7 @@ nonisolated extension Leyline_V1_ActionResolved: SwiftProtobuf.Message, SwiftPro
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.callID) }()
       case 2: try { try decoder.decodeSingularBoolField(value: &self.approved) }()
+      case 3: try { try decoder.decodeSingularEnumField(value: &self.scope) }()
       default: break
       }
     }
@@ -2435,12 +2604,16 @@ nonisolated extension Leyline_V1_ActionResolved: SwiftProtobuf.Message, SwiftPro
     if self.approved != false {
       try visitor.visitSingularBoolField(value: self.approved, fieldNumber: 2)
     }
+    if self.scope != .unspecified {
+      try visitor.visitSingularEnumField(value: self.scope, fieldNumber: 3)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Leyline_V1_ActionResolved, rhs: Leyline_V1_ActionResolved) -> Bool {
     if lhs.callID != rhs.callID {return false}
     if lhs.approved != rhs.approved {return false}
+    if lhs.scope != rhs.scope {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

@@ -18,6 +18,12 @@ import (
 // A message the loop extends in memory (the user's text after a turn's tool results) is written
 // as a second line with the same role, and a load joins them back. A line cut short by a crash is
 // skipped.
+//
+// The user's grants for the rest of the conversation are kept in the same file, one line each
+// with the role "grant", which is never a message: a load hands them to the gate and leaves them
+// out of what the model is sent. The transcript is where a resumed worker already looks, it goes
+// with the conversation when the daemon removes it, and the append below already keeps a line
+// whole, so a grant needs no file or format of its own.
 
 // redactedKey stands in for the key wherever a line would have carried it.
 const redactedKey = "[key]"
@@ -25,6 +31,24 @@ const redactedKey = "[key]"
 // cutShortResult is what the model is told of a call the transcript holds no result for: the
 // worker that made it was stopped before the call finished.
 const cutShortResult = "the conversation was interrupted before this call finished"
+
+// GrantRole is the role of a transcript line that holds a grant rather than a message.
+const GrantRole = "grant"
+
+// grantLine is a grant as the transcript keeps it.
+type grantLine struct {
+	Role  string `json:"role"`
+	Grant Grant  `json:"grant"`
+}
+
+// AppendGrant adds g to the transcript at path as one line.
+func AppendGrant(path string, g Grant) error {
+	line, err := json.Marshal(grantLine{Role: GrantRole, Grant: g})
+	if err != nil {
+		return err
+	}
+	return appendLine(path, line)
+}
 
 // AppendTranscript adds m to the transcript at path as one line, with secret, as it stands and
 // JSON-escaped, replaced.
@@ -39,6 +63,11 @@ func AppendTranscript(path string, m Message, secret string) error {
 			line = bytes.ReplaceAll(line, escaped[1:len(escaped)-1], []byte(redactedKey))
 		}
 	}
+	return appendLine(path, line)
+}
+
+// appendLine adds one line to the file at path, creating it 0600.
+func appendLine(path string, line []byte) error {
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0o600)
 	if err != nil {
 		return err
@@ -62,18 +91,35 @@ func AppendTranscript(path string, m Message, secret string) error {
 // LoadTranscript reads the transcript at path as the model is to be sent it: consecutive lines of
 // one role joined, anything before the first user message dropped, and a tool call left without
 // its result given one that says it was cut short, since the Messages API refuses a tool_use with
-// no tool_result after it. skipped counts the lines that were not a message.
+// no tool_result after it. skipped counts the lines that were neither a message nor a grant.
 func LoadTranscript(path string) (messages []Message, skipped int, err error) {
+	messages, _, skipped, err = loadTranscript(path)
+	return messages, skipped, err
+}
+
+// loadTranscript is LoadTranscript, and the grants the file holds, in the order they were made.
+func loadTranscript(path string) (messages []Message, grants []Grant, skipped int, err error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, 0, err
 	}
 	for _, line := range bytes.Split(raw, []byte("\n")) {
 		if len(bytes.TrimSpace(line)) == 0 {
 			continue
 		}
-		var m Message
-		if json.Unmarshal(line, &m) != nil || (m.Role != "user" && m.Role != "assistant") || len(m.Content) == 0 {
+		var m struct {
+			Message
+			Grant *Grant `json:"grant"`
+		}
+		if json.Unmarshal(line, &m) != nil {
+			skipped++
+			continue
+		}
+		if m.Role == GrantRole && m.Grant != nil && m.Grant.CallID != "" {
+			grants = append(grants, *m.Grant)
+			continue
+		}
+		if (m.Role != "user" && m.Role != "assistant") || len(m.Content) == 0 {
 			skipped++
 			continue
 		}
@@ -85,9 +131,9 @@ func LoadTranscript(path string) (messages []Message, skipped int, err error) {
 			messages[n-1].Content = append(messages[n-1].Content, m.Content...)
 			continue
 		}
-		messages = append(messages, m)
+		messages = append(messages, m.Message)
 	}
-	return answerDanglingCalls(messages), skipped, nil
+	return answerDanglingCalls(messages), grants, skipped, nil
 }
 
 // answerDanglingCalls gives every tool_use a tool_result in the user message after it, adding the
@@ -124,18 +170,22 @@ func answerDanglingCalls(messages []Message) []Message {
 }
 
 // resume loads the transcript a worker before this one kept, and takes up what it implies: the
-// call numbering, the received-text taint, and where a scripted model's lines go on from. A file
-// that is missing or unreadable is logged and the conversation goes on from an empty transcript.
+// call numbering, the received-text taint, the user's grants, and where a scripted model's lines
+// go on from. A file that is missing or unreadable is logged and the conversation goes on from an
+// empty transcript and no grants.
 func (w *worker) resume() {
 	path := w.start.GetTranscriptPath()
 	if path == "" {
 		w.logf("told to resume with no transcript path; starting from an empty transcript")
 		return
 	}
-	messages, skipped, err := LoadTranscript(path)
+	messages, grants, skipped, err := loadTranscript(path)
 	if err != nil {
 		w.logf("cannot read the transcript (%v); starting from an empty one", err)
 		return
+	}
+	for _, g := range grants {
+		w.policy.Grant(g)
 	}
 	if skipped > 0 {
 		w.logf("skipped %d unreadable lines of %s", skipped, path)
@@ -158,7 +208,20 @@ func (w *worker) resume() {
 	if s, ok := w.model.(interface{ Skip(int) }); ok {
 		s.Skip(responses)
 	}
-	w.logf("resumed from %d messages, %d of them the model's", len(messages), responses)
+	w.logf("resumed from %d messages, %d of them the model's, and %d grants", len(messages), responses, len(grants))
+}
+
+// recordGrant keeps g in the transcript file, so a worker started later for the conversation
+// holds it too.
+func (w *worker) recordGrant(g Grant) {
+	path := w.start.GetTranscriptPath()
+	if path == "" {
+		return
+	}
+	if err := AppendGrant(path, g); err != nil {
+		// The grant holds for this worker; a later one would ask again.
+		w.logf("cannot keep the grant from %s in the transcript: %v", g.CallID, err)
+	}
 }
 
 // record adds m to the transcript in memory, joining the last message when both are the user's
