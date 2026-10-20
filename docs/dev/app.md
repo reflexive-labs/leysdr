@@ -506,7 +506,7 @@ under the turns says so: a small spinner and `thinking…`, with the seconds fro
 (`thinking… 4s`), counted from the conversation's `last_turn_at_ns`, so the count starts again
 after each step (`cli-style.md`, "A wait says so, and leaves nothing behind"). As that rule asks,
 it is drawn only once the wait has gone on for 300 ms, so an answer that comes straight back does
-not flicker it; unlike a terminal's waiting line, it has a spinner, which a window can draw
+not flicker it; unlike a terminal's progress line, it has a spinner, which a window can draw
 without redrawing text. A running step is its own sign, so the row is absent then, and
 nothing of it stays once the turn moves on. A call waiting for approval is a card with the
 question, the gate's reason (`assistant.md`, "The gate") and a button per answer the call offers
