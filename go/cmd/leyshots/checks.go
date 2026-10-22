@@ -301,6 +301,8 @@ func (c *AppCommand) validate(path func(string) string) error {
 		need = []string{"text"}
 	case "press":
 		need = []string{"identifier"}
+	case "pick":
+		need = []string{"identifier", "text"}
 	case "wait":
 		need, may = []string{"seconds"}, []string{"expect_log"}
 	case "menu":

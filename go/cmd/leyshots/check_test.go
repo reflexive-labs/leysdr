@@ -230,6 +230,7 @@ func TestLoadChecksRejects(t *testing.T) {
 		"menu sans menu":     "fixtures: [{name: x}]\n    app: [{cmd: menu}]",
 		"menu empty title":   "fixtures: [{name: x}]\n    app: [{cmd: menu, menu: \"View>\"}]",
 		"read on press":      "fixtures: [{name: x}]\n    app: [{cmd: press, identifier: a, read: true}]",
+		"pick sans text":     "fixtures: [{name: x}]\n    app: [{cmd: pick, identifier: a}]",
 		"relaunch window":    "fixtures: [{name: x}]\n    app: [{cmd: relaunch, stage: {window: {width: 1, height: 1}}}]",
 		"window on state":    "fixtures: [{name: x}]\n    app: [{cmd: state, window: main}]",
 		"ley sans args":      "fixtures: [{name: x}]\n    app: [{cmd: ley}]",

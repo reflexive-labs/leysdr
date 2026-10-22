@@ -116,6 +116,12 @@ launch), `sizes`, and `app`, the commands in order.
   `state.alert` gives its title, message and buttons.
 - `stage: {settings: true}` opens Settings; `snapshot` and `ax` take `window: settings`, `press`
   finds Settings' identifiers, and `state.settings_open` says whether it shows.
+- `pick` chooses an item of a pop-up (a SwiftUI `Picker`) or a segmented control by its title
+  (`{cmd: pick, identifier: settings.ai.usage.period, text: By month}`), without opening its
+  menu. A `press` on a text field focuses it in its own window, so a Settings field is typed
+  into there; a `press` on a disabled element fails (`… is disabled`). ⌘W closes nothing in a
+  check run (the app is never active, so File ▸ Close has no key window): close Settings with
+  `stage: {settings: false}`.
 - `hover` (an identifier, or `x` and `y` in points from the window's top-left corner) rests the
   pointer and answers the tooltip, which `state.tooltip` repeats; `click` does a mouse click
   there (`button: right`) for a chart point or anything `press` cannot reach; `menu` presses a

@@ -236,6 +236,15 @@ final class ControlChannel {
                     if why == nil || why?.hasSuffix(" is disabled") == true { break }
                 }
                 return ControlAnswer(id: c.id, ok: why == nil, error: why ?? "")
+            case .pick(let identifier, let item):
+                guard let window = staging.window else { return noWindow }
+                var why: String?
+                for w in [window, Staging.settingsWindow].compactMap({ $0 }) {
+                    why = AccessibilityTree.pick(identifier, item: item, in: w)
+                    if why?.hasPrefix("no element has") != true { break }
+                }
+                try? await Task.sleep(for: .milliseconds(Self.keySettleMilliseconds))
+                return ControlAnswer(id: c.id, ok: why == nil, error: why ?? "")
             case .hover(let target):
                 guard let window = staging.window else { return noWindow }
                 await AccessibilityTree.ready(window)
@@ -352,14 +361,16 @@ final class ControlChannel {
 
     /// The window a key goes to: the sheet over the main window, else its open popover (whose
     /// key monitor takes Up and Down), else the app's key window while it is on screen
-    /// (Settings), else the main window.
+    /// (Settings), else another window being typed into, else the main window.
     private static func keyTarget(_ main: NSWindow) -> NSWindow {
         if let sheet = main.attachedSheet { return sheet }
         if let popover = main.childWindows?.last(where: \.isVisible) {
             return popover
         }
         if let key = NSApp.keyWindow, key.isVisible { return key }
-        return main
+        // An inactive app has no key window, whatever makeKey asked: the window being typed
+        // into (a field pressed in Settings), else the main window.
+        return typingWindow(besides: main) ?? main
     }
 
     /// A key down and up, as the keyboard sends them, to `window`. The events go to this
@@ -411,7 +422,10 @@ final class ControlChannel {
             openRows: s.sidebarRows.filter { s.isExpanded($0) }.map(\.id),
             filterQuery: s.filterQuery, inspectorShown: s.inspectorShown,
             assistantShown: s.assistantPanelShown, zoom: s.zoom,
-            focused: window.map { Self.describeFocus($0.firstResponder, in: $0, focusedID) } ?? "",
+            focused: window.map { main in
+                let w = Self.focusWindow(main)
+                return Self.describeFocus(w.firstResponder, in: w, focusedID)
+            } ?? "",
             notices: notices,
             popover: popover, selectedRecordingChannel: s.selectedRecordingChannel,
             selectedPart: s.selectedPartURI, heard: s.heardTone?.words,
@@ -487,8 +501,25 @@ final class ControlChannel {
             title: texts.first ?? sheet.title, message: texts.dropFirst().first, buttons: buttons)
     }
 
+    /// The window whose focus `state` names: the key window, else another being typed into
+    /// (Settings, in an app that is never active and so has no key window), else the main one.
+    private static func focusWindow(_ main: NSWindow) -> NSWindow {
+        if let key = NSApp.keyWindow, key.isVisible { return key }
+        return typingWindow(besides: main) ?? main
+    }
+
+    /// A visible window of its own other than `main` (not a popover, which `keyTarget` takes
+    /// first) whose text field is being typed into.
+    private static func typingWindow(besides main: NSWindow) -> NSWindow? {
+        NSApp.windows.first {
+            $0.isVisible && $0 !== main && $0.parent == nil
+                && ($0.firstResponder as? NSTextView)?.isFieldEditor == true
+        }
+    }
+
     /// The first responder by its accessibility identifier, else its role and label; a field
     /// editor stands for the field it edits. Empty when the window itself holds the focus.
+
     private static func describeFocus(
         _ responder: NSResponder?, in window: NSWindow, _ focusedID: String?
     ) -> String {

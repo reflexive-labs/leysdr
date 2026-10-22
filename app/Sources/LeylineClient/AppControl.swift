@@ -138,6 +138,8 @@ public struct ControlCommand: Sendable, Equatable {
         case key(KeyChord)
         case type(String)
         case press(identifier: String)
+        /// Chooses an item of a pop-up or segmented control by its title.
+        case pick(identifier: String, item: String)
         /// Rests the pointer on an element or a point; `state.tooltip` then says what shows.
         case hover(PointTarget)
         /// A mouse click there, left or right, for what `press` cannot reach.
@@ -268,6 +270,13 @@ public struct ControlCommand: Sendable, Equatable {
                 return .failure(Refusal(reason: "press needs an identifier"))
             }
             return .success(.press(identifier: identifier))
+        case "pick":
+            guard let identifier = line.identifier, !identifier.isEmpty, let item = line.text,
+                !item.isEmpty
+            else {
+                return .failure(Refusal(reason: "pick needs an identifier and the item's text"))
+            }
+            return .success(.pick(identifier: identifier, item: item))
         case "hover", "click":
             let target: PointTarget
             switch (line.identifier, line.x, line.y) {

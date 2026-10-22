@@ -111,7 +111,21 @@ enum AccessibilityTree {
     /// Presses the first element, depth first, whose identifier is `identifier`, as VoiceOver's
     /// press does. Answers why not when there is no such element or it refused the press.
     static func press(_ identifier: String, in window: NSWindow) -> String? {
-        AXWalk.press(identifier, TreeTarget(window))
+        // A text field takes the focus as a click gives it, its window's first responder: the
+        // API's focus is answered as set without the field editor moving in, and the keys that
+        // follow would reach no field.
+        if let field = AXWalk.textField(identifier, ObjectNode(object: window)) {
+            guard field.isEnabled else { return "\(identifier) is disabled" }
+            return window.makeFirstResponder(field) ? nil : "\(identifier) refused the focus"
+        }
+        return AXWalk.press(identifier, TreeTarget(window))
+    }
+
+    /// Chooses `item` by its title in the pop-up or segmented control with that identifier, as
+    /// a person's choice from its menu would, without opening the menu (whose tracking loop
+    /// would hold the command file until it closed). Answers why not.
+    static func pick(_ identifier: String, item: String, in window: NSWindow) -> String? {
+        AXWalk.pick(identifier, item: item, ObjectNode(object: window))
     }
 
     /// Every element under `window` whose identifier starts with `prefix`, in tree order.
@@ -340,7 +354,13 @@ struct ObjectNode: TreeNode {
     func focus() -> Bool {
         if object.isAccessibilityFocused?() == true { return true }
         object.setAccessibilityFocused?(true)
-        return object.isAccessibilityFocused?() ?? false
+        if object.isAccessibilityFocused?() == true { return true }
+        // An AppKit field (a SecureField's among them) that does not take the focus this way
+        // takes it as a click gives it, as its window's first responder.
+        if let view = object as? NSView, view.acceptsFirstResponder, let window = view.window {
+            return window.makeFirstResponder(view)
+        }
+        return false
     }
 }
 
@@ -486,8 +506,10 @@ enum AXWalk {
                 return true
             }
             if let button {
+                // A destructive button is named by its description rather than its title.
+                let name = e.string(kAXTitleAttribute) ?? e.string(kAXDescriptionAttribute) ?? ""
                 guard e.string(kAXRoleAttribute) == kAXButtonRole,
-                    ViewIdentifier.slug(e.string(kAXTitleAttribute) ?? "") == button
+                    ViewIdentifier.slug(name) == button
                 else { return false }
             } else {
                 guard e.string(kAXIdentifierAttribute) == identifier else { return false }
@@ -502,10 +524,76 @@ enum AXWalk {
         // A disabled element answers a press as if it took it, through either reading, so a
         // check that presses a dead button is told so rather than passing.
         if found.bool(kAXEnabledAttribute) == false { return "\(identifier) is disabled" }
-        if found.perform(kAXPressAction) { return nil }
+        // A text field is focused rather than pressed, through either reading: the API may
+        // answer a press on one as done without focusing it.
+        let field = [kAXTextFieldRole, kAXTextAreaRole].contains(found.string(kAXRoleAttribute))
+        if !field, found.perform(kAXPressAction) { return nil }
         // A text field has no press; a click there gives it the focus, and so does this.
         if found.focus() { return nil }
         return "\(identifier) refused the press"
+    }
+
+    /// The AppKit text field with that identifier among the window's objects, if it is one.
+    static func textField(_ identifier: String, _ root: ObjectNode) -> NSTextField? {
+        var found: NSTextField?
+        walk(root, depth: 0) { e, _ in
+            guard e.string(kAXIdentifierAttribute) == identifier else { return false }
+            found = (e.object as? NSTextField) ?? ((e.object as? NSCell)?.controlView as? NSTextField)
+            return true
+        }
+        return found
+    }
+
+    /// `pick` on the window's own objects, which are the AppKit controls themselves.
+    static func pick(_ identifier: String, item: String, _ root: ObjectNode) -> String? {
+        var found: ObjectNode?
+        walk(root, depth: 0) { e, _ in
+            guard e.string(kAXIdentifierAttribute) == identifier else { return false }
+            found = e
+            return true
+        }
+        guard let found else { return "no element has the identifier \(identifier)" }
+        if found.bool(kAXEnabledAttribute) == false { return "\(identifier) is disabled" }
+        guard let control = Self.control(in: found.object) else {
+            return "\(identifier) is a \(type(of: found.object)), not a pop-up or segmented control"
+        }
+        switch control {
+        case let popUp as NSPopUpButton:
+            guard let index = popUp.itemTitles.firstIndex(of: item) else {
+                return "\(identifier) has no item \(item); it has \(popUp.itemTitles)"
+            }
+            // SwiftUI's pop-up hears a choice through the item's own action, as a menu sends
+            // it; an AppKit one through the button's.
+            popUp.selectItem(at: index)
+            if let menu = popUp.menu, menu.items[index].action != nil {
+                menu.performActionForItem(at: index)
+            } else {
+                popUp.sendAction(popUp.action, to: popUp.target)
+            }
+        case let segments as NSSegmentedControl:
+            let labels = (0..<segments.segmentCount).map { segments.label(forSegment: $0) ?? "" }
+            guard let index = labels.firstIndex(of: item) else {
+                return "\(identifier) has no segment \(item); it has \(labels)"
+            }
+            segments.selectedSegment = index
+            segments.sendAction(segments.action, to: segments.target)
+        default:
+            return "\(identifier) is not a pop-up or segmented control"
+        }
+        return nil
+    }
+
+    /// The pop-up or segmented control an element is, or holds.
+    private static func control(in object: AnyObject) -> NSControl? {
+        if let cell = object as? NSCell, let view = cell.controlView {
+            return control(in: view)
+        }
+        guard let view = object as? NSView else { return nil }
+        if view is NSPopUpButton || view is NSSegmentedControl { return view as? NSControl }
+        for sub in view.subviews {
+            if let c = control(in: sub) { return c }
+        }
+        return nil
     }
 
     static func elements(withPrefix prefix: String, _ target: TreeTarget) -> [AXElementInfo] {
