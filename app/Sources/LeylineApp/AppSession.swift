@@ -1185,7 +1185,9 @@ final class AppSession {
             let rate = existing?.sampleRate ?? preferredSampleRate(for: dev)
             let target = hz ?? band.centerHz
             let centre =
-                hz == nil ? band.centerHz : captureCentre(for: band, at: target, rate: rate)
+                hz == nil
+                ? UInt64(max(0, clampCentre(Int64(band.centerHz), span: Int64(rate))))
+                : captureCentre(for: band, at: target, rate: rate)
             let cap = try await ensureCapture(on: dev, centerHz: centre, sampleRate: rate)
             let mode = band.mode(at: target)
             if hz != nil { request(target) }
