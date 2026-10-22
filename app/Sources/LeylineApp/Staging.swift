@@ -47,6 +47,9 @@ final class Staging {
     static let sweepSeconds: Double = 60
     /// A staged part plays this long before it is paused, so the player has started.
     static let playPartSeconds: Double = 0.4
+    /// The window's top-left corner, this far in from the top-left of the menu bar's screen's
+    /// visible frame.
+    static let windowInset: CGFloat = 40
 
     /// The stage file, and the stage it held; both nil with only a control directory. The
     /// stage is nil too when the file could not be read or was refused: the run is still
@@ -107,6 +110,7 @@ final class Staging {
         started = true
         if await until(seconds: Self.confirmSeconds, { self.window != nil }), let window {
             DeterministicFrames.drawAsKey(window)
+            place(window)
         }
         if let size = stage?.window { await sizeWindow(size) }
         let live = await until(seconds: Self.liveSeconds) { session.isLive }
@@ -233,6 +237,22 @@ final class Staging {
             }
         }
         note("no over held the squelch open within \(Int(Self.onAirSeconds)) s")
+    }
+
+    /// The window on the screen with the menu bar, at the same corner every run, and drawn in
+    /// sRGB: a window draws in its screen's colour space, so the same frame on another display
+    /// came out several per cent different in every pixel, and macOS moves a popover to fit the
+    /// screen it is on. The person's own windows are not touched.
+    private func place(_ window: NSWindow) {
+        window.colorSpace = .sRGB
+        guard let screen = NSScreen.screens.first else { return }
+        let visible = screen.visibleFrame
+        window.setFrameTopLeftPoint(
+            NSPoint(x: visible.minX + Self.windowInset, y: visible.maxY - Self.windowInset))
+        log(
+            "stage",
+            "window \(window.windowNumber) placed on \(window.screen?.localizedName ?? "no screen"), in sRGB"
+        )
     }
 
     /// The window's frame, toolbar included, at the stage's size with its top-left corner kept.

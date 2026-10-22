@@ -24,7 +24,9 @@ enum WindowPicture {
         let covers = coverMetalViews(in: frame)
         defer { for cover in covers { cover.removeFromSuperview() } }
         frame.cacheDisplay(in: bounds, to: rep)
-        return rep.representation(using: .png, properties: [:])
+        // In sRGB whatever screen the window is on, so two runs on two displays give one picture.
+        let srgb = rep.converting(to: .sRGB, renderingIntent: .default) ?? rep
+        return srgb.representation(using: .png, properties: [:])
     }
 
     /// One layer-backed view over each Metal view under `root`, showing what it would draw now.

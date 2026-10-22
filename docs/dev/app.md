@@ -784,6 +784,13 @@ therefore starts with a capture already tuned (`ley tune`), as it would be for s
 the radio running. Without one, the app opens FM broadcast, as a first launch does. The stage changes only what the window's own controls
 change, and the daemon's state is changed only by the tune a click would make (invariant 7).
 
+A staged run puts its window on the screen with the menu bar (`NSScreen.screens[0]`), its top-left
+corner 40 pt in from that screen's visible frame, before the stage sizes it, and draws it in sRGB,
+and `window.png` is converted to sRGB before it is written. A window draws in its screen's colour
+space, so the same frame on two displays differed in every pixel (7 % of a picture between two
+Dell monitors), and macOS moves a popover to fit the screen it opens on. Forced onto the other
+display once, the window gave the same picture to the pixel.
+
 A staged run draws the same frame twice (`DeterministicFrames.swift`), so two pictures of a still
 scene differ only where the radio moves them. SwiftUI's animations are disabled by a transaction
 at the window's root; window and scroll animations are off and the text caret does not blink,
