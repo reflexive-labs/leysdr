@@ -249,6 +249,7 @@ struct StepView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("assistant.step.\(ViewIdentifier.slug(step.callID))")
             if !open, !step.resultFirstLine.isEmpty {
                 Text(step.resultFirstLine).font(Theme.Font.valueSmall)
                     .foregroundStyle(step.isError ? Theme.recording : Theme.inkFaint)

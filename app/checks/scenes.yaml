@@ -671,3 +671,114 @@ scenes:
       - {cmd: daemon, op: start}
       - {cmd: wait, seconds: 3}
       - {cmd: file, path: ai/record.jsonl, contains: where am i}
+
+  # The assistant's conversation (docs/plans/app.md, the assistant panel): the toolbar's toggle
+  # closes and opens the column, whose width the window's minimum gives back; Return sends and
+  # clears the field, which keeps the focus; a slow answer shows the waiting row, one element for VoiceOver, counting from three seconds; a step opens to
+  # its arguments, result and JSON and closes; two quick Returns send one message; Option-Return
+  # makes a line and Space and ← type rather than mute and tune; while the assistant thinks the
+  # field takes typing, Return keeps it and the line under it says why, and Stop ends the turn,
+  # after which Return sends it; ⌘2 and ⌘1 keep the transcript and the field; a send the
+  # stopped daemon refused puts the text back; and New Conversation empties the panel.
+  # The scene sets no clock: the waiting row counts from the daemon's time of the turn
+  # against the app's own clock, and a shifted daemon (leylined --wall-clock) puts it hours ahead.
+  # ⇧⌘A is not sent: in a check run it never reaches View > Hide Assistant, which the menu
+  # command reads instead.
+  - name: assistant-conversation
+    fixtures: [{name: scene_2m}]
+    bookmarks: ../../site/shots/home.csv
+    ai: {script: assistant/conversation.script}
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      assistant: true
+      settle: 3
+    app:
+      - {cmd: state, expect: {assistant_shown: true, window.min_width: 1221, assistant.state: null, assistant.input: ""}}
+      - {cmd: snapshot, name: empty}
+      - {cmd: ax, name: empty}
+      - {cmd: menu, menu: "View>Hide Assistant", read: true, expect: {enabled: true}}
+      - {cmd: press, identifier: toolbar.assistant}
+      - {cmd: state, expect: {assistant_shown: false, window.min_width: 900}}
+      - {cmd: press, identifier: toolbar.assistant}
+      - {cmd: state, expect: {assistant_shown: true}}
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: where am i}
+      - {cmd: key, keys: return}
+      - {cmd: state, expect: {assistant.input: "", focused: assistant.input, assistant.turns.0.text: where am i}}
+      - {cmd: wait, seconds: 1.5}
+      - {cmd: state, expect: {assistant.thinking: true, assistant.stop_shown: true, focused: assistant.input}}
+      - {cmd: ax, name: thinking}
+      - {cmd: wait, seconds: 2.5}
+      - {cmd: snapshot, name: counting}
+      - {cmd: wait, seconds: 4}
+      - {cmd: state, expect: {assistant.thinking: false, assistant.stop_shown: false, assistant.state: ready, assistant.turns.1.role: assistant, focused: assistant.input}}
+      - {cmd: snapshot, name: answered}
+      - {cmd: ax, name: answered}
+      - {cmd: press, identifier: assistant.step.c1}
+      - {cmd: wait, seconds: 0.5}
+      - {cmd: snapshot, name: stepopen}
+      - {cmd: ax, name: stepopen}
+      - {cmd: press, identifier: assistant.step.c1}
+      - {cmd: wait, seconds: 0.5}
+      - {cmd: ax, name: stepclosed}
+      # Space and ← go into the field rather than mute and tune; two Returns back to back
+      # send one message.
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: a}
+      - {cmd: key, keys: space}
+      - {cmd: type, text: b}
+      - {cmd: key, keys: left}
+      - {cmd: type, text: c}
+      - {cmd: state, expect: {assistant.input: a cb, muted: false, tuned_hz: 146520000}}
+      - {cmd: key, keys: return}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {assistant.turns.2.text: a cb, assistant.turns.3.text: "Still on 146.520 MHz."}}
+      - {cmd: ax, name: once}
+      # Option-Return makes a new line. While the assistant thinks, Return keeps what is typed
+      # and the line under the field says why; Stop ends the turn and Return then sends it.
+      - {cmd: type, text: line one}
+      - {cmd: key, keys: opt+return}
+      - {cmd: type, text: line two}
+      - {cmd: state, expect: {assistant.input: "line one\nline two"}}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1.5}
+      - {cmd: state, expect: {assistant.input: "", assistant.turns.4.text: "line one\nline two", assistant.thinking: true, assistant.stop_shown: true}}
+      - {cmd: type, text: next one}
+      - {cmd: key, keys: return}
+      - {cmd: state, expect: {assistant.input: next one, assistant.thinking: true}}
+      - {cmd: ax, name: waits}
+      - {cmd: press, identifier: assistant.stop}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {assistant.thinking: false, assistant.stop_shown: false, assistant.input: next one}}
+      - {cmd: ax, name: stopped}
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {assistant.input: "", assistant.turns.6.text: next one, assistant.turns.7.text: Here is the next one.}}
+      - {cmd: snapshot, name: later}
+      # ⌘2 and ⌘1 keep the transcript and the field's text.
+      - {cmd: type, text: draft kept}
+      - {cmd: key, keys: cmd+2}
+      - {cmd: state, expect: {place: library, assistant.input: draft kept, assistant.turns.0.text: where am i}}
+      - {cmd: key, keys: cmd+1}
+      - {cmd: state, expect: {place: radio, assistant.input: draft kept, assistant.turns.7.text: Here is the next one.}}
+      # A message the stopped daemon did not take goes back into the field.
+      - {cmd: daemon, op: stop}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {assistant.input: draft kept}}
+      - {cmd: ax, name: refused}
+      - {cmd: daemon, op: start}
+      - {cmd: wait, seconds: 3}
+      - {cmd: press, identifier: assistant.new}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {assistant.state: null, assistant.input: draft kept}}
+      - {cmd: ax, name: new}
+      - {cmd: file, path: ai/record.jsonl, contains: where am i}
