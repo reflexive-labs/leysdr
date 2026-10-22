@@ -62,12 +62,24 @@ scale and the window's point size in `regions.json`. Check that it matches `scre
 on one scene, toolbar included; if the toolbar or the Metal waterfall does not render through
 `cacheDisplay`, say which, and fall back to `screencapture` for those scenes.
 
+Built 2026-10-21, not ticked until ML-4 has run on it: the picture is the theme frame (the
+content view's superview), so the title bar and toolbar render. The Metal waterfall came out as
+the ground; the renderer draws a frame offscreen and the app lays it over the Metal view for the
+draw, so no scene needs `screencapture`. Against `screencapture -o -l` at 2× the picture differs
+at the four rounded corners and in the filter's placeholder, which `cacheDisplay` draws brighter.
+
 ### ML-2 `[ ]` Deterministic frames
 
 Behind `LEYLINE_APP_STAGE` only: animations off (`NSAnimationContext` duration 0, a transaction
 that disables animations at the root), the caret not blinking, the window drawn as key whether or
 not it is frontmost, and the waterfall paused at a fixed row count before the picture. Two runs
 of one scene give the same pixels, or the unit names what still moves.
+
+Built 2026-10-21 for both variables, without the pause: the checker masks the spectrum and the
+waterfall, so the waterfall runs on. `isKeyWindow` alone left the traffic lights grey; the window
+also overrides AppKit's private key-appearance getters. Two pictures a second apart still differ
+in the inspector's live readings (tuning and deviation figures, the audio ladder), about 0.2 % of
+a 1100 × 700 pt window, and the `ax` tree carries the same figures as values.
 
 ### ML-3 `[ ]` The command file
 
@@ -114,6 +126,13 @@ field, hover a point on the rail or the spectrum, open the assistant panel, open
 | `press` | `identifier` (ML-5) | `accessibilityPerformPress` on the element with that identifier |
 | `wait` | `seconds` | answered after that long |
 | `quit` | | answered, then the app terminates |
+
+Built 2026-10-21 to this table with no field changed. Facts found on the way: keys must be posted
+to the app's queue (`NSApp.postEvent`), because `sendEvent` skips the local key monitors and
+Return never reached the filter; `ax` must read through `AXUIElement` on the app's own pid,
+because the `NSAccessibility` walk from the window sees none of SwiftUI's elements; a command-file
+run neither activates the app nor orders its window front. `ShotStage` gained `assistant`,
+`focus_filter` and `channels_picker`; hovering a point and opening Settings are left.
 
 ### ML-4 `[ ]` `leyshots check`
 

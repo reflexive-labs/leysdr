@@ -749,8 +749,8 @@ under `#if canImport(SwiftUI)`, `Metal` or `AppKit` is never compiled on Linux, 
 ## Staged runs
 
 `LEYLINE_APP_STAGE` names a stage file, and the app then sets its window to it for the site's
-screenshots (`../plans/site-shots.md`, "App shots"). `leyshots` writes the file. It holds JSON
-that `ShotStage` decodes, and every key is optional:
+screenshots (`../plans/site-shots.md`, "App shots") and for check runs. `leyshots` writes the
+file. It holds JSON that `ShotStage` decodes, and every key is optional:
 
 | key | what the app does |
 |---|---|
@@ -762,8 +762,11 @@ that `ShotStage` decodes, and every key is optional:
 | `place` | `radio` or `library`, as the toolbar's switch sets it |
 | `select_part` | selects this part of the Library's selected channel without playing it, counted from 0 down the page's recent days |
 | `play_part` | with `select_part`, plays that part for 0.4 s and pauses it, as a click and a second click do, because the Library draws only the playing row as current |
+| `assistant` | shows or hides the assistant's panel, as its toolbar button does; the panel draws only while an AI provider is set up |
+| `channels_picker` | opens this sidebar row's Channels… popover |
 | `settle` | the seconds the window keeps drawing after the stage is applied, before the regions are measured |
 | `on_air` | after `settle`, waits up to 30 s for an over to start and keep the tuned channel's squelch open through 1.5 s, so the readings and audio meters are live in the shot with the rest of the over to come; an over already on the air when the wait begins, or one that ends sooner, is passed over for the next. The scene needs a squelch level set |
+| `focus_filter` | after `settle`, gives the sidebar's filter field the focus, as Go to… (⌘G) does |
 | `zoom` | the spectrum and waterfall's zoom, as the band rail's − and + set it: 1, 2, 4 or 8, centred on the tuned frequency |
 | `scan_band` | with `expanded_band`, presses that row's Scan band as a click does and waits up to 60 s for the sweep to end before `settle` starts, so its hits show |
 
@@ -775,25 +778,98 @@ therefore starts with a capture already tuned (`ley tune`), as it would be for s
 the radio running. Without one, the app opens FM broadcast, as a first launch does. The stage changes only what the window's own controls
 change, and the daemon's state is changed only by the tune a click would make (invariant 7).
 
-`settle` seconds after the stage is applied (and, with `on_air`, once an over is on the air), the app clears the text focus, brings the window to the front and waits 1 s, then writes `regions.json` beside the stage file. Stage Manager draws a window that is not in front as a small tilted thumbnail in its strip, and `screencapture -l` takes the thumbnail; `leyshots` refuses a capture that is not the window's size at 1×, 2× or 3×. The file is
-replaced atomically:
+A staged run draws the same frame twice (`DeterministicFrames.swift`), so two pictures of a still
+scene differ only where the radio moves them. SwiftUI's animations are disabled by a transaction
+at the window's root; window and scroll animations are off and the text caret does not blink,
+through registration defaults that are never written to disk; and the window draws as the key
+window whatever has the focus, so its traffic lights are coloured even while the person at the
+Mac works in another app. What still moves is the spectrum, the waterfall (which runs on; a check
+masks both), and the inspector's live readings: the tuning and deviation figures and the audio
+ladder.
+
+`settle` seconds after the stage is applied (and, with `on_air`, once an over is on the air), the
+app clears the text focus. Without a command file it then brings the window to the front and
+waits 1 s, because Stage Manager draws a window that is not in front as a small tilted thumbnail
+in its strip and `screencapture -l` takes the thumbnail; `leyshots` refuses a capture that is not
+the window's size at 1×, 2× or 3×. It then writes `window.png` and `regions.json` beside the stage
+file, the picture first, each replaced atomically:
 
 ```json
-{"window_number": 4242,
+{"window_number": 4242, "scale": 2,
  "regions": {"window": {"x": 0, "y": 0, "width": 1440, "height": 820},
              "toolbar": {"x": 0, "y": 0, "width": 1440, "height": 52}, "sidebar": {…}}}
 ```
 
-`window_number` is the `NSWindow` number that `screencapture -l` takes. Each region is a rectangle
+`window.png` is the whole window, title bar and toolbar included, drawn by the app itself at the
+backing scale, so it needs no Screen Recording permission and does not depend on the focus. The
+app draws the window's frame view with `cacheDisplay(in:to:)`. A Metal layer draws nothing
+there, so the waterfall's renderer draws one more frame into an offscreen texture and that
+image is laid over the Metal view for the draw, under what SwiftUI draws over the waterfall.
+Against `screencapture -o -l` of the same window the picture differs at the window's four rounded
+corners, which `screencapture` leaves transparent, and in the sidebar filter's placeholder,
+which `cacheDisplay` draws brighter because the system placeholder colour's vibrancy is not
+applied.
+
+`window_number` is the `NSWindow` number that `screencapture -l` takes, and `scale` is the
+window's backing scale, the pixels per point in `window.png`. Each region is a rectangle
 in points from the top-left corner of the window's frame, toolbar included, because
 `screencapture -l` captures that whole frame. The regions are `window`, `toolbar`, `sidebar`,
-`inspector`, `waterfall`, `notice` (the one-line notice over the bottom of the waterfall, while one shows), `library` (the Library's whole body) and `parts` (the Library's page of the selected channel). In the Library, `sidebar` and
+`inspector`, `spectrum`, `waterfall`, `notice` (the one-line notice over the bottom of the waterfall, while one shows), `library` (the Library's whole body) and `parts` (the Library's page of the selected channel). In the Library, `sidebar` and
 `inspector` are the Library's own. A region that is not on screen is left out of the file. Each
 region except `window` and `toolbar` is measured by a `WindowFrameProbe` under its view. The
 toolbar is hosted outside the content's view tree, so its region is the strip above the window's
 `contentLayoutRect`. Every step is logged under `stage`. If the daemon is not live within 15 s,
 or the stage file cannot be read, the app applies nothing and writes no regions, and the log
 says why.
+
+### The command file
+
+`LEYLINE_APP_CONTROL` names a directory through which `leyshots check` drives the window
+(`../plans/mac-loop.md`, "The protocol", has the client's side). It stages the run as a stage file does,
+with or without one. Once a stage file given at launch has been applied and has settled, or
+once the daemon is live and the window has its channel when there is none, the app writes
+`ready.json` there:
+
+```json
+{"ok": true, "pid": 123, "window_number": 456, "scale": 2, "error": ""}
+```
+
+`ok` is false, with the reason in `error`, when the daemon was not live within 15 s; commands are
+still taken. The client then appends one JSON object per line to `commands.jsonl`. The app reads
+new complete lines every 100 ms and runs them one at a time, in order. Each has an integer `id`,
+unique in the run, and a `cmd`, and each is answered in `out/<id>.json`, written to a temporary
+file and renamed, so a reader never sees half an answer:
+
+```json
+{"id": 7, "ok": true, "error": "", "files": ["out/7.png"], "result": {…}}
+```
+
+Paths in `files` are relative to the directory, and `result` is `{}` for a command with nothing
+to return. A line the app cannot parse or run is answered `ok:false` with the reason in `error`,
+and the next line still runs; a line with no `id` has no answer file, so it is only logged.
+
+| `cmd` | fields | answer |
+|---|---|---|
+| `stage` | `stage`: a stage object as above (`settle` is slept, `window` resizes) | `result.applied`: the steps, as the log lines give them |
+| `snapshot` | `settle`: seconds to wait first, default 0 | `out/<id>.png`; `result`: `scale`, `width_pt`, `height_pt` and `regions`, as `regions.json` gives them |
+| `state` | | `result`: `place`, `tuned_hz`, `mode`, `bandwidth_hz`, `channel_id`, `capture_id`, `band`, `bookmark`, `open_rows`, `filter_query`, `inspector_shown`, `assistant_shown`, `zoom`, `focused` (the focused control's identifier, else its role and label), `notices` (every message the window shows), `popover` (`channels:<row>`, `device_menu` or empty), `selected_recording_channel`, `selected_part`; every key is present, `null` when it has no value |
+| `ax` | | `out/<id>.ax.txt`: the window's accessibility tree, one element per line indented two spaces a level: role, `id=` and the identifier when there is one, the label, `value=` when there is one, the frame in points from the window's top-left corner, `enabled` or `disabled` |
+| `key` | `keys`: `cmd+g`, `shift+cmd+left`, `escape`, `return`, `down`… | a key down and up |
+| `type` | `text` | a key down and up for each character |
+| `press` | `identifier` | AXPress on the first element with that accessibility identifier; `ok:false` when none has it |
+| `wait` | `seconds` | answered after that long |
+| `quit` | | answered, then the app quits |
+
+Keys are posted to the app's own event queue, as a keyboard's arrive, so a menu's key equivalent,
+the filter field's key monitor and the focused field all see them, and nothing is typed into
+another app. A modifier is `cmd`, `shift`, `opt` or `ctrl`; a key is one character or one of
+`return`, `escape`, `tab`, `space`, `delete`, `forward_delete`, the four arrows, `home`, `end`,
+`page_up` and `page_down`. Each key's answer is written 150 ms after the key, so a key that moves
+the focus has moved it before the next command. A command-file run never activates the app or
+brings its window forward, so the person at the Mac keeps the focus; the window is made key
+within the app, which is where a field's focus lives. The tree comes from the accessibility API
+on the app's own process, which SwiftUI answers in full and which needs no Accessibility
+permission.
 
 ## Logs
 
