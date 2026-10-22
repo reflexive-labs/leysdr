@@ -237,6 +237,8 @@ func TestLoadChecksRejects(t *testing.T) {
 		"op on ley":          "fixtures: [{name: x}]\n    app: [{cmd: ley, args: [state], op: stop}]",
 		"log on press":       "fixtures: [{name: x}]\n    app: [{cmd: press, identifier: a, expect_log: x}]",
 		"bad log regex":      "fixtures: [{name: x}]\n    app: [{cmd: state, expect_log: [\"[\"]}]",
+		"negative dwell":     "fixtures: [{name: x}]\n    sweep_dwell: -1\n    app: [{cmd: state}]",
+		"endless dwell":      "fixtures: [{name: x}]\n    sweep_dwell: 600\n    app: [{cmd: state}]",
 	}
 	for name, body := range cases {
 		path := filepath.Join(t.TempDir(), "scenes.yaml")

@@ -18,7 +18,8 @@ import (
 )
 
 // fakeEnv makes the test binary a leylined: it serves the fake daemon on --socket until
-// interrupted, and counts its starts in --data/starts, with the variable FAKE_SAYS beside each.
+// interrupted, and counts its starts in --data/starts, with the variable FAKE_SAYS and its
+// --file-scan-dwell beside each.
 const fakeEnv = "DAEMONRUN_FAKE_LEYLINED"
 
 func TestMain(m *testing.M) {
@@ -32,6 +33,7 @@ func fakeLeylined() int {
 	fs := flag.NewFlagSet("leylined", flag.ContinueOnError)
 	socket := fs.String("socket", "", "")
 	data := fs.String("data", "", "")
+	dwell := fs.String("file-scan-dwell", "", "")
 	for _, name := range []string{"pidfile", "store", "recordings", "log-level", "decoders", "wall-clock"} {
 		fs.String(name, "", "")
 	}
@@ -44,7 +46,7 @@ func fakeLeylined() int {
 	if err != nil {
 		return 1
 	}
-	fmt.Fprintln(f, os.Getenv("FAKE_SAYS"))
+	fmt.Fprintln(f, os.Getenv("FAKE_SAYS"), *dwell)
 	_ = f.Close()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -65,6 +67,7 @@ func TestHaltResume(t *testing.T) {
 	}
 	d, err := Start(ctx, Options{
 		Bin: exe, Dir: t.TempDir(), Env: []string{fakeEnv + "=1", "FAKE_SAYS=hello"}, NoAudio: true,
+		FileScanDwellMs: 2500,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +99,7 @@ func TestHaltResume(t *testing.T) {
 		t.Errorf("the resumed daemon does not answer: %v", err)
 	}
 	b, err := os.ReadFile(starts)
-	if err != nil || string(b) != "hello\nhello\n" {
+	if err != nil || string(b) != "hello 2500\nhello 2500\n" {
 		t.Errorf("starts: %q, %v", b, err)
 	}
 	if b, _ := os.ReadFile(d.Log); !strings.Contains(string(b), "daemonrun: started again") {

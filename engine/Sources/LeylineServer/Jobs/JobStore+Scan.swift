@@ -115,7 +115,7 @@ extension JobStore {
         await setStep(id, plan: plan)
 
         let captureID = lease.captureID
-        let dwell = config.dwellMs == 0 ? 250 : config.dwellMs
+        let dwell = Self.scanDwellMs(requested: config.dwellMs, driver: device?.driver, fileFloorMs: fileScanDwellMs)
         let result = await ScanRunner.sweep(
             lease: lease, plan: plan, dwellMs: dwell,
             onStep: { [weak self] p in
@@ -154,6 +154,16 @@ extension JobStore {
             let steps = result.steps == 1 ? "1 step" : "\(result.steps) steps"
             await finish(id, state: .completed, detail: "\(result.hits.count) found in \(steps)\(clipped)")
         }
+    }
+
+    /// The dwell a sweep runs at, in ms: the request's, or 250 when it names none; on a file device
+    /// never shorter than `fileFloorMs` (`leylined --file-scan-dwell`). A file device sweeps in one
+    /// step, so a check scene that needs a sweep in progress -- its Stop, a click during it -- has
+    /// one that lasts that long. A radio of any other driver keeps the dwell it asked for.
+    static func scanDwellMs(requested: UInt32, driver: String?, fileFloorMs: UInt32) -> UInt32 {
+        let dwell = requested == 0 ? 250 : requested
+        guard driver == FilePlaybackDevice.driverName else { return dwell }
+        return Swift.max(dwell, fileFloorMs)
     }
 
     private func setStep(_ id: JobID, plan: SweepPlan) {

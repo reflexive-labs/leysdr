@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +33,9 @@ type Options struct {
 	// NoAudio starts the daemon with --no-audio: every audio sink and playback is discarded, so
 	// nothing reaches the speakers of the Mac it runs on.
 	NoAudio bool
+	// FileScanDwellMs, when set, starts the daemon with --file-scan-dwell: a scan on a file device
+	// dwells that long when it asks for less, so a check sees a sweep in progress.
+	FileScanDwellMs int
 	// Label is the client label the readiness connection uses, as the daemon's log shows it.
 	Label string
 	// Env is added to the daemon's environment, as KEY=value.
@@ -116,6 +120,9 @@ func Start(ctx context.Context, o Options) (*Daemon, error) {
 	}
 	if o.NoAudio {
 		d.args = append(d.args, "--no-audio")
+	}
+	if o.FileScanDwellMs > 0 {
+		d.args = append(d.args, "--file-scan-dwell", strconv.Itoa(o.FileScanDwellMs))
 	}
 	d.bin, d.env, d.label = o.Bin, daemonEnv(os.Environ(), o), o.Label
 	if d.label == "" {

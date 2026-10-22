@@ -38,6 +38,10 @@ type CheckScene struct {
 	Threshold *float64 `yaml:"threshold"`
 	// AI puts the assistant on a scripted model, with a made-up key (ai.go).
 	AI *AISetup `yaml:"ai"`
+	// SweepDwell is the dwell in seconds of a scan on the scene's file radio when it asks for less
+	// (leylined --file-scan-dwell): its one step lasts about that long, so a sweep in progress can
+	// be seen and stopped. 0 leaves the scan's own.
+	SweepDwell float64 `yaml:"sweep_dwell"`
 }
 
 // defaultCheckSize is the site shots' window.
@@ -206,6 +210,9 @@ func (s *CheckScene) validate(path func(string) string) error {
 	}
 	if s.Threshold != nil && (*s.Threshold < 0 || *s.Threshold > 100) {
 		return fmt.Errorf("threshold %g is not a percentage", *s.Threshold)
+	}
+	if s.SweepDwell < 0 || s.SweepDwell > 60 {
+		return fmt.Errorf("sweep_dwell %g is not between 0 and 60 seconds", s.SweepDwell)
 	}
 	if err := validateSetup(path, s.Bookmarks, s.Steps); err != nil {
 		return err
