@@ -205,6 +205,28 @@ questions and answer each with yes, no or can't tell. A "no" becomes a task, not
 - A PostToolUse hook on edits under `app/Sources` running `swift build` for the app and
   `scripts/check-theme.sh`: seconds, not the full loop.
 
+Built 2026-10-22, not ticked until an agent has used it on ML-9's first scenes:
+
+- `.claude/skills/app-check/SKILL.md`: when to run `make app-check [ONLY=…]`, each status and
+  where its artefacts are, reading a picture and its diff image, writing a scene, the rules
+  (no re-recording to pass, kill only pids you launched, the Accessibility grant) and the
+  handover. ML-7's review questions are not in it, because `app/checks/review.md` does not exist.
+- `leyshots check --hold --only <scene>` for exploring by hand: the scene runs at its first size,
+  then the app and its daemon stay up, and leyshots prints the pid, the log, the daemon's socket,
+  the command file and the next free id, until a `quit` command or an interrupt (SIGTERM too).
+  Its closing quit takes the id after the last one used. Tried on radio-2m: a `state` sent by
+  hand was answered, and a `quit` ended the hold and the daemon.
+- Section 12 and AGENTS.md's convention now say: run `make app-check`, add or extend a scene,
+  state what no check covers; the container's limits stay as a caveat.
+- `.claude/settings.json` (`.gitignore` now ignores `.claude/*` but it and `.claude/skills/`)
+  allows `make app-check`, `make app`, `make app-lint`, `make app-test`, `make app-bundle` and
+  `go/bin/leyshots`. `open -g` and `pkill -x LeylineApp` are left out: `leyshots` opens the app
+  itself, and a kill by name would reach the person's own app. The hook is
+  `scripts/claude-app-hook.sh`: about 0.2 s for a file elsewhere; for one under `app/Sources`
+  an incremental `swift build` (5.6 s with nothing to compile, 16 s after a change) and the theme
+  gate; on a failure it prints the first 30 error lines and exits 2. A build error and a theme
+  hit were tried in a scratch package, and an edit in a worktree builds that worktree.
+
 ### ML-9 `[ ]` Burn down the Unverified lists
 
 Turn each item under "Unverified on the Mac" in `app.md` (U4 onward, Settings, the assistant
