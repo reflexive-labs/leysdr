@@ -173,4 +173,13 @@ final class KeyChordTests: XCTestCase {
         XCTAssertEqual(KeyChord.typing("W").keyCode, 13)
         XCTAssertEqual(KeyChord.typing("3").modifiers, [])
     }
+
+    func testASlugIsOneLowercaseWordOfTheIdentifier() {
+        XCTAssertEqual(ViewIdentifier.slug("Calling"), "calling")
+        XCTAssertEqual(ViewIdentifier.slug("Club repeater"), "club-repeater")
+        XCTAssertEqual(ViewIdentifier.slug("  GMRS CH3 (local) "), "gmrs-ch3-local")
+        XCTAssertEqual(ViewIdentifier.slug("gmrs/ch5"), "gmrs-ch5")
+        XCTAssertEqual(ViewIdentifier.slug("Café 2"), "caf-2")
+        XCTAssertEqual(ViewIdentifier.slug("—"), "_")
+    }
 }

@@ -19,6 +19,17 @@
 
 import AppKit
 import ApplicationServices
+import SwiftUI
+
+extension View {
+    /// One element named `identifier` holding the view's elements as its children. An identifier
+    /// on a stack that is not an element of its own is given to every element inside it instead,
+    /// over their own, so a region or a row the checks name is made an element first. It changes
+    /// the tree and nothing drawn.
+    func identifiedGroup(_ identifier: String) -> some View {
+        accessibilityElement(children: .contain).accessibilityIdentifier(identifier)
+    }
+}
 
 @MainActor
 enum AccessibilityTree {

@@ -66,6 +66,29 @@ public enum AppControl {
     }
 }
 
+/// The window's accessibility identifiers, which the command file's `press` names and `ax`
+/// prints (docs/dev/app.md, "Staged runs", has the scheme): lowercase words joined by dots, the
+/// area first. A list's rows end in their data, slugged here so a name with spaces or capitals
+/// still makes one word of the identifier.
+public enum ViewIdentifier {
+    /// `Club repeater` → `club-repeater`: lowercase ASCII letters and digits, every other run of
+    /// characters one hyphen, none at either end. A name with no letter or digit is `_`.
+    public static func slug(_ s: String) -> String {
+        var out = ""
+        var gap = false
+        for ch in s.lowercased().unicodeScalars {
+            if ("a"..."z").contains(ch) || ("0"..."9").contains(ch) {
+                if gap, !out.isEmpty { out.append("-") }
+                out.unicodeScalars.append(ch)
+                gap = false
+            } else {
+                gap = true
+            }
+        }
+        return out.isEmpty ? "_" : out
+    }
+}
+
 /// `ready.json`: written once the session is live and has its first channel, or when the waits
 /// for those run out (`ok` false then, with the reason in `error`).
 public struct ControlReady: Sendable, Equatable, Codable {
