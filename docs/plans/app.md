@@ -1398,33 +1398,48 @@ Each unit that touches `app/Sources/LeylineApp` leaves its list here; the contai
 none of those files (`../dev/swift-style.md`, section 12). The owner runs the accumulated list
 once and files fixes as new items.
 
+Since 2026-10-22 the check scenes in `app/checks/scenes.yaml` cover part of these lists
+(`mac-loop.md`, ML-9a). A fact a scene checks ends in `Checked:` and the scene's name; what is
+left needs a harness addition (ML-9b, ML-9c) or a person. What the scenes found is under "Found
+by the Mac checks (2026-10-22)" below.
+
 - **U4** (`SidebarView.swift`, new `PlanPickerView.swift`, `BandRailView.swift`,
   `AppSession.swift`, `LeylineApp.swift`, `Theme.swift`; none compiled here):
   - A band row's tap tunes it as before; its chevron opens and closes the row without tuning,
-    and a tune into another row closes a row the chevron opened.
+    and a tune into another row closes a row the chevron opened. Checked: `sidebar-rows` (the
+    chevron, and a tune within 2 m closing the row it opened; a tune into another row needs a
+    wider fixture).
   - The tuned row is open, with the range line, a compact raised, bordered action strip, then
     its bookmarks indented under it. `Scan band` and `Channels…` sit together in the strip and
     do not read as bookmark rows; a band without a plan shows only `Scan band`. `GMRS` is one
     row and is the tuned one on either half; a bookmark at
     462.6625 MHz sits under it and reads `ch5` where its frequency was; a bookmark at 500 MHz
-    is under `Other`.
+    is under `Other`. Checked: `sidebar-rows`, all but GMRS tuned on either half (a GMRS
+    fixture).
   - The filter field takes focus on ⌘G (`Go to…` in the Tune menu, from the Library too);
     while it has focus Space types a space and ← → move the caret, neither mutes nor tunes.
+    Checked: `goto-bookmark`, the focus and the space; the caret and the mute need `state`
+    fields.
   - Typing `wx3` lists the NOAA row and Return tunes 162.475 MHz, clears the field and drops
     its focus; Escape clears and blurs; `zz` shows `No matches for “zz”.`; a row of a band the
-    radio cannot tune is dimmed and does nothing.
+    radio cannot tune is dimmed and does nothing. Checked: `goto-bookmark` and `sidebar-rows`,
+    with Return on `evening net` for the tune (162.475 MHz is outside the file radio).
   - `Channels…` opens the picker to the right of its action; it opens with the field focused and
     the highlight on the tuned channel when the plan has it, else the first row; Up and Down
     move the highlight and stop at the ends, and the list scrolls to keep it in view; typing
     narrows the rows and puts the highlight back on the first; Return picks it and closes;
     Escape closes; a click picks. On marine's list (110 rows) the popover is about twelve rows
-    tall and scrolls; typing `24` leaves `24`, `24 coast`, `24A`.
+    tall and scrolls; typing `24` leaves `24` and `24 coast` (the plan has no `24A`). Checked:
+    `plan-picker`, all but the highlight, Up and Down, the scroll and a click: a check run's
+    keys reach the main window and not the popover, and the window's picture leaves the
+    popover out.
   - The plan ticks on the rail are visibly fainter than the bookmark ticks and sit under them;
     hovering one names the channel; a click on one tunes it; the rail on `gmrs-462` shows only
     the channels in that half; marine shows none.
   - With an RTL-SDR the list opens on `7 bands below what this radio tunes`, one dim line;
     clicking it shows the seven rows disabled with the existing tooltip; the next tune folds
-    it again.
+    it again. Checked: `sidebar-rows`, on a file radio's `17 bands outside what this radio
+    tunes`; the tooltip needs `hover`.
   - ⌘D on 462.6625 MHz makes a bookmark named `ch5` with its row open as an editor; on
     146.52 MHz it is named `146.520 MHz`. The inspector's pencil committed empty on a plan
     channel makes one named after the channel.
@@ -1433,18 +1448,22 @@ once and files fixes as new items.
   - A pick of MURS 4 arrives at 20 kHz where the group is 11.25 kHz.
   - The app builds without a `Sendable` diagnostic from the filter and picker key monitor;
     holding Up or Down in the picker moves every repeated step and leaves the field focused.
+    The build is checked on every edit; the keys are not (as for `Channels…` above).
 - **U5** (`AppSession.swift`, `SidebarView.swift`, `BandRailView.swift`, `MainWindow.swift`,
   `Theme.swift`; none compiled here):
   - Scan band on the tuned 2 m row: the audio stops, the field keeps showing the tuned
     frequency, the row reads `Sweeping 2 m amateur, 7 steps…` from the job's events, and the
     audio is back on the same frequency with the band's mode and width when the row shows its
     hits. Record how long the audio was gone, in the design's open question
-    (`../design/channels.md`, "Open questions").
+    (`../design/channels.md`, "Open questions"). Checked: `scan-hits`, the return to the same
+    frequency, mode and width; the rest needs a sweep that lasts.
   - The hits are listed strongest first, `WX3` or `146.520 MHz` with `23 dB` beside it; the
     rail shows a tick per hit, brighter than the plan ticks and distinct from a bookmark's,
     hovering one reads `WX3 · 23 dB`, and a click on a hit's row or its tick tunes it.
+    Checked: `scan-hits`, the order, the names and a tick per hit; hovering and clicking need
+    `hover` and `click`.
   - `＋` on a hit makes a bookmark named after the channel (`WX3`), else the frequency, under
-    the band with its row open as an editor, as ⌘D does.
+    the band with its row open as an editor, as ⌘D does. Checked: `scan-hits`.
   - The item reads `Stop` while the row is swept, in the row and in its context menu; Stop
     ends the job and the audio comes back where it was; the row shows nothing under the item
     afterwards.
@@ -1462,15 +1481,18 @@ once and files fixes as new items.
     offers only `.csv` files; Cancel does nothing.
   - Choosing `fixtures/chirp/sample.csv` shows the notice `Imported 9 from sample.csv: 8
     added, 1 updated, 1 skipped`, opens no row and no editor, and the log carries `sample.csv
-    line 9: frequency "abc" is not a number` and the DV row's warning.
+    line 9: frequency "abc" is not a number` and the DV row's warning. Checked: `chirp-import`,
+    all but the log.
   - The 2 m and 70 cm rows stay collapsed and hold the new bookmarks once opened: `Club`,
     `Simplex`, `Tsql`, `Digital` under 2 m; `Dcs`, `Cross`, `445.925 MHz` under 70 cm; `ch5`
-    under GMRS, reading its channel name.
+    under GMRS, reading its channel name. Checked: `chirp-import` (2 m is the tuned row on a
+    file radio, so it is open).
   - The inspector on `Club` shows `PL 100.0` and the note `club repeater`; on `Dcs` it shows
-    `DCS 023`.
+    `DCS 023`. Checked: `chirp-import`, Club's tone field reading `100.0`; `Dcs` is outside the
+    file radio.
   - Typing a note on `Simplex`, then importing the file again, keeps the note and shows
     `Imported 9 from sample.csv: 0 added, 9 updated, 1 skipped`; `ley bookmarks --tag sample`
-    lists nine.
+    lists nine. Checked: `chirp-import`, all but `ley bookmarks`.
   - A file with no Frequency column (any other CSV) shows the error `<name> has no Frequency
     column; is it a CHIRP CSV export?` and `bookmarks.json` is unchanged.
   - If the bookmarks file cannot be saved, the import reports the write error and the sidebar
@@ -1491,29 +1513,67 @@ once and files fixes as new items.
   - On a bookmarked frequency the identity region shows `Tone` and `Note` fields under the
     frequency line, labelled in the reading's label column, each showing the saved value or
     its placeholder (`100.0 or D023N`, `A note`); on a frequency with no bookmark neither
-    field is there, and naming the frequency with the pencil brings both.
+    field is there, and naming the frequency with the pencil brings both. Checked:
+    `bookmark-fields`.
   - A click in the tone field takes focus; while it has focus Space types a space and ← →
-    move the caret, neither mutes nor tunes; the same in the note field.
+    move the caret, neither mutes nor tunes; the same in the note field. Checked:
+    `bookmark-fields`, the focus; the caret and the mute need `state` fields.
   - Typing `100.0` and Return keeps the field focused, the sidebar row and `ley bookmarks`
     read `100.0` for that bookmark; `ley bookmarks --json` carries `"tone": "100.0"`; clearing
-    the field and Return removes the tone from both.
+    the field and Return removes the tone from both. Checked: `bookmark-fields`, the focus
+    kept; the sidebar row shows no tone (found below), and `ley bookmarks` needs `ley` in a
+    scene.
   - Typing `D024N` and Return leaves the text in the field and puts `tone must be a CTCSS tone
     such as 100.0 or a DCS code such as D023N` under it in `caution`, wrapped, and the bookmark
     is unchanged; a good tone then, or Escape, or a click elsewhere, removes the sentence;
-    a tune to another frequency removes it too.
+    a tune to another frequency removes it too. Checked: `bookmark-fields`, all but the click.
   - Escape and a click elsewhere put the saved value back in either field without writing;
     `ley bookmarks add … --note x` on the tuned bookmark's frequency and name replaces an
     idle field's text within a second (the file watcher), and does not replace one being
-    edited.
+    edited. Checked: `bookmark-fields`, Escape putting the saved value back.
   - With a keyed transmission carrying a PL, `heard PL 100.0` appears beside the tone field in
     `inkTertiary` and stays after the transmission ends; a DCS transmission reads `heard DCS
     023`; a tune away and back to the frequency clears it until the next transmission there;
     a bookmark tone that differs from the heard one shows both and no word like mismatch.
+    Checked: `heard-tones`.
   - A bookmark with tags (`ley bookmarks add 146.94 --name r --tag home --tag vhf`) shows
     `home · vhf` in `inkFaint` between the name and the frequency line; without tags the line
-    is absent and nothing shifts.
+    is absent and nothing shifts. Checked: `sidebar-rows`; without the line what follows
+    moves up 17 pt (found below).
   - The panel's width (312 pt) holds the label, the field and `heard DCS 023 inverted` on one
-    line; if it does not, the heard words truncate and the field keeps its width.
+    line; if it does not, the heard words truncate and the field keeps its width. Not checked:
+    `nfm_dcs_inverted` reads as DCS 047 normal, so no fixture says `inverted`.
+
+#### Found by the Mac checks (2026-10-22)
+
+Faults and questions the ML-9a scenes found that were not fixed on the spot; each names its
+scene, whose pictures and trees in `tmp/checks/<scene>/` show it.
+
+- `sidebar-rows`: at the sidebar's 236 pt the out-of-range line is cut to `17 bands outside what
+  this radio…` (a file radio's words; an RTL-SDR's `7 bands below…` are shorter) and the tuned
+  row's range line to `144 – 148 MHz · 12.5 kHz · sq −…`. Shorter words, or a wider sidebar?
+- `sidebar-rows`: between a tagged and an untagged bookmark everything under the tags line
+  moves 17 pt. Is that the "nothing shifts" U6 meant, or should the line keep its place?
+- `sidebar-rows`: a band row the radio cannot tune is dimmed and ignores a press, but its
+  accessibility element reads enabled, and its `Channels…` stays enabled although no pick in it
+  can tune.
+- `bookmark-fields`: a bookmark's sidebar row shows its channel or frequency and never its tone,
+  so U6's "the sidebar row reads `100.0`" cannot hold. Show the tone, or drop the words?
+- `bookmark-fields`: a bookmark at 146.525 MHz, 5 kHz off the calling channel, reads `calling`
+  in the sidebar where its frequency would be: the plan lookup names a neighbour.
+- `bookmark-fields`: the arrows beside the frequency read the keyboard's ⇧ when they are
+  pressed (`NSEvent.modifierFlags`), so an accessibility press, VoiceOver's included, steps
+  finely whenever a key is held elsewhere.
+- `scan-hits`: `＋` on a hit bookmarks the frequency the sweep measured (146.940186 MHz, shown
+  `146.9402`), not the `146.940 MHz` the hit is named.
+- `plan-picker`: once a pick closes the picker the sidebar's filter has the focus, so Space and
+  the arrows type there rather than mute and tune. Seen in a check run, whose app is never
+  active; look in a real session before changing it.
+- Every scene: a plain text field's AppKit view keeps the height of whichever field it was first
+  made for (13 or 15 pt) from launch to launch, as `Theme.Layout.labelFieldHeight` says. The
+  pixels stay put and `ax` leaves the field's top and height out, but a group's frame is the
+  union of its children's, so `inspector.identity` reads 116 or 117 pt and a tree holding it
+  differs on about one launch in three.
 
 #### Residuals after APP-9 review
 
@@ -1574,7 +1634,8 @@ and the fake worker in `make app-e2e`. The views are not compiled off the Mac.
   `InspectorView.swift`, the `Theme.Layout.assistant*` tokens.
 - K1: with no key, no toggle and no column, and View ▸ Show Assistant is disabled; adding a key
   in Settings brings the toggle and enables the item, and removing the key takes the column away
-  even while it was open.
+  even while it was open. Checked: `assistant-absent`, no toggle and no column with ⇧⌘A; the
+  menu item and a key need `menu` and the AI provider stub.
 - With the column open the window cannot be made narrower than 900 pt plus the column, and
   opening it in a narrow window widens the window rather than squeezing the canvas.
 - Stop shows while the assistant waits on a view tool; after a message the field keeps the focus
