@@ -65,7 +65,7 @@ enum AccessibilityTree {
     /// The tree under `window`, one element per line.
     static func text(of window: NSWindow) throws -> String {
         guard let root = element(of: window) else {
-            throw Failure(reason: "the window has no accessibility element")
+            throw Failure(reason: noWindowReason())
         }
         // A process macOS does not trust for accessibility is answered with the application's
         // element wherever a window or a view should be, a tree of thousands of menu items.
@@ -99,9 +99,7 @@ enum AccessibilityTree {
     /// Presses the first element, depth first, whose identifier is `identifier`, as VoiceOver's
     /// press does. Answers why not when there is no such element or it refused the press.
     static func press(_ identifier: String, in window: NSWindow) -> String? {
-        guard let root = element(of: window) else {
-            return "the window has no accessibility element"
-        }
+        guard let root = element(of: window) else { return noWindowReason() }
         var found: AXUIElement?
         let deadline = Date().addingTimeInterval(walkSeconds)
         var late = false
@@ -120,6 +118,18 @@ enum AccessibilityTree {
         guard let found else { return "no element has the identifier \(identifier)" }
         let err = AXUIElementPerformAction(found, kAXPressAction as CFString)
         return err == .success ? nil : "\(identifier) refused the press (AXError \(err.rawValue))"
+    }
+
+    /// Why `element(of:)` found nothing: what the application answered for its windows, and
+    /// whether macOS trusts this process.
+    private static func noWindowReason() -> String {
+        var v: CFTypeRef?
+        let err = AXUIElementCopyAttributeValue(
+            AXUIElementCreateApplication(getpid()), kAXWindowsAttribute as CFString, &v)
+        let count = (v as? [AXUIElement])?.count
+        return "the window has no accessibility element (the application answered "
+            + (count.map { "\($0) windows" } ?? "AXError \(err.rawValue)")
+            + "; trusted: \(AXIsProcessTrusted() ? "yes" : "no"))"
     }
 
     /// The identifier of the element that has the keyboard focus, as the accessibility API
