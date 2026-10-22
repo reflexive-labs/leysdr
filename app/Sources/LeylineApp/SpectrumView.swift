@@ -250,7 +250,7 @@ struct MaxHoldChip: View {
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: session.maxHold ? "checkmark.square.fill" : "square")
-                        .font(.system(size: 9))
+                        .font(Theme.Font.checkGlyph)
                         .foregroundStyle(session.maxHold ? Theme.good : Theme.inkFaint)
                     Rectangle().fill(Theme.good.opacity(0.5)).frame(width: 10, height: 1.5)
                     Text("max hold").font(Theme.Font.valueSmall).foregroundStyle(

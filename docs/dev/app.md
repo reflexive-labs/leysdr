@@ -664,6 +664,7 @@ name is SF, each at the size and tracking the role calls for.
 | a table's column head | `columnHead` | SF Mono | 8.5 | the inspector's log |
 | a clause under a sentence | `aside` | SF | 11.5 | |
 | footnote under a control | `footnote` | SF | 10.5 | |
+| an SF Symbol in a control | `glyph`, `transportGlyph`, `arrowGlyph`, `closeGlyph`, `checkGlyph`, `fieldGlyph`, `buttonGlyph`, `editGlyph`, `panelGlyph`, `toolbarGlyph` | SF Symbols | 6–16 | one token per role: a chevron, the × on a banner, a search field's glass |
 
 Every number that changes while you watch it uses tabular figures, without exception, so a
 frequency does not change width while tuning.

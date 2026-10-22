@@ -348,7 +348,7 @@ struct EngineUpdateStrip: View {
             Button {
                 session.dismissEngineUpdate()
             } label: {
-                Image(systemName: "xmark").font(.system(size: 9))
+                Image(systemName: "xmark").font(Theme.Font.closeGlyph)
             }
             .buttonStyle(.plain).foregroundStyle(Theme.inkFaint)
         }
@@ -378,7 +378,7 @@ struct NoticeStrip: View {
         HStack {
             Text(text).font(Theme.Font.label).foregroundStyle(colour).lineLimit(2)
             Spacer()
-            Button(action: dismiss) { Image(systemName: "xmark").font(.system(size: 9)) }
+            Button(action: dismiss) { Image(systemName: "xmark").font(Theme.Font.closeGlyph) }
                 .buttonStyle(.plain).foregroundStyle(Theme.inkFaint)
         }
         .padding(.horizontal, 12).padding(.vertical, 6)

@@ -61,7 +61,7 @@ struct PlayButton: View {
             ZStack {
                 Circle().fill(Theme.accent).frame(width: 44, height: 44)
                 Image(systemName: session.isMuted ? "speaker.slash" : "speaker.wave.2")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(Theme.Font.transportGlyph)
                     .foregroundStyle(Theme.ground)
             }
         }
@@ -400,7 +400,7 @@ struct StepArrow: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 8, weight: .semibold))
+            Image(systemName: symbol).font(Theme.Font.glyph)
                 .foregroundStyle(
                     !enabled ? Theme.inkDisabled : hovering ? Theme.ink : Theme.inkMuted
                 )
@@ -434,7 +434,7 @@ struct PopupButton<T: Hashable>: View {
             HStack(spacing: 8) {
                 Text(label(pending ?? current)).font(Theme.Font.body).foregroundStyle(Theme.ink)
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+                Image(systemName: "chevron.down").font(Theme.Font.glyph)
                     .foregroundStyle(Theme.inkMuted)
             }
             .padding(.horizontal, 12).padding(.vertical, 8)

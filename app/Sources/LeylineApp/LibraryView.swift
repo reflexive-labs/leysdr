@@ -108,7 +108,7 @@ struct LibrarySidebar: View {
     /// Return chooses the first row that matches.
     private var search: some View {
         HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").font(.system(size: 10))
+            Image(systemName: "magnifyingglass").font(Theme.Font.fieldGlyph)
                 .foregroundStyle(Theme.inkFaint)
             TextField(
                 "Search recordings",
