@@ -35,14 +35,17 @@ struct BandRailView: View {
                 HStack(spacing: 2) {
                     zoomButton("minus") { session.zoomOut() }.disabled(session.zoom <= 1)
                         .help(columns.isEmpty ? "Zoom out" : "Zoom out: \(columns) now")
+                        .accessibilityIdentifier("rail.zoom.out")
                     zoomButton("plus") { session.zoomIn() }.disabled(session.zoom >= 8)
                         .help(columns.isEmpty ? "Zoom in" : "Zoom in: \(columns) now")
+                        .accessibilityIdentifier("rail.zoom.in")
                 }
             }
             .padding(.horizontal, 14)
             .frame(width: geo.size.width, height: geo.size.height)
         }
         .background(Theme.panelHeader)
+        .identifiedGroup("rail")
     }
 
     private var title: String {
@@ -116,6 +119,7 @@ struct NeighbourButton: View {
                 .foregroundStyle(Theme.inkFaint)
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier(side == .below ? "rail.below" : "rail.above")
             .help(
                 abuts
                     ? "\(band.name), \(side == .below ? "below" : "above") this band"
@@ -182,6 +186,8 @@ struct BandRail: View {
                             )
                             .help(channel.name)
                             .onTapGesture { session.tune(to: channel.hz) }
+                            .accessibilityIdentifier(
+                                "rail.channel.\(ViewIdentifier.slug(channel.id))")
                     }
                 }
                 // The last sweep's hits inside the rail: a group's hits show on the half the
@@ -197,6 +203,7 @@ struct BandRail: View {
                         )
                         .help("\(hit.label) · \(String(format: "%.0f", hit.snrDb)) dB")
                         .onTapGesture { session.tune(hit: hit) }
+                        .accessibilityIdentifier("rail.hit.\(hit.hz)")
                 }
                 // Bookmarks in the band.
                 ForEach(session.bookmarks.list.filter { range.contains($0.hz) }) { b in
@@ -228,6 +235,7 @@ struct BandRail: View {
                     .onChanged { v in moved(v, width: w) }
                     .onEnded { v in ended(v, width: w) })
         }
+        .identifiedGroup("rail.track")
     }
 
     /// The capture's span, from the centre a drag is taking it to when there is one.

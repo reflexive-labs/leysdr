@@ -300,6 +300,7 @@ struct PlaceSwitch: View {
                 .buttonStyle(.plain)
                 .help(Text(verbatim: "\(p.title) (⌘\(p.shortcut))"))
                 .accessibilityAddTraits(shown ? .isSelected : [])
+                .accessibilityIdentifier("toolbar.place.\(p.rawValue)")
             }
         }
         .padding(inset)

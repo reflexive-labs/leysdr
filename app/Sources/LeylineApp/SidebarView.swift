@@ -37,9 +37,11 @@ struct SidebarView: View {
             // open band's channels), and without an anchor the list sometimes settled a couple
             // of points scrolled: it opens at the top whatever arrives first.
             .defaultScrollAnchor(.top)
+            .accessibilityIdentifier("sidebar.list")
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.panel)
+        .identifiedGroup("sidebar")
     }
 
     /// The filter field in the Library search field's shape, with `＋` beside it. Return tunes the
@@ -56,6 +58,7 @@ struct SidebarView: View {
                     .focused($filterFocused)
                     .onSubmit { session.tuneFirstMatch() }
                     .onExitCommand { session.clearFilter() }
+                    .accessibilityIdentifier("sidebar.filter")
             }
             .padding(.horizontal, 8).padding(.vertical, 5)
             .background(Theme.ground, in: RoundedRectangle(cornerRadius: 6))
@@ -70,6 +73,7 @@ struct SidebarView: View {
             .foregroundStyle(Theme.inkTertiary)
             .disabled(session.tunedHz == nil)
             .help("Bookmark the tuned frequency (⌘D)")
+            .accessibilityIdentifier("sidebar.add")
         }
         .padding(.horizontal, 14).padding(.top, 12)
         // The session asks for focus (⌘G) and is told when the field has or loses it, so the
@@ -94,6 +98,7 @@ struct SidebarView: View {
             OutOfRangeLine(fold: fold, expanded: session.outOfRangeExpanded)
                 .contentShape(Rectangle())
                 .onTapGesture { session.outOfRangeExpanded.toggle() }
+                .identifiedGroup("sidebar.outofrange")
             if session.outOfRangeExpanded {
                 ForEach(fold.bands) { row in bandRow(row, bookmarks: byRow[row.id] ?? []) }
             }
@@ -128,6 +133,7 @@ struct SidebarView: View {
         .contextMenu {
             Button(scanBandTitle(row)) { session.scanBand(row: row) }.disabled(why != nil)
         }
+        .identifiedGroup("sidebar.band.\(row.id)")
         if expanded {
             bandActions(row, scanDisabled: why != nil)
             if session.sweepRow?.id == row.id, let outcome = session.sweep?.outcome {
@@ -157,6 +163,7 @@ struct SidebarView: View {
             }
             .buttonStyle(.plain)
             .disabled(scanDisabled)
+            .accessibilityIdentifier("sidebar.band.\(row.id).scan")
             .help(
                 stopping
                     ? "Stop the sweep; listening comes back where it was"
@@ -173,6 +180,7 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .help("The \(row.name) plan: pick a channel by name")
+                .accessibilityIdentifier("sidebar.band.\(row.id).channels")
                 .popover(
                     isPresented: Binding(
                         get: { session.pickerBand?.id == row.id },
@@ -268,6 +276,7 @@ struct SidebarView: View {
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .onTapGesture { session.tune(hit: hit) }
+        .identifiedGroup("sidebar.hit.\(hit.hz)")
         .help(
             "\(Frequency.format(hit.hz)) · \(snr) dB over the floor · heard in \(hit.looks) of \(hit.looksPossible) looks"
         )
@@ -306,6 +315,7 @@ struct SidebarView: View {
             }
             Button("Remove", role: .destructive) { session.remove(bookmark: b) }
         }
+        .identifiedGroup("sidebar.bookmark.\(ViewIdentifier.slug(b.name))")
     }
 
     /// The flat list while something is typed: the index's rows in its order, each naming its
@@ -323,6 +333,7 @@ struct SidebarView: View {
             MatchRow(match: match)
                 .contentShape(Rectangle())
                 .onTapGesture { session.tune(match: match) }
+                .identifiedGroup("sidebar.match.\(ViewIdentifier.slug(match.id))")
         }
     }
 }
@@ -357,6 +368,7 @@ struct BandRow: View {
                 }
                 .buttonStyle(.plain)
                 .help(expanded ? "Close \(band.name)" : "Open \(band.name) without tuning it")
+                .accessibilityIdentifier("sidebar.band.\(band.id).chevron")
             }
             if expanded {
                 Text(detail).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary)

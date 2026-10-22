@@ -32,6 +32,7 @@ struct TransportBarView: View {
         .padding(.top, 12)
         .padding(.bottom, 10)
         .background(Theme.chrome)
+        .identifiedGroup("transport")
     }
 }
 
@@ -67,6 +68,7 @@ struct PlayButton: View {
         }
         .buttonStyle(.plain)
         .disabled(session.channel == nil || session.audioElsewhere != nil)
+        .accessibilityIdentifier("transport.mute")
         .help(
             session.isMuted
                 ? "Unmute: the channel's audio is attached again"
@@ -132,6 +134,7 @@ struct FrequencyField: View {
             .overlay(alignment: .trailing) {
                 StepArrows(enabled: session.channel != nil).padding(.trailing, 9)
             }
+            .identifiedGroup("tuning.field")
         }
         .onAppear { load(hz) }
         .onChange(of: hz) { _, new in
@@ -381,8 +384,10 @@ struct StepArrows: View {
         VStack(spacing: 3) {
             StepArrow(symbol: "chevron.up", enabled: enabled) { step(1) }
                 .help("Tune up by the band's step; ⇧ for the fine step")
+                .accessibilityIdentifier("tuning.up")
             StepArrow(symbol: "chevron.down", enabled: enabled) { step(-1) }
                 .help("Tune down by the band's step; ⇧ for the fine step")
+                .accessibilityIdentifier("tuning.down")
         }
         .disabled(!enabled)
     }
@@ -461,6 +466,7 @@ struct ModePopup: View {
                 current: session.channel?.mode ?? .nfm
             ) { session.setMode($0) }
             .disabled(session.channel == nil)
+            .accessibilityIdentifier("transport.mode")
         }
     }
 }
@@ -481,6 +487,7 @@ struct WidthPopup: View {
                 session.setBandwidth($0)
             }
             .disabled(session.channel == nil)
+            .accessibilityIdentifier("transport.width")
         }
     }
 }
@@ -554,6 +561,7 @@ struct SquelchTrack: View {
                         })
             }
             .frame(height: 18)
+            .identifiedGroup("transport.squelch.track")
             HStack {
                 Text("muted below").font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
                 Spacer()
@@ -564,6 +572,7 @@ struct SquelchTrack: View {
             }
         }
         .disabled(session.channel == nil)
+        .identifiedGroup("transport.squelch")
     }
 
     private func headerWords(squelch: Double, power: Double, open: Bool) -> String {
@@ -603,6 +612,7 @@ struct VolumeControl: View {
                     .controlSize(.small)
                     .tint(Theme.inkTertiary)
                     .disabled(sink == nil)
+                    .accessibilityIdentifier(library ? "player.volume" : "transport.volume")
                 Text(caption(sink))
                     .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest).lineLimit(1)
                     .help(outputWords(sink))

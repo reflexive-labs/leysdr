@@ -31,6 +31,7 @@ struct PlanPickerView: View {
                     .focused($focused)
                     .onSubmit { session.pickHighlighted() }
                     .onExitCommand { session.pickerBand = nil }
+                    .accessibilityIdentifier("planpicker.filter")
             }
             .padding(.horizontal, 8).padding(.vertical, 5)
             .background(Theme.ground, in: RoundedRectangle(cornerRadius: 6))
@@ -50,6 +51,8 @@ struct PlanPickerView: View {
                                 .id(channel.id)
                                 .contentShape(Rectangle())
                                 .onTapGesture { session.pick(channel: channel, in: band) }
+                                .identifiedGroup(
+                                    "planpicker.row.\(ViewIdentifier.slug(channel.id))")
                         }
                     }
                 }
@@ -64,6 +67,7 @@ struct PlanPickerView: View {
         .padding(14)
         .frame(width: Theme.Layout.pickerWidth)
         .background(Theme.chrome)
+        .identifiedGroup("planpicker")
         .onAppear { focused = true }
     }
 }

@@ -32,6 +32,7 @@ struct InspectorToggle: View {
         }
         .buttonStyle(.plain)
         .help(session.inspectorShown ? "Hide Inspector (⌥⌘I)" : "Show Inspector (⌥⌘I)")
+        .accessibilityIdentifier("toolbar.inspector")
     }
 }
 
@@ -47,24 +48,25 @@ struct InspectorView: View {
 struct ChannelPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            InspectorHeader()
+            InspectorHeader().identifiedGroup("inspector.header")
             Rectangle().fill(Theme.hairline).frame(height: 1)
-            IdentityView()
+            IdentityView().identifiedGroup("inspector.identity")
             Rectangle().fill(Theme.hairline).frame(height: 1)
             VStack(alignment: .leading, spacing: 0) {
-                ReadingsView()
+                ReadingsView().identifiedGroup("inspector.readings")
                 Rectangle().fill(Theme.hairline).frame(height: 1)
-                AudioLevelsView()
+                AudioLevelsView().identifiedGroup("inspector.audio")
             }
             .stageRegion(.readings)
             Rectangle().fill(Theme.hairline).frame(height: 1)
             // The log takes the height the other regions leave, and fills it with rows.
-            RecentLog()
+            RecentLog().identifiedGroup("inspector.log")
             Rectangle().fill(Theme.hairline).frame(height: 1)
-            DisclosureSection()
+            DisclosureSection().identifiedGroup("inspector.measurements")
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.panel)
+        .identifiedGroup("inspector")
     }
 }
 
@@ -131,7 +133,9 @@ struct IdentityView: View {
                         .help(
                             bookmark == nil
                                 ? "Name this frequency; the name is kept as a bookmark"
-                                : "Rename the bookmark")
+                                : "Rename the bookmark"
+                        )
+                        .accessibilityIdentifier("inspector.rename")
                     }
                 }
             }
@@ -175,8 +179,10 @@ struct IdentityView: View {
                     Spacer(minLength: 0)
                     Button("Revert") { session.revertToTunedBookmark() }
                         .help("Back to the bookmark's saved mode and width")
+                        .accessibilityIdentifier("inspector.revert")
                     Button("Save") { session.saveTunedBookmark() }
                         .help("The bookmark takes the mode and width it is heard with now")
+                        .accessibilityIdentifier("inspector.save")
                 }
                 .buttonStyle(.bordered).controlSize(.mini)
                 .padding(.top, 4)
@@ -193,6 +199,7 @@ struct IdentityView: View {
                     Spacer(minLength: 0)
                     Button("Tune inside") { session.tuneInside() }
                         .help("Moves the radio's centre so this frequency is captured again")
+                        .accessibilityIdentifier("inspector.tuneinside")
                 }
                 .buttonStyle(.bordered).controlSize(.mini)
                 .padding(.top, 4)
@@ -332,7 +339,9 @@ struct BookmarkFieldsView: View {
                 BookmarkField(
                     saved: bookmark.tone, placeholder: "100.0 or D023N",
                     onCommit: { session.editTunedBookmark(tone: $0) },
-                    onRevert: { session.clearToneError() })
+                    onRevert: { session.clearToneError() }
+                )
+                .accessibilityIdentifier("inspector.tone")
                 // Laid out with or without a tone, so the first tone heard neither moves the
                 // field nor pushes the panel below it down a point.
                 Text(session.heardTone.map { "heard \($0.words)" } ?? " ")
@@ -349,7 +358,9 @@ struct BookmarkFieldsView: View {
                 label("Note")
                 BookmarkField(
                     saved: bookmark.note, placeholder: "A note",
-                    onCommit: { session.editTunedBookmark(note: $0) })
+                    onCommit: { session.editTunedBookmark(note: $0) }
+                )
+                .accessibilityIdentifier("inspector.note")
             }
         }
         .padding(.top, 4)

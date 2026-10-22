@@ -259,6 +259,7 @@ struct MaxHoldChip: View {
                 .padding(.horizontal, 7).padding(.vertical, 4)
             }
             .help(session.maxHold ? "Hide max hold" : "Show max hold")
+            .accessibilityIdentifier("spectrum.maxhold")
 
             Rectangle().fill(Theme.border).frame(width: 1, height: 16)
 
@@ -270,6 +271,7 @@ struct MaxHoldChip: View {
             }
             .disabled(session.spectrum.hold.rows == 0)
             .help("Clear max hold")
+            .accessibilityIdentifier("spectrum.clear")
         }
         .background(Theme.ground.opacity(0.85), in: RoundedRectangle(cornerRadius: 4))
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.border))

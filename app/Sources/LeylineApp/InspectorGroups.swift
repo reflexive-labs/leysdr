@@ -190,6 +190,7 @@ struct RecordSwitch: View {
                 // switch.
                 .tint(Theme.accentRec)
                 .disabled(session.tunedHz == nil)
+                .accessibilityIdentifier("inspector.record")
                 .help(
                     job == nil
                         ? "Record this channel while its squelch is open (⌘R). The daemon keeps recording after the window closes."
@@ -361,6 +362,7 @@ struct DisclosureRow<Content: View>: View {
                 DisclosureLabel(title: title, hint: hint, open: open)
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("inspector.\(ViewIdentifier.slug(title)).toggle")
             if open {
                 content.padding(.horizontal, 16).padding(.bottom, 10)
             }

@@ -36,6 +36,7 @@ struct DeviceChip: View {
         // tooltip, and nowhere else in words; it goes when the level clears, so there is
         // nothing to close.
         .help(tooltip)
+        .accessibilityIdentifier("toolbar.device")
         .popover(isPresented: $session.deviceMenuShown, arrowEdge: .bottom) { DeviceMenuView() }
     }
 
@@ -88,6 +89,7 @@ struct DeviceMenuView: View {
         .padding(14)
         .frame(width: 320)
         .background(Theme.chrome)
+        .identifiedGroup("devicemenu")
         .onAppear {
             // The menu reads the mirror and asks the daemon nothing, so a slow open is the main
             // actor busy elsewhere; the delay is logged to find out with what.
@@ -137,6 +139,7 @@ struct DeviceMenuView: View {
             }
             .labelsHidden()
             .frame(maxWidth: .infinity)
+            .accessibilityIdentifier("devicemenu.rate")
         }
     }
 
@@ -161,6 +164,7 @@ struct DeviceMenuView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("devicemenu.device.\(ViewIdentifier.slug(d.deviceID))")
             }
         }
     }
@@ -203,6 +207,7 @@ struct GainControl: View {
                     .pickerStyle(.segmented)
                     .labelsHidden()
                     .frame(width: 130)
+                    .accessibilityIdentifier("\(identifier).auto")
                 }
             }
             Text(description)
@@ -222,12 +227,14 @@ struct GainControl: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+                .accessibilityIdentifier(identifier)
             } else {
                 GainSlider(element: element, db: db, dimmed: auto, clipping: clipping) {
                     newDB, ended in
                     dragging = ended ? nil : newDB
                     if ended { session.setGain(element: element.name, db: newDB) }
                 }
+                .identifiedGroup(identifier)
                 HStack {
                     Text(String(format: "%.0f dB", element.minDb)).font(Theme.Font.valueSmall)
                         .foregroundStyle(Theme.inkFaint)
@@ -252,6 +259,9 @@ struct GainControl: View {
             }
         }
     }
+
+    /// `devicemenu.gain.tuner`: the stage's control, and with `.auto` its Auto and Manual pair.
+    private var identifier: String { "devicemenu.gain.\(ViewIdentifier.slug(element.name))" }
 
     /// Whether the radio is clipping: the slider's knob lights, because the slider is the fix.
     private var clipping: Bool {
