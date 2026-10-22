@@ -22,19 +22,23 @@ struct LibraryBody: View {
                 LibrarySidebar()
                     .frame(width: Theme.Layout.sidebarWidth)
                     .stageRegion(.sidebar)
+                    .identifiedGroup("library.sidebar")
                 Rectangle().fill(Theme.border).frame(width: 1)
                 RecordingsPage()
                     .stageRegion(.parts)
+                    .identifiedGroup("library.page")
                 if session.inspectorShown {
                     Rectangle().fill(Theme.hairline).frame(width: 1)
                     LibraryInspector()
                         .frame(width: Theme.Layout.inspectorWidth)
                         .stageRegion(.inspector)
+                        .identifiedGroup("library.inspector")
                 }
             }
             Rectangle().fill(Theme.border).frame(height: 1)
             PlayerBar()
                 .frame(height: Theme.Layout.transportHeight)
+                .identifiedGroup("player")
         }
         .modifier(SpeechDialogs())
     }
@@ -81,6 +85,7 @@ struct LibrarySidebar: View {
                             )
                             .contentShape(Rectangle())
                             .onTapGesture { choose(c) }
+                            .identifiedGroup("library.channel.\(c.id)")
                         }
                         Spacer(minLength: 12)
                     }
@@ -116,6 +121,7 @@ struct LibrarySidebar: View {
                     get: { session.recordingsQuery }, set: { session.recordingsQuery = $0 })
             )
             .textFieldStyle(.plain).font(Theme.Font.label).foregroundStyle(Theme.ink)
+            .accessibilityIdentifier("library.search")
             .onSubmit {
                 let now = Date()
                 if let first = session.recordingChannels.first(where: {
@@ -177,6 +183,7 @@ struct ChannelSummary: View {
                 }
                 .buttonStyle(.bordered)
                 .help("Show the newest recording of \(channel.title) in Finder")
+                .accessibilityIdentifier("library.inspector.finder")
                 .padding(.horizontal, 16).padding(.vertical, 14)
             }
             Spacer(minLength: 0)

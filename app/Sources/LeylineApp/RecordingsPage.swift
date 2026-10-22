@@ -44,6 +44,11 @@ struct RecordingsPage: View {
         let days = Recordings.dayRows(groups, now: Date())
         let recent = days.filter { !$0.earlier }
         let earlier = days.filter(\.earlier)
+        // Each part's place down the page, recent days first, as a stage's `select_part`
+        // counts: the rows' identifiers end in it (`library.part.0`).
+        let indices = Dictionary(
+            (recent + earlier).flatMap(\.rows).enumerated().map { ($1.uri, $0) },
+            uniquingKeysWith: { first, _ in first })
         return VStack(spacing: 0) {
             RecordingsPageHeader(channel: channel, groups: groups)
                 .frame(height: Theme.Layout.pageHeaderHeight)
@@ -65,6 +70,7 @@ struct RecordingsPage: View {
                     }
                     .padding(.horizontal, Theme.Layout.pageInset)
                     .padding(.bottom, Theme.Layout.pageInset)
+                    .environment(\.partIndices, indices)
                 }
                 // The search selected an over: bring its line into view.
                 .onChange(of: scrollTarget) { _, target in
@@ -114,12 +120,14 @@ struct RecordingsPageHeader: View {
             // One tint, always, as the log's switch (`RecordSwitch`).
             .tint(Theme.accentRec)
             .disabled(!session.isLive)
+            .accessibilityIdentifier("library.page.record")
             .help(
                 job == nil
                     ? "Record this channel while its squelch is open, at the daemon's auto squelch. The daemon keeps recording after the window closes."
                     : "Stop recording \(job?.jobID ?? ""); its parts stay on disk")
             Button("Tune") { session.tune(recordingChannel: channel) }
                 .buttonStyle(.bordered)
+                .accessibilityIdentifier("library.page.tune")
                 .help("Back to Radio, tuned to \(Frequency.format(channel.frequencyHz))")
         }
         .padding(.horizontal, Theme.Layout.pageInset)
@@ -178,6 +186,7 @@ struct PlayDayButton: View {
         }
         .buttonStyle(.plain)
         .help("Play day")
+        .accessibilityIdentifier("library.day.\(ViewIdentifier.slug(day.title)).play")
     }
 }
 
@@ -227,6 +236,7 @@ struct EarlierDay: View {
             .padding(.vertical, 10)
             .contentShape(Rectangle())
             .onTapGesture { session.toggleOpened(day: day.id) }
+            .identifiedGroup("library.day.\(ViewIdentifier.slug(day.title))")
             .help(opened ? "Fold \(day.title)" : "Show \(day.title)'s parts")
             if opened {
                 DayBody(day: day).padding(.top, 4).padding(.bottom, 12)
@@ -316,6 +326,7 @@ struct PartColumnHead: View {
 struct PartRowView: View {
     let row: PartRow
     @Environment(AppSession.self) private var session
+    @Environment(\.partIndices) private var indices
 
     var body: some View {
         let playing = session.playingURI == row.uri
@@ -355,6 +366,7 @@ struct PartRowView: View {
         }
         .buttonStyle(.plain)
         .help(playing ? (paused ? "Resume" : "Pause") : "Play")
+        .accessibilityIdentifier("library.part.\(indices[row.uri].map(String.init) ?? "_")")
         .contextMenu { SpeechActions(recordingID: row.jobID) }
         .onAppear { session.loadLevelGraph(row) }
     }
@@ -422,4 +434,10 @@ struct LevelBars: View {
         }
         .accessibilityHidden(true)
     }
+}
+
+extension EnvironmentValues {
+    /// Each part's place down the channel's page by its URI, which its row's accessibility
+    /// identifier ends in.
+    @Entry var partIndices: [String: Int] = [:]
 }

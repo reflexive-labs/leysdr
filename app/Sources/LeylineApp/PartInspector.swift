@@ -55,6 +55,7 @@ struct PartInspector: View {
                     }
                     .buttonStyle(.plain)
                     .help("Play all")
+                    .accessibilityIdentifier("library.inspector.playall")
                 }
                 .padding(.bottom, 4)
                 PartTable(rows: words.recording, ink: { _ in Theme.inkSecondary })
@@ -71,6 +72,7 @@ struct PartInspector: View {
                         Task { await session.revealInFinder(uri: uri) }
                     }
                     .help("Select this part's file in Finder")
+                    .accessibilityIdentifier("library.inspector.finder")
                     // The tooltip sits on a wrapper: a disabled button shows none of its own.
                     HStack {
                         Button {
@@ -81,6 +83,7 @@ struct PartInspector: View {
                                     group.running ? Theme.inkDisabled : Theme.accentRec)
                         }
                         .disabled(group.running)
+                        .accessibilityIdentifier("library.inspector.delete")
                     }
                     .help(
                         group.running
