@@ -24,7 +24,7 @@ struct DeviceChip: View {
             HStack(spacing: 7) {
                 Circle().fill(dotColour).frame(width: 7, height: 7)
                 Text(name).font(Theme.Font.label).foregroundStyle(Theme.inkSecondary)
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+                Image(systemName: "chevron.down").font(Theme.Font.glyph)
                     .foregroundStyle(Theme.inkMuted)
             }
             .padding(.horizontal, 10).padding(.vertical, 6)

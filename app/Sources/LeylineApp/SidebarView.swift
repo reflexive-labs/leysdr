@@ -45,7 +45,7 @@ struct SidebarView: View {
         @Bindable var session = session
         return HStack(spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").font(.system(size: 10))
+                Image(systemName: "magnifyingglass").font(Theme.Font.fieldGlyph)
                     .foregroundStyle(Theme.inkFaint)
                 TextField("Band, bookmark or channel", text: $session.filterQuery)
                     .textFieldStyle(.plain).font(Theme.Font.label).foregroundStyle(Theme.ink)
@@ -60,7 +60,7 @@ struct SidebarView: View {
             Button {
                 session.bookmarkCurrent()
             } label: {
-                Image(systemName: "plus").font(.system(size: 10, weight: .semibold))
+                Image(systemName: "plus").font(Theme.Font.buttonGlyph)
             }
             .buttonStyle(.plain)
             .foregroundStyle(Theme.inkTertiary)
@@ -252,7 +252,7 @@ struct SidebarView: View {
             Button {
                 session.bookmark(hit: hit)
             } label: {
-                Image(systemName: "plus").font(.system(size: 10, weight: .semibold))
+                Image(systemName: "plus").font(Theme.Font.buttonGlyph)
                     .frame(width: 12, height: 12)
                     .contentShape(Rectangle())
             }
@@ -346,7 +346,7 @@ struct BandRow: View {
                     disabled ? Theme.inkDisabled : Theme.inkFaint)
                 Button(action: onChevron) {
                     Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 8, weight: .semibold))
+                        .font(Theme.Font.glyph)
                         .foregroundStyle(Theme.inkFaint)
                         .frame(width: 12, height: 12)
                         .contentShape(Rectangle())
@@ -393,7 +393,7 @@ struct OutOfRangeLine: View {
                 .lineLimit(1)
             Spacer()
             Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                .font(.system(size: 8, weight: .semibold))
+                .font(Theme.Font.glyph)
                 .foregroundStyle(Theme.inkFaint)
         }
         .padding(.horizontal, 14)

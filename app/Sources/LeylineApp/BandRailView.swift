@@ -76,7 +76,7 @@ struct BandRailView: View {
 
     private func zoomButton(_ symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 10, weight: .semibold))
+            Image(systemName: symbol).font(Theme.Font.buttonGlyph)
                 .frame(width: 22, height: 20)
                 .background(Theme.raised, in: RoundedRectangle(cornerRadius: 4))
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.border))
@@ -131,7 +131,7 @@ struct NeighbourButton: View {
     }
 
     private func arrow(_ name: String) -> some View {
-        Image(systemName: name).font(.system(size: 6))
+        Image(systemName: name).font(Theme.Font.arrowGlyph)
     }
 }
 

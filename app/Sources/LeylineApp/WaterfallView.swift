@@ -174,8 +174,7 @@ struct WaterfallMetalView: NSViewRepresentable {
         let view = InteractiveMetalView(frame: .zero, device: context.coordinator.device)
         view.delegate = context.coordinator
         view.colorPixelFormat = .bgra8Unorm
-        view.clearColor = MTLClearColor(
-            red: 0x0B / 255.0, green: 0x0D / 255.0, blue: 0x0F / 255.0, alpha: 1)
+        view.clearColor = Theme.groundClearColor
         view.preferredFramesPerSecond = Int(SpectrumFeed.rowsPerSecond)
         view.isPaused = false
         view.enableSetNeedsDisplay = false

@@ -24,7 +24,7 @@ struct PlanPickerView: View {
         let highlight = session.pickerHighlight
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").font(.system(size: 10))
+                Image(systemName: "magnifyingglass").font(Theme.Font.fieldGlyph)
                     .foregroundStyle(Theme.inkFaint)
                 TextField("Filter \(band.name) channels", text: $session.pickerQuery)
                     .textFieldStyle(.plain).font(Theme.Font.label).foregroundStyle(Theme.ink)

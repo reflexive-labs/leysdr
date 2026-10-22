@@ -25,7 +25,7 @@ struct AssistantToggle: View {
                 session.toggleAssistant()
             } label: {
                 Image(systemName: "bubble.left.and.text.bubble.right")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(Theme.Font.toolbarGlyph)
                     .foregroundStyle(session.assistantShown ? Theme.inkSecondary : Theme.inkMuted)
                     .padding(.horizontal, 8).padding(.vertical, 6)
                     .background(Theme.border, in: RoundedRectangle(cornerRadius: 6))
@@ -99,7 +99,7 @@ struct AssistantHeader: View {
                 Button {
                     Task { await session.newConversation() }
                 } label: {
-                    Image(systemName: "square.and.pencil").font(.system(size: 12))
+                    Image(systemName: "square.and.pencil").font(Theme.Font.panelGlyph)
                         .foregroundStyle(Theme.inkMuted)
                 }
                 .buttonStyle(.plain)
@@ -230,7 +230,7 @@ struct StepView: View {
                 open.toggle()
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold))
+                    Image(systemName: "chevron.right").font(Theme.Font.glyph)
                         .foregroundStyle(Theme.inkFaintest)
                         .rotationEffect(.degrees(open ? 90 : 0))
                     Text(step.line).font(Theme.Font.value).foregroundStyle(Theme.inkTertiary)

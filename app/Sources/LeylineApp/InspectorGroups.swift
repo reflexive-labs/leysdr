@@ -364,7 +364,7 @@ struct DisclosureLabel: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold))
+            Image(systemName: "chevron.right").font(Theme.Font.glyph)
                 .foregroundStyle(Theme.inkFaintest)
                 .rotationEffect(.degrees(open ? 90 : 0))
             Text(title).font(Theme.Font.label).foregroundStyle(Theme.inkTertiary)

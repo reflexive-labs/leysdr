@@ -24,7 +24,7 @@ struct InspectorToggle: View {
         Button {
             session.toggleInspector()
         } label: {
-            Image(systemName: "sidebar.right").font(.system(size: 13, weight: .medium))
+            Image(systemName: "sidebar.right").font(Theme.Font.toolbarGlyph)
                 .foregroundStyle(session.inspectorShown ? Theme.inkSecondary : Theme.inkMuted)
                 .padding(.horizontal, 8).padding(.vertical, 6)
                 .background(Theme.border, in: RoundedRectangle(cornerRadius: 6))
@@ -121,7 +121,7 @@ struct IdentityView: View {
                         Button {
                             editing = true
                         } label: {
-                            Image(systemName: "pencil").font(.system(size: 11))
+                            Image(systemName: "pencil").font(Theme.Font.editGlyph)
                                 .foregroundStyle(Theme.inkFaint)
                         }
                         .buttonStyle(.plain)

@@ -6,11 +6,18 @@
 // level ramp") and nothing else: this one runs from near-black to cream and assumes the app's own
 // dark ground.
 
+import Metal
 import SwiftUI
 
 enum Theme {
     // Grounds and chrome.
-    static let ground = Color(hex: 0x0B0D0F)
+    static let groundHex: UInt32 = 0x0B0D0F
+    static let ground = Color(hex: groundHex)
+    /// `ground` for the waterfall's Metal view, which clears to it before the first row arrives.
+    static var groundClearColor: MTLClearColor {
+        let c = rgb(groundHex)
+        return MTLClearColor(red: Double(c.x), green: Double(c.y), blue: Double(c.z), alpha: 1)
+    }
     static let chrome = Color(hex: 0x17191C)
     static let panel = Color(hex: 0x101315)
     static let panelHeader = Color(hex: 0x0E1113)
@@ -64,6 +71,9 @@ enum Theme {
     /// clipping, a channel outside the capture. The ramp's fourth stop, so it never competes
     /// with `accent` for the tuned channel.
     static let caution = Color(hex: 0xC9C06A)
+    /// The left end of the squelch meter's container, which fades from it to the ramp's first
+    /// stop. Pure black, darker than `ground` and outside the palette's greys.
+    static let meterWell = Color(hex: 0x000000)
 
     /// The level ramp's stops, cold to hot: floor to full scale. `level(_:)` interpolates for
     /// SwiftUI-drawn meters; the waterfall shader gets the same stops as floats.
@@ -129,10 +139,28 @@ enum Theme {
         static let footnote = SwiftUI.Font.system(size: 10.5)
         /// A clause under a sentence, or a condition line under the identity's frequency.
         static let aside = SwiftUI.Font.system(size: 11.5)
-        /// The play and stop glyphs in a kept row's ring, and the player's ⏮ and ⏭.
+        /// The play and stop glyphs in a kept row's ring, the player's ⏮ and ⏭, and a disclosure
+        /// or pop-up chevron.
         static let glyph = SwiftUI.Font.system(size: 8, weight: .semibold)
-        /// The glyph in the transport bar's 44 pt circle: the player's ▶ and ⏸.
+        /// The glyph in the transport bar's 44 pt circle: the speaker in the Radio, the player's
+        /// ▶ and ⏸.
         static let transportGlyph = SwiftUI.Font.system(size: 16, weight: .bold)
+        /// The arrows on the band rail that point at a band off its edge.
+        static let arrowGlyph = SwiftUI.Font.system(size: 6)
+        /// The × that dismisses a banner or a note.
+        static let closeGlyph = SwiftUI.Font.system(size: 9)
+        /// The spectrum's max hold checkbox.
+        static let checkGlyph = SwiftUI.Font.system(size: 9)
+        /// The magnifying glass at the head of a search or filter field.
+        static let fieldGlyph = SwiftUI.Font.system(size: 10)
+        /// The symbol in a small square button: add a bookmark, zoom the band rail.
+        static let buttonGlyph = SwiftUI.Font.system(size: 10, weight: .semibold)
+        /// The pencil that edits the channel's name in the inspector.
+        static let editGlyph = SwiftUI.Font.system(size: 11)
+        /// A button in a panel's header: the assistant's new conversation.
+        static let panelGlyph = SwiftUI.Font.system(size: 12)
+        /// A toolbar button that shows or hides a panel: the inspector, the assistant.
+        static let toolbarGlyph = SwiftUI.Font.system(size: 13, weight: .medium)
         /// ⏸ or ▶ in the Library's playing row's 28 pt circle.
         static let playingGlyph = SwiftUI.Font.system(size: 10, weight: .bold)
     }

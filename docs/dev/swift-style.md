@@ -34,9 +34,10 @@ judgement, and says "prefer".
    both happen; each wait names the seconds it gives up after
    (`AppSession.request(_:)` and `AppSession.confirmed(within:_:)`).
 6. **Colours, fonts and fixed dimensions come from `Theme`.** No `Color(red:)`, no
-   `.font(.system(size:))` on text (an SF Symbol's glyph size is the one inline size allowed),
-   no system or white colours: the window owns a dark ground, and a design change is meant to
-   be one file's worth of edits.
+   `.font(.system(size:))`, an SF Symbol's included (its size is a `Theme.Font` glyph token), no
+   system or white colours: the window owns a dark ground, and a design change is meant to be
+   one file's worth of edits. `scripts/check-theme.sh`, run by `make app-lint`, enforces the
+   colours and fonts.
 7. **Only `Sendable` values cross into `MainActor.assumeIsolated`.** An `NSEvent` is not
    `Sendable`; the scalars it yields are, and are extracted first
    (the key monitor in `TransportBarView.watchClicks()`).
