@@ -26,6 +26,7 @@ ALLOW="
 LeylineApp.swift|NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)|the About panel is the system's window on the system's ground
 LeylineApp.swift|NSColor.secondaryLabelColor|the About panel is the system's window on the system's ground
 SplashView.swift|[.clear, .black]|the sweep's alpha mask: only its opacity is drawn, never its colour
+WindowPicture.swift|NSColor.windowBackgroundColor|a check picture's ground under a system alert, which is the system's window in its own appearance
 "
 export ALLOW
 

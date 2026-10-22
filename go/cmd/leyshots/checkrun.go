@@ -274,7 +274,7 @@ func (c *checker) runSize(ctx context.Context, s *CheckScene, size Size) {
 	}
 	defer sd.stop()
 	env := sd.env
-	app, err := c.launch(ctx, s, size, run, env)
+	app, err := c.launch(ctx, s.Stage, size, run, env)
 	if err != nil {
 		fail(err)
 		return
@@ -300,6 +300,14 @@ func (c *checker) runSize(ctx context.Context, s *CheckScene, size Size) {
 				c.add(r)
 			}
 			if stop {
+				return
+			}
+			continue
+		}
+		if cmd.Cmd == "relaunch" {
+			// The deferred quit reads app when it runs, so it quits the new instance.
+			if app, err = c.relaunch(ctx, app, cmd, id, size, run, env); err != nil {
+				fail(fmt.Errorf("%s: %w", cmd.label(id), err))
 				return
 			}
 			continue
@@ -379,17 +387,33 @@ type runningApp struct {
 	pid     int
 }
 
-// launch writes the stage file (the scene's stage at this size), starts the app with
-// `open -g -n`, so nothing takes focus, and waits for ready.json.
-func (c *checker) launch(ctx context.Context, s *CheckScene, size Size, run string, env []string) (*runningApp, error) {
+// relaunch quits the app as command id and starts it again on the same control directory, log,
+// daemon and staged defaults domain, with the command's stage (the window only, without one). The
+// new instance skips the commands already in commands.jsonl and clears the old answers, so ids go
+// on from where they were.
+func (c *checker) relaunch(ctx context.Context, old *runningApp, cmd *AppCommand, id int, size Size, run string, env []string) (*runningApp, error) {
+	old.quit(ctx, id)
+	if pid := old.pid; pid != 0 && c.o.alive(pid) {
+		return nil, fmt.Errorf("the app (pid %d) is still running after quit", pid)
+	}
+	// The next ready.json must be the new instance's.
+	if err := os.Remove(filepath.Join(old.control, "ready.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	return c.launch(ctx, cmd.Stage, size, run, env)
+}
+
+// launch writes the stage file (stage at this size), starts the app with `open -g -n`, so
+// nothing takes focus, and waits for ready.json.
+func (c *checker) launch(ctx context.Context, stage *Stage, size Size, run string, env []string) (*runningApp, error) {
 	control := filepath.Join(run, "control")
 	if err := os.MkdirAll(filepath.Join(control, "out"), 0o755); err != nil {
 		return nil, err
 	}
 	st := Stage{}
-	if s.Stage != nil {
+	if stage != nil {
 		var err error
-		if st, err = resolveStage(c.f.Path, s.Stage); err != nil {
+		if st, err = resolveStage(c.f.Path, stage); err != nil {
 			return nil, err
 		}
 	}
@@ -596,8 +620,10 @@ func (c *checker) handle(ctx context.Context, s *CheckScene, size Size, dir stri
 		r := c.compareAX(ctx, s, size, cmd, actual, res)
 		r.Scene, r.Size, r.Item = base.Scene, base.Size, base.Item
 		c.add(r)
-	case "state":
-		path := filepath.Join(dir, fmt.Sprintf("state-%d.json", id))
+	case "state", "menu", "hover":
+		// A menu's answer describes the item (title, enabled, checked, its menu's items) and a
+		// hover's the tooltip; each is kept and checked as a state is.
+		path := filepath.Join(dir, fmt.Sprintf("%s-%d.json", cmd.Cmd, id))
 		if err := os.WriteFile(path, a.Result, 0o644); err != nil {
 			fail("error", err.Error())
 			return

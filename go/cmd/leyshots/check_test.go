@@ -207,7 +207,7 @@ func TestLoadChecksRejects(t *testing.T) {
 	cases := map[string]string{
 		"no fixtures":        "app: [{cmd: state}]",
 		"no commands":        "fixtures: [{name: x}]",
-		"unknown command":    "fixtures: [{name: x}]\n    app: [{cmd: click}]",
+		"unknown command":    "fixtures: [{name: x}]\n    app: [{cmd: drag}]",
 		"quit":               "fixtures: [{name: x}]\n    app: [{cmd: quit}]",
 		"snapshot sans name": "fixtures: [{name: x}]\n    app: [{cmd: snapshot}]",
 		"stray field":        "fixtures: [{name: x}]\n    app: [{cmd: key, keys: return, text: a}]",
@@ -219,7 +219,17 @@ func TestLoadChecksRejects(t *testing.T) {
 		"name twice":         "fixtures: [{name: x}]\n    app: [{cmd: ax, name: a}, {cmd: ax, name: a}]",
 		"bad size":           "fixtures: [{name: x}]\n    sizes: [{width: 0, height: 1}]\n    app: [{cmd: state}]",
 		"name with a dot":    "fixtures: [{name: x}]\n    app: [{cmd: snapshot, name: a.b}]",
-		"ax window":          "fixtures: [{name: x}]\n    app: [{cmd: ax, name: a, window: sheet}]",
+		"ax window":          "fixtures: [{name: x}]\n    app: [{cmd: ax, name: a, window: dock}]",
+		"snapshot popover":   "fixtures: [{name: x}]\n    app: [{cmd: snapshot, name: a, window: popover}]",
+		"hover nowhere":      "fixtures: [{name: x}]\n    app: [{cmd: hover}]",
+		"hover twice over":   "fixtures: [{name: x}]\n    app: [{cmd: hover, identifier: a, x: 1, y: 2}]",
+		"hover half a point": "fixtures: [{name: x}]\n    app: [{cmd: hover, x: 1}]",
+		"hover button":       "fixtures: [{name: x}]\n    app: [{cmd: hover, identifier: a, button: right}]",
+		"click middle":       "fixtures: [{name: x}]\n    app: [{cmd: click, identifier: a, button: middle}]",
+		"menu sans menu":     "fixtures: [{name: x}]\n    app: [{cmd: menu}]",
+		"menu empty title":   "fixtures: [{name: x}]\n    app: [{cmd: menu, menu: \"View>\"}]",
+		"read on press":      "fixtures: [{name: x}]\n    app: [{cmd: press, identifier: a, read: true}]",
+		"relaunch window":    "fixtures: [{name: x}]\n    app: [{cmd: relaunch, stage: {window: {width: 1, height: 1}}}]",
 		"window on state":    "fixtures: [{name: x}]\n    app: [{cmd: state, window: main}]",
 		"ley sans args":      "fixtures: [{name: x}]\n    app: [{cmd: ley}]",
 		"ley with keys":      "fixtures: [{name: x}]\n    app: [{cmd: ley, args: [state], keys: a}]",
@@ -311,9 +321,13 @@ func (a *fakeApp) serve(ctx context.Context, control, log string, pid int) {
 		_ = os.WriteFile(tmp, b, 0o644)
 		_ = os.Rename(tmp, filepath.Join(control, name))
 	}
+	// What commands.jsonl already holds was another launch's, and is skipped as the app skips it.
+	read := 0
+	if b, err := os.ReadFile(filepath.Join(control, "commands.jsonl")); err == nil {
+		read = len(b)
+	}
 	ready, _ := json.Marshal(map[string]any{"ok": true, "pid": pid, "window_number": 7, "scale": fakeScale, "error": ""})
 	writeAtomic("ready.json", ready)
-	read := 0
 	for ctx.Err() == nil {
 		time.Sleep(5 * time.Millisecond)
 		b, err := os.ReadFile(filepath.Join(control, "commands.jsonl"))
@@ -372,6 +386,8 @@ func (a *fakeApp) serve(ctx context.Context, control, log string, pid int) {
 				ans["files"] = []string{name}
 			case "press":
 				ans["ok"], ans["error"] = false, "no element press.me"
+			case "menu":
+				ans["result"] = map[string]any{"title": "Show Assistant", "enabled": true, "items": []string{"Show Assistant", "-"}}
 			case "wait":
 				s, _ := cmd["seconds"].(float64)
 				time.Sleep(time.Duration(s * float64(time.Second)))
@@ -752,5 +768,71 @@ func TestCheckHold(t *testing.T) {
 	b, _ := os.ReadFile(filepath.Join(control, "commands.jsonl"))
 	if !strings.HasSuffix(string(b), `{"id":4,"cmd":"quit"}`+"\n") {
 		t.Errorf("the runner's quit does not follow the ids sent by hand:\n%s", b)
+	}
+}
+
+// A relaunch quits the app under its own id and starts it again on the same control directory
+// with the command's stage at the scene's size; the new instance takes the ids that follow, and
+// the hover, click and menu fields reach the app as they were written.
+func TestCheckRelaunch(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "scenes.yaml"), `scenes:
+  - name: one
+    fixtures: [{name: scene_2m}]
+    stage: {place: radio, inspector: true}
+    sizes: [{width: 100, height: 60}]
+    app:
+      - {cmd: hover, x: 10, y: 20.5}
+      - {cmd: click, identifier: rail.channel.calling, button: right}
+      - {cmd: menu, menu: "View>Show Assistant", read: true, expect: {enabled: true, items.1: "-"}}
+      - {cmd: relaunch, stage: {place: library}}
+      - {cmd: state, expect: {tuned_hz: 1}}
+`)
+	fake := &fakeApp{alive: map[int]bool{}, state: map[string]any{"tuned_hz": 1}}
+	var stdout bytes.Buffer
+	o := checkOptions{
+		runOptions: runOptions{out: filepath.Join(dir, "checks"), stdout: &stdout, logf: t.Logf},
+		checks:     filepath.Join(dir, "scenes.yaml"), goldens: filepath.Join(dir, "goldens"), release: "26.6",
+		prepare: func(_ context.Context, _ *CheckFile, _ *CheckScene, run string) (*sceneDaemon, error) {
+			return &sceneDaemon{env: []string{"LEYLINE_SOCKET=/s.sock"}, stop: func() {}}, os.MkdirAll(run, 0o755)
+		},
+		launch: fake.launch,
+		alive: func(pid int) bool {
+			fake.mu.Lock()
+			defer fake.mu.Unlock()
+			return fake.alive[pid]
+		},
+		kill:    func(pid int) { t.Errorf("killed %d; it should have quit", pid) },
+		findPID: func(context.Context, string) int { return 0 },
+		grace:   2 * time.Second, poll: 5 * time.Millisecond,
+	}
+	if err := checkScenes(context.Background(), o); err != nil {
+		t.Fatalf("%v\n%s", err, stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "ok       one 100x60 menu#3 enabled") || !strings.Contains(stdout.String(), "3 checked: 3 ok") {
+		t.Errorf("output:\n%s", stdout.String())
+	}
+	fake.mu.Lock()
+	launches := len(fake.envs)
+	var cmds []string
+	for _, c := range fake.commands {
+		cmds = append(cmds, fmt.Sprintf("%v:%v", c["id"], c["cmd"]))
+	}
+	first := fake.commands[:3]
+	fake.mu.Unlock()
+	if launches != 2 {
+		t.Errorf("%d launches, want 2", launches)
+	}
+	if got := strings.Join(cmds, " "); got != "1:hover 2:click 3:menu 4:quit 5:state 6:quit" {
+		t.Errorf("commands: %s", got)
+	}
+	if first[0]["x"] != 10.0 || first[0]["y"] != 20.5 || first[1]["button"] != "right" ||
+		first[1]["identifier"] != "rail.channel.calling" || first[2]["menu"] != "View>Show Assistant" || first[2]["read"] != true {
+		t.Errorf("the fields sent: %v", first)
+	}
+	stage, err := os.ReadFile(filepath.Join(dir, "checks", "one", "100x60", "run", "stage.json"))
+	if err != nil || !strings.Contains(string(stage), `"place": "library"`) || !strings.Contains(string(stage), `"width": 100`) ||
+		strings.Contains(string(stage), "inspector") {
+		t.Errorf("the relaunch's stage.json: %s %v", stage, err)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -66,8 +67,21 @@ type AppCommand struct {
 	Text       string  `yaml:"text"`
 	Identifier string  `yaml:"identifier"`
 	Seconds    float64 `yaml:"seconds"`
-	// Window is the window an ax tree is read from: main (the default) or settings.
+	// Window is the window an ax tree or a snapshot is read from: main (the default), settings,
+	// and for ax also popover or sheet, the main window's open popover or sheet alone.
 	Window string `yaml:"window"`
+	// X and Y are a hover's or a click's point in points from the window's top-left corner,
+	// toolbar included, as the regions and the ax frames are; the identifier's centre otherwise.
+	X *float64 `yaml:"x"`
+	Y *float64 `yaml:"y"`
+	// Button is a click's left (the default) or right.
+	Button string `yaml:"button"`
+	// Menu is a menu command's item, its titles from the menu bar joined by >:
+	// View>Show Assistant.
+	Menu string `yaml:"menu"`
+	// Read has a menu command read the item (enabled, checked, its menu's items in order)
+	// rather than press it.
+	Read bool `yaml:"read"`
 	// Name names a snapshot's or an ax tree's artefact and its golden.
 	Name string `yaml:"name"`
 	// Expect maps dotted paths into a state answer's result to the scalar each must hold.
@@ -98,15 +112,20 @@ type AppCommand struct {
 
 // wireCommand is one line of commands.jsonl.
 type wireCommand struct {
-	ID         int     `json:"id"`
-	Cmd        string  `json:"cmd"`
-	Stage      *Stage  `json:"stage,omitempty"`
-	Settle     float64 `json:"settle,omitempty"`
-	Keys       string  `json:"keys,omitempty"`
-	Text       string  `json:"text,omitempty"`
-	Identifier string  `json:"identifier,omitempty"`
-	Seconds    float64 `json:"seconds,omitempty"`
-	Window     string  `json:"window,omitempty"`
+	ID         int      `json:"id"`
+	Cmd        string   `json:"cmd"`
+	Stage      *Stage   `json:"stage,omitempty"`
+	Settle     float64  `json:"settle,omitempty"`
+	Keys       string   `json:"keys,omitempty"`
+	Text       string   `json:"text,omitempty"`
+	Identifier string   `json:"identifier,omitempty"`
+	Seconds    float64  `json:"seconds,omitempty"`
+	Window     string   `json:"window,omitempty"`
+	X          *float64 `json:"x,omitempty"`
+	Y          *float64 `json:"y,omitempty"`
+	Button     string   `json:"button,omitempty"`
+	Menu       string   `json:"menu,omitempty"`
+	Read       bool     `json:"read,omitempty"`
 }
 
 // LoadChecks reads and validates a check scenes file.
@@ -257,20 +276,24 @@ func (c *AppCommand) validate(path func(string) string) error {
 		"expect": len(c.Expect) > 0, "mask": c.Mask != nil, "window": c.Window != "",
 		"args": len(c.Args) > 0, "expect_stdout": len(c.ExpectStdout) > 0, "expect_exit": c.ExpectExit != nil,
 		"id": c.ID != "", "path": c.Path != "", "contains": len(c.Contains) > 0, "op": c.Op != "",
-		"expect_log": len(c.ExpectLog) > 0,
+		"expect_log": len(c.ExpectLog) > 0, "x": c.X != nil, "y": c.Y != nil, "button": c.Button != "",
+		"menu": c.Menu != "", "read": c.Read,
 	}
 	var need, may []string
 	switch c.Cmd {
 	case "stage":
 		need = []string{"stage"}
 	case "snapshot":
-		need, may = []string{"name"}, []string{"settle", "mask"}
+		need, may = []string{"name"}, []string{"settle", "mask", "window"}
+		if c.Window != "" && c.Window != "main" && c.Window != "settings" {
+			return fmt.Errorf("snapshot window is main or settings, not %q", c.Window)
+		}
 	case "state":
 		may = []string{"expect", "expect_log"}
 	case "ax":
 		need, may = []string{"name"}, []string{"mask", "window"}
-		if c.Window != "" && c.Window != "main" && c.Window != "settings" {
-			return fmt.Errorf("ax window is main or settings, not %q", c.Window)
+		if !slices.Contains([]string{"", "main", "settings", "popover", "sheet"}, c.Window) {
+			return fmt.Errorf("ax window is main, settings, popover or sheet, not %q", c.Window)
 		}
 	case "key":
 		need = []string{"keys"}
@@ -280,6 +303,24 @@ func (c *AppCommand) validate(path func(string) string) error {
 		need = []string{"identifier"}
 	case "wait":
 		need, may = []string{"seconds"}, []string{"expect_log"}
+	case "menu":
+		need, may = []string{"menu"}, []string{"read", "expect"}
+	case "hover", "click":
+		may = []string{"identifier", "x", "y"}
+		if c.Cmd == "hover" {
+			may = append(may, "expect")
+		}
+		if c.Cmd == "click" {
+			may = append(may, "button")
+		}
+		if (c.Identifier != "") == (c.X != nil || c.Y != nil) || (c.X == nil) != (c.Y == nil) {
+			return fmt.Errorf("%s needs an identifier, or x and y", c.Cmd)
+		}
+		if c.Button != "" && c.Button != "left" && c.Button != "right" {
+			return fmt.Errorf("click button is left or right, not %q", c.Button)
+		}
+	case "relaunch":
+		may = []string{"stage"}
 	case "ley":
 		need, may = []string{"args"}, []string{"expect_stdout", "expect_exit"}
 	case "ley_bg":
@@ -309,6 +350,9 @@ func (c *AppCommand) validate(path func(string) string) error {
 		if on && !allowed[k] {
 			return fmt.Errorf("%s does not take %s", c.Cmd, k)
 		}
+	}
+	if c.Menu != "" && slices.Contains(strings.Split(c.Menu, ">"), "") {
+		return fmt.Errorf("menu %q has an empty title; join the titles with >", c.Menu)
 	}
 	if c.Settle < 0 || c.Seconds < 0 {
 		return errors.New("settle and seconds are not negative")
@@ -346,6 +390,7 @@ func (c *AppCommand) wire(id int, path func(string) string) (wireCommand, error)
 	w := wireCommand{
 		ID: id, Cmd: c.Cmd, Settle: c.Settle, Keys: c.Keys, Text: c.Text,
 		Identifier: c.Identifier, Seconds: c.Seconds, Window: c.Window,
+		X: c.X, Y: c.Y, Button: c.Button, Menu: c.Menu, Read: c.Read,
 	}
 	if c.Stage != nil {
 		st, err := resolveStage(path, c.Stage)

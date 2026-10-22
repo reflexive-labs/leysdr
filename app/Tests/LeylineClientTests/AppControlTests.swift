@@ -20,10 +20,16 @@ final class AppControlTests: XCTestCase {
     func testEveryCommandOfTheProtocolParses() {
         XCTAssertEqual(
             parse(#"{"id":1,"cmd":"snapshot"}"#),
-            .command(.init(id: 1, action: .snapshot(settle: 0))))
+            .command(.init(id: 1, action: .snapshot(settle: 0, window: .main))))
         XCTAssertEqual(
             parse(#"{"id":2,"cmd":"snapshot","settle":1.5}"#),
-            .command(.init(id: 2, action: .snapshot(settle: 1.5))))
+            .command(.init(id: 2, action: .snapshot(settle: 1.5, window: .main))))
+        XCTAssertEqual(
+            parse(#"{"id":2,"cmd":"snapshot","window":"settings"}"#),
+            .command(.init(id: 2, action: .snapshot(settle: 0, window: .settings))))
+        XCTAssertEqual(
+            parse(#"{"id":2,"cmd":"snapshot","window":"popover"}"#),
+            .refused(id: 2, reason: "a snapshot's window must be main or settings"))
         XCTAssertEqual(parse(#"{"id":3,"cmd":"state"}"#), .command(.init(id: 3, action: .state)))
         XCTAssertEqual(
             parse(#"{"id":4,"cmd":"ax"}"#), .command(.init(id: 4, action: .ax(window: .main))))
@@ -32,7 +38,22 @@ final class AppControlTests: XCTestCase {
             .command(.init(id: 4, action: .ax(window: .settings))))
         XCTAssertEqual(
             parse(#"{"id":4,"cmd":"ax","window":"sheet"}"#),
-            .refused(id: 4, reason: "window must be main or settings"))
+            .command(.init(id: 4, action: .ax(window: .sheet))))
+        XCTAssertEqual(
+            parse(#"{"id":4,"cmd":"ax","window":"dock"}"#),
+            .refused(id: 4, reason: "window must be main, settings, popover or sheet"))
+        XCTAssertEqual(
+            parse(#"{"id":20,"cmd":"hover","identifier":"rail.track"}"#),
+            .command(.init(id: 20, action: .hover(.identifier("rail.track")))))
+        XCTAssertEqual(
+            parse(#"{"id":21,"cmd":"click","x":10,"y":20.5,"button":"right"}"#),
+            .command(.init(id: 21, action: .click(.point(x: 10, y: 20.5), right: true))))
+        XCTAssertEqual(
+            parse(#"{"id":22,"cmd":"click","identifier":"rail.track"}"#),
+            .command(.init(id: 22, action: .click(.identifier("rail.track"), right: false))))
+        XCTAssertEqual(
+            parse(#"{"id":23,"cmd":"menu","menu":"View>Show Assistant","read":true}"#),
+            .command(.init(id: 23, action: .menu(path: "View>Show Assistant", read: true))))
         XCTAssertEqual(
             parse(#"{"id":5,"cmd":"key","keys":"cmd+g"}"#),
             .command(
@@ -58,6 +79,11 @@ final class AppControlTests: XCTestCase {
             #"{"id":14,"cmd":"wait","seconds":-1}"#, #"{"id":15,"cmd":"press"}"#,
             #"{"id":16,"cmd":"stage","stage":{"zoom":3}}"#, #"{"id":17,"cmd":"type","text":""}"#,
             #"{"id":18,"cmd":"stage","stage":{"place":"scan"}}"#,
+            #"{"id":19,"cmd":"hover"}"#, #"{"id":19,"cmd":"hover","x":1}"#,
+            #"{"id":19,"cmd":"hover","identifier":"a","x":1,"y":2}"#,
+            #"{"id":19,"cmd":"hover","identifier":"a","button":"right"}"#,
+            #"{"id":19,"cmd":"click","identifier":"a","button":"middle"}"#,
+            #"{"id":19,"cmd":"menu"}"#, #"{"id":19,"cmd":"menu","menu":"View>"}"#,
         ] {
             guard case .refused(let id, let reason) = parse(line) else {
                 return XCTFail("\(line) was not refused")
@@ -109,11 +135,42 @@ final class AppControlTests: XCTestCase {
         XCTAssertEqual(
             back.keys.sorted(),
             [
-                "assistant_shown", "band", "bandwidth_hz", "bookmark", "capture_id", "channel_id",
-                "filter_query", "focused", "heard", "hits", "inspector_shown", "mode",
-                "notices", "open_rows", "place", "popover", "selected_part",
-                "selected_recording_channel", "tuned_hz", "zoom",
+                "alert", "assistant", "assistant_shown", "band", "bandwidth_hz", "bookmark",
+                "capture_id", "channel_id", "filter_caret", "filter_query", "focused", "heard",
+                "hits", "inspector_shown", "mode", "muted", "notices", "open_rows", "place",
+                "popover", "selected_part", "selected_recording_channel", "settings_open", "sink",
+                "tooltip", "tuned_hz", "view_window", "volume", "window", "zoom",
             ])
+        for key in [
+            "alert", "assistant", "filter_caret", "tooltip", "view_window", "volume", "window",
+        ] {
+            XCTAssertTrue(back[key] is NSNull, key)
+        }
+    }
+
+    func testStateNestsItsObjectsInSnakeCase() throws {
+        let state = ControlViewState(
+            place: "radio",
+            window: ControlWindowSize(width: 1440, height: 820, minWidth: 980, minHeight: 600),
+            alert: ControlAlert(title: "Move the radio?", buttons: ["Cancel", "Move"]),
+            viewWindow: ControlViewWindow(lowHz: 146_000_000, highHz: 147_000_000),
+            assistant: ControlAssistant(
+                turns: [.init(role: "user", text: "hi")], inputFocused: true,
+                buttons: [.init(id: "assistant.new", title: "New", enabled: false)]))
+        let back = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: AppControl.encoded(state)) as? [String: Any])
+        let window = try XCTUnwrap(back["window"] as? [String: Any])
+        XCTAssertEqual(window["min_width"] as? Int, 980)
+        let alert = try XCTUnwrap(back["alert"] as? [String: Any])
+        XCTAssertTrue(alert["message"] is NSNull)
+        XCTAssertEqual(alert["buttons"] as? [String], ["Cancel", "Move"])
+        XCTAssertEqual((back["view_window"] as? [String: Any])?["high_hz"] as? Int, 147_000_000)
+        let assistant = try XCTUnwrap(back["assistant"] as? [String: Any])
+        XCTAssertEqual(assistant["input_focused"] as? Bool, true)
+        XCTAssertTrue(assistant["state"] is NSNull)
+        XCTAssertEqual(
+            ((assistant["buttons"] as? [[String: Any]])?.first)?["enabled"] as? Bool, false)
+        XCTAssertEqual(back["sink"] as? String, "none")
     }
 
     func testTheEnvironmentStagesTheRunWithEitherVariable() {

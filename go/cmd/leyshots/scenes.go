@@ -94,6 +94,15 @@ type Stage struct {
 	ScanBand bool `yaml:"scan_band" json:"scan_band,omitempty"`
 	// PlayPart plays the selected part and pauses it, so the Library draws it as current.
 	PlayPart bool `yaml:"play_part" json:"play_part,omitempty"`
+	// Assistant shows or hides the assistant's panel, as its toolbar button does.
+	Assistant *bool `yaml:"assistant" json:"assistant,omitempty"`
+	// ChannelsPicker opens this sidebar row's Channels… popover, by the row's id.
+	ChannelsPicker string `yaml:"channels_picker" json:"channels_picker,omitempty"`
+	// FocusFilter gives the sidebar's filter the focus after Settle, as Go to… does.
+	FocusFilter bool `yaml:"focus_filter" json:"focus_filter,omitempty"`
+	// Settings opens the Settings window (true) or closes it (false), as ⌘, and its close
+	// button do.
+	Settings *bool `yaml:"settings" json:"settings,omitempty"`
 }
 
 // Crop says which part of the window an app shot keeps: the union of Regions, or a box of Size

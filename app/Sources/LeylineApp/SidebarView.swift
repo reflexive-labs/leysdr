@@ -550,7 +550,13 @@ struct TuningKeyGuard: ViewModifier {
 
     private func watchKeys() {
         if monitor != nil { return }
-        ownWindow = NSApp.keyWindow.map { ObjectIdentifier($0) }
+        // The key window, or, while the app is not active (a check run never activates it,
+        // and an inactive app has no key window), the window being typed into, a popover's
+        // before the window it opened from.
+        let typing = NSApp.windows.filter {
+            $0.isVisible && ($0.firstResponder as? NSTextView)?.isFieldEditor == true
+        }.min { a, _ in a.parent != nil }
+        ownWindow = (NSApp.keyWindow ?? typing).map { ObjectIdentifier($0) }
         let own = ownWindow
         let move = $pickerMove
         let picker = pickerKeys

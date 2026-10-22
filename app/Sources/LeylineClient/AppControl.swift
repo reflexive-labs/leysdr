@@ -130,22 +130,38 @@ public struct ControlCommand: Sendable, Equatable {
         /// A `ShotStage` applied to the running window; its `settle` is slept and its `window`
         /// resizes.
         case stage(ShotStage)
-        /// The window's picture after `settle` seconds.
-        case snapshot(settle: Double)
+        /// The picture of the main window, or of Settings, after `settle` seconds.
+        case snapshot(settle: Double, window: TreeWindow)
         case state
         /// The tree of one of the app's windows.
         case ax(window: TreeWindow)
         case key(KeyChord)
         case type(String)
         case press(identifier: String)
+        /// Rests the pointer on an element or a point; `state.tooltip` then says what shows.
+        case hover(PointTarget)
+        /// A mouse click there, left or right, for what `press` cannot reach.
+        case click(PointTarget, right: Bool)
+        /// A menu bar item by its titles (`View>Show Assistant`): pressed, or with `read` only
+        /// described.
+        case menu(path: String, read: Bool)
         case wait(seconds: Double)
         case quit
     }
 
-    /// The window an `ax` reads: the main window, popovers and sheets included, by default; or
-    /// the Settings window, while it is open.
+    /// Where a `hover` or a `click` goes: the centre of the element with an identifier, or a
+    /// point in points from the window's top-left corner, toolbar included, as the regions and
+    /// the `ax` frames are measured.
+    public enum PointTarget: Sendable, Equatable {
+        case identifier(String)
+        case point(x: Double, y: Double)
+    }
+
+    /// The window an `ax` reads: the main window, popovers and sheets included, by default; the
+    /// Settings window, while it is open; or the open popover or sheet alone (a sheet over the
+    /// main window, else over Settings).
     public enum TreeWindow: String, Sendable, Equatable, CaseIterable {
-        case main, settings
+        case main, settings, popover, sheet
     }
 
     public var id: Int
@@ -173,6 +189,11 @@ public struct ControlCommand: Sendable, Equatable {
         var identifier: String?
         var seconds: Double?
         var window: String?
+        var x: Double?
+        var y: Double?
+        var button: String?
+        var menu: String?
+        var read: Bool?
     }
 
     private struct LineID: Decodable {
@@ -220,12 +241,15 @@ public struct ControlCommand: Sendable, Equatable {
             guard settle.isFinite, settle >= 0 else {
                 return .failure(Refusal(reason: "settle must be zero or more seconds"))
             }
-            return .success(.snapshot(settle: settle))
+            let window = TreeWindow(rawValue: line.window ?? TreeWindow.main.rawValue)
+            guard let window, window == .main || window == .settings else {
+                return .failure(Refusal(reason: "a snapshot's window must be main or settings"))
+            }
+            return .success(.snapshot(settle: settle, window: window))
         case "state": return .success(.state)
         case "ax":
             guard let window = TreeWindow(rawValue: line.window ?? TreeWindow.main.rawValue) else {
-                let names = TreeWindow.allCases.map(\.rawValue).joined(separator: " or ")
-                return .failure(Refusal(reason: "window must be \(names)"))
+                return .failure(Refusal(reason: "window must be main, settings, popover or sheet"))
             }
             return .success(.ax(window: window))
         case "key":
@@ -244,6 +268,32 @@ public struct ControlCommand: Sendable, Equatable {
                 return .failure(Refusal(reason: "press needs an identifier"))
             }
             return .success(.press(identifier: identifier))
+        case "hover", "click":
+            let target: PointTarget
+            switch (line.identifier, line.x, line.y) {
+            case (let id?, nil, nil) where !id.isEmpty: target = .identifier(id)
+            case (nil, let x?, let y?) where x.isFinite && y.isFinite: target = .point(x: x, y: y)
+            default:
+                return .failure(Refusal(reason: "\(cmd) needs an identifier, or x and y"))
+            }
+            if cmd == "hover" {
+                guard line.button == nil else {
+                    return .failure(Refusal(reason: "hover takes no button"))
+                }
+                return .success(.hover(target))
+            }
+            switch line.button ?? "left" {
+            case "left": return .success(.click(target, right: false))
+            case "right": return .success(.click(target, right: true))
+            default: return .failure(Refusal(reason: "a click's button must be left or right"))
+            }
+        case "menu":
+            guard let path = line.menu, !path.isEmpty,
+                !path.split(separator: ">", omittingEmptySubsequences: false).contains("")
+            else {
+                return .failure(Refusal(reason: "menu needs titles joined by >"))
+            }
+            return .success(.menu(path: path, read: line.read ?? false))
         case "wait":
             guard let s = line.seconds, s.isFinite, s >= 0 else {
                 return .failure(Refusal(reason: "wait needs seconds, zero or more"))
@@ -319,6 +369,136 @@ public struct ControlSnapshot: Sendable, Equatable, Encodable {
     }
 }
 
+/// `state.window`: the main window's frame in points, toolbar included, and the least the person
+/// can make it.
+public struct ControlWindowSize: Sendable, Equatable, Codable {
+    public var width: Double
+    public var height: Double
+    public var minWidth: Double
+    public var minHeight: Double
+
+    enum CodingKeys: String, CodingKey {
+        case width, height
+        case minWidth = "min_width"
+        case minHeight = "min_height"
+    }
+
+    public init(width: Double, height: Double, minWidth: Double, minHeight: Double) {
+        self.width = width
+        self.height = height
+        self.minWidth = minWidth
+        self.minHeight = minHeight
+    }
+}
+
+/// `state.alert`: the sheet over a window (an alert, a confirmation): its title, its message
+/// when it has one, and its buttons' titles in order.
+public struct ControlAlert: Sendable, Equatable, Codable {
+    public var title: String
+    public var message: String?
+    public var buttons: [String]
+
+    public init(title: String, message: String? = nil, buttons: [String]) {
+        self.title = title
+        self.message = message
+        self.buttons = buttons
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(title, forKey: .title)
+        try c.encode(message, forKey: .message)
+        try c.encode(buttons, forKey: .buttons)
+    }
+}
+
+/// `state.view_window`: the frequencies at the spectrum and waterfall's two edges, as the zoom
+/// and the tuned channel put them.
+public struct ControlViewWindow: Sendable, Equatable, Codable {
+    public var lowHz: UInt64
+    public var highHz: UInt64
+
+    enum CodingKeys: String, CodingKey {
+        case lowHz = "low_hz"
+        case highHz = "high_hz"
+    }
+
+    public init(lowHz: UInt64, highHz: UInt64) {
+        self.lowHz = lowHz
+        self.highHz = highHz
+    }
+}
+
+/// `state.assistant`: the assistant's panel while it is shown.
+public struct ControlAssistant: Sendable, Equatable, Codable {
+    /// One turn of the conversation, oldest first: `user` or `assistant`, and its text.
+    public struct Turn: Sendable, Equatable, Codable {
+        public var role: String
+        public var text: String
+
+        public init(role: String, text: String) {
+            self.role = role
+            self.text = text
+        }
+    }
+
+    /// A button the panel shows (New, Stop, Decline, Allow…), by its identifier.
+    public struct Button: Sendable, Equatable, Codable {
+        public var id: String
+        public var title: String
+        public var enabled: Bool
+
+        public init(id: String, title: String, enabled: Bool) {
+            self.id = id
+            self.title = title
+            self.enabled = enabled
+        }
+    }
+
+    public var turns: [Turn]
+    /// The conversation's state as the header says it (`thinking`, `idle`, `asking`…), or nil
+    /// with none.
+    public var state: String?
+    /// The assistant is thinking: the `thinking…` row shows under the newest turn.
+    public var thinking: Bool
+    /// What the panel's field holds, and whether it has the keyboard's focus.
+    public var input: String
+    public var inputFocused: Bool
+    /// Stop shows beside the field.
+    public var stopShown: Bool
+    public var buttons: [Button]
+
+    enum CodingKeys: String, CodingKey {
+        case turns, state, thinking, input, buttons
+        case inputFocused = "input_focused"
+        case stopShown = "stop_shown"
+    }
+
+    public init(
+        turns: [Turn] = [], state: String? = nil, thinking: Bool = false, input: String = "",
+        inputFocused: Bool = false, stopShown: Bool = false, buttons: [Button] = []
+    ) {
+        self.turns = turns
+        self.state = state
+        self.thinking = thinking
+        self.input = input
+        self.inputFocused = inputFocused
+        self.stopShown = stopShown
+        self.buttons = buttons
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(turns, forKey: .turns)
+        try c.encode(state, forKey: .state)
+        try c.encode(thinking, forKey: .thinking)
+        try c.encode(input, forKey: .input)
+        try c.encode(inputFocused, forKey: .inputFocused)
+        try c.encode(stopShown, forKey: .stopShown)
+        try c.encode(buttons, forKey: .buttons)
+    }
+}
+
 /// `state`'s result: the window's view state as `AppSession` holds it. Every key is written,
 /// null when absent, so a check can tell "no channel" from a key it misspelled.
 public struct ControlViewState: Sendable, Equatable, Codable {
@@ -356,6 +536,25 @@ public struct ControlViewState: Sendable, Equatable, Codable {
     /// The last sweep's hits as the open row lists them, strongest first, by the name or
     /// frequency each shows.
     public var hits: [String]
+    /// The transport's speaker: true when the window has no sink of its own on the channel and
+    /// no other client's plays it.
+    public var muted: Bool
+    /// The window's own sink's volume, 0 to 1, or nil without one.
+    public var volume: Double?
+    /// Who plays the tuned channel: `own` (the window's sink), `other` (another client's) or
+    /// `none`.
+    public var sink: String
+    public var window: ControlWindowSize?
+    /// The insertion point in the sidebar's filter, in characters from its start, while the
+    /// filter has the focus; nil otherwise.
+    public var filterCaret: Int?
+    public var settingsOpen: Bool
+    public var alert: ControlAlert?
+    public var viewWindow: ControlViewWindow?
+    public var assistant: ControlAssistant?
+    /// The tooltip of what the last `hover` rested on, or the charts' pointer readout while the
+    /// pointer is over one; nil when neither shows.
+    public var tooltip: String?
 
     enum CodingKeys: String, CodingKey {
         case place, mode, band, bookmark, zoom, focused, notices, popover, heard, hits
@@ -369,6 +568,10 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         case assistantShown = "assistant_shown"
         case selectedRecordingChannel = "selected_recording_channel"
         case selectedPart = "selected_part"
+        case muted, volume, sink, window, alert, assistant, tooltip
+        case filterCaret = "filter_caret"
+        case settingsOpen = "settings_open"
+        case viewWindow = "view_window"
     }
 
     public init(
@@ -378,7 +581,11 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         inspectorShown: Bool = false, assistantShown: Bool = false, zoom: Int = 1,
         focused: String = "", notices: [String] = [], popover: String = "",
         selectedRecordingChannel: String? = nil, selectedPart: String? = nil,
-        heard: String? = nil, hits: [String] = []
+        heard: String? = nil, hits: [String] = [], muted: Bool = false, volume: Double? = nil,
+        sink: String = "none", window: ControlWindowSize? = nil, filterCaret: Int? = nil,
+        settingsOpen: Bool = false, alert: ControlAlert? = nil,
+        viewWindow: ControlViewWindow? = nil, assistant: ControlAssistant? = nil,
+        tooltip: String? = nil
     ) {
         self.place = place
         self.tunedHz = tunedHz
@@ -400,6 +607,16 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         self.selectedPart = selectedPart
         self.heard = heard
         self.hits = hits
+        self.muted = muted
+        self.volume = volume
+        self.sink = sink
+        self.window = window
+        self.filterCaret = filterCaret
+        self.settingsOpen = settingsOpen
+        self.alert = alert
+        self.viewWindow = viewWindow
+        self.assistant = assistant
+        self.tooltip = tooltip
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -426,6 +643,16 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         try c.encode(selectedPart, forKey: .selectedPart)
         try c.encode(heard, forKey: .heard)
         try c.encode(hits, forKey: .hits)
+        try c.encode(muted, forKey: .muted)
+        try c.encode(volume, forKey: .volume)
+        try c.encode(sink, forKey: .sink)
+        try c.encode(window, forKey: .window)
+        try c.encode(filterCaret, forKey: .filterCaret)
+        try c.encode(settingsOpen, forKey: .settingsOpen)
+        try c.encode(alert, forKey: .alert)
+        try c.encode(viewWindow, forKey: .viewWindow)
+        try c.encode(assistant, forKey: .assistant)
+        try c.encode(tooltip, forKey: .tooltip)
     }
 }
 

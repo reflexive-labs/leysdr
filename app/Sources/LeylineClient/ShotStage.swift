@@ -69,6 +69,8 @@ public struct ShotStage: Sendable, Equatable, Codable {
     public var focusFilter: Bool
     /// Opens a sidebar row's Channels… popover, by the row's id (`gmrs`).
     public var channelsPicker: String?
+    /// Opens the Settings window (true), as Leyline ▸ Settings… does, or closes it (false).
+    public var settings: Bool?
 
     enum CodingKeys: String, CodingKey {
         case window, place, inspector, settle, zoom
@@ -82,6 +84,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
         case assistant
         case focusFilter = "focus_filter"
         case channelsPicker = "channels_picker"
+        case settings
     }
 
     public init(
@@ -89,7 +92,8 @@ public struct ShotStage: Sendable, Equatable, Codable {
         expandedBand: String? = nil, selectBookmark: String? = nil, selectPart: Int? = nil,
         importCHIRP: String? = nil, settle: Double = 0, onAir: Bool = false,
         zoom: Int? = nil, scanBand: Bool = false, playPart: Bool = false,
-        assistant: Bool? = nil, focusFilter: Bool = false, channelsPicker: String? = nil
+        assistant: Bool? = nil, focusFilter: Bool = false, channelsPicker: String? = nil,
+        settings: Bool? = nil
     ) {
         self.window = window
         self.place = place
@@ -106,6 +110,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
         self.assistant = assistant
         self.focusFilter = focusFilter
         self.channelsPicker = channelsPicker
+        self.settings = settings
     }
 
     public init(from decoder: Decoder) throws {
@@ -125,6 +130,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
         assistant = try c.decodeIfPresent(Bool.self, forKey: .assistant)
         focusFilter = try c.decodeIfPresent(Bool.self, forKey: .focusFilter) ?? false
         channelsPicker = try c.decodeIfPresent(String.self, forKey: .channelsPicker)
+        settings = try c.decodeIfPresent(Bool.self, forKey: .settings)
     }
 
     /// The stage file's path from the environment, or nil when the run is not staged.

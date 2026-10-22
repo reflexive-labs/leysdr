@@ -173,6 +173,7 @@ final class Staging {
             note(shown ? "assistant shown" : "assistant hidden")
         }
         if let id = stage.channelsPicker { openPicker(row: id, session) }
+        if let open = stage.settings { await settings(open: open) }
         log("stage", "applied; settling \(stage.settle) s")
         try? await Task.sleep(for: .seconds(stage.settle))
         if stage.onAir { await waitOnAir(session) }
@@ -301,6 +302,35 @@ final class Staging {
         }
         if !session.isExpanded(row) { session.toggleExpanded(row) }
         note("row \(row.name) open")
+    }
+
+    /// The Settings window, while it is on screen. SwiftUI names its window
+    /// `com_apple_SwiftUI_Settings_window`.
+    static var settingsWindow: NSWindow? {
+        NSApp.windows.first {
+            $0.isVisible && $0.identifier?.rawValue.contains("Settings") == true
+        }
+    }
+
+    /// Opens Settings through the app menu's item, as ⌘, does, and waits for its window; or
+    /// closes the window.
+    private func settings(open: Bool) async {
+        if !open {
+            Self.settingsWindow?.close()
+            note("settings closed")
+            return
+        }
+        if Self.settingsWindow == nil, let (menu, index) = AppMenus.settingsItem() {
+            menu.performActionForItem(at: index)
+        }
+        let shown = await until(seconds: Self.confirmSeconds) { Self.settingsWindow != nil }
+        if shown, let w = Self.settingsWindow {
+            // On the menu bar's screen in sRGB, as the main window is, so its picture is the
+            // same on every run.
+            w.colorSpace = .sRGB
+            DeterministicFrames.drawAsKey(w)
+        }
+        note(shown ? "settings open" : "settings did not open within \(Int(Self.confirmSeconds)) s")
     }
 
     /// Opens a sidebar row's Channels… popover, as its button does.

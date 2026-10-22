@@ -26,6 +26,8 @@ final class ControlChannel {
     private let session: AppSession
     private var lines = ControlLines()
     private var offset: UInt64 = 0
+    /// The tooltip of what the last `hover` rested on, until the next `hover` or `click`.
+    private var hoverHelp: String?
 
     init(directory: URL, staging: Staging, session: AppSession) {
         self.directory = directory
@@ -142,26 +144,52 @@ final class ControlChannel {
                 return ControlAnswer(
                     id: c.id, ok: true,
                     result: .object(["applied": .array(applied.map(JSONValue.string))]))
-            case .snapshot(let settle):
+            case .snapshot(let settle, let which):
                 try? await Task.sleep(for: .seconds(settle))
                 guard let window = staging.window else { return noWindow }
-                return try snapshot(c.id, window)
-            case .state:
-                return ControlAnswer(
-                    id: c.id, ok: true,
-                    result: try ControlAnswer.result(viewState(staging.window)))
-            case .ax(let which):
-                guard let window = staging.window else { return noWindow }
-                let file = "\(AppControl.outName)/\(c.id).ax.txt"
-                guard let read = which == .main ? window : Self.settingsWindow() else {
+                guard which == .settings else { return try snapshot(c.id, window) }
+                guard let settings = Staging.settingsWindow else {
                     return ControlAnswer(
                         id: c.id, ok: false, error: "the Settings window is not open")
                 }
+                return try snapshot(c.id, settings, regions: false)
+            case .state:
+                if let window = staging.window { await AccessibilityTree.ready(window) }
+                let focusedID = AccessibilityTree.focusedIdentifier()
+                var state = viewState(staging.window, focusedID)
+                if let window = staging.window {
+                    state.assistant = assistantState(window, state.focused)
+                    if state.focused == "sidebar.filter" { state.filterCaret = Self.caret(window) }
+                }
+                return ControlAnswer(
+                    id: c.id, ok: true, result: try ControlAnswer.result(state))
+            case .ax(let which):
+                guard let window = staging.window else { return noWindow }
+                let file = "\(AppControl.outName)/\(c.id).ax.txt"
+                let read: NSWindow
+                var part: String?
+                switch which {
+                case .main: read = window
+                case .settings:
+                    guard let w = Staging.settingsWindow else {
+                        return ControlAnswer(
+                            id: c.id, ok: false, error: "the Settings window is not open")
+                    }
+                    read = w
+                case .popover:
+                    read = window
+                    part = kAXPopoverRole
+                case .sheet:
+                    // The sheet over the main window, else the one over Settings.
+                    read = window.attachedSheet == nil ? Staging.settingsWindow ?? window : window
+                    part = kAXSheetRole
+                }
+                await AccessibilityTree.ready(read)
                 try AppControl.writeReplacing(
-                    Data(try AccessibilityTree.text(of: read).utf8),
+                    Data(try AccessibilityTree.text(of: read, part: part).utf8),
                     to: directory.appendingPathComponent(file))
                 // The regions are the main window's, and mean nothing in another.
-                guard which == .main else {
+                guard read === window else {
                     return ControlAnswer(id: c.id, ok: true, files: [file])
                 }
                 // The regions as a snapshot gives them, so the checker can mask the values of
@@ -176,21 +204,83 @@ final class ControlChannel {
                     id: c.id, ok: true, files: [file], result: try ControlAnswer.result(shot))
             case .key(let chord):
                 guard let window = staging.window else { return noWindow }
-                send(chord, to: window)
+                send(chord, to: Self.keyTarget(window))
                 try? await Task.sleep(for: .milliseconds(Self.keySettleMilliseconds))
                 return ControlAnswer(id: c.id, ok: true)
             case .type(let text):
                 guard let window = staging.window else { return noWindow }
                 for ch in text {
-                    send(.typing(ch), to: window)
+                    send(.typing(ch), to: Self.keyTarget(window))
                     try? await Task.sleep(for: .milliseconds(Self.typeGapMilliseconds))
                 }
                 try? await Task.sleep(for: .milliseconds(Self.keySettleMilliseconds))
                 return ControlAnswer(id: c.id, ok: true)
             case .press(let identifier):
                 guard let window = staging.window else { return noWindow }
-                let why = AccessibilityTree.press(identifier, in: window)
+                // A sheet's button is pressed in the window it covers; any other identifier is
+                // looked for in the main window, then in Settings while it is open.
+                var windows = [window]
+                if let settings = Staging.settingsWindow {
+                    let alert = identifier.hasPrefix(AXWalk.alertPrefix)
+                    if alert && window.attachedSheet == nil {
+                        windows = [settings]
+                    } else if !alert {
+                        windows.append(settings)
+                    }
+                }
+                var why: String?
+                for w in windows {
+                    await AccessibilityTree.ready(w)
+                    why = AccessibilityTree.press(identifier, in: w)
+                    if why == nil { break }
+                }
                 return ControlAnswer(id: c.id, ok: why == nil, error: why ?? "")
+            case .hover(let target):
+                guard let window = staging.window else { return noWindow }
+                await AccessibilityTree.ready(window)
+                guard let p = Self.point(target, in: window) else {
+                    return ControlAnswer(id: c.id, ok: false, error: Self.noTarget(target))
+                }
+                post([.mouseMoved], at: p, in: window)
+                try? await Task.sleep(for: .milliseconds(Self.keySettleMilliseconds))
+                hoverHelp = AccessibilityTree.help(at: p, in: window)
+                return ControlAnswer(
+                    id: c.id, ok: true,
+                    result: .object(["tooltip": hoverHelp.map(JSONValue.string) ?? .null]))
+            case .click(let target, let right):
+                guard let window = staging.window else { return noWindow }
+                await AccessibilityTree.ready(window)
+                guard let p = Self.point(target, in: window) else {
+                    return ControlAnswer(id: c.id, ok: false, error: Self.noTarget(target))
+                }
+                hoverHelp = nil
+                post(
+                    right ? [.rightMouseDown, .rightMouseUp] : [.leftMouseDown, .leftMouseUp],
+                    at: p, in: window)
+                try? await Task.sleep(for: .milliseconds(Self.keySettleMilliseconds))
+                return ControlAnswer(id: c.id, ok: true)
+            case .menu(let path, let read):
+                switch AppMenus.item(path: path) {
+                case .failure(let why):
+                    return ControlAnswer(id: c.id, ok: false, error: "\(why)")
+                case .success(let (menu, index)):
+                    let item = menu.items[index]
+                    let result: JSONValue = .object([
+                        "title": .string(item.title),
+                        "enabled": .bool(item.isEnabled),
+                        "checked": .bool(item.state == .on),
+                        "items": .array(AppMenus.titles(of: menu).map(JSONValue.string)),
+                    ])
+                    guard !read else { return ControlAnswer(id: c.id, ok: true, result: result) }
+                    guard item.isEnabled else {
+                        return ControlAnswer(
+                            id: c.id, ok: false, error: "\(path) is disabled", result: result)
+                    }
+                    log("control", "menu \(path) pressed")
+                    menu.performActionForItem(at: index)
+                    try? await Task.sleep(for: .milliseconds(Self.keySettleMilliseconds))
+                    return ControlAnswer(id: c.id, ok: true, result: result)
+                }
             case .wait(let seconds):
                 try? await Task.sleep(for: .seconds(seconds))
                 return ControlAnswer(id: c.id, ok: true)
@@ -202,17 +292,73 @@ final class ControlChannel {
         }
     }
 
-    private func snapshot(_ id: Int, _ window: NSWindow) throws -> ControlAnswer {
-        guard let png = WindowPicture.png(of: window), let regions = staging.measure() else {
+    /// The window's picture; with `regions`, the main window's regions beside it, and none for
+    /// another window, whose frame they do not describe.
+    private func snapshot(_ id: Int, _ window: NSWindow, regions: Bool = true) throws
+        -> ControlAnswer
+    {
+        let measured = regions ? staging.measure() : nil
+        guard let png = WindowPicture.png(of: window), !regions || measured != nil else {
             return ControlAnswer(id: id, ok: false, error: "the window drew no picture")
         }
         let file = "\(AppControl.outName)/\(id).png"
         try AppControl.writeReplacing(png, to: directory.appendingPathComponent(file))
         let shot = ControlSnapshot(
-            scale: regions.scale, widthPt: Double(window.frame.width),
-            heightPt: Double(window.frame.height), regions: regions.regions)
+            scale: measured?.scale ?? Double(window.backingScaleFactor),
+            widthPt: Double(window.frame.width), heightPt: Double(window.frame.height),
+            regions: measured?.regions ?? [:])
         return ControlAnswer(
             id: id, ok: true, files: [file], result: try ControlAnswer.result(shot))
+    }
+
+    /// A target's point in points from the window's top-left corner: the element's centre, or
+    /// the point given.
+    private static func point(_ target: ControlCommand.PointTarget, in window: NSWindow)
+        -> CGPoint?
+    {
+        switch target {
+        case .point(let x, let y): return CGPoint(x: x, y: y)
+        case .identifier(let id):
+            guard let r = AccessibilityTree.frame(of: id, in: window) else { return nil }
+            return CGPoint(x: r.midX, y: r.midY)
+        }
+    }
+
+    private static func noTarget(_ target: ControlCommand.PointTarget) -> String {
+        if case .identifier(let id) = target { return "no element has the identifier \(id)" }
+        return "no point"
+    }
+
+    /// Mouse events at `p` (from the window's top-left corner) posted to this process's own
+    /// queue, as `send` posts keys: the window's tracking areas, gestures and menus see them as
+    /// a mouse's, and nothing reaches another app or moves the person's pointer.
+    private func post(_ types: [NSEvent.EventType], at p: CGPoint, in window: NSWindow) {
+        if NSApp.keyWindow !== window { window.makeKey() }
+        // The event's location is from the window's bottom-left corner.
+        let location = NSPoint(x: p.x, y: window.frame.height - p.y)
+        for type in types {
+            guard
+                let event = NSEvent.mouseEvent(
+                    with: type, location: location, modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                    clickCount: type == .mouseMoved ? 0 : 1,
+                    pressure: type == .leftMouseDown || type == .rightMouseDown ? 1 : 0)
+            else { continue }
+            NSApp.postEvent(event, atStart: false)
+        }
+    }
+
+    /// The window a key goes to: the sheet over the main window, else its open popover (whose
+    /// key monitor takes Up and Down), else the app's key window while it is on screen
+    /// (Settings), else the main window.
+    private static func keyTarget(_ main: NSWindow) -> NSWindow {
+        if let sheet = main.attachedSheet { return sheet }
+        if let popover = main.childWindows?.last(where: \.isVisible) {
+            return popover
+        }
+        if let key = NSApp.keyWindow, key.isVisible { return key }
+        return main
     }
 
     /// A key down and up, as the keyboard sends them, to `window`. The events go to this
@@ -243,7 +389,7 @@ final class ControlChannel {
     }
 
     /// `state`'s result, read from the session as the views read it.
-    private func viewState(_ window: NSWindow?) -> ControlViewState {
+    private func viewState(_ window: NSWindow?, _ focusedID: String?) -> ControlViewState {
         let s = session
         var notices: [String] = []
         if let n = s.notice { notices.append(n) }
@@ -264,24 +410,87 @@ final class ControlChannel {
             openRows: s.sidebarRows.filter { s.isExpanded($0) }.map(\.id),
             filterQuery: s.filterQuery, inspectorShown: s.inspectorShown,
             assistantShown: s.assistantPanelShown, zoom: s.zoom,
-            focused: window.map { Self.describeFocus($0.firstResponder, in: $0) } ?? "",
+            focused: window.map { Self.describeFocus($0.firstResponder, in: $0, focusedID) } ?? "",
             notices: notices,
             popover: popover, selectedRecordingChannel: s.selectedRecordingChannel,
             selectedPart: s.selectedPartURI, heard: s.heardTone?.words,
-            hits: s.sweepHits.map(\.label))
+            hits: s.sweepHits.map(\.label), muted: s.isMuted,
+            volume: s.sink.map { $0.systemAudio.hasVolume ? $0.systemAudio.volume : 1 },
+            sink: s.sink != nil ? "own" : s.audioElsewhere != nil ? "other" : "none",
+            window: window.map {
+                ControlWindowSize(
+                    width: Double($0.frame.width), height: Double($0.frame.height),
+                    minWidth: Double($0.minSize.width), minHeight: Double($0.minSize.height))
+            },
+            settingsOpen: Staging.settingsWindow != nil,
+            alert: window.flatMap { Self.alert(over: [$0, Staging.settingsWindow]) },
+            viewWindow: s.visibleRange.map {
+                ControlViewWindow(lowHz: $0.lowerBound, highHz: $0.upperBound)
+            },
+            // The charts draw their own readout under the pointer rather than a tooltip.
+            tooltip: hoverHelp
+                ?? s.pointerHz.map { "\(Frequency.fieldParts($0).major) MHz" })
     }
 
-    /// The Settings scene's window while it is on screen. SwiftUI names it
-    /// `com_apple_SwiftUI_Settings_window`.
-    private static func settingsWindow() -> NSWindow? {
-        NSApp.windows.first {
-            $0.isVisible && $0.identifier?.rawValue.contains("Settings") == true
+    /// The assistant's panel as `state` gives it, or nil while it is hidden. The turns and the
+    /// thinking row come from the conversation the panel draws; the field and the buttons from
+    /// their accessibility elements, since the field's text is the view's own.
+    private func assistantState(_ window: NSWindow, _ focused: String)
+        -> ControlAssistant?
+    {
+        guard session.assistantPanelShown else { return nil }
+        let view = session.conversationView
+        let elements = AccessibilityTree.elements(withPrefix: "assistant.", in: window)
+        let input = elements.first { $0.identifier == "assistant.input" }
+        return ControlAssistant(
+            turns: (view?.turns ?? []).map {
+                ControlAssistant.Turn(role: $0.role == .user ? "user" : "assistant", text: $0.text)
+            },
+            state: session.assistantLost ? "gone" : view?.stateWord,
+            thinking: view?.isWaitingOnModel ?? false,
+            input: input?.value ?? "",
+            inputFocused: focused == "assistant.input",
+            stopShown: elements.contains { $0.identifier == "assistant.stop" },
+            buttons: elements.filter { $0.role == kAXButtonRole }.map {
+                ControlAssistant.Button(id: $0.identifier, title: $0.label, enabled: $0.enabled)
+            })
+    }
+
+    /// The insertion point of the field being typed into, in characters from its start.
+    private static func caret(_ window: NSWindow) -> Int? {
+        guard let editor = window.firstResponder as? NSTextView, editor.isFieldEditor else {
+            return nil
         }
+        return editor.selectedRange().location
+    }
+
+    /// The first sheet over one of `windows`: its texts (the first the title, the second the
+    /// message) and its buttons' titles, read from its views.
+    private static func alert(over windows: [NSWindow?]) -> ControlAlert? {
+        guard let sheet = windows.compactMap({ $0?.attachedSheet }).first,
+            let root = sheet.contentView
+        else { return nil }
+        var texts: [String] = []
+        var buttons: [String] = []
+        func visit(_ v: NSView) {
+            if v.isHidden { return }
+            if let b = v as? NSButton, !b.title.isEmpty {
+                buttons.append(b.title)
+            } else if let t = v as? NSTextField, !t.isEditable, !t.stringValue.isEmpty {
+                texts.append(t.stringValue)
+            }
+            v.subviews.forEach(visit)
+        }
+        visit(root)
+        return ControlAlert(
+            title: texts.first ?? sheet.title, message: texts.dropFirst().first, buttons: buttons)
     }
 
     /// The first responder by its accessibility identifier, else its role and label; a field
     /// editor stands for the field it edits. Empty when the window itself holds the focus.
-    private static func describeFocus(_ responder: NSResponder?, in window: NSWindow) -> String {
+    private static func describeFocus(
+        _ responder: NSResponder?, in window: NSWindow, _ focusedID: String?
+    ) -> String {
         guard var view = responder as? NSView, responder !== window else { return "" }
         if let editor = view as? NSTextView, editor.isFieldEditor,
             let field = editor.delegate as? NSView
@@ -290,7 +499,14 @@ final class ControlChannel {
         }
         let id = view.accessibilityIdentifier()
         if !id.isEmpty { return id }
-        if let id = AccessibilityTree.focusedIdentifier() { return id }
+        if let focusedID { return focusedID }
+        // While the screen is locked the API names no focused element; the identified text
+        // field over the focused view in this window is the one it would have named.
+        if view.window === window,
+            let id = AccessibilityTree.textFieldIdentifier(over: view, in: window)
+        {
+            return id
+        }
         let role = view.accessibilityRole()?.rawValue ?? String(describing: type(of: view))
         let label =
             view.accessibilityLabel() ?? (view as? NSTextField)?.placeholderString
