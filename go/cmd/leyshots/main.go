@@ -8,7 +8,7 @@
 // (docs/plans/mac-loop.md, ML-4).
 //
 //	leyshots run [--only a,b] [--out tmp/shots]
-//	leyshots check [--only a,b] [--record] [--out tmp/checks] [--goldens tmp/goldens] [--list]
+//	leyshots check [--only a,b] [--record] [--hold] [--out tmp/checks] [--goldens tmp/goldens] [--list]
 //	leyshots publish [--only a,b] [--out tmp/shots] [--dry-run]
 //	leyshots list
 //	leyshots keys [--out tmp/shots/keys] [--leyfix PATH]
@@ -30,12 +30,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 )
 
 func usage(w io.Writer) {
 	fmt.Fprintln(w, "usage: leyshots run [--only a,b] [--out DIR]       take the scenes in site/shots/scenes.yaml")
-	fmt.Fprintln(w, "       leyshots check [--only a,b] [--record] [--out DIR] [--goldens DIR] [--list]")
+	fmt.Fprintln(w, "       leyshots check [--only a,b] [--record] [--hold] [--out DIR] [--goldens DIR] [--list]")
 	fmt.Fprintln(w, "                                                 run app/checks/scenes.yaml against the app and its goldens")
 	fmt.Fprintln(w, "       leyshots publish [--only a,b] [--out DIR] [--dry-run]")
 	fmt.Fprintln(w, "                                                 release the reviewed images as shots-YYYY-MM-DD")
@@ -52,7 +53,7 @@ func realMain(args []string) int {
 		usage(os.Stderr)
 		return 2
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	var err error
 	switch args[0] {
@@ -169,6 +170,7 @@ func cmdCheck(ctx context.Context, args []string, stdout io.Writer) error {
 	out := fs.String("out", "", "output directory for the artefacts and summary.json (default: tmp/checks in the checkout)")
 	goldens := fs.String("goldens", "", "goldens directory, above <macOS>-<arch> (default: tmp/goldens in the checkout)")
 	list := fs.Bool("list", false, "list the check scenes and run nothing")
+	hold := fs.Bool("hold", false, "with --only naming one scene: run it at its first size, then leave the app and daemon running to be driven over the command file until the app quits")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -203,7 +205,7 @@ func cmdCheck(ctx context.Context, args []string, stdout io.Writer) error {
 			goos:     runtime.GOOS, stdout: stdout, logf: logf,
 			stageApp: stagedAppIn(root),
 		},
-		checks: checks, goldens: *goldens, record: *record,
+		checks: checks, goldens: *goldens, record: *record, hold: *hold,
 		launch: openApp, alive: processAlive, kill: killProcess, findPID: findAppPID,
 		grace: answerGrace, poll: 100 * time.Millisecond,
 	}

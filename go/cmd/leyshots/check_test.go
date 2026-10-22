@@ -611,3 +611,104 @@ func TestMaskAX(t *testing.T) {
 		t.Errorf("no rects changed the tree:\n%s", got)
 	}
 }
+
+// A hold runs the one scene at its first size, then leaves the app to be driven by hand until it
+// quits; the runner's own quit then takes the id after the last one sent.
+func TestCheckHold(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "scenes.yaml"), `scenes:
+  - name: one
+    fixtures: [{name: scene_2m}]
+    sizes: [{width: 100, height: 60}, {width: 80, height: 50}]
+    app: [{cmd: state}]
+  - name: two
+    fixtures: [{name: scene_2m}]
+    app: [{cmd: state}]
+`)
+	fake := &fakeApp{alive: map[int]bool{}, state: map[string]any{"tuned_hz": 1}}
+	var stdout bytes.Buffer
+	var mu sync.Mutex
+	var logs []string
+	o := checkOptions{
+		runOptions: runOptions{out: filepath.Join(dir, "checks"), stdout: &stdout, logf: func(f string, a ...any) {
+			mu.Lock()
+			logs = append(logs, fmt.Sprintf(f, a...))
+			mu.Unlock()
+		}},
+		checks: filepath.Join(dir, "scenes.yaml"), goldens: filepath.Join(dir, "goldens"), release: "26.6", hold: true,
+		prepare: func(_ context.Context, _ *CheckFile, _ *CheckScene, run string) ([]string, func(), error) {
+			return []string{"LEYLINE_SOCKET=/s.sock"}, func() {}, os.MkdirAll(run, 0o755)
+		},
+		launch: fake.launch,
+		alive: func(pid int) bool {
+			fake.mu.Lock()
+			defer fake.mu.Unlock()
+			return fake.alive[pid]
+		},
+		kill:    func(pid int) { t.Errorf("killed %d; it should have quit", pid) },
+		findPID: func(context.Context, string) int { return 0 },
+		grace:   2 * time.Second, poll: 5 * time.Millisecond,
+	}
+	if err := checkScenes(context.Background(), o); err == nil || !strings.Contains(err.Error(), "--hold takes one scene") {
+		t.Fatalf("a hold of two scenes: %v", err)
+	}
+	o.only = []string{"one"}
+	done := make(chan error, 1)
+	go func() { done <- checkScenes(context.Background(), o) }()
+
+	control := filepath.Join(dir, "checks", "one", "100x60", "run", "control")
+	holding := func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, l := range logs {
+			if strings.HasPrefix(l, "holding one 100x60") {
+				return true
+			}
+		}
+		return false
+	}
+	for deadline := time.Now().Add(5 * time.Second); !holding(); time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the run never held")
+		}
+	}
+	mu.Lock()
+	all := strings.Join(logs, "\n")
+	mu.Unlock()
+	for _, want := range []string{"ley --socket /s.sock", `{"id":2,"cmd":"snapshot"}`, control} {
+		if !strings.Contains(all, want) {
+			t.Errorf("the hold's instructions lack %q:\n%s", want, all)
+		}
+	}
+	// Driven by hand: a state, then a quit.
+	f, err := os.OpenFile(filepath.Join(control, "commands.jsonl"), os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString(`{"id":2,"cmd":"state"}` + "\n" + `{"id":3,"cmd":"quit"}` + "\n")
+	_ = f.Close()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("the held run: %v\n%s", err, stdout.String())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the hold did not end when the app quit")
+	}
+	if _, err := os.Stat(filepath.Join(control, "out", "2.json")); err != nil {
+		t.Errorf("the command sent by hand was not answered: %v", err)
+	}
+	fake.mu.Lock()
+	launches, last := len(fake.envs), fake.commands[len(fake.commands)-1]
+	fake.mu.Unlock()
+	if launches != 1 {
+		t.Errorf("%d launches; a hold runs the first size only", launches)
+	}
+	if last["id"].(float64) != 3 || last["cmd"] != "quit" {
+		t.Errorf("the last command the app read: %v", last)
+	}
+	b, _ := os.ReadFile(filepath.Join(control, "commands.jsonl"))
+	if !strings.HasSuffix(string(b), `{"id":4,"cmd":"quit"}`+"\n") {
+		t.Errorf("the runner's quit does not follow the ids sent by hand:\n%s", b)
+	}
+}

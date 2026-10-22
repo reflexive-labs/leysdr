@@ -40,6 +40,9 @@ type checkOptions struct {
 	// release is the running macOS as major.minor.
 	release string
 	record  bool
+	// hold leaves the one scene's app and daemon running after its commands, for driving by hand
+	// over the command file, until the app quits or the run is interrupted.
+	hold bool
 	// prepare starts the scene's daemon in run and returns the environment that points the app
 	// at it, and how to stop it.
 	prepare func(ctx context.Context, f *CheckFile, s *CheckScene, run string) (env []string, stop func(), err error)
@@ -160,6 +163,9 @@ func checkScenes(ctx context.Context, o checkOptions) error {
 	if err != nil {
 		return err
 	}
+	if o.hold && len(scenes) != 1 {
+		return errors.New("--hold takes one scene: name it with --only")
+	}
 	if err := os.MkdirAll(o.out, 0o755); err != nil {
 		return err
 	}
@@ -170,7 +176,11 @@ func checkScenes(ctx context.Context, o checkOptions) error {
 	}
 	c := &checker{o: o, f: f}
 	for _, s := range scenes {
-		for _, size := range s.sizes() {
+		sizes := s.sizes()
+		if o.hold {
+			sizes = sizes[:1] // a hold ends the run, so the scene's first size is the only one
+		}
+		for _, size := range sizes {
 			if ctx.Err() != nil {
 				break
 			}
@@ -257,7 +267,8 @@ func (c *checker) runSize(ctx context.Context, s *CheckScene, size Size) {
 		fail(err)
 		return
 	}
-	defer app.quit(ctx, len(s.App)+1)
+	// A held app may have been sent commands by hand, so quit takes the id after the last used.
+	defer func() { app.quit(ctx, app.nextID(len(s.App)+1)) }()
 	for i := range s.App {
 		cmd := &s.App[i]
 		id := i + 1
@@ -268,6 +279,55 @@ func (c *checker) runSize(ctx context.Context, s *CheckScene, size Size) {
 		}
 		c.handle(ctx, s, size, dir, app, cmd, id, a)
 	}
+	if c.o.hold {
+		app.hold(ctx, s, size, env)
+	}
+}
+
+// hold prints how to drive the app over its command file and waits until the app exits or the
+// run is interrupted. The scene's daemon runs as long as the hold does.
+func (a *runningApp) hold(ctx context.Context, s *CheckScene, size Size, env []string) {
+	next := a.nextID(len(s.App) + 1)
+	cmds := filepath.Join(a.control, "commands.jsonl")
+	a.c.o.logf("holding %s %s: the app is pid %d; its log is %s", s.Name, size, a.pid, a.log)
+	for _, kv := range env {
+		if v, ok := strings.CutPrefix(kv, "LEYLINE_SOCKET="); ok {
+			a.c.o.logf("  the scene's daemon: ley --socket %s …", v)
+		}
+	}
+	a.c.o.logf("  send a command: echo '{\"id\":%d,\"cmd\":\"snapshot\"}' >> %s", next, cmds)
+	a.c.o.logf("  read its answer: %s (ids from %d, each used once)", filepath.Join(a.control, "out", strconv.Itoa(next)+".json"), next)
+	a.c.o.logf("  end the hold: a quit command, or interrupt leyshots (pid %d)", os.Getpid())
+	for ctx.Err() == nil {
+		pid := a.pid
+		if pid == 0 {
+			pid = a.c.o.findPID(ctx, a.control)
+		}
+		if pid == 0 || !a.c.o.alive(pid) {
+			a.c.o.logf("the app has exited; the hold ends")
+			return
+		}
+		if sleepFor(ctx, a.c.o.poll) != nil {
+			return
+		}
+	}
+}
+
+// nextID is the id after the largest commands.jsonl holds, and at least least.
+func (a *runningApp) nextID(least int) int {
+	b, err := os.ReadFile(filepath.Join(a.control, "commands.jsonl"))
+	if err != nil {
+		return least
+	}
+	for _, line := range bytes.Split(b, []byte("\n")) {
+		var w struct {
+			ID int `json:"id"`
+		}
+		if json.Unmarshal(line, &w) == nil && w.ID >= least {
+			least = w.ID + 1
+		}
+	}
+	return least
 }
 
 // runningApp is a launched app and its control directory.
