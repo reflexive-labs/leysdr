@@ -110,9 +110,9 @@ final class AppControlTests: XCTestCase {
             back.keys.sorted(),
             [
                 "assistant_shown", "band", "bandwidth_hz", "bookmark", "capture_id", "channel_id",
-                "filter_query", "focused", "heard", "inspector_shown", "mode", "notices",
-                "open_rows", "place", "popover", "selected_part", "selected_recording_channel",
-                "tuned_hz", "zoom",
+                "filter_query", "focused", "heard", "hits", "inspector_shown", "mode",
+                "notices", "open_rows", "place", "popover", "selected_part",
+                "selected_recording_channel", "tuned_hz", "zoom",
             ])
     }
 

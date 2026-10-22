@@ -342,9 +342,12 @@ public struct ControlViewState: Sendable, Equatable, Codable {
     /// The tone the tuned channel last heard, as the inspector writes it beside the bookmark's
     /// (`PL 100.0`, `DCS 023`), or nil before one is measured.
     public var heard: String?
+    /// The last sweep's hits as the open row lists them, strongest first, by the name or
+    /// frequency each shows.
+    public var hits: [String]
 
     enum CodingKeys: String, CodingKey {
-        case place, mode, band, bookmark, zoom, focused, notices, popover, heard
+        case place, mode, band, bookmark, zoom, focused, notices, popover, heard, hits
         case tunedHz = "tuned_hz"
         case bandwidthHz = "bandwidth_hz"
         case channelID = "channel_id"
@@ -364,7 +367,7 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         inspectorShown: Bool = false, assistantShown: Bool = false, zoom: Int = 1,
         focused: String = "", notices: [String] = [], popover: String = "",
         selectedRecordingChannel: String? = nil, selectedPart: String? = nil,
-        heard: String? = nil
+        heard: String? = nil, hits: [String] = []
     ) {
         self.place = place
         self.tunedHz = tunedHz
@@ -385,6 +388,7 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         self.selectedRecordingChannel = selectedRecordingChannel
         self.selectedPart = selectedPart
         self.heard = heard
+        self.hits = hits
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -410,6 +414,7 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         try c.encode(selectedRecordingChannel, forKey: .selectedRecordingChannel)
         try c.encode(selectedPart, forKey: .selectedPart)
         try c.encode(heard, forKey: .heard)
+        try c.encode(hits, forKey: .hits)
     }
 }
 
