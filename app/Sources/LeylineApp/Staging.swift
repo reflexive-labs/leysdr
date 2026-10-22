@@ -268,7 +268,10 @@ final class Staging {
         }
         let url = ShotStage.regionsURL(besideStage: stageURL)
         do {
-            try ShotRegions(windowNumber: window.windowNumber, regions: regions).write(to: url)
+            try ShotRegions(
+                windowNumber: window.windowNumber, scale: Double(window.backingScaleFactor),
+                regions: regions
+            ).write(to: url)
             let names = regions.keys.map(\.rawValue).sorted().joined(separator: ", ")
             log("stage", "regions written to \(url.path): \(names)")
         } catch {

@@ -62,6 +62,13 @@ public struct ShotStage: Sendable, Equatable, Codable {
     /// With `select_part`, plays that part and pauses it at once, as a click and a second click
     /// do: the Library draws only the playing row as current, not a row that is merely selected.
     public var playPart: Bool
+    /// Shows or hides the assistant's panel, as its toolbar button does; drawn only while an AI
+    /// provider is set up.
+    public var assistant: Bool?
+    /// Gives the sidebar's filter field the focus, as Go to… (⌘G) does.
+    public var focusFilter: Bool
+    /// Opens a sidebar row's Channels… popover, by the row's id (`gmrs`).
+    public var channelsPicker: String?
 
     enum CodingKeys: String, CodingKey {
         case window, place, inspector, settle, zoom
@@ -72,13 +79,17 @@ public struct ShotStage: Sendable, Equatable, Codable {
         case selectBookmark = "select_bookmark"
         case selectPart = "select_part"
         case importCHIRP = "import_chirp"
+        case assistant
+        case focusFilter = "focus_filter"
+        case channelsPicker = "channels_picker"
     }
 
     public init(
         window: WindowSize? = nil, place: Place? = nil, inspector: Bool? = nil,
         expandedBand: String? = nil, selectBookmark: String? = nil, selectPart: Int? = nil,
         importCHIRP: String? = nil, settle: Double = 0, onAir: Bool = false,
-        zoom: Int? = nil, scanBand: Bool = false, playPart: Bool = false
+        zoom: Int? = nil, scanBand: Bool = false, playPart: Bool = false,
+        assistant: Bool? = nil, focusFilter: Bool = false, channelsPicker: String? = nil
     ) {
         self.window = window
         self.place = place
@@ -92,6 +103,9 @@ public struct ShotStage: Sendable, Equatable, Codable {
         self.zoom = zoom
         self.scanBand = scanBand
         self.playPart = playPart
+        self.assistant = assistant
+        self.focusFilter = focusFilter
+        self.channelsPicker = channelsPicker
     }
 
     public init(from decoder: Decoder) throws {
@@ -108,6 +122,9 @@ public struct ShotStage: Sendable, Equatable, Codable {
         zoom = try c.decodeIfPresent(Int.self, forKey: .zoom)
         scanBand = try c.decodeIfPresent(Bool.self, forKey: .scanBand) ?? false
         playPart = try c.decodeIfPresent(Bool.self, forKey: .playPart) ?? false
+        assistant = try c.decodeIfPresent(Bool.self, forKey: .assistant)
+        focusFilter = try c.decodeIfPresent(Bool.self, forKey: .focusFilter) ?? false
+        channelsPicker = try c.decodeIfPresent(String.self, forKey: .channelsPicker)
     }
 
     /// The stage file's path from the environment, or nil when the run is not staged.
@@ -118,31 +135,41 @@ public struct ShotStage: Sendable, Equatable, Codable {
         return p
     }
 
-    /// Reads and decodes a stage file. A negative or non-finite `settle`, a window without a
-    /// positive size, a negative part and a zoom the band rail cannot set are refused here, so the app never sleeps or sizes on
-    /// a value it cannot use.
+    /// Reads and decodes a stage file, refused as `validate()` refuses it.
     public static func read(at url: URL) throws -> ShotStage {
         let stage = try JSONDecoder().decode(ShotStage.self, from: Data(contentsOf: url))
-        guard stage.settle.isFinite, stage.settle >= 0 else {
+        try stage.validate()
+        return stage
+    }
+
+    /// Refuses a negative or non-finite `settle`, a window without a positive size, a negative
+    /// part and a zoom the band rail cannot set, so the app never sleeps or sizes on a value it
+    /// cannot use.
+    public func validate() throws {
+        guard settle.isFinite, settle >= 0 else {
             throw ShotStageError.invalid("settle must be zero or more seconds")
         }
-        if let w = stage.window,
+        if let w = window,
             !(w.width.isFinite && w.height.isFinite && w.width > 0 && w.height > 0)
         {
             throw ShotStageError.invalid("window needs a positive width and height")
         }
-        if let p = stage.selectPart, p < 0 {
+        if let p = selectPart, p < 0 {
             throw ShotStageError.invalid("select_part must be 0 or more")
         }
-        if let z = stage.zoom, ![1, 2, 4, 8].contains(z) {
+        if let z = zoom, ![1, 2, 4, 8].contains(z) {
             throw ShotStageError.invalid("zoom must be 1, 2, 4 or 8")
         }
-        return stage
     }
 
     /// Where `regions.json` goes: beside the stage file.
     public static func regionsURL(besideStage url: URL) -> URL {
         url.deletingLastPathComponent().appendingPathComponent("regions.json")
+    }
+
+    /// Where the window's own picture goes: beside the stage file, with `regions.json`.
+    public static func pictureURL(besideStage url: URL) -> URL {
+        url.deletingLastPathComponent().appendingPathComponent("window.png")
     }
 }
 
@@ -158,16 +185,16 @@ public enum ShotStageError: Error, Equatable, CustomStringConvertible {
 
 /// The parts of the window `leyshots` crops to, by the names `scenes.yaml` uses.
 public enum ShotRegion: String, Sendable, CaseIterable, Codable {
-    case window, sidebar, inspector, toolbar, waterfall, library
+    case window, sidebar, inspector, toolbar, spectrum, waterfall, library
     /// The one-line notice over the bottom of the waterfall (a CHIRP import's counts), when shown.
     case notice
     /// The Library's page of the selected channel: its day strip and its parts.
     case parts
 }
 
-/// `regions.json`: the window's number for `screencapture -l`, and each region on screen as a
-/// rectangle in points from the top-left corner of the window's frame, toolbar included, which
-/// is the image `screencapture -l` takes.
+/// `regions.json`: the window's number for `screencapture -l`, its backing scale (pixels per
+/// point in `window.png`), and each region on screen as a rectangle in points from the top-left
+/// corner of the window's frame, toolbar included, which is the image `screencapture -l` takes.
 public struct ShotRegions: Sendable, Equatable, Encodable {
     public struct Rect: Sendable, Equatable, Codable {
         public var x: Double
@@ -195,21 +222,24 @@ public struct ShotRegions: Sendable, Equatable, Encodable {
     }
 
     public var windowNumber: Int
+    public var scale: Double
     public var regions: [ShotRegion: Rect]
 
-    public init(windowNumber: Int, regions: [ShotRegion: Rect]) {
+    public init(windowNumber: Int, scale: Double, regions: [ShotRegion: Rect]) {
         self.windowNumber = windowNumber
+        self.scale = scale
         self.regions = regions
     }
 
     enum CodingKeys: String, CodingKey {
         case windowNumber = "window_number"
-        case regions
+        case scale, regions
     }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(windowNumber, forKey: .windowNumber)
+        try c.encode(scale, forKey: .scale)
         // Keyed by the region's name: a dictionary keyed by an enum encodes as an array.
         try c.encode(
             Dictionary(uniqueKeysWithValues: regions.map { ($0.key.rawValue, $0.value) }),
@@ -226,14 +256,6 @@ public struct ShotRegions: Sendable, Equatable, Encodable {
     /// Writes the file the way `BookmarkStore.save()` writes bookmarks: a temp file beside it,
     /// then rename(2), so `leyshots`, which waits for the file to appear, never reads half of it.
     public func write(to url: URL) throws {
-        let tmp = url.deletingLastPathComponent().appendingPathComponent(
-            ".\(url.lastPathComponent).\(ProcessInfo.processInfo.processIdentifier).tmp")
-        defer { try? FileManager.default.removeItem(at: tmp) }
-        try encoded().write(to: tmp, options: .atomic)
-        guard rename(tmp.path, url.path) == 0 else {
-            throw NSError(
-                domain: NSPOSIXErrorDomain, code: Int(errno),
-                userInfo: [NSFilePathErrorKey: url.path])
-        }
+        try AppControl.writeReplacing(encoded(), to: url)
     }
 }
