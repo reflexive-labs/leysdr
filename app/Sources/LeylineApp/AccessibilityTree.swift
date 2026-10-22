@@ -207,8 +207,13 @@ enum AccessibilityTree {
         if let value = value(e) { parts.append("value=" + quoted(value)) }
         let p = point(e) ?? .zero
         let s = size(e) ?? .zero
-        parts.append(
-            frame(CGRect(x: p.x - origin.x, y: p.y - origin.y, width: s.width, height: s.height)))
+        let rect = CGRect(x: p.x - origin.x, y: p.y - origin.y, width: s.width, height: s.height)
+        // A plain text field's AppKit view keeps the height of whichever field it was first
+        // made for, 13 or 15 pt, from launch to launch, while the frame the window lays it out
+        // in, and so every pixel, stays the same (`Theme.Layout.labelFieldHeight`); its top
+        // and height are left out so a tree compares the same on every launch.
+        let role = parts[0]
+        parts.append(role == kAXTextFieldRole ? horizontal(rect) : frame(rect))
         parts.append(bool(e, kAXEnabledAttribute) == false ? "disabled" : "enabled")
         return parts.joined(separator: " ")
     }
@@ -272,6 +277,12 @@ enum AccessibilityTree {
             + s.replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
             .replacingOccurrences(of: "\n", with: "\\n") + "\""
+    }
+
+    /// `(38,– 161×–)`: the frame's left edge and width only.
+    private static func horizontal(_ r: CGRect) -> String {
+        let nums = [r.minX, r.width].map { abs($0) < 1e9 ? Int($0.rounded()) : 0 }
+        return "(\(nums[0]),– \(nums[1])×–)"
     }
 
     /// A rectangle in whole points, `(x,y w×h)`.
