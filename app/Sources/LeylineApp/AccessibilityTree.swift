@@ -164,9 +164,9 @@ enum AccessibilityTree {
         AXUIElementSetMessagingTimeout(app, messagingSeconds)
         var windows = children(app, kAXWindowsAttribute)
         if windows.isEmpty {
-            // The application lists only the windows on the Space the person is looking at,
-            // so a window left on another Space is not among them; the main and focused
-            // windows are answered all the same.
+            // Now and then, for minutes at a time, a trusted process is answered no windows
+            // (or the application where a window should be) while its window is on screen;
+            // the cause is not known. The main and focused windows are asked for instead.
             windows = [kAXMainWindowAttribute, kAXFocusedWindowAttribute].compactMap { name in
                 guard let w = attribute(app, name), CFGetTypeID(w) == AXUIElementGetTypeID(),
                     string(w as! AXUIElement, kAXRoleAttribute) == kAXWindowRole
