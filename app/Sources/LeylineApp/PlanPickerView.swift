@@ -52,8 +52,9 @@ struct PlanPickerView: View {
                                 .id(channel.id)
                                 .contentShape(Rectangle())
                                 .onTapGesture { session.pick(channel: channel, in: band) }
-                                .identifiedGroup(
-                                    "planpicker.row.\(ViewIdentifier.slug(channel.id))")
+                                .pressableGroup(
+                                    "planpicker.row.\(ViewIdentifier.slug(channel.id))"
+                                ) { session.pick(channel: channel, in: band) }
                         }
                     }
                 }

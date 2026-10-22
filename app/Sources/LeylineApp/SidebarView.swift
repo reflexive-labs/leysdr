@@ -99,7 +99,7 @@ struct SidebarView: View {
             OutOfRangeLine(fold: fold, expanded: session.outOfRangeExpanded)
                 .contentShape(Rectangle())
                 .onTapGesture { session.outOfRangeExpanded.toggle() }
-                .identifiedGroup("sidebar.outofrange")
+                .pressableGroup("sidebar.outofrange") { session.outOfRangeExpanded.toggle() }
             if session.outOfRangeExpanded {
                 ForEach(fold.bands) { row in bandRow(row, bookmarks: byRow[row.id] ?? []) }
             }
@@ -134,7 +134,7 @@ struct SidebarView: View {
         .contextMenu {
             Button(scanBandTitle(row)) { session.scanBand(row: row) }.disabled(why != nil)
         }
-        .identifiedGroup("sidebar.band.\(row.id)")
+        .pressableGroup("sidebar.band.\(row.id)") { if why == nil { session.tune(row: row) } }
         if expanded {
             bandActions(row, scanDisabled: why != nil)
             if session.sweepRow?.id == row.id, let outcome = session.sweep?.outcome {
@@ -277,7 +277,7 @@ struct SidebarView: View {
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .onTapGesture { session.tune(hit: hit) }
-        .identifiedGroup("sidebar.hit.\(hit.hz)")
+        .pressableGroup("sidebar.hit.\(hit.hz)") { session.tune(hit: hit) }
         .help(
             "\(Frequency.format(hit.hz)) · \(snr) dB over the floor · heard in \(hit.looks) of \(hit.looksPossible) looks"
         )
@@ -316,7 +316,9 @@ struct SidebarView: View {
             }
             Button("Remove", role: .destructive) { session.remove(bookmark: b) }
         }
-        .identifiedGroup("sidebar.bookmark.\(ViewIdentifier.slug(b.name))")
+        .pressableGroup("sidebar.bookmark.\(ViewIdentifier.slug(b.name))") {
+            if session.editingBookmarkID != b.id { session.tune(bookmark: b) }
+        }
     }
 
     /// The flat list while something is typed: the index's rows in its order, each naming its
@@ -334,7 +336,9 @@ struct SidebarView: View {
             MatchRow(match: match)
                 .contentShape(Rectangle())
                 .onTapGesture { session.tune(match: match) }
-                .identifiedGroup("sidebar.match.\(ViewIdentifier.slug(match.id))")
+                .pressableGroup("sidebar.match.\(ViewIdentifier.slug(match.id))") {
+                    session.tune(match: match)
+                }
         }
     }
 }

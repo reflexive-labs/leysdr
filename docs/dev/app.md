@@ -924,11 +924,11 @@ A region or a row is made an element of its own before it is named (`identifiedG
 `AccessibilityTree.swift`), because an identifier on a stack that is not an element is given to
 every element inside it, over their own. That adds a group to the tree and draws nothing. A
 pop-up's identifier is on both of its elements, the value and the chevron, and `press` takes the
-first. A row whose click is a tap gesture (a sidebar band, bookmark or match, a Library channel,
-a plan picker row) takes `press` without doing anything, because an accessibility press does not
-reach a tap gesture; a check reaches those through the stage or the keys. `ax` reads only the
-main window, so the Settings window's identifiers are not in its tree; popovers are, under the
-element that opened them.
+first. An accessibility press does not reach a tap gesture, so a row clicked through one (a
+sidebar band, bookmark, hit or match, the out-of-range line, a Library channel, an EARLIER day, a
+plan picker row, a tick on the rail) is also an accessibility button whose action is the tap's own
+closure (`pressableGroup`, `pressable`): VoiceOver and `press` activate it as a click does.
+Popovers are in the main window's tree, under the element that opened them.
 
 ## Logs
 

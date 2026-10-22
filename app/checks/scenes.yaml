@@ -72,11 +72,9 @@ scenes:
       - {cmd: snapshot, name: after}
 
   # The window's accessibility identifiers (docs/dev/app.md, "Staged runs"), reached by press:
-  # the toolbar's switch both ways, the rail's zoom, then a band row's Channels…, whose popover
-  # the second tree holds, and the device chip. The device menu has no tree: macOS moves a popover
-  # to fit the screen the window is on, so its frames change with the display. A row of the
-  # sidebar is not pressed: its click is a tap gesture, which an accessibility press does not
-  # reach.
+  # the toolbar's switch both ways, the rail's zoom, a bookmark's row (a tap gesture, which is an
+  # accessibility button too), then a band row's Channels…, whose popover the second tree holds,
+  # and the device chip; last, Settings, opened by its key, whose AI pane the third tree holds.
   - name: identifiers
     fixtures: [{name: scene_2m}]
     clock: "19:42"
@@ -98,6 +96,9 @@ scenes:
       - {cmd: state, expect: {zoom: 2}}
       - {cmd: press, identifier: sidebar.band.2m.channels}
       - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: sidebar.bookmark.club-repeater}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater}}
       - {cmd: state, expect: {popover: "channels:2m"}}
       - {cmd: ax, name: planpicker}
       - {cmd: press, identifier: toolbar.device}

@@ -236,7 +236,9 @@ struct EarlierDay: View {
             .padding(.vertical, 10)
             .contentShape(Rectangle())
             .onTapGesture { session.toggleOpened(day: day.id) }
-            .identifiedGroup("library.day.\(ViewIdentifier.slug(day.title))")
+            .pressableGroup("library.day.\(ViewIdentifier.slug(day.title))") {
+                session.toggleOpened(day: day.id)
+            }
             .help(opened ? "Fold \(day.title)" : "Show \(day.title)'s parts")
             if opened {
                 DayBody(day: day).padding(.top, 4).padding(.bottom, 12)

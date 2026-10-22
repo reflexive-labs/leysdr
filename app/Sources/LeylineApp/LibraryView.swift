@@ -85,7 +85,7 @@ struct LibrarySidebar: View {
                             )
                             .contentShape(Rectangle())
                             .onTapGesture { choose(c) }
-                            .identifiedGroup("library.channel.\(c.id)")
+                            .pressableGroup("library.channel.\(c.id)") { choose(c) }
                         }
                         Spacer(minLength: 12)
                     }

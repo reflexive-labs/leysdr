@@ -187,7 +187,9 @@ struct BandRail: View {
                             .help(channel.name)
                             .onTapGesture { session.tune(to: channel.hz) }
                             .accessibilityIdentifier(
-                                "rail.channel.\(ViewIdentifier.slug(channel.id))")
+                                "rail.channel.\(ViewIdentifier.slug(channel.id))"
+                            )
+                            .pressable { session.tune(to: channel.hz) }
                     }
                 }
                 // The last sweep's hits inside the rail: a group's hits show on the half the
@@ -204,6 +206,7 @@ struct BandRail: View {
                         .help("\(hit.label) · \(String(format: "%.0f", hit.snrDb)) dB")
                         .onTapGesture { session.tune(hit: hit) }
                         .accessibilityIdentifier("rail.hit.\(hit.hz)")
+                        .pressable { session.tune(hit: hit) }
                 }
                 // Bookmarks in the band.
                 ForEach(session.bookmarks.list.filter { range.contains($0.hz) }) { b in

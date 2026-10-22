@@ -29,6 +29,19 @@ extension View {
     func identifiedGroup(_ identifier: String) -> some View {
         accessibilityElement(children: .contain).accessibilityIdentifier(identifier)
     }
+
+    /// `identifiedGroup` for a row whose click is a tap gesture, made a button whose press runs
+    /// `action`, the tap's own closure: an accessibility press (VoiceOver's, or the command
+    /// file's `press`) does not reach a tap gesture.
+    func pressableGroup(_ identifier: String, action: @escaping () -> Void) -> some View {
+        identifiedGroup(identifier).pressable(action: action)
+    }
+
+    /// A button to accessibility, whose press runs `action`; for a view clicked through a tap
+    /// gesture.
+    func pressable(action: @escaping () -> Void) -> some View {
+        accessibilityAddTraits(.isButton).accessibilityAction(.default, action)
+    }
 }
 
 @MainActor
