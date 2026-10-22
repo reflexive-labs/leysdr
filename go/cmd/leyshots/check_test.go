@@ -45,18 +45,50 @@ func TestComparePixels(t *testing.T) {
 	if d, err := comparePixels(base, near, nil, pixelTolerance); err != nil || d.Changed != 0 {
 		t.Errorf("within tolerance: %v, %v", d, err)
 	}
-	// An edge moved by one pixel is anti-aliasing, not a change.
+	// An anti-aliased edge (ground, one blended column, ink) moved by one pixel is not a change.
+	mid := color.RGBA{R: 0x78, G: 0x79, B: 0x7a, A: 0xff}
 	edge := func(at int) *image.RGBA {
 		img := solid(20, 10, ground)
 		for y := 0; y < 10; y++ {
-			for x := at; x < 20; x++ {
+			img.SetRGBA(at, y, mid)
+			for x := at + 1; x < 20; x++ {
 				img.SetRGBA(x, y, ink)
 			}
 		}
 		return img
 	}
 	if d, err := comparePixels(edge(10), edge(11), nil, pixelTolerance); err != nil || d.Changed != 0 {
-		t.Errorf("a one-pixel shift: %.2f %%, %v", d.Changed, err)
+		t.Errorf("a one-pixel shift of an anti-aliased edge: %.2f %%, %v", d.Changed, err)
+	}
+	// A 1 px stripe pattern, inverted, changes every pixel; a colour found next door is no excuse.
+	stripes := func(phase int) *image.RGBA {
+		img := solid(20, 10, ground)
+		for y := 0; y < 10; y++ {
+			for x := phase; x < 20; x += 2 {
+				img.SetRGBA(x, y, ink)
+			}
+		}
+		return img
+	}
+	if d, err := comparePixels(stripes(0), stripes(1), nil, pixelTolerance); err != nil || d.Changed != 100 {
+		t.Errorf("inverted stripes: %.2f %%, %v", d.Changed, err)
+	}
+	// One glyph for another: an L becomes a T in a 5 × 5 cell, and the 14 pixels that differ count.
+	glyph := func(rows ...string) *image.RGBA {
+		img := solid(20, 10, ground)
+		for y, row := range rows {
+			for x, c := range row {
+				if c == '#' {
+					img.SetRGBA(5+x, 2+y, ink)
+				}
+			}
+		}
+		return img
+	}
+	l := glyph("#....", "#....", "#....", "#....", "#####")
+	tee := glyph("#####", "..#..", "..#..", "..#..", "..#..")
+	if d, err := comparePixels(l, tee, nil, pixelTolerance); err != nil || d.Changed != 100*14.0/200 {
+		t.Errorf("a changed glyph: %.2f %%, %v", d.Changed, err)
 	}
 	// A thin line drawn on the plain ground is a change: 10 of 200 pixels.
 	line := solid(20, 10, ground)

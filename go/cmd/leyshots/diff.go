@@ -36,10 +36,11 @@ var errSizeMismatch = errors.New("size")
 
 // comparePixels compares actual with golden, skipping the masked rectangles (in actual's pixel
 // coordinates). A pixel is changed when one of its channels differs by more than tolerance and it
-// is not an anti-aliasing shift: an edge that moved by one pixel leaves each image's colour within
-// the other's 3×3 neighbourhood, so a pixel whose colour is found there in both directions is not
-// counted. A thin line drawn on a plain ground is still counted, because its colour is nowhere
-// near it in the golden.
+// is not anti-aliasing, as pixelmatch's antialiased() detects it (Vysniauskas 2009): a pixel
+// forgiven as anti-aliasing is a blend between a darker and a brighter neighbour, and that
+// neighbour sits in a flat area in both images. Text is most of what a check looks at, so a pixel
+// is not forgiven merely because its colour appears nearby: a changed glyph or an inverted 1 px
+// pattern still counts.
 func comparePixels(golden, actual image.Image, masks []image.Rectangle, tolerance int) (*pixelDiff, error) {
 	gb, ab := golden.Bounds(), actual.Bounds()
 	if gb.Dx() != ab.Dx() || gb.Dy() != ab.Dy() {
@@ -67,7 +68,7 @@ func comparePixels(golden, actual image.Image, masks []image.Rectangle, toleranc
 			}
 			compared++
 			gc := g.NRGBAAt(x, y)
-			if within(ac, gc, tolerance) || (nearby(a, x, y, gc, tolerance) && nearby(g, x, y, ac, tolerance)) {
+			if within(ac, gc, tolerance) || antialiased(g, a, x, y) || antialiased(a, g, x, y) {
 				// Faded towards white, so the red reads on the app's dark ground.
 				out.SetRGBA(x, y, color.RGBA{R: 0xc0 + ac.R/4, G: 0xc0 + ac.G/4, B: 0xc0 + ac.B/4, A: 0xff})
 				continue
@@ -108,18 +109,76 @@ func abs(v int) int {
 	return v
 }
 
-// nearby reports whether c is within tolerance of a pixel in img's 3×3 neighbourhood of x,y.
-func nearby(img *image.NRGBA, x, y int, c color.NRGBA, tolerance int) bool {
+// antialiased reports whether the pixel at x,y of img looks like anti-aliasing, as pixelmatch's
+// antialiased() decides it: among its eight neighbours there are at most two of its own
+// brightness (a pixel on the image's edge counts one already), at least one darker and one
+// brighter, and the darkest or the brightest neighbour has more than two identical neighbours of
+// its own in both img and other, so it is the flat area the blend runs into.
+func antialiased(img, other *image.NRGBA, x, y int) bool {
 	b := img.Bounds()
+	zeroes := 0
+	if x == b.Min.X || x == b.Max.X-1 || y == b.Min.Y || y == b.Max.Y-1 {
+		zeroes = 1
+	}
+	centre := brightness(img.NRGBAAt(x, y))
+	var lo, hi float64
+	var loP, hiP image.Point
 	for dy := -1; dy <= 1; dy++ {
 		for dx := -1; dx <= 1; dx++ {
 			p := image.Pt(x+dx, y+dy)
-			if p.In(b) && within(img.NRGBAAt(p.X, p.Y), c, tolerance) {
-				return true
+			if (dx == 0 && dy == 0) || !p.In(b) {
+				continue
+			}
+			switch d := centre - brightness(img.NRGBAAt(p.X, p.Y)); {
+			case d == 0:
+				zeroes++
+				if zeroes > 2 {
+					return false
+				}
+			case d < lo:
+				lo, loP = d, p
+			case d > hi:
+				hi, hiP = d, p
+			}
+		}
+	}
+	if lo == 0 || hi == 0 {
+		return false
+	}
+	return (manySiblings(img, loP) && manySiblings(other, loP)) ||
+		(manySiblings(img, hiP) && manySiblings(other, hiP))
+}
+
+// manySiblings reports whether more than two of p's neighbours are exactly its colour, a pixel on
+// the image's edge counting one already.
+func manySiblings(img *image.NRGBA, p image.Point) bool {
+	b := img.Bounds()
+	zeroes := 0
+	if p.X == b.Min.X || p.X == b.Max.X-1 || p.Y == b.Min.Y || p.Y == b.Max.Y-1 {
+		zeroes = 1
+	}
+	c := img.NRGBAAt(p.X, p.Y)
+	for dy := -1; dy <= 1; dy++ {
+		for dx := -1; dx <= 1; dx++ {
+			q := image.Pt(p.X+dx, p.Y+dy)
+			if (dx == 0 && dy == 0) || !q.In(b) {
+				continue
+			}
+			if img.NRGBAAt(q.X, q.Y) == c {
+				zeroes++
+				if zeroes > 2 {
+					return true
+				}
 			}
 		}
 	}
 	return false
+}
+
+// brightness is the pixel's luma (YIQ's Y, as pixelmatch uses), blended over white by its alpha.
+func brightness(c color.NRGBA) float64 {
+	blend := func(v uint8) float64 { return 255 + (float64(v)-255)*float64(c.A)/255 }
+	return blend(c.R)*0.29889531 + blend(c.G)*0.58662247 + blend(c.B)*0.11448223
 }
 
 // maskRects maps regions in window points (origin at the top-left corner of the window's frame,
