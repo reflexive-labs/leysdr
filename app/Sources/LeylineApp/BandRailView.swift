@@ -205,7 +205,7 @@ struct BandRail: View {
                         )
                         .help("\(hit.label) · \(String(format: "%.0f", hit.snrDb)) dB")
                         .onTapGesture { session.tune(hit: hit) }
-                        .accessibilityIdentifier("rail.hit.\(hit.hz)")
+                        .accessibilityIdentifier("rail.hit.\(ViewIdentifier.slug(hit.label))")
                         .pressable { session.tune(hit: hit) }
                 }
                 // Bookmarks in the band.
