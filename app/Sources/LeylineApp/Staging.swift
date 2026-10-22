@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// A staged run for the site's screenshots (docs/dev/app.md, "Staged runs"; docs/plans/
-// site-shots.md, "App shots"). `LEYLINE_APP_STAGE` names a stage file (`ShotStage`); once the
-// daemon is live the window is set to it and, `settle` seconds later, measured into
-// `regions.json` and drawn into `window.png` beside it for `leyshots` to crop by. The stage sets
-// only what the window's own controls set: the place, the inspector, an opened sidebar row, a
-// bookmark tuned the way a click on its row tunes it, a Library part selected, and a CHIRP file
-// imported through the same call File ▸ Import CHIRP… makes. The radio is the daemon's as in any other run (invariant 7), and a
-// staged session writes nothing to UserDefaults (`AppSession.staging`), so a shot leaves the
-// person's last band, place and inspector setting as they were.
+// A staged run, for the site's screenshots and for check runs (docs/dev/app.md, "Staged runs";
+// docs/plans/site-shots.md, "App shots"; docs/plans/mac-loop.md). `LEYLINE_APP_STAGE` names a
+// stage file (`ShotStage`); once the daemon is live the window is set to it and, `settle` seconds
+// later, measured into `regions.json` and drawn into `window.png` beside it for `leyshots` to crop
+// by. `LEYLINE_APP_CONTROL` names a directory of commands the run then takes (`Control.swift`).
+// The stage sets only what the window's own controls set: the place, the inspector, an opened
+// sidebar row, a bookmark tuned the way a click on its row tunes it, a Library part selected, and
+// a CHIRP file imported through the same call File ▸ Import CHIRP… makes. The radio is the
+// daemon's as in any other run (invariant 7), and a staged session writes nothing to UserDefaults
+// (`AppSession.staging`), so a shot leaves the person's last band, place and inspector setting as
+// they were. A staged run draws the same frame twice: no animation, a caret that does not blink
+// (`DeterministicFrames`).
 //
 // Each region is measured by a `WindowFrameProbe` under its view, the measurement the splash's
 // flight already relies on, in the window's coordinates, which run up from the bottom-left corner
@@ -45,26 +48,43 @@ final class Staging {
     /// A staged part plays this long before it is paused, so the player has started.
     static let playPartSeconds: Double = 0.4
 
-    let stageURL: URL
-    /// nil when the file could not be read or was refused; the run is still staged, so nothing
-    /// is written to UserDefaults, but nothing is applied and no regions are written.
+    /// The stage file, and the stage it held; both nil with only a control directory. The
+    /// stage is nil too when the file could not be read or was refused: the run is still
+    /// staged, so nothing is written to UserDefaults, but nothing is applied and no regions are
+    /// written.
+    let stageURL: URL?
     let stage: ShotStage?
+    /// The command file's directory (`AppControl`), or nil.
+    let controlURL: URL?
     private var anchors: [ShotRegion: WindowFrameAnchor] = [:]
     private var started = false
+    /// What the stage being applied did, as its log lines say it: a `stage` command's result.
+    private var applied: [String] = []
 
-    /// The staged run `LEYLINE_APP_STAGE` asks for, or nil with the variable unset.
+    /// The staged run `LEYLINE_APP_STAGE` and `LEYLINE_APP_CONTROL` ask for, or nil with both
+    /// unset.
     static func fromEnvironment() -> Staging? {
-        ShotStage.path().map { Staging(path: $0) }
+        let stage = ShotStage.path()
+        let control = AppControl.directory()
+        guard stage != nil || control != nil else { return nil }
+        return Staging(stagePath: stage, controlPath: control)
     }
 
-    init(path: String) {
-        stageURL = URL(fileURLWithPath: path)
+    init(stagePath: String?, controlPath: String?) {
+        controlURL = controlPath.map { URL(fileURLWithPath: $0) }
+        guard let stagePath else {
+            stageURL = nil
+            stage = nil
+            log("stage", "staged by the command file in \(controlPath ?? "")")
+            return
+        }
+        stageURL = URL(fileURLWithPath: stagePath)
         do {
-            stage = try ShotStage.read(at: stageURL)
-            log("stage", "staged from \(path)")
+            stage = try ShotStage.read(at: URL(fileURLWithPath: stagePath))
+            log("stage", "staged from \(stagePath)")
         } catch {
             stage = nil
-            log("stage", "stage file \(path) not used: \(error)")
+            log("stage", "stage file \(stagePath) not used: \(error)")
         }
     }
 
@@ -77,34 +97,56 @@ final class Staging {
         return a
     }
 
-    private var window: NSWindow? { anchors[.window]?.view?.window }
+    var window: NSWindow? { anchors[.window]?.view?.window }
 
-    /// Applies the stage once and writes the regions. Called from the first window's task; a
-    /// second window's call returns at once.
+    /// Applies the stage once, writes the regions and the picture, then takes commands when
+    /// the run has a control directory. Called from the first window's task; a second window's
+    /// call returns at once.
     func run(_ session: AppSession) async {
-        guard !started, let stage else { return }
+        guard !started else { return }
         started = true
         if await until(seconds: Self.confirmSeconds, { self.window != nil }), let window {
             DeterministicFrames.drawAsKey(window)
         }
-        if let size = stage.window { await sizeWindow(size) }
-        guard await until(seconds: Self.liveSeconds, { session.isLive }) else {
-            log(
-                "stage",
-                "the daemon was not live within \(Int(Self.liveSeconds)) s; nothing applied, no regions written"
-            )
-            return
-        }
-        if !(await until(seconds: Self.channelSeconds, { session.channel != nil })) {
+        if let size = stage?.window { await sizeWindow(size) }
+        let live = await until(seconds: Self.liveSeconds) { session.isLive }
+        if live, !(await until(seconds: Self.channelSeconds, { session.channel != nil })) {
             log("stage", "no channel within \(Int(Self.channelSeconds)) s; applying anyway")
         }
+        let notLive = "the daemon was not live within \(Int(Self.liveSeconds)) s"
+        if let stage, let stageURL {
+            if live {
+                await apply(stage, session)
+                await front()
+                writeRegions(besideStage: stageURL)
+            } else {
+                log("stage", "\(notLive); nothing applied, no regions written")
+            }
+        }
+        guard let controlURL else { return }
+        await front()
+        await ControlChannel(directory: controlURL, staging: self, session: session)
+            .run(problem: live ? nil : notLive)
+    }
+
+    /// A `stage` command: the stage applied to the running window, and what it did.
+    func applyCommand(_ stage: ShotStage, _ session: AppSession) async -> [String] {
+        if let size = stage.window { await sizeWindow(size) }
+        await apply(stage, session)
+        return applied
+    }
+
+    /// Sets what the stage sets, in the order of the table in docs/dev/app.md, "Staged runs",
+    /// then lets the window draw for `settle` seconds (and, with `on_air`, waits for an over).
+    private func apply(_ stage: ShotStage, _ session: AppSession) async {
+        applied = []
         if let shown = stage.inspector {
             session.inspectorShown = shown
-            log("stage", shown ? "inspector shown" : "inspector hidden")
+            note(shown ? "inspector shown" : "inspector hidden")
         }
         if let name = stage.selectBookmark { await tune(bookmark: name, session) }
         if let path = stage.importCHIRP {
-            log("stage", "import CHIRP \(path)")
+            note("import CHIRP \(path)")
             session.importCHIRP(url: URL(fileURLWithPath: path))
         }
         if let id = stage.expandedBand {
@@ -113,24 +155,51 @@ final class Staging {
         }
         if let z = stage.zoom {
             session.zoom = z
-            log("stage", "zoom \(z)")
+            note("zoom \(z)")
         }
         if let p = stage.place, let place = WindowPlace(rawValue: p.rawValue) {
             session.place = place
+            note("place \(p.rawValue)")
         }
-        if let index = stage.selectPart { await select(part: index, session) }
-        log("stage", "applied; regions in \(stage.settle) s")
+        if let index = stage.selectPart {
+            await select(part: index, play: stage.playPart, session)
+        }
+        if let shown = stage.assistant {
+            session.assistantShown = shown
+            note(shown ? "assistant shown" : "assistant hidden")
+        }
+        if let id = stage.channelsPicker { openPicker(row: id, session) }
+        log("stage", "applied; settling \(stage.settle) s")
         try? await Task.sleep(for: .seconds(stage.settle))
         if stage.onAir { await waitOnAir(session) }
-        // A shot shows no text cursor: the sidebar's search field takes focus at launch.
+        // A shot shows no text cursor: the sidebar's search field takes focus at launch. A
+        // stage that asks for the filter's focus gives it last, so nothing takes it back.
         window?.makeFirstResponder(nil)
-        // Stage Manager shrinks a window that is not in front into its strip, and
-        // `screencapture -l` takes it as that tilted thumbnail; the window comes forward first.
+        if stage.focusFilter {
+            session.goTo()
+            note("filter focused")
+        }
+    }
+
+    /// Stage Manager shrinks a window that is not in front into its strip, and
+    /// `screencapture -l` takes it as that tilted thumbnail; the window comes forward first.
+    /// A run with a command file takes its own picture, which needs neither, so it leaves the
+    /// focus with the person at the Mac and only makes the window key within the app.
+    private func front() async {
+        guard controlURL == nil else {
+            window?.makeKey()
+            return
+        }
         NSApp.activate(ignoringOtherApps: true)
         window?.orderFrontRegardless()
         window?.makeKey()
         try? await Task.sleep(for: .seconds(Self.frontSeconds))
-        writeRegions()
+    }
+
+    /// Logs a step of the stage and keeps it for a `stage` command's answer.
+    private func note(_ step: String) {
+        applied.append(step)
+        log("stage", step)
     }
 
     /// Presses the row's Scan band as its click does and waits for the sweep to end.
@@ -139,8 +208,7 @@ final class Staging {
         session.scanBand(row: row)
         _ = await until(seconds: Self.confirmSeconds) { session.sweeping }
         let done = await until(seconds: Self.sweepSeconds) { !session.sweeping }
-        log(
-            "stage",
+        note(
             done
                 ? "scanned \(row.name)"
                 : "the scan of \(row.name) did not end within \(Int(Self.sweepSeconds)) s")
@@ -160,11 +228,11 @@ final class Staging {
             guard await until(seconds: left, { session.transmissions?.onAir != nil }) else { break }
             try? await Task.sleep(for: .seconds(Self.onAirFillSeconds))
             if session.transmissions?.onAir != nil {
-                log("stage", "on the air")
+                note("on the air")
                 return
             }
         }
-        log("stage", "no over held the squelch open within \(Int(Self.onAirSeconds)) s")
+        note("no over held the squelch open within \(Int(Self.onAirSeconds)) s")
     }
 
     /// The window's frame, toolbar included, at the stage's size with its top-left corner kept.
@@ -184,8 +252,7 @@ final class Staging {
         window.setFrame(
             NSRect(x: f.minX, y: f.maxY - size.height, width: size.width, height: size.height),
             display: true)
-        log(
-            "stage",
+        note(
             "window \(window.windowNumber) asked for \(Int(size.width))×\(Int(size.height)) pt, is \(Int(window.frame.width))×\(Int(window.frame.height)) pt"
         )
     }
@@ -194,13 +261,12 @@ final class Staging {
     /// it (`AppSession.tune(bookmark:)`).
     private func tune(bookmark name: String, _ session: AppSession) async {
         guard let b = session.bookmarks.list.first(where: { $0.name == name }) else {
-            log("stage", "no bookmark named \(name); nothing tuned")
+            note("no bookmark named \(name); nothing tuned")
             return
         }
         session.tune(bookmark: b)
         let tuned = await until(seconds: Self.confirmSeconds) { session.tunedHz == b.hz }
-        log(
-            "stage",
+        note(
             tuned
                 ? "bookmark \(name) tuned at \(b.hz) Hz"
                 : "bookmark \(name) at \(b.hz) Hz not confirmed within \(Int(Self.confirmSeconds)) s"
@@ -210,17 +276,27 @@ final class Staging {
     /// Opens a sidebar row as its chevron does. The tuned row is open already.
     private func open(row id: String, _ session: AppSession) {
         guard let row = session.sidebarRows.first(where: { $0.id == id }) else {
-            log("stage", "no sidebar row \(id); none opened")
+            note("no sidebar row \(id); none opened")
             return
         }
         if !session.isExpanded(row) { session.toggleExpanded(row) }
-        log("stage", "row \(row.name) open")
+        note("row \(row.name) open")
+    }
+
+    /// Opens a sidebar row's Channels… popover, as its button does.
+    private func openPicker(row id: String, _ session: AppSession) {
+        guard let row = session.sidebarRows.first(where: { $0.id == id }) else {
+            note("no sidebar row \(id); no channels opened")
+            return
+        }
+        session.pickerBand = row
+        note("channels of \(row.name) open")
     }
 
     /// Selects a part of the selected channel's page, counted down the recent days' rows as the
     /// page draws them. Without `play_part` it does not play: a row's click would play it
     /// through the speakers.
-    private func select(part index: Int, _ session: AppSession) async {
+    private func select(part index: Int, play: Bool, _ session: AppSession) async {
         var uri: String?
         _ = await until(seconds: Self.librarySeconds) {
             guard let c = session.selectedChannel else { return false }
@@ -229,31 +305,27 @@ final class Staging {
             return uri != nil
         }
         guard let uri else {
-            log(
-                "stage",
+            note(
                 "the page has no part \(index) within \(Int(Self.librarySeconds)) s; none selected")
             return
         }
         session.selectedPartURI = uri
-        log("stage", "part \(index) selected: \(uri)")
-        guard stage?.playPart == true else { return }
+        note("part \(index) selected: \(uri)")
+        guard play else { return }
         // Played and paused at once, so the row draws as the current one with a fraction of a
         // second of audio; the pause leaves the player where it stopped.
         await session.clickRow(uri)
         try? await Task.sleep(for: .seconds(Self.playPartSeconds))
         await session.pausePlayback(true)
-        log("stage", "part \(index) played and paused")
+        note("part \(index) played and paused")
     }
 
-    /// `regions.json`: the whole frame as `window`, the strip above the content layout rect as
-    /// `toolbar`, and each probed region whose view is in this window, clipped to the frame. A
-    /// region not on screen (the inspector closed, the Library's regions in the Radio) is left
-    /// out.
-    private func writeRegions() {
-        guard let window else {
-            log("stage", "no window to measure; no regions written")
-            return
-        }
+    /// The regions as `regions.json` gives them: the whole frame as `window`, the strip above the
+    /// content layout rect as `toolbar`, and each probed region whose view is in this window,
+    /// clipped to the frame. A region not on screen (the inspector closed, the Library's regions
+    /// in the Radio) is left out. nil before the window exists.
+    func measure() -> ShotRegions? {
+        guard let window else { return nil }
         let size = window.frame.size
         let height = Double(size.height)
         let bounds = CGRect(origin: .zero, size: size)
@@ -269,7 +341,18 @@ final class Staging {
             regions[region] = ShotRegions.Rect(
                 windowRect: r.intersection(bounds), windowHeight: height)
         }
-        // The picture first: `leyshots` takes the regions file as the sign that both are there.
+        return ShotRegions(
+            windowNumber: window.windowNumber, scale: Double(window.backingScaleFactor),
+            regions: regions)
+    }
+
+    /// `window.png` and `regions.json` beside the stage file, the picture first: `leyshots`
+    /// takes the regions file as the sign that both are there.
+    private func writeRegions(besideStage stageURL: URL) {
+        guard let window, let regions = measure() else {
+            log("stage", "no window to measure; no regions written")
+            return
+        }
         let picture = ShotStage.pictureURL(besideStage: stageURL)
         if let png = WindowPicture.png(of: window) {
             do {
@@ -283,11 +366,8 @@ final class Staging {
         }
         let url = ShotStage.regionsURL(besideStage: stageURL)
         do {
-            try ShotRegions(
-                windowNumber: window.windowNumber, scale: Double(window.backingScaleFactor),
-                regions: regions
-            ).write(to: url)
-            let names = regions.keys.map(\.rawValue).sorted().joined(separator: ", ")
+            try regions.write(to: url)
+            let names = regions.regions.keys.map(\.rawValue).sorted().joined(separator: ", ")
             log("stage", "regions written to \(url.path): \(names)")
         } catch {
             log("stage", "regions not written to \(url.path): \(error)")

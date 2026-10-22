@@ -21,7 +21,7 @@ struct MainWindow: View {
     /// clears it; a window opened later starts with the splash `done`. A launch by URL would skip
     /// it too (the spec's clause), but the app opens no URLs yet. A staged run
     /// (`Staging.swift`) has no splash, so a screenshot never catches it.
-    private static var splashPending = ShotStage.path() == nil
+    private static var splashPending = !AppControl.isStaged()
     @State private var splash: SplashPhase = MainWindow.splashPending ? .before : .done
     @State private var flight: SplashFlight?
     @State private var splashMark = WindowFrameAnchor()
