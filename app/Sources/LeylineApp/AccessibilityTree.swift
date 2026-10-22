@@ -173,7 +173,9 @@ enum AccessibilityTree {
                 else { return nil }
                 return (w as! AXUIElement)
             }
-            log("control", "accessibility: no windows listed; \(windows.count) from main and focused")
+            log(
+                "control",
+                "accessibility: no windows listed; \(windows.count) from main and focused")
         }
         let want = window.frame.size
         let match = windows.first { w in
