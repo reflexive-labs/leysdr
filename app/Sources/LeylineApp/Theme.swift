@@ -212,6 +212,13 @@ enum Theme {
         static let readingWordGap: CGFloat = 10
         /// Wide enough for `+1.2 kHz` in `Font.value`, the longest number a reading prints.
         static let readingNumberWidth: CGFloat = 54
+        /// The heard tone beside a bookmark's Tone field, wide enough for `heard DCS 023N` in
+        /// `Font.valueSmall`, and that wide with no tone heard, so the field does not change width
+        /// when the first one is.
+        static let heardToneWidth: CGFloat = 104
+        /// The day over the transmissions log, wide enough for `yesterday` and `Wednesday` in
+        /// `Font.columnHead`.
+        static let logDayWidth: CGFloat = 64
         /// A meter's track (`MeterTrack`), and the height of its ticks and needle, which is the
         /// meter's own height.
         static let meterTrackHeight: CGFloat = 6

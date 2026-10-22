@@ -120,7 +120,7 @@ field, hover a point on the rail or the spectrum, open the assistant panel, open
 | `stage` | `stage`: a `ShotStage` object (`settle` applies; `window` resizes) | `result`: what was applied, as the log lines say it |
 | `snapshot` | `settle` (seconds, default 0) | `out/<id>.png` at the backing scale; `result`: `{"scale":2,"width_pt":…,"height_pt":…,"regions":{…}}`, the regions as `regions.json` gives them |
 | `state` | | `result`: the view state (place, selection, tuned Hz and mode, channel id, open sidebar rows, inspector shown, zoom, focused control, notices on screen, popover open, the assistant panel open) |
-| `ax` | | `out/<id>.ax.txt` (ML-5's tree); `result` empty |
+| `ax` | | `out/<id>.ax.txt` (ML-5's tree, values quoted with `\`, `"` and newlines escaped); `result`: as `snapshot`'s (changed 2026-10-21, so the checker can mask live regions in the tree) |
 | `key` | `keys`: `"cmd+g"`, `"escape"`, `"down"`, `"return"` | sent to the key window as key down and up |
 | `type` | `text` | one key event per character to the key window |
 | `press` | `identifier` (ML-5) | `accessibilityPerformPress` on the element with that identifier |
@@ -142,7 +142,11 @@ to take). For each scene and size it starts the daemon and the app (`open -g -n`
 focus), runs the commands, collects the pictures, state and trees into
 `tmp/checks/<scene>/<W>x<H>/`, compares each picture and tree with its golden and each `state`
 with its `expect`, and prints one line per artefact or expectation: `ok`, `diff 2.4 %`, `new`,
-`recorded`, `fail` or `error`, and the path. The pixel diff is Go (`image` is already in
+`recorded`, `fail` or `error`, and the path. A snapshot or an `ax` command takes `mask`, the
+regions left out of the comparison, by default `spectrum`, `waterfall`, `readings` (the
+inspector's figures and audio ladder), `transmissions` (its log's rows), `log_day` (the day over
+them) and `heard` (the tone last heard), because each changes between two runs of one scene; in a tree, an element whose frame lies inside a masked region has
+its value and frame replaced by `<masked>`, and a run of identical masked lines becomes one. The pixel diff is Go (`image` is already in
 `leyshots`): per-channel tolerance, an anti-aliasing allowance, a red diff image. `make app-check`
 runs it; `ONLY=` and `RECORD=1` as `make shots` has them. Both `check` and the site's `run` launch a copy
 of the bundle under `com.leysdr.app.staged` (`tmp/staged-app/`), because a staged run under the

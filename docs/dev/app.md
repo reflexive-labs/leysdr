@@ -789,9 +789,11 @@ scene differ only where the radio moves them. SwiftUI's animations are disabled 
 at the window's root; window and scroll animations are off and the text caret does not blink,
 through registration defaults that are never written to disk; and the window draws as the key
 window whatever has the focus, so its traffic lights are coloured even while the person at the
-Mac works in another app. What still moves is the spectrum, the waterfall (which runs on; a check
-masks both), and the inspector's live readings: the tuning and deviation figures and the audio
-ladder.
+Mac works in another app. What still moves is the spectrum, the waterfall (which runs on), the inspector's live readings
+(the signal, tuning and deviation figures, the time on the air and the audio ladder) and its
+log's rows and their day, and the tone last heard; they are the regions `spectrum`, `waterfall`,
+`readings`, `transmissions`, `log_day` and `heard`, and a check masks them all. The heard tone and
+the day are laid out at their full width when blank, so their first appearance moves nothing.
 
 `settle` seconds after the stage is applied (and, with `on_air`, once an over is on the air), the
 app clears the text focus. Without a command file it then brings the window to the front and
@@ -820,7 +822,11 @@ applied.
 window's backing scale, the pixels per point in `window.png`. Each region is a rectangle
 in points from the top-left corner of the window's frame, toolbar included, because
 `screencapture -l` captures that whole frame. The regions are `window`, `toolbar`, `sidebar`,
-`inspector`, `spectrum`, `waterfall`, `notice` (the one-line notice over the bottom of the waterfall, while one shows), `library` (the Library's whole body) and `parts` (the Library's page of the selected channel). In the Library, `sidebar` and
+`inspector`, `spectrum`, `waterfall`, `notice` (the one-line notice over the bottom of the waterfall, while one shows), `library` (the Library's whole body), `parts` (the Library's page of the selected channel),
+`readings` (the inspector's Signal, Tuning, Deviation and On air rows and its audio ladder),
+`transmissions` (the rows of the inspector's log, which gain one whenever an over ends),
+`log_day` (the day over those rows, blank until the first) and `heard` (the tone the channel last
+heard, beside the bookmark's Tone, which shows once one has been measured). In the Library, `sidebar` and
 `inspector` are the Library's own. A region that is not on screen is left out of the file. Each
 region except `window` and `toolbar` is measured by a `WindowFrameProbe` under its view. The
 toolbar is hosted outside the content's view tree, so its region is the strip above the window's
@@ -859,7 +865,7 @@ and the next line still runs; a line with no `id` has no answer file, so it is o
 | `stage` | `stage`: a stage object as above (`settle` is slept, `window` resizes) | `result.applied`: the steps, as the log lines give them |
 | `snapshot` | `settle`: seconds to wait first, default 0 | `out/<id>.png`; `result`: `scale`, `width_pt`, `height_pt` and `regions`, as `regions.json` gives them |
 | `state` | | `result`: `place`, `tuned_hz`, `mode`, `bandwidth_hz`, `channel_id`, `capture_id`, `band`, `bookmark`, `open_rows`, `filter_query`, `inspector_shown`, `assistant_shown`, `zoom`, `focused` (the focused control's identifier, else its role and label), `notices` (every message the window shows), `popover` (`channels:<row>`, `device_menu` or empty), `selected_recording_channel`, `selected_part`; every key is present, `null` when it has no value |
-| `ax` | | `out/<id>.ax.txt`: the window's accessibility tree, one element per line indented two spaces a level: role, `id=` and the identifier when there is one, the label, `value=` when there is one, the frame in points from the window's top-left corner, `enabled` or `disabled` |
+| `ax` | | `out/<id>.ax.txt`: the window's accessibility tree, one element per line indented two spaces a level: role, `id=` and the identifier when there is one, the label, `value=` when there is one (quoted, with `\`, `"` and newlines escaped), the frame in points from the window's top-left corner as the regions are measured, `enabled` or `disabled`; `result`: as `snapshot`'s, so a reader can tell which elements lie in which region |
 | `key` | `keys`: `cmd+g`, `shift+cmd+left`, `escape`, `return`, `down`… | a key down and up |
 | `type` | `text` | a key down and up for each character |
 | `press` | `identifier` | AXPress on the first element with that accessibility identifier; `ok:false` when none has it |
@@ -874,8 +880,12 @@ another app. A modifier is `cmd`, `shift`, `opt` or `ctrl`; a key is one charact
 the focus has moved it before the next command. A command-file run never activates the app or
 brings its window forward, so the person at the Mac keeps the focus; the window is made key
 within the app, which is where a field's focus lives. The tree comes from the accessibility API
-on the app's own process, which SwiftUI answers in full and which needs no Accessibility
-permission.
+on the app's own process, which SwiftUI answers in full only when the process is allowed to use
+that API: the bundle `leyshots` launches (`tmp/staged-app/Leyline.app`, under
+`com.leysdr.app.staged`) is added once in System Settings > Privacy & Security > Accessibility.
+Its designated requirement is its identifier, so the permission holds for every later copy. A
+process without it is answered with the application's element wherever a window should be, and
+`ax` answers `ok:false` saying so.
 
 ## Logs
 

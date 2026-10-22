@@ -190,6 +190,18 @@ public enum ShotRegion: String, Sendable, CaseIterable, Codable {
     case notice
     /// The Library's page of the selected channel: its day strip and its parts.
     case parts
+    /// The inspector's live readings: the Signal, Tuning, Deviation and On air rows and the audio
+    /// ladder, which change from one frame to the next while the radio plays. A check masks it.
+    case readings
+    /// The rows of the inspector's transmissions log, which gain a row whenever an over starts or
+    /// ends. A check masks it.
+    case transmissions
+    /// The tone the tuned channel last heard, beside the bookmark's Tone (`heard PL 100.0`),
+    /// which appears once the decoder has measured one. A check masks it.
+    case heard
+    /// The day over the transmissions log (`today`), blank until the first over. A check masks
+    /// it.
+    case logDay = "log_day"
 }
 
 /// `regions.json`: the window's number for `screencapture -l`, its backing scale (pixels per

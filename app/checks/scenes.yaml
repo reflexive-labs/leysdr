@@ -14,11 +14,14 @@
 #   {cmd: stage, stage: {...}}            a stage applied to the running window (no window)
 #   {cmd: snapshot, name: N}              the window's picture, compared with the golden N.png;
 #                                         settle waits first; mask lists regions left out of the
-#                                         diff (default [spectrum, waterfall], whose live pixels
-#                                         never repeat; [] compares everything)
+#                                         diff (default [spectrum, waterfall, readings,
+#                                         transmissions, log_day, heard], which change between
+#                                         runs; [] compares everything)
 #   {cmd: state, expect: {path: value}}   the view state; each dotted path into the answer's
 #                                         result must hold the value, or the line fails
-#   {cmd: ax, name: N}                    the accessibility tree, compared as text with N.ax.txt
+#   {cmd: ax, name: N}                    the accessibility tree, compared as text with N.ax.txt;
+#                                         mask as snapshot's: an element inside a masked region
+#                                         reads value=<masked> (<masked>) on both sides
 #   {cmd: key, keys: cmd+g}               a key, as the protocol names keys
 #   {cmd: type, text: wx3}                one key event per character
 #   {cmd: press, identifier: I}           presses the element with that accessibility identifier

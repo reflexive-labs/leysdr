@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -484,7 +485,14 @@ func (c *checker) handle(ctx context.Context, s *CheckScene, size Size, dir stri
 			fail("error", err.Error())
 			return
 		}
-		r := c.compareAX(ctx, s, size, cmd, actual)
+		var res snapshotResult
+		if len(a.Result) > 0 {
+			if err := json.Unmarshal(a.Result, &res); err != nil {
+				fail("error", "the ax answer's result: "+err.Error())
+				return
+			}
+		}
+		r := c.compareAX(ctx, s, size, cmd, actual, res)
 		r.Scene, r.Size, r.Item = base.Scene, base.Size, base.Item
 		c.add(r)
 	case "state":
@@ -529,6 +537,32 @@ func (c *checker) record(actual, golden string) checkResult {
 	return checkResult{Status: "recorded", Path: c.rel(golden)}
 }
 
+// maskRegions is the rectangles, in points from the window's top-left corner, of the regions the
+// command masks: its own mask, else defaultMask. A region named in the command's own mask that
+// the app did not report is an error; one of defaultMask's is skipped.
+func maskRegions(cmd *AppCommand, res snapshotResult) ([]Rect, error) {
+	regions, err := res.regions()
+	if err != nil {
+		return nil, err
+	}
+	names, explicit := cmd.Mask, true
+	if names == nil {
+		names, explicit = defaultMask, false
+	}
+	var rects []Rect
+	for _, n := range names {
+		r, ok := regions[n]
+		if !ok {
+			if explicit {
+				return nil, fmt.Errorf("the app reported no %s region to mask", n)
+			}
+			continue
+		}
+		rects = append(rects, r)
+	}
+	return rects, nil
+}
+
 // compareSnapshot records or compares one picture.
 func (c *checker) compareSnapshot(s *CheckScene, size Size, cmd *AppCommand, actual string, res snapshotResult) checkResult {
 	golden := filepath.Join(goldenDir(c.o.goldens, c.o.release, s.Name, size), cmd.Name+".png")
@@ -546,24 +580,9 @@ func (c *checker) compareSnapshot(s *CheckScene, size Size, cmd *AppCommand, act
 	if err != nil {
 		return checkResult{Status: "error", Detail: err.Error()}
 	}
-	regions, err := res.regions()
+	rects, err := maskRegions(cmd, res)
 	if err != nil {
 		return checkResult{Status: "error", Detail: err.Error()}
-	}
-	names, explicit := cmd.Mask, true
-	if names == nil {
-		names, explicit = defaultMask, false
-	}
-	var rects []Rect
-	for _, n := range names {
-		r, ok := regions[n]
-		if !ok {
-			if explicit {
-				return checkResult{Status: "error", Detail: fmt.Sprintf("the app reported no %s region to mask", n)}
-			}
-			continue
-		}
-		rects = append(rects, r)
 	}
 	scale := res.Scale
 	if scale <= 0 {
@@ -590,8 +609,9 @@ func (c *checker) compareSnapshot(s *CheckScene, size Size, cmd *AppCommand, act
 	return r
 }
 
-// compareAX records or compares one accessibility tree as text.
-func (c *checker) compareAX(ctx context.Context, s *CheckScene, size Size, cmd *AppCommand, actual string) checkResult {
+// compareAX records or compares one accessibility tree as text. The golden is kept whole; the
+// comparison masks both trees with this run's regions (maskAX) and diffs what is left.
+func (c *checker) compareAX(ctx context.Context, s *CheckScene, size Size, cmd *AppCommand, actual string, res snapshotResult) checkResult {
 	golden := filepath.Join(goldenDir(c.o.goldens, c.o.release, s.Name, size), cmd.Name+".ax.txt")
 	if c.o.record {
 		return c.record(actual, golden)
@@ -599,7 +619,22 @@ func (c *checker) compareAX(ctx context.Context, s *CheckScene, size Size, cmd *
 	if _, err := os.Stat(golden); errors.Is(err, os.ErrNotExist) {
 		return checkResult{Status: "new", Path: c.rel(actual)}
 	}
-	diff, err := unifiedDiff(ctx, golden, actual)
+	rects, err := maskRegions(cmd, res)
+	if err != nil {
+		return checkResult{Status: "error", Detail: err.Error()}
+	}
+	base := strings.TrimSuffix(actual, ".ax.txt")
+	masked := map[string]string{golden: base + ".golden.masked.ax.txt", actual: base + ".masked.ax.txt"}
+	for src, dst := range masked {
+		b, err := os.ReadFile(src)
+		if err != nil {
+			return checkResult{Status: "error", Detail: err.Error()}
+		}
+		if err := os.WriteFile(dst, []byte(maskAX(string(b), rects)), 0o644); err != nil {
+			return checkResult{Status: "error", Detail: err.Error()}
+		}
+	}
+	diff, err := unifiedDiff(ctx, masked[golden], masked[actual])
 	if err != nil {
 		return checkResult{Status: "error", Detail: err.Error()}
 	}
@@ -611,6 +646,57 @@ func (c *checker) compareAX(ctx context.Context, s *CheckScene, size Size, cmd *
 		return checkResult{Status: "error", Detail: err.Error()}
 	}
 	return checkResult{Status: "fail", Detail: "tree differs", Path: c.rel(path)}
+}
+
+// axFrame matches the end of an ax line: its value, when it has one, its frame and its state,
+// ` value="+21 Hz" (1383,270 41×14) enabled`. The frame is in points from the window's top-left
+// corner, as the regions are. A value's quotes and backslashes are escaped, so the value ends at
+// the first bare quote.
+var axFrame = regexp.MustCompile(`(?: value="(?:[^"\\]|\\.)*")? \((-?[0-9.]+),(-?[0-9.]+) ([0-9.]+)×([0-9.]+)\)( (?:enabled|disabled)\n?)$`)
+
+// maskAX hides what a live region shows in an ax tree: an element whose frame lies inside one of
+// rects (to within a point) has its value and its frame replaced by <masked>, and a masked line
+// the same as the one before it is dropped, so a log that gained a row or a figure that moved
+// reads the same. Lines without a frame are kept as they are.
+func maskAX(tree string, rects []Rect) string {
+	var out []string
+	prev := ""
+	for _, line := range strings.SplitAfter(tree, "\n") {
+		if line == "" {
+			continue
+		}
+		m := axFrame.FindStringSubmatchIndex(line)
+		if m == nil || len(rects) == 0 {
+			out, prev = append(out, line), ""
+			continue
+		}
+		var f [4]float64
+		for i := range f {
+			f[i], _ = strconv.ParseFloat(line[m[2+2*i]:m[3+2*i]], 64)
+		}
+		if !insideAny(Rect{X: f[0], Y: f[1], Width: f[2], Height: f[3]}, rects) {
+			out, prev = append(out, line), ""
+			continue
+		}
+		hidden := line[:m[0]] + " value=<masked> (<masked>)" + line[m[10]:]
+		if hidden == prev {
+			continue
+		}
+		out, prev = append(out, hidden), hidden
+	}
+	return strings.Join(out, "")
+}
+
+// insideAny reports whether r lies inside one of rects, to within a point at each edge.
+func insideAny(r Rect, rects []Rect) bool {
+	const slack = 1
+	for _, m := range rects {
+		if r.X >= m.X-slack && r.Y >= m.Y-slack &&
+			r.X+r.Width <= m.X+m.Width+slack && r.Y+r.Height <= m.Y+m.Height+slack {
+			return true
+		}
+	}
+	return false
 }
 
 // checkExpect checks each expected path in a state result, in path order. Item is the path.

@@ -51,9 +51,12 @@ struct ChannelPanel: View {
             Rectangle().fill(Theme.hairline).frame(height: 1)
             IdentityView()
             Rectangle().fill(Theme.hairline).frame(height: 1)
-            ReadingsView()
-            Rectangle().fill(Theme.hairline).frame(height: 1)
-            AudioLevelsView()
+            VStack(alignment: .leading, spacing: 0) {
+                ReadingsView()
+                Rectangle().fill(Theme.hairline).frame(height: 1)
+                AudioLevelsView()
+            }
+            .stageRegion(.readings)
             Rectangle().fill(Theme.hairline).frame(height: 1)
             // The log takes the height the other regions leave, and fills it with rows.
             RecentLog()
@@ -330,10 +333,13 @@ struct BookmarkFieldsView: View {
                     saved: bookmark.tone, placeholder: "100.0 or D023N",
                     onCommit: { session.editTunedBookmark(tone: $0) },
                     onRevert: { session.clearToneError() })
-                if let heard = session.heardTone {
-                    Text("heard \(heard.words)").font(Theme.Font.valueSmall)
-                        .foregroundStyle(Theme.inkTertiary).lineLimit(1)
-                }
+                // Laid out with or without a tone, so the first tone heard neither moves the
+                // field nor pushes the panel below it down a point.
+                Text(session.heardTone.map { "heard \($0.words)" } ?? " ")
+                    .font(Theme.Font.valueSmall)
+                    .foregroundStyle(Theme.inkTertiary).lineLimit(1)
+                    .frame(width: Theme.Layout.heardToneWidth, alignment: .trailing)
+                    .stageRegion(.heard)
             }
             if let sentence = session.toneError {
                 Text(sentence).font(Theme.Font.aside).foregroundStyle(Theme.caution)

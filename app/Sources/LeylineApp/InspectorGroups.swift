@@ -64,50 +64,63 @@ struct RecentLog: View {
             HStack(alignment: .firstTextBaseline) {
                 SectionHeader(text: "Transmissions")
                 Spacer(minLength: 8)
-                Text(dayWords(log)).font(Theme.Font.columnHead).foregroundStyle(Theme.inkFaint)
-                    .lineLimit(1)
+                // Blank until the first over, so a check masks it; laid out at a weekday's
+                // width either way, so the mask covers whichever word a run shows.
+                let day = dayWords(log)
+                Text(day.isEmpty ? " " : day).font(Theme.Font.columnHead)
+                    .foregroundStyle(Theme.inkFaint).lineLimit(1)
+                    .frame(minWidth: Theme.Layout.logDayWidth, alignment: .trailing)
+                    .stageRegion(.logDay)
             }
             .padding(.bottom, 6)
             RecordSwitch().padding(.bottom, 8)
-            if let open {
-                LogRow(
-                    time: Text("now").foregroundStyle(Theme.accent),
-                    length: Reading.seconds(session.timeOnAirSeconds ?? .nan),
-                    lengthInk: Theme.inkSecondary,
-                    signal: session.channelReading?.signalWord?.word ?? Reading.absent,
-                    tone: open.tone, open: true, trailing: writing ? .writing : .empty,
-                    startMarker: open.startMarker)
-            }
-            // Keyed by capture and start sample, so a new transmission adds a row instead of
-            // changing what every row's position means.
-            ForEach(closed, id: \.start) { t in
-                let uri = session.keptPartURI(t)
-                let ink = uri == nil ? Theme.inkTertiary : Theme.ink
-                LogRow(
-                    time: Text(timeWords(t)).foregroundStyle(ink),
-                    length: Reading.seconds(t.seconds), lengthInk: ink,
-                    signal: SignalWord(overNoiseDB: t.peakSNRDB)?.word ?? Reading.absent,
-                    tone: t.tone, open: false,
-                    trailing: uri.map { LogRow.Trailing.part(part($0, row: t.start)) } ?? .empty,
-                    startMarker: t.startMarker, endMarker: t.endMarker
-                )
-                .contextMenu {
-                    if let uri {
-                        Button("Show in Finder") {
-                            Task { await session.revealInFinder(uri: uri) }
+            // The rows change whenever an over starts or ends, so a check masks them.
+            VStack(alignment: .leading, spacing: 0) {
+                if let open {
+                    LogRow(
+                        time: Text("now").foregroundStyle(Theme.accent),
+                        length: Reading.seconds(session.timeOnAirSeconds ?? .nan),
+                        lengthInk: Theme.inkSecondary,
+                        signal: session.channelReading?.signalWord?.word ?? Reading.absent,
+                        tone: open.tone, open: true, trailing: writing ? .writing : .empty,
+                        startMarker: open.startMarker)
+                }
+                // Keyed by capture and start sample, so a new transmission adds a row instead of
+                // changing what every row's position means.
+                ForEach(closed, id: \.start) { t in
+                    let uri = session.keptPartURI(t)
+                    let ink = uri == nil ? Theme.inkTertiary : Theme.ink
+                    LogRow(
+                        time: Text(timeWords(t)).foregroundStyle(ink),
+                        length: Reading.seconds(t.seconds), lengthInk: ink,
+                        signal: SignalWord(overNoiseDB: t.peakSNRDB)?.word ?? Reading.absent,
+                        tone: t.tone, open: false,
+                        trailing: uri.map { LogRow.Trailing.part(part($0, row: t.start)) }
+                            ?? .empty,
+                        startMarker: t.startMarker, endMarker: t.endMarker
+                    )
+                    .contextMenu {
+                        if let uri {
+                            Button("Show in Finder") {
+                                Task { await session.revealInFinder(uri: uri) }
+                            }
                         }
                     }
                 }
+                if open == nil, closed.isEmpty {
+                    Text(
+                        log == nil
+                            ? "No channel."
+                            : "Nothing yet. A transmission is logged when the squelch closes behind it."
+                    )
+                    .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+                    .padding(.horizontal, 6).padding(.top, 4)
+                }
             }
-            if open == nil, closed.isEmpty {
-                Text(
-                    log == nil
-                        ? "No channel."
-                        : "Nothing yet. A transmission is logged when the squelch closes behind it."
-                )
-                .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
-                .padding(.horizontal, 6).padding(.top, 4)
-            }
+            // The rows take the log's whole height, so the region a check masks is the same
+            // whether a run has no row yet or several.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .stageRegion(.transmissions)
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
     }

@@ -13,7 +13,9 @@
 // The tree is read through the accessibility API (`AXUIElement`) on the app's own process, as
 // VoiceOver reads it, and not through `NSAccessibility` on the window: SwiftUI builds its
 // elements only for a client of that API, and the `NSAccessibility` walk from the window found
-// the AppKit views and none of the SwiftUI text, buttons or rows inside them.
+// the AppKit views and none of the SwiftUI text, buttons or rows inside them. The API answers a
+// process only when macOS allows it accessibility: otherwise every element it returns is the
+// application's, and `text(of:)` says so rather than writing that tree.
 
 import AppKit
 import ApplicationServices
@@ -35,6 +37,14 @@ enum AccessibilityTree {
     static func text(of window: NSWindow) throws -> String {
         guard let root = element(of: window) else {
             throw Failure(reason: "the window has no accessibility element")
+        }
+        // A process macOS does not trust for accessibility is answered with the application's
+        // element wherever a window or a view should be, a tree of thousands of menu items.
+        guard string(root, kAXRoleAttribute) == kAXWindowRole else {
+            throw Failure(
+                reason:
+                    "the accessibility API answered with no window: \(Bundle.main.bundlePath) is not allowed to read it; add it in System Settings > Privacy & Security > Accessibility"
+            )
         }
         let origin = point(root) ?? .zero
         var lines: [String] = []
@@ -156,8 +166,13 @@ enum AccessibilityTree {
         return s
     }
 
+    /// In double quotes, with backslashes, quotes and newlines escaped, so a reader of the line
+    /// finds where the text ends.
     private static func quoted(_ s: String) -> String {
-        "\"" + s.replacingOccurrences(of: "\n", with: "\\n") + "\""
+        "\""
+            + s.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n") + "\""
     }
 
     /// A rectangle in whole points, `(x,y w×h)`.

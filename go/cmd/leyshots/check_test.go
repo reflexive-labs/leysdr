@@ -584,3 +584,30 @@ func TestCheckAppNeverReady(t *testing.T) {
 		t.Errorf("an interrupted run's output:\n%s", stdout.String())
 	}
 }
+
+// An element inside a masked region loses its value and frame, a run of masked lines that read
+// the same is one line, and everything else is kept.
+func TestMaskAX(t *testing.T) {
+	tree := `AXWindow "Leyline" (0,0 1440×820) enabled
+  AXStaticText "" value="Tuning" (1144,269 40×15) enabled
+  AXStaticText "" value="+21 Hz" (1383,270 41×14) enabled
+  AXStaticText "" value="2.6 kHz" (1376,293 48×14) enabled
+  AXStaticText "" value="say \"hi\" (1,2 3×4) enabled" (1150,561 240×26) enabled
+  AXCheckBox "Record transmissions" value="0" (1380,512 44×20) disabled
+  AXGroup "" (1120,240 320×100) enabled
+  AXButton "Scan band" (26,171 88×23) enabled
+`
+	rects := []Rect{{X: 1128, Y: 233, Width: 312, Height: 100}, {X: 1144, Y: 550, Width: 280, Height: 40}}
+	want := `AXWindow "Leyline" (0,0 1440×820) enabled
+  AXStaticText "" value=<masked> (<masked>) enabled
+  AXCheckBox "Record transmissions" value="0" (1380,512 44×20) disabled
+  AXGroup "" (1120,240 320×100) enabled
+  AXButton "Scan band" (26,171 88×23) enabled
+`
+	if got := maskAX(tree, rects); got != want {
+		t.Errorf("maskAX:\n%s\nwant\n%s", got, want)
+	}
+	if got := maskAX(tree, nil); got != tree {
+		t.Errorf("no rects changed the tree:\n%s", got)
+	}
+}

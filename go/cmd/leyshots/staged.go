@@ -20,6 +20,9 @@ import (
 // asks), so it would change the app they use and depend on it.
 const stagedBundleID = "com.leysdr.app.staged"
 
+// stagedRequirement is the copy's designated requirement: its identifier alone.
+const stagedRequirement = `designated => identifier "` + stagedBundleID + `"`
+
 // stagedStamp, inside the copy, records the source it was made from; a copy whose stamp matches
 // the source is reused.
 const stagedStamp = "Contents/Resources/leyshots-staged-from"
@@ -32,6 +35,8 @@ func stagedApp(ctx context.Context, src, dir string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%s: %w; build it with: make app-bundle", src, err)
 	}
+	// The identifier and the requirement are in the stamp, so a change to either remakes the copy.
+	stamp = stagedBundleID + " " + stagedRequirement + " " + stamp
 	dst := filepath.Join(dir, filepath.Base(src))
 	if b, err := os.ReadFile(filepath.Join(dst, stagedStamp)); err == nil && string(b) == stamp {
 		return dst, nil
@@ -58,8 +63,12 @@ func stagedApp(ctx context.Context, src, dir string) (string, error) {
 	if err := os.WriteFile(filepath.Join(dst, stagedStamp), []byte(stamp), 0o644); err != nil {
 		return "", err
 	}
-	// The nested code (Sparkle) keeps its signature; only the bundle's own seal changed.
-	if err := run("codesign", "--force", "--sign", "-", "--timestamp=none", dst); err != nil {
+	// The nested code (Sparkle) keeps its signature; only the bundle's own seal changed. The
+	// designated requirement names the identifier rather than the build's hash, so the
+	// Accessibility permission the ax command needs, granted to the copy once, holds for every
+	// later copy.
+	if err := run("codesign", "--force", "--sign", "-", "--timestamp=none",
+		"-r="+stagedRequirement, dst); err != nil {
 		return "", err
 	}
 	return dst, nil

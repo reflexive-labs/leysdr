@@ -41,19 +41,13 @@ type CheckScene struct {
 // defaultCheckSize is the site shots' window.
 var defaultCheckSize = Size{Width: 1440, Height: 820}
 
-// defaultMask is what a snapshot leaves out of the diff unless it names its own mask: live signal
-// pixels never repeat exactly. A name the app does not report is skipped, so a mask can name a
-// region before the app measures it (ShotRegion has no spectrum case yet).
-var defaultMask = []string{"spectrum", "waterfall"}
-
-// maskNames are the regions a mask may name: what regions.json can hold, and the spectrum.
-var maskNames = func() map[string]bool {
-	m := map[string]bool{"spectrum": true}
-	for n := range regionNames {
-		m[n] = true
-	}
-	return m
-}()
+// defaultMask is what a snapshot or an ax tree leaves out of the comparison unless the command
+// names its own mask: live signal pixels and readings never repeat exactly. The spectrum and the
+// waterfall draw the radio; readings is the inspector's figures and audio ladder; transmissions
+// is its log's rows, which gain one whenever an over ends, and log_day the day over them, blank
+// until the first; heard is the tone the channel last heard, which shows once the decoder has
+// measured one. A name the app does not report is skipped.
+var defaultMask = []string{"spectrum", "waterfall", "readings", "transmissions", "log_day", "heard"}
 
 // AppCommand is one command of the command-file protocol (mac-loop.md, ML-3, "The protocol"),
 // with the runner's own keys: Name, Expect and Mask. The runner assigns the id.
@@ -69,7 +63,8 @@ type AppCommand struct {
 	Name string `yaml:"name"`
 	// Expect maps dotted paths into a state answer's result to the scalar each must hold.
 	Expect map[string]any `yaml:"expect"`
-	// Mask names the regions a snapshot leaves out of the diff; nil is defaultMask, [] none.
+	// Mask names the regions a snapshot or an ax tree leaves out of the comparison; nil is
+	// defaultMask, [] none.
 	Mask []string `yaml:"mask"`
 }
 
@@ -227,7 +222,7 @@ func (c *AppCommand) validate(path func(string) string) error {
 	case "state":
 		may = []string{"expect"}
 	case "ax":
-		need = []string{"name"}
+		need, may = []string{"name"}, []string{"mask"}
 	case "key":
 		need = []string{"keys"}
 	case "type":
@@ -263,7 +258,7 @@ func (c *AppCommand) validate(path func(string) string) error {
 		return fmt.Errorf("name must be one word usable as a file name, not %q", c.Name)
 	}
 	for _, m := range c.Mask {
-		if !maskNames[m] {
+		if !regionNames[m] {
 			return fmt.Errorf("unknown region %q in mask", m)
 		}
 	}

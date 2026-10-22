@@ -121,7 +121,16 @@ final class ControlChannel {
                 try AppControl.writeReplacing(
                     Data(try AccessibilityTree.text(of: window).utf8),
                     to: directory.appendingPathComponent(file))
-                return ControlAnswer(id: c.id, ok: true, files: [file])
+                // The regions as a snapshot gives them, so the checker can mask the values of
+                // the elements inside the live ones.
+                guard let regions = staging.measure() else {
+                    return ControlAnswer(id: c.id, ok: true, files: [file])
+                }
+                let shot = ControlSnapshot(
+                    scale: regions.scale, widthPt: Double(window.frame.width),
+                    heightPt: Double(window.frame.height), regions: regions.regions)
+                return ControlAnswer(
+                    id: c.id, ok: true, files: [file], result: try ControlAnswer.result(shot))
             case .key(let chord):
                 send(chord, to: window)
                 try? await Task.sleep(for: .milliseconds(Self.keySettleMilliseconds))
