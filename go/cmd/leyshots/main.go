@@ -227,9 +227,14 @@ func cmdCheck(ctx context.Context, args []string, stdout io.Writer) error {
 		return err
 	}
 	o.prepare = func(ctx context.Context, f *CheckFile, s *CheckScene, run string) ([]string, func(), error) {
-		sr, err := startScene(ctx, o.runOptions, sceneSetup{
-			fixtures: s.Fixtures, clock: s.Clock, bookmarks: f.Path(s.Bookmarks), steps: s.Steps,
-		}, run)
+		in := sceneSetup{fixtures: s.Fixtures, clock: s.Clock, bookmarks: f.Path(s.Bookmarks), steps: s.Steps}
+		if s.AI != nil {
+			var err error
+			if in.ai, err = s.AI.stub(f.Path); err != nil {
+				return nil, nil, err
+			}
+		}
+		sr, err := startScene(ctx, o.runOptions, in, run)
 		if err != nil {
 			return nil, nil, err
 		}

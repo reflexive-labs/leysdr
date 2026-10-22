@@ -265,6 +265,8 @@ type sceneSetup struct {
 	clock     string
 	bookmarks string
 	steps     []Step
+	// ai, when set, runs the daemon's assistant on a script and adds its key first (ai.go).
+	ai *aiStub
 }
 
 // sceneRun is a scene's own daemon, set up and running.
@@ -302,11 +304,19 @@ func startScene(ctx context.Context, o runOptions, in sceneSetup, run string) (*
 	}
 	// The plugins (leydec-*) are installed beside ley; the daemon finds them on PATH.
 	pathEnv := "PATH=" + filepath.Dir(o.ley) + string(os.PathListSeparator) + os.Getenv("PATH")
+	daemonEnv := []string{pathEnv}
+	if in.ai != nil {
+		aiEnv, err := in.ai.install(run, o.ley)
+		if err != nil {
+			return nil, err
+		}
+		daemonEnv = append(daemonEnv, aiEnv...)
+	}
 	d, err := daemonrun.Start(ctx, daemonrun.Options{
 		// A shot or check plays its fixtures on the Mac's speakers otherwise, beside the person
 		// working there; the channel still has its sink, so the app shows what it would.
-		Bin: o.leylined, Dir: run, Decoders: o.decoders, WallClock: in.clock, Label: "leyshots", Env: []string{pathEnv},
-		NoAudio: true,
+		Bin: o.leylined, Dir: run, Decoders: o.decoders, WallClock: in.clock, Label: "leyshots", Env: daemonEnv,
+		Unset: aiEnvNames, NoAudio: true,
 	})
 	if err != nil {
 		return nil, err
@@ -330,18 +340,20 @@ func startScene(ctx context.Context, o runOptions, in sceneSetup, run string) (*
 	return sr, nil
 }
 
-// setUp imports the bookmarks, plays the fixtures and runs the steps.
+// setUp imports the bookmarks, plays the fixtures, adds the AI key and runs the steps.
 func (sr *sceneRun) setUp(ctx context.Context, o runOptions, in sceneSetup, files []*fixtureFile) error {
-	ley := func(args ...string) error {
+	leyIn := func(stdin string, args ...string) error {
 		fmt.Fprintf(sr.stepsLog, "$ ley %s\n", strings.Join(args, " "))
 		cmd := exec.CommandContext(ctx, o.ley, args...)
 		cmd.Env = append(os.Environ(), sr.env...)
+		cmd.Stdin = strings.NewReader(stdin)
 		cmd.Stdout, cmd.Stderr = sr.stepsLog, sr.stepsLog
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("ley %s: %w; the output is in %s", strings.Join(args, " "), err, sr.stepsLog.Name())
 		}
 		return nil
 	}
+	ley := func(args ...string) error { return leyIn("", args...) }
 	if in.bookmarks != "" {
 		if err := ley("bookmarks", "import", in.bookmarks); err != nil {
 			return err
@@ -352,6 +364,13 @@ func (sr *sceneRun) setUp(ctx context.Context, o runOptions, in sceneSetup, file
 	for _, ff := range files {
 		if err := ley("play", ff.Path, "--persistent", "--loop"); err != nil {
 			return err
+		}
+	}
+	if in.ai != nil {
+		for _, c := range in.ai.steps() {
+			if err := leyIn(c.stdin, c.args...); err != nil {
+				return err
+			}
 		}
 	}
 	for _, st := range in.steps {

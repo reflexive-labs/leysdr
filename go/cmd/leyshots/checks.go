@@ -36,6 +36,8 @@ type CheckScene struct {
 	// Threshold is the percentage of compared pixels a snapshot may change and still pass;
 	// nil is defaultThreshold.
 	Threshold *float64 `yaml:"threshold"`
+	// AI puts the assistant on a scripted model, with a made-up key (ai.go).
+	AI *AISetup `yaml:"ai"`
 }
 
 // defaultCheckSize is the site shots' window.
@@ -188,6 +190,11 @@ func (s *CheckScene) validate(path func(string) string) error {
 	}
 	if err := validateSetup(path, s.Bookmarks, s.Steps); err != nil {
 		return err
+	}
+	if s.AI != nil {
+		if err := s.AI.validate(path); err != nil {
+			return err
+		}
 	}
 	names := map[string]bool{}
 	for i := range s.App {
