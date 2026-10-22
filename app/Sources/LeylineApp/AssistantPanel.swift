@@ -337,8 +337,10 @@ struct PendingCard: View {
                 Text(question.reason).font(Theme.Font.aside).foregroundStyle(Theme.caution)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            HStack(spacing: 8) {
-                Spacer()
+            // The three at their full width, 279 pt: the panel's 320 pt leaves the card 280
+            // inside its padding, with no room given to the spacer and 6 pt between.
+            HStack(spacing: 6) {
+                Spacer(minLength: 0)
                 let session = session
                 let id = question.callID
                 Button("Decline") { answer { await session.decline(callID: id) } }
@@ -352,13 +354,15 @@ struct PendingCard: View {
                 Button("Allow") { answer { await session.approve(callID: id) } }
                     .accessibilityIdentifier("assistant.allow")
             }
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(maxWidth: .infinity, alignment: .trailing)
             .buttonStyle(.bordered).controlSize(.small)
             .disabled(answering == question.callID)
         }
         .padding(12)
         .background(Theme.raised, in: RoundedRectangle(cornerRadius: 6))
         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.borderStrong))
-        .padding(.horizontal, 12).padding(.bottom, 10)
+        .padding(.horizontal, 8).padding(.bottom, 10)
     }
 }
 
