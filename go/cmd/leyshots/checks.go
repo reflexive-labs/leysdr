@@ -68,6 +68,9 @@ type AppCommand struct {
 	// Mask names the regions a snapshot or an ax tree leaves out of the comparison; nil is
 	// defaultMask, [] none.
 	Mask []string `yaml:"mask"`
+	// ExpectLog is what the app's log must (or, with !, must not) hold among the lines it wrote
+	// from the moment the command before was sent until a state or wait is answered.
+	ExpectLog patterns `yaml:"expect_log"`
 
 	// The runner's own commands (local.go), which never reach the app.
 	// Args are a ley or ley_bg command's arguments, without ley.
@@ -243,6 +246,7 @@ func (c *AppCommand) validate(path func(string) string) error {
 		"expect": len(c.Expect) > 0, "mask": c.Mask != nil,
 		"args": len(c.Args) > 0, "expect_stdout": len(c.ExpectStdout) > 0, "expect_exit": c.ExpectExit != nil,
 		"id": c.ID != "", "path": c.Path != "", "contains": len(c.Contains) > 0, "op": c.Op != "",
+		"expect_log": len(c.ExpectLog) > 0,
 	}
 	var need, may []string
 	switch c.Cmd {
@@ -251,7 +255,7 @@ func (c *AppCommand) validate(path func(string) string) error {
 	case "snapshot":
 		need, may = []string{"name"}, []string{"settle", "mask"}
 	case "state":
-		may = []string{"expect"}
+		may = []string{"expect", "expect_log"}
 	case "ax":
 		need, may = []string{"name"}, []string{"mask"}
 	case "key":
@@ -261,7 +265,7 @@ func (c *AppCommand) validate(path func(string) string) error {
 	case "press":
 		need = []string{"identifier"}
 	case "wait":
-		need = []string{"seconds"}
+		need, may = []string{"seconds"}, []string{"expect_log"}
 	case "ley":
 		need, may = []string{"args"}, []string{"expect_stdout", "expect_exit"}
 	case "ley_bg":
@@ -302,6 +306,9 @@ func (c *AppCommand) validate(path func(string) string) error {
 		if !regionNames[m] {
 			return fmt.Errorf("unknown region %q in mask", m)
 		}
+	}
+	if err := c.ExpectLog.validate(); err != nil {
+		return fmt.Errorf("expect_log: %w", err)
 	}
 	for p, v := range c.Expect {
 		switch v.(type) {

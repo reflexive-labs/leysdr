@@ -285,9 +285,14 @@ func (c *checker) runSize(ctx context.Context, s *CheckScene, size Size) {
 	// before the app quits and the daemon stops.
 	local := &localRun{c: c, daemon: sd, run: run, bg: map[string]*bgProcess{}}
 	defer local.cleanup()
+	// The app log's size when the command before this one was sent: an expect_log reads from there.
+	var prevMark int64
 	for i := range s.App {
 		cmd := &s.App[i]
 		id := i + 1
+		mark := fileSize(app.log)
+		since := prevMark
+		prevMark = mark
 		if cmd.isLocal() {
 			results, stop := local.runLocal(ctx, cmd, id)
 			for _, r := range results {
@@ -305,6 +310,15 @@ func (c *checker) runSize(ctx context.Context, s *CheckScene, size Size) {
 			return
 		}
 		c.handle(ctx, s, size, dir, app, cmd, id, a)
+		if len(cmd.ExpectLog) > 0 && a.OK {
+			for _, r := range checkLog(app.log, since, cmd.ExpectLog) {
+				r.Scene, r.Size, r.Item = s.Name, size.String(), cmd.label(id)+" log "+r.Item
+				if r.Status != "ok" {
+					r.Path = c.rel(app.log)
+				}
+				c.add(r)
+			}
+		}
 	}
 	if c.o.hold {
 		app.hold(ctx, s, size, env)
@@ -593,6 +607,28 @@ func (c *checker) handle(ctx context.Context, s *CheckScene, size Size, dir stri
 			c.add(r)
 		}
 	}
+}
+
+// fileSize is the file's size, 0 when it is not there yet.
+func fileSize(path string) int64 {
+	st, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	return st.Size()
+}
+
+// checkLog matches the patterns against the log from offset since to its end. A log shorter than
+// since was started again, and is read whole.
+func checkLog(path string, since int64, p patterns) []checkResult {
+	b, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return []checkResult{{Status: "error", Item: "-", Detail: err.Error()}}
+	}
+	if since > int64(len(b)) {
+		since = 0
+	}
+	return p.check(string(b[since:]))
 }
 
 // answerFile is the first file of the answer with the suffix, relative to the control directory.

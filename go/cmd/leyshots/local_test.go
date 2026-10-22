@@ -167,6 +167,33 @@ func TestCheckLocalLeyMissing(t *testing.T) {
 	}
 }
 
+// expect_log reads the app's log from the moment the command before was sent: a line from earlier
+// is not found, a line the app logged for the command before is, and a negated pattern fails on a
+// line that is there.
+func TestCheckExpectLog(t *testing.T) {
+	_, out, err := checkWithFakeApp(t, t.TempDir(), `scenes:
+  - name: s
+    fixtures: [{name: scene_2m}]
+    app:
+      - {cmd: state, expect_log: launched}
+      - {cmd: key, keys: cmd+g}
+      - {cmd: state, expect_log: ["key cmd\\+g", "!launched", "!state"]}
+      - {cmd: wait, seconds: 0.01, expect_log: ["key cmd", "(?m)^[0-9:.]+ state$"]}
+`, func(string) (*sceneDaemon, error) { return &sceneDaemon{stop: func() {}}, nil })
+	if !errors.Is(err, errChecksFailed) {
+		t.Fatalf("err = %v\n%s", err, out)
+	}
+	expectOutput(t, out,
+		`ok       s 1440x820 state#1 log /launched/ "`,
+		`ok       s 1440x820 state#3 log /key cmd\+g/ "`,
+		`ok       s 1440x820 state#3 log /!launched/ absent`,
+		`fail     s 1440x820 state#3 log /!state/ found "`,
+		`fail     s 1440x820 wait#4 log /key cmd/ no match  checks/s/1440x820/run/app.log`,
+		`ok       s 1440x820 wait#4 log /(?m)^[0-9:.]+ state$/ "`,
+		"6 checked: 4 ok, 2 fail; ",
+	)
+}
+
 // daemon stops and starts the scene's daemon in order with the app's commands; one that will not
 // start again ends the scene.
 func TestCheckDaemonCommand(t *testing.T) {

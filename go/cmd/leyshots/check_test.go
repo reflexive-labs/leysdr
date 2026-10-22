@@ -235,6 +235,8 @@ func TestLoadChecksRejects(t *testing.T) {
 		"daemon sans op":     "fixtures: [{name: x}]\n    app: [{cmd: daemon}]",
 		"daemon restart":     "fixtures: [{name: x}]\n    app: [{cmd: daemon, op: restart}]",
 		"op on ley":          "fixtures: [{name: x}]\n    app: [{cmd: ley, args: [state], op: stop}]",
+		"log on press":       "fixtures: [{name: x}]\n    app: [{cmd: press, identifier: a, expect_log: x}]",
+		"bad log regex":      "fixtures: [{name: x}]\n    app: [{cmd: state, expect_log: [\"[\"]}]",
 	}
 	for name, body := range cases {
 		path := filepath.Join(t.TempDir(), "scenes.yaml")
@@ -272,20 +274,34 @@ func (a *fakeApp) launch(ctx context.Context, l appLaunch) error {
 	a.alive[pid] = true
 	a.envs = append(a.envs, l.env)
 	a.mu.Unlock()
-	var control string
+	var control, log string
 	for _, kv := range l.env {
 		if v, ok := strings.CutPrefix(kv, "LEYLINE_APP_CONTROL="); ok {
 			control = v
+		}
+		if v, ok := strings.CutPrefix(kv, "LEYLINE_APP_LOG="); ok {
+			log = v
 		}
 	}
 	if control == "" {
 		return errors.New("no LEYLINE_APP_CONTROL")
 	}
-	go a.serve(ctx, control, pid)
+	go a.serve(ctx, control, log, pid)
 	return nil
 }
 
-func (a *fakeApp) serve(ctx context.Context, control string, pid int) {
+// logLine appends a line to the fake app's log, as the app logs what it does.
+func logLine(path, format string, args ...any) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return
+	}
+	fmt.Fprintf(f, time.Now().Format("15:04:05.000")+" "+format+"\n", args...)
+	_ = f.Close()
+}
+
+func (a *fakeApp) serve(ctx context.Context, control, log string, pid int) {
+	logLine(log, "launched")
 	writeAtomic := func(name string, b []byte) {
 		tmp := filepath.Join(control, name+".tmp")
 		_ = os.WriteFile(tmp, b, 0o644)
@@ -312,6 +328,9 @@ func (a *fakeApp) serve(ctx context.Context, control string, pid int) {
 			a.commands = append(a.commands, cmd)
 			a.mu.Unlock()
 			id := int(cmd["id"].(float64))
+			keys, _ := cmd["keys"].(string)
+			ident, _ := cmd["identifier"].(string)
+			logLine(log, "%s", strings.TrimSpace(fmt.Sprintf("%v %s%s", cmd["cmd"], keys, ident)))
 			ans := map[string]any{"id": id, "ok": true, "error": "", "files": []string{}, "result": map[string]any{}}
 			switch cmd["cmd"] {
 			case "snapshot":
