@@ -173,7 +173,7 @@ struct WaterfallMetalView: NSViewRepresentable {
     func makeNSView(context: Context) -> InteractiveMetalView {
         let view = InteractiveMetalView(frame: .zero, device: context.coordinator.device)
         view.delegate = context.coordinator
-        view.colorPixelFormat = .bgra8Unorm
+        view.colorPixelFormat = WaterfallRenderer.pixelFormat
         view.clearColor = Theme.groundClearColor
         view.preferredFramesPerSecond = Int(SpectrumFeed.rowsPerSecond)
         view.isPaused = false
@@ -269,6 +269,9 @@ struct WaterfallUniforms {
 /// the row's arrival.
 @MainActor
 final class WaterfallRenderer: NSObject, MTKViewDelegate {
+    /// The pipeline's colour format, which the view's drawable and a picture's target share.
+    static let pixelFormat: MTLPixelFormat = .bgra8Unorm
+
     let device: MTLDevice?
     private let queue: MTLCommandQueue?
     private var pipeline: MTLRenderPipelineState?
@@ -303,7 +306,7 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
             let desc = MTLRenderPipelineDescriptor()
             desc.vertexFunction = library.makeFunction(name: "waterfall_vertex")
             desc.fragmentFunction = library.makeFunction(name: "waterfall_fragment")
-            desc.colorAttachments[0].pixelFormat = .bgra8Unorm
+            desc.colorAttachments[0].pixelFormat = Self.pixelFormat
             pipeline = try device.makeRenderPipelineState(descriptor: desc)
             log("waterfall", "shader compiled on \(device.name)")
         } catch {
@@ -338,16 +341,7 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
             log("waterfall", String(format: "waited %.0f ms for a drawable", waited * 1000))
         }
         guard let drawable, let pass = view.currentRenderPassDescriptor else { return }
-        if texture == nil || texture?.width != buffer.bins {
-            guard let made = makeRingTexture(device: device, bins: buffer.bins) else { return }
-            texture = made
-            uploaded = 0
-            log(
-                "waterfall",
-                "texture \(buffer.bins)×\(WaterfallBuffer.capacity), drawable \(Int(view.drawableSize.width))×\(Int(view.drawableSize.height))"
-            )
-        }
-        guard let texture else { return }
+        guard let texture = ringTexture(device: device, buffer: buffer, view: view) else { return }
         upload(from: buffer, into: texture)
 
         let state = signposter.beginInterval("draw", "seq=\(buffer.newestSeq)")
@@ -360,6 +354,22 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
         cmd.commit()
         frames += 1
         signposter.endInterval("draw", state)
+    }
+
+    /// The ring texture for `buffer`'s width, made again (and uploaded from the start) when the
+    /// row width changed since the last one, which a zoom or a rate change does.
+    private func ringTexture(device: MTLDevice, buffer: WaterfallBuffer, view: MTKView)
+        -> MTLTexture?
+    {
+        if let texture, texture.width == buffer.bins { return texture }
+        guard let made = makeRingTexture(device: device, bins: buffer.bins) else { return nil }
+        texture = made
+        uploaded = 0
+        log(
+            "waterfall",
+            "texture \(buffer.bins)×\(WaterfallBuffer.capacity), drawable \(Int(view.drawableSize.width))×\(Int(view.drawableSize.height))"
+        )
+        return made
     }
 
     /// One frame's draw: the ring through the ramp, at `size` pixels.
@@ -403,14 +413,15 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
     /// `CAMetalLayer` draws nothing through `cacheDisplay`. nil before the first row, when the
     /// view shows only its clear colour, which `cacheDisplay` draws as the ground anyway.
     func picture(of view: MTKView) -> CGImage? {
-        guard let device, let queue, let pipeline, let buffer, let texture, buffer.bins > 0
+        guard let device, let queue, let pipeline, let buffer, buffer.bins > 0,
+            let texture = ringTexture(device: device, buffer: buffer, view: view)
         else { return nil }
         upload(from: buffer, into: texture)
         let w = Int(view.drawableSize.width)
         let h = Int(view.drawableSize.height)
         guard w > 0, h > 0 else { return nil }
         let d = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: view.colorPixelFormat, width: w, height: h, mipmapped: false)
+            pixelFormat: Self.pixelFormat, width: w, height: h, mipmapped: false)
         d.usage = [.renderTarget]
         d.storageMode = .managed
         guard let target = device.makeTexture(descriptor: d) else { return nil }
@@ -441,7 +452,7 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
         guard let space, let provider = CGDataProvider(data: Data(bytes) as CFData) else {
             return nil
         }
-        // `bgra8Unorm` is BGRA in memory: 32-bit little-endian with alpha first.
+        // `pixelFormat`, `bgra8Unorm`, is BGRA in memory: 32-bit little-endian with alpha first.
         let info =
             CGBitmapInfo.byteOrder32Little.rawValue
             | CGImageAlphaInfo.premultipliedFirst.rawValue

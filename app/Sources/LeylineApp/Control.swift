@@ -36,6 +36,7 @@ final class ControlChannel {
     /// Writes `ready.json`, `ok` false with `problem` when there is one, then takes commands
     /// until `quit` or the end of the process.
     func run(problem: String?) async {
+        clearOutputs()
         do {
             try FileManager.default.createDirectory(
                 at: directory.appendingPathComponent(AppControl.outName),
@@ -76,12 +77,44 @@ final class ControlChannel {
         }
     }
 
+    /// A directory used before must not answer for this run: an old `ready.json` would read as
+    /// this launch being ready, and old answers as this run's. They are removed, and the
+    /// commands already in `commands.jsonl` are skipped, not replayed.
+    private func clearOutputs() {
+        let fm = FileManager.default
+        for name in [AppControl.readyName, AppControl.outName] {
+            let url = directory.appendingPathComponent(name)
+            guard fm.fileExists(atPath: url.path) else { continue }
+            do {
+                try fm.removeItem(at: url)
+                log("control", "removed the last run's \(name) from \(directory.path)")
+            } catch {
+                log("control", "could not remove the last run's \(name): \(error)")
+            }
+        }
+        let commands = directory.appendingPathComponent(AppControl.commandsName)
+        if let size = (try? fm.attributesOfItem(atPath: commands.path))?[.size] as? UInt64,
+            size > 0
+        {
+            offset = size
+            log("control", "skipping the \(size) bytes already in \(AppControl.commandsName)")
+        }
+    }
+
     /// The complete lines appended to `commands.jsonl` since the last read; none while the file
-    /// does not exist yet.
+    /// does not exist yet. A file shorter than what was read has been replaced, and is read from
+    /// its start.
     private func readLines() -> [Data] {
         let url = directory.appendingPathComponent(AppControl.commandsName)
         guard let handle = try? FileHandle(forReadingFrom: url) else { return [] }
         defer { try? handle.close() }
+        if let end = try? handle.seekToEnd(), end < offset {
+            log(
+                "control",
+                "\(AppControl.commandsName) shrank to \(end) bytes; reading it from the start")
+            offset = 0
+            lines = ControlLines()
+        }
         guard (try? handle.seek(toOffset: offset)) != nil,
             let data = try? handle.readToEnd(), !data.isEmpty
         else { return [] }
@@ -100,23 +133,25 @@ final class ControlChannel {
 
     private func perform(_ c: ControlCommand) async -> ControlAnswer {
         log("control", "command \(c.id): \(c.action)")
-        guard let window = staging.window else {
-            return ControlAnswer(id: c.id, ok: false, error: "the app has no window")
-        }
+        let noWindow = ControlAnswer(id: c.id, ok: false, error: "the app has no window")
         do {
             switch c.action {
             case .stage(let stage):
+                if stage.window != nil, staging.window == nil { return noWindow }
                 let applied = await staging.applyCommand(stage, session)
                 return ControlAnswer(
                     id: c.id, ok: true,
                     result: .object(["applied": .array(applied.map(JSONValue.string))]))
             case .snapshot(let settle):
                 try? await Task.sleep(for: .seconds(settle))
+                guard let window = staging.window else { return noWindow }
                 return try snapshot(c.id, window)
             case .state:
                 return ControlAnswer(
-                    id: c.id, ok: true, result: try ControlAnswer.result(viewState(window)))
+                    id: c.id, ok: true,
+                    result: try ControlAnswer.result(viewState(staging.window)))
             case .ax:
+                guard let window = staging.window else { return noWindow }
                 let file = "\(AppControl.outName)/\(c.id).ax.txt"
                 try AppControl.writeReplacing(
                     Data(try AccessibilityTree.text(of: window).utf8),
@@ -132,10 +167,12 @@ final class ControlChannel {
                 return ControlAnswer(
                     id: c.id, ok: true, files: [file], result: try ControlAnswer.result(shot))
             case .key(let chord):
+                guard let window = staging.window else { return noWindow }
                 send(chord, to: window)
                 try? await Task.sleep(for: .milliseconds(Self.keySettleMilliseconds))
                 return ControlAnswer(id: c.id, ok: true)
             case .type(let text):
+                guard let window = staging.window else { return noWindow }
                 for ch in text {
                     send(.typing(ch), to: window)
                     try? await Task.sleep(for: .milliseconds(Self.typeGapMilliseconds))
@@ -143,6 +180,7 @@ final class ControlChannel {
                 try? await Task.sleep(for: .milliseconds(Self.keySettleMilliseconds))
                 return ControlAnswer(id: c.id, ok: true)
             case .press(let identifier):
+                guard let window = staging.window else { return noWindow }
                 let why = AccessibilityTree.press(identifier, in: window)
                 return ControlAnswer(id: c.id, ok: why == nil, error: why ?? "")
             case .wait(let seconds):
@@ -197,7 +235,7 @@ final class ControlChannel {
     }
 
     /// `state`'s result, read from the session as the views read it.
-    private func viewState(_ window: NSWindow) -> ControlViewState {
+    private func viewState(_ window: NSWindow?) -> ControlViewState {
         let s = session
         var notices: [String] = []
         if let n = s.notice { notices.append(n) }
@@ -218,7 +256,8 @@ final class ControlChannel {
             openRows: s.sidebarRows.filter { s.isExpanded($0) }.map(\.id),
             filterQuery: s.filterQuery, inspectorShown: s.inspectorShown,
             assistantShown: s.assistantPanelShown, zoom: s.zoom,
-            focused: Self.describeFocus(window.firstResponder, in: window), notices: notices,
+            focused: window.map { Self.describeFocus($0.firstResponder, in: $0) } ?? "",
+            notices: notices,
             popover: popover, selectedRecordingChannel: s.selectedRecordingChannel,
             selectedPart: s.selectedPartURI)
     }

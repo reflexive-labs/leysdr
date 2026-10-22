@@ -25,8 +25,13 @@ enum AccessibilityTree {
     /// Deeper than any tree the window builds; a cycle in what an element reports as its
     /// children stops here rather than recursing until the stack runs out.
     static let maxDepth = 64
-    /// How long one question to the app's own elements may take before it is given up.
-    static let messagingSeconds: Float = 2
+    /// How long one question to the app's own elements may take before it is given up. The
+    /// walk runs on the main actor, which also answers the questions, so a slow one freezes
+    /// the window for this long.
+    static let messagingSeconds: Float = 0.25
+    /// The whole walk, after which `text(of:)` and `press(_:in:)` give up rather than hold the
+    /// main actor any longer.
+    static let walkSeconds: Double = 5
 
     struct Failure: Error, CustomStringConvertible {
         let reason: String
@@ -48,9 +53,21 @@ enum AccessibilityTree {
         }
         let origin = point(root) ?? .zero
         var lines: [String] = []
+        let deadline = Date().addingTimeInterval(walkSeconds)
+        var late = false
         walk(root, depth: 0) { e, depth in
+            if Date() > deadline {
+                late = true
+                return true
+            }
             lines.append(String(repeating: "  ", count: depth) + line(e, origin: origin))
             return false
+        }
+        if late {
+            throw Failure(
+                reason:
+                    "the tree took longer than \(Int(walkSeconds)) s to read; \(lines.count) elements were read"
+            )
         }
         return lines.joined(separator: "\n") + "\n"
     }
@@ -62,10 +79,19 @@ enum AccessibilityTree {
             return "the window has no accessibility element"
         }
         var found: AXUIElement?
+        let deadline = Date().addingTimeInterval(walkSeconds)
+        var late = false
         walk(root, depth: 0) { e, _ in
+            if Date() > deadline {
+                late = true
+                return true
+            }
             guard string(e, kAXIdentifierAttribute) == identifier else { return false }
             found = e
             return true
+        }
+        if late {
+            return "no element with the identifier \(identifier) within \(Int(walkSeconds)) s"
         }
         guard let found else { return "no element has the identifier \(identifier)" }
         let err = AXUIElementPerformAction(found, kAXPressAction as CFString)
@@ -93,6 +119,8 @@ enum AccessibilityTree {
         _ element: AXUIElement, depth: Int, _ visit: (AXUIElement, Int) -> Bool
     ) -> Bool {
         guard depth <= maxDepth else { return false }
+        // The timeout is the element's own, not inherited from the application's.
+        AXUIElementSetMessagingTimeout(element, messagingSeconds)
         if visit(element, depth) { return true }
         for child in children(element, kAXChildrenAttribute) {
             if walk(child, depth: depth + 1, visit) { return true }

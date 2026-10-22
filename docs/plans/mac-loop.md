@@ -103,11 +103,17 @@ field, hover a point on the rail or the spectrum, open the assistant panel, open
 - `LEYLINE_APP_CONTROL=<dir>` turns it on. It makes the session staged as `LEYLINE_APP_STAGE`
   does (nothing written to UserDefaults, ML-2's deterministic frames), with or without a stage
   file; with one, the stage is applied first and `regions.json` written as today.
+- **A used directory.** Before it writes `ready.json`, the app removes the directory's outputs
+  (an old `ready.json` and `out/`) and skips whatever `commands.jsonl` already holds, so a
+  directory reused from an earlier run neither reads as ready nor replays its commands
+  (added 2026-10-21). A `commands.jsonl` that shrinks is read again from its start.
 - **Ready.** Once the session is live and has its first channel (`Staging.liveSeconds` and
   `channelSeconds`), or when those run out, the app writes `<dir>/ready.json`:
   `{"ok":true,"pid":123,"window_number":456,"scale":2.0,"error":""}`.
-- **Commands.** The client appends one JSON object per line to `<dir>/commands.jsonl`. The app
-  reads new complete lines every 100 ms and runs them one at a time, in order. Every command
+- **Commands.** The client appends one JSON object per line to `<dir>/commands.jsonl` once
+  `ready.json` is there. The app reads new complete lines every 100 ms and runs them one at a
+  time, in order. Only the commands that use the window (`snapshot`, `ax`, `key`, `type`,
+  `press`, and a `stage` that resizes) are refused for want of one. Every command
   has an integer `id`, unique in the run, and a `cmd`.
 - **Answers.** For each command the app writes `<dir>/out/<id>.json` by writing a temporary
   file and renaming it, so a reader never sees half an answer:

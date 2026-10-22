@@ -838,7 +838,9 @@ says why.
 
 `LEYLINE_APP_CONTROL` names a directory through which `leyshots check` drives the window
 (`../plans/mac-loop.md`, "The protocol", has the client's side). It stages the run as a stage file does,
-with or without one. Once a stage file given at launch has been applied and has settled, or
+with or without one. It first removes what an earlier run left there (`ready.json` and `out/`)
+and skips the lines `commands.jsonl` already holds, so a reused directory replays nothing; a
+`commands.jsonl` that shrinks is read again from its start. Once a stage file given at launch has been applied and has settled, or
 once the daemon is live and the window has its channel when there is none, the app writes
 `ready.json` there:
 
