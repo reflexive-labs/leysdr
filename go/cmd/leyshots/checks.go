@@ -82,6 +82,8 @@ type AppCommand struct {
 	Path string `yaml:"path"`
 	// Contains is what a file command's file must (or, with !, must not) match.
 	Contains patterns `yaml:"contains"`
+	// Op is a daemon command's stop or start.
+	Op string `yaml:"op"`
 }
 
 // wireCommand is one line of commands.jsonl.
@@ -240,7 +242,7 @@ func (c *AppCommand) validate(path func(string) string) error {
 		"identifier": c.Identifier != "", "seconds": c.Seconds != 0, "name": c.Name != "",
 		"expect": len(c.Expect) > 0, "mask": c.Mask != nil,
 		"args": len(c.Args) > 0, "expect_stdout": len(c.ExpectStdout) > 0, "expect_exit": c.ExpectExit != nil,
-		"id": c.ID != "", "path": c.Path != "", "contains": len(c.Contains) > 0,
+		"id": c.ID != "", "path": c.Path != "", "contains": len(c.Contains) > 0, "op": c.Op != "",
 	}
 	var need, may []string
 	switch c.Cmd {
@@ -268,6 +270,8 @@ func (c *AppCommand) validate(path func(string) string) error {
 		need = []string{"id"}
 	case "file":
 		need = []string{"path", "contains"}
+	case "daemon":
+		need = []string{"op"}
 	case "quit":
 		return errors.New("the runner sends quit after the last command")
 	default:

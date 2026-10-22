@@ -238,7 +238,7 @@ func cmdCheck(ctx context.Context, args []string, stdout io.Writer) error {
 		if err != nil {
 			return nil, err
 		}
-		return &sceneDaemon{env: sr.env, stop: sr.stop}, nil
+		return &sceneDaemon{env: sr.env, stop: sr.stop, halt: sr.daemon.Halt, resume: sr.daemon.Resume}, nil
 	}
 	return checkScenes(ctx, o)
 }

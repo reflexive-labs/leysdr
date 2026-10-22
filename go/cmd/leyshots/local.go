@@ -19,9 +19,10 @@ import (
 )
 
 // The commands of a scene's app list the runner runs itself, in order with the ones it sends the
-// app (docs/plans/mac-loop.md, ML-9b, H6): a ley command against the scene's daemon, one started
-// in the background and later interrupted, and a file of the run read.
-var localCommands = map[string]bool{"ley": true, "ley_bg": true, "kill": true, "file": true}
+// app (docs/plans/mac-loop.md, ML-9b, H6 and H9): a ley command against the scene's daemon, one
+// started in the background and later interrupted, a file of the run read, and the scene's daemon
+// stopped and started again.
+var localCommands = map[string]bool{"ley": true, "ley_bg": true, "kill": true, "file": true, "daemon": true}
 
 // isLocal reports whether the runner runs the command rather than the app.
 func (c *AppCommand) isLocal() bool { return localCommands[c.Cmd] }
@@ -122,6 +123,10 @@ func (c *AppCommand) validateLocal(ids map[string]bool) error {
 		if filepath.IsAbs(c.Path) || !filepath.IsLocal(c.Path) {
 			return fmt.Errorf("file path %q is not inside the run directory", c.Path)
 		}
+	case "daemon":
+		if c.Op != "stop" && c.Op != "start" {
+			return fmt.Errorf("daemon op is stop or start, not %q", c.Op)
+		}
 	}
 	if c.ExpectExit != nil && *c.ExpectExit < 0 {
 		return errors.New("expect_exit is not negative")
@@ -154,7 +159,7 @@ func (l *localRun) leyCmd(ctx context.Context, args []string) *exec.Cmd {
 }
 
 // runLocal runs one of the runner's commands and returns its result lines. stop is set when the
-// scene cannot go on: a ley that could not run at all.
+// scene cannot go on: a ley that could not run at all, a daemon that would not start.
 func (l *localRun) runLocal(ctx context.Context, cmd *AppCommand, id int) (results []checkResult, stop bool) {
 	label := cmd.label(id)
 	errorLine := func(err error) []checkResult {
@@ -184,6 +189,17 @@ func (l *localRun) runLocal(ctx context.Context, cmd *AppCommand, id int) (resul
 			r.Item = label + " " + r.Item
 			r.Path = l.c.rel(path)
 			results = append(results, r)
+		}
+	case "daemon":
+		switch {
+		case l.daemon.halt == nil || l.daemon.resume == nil:
+			return errorLine(errors.New("this run cannot stop and start the scene's daemon")), true
+		case cmd.Op == "stop":
+			l.daemon.halt()
+		default:
+			if err := l.daemon.resume(ctx); err != nil {
+				return errorLine(fmt.Errorf("the scene's daemon did not start again: %w", err)), true
+			}
 		}
 	}
 	return results, false

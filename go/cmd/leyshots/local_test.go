@@ -166,3 +166,49 @@ func TestCheckLocalLeyMissing(t *testing.T) {
 		t.Errorf("the app was sent %v", fake.commands)
 	}
 }
+
+// daemon stops and starts the scene's daemon in order with the app's commands; one that will not
+// start again ends the scene.
+func TestCheckDaemonCommand(t *testing.T) {
+	var calls []string
+	scenes := `scenes:
+  - name: s
+    fixtures: [{name: scene_2m}]
+    app:
+      - {cmd: daemon, op: stop}
+      - {cmd: state, expect: {tuned_hz: 146520000}}
+      - {cmd: daemon, op: start}
+      - {cmd: state, expect: {tuned_hz: 146520000}}
+`
+	var resumeErr error
+	prepare := func(string) (*sceneDaemon, error) {
+		return &sceneDaemon{
+			stop: func() { calls = append(calls, "stop") },
+			halt: func() { calls = append(calls, "halt") },
+			resume: func(context.Context) error {
+				calls = append(calls, "resume")
+				return resumeErr
+			},
+		}, nil
+	}
+	_, out, err := checkWithFakeApp(t, t.TempDir(), scenes, prepare)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if got := strings.Join(calls, " "); got != "halt resume stop" {
+		t.Errorf("the daemon was %s", got)
+	}
+	calls, resumeErr = nil, errors.New("leylined did not answer")
+	_, out, err = checkWithFakeApp(t, t.TempDir(), scenes, prepare)
+	if !errors.Is(err, errChecksFailed) {
+		t.Fatalf("err = %v\n%s", err, out)
+	}
+	expectOutput(t, out,
+		"ok       s 1440x820 state#2 tuned_hz",
+		"error    s 1440x820 daemon#3             the scene's daemon did not start again: leylined did not answer",
+		"2 checked: 1 ok, 1 error; ",
+	)
+	if got := strings.Join(calls, " "); got != "halt resume stop" {
+		t.Errorf("the daemon was %s", got)
+	}
+}

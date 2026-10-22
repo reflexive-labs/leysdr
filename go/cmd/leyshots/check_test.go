@@ -232,6 +232,9 @@ func TestLoadChecksRejects(t *testing.T) {
 		"file absolute":      "fixtures: [{name: x}]\n    app: [{cmd: file, path: /etc/hosts, contains: a}]",
 		"file sans contains": "fixtures: [{name: x}]\n    app: [{cmd: file, path: bookmarks.json}]",
 		"negative exit":      "fixtures: [{name: x}]\n    app: [{cmd: ley, args: [state], expect_exit: -1}]",
+		"daemon sans op":     "fixtures: [{name: x}]\n    app: [{cmd: daemon}]",
+		"daemon restart":     "fixtures: [{name: x}]\n    app: [{cmd: daemon, op: restart}]",
+		"op on ley":          "fixtures: [{name: x}]\n    app: [{cmd: ley, args: [state], op: stop}]",
 	}
 	for name, body := range cases {
 		path := filepath.Join(t.TempDir(), "scenes.yaml")
