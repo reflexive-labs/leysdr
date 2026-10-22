@@ -219,6 +219,19 @@ func TestLoadChecksRejects(t *testing.T) {
 		"name twice":         "fixtures: [{name: x}]\n    app: [{cmd: ax, name: a}, {cmd: ax, name: a}]",
 		"bad size":           "fixtures: [{name: x}]\n    sizes: [{width: 0, height: 1}]\n    app: [{cmd: state}]",
 		"name with a dot":    "fixtures: [{name: x}]\n    app: [{cmd: snapshot, name: a.b}]",
+		"ley sans args":      "fixtures: [{name: x}]\n    app: [{cmd: ley}]",
+		"ley with keys":      "fixtures: [{name: x}]\n    app: [{cmd: ley, args: [state], keys: a}]",
+		"stdout on state":    "fixtures: [{name: x}]\n    app: [{cmd: state, expect_stdout: a}]",
+		"bad regex":          "fixtures: [{name: x}]\n    app: [{cmd: ley, args: [state], expect_stdout: \"(\"}]",
+		"empty negation":     "fixtures: [{name: x}]\n    app: [{cmd: ley, args: [state], expect_stdout: \"!\"}]",
+		"ley_bg sans id":     "fixtures: [{name: x}]\n    app: [{cmd: ley_bg, args: [tune]}]",
+		"ley_bg twice":       "fixtures: [{name: x}]\n    app: [{cmd: ley_bg, id: a, args: [tune]}, {cmd: ley_bg, id: a, args: [tune]}]",
+		"kill unknown":       "fixtures: [{name: x}]\n    app: [{cmd: kill, id: a}]",
+		"kill before start":  "fixtures: [{name: x}]\n    app: [{cmd: kill, id: a}, {cmd: ley_bg, id: a, args: [tune]}]",
+		"file outside":       "fixtures: [{name: x}]\n    app: [{cmd: file, path: ../x, contains: a}]",
+		"file absolute":      "fixtures: [{name: x}]\n    app: [{cmd: file, path: /etc/hosts, contains: a}]",
+		"file sans contains": "fixtures: [{name: x}]\n    app: [{cmd: file, path: bookmarks.json}]",
+		"negative exit":      "fixtures: [{name: x}]\n    app: [{cmd: ley, args: [state], expect_exit: -1}]",
 	}
 	for name, body := range cases {
 		path := filepath.Join(t.TempDir(), "scenes.yaml")
@@ -333,6 +346,9 @@ func (a *fakeApp) serve(ctx context.Context, control string, pid int) {
 				ans["files"] = []string{name}
 			case "press":
 				ans["ok"], ans["error"] = false, "no element press.me"
+			case "wait":
+				s, _ := cmd["seconds"].(float64)
+				time.Sleep(time.Duration(s * float64(time.Second)))
 			}
 			b, _ := json.Marshal(ans)
 			writeAtomic(filepath.Join("out", strconv.Itoa(id)+".json"), b)
@@ -375,12 +391,12 @@ func TestCheckEndToEnd(t *testing.T) {
 	o := checkOptions{
 		runOptions: runOptions{root: dir, out: filepath.Join(dir, "checks"), app: "/A.app", stdout: &stdout, logf: t.Logf},
 		checks:     filepath.Join(dir, "chk", "scenes.yaml"), goldens: filepath.Join(dir, "goldens"), release: "26.6",
-		prepare: func(_ context.Context, _ *CheckFile, _ *CheckScene, run string) ([]string, func(), error) {
+		prepare: func(_ context.Context, _ *CheckFile, _ *CheckScene, run string) (*sceneDaemon, error) {
 			prepared++
 			if err := os.MkdirAll(run, 0o755); err != nil {
-				return nil, nil, err
+				return nil, err
 			}
-			return []string{"LEYLINE_SOCKET=/s.sock", "LEYLINE_BOOKMARKS=/b.json", "PATH=/bin"}, func() {}, nil
+			return &sceneDaemon{env: []string{"LEYLINE_SOCKET=/s.sock", "LEYLINE_BOOKMARKS=/b.json", "PATH=/bin"}, stop: func() {}}, nil
 		},
 		launch: fake.launch,
 		alive: func(pid int) bool {
@@ -526,8 +542,8 @@ func TestCheckAppNeverReady(t *testing.T) {
 	o := checkOptions{
 		runOptions: runOptions{out: filepath.Join(dir, "checks"), stdout: &stdout, logf: t.Logf},
 		checks:     filepath.Join(dir, "scenes.yaml"), goldens: filepath.Join(dir, "goldens"), release: "26.6",
-		prepare: func(_ context.Context, _ *CheckFile, _ *CheckScene, run string) ([]string, func(), error) {
-			return nil, func() {}, os.MkdirAll(run, 0o755)
+		prepare: func(_ context.Context, _ *CheckFile, _ *CheckScene, run string) (*sceneDaemon, error) {
+			return &sceneDaemon{stop: func() {}}, os.MkdirAll(run, 0o755)
 		},
 		launch:  func(context.Context, appLaunch) error { return nil },
 		alive:   func(int) bool { return killed == 0 },
@@ -636,8 +652,8 @@ func TestCheckHold(t *testing.T) {
 			mu.Unlock()
 		}},
 		checks: filepath.Join(dir, "scenes.yaml"), goldens: filepath.Join(dir, "goldens"), release: "26.6", hold: true,
-		prepare: func(_ context.Context, _ *CheckFile, _ *CheckScene, run string) ([]string, func(), error) {
-			return []string{"LEYLINE_SOCKET=/s.sock"}, func() {}, os.MkdirAll(run, 0o755)
+		prepare: func(_ context.Context, _ *CheckFile, _ *CheckScene, run string) (*sceneDaemon, error) {
+			return &sceneDaemon{env: []string{"LEYLINE_SOCKET=/s.sock"}, stop: func() {}}, os.MkdirAll(run, 0o755)
 		},
 		launch: fake.launch,
 		alive: func(pid int) bool {

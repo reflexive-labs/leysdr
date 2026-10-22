@@ -68,6 +68,20 @@ type AppCommand struct {
 	// Mask names the regions a snapshot or an ax tree leaves out of the comparison; nil is
 	// defaultMask, [] none.
 	Mask []string `yaml:"mask"`
+
+	// The runner's own commands (local.go), which never reach the app.
+	// Args are a ley or ley_bg command's arguments, without ley.
+	Args []string `yaml:"args"`
+	// ExpectStdout is what a ley command's standard output must (or, with !, must not) match.
+	ExpectStdout patterns `yaml:"expect_stdout"`
+	// ExpectExit is a ley command's exit status; nil is 0.
+	ExpectExit *int `yaml:"expect_exit"`
+	// ID names a ley_bg process for the kill that ends it.
+	ID string `yaml:"id"`
+	// Path is a file command's file, relative to the run directory (bookmarks.json, app.log).
+	Path string `yaml:"path"`
+	// Contains is what a file command's file must (or, with !, must not) match.
+	Contains patterns `yaml:"contains"`
 }
 
 // wireCommand is one line of commands.jsonl.
@@ -197,10 +211,16 @@ func (s *CheckScene) validate(path func(string) string) error {
 		}
 	}
 	names := map[string]bool{}
+	bg := map[string]bool{}
 	for i := range s.App {
 		c := &s.App[i]
 		if err := c.validate(path); err != nil {
 			return fmt.Errorf("app command %d (%s): %w", i+1, c.Cmd, err)
+		}
+		if c.isLocal() {
+			if err := c.validateLocal(bg); err != nil {
+				return fmt.Errorf("app command %d (%s): %w", i+1, c.Cmd, err)
+			}
 		}
 		if c.Name != "" {
 			key := c.Cmd + " " + c.Name
@@ -219,6 +239,8 @@ func (c *AppCommand) validate(path func(string) string) error {
 		"stage": c.Stage != nil, "settle": c.Settle != 0, "keys": c.Keys != "", "text": c.Text != "",
 		"identifier": c.Identifier != "", "seconds": c.Seconds != 0, "name": c.Name != "",
 		"expect": len(c.Expect) > 0, "mask": c.Mask != nil,
+		"args": len(c.Args) > 0, "expect_stdout": len(c.ExpectStdout) > 0, "expect_exit": c.ExpectExit != nil,
+		"id": c.ID != "", "path": c.Path != "", "contains": len(c.Contains) > 0,
 	}
 	var need, may []string
 	switch c.Cmd {
@@ -238,6 +260,14 @@ func (c *AppCommand) validate(path func(string) string) error {
 		need = []string{"identifier"}
 	case "wait":
 		need = []string{"seconds"}
+	case "ley":
+		need, may = []string{"args"}, []string{"expect_stdout", "expect_exit"}
+	case "ley_bg":
+		need = []string{"id", "args"}
+	case "kill":
+		need = []string{"id"}
+	case "file":
+		need = []string{"path", "contains"}
 	case "quit":
 		return errors.New("the runner sends quit after the last command")
 	default:

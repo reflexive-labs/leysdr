@@ -43,9 +43,8 @@ type checkOptions struct {
 	// hold leaves the one scene's app and daemon running after its commands, for driving by hand
 	// over the command file, until the app quits or the run is interrupted.
 	hold bool
-	// prepare starts the scene's daemon in run and returns the environment that points the app
-	// at it, and how to stop it.
-	prepare func(ctx context.Context, f *CheckFile, s *CheckScene, run string) (env []string, stop func(), err error)
+	// prepare starts the scene's daemon in run.
+	prepare func(ctx context.Context, f *CheckFile, s *CheckScene, run string) (*sceneDaemon, error)
 	launch  func(ctx context.Context, l appLaunch) error
 	alive   func(pid int) bool
 	kill    func(pid int)
@@ -55,6 +54,14 @@ type checkOptions struct {
 	// grace stands for answerGrace and the wait for ready.json beyond the stage's own time.
 	grace time.Duration
 	poll  time.Duration
+}
+
+// sceneDaemon is a check scene's daemon, set up and running.
+type sceneDaemon struct {
+	// env points a client at the daemon and the scene's bookmarks file, as KEY=value.
+	env []string
+	// stop ends the daemon.
+	stop func()
 }
 
 // appLaunch is one start of the app.
@@ -256,12 +263,13 @@ func (c *checker) runSize(ctx context.Context, s *CheckScene, size Size) {
 		return
 	}
 	run := filepath.Join(dir, "run")
-	env, stop, err := c.o.prepare(ctx, c.f, s, run)
+	sd, err := c.o.prepare(ctx, c.f, s, run)
 	if err != nil {
 		fail(err)
 		return
 	}
-	defer stop()
+	defer sd.stop()
+	env := sd.env
 	app, err := c.launch(ctx, s, size, run, env)
 	if err != nil {
 		fail(err)
@@ -269,9 +277,24 @@ func (c *checker) runSize(ctx context.Context, s *CheckScene, size Size) {
 	}
 	// A held app may have been sent commands by hand, so quit takes the id after the last used.
 	defer func() { app.quit(ctx, app.nextID(len(s.App)+1)) }()
+	// The runner's own commands; a background ley still running at the end is interrupted
+	// before the app quits and the daemon stops.
+	local := &localRun{c: c, daemon: sd, run: run, bg: map[string]*bgProcess{}}
+	defer local.cleanup()
 	for i := range s.App {
 		cmd := &s.App[i]
 		id := i + 1
+		if cmd.isLocal() {
+			results, stop := local.runLocal(ctx, cmd, id)
+			for _, r := range results {
+				r.Scene, r.Size = s.Name, size.String()
+				c.add(r)
+			}
+			if stop {
+				return
+			}
+			continue
+		}
 		a, err := app.send(ctx, cmd, id, c.f.Path)
 		if err != nil {
 			fail(fmt.Errorf("%s: %w", cmd.label(id), err))
