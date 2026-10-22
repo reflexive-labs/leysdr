@@ -62,8 +62,8 @@ type sceneDaemon struct {
 	env []string
 	// stop ends the daemon.
 	stop func()
-	// halt stops the daemon and resume starts it again on the same socket, store and data, for a
-	// scene's daemon command; nil when the run cannot.
+	// halt stops the daemon and resume starts it again on the same socket, store and data and
+	// plays the scene's fixtures again, for a scene's daemon command; nil when the run cannot.
 	halt   func()
 	resume func(ctx context.Context) error
 }

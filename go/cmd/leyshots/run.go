@@ -335,38 +335,58 @@ func startScene(ctx context.Context, o runOptions, in sceneSetup, run string) (*
 			pathEnv, "COLORTERM=truecolor", "LANG=en_US.UTF-8",
 		},
 	}
-	if err := sr.setUp(ctx, o, in, files); err != nil {
+	if err := sr.setUp(ctx, o, in); err != nil {
 		sr.stop()
 		return nil, err
 	}
 	return sr, nil
 }
 
-// setUp imports the bookmarks, plays the fixtures, adds the AI key and runs the steps.
-func (sr *sceneRun) setUp(ctx context.Context, o runOptions, in sceneSetup, files []*fixtureFile) error {
-	leyIn := func(stdin string, args ...string) error {
-		fmt.Fprintf(sr.stepsLog, "$ ley %s\n", strings.Join(args, " "))
-		cmd := exec.CommandContext(ctx, o.ley, args...)
-		cmd.Env = append(os.Environ(), sr.env...)
-		cmd.Stdin = strings.NewReader(stdin)
-		cmd.Stdout, cmd.Stderr = sr.stepsLog, sr.stepsLog
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("ley %s: %w; the output is in %s", strings.Join(args, " "), err, sr.stepsLog.Name())
-		}
-		return nil
+// ley runs one ley command against the scene's daemon with stdin, its output in steps.log.
+func (sr *sceneRun) ley(ctx context.Context, o runOptions, stdin string, args ...string) error {
+	fmt.Fprintf(sr.stepsLog, "$ ley %s\n", strings.Join(args, " "))
+	cmd := exec.CommandContext(ctx, o.ley, args...)
+	cmd.Env = append(os.Environ(), sr.env...)
+	cmd.Stdin = strings.NewReader(stdin)
+	cmd.Stdout, cmd.Stderr = sr.stepsLog, sr.stepsLog
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ley %s: %w; the output is in %s", strings.Join(args, " "), err, sr.stepsLog.Name())
 	}
+	return nil
+}
+
+// play makes each fixture a radio with a channel tuned on it; the channel outlives the command.
+// The app needs one tuned before it starts: a staged run does not reopen a band.
+func (sr *sceneRun) play(ctx context.Context, o runOptions) error {
+	for _, ff := range sr.fixtures {
+		if err := sr.ley(ctx, o, "", "play", ff.Path, "--persistent", "--loop"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// restart starts the halted daemon again on the same socket, store and data, and plays the
+// fixtures again: a daemon does not keep a file device across a restart, while the bookmarks,
+// keys and recordings it keeps are still there.
+func (sr *sceneRun) restart(ctx context.Context, o runOptions) error {
+	if err := sr.daemon.Resume(ctx); err != nil {
+		return err
+	}
+	return sr.play(ctx, o)
+}
+
+// setUp imports the bookmarks, plays the fixtures, adds the AI key and runs the steps.
+func (sr *sceneRun) setUp(ctx context.Context, o runOptions, in sceneSetup) error {
+	leyIn := func(stdin string, args ...string) error { return sr.ley(ctx, o, stdin, args...) }
 	ley := func(args ...string) error { return leyIn("", args...) }
 	if in.bookmarks != "" {
 		if err := ley("bookmarks", "import", in.bookmarks); err != nil {
 			return err
 		}
 	}
-	// Each fixture becomes a radio with a channel tuned on it, and the channel outlives the
-	// command. The app needs one tuned before it starts: a staged run does not reopen a band.
-	for _, ff := range files {
-		if err := ley("play", ff.Path, "--persistent", "--loop"); err != nil {
-			return err
-		}
+	if err := sr.play(ctx, o); err != nil {
+		return err
 	}
 	if in.ai != nil {
 		for _, c := range in.ai.steps() {
