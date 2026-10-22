@@ -54,7 +54,7 @@ daemon` tests reaching the machine's real launchd (`d487472`). The first shot sh
 layout faults for ML-9: the spectrum's trace draws over its dB labels at both edges, and the
 sidebar filter's placeholder is cut to "Band, bookmark or channe".
 
-### ML-1 `[ ]` The app writes its own window picture
+### ML-1 `[x]` The app writes its own window picture
 
 `Staging.swift`: after `settle`, beside `regions.json`, write `window.png` from the window's
 content view (`bitmapImageRepForCachingDisplay` + `cacheDisplay`), at the backing scale, with the
@@ -68,7 +68,7 @@ the ground; the renderer draws a frame offscreen and the app lays it over the Me
 draw, so no scene needs `screencapture`. Against `screencapture -o -l` at 2× the picture differs
 at the four rounded corners and in the filter's placeholder, which `cacheDisplay` draws brighter.
 
-### ML-2 `[ ]` Deterministic frames
+### ML-2 `[x]` Deterministic frames
 
 Behind `LEYLINE_APP_STAGE` only: animations off (`NSAnimationContext` duration 0, a transaction
 that disables animations at the root), the caret not blinking, the window drawn as key whether or
@@ -81,7 +81,7 @@ also overrides AppKit's private key-appearance getters. Two pictures a second ap
 in the inspector's live readings (tuning and deviation figures, the audio ladder), about 0.2 % of
 a 1100 × 700 pt window, and the `ax` tree carries the same figures as values.
 
-### ML-3 `[ ]` The command file
+### ML-3 `[x]` The command file
 
 `LEYLINE_APP_CONTROL` names a file the app tails. Each line is one JSON command; each answer is
 `<n>.json` (and `<n>.png` for a picture) in a directory beside it:
@@ -140,7 +140,7 @@ because the `NSAccessibility` walk from the window sees none of SwiftUI's elemen
 run neither activates the app nor orders its window front. `ShotStage` gained `assistant`,
 `focus_filter` and `channels_picker`; hovering a point and opening Settings are left.
 
-### ML-4 `[ ]` `leyshots check`
+### ML-4 `[x]` `leyshots check`
 
 A sibling of `leyshots run` reading `app/checks/scenes.yaml` (the site scene's inputs, plus
 `app`, a list of ML-3 commands, since `steps` stay the `ley` steps, and `sizes`, the window sizes
