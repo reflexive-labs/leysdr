@@ -72,6 +72,29 @@ scenes:
       - {cmd: wait, seconds: 2}
       - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater}}
       - {cmd: snapshot, name: after}
+      # The filter (docs/plans/app.md, U4): ⌘G from the Library brings the Radio and the
+      # field's focus; wx3 lists the NOAA row, dimmed because this radio cannot tune it; Escape
+      # clears the field and lets it go; zz matches nothing; and a name with a space in it
+      # types the space rather than muting, and Return tunes it, clears the field and lets it go.
+      - {cmd: press, identifier: toolbar.place.library}
+      - {cmd: key, keys: cmd+g}
+      - {cmd: state, expect: {place: radio, focused: sidebar.filter}}
+      - {cmd: type, text: wx3}
+      - {cmd: state, expect: {filter_query: wx3, focused: sidebar.filter}}
+      - {cmd: ax, name: wx3}
+      - {cmd: key, keys: escape}
+      - {cmd: state, expect: {filter_query: "", focused: ""}}
+      - {cmd: key, keys: cmd+g}
+      - {cmd: type, text: zz}
+      - {cmd: ax, name: zz}
+      - {cmd: snapshot, name: zz}
+      - {cmd: key, keys: escape}
+      - {cmd: key, keys: cmd+g}
+      - {cmd: type, text: evening net}
+      - {cmd: state, expect: {filter_query: evening net, focused: sidebar.filter}}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {tuned_hz: 147180000, bookmark: Evening net, filter_query: "", focused: ""}}
 
   # The window's accessibility identifiers (docs/dev/app.md, "Staged runs"), reached by press:
   # the toolbar's switch both ways, the rail's zoom, a bookmark's row (a tap gesture, which is an
@@ -109,3 +132,286 @@ scenes:
       - {cmd: key, keys: "cmd+,"}
       - {cmd: wait, seconds: 1}
       - {cmd: ax, name: settings, window: settings}
+
+  # The sidebar's rows (docs/plans/app.md, U4 and U6): the tuned 2 m row open with its range
+  # line, action strip and bookmarks; the bands outside the file radio's capture folded into one
+  # line, which a press opens and the next tune folds again; a folded band dimmed, its press doing
+  # nothing, its chevron opening it without a tune; a bookmark at 462.6625 MHz reading ch5 under
+  # GMRS, one at 500 MHz under Other; and the inspector's tags line, present on a tagged bookmark
+  # and absent on one without. The squelch is off, because the words over the squelch track
+  # follow the noise while it is muted, and no region masks them; the track itself moves with
+  # the signal, about 1.2 % of the picture, hence the threshold.
+  - name: sidebar-rows
+    threshold: 1.5
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "off"]
+      - ley: [bookmarks, add, "462.6625", --name, Family]
+      - ley: [bookmarks, add, "500", --name, Far]
+      - ley: [bookmarks, add, "146.85", --name, Tagged, --tag, home, --tag, vhf]
+      - ley: [bookmarks, add, "146.7", --name, Plain]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: snapshot, name: initial}
+      - {cmd: ax, name: initial}
+      - {cmd: state, expect: {tuned_hz: 146520000, open_rows.0: 2m}}
+      - {cmd: press, identifier: sidebar.outofrange}
+      - {cmd: press, identifier: sidebar.band.gmrs}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146520000}}
+      - {cmd: press, identifier: sidebar.band.gmrs.chevron}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146520000, open_rows.0: 2m, open_rows.1: gmrs}}
+      - {cmd: snapshot, name: unfolded}
+      - {cmd: ax, name: unfolded}
+      # 6 m has no plan, so its strip holds Scan band alone; one row opens by its chevron at a
+      # time, so GMRS closes.
+      - {cmd: press, identifier: sidebar.band.6m.chevron}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146520000, open_rows.0: 6m, open_rows.1: 2m}}
+      - {cmd: ax, name: noplan}
+      - {cmd: press, identifier: sidebar.bookmark.tagged}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146850000, bookmark: Tagged, open_rows.0: 2m}}
+      - {cmd: ax, name: tagged}
+      - {cmd: press, identifier: sidebar.bookmark.plain}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146700000, bookmark: Plain}}
+      - {cmd: ax, name: plain}
+
+  # The plan picker, Channels… (docs/plans/app.md, U4): it opens beside its action with its
+  # field focused; typing narrows the rows; Escape closes it; Return picks the highlighted row
+  # and closes it. Then marine's 110 rows, opened from the out-of-range fold: twelve rows tall,
+  # and 24 narrows them to 24 and 24 coast. The popover is a window of its own, which the
+  # window's picture leaves out, and the focused field is named by its label, because state
+  # finds no identifier on it. Up and Down are not sent: keys reach the main window, so the
+  # picker's key monitor never sees them in a check run.
+  - name: plan-picker
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Club repeater
+      settle: 3
+    app:
+      - {cmd: press, identifier: sidebar.band.2m.channels}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "channels:2m", focused: "AXUnknown \"Filter 2 m amateur channels\""}}
+      - {cmd: ax, name: open}
+      - {cmd: type, text: cal}
+      - {cmd: ax, name: narrowed}
+      - {cmd: key, keys: escape}
+      - {cmd: state, expect: {popover: "", tuned_hz: 146940000}}
+      - {cmd: press, identifier: sidebar.band.2m.channels}
+      - {cmd: wait, seconds: 1}
+      - {cmd: type, text: cal}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "", tuned_hz: 146520000, bookmark: Calling}}
+      - {cmd: press, identifier: sidebar.outofrange}
+      - {cmd: press, identifier: sidebar.band.marine.chevron}
+      - {cmd: press, identifier: sidebar.band.marine.channels}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "channels:marine", focused: "AXUnknown \"Filter marine VHF channels\""}}
+      - {cmd: type, text: "24"}
+      - {cmd: ax, name: marine24}
+
+  # The bookmark's Tone and Note in the inspector (docs/plans/app.md, U6): on Calling they show
+  # its saved values; a step up with →, to a frequency with no bookmark, takes both away, and
+  # naming that frequency with the pencil brings them back with their placeholders. (The arrows
+  # by the frequency are not pressed: they step finely while the person at the Mac holds ⇧.)
+  # A tone typed and Returned keeps the field's focus; a bad one stays in the field
+  # with the reason under it, which a good tone, Escape (putting the saved value back) and a
+  # tune to another bookmark each take away.
+  - name: bookmark-fields
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: ax, name: calling}
+      - {cmd: key, keys: right}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146525000, bookmark: null}}
+      - {cmd: ax, name: unnamed}
+      - {cmd: press, identifier: inspector.rename}
+      - {cmd: type, text: Spot}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {bookmark: Spot}}
+      - {cmd: snapshot, name: named}
+      - {cmd: ax, name: named}
+      - {cmd: press, identifier: inspector.tone}
+      - {cmd: state, expect: {focused: inspector.tone}}
+      - {cmd: type, text: "100.0"}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {focused: inspector.tone}}
+      - {cmd: ax, name: toned}
+      - {cmd: key, keys: cmd+a}
+      - {cmd: type, text: D024N}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: snapshot, name: refused}
+      - {cmd: ax, name: refused}
+      - {cmd: key, keys: cmd+a}
+      - {cmd: type, text: D023N}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ax, name: good}
+      - {cmd: key, keys: cmd+a}
+      - {cmd: type, text: D024N}
+      - {cmd: key, keys: return}
+      - {cmd: key, keys: escape}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ax, name: escaped}
+      - {cmd: press, identifier: inspector.tone}
+      - {cmd: key, keys: cmd+a}
+      - {cmd: type, text: D024N}
+      - {cmd: key, keys: return}
+      - {cmd: press, identifier: sidebar.bookmark.club-repeater}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146940000}}
+      - {cmd: ax, name: tuned}
+
+  # The tone last heard beside the bookmark's (docs/plans/app.md, U6): Calling's overs carry PL
+  # 100.0, and once one has been measured it stays between overs; Evening net's read DCS 023; a
+  # tune away and straight back clears it until the next over is measured; and a bookmark whose
+  # tone differs from the heard one shows both. state's heard says what the inspector writes;
+  # the picture shows the words beside the field. No tree is taken: the words over the squelch
+  # track follow the noise between overs, and no region masks them.
+  - name: heard-tones
+    threshold: 1.5
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "-45"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: wait, seconds: 10}
+      - {cmd: state, expect: {bookmark: Calling, heard: PL 100.0}}
+      - {cmd: wait, seconds: 5}
+      - {cmd: state, expect: {heard: PL 100.0}}
+      - {cmd: press, identifier: sidebar.bookmark.evening-net}
+      - {cmd: wait, seconds: 12}
+      - {cmd: state, expect: {bookmark: Evening net, heard: DCS 023}}
+      - {cmd: press, identifier: sidebar.bookmark.calling}
+      - {cmd: press, identifier: sidebar.bookmark.evening-net}
+      - {cmd: state, expect: {bookmark: Evening net, heard: null}}
+      - {cmd: press, identifier: sidebar.bookmark.calling}
+      - {cmd: press, identifier: inspector.tone}
+      - {cmd: key, keys: cmd+a}
+      - {cmd: type, text: "88.5"}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 10}
+      - {cmd: state, expect: {bookmark: Calling, heard: PL 100.0}}
+      - {cmd: snapshot, name: differs, mask: [spectrum, waterfall, readings, transmissions, log_day]}
+
+  # CHIRP import (docs/plans/app.md, U7), through File ▸ Import CHIRP…'s code path: the notice
+  # gives the counts and no row or editor opens; the bookmarks land under their bands, the
+  # 70 cm ones and GMRS's unnamed ch5 in the out-of-range fold; Club shows its tone and note;
+  # and a note typed on Simplex survives the file imported again, which updates all nine.
+  - name: chirp-import
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      import_chirp: ../../fixtures/chirp/sample.csv
+      settle: 3
+    app:
+      - {cmd: state, expect: {notices.0: "Imported 9 from sample.csv: 8 added, 1 updated, 1 skipped", open_rows.0: 2m}}
+      - {cmd: ax, name: imported}
+      - {cmd: press, identifier: sidebar.outofrange}
+      - {cmd: press, identifier: sidebar.band.70cm.chevron}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ax, name: seventy}
+      - {cmd: press, identifier: sidebar.band.gmrs.chevron}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ax, name: gmrs}
+      - {cmd: press, identifier: sidebar.bookmark.club}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club}}
+      - {cmd: ax, name: club}
+      - {cmd: press, identifier: sidebar.bookmark.simplex}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: inspector.note}
+      - {cmd: type, text: kept}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: stage, stage: {import_chirp: ../../fixtures/chirp/sample.csv}}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {bookmark: Simplex, notices.0: "Imported 9 from sample.csv: 0 added, 9 updated, 1 skipped"}}
+      - {cmd: ax, name: reimported}
+
+  # Scan band on the tuned 2 m row (docs/plans/app.md, U5), as the site's scan-app shot runs it:
+  # once the sweep's hits show, the audio is back on Calling with the band's mode and width; the
+  # hits are listed strongest first, each named by its channel or else its frequency, with a
+  # tick on the rail; and a hit's ＋ makes a bookmark named after it, its row open as an editor.
+  # scene_scan sweeps in one step, so nothing here holds the sweep's own words or its Stop. The
+  # tree is not kept: the levels move by a decibel between runs, and the two 41 dB hits trade
+  # places, so state asserts the order where it is clear. The picture leaves the sidebar out.
+  - name: scan-hits
+    threshold: 1.5
+    fixtures: [{name: scene_scan}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [stop, all]
+      - ley: [tune, "146", --persistent]
+    stage:
+      place: radio
+      inspector: true
+      expanded_band: 2m
+      select_bookmark: Calling
+      scan_band: true
+      settle: 3
+    app:
+      - {cmd: state, expect: {tuned_hz: 146520000, mode: NFM, bandwidth_hz: 12500, bookmark: Calling, hits.0: calling, hits.1: 146.940 MHz, hits.4: 145.230 MHz}}
+      - {cmd: snapshot, name: hits, mask: [spectrum, waterfall, readings, transmissions, log_day, heard, sidebar]}
+      - {cmd: press, identifier: sidebar.hit.146-940-mhz.add}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146520000, focused: "AXUnknown \"Name\""}}
+
+  # The assistant with no AI provider set up (docs/plans/app.md, the assistant panel, K1): the
+  # toolbar has no toggle and ⇧⌘A opens no column. (leyshots's stage has no assistant key yet.)
+  - name: assistant-absent
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: key, keys: shift+cmd+a}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {assistant_shown: false}}
+      - {cmd: snapshot, name: absent}
+      - {cmd: ax, name: absent}
