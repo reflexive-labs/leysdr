@@ -61,16 +61,9 @@ struct SidebarView: View {
                     .onExitCommand { session.clearFilter() }
                     .accessibilityIdentifier("sidebar.filter")
                     .accessibilityLabel("Band, bookmark or channel")
-                    // The placeholder is drawn here in `inkFaint`: the field's own takes the
-                    // field's `ink`, and the system's placeholder colour is dimmed only by
-                    // vibrancy, which a staged run's picture does not apply.
-                    .background(alignment: .leading) {
-                        if session.filterQuery.isEmpty {
-                            Text("Band, bookmark or channel").font(Theme.Font.label)
-                                .foregroundStyle(Theme.inkFaint).lineLimit(1)
-                                .allowsHitTesting(false).accessibilityHidden(true)
-                        }
-                    }
+                    .fieldPlaceholder(
+                        "Band, bookmark or channel", font: Theme.Font.label,
+                        shown: session.filterQuery.isEmpty)
             }
             .padding(.horizontal, 7).padding(.vertical, 5)
             .background(Theme.ground, in: RoundedRectangle(cornerRadius: 6))

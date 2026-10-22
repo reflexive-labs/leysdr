@@ -394,10 +394,12 @@ struct BookmarkField: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        TextField(placeholder, text: $draft)
+        TextField("", text: $draft)
             .textFieldStyle(.plain)
             .font(Theme.Font.value)
             .foregroundStyle(Theme.ink)
+            .accessibilityLabel(placeholder)
+            .fieldPlaceholder(placeholder, font: Theme.Font.value, shown: draft.isEmpty)
             .frame(height: Theme.Layout.valueFieldHeight)
             .focused($focused)
             .onSubmit { onCommit(draft) }
@@ -416,6 +418,20 @@ struct BookmarkField: View {
         guard draft != saved else { return }
         draft = saved
         onRevert()
+    }
+}
+
+extension View {
+    /// A plain text field's placeholder, drawn behind it in `inkFaint` while `shown`. The
+    /// field's own placeholder takes the field's ink, and the system's placeholder colour is
+    /// dimmed only by vibrancy, which a staged run's picture does not apply.
+    func fieldPlaceholder(_ text: String, font: Font, shown: Bool) -> some View {
+        background(alignment: .leading) {
+            if shown {
+                Text(text).font(font).foregroundStyle(Theme.inkFaint).lineLimit(1)
+                    .allowsHitTesting(false).accessibilityHidden(true)
+            }
+        }
     }
 }
 
