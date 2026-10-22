@@ -1664,7 +1664,9 @@ final class AppSession {
         followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
     }
 
-    /// A centre inside the radio's tuning range, with half a span to spare on each side.
+    /// A centre inside the radio's tuning range, with half a span to spare on each side. A
+    /// range narrower than the span (a file radio's, which tunes only the centre it was
+    /// recorded at) has no such centre, and the centre is kept inside the range itself.
     private func clampCentre(_ centre: Int64, span: Int64) -> Int64 {
         guard
             let r = device?.tuningRanges.first(where: {
@@ -1672,7 +1674,10 @@ final class AppSession {
             })
                 ?? device?.tuningRanges.first
         else { return max(0, centre) }
-        return min(max(centre, Int64(r.minHz) + span / 2), Int64(r.maxHz) - span / 2)
+        var lo = Int64(r.minHz) + span / 2
+        var hi = Int64(r.maxHz) - span / 2
+        if lo > hi { (lo, hi) = (Int64(r.minHz), Int64(r.maxHz)) }
+        return min(max(centre, lo), hi)
     }
 
     /// The centre write, the wait for its event, then the offset, and then whatever move was
