@@ -281,7 +281,11 @@ func (l *localRun) start(ctx context.Context, cmd *AppCommand) error {
 // killGrace. It returns a failing line when the ley had already exited, or did not exit on the
 // interrupt; nil when it exited as asked.
 func (l *localRun) kill(id, label string) *checkResult {
-	p := l.bg[id]
+	p, ok := l.bg[id]
+	if !ok {
+		// Validation keeps a kill after its ley_bg, but a second kill of one id finds it gone.
+		return &checkResult{Status: "fail", Item: label, Detail: fmt.Sprintf("ley_bg %s was killed already", id)}
+	}
 	delete(l.bg, id)
 	select {
 	case <-p.done:

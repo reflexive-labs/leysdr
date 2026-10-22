@@ -142,6 +142,28 @@ func TestCheckLocalCommands(t *testing.T) {
 	}
 }
 
+// A second kill of one id fails with a line, and the scene goes on.
+func TestCheckKillTwice(t *testing.T) {
+	_, out, err := checkWithFakeApp(t, t.TempDir(), `scenes:
+  - name: s
+    fixtures: [{name: scene_2m}]
+    app:
+      - {cmd: ley_bg, id: tune, args: [tune]}
+      - {cmd: wait, seconds: 0.2}
+      - {cmd: kill, id: tune}
+      - {cmd: kill, id: tune}
+      - {cmd: state, expect: {tuned_hz: 146520000}}
+`, func(string) (*sceneDaemon, error) { return &sceneDaemon{stop: func() {}}, nil })
+	if !errors.Is(err, errChecksFailed) {
+		t.Fatalf("err = %v\n%s", err, out)
+	}
+	expectOutput(t, out,
+		"fail     s 1440x820 kill#4               ley_bg tune was killed already",
+		"ok       s 1440x820 state#5 tuned_hz",
+		"2 checked: 1 ok, 1 fail; ",
+	)
+}
+
 // A ley that cannot be started ends the scene with an error, and the app still quits.
 func TestCheckLocalLeyMissing(t *testing.T) {
 	dir := t.TempDir()
