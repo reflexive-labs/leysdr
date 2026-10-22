@@ -266,9 +266,9 @@ type sceneRun struct {
 }
 
 // stop ends the daemon and closes the steps log.
-func (r *sceneRun) stop() {
-	_ = r.stepsLog.Close() // only appended to; a lost line is not worth failing the scene over
-	r.daemon.Stop()
+func (sr *sceneRun) stop() {
+	_ = sr.stepsLog.Close() // only appended to; a lost line is not worth failing the scene over
+	sr.daemon.Stop()
 }
 
 // startScene empties the run directory, generates the fixtures, starts the scene's
