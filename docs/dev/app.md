@@ -889,6 +889,40 @@ Its designated requirement is its identifier, so the permission holds for every 
 process without it is answered with the application's element wherever a window should be, and
 `ax` answers `ok:false` saying so.
 
+### Accessibility identifiers
+
+The views the checks name carry an accessibility identifier, which `ax` prints after `id=` and
+`press` takes. An identifier is lowercase words joined by dots, the area first; a row of a list
+ends in its data, a name slugged by `ViewIdentifier.slug` (`Club repeater` is `club-repeater`),
+so the identifier stays the same from one run to the next while the data does. The views give
+them and nothing else: an identifier changes no layout and no behaviour.
+
+| prefix | views |
+|---|---|
+| `toolbar.` | `place.radio`, `place.library`, `device` (the chip), `inspector`, `assistant` |
+| `sidebar` | the Radio's sidebar; `.filter`, `.add` (＋), `.list`, `.outofrange`, `.band.<id>` (a band row by its id in `bands.json`) with `.chevron`, `.scan` and `.channels` under it, `.bookmark.<name>`, `.hit.<hz>` (a sweep's hit), `.match.<id>` (a row of the filtered list) |
+| `planpicker` | the Channels… popover; `.filter`, `.row.<channel>` |
+| `devicemenu` | the device chip's popover; `.rate`, `.gain.<stage>` and `.gain.<stage>.auto`, `.device.<id>` |
+| `rail` | the band rail; `.track`, `.below`, `.above`, `.zoom.out`, `.zoom.in`, `.channel.<channel>` and `.hit.<hz>` (the ticks on the track) |
+| `spectrum.` | `maxhold`, `clear` |
+| `tuning.` | `field` (the frequency's digits), `up`, `down` |
+| `transport` | the bar under the Radio; `.mute`, `.mode`, `.width`, `.squelch` with `.squelch.track`, `.volume` |
+| `inspector` | the Radio's inspector; its groups `.header`, `.identity`, `.readings`, `.audio`, `.log`, `.measurements`; its controls `.rename`, `.tone`, `.note`, `.revert`, `.save`, `.tuneinside`, `.record`, `.measurements.toggle` |
+| `library.` | `sidebar`, `search`, `channel.<hz>`, `page`, `page.record`, `page.tune`, `day.<day>` (an EARLIER day's line) and `day.<day>.play`, `part.<n>` (counted from 0 down the page, as `select_part` counts), `inspector`, `inspector.playall`, `inspector.finder`, `inspector.delete` |
+| `player` | the Library's bar; `.previous`, `.play`, `.next`, `.volume` |
+| `assistant.` | `panel`, `new`, `input`, `stop`, `settings`, `decline`, `allow`, `allow.conversation` |
+| `settings.ai` | the Settings window's AI pane; `.key.<provider>` with `.check` and `.remove`, `.add` with `.add.provider`, `.add.label`, `.add.key` and `.add.endpoint`, `.feature.<feature>` with `.provider` and `.model`, `.usage.period`, `.notice.close` |
+
+A region or a row is made an element of its own before it is named (`identifiedGroup`, in
+`AccessibilityTree.swift`), because an identifier on a stack that is not an element is given to
+every element inside it, over their own. That adds a group to the tree and draws nothing. A
+pop-up's identifier is on both of its elements, the value and the chevron, and `press` takes the
+first. A row whose click is a tap gesture (a sidebar band, bookmark or match, a Library channel,
+a plan picker row) takes `press` without doing anything, because an accessibility press does not
+reach a tap gesture; a check reaches those through the stage or the keys. `ax` reads only the
+main window, so the Settings window's identifiers are not in its tree; popovers are, under the
+element that opened them.
+
 ## Logs
 
 The app writes one line per thing the window did (`AppLog.swift`): dialling and the daemon's
