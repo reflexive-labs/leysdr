@@ -242,6 +242,27 @@ person or hardware, 3 obsolete. Its numbering (U4.02, P.45, H3, F2) is used belo
   `goto-bookmark`), `plan-picker`, `bookmark-fields`, `heard-tones`, `chirp-import` (its first
   half), `scan-hits` (without the sweep's words), `assistant-absent`. Each fault found is fixed
   in its own commit when it is small and plainly a bug, and filed in `app.md` otherwise.
+
+  Built 2026-10-22, not ticked until the owner has read the findings: the eight scenes, with
+  `filter-goto` as `goto-bookmark`'s second half. About 55 facts are checked; `app.md` marks
+  each with its scene and lists what was found. Fixed on the way: the filter's placeholder and
+  the spectrum's dB labels (the two layout faults above), Go to… from the Library, the
+  pencil's field taking the focus, a plan pick or a band row on a file radio answering
+  `FREQ_OUT_OF_RANGE`, the Tone and Note placeholders' ink, and hit identifiers that moved from
+  run to run. The app's side of the harness gained `press` on a text field (the focus), `state`'s
+  `heard` and `hits` and a focused SwiftUI field's identifier, and an `ax` that leaves a text
+  field's top and height out. What the scenes could not reach, for ML-9b and ML-9c:
+  - the words over the squelch track follow the noise between overs and no region masks them,
+    so most scenes turn the squelch off and `heard-tones` asserts through `state` (a `squelch`
+    region in `leyshots`'s list and its default mask);
+  - `leyshots`'s stage has no `assistant`, `channels_picker` or `focus_filter` key, though the
+    app takes them;
+  - keys go to the main window, so a popover's key monitor never sees Up and Down, and the
+    window's picture leaves popovers out (the plan picker's highlight and scroll);
+  - `ax` is now and then answered no window, or the application in its place, by a trusted
+    process whose window is on screen, for minutes at a time; the cause is not known;
+  - nothing sets a `ley` value mid-scene (H6), and the arrows beside the frequency read the
+    person's ⇧, so scenes step with → instead.
 - **ML-9b `[ ]` The harness from outside the app** (Go, `leyfix`, the daemon): the AI provider
   stub as a scene key (H3, about 70 facts: `LEY_ASSISTANT_SCRIPT`, a `ley` that answers
   `worker check`, `ley ai add` and `use` steps); `ley`, `ley_bg`, `kill` and `file` in a scene's
