@@ -51,16 +51,22 @@ scenes:
       - {cmd: state, expect: {tuned_hz: 146520000}}
       - {cmd: ax, name: initial}
 
-  # Go to… (⌘G) by name: WX3 is 162.475 MHz, inside scene_ais's capture around 162.000 MHz.
-  - name: goto-wx
-    fixtures: [{name: scene_ais}]
+  # Go to… (⌘G) by name: Club repeater, a bookmark at 146.940 MHz, inside scene_2m's capture
+  # (146.400 MHz centre at 2.88 MS/s, so 144.96 to 147.84 MHz). A file radio tunes only inside
+  # the capture it was recorded with, so the name must lie there.
+  - name: goto-bookmark
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "-45"]
     stage:
       place: radio
       settle: 3
     app:
       - {cmd: key, keys: cmd+g}
-      - {cmd: type, text: wx3}
+      - {cmd: type, text: club}
       - {cmd: key, keys: return}
       - {cmd: wait, seconds: 2}
-      - {cmd: state, expect: {tuned_hz: 162475000}}
+      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater}}
       - {cmd: snapshot, name: after}

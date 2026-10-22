@@ -187,7 +187,7 @@ func TestChecksFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sel, err := f.Select([]string{"radio-2m", "goto-wx"})
+	sel, err := f.Select([]string{"radio-2m", "goto-bookmark"})
 	if err != nil || len(sel) != 2 {
 		t.Fatalf("Select: %v", err)
 	}

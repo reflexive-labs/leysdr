@@ -164,7 +164,7 @@ func cmdRun(ctx context.Context, args []string, stdout io.Writer) error {
 
 func cmdCheck(ctx context.Context, args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
-	only := fs.String("only", "", "comma-separated check scenes to run, e.g. radio-2m,goto-wx (default: all)")
+	only := fs.String("only", "", "comma-separated check scenes to run, e.g. radio-2m,goto-bookmark (default: all)")
 	record := fs.Bool("record", false, "write each picture and tree over its golden instead of comparing")
 	out := fs.String("out", "", "output directory for the artefacts and summary.json (default: tmp/checks in the checkout)")
 	goldens := fs.String("goldens", "", "goldens directory, above <macOS>-<arch> (default: tmp/goldens in the checkout)")
