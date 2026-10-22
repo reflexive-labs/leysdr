@@ -38,7 +38,7 @@ structure, compare both with what they should be, and read the result in a few l
 
 ## Units
 
-### ML-0 `[ ]` The Mac builds everything the loop needs
+### ML-0 `[x]` The Mac builds everything the loop needs
 
 - `make go` on the Mac: `go/bin/ley` is a Linux ELF left by the container, which is why the
   `leyline` MCP server fails to start (`ENOEXEC`).
@@ -48,6 +48,11 @@ structure, compare both with what they should be, and read the result in a few l
 - Grant Screen Recording to the terminal that runs `claude`, once, by hand, so the existing
   `make shots` works as a baseline. Record the terminal's name in `AGENTS.local.md`.
 - Done when `make shots ONLY=app-radio-2m.png` writes an image on this Mac.
+
+Landed 2026-10-21: all of the above green with nothing installed; the one failure was the `ley
+daemon` tests reaching the machine's real launchd (`d487472`). The first shot showed two
+layout faults for ML-9: the spectrum's trace draws over its dB labels at both edges, and the
+sidebar filter's placeholder is cut to "Band, bookmark or channe".
 
 ### ML-1 `[ ]` The app writes its own window picture
 
@@ -129,7 +134,7 @@ for each element as indented text, so a scene's tree diffs as text against its g
 agent can assert "the row `band.gmrs` is expanded and the third child reads `ch5`" without
 a picture.
 
-### ML-6 `[ ]` The style checks
+### ML-6 `[x]` The style checks
 
 - `scripts/check-theme.sh`, run by `make app-lint`: no `Color(`, `NSColor(`, `.font(.system` or
   hex literal in `app/Sources/LeylineApp` outside `Theme.swift`, with an allow-list for
@@ -140,8 +145,13 @@ a picture.
 - A test of WCAG contrast for every ink token on the grounds the table pairs it with, so an ink
   that falls below 4.5:1 (3:1 for the faint ones the table names) is caught in Swift, on Linux
   too.
-- In `leyshots check`: every pixel of a scene's chrome regions (from `regions.json`) is a palette
+- In `leyshots check` (with ML-4, still open): every pixel of a scene's chrome regions (from `regions.json`) is a palette
   value or a blend of two, which catches a system default colour leaking into a panel.
+
+Landed 2026-10-21 but for the pixel check: `scripts/check-theme.sh` in `make app-lint` (shorthand
+colours too, one line at a time), eight glyph font tokens and `meterWell` (pure black, off the
+palette: the owner may want it on), `PaletteTests.swift`. Two contrast pairs sit under 3:1 and
+are recorded as exceptions: `inkFaintest` on `chrome` (2.98) and on `selected` (2.84).
 
 ### ML-7 `[ ]` The vision review
 
