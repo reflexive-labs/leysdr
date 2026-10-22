@@ -68,6 +68,7 @@ private struct AIPaneContent: View {
             .padding(Theme.Layout.pageInset)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .accessibilityIdentifier("settings.ai")
     }
 }
 
@@ -83,6 +84,7 @@ private struct SettingsNoticeLine: View {
             Spacer()
             Button(action: dismiss) { Image(systemName: "xmark").font(Theme.Font.closeGlyph) }
                 .buttonStyle(.plain).foregroundStyle(Theme.inkFaint)
+                .accessibilityIdentifier("settings.ai.notice.close")
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(Theme.chrome)
@@ -177,8 +179,13 @@ private struct KeyRowView: View {
             }
             Spacer(minLength: 8)
             Button("Check") { Task { await session.checkKey(provider: row.provider) } }
+                .accessibilityIdentifier(
+                    "settings.ai.key.\(ViewIdentifier.slug(row.provider)).check")
             Button("Remove") { confirmingRemove = true }
+                .accessibilityIdentifier(
+                    "settings.ai.key.\(ViewIdentifier.slug(row.provider)).remove")
         }
+        .identifiedGroup("settings.ai.key.\(ViewIdentifier.slug(row.provider))")
         .confirmationDialog(
             "Remove the \(row.provider) key?", isPresented: $confirmingRemove
         ) {
@@ -225,23 +232,28 @@ private struct AddKeyForm: View {
                 }
                 .labelsHidden()
                 .frame(width: Theme.Layout.settingsPickerWidth)
+                .accessibilityIdentifier("settings.ai.add.provider")
             }
             field("Label") {
                 TextField("optional, such as home", text: $label).textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("settings.ai.add.label")
             }
             field("Key") {
                 SecureField("paste the key", text: $secret).textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("settings.ai.add.key")
             }
             if provider?.takesEndpoint == true {
                 field("Endpoint") {
                     TextField("empty for the provider's own API", text: $endpoint)
                         .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("settings.ai.add.endpoint")
                 }
             }
             HStack {
                 Spacer().frame(width: Theme.Layout.settingsLabelWidth)
                 Button(adding ? "Checking…" : "Add") { add() }
                     .disabled(adding || secret.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityIdentifier("settings.ai.add")
                 Text("Adding a key replaces any key for that provider, then checks it once.")
                     .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
             }
@@ -325,6 +337,7 @@ private struct FeatureRowView: View {
                 Text(missing).font(Theme.Font.footnote).foregroundStyle(Theme.caution)
             }
         }
+        .identifiedGroup(identifier)
     }
 
     private var shownProvider: String { typedProvider ?? row.provider }
@@ -356,7 +369,11 @@ private struct FeatureRowView: View {
         }
         .labelsHidden()
         .frame(width: Theme.Layout.settingsPickerWidth)
+        .accessibilityIdentifier("\(identifier).provider")
     }
+
+    /// `settings.ai.feature.speech`: the feature's row, which its pickers' identifiers extend.
+    private var identifier: String { "settings.ai.feature.\(ViewIdentifier.slug(row.feature))" }
 
     @ViewBuilder
     private var modelControl: some View {
@@ -367,6 +384,7 @@ private struct FeatureRowView: View {
                 .frame(width: Theme.Layout.settingsPickerWidth)
                 .onSubmit { writeTyped() }
                 .onAppear { if typedProvider == nil { typedModel = row.model } }
+                .accessibilityIdentifier("\(identifier).model")
         } else if !models.isEmpty {
             Picker(
                 "",
@@ -378,6 +396,7 @@ private struct FeatureRowView: View {
             }
             .labelsHidden()
             .frame(width: Theme.Layout.settingsPickerWidth)
+            .accessibilityIdentifier("\(identifier).model")
         }
     }
 
@@ -444,6 +463,7 @@ private struct UsageGroup: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
+                .accessibilityIdentifier("settings.ai.usage.period")
             }
             if fold.rows.isEmpty {
                 Text("No usage reported yet; calls made with these keys are counted here.")

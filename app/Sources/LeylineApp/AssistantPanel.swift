@@ -33,6 +33,7 @@ struct AssistantToggle: View {
             }
             .buttonStyle(.plain)
             .help(session.assistantShown ? "Hide Assistant (⇧⌘A)" : "Show Assistant (⇧⌘A)")
+            .accessibilityIdentifier("toolbar.assistant")
         }
     }
 }
@@ -79,6 +80,7 @@ struct AssistantPanel: View {
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.panel)
+        .identifiedGroup("assistant.panel")
     }
 }
 
@@ -104,6 +106,7 @@ struct AssistantHeader: View {
                 }
                 .buttonStyle(.plain)
                 .help("New Conversation: ends this one and starts empty")
+                .accessibilityIdentifier("assistant.new")
             }
         }
         .padding(.horizontal, 16)
@@ -127,6 +130,7 @@ struct AssistantEmpty: View {
                     .fixedSize(horizontal: false, vertical: true)
                 SettingsLink { Text("Open Settings") }
                     .buttonStyle(.bordered).controlSize(.small)
+                    .accessibilityIdentifier("assistant.settings")
             }
             Spacer(minLength: 0)
         }
@@ -334,12 +338,15 @@ struct PendingCard: View {
                 let session = session
                 let id = question.callID
                 Button("Decline") { answer { await session.decline(callID: id) } }
+                    .accessibilityIdentifier("assistant.decline")
                 if question.offersConversation {
                     Button("Allow for this conversation") {
                         answer { await session.approve(callID: id, forConversation: true) }
                     }
+                    .accessibilityIdentifier("assistant.allow.conversation")
                 }
                 Button("Allow") { answer { await session.approve(callID: id) } }
+                    .accessibilityIdentifier("assistant.allow")
             }
             .buttonStyle(.bordered).controlSize(.small)
             .disabled(answering == question.callID)
@@ -364,6 +371,7 @@ struct AssistantNoticeLine: View {
             if settings {
                 SettingsLink { Text("Open Settings") }
                     .buttonStyle(.bordered).controlSize(.small)
+                    .accessibilityIdentifier("assistant.settings")
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 8)
@@ -409,10 +417,12 @@ struct AssistantField: View {
                     .focused($focused)
                     .onSubmit(send)
                     .modifier(TuningKeyGuard(focused: focused))
+                    .accessibilityIdentifier("assistant.input")
                 if view?.canStop == true {
                     Button("Stop") { Task { await session.stopTurn() } }
                         .buttonStyle(.bordered).controlSize(.small)
                         .help("Ends this turn; the conversation goes on")
+                        .accessibilityIdentifier("assistant.stop")
                 }
             }
             .padding(8)
