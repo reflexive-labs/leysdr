@@ -126,6 +126,10 @@ type App struct {
 	// verbs a job the Leyline app registered.
 	launchctlPrint func(ctx context.Context, target string) (string, error)
 	launchctlRun   func(ctx context.Context, args ...string) error
+	// launchAgentPlist, when set, stands in for the LaunchAgent plist's path
+	// (~/Library/LaunchAgents/com.leysdr.daemon.plist), so a test on a Mac
+	// with ley's agent installed never takes that agent for its daemon.
+	launchAgentPlist string
 	// echoOff, when set, stands in for turning echo off on a terminal stdin, so a test can take
 	// the prompt path of `ley ai add` with a reader that is not a terminal.
 	echoOff func(io.Reader) (restore func(), err error)

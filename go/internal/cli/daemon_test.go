@@ -252,16 +252,14 @@ func TestDaemonStartAndStopDriveALoadedLabel(t *testing.T) {
 
 // Without a plist or a loaded label, start and stop keep to the pidfile.
 func TestLaunchdOwnsDaemonNeedsALoadedLabel(t *testing.T) {
-	if launchAgentInstalled() {
-		t.Skip("this machine has ley's LaunchAgent installed")
-	}
-	none := &App{launchctlPrint: func(context.Context, string) (string, error) {
+	plist := filepath.Join(t.TempDir(), "com.leysdr.daemon.plist")
+	none := &App{launchAgentPlist: plist, launchctlPrint: func(context.Context, string) (string, error) {
 		return "", errors.New("exit status 113")
 	}}
 	if none.launchdOwnsDaemon(t.Context()) {
 		t.Error("launchdOwnsDaemon is true with no job loaded")
 	}
-	loaded := &App{launchctlPrint: func(context.Context, string) (string, error) { return "gui/501/com.leysdr.daemon = {\n}\n", nil }}
+	loaded := &App{launchAgentPlist: plist, launchctlPrint: func(context.Context, string) (string, error) { return "gui/501/com.leysdr.daemon = {\n}\n", nil }}
 	if !loaded.launchdOwnsDaemon(t.Context()) {
 		t.Error("launchdOwnsDaemon is false with the label loaded")
 	}

@@ -129,12 +129,21 @@ func (a *App) logPath(f *daemonFlags) string {
 	return leyline.DefaultLogPath()
 }
 
+// launchAgentPath is the LaunchAgent plist's path: the test's stand-in when
+// set, otherwise defaultLaunchAgentPath.
+func (a *App) launchAgentPath() string {
+	if a.launchAgentPlist != "" {
+		return a.launchAgentPlist
+	}
+	return defaultLaunchAgentPath()
+}
+
 // launchAgentInstalled reports whether the plist exists (macOS only).
-func launchAgentInstalled() bool {
+func (a *App) launchAgentInstalled() bool {
 	if runtime.GOOS != "darwin" {
 		return false
 	}
-	_, err := os.Stat(defaultLaunchAgentPath())
+	_, err := os.Stat(a.launchAgentPath())
 	return err == nil
 }
 
@@ -184,7 +193,7 @@ func (a *App) printJob(ctx context.Context) (string, error) {
 // disk, or the label is loaded without one, which is how the app registers
 // its agent.
 func (a *App) launchdOwnsDaemon(ctx context.Context) bool {
-	if launchAgentInstalled() {
+	if a.launchAgentInstalled() {
 		return true
 	}
 	_, err := a.printJob(ctx)
@@ -216,7 +225,7 @@ func (a *App) appDaemonProgram(ctx context.Context) string {
 			plistPath = value
 		}
 	}
-	if plistPath == defaultLaunchAgentPath() || !strings.Contains(program, ".app/Contents/Helpers/") {
+	if plistPath == a.launchAgentPath() || !strings.Contains(program, ".app/Contents/Helpers/") {
 		return ""
 	}
 	return program
@@ -300,7 +309,7 @@ func (a *App) daemonInstall(ctx context.Context, f *daemonFlags) error {
 	if err != nil {
 		return err
 	}
-	for _, p := range []string{defaultLaunchAgentPath(), logPath, socket} {
+	for _, p := range []string{a.launchAgentPath(), logPath, socket} {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			return err
 		}
@@ -315,7 +324,7 @@ func (a *App) daemonInstall(ctx context.Context, f *daemonFlags) error {
 	} else if info != nil {
 		return fmt.Errorf("another daemon is serving %s; stop it before installing", socket)
 	}
-	path := defaultLaunchAgentPath()
+	path := a.launchAgentPath()
 	if err := os.WriteFile(path, []byte(plist(bin, leyExecutable(), socket, logPath)), 0o644); err != nil {
 		return err
 	}
@@ -347,7 +356,7 @@ func (a *App) daemonUninstall(ctx context.Context, _ *daemonFlags) error {
 	if runtime.GOOS != "darwin" {
 		return errors.New("daemon uninstall needs launchd (macOS)")
 	}
-	path := defaultLaunchAgentPath()
+	path := a.launchAgentPath()
 	if _, err := os.Stat(path); err != nil {
 		return fmt.Errorf("not installed: %s", path)
 	}

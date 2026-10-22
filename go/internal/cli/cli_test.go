@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -75,8 +76,30 @@ func runEnv(t *testing.T, ctx context.Context, sock string, env map[string]strin
 	t.Helper()
 	var out, errb bytes.Buffer
 	app := &App{Stdout: &out, Stderr: &errb, LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }}
+	withoutLaunchd(t, app)
 	err := Execute(ctx, app, append([]string{"--socket", sock}, args...))
 	return out.String(), errb.String(), err
+}
+
+// withoutLaunchd points app's launchd at nothing: no plist and no loaded job, and any other
+// launchctl call fails. Without it the daemon verbs on a Mac with ley's LaunchAgent installed
+// drive that agent, kickstarting and stopping the machine's own daemon. A stand-in the test set
+// already is kept.
+func withoutLaunchd(t *testing.T, app *App) {
+	t.Helper()
+	if app.launchAgentPlist == "" {
+		app.launchAgentPlist = filepath.Join(t.TempDir(), "com.leysdr.daemon.plist")
+	}
+	if app.launchctlPrint == nil {
+		app.launchctlPrint = func(context.Context, string) (string, error) {
+			return "", errors.New("exit status 113")
+		}
+	}
+	if app.launchctlRun == nil {
+		app.launchctlRun = func(_ context.Context, args ...string) error {
+			return fmt.Errorf("launchctl %v: a test must not reach launchd", args)
+		}
+	}
 }
 
 // runEnvIn is runEnv with stdin holding the given text.
@@ -87,6 +110,7 @@ func runEnvIn(t *testing.T, ctx context.Context, sock string, env map[string]str
 		Stdout: &out, Stderr: &errb, Stdin: strings.NewReader(stdin),
 		LookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok },
 	}
+	withoutLaunchd(t, app)
 	err := Execute(ctx, app, append([]string{"--socket", sock}, args...))
 	return out.String(), errb.String(), err
 }
@@ -298,6 +322,7 @@ func runApp(t *testing.T, app *App, args ...string) (string, string, error) {
 	if app.LookupEnv == nil {
 		app.LookupEnv = func(string) (string, bool) { return "", false }
 	}
+	withoutLaunchd(t, app)
 	if app.Socket != "" {
 		args = append([]string{"--socket", app.Socket}, args...)
 	}
