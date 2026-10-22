@@ -234,6 +234,32 @@ panel, the window following the radio) and `ai-features.md` into a check scene, 
 `ax` assertion, or a review question, and run them. Fixes are filed as new items in those plans.
 Items that need the real radio, real audio or a person's ear stay on a shorter list, named.
 
+The inventory (2026-10-22, kept in `tmp/ml9-inventory.md` on the build Mac) splits the lists into
+238 checkable facts: 58 a scene can check today, 172 after a harness addition, 5 that need a
+person or hardware, 3 obsolete. Its numbering (U4.02, P.45, H3, F2) is used below. Four parts:
+
+- **ML-9a `[ ]` The scenes that need nothing new.** `sidebar-rows`, `filter-goto` (extending
+  `goto-bookmark`), `plan-picker`, `bookmark-fields`, `heard-tones`, `chirp-import` (its first
+  half), `scan-hits` (without the sweep's words), `assistant-absent`. Each fault found is fixed
+  in its own commit when it is small and plainly a bug, and filed in `app.md` otherwise.
+- **ML-9b `[ ]` The harness from outside the app** (Go, `leyfix`, the daemon): the AI provider
+  stub as a scene key (H3, about 70 facts: `LEY_ASSISTANT_SCRIPT`, a `ley` that answers
+  `worker check`, `ley ai add` and `use` steps); `ley`, `ley_bg`, `kill` and `file` in a scene's
+  `app` list, run mid-scene against its socket (H6); `daemon stop|start` (H9); `expect_log`
+  against `run/app.log` (H7); the fixtures `scene_gmrs`, `scene_vhf20`, `scene_wx` and a CHIRP
+  file with no Frequency column (F1–F4); a sweep that lasts seconds on a file device (H10).
+- **ML-9c `[ ]` The harness inside the app**: the Settings window in `stage`, `ax`, `snapshot`
+  and `state` (H4); `state` fields for mute, volume, the sink, window size, the caret, an alert,
+  the assistant's turns and buttons, the waterfall's view and a tooltip (H5); `click` and `hover`
+  for what `press` cannot reach (H1, H2); `menu` (H8); alert sheets (H13); `relaunch` (H11).
+- **ML-9d `[ ]` The remaining scenes**: `settings-ai`, `assistant-conversation`,
+  `assistant-cards`, `assistant-view-tools`, `follow-terminal`, `follow-assistant`,
+  `follow-launch-and-daemon`, `gmrs-plan`, `vhf-wide`, `sweep-lifecycle`, `change-note`,
+  `alert-and-menus`.
+
+ML-9a and ML-9b run side by side; ML-9c follows ML-9a in the same tree, since both edit the app;
+ML-9d needs all three. Light appearance stays out (Decisions: dark only).
+
 ### ML-10 `[ ]` Snapshot tests of single views (later, if ML-4 is too slow)
 
 Offscreen `NSHostingView` renders of single views from a fixture `AppSession`, in a macOS-only
