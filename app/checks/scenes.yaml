@@ -27,9 +27,47 @@
 #   {cmd: press, identifier: I}           presses the element with that accessibility identifier
 #   {cmd: wait, seconds: S}
 #
+# A state or a wait may take expect_log, patterns the app's log (run/app.log) must hold among the
+# lines written from the moment the command before was sent; a line that matches is printed with
+# its timestamp. A pattern is a Go regular expression, and one that starts with ! must not match;
+# expect_log, expect_stdout and contains each take one pattern or a list.
+#
+# These entries of app the runner runs itself, in order with the others; they never reach the app:
+#
+#   {cmd: ley, args: [bookmarks, --json]} a ley command against the scene's daemon and bookmarks;
+#                                         expect_exit (default 0) and expect_stdout are checked,
+#                                         and the output goes to run/steps.log
+#   {cmd: ley_bg, id: T, args: [tune, 146.52]}
+#                                         a ley started in the background, its output in
+#                                         run/ley_bg-T.log; one still running when the scene ends
+#                                         is interrupted
+#   {cmd: kill, id: T}                    interrupts ley_bg T as Ctrl-C would and waits for it; it
+#                                         fails when T had exited already or does not exit
+#   {cmd: file, path: bookmarks.json, contains: ["Club", "!Simplex"]}
+#                                         a file of the run directory (bookmarks.json, app.log,
+#                                         leylined.log, steps.log, ai/record.jsonl) matched
+#   {cmd: daemon, op: stop}               stops the scene's leylined; op: start starts it again on
+#                                         the same socket, store and keys and plays the fixtures
+#                                         again, so the app reconnects
+#
+# ai: {script: assistant/hello.script, model: M, provider: P, key: true} runs the daemon's
+# assistant on a scripted model (go/internal/assistant, Scripted: one JSON response a line), with
+# a ley shim that accepts any key as the daemon's worker check. Before the app starts a made-up
+# key is added for P (default anthropic) and M chosen (default the provider's); key: false adds
+# none. Nothing reaches a provider, and the key lives in the scene daemon's own data directory.
+#
+# sweep_dwell: S makes a scan on the scene's file radio dwell S seconds (leylined
+# --file-scan-dwell): a file radio sweeps in one step, which otherwise ends in a quarter of a
+# second, too soon to see the sweep or stop it.
+#
 # threshold is the percentage of compared pixels a snapshot may change and still pass (default
 # 0.1). Goldens live in tmp/goldens/<macOS major.minor>-<arch>/<scene>/<W>x<H>/ and are written only
 # by `make app-check RECORD=1`.
+#
+# Fixtures made for checks (go/cmd/leyfix/scenes.go): scene_gmrs (GMRS 462 MHz, channels 1, 5 and
+# 21), scene_vhf20 (2 m, MURS, marine and NOAA WX2 in one capture, 142.7 to 163.7 MHz),
+# scene_wx (the NOAA channels with nothing on the air) and scene_wx_on (WX2 and WX1 on the air);
+# ../../fixtures/chirp/nofreq.csv is a CSV the CHIRP import refuses.
 
 scenes:
   # The site's app-radio-2m inputs, without its on_air wait: the 2 m band open on Calling.
