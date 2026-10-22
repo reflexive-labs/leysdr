@@ -231,7 +231,7 @@ private struct AddKeyForm: View {
                     ForEach(providers) { p in Text(p.name).tag(p.id) }
                 }
                 .labelsHidden()
-                .frame(width: Theme.Layout.settingsPickerWidth)
+                .frame(width: Theme.Layout.settingsPickerWidth, alignment: .leading)
                 .accessibilityIdentifier("settings.ai.add.provider")
             }
             field("Label") {
@@ -368,7 +368,7 @@ private struct FeatureRowView: View {
             }
         }
         .labelsHidden()
-        .frame(width: Theme.Layout.settingsPickerWidth)
+        .frame(width: Theme.Layout.settingsPickerWidth, alignment: .leading)
         .accessibilityIdentifier("\(identifier).provider")
     }
 
@@ -395,7 +395,7 @@ private struct FeatureRowView: View {
                 ForEach(modelChoices(models), id: \.self) { m in Text(m).tag(m) }
             }
             .labelsHidden()
-            .frame(width: Theme.Layout.settingsPickerWidth)
+            .frame(width: Theme.Layout.settingsPickerWidth, alignment: .leading)
             .accessibilityIdentifier("\(identifier).model")
         }
     }
