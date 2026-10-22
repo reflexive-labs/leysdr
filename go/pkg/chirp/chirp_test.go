@@ -180,6 +180,15 @@ func TestParseHeaderRules(t *testing.T) {
 	if _, _, err := Parse(strings.NewReader("")); !errors.Is(err, ErrNoFrequency) {
 		t.Fatalf("an empty file has no Frequency column either: %v", err)
 	}
+	// The fixture the app's import is checked with: a channel list from some other program.
+	f, err := os.Open("../../../fixtures/chirp/nofreq.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if _, _, err := Parse(f); !errors.Is(err, ErrNoFrequency) {
+		t.Fatalf("nofreq.csv: err = %v", err)
+	}
 }
 
 // One import into an empty store is the expected file, after both are normalised.

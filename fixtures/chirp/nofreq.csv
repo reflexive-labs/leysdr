@@ -1,0 +1,4 @@
+Channel,Name,RX MHz,TX MHz,Mode,Comment
+1,Club,146.940,146.340,FM,club repeater
+2,Simplex,146.520,146.520,NFM,
+3,Net,147.180,147.780,FM,evening net
