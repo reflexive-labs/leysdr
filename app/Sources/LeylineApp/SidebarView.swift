@@ -555,8 +555,9 @@ struct TuningKeyGuard: ViewModifier {
         // before the window it opened from.
         var window = NSApp.keyWindow
         if window == nil, DeterministicFrames.staged {
+            // A field editor, or the text view a multi-line field (the assistant's) types into.
             window = NSApp.windows.filter {
-                $0.isVisible && ($0.firstResponder as? NSTextView)?.isFieldEditor == true
+                $0.isVisible && ($0.firstResponder as? NSTextView)?.isEditable == true
             }.min { a, _ in a.parent != nil }
         }
         ownWindow = window.map { ObjectIdentifier($0) }
@@ -574,8 +575,10 @@ struct TuningKeyGuard: ViewModifier {
                 .subtracting([.numericPad, .function, .capsLock])
             guard held.isEmpty || held == [.shift] else { return event }
             let shift = held == [.shift]
+            let number = window.windowNumber
             let taken: Bool = MainActor.assumeIsolated {
-                Self.take(keyCode: code, shift: shift, picker: picker, move: move)
+                Self.take(
+                    keyCode: code, shift: shift, picker: picker, move: move, window: number)
             }
             return taken ? nil : event
         }
@@ -586,7 +589,7 @@ struct TuningKeyGuard: ViewModifier {
     /// when the key was taken.
     @MainActor
     private static func take(
-        keyCode: UInt16, shift: Bool, picker: Bool, move: Binding<Int>
+        keyCode: UInt16, shift: Bool, picker: Bool, move: Binding<Int>, window: Int
     )
         -> Bool
     {
@@ -602,7 +605,10 @@ struct TuningKeyGuard: ViewModifier {
                 break
             }
         }
-        guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView else { return false }
+        // The editor of the window the key came to, which is the key window when the app is
+        // active; a check run's app never is, and has no key window.
+        guard let editor = NSApp.window(withWindowNumber: window)?.firstResponder as? NSTextView
+        else { return false }
         switch keyCode {
         case 49:  // Space: the Tune menu's Mute/Unmute, and a word break in a name
             editor.insertText(" ", replacementRange: editor.selectedRange())
