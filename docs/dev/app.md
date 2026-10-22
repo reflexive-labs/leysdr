@@ -821,9 +821,9 @@ app draws the window's frame view with `cacheDisplay(in:to:)`. A Metal layer dra
 there, so the waterfall's renderer draws one more frame into an offscreen texture and that
 image is laid over the Metal view for the draw, under what SwiftUI draws over the waterfall.
 Against `screencapture -o -l` of the same window the picture differs at the window's four rounded
-corners, which `screencapture` leaves transparent, and in the sidebar filter's placeholder,
-which `cacheDisplay` draws brighter because the system placeholder colour's vibrancy is not
-applied.
+corners, which `screencapture` leaves transparent. A text field's system placeholder is dimmed
+only by vibrancy, which `cacheDisplay` does not apply, so the sidebar filter draws its own
+placeholder in `inkFaint`.
 
 `window_number` is the `NSWindow` number that `screencapture -l` takes, and `scale` is the
 window's backing scale, the pixels per point in `window.png`. Each region is a rectangle

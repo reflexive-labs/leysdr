@@ -49,19 +49,30 @@ struct SidebarView: View {
     /// gives it focus through the session.
     private var filter: some View {
         @Bindable var session = session
-        return HStack(spacing: 8) {
-            HStack(spacing: 6) {
+        return HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 Image(systemName: "magnifyingglass").font(Theme.Font.fieldGlyph)
                     .foregroundStyle(Theme.inkFaint)
-                TextField("Band, bookmark or channel", text: $session.filterQuery)
+                TextField("", text: $session.filterQuery)
                     .textFieldStyle(.plain).font(Theme.Font.label).foregroundStyle(Theme.ink)
                     .frame(height: Theme.Layout.labelFieldHeight)
                     .focused($filterFocused)
                     .onSubmit { session.tuneFirstMatch() }
                     .onExitCommand { session.clearFilter() }
                     .accessibilityIdentifier("sidebar.filter")
+                    .accessibilityLabel("Band, bookmark or channel")
+                    // The placeholder is drawn here in `inkFaint`: the field's own takes the
+                    // field's `ink`, and the system's placeholder colour is dimmed only by
+                    // vibrancy, which a staged run's picture does not apply.
+                    .background(alignment: .leading) {
+                        if session.filterQuery.isEmpty {
+                            Text("Band, bookmark or channel").font(Theme.Font.label)
+                                .foregroundStyle(Theme.inkFaint).lineLimit(1)
+                                .allowsHitTesting(false).accessibilityHidden(true)
+                        }
+                    }
             }
-            .padding(.horizontal, 8).padding(.vertical, 5)
+            .padding(.horizontal, 7).padding(.vertical, 5)
             .background(Theme.ground, in: RoundedRectangle(cornerRadius: 6))
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.border))
             .modifier(TuningKeyGuard(focused: filterFocused))
