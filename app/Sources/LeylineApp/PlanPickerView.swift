@@ -28,6 +28,7 @@ struct PlanPickerView: View {
                     .foregroundStyle(Theme.inkFaint)
                 TextField("Filter \(band.name) channels", text: $session.pickerQuery)
                     .textFieldStyle(.plain).font(Theme.Font.label).foregroundStyle(Theme.ink)
+                    .frame(height: Theme.Layout.labelFieldHeight)
                     .focused($focused)
                     .onSubmit { session.pickHighlighted() }
                     .onExitCommand { session.pickerBand = nil }

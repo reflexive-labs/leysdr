@@ -174,6 +174,13 @@ enum Theme {
 
     // Layout, from the design's window: ratios of a 1360×820 design, fixed where it says so.
     enum Layout {
+        /// A plain text field's height in `Font.label` and in `Font.value`: their lines' heights,
+        /// set rather than left to the field. Left to themselves the heights swapped on some
+        /// launches, the filter field 13 pt and the inspector's Tone and Note 15 pt, as if an
+        /// AppKit field made for one font had been reused for the other and kept its height, and
+        /// the rows under them moved.
+        static let labelFieldHeight: CGFloat = 15
+        static let valueFieldHeight: CGFloat = 13
         static let sidebarWidth: CGFloat = 236
         static let bandRailHeight: CGFloat = 40
         static let spectrumHeight: CGFloat = 150

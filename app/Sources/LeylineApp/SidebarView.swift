@@ -55,6 +55,7 @@ struct SidebarView: View {
                     .foregroundStyle(Theme.inkFaint)
                 TextField("Band, bookmark or channel", text: $session.filterQuery)
                     .textFieldStyle(.plain).font(Theme.Font.label).foregroundStyle(Theme.ink)
+                    .frame(height: Theme.Layout.labelFieldHeight)
                     .focused($filterFocused)
                     .onSubmit { session.tuneFirstMatch() }
                     .onExitCommand { session.clearFilter() }
@@ -439,7 +440,10 @@ struct BookmarkRow: View {
         HStack(spacing: 8) {
             Circle().fill(selected ? Theme.good : Theme.borderStrong).frame(width: 6, height: 6)
             if editing {
-                NameField(initial: bookmark.name, font: Theme.Font.label, editing: $editing) {
+                NameField(
+                    initial: bookmark.name, font: Theme.Font.label,
+                    height: Theme.Layout.labelFieldHeight, editing: $editing
+                ) {
                     session.rename(bookmark: bookmark, to: $0)
                 }
             } else {

@@ -236,6 +236,8 @@ struct IdentityView: View {
 struct NameField: View {
     let initial: String
     var font: Font = Theme.Font.name
+    /// The field's height, set for the fonts `Theme.Layout` gives one for (`labelFieldHeight`).
+    var height: CGFloat? = nil
     @Binding var editing: Bool
     /// What the name becomes on Return; Escape and a lost focus end the edit without it.
     let onCommit: (String) -> Void
@@ -250,6 +252,7 @@ struct NameField: View {
             .textFieldStyle(.plain)
             .font(font)
             .foregroundStyle(Theme.ink)
+            .frame(height: height)
             .focused($focused)
             .onSubmit { commit() }
             .onExitCommand { end() }
@@ -394,6 +397,7 @@ struct BookmarkField: View {
             .textFieldStyle(.plain)
             .font(Theme.Font.value)
             .foregroundStyle(Theme.ink)
+            .frame(height: Theme.Layout.valueFieldHeight)
             .focused($focused)
             .onSubmit { onCommit(draft) }
             .onExitCommand { focused = false }

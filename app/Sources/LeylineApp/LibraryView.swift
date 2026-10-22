@@ -121,6 +121,7 @@ struct LibrarySidebar: View {
                     get: { session.recordingsQuery }, set: { session.recordingsQuery = $0 })
             )
             .textFieldStyle(.plain).font(Theme.Font.label).foregroundStyle(Theme.ink)
+            .frame(height: Theme.Layout.labelFieldHeight)
             .accessibilityIdentifier("library.search")
             .onSubmit {
                 let now = Date()
