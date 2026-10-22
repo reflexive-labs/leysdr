@@ -43,34 +43,29 @@ enum DeterministicFrames {
             "_hasActiveAppearanceIgnoringKeyFocus", "_isKeyWindow", "_isKeyWindowIgnoringFocus",
         ].map(NSSelectorFromString)
 
-    /// Makes `window` answer that it is key and main whatever the focus, by moving it to a
-    /// subclass of its own class made for that; SwiftUI's window class is not ours to subclass
-    /// in source. Done once per window.
+    /// Classes whose windows already answer that they are key.
+    private static var keyedClasses: Set<ObjectIdentifier> = []
+
+    /// Makes `window` answer that it is key and main whatever the focus. SwiftUI's window class
+    /// is not ours to subclass in source, and moving the window to a subclass made at run time
+    /// crashed the Library's first layout (a Swift cast on the window traps on a class with no
+    /// Swift metadata), so the getters are replaced on the window's own class: in a staged run
+    /// every window of that class draws as key.
     static func drawAsKey(_ window: NSWindow) {
-        let base: AnyClass = type(of: window)
-        let name = "LeylineStaged_" + NSStringFromClass(base)
-        if NSStringFromClass(base) == name { return }
-        let cls: AnyClass
-        if let existing = NSClassFromString(name) {
-            cls = existing
-        } else {
-            guard let made = objc_allocateClassPair(base, name, 0) else { return }
-            let yes: @convention(block) (AnyObject) -> Bool = { _ in true }
-            let yesFor: @convention(block) (AnyObject, Int) -> Bool = { _, _ in true }
-            // `isKeyWindow` alone leaves the traffic lights grey: the frame asks AppKit's own
-            // appearance getters, which are private and so named by string, each overridden
-            // only where this macOS has it.
-            for sel in Self.keyGetters where class_getInstanceMethod(base, sel) != nil {
-                class_addMethod(made, sel, imp_implementationWithBlock(yes), "c@:")
-            }
-            let button = NSSelectorFromString("_hasActiveAppearanceForStandardWindowButton:")
-            if class_getInstanceMethod(base, button) != nil {
-                class_addMethod(made, button, imp_implementationWithBlock(yesFor), "c@:q")
-            }
-            objc_registerClassPair(made)
-            cls = made
+        let cls: AnyClass = type(of: window)
+        guard keyedClasses.insert(ObjectIdentifier(cls)).inserted else { return }
+        let yes: @convention(block) (AnyObject) -> Bool = { _ in true }
+        let yesFor: @convention(block) (AnyObject, Int) -> Bool = { _, _ in true }
+        // `isKeyWindow` alone leaves the traffic lights grey: the frame asks AppKit's own
+        // appearance getters, which are private and so named by string, each replaced only
+        // where this macOS has it.
+        for sel in keyGetters where class_getInstanceMethod(cls, sel) != nil {
+            class_replaceMethod(cls, sel, imp_implementationWithBlock(yes), "c@:")
         }
-        object_setClass(window, cls)
+        let button = NSSelectorFromString("_hasActiveAppearanceForStandardWindowButton:")
+        if class_getInstanceMethod(cls, button) != nil {
+            class_replaceMethod(cls, button, imp_implementationWithBlock(yesFor), "c@:q")
+        }
         // Views read the key state when told it changed, as a real focus change tells them.
         NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
         NotificationCenter.default.post(name: NSWindow.didBecomeMainNotification, object: window)
