@@ -108,6 +108,7 @@ struct AssistantHeader: View {
                 }
                 .buttonStyle(.plain)
                 .help("New Conversation: ends this one and starts empty")
+                .accessibilityLabel("New Conversation")
                 .accessibilityIdentifier("assistant.new")
             }
         }
