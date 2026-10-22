@@ -147,7 +147,7 @@ struct AssistantTranscript: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: Theme.Layout.assistantTurnGap) {
+            VStack(alignment: .leading, spacing: Theme.Layout.assistantTurnGap) {
                 ForEach(view.turns) { turn in
                     TurnView(turn: turn)
                 }
