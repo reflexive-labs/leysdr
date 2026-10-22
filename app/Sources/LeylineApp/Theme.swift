@@ -71,6 +71,9 @@ enum Theme {
     /// clipping, a channel outside the capture. The ramp's fourth stop, so it never competes
     /// with `accent` for the tuned channel.
     static let caution = Color(hex: 0xC9C06A)
+    /// The left end of the squelch meter's container, which fades from it to the ramp's first
+    /// stop. Pure black, darker than `ground` and outside the palette's greys.
+    static let meterWell = Color(hex: 0x000000)
 
     /// The level ramp's stops, cold to hot: floor to full scale. `level(_:)` interpolates for
     /// SwiftUI-drawn meters; the waterfall shader gets the same stops as floats.

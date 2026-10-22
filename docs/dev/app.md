@@ -578,7 +578,9 @@ side are never compiled there.
 
 Every value below is in `Theme.swift`, under the names given here, and a view uses no colour or
 font that is not one of them. `make app-lint` runs `scripts/check-theme.sh`, which fails on a
-colour, system font or hex value anywhere else in `LeylineApp`. `PaletteTests` fails when the
+colour, system font or hex value anywhere else in `LeylineApp`, a shorthand system colour
+(`.black`, `.secondary`) passed to `foregroundStyle`, `fill`, `background` and the like or listed
+in a gradient's `colors:` included. `PaletteTests` fails when the
 palette table and `Theme.swift` disagree, and when an ink falls under its WCAG contrast floor on
 `ground`, `chrome`, `panel`, `raised` or `selected`: 4.5:1 for `ink`, `inkSecondary` and
 `inkTertiary`, 3:1 for the three fainter inks. Two pairs are under it and recorded in the test as
@@ -609,6 +611,7 @@ known exceptions: `inkFaintest` on `chrome` (2.98:1) and on `selected` (2.84:1).
 | `good` | `#2FB6A3` | squelch open, a connected device, a bookmarked frequency |
 | `caution` | `#C9C06A` | off tune, overdeviating, the radio clipping, a channel outside the capture; the ramp's fourth stop |
 | `recording` | `#B8483C` | the radio clipping: the waterfall's clipped-row marks, the gain slider's knob |
+| `meterWell` | `#000000` | the left end of the squelch meter's container, fading to the ramp's first stop |
 | `accentRec` | `#E5484D` | what is being kept: the Record transmissions switch, the live row's dot, a recording bookmark's dot, the time gutter's kept bars |
 
 `recording` and `accentRec` are never on one element, so red on a control always means kept and

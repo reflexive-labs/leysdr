@@ -517,7 +517,8 @@ struct SquelchTrack: View {
                     RoundedRectangle(cornerRadius: 4)
                         .fill(
                             LinearGradient(
-                                colors: [.black, Theme.levelStops[0]], startPoint: .leading,
+                                colors: [Theme.meterWell, Theme.levelStops[0]],
+                                startPoint: .leading,
                                 endPoint: .trailing))
                     // The colour region, inset, as long as the level: dark teal at its left to
                     // the ramp's yellow at its right whatever its length, as the design draws it.

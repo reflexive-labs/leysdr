@@ -9,9 +9,12 @@
 #
 # Every Swift file under app/Sources/LeylineApp except Theme.swift is searched for a colour built
 # in place (`Color(`, `NSColor(`, `MTLClearColor(` and the like), a named system colour
-# (`Color.red`, `NSColor.labelColor`), a system font (`.font(.system`, `Font.system`) and a hex
-# colour (`#2A3034`, `0x2A3034`). Each hit prints as `file:line: message`; any hit exits 1.
-# Whole-line comments are skipped, so a comment may name the hex value it explains.
+# (`Color.red`, `NSColor.labelColor`, or `.black` where a colour is expected: in a gradient's
+# `colors: [`, or passed to `foregroundStyle`, `foregroundColor`, `tint`, `fill`, `stroke`,
+# `background` or `shadow(color:`), a system font (`.font(.system`, `Font.system`,
+# `Font = .system(`) and a hex colour (`#2A3034`, `0x2A3034`, `0x2A3034FF`). Each hit prints as
+# `file:line: message`; any hit exits 1. Whole-line comments are skipped, so a comment may name
+# the hex value it explains.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -22,6 +25,7 @@ ALLOW="
 *|Color.clear|transparent, not a colour: an unselected row's ground or a spacer
 LeylineApp.swift|NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)|the About panel is the system's window on the system's ground
 LeylineApp.swift|NSColor.secondaryLabelColor|the About panel is the system's window on the system's ground
+SplashView.swift|[.clear, .black]|the sweep's alpha mask: only its opacity is drawn, never its colour
 "
 export ALLOW
 
@@ -59,9 +63,12 @@ awk '
             if (allowFile[i] == "*" || allowFile[i] == name) line = strip(line, allowText[i])
         if (line ~ /Color\(/) hit("a colour built outside Theme.swift; use a Theme token")
         if (line ~ /(^|[^A-Za-z0-9_])(NS)?Color\.[a-z]/) hit("a system colour; use a Theme token")
-        if (line ~ /\.font\(\.system/ || line ~ /Font\.system/)
+        if (line ~ /(colors: *\[|\.foregroundStyle\(|\.foregroundColor\(|\.tint\(|\.fill\(|\.stroke\(|\.background\(|\.shadow\(color:)/ \
+            && line ~ /[(\[,:?] *\.(black|white|red|green|blue|orange|yellow|gray|grey|pink|purple|brown|cyan|mint|teal|indigo|primary|secondary|tertiary|quaternary|accentColor)([^A-Za-z0-9_]|$)/)
+            hit("a system colour; use a Theme token")
+        if (line ~ /\.font\(\.system/ || line ~ /Font\.system/ || line ~ /Font\?? *= *\.system\(/)
             hit("a system font; use a Theme.Font token")
-        if (line ~ /(#|0x)[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]([^0-9A-Za-z_]|$)/)
+        if (line ~ /(#|0x)[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]([0-9A-Fa-f][0-9A-Fa-f])?([^0-9A-Za-z_]|$)/)
             hit("a hex colour outside Theme.swift; use a Theme token")
     }
     END { exit bad }
