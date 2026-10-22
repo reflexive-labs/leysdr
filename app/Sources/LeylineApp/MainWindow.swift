@@ -211,6 +211,7 @@ struct RadioBody: View {
                     VStack(spacing: 0) {
                         SpectrumView()
                             .frame(height: Theme.Layout.spectrumHeight)
+                            .stageRegion(.spectrum)
                         // The seam between them is drawn by the waterfall, over its Metal view:
                         // a line laid here sat under the hosted view's rounded-out frame.
                         WaterfallView()

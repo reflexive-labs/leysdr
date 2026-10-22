@@ -351,6 +351,22 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
         upload(from: buffer, into: texture)
 
         let state = signposter.beginInterval("draw", "seq=\(buffer.newestSeq)")
+        guard let cmd = queue.makeCommandBuffer(),
+            let enc = cmd.makeRenderCommandEncoder(descriptor: pass)
+        else { return }
+        encode(enc, pipeline: pipeline, texture: texture, buffer: buffer, size: view.drawableSize)
+        enc.endEncoding()
+        cmd.present(drawable)
+        cmd.commit()
+        frames += 1
+        signposter.endInterval("draw", state)
+    }
+
+    /// One frame's draw: the ring through the ramp, at `size` pixels.
+    private func encode(
+        _ enc: MTLRenderCommandEncoder, pipeline: MTLRenderPipelineState, texture: MTLTexture,
+        buffer: WaterfallBuffer, size: CGSize
+    ) {
         var u = WaterfallUniforms()
         u.capacity = UInt32(WaterfallBuffer.capacity)
         u.bins = UInt32(buffer.bins)
@@ -362,16 +378,13 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
         u.floorU8 = (floor + DBU8.offset) * DBU8.scale
         u.rangeU8 = max(rangeDB, 1) * DBU8.scale
         u.fadeU8 = fadeDB * DBU8.scale
-        u.width = Float(view.drawableSize.width)
-        u.height = Float(view.drawableSize.height)
+        u.width = Float(size.width)
+        u.height = Float(size.height)
         u.rowsPerPixel = 1
         u.markR = mark.x
         u.markG = mark.y
         u.markB = mark.z
 
-        guard let cmd = queue.makeCommandBuffer(),
-            let enc = cmd.makeRenderCommandEncoder(descriptor: pass)
-        else { return }
         enc.setRenderPipelineState(pipeline)
         enc.setFragmentTexture(texture, index: 0)
         enc.setFragmentBytes(&u, length: MemoryLayout<WaterfallUniforms>.stride, index: 0)
@@ -383,11 +396,59 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
             enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 2)
         }
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+    }
+
+    /// The waterfall as the next frame would draw it, rendered into a texture of the view's
+    /// drawable size and read back, for a staged run's picture (`WindowPicture`): a
+    /// `CAMetalLayer` draws nothing through `cacheDisplay`. nil before the first row, when the
+    /// view shows only its clear colour, which `cacheDisplay` draws as the ground anyway.
+    func picture(of view: MTKView) -> CGImage? {
+        guard let device, let queue, let pipeline, let buffer, let texture, buffer.bins > 0
+        else { return nil }
+        upload(from: buffer, into: texture)
+        let w = Int(view.drawableSize.width)
+        let h = Int(view.drawableSize.height)
+        guard w > 0, h > 0 else { return nil }
+        let d = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: view.colorPixelFormat, width: w, height: h, mipmapped: false)
+        d.usage = [.renderTarget]
+        d.storageMode = .managed
+        guard let target = device.makeTexture(descriptor: d) else { return nil }
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = target
+        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].clearColor = view.clearColor
+        pass.colorAttachments[0].storeAction = .store
+        guard let cmd = queue.makeCommandBuffer(),
+            let enc = cmd.makeRenderCommandEncoder(descriptor: pass)
+        else { return nil }
+        encode(enc, pipeline: pipeline, texture: texture, buffer: buffer, size: view.drawableSize)
         enc.endEncoding()
-        cmd.present(drawable)
+        if let blit = cmd.makeBlitCommandEncoder() {
+            blit.synchronize(resource: target)
+            blit.endEncoding()
+        }
         cmd.commit()
-        frames += 1
-        signposter.endInterval("draw", state)
+        cmd.waitUntilCompleted()
+        var bytes = [UInt8](repeating: 0, count: w * h * 4)
+        target.getBytes(
+            &bytes, bytesPerRow: w * 4, from: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0)
+        // The layer's own colour space when it has one; else the window's, which is what a
+        // layer without one is composited as.
+        let space =
+            (view.layer as? CAMetalLayer)?.colorspace ?? view.window?.colorSpace?.cgColorSpace
+            ?? CGColorSpace(name: CGColorSpace.sRGB)
+        guard let space, let provider = CGDataProvider(data: Data(bytes) as CFData) else {
+            return nil
+        }
+        // `bgra8Unorm` is BGRA in memory: 32-bit little-endian with alpha first.
+        let info =
+            CGBitmapInfo.byteOrder32Little.rawValue
+            | CGImageAlphaInfo.premultipliedFirst.rawValue
+        return CGImage(
+            width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
+            space: space, bitmapInfo: CGBitmapInfo(rawValue: info), provider: provider,
+            decode: nil, shouldInterpolate: false, intent: .defaultIntent)
     }
 
     /// The ring texture, or nil while Metal is refusing one. A refusal is reported in the window

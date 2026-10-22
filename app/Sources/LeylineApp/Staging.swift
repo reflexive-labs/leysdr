@@ -3,10 +3,10 @@
 // A staged run for the site's screenshots (docs/dev/app.md, "Staged runs"; docs/plans/
 // site-shots.md, "App shots"). `LEYLINE_APP_STAGE` names a stage file (`ShotStage`); once the
 // daemon is live the window is set to it and, `settle` seconds later, measured into
-// `regions.json` beside it for `leyshots` to crop by. The stage sets only what the window's own
-// controls set: the place, the inspector, an opened sidebar row, a bookmark tuned the way a click
-// on its row tunes it, a Library part selected, and a CHIRP file imported through the same call
-// File ▸ Import CHIRP… makes. The radio is the daemon's as in any other run (invariant 7), and a
+// `regions.json` and drawn into `window.png` beside it for `leyshots` to crop by. The stage sets
+// only what the window's own controls set: the place, the inspector, an opened sidebar row, a
+// bookmark tuned the way a click on its row tunes it, a Library part selected, and a CHIRP file
+// imported through the same call File ▸ Import CHIRP… makes. The radio is the daemon's as in any other run (invariant 7), and a
 // staged session writes nothing to UserDefaults (`AppSession.staging`), so a shot leaves the
 // person's last band, place and inspector setting as they were.
 //
@@ -265,6 +265,18 @@ final class Staging {
             guard anchor.view?.window === window, let r = anchor.frameInWindow else { continue }
             regions[region] = ShotRegions.Rect(
                 windowRect: r.intersection(bounds), windowHeight: height)
+        }
+        // The picture first: `leyshots` takes the regions file as the sign that both are there.
+        let picture = ShotStage.pictureURL(besideStage: stageURL)
+        if let png = WindowPicture.png(of: window) {
+            do {
+                try AppControl.writeReplacing(png, to: picture)
+                log("stage", "picture written to \(picture.path)")
+            } catch {
+                log("stage", "picture not written to \(picture.path): \(error)")
+            }
+        } else {
+            log("stage", "the window drew no picture")
         }
         let url = ShotStage.regionsURL(besideStage: stageURL)
         do {
