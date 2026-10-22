@@ -267,7 +267,7 @@ final class ControlChannel {
             focused: window.map { Self.describeFocus($0.firstResponder, in: $0) } ?? "",
             notices: notices,
             popover: popover, selectedRecordingChannel: s.selectedRecordingChannel,
-            selectedPart: s.selectedPartURI)
+            selectedPart: s.selectedPartURI, heard: s.heardTone?.words)
     }
 
     /// The Settings scene's window while it is on screen. SwiftUI names it
