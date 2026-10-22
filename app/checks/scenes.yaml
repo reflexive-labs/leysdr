@@ -232,8 +232,10 @@ scenes:
   # by the frequency are not pressed: they step finely while the person at the Mac holds ⇧.)
   # A tone typed and Returned keeps the field's focus; a bad one stays in the field
   # with the reason under it, which a good tone, Escape (putting the saved value back) and a
-  # tune to another bookmark each take away.
+  # tune to another bookmark each take away. The squelch track moves with the signal, about
+  # 1.2 % of the picture, hence the threshold.
   - name: bookmark-fields
+    threshold: 1.5
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: ../../site/shots/home.csv
