@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/reflexive-labs/leysdr/go/internal/daemonrun"
@@ -30,6 +31,9 @@ type runOptions struct {
 	logf                                            func(string, ...any)
 	// leyfixSrc is leyfixSourceHash of the checkout, which a cached fixture must match.
 	leyfixSrc string
+	// stageApp turns app into the bundle a staged run launches (stagedApp: a copy under its own
+	// bundle identifier); nil launches app as it is.
+	stageApp func(ctx context.Context, app string) (string, error)
 }
 
 // errHTMLOnly is a page rendered to HTML on a machine that cannot draw it to a PNG.
@@ -69,6 +73,13 @@ func runScenes(ctx context.Context, o runOptions) error {
 	manifest, err := readManifest(manifestPath)
 	if err != nil {
 		return err
+	}
+	if o.stageApp != nil && o.goos == "darwin" && slices.ContainsFunc(scenes, func(s *Scene) bool {
+		return s.Kind == kindApp || s.Kind == kindComposite
+	}) {
+		if o.app, err = o.stageApp(ctx, o.app); err != nil {
+			return err
+		}
 	}
 	tm := &tmuxRunner{bin: o.tmux}
 	defer tm.stop()

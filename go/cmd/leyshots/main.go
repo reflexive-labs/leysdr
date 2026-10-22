@@ -151,6 +151,7 @@ func cmdRun(ctx context.Context, args []string, stdout io.Writer) error {
 		goos:     runtime.GOOS,
 		stdout:   stdout,
 		logf:     logf,
+		stageApp: stagedAppIn(root),
 	}
 	if o.out == "" {
 		o.out = filepath.Join(root, "tmp", "shots")
@@ -200,6 +201,7 @@ func cmdCheck(ctx context.Context, args []string, stdout io.Writer) error {
 			app:      envOr("LEYLINE_APP", filepath.Join(root, "app", "dist", "Leyline.app")),
 			decoders: filepath.Join(root, "decoders"),
 			goos:     runtime.GOOS, stdout: stdout, logf: logf,
+			stageApp: stagedAppIn(root),
 		},
 		checks: checks, goldens: *goldens, record: *record,
 		launch: openApp, alive: processAlive, kill: killProcess, findPID: findAppPID,

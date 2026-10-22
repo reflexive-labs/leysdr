@@ -772,7 +772,13 @@ file. It holds JSON that `ShotStage` decodes, and every key is optional:
 
 A staged run shows no splash, so its first frame is the window. It writes nothing to
 UserDefaults and does not reopen the last band, so a staged run neither changes nor depends on
-the person's own settings. The stage is applied once, in the order of the table, after the daemon
+the person's own settings. AppKit writes some keys of its own all the same (a window's frame
+under `NSWindow Frame …`), so `leyshots` never launches the bundle it is given: it launches a
+copy in `tmp/staged-app/` whose `CFBundleIdentifier` is `com.leysdr.app.staged`, ad-hoc signed
+again and remade only when the source's executable or `Info.plist` changes. Its defaults, saved
+state and window frames are that copy's, never the person's app's. Nothing in the app keys on the
+identifier: Sparkle does not start in a staged run, the launch agent is not registered when
+`LEYLINE_SOCKET` names a socket, and the CLI link is only made from its menu item. The stage is applied once, in the order of the table, after the daemon
 is live and the window has its channel, or 5 s after that if no channel arrives. A scene
 therefore starts with a capture already tuned (`ley tune`), as it would be for someone who has
 the radio running. Without one, the app opens FM broadcast, as a first launch does. The stage changes only what the window's own controls

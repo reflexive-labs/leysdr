@@ -162,6 +162,11 @@ func checkScenes(ctx context.Context, o checkOptions) error {
 	if err := os.MkdirAll(o.out, 0o755); err != nil {
 		return err
 	}
+	if o.stageApp != nil && len(scenes) > 0 {
+		if o.app, err = o.stageApp(ctx, o.app); err != nil {
+			return err
+		}
+	}
 	c := &checker{o: o, f: f}
 	for _, s := range scenes {
 		for _, size := range s.sizes() {

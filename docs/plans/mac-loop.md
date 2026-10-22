@@ -144,7 +144,9 @@ focus), runs the commands, collects the pictures, state and trees into
 with its `expect`, and prints one line per artefact or expectation: `ok`, `diff 2.4 %`, `new`,
 `recorded`, `fail` or `error`, and the path. The pixel diff is Go (`image` is already in
 `leyshots`): per-channel tolerance, an anti-aliasing allowance, a red diff image. `make app-check`
-runs it; `ONLY=` and `RECORD=1` as `make shots` has them.
+runs it; `ONLY=` and `RECORD=1` as `make shots` has them. Both `check` and the site's `run` launch a copy
+of the bundle under `com.leysdr.app.staged` (`tmp/staged-app/`), because a staged run under the
+app's own identifier wrote a window frame into the person's defaults.
 
 ### ML-5 `[ ]` The accessibility tree
 
