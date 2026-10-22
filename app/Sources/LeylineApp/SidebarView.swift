@@ -550,13 +550,16 @@ struct TuningKeyGuard: ViewModifier {
 
     private func watchKeys() {
         if monitor != nil { return }
-        // The key window, or, while the app is not active (a check run never activates it,
-        // and an inactive app has no key window), the window being typed into, a popover's
+        // The key window. A check run never activates the app, and an inactive app has no key
+        // window, so a staged run alone falls back to the window being typed into, a popover's
         // before the window it opened from.
-        let typing = NSApp.windows.filter {
-            $0.isVisible && ($0.firstResponder as? NSTextView)?.isFieldEditor == true
-        }.min { a, _ in a.parent != nil }
-        ownWindow = (NSApp.keyWindow ?? typing).map { ObjectIdentifier($0) }
+        var window = NSApp.keyWindow
+        if window == nil, DeterministicFrames.staged {
+            window = NSApp.windows.filter {
+                $0.isVisible && ($0.firstResponder as? NSTextView)?.isFieldEditor == true
+            }.min { a, _ in a.parent != nil }
+        }
+        ownWindow = window.map { ObjectIdentifier($0) }
         let own = ownWindow
         let move = $pickerMove
         let picker = pickerKeys
