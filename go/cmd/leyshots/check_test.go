@@ -173,6 +173,12 @@ func TestPidWithEnv(t *testing.T) {
 	if got := pidWithEnv(ps, "LEYLINE_APP_CONTROL=/r/con"); got != 0 {
 		t.Errorf("a prefix matched pid %d", got)
 	}
+	// A checkout under a path with spaces: the variable is matched whole, not field by field.
+	spaced := []byte(" 40 /A.app/LeylineApp LEYLINE_APP_CONTROL=/My Repo/run/control2 X=1\n" +
+		" 41 /A.app/LeylineApp LEYLINE_APP_CONTROL=/My Repo/run/control\n")
+	if got := pidWithEnv(spaced, "LEYLINE_APP_CONTROL=/My Repo/run/control"); got != 41 {
+		t.Errorf("a path with spaces: pid %d", got)
+	}
 }
 
 // The checked-in scenes parse and keep to the protocol's fields.
@@ -537,5 +543,44 @@ func TestCheckAppNeverReady(t *testing.T) {
 	}
 	if killed != 77 {
 		t.Errorf("killed %d", killed)
+	}
+
+	// A ready.json caught mid-write is read again, not taken as the app's failure.
+	o.launch = func(_ context.Context, l appLaunch) error {
+		var control string
+		for _, kv := range l.env {
+			if v, ok := strings.CutPrefix(kv, "LEYLINE_APP_CONTROL="); ok {
+				control = v
+			}
+		}
+		path := filepath.Join(control, "ready.json")
+		if err := os.WriteFile(path, []byte(`{"ok":tr`), 0o644); err != nil {
+			return err
+		}
+		go func() {
+			time.Sleep(20 * time.Millisecond)
+			_ = os.WriteFile(path, []byte(`{"ok":true,"pid":0}`), 0o644)
+			time.Sleep(20 * time.Millisecond)
+			_ = os.WriteFile(filepath.Join(control, "out", "1.json"), []byte(`{"id":1,"ok":true,"result":{}}`), 0o644)
+		}()
+		return nil
+	}
+	o.grace = 2 * time.Second
+	o.findPID = func(context.Context, string) int { return 0 }
+	killed = 0
+	stdout.Reset()
+	if err := checkScenes(context.Background(), o); err != nil {
+		t.Errorf("a ready.json read mid-write: %v\n%s", err, stdout.String())
+	}
+
+	// An interrupted run fails, and still says what it did.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	stdout.Reset()
+	if err := checkScenes(ctx, o); !errors.Is(err, errChecksFailed) {
+		t.Errorf("an interrupted run: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "interrupted: context canceled") || !strings.Contains(stdout.String(), "checked:") {
+		t.Errorf("an interrupted run's output:\n%s", stdout.String())
 	}
 }

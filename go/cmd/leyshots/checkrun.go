@@ -172,6 +172,10 @@ func checkScenes(ctx context.Context, o checkOptions) error {
 			c.runSize(ctx, s, size)
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		// An interrupted run checked less than it was asked to: it fails, with what did run above.
+		c.add(checkResult{Status: "error", Scene: "-", Size: "-", Item: "-", Detail: "interrupted: " + err.Error()})
+	}
 	counts := map[string]int{}
 	failing := false
 	for _, r := range c.results {
@@ -309,22 +313,26 @@ func (c *checker) launch(ctx context.Context, s *CheckScene, size Size, run stri
 	}
 	path := filepath.Join(control, "ready.json")
 	deadline := time.Now().Add(wait)
+	var parseErr error
 	for {
 		if b, err := os.ReadFile(path); err == nil {
+			// A file that does not parse may be mid-write: read it again until the deadline.
 			var r ready
-			if err := json.Unmarshal(b, &r); err != nil {
-				a.quit(ctx, 0)
-				return nil, fmt.Errorf("%s: %w", path, err)
+			parseErr = json.Unmarshal(b, &r)
+			if parseErr == nil {
+				a.pid = r.PID
+				if !r.OK {
+					a.quit(ctx, 0)
+					return nil, fmt.Errorf("the app was not ready: %s; its log is %s", r.Error, c.rel(a.log))
+				}
+				return a, nil
 			}
-			a.pid = r.PID
-			if !r.OK {
-				a.quit(ctx, 0)
-				return nil, fmt.Errorf("the app was not ready: %s; its log is %s", r.Error, c.rel(a.log))
-			}
-			return a, nil
 		}
 		if time.Now().After(deadline) {
 			a.quit(ctx, 0)
+			if parseErr != nil {
+				return nil, fmt.Errorf("%s did not parse within %.0f s: %w; the app's log is %s", path, wait.Seconds(), parseErr, c.rel(a.log))
+			}
 			return nil, fmt.Errorf("the app wrote no ready.json within %.0f s; its log is %s and its output %s",
 				wait.Seconds(), c.rel(a.log), c.rel(l.output))
 		}
@@ -413,6 +421,7 @@ func (a *runningApp) quit(ctx context.Context, id int) {
 		pid = a.c.o.findPID(context.WithoutCancel(ctx), a.control)
 	}
 	if pid == 0 {
+		a.c.o.logf("found no app process started with control directory %s; it may still be running", a.control)
 		return
 	}
 	for deadline := time.Now().Add(grace); time.Now().Before(deadline); {
@@ -727,18 +736,37 @@ func findAppPID(ctx context.Context, control string) int {
 	return pidWithEnv(out, "LEYLINE_APP_CONTROL="+control)
 }
 
-// pidWithEnv picks the pid of the first `ps -E` line that holds the variable as a whole word.
+// pidWithEnv picks the pid of the first `ps -E` line that holds the variable whole. ps joins
+// arguments and variables with spaces and quotes nothing, so a path with spaces cannot be split
+// into fields; instead the variable must follow a space and be followed by a space or the end of
+// the line.
 func pidWithEnv(ps []byte, kv string) int {
 	for _, line := range strings.Split(string(ps), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 2 || !slices.Contains(fields[1:], kv) {
+		line = strings.TrimSpace(line)
+		pidText, rest, ok := strings.Cut(line, " ")
+		if !ok || !holdsWhole(" "+rest, " "+kv) {
 			continue
 		}
-		if pid, err := strconv.Atoi(fields[0]); err == nil {
+		if pid, err := strconv.Atoi(pidText); err == nil {
 			return pid
 		}
 	}
 	return 0
+}
+
+// holdsWhole reports whether s contains sub followed by a space or the end of s.
+func holdsWhole(s, sub string) bool {
+	for i := 0; ; {
+		j := strings.Index(s[i:], sub)
+		if j < 0 {
+			return false
+		}
+		end := i + j + len(sub)
+		if end == len(s) || s[end] == ' ' {
+			return true
+		}
+		i += j + 1
+	}
 }
 
 // listChecks prints one row per check scene: its name, sizes and commands.
