@@ -70,6 +70,12 @@ enum AccessibilityTree {
         // A process macOS does not trust for accessibility is answered with the application's
         // element wherever a window or a view should be, a tree of thousands of menu items.
         guard string(root, kAXRoleAttribute) == kAXWindowRole else {
+            if AXIsProcessTrusted() {
+                throw Failure(
+                    reason:
+                        "the accessibility API answered \(string(root, kAXRoleAttribute) ?? "an element with no role") where the window should be, though this process is trusted"
+                )
+            }
             throw Failure(
                 reason:
                     "the accessibility API answered with no window: \(Bundle.main.bundlePath) is not allowed to read it; add it in System Settings > Privacy & Security > Accessibility"
@@ -162,7 +168,8 @@ enum AccessibilityTree {
             // so a window left on another Space is not among them; the main and focused
             // windows are answered all the same.
             windows = [kAXMainWindowAttribute, kAXFocusedWindowAttribute].compactMap { name in
-                guard let w = attribute(app, name), CFGetTypeID(w) == AXUIElementGetTypeID()
+                guard let w = attribute(app, name), CFGetTypeID(w) == AXUIElementGetTypeID(),
+                    string(w as! AXUIElement, kAXRoleAttribute) == kAXWindowRole
                 else { return nil }
                 return (w as! AXUIElement)
             }
