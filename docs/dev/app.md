@@ -578,8 +578,11 @@ side are never compiled there.
 
 Every value below is in `Theme.swift`, under the names given here, and a view uses no colour or
 font that is not one of them. `make app-lint` runs `scripts/check-theme.sh`, which fails on a
-colour, system font or hex value anywhere else in `LeylineApp`, and `PaletteTests` fails when the
-palette table and `Theme.swift` disagree.
+colour, system font or hex value anywhere else in `LeylineApp`. `PaletteTests` fails when the
+palette table and `Theme.swift` disagree, and when an ink falls under its WCAG contrast floor on
+`ground`, `chrome`, `panel`, `raised` or `selected`: 4.5:1 for `ink`, `inkSecondary` and
+`inkTertiary`, 3:1 for the three fainter inks. Two pairs are under it and recorded in the test as
+known exceptions: `inkFaintest` on `chrome` (2.98:1) and on `selected` (2.84:1).
 
 ### Palette
 
