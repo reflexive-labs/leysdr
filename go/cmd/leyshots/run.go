@@ -159,74 +159,18 @@ func runScene(ctx context.Context, o runOptions, f *File, s *Scene, tm *tmuxRunn
 	}
 
 	run := filepath.Join(o.out, "run", s.Name())
-	if err := os.RemoveAll(run); err != nil {
+	sr, err := startScene(ctx, o, sceneSetup{
+		fixtures: s.Fixtures, clock: s.Clock, bookmarks: f.Path(s.Bookmarks), steps: s.Steps,
+	}, run)
+	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(run, 0o755); err != nil {
-		return nil, err
-	}
-	var files []*fixtureFile
+	defer sr.stop()
 	shot.Fixtures = map[string]json.RawMessage{}
-	for _, ref := range s.Fixtures {
-		ff, err := ensureFixture(ctx, o.leyfix, o.cache, ref, o.leyfixSrc, o.logf)
-		if err != nil {
-			return nil, err
-		}
-		files = append(files, ff)
-		shot.Fixtures[ref.Name] = ff.Generator
+	for i, ref := range s.Fixtures {
+		shot.Fixtures[ref.Name] = sr.fixtures[i].Generator
 	}
-	// The plugins (leydec-*) are installed beside ley; the daemon finds them on PATH.
-	pathEnv := "PATH=" + filepath.Dir(o.ley) + string(os.PathListSeparator) + os.Getenv("PATH")
-	d, err := daemonrun.Start(ctx, daemonrun.Options{
-		Bin: o.leylined, Dir: run, Decoders: o.decoders, WallClock: s.Clock, Label: "leyshots", Env: []string{pathEnv},
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer d.Stop()
-	env := []string{
-		"LEYLINE_SOCKET=" + d.Socket, "LEYLINE_BOOKMARKS=" + filepath.Join(run, "bookmarks.json"),
-		pathEnv, "COLORTERM=truecolor", "LANG=en_US.UTF-8",
-	}
-	steps, err := os.Create(filepath.Join(run, "steps.log"))
-	if err != nil {
-		return nil, err
-	}
-	defer steps.Close()
-	ley := func(args ...string) error {
-		fmt.Fprintf(steps, "$ ley %s\n", strings.Join(args, " "))
-		cmd := exec.CommandContext(ctx, o.ley, args...)
-		cmd.Env = append(os.Environ(), env...)
-		cmd.Stdout, cmd.Stderr = steps, steps
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("ley %s: %w; the output is in %s", strings.Join(args, " "), err, steps.Name())
-		}
-		return nil
-	}
-	if s.Bookmarks != "" {
-		if err := ley("bookmarks", "import", f.Path(s.Bookmarks)); err != nil {
-			return nil, err
-		}
-	}
-	// Each fixture becomes a radio with a channel tuned on it, and the channel outlives the
-	// command. The app needs one tuned before it starts: a staged run does not reopen a band.
-	for _, ff := range files {
-		if err := ley("play", ff.Path, "--persistent", "--loop"); err != nil {
-			return nil, err
-		}
-	}
-	for _, st := range s.Steps {
-		if st.Wait > 0 {
-			o.logf("waiting %.0f s", st.Wait)
-			if err := sleep(ctx, st.Wait); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		if err := ley(st.Ley...); err != nil {
-			return nil, err
-		}
-	}
+	env := sr.env
 	tm.env = env
 
 	switch s.Kind {
@@ -301,6 +245,114 @@ func runScene(ctx context.Context, o runOptions, f *File, s *Scene, tm *tmuxRunn
 		return finish(shot, out)
 	}
 	return nil, fmt.Errorf("unknown kind %q", s.Kind)
+}
+
+// sceneSetup is what a scene does before anything is shot or checked: the fixtures it plays, the
+// daemon's clock, the bookmarks it imports (a path already resolved, or empty) and its ley steps.
+type sceneSetup struct {
+	fixtures  []FixtureRef
+	clock     string
+	bookmarks string
+	steps     []Step
+}
+
+// sceneRun is a scene's own daemon, set up and running.
+type sceneRun struct {
+	daemon   *daemonrun.Daemon
+	fixtures []*fixtureFile // in the order of sceneSetup.fixtures
+	// env points a client at the daemon and the scene's bookmarks file.
+	env      []string
+	stepsLog *os.File
+}
+
+// stop ends the daemon and closes the steps log.
+func (r *sceneRun) stop() {
+	_ = r.stepsLog.Close() // only appended to; a lost line is not worth failing the scene over
+	r.daemon.Stop()
+}
+
+// startScene empties the run directory, generates the fixtures, starts the scene's
+// leylined --no-hardware there, imports the bookmarks, plays each fixture and runs the steps,
+// logging every ley command and its output to steps.log in the run directory.
+func startScene(ctx context.Context, o runOptions, in sceneSetup, run string) (*sceneRun, error) {
+	if err := os.RemoveAll(run); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(run, 0o755); err != nil {
+		return nil, err
+	}
+	var files []*fixtureFile
+	for _, ref := range in.fixtures {
+		ff, err := ensureFixture(ctx, o.leyfix, o.cache, ref, o.leyfixSrc, o.logf)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, ff)
+	}
+	// The plugins (leydec-*) are installed beside ley; the daemon finds them on PATH.
+	pathEnv := "PATH=" + filepath.Dir(o.ley) + string(os.PathListSeparator) + os.Getenv("PATH")
+	d, err := daemonrun.Start(ctx, daemonrun.Options{
+		Bin: o.leylined, Dir: run, Decoders: o.decoders, WallClock: in.clock, Label: "leyshots", Env: []string{pathEnv},
+	})
+	if err != nil {
+		return nil, err
+	}
+	steps, err := os.Create(filepath.Join(run, "steps.log"))
+	if err != nil {
+		d.Stop()
+		return nil, err
+	}
+	sr := &sceneRun{
+		daemon: d, fixtures: files, stepsLog: steps,
+		env: []string{
+			"LEYLINE_SOCKET=" + d.Socket, "LEYLINE_BOOKMARKS=" + filepath.Join(run, "bookmarks.json"),
+			pathEnv, "COLORTERM=truecolor", "LANG=en_US.UTF-8",
+		},
+	}
+	if err := sr.setUp(ctx, o, in, files); err != nil {
+		sr.stop()
+		return nil, err
+	}
+	return sr, nil
+}
+
+// setUp imports the bookmarks, plays the fixtures and runs the steps.
+func (sr *sceneRun) setUp(ctx context.Context, o runOptions, in sceneSetup, files []*fixtureFile) error {
+	ley := func(args ...string) error {
+		fmt.Fprintf(sr.stepsLog, "$ ley %s\n", strings.Join(args, " "))
+		cmd := exec.CommandContext(ctx, o.ley, args...)
+		cmd.Env = append(os.Environ(), sr.env...)
+		cmd.Stdout, cmd.Stderr = sr.stepsLog, sr.stepsLog
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("ley %s: %w; the output is in %s", strings.Join(args, " "), err, sr.stepsLog.Name())
+		}
+		return nil
+	}
+	if in.bookmarks != "" {
+		if err := ley("bookmarks", "import", in.bookmarks); err != nil {
+			return err
+		}
+	}
+	// Each fixture becomes a radio with a channel tuned on it, and the channel outlives the
+	// command. The app needs one tuned before it starts: a staged run does not reopen a band.
+	for _, ff := range files {
+		if err := ley("play", ff.Path, "--persistent", "--loop"); err != nil {
+			return err
+		}
+	}
+	for _, st := range in.steps {
+		if st.Wait > 0 {
+			o.logf("waiting %.0f s", st.Wait)
+			if err := sleep(ctx, st.Wait); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := ley(st.Ley...); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // finish reads the written image's size and sha256 into the shot.
