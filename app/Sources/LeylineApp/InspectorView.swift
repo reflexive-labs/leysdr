@@ -258,7 +258,8 @@ struct NameField: View {
             .onExitCommand { end() }
             .onAppear {
                 draft = initial
-                focused = true
+                // A focus asked for before the field is in the window does not take.
+                DispatchQueue.main.async { focused = true }
             }
             .onChange(of: focused) { _, isFocused in
                 if isFocused { watchKeys() } else { end() }
