@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -834,5 +835,58 @@ func TestCheckRelaunch(t *testing.T) {
 	if err != nil || !strings.Contains(string(stage), `"place": "library"`) || !strings.Contains(string(stage), `"width": 100`) ||
 		strings.Contains(string(stage), "inspector") {
 		t.Errorf("the relaunch's stage.json: %s %v", stage, err)
+	}
+}
+
+// A relaunch whose new instance cannot start is an error line, not a panic in the deferred quit,
+// and an old instance that outlives its quit is killed before another starts on its directory.
+func TestCheckRelaunchFails(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "scenes.yaml"), `scenes:
+  - name: one
+    fixtures: [{name: scene_2m}]
+    sizes: [{width: 100, height: 60}]
+    app:
+      - {cmd: relaunch}
+      - {cmd: state}
+`)
+	fake := &fakeApp{alive: map[int]bool{}, state: map[string]any{"tuned_hz": 1}}
+	var stdout bytes.Buffer
+	launches := 0
+	var killed []int
+	o := checkOptions{
+		runOptions: runOptions{out: filepath.Join(dir, "checks"), stdout: &stdout, logf: t.Logf},
+		checks:     filepath.Join(dir, "scenes.yaml"), goldens: filepath.Join(dir, "goldens"), release: "26.6",
+		prepare: func(_ context.Context, _ *CheckFile, _ *CheckScene, run string) (*sceneDaemon, error) {
+			return &sceneDaemon{env: []string{"LEYLINE_SOCKET=/s.sock"}, stop: func() {}}, os.MkdirAll(run, 0o755)
+		},
+		launch: func(ctx context.Context, l appLaunch) error {
+			launches++
+			if launches > 1 {
+				return errors.New("open failed")
+			}
+			return fake.launch(ctx, l)
+		},
+		// The first instance never writes its pid out of the fake's quit, so it is found by
+		// its control directory and stays alive until it is killed.
+		alive: func(pid int) bool {
+			fake.mu.Lock()
+			defer fake.mu.Unlock()
+			return pid == 9001 && !slices.Contains(killed, pid)
+		},
+		kill: func(pid int) {
+			fake.mu.Lock()
+			killed = append(killed, pid)
+			fake.mu.Unlock()
+		},
+		findPID: func(context.Context, string) int { return 9001 },
+		grace:   200 * time.Millisecond, poll: 5 * time.Millisecond,
+	}
+	err := checkScenes(context.Background(), o)
+	if err == nil || !strings.Contains(stdout.String(), "error    one 100x60") || !strings.Contains(stdout.String(), "open failed") {
+		t.Fatalf("err %v, output:\n%s", err, stdout.String())
+	}
+	if launches != 2 || len(killed) == 0 || killed[0] != 9001 {
+		t.Errorf("launches %d, killed %v", launches, killed)
 	}
 }

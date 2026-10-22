@@ -305,11 +305,14 @@ func (c *checker) runSize(ctx context.Context, s *CheckScene, size Size) {
 			continue
 		}
 		if cmd.Cmd == "relaunch" {
-			// The deferred quit reads app when it runs, so it quits the new instance.
-			if app, err = c.relaunch(ctx, app, cmd, id, size, run, env); err != nil {
+			// The deferred quit reads app when it runs, so it quits the new instance; on a
+			// failure app stays the old one, which the deferred quit then finds gone or kills.
+			next, err := c.relaunch(ctx, app, cmd, id, size, run, env)
+			if err != nil {
 				fail(fmt.Errorf("%s: %w", cmd.label(id), err))
 				return
 			}
+			app = next
 			continue
 		}
 		a, err := app.send(ctx, cmd, id, c.f.Path)
@@ -392,9 +395,21 @@ type runningApp struct {
 // new instance skips the commands already in commands.jsonl and clears the old answers, so ids go
 // on from where they were.
 func (c *checker) relaunch(ctx context.Context, old *runningApp, cmd *AppCommand, id int, size Size, run string, env []string) (*runningApp, error) {
+	// The pid from ready.json, else the process started with this control directory, so two
+	// instances never share it.
+	pid := old.pid
+	if pid == 0 {
+		pid = c.o.findPID(context.WithoutCancel(ctx), old.control)
+	}
 	old.quit(ctx, id)
-	if pid := old.pid; pid != 0 && c.o.alive(pid) {
-		return nil, fmt.Errorf("the app (pid %d) is still running after quit", pid)
+	if pid != 0 && c.o.alive(pid) {
+		c.o.kill(pid)
+		for deadline := time.Now().Add(min(quitGrace, c.o.grace)); c.o.alive(pid) && time.Now().Before(deadline); {
+			time.Sleep(c.o.poll)
+		}
+		if c.o.alive(pid) {
+			return nil, fmt.Errorf("the app (pid %d) is still running after quit and a kill", pid)
+		}
 	}
 	// The next ready.json must be the new instance's.
 	if err := os.Remove(filepath.Join(old.control, "ready.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
