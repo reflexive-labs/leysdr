@@ -81,6 +81,35 @@ of one scene give the same pixels, or the unit names what still moves.
 `ShotStage` gains what the Unverified lists need to reach: open a popover, focus the filter
 field, hover a point on the rail or the spectrum, open the assistant panel, open Settings.
 
+#### The protocol (fixed 2026-10-21, so ML-3 and ML-4 can be built side by side)
+
+- `LEYLINE_APP_CONTROL=<dir>` turns it on. It makes the session staged as `LEYLINE_APP_STAGE`
+  does (nothing written to UserDefaults, ML-2's deterministic frames), with or without a stage
+  file; with one, the stage is applied first and `regions.json` written as today.
+- **Ready.** Once the session is live and has its first channel (`Staging.liveSeconds` and
+  `channelSeconds`), or when those run out, the app writes `<dir>/ready.json`:
+  `{"ok":true,"pid":123,"window_number":456,"scale":2.0,"error":""}`.
+- **Commands.** The client appends one JSON object per line to `<dir>/commands.jsonl`. The app
+  reads new complete lines every 100 ms and runs them one at a time, in order. Every command
+  has an integer `id`, unique in the run, and a `cmd`.
+- **Answers.** For each command the app writes `<dir>/out/<id>.json` by writing a temporary
+  file and renaming it, so a reader never sees half an answer:
+  `{"id":7,"ok":true,"error":"","files":["out/7.png"],"result":{…}}`. Paths in `files` are
+  relative to `<dir>`. A command the app cannot parse or run is answered `ok:false` with the
+  reason in `error`, and the next command still runs.
+
+| `cmd` | fields | answer |
+|---|---|---|
+| `stage` | `stage`: a `ShotStage` object (`settle` applies; `window` resizes) | `result`: what was applied, as the log lines say it |
+| `snapshot` | `settle` (seconds, default 0) | `out/<id>.png` at the backing scale; `result`: `{"scale":2,"width_pt":…,"height_pt":…,"regions":{…}}`, the regions as `regions.json` gives them |
+| `state` | | `result`: the view state (place, selection, tuned Hz and mode, channel id, open sidebar rows, inspector shown, zoom, focused control, notices on screen, popover open, the assistant panel open) |
+| `ax` | | `out/<id>.ax.txt` (ML-5's tree); `result` empty |
+| `key` | `keys`: `"cmd+g"`, `"escape"`, `"down"`, `"return"` | sent to the key window as key down and up |
+| `type` | `text` | one key event per character to the key window |
+| `press` | `identifier` (ML-5) | `accessibilityPerformPress` on the element with that identifier |
+| `wait` | `seconds` | answered after that long |
+| `quit` | | answered, then the app terminates |
+
 ### ML-4 `[ ]` `leyshots check`
 
 A sibling of `leyshots run` reading `app/checks/scenes.yaml` (same scene shape, plus a list of
