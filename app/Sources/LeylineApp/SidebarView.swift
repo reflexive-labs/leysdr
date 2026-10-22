@@ -33,6 +33,10 @@ struct SidebarView: View {
                     Spacer(minLength: 12)
                 }
             }
+            // The rows arrive in several passes (the bands, then the radio's range, then the
+            // open band's channels), and without an anchor the list sometimes settled a couple
+            // of points scrolled: it opens at the top whatever arrives first.
+            .defaultScrollAnchor(.top)
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.panel)
