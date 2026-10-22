@@ -398,9 +398,9 @@ struct BookmarkField: View {
             .textFieldStyle(.plain)
             .font(Theme.Font.value)
             .foregroundStyle(Theme.ink)
+            .frame(height: Theme.Layout.valueFieldHeight)
             .accessibilityLabel(placeholder)
             .fieldPlaceholder(placeholder, font: Theme.Font.value, shown: draft.isEmpty)
-            .frame(height: Theme.Layout.valueFieldHeight)
             .focused($focused)
             .onSubmit { onCommit(draft) }
             .onExitCommand { focused = false }
