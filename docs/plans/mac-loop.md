@@ -117,11 +117,13 @@ field, hover a point on the rail or the spectrum, open the assistant panel, open
 
 ### ML-4 `[ ]` `leyshots check`
 
-A sibling of `leyshots run` reading `app/checks/scenes.yaml` (same scene shape, plus a list of
-`steps` of ML-3 commands and the window sizes to take). For each scene it starts the daemon and
-the app (`open -g -n`, so nothing takes focus), runs the steps, collects the pictures, state and
-trees into `tmp/checks/<scene>/`, compares each picture with its golden, and prints one line per
-picture: `ok`, `diff 2.4 %` or `new`, and the path. The pixel diff is Go (`image` is already in
+A sibling of `leyshots run` reading `app/checks/scenes.yaml` (the site scene's inputs, plus
+`app`, a list of ML-3 commands, since `steps` stay the `ley` steps, and `sizes`, the window sizes
+to take). For each scene and size it starts the daemon and the app (`open -g -n`, so nothing takes
+focus), runs the commands, collects the pictures, state and trees into
+`tmp/checks/<scene>/<W>x<H>/`, compares each picture and tree with its golden and each `state`
+with its `expect`, and prints one line per artefact or expectation: `ok`, `diff 2.4 %`, `new`,
+`recorded`, `fail` or `error`, and the path. The pixel diff is Go (`image` is already in
 `leyshots`): per-channel tolerance, an anti-aliasing allowance, a red diff image. `make app-check`
 runs it; `ONLY=` and `RECORD=1` as `make shots` has them.
 

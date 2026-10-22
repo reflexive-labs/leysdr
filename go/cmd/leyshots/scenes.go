@@ -72,6 +72,9 @@ type Size struct {
 	Height float64 `yaml:"height" json:"height"`
 }
 
+// String is the size as a directory name: 1440x820.
+func (s Size) String() string { return fmt.Sprintf("%gx%g", s.Width, s.Height) }
+
 // Stage is the app's stage file (docs/dev/app.md, "Staged runs"). The JSON is what the app
 // reads; ImportChirp is relative to scenes.yaml here and absolute in the file.
 type Stage struct {
@@ -243,21 +246,34 @@ func (s *Scene) validate(f *File) error {
 		}
 	}
 	if s.Stage != nil {
-		if p := s.Stage.Place; p != "" && p != "radio" && p != "library" {
-			return fmt.Errorf("place is radio or library, not %q", p)
-		}
-		if c := s.Stage.ImportChirp; c != "" {
-			if _, err := os.Stat(f.Path(c)); err != nil {
-				return err
-			}
-		}
-	}
-	if s.Bookmarks != "" {
-		if _, err := os.Stat(f.Path(s.Bookmarks)); err != nil {
+		if err := s.Stage.validate(f.Path); err != nil {
 			return err
 		}
 	}
-	for i, st := range s.Steps {
+	return validateSetup(f.Path, s.Bookmarks, s.Steps)
+}
+
+// validate checks a stage's place and that its CHIRP import exists, resolved by path.
+func (st *Stage) validate(path func(string) string) error {
+	if p := st.Place; p != "" && p != "radio" && p != "library" {
+		return fmt.Errorf("place is radio or library, not %q", p)
+	}
+	if c := st.ImportChirp; c != "" {
+		if _, err := os.Stat(path(c)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateSetup checks that a scene's bookmarks file exists and that each step is one thing.
+func validateSetup(path func(string) string, bookmarks string, steps []Step) error {
+	if bookmarks != "" {
+		if _, err := os.Stat(path(bookmarks)); err != nil {
+			return err
+		}
+	}
+	for i, st := range steps {
 		if (len(st.Ley) > 0) == (st.Wait > 0) {
 			return fmt.Errorf("step %d needs exactly one of ley and wait", i+1)
 		}

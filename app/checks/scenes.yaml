@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The app's check scenes, which `make app-check` runs (docs/plans/mac-loop.md, ML-4). go/cmd/leyshots
+# reads this file with `leyshots check`. Paths are relative to this directory.
+#
+# A check scene takes a site scene's inputs (site/shots/scenes.yaml, the header comment):
+# fixtures, clock, bookmarks, steps and an optional stage, which is applied at launch. It runs once
+# per entry of sizes, a window size in points (default 1440 x 820), each with its own
+# leylined --no-hardware and its own launch of the app; the stage may not set window, the size
+# does. Then it sends the app commands in order over the app's command file (mac-loop.md, ML-3,
+# "The protocol") and quits it. Each entry of app is one protocol command, without the id, which
+# the runner assigns:
+#
+#   {cmd: stage, stage: {...}}            a stage applied to the running window (no window)
+#   {cmd: snapshot, name: N}              the window's picture, compared with the golden N.png;
+#                                         settle waits first; mask lists regions left out of the
+#                                         diff (default [spectrum, waterfall], whose live pixels
+#                                         never repeat; [] compares everything)
+#   {cmd: state, expect: {path: value}}   the view state; each dotted path into the answer's
+#                                         result must hold the value, or the line fails
+#   {cmd: ax, name: N}                    the accessibility tree, compared as text with N.ax.txt
+#   {cmd: key, keys: cmd+g}               a key, as the protocol names keys
+#   {cmd: type, text: wx3}                one key event per character
+#   {cmd: press, identifier: I}           presses the element with that accessibility identifier
+#   {cmd: wait, seconds: S}
+#
+# threshold is the percentage of compared pixels a snapshot may change and still pass (default
+# 0.1). Goldens live in tmp/goldens/<macOS major.minor>-<arch>/<scene>/<W>x<H>/ and are written only
+# by `make app-check RECORD=1`.
+
+scenes:
+  # The site's app-radio-2m inputs, without its on_air wait: the 2 m band open on Calling.
+  - name: radio-2m
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "-45"]
+    stage:
+      place: radio
+      inspector: true
+      expanded_band: 2m
+      select_bookmark: Calling
+      settle: 5
+      zoom: 4
+    app:
+      - {cmd: snapshot, name: initial}
+      - {cmd: state, expect: {tuned_hz: 146520000}}
+      - {cmd: ax, name: initial}
+
+  # Go to… (⌘G) by name: WX3 is 162.475 MHz, inside scene_ais's capture around 162.000 MHz.
+  - name: goto-wx
+    fixtures: [{name: scene_ais}]
+    stage:
+      place: radio
+      settle: 3
+    app:
+      - {cmd: key, keys: cmd+g}
+      - {cmd: type, text: wx3}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {tuned_hz: 162475000}}
+      - {cmd: snapshot, name: after}

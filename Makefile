@@ -34,6 +34,10 @@
 #   make app-e2e    the façade against a locally built leylined --no-hardware playing a fixture
 #   make app-run    macOS: run the app straight from the package (no bundle, no signature)
 #   make app-bundle macOS: assemble and sign app/dist/Leyline.app (scripts/bundle-app.sh)
+#   make app-check  macOS: the app's checks (docs/plans/mac-loop.md, ML-4): each scene in
+#                   app/checks/scenes.yaml against its own daemon, its pictures and trees compared
+#                   with the goldens in tmp/goldens, a line each in tmp/checks; ONLY=a,b runs those
+#                   scenes, RECORD=1 writes their goldens instead
 #   make release    macOS: cut the next release from start to finish (scripts/cut-release.sh):
 #                   check the build Mac, bump VERSION, date the CHANGELOG's Unreleased section,
 #                   commit and tag, make release-build, push, make release-publish, then name the
@@ -89,7 +93,7 @@ ACTIONLINT_VERSION := v1.7.12
 CODESIGN_IDENTITY ?= Developer ID Application: Reflexive Labs LLC. (P2KZW25PL8)
 NOTARY_PROFILE ?= leysdr-notary
 
-.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval eval-test speech-spike shots shots-bundle shots-publish shots-release release release-build release-publish release-rehearse release-test app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders
+.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval eval-test speech-spike shots shots-bundle shots-publish shots-release app-check release release-build release-publish release-rehearse release-test app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders
 
 all: go swift app
 
@@ -246,8 +250,9 @@ speech-spike: go
 # prerequisites they would make every image stale on every run. Scenes share tmp/shots/shots.json
 # and one tmux server, so the run is serial. A failed scene stops make; `make -k shots` goes on.
 SHOTS_OUT := $(CURDIR)/tmp/shots
-SHOTS_RUN = LEYLINED_BIN="$$(cd engine && swift build -c $(SWIFT_CONFIG) --show-bin-path)/leylined" LEY_BIN=$(GOBIN)/ley \
-	LEYFIX_BIN=$(GOBIN)/leyfix $(GOBIN)/leyshots run
+LEYSHOTS = LEYLINED_BIN="$$(cd engine && swift build -c $(SWIFT_CONFIG) --show-bin-path)/leylined" LEY_BIN=$(GOBIN)/ley \
+	LEYFIX_BIN=$(GOBIN)/leyfix $(GOBIN)/leyshots
+SHOTS_RUN = $(LEYSHOTS) run
 ifneq ($(filter shots-release,$(MAKECMDGOALS))$(if $(ONLY),,$(filter shots,$(MAKECMDGOALS))),)
 SHOTS_GEN := $(shell mkdir -p $(SHOTS_OUT)/bin && cd go && go build -o $(SHOTS_OUT)/bin/ ./cmd/leyshots ./cmd/leyfix && \
 	$(SHOTS_OUT)/bin/leyshots keys --leyfix $(SHOTS_OUT)/bin/leyfix --out $(SHOTS_OUT)/keys >&2 && \
@@ -291,6 +296,11 @@ shots-publish: go
 # release's; with none, leyshots says the latest release is up to date and creates nothing.
 shots-release: $(SHOTS_ASSETS) | go
 	$(GOBIN)/leyshots publish $(SHOTS_ARGS)
+
+# The app's checks (docs/plans/mac-loop.md, ML-4): what make shots builds for an app scene, then
+# leyshots check. Every scene runs, or ONLY's; RECORD=1 writes the goldens rather than comparing.
+app-check: go swift shots-bundle
+	$(LEYSHOTS) check $(if $(ONLY),--only $(ONLY)) $(if $(filter 1,$(RECORD)),--record)
 
 # Every step of a release in order, resumable (docs/dev/release-checklist.md, "The signed build").
 # It calls make release-build, release-publish and release-rehearse itself. The recipe does not
