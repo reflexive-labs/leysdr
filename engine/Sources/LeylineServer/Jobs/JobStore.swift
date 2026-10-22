@@ -63,6 +63,9 @@ actor JobStore {
     /// The user's keys, so a decoder that needs one is refused when the provider has turned it
     /// down; nil when the daemon holds none (tests that build a store of their own).
     let credentials: CredentialStore?
+    /// `leylined --file-scan-dwell`: the shortest dwell a scan on a file device runs at, in ms
+    /// (`scanDwellMs`); 0 leaves every scan's own.
+    let fileScanDwellMs: UInt32
     let hub = RecordHub()
     let log = Logger(label: "leyline.jobs")
     var entries: [JobID: Entry] = [:]
@@ -76,7 +79,7 @@ actor JobStore {
 
     init(store: SessionStore, allocator: SessionCaptureAllocator, decoders: DecoderRegistry,
          records: RecordStore, recordings: RecordingStore, usage: UsageRecorder? = nil,
-         credentials: CredentialStore? = nil)
+         credentials: CredentialStore? = nil, fileScanDwellMs: UInt32 = 0)
     {
         self.store = store
         self.allocator = allocator
@@ -85,6 +88,7 @@ actor JobStore {
         self.recordings = recordings
         self.usage = usage
         self.credentials = credentials
+        self.fileScanDwellMs = fileScanDwellMs
     }
 
     // MARK: Kept jobs across a restart

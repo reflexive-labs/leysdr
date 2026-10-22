@@ -226,14 +226,25 @@ func cmdCheck(ctx context.Context, args []string, stdout io.Writer) error {
 	if o.leyfixSrc, err = leyfixSourceHash(root); err != nil {
 		return err
 	}
-	o.prepare = func(ctx context.Context, f *CheckFile, s *CheckScene, run string) ([]string, func(), error) {
-		sr, err := startScene(ctx, o.runOptions, sceneSetup{
+	o.prepare = func(ctx context.Context, f *CheckFile, s *CheckScene, run string) (*sceneDaemon, error) {
+		in := sceneSetup{
 			fixtures: s.Fixtures, clock: s.Clock, bookmarks: f.Path(s.Bookmarks), steps: s.Steps,
-		}, run)
-		if err != nil {
-			return nil, nil, err
+			sweepDwellMs: int(s.SweepDwell * 1000),
 		}
-		return sr.env, sr.stop, nil
+		if s.AI != nil {
+			var err error
+			if in.ai, err = s.AI.stub(f.Path); err != nil {
+				return nil, err
+			}
+		}
+		sr, err := startScene(ctx, o.runOptions, in, run)
+		if err != nil {
+			return nil, err
+		}
+		return &sceneDaemon{
+			env: sr.env, stop: sr.stop, halt: sr.daemon.Halt,
+			resume: func(ctx context.Context) error { return sr.restart(ctx, o.runOptions) },
+		}, nil
 	}
 	return checkScenes(ctx, o)
 }

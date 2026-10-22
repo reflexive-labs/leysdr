@@ -57,6 +57,9 @@ package final class Daemon: Sendable {
         var programLocator: ProgramLocator = .init()
         /// When an idle conversation ends; a test shortens it and brings its own clock.
         var conversationTiming = ConversationStore.Timing()
+        /// `--file-scan-dwell`: the shortest dwell a scan on a file device runs at, in ms; 0 leaves
+        /// the request's. A check scene sets it to see a sweep in progress; other radios ignore it.
+        package var fileScanDwellMs: UInt32 = 0
         /// Reported in `DaemonInfo` and the startup log line: the executable passes its generated
         /// `leylinedVersion`, a test its own string.
         var version: String
@@ -149,7 +152,8 @@ package final class Daemon: Sendable {
         ledger = Ledger(path: Ledger.path(inStore: config.storePath))
         let usage = UsageRecorder(ledger: ledger, credentials: credentials, store: store)
         jobs = JobStore(store: store, allocator: allocator, decoders: decoders, records: recordStore,
-                        recordings: recordings, usage: usage, credentials: credentials)
+                        recordings: recordings, usage: usage, credentials: credentials,
+                        fileScanDwellMs: config.fileScanDwellMs)
         let worker = WorkerProcess(leyPath: config.leyPath, locator: config.programLocator, socketPath: config.socketPath)
         let session = store
         conversations = ConversationStore(credentials: credentials, spawner: worker,

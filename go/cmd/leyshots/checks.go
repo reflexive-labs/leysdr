@@ -36,6 +36,12 @@ type CheckScene struct {
 	// Threshold is the percentage of compared pixels a snapshot may change and still pass;
 	// nil is defaultThreshold.
 	Threshold *float64 `yaml:"threshold"`
+	// AI puts the assistant on a scripted model, with a made-up key (ai.go).
+	AI *AISetup `yaml:"ai"`
+	// SweepDwell is the dwell in seconds of a scan on the scene's file radio when it asks for less
+	// (leylined --file-scan-dwell): its one step lasts about that long, so a sweep in progress can
+	// be seen and stopped. 0 leaves the scan's own.
+	SweepDwell float64 `yaml:"sweep_dwell"`
 }
 
 // defaultCheckSize is the site shots' window.
@@ -68,6 +74,25 @@ type AppCommand struct {
 	// Mask names the regions a snapshot or an ax tree leaves out of the comparison; nil is
 	// defaultMask, [] none.
 	Mask []string `yaml:"mask"`
+	// ExpectLog is what the app's log must (or, with !, must not) hold among the lines it wrote
+	// from the moment the command before was sent until a state or wait is answered.
+	ExpectLog patterns `yaml:"expect_log"`
+
+	// The runner's own commands (local.go), which never reach the app.
+	// Args are a ley or ley_bg command's arguments, without ley.
+	Args []string `yaml:"args"`
+	// ExpectStdout is what a ley command's standard output must (or, with !, must not) match.
+	ExpectStdout patterns `yaml:"expect_stdout"`
+	// ExpectExit is a ley command's exit status; nil is 0.
+	ExpectExit *int `yaml:"expect_exit"`
+	// ID names a ley_bg process for the kill that ends it.
+	ID string `yaml:"id"`
+	// Path is a file command's file, relative to the run directory (bookmarks.json, app.log).
+	Path string `yaml:"path"`
+	// Contains is what a file command's file must (or, with !, must not) match.
+	Contains patterns `yaml:"contains"`
+	// Op is a daemon command's stop or start.
+	Op string `yaml:"op"`
 }
 
 // wireCommand is one line of commands.jsonl.
@@ -189,14 +214,28 @@ func (s *CheckScene) validate(path func(string) string) error {
 	if s.Threshold != nil && (*s.Threshold < 0 || *s.Threshold > 100) {
 		return fmt.Errorf("threshold %g is not a percentage", *s.Threshold)
 	}
+	if s.SweepDwell < 0 || s.SweepDwell > 60 {
+		return fmt.Errorf("sweep_dwell %g is not between 0 and 60 seconds", s.SweepDwell)
+	}
 	if err := validateSetup(path, s.Bookmarks, s.Steps); err != nil {
 		return err
 	}
+	if s.AI != nil {
+		if err := s.AI.validate(path); err != nil {
+			return err
+		}
+	}
 	names := map[string]bool{}
+	bg := map[string]bool{}
 	for i := range s.App {
 		c := &s.App[i]
 		if err := c.validate(path); err != nil {
 			return fmt.Errorf("app command %d (%s): %w", i+1, c.Cmd, err)
+		}
+		if c.isLocal() {
+			if err := c.validateLocal(bg); err != nil {
+				return fmt.Errorf("app command %d (%s): %w", i+1, c.Cmd, err)
+			}
 		}
 		if c.Name != "" {
 			key := c.Cmd + " " + c.Name
@@ -215,6 +254,9 @@ func (c *AppCommand) validate(path func(string) string) error {
 		"stage": c.Stage != nil, "settle": c.Settle != 0, "keys": c.Keys != "", "text": c.Text != "",
 		"identifier": c.Identifier != "", "seconds": c.Seconds != 0, "name": c.Name != "",
 		"expect": len(c.Expect) > 0, "mask": c.Mask != nil, "window": c.Window != "",
+		"args": len(c.Args) > 0, "expect_stdout": len(c.ExpectStdout) > 0, "expect_exit": c.ExpectExit != nil,
+		"id": c.ID != "", "path": c.Path != "", "contains": len(c.Contains) > 0, "op": c.Op != "",
+		"expect_log": len(c.ExpectLog) > 0,
 	}
 	var need, may []string
 	switch c.Cmd {
@@ -223,7 +265,7 @@ func (c *AppCommand) validate(path func(string) string) error {
 	case "snapshot":
 		need, may = []string{"name"}, []string{"settle", "mask"}
 	case "state":
-		may = []string{"expect"}
+		may = []string{"expect", "expect_log"}
 	case "ax":
 		need, may = []string{"name"}, []string{"mask", "window"}
 		if c.Window != "" && c.Window != "main" && c.Window != "settings" {
@@ -236,7 +278,17 @@ func (c *AppCommand) validate(path func(string) string) error {
 	case "press":
 		need = []string{"identifier"}
 	case "wait":
-		need = []string{"seconds"}
+		need, may = []string{"seconds"}, []string{"expect_log"}
+	case "ley":
+		need, may = []string{"args"}, []string{"expect_stdout", "expect_exit"}
+	case "ley_bg":
+		need = []string{"id", "args"}
+	case "kill":
+		need = []string{"id"}
+	case "file":
+		need = []string{"path", "contains"}
+	case "daemon":
+		need = []string{"op"}
 	case "quit":
 		return errors.New("the runner sends quit after the last command")
 	default:
@@ -267,6 +319,9 @@ func (c *AppCommand) validate(path func(string) string) error {
 		if !regionNames[m] {
 			return fmt.Errorf("unknown region %q in mask", m)
 		}
+	}
+	if err := c.ExpectLog.validate(); err != nil {
+		return fmt.Errorf("expect_log: %w", err)
 	}
 	for p, v := range c.Expect {
 		switch v.(type) {

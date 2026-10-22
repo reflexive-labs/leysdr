@@ -18,7 +18,10 @@ file", is the full reference.
 - **While iterating on a view**: `make app-check ONLY=radio-2m,goto-bookmark`, the scenes the
   change touches. `go/bin/leyshots check --list` lists them.
 - **Before handing over**: `make app-check` (every scene) and `make app-lint`. The make target
-  rebuilds `ley`, the engine and the bundle first, so it always checks the code as it is.
+  rebuilds `ley`, the engine and the bundle first, so it always checks the code as it is. The
+  scenes' daemon is always the release `leylined` (`make swift-release`): a debug one plays
+  `scene_vhf20`'s 21 MSPS at about half of real time. Running `go/bin/leyshots check` by hand
+  takes the debug one unless `LEYLINED_BIN` names the release build.
 
 ## Reading the output
 
@@ -90,7 +93,35 @@ launch), `sizes`, and `app`, the commands in order.
   `docs/dev/app.md`; `grep -rn 'accessibilityIdentifier(' app/Sources/LeylineApp` finds them in
   the code. A view without one cannot be pressed: give it one.
 - A file radio tunes only inside the capture it was recorded with, so a scene that tunes must
-  stay inside its fixture's span.
+  stay inside its fixture's span. `scene_vhf20` holds 2 m, MURS, marine and NOAA WX2 in one
+  capture, `scene_gmrs` the GMRS 462 MHz channels, `scene_wx` and `scene_wx_on` the NOAA channels
+  silent and broadcasting.
+- `ley`, `ley_bg`, `kill`, `file` and `daemon` in `app` are run by `leyshots`, not the app: a
+  terminal's `ley` mid-scene against the scene's daemon (`expect_stdout`, `expect_exit`), a
+  long-running one started and later interrupted, a file of the run directory matched
+  (`contains`), and the scene's daemon stopped and started again. Their output is in
+  `run/steps.log` and `run/ley_bg-<id>.log`.
+- `expect_log` on a `state` or `wait` matches `run/app.log` from the command before onwards; a
+  `!` pattern must not match. The matched line carries its timestamp, so two of them give a
+  duration.
+- `ai: {script: assistant/<name>.script}` gives the scene an assistant on a scripted model with a
+  made-up key, so the toolbar toggle, the column and Settings' Features and Usage draw. Write the
+  script as JSON lines (`{"text": …}`, `{"tool": …, "args": …}`, `sleep_ms`, `usage`);
+  `run/ai/record.jsonl` holds what each call was sent. Nothing reaches a provider.
+- `sweep_dwell: 4` makes a Scan band on the file radio last about four seconds, long enough to
+  press Stop or click elsewhere while it sweeps. It is still one step.
+
+```yaml
+  - name: follow-terminal
+    fixtures: [{name: scene_2m}]
+    stage: {place: radio, settle: 3}
+    app:
+      - {cmd: ley_bg, id: tune, args: [tune, "146.94"]}
+      - {cmd: wait, seconds: 2, expect_log: "following chan_"}
+      - {cmd: state, expect: {tuned_hz: 146940000}}
+      - {cmd: kill, id: tune}
+      - {cmd: ley, args: [state], expect_stdout: "146.940 MHz"}
+```
 
 The first run prints `new`. Read the picture and the tree, and record them only when they show
 what the scene should.

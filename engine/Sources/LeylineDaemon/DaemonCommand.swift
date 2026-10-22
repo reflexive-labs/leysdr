@@ -76,6 +76,9 @@ struct DaemonCommand: AsyncParsableCommand {
     @Option(name: .customLong("wall-clock"), help: "Development: shift the wall clock captures, recordings and records are dated from so the daemon starts at HH:MM local time today, for staged screenshots. Retention still runs on the real clock.")
     var wallClock: String?
 
+    @Option(name: .customLong("file-scan-dwell"), help: "Development: a scan on a file device that asks for a shorter dwell dwells this many milliseconds, so its single step lasts long enough for a check scene to see the sweep in progress. A scan on any other radio is unchanged.")
+    var fileScanDwell: UInt32 = 0
+
     func run() async throws {
         if let logFile {
             do {
@@ -117,6 +120,7 @@ struct DaemonCommand: AsyncParsableCommand {
                                    leyPath: ley.map { expandingTilde($0) } ?? leyPathFromEnvironment(),
                                    version: leylinedVersion)
         config.secrets = secrets
+        config.fileScanDwellMs = fileScanDwell
         let daemon = Daemon(config: config)
         // A write to a socket whose peer vanished (rtl_tcp dying mid-command) must be an error
         // return, never a process-killing SIGPIPE.

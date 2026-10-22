@@ -269,6 +269,38 @@ person or hardware, 3 obsolete. Its numbering (U4.02, P.45, H3, F2) is used belo
   `app` list, run mid-scene against its socket (H6); `daemon stop|start` (H9); `expect_log`
   against `run/app.log` (H7); the fixtures `scene_gmrs`, `scene_vhf20`, `scene_wx` and a CHIRP
   file with no Frequency column (F1–F4); a sweep that lasts seconds on a file device (H10).
+
+  Built 2026-10-22, not ticked until ML-9d's scenes have run on it (no scene uses it yet, and
+  nothing of it has run against the app): the keys and commands are in the header of
+  `app/checks/scenes.yaml` and the skill's "Writing a check scene".
+  - `ai: {script, model, provider, key}` (H3): the scene's daemon gets `LEY_ASSISTANT_SCRIPT`,
+    `LEY_ASSISTANT_RECORD` (`run/ai/record.jsonl`) and, as `LEYLINE_LEY`, a shim in `run/ai/`
+    that answers `worker check` as accepted and hands every other verb to the real `ley`; a
+    made-up key is added on stdin and the model chosen before the app starts. `daemonrun` already
+    keeps keys in the daemon's own data directory (`LEYLINE_SECRETS=file`), so nothing reaches the
+    keychain or a provider. The first script is `app/checks/assistant/hello.script`. Tried with a
+    real `leylined` and `ley ask`: the key read `accepted`, the turn played the script.
+  - `ley`, `ley_bg`, `kill`, `file` (H6) and `daemon` (H9) run in the runner, in order with the
+    app's commands, under the same ids. `ley` checks `expect_exit` (default 0) and
+    `expect_stdout`; `kill` sends SIGINT and fails when the process had exited already or outlives
+    10 s; a `ley_bg` still running at the end is interrupted before the app quits. `daemon stop`
+    is `daemonrun.Daemon.Halt`, `start` is `Resume` on the same socket, store, data and log, then
+    the fixtures played again, because a daemon keeps no file device across a restart.
+  - `expect_log` on `state` and `wait` (H7): patterns against `run/app.log` from the moment the
+    command before was sent; `!` negates; a matching line is printed with its timestamp.
+  - F1–F4 in `leyfix` (scenes set, cached as the others are): `scene_gmrs` (462.650 MHz, 480 kSPS,
+    channels 5, 1 and 21 in overs, 30 s, 29 MB); `scene_vhf20` (153.200 MHz at 21 MSPS, so the
+    capture is 142.7 to 163.7 MHz and every carrier sits inside the 45 % edge: 146.520, 146.940,
+    MURS 1 and 4, marine 16, NOAA WX2; 7 s, 294 MB, about 12 s to generate); `scene_wx` (162.475
+    MHz, the floor alone) and `scene_wx_on` (WX2 and WX1 broadcasting), 19 MB each. All pass
+    `leyfix check`. `fixtures/chirp/nofreq.csv` has no Frequency column. 20 MSPS at 152.6 MHz,
+    the inventory's choice, put 162.400 outside the 45 % edge that `leyfix` holds every scene to.
+    Whether a debug `leylined` keeps up with 21 MSPS in real time is unmeasured.
+  - H10: `leylined --file-scan-dwell MS` raises the dwell of a scan on a file device to MS when it
+    asks for less; other drivers keep theirs (`ScanSweepTests`). A check scene sets it with
+    `sweep_dwell` in seconds. The sweep stays one step, so the "7 steps" words of U5.03 are still
+    out of reach: a file device that retunes needs an oversampled source and a
+    mix-filter-decimate chain (`ScanSweepTests`'s header), which is not small.
 - **ML-9c `[ ]` The harness inside the app**: the Settings window in `stage`, `ax`, `snapshot`
   and `state` (H4); `state` fields for mute, volume, the sink, window size, the caret, an alert,
   the assistant's turns and buttons, the waterfall's view and a tooltip (H5); `click` and `hover`

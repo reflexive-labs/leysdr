@@ -236,6 +236,86 @@ func sceneScanCarriers() []sceneCarrier {
 	}
 }
 
+// The scene_gmrs stations, around 462.650 MHz at 480 kSPS: the GMRS 462 MHz half's channels 1 to
+// 7 and 15 to 22 (462.5500 to 462.7250) all lie inside the capture, so a check scene can tune any
+// of them. Channel 5 is the hero, with one station below the centre and one above it. Thirty
+// seconds is 29 MB, and every carrier keys at least three times in it.
+const (
+	sceneGMRSCenterHz  = 462_650_000
+	sceneGMRSRate      = 480_000
+	sceneGMRSDurationS = 30
+)
+
+func sceneGMRSCarriers() []sceneCarrier {
+	end := sceneGMRSDurationS - 1.0
+	return []sceneCarrier{
+		// ch5, 462.6625, PL 141.3: the first expect entry, so ley play tunes it.
+		{offsetHz: 12_500, dbfs: -16, voiceSeed: 51, toneHz: 141.3, segs: overs(51, 0.8, end, 4, 7, 2, 4)},
+		// ch1, 462.5625, no tone, below the centre.
+		{offsetHz: -87_500, dbfs: -22, voiceSeed: 52, segs: overs(52, 2.0, end, 3, 6, 3, 5)},
+		// ch21, 462.7000, PL 100.0, above it.
+		{offsetHz: 50_000, dbfs: -26, voiceSeed: 53, toneHz: 100.0, segs: overs(53, 1.2, end, 3, 6, 3, 5)},
+	}
+}
+
+// The scene_vhf20 stations: 2 m, MURS, marine and NOAA weather in one capture, around 153.200 MHz
+// at 21 MSPS, so a check scene can tune from one band to another on a radio that cannot be
+// retuned. The capture is 142.7 to 163.7 MHz (all of 2 m, MURS, marine and the seven NOAA
+// channels), and every carrier sits inside the 45% analysis edge, 143.75 to 162.65 MHz. Seven
+// seconds at 21 MSPS is 294 MB, the scenes' size bound; the overs are short to fit the loop.
+const (
+	sceneVHF20CenterHz  = 153_200_000
+	sceneVHF20Rate      = 21_000_000
+	sceneVHF20DurationS = 7
+)
+
+func sceneVHF20Carriers() []sceneCarrier {
+	end := sceneVHF20DurationS - 0.3
+	return []sceneCarrier{
+		// 146.520 simplex, PL 100.0: the first expect entry, so ley play tunes it.
+		{offsetHz: -6_680_000, dbfs: -14, voiceSeed: 61, toneHz: 100.0, segs: overs(61, 0.3, end, 2, 3, 0.6, 1.2)},
+		// 146.940 repeater output, PL 127.3.
+		{offsetHz: -6_260_000, dbfs: -20, voiceSeed: 62, toneHz: 127.3, segs: overs(62, 0.8, end, 1.5, 2.5, 0.8, 1.5)},
+		// MURS 1, 151.820, on the air throughout.
+		{offsetHz: -1_380_000, dbfs: -22, voiceSeed: 63},
+		// MURS 4, 154.570.
+		{offsetHz: 1_370_000, dbfs: -24, voiceSeed: 64, segs: overs(64, 0.5, end, 1.5, 3, 0.5, 1.5)},
+		// Marine 16, 156.800.
+		{offsetHz: 3_600_000, dbfs: -18, voiceSeed: 65, segs: overs(65, 1.0, end, 1.5, 2.5, 0.8, 1.5)},
+		// NOAA WX2, 162.400: a weather broadcast, on the air throughout.
+		{offsetHz: 9_200_000, dbfs: -20, voiceSeed: 66},
+	}
+}
+
+// The scene_wx captures, around 162.475 MHz (NOAA WX3) at 480 kSPS: every NOAA channel, 162.400 to
+// 162.550, lies inside it. scene_wx is the floor alone, a weather band swept with the antenna off;
+// scene_wx_on has WX2 and WX1 broadcasting, outside a sweep's 24 kHz DC guard. Twenty seconds is
+// 19 MB.
+const (
+	sceneWXCenterHz  = 162_475_000
+	sceneWXRate      = 480_000
+	sceneWXDurationS = 20
+)
+
+func sceneWXCarriers() []sceneCarrier {
+	return []sceneCarrier{
+		// WX2, 162.400: the first expect entry, so ley play tunes it.
+		{offsetHz: -75_000, dbfs: -18, voiceSeed: 71},
+		// WX1, 162.550, a weaker station further off.
+		{offsetHz: 75_000, dbfs: -28, voiceSeed: 72},
+	}
+}
+
+// sceneQuietExpect is a channel on a capture with nothing in it: the floor through a 12.5 kHz
+// channel, with the squelch at the checker's reference closed.
+func sceneQuietExpect(offsetHz, rate float64) iqfile.Expect {
+	floor := sceneNoiseDBFS + 10*math.Log10(12_500/rate)
+	return iqfile.Expect{
+		Mode: "NFM", OffsetHz: offsetHz, BandwidthHz: 12_500,
+		Meter: &iqfile.MeterExpect{PowerDBFSMax: f64(floor + 3), SquelchOpen: bp(false)},
+	}
+}
+
 // aprsStation is one station in scene_aprs.
 type aprsStation struct {
 	ssid int
@@ -383,6 +463,62 @@ var sceneFixtures = []fixture{
 				Meter:  &iqfile.MeterExpect{PowerDBFSMin: f64(-30), SquelchOpen: bp(true)},
 				Decode: &iqfile.DecodeExpect{Protocol: "ais", Records: len(p.reports), DeviceIDs: p.deviceIDs()},
 			}}
+		},
+	},
+	{
+		name: "scene_gmrs", centerHz: sceneGMRSCenterHz, set: sceneSet, format: iqfile.FormatCU8,
+		fixedRate: sceneGMRSRate, fixedDurationS: sceneGMRSDurationS, noiseDBFS: sceneNoiseDBFS,
+		label:       sceneRadio,
+		description: "GMRS 462 MHz in overs: channel 5 (462.6625) PL 141.3, channel 1 (462.5625) with no tone and channel 21 (462.7000) PL 100.0; speech-shaped voice",
+		metadata:    sceneMetadata(462_662_500),
+		build:       func(rate float64) []source { return sources(rate, sceneGMRSCarriers()) },
+		expect: func(float64) []iqfile.Expect {
+			var out []iqfile.Expect
+			for i, c := range sceneGMRSCarriers() {
+				out = append(out, c.expect(i == 0))
+			}
+			return out
+		},
+	},
+	{
+		name: "scene_vhf20", centerHz: sceneVHF20CenterHz, set: sceneSet, format: iqfile.FormatCU8,
+		fixedRate: sceneVHF20Rate, fixedDurationS: sceneVHF20DurationS, noiseDBFS: sceneNoiseDBFS,
+		label:       sceneRadio,
+		description: "VHF from 142.7 to 163.7 MHz in one capture: 146.520 PL 100.0 and 146.940 PL 127.3 in overs, MURS 1 throughout, MURS 4 and marine 16 in overs, NOAA WX2 (162.400) throughout; speech-shaped voice",
+		metadata:    sceneMetadata(146_520_000),
+		build:       func(rate float64) []source { return sources(rate, sceneVHF20Carriers()) },
+		expect: func(float64) []iqfile.Expect {
+			var out []iqfile.Expect
+			for i, c := range sceneVHF20Carriers() {
+				out = append(out, c.expect(i == 0))
+			}
+			return out
+		},
+	},
+	{
+		name: "scene_wx", centerHz: sceneWXCenterHz, set: sceneSet, format: iqfile.FormatCU8,
+		fixedRate: sceneWXRate, fixedDurationS: sceneWXDurationS, noiseDBFS: sceneNoiseDBFS,
+		label:       sceneRadio,
+		description: "the NOAA weather channels with nothing on the air: the floor alone, as a sweep with the antenna off sees it",
+		metadata:    sceneMetadata(162_400_000),
+		build:       func(float64) []source { return nil },
+		expect: func(rate float64) []iqfile.Expect {
+			return []iqfile.Expect{sceneQuietExpect(-75_000, rate), sceneQuietExpect(75_000, rate)}
+		},
+	},
+	{
+		name: "scene_wx_on", centerHz: sceneWXCenterHz, set: sceneSet, format: iqfile.FormatCU8,
+		fixedRate: sceneWXRate, fixedDurationS: sceneWXDurationS, noiseDBFS: sceneNoiseDBFS,
+		label:       sceneRadio,
+		description: "the NOAA weather channels with WX2 (162.400) and a weaker WX1 (162.550) broadcasting throughout; speech-shaped voice",
+		metadata:    sceneMetadata(162_400_000),
+		build:       func(rate float64) []source { return sources(rate, sceneWXCarriers()) },
+		expect: func(float64) []iqfile.Expect {
+			var out []iqfile.Expect
+			for _, c := range sceneWXCarriers() {
+				out = append(out, c.expect(true))
+			}
+			return out
 		},
 	},
 }

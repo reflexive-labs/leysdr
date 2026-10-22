@@ -188,6 +188,15 @@ clock, so under a shift `ley track --since` and `ley devices-seen` ages are off 
 usual, a recording's playback paces as usual, and nothing is played. `leyshots` starts its daemons
 with it, so a shot or a check run plays nothing through the speakers of the Mac it runs on.
 
+**A slow sweep on a file.** A file device tunes only the point it was recorded at, so a scan on
+one is a single step that ends a quarter of a second after it starts. `leylined
+--file-scan-dwell MS` raises the dwell of a scan on a file device to MS milliseconds when it asks
+for less (`JobStore.scanDwellMs`), so a check scene can press Stop or click elsewhere while the
+sweep runs. The step ends once it has the rows that dwell implies, a whole number of row
+intervals, so it lasts about MS; it gathers more rows at the same false-alarm budget per sweep. A
+scan on any other driver keeps the dwell it asked for. `leyshots` passes it for a check scene's
+`sweep_dwell`.
+
 **Capture-owned index base.** Devices number samples per stream: `RTLTCPDevice`, the rtl-sdr
 callback and `FilePlaybackDevice` all restart at 0 on every `startStreaming`. The capture, not the
 device, owns the timeline. `CaptureDSPCore` keeps an `indexBase`; `expectNewAnchor()` (called by
