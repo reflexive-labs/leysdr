@@ -150,12 +150,20 @@ final class ControlChannel {
                 return ControlAnswer(
                     id: c.id, ok: true,
                     result: try ControlAnswer.result(viewState(staging.window)))
-            case .ax:
+            case .ax(let which):
                 guard let window = staging.window else { return noWindow }
                 let file = "\(AppControl.outName)/\(c.id).ax.txt"
+                guard let read = which == .main ? window : Self.settingsWindow() else {
+                    return ControlAnswer(
+                        id: c.id, ok: false, error: "the Settings window is not open")
+                }
                 try AppControl.writeReplacing(
-                    Data(try AccessibilityTree.text(of: window).utf8),
+                    Data(try AccessibilityTree.text(of: read).utf8),
                     to: directory.appendingPathComponent(file))
+                // The regions are the main window's, and mean nothing in another.
+                guard which == .main else {
+                    return ControlAnswer(id: c.id, ok: true, files: [file])
+                }
                 // The regions as a snapshot gives them, so the checker can mask the values of
                 // the elements inside the live ones.
                 guard let regions = staging.measure() else {
@@ -260,6 +268,14 @@ final class ControlChannel {
             notices: notices,
             popover: popover, selectedRecordingChannel: s.selectedRecordingChannel,
             selectedPart: s.selectedPartURI)
+    }
+
+    /// The Settings scene's window while it is on screen. SwiftUI names it
+    /// `com_apple_SwiftUI_Settings_window`.
+    private static func settingsWindow() -> NSWindow? {
+        NSApp.windows.first {
+            $0.isVisible && $0.identifier?.rawValue.contains("Settings") == true
+        }
     }
 
     /// The first responder by its accessibility identifier, else its role and label; a field

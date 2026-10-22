@@ -126,7 +126,7 @@ field, hover a point on the rail or the spectrum, open the assistant panel, open
 | `stage` | `stage`: a `ShotStage` object (`settle` applies; `window` resizes) | `result`: what was applied, as the log lines say it |
 | `snapshot` | `settle` (seconds, default 0) | `out/<id>.png` at the backing scale; `result`: `{"scale":2,"width_pt":…,"height_pt":…,"regions":{…}}`, the regions as `regions.json` gives them |
 | `state` | | `result`: the view state (place, selection, tuned Hz and mode, channel id, open sidebar rows, inspector shown, zoom, focused control, notices on screen, popover open, the assistant panel open) |
-| `ax` | | `out/<id>.ax.txt` (ML-5's tree, values quoted with `\`, `"` and newlines escaped); `result`: as `snapshot`'s (changed 2026-10-21, so the checker can mask live regions in the tree) |
+| `ax` | `window`: `main` (default) or `settings` (added 2026-10-22) | `out/<id>.ax.txt` (ML-5's tree, values quoted with `\`, `"` and newlines escaped); `result`: as `snapshot`'s (changed 2026-10-21, so the checker can mask live regions in the tree) |
 | `key` | `keys`: `"cmd+g"`, `"escape"`, `"down"`, `"return"` | sent to the key window as key down and up |
 | `type` | `text` | one key event per character to the key window |
 | `press` | `identifier` (ML-5) | `accessibilityPerformPress` on the element with that identifier |

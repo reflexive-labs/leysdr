@@ -25,7 +25,14 @@ final class AppControlTests: XCTestCase {
             parse(#"{"id":2,"cmd":"snapshot","settle":1.5}"#),
             .command(.init(id: 2, action: .snapshot(settle: 1.5))))
         XCTAssertEqual(parse(#"{"id":3,"cmd":"state"}"#), .command(.init(id: 3, action: .state)))
-        XCTAssertEqual(parse(#"{"id":4,"cmd":"ax"}"#), .command(.init(id: 4, action: .ax)))
+        XCTAssertEqual(
+            parse(#"{"id":4,"cmd":"ax"}"#), .command(.init(id: 4, action: .ax(window: .main))))
+        XCTAssertEqual(
+            parse(#"{"id":4,"cmd":"ax","window":"settings"}"#),
+            .command(.init(id: 4, action: .ax(window: .settings))))
+        XCTAssertEqual(
+            parse(#"{"id":4,"cmd":"ax","window":"sheet"}"#),
+            .refused(id: 4, reason: "window must be main or settings"))
         XCTAssertEqual(
             parse(#"{"id":5,"cmd":"key","keys":"cmd+g"}"#),
             .command(

@@ -122,12 +122,19 @@ public struct ControlCommand: Sendable, Equatable {
         /// The window's picture after `settle` seconds.
         case snapshot(settle: Double)
         case state
-        case ax
+        /// The tree of one of the app's windows.
+        case ax(window: TreeWindow)
         case key(KeyChord)
         case type(String)
         case press(identifier: String)
         case wait(seconds: Double)
         case quit
+    }
+
+    /// The window an `ax` reads: the main window, popovers and sheets included, by default; or
+    /// the Settings window, while it is open.
+    public enum TreeWindow: String, Sendable, Equatable, CaseIterable {
+        case main, settings
     }
 
     public var id: Int
@@ -154,6 +161,7 @@ public struct ControlCommand: Sendable, Equatable {
         var text: String?
         var identifier: String?
         var seconds: Double?
+        var window: String?
     }
 
     private struct LineID: Decodable {
@@ -203,7 +211,12 @@ public struct ControlCommand: Sendable, Equatable {
             }
             return .success(.snapshot(settle: settle))
         case "state": return .success(.state)
-        case "ax": return .success(.ax)
+        case "ax":
+            guard let window = TreeWindow(rawValue: line.window ?? TreeWindow.main.rawValue) else {
+                let names = TreeWindow.allCases.map(\.rawValue).joined(separator: " or ")
+                return .failure(Refusal(reason: "window must be \(names)"))
+            }
+            return .success(.ax(window: window))
         case "key":
             guard let keys = line.keys else { return .failure(Refusal(reason: "key needs keys")) }
             guard let chord = KeyChord(keys) else {

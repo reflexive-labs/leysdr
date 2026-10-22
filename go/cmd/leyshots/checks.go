@@ -59,6 +59,8 @@ type AppCommand struct {
 	Text       string  `yaml:"text"`
 	Identifier string  `yaml:"identifier"`
 	Seconds    float64 `yaml:"seconds"`
+	// Window is the window an ax tree is read from: main (the default) or settings.
+	Window string `yaml:"window"`
 	// Name names a snapshot's or an ax tree's artefact and its golden.
 	Name string `yaml:"name"`
 	// Expect maps dotted paths into a state answer's result to the scalar each must hold.
@@ -78,6 +80,7 @@ type wireCommand struct {
 	Text       string  `json:"text,omitempty"`
 	Identifier string  `json:"identifier,omitempty"`
 	Seconds    float64 `json:"seconds,omitempty"`
+	Window     string  `json:"window,omitempty"`
 }
 
 // LoadChecks reads and validates a check scenes file.
@@ -211,7 +214,7 @@ func (c *AppCommand) validate(path func(string) string) error {
 	set := map[string]bool{
 		"stage": c.Stage != nil, "settle": c.Settle != 0, "keys": c.Keys != "", "text": c.Text != "",
 		"identifier": c.Identifier != "", "seconds": c.Seconds != 0, "name": c.Name != "",
-		"expect": len(c.Expect) > 0, "mask": c.Mask != nil,
+		"expect": len(c.Expect) > 0, "mask": c.Mask != nil, "window": c.Window != "",
 	}
 	var need, may []string
 	switch c.Cmd {
@@ -222,7 +225,10 @@ func (c *AppCommand) validate(path func(string) string) error {
 	case "state":
 		may = []string{"expect"}
 	case "ax":
-		need, may = []string{"name"}, []string{"mask"}
+		need, may = []string{"name"}, []string{"mask", "window"}
+		if c.Window != "" && c.Window != "main" && c.Window != "settings" {
+			return fmt.Errorf("ax window is main or settings, not %q", c.Window)
+		}
 	case "key":
 		need = []string{"keys"}
 	case "type":
@@ -283,7 +289,7 @@ func (c *AppCommand) validate(path func(string) string) error {
 func (c *AppCommand) wire(id int, path func(string) string) (wireCommand, error) {
 	w := wireCommand{
 		ID: id, Cmd: c.Cmd, Settle: c.Settle, Keys: c.Keys, Text: c.Text,
-		Identifier: c.Identifier, Seconds: c.Seconds,
+		Identifier: c.Identifier, Seconds: c.Seconds, Window: c.Window,
 	}
 	if c.Stage != nil {
 		st, err := resolveStage(path, c.Stage)

@@ -21,7 +21,9 @@
 #                                         result must hold the value, or the line fails
 #   {cmd: ax, name: N}                    the accessibility tree, compared as text with N.ax.txt;
 #                                         mask as snapshot's: an element inside a masked region
-#                                         reads value=<masked> (<masked>) on both sides
+#                                         reads value=<masked> (<masked>) on both sides; window:
+#                                         settings reads the Settings window (open it with the
+#                                         key cmd+,) instead of the main one, unmasked
 #   {cmd: key, keys: cmd+g}               a key, as the protocol names keys
 #   {cmd: type, text: wx3}                one key event per character
 #   {cmd: press, identifier: I}           presses the element with that accessibility identifier
@@ -94,13 +96,16 @@ scenes:
       - {cmd: state, expect: {place: radio}}
       - {cmd: press, identifier: rail.zoom.in}
       - {cmd: state, expect: {zoom: 2}}
-      - {cmd: press, identifier: sidebar.band.2m.channels}
-      - {cmd: wait, seconds: 1}
       - {cmd: press, identifier: sidebar.bookmark.club-repeater}
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater}}
+      - {cmd: press, identifier: sidebar.band.2m.channels}
+      - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {popover: "channels:2m"}}
       - {cmd: ax, name: planpicker}
       - {cmd: press, identifier: toolbar.device}
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {popover: device_menu}}
+      - {cmd: key, keys: "cmd+,"}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ax, name: settings, window: settings}

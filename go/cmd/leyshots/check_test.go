@@ -219,6 +219,8 @@ func TestLoadChecksRejects(t *testing.T) {
 		"name twice":         "fixtures: [{name: x}]\n    app: [{cmd: ax, name: a}, {cmd: ax, name: a}]",
 		"bad size":           "fixtures: [{name: x}]\n    sizes: [{width: 0, height: 1}]\n    app: [{cmd: state}]",
 		"name with a dot":    "fixtures: [{name: x}]\n    app: [{cmd: snapshot, name: a.b}]",
+		"ax window":          "fixtures: [{name: x}]\n    app: [{cmd: ax, name: a, window: sheet}]",
+		"window on state":    "fixtures: [{name: x}]\n    app: [{cmd: state, window: main}]",
 	}
 	for name, body := range cases {
 		path := filepath.Join(t.TempDir(), "scenes.yaml")
