@@ -577,7 +577,9 @@ side are never compiled there.
 ## Palette and type
 
 Every value below is in `Theme.swift`, under the names given here, and a view uses no colour or
-font that is not one of them.
+font that is not one of them. `make app-lint` runs `scripts/check-theme.sh`, which fails on a
+colour, system font or hex value anywhere else in `LeylineApp`, and `PaletteTests` fails when the
+palette table and `Theme.swift` disagree.
 
 ### Palette
 
