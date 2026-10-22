@@ -54,7 +54,7 @@
 #   make reload     macOS: rebuild ley and leylined (release), stop the running daemon, reinstall the
 #                   LaunchAgent on the new binary and start it — the edit-build-try loop in one step
 #   make lint       golangci-lint + gofumpt (pinned versions, installed into .tools/<host>/bin)
-#   make app-lint   swift-format over the app package
+#   make app-lint   swift-format over the app package, and no colour or font outside Theme.swift
 #   make docs-check every relative link and backticked repository path in the docs resolves
 #   make vulncheck  govulncheck over the Go module: known vulnerabilities in code ley calls
 #   make workflow-lint  actionlint over .github/workflows
@@ -345,12 +345,14 @@ app-bundle:
 	./scripts/bundle-app.sh $(BUNDLE_ARGS)
 
 # swift-format ships in the toolchain; app/.swift-format pins its defaults at four spaces and 100
-# columns (docs/dev/swift-style.md, "Files"). app-format rewrites, app-lint only reports.
+# columns (docs/dev/swift-style.md, "Files"). app-format rewrites, app-lint only reports. app-lint
+# also runs scripts/check-theme.sh: no colour or font in the app outside Theme.swift.
 app-format:
 	cd app && swift format --in-place --recursive Sources Tests Package.swift
 
 app-lint:
 	cd app && swift format lint --strict --recursive Sources Tests Package.swift
+	./scripts/check-theme.sh
 
 lint: $(GOLANGCI_LINT) $(GOFUMPT)
 	cd go && $(GOLANGCI_LINT) run ./... && test -z "$$($(GOFUMPT) -l .)"
