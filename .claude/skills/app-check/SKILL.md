@@ -18,7 +18,10 @@ file", is the full reference.
 - **While iterating on a view**: `make app-check ONLY=radio-2m,goto-bookmark`, the scenes the
   change touches. `go/bin/leyshots check --list` lists them.
 - **Before handing over**: `make app-check` (every scene) and `make app-lint`. The make target
-  rebuilds `ley`, the engine and the bundle first, so it always checks the code as it is.
+  rebuilds `ley`, the engine and the bundle first, so it always checks the code as it is. The
+  scenes' daemon is always the release `leylined` (`make swift-release`): a debug one plays
+  `scene_vhf20`'s 21 MSPS at about half of real time. Running `go/bin/leyshots check` by hand
+  takes the debug one unless `LEYLINED_BIN` names the release build.
 
 ## Reading the output
 

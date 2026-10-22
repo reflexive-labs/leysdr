@@ -299,8 +299,11 @@ shots-release: $(SHOTS_ASSETS) | go
 
 # The app's checks (docs/plans/mac-loop.md, ML-4): what make shots builds for an app scene, then
 # leyshots check. Every scene runs, or ONLY's; RECORD=1 writes the goldens rather than comparing.
-app-check: go swift shots-bundle
-	$(LEYSHOTS) check $(if $(ONLY),--only $(ONLY)) $(if $(filter 1,$(RECORD)),--record)
+# The daemon is a release build whatever SWIFT_CONFIG says: a debug leylined plays scene_vhf20's
+# 21 MSPS at about half of real time, which puts every timing in a scene out.
+app-check: go swift-release shots-bundle
+	LEYLINED_BIN="$$(cd engine && swift build -c release --show-bin-path)/leylined" LEY_BIN=$(GOBIN)/ley \
+		LEYFIX_BIN=$(GOBIN)/leyfix $(GOBIN)/leyshots check $(if $(ONLY),--only $(ONLY)) $(if $(filter 1,$(RECORD)),--record)
 
 # Every step of a release in order, resumable (docs/dev/release-checklist.md, "The signed build").
 # It calls make release-build, release-publish and release-rehearse itself. The recipe does not

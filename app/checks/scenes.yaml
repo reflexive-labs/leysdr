@@ -67,7 +67,9 @@
 # Fixtures made for checks (go/cmd/leyfix/scenes.go): scene_gmrs (GMRS 462 MHz, channels 1, 5 and
 # 21), scene_vhf20 (2 m, MURS, marine and NOAA WX2 in one capture, 142.7 to 163.7 MHz),
 # scene_wx (the NOAA channels with nothing on the air) and scene_wx_on (WX2 and WX1 on the air);
-# ../../fixtures/chirp/nofreq.csv is a CSV the CHIRP import refuses.
+# ../../fixtures/chirp/nofreq.csv is a CSV the CHIRP import refuses. `make app-check` runs a
+# release leylined whatever SWIFT_CONFIG says: a debug one plays scene_vhf20 at about half of real
+# time, so its timings would be wrong.
 
 scenes:
   # The site's app-radio-2m inputs, without its on_air wait: the 2 m band open on Calling.
