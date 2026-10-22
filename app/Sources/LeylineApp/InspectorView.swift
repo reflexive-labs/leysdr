@@ -32,6 +32,8 @@ struct InspectorToggle: View {
         }
         .buttonStyle(.plain)
         .help(session.inspectorShown ? "Hide Inspector (⌥⌘I)" : "Show Inspector (⌥⌘I)")
+        // The symbol's own name would be read otherwise ("Split View Horizontally Right").
+        .accessibilityLabel("Inspector")
         .accessibilityIdentifier("toolbar.inspector")
     }
 }

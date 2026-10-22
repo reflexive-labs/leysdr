@@ -33,6 +33,8 @@ struct AssistantToggle: View {
             }
             .buttonStyle(.plain)
             .help(session.assistantShown ? "Hide Assistant (⇧⌘A)" : "Show Assistant (⇧⌘A)")
+            // The symbol's own name would be read otherwise.
+            .accessibilityLabel("Assistant")
             .accessibilityIdentifier("toolbar.assistant")
         }
     }
