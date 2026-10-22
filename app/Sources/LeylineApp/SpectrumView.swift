@@ -111,16 +111,27 @@ struct SpectrumView: View {
         }
         ctx.stroke(grid, with: .color(Theme.border.opacity(0.6)), lineWidth: 0.5)
 
+        // The axis's words are drawn last, each on a plate of the ground, so a trace crossing
+        // the chart's edges passes under them rather than through them.
+        var labels: [(Text, CGPoint, UnitPoint)] = []
+        defer {
+            for (text, point, anchor) in labels {
+                drawLabel(text, at: point, anchor: anchor, in: &ctx)
+            }
+        }
+
         if held {
             // The margin at the left edge, under each line: above its line +50 would sit under
             // the max-hold chip, and +70 is the top edge, under the chip either way, so it is
             // not labelled (the top label on the right gives that line's level).
             for step in Self.gridStepsDB where step < Self.aboveFloorDB {
-                ctx.draw(
-                    Text(verbatim: "+\(Int(step))").font(Theme.Font.columnHead).foregroundStyle(
-                        Theme.inkFaintest),
-                    at: CGPoint(x: 6, y: y(ofDBOverFloor: step, height: size.height) + 2),
-                    anchor: .topLeading)
+                labels.append(
+                    (
+                        Text(verbatim: "+\(Int(step))").font(Theme.Font.columnHead)
+                            .foregroundStyle(Theme.inkFaintest),
+                        CGPoint(x: 6, y: y(ofDBOverFloor: step, height: size.height) + 2),
+                        .topLeading
+                    ))
             }
             // The floor as a rule, stroked before the traces so they cross over it, so height
             // above it reads as margin (docs/dev/cli-style.md, "A chart draws its trace, not its
@@ -132,10 +143,12 @@ struct SpectrumView: View {
             ctx.stroke(
                 rule, with: .color(Theme.borderStrong),
                 style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-            ctx.draw(
-                Text(verbatim: "floor \(dbLabel(rows.floorDB, unit: false))")
-                    .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint),
-                at: CGPoint(x: size.width - 8, y: ruleY - 2), anchor: .bottomTrailing)
+            labels.append(
+                (
+                    Text(verbatim: "floor \(dbLabel(rows.floorDB, unit: false))")
+                        .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint),
+                    CGPoint(x: size.width - 8, y: ruleY - 2), .bottomTrailing
+                ))
         }
 
         guard let cap = rows.capture, let range = rows.range, cap.sampleRate > 0 else { return }
@@ -157,14 +170,34 @@ struct SpectrumView: View {
 
         // The window's two ends, faintly, at the right edge: without them the trace has no
         // scale and the max-hold line means nothing quantitative.
-        ctx.draw(
-            Text(dbLabel(top, unit: true)).font(Theme.Font.valueSmall).foregroundStyle(
-                Theme.inkFaint),
-            at: CGPoint(x: size.width - 8, y: 6), anchor: .topTrailing)
-        ctx.draw(
-            Text(dbLabel(bottom, unit: false)).font(Theme.Font.valueSmall).foregroundStyle(
-                Theme.inkFaint),
-            at: CGPoint(x: size.width - 8, y: size.height - 5), anchor: .bottomTrailing)
+        labels.append(
+            (
+                Text(dbLabel(top, unit: true)).font(Theme.Font.valueSmall)
+                    .foregroundStyle(Theme.inkFaint),
+                CGPoint(x: size.width - 8, y: 6), .topTrailing
+            ))
+        labels.append(
+            (
+                Text(dbLabel(bottom, unit: false)).font(Theme.Font.valueSmall)
+                    .foregroundStyle(Theme.inkFaint),
+                CGPoint(x: size.width - 8, y: size.height - 5), .bottomTrailing
+            ))
+    }
+
+    /// One of the axis's words on a plate of the chart's ground, 2 pt wider than the words on
+    /// each side and 1 pt taller.
+    private func drawLabel(
+        _ text: Text, at point: CGPoint, anchor: UnitPoint, in ctx: inout GraphicsContext
+    ) {
+        let resolved = ctx.resolve(text)
+        let size = resolved.measure(in: CGSize(width: CGFloat.infinity, height: .infinity))
+        let rect = CGRect(
+            x: point.x - size.width * anchor.x, y: point.y - size.height * anchor.y,
+            width: size.width, height: size.height)
+        ctx.fill(
+            Path(roundedRect: rect.insetBy(dx: -2, dy: -1), cornerRadius: 2),
+            with: .color(Theme.ground))
+        ctx.draw(resolved, in: rect)
     }
 
     /// Where a level this far over the held floor falls: the window runs from the floor less
