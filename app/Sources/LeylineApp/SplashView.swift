@@ -203,15 +203,24 @@ struct WindowFrameProbe: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let view = PassThroughView()
+        view.anchor = anchor
         anchor.view = view
         return view
     }
 
+    // A view made new (`.id` on its content) can be updated once more after its replacement was
+    // made; taking the anchor back then left it on a view about to go, and the region unmeasured.
+    // The anchor stays with the view that is in a window.
     func updateNSView(_ nsView: NSView, context: Context) {
-        anchor.view = nsView
+        if anchor.view?.window == nil { anchor.view = nsView }
     }
 
     private final class PassThroughView: NSView {
+        weak var anchor: WindowFrameAnchor?
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window != nil { anchor?.view = self }
+        }
     }
 }

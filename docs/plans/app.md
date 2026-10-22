@@ -1568,12 +1568,9 @@ scene, whose pictures and trees in `tmp/checks/<scene>/` show it.
   `146.9402`), not the `146.940 MHz` the hit is named.
 - `plan-picker`: once a pick closes the picker the sidebar's filter has the focus, so Space and
   the arrows type there rather than mute and tune. Seen in a check run, whose app is never
-  active; look in a real session before changing it.
-- Every scene: a plain text field's AppKit view keeps the height of whichever field it was first
-  made for (13 or 15 pt) from launch to launch, as `Theme.Layout.labelFieldHeight` says. The
-  pixels stay put and `ax` leaves the field's top and height out, but a group's frame is the
-  union of its children's, so `inspector.identity` reads 116 or 117 pt and a tree holding it
-  differs on about one launch in three.
+  active; look in a real session before changing it. ML-9c saw why: Escape out of the picker
+  does the same, because AppKit gives a window that becomes key with nothing focused to its
+  first key view, the filter.
 
 #### Residuals after APP-9 review
 

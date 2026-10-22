@@ -167,7 +167,13 @@ struct IdentityView: View {
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
             if let b = bookmark {
-                BookmarkFieldsView(bookmark: b)
+                // A view of their own for each bookmark, made new when the tuned bookmark
+                // changes. Kept across the change, the fields took the new bookmark's text in
+                // the same layout pass as the move, and AppKit measured the field with the text
+                // it was changing to at the height it had last been given anywhere (the 15 pt
+                // of a 12.5 pt field closing in the same pass), so on about one change in five
+                // Tone and Note came out 2 pt taller and the rows under them moved.
+                BookmarkFieldsView(bookmark: b).id(b.id)
             }
             if session.bookmarkModified, !editing {
                 // The channel's settings differ from the bookmark's: say so on a line of its
