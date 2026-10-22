@@ -1,0 +1,137 @@
+---
+name: app-check
+description: Check the Leyline Mac app on this Mac with `make app-check` (pictures, accessibility trees and view state against local goldens) and drive a staged copy of the app by hand. Use after changing anything under app/Sources, before handing over app work, and whenever you need to see or verify what the Mac app shows.
+---
+
+# Checking the Mac app
+
+Each scene in `app/checks/scenes.yaml` runs against its own `leylined --no-hardware` playing
+synthetic IQ, in a staged copy of the app (`tmp/staged-app/Leyline.app`, bundle id
+`com.leysdr.app.staged`) that `leyshots` drives over a command file. Nothing touches the default
+socket or the person's own app and settings. `docs/dev/app.md`, "Staged runs" and "The command
+file", is the full reference.
+
+## When to run what
+
+- **Every edit under `app/Sources`**: the PostToolUse hook (`scripts/claude-app-hook.sh`) runs an
+  incremental `swift build` and `scripts/check-theme.sh`. Fix what it prints before going on.
+- **While iterating on a view**: `make app-check ONLY=radio-2m,goto-bookmark`, the scenes the
+  change touches. `go/bin/leyshots check --list` lists them.
+- **Before handing over**: `make app-check` (every scene) and `make app-lint`. The make target
+  rebuilds `ley`, the engine and the bundle first, so it always checks the code as it is.
+
+## Reading the output
+
+One line per artefact or expectation: `<status> <scene> <W>x<H> <item> <detail> <path>`. The
+item is a snapshot's name, `<name>.ax` for a tree, `state#<id> <path>` for an expectation and
+`<cmd>#<id>` for a command the app refused.
+
+| status | means | do |
+|---|---|---|
+| `ok` | matches; a snapshot shows its % of changed pixels, under the scene's threshold (default 0.1 %) | nothing |
+| `diff 2.40 %` | the picture changed more than the threshold; the path is the diff image | look at it (below) |
+| `new` | no golden yet; the path is the picture or tree | look at it, then record it if it is right |
+| `recorded` | `RECORD=1` wrote the golden | name it in the handover |
+| `fail` | a `state` value (`got … want …`), a tree that differs (the path is `<name>.ax.diff`), a picture of another size, or a command the app answered `ok:false` (`the app: …`) | read the detail |
+| `error` | the run could not check: the app never became ready, exited, or did not answer | read `run/app.log` |
+
+The last line is `N checked: …; tmp/checks/summary.json`; the run exits 1 on any `diff`, `fail`
+or `error`.
+
+Artefacts, in `tmp/checks/<scene>/<W>x<H>/`:
+
+- `<name>.png`, the window at the backing scale (2880 × 1640 px for 1440 × 820 pt), and
+  `<name>.diff.png` when any pixel changed.
+- `<name>.ax.txt`, the tree; `<name>.masked.ax.txt` and `<name>.golden.masked.ax.txt`, the two
+  sides as compared; `<name>.ax.diff` when they differ.
+- `state-<id>.json`, each `state` answer.
+- `run/`: `app.log` (one line per thing the window did), `app.stderr`, `leylined.log`,
+  `steps.log` (the scene's `ley` steps), `stage.json`, `regions.json`, and `control/` (the
+  command file and the app's answers).
+
+Goldens are in `tmp/goldens/<macOS major.minor>-<arch>/<scene>/<W>x<H>/`, local to this Mac
+and never committed.
+
+## Looking at a picture
+
+Read the PNG with the Read tool. For a `diff`, read `<name>.diff.png`: red pixels changed, grey
+is masked, everything else is the golden faded. Then read the golden and the new picture to see
+what the red is. The masked regions (`spectrum`, `waterfall`, `readings`, `transmissions`,
+`log_day`, `heard`) move between runs and are never compared, so a change inside one is checked
+only by looking at the picture.
+
+Decide whether the change was intended. If not, fix the code. If it was, re-record that scene
+only: `make app-check ONLY=<scene> RECORD=1`.
+
+## Writing a check scene
+
+Add or extend a scene for each behaviour you change. The header of `app/checks/scenes.yaml` is
+the format: a site scene's inputs (fixtures, clock, bookmarks, `ley` steps, a stage applied at
+launch), `sizes`, and `app`, the commands in order.
+
+```yaml
+  - name: filter-focus
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    stage: {place: radio, settle: 3}
+    app:
+      - {cmd: key, keys: cmd+g}
+      - {cmd: state, expect: {focused: sidebar.filter}}
+      - {cmd: snapshot, name: focused}
+      - {cmd: ax, name: focused}
+```
+
+- `expect` maps a dotted path into the `state` answer to a value; the keys are in
+  `docs/dev/app.md`, "The command file".
+- `mask` on a `snapshot` or `ax` replaces the default list of masked regions; `[]` compares
+  everything.
+- `press` and the tree's `id=` use the views' accessibility identifiers, listed in
+  `docs/dev/app.md`; `grep -rn 'accessibilityIdentifier(' app/Sources/LeylineApp` finds them in
+  the code. A view without one cannot be pressed: give it one.
+- A file radio tunes only inside the capture it was recorded with, so a scene that tunes must
+  stay inside its fixture's span.
+
+The first run prints `new`. Read the picture and the tree, and record them only when they show
+what the scene should.
+
+## Driving the app by hand
+
+To explore a state no scene reaches yet, hold a scene's app open. Build once with
+`make app-check ONLY=<scene>`, then run, in the background:
+
+```sh
+go/bin/leyshots check --hold --only radio-2m --out tmp/explore
+```
+
+After the scene's commands it prints, on stderr, the app's pid and log, the scene's daemon
+socket, the command file and the next free id, and waits:
+
+```sh
+C=tmp/explore/radio-2m/1440x820/run/control
+echo '{"id":4,"cmd":"key","keys":"cmd+g"}' >> $C/commands.jsonl   # answered in $C/out/4.json
+echo '{"id":5,"cmd":"snapshot"}' >> $C/commands.jsonl              # the picture is $C/out/5.png
+echo '{"id":6,"cmd":"quit"}' >> $C/commands.jsonl                  # ends the hold and the daemon
+```
+
+Each id is used once. `ley --socket <the printed socket> …` reads the scene's daemon. Without
+`--out`, the hold writes over that scene's artefacts in `tmp/checks`.
+
+## Rules
+
+- **Never re-record a golden to make a check pass.** `RECORD=1` is for a change you intended,
+  scene by scene, and every re-recorded golden is named in the handover with the reason.
+- **Kill only the pids you launched**: the app's pid in the hold's line or `ready.json`, and the
+  `leyshots` you started. Never `pkill` or `killall` by name, never `launchctl`, never the
+  default socket: the person's own Leyline app and daemon may be running on this Mac.
+- **Accessibility is granted once, by the person**, to `tmp/staged-app/Leyline.app` in System
+  Settings > Privacy & Security > Accessibility. An `ax` line `fail … the app: …` that names the
+  permission means the grant was lost: stop and ask for it to be added again.
+
+## The handover
+
+- The summary line of the last `make app-check`, and each line that is not `ok`, with why.
+- The goldens re-recorded, by scene, and why.
+- The scenes added or extended.
+- What no check covers: behaviour the change touches that no scene reaches (audio, a real
+  radio, a masked region, a path with no key or identifier yet).
