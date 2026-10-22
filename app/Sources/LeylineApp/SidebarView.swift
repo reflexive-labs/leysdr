@@ -283,13 +283,16 @@ struct SidebarView: View {
             .buttonStyle(.plain)
             .foregroundStyle(Theme.inkTertiary)
             .help("Bookmark \(hit.label)")
-            .accessibilityIdentifier("sidebar.hit.\(ViewIdentifier.slug(hit.label)).add")
+            .accessibilityIdentifier(
+                "sidebar.hit.\(ViewIdentifier.hitSlug(hit, among: session.sweepHits)).add")
         }
         .padding(.leading, 14 + Theme.Layout.sidebarIndent).padding(.trailing, 14)
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .onTapGesture { session.tune(hit: hit) }
-        .pressableGroup("sidebar.hit.\(ViewIdentifier.slug(hit.label))") { session.tune(hit: hit) }
+        .pressableGroup(
+            "sidebar.hit.\(ViewIdentifier.hitSlug(hit, among: session.sweepHits))"
+        ) { session.tune(hit: hit) }
         .help(
             "\(Frequency.format(hit.hz)) · \(snr) dB over the floor · heard in \(hit.looks) of \(hit.looksPossible) looks"
         )

@@ -907,10 +907,10 @@ them and nothing else: an identifier changes no layout and no behaviour.
 | prefix | views |
 |---|---|
 | `toolbar.` | `place.radio`, `place.library`, `device` (the chip), `inspector`, `assistant` |
-| `sidebar` | the Radio's sidebar; `.filter`, `.add` (＋), `.list`, `.outofrange`, `.band.<id>` (a band row by its id in `bands.json`) with `.chevron`, `.scan` and `.channels` under it, `.bookmark.<name>`, `.hit.<label>` (a sweep's hit, by the name or frequency it shows, because the frequency it measured moves from run to run) with `.add` (its ＋), `.match.<id>` (a row of the filtered list) |
+| `sidebar` | the Radio's sidebar; `.filter`, `.add` (＋), `.list`, `.outofrange`, `.band.<id>` (a band row by its id in `bands.json`) with `.chevron`, `.scan` and `.channels` under it, `.bookmark.<name>`, `.hit.<label>` (a sweep's hit, by the name or frequency it shows, because the frequency it measured moves from run to run; a label two hits share is `-2`, `-3` on the second and later by frequency) with `.add` (its ＋), `.match.<id>` (a row of the filtered list) |
 | `planpicker` | the Channels… popover; `.filter`, `.row.<channel>` |
 | `devicemenu` | the device chip's popover; `.rate`, `.gain.<stage>` and `.gain.<stage>.auto`, `.device.<id>` |
-| `rail` | the band rail; `.track`, `.below`, `.above`, `.zoom.out`, `.zoom.in`, `.channel.<channel>` and `.hit.<label>` (the ticks on the track) |
+| `rail` | the band rail; `.track`, `.below`, `.above`, `.zoom.out`, `.zoom.in`, `.channel.<channel>` and `.hit.<label>` (the ticks on the track; a hit's as the sidebar names it) |
 | `spectrum.` | `maxhold`, `clear` |
 | `tuning.` | `field` (the frequency's digits), `up`, `down` |
 | `transport` | the bar under the Radio; `.mute`, `.mode`, `.width`, `.squelch` with `.squelch.track`, `.volume` |

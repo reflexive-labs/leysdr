@@ -189,4 +189,14 @@ final class KeyChordTests: XCTestCase {
         XCTAssertEqual(ViewIdentifier.slug("Café 2"), "caf-2")
         XCTAssertEqual(ViewIdentifier.slug("—"), "_")
     }
+
+    func testHitSlugsAreUniqueOnlyWhereALabelRepeats() {
+        func hit(_ hz: UInt64, _ name: String?) -> SweepHit {
+            SweepHit(hz: hz, snrDb: 20, bandwidthHz: 12_500, looks: 8, looksPossible: 8, name: name)
+        }
+        let hits = [hit(162_550_000, "WX"), hit(162_400_000, "WX"), hit(146_520_000, "Calling")]
+        XCTAssertEqual(ViewIdentifier.hitSlug(hits[1], among: hits), "wx")
+        XCTAssertEqual(ViewIdentifier.hitSlug(hits[0], among: hits), "wx-2")
+        XCTAssertEqual(ViewIdentifier.hitSlug(hits[2], among: hits), "calling")
+    }
 }

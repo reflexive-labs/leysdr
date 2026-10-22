@@ -87,6 +87,17 @@ public enum ViewIdentifier {
         }
         return out.isEmpty ? "_" : out
     }
+
+    /// A sweep hit's slug, unique among `hits`: its label's, and when another hit has the same
+    /// label (two hits on one plan channel, two plans naming a channel `WX`), `-2`, `-3` on
+    /// the second and later of them by frequency. The first keeps the plain slug, so a sweep with
+    /// no repeated label names its hits as it always has; the count is used rather than the
+    /// frequency because the frequency a sweep measures moves from run to run.
+    public static func hitSlug(_ hit: SweepHit, among hits: [SweepHit]) -> String {
+        let base = slug(hit.label)
+        let before = hits.filter { $0.hz < hit.hz && slug($0.label) == base }.count
+        return before == 0 ? base : "\(base)-\(before + 1)"
+    }
 }
 
 /// `ready.json`: written once the session is live and has its first channel, or when the waits
