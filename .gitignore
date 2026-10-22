@@ -10,8 +10,11 @@ DerivedData/
 *.xcodeproj
 *.xcworkspace
 
-# Agent scratch (worktrees created by parallel runs)
-.claude/
+# Agent scratch (worktrees created by parallel runs) and one person's Claude Code settings; the
+# project's settings and skills are committed
+.claude/*
+!.claude/settings.json
+!.claude/skills/
 
 # Notes for one machine (AGENTS.md points to it)
 AGENTS.local.md
