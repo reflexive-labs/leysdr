@@ -156,7 +156,18 @@ enum AccessibilityTree {
     private static func element(of window: NSWindow) -> AXUIElement? {
         let app = AXUIElementCreateApplication(getpid())
         AXUIElementSetMessagingTimeout(app, messagingSeconds)
-        let windows = children(app, kAXWindowsAttribute)
+        var windows = children(app, kAXWindowsAttribute)
+        if windows.isEmpty {
+            // The application lists only the windows on the Space the person is looking at,
+            // so a window left on another Space is not among them; the main and focused
+            // windows are answered all the same.
+            windows = [kAXMainWindowAttribute, kAXFocusedWindowAttribute].compactMap { name in
+                guard let w = attribute(app, name), CFGetTypeID(w) == AXUIElementGetTypeID()
+                else { return nil }
+                return (w as! AXUIElement)
+            }
+            log("control", "accessibility: no windows listed; \(windows.count) from main and focused")
+        }
         let want = window.frame.size
         let match = windows.first { w in
             guard let s = size(w) else { return false }
