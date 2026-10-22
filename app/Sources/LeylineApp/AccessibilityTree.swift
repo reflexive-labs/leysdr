@@ -117,6 +117,12 @@ enum AccessibilityTree {
         }
         guard let found else { return "no element has the identifier \(identifier)" }
         let err = AXUIElementPerformAction(found, kAXPressAction as CFString)
+        if err == .actionUnsupported {
+            // A text field has no press; a click there gives it the focus, and so does this.
+            let focus = AXUIElementSetAttributeValue(
+                found, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+            if focus == .success { return nil }
+        }
         return err == .success ? nil : "\(identifier) refused the press (AXError \(err.rawValue))"
     }
 
