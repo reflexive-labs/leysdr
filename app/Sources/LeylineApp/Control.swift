@@ -232,7 +232,8 @@ final class ControlChannel {
                 for w in windows {
                     await AccessibilityTree.ready(w)
                     why = AccessibilityTree.press(identifier, in: w)
-                    if why == nil { break }
+                    // Found, pressed or disabled: the next window is not looked in.
+                    if why == nil || why?.hasSuffix(" is disabled") == true { break }
                 }
                 return ControlAnswer(id: c.id, ok: why == nil, error: why ?? "")
             case .hover(let target):

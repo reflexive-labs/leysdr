@@ -499,6 +499,9 @@ enum AXWalk {
             return "no element with the identifier \(identifier) within \(Int(walkSeconds)) s"
         }
         guard let found else { return "no element has the identifier \(identifier)" }
+        // A disabled element answers a press as if it took it, through either reading, so a
+        // check that presses a dead button is told so rather than passing.
+        if found.bool(kAXEnabledAttribute) == false { return "\(identifier) is disabled" }
         if found.perform(kAXPressAction) { return nil }
         // A text field has no press; a click there gives it the focus, and so does this.
         if found.focus() { return nil }
