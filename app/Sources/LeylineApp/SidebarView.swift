@@ -96,6 +96,13 @@ struct SidebarView: View {
         .onChange(of: filterFocused) { _, has in
             if session.filterFocused != has { session.filterFocused = has }
         }
+        // ⌘G from the Library asks for the focus before this field exists, so the change
+        // above never fires; it is given once the field is in the window.
+        .onAppear {
+            if session.filterFocused {
+                DispatchQueue.main.async { filterFocused = true }
+            }
+        }
     }
 
     /// The list with nothing typed: the out-of-range line and, opened, its rows; the rows the
