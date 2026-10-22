@@ -394,7 +394,9 @@ struct BookmarkField: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        TextField("", text: $draft)
+        // The field's own placeholder is a space: an empty one left its first baseline, which
+        // the row aligns on, unsettled on some launches, and the row grew 11 pt.
+        TextField(" ", text: $draft)
             .textFieldStyle(.plain)
             .font(Theme.Font.value)
             .foregroundStyle(Theme.ink)
