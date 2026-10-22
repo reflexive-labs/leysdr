@@ -3,8 +3,8 @@
 How Leyline's Swift is written: what a file looks like, what things are called, where state
 lives, and which mistakes this codebase has already made. It covers the engine
 package, the app package and the tests around both. Read it before writing Swift anywhere in the
-repository, and read section 12 first if you are working on Linux, because most
-of the Swift you will touch there is never compiled before you hand the work over.
+repository, and read section 12 first: it says how a change to the app is checked on the Mac,
+and what the Linux container cannot check.
 
 Four things are not here because they have their own page. Prose — comments and log lines
 included — follows [`../writing-guide.md`](../writing-guide.md). The engine's threads, hot path
@@ -336,27 +336,34 @@ testing, goes against that same harness (`app.md`, "Testing").
 
 ## 12. Working as an agent on this repository
 
-**Linux builds and tests the façade, and nothing else of the app.**
+**On the Mac, a change to the app is checked by running it.** `make app` builds both targets,
+and Claude Code builds the app again after each edit under `app/Sources`
+(`scripts/claude-app-hook.sh`, with `scripts/check-theme.sh`). Before handing over, run
+`make app-check`: each scene in `app/checks/scenes.yaml` runs a staged copy of the app against
+its own `leylined --no-hardware` and compares its pictures, accessibility trees and view state
+with local goldens (`app.md`, "Staged runs"). `.claude/skills/app-check/SKILL.md` says how to
+read its lines and look at a picture.
+
+**Add or extend a check scene for each behaviour the change touches**: a `state` expectation for
+what the window holds, an `ax` tree for its structure, a snapshot for its layout. Read the
+pictures for section 7's layout rules too (offset against frame alignment, overlay before
+offset, what a hosted view covers), because a diff shows that pixels changed and not whether the
+layout is right. A golden is re-recorded only for a change that was intended, and the handover
+names each one and why.
+
+**State what no check covers.** Name the behaviours the change touches that no scene reaches,
+such as audio, a real radio, a masked region (the spectrum, the waterfall, the live readings) or
+an interaction with no key or identifier to drive it, in the handoff message and commit body.
+
+**The Linux container builds and tests the façade, and nothing else of the app.** There
 `cd app && swift build` builds `LeylineClient` only, because `app/Package.swift` declares
-`LeylineApp` inside `#if os(macOS)`. `make app-test` runs the façade's cases in well under a
-second; `make app-e2e` runs on Linux too, given `LEYLINED_BIN` and fixtures (`setup.md`).
-
-**Only the Mac catches the rest.** Every file in `app/Sources/LeylineApp` — the SwiftUI, AppKit,
-MetalKit, CoreAudio and `os` imports — is untouched by a green Linux run. So are the engine's
-Accelerate kernels, the engine's actor-isolation mistakes while it stays in Swift 5 mode, Xcode's
-stricter type checker, shader compilation and texture formats, and every layout and interaction
-fact in section 7.
-
-**Before handing over, read the diff by eye for the five things the compiler would have caught.**
-Is every `static let` that a value type or an off-actor closure reads marked `nonisolated`? After
-extracting a helper, does every identifier still resolve — a body moved into a new function kept
-a `press.key` that no longer existed? Does every `guard let` binding get used? Is every
-`UInt`/`Int` conversion of a value that can be negative or NaN guarded? Does anything crossing an
-AppKit closure carry only `Sendable` values? Then check the layout rules: offset against frame
-alignment, overlay before offset, and what a hosted view covers.
-
-**State what was not compiled.** Name the files and unverified behaviours, including layout,
-gestures and shaders, in the handoff message and commit body.
+`LeylineApp` inside `#if os(macOS)`; `make app-test` and `make app-e2e` run too (`setup.md`).
+Every file in `app/Sources/LeylineApp`, the engine's Accelerate kernels, shader compilation and
+every layout fact are untouched by a green container run. Read the diff there for what the
+compiler would have caught: `nonisolated` on a `static let` read off the main actor, identifiers
+that still resolve after a body moves into a helper, every `guard let` binding used, guarded
+`UInt`/`Int` conversions, and only `Sendable` values crossing an AppKit closure. Then name the
+files and behaviours changed, for a `make app-check` run on the Mac.
 
 **Small diffs, and only the change that was asked for.** No speculative abstraction: a layer
 added for a use that does not exist yet costs the next reader time for no benefit. No reformatting
