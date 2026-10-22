@@ -34,6 +34,9 @@ struct DaemonCommand: AsyncParsableCommand {
     @Flag(name: .customLong("no-hardware"), help: "Never look for USB dongles: the daemon hosts only what is attached to it (file devices, rtl_tcp). For a daemon that must see nothing but its test radios, such as an eval's.")
     var noHardware = false
 
+    @Flag(name: .customLong("no-audio"), help: "Play nothing through the speakers: every audio sink a client attaches, and every recording played, is accepted and discarded. For a staged or check run beside a person at the Mac.")
+    var noAudio = false
+
     @Option(name: .customLong("rtltcp"), help: "Remote dongle served by rtl_tcp, as host:port, for foreground runs (repeatable; env LEYLINE_RTLTCP, comma-separated). A radio the daemon should keep is attached over the protocol instead, with `ley devices attach`.")
     var rtltcp: [String] = []
 
@@ -84,6 +87,7 @@ struct DaemonCommand: AsyncParsableCommand {
             // A file is fully buffered by default; a log line must reach it when it is written.
             setvbuf(stdout, nil, _IOLBF, 0)
         }
+        if noAudio { SinkFactory.setSilenced(true) }
         if let wallClock {
             do {
                 let (hour, minute) = try WallClock.parseClockTime(wallClock)

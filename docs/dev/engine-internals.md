@@ -183,6 +183,11 @@ elapsed time uses `WallClock.realNowNs()`: the retention cutoffs (`--store-age`,
 time, an alert's validity check and the ULID timestamp. Clients compare dates against their own
 clock, so under a shift `ley track --since` and `ley devices-seen` ages are off by the offset.
 
+**A silent daemon.** `leylined --no-audio` makes every system audio sink a `SilentAudioSink`
+(`SinkFactory.setSilenced`, once at startup): a client's sink is attached, reported and fed as
+usual, a recording's playback paces as usual, and nothing is played. `leyshots` starts its daemons
+with it, so a shot or a check run plays nothing through the speakers of the Mac it runs on.
+
 **Capture-owned index base.** Devices number samples per stream: `RTLTCPDevice`, the rtl-sdr
 callback and `FilePlaybackDevice` all restart at 0 on every `startStreaming`. The capture, not the
 device, owns the timeline. `CaptureDSPCore` keeps an `indexBase`; `expectNewAnchor()` (called by

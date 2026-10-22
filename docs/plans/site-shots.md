@@ -42,7 +42,8 @@ page covers each of its items.
    packages it imports), so a code change that leaves the generator record as it was still
    regenerates the copy;
 2. starts its own `leylined --no-hardware` with a socket, pidfile, store, recordings directory
-   and log under `tmp/shots/run/<scene>/`, and `--wall-clock` set when the scene gives a `clock`.
+   and log under `tmp/shots/run/<scene>/`, with `--no-audio` (the fixtures, the app's sink and a
+   part's playback are heard by nobody) and `--wall-clock` set when the scene gives a `clock`.
    One daemon per scene, so no state carries from one shot to the next. The start is
    `go/internal/daemonrun`, which the agent evals use too;
 3. points `LEYLINE_BOOKMARKS` at `tmp/shots/run/<scene>/bookmarks.json`, imports the scene's

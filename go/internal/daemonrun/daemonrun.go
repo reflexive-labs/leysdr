@@ -29,6 +29,9 @@ type Options struct {
 	Decoders string
 	// WallClock, as HH:MM, starts the daemon's clock at that time today (leylined --wall-clock).
 	WallClock string
+	// NoAudio starts the daemon with --no-audio: every audio sink and playback is discarded, so
+	// nothing reaches the speakers of the Mac it runs on.
+	NoAudio bool
 	// Label is the client label the readiness connection uses, as the daemon's log shows it.
 	Label string
 	// Env is added to the daemon's environment, as KEY=value.
@@ -106,6 +109,9 @@ func Start(ctx context.Context, o Options) (*Daemon, error) {
 	}
 	if o.WallClock != "" {
 		args = append(args, "--wall-clock", o.WallClock)
+	}
+	if o.NoAudio {
+		args = append(args, "--no-audio")
 	}
 	d.cmd = exec.Command(o.Bin, args...)
 	d.cmd.Stdout, d.cmd.Stderr = f, f

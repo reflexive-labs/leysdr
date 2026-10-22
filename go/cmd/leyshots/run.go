@@ -303,7 +303,10 @@ func startScene(ctx context.Context, o runOptions, in sceneSetup, run string) (*
 	// The plugins (leydec-*) are installed beside ley; the daemon finds them on PATH.
 	pathEnv := "PATH=" + filepath.Dir(o.ley) + string(os.PathListSeparator) + os.Getenv("PATH")
 	d, err := daemonrun.Start(ctx, daemonrun.Options{
+		// A shot or check plays its fixtures on the Mac's speakers otherwise, beside the person
+		// working there; the channel still has its sink, so the app shows what it would.
 		Bin: o.leylined, Dir: run, Decoders: o.decoders, WallClock: in.clock, Label: "leyshots", Env: []string{pathEnv},
+		NoAudio: true,
 	})
 	if err != nil {
 		return nil, err

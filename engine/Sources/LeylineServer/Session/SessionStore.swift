@@ -52,6 +52,7 @@ enum TeardownScope: Sendable {
 /// `SinkFactory.systemAudio` with a caller-chosen id, so a sink rebuilt at a new audio rate keeps
 /// the id clients hold.
 func makeSystemAudioSink(id: SinkID, rate: UInt32, volume: Double, deviceUID: String?) throws -> any AudioSink {
+    if SinkFactory.isSilenced { return SilentAudioSink(id: id) }
     #if canImport(AVFoundation)
     return try CoreAudioSink(id: id, rate: rate, volume: volume, deviceUID: deviceUID)
     #else
