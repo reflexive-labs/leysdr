@@ -51,6 +51,14 @@ struct MainWindow: View {
             }
         }
         .background(Theme.ground)
+        // A staged run draws no animation, so two pictures of one scene match
+        // (`DeterministicFrames`).
+        .transaction { t in
+            if DeterministicFrames.staged {
+                t.disablesAnimations = true
+                t.animation = nil
+            }
+        }
         .stageRegion(.window)
         .overlay {
             if splash != .done {

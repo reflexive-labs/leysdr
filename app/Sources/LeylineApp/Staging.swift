@@ -84,6 +84,9 @@ final class Staging {
     func run(_ session: AppSession) async {
         guard !started, let stage else { return }
         started = true
+        if await until(seconds: Self.confirmSeconds, { self.window != nil }), let window {
+            DeterministicFrames.drawAsKey(window)
+        }
         if let size = stage.window { await sizeWindow(size) }
         guard await until(seconds: Self.liveSeconds, { session.isLive }) else {
             log(

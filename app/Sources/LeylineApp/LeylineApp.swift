@@ -57,6 +57,10 @@ struct LeylineApp: App {
 /// A bare executable (`make app-run`, no bundle) is not activated by macOS: its window opens
 /// behind the terminal without focus or a Dock icon. This is the launch a bundle would get.
 final class Activation: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        if DeterministicFrames.staged { DeterministicFrames.registerDefaults() }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
