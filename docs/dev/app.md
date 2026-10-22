@@ -764,6 +764,7 @@ file. It holds JSON that `ShotStage` decodes, and every key is optional:
 | `play_part` | with `select_part`, plays that part for 0.4 s and pauses it, as a click and a second click do, because the Library draws only the playing row as current |
 | `assistant` | shows or hides the assistant's panel, as its toolbar button does; the panel draws only while an AI provider is set up |
 | `channels_picker` | opens this sidebar row's Channels… popover |
+| `settings` | `true` opens the Settings window through the app menu's Settings… item, as ⌘, does, and waits up to 5 s for it; `false` closes it |
 | `settle` | the seconds the window keeps drawing after the stage is applied, before the regions are measured |
 | `on_air` | after `settle`, waits up to 30 s for an over to start and keep the tuned channel's squelch open through 1.5 s, so the readings and audio meters are live in the shot with the rest of the over to come; an over already on the air when the wait begins, or one that ends sooner, is passed over for the next. The scene needs a squelch level set |
 | `focus_filter` | after `settle`, gives the sidebar's filter field the focus, as Go to… (⌘G) does |
@@ -875,12 +876,15 @@ and the next line still runs; a line with no `id` has no answer file, so it is o
 | `cmd` | fields | answer |
 |---|---|---|
 | `stage` | `stage`: a stage object as above (`settle` is slept, `window` resizes) | `result.applied`: the steps, as the log lines give them |
-| `snapshot` | `settle`: seconds to wait first, default 0 | `out/<id>.png`; `result`: `scale`, `width_pt`, `height_pt` and `regions`, as `regions.json` gives them |
-| `state` | | `result`: `place`, `tuned_hz`, `mode`, `bandwidth_hz`, `channel_id`, `capture_id`, `band`, `bookmark`, `open_rows`, `filter_query`, `inspector_shown`, `assistant_shown`, `zoom`, `focused` (the focused control's identifier, else its role and label), `notices` (every message the window shows), `popover` (`channels:<row>`, `device_menu` or empty), `selected_recording_channel`, `selected_part`, `heard` (the tone the tuned channel last heard, as the inspector writes it: `PL 100.0`), `hits` (the last sweep's hits as its row lists them, strongest first); every key is present, `null` when it has no value |
-| `ax` | `window`: `main` (the default; its popovers and sheets are in its tree) or `settings` (the Settings window, while it is open: the key `cmd+,` opens it) | `out/<id>.ax.txt`: the window's accessibility tree, one element per line indented two spaces a level: role, `id=` and the identifier when there is one, the label, `value=` when there is one (quoted, with `\`, `"` and newlines escaped), the frame in points from the window's top-left corner as the regions are measured (a text field's left edge and width only, `(38,– 161×–)`, because its AppKit view keeps the height of whichever field it was first made for, 13 or 15 pt, from launch to launch while its pixels stay put), `enabled` or `disabled`; `result`: as `snapshot`'s, so a reader can tell which elements lie in which region, and `{}` for the Settings window |
+| `snapshot` | `settle`: seconds to wait first, default 0; `window`: `main` (the default) or `settings` | `out/<id>.png`, with the popover and the sheet open over the window drawn in at their places (a menu that is open is not); `result`: `scale`, `width_pt`, `height_pt` and `regions`, as `regions.json` gives them, `{}` for `regions` of the Settings window |
+| `state` | | `result`: `place`, `tuned_hz`, `mode`, `bandwidth_hz`, `channel_id`, `capture_id`, `band`, `bookmark`, `open_rows`, `filter_query`, `inspector_shown`, `assistant_shown`, `zoom`, `focused` (the focused control's identifier, else its role and label), `notices` (every message the window shows), `popover` (`channels:<row>`, `device_menu` or empty), `selected_recording_channel`, `selected_part`, `heard` (the tone the tuned channel last heard, as the inspector writes it: `PL 100.0`), `hits` (the last sweep's hits as its row lists them, strongest first), `muted` (the transport's speaker), `volume` (the window's own sink's, 0 to 1), `sink` (`own`, `other` when another client's sink plays the channel, `none`), `window` (`width`, `height`, `min_width`, `min_height` in points, toolbar included), `filter_caret` (the insertion point in the sidebar's filter while it has the focus), `settings_open`, `alert` (the sheet over the main window or Settings: `title`, `message`, `buttons` in order), `view_window` (`low_hz` and `high_hz`, the frequencies at the charts' two edges), `assistant` (while its panel shows: `turns`, each `role` and `text`; `state`, the header's word; `thinking`; `input`, the field's text; `input_focused`; `stop_shown`; `buttons`, each `id`, `title` and `enabled`), `tooltip` (the help of what the last `hover` rested on, else the frequency under the pointer while it is over a chart); every key is present, `null` when it has no value |
+| `ax` | `window`: `main` (the default; its popovers and sheets are in its tree), `settings` (the Settings window, while it is open: the stage's `settings` or the key `cmd+,` opens it), `popover` (the main window's open popover alone) or `sheet` (the sheet over the main window, else over Settings, alone) | `out/<id>.ax.txt`: the window's accessibility tree, one element per line indented two spaces a level: role, `id=` and the identifier when there is one, the label, `value=` when there is one (quoted, with `\`, `"` and newlines escaped), the frame in points from the window's top-left corner as the regions are measured (a text field's left edge and width only, `(38,– 161×–)`, because the AppKit field's height follows its text, 14 pt empty and 13 with text in the inspector's fields, while the row it sits in keeps its height), `enabled` or `disabled`; `result`: as `snapshot`'s, so a reader can tell which elements lie in which region, and `{}` for the Settings window or a sheet over it; a popover or a sheet alone is framed from its window's corner |
 | `key` | `keys`: `cmd+g`, `shift+cmd+left`, `escape`, `return`, `down`… | a key down and up |
 | `type` | `text` | a key down and up for each character |
-| `press` | `identifier` | AXPress on the first element with that accessibility identifier, or the focus for a text field, which has no press; `ok:false` when none has it |
+| `press` | `identifier` | AXPress on the first element with that accessibility identifier in the main window, then in Settings while it is open, or the focus for a text field, which has no press; `alert.<title>` presses the button of the open sheet with that title slugged (`alert.cancel`, `alert.move-anyway`), since a sheet's buttons carry no identifier of the app's; `ok:false` when none has it |
+| `hover` | `identifier`, or `x` and `y` in points from the window's top-left corner as the regions are measured | the pointer moved there as a mouse moves it, for the charts' hairline and readout; `result.tooltip`: the help of the deepest element there that has one, which `state.tooltip` then gives |
+| `click` | `identifier` (its centre), or `x` and `y`; `button`: `left` (the default) or `right` | a mouse down and up there, for what `press` cannot reach: a point on a chart, a tick by its place |
+| `menu` | `menu`: the titles from the menu bar down joined by `>` (`View>Show Assistant`; `...` stands for `…`); `read`: describe, do not press | presses the item, `ok:false` when it is disabled; `result`: its `title`, `enabled`, `checked` and `items`, its menu's titles in order with `-` for a separator |
 | `wait` | `seconds` | answered after that long |
 | `quit` | | answered, then the app quits |
 
@@ -891,13 +895,24 @@ another app. A modifier is `cmd`, `shift`, `opt` or `ctrl`; a key is one charact
 `page_up` and `page_down`. Each key's answer is written 150 ms after the key, so a key that moves
 the focus has moved it before the next command. A command-file run never activates the app or
 brings its window forward, so the person at the Mac keeps the focus; the window is made key
-within the app, which is where a field's focus lives. The tree comes from the accessibility API
+within the app, which is where a field's focus lives. A key goes to the sheet over the main window
+when one is open, else to its popover (whose key monitor takes Up and Down), else to the app's key
+window (Settings, once it is open), else to the main window. A `hover` and a `click` are posted
+to the same queue as mouse events, so the person's pointer does not move. The tree comes from the accessibility API
 on the app's own process, which SwiftUI answers in full only when the process is allowed to use
 that API: the bundle `leyshots` launches (`tmp/staged-app/Leyline.app`, under
 `com.leysdr.app.staged`) is added once in System Settings > Privacy & Security > Accessibility.
 Its designated requirement is its identifier, so the permission holds for every later copy. A
 process without it is answered with the application's element wherever a window should be, and
-`ax` answers `ok:false` saying so.
+`ax` answers `ok:false` saying so. While the screen is locked AppKit vends no element of a
+window under the lock's shield (`_NSAccessibilitySafeToVendElement`), and the API answers the
+application where the window should be; the application's window list also holds only the
+windows on the Spaces shown now. Whenever the API answers no window, `ax`, `press`, `hover`,
+`click` and `state` read the window's own objects through the `NSAccessibility` protocol
+instead, and the log says so once (`accessibility: the API answered no window (the screen is
+locked)`). The two readings give the same tree, because the tree leaves out what they list
+differently: a scroll bar's parts, the insides of the window's own buttons, the window's title
+(the title bar shows it) and a slider knob's frame (it gives its value and `(–)`).
 
 ### Accessibility identifiers
 
@@ -931,7 +946,8 @@ first. An accessibility press does not reach a tap gesture, so a row clicked thr
 sidebar band, bookmark, hit or match, the out-of-range line, a Library channel, an EARLIER day, a
 plan picker row, a tick on the rail) is also an accessibility button whose action is the tap's own
 closure (`pressableGroup`, `pressable`): VoiceOver and `press` activate it as a click does.
-Popovers are in the main window's tree, under the element that opened them; the Settings window
+Popovers are in the main window's tree, under the element that opened them (`window: popover`
+reads one alone); a sheet is under the window it covers (`window: sheet`); the Settings window
 is `ax` with `window: settings`.
 
 ## Logs

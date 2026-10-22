@@ -124,12 +124,15 @@ field, hover a point on the rail or the spectrum, open the assistant panel, open
 | `cmd` | fields | answer |
 |---|---|---|
 | `stage` | `stage`: a `ShotStage` object (`settle` applies; `window` resizes) | `result`: what was applied, as the log lines say it |
-| `snapshot` | `settle` (seconds, default 0) | `out/<id>.png` at the backing scale; `result`: `{"scale":2,"width_pt":…,"height_pt":…,"regions":{…}}`, the regions as `regions.json` gives them |
-| `state` | | `result`: the view state (place, selection, tuned Hz and mode, channel id, open sidebar rows, inspector shown, zoom, focused control, notices on screen, popover open, the assistant panel open) |
-| `ax` | `window`: `main` (default) or `settings` (added 2026-10-22) | `out/<id>.ax.txt` (ML-5's tree, values quoted with `\`, `"` and newlines escaped); `result`: as `snapshot`'s (changed 2026-10-21, so the checker can mask live regions in the tree) |
+| `snapshot` | `settle` (seconds, default 0); `window`: `main` or `settings` (added 2026-10-22) | `out/<id>.png` at the backing scale, the open popover and sheet drawn in (added 2026-10-22); `result`: `{"scale":2,"width_pt":…,"height_pt":…,"regions":{…}}`, the regions as `regions.json` gives them |
+| `state` | | `result`: the view state (place, selection, tuned Hz and mode, channel id, open sidebar rows, inspector shown, zoom, focused control, notices on screen, popover open, the assistant panel open; from 2026-10-22 also mute, volume, sink, window size, the filter's caret, Settings open, the alert, the charts' span, the assistant's turns and buttons, the tooltip) |
+| `ax` | `window`: `main` (default), `settings`, `popover` or `sheet` (added 2026-10-22) | `out/<id>.ax.txt` (ML-5's tree, values quoted with `\`, `"` and newlines escaped); `result`: as `snapshot`'s (changed 2026-10-21, so the checker can mask live regions in the tree) |
 | `key` | `keys`: `"cmd+g"`, `"escape"`, `"down"`, `"return"` | sent to the key window as key down and up |
 | `type` | `text` | one key event per character to the key window |
-| `press` | `identifier` (ML-5) | `accessibilityPerformPress` on the element with that identifier |
+| `press` | `identifier` (ML-5); `alert.<title>` for a sheet's button (added 2026-10-22) | `accessibilityPerformPress` on the element with that identifier, in the main window, then Settings |
+| `hover` | `identifier`, or `x` and `y` (added 2026-10-22) | the pointer moved there; `result.tooltip` |
+| `click` | `identifier`, or `x` and `y`; `button` (added 2026-10-22) | a mouse down and up there |
+| `menu` | `menu` (`View>Show Assistant`), `read` (added 2026-10-22) | the item pressed; `result`: `title`, `enabled`, `checked`, `items` |
 | `wait` | `seconds` | answered after that long |
 | `quit` | | answered, then the app terminates |
 
@@ -260,7 +263,7 @@ person or hardware, 3 obsolete. Its numbering (U4.02, P.45, H3, F2) is used belo
   - keys go to the main window, so a popover's key monitor never sees Up and Down, and the
     window's picture leaves popovers out (the plan picker's highlight and scroll);
   - `ax` is now and then answered no window, or the application in its place, by a trusted
-    process whose window is on screen, for minutes at a time; the cause is not known;
+    process whose window is on screen, for minutes at a time (the locked screen, ML-9c found);
   - nothing sets a `ley` value mid-scene (H6), and the arrows beside the frequency read the
     person's ⇧, so scenes step with → instead.
 - **ML-9b `[ ]` The harness from outside the app** (Go, `leyfix`, the daemon): the AI provider
@@ -305,6 +308,39 @@ person or hardware, 3 obsolete. Its numbering (U4.02, P.45, H3, F2) is used belo
   and `state` (H4); `state` fields for mute, volume, the sink, window size, the caret, an alert,
   the assistant's turns and buttons, the waterfall's view and a tooltip (H5); `click` and `hover`
   for what `press` cannot reach (H1, H2); `menu` (H8); alert sheets (H13); `relaunch` (H11).
+
+  Built 2026-10-22, not ticked until the owner has read it: every item above, the stage keys
+  ML-9a missed in `leyshots` (`assistant`, `channels_picker`, `focus_filter`, and `settings`),
+  and a `squelch` region in the default mask, so `heard-tones` takes a tree and neither it nor
+  `bookmark-fields` needs a raised threshold. Scenes: `plan-picker` (Up in the popover, its
+  picture and tree), `goto-bookmark` (`filter_caret`), `settings-sheet` (Settings, a Remove
+  sheet read and cancelled), `pointer-and-menus` (hover, a click on the waterfall, View ▸ Show
+  Assistant, the assistant's turns through `state`, `relaunch`). Found on the way:
+  - The two flakes ML-9a met had causes. A tree differing by a point (`inspector.identity` 116
+    or 117 pt) came from the inspector's Tone and Note fields taking the next bookmark's text in
+    place during a retune: AppKit then measured them, on about one change in ten, at the 15 pt of
+    the 12.5 pt field closing in the same pass (seen with a frame-change log and a debugger on
+    `-[NSTextField setFrameSize:]`, whose caller was SwiftUI's display-list geometry from
+    `AppKitPlatformViewHost.intrinsicLayoutTraits`). The fields are now made new for each
+    bookmark (`.id`); 14 runs of `plan-picker` and `chirp-import` showed no 15 pt field. That
+    also fixed a stale draft: a refused tone (`D024N`) stayed in the field after a tune to
+    another bookmark, and `bookmark-fields`'s `tuned` golden had recorded it.
+  - "`ax` answered no window, or the application, for minutes" was the screen being locked:
+    `_NSAccessibilitySafeToVendElement` refuses every element under the lock's shield, and the
+    API substitutes the application. The walk now reads the window's objects when the API
+    answers no window, which gives the same tree once a scroll bar's parts, the window's own
+    buttons' insides, its title and a slider knob's frame are left out of both readings (the
+    goldens were pruned to match by a script, not re-recorded). The application's window list
+    also leaves out windows on Spaces not shown (its disassembly asks `currentManagedSpaces`),
+    which the same reading covers.
+  - Keys now go to the open popover, and the filter's key monitor takes the window being typed
+    into when the app is not active (an inactive app has no key window), so a check run's Up
+    and Down reach the plan picker. A region measured under a view that `.id` makes new kept
+    its old, dying view and dropped out of `regions.json`; the probe keeps the one in a window.
+  - What is left: a snapshot draws a sheet's glass as the window background of its appearance
+    and a popover without its arrow, because the window server draws both; an open menu is not
+    drawn; the menu items' titles are read once (`Show Assistant` stays so while the panel
+    shows, as the Commands body's comment says).
 - **ML-9d `[ ]` The remaining scenes**: `settings-ai`, `assistant-conversation`,
   `assistant-cards`, `assistant-view-tools`, `follow-terminal`, `follow-assistant`,
   `follow-launch-and-daemon`, `gmrs-plan`, `vhf-wide`, `sweep-lifecycle`, `change-note`,

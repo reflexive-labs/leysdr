@@ -8,25 +8,39 @@
 # per entry of sizes, a window size in points (default 1440 x 820), each with its own
 # leylined --no-hardware and its own launch of the app; the stage may not set window, the size
 # does. Then it sends the app commands in order over the app's command file (mac-loop.md, ML-3,
-# "The protocol") and quits it. Each entry of app is one protocol command, without the id, which
-# the runner assigns:
+# "The protocol") and quits it. A stage takes the keys of docs/dev/app.md, "Staged runs",
+# among them assistant, channels_picker, focus_filter and settings (true opens the Settings
+# window). Each entry of app is one protocol command, without the id, which the runner assigns:
 #
 #   {cmd: stage, stage: {...}}            a stage applied to the running window (no window)
-#   {cmd: snapshot, name: N}              the window's picture, compared with the golden N.png;
-#                                         settle waits first; mask lists regions left out of the
-#                                         diff (default [spectrum, waterfall, readings,
-#                                         transmissions, log_day, heard], which change between
-#                                         runs; [] compares everything)
+#   {cmd: snapshot, name: N}              the window's picture, compared with the golden N.png,
+#                                         an open popover or sheet drawn in; settle waits first;
+#                                         mask lists regions left out of the diff (default
+#                                         [spectrum, waterfall, readings, transmissions, log_day,
+#                                         heard, squelch], which change between runs; [] compares
+#                                         everything); window: settings takes the Settings window
 #   {cmd: state, expect: {path: value}}   the view state; each dotted path into the answer's
 #                                         result must hold the value, or the line fails
 #   {cmd: ax, name: N}                    the accessibility tree, compared as text with N.ax.txt;
 #                                         mask as snapshot's: an element inside a masked region
 #                                         reads value=<masked> (<masked>) on both sides; window:
 #                                         settings reads the Settings window (open it with the
-#                                         key cmd+,) instead of the main one, unmasked
+#                                         stage's settings: true) instead of the main one,
+#                                         unmasked; popover or sheet reads the open one alone
 #   {cmd: key, keys: cmd+g}               a key, as the protocol names keys
 #   {cmd: type, text: wx3}                one key event per character
-#   {cmd: press, identifier: I}           presses the element with that accessibility identifier
+#   {cmd: press, identifier: I}           presses the element with that accessibility identifier,
+#                                         in the main window, then Settings; alert.<title> presses
+#                                         the open sheet's button by its title slugged (alert.cancel)
+#   {cmd: hover, identifier: I}           rests the pointer on I (or x: X, y: Y, points from the
+#                                         window's top-left corner); expect checks its answer's
+#                                         tooltip, which state.tooltip then gives
+#   {cmd: click, identifier: I}           a mouse click there (or x and y), for a point on a chart or
+#                                         anything press cannot reach; button: right
+#   {cmd: menu, menu: "View>Show Assistant"}
+#                                         presses the menu bar item; read: true only describes it;
+#                                         expect checks the answer's title, enabled, checked and
+#                                         items (its menu's titles in order, - for a separator)
 #   {cmd: wait, seconds: S}
 #
 # A state or a wait may take expect_log, patterns the app's log (run/app.log) must hold among the
@@ -51,6 +65,10 @@
 #   {cmd: daemon, op: stop}               stops the scene's leylined; op: start starts it again on
 #                                         the same socket, store and keys and plays the fixtures
 #                                         again, so the app reconnects
+#   {cmd: relaunch, stage: {...}}         quits the app and starts it again on the same daemon,
+#                                         command file, log and staged defaults domain, with this
+#                                         stage at the scene's size (the window only, without one);
+#                                         ids go on from where they were
 #
 # ai: {script: assistant/hello.script, model: M, provider: P, key: true} runs the daemon's
 # assistant on a scripted model (go/internal/assistant, Scripted: one JSON response a line), with
@@ -108,6 +126,7 @@ scenes:
     app:
       - {cmd: key, keys: cmd+g}
       - {cmd: type, text: club}
+      - {cmd: state, expect: {filter_query: club, filter_caret: 4}}
       - {cmd: key, keys: return}
       - {cmd: wait, seconds: 2}
       - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater}}
@@ -265,6 +284,18 @@ scenes:
       - {cmd: state, expect: {popover: "channels:marine", focused: "AXUnknown \"Filter marine VHF channels\""}}
       - {cmd: type, text: "24"}
       - {cmd: ax, name: marine24}
+      # Keys reach the open popover, so Up moves its highlight from Calling to APRS, which
+      # Return picks and this capture refuses; the picture shows the popover over the window
+      # and the tree reads it alone.
+      - {cmd: key, keys: escape}
+      - {cmd: press, identifier: sidebar.band.2m.channels}
+      - {cmd: wait, seconds: 1}
+      - {cmd: key, keys: up}
+      - {cmd: snapshot, name: up}
+      - {cmd: ax, name: up, window: popover}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "", tuned_hz: 146520000, notices.1: "offset -2010000 Hz falls outside the capture bandwidth"}}
 
   # The bookmark's Tone and Note in the inspector (docs/plans/app.md, U6): on Calling they show
   # its saved values; a step up with →, to a frequency with no bookmark, takes both away, and
@@ -455,3 +486,70 @@ scenes:
       - {cmd: state, expect: {assistant_shown: false}}
       - {cmd: snapshot, name: absent}
       - {cmd: ax, name: absent}
+
+  # Settings in the loop (docs/plans/app.md, the Settings AI list): the stage opens it, its
+  # picture and tree are taken, a key's Remove asks in a sheet that state, ax and press reach,
+  # Cancel keeps the key, and the stage closes the window again.
+  - name: settings-sheet
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    ai: {script: assistant/hello.script}
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      settle: 3
+      settings: true
+    app:
+      - {cmd: state, expect: {settings_open: true, alert: null}}
+      - {cmd: snapshot, name: settings, window: settings}
+      - {cmd: ax, name: settings, window: settings}
+      - {cmd: press, identifier: settings.ai.key.anthropic.remove}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {alert.title: "Remove the anthropic key?", alert.message: "Every job and conversation using it stops.", alert.buttons.0: Cancel, alert.buttons.1: Remove}}
+      - {cmd: ax, name: sheet, window: sheet}
+      - {cmd: snapshot, name: sheet, window: settings}
+      - {cmd: press, identifier: alert.cancel}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {alert: null, settings_open: true}}
+      - {cmd: stage, stage: {settings: false}}
+      - {cmd: state, expect: {settings_open: false}}
+
+  # The pointer, the menus and a relaunch: a tooltip by hover; a click on the waterfall at
+  # 146.940 MHz (the capture's 144.960 to 147.840 MHz across its 825 pt from x 237); View ▸
+  # Show Assistant read and pressed; the panel's field typed into and its turns read through
+  # state; and the app quit and started again on the same daemon, which it finds tuned where it
+  # left it.
+  - name: pointer-and-menus
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    ai: {script: assistant/hello.script}
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: state, expect: {muted: false, sink: other, volume: null, window.width: 1440, window.min_width: 900, view_window.low_hz: 144960000, view_window.high_hz: 147840000, settings_open: false, alert: null, assistant: null, tooltip: null}}
+      - {cmd: hover, identifier: sidebar.add, expect: {tooltip: "Bookmark the tuned frequency (⌘D)"}}
+      - {cmd: state, expect: {tooltip: "Bookmark the tuned frequency (⌘D)"}}
+      - {cmd: click, x: 804, y: 400}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146939345, bookmark: null, tooltip: null}}
+      - {cmd: menu, menu: "View>Show Assistant", read: true, expect: {title: Show Assistant, enabled: true, checked: false, items.8: Hide Inspector}}
+      - {cmd: menu, menu: "View>Show Assistant"}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {assistant_shown: true, window.min_width: 1221, assistant.input: "", assistant.state: null}}
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: where am i}
+      - {cmd: state, expect: {focused: assistant.input, assistant.input: where am i, assistant.input_focused: true}}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 4}
+      - {cmd: state, expect: {assistant.turns.0.role: user, assistant.turns.0.text: where am i, assistant.turns.1.role: assistant, assistant.turns.1.text: "The radio is on 146.520 MHz, the 2 m calling frequency, in NFM.", assistant.state: ready, assistant.thinking: false, assistant.stop_shown: false, assistant.input: "", assistant.buttons.0.id: assistant.new, assistant.buttons.0.enabled: true}}
+      - {cmd: snapshot, name: answered}
+      - {cmd: relaunch, stage: {place: radio, settle: 3}}
+      - {cmd: state, expect: {tuned_hz: 146939345, assistant_shown: false}}

@@ -110,6 +110,21 @@ launch), `sizes`, and `app`, the commands in order.
   `run/ai/record.jsonl` holds what each call was sent. Nothing reaches a provider.
 - `sweep_dwell: 4` makes a Scan band on the file radio last about four seconds, long enough to
   press Stop or click elsewhere while it sweeps. It is still one step.
+- A snapshot draws an open popover or sheet in; `ax` with `window: popover` or `sheet` reads it
+  alone. Keys go to the sheet, else the popover, else the key window, so the plan picker sees
+  Up and Down. A sheet's button is `press` `alert.<title slugged>` (`alert.cancel`), and
+  `state.alert` gives its title, message and buttons.
+- `stage: {settings: true}` opens Settings; `snapshot` and `ax` take `window: settings`, `press`
+  finds Settings' identifiers, and `state.settings_open` says whether it shows.
+- `hover` (an identifier, or `x` and `y` in points from the window's top-left corner) rests the
+  pointer and answers the tooltip, which `state.tooltip` repeats; `click` does a mouse click
+  there (`button: right`) for a chart point or anything `press` cannot reach; `menu` presses a
+  menu bar item by its titles (`View>Show Assistant`), or with `read: true` describes it, and
+  takes `expect` on its `enabled`, `checked` and `items`; `relaunch` quits the app and starts
+  it again on the same daemon and staged defaults, with an optional `stage`.
+- `state` also gives `muted`, `volume`, `sink`, `window`, `filter_caret`, `view_window` and,
+  while the panel shows, `assistant` (its turns, field, focus and buttons); `docs/dev/app.md`,
+  "The command file", has every key.
 
 ```yaml
   - name: follow-terminal
