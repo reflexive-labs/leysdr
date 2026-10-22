@@ -390,6 +390,7 @@ scenes:
       - {cmd: press, identifier: sidebar.bookmark.evening-net}
       - {cmd: state, expect: {bookmark: Evening net, heard: null}}
       - {cmd: press, identifier: sidebar.bookmark.calling}
+      - {cmd: wait, seconds: 1}
       - {cmd: press, identifier: inspector.tone}
       - {cmd: key, keys: cmd+a}
       - {cmd: type, text: "88.5"}

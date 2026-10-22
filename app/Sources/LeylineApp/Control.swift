@@ -500,8 +500,8 @@ final class ControlChannel {
         let id = view.accessibilityIdentifier()
         if !id.isEmpty { return id }
         if let focusedID { return focusedID }
-        // While the screen is locked the API names no focused element; the identified text
-        // field over the focused view in this window is the one it would have named.
+        // When the API names no focused element (the screen is locked, or a field editor is on
+        // its way in), the identified text field over the focused view is the one it names.
         if view.window === window,
             let id = AccessibilityTree.textFieldIdentifier(over: view, in: window)
         {

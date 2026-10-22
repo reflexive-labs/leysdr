@@ -131,11 +131,10 @@ enum AccessibilityTree {
         AXWalk.help(at: point, TreeTarget(window))
     }
 
-    /// The identifier of the text field element whose frame is `view`'s, when the API answers
-    /// no window and the window's objects are read instead; nil otherwise.
+    /// The identifier of the text field element over `view`, for a focus the API names no element
+    /// for (while the screen is locked, or in the moment a field editor moves in).
     static func textFieldIdentifier(over view: NSView, in window: NSWindow) -> String? {
         let target = TreeTarget(window)
-        guard !AXWalk.apiAnswers(target) else { return nil }
         let want = view.convert(view.bounds, to: nil)
         let top = window.frame.height
         // In points from the window's top-left corner, as the walk's frames are.
@@ -265,8 +264,10 @@ struct ObjectNode: TreeNode {
         switch name {
         case kAXRoleAttribute: return o.accessibilityRole?()?.rawValue
         case kAXIdentifierAttribute:
+            // An AppKit window or view answers with its own identifier, as the API reads it.
             let id = o.accessibilityIdentifier?() ?? ""
-            return id.isEmpty ? (o as? NSWindow)?.identifier?.rawValue ?? id : id
+            guard id.isEmpty else { return id }
+            return ((o as? NSWindow)?.identifier ?? (o as? NSView)?.identifier)?.rawValue ?? id
         case kAXDescriptionAttribute: return o.accessibilityLabel?() ?? nil
         case kAXTitleAttribute: return o.accessibilityTitle?() ?? nil
         case kAXValueAttribute: return o.accessibilityValue?() ?? nil
@@ -571,7 +572,10 @@ enum AXWalk {
     }
 
     static func identifiedTextField(at point: CGPoint, _ target: TreeTarget) -> String? {
-        let root = ObjectNode(object: target.window)
+        (try? withRoot(target) { root in identifiedTextField(at: point, root) }) ?? nil
+    }
+
+    private static func identifiedTextField<N: TreeNode>(at point: CGPoint, _ root: N) -> String? {
         let origin = root.point ?? .zero
         var found: String?
         walk(root, depth: 0) { e, _ in
