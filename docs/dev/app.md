@@ -798,8 +798,9 @@ through registration defaults that are never written to disk; and the window dra
 window whatever has the focus, so its traffic lights are coloured even while the person at the
 Mac works in another app. What still moves is the spectrum, the waterfall (which runs on), the inspector's live readings
 (the signal, tuning and deviation figures, the time on the air and the audio ladder) and its
-log's rows and their day, and the tone last heard; they are the regions `spectrum`, `waterfall`,
-`readings`, `transmissions`, `log_day` and `heard`, and a check masks them all. The heard tone and
+log's rows and their day, the tone last heard, and the squelch's words and the level in its
+track; they are the regions `spectrum`, `waterfall`, `readings`, `transmissions`, `log_day`,
+`heard` and `squelch`, and a check masks them all. The heard tone and
 the day are laid out at their full width when blank, so their first appearance moves nothing.
 
 `settle` seconds after the stage is applied (and, with `on_air`, once an over is on the air), the
@@ -832,8 +833,10 @@ in points from the top-left corner of the window's frame, toolbar included, beca
 `inspector`, `spectrum`, `waterfall`, `notice` (the one-line notice over the bottom of the waterfall, while one shows), `library` (the Library's whole body), `parts` (the Library's page of the selected channel),
 `readings` (the inspector's Signal, Tuning, Deviation and On air rows and its audio ladder),
 `transmissions` (the rows of the inspector's log, which gain one whenever an over ends),
-`log_day` (the day over those rows, blank until the first) and `heard` (the tone the channel last
-heard, beside the bookmark's Tone, which shows once one has been measured). In the Library, `sidebar` and
+`log_day` (the day over those rows, blank until the first), `heard` (the tone the channel last
+heard, beside the bookmark's Tone, which shows once one has been measured) and `squelch` (the
+words over the transport's squelch track and the track itself, whose level follows the noise
+between overs). In the Library, `sidebar` and
 `inspector` are the Library's own. A region that is not on screen is left out of the file. Each
 region except `window` and `toolbar` is measured by a `WindowFrameProbe` under its view. The
 toolbar is hosted outside the content's view tree, so its region is the strip above the window's

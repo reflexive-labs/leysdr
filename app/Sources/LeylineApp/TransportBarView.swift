@@ -507,61 +507,67 @@ struct SquelchTrack: View {
         let open = session.meter?.squelchOpen ?? false
         let power = session.meter?.powerDbfs ?? .nan
         VStack(alignment: .leading, spacing: 7) {
-            HStack {
-                SectionHeader(text: "Squelch")
-                Spacer()
-                Text(headerWords(squelch: squelch, power: power, open: open))
-                    .font(Theme.Font.valueSmall).foregroundStyle(open ? Theme.good : Theme.inkMuted)
-            }
-            GeometryReader { geo in
-                let w = geo.size.width
-                let markerX = squelch.isNaN ? 0 : x(of: squelch, width: w)
-                let levelX = power.isNaN ? 0 : x(of: power, width: w)
-                let inset: CGFloat = 3
-                ZStack(alignment: .leading) {
-                    // The container: black at the left to the ramp's first stop, the near-black
-                    // teal, at the right.
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(
-                            LinearGradient(
-                                colors: [Theme.meterWell, Theme.levelStops[0]],
-                                startPoint: .leading,
-                                endPoint: .trailing))
-                    // The colour region, inset, as long as the level: dark teal at its left to
-                    // the ramp's yellow at its right whatever its length, as the design draws it.
-                    LinearGradient(
-                        colors: Array(Theme.levelStops[1...3]), startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .frame(width: max(0, levelX - inset))
-                    .clipShape(RoundedRectangle(cornerRadius: 2))
-                    .padding(.vertical, inset)
-                    .offset(x: inset)
-                    Rectangle().fill(Theme.ink).frame(width: 2.5)
-                        .overlay(alignment: .top) {
-                            Circle().fill(Theme.ink).frame(width: 7, height: 7).offset(y: -2)
-                        }
-                        .offset(x: markerX - 1.25)
+            // The words over the track and the level in it follow the noise between overs, so
+            // a staged run measures them as the `squelch` region a check masks.
+            VStack(alignment: .leading, spacing: 7) {
+                HStack {
+                    SectionHeader(text: "Squelch")
+                    Spacer()
+                    Text(headerWords(squelch: squelch, power: power, open: open))
+                        .font(Theme.Font.valueSmall).foregroundStyle(
+                            open ? Theme.good : Theme.inkMuted)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.border))
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { v in
-                            let d = db(atX: v.location.x, width: w)
-                            dragDB = d
-                            // Coalesced: one write a tick, the last value wins.
-                            session.setSquelch(d)
-                        }
-                        .onEnded { v in
-                            let d = db(atX: v.location.x, width: w)
-                            dragDB = nil
-                            session.setSquelch(d)
-                        })
+                GeometryReader { geo in
+                    let w = geo.size.width
+                    let markerX = squelch.isNaN ? 0 : x(of: squelch, width: w)
+                    let levelX = power.isNaN ? 0 : x(of: power, width: w)
+                    let inset: CGFloat = 3
+                    ZStack(alignment: .leading) {
+                        // The container: black at the left to the ramp's first stop, the near-black
+                        // teal, at the right.
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Theme.meterWell, Theme.levelStops[0]],
+                                    startPoint: .leading,
+                                    endPoint: .trailing))
+                        // The colour region, inset, as long as the level: dark teal at its left to
+                        // the ramp's yellow at its right whatever its length, as the design draws it.
+                        LinearGradient(
+                            colors: Array(Theme.levelStops[1...3]), startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: max(0, levelX - inset))
+                        .clipShape(RoundedRectangle(cornerRadius: 2))
+                        .padding(.vertical, inset)
+                        .offset(x: inset)
+                        Rectangle().fill(Theme.ink).frame(width: 2.5)
+                            .overlay(alignment: .top) {
+                                Circle().fill(Theme.ink).frame(width: 7, height: 7).offset(y: -2)
+                            }
+                            .offset(x: markerX - 1.25)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.border))
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { v in
+                                let d = db(atX: v.location.x, width: w)
+                                dragDB = d
+                                // Coalesced: one write a tick, the last value wins.
+                                session.setSquelch(d)
+                            }
+                            .onEnded { v in
+                                let d = db(atX: v.location.x, width: w)
+                                dragDB = nil
+                                session.setSquelch(d)
+                            })
+                }
+                .frame(height: 18)
+                .identifiedGroup("transport.squelch.track")
             }
-            .frame(height: 18)
-            .identifiedGroup("transport.squelch.track")
+            .stageRegion(.squelch)
             HStack {
                 Text("muted below").font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
                 Spacer()

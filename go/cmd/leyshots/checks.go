@@ -52,8 +52,9 @@ var defaultCheckSize = Size{Width: 1440, Height: 820}
 // waterfall draw the radio; readings is the inspector's figures and audio ladder; transmissions
 // is its log's rows, which gain one whenever an over ends, and log_day the day over them, blank
 // until the first; heard is the tone the channel last heard, which shows once the decoder has
-// measured one. A name the app does not report is skipped.
-var defaultMask = []string{"spectrum", "waterfall", "readings", "transmissions", "log_day", "heard"}
+// measured one; squelch is the squelch's words and the level in its track, which follow the noise
+// between overs. A name the app does not report is skipped.
+var defaultMask = []string{"spectrum", "waterfall", "readings", "transmissions", "log_day", "heard", "squelch"}
 
 // AppCommand is one command of the command-file protocol (mac-loop.md, ML-3, "The protocol"),
 // with the runner's own keys: Name, Expect and Mask. The runner assigns the id.

@@ -60,7 +60,7 @@ and never committed.
 Read the PNG with the Read tool. For a `diff`, read `<name>.diff.png`: red pixels changed, grey
 is masked, everything else is the golden faded. Then read the golden and the new picture to see
 what the red is. The masked regions (`spectrum`, `waterfall`, `readings`, `transmissions`,
-`log_day`, `heard`) move between runs and are never compared, so a change inside one is checked
+`log_day`, `heard`, `squelch`) move between runs and are never compared, so a change inside one is checked
 only by looking at the picture.
 
 Decide whether the change was intended. If not, fix the code. If it was, re-record that scene

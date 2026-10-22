@@ -272,10 +272,8 @@ scenes:
   # by the frequency are not pressed: they step finely while the person at the Mac holds ⇧.)
   # A tone typed and Returned keeps the field's focus; a bad one stays in the field
   # with the reason under it, which a good tone, Escape (putting the saved value back) and a
-  # tune to another bookmark each take away. The squelch track moves with the signal, about
-  # 1.2 % of the picture, hence the threshold.
+  # tune to another bookmark each take away.
   - name: bookmark-fields
-    threshold: 1.5
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: ../../site/shots/home.csv
@@ -336,10 +334,9 @@ scenes:
   # 100.0, and once one has been measured it stays between overs; Evening net's read DCS 023; a
   # tune away and straight back clears it until the next over is measured; and a bookmark whose
   # tone differs from the heard one shows both. state's heard says what the inspector writes;
-  # the picture shows the words beside the field. No tree is taken: the words over the squelch
-  # track follow the noise between overs, and no region masks them.
+  # the picture shows the words beside the field, and the tree reads it with the squelch's words
+  # and level, which follow the noise between overs, masked as the squelch region.
   - name: heard-tones
-    threshold: 1.5
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: ../../site/shots/home.csv
@@ -368,7 +365,8 @@ scenes:
       - {cmd: key, keys: return}
       - {cmd: wait, seconds: 10}
       - {cmd: state, expect: {bookmark: Calling, heard: PL 100.0}}
-      - {cmd: snapshot, name: differs, mask: [spectrum, waterfall, readings, transmissions, log_day]}
+      - {cmd: snapshot, name: differs, mask: [spectrum, waterfall, readings, transmissions, log_day, squelch]}
+      - {cmd: ax, name: differs, mask: [spectrum, waterfall, readings, transmissions, log_day, squelch]}
 
   # CHIRP import (docs/plans/app.md, U7), through File ▸ Import CHIRP…'s code path: the notice
   # gives the counts and no row or editor opens; the bookmarks land under their bands, the

@@ -202,6 +202,9 @@ public enum ShotRegion: String, Sendable, CaseIterable, Codable {
     /// The day over the transmissions log (`today`), blank until the first over. A check masks
     /// it.
     case logDay = "log_day"
+    /// The squelch's words and the level in its track, under the waterfall, which follow the
+    /// noise between overs. A check masks it.
+    case squelch
 }
 
 /// `regions.json`: the window's number for `screencapture -l`, its backing scale (pixels per
