@@ -158,7 +158,7 @@ runs it; `ONLY=` and `RECORD=1` as `make shots` has them. Both `check` and the s
 of the bundle under `com.leysdr.app.staged` (`tmp/staged-app/`), because a staged run under the
 app's own identifier wrote a window frame into the person's defaults.
 
-### ML-5 `[ ]` The accessibility tree
+### ML-5 `[x]` The accessibility tree
 
 `.accessibilityIdentifier` on the views the checks name (there are none today): the sidebar
 rows, the band rail, the tuning field, the transport controls, the inspector groups, the Library
@@ -193,7 +193,7 @@ palette's roles written as yes-or-no questions, plus per-scene questions taken f
 Unverified lists. The skill (ML-8) has the agent read the scene's picture at 1× with the
 questions and answer each with yes, no or can't tell. A "no" becomes a task, not a failed check.
 
-### ML-8 `[ ]` The skill and the hooks
+### ML-8 `[x]` The skill and the hooks
 
 - `.claude/skills/app-check/SKILL.md`: when to run `make app-check`, how to read its lines,
   how to look at one picture or diff, the never-re-record rule, and what to put in a handover.
