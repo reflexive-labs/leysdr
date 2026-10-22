@@ -241,7 +241,7 @@ The inventory (2026-10-22, kept in `tmp/ml9-inventory.md` on the build Mac) spli
 238 checkable facts: 58 a scene can check today, 172 after a harness addition, 5 that need a
 person or hardware, 3 obsolete. Its numbering (U4.02, P.45, H3, F2) is used below. Four parts:
 
-- **ML-9a `[ ]` The scenes that need nothing new.** `sidebar-rows`, `filter-goto` (extending
+- **ML-9a `[x]` The scenes that need nothing new.** `sidebar-rows`, `filter-goto` (extending
   `goto-bookmark`), `plan-picker`, `bookmark-fields`, `heard-tones`, `chirp-import` (its first
   half), `scan-hits` (without the sweep's words), `assistant-absent`. Each fault found is fixed
   in its own commit when it is small and plainly a bug, and filed in `app.md` otherwise.
@@ -266,7 +266,7 @@ person or hardware, 3 obsolete. Its numbering (U4.02, P.45, H3, F2) is used belo
     process whose window is on screen, for minutes at a time (the locked screen, ML-9c found);
   - nothing sets a `ley` value mid-scene (H6), and the arrows beside the frequency read the
     person's ⇧, so scenes step with → instead.
-- **ML-9b `[ ]` The harness from outside the app** (Go, `leyfix`, the daemon): the AI provider
+- **ML-9b `[x]` The harness from outside the app** (Go, `leyfix`, the daemon): the AI provider
   stub as a scene key (H3, about 70 facts: `LEY_ASSISTANT_SCRIPT`, a `ley` that answers
   `worker check`, `ley ai add` and `use` steps); `ley`, `ley_bg`, `kill` and `file` in a scene's
   `app` list, run mid-scene against its socket (H6); `daemon stop|start` (H9); `expect_log`
@@ -304,7 +304,7 @@ person or hardware, 3 obsolete. Its numbering (U4.02, P.45, H3, F2) is used belo
     `sweep_dwell` in seconds. The sweep stays one step, so the "7 steps" words of U5.03 are still
     out of reach: a file device that retunes needs an oversampled source and a
     mix-filter-decimate chain (`ScanSweepTests`'s header), which is not small.
-- **ML-9c `[ ]` The harness inside the app**: the Settings window in `stage`, `ax`, `snapshot`
+- **ML-9c `[x]` The harness inside the app**: the Settings window in `stage`, `ax`, `snapshot`
   and `state` (H4); `state` fields for mute, volume, the sink, window size, the caret, an alert,
   the assistant's turns and buttons, the waterfall's view and a tooltip (H5); `click` and `hover`
   for what `press` cannot reach (H1, H2); `menu` (H8); alert sheets (H13); `relaunch` (H11).
