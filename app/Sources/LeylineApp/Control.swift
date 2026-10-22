@@ -289,6 +289,7 @@ final class ControlChannel {
         }
         let id = view.accessibilityIdentifier()
         if !id.isEmpty { return id }
+        if let id = AccessibilityTree.focusedIdentifier() { return id }
         let role = view.accessibilityRole()?.rawValue ?? String(describing: type(of: view))
         let label =
             view.accessibilityLabel() ?? (view as? NSTextField)?.placeholderString

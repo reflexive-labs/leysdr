@@ -122,6 +122,19 @@ enum AccessibilityTree {
         return err == .success ? nil : "\(identifier) refused the press (AXError \(err.rawValue))"
     }
 
+    /// The identifier of the element that has the keyboard focus, as the accessibility API
+    /// answers it: a SwiftUI field's identifier is on its element, not on the AppKit view that
+    /// holds the focus.
+    static func focusedIdentifier() -> String? {
+        let app = AXUIElementCreateApplication(getpid())
+        AXUIElementSetMessagingTimeout(app, messagingSeconds)
+        guard let focused = attribute(app, kAXFocusedUIElementAttribute),
+            CFGetTypeID(focused) == AXUIElementGetTypeID()
+        else { return nil }
+        let id = string(focused as! AXUIElement, kAXIdentifierAttribute) ?? ""
+        return id.isEmpty ? nil : id
+    }
+
     /// The app's element for `window`: the one of its windows with the window's title and
     /// size, else the first.
     private static func element(of window: NSWindow) -> AXUIElement? {
