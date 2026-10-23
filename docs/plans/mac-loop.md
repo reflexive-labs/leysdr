@@ -384,6 +384,9 @@ person or hardware, 3 obsolete. Its numbering (U4.02, P.45, H3, F2) is used belo
   left, by reason (needs a person or a real radio, or a harness addition by H-number). What the
   second half found is in `app.md` beside the first half's.
 
+  Verified 2026-10-23: every scene of both halves ran in Batch 1's and Batch 2's verify loops,
+  and two full runs at `JOBS=3` before the merge into main were clean (841 checked, 841 ok).
+
 ML-9a and ML-9b run side by side; ML-9c follows ML-9a in the same tree, since both edit the app;
 ML-9d needs all three. Light appearance stays out (Decisions: dark only).
 

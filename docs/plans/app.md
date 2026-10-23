@@ -1662,7 +1662,7 @@ the Mac, and the system-audio sink cannot attach on Linux.
 Checked by `follow-assistant`, `follow-terminal` and `follow-launch-and-daemon`; what no scene
 reaches is in APP-9's "Unverified on the Mac".
 
-### MC-1 `[ ]` The owner's calls on the Mac-check findings (2026-10-22)
+### MC-1 `[x]` The owner's calls on the Mac-check findings (2026-10-22)
 
 The owner decided the findings above one at a time on 2026-10-22, and sent a mockup for the
 sidebar's actions (`tmp/sidebar-actions-mock.png` on the build Mac). The work runs as one batch
@@ -1712,6 +1712,11 @@ scene, or extends one.
 - Settings' controls take palette colours by role. The system-drawn tab stays as macOS draws it.
 - The API key field opts out of AutoFill. Then closing Settings with the field focused is
   checked again.
+
+Verified 2026-10-23 on the Mac: the scenes of the three lanes (`mc1a-sidebar-actions`,
+`mc1a-inspector`, `transport-tuning`, `transport-narrow`, `transport-sizes`, `settings-ai` and
+the assistant's) pass in Batch 1's and Batch 2's verify loops and in two full runs at `JOBS=3`
+before the merge into main (841 checked, 841 ok, each).
 
 ### MC-2 `[x]` The assistant column, refined (2026-10-22)
 
@@ -1783,7 +1788,7 @@ A review of Batch 1 found three defects. The owner settled three questions it ra
   run. Changes to `app/Package.swift` and the façade count. A smoke run that selects no scene is
   an error.
 
-### MC-4 `[ ]` The question card, second pass (2026-10-23)
+### MC-4 `[x]` The question card, second pass (2026-10-23)
 
 From the owner's look at Batch 2's pictures (`tmp/batch2/` on the build Mac):
 
@@ -1802,6 +1807,12 @@ this cannot be undone.` The daemon's reason is unchanged, since the model reads 
 opened step still shows it whole. `ley ask` names no option, so it has nothing to rename. The
 identifier `assistant.allow.conversation` stays. `state` gains `assistant.question` and
 `assistant.note`, which `assistant-cards` now expects, with the buttons in one row's order.
+
+Verified 2026-10-23 on the Mac: at 1440 and 1221 pt the card's buttons read Decline · Allow in
+this chat · Allow on one row (y 697 in both), the bookmark's removal shows no line under its
+sentence, and the take-over reads `It takes the radio from whoever is using it.` with no
+`take_over`. `assistant-cards`'s pictures and trees were re-recorded for it; two full runs at
+`JOBS=3` after were clean.
 
 ## Backlog
 
