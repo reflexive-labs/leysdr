@@ -510,7 +510,8 @@ struct WidthPopup: View {
 
 /// A track with a marked threshold: muted left of it, audible right of it, the level as a
 /// ramp-filled bar the height of the track, the marker draggable and written as it moves. The
-/// label text is the primary readout.
+/// label text is the primary readout. A narrow bar drops the three words under the track first,
+/// then shortens the caption (`SquelchCaption`); the track keeps its size and no word is cut.
 struct SquelchTrack: View {
     @Environment(AppSession.self) private var session
     @State private var dragDB: Double?
@@ -529,9 +530,10 @@ struct SquelchTrack: View {
                 HStack {
                     SectionHeader(text: "Squelch")
                     Spacer()
-                    Text(headerWords(squelch: squelch, power: power, open: open))
-                        .font(Theme.Font.valueSmall).foregroundStyle(
-                            open ? Theme.good : Theme.inkMuted)
+                    ViewThatFits(in: .horizontal) {
+                        caption(squelch: squelch, power: power, open: open, short: false)
+                        caption(squelch: squelch, power: power, open: open, short: true)
+                    }
                 }
                 GeometryReader { geo in
                     let w = geo.size.width
@@ -584,29 +586,50 @@ struct SquelchTrack: View {
                 .identifiedGroup("transport.squelch.track")
             }
             .stageRegion(.squelch)
-            // One line each: in a narrow bar the words are cut, never broken inside a word.
-            HStack {
-                Text("muted below").font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
-                    .lineLimit(1)
-                Spacer()
-                Text(squelch.isNaN ? "squelch off" : String(format: "marker %.0f dBFS", squelch))
-                    .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint).lineLimit(1)
-                Spacer()
-                Text("heard above").font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
-                    .lineLimit(1)
+            // The words show only while they and the long caption both fit, so they go before
+            // the caption shortens; without them the row keeps its height and the bar its own.
+            ViewThatFits(in: .horizontal) {
+                ZStack(alignment: .leading) {
+                    words(squelch: squelch)
+                    HStack {
+                        SectionHeader(text: "Squelch")
+                        Spacer()
+                        caption(squelch: squelch, power: power, open: open, short: false)
+                    }
+                    .hidden().accessibilityHidden(true)
+                }
+                ZStack {
+                    Text(" ").font(Theme.Font.footnote)
+                    Text(" ").font(Theme.Font.valueSmall)
+                }
+                .hidden().accessibilityHidden(true)
             }
         }
         .disabled(session.channel == nil)
         .identifiedGroup("transport.squelch")
     }
 
-    private func headerWords(squelch: Double, power: Double, open: Bool) -> String {
-        guard power.isFinite else { return "no signal measured yet" }
-        guard squelch.isFinite else { return "open · squelch off" }
-        let d = power - squelch
-        return open
-            ? String(format: "open · %.0f dB above the marker", d)
-            : String(format: "muted · %.0f dB below the marker", -d)
+    private func caption(squelch: Double, power: Double, open: Bool, short: Bool) -> some View {
+        Text(SquelchCaption.words(squelchDB: squelch, powerDB: power, open: open, short: short))
+            .font(Theme.Font.valueSmall).foregroundStyle(open ? Theme.good : Theme.inkMuted)
+            .lineLimit(1)
+            .accessibilityIdentifier("transport.squelch.caption" + (short ? ".short" : ""))
+    }
+
+    /// `muted below`, the marker's level, `heard above`, spread under the track.
+    private func words(squelch: Double) -> some View {
+        HStack {
+            Text("muted below").font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+                .accessibilityIdentifier("transport.squelch.words.below")
+            Spacer()
+            Text(squelch.isNaN ? "squelch off" : String(format: "marker %.0f dBFS", squelch))
+                .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
+                .accessibilityIdentifier("transport.squelch.words.marker")
+            Spacer()
+            Text("heard above").font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+                .accessibilityIdentifier("transport.squelch.words.above")
+        }
+        .lineLimit(1)
     }
 
     private func x(of db: Double, width: CGFloat) -> CGFloat {
