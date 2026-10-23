@@ -741,9 +741,14 @@ function the dashboard reuses for its no-daemon and no-device states, so the wor
 **Auto squelch and the daemon-side follow-up.** `tune --squelch auto` (the default for NFM and
 AM, whatever the run prints; `--squelch off` opts out) and `set squelch auto` subscribe one FFT row of the capture, take the median bin
 as the floor, scale it to the channel bandwidth (`+10·log10(bw / bin width)`) and write
-`floor + 10 dB` with `WriteParams`. The measurement is the daemon's own spectrum and a median is
-presentation, so no DSP moves client-side (AGENTS.md invariant 2); but the threshold is a
-snapshot, and every client would have to repeat it. The recorded follow-up is an additive
+`floor + 10 dB` with `WriteParams` as `squelch_auto_db`, so the channel says the level was
+measured (`Channel.squelch_source` `SQUELCH_AUTO`; a level typed as a number is `SQUELCH_MANUAL`).
+`ley state`, `ley set` and the event lines put `(auto)` after a measured level
+(`squelch -80.0 dB (auto)`, `squelch    -80 dBFS (auto)`), whichever client or job measured it:
+the daemon's own auto squelch for a gated recording or a decoder's segments says the same. The
+measurement is the daemon's own spectrum and a median is presentation, so no DSP moves
+client-side (AGENTS.md invariant 2); but the threshold is a snapshot, and every client would have
+to repeat it. The recorded follow-up is an additive
 daemon-side relative squelch — `ParamWrite.squelch_relative_db`, "mute at noise floor + N dB"
 tracked by the daemon — after which `auto` becomes a one-field write. Not in v0.
 

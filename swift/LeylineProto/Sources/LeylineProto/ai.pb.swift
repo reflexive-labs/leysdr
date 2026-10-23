@@ -184,6 +184,72 @@ public nonisolated enum Leyline_V1_ConversationState: SwiftProtobuf.Enum, Swift.
 
 }
 
+public nonisolated enum Leyline_V1_StopReason: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+
+  /// the model ended the turn
+  case completed // = 1
+
+  /// StopTurn: a client stopped it
+  case stopped // = 2
+
+  /// the worker's bound on model calls in one turn
+  case stepLimit // = 3
+
+  /// the response reached the model's output limit
+  case maxTokens // = 4
+
+  /// the model declined to answer
+  case refusal // = 5
+
+  /// the daemon restarted during the turn
+  case restarted // = 6
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .completed
+    case 2: self = .stopped
+    case 3: self = .stepLimit
+    case 4: self = .maxTokens
+    case 5: self = .refusal
+    case 6: self = .restarted
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .completed: return 1
+    case .stopped: return 2
+    case .stepLimit: return 3
+    case .maxTokens: return 4
+    case .refusal: return 5
+    case .restarted: return 6
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Leyline_V1_StopReason] = [
+    .unspecified,
+    .completed,
+    .stopped,
+    .stepLimit,
+    .maxTokens,
+    .refusal,
+    .restarted,
+  ]
+
+}
+
 public nonisolated enum Leyline_V1_Role: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case unspecified // = 0
@@ -690,6 +756,11 @@ public nonisolated struct Leyline_V1_Turn: Sendable {
   /// the assistant has finished the turn, or it was stopped
   public var done: Bool = false
 
+  /// Why a done assistant turn ended; UNSPECIFIED while it runs, on a user turn, and on a turn a
+  /// daemon kept from before the field. The worker sets it, and the daemon when it closes a turn
+  /// itself: a StopTurn the worker did not answer in time, or a restart.
+  public var stopReason: Leyline_V1_StopReason = .unspecified
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -1190,6 +1261,10 @@ nonisolated extension Leyline_V1_ApprovalScope: SwiftProtobuf._ProtoNameProvidin
 
 nonisolated extension Leyline_V1_ConversationState: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CONVERSATION_STATE_UNSPECIFIED\0\u{1}CONVERSATION_IDLE\0\u{1}CONVERSATION_THINKING\0\u{1}CONVERSATION_WAITING\0\u{1}CONVERSATION_ENDED\0\u{1}CONVERSATION_FAILED\0")
+}
+
+nonisolated extension Leyline_V1_StopReason: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0STOP_REASON_UNSPECIFIED\0\u{1}STOP_REASON_COMPLETED\0\u{1}STOP_REASON_STOPPED\0\u{1}STOP_REASON_STEP_LIMIT\0\u{1}STOP_REASON_MAX_TOKENS\0\u{1}STOP_REASON_REFUSAL\0\u{1}STOP_REASON_RESTARTED\0")
 }
 
 nonisolated extension Leyline_V1_Role: SwiftProtobuf._ProtoNameProviding {
@@ -1878,7 +1953,7 @@ nonisolated extension Leyline_V1_Conversation: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension Leyline_V1_Turn: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Turn"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}turn_id\0\u{1}role\0\u{1}text\0\u{1}tools\0\u{3}at_ns\0\u{1}done\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}turn_id\0\u{1}role\0\u{1}text\0\u{1}tools\0\u{3}at_ns\0\u{1}done\0\u{3}stop_reason\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1892,6 +1967,7 @@ nonisolated extension Leyline_V1_Turn: SwiftProtobuf.Message, SwiftProtobuf._Mes
       case 4: try { try decoder.decodeRepeatedMessageField(value: &self.tools) }()
       case 5: try { try decoder.decodeSingularInt64Field(value: &self.atNs) }()
       case 6: try { try decoder.decodeSingularBoolField(value: &self.done) }()
+      case 7: try { try decoder.decodeSingularEnumField(value: &self.stopReason) }()
       default: break
       }
     }
@@ -1916,6 +1992,9 @@ nonisolated extension Leyline_V1_Turn: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if self.done != false {
       try visitor.visitSingularBoolField(value: self.done, fieldNumber: 6)
     }
+    if self.stopReason != .unspecified {
+      try visitor.visitSingularEnumField(value: self.stopReason, fieldNumber: 7)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1926,6 +2005,7 @@ nonisolated extension Leyline_V1_Turn: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if lhs.tools != rhs.tools {return false}
     if lhs.atNs != rhs.atNs {return false}
     if lhs.done != rhs.done {return false}
+    if lhs.stopReason != rhs.stopReason {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

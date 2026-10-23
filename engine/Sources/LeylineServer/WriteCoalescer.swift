@@ -43,7 +43,8 @@ final class WriteCoalescer: @unchecked Sendable {
         case .offsetHz?: param = 5
         case .bandwidthHz?: param = 6
         case .mode?: param = 7
-        case .squelchDb?: param = 8
+        // One parameter: the last squelch write in a tick wins, measured or not.
+        case .squelchDb?, .squelchAutoDb?: param = 8
         case .gain(let g)?: param = 9; element = g.element
         case .sinkVolume?: param = 10
         case nil: param = 0

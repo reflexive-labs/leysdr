@@ -164,7 +164,7 @@ struct SidebarView: View {
                 band: row, selected: tuned, expanded: expanded,
                 squelch: tuned
                     ? session.channel.map {
-                        SquelchWords.short($0.squelchDb, auto: session.squelchIsAuto)
+                        SquelchWords.short($0.squelchDb, auto: $0.squelchSource == .squelchAuto)
                     } : nil,
                 disabled: why != nil
             ) {

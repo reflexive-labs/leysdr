@@ -532,10 +532,10 @@ it is drawn only once the wait has gone on for 300 ms, so an answer that comes s
 not flicker it; unlike a terminal's progress line, it has a spinner, which a window can draw
 without redrawing text. A running step is its own sign, so the row is absent then, and
 nothing of it stays once the turn moves on. A stopped turn ends with `Stopped.` in `inkFaint`,
-after any steps it took (`TurnRow.stopped`). The contract has no field for a stop, so the rows
-read it from the transcript (`assistant.md`, "The loop"): an assistant turn done with no text or
-with a step the stop ended, or a user's message that no reply follows, because a turn stopped
-before the worker wrote its own leaves the message last. A call waiting for approval is a card with the
+after any steps it took (`TurnRow.stopped`): a turn whose `stop_reason` is `STOPPED`, which the
+worker sets on a turn a stop ended and the daemon on one it closes for a stop, an empty one
+included (`assistant.md`, "The loop"). A turn that ended at the step bound or the output limit
+says so in its own text and is not `Stopped.`. A call waiting for approval is a card with the
 question, the gate's reason (`assistant.md`, "The gate") and a button per answer the call offers
 (`PendingQuestion.offers`): Decline, Allow for this conversation when the call can be granted for
 the rest of the conversation (never a delete or a cancel of another client's job), and Allow, none
@@ -588,11 +588,11 @@ frequency and mode when another client changed the channel or its radio last, fr
 the width to 25.0 kHz." A channel another client made, which the window follows, reads as a tune
 from the mirror's `made`: "The assistant tuned to 162.400 MHz NFM.", and with a later change by
 the same client, "… NFM and set the mode to AM." The squelch a tune sets right after making the
-channel (from off) is named only when the assistant set a level itself: its call that made the
-channel, the first in the mirror's conversations whose result names the channel, asked for one
-(`"squelch": "-42"`), "The assistant tuned to 162.400 MHz NFM and set the squelch to -42 dBFS."
-A squelch measured on auto is not a level anyone chose and is left out, as is a terminal's, whose
-call the mirror does not hold. The words and the names are `ley`'s change lines (`whoChanged`): the
+channel (from off) is named when it was a level, "The assistant tuned to 162.400 MHz NFM and set
+the squelch to -42 dBFS.", and left out when the channel says it was measured
+(`Channel.squelch_source` `AUTO`): a squelch measured on auto is not a level anyone chose. The
+rule is the same for every client. A measured level set later is named with "(auto)" after it, as
+`ley` names it. The words and the names are `ley`'s change lines (`whoChanged`): the
 assistant is the MCP client labelled `assistant`, as the worker's tool server dials. A change is
 shown only while the channel and its radio still hold the values it set, so an unattributed
 change since (the daemon's own) never leaves the note naming a stale value, and the line goes as

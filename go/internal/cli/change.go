@@ -250,7 +250,7 @@ func (s *verbSession) channelChanges(was, now *leylinev1.Channel, st ui.Style) (
 		if units.SquelchOff(now.SquelchDb) {
 			out = append(out, change{"turned", "the squelch off"})
 		} else {
-			out = append(out, change{"set", fmt.Sprintf("the squelch to %.0f dBFS", now.SquelchDb)})
+			out = append(out, change{"set", fmt.Sprintf("the squelch to %.0f dBFS", now.SquelchDb) + autoSuffix(now)})
 		}
 	}
 	return out, false

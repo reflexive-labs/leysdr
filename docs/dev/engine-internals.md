@@ -576,6 +576,12 @@ Activity: `last_interactive_write_ns` is updated by any capture/channel write wh
   confirmed value comes back in the `Capture.gains` field of the capture event under that name.
   A `mode` write re-decides `subaudible_detect` (on for NFM, the only mode CTCSS is sent under,
   off otherwise), so a channel that started in another mode looks for a tone once it is NFM.
+  `squelch_auto_db` is a level the writer measured from the noise floor: it is applied as
+  `squelch_db` is (NaN is refused, since off is `squelch_db`'s), shares its coalescing key, and
+  marks the channel `squelch_source` `SQUELCH_AUTO`; a `squelch_db` write marks it
+  `SQUELCH_MANUAL`, and a squelch that is off has no source. The source lives on the session's
+  channel entry, not in `ChannelConfig`, because the DSP never reads it; the record and decode
+  jobs that measure a squelch themselves mark it `AUTO` when they publish the channel.
   On a channel that is `OUT_OF_CAPTURE` every non-offset write (`bandwidth_hz`, `mode`, `squelch_db`)
   is stored and used by the rebuild when the capture moves back over the channel — the channel stays
   `OUT_OF_CAPTURE` at its absolute frequency; only an `offset_hz` write is checked against the capture

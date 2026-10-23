@@ -170,7 +170,10 @@ enum ProtoMapping {
         return out
     }
 
-    static func channel(id: ChannelID, captureID: CaptureID, config: ChannelConfig, state: ChannelState?, owner: Leyline_V1_ClientInfo) -> Leyline_V1_Channel {
+    /// `squelchAuto` is how the level was chosen (`SessionStore.ChannelEntry.squelchAuto`); a
+    /// squelch that is off has no source.
+    static func channel(id: ChannelID, captureID: CaptureID, config: ChannelConfig, state: ChannelState?, owner: Leyline_V1_ClientInfo,
+                        squelchAuto: Bool = false) -> Leyline_V1_Channel {
         var out = Leyline_V1_Channel()
         out.channelID = id.string
         out.captureID = captureID.string
@@ -178,6 +181,7 @@ enum ProtoMapping {
         out.bandwidthHz = config.bandwidthHz
         out.mode = demodMode(config.mode)
         out.squelchDb = config.squelchDB
+        out.squelchSource = config.squelchDB.isNaN ? .unspecified : squelchAuto ? .squelchAuto : .squelchManual
         out.agc = gainMode(config.agc)
         out.state = state.map(channelState) ?? .unspecified
         out.persistent = config.persistent

@@ -238,6 +238,10 @@ final class AssistantDaemonTests: XCTestCase {
                 && assistant.conversation?.turns.last?.done == true
         }
         XCTAssertFalse(assistant.conversation?.turns.last?.text.contains("never") ?? true)
+        // The daemon says why it ended, and the panel's `Stopped.` reads that.
+        XCTAssertEqual(assistant.conversation?.turns.last?.stopReason, .stopped)
+        XCTAssertEqual(
+            ConversationView(try XCTUnwrap(assistant.conversation)).turns.last?.stopped, true)
 
         // End: ENDED here and in the mirror.
         await assistant.end()
@@ -279,6 +283,16 @@ final class AssistantDaemonTests: XCTestCase {
             for: try XCTUnwrap(mirror.state.channel(channel.channelID)), in: mirror.state,
             selfClientID: app.identity.id)
         XCTAssertEqual(note?.text, "The assistant set the squelch to -45 dBFS.")
+        XCTAssertEqual(mirror.state.channel(channel.channelID)?.squelchSource, .squelchManual)
+
+        // A measured level: the daemon says so, and so does the note, as ley's does.
+        try await Harness.setSquelch(
+            -53, auto: true, channel: channel.channelID, via: worker, mirror: mirror)
+        XCTAssertEqual(
+            ChangeNote.latest(
+                for: try XCTUnwrap(mirror.state.channel(channel.channelID)), in: mirror.state,
+                selfClientID: app.identity.id)?.text,
+            "The assistant set the squelch to -53 dBFS (auto).")
 
         // The app's own write back takes the note away.
         try await Harness.setSquelch(-50, channel: channel.channelID, via: app, mirror: mirror)

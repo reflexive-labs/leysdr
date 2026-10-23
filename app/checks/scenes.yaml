@@ -1628,8 +1628,8 @@ scenes:
   # tmp/sidebar-actions-mock.png): the open 2 m row's Scan band and Channels as list rows at a
   # bookmark row's height, the glyph under the bookmark dots and the label under their names,
   # dimmer than a name, with no chrome, Channels ending in ›, and the header, range line, actions
-  # and bookmarks on one raised ground. The range line ends `sq auto` while the channel keeps the
-  # level the window measured, `sq −45` once a terminal sets one, and its squelch is never cut.
+  # and bookmarks on one raised ground. The range line ends `sq auto` while the daemon says the
+  # channel's level was measured, `sq −45` once a terminal sets one, and its squelch is never cut.
   # Near, 5 kHz up from the calling channel, reads `≈ calling`; Club repeater shows no tone. The
   # fold reads `N bands out of range` and its help says where; GMRS, out of range, is disabled
   # (its row and Channels read disabled in the tree) with its help saying why, and its chevron

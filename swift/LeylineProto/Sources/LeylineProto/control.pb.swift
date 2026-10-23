@@ -185,6 +185,44 @@ public nonisolated enum Leyline_V1_GainMode: SwiftProtobuf.Enum, Swift.CaseItera
 
 }
 
+public nonisolated enum Leyline_V1_SquelchSource: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case squelchManual // = 1
+  case squelchAuto // = 2
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .squelchManual
+    case 2: self = .squelchAuto
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .squelchManual: return 1
+    case .squelchAuto: return 2
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Leyline_V1_SquelchSource] = [
+    .unspecified,
+    .squelchManual,
+    .squelchAuto,
+  ]
+
+}
+
 public nonisolated enum Leyline_V1_ChannelState: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case unspecified // = 0
@@ -573,6 +611,13 @@ public nonisolated struct Leyline_V1_Channel: Sendable {
   /// no visible cause.
   public var subaudibleDetect: Bool = false
 
+  /// How squelch_db was chosen, so a client can say "auto" without remembering what it wrote.
+  /// AUTO when it was measured from the band's noise floor: by the daemon (a gated recording, a
+  /// decoder's segments) or by the client that wrote it as ParamWrite.squelch_auto_db. MANUAL when
+  /// a client wrote a level as squelch_db. UNSPECIFIED while the squelch is off. The level is a
+  /// snapshot either way: an auto squelch does not follow the floor once it is set.
+  public var squelchSource: Leyline_V1_SquelchSource = .unspecified
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -785,6 +830,17 @@ public nonisolated struct Leyline_V1_ParamWrite: Sendable {
     set {param = .sinkVolume(newValue)}
   }
 
+  /// A squelch level the writer measured from the noise floor (`ley tune`'s auto, the app's):
+  /// applied as squelch_db is, and the channel says SQUELCH_AUTO. It and squelch_db are one
+  /// parameter, so the last of the two in a tick wins. Not NaN: off is squelch_db NaN.
+  public var squelchAutoDb: Double {
+    get {
+      if case .squelchAutoDb(let v)? = param {return v}
+      return 0
+    }
+    set {param = .squelchAutoDb(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Param: Equatable, Sendable {
@@ -800,6 +856,10 @@ public nonisolated struct Leyline_V1_ParamWrite: Sendable {
     case gain(Leyline_V1_GainWrite)
     /// target_id = sink_id
     case sinkVolume(Double)
+    /// A squelch level the writer measured from the noise floor (`ley tune`'s auto, the app's):
+    /// applied as squelch_db is, and the channel says SQUELCH_AUTO. It and squelch_db are one
+    /// parameter, so the last of the two in a tick wins. Not NaN: off is squelch_db NaN.
+    case squelchAutoDb(Double)
 
   }
 
@@ -1566,6 +1626,10 @@ nonisolated extension Leyline_V1_GainMode: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0GAIN_MODE_UNSPECIFIED\0\u{1}MANUAL\0\u{1}AUTO\0")
 }
 
+nonisolated extension Leyline_V1_SquelchSource: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0SQUELCH_SOURCE_UNSPECIFIED\0\u{1}SQUELCH_MANUAL\0\u{1}SQUELCH_AUTO\0")
+}
+
 nonisolated extension Leyline_V1_ChannelState: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CHANNEL_STATE_UNSPECIFIED\0\u{1}CHANNEL_ACTIVE\0\u{1}OUT_OF_CAPTURE\0")
 }
@@ -1914,7 +1978,7 @@ nonisolated extension Leyline_V1_CaptureActivity: SwiftProtobuf.Message, SwiftPr
 
 nonisolated extension Leyline_V1_Channel: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Channel"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}channel_id\0\u{3}capture_id\0\u{3}offset_hz\0\u{3}bandwidth_hz\0\u{1}mode\0\u{3}squelch_db\0\u{1}agc\0\u{1}state\0\u{1}persistent\0\u{3}required_hz\0\u{1}owner\0\u{3}subaudible_detect\0\u{c}\u{d}\u{1}")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}channel_id\0\u{3}capture_id\0\u{3}offset_hz\0\u{3}bandwidth_hz\0\u{1}mode\0\u{3}squelch_db\0\u{1}agc\0\u{1}state\0\u{1}persistent\0\u{3}required_hz\0\u{1}owner\0\u{3}subaudible_detect\0\u{4}\u{2}squelch_source\0\u{c}\u{d}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1934,6 +1998,7 @@ nonisolated extension Leyline_V1_Channel: SwiftProtobuf.Message, SwiftProtobuf._
       case 10: try { try decoder.decodeSingularUInt64Field(value: &self.requiredHz) }()
       case 11: try { try decoder.decodeSingularMessageField(value: &self._owner) }()
       case 12: try { try decoder.decodeSingularBoolField(value: &self.subaudibleDetect) }()
+      case 14: try { try decoder.decodeSingularEnumField(value: &self.squelchSource) }()
       default: break
       }
     }
@@ -1980,6 +2045,9 @@ nonisolated extension Leyline_V1_Channel: SwiftProtobuf.Message, SwiftProtobuf._
     if self.subaudibleDetect != false {
       try visitor.visitSingularBoolField(value: self.subaudibleDetect, fieldNumber: 12)
     }
+    if self.squelchSource != .unspecified {
+      try visitor.visitSingularEnumField(value: self.squelchSource, fieldNumber: 14)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1996,6 +2064,7 @@ nonisolated extension Leyline_V1_Channel: SwiftProtobuf.Message, SwiftProtobuf._
     if lhs.requiredHz != rhs.requiredHz {return false}
     if lhs._owner != rhs._owner {return false}
     if lhs.subaudibleDetect != rhs.subaudibleDetect {return false}
+    if lhs.squelchSource != rhs.squelchSource {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2206,7 +2275,7 @@ nonisolated extension Leyline_V1_FileSink: SwiftProtobuf.Message, SwiftProtobuf.
 
 nonisolated extension Leyline_V1_ParamWrite: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ParamWrite"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}tag\0\u{3}target_id\0\u{3}center_hz\0\u{3}capture_sample_rate\0\u{3}offset_hz\0\u{3}bandwidth_hz\0\u{1}mode\0\u{3}squelch_db\0\u{1}gain\0\u{3}sink_volume\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}tag\0\u{3}target_id\0\u{3}center_hz\0\u{3}capture_sample_rate\0\u{3}offset_hz\0\u{3}bandwidth_hz\0\u{1}mode\0\u{3}squelch_db\0\u{1}gain\0\u{3}sink_volume\0\u{3}squelch_auto_db\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2285,6 +2354,14 @@ nonisolated extension Leyline_V1_ParamWrite: SwiftProtobuf.Message, SwiftProtobu
           self.param = .sinkVolume(v)
         }
       }()
+      case 11: try {
+        var v: Double?
+        try decoder.decodeSingularDoubleField(value: &v)
+        if let v = v {
+          if self.param != nil {try decoder.handleConflictingOneOf()}
+          self.param = .squelchAutoDb(v)
+        }
+      }()
       default: break
       }
     }
@@ -2333,6 +2410,10 @@ nonisolated extension Leyline_V1_ParamWrite: SwiftProtobuf.Message, SwiftProtobu
     case .sinkVolume?: try {
       guard case .sinkVolume(let v)? = self.param else { preconditionFailure() }
       try visitor.visitSingularDoubleField(value: v, fieldNumber: 10)
+    }()
+    case .squelchAutoDb?: try {
+      guard case .squelchAutoDb(let v)? = self.param else { preconditionFailure() }
+      try visitor.visitSingularDoubleField(value: v, fieldNumber: 11)
     }()
     case nil: break
     }

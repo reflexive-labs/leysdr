@@ -125,6 +125,20 @@ func squelchString(db float64) string {
 	return fmt.Sprintf("%.1f dB", db)
 }
 
+// channelSquelch is a channel's squelch as squelchString renders it, with "(auto)" after a level
+// measured from the noise floor (Channel.squelch_source), as ley mcp's tune says it.
+func channelSquelch(ch *leylinev1.Channel) string {
+	return squelchString(ch.GetSquelchDb()) + autoSuffix(ch)
+}
+
+// autoSuffix is " (auto)" for a channel whose squelch level was measured, else empty.
+func autoSuffix(ch *leylinev1.Channel) string {
+	if !units.SquelchOff(ch.GetSquelchDb()) && ch.GetSquelchSource() == leylinev1.SquelchSource_SQUELCH_AUTO {
+		return " (auto)"
+	}
+	return ""
+}
+
 // clientString renders a ClientInfo as "cli:ley (cli_…)".
 func clientString(ci *leylinev1.ClientInfo) string {
 	if ci == nil {
@@ -172,7 +186,7 @@ func eventLine(ev *leylinev1.Event, state *leylinev1.GetStateResponse) string {
 		if _, ok := leyline.ChannelFrequency(state, c); ok {
 			freq = " " + channelFreqLabel(state, c)
 		}
-		return fmt.Sprintf("channel %s %s%s %s bw %d squelch %s%s", c.ChannelId, enumName(c.State.String()), freq, leyline.ModeName(c.Mode), c.BandwidthHz, squelchString(c.SquelchDb), who)
+		return fmt.Sprintf("channel %s %s%s %s bw %d squelch %s%s", c.ChannelId, enumName(c.State.String()), freq, leyline.ModeName(c.Mode), c.BandwidthHz, channelSquelch(c), who)
 	case *leylinev1.Event_Sink:
 		s := p.Sink
 		kind := "sink"

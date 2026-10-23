@@ -161,9 +161,43 @@ final class ConversationStoreTests: XCTestCase {
         XCTAssertEqual(conversation.state, .conversationIdle)
         XCTAssertFalse(conversation.hasPending)
         XCTAssertEqual(conversation.turns[0].done, true)
+        XCTAssertEqual(conversation.turns[0].stopReason, .stopped)
         XCTAssertEqual(conversation.turns[0].tools.map(\.state), [.toolCallDone, .toolCallRefused])
         XCTAssertEqual(conversation.turns[0].tools[0].resultText, "stopped")
         XCTAssertTrue(conversation.turns[0].tools[0].isError)
+    }
+
+    /// A stop the worker had not written a turn for yet still lands on a turn: an empty one that
+    /// answers the user's, STOPPED, so a reader finds why it ended where it looks for every other.
+    func testAStopBeforeTheWorkerWroteAddsAnEmptyStoppedTurn() {
+        var conversation = Leyline_V1_Conversation()
+        var user = Leyline_V1_Turn()
+        user.turnID = "t1"
+        user.role = .user
+        user.done = true
+        conversation.turns = [user]
+        conversation.state = .conversationThinking
+        conversation.closeStoppedTurn("t2")
+        XCTAssertEqual(conversation.state, .conversationIdle)
+        XCTAssertEqual(conversation.turns.map(\.turnID), ["t1", "t2"])
+        XCTAssertEqual(conversation.turns[1].role, .assistant)
+        XCTAssertEqual(conversation.turns[1].text, "")
+        XCTAssertTrue(conversation.turns[1].done)
+        XCTAssertEqual(conversation.turns[1].stopReason, .stopped)
+        XCTAssertEqual(ConversationStore.nextTurnID(after: conversation.turns), "t3")
+    }
+
+    /// A turn the worker finished just as the stop came keeps the reason the worker gave.
+    func testAStopAfterTheWorkerFinishedKeepsItsReason() {
+        var conversation = Leyline_V1_Conversation()
+        var turn = Leyline_V1_Turn()
+        turn.turnID = "t2"
+        turn.role = .assistant
+        turn.done = true
+        turn.stopReason = .completed
+        conversation.turns = [turn]
+        conversation.closeStoppedTurn("t2")
+        XCTAssertEqual(conversation.turns[0].stopReason, .completed)
     }
 
     func testATurnCutByARestartIsClosedWithTheNote() {
@@ -180,6 +214,7 @@ final class ConversationStoreTests: XCTestCase {
         XCTAssertFalse(waiting.hasPending)
         XCTAssertTrue(waiting.turns[1].done)
         XCTAssertEqual(waiting.turns[1].text, "so far\n\n" + ConversationStore.restartNote)
+        XCTAssertEqual(waiting.turns[1].stopReason, .restarted)
         XCTAssertEqual(waiting.turns[1].tools.map(\.state), [.toolCallDone, .toolCallRefused])
 
         var unanswered = Leyline_V1_Conversation()
@@ -191,6 +226,7 @@ final class ConversationStoreTests: XCTestCase {
         XCTAssertEqual(unanswered.turns[1].role, .assistant)
         XCTAssertEqual(unanswered.turns[1].text, ConversationStore.restartNote)
         XCTAssertTrue(unanswered.turns[1].done)
+        XCTAssertEqual(unanswered.turns[1].stopReason, .restarted)
     }
 
     func testATextDeltaWritesNothingAndADoneTurnDoes() {

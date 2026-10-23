@@ -41,10 +41,14 @@ const Declined = "the user declined"
 // finishing ends the turn rather than running the radio until the user stops it.
 const maxSteps = 40
 
-// cutShort is the stop reasons that end a turn early, and the line the turn ends with.
-var cutShort = map[string]string{
-	"max_tokens": "(The response reached the model's output limit and was cut off. Ask again, for less at once.)",
-	"refusal":    "(The model declined to answer this.)",
+// cutShort is the stop reasons that end a turn early, the line the turn ends with, and the
+// reason the turn says it ended for (ai.proto, Turn.stop_reason).
+var cutShort = map[string]struct {
+	note   string
+	reason leylinev1.StopReason
+}{
+	"max_tokens": {"(The response reached the model's output limit and was cut off. Ask again, for less at once.)", leylinev1.StopReason_STOP_REASON_MAX_TOKENS},
+	"refusal":    {"(The model declined to answer this.)", leylinev1.StopReason_STOP_REASON_REFUSAL},
 }
 
 // usageTimeout bounds one ReportUsage.
@@ -305,7 +309,7 @@ func (w *worker) runTurn(ctx context.Context, user *leylinev1.UserMessage) error
 	for step := 0; ; step++ {
 		if step == maxSteps {
 			turn.Text = joinText(turn.Text, fmt.Sprintf("(The assistant stopped after %d steps without finishing. Ask again to go on.)", maxSteps))
-			return w.finish(turn)
+			return w.finish(turn, leylinev1.StopReason_STOP_REASON_STEP_LIMIT)
 		}
 		var resp Response
 		var err error
@@ -314,7 +318,7 @@ func (w *worker) runTurn(ctx context.Context, user *leylinev1.UserMessage) error
 		system, defs, transcript := w.system, w.tools.Defs(), w.transcript
 		switch w.during(ctx, func(cctx context.Context) { resp, err = w.model.Respond(cctx, system, defs, transcript) }) {
 		case stopped:
-			return w.finish(turn)
+			return w.finish(turn, leylinev1.StopReason_STOP_REASON_STOPPED)
 		case closed:
 			return errClosed
 		}
@@ -326,14 +330,14 @@ func (w *worker) runTurn(ctx context.Context, user *leylinev1.UserMessage) error
 			return w.fail(leyline.CodeProviderUnavailable, err.Error())
 		}
 		w.reportUsage(ctx, resp.Usage)
-		if note, ends := cutShort[resp.StopReason]; ends {
+		if cut, ends := cutShort[resp.StopReason]; ends {
 			// A response cut at the output limit may end in a half-made tool call, and a refusal
 			// has nothing to run: keep the text, drop the calls, and end the turn saying why.
 			if text := resp.Text(); text != "" {
 				w.record(Message{Role: "assistant", Content: []Block{{Type: "text", Text: text}}})
 			}
-			turn.Text = joinText(joinText(turn.Text, resp.Text()), note)
-			return w.finish(turn)
+			turn.Text = joinText(joinText(turn.Text, resp.Text()), cut.note)
+			return w.finish(turn, cut.reason)
 		}
 		if len(resp.Content) > 0 {
 			w.record(Message{Role: "assistant", Content: resp.Content})
@@ -341,7 +345,7 @@ func (w *worker) runTurn(ctx context.Context, user *leylinev1.UserMessage) error
 		turn.Text = joinText(turn.Text, resp.Text())
 		uses := resp.ToolUses()
 		if len(uses) == 0 {
-			return w.finish(turn)
+			return w.finish(turn, leylinev1.StopReason_STOP_REASON_COMPLETED)
 		}
 		if err := w.write(turn); err != nil {
 			return err
@@ -361,7 +365,7 @@ func (w *worker) runTurn(ctx context.Context, user *leylinev1.UserMessage) error
 				if intr == closed {
 					return errClosed
 				}
-				return w.finish(turn)
+				return w.finish(turn, leylinev1.StopReason_STOP_REASON_STOPPED)
 			}
 			results = append(results, result)
 		}
@@ -605,9 +609,9 @@ func (w *worker) appendUser(blocks ...Block) {
 	w.record(Message{Role: "user", Content: blocks})
 }
 
-// finish marks the turn done and writes it.
-func (w *worker) finish(turn *leylinev1.Turn) error {
-	turn.Done = true
+// finish marks the turn done, with why it ended, and writes it.
+func (w *worker) finish(turn *leylinev1.Turn, reason leylinev1.StopReason) error {
+	turn.Done, turn.StopReason = true, reason
 	return w.write(turn)
 }
 

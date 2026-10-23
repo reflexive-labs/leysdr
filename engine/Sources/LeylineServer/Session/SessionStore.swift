@@ -97,6 +97,10 @@ actor SessionStore {
         var engine: any ChannelEngine
         var captureID: CaptureID
         var owner: ClientContext
+        /// The squelch level was measured from the noise floor rather than written as a number
+        /// (`Channel.squelch_source`): set by a `squelch_auto_db` write and by the jobs that
+        /// measure one (`publishChannel(_:squelchAuto:)`), cleared by a `squelch_db` write.
+        var squelchAuto = false
     }
 
     struct SinkEntry {

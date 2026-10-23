@@ -437,6 +437,7 @@ final class AssistantServiceTests: XCTestCase {
             XCTAssertEqual(stopped.turns.last?.done, true)
             XCTAssertEqual(stopped.turns.last?.text, "working on it")
             XCTAssertEqual(stopped.turns.last?.turnID, "t2")
+            XCTAssertEqual(stopped.turns.last?.stopReason, .stopped)
             let calls = stopped.turns.last?.tools ?? []
             XCTAssertEqual(calls.map(\.state), [.toolCallDone, .toolCallRefused],
                            "a running call is done as stopped, a waiting one refused")
@@ -448,6 +449,7 @@ final class AssistantServiceTests: XCTestCase {
             let next = try await self.conversation(c, id) { $0.state == .conversationIdle && $0.turns.count == 4 }
             XCTAssertEqual(next.turns.map(\.turnID), ["t1", "t2", "t3", "t4"])
             XCTAssertEqual(next.turns.last?.text, "second")
+            XCTAssertEqual(next.turns.last?.stopReason, .completed)
         }
     }
 

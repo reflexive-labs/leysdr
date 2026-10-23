@@ -31,6 +31,10 @@ type writeKey struct {
 
 func keyOf(w *leylinev1.ParamWrite) writeKey {
 	k := writeKey{target: w.TargetId, param: fmt.Sprintf("%T", w.Param)}
+	if _, ok := w.Param.(*leylinev1.ParamWrite_SquelchAutoDb); ok {
+		// One parameter with squelch_db, as the daemon keys them: the last squelch write wins.
+		k.param = fmt.Sprintf("%T", &leylinev1.ParamWrite_SquelchDb{})
+	}
 	if g, ok := w.Param.(*leylinev1.ParamWrite_Gain); ok && g.Gain != nil {
 		k.elem = g.Gain.Element
 	}
@@ -192,7 +196,8 @@ func (d *Daemon) applyLocked(ci *leylinev1.ClientInfo, w *leylinev1.ParamWrite) 
 		d.emit(ci, c.Capture)
 		d.recheckChannelsLocked(ci, c)
 		return true
-	case *leylinev1.ParamWrite_OffsetHz, *leylinev1.ParamWrite_BandwidthHz, *leylinev1.ParamWrite_Mode, *leylinev1.ParamWrite_SquelchDb:
+	case *leylinev1.ParamWrite_OffsetHz, *leylinev1.ParamWrite_BandwidthHz, *leylinev1.ParamWrite_Mode, *leylinev1.ParamWrite_SquelchDb,
+		*leylinev1.ParamWrite_SquelchAutoDb:
 		ch := d.channels[w.TargetId]
 		if ch == nil {
 			return d.rejectLocked(ci, w.Tag, errorf(leyline.CodeChannelNotFound, w.TargetId, "no such channel"))
@@ -235,7 +240,16 @@ func (d *Daemon) applyLocked(ci *leylinev1.ClientInfo, w *leylinev1.ParamWrite) 
 			if !math.IsNaN(p.SquelchDb) && (p.SquelchDb > 0 || p.SquelchDb < -200) {
 				return d.rejectLocked(ci, w.Tag, errorf(leyline.CodeInvalidArgument, w.TargetId, "squelch must be a dBFS value <= 0 or NaN"))
 			}
-			ch.SquelchDb = p.SquelchDb
+			ch.SquelchDb, ch.SquelchSource = p.SquelchDb, leylinev1.SquelchSource_SQUELCH_MANUAL
+			if math.IsNaN(p.SquelchDb) {
+				ch.SquelchSource = leylinev1.SquelchSource_SQUELCH_SOURCE_UNSPECIFIED
+			}
+		case *leylinev1.ParamWrite_SquelchAutoDb:
+			// A measured level, so never off: NaN is a writer that measured nothing.
+			if !(p.SquelchAutoDb <= 0 && p.SquelchAutoDb >= -200) {
+				return d.rejectLocked(ci, w.Tag, errorf(leyline.CodeInvalidArgument, w.TargetId, "an auto squelch must be a dBFS value <= 0"))
+			}
+			ch.SquelchDb, ch.SquelchSource = p.SquelchAutoDb, leylinev1.SquelchSource_SQUELCH_AUTO
 		}
 		if c != nil {
 			touch(c)

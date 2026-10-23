@@ -476,6 +476,7 @@ final class DaemonTests: XCTestCase {
             return false
         }
         XCTAssertNotNil(updated, "channel event with the applied squelch")
+        XCTAssertEqual(updated?.channel.squelchSource, .squelchManual, "a level written as a number is manual")
         XCTAssertEqual(updated?.channel.offsetHz, 100_000, "rejected offset must not apply")
         let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
         XCTAssertEqual(state.channels.first?.squelchDb, -50)
@@ -507,5 +508,42 @@ final class DaemonTests: XCTestCase {
         }
         XCTAssertEqual(openSummary.writesReceived, 2)
         XCTAssertEqual(openSummary.writesApplied, 1)
+        try await checkSquelchSource(c, channel: channel, events: events)
+    }
+
+    /// A level the writer measured is applied as any other and the channel says AUTO, until a
+    /// level is written as a number; a squelch turned off has no source, and NaN is not a measured
+    /// level.
+    private func checkSquelchSource(_ c: DaemonClients, channel: Leyline_V1_Channel, events: EventCollector) async throws {
+        func write(_ tag: UInt64, _ param: Leyline_V1_ParamWrite.OneOf_Param) async throws {
+            _ = try await c.control.writeParams(metadata: testMetadata) { writer in
+                var w = Leyline_V1_ParamWrite()
+                w.tag = tag
+                w.targetID = channel.channelID
+                w.param = param
+                try await writer.write(w)
+            }
+        }
+        func source(after match: (Leyline_V1_Channel) -> Bool) async -> Leyline_V1_SquelchSource? {
+            await events.waitFor { ev in
+                if case .channel(let ch)? = ev.body { return ch.channelID == channel.channelID && match(ch) }
+                return false
+            }?.channel.squelchSource
+        }
+        try await write(20, .squelchAutoDb(-53))
+        let auto = await source { $0.squelchDb == -53 }
+        XCTAssertEqual(auto, .squelchAuto)
+        try await write(21, .squelchAutoDb(.nan))
+        let rejected = await events.waitFor { ev in
+            if case .writeRejected(let wr)? = ev.body { return wr.tag == 21 }
+            return false
+        }
+        XCTAssertEqual(rejected?.writeRejected.error.code, "INVALID_ARGUMENT", "NaN is off, which is squelch_db's")
+        try await write(22, .squelchDb(-53))
+        let manual = await source { $0.squelchDb == -53 && $0.squelchSource == .squelchManual }
+        XCTAssertEqual(manual, .squelchManual, "the same level written as a number is manual")
+        try await write(23, .squelchDb(.nan))
+        let off = await source { $0.squelchDb.isNaN }
+        XCTAssertEqual(off, .unspecified, "a squelch that is off has no source")
     }
 }

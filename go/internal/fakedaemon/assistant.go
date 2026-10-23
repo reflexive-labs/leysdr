@@ -315,7 +315,8 @@ func (d *Daemon) playTurn(fc *fakeConversation, steps AssistantTurn, stop <-chan
 	if stopped() {
 		return
 	}
-	d.assistantTurnLocked(fc).Done = true
+	done := d.assistantTurnLocked(fc)
+	done.Done, done.StopReason = true, leylinev1.StopReason_STOP_REASON_COMPLETED
 	d.settleLocked(fc, leylinev1.ConversationState_CONVERSATION_IDLE)
 	d.publishConvLocked(fc, by)
 }
@@ -585,20 +586,26 @@ func (a assistantSvc) StopTurn(ctx context.Context, req *leylinev1.ConversationR
 		return nil, fail(ctx, errorf(leyline.CodeFailedPrecondition, fc.conv.ConversationId,
 			fmt.Sprintf("the conversation has %s; there is no turn to stop", stateName(fc.conv.State))))
 	}
+	if n := len(fc.conv.Turns); n > 0 && fc.conv.Turns[n-1].Role == leylinev1.Role_ROLE_USER {
+		// Stopped before the assistant wrote anything: an empty turn answers the user's, as the
+		// engine's closeStoppedTurn adds one, so the stop is on a turn.
+		d.assistantTurnLocked(fc)
+	}
 	d.stopTurnLocked(fc)
 	d.settleLocked(fc, leylinev1.ConversationState_CONVERSATION_IDLE)
 	d.publishConvLocked(fc, ci)
 	return proto.Clone(fc.conv).(*leylinev1.Conversation), nil
 }
 
-// stopTurnLocked marks the playing assistant turn done where it stands. Call with d.mu held.
+// stopTurnLocked marks the playing assistant turn done where it stands, STOPPED. Call with d.mu
+// held.
 func (d *Daemon) stopTurnLocked(fc *fakeConversation) {
 	n := len(fc.conv.Turns)
-	if n == 0 || fc.conv.Turns[n-1].Role != leylinev1.Role_ROLE_ASSISTANT {
+	if n == 0 || fc.conv.Turns[n-1].Role != leylinev1.Role_ROLE_ASSISTANT || fc.conv.Turns[n-1].Done {
 		return
 	}
 	t := fc.conv.Turns[n-1]
-	t.Done = true
+	t.Done, t.StopReason = true, leylinev1.StopReason_STOP_REASON_STOPPED
 	for _, c := range t.Tools {
 		switch c.State {
 		case leylinev1.ToolCallState_TOOL_CALL_AWAITING_APPROVAL, leylinev1.ToolCallState_TOOL_CALL_AWAITING_CLIENT:

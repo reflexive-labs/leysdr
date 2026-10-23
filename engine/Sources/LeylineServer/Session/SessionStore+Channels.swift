@@ -33,9 +33,11 @@ extension SessionStore {
     func channelCapture(_ id: ChannelID) -> CaptureID? { channels[id]?.captureID }
 
     /// Re-emits a channel after something changed it that was not a client write: the squelch a
-    /// record job set on the channel the allocator built for it, say.
-    func publishChannel(_ id: ChannelID) async {
+    /// record job set on the channel the allocator built for it, say. `squelchAuto`, when given,
+    /// is how the job chose the squelch it set (`Channel.squelch_source`).
+    func publishChannel(_ id: ChannelID, squelchAuto: Bool? = nil) async {
         guard let entry = channels[id] else { return }
+        if let squelchAuto { channels[id]?.squelchAuto = squelchAuto }
         await emitChannel(id, by: entry.owner)
     }
 
@@ -43,7 +45,8 @@ extension SessionStore {
         guard let entry = channels[id] else { return nil }
         let config = await entry.engine.config
         let state = await entry.engine.state
-        return ProtoMapping.channel(id: id, captureID: entry.captureID, config: config, state: state, owner: entry.owner.proto)
+        return ProtoMapping.channel(id: id, captureID: entry.captureID, config: config, state: state, owner: entry.owner.proto,
+                                    squelchAuto: entry.squelchAuto)
     }
 
     func emitChannel(_ id: ChannelID, by: ClientContext) async {
@@ -103,7 +106,8 @@ extension SessionStore {
             await cap.engine.removeChannel(id)
         }
         channels[id] = nil
-        let proto = ProtoMapping.channel(id: id, captureID: entry.captureID, config: config, state: nil, owner: entry.owner.proto)
+        let proto = ProtoMapping.channel(id: id, captureID: entry.captureID, config: config, state: nil, owner: entry.owner.proto,
+                                         squelchAuto: entry.squelchAuto)
         emit(.channel(proto), captureID: entry.captureID, by: by)
     }
 }
