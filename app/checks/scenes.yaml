@@ -1027,3 +1027,49 @@ scenes:
       - {cmd: wait, seconds: 6, expect_log: ["playback: .* ended", "live sink attached again"]}
       - {cmd: state, expect: {tuned_hz: 147180000, sink: own}}
       - {cmd: ley, args: [state], expect_stdout: "(?s)by cli:ley\\s+└─ system_audio"}
+
+  # The window at launch and across a daemon restart (docs/plans/app.md, "The window follows the
+  # radio"). Before the app starts, the fixture's channel is stopped, a terminal's `ley tune
+  # 146.94 --persistent` plays and a recording tunes 147.18 after it: the window takes the
+  # terminal's channel, the newest that is not a recording's, with no sink of its own, says the
+  # audio plays through another terminal and disables its mute and volume. The daemon is then
+  # stopped and started again, which plays the fixture anew, and `ley ask` tunes the club
+  # repeater: the window still follows. Muted, the window is disconnected once more, and a
+  # terminal tunes the evening net with no audio as the daemon comes back: the window reconnects
+  # onto that channel and stays muted.
+  - name: follow-launch-and-daemon
+    fixtures: [{name: scene_2m}]
+    bookmarks: ../../site/shots/home.csv
+    ai: {script: assistant/follow.script}
+    steps:
+      - ley: [stop, "146.52"]
+      - ley: [tune, "146.94", --persistent]
+      - ley: [record, "147.18", --detach]
+    stage:
+      place: radio
+      inspector: true
+      settle: 3
+    app:
+      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater, sink: other, muted: false}}
+      - {cmd: ley, args: [state], expect_stdout: ["!by app:Leyline", "147.180 MHz"]}
+      - {cmd: snapshot, name: launched}
+      - {cmd: ax, name: launched}
+      - {cmd: daemon, op: stop}
+      - {cmd: wait, seconds: 2}
+      - {cmd: snapshot, name: stopped}
+      - {cmd: daemon, op: start}
+      - {cmd: wait, seconds: 6}
+      - {cmd: state, expect: {tuned_hz: 146520000, sink: other}}
+      - {cmd: ley, args: [ask, --yes, listen to the club repeater]}
+      - {cmd: wait, seconds: 3, expect_log: "following chan_.*made by the assistant"}
+      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater, sink: own}}
+      - {cmd: press, identifier: transport.mute}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {muted: true, sink: none}}
+      - {cmd: daemon, op: stop}
+      - {cmd: wait, seconds: 2}
+      - {cmd: daemon, op: start}
+      - {cmd: ley, args: [tune, "147.18", --persistent, --no-audio]}
+      - {cmd: wait, seconds: 6}
+      - {cmd: state, expect: {tuned_hz: 147180000, bookmark: Evening net, muted: true, sink: none}}
+      - {cmd: ley, args: [state], expect_stdout: "!by app:Leyline"}
