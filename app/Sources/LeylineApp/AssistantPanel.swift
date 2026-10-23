@@ -425,10 +425,10 @@ struct StepTable: View {
     }
 }
 
-/// What the assistant asks to do in words, the reason in its gate's words, and a button per
-/// answer the question offers: Decline and Allow for this conversation (when it can be granted
-/// for the rest of the conversation, never for a delete or a cancel of another client's job) as
-/// plain text, and Allow, the one filled button. No button takes Return: a delete or a takeover
+/// What the assistant asks to do in words, what the gate's reason adds to that (`note`, absent
+/// when it adds nothing), and a button per answer the question offers: Decline and Allow in this
+/// chat (when it can be granted for the rest of the conversation, never for a delete or a cancel
+/// of another client's job) as plain text, and Allow, the one filled button. No button takes Return: a delete or a takeover
 /// is answered with a click, never a stray key.
 struct PendingCard: View {
     @Environment(AppSession.self) private var session
@@ -455,12 +455,14 @@ struct PendingCard: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(question.question).font(Theme.Font.label).foregroundStyle(Theme.ink)
                 .fixedSize(horizontal: false, vertical: true)
-            if !question.reason.isEmpty {
-                Text(question.reason).font(Theme.Font.aside).foregroundStyle(Theme.inkSecondary)
+                .accessibilityIdentifier("assistant.card.question")
+            if !question.note.isEmpty {
+                Text(question.note).font(Theme.Font.aside).foregroundStyle(Theme.inkSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("assistant.card.note")
             }
-            // On one line when the three fit the card, else Allow for this conversation over
-            // Decline and Allow, so none is cut at the window's narrowest.
+            // On one line when the three fit the card, as they do in the column's 320 pt, else
+            // Allow in this chat over Decline and Allow, so none is cut.
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 12) {
                     Spacer(minLength: 0)
@@ -501,7 +503,7 @@ struct PendingCard: View {
     private var allowForConversation: some View {
         let session = session
         let id = question.callID
-        return Button("Allow for this conversation") {
+        return Button("Allow in this chat") {
             answer { await session.approve(callID: id, forConversation: true) }
         }
         .buttonStyle(AssistantButtonStyle(filled: false))

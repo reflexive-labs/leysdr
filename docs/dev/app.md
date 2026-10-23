@@ -504,7 +504,7 @@ assistant's own `show_place` included, leaves the transcript, its scroll and the
 its rules are tested without a daemon). The window starts a conversation with `StartConversation`,
 declaring the app's view tools and naming no provider or model, so the daemon uses the assistant
 feature's; the first message starts one when none is going, and New Conversation ends the one shown
-and empties the panel. `SendMessage`, `ResolveAction` (Allow, Allow for this conversation, Decline),
+and empties the panel. `SendMessage`, `ResolveAction` (Allow, Allow in this chat, Decline),
 `StopTurn` and `EndConversation` are the other calls. The controller holds the newest copy of the
 conversation by `seq`, from the replies, from a `WatchConversation` stream that resumes from the
 `seq` it holds after a drop, and from the mirror's `conversation` events, which the session passes
@@ -545,16 +545,25 @@ after any steps it took (`TurnRow.stopped`): a turn whose `stop_reason` is `STOP
 worker sets on a turn a stop ended and the daemon on one it closes for a stop, an empty one
 included (`assistant.md`, "The loop"). A turn that ended at the step bound or the output limit
 says so in its own text and is not `Stopped.`. A call waiting for approval is a card with the
-question, the gate's reason (`assistant.md`, "The gate") in `inkSecondary` and a button per answer
-the call offers (`PendingQuestion.offers`): Decline, Allow for this conversation when the call can
-be granted for the rest of the conversation (never a delete or a cancel of another client's job),
-both plain text, and Allow, the one filled button, none on Return; Allow for this conversation
-goes on a line of its own over the other two when the three do not fit. The question says what
+question, a line in `inkSecondary` under it when the gate's reason (`assistant.md`, "The gate")
+says something the question does not, and a button per answer the call offers
+(`PendingQuestion.offers`): Decline, Allow in this chat when the call can be granted for the rest
+of the conversation (never a delete or a cancel of another client's job), both plain text, and
+Allow, the one filled button, none on Return. The three sit on one line in that order, which they
+fit in the column's 320 pt; Allow in this chat goes on a line of its own over the other two only
+when they do not. The question says what
 the call would do in words and never shows a tool's name or an id ("The assistant wants to remove
 the APRS bookmark."): the daemon's question carries the tool, its arguments and the reason, and
 no sentence, and the reason says why it asks rather than what, so `AssistantWords.action` builds
 the words from the tool and its arguments, names an id by its kind (`delete a recording`) and
-reads a tool it does not know as `use the list presets tool`. Once one is pressed all three are disabled, and a click meanwhile is dropped, until the
+reads a tool it does not know as `use the list presets tool`. The reason is written for the model
+too, one clause per gate row joined by `; `, and names arguments and ids, so
+`AssistantWords.cardReason` turns it into the line: a clause that restates the question (a
+bookmark's removal, a CHIRP import) goes, a take-over says whom it takes the radio from by the
+kinds of client the refusal before it named ("It takes the radio from the window.", or "from
+whoever is using it" with no refusal) and never shows `take_over`, the other rows say what they
+add in a sentence (a delete's files, a kept job, a webhook), and a clause it does not know is
+kept as the daemon wrote it. The step's opened body keeps the reason as the daemon wrote it. Once one is pressed all three are disabled, and a click meanwhile is dropped, until the
 daemon replies to that answer, so a second click sends no second answer; a question still pending
 after a failed answer can be answered again. The app starts every conversation in the default mode,
 in which questions are asked; the panel has no switch for the mode that asks nothing. Stop shows
@@ -926,7 +935,7 @@ and the next line still runs; a line with no `id` has no answer file, so it is o
 |---|---|---|
 | `stage` | `stage`: a stage object as above (`settle` is slept, `window` resizes) | `result.applied`: the steps, as the log lines give them |
 | `snapshot` | `settle`: seconds to wait first, default 0; `window`: `main` (the default) or `settings` | `out/<id>.png`, with the popover and the sheet open over the window drawn in at their places (a menu that is open is not); `result`: `scale`, `width_pt`, `height_pt` and `regions`, as `regions.json` gives them, `{}` for `regions` of the Settings window |
-| `state` | | `result`: `place`, `tuned_hz`, `mode`, `bandwidth_hz`, `channel_id`, `capture_id`, `band`, `bookmark`, `open_rows`, `filter_query`, `inspector_shown`, `assistant_shown`, `zoom`, `focused` (the focused control's identifier, else its role and label), `notices` (every message the window shows), `popover` (`channels:<row>`, `device_menu` or empty), `selected_recording_channel`, `selected_part`, `heard` (the tone the tuned channel last heard, as the inspector writes it: `PL 100.0`), `hits` (the last sweep's hits as its row lists them, strongest first), `muted` (the transport's speaker), `volume` (the window's own sink's, 0 to 1), `sink` (`own`, `other` when another client's sink plays the channel, `none`), `window` (`width`, `height`, `min_width`, `min_height` in points, toolbar included), `filter_caret` (the insertion point in the sidebar's filter while it has the focus), `settings_open`, `alert` (the sheet over the main window or Settings: `title`, `message`, `buttons` in order), `view_window` (`low_hz` and `high_hz`, the frequencies at the charts' two edges), `assistant` (while its panel shows: `turns`, each `role`, `text` and `stopped`; `state`, the header's word; `thinking`; `input`, the field's text; `input_focused`; `stop_shown`; `buttons`, each `id`, `title` and `enabled`), `tooltip` (the help of what the last `hover` rested on, else the frequency under the pointer while it is over a chart), `transport` (the bar's words as drawn: `tuning`, the field's digits; `squelch_caption`, and `squelch_caption_short` when it is the short one; `squelch_words`, the three under the track joined by ` · `, empty once a narrow bar drops them; `null` without a bar); every key is present, `null` when it has no value |
+| `state` | | `result`: `place`, `tuned_hz`, `mode`, `bandwidth_hz`, `channel_id`, `capture_id`, `band`, `bookmark`, `open_rows`, `filter_query`, `inspector_shown`, `assistant_shown`, `zoom`, `focused` (the focused control's identifier, else its role and label), `notices` (every message the window shows), `popover` (`channels:<row>`, `device_menu` or empty), `selected_recording_channel`, `selected_part`, `heard` (the tone the tuned channel last heard, as the inspector writes it: `PL 100.0`), `hits` (the last sweep's hits as its row lists them, strongest first), `muted` (the transport's speaker), `volume` (the window's own sink's, 0 to 1), `sink` (`own`, `other` when another client's sink plays the channel, `none`), `window` (`width`, `height`, `min_width`, `min_height` in points, toolbar included), `filter_caret` (the insertion point in the sidebar's filter while it has the focus), `settings_open`, `alert` (the sheet over the main window or Settings: `title`, `message`, `buttons` in order), `view_window` (`low_hz` and `high_hz`, the frequencies at the charts' two edges), `assistant` (while its panel shows: `turns`, each `role`, `text` and `stopped`; `state`, the header's word; `thinking`; `input`, the field's text; `input_focused`; `stop_shown`; `buttons`, each `id`, `title` and `enabled`; `question`, the card's sentence as drawn, and `note`, the line under it), `tooltip` (the help of what the last `hover` rested on, else the frequency under the pointer while it is over a chart), `transport` (the bar's words as drawn: `tuning`, the field's digits; `squelch_caption`, and `squelch_caption_short` when it is the short one; `squelch_words`, the three under the track joined by ` · `, empty once a narrow bar drops them; `null` without a bar); every key is present, `null` when it has no value |
 | `ax` | `window`: `main` (the default; its popovers and sheets are in its tree), `settings` (the Settings window, while it is open: the stage's `settings` or the key `cmd+,` opens it), `popover` (the main window's open popover alone) or `sheet` (the sheet over the main window, else over Settings, alone) | `out/<id>.ax.txt`: the window's accessibility tree, one element per line indented two spaces a level: role, `id=` and the identifier when there is one, the label, `value=` when there is one (quoted, with `\`, `"` and newlines escaped), the frame in points from the window's top-left corner as the regions are measured (a text field's left edge and width only, `(38,– 161×–)`, because the AppKit field's height follows its text, 14 pt empty and 13 with text in the inspector's fields, while the row it sits in keeps its height; a group whose frame is the union of its children's and that holds a field spans what its other children span, top to bottom, for the same reason), `enabled` or `disabled`; `result`: as `snapshot`'s, so a reader can tell which elements lie in which region, and `{}` for the Settings window or a sheet over it; a popover or a sheet alone is framed from its window's corner |
 | `key` | `keys`: `cmd+g`, `shift+cmd+left`, `escape`, `return`, `down`… | a key down and up |
 | `type` | `text` | a key down and up for each character |

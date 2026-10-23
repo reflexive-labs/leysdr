@@ -1793,6 +1793,16 @@ From the owner's look at Batch 2's pictures (`tmp/batch2/` on the build Mac):
 - The option is named `Allow in this chat`, so all three fit one row: Decline · Allow in this chat
   · Allow, with Allow the filled one. The buttons stack only when even that does not fit.
 
+Built 2026-10-23 in a batch lane, which launches no app; not ticked until a verify run on the Mac
+has recorded the pictures. The façade decides the line (`AssistantWords.cardReason`, unit-tested
+per gate row): the take-over reads `It takes the radio from the window.` (or `a ley command`,
+`another assistant`, by the kinds the refusal named; `from whoever is using it` with none), a
+bookmark's removal and a CHIRP import show no line, a delete reads `Its files go with it, and
+this cannot be undone.` The daemon's reason is unchanged, since the model reads it too, and an
+opened step still shows it whole. `ley ask` names no option, so it has nothing to rename. The
+identifier `assistant.allow.conversation` stays. `state` gains `assistant.question` and
+`assistant.note`, which `assistant-cards` now expects, with the buttons in one row's order.
+
 ## Backlog
 
 - **Two frequency affine maps remain separate.** `SquelchTrack` and `GainSlider` share

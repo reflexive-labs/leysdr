@@ -186,7 +186,7 @@ public final class AssistantController {
         }
     }
 
-    /// Allow, Allow for this conversation, or Decline on the question the assistant is waiting
+    /// Allow, Allow in this chat, or Decline on the question the assistant is waiting
     /// on. `scope` is one of the question's offers (`PendingQuestion.offers`); unset is once.
     public func resolve(
         callID: String, approve: Bool, scope: Leyline_V1_ApprovalScope = .unspecified

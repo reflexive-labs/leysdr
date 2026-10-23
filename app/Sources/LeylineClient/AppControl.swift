@@ -520,16 +520,21 @@ public struct ControlAssistant: Sendable, Equatable, Codable {
     /// Stop shows beside the field.
     public var stopShown: Bool
     public var buttons: [Button]
+    /// The question card's sentence and the line under it as drawn, nil without a card or,
+    /// for the note, when the card has no line under its sentence.
+    public var question: String?
+    public var note: String?
 
     enum CodingKeys: String, CodingKey {
-        case turns, state, thinking, input, buttons
+        case turns, state, thinking, input, buttons, question, note
         case inputFocused = "input_focused"
         case stopShown = "stop_shown"
     }
 
     public init(
         turns: [Turn] = [], state: String? = nil, thinking: Bool = false, input: String = "",
-        inputFocused: Bool = false, stopShown: Bool = false, buttons: [Button] = []
+        inputFocused: Bool = false, stopShown: Bool = false, buttons: [Button] = [],
+        question: String? = nil, note: String? = nil
     ) {
         self.turns = turns
         self.state = state
@@ -538,6 +543,8 @@ public struct ControlAssistant: Sendable, Equatable, Codable {
         self.inputFocused = inputFocused
         self.stopShown = stopShown
         self.buttons = buttons
+        self.question = question
+        self.note = note
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -549,6 +556,8 @@ public struct ControlAssistant: Sendable, Equatable, Codable {
         try c.encode(inputFocused, forKey: .inputFocused)
         try c.encode(stopShown, forKey: .stopShown)
         try c.encode(buttons, forKey: .buttons)
+        try c.encode(question, forKey: .question)
+        try c.encode(note, forKey: .note)
     }
 }
 
