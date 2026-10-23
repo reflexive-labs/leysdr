@@ -306,6 +306,7 @@ struct LogRow: View {
             }
             .buttonStyle(.plain)
             .help(part.playing ? "Stop" : "Play")
+            .accessibilityIdentifier("inspector.log.play")
         }
     }
 
