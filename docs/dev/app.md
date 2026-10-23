@@ -915,7 +915,10 @@ windows on the Spaces shown now. Whenever the API answers no window, `ax`, `pres
 instead, and the log says so once (`accessibility: the API answered no window (the screen is
 locked)`). The two readings give the same tree, because the tree leaves out what they list
 differently: a scroll bar's parts, the insides of the window's own buttons, the window's title
-(the title bar shows it) and a slider knob's frame (it gives its value and `(–)`).
+(the title bar shows it), a slider knob's frame (it gives its value and `(–)`) and an alert
+button's AppKit name (`action-button-1`). The cell of an AppKit control SwiftUI hosts (a text
+field, a slider, a pop-up) answers a frame a point larger on each side than the API's, so the
+window's objects are read with the API's: the control's frame less its alignment insets.
 
 ### Accessibility identifiers
 

@@ -326,9 +326,34 @@ struct ObjectNode: TreeNode {
         }
     }
 
-    /// The frame in the screen's own points from the bottom of the main display.
+    /// The frame in the screen's own points from the bottom of the main display. The cell of an
+    /// AppKit control that SwiftUI hosts (a text field's, a selectable text's, a slider's, a
+    /// pop-up's, a segmented control's) answers a point outside the control on each side, while
+    /// the API gives the control's frame less its alignment insets (a text field's two points
+    /// either side), the rectangle SwiftUI lays it out by; that is taken here too, so the two
+    /// readings agree. AppKit's own windows (an alert's, the title bar's buttons) answer as the
+    /// API does.
     private var screenFrame: CGRect? {
-        object.accessibilityFrame?()
+        if let cell = object as? NSCell, let view = cell.controlView, let window = view.window,
+            Self.hostedBySwiftUI(view)
+        {
+            let f = window.convertToScreen(view.convert(view.bounds, to: nil))
+            let i = view.alignmentRectInsets
+            return CGRect(
+                x: f.minX + i.left, y: f.minY + i.bottom,
+                width: f.width - i.left - i.right, height: f.height - i.top - i.bottom)
+        }
+        return object.accessibilityFrame?()
+    }
+
+    /// Whether a view sits inside a SwiftUI hosting view.
+    private static func hostedBySwiftUI(_ view: NSView) -> Bool {
+        var v = view.superview
+        while let s = v {
+            if String(describing: type(of: s)).contains("Hosting") { return true }
+            v = s.superview
+        }
+        return false
     }
 
     var point: CGPoint? {
@@ -727,8 +752,12 @@ enum AXWalk {
         -> String
     {
         var parts = [e.string(kAXRoleAttribute) ?? "AXUnknown"]
-        // AppKit numbers the views it names itself (`_NS:87`) from run to run.
-        if let id = e.string(kAXIdentifierAttribute), !id.isEmpty, !id.hasPrefix("_NS:") {
+        // AppKit numbers the views it names itself (`_NS:87`) from run to run, and an alert's
+        // buttons (`action-button-1`) are named through the API in some runs and not in others,
+        // with the sheet's key state; `press` takes a sheet's button by its title.
+        if let id = e.string(kAXIdentifierAttribute), !id.isEmpty, !id.hasPrefix("_NS:"),
+            !id.hasPrefix("action-button-")
+        {
             parts.append("id=\(id)")
         }
         let label = e.string(kAXDescriptionAttribute) ?? ""
