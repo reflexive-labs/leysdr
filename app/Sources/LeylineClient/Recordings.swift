@@ -337,9 +337,49 @@ public struct RecordingPart: Sendable, Equatable, Codable {
     public var squelchIntervals: [SquelchInterval]?
     /// The rate the part's samples count in, from its sidecar's anchor, when `read(at:)` read it.
     public var captureRate: UInt64?
+    /// How much the part's file holds, in ms: `samples` at the file's rate, whatever its span on
+    /// the capture's timeline. Nil on a part from a daemon older than the key.
+    public var writtenMs: Int64?
+    /// Where the daemon dropped samples inside the part before the recording saw them, having
+    /// fallen behind the radio (docs/design/recording.md, "Gaps"). The file holds the audio either
+    /// side back to back, so the span is the written time plus these. Empty when none.
+    public var gaps: [Gap]
+
+    /// Capture samples dropped inside a part: `samples` of them from `sample`, on the capture's
+    /// timeline at the capture rate.
+    public struct Gap: Sendable, Equatable, Codable {
+        public var sample: UInt64
+        public var samples: UInt64
+
+        public init(sample: UInt64, samples: UInt64) {
+            self.sample = sample
+            self.samples = samples
+        }
+    }
+
+    /// The capture samples the part's gaps span.
+    public var droppedSamples: UInt64 { gaps.reduce(0) { $0 + $1.samples } }
+
+    /// Each gap as a fraction of the part's written audio, 0 at its first frame and 1 at its last:
+    /// where the gap falls on a graph drawn from the file, which holds the audio either side of a
+    /// gap back to back. Empty when the part dropped nothing or its span is not longer than them.
+    public var gapFractions: [Double] {
+        let span = endSample > startSample ? endSample - startSample : 0
+        let dropped = droppedSamples
+        guard !gaps.isEmpty, span > dropped else { return [] }
+        let written = Double(span - dropped)
+        var before: UInt64 = 0
+        return gaps.sorted { $0.sample < $1.sample }.map { g in
+            let at = g.sample > startSample ? g.sample - startSample : 0
+            let audio = at > before ? Double(at - before) : 0
+            before += g.samples
+            return min(1, max(0, audio / written))
+        }
+    }
 
     enum CodingKeys: String, CodingKey {
-        case part, file, samples, bytes
+        case part, file, samples, bytes, gaps
+        case writtenMs = "written_ms"
         case startSample = "start_sample"
         case endSample = "end_sample"
         case peakDBFS = "peak_dbfs"
@@ -353,7 +393,8 @@ public struct RecordingPart: Sendable, Equatable, Codable {
         part: Int, file: String, startSample: UInt64, endSample: UInt64, samples: UInt64,
         bytes: UInt64, peakDBFS: Double? = nil, meanDBFS: Double? = nil, squelchOpens: Int = 0,
         clippedMs: Int64? = nil, captureID: String? = nil, squelchOpenMs: Int64? = nil,
-        squelchIntervals: [SquelchInterval]? = nil, captureRate: UInt64? = nil
+        squelchIntervals: [SquelchInterval]? = nil, captureRate: UInt64? = nil,
+        writtenMs: Int64? = nil, gaps: [Gap] = []
     ) {
         self.part = part
         self.file = file
@@ -369,6 +410,8 @@ public struct RecordingPart: Sendable, Equatable, Codable {
         self.squelchOpenMs = squelchOpenMs
         self.squelchIntervals = squelchIntervals
         self.captureRate = captureRate
+        self.writtenMs = writtenMs
+        self.gaps = gaps
     }
 
     public init(from decoder: any Decoder) throws {
@@ -384,6 +427,8 @@ public struct RecordingPart: Sendable, Equatable, Codable {
         squelchOpens = try c.decodeIfPresent(Int.self, forKey: .squelchOpens) ?? 0
         clippedMs = try c.decodeIfPresent(Int64.self, forKey: .clippedMs)
         squelchOpenMs = try c.decodeIfPresent(Int64.self, forKey: .squelchOpenMs)
+        writtenMs = try c.decodeIfPresent(Int64.self, forKey: .writtenMs)
+        gaps = try c.decodeIfPresent([Gap].self, forKey: .gaps) ?? []
         captureID = nil
         squelchIntervals = nil
         captureRate = nil
@@ -402,6 +447,8 @@ public struct RecordingPart: Sendable, Equatable, Codable {
         try c.encode(squelchOpens, forKey: .squelchOpens)
         try c.encodeIfPresent(squelchOpenMs, forKey: .squelchOpenMs)
         try c.encodeIfPresent(clippedMs, forKey: .clippedMs)
+        try c.encodeIfPresent(writtenMs, forKey: .writtenMs)
+        if !gaps.isEmpty { try c.encode(gaps, forKey: .gaps) }
     }
 }
 

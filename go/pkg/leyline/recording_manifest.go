@@ -97,6 +97,22 @@ type RecordingPart struct {
 	// when nothing clipped. It is the clipping fact: PeakDBFS measures the
 	// audio, not the radio's converter.
 	ClippedMs int64 `json:"clipped_ms,omitempty"`
+	// WrittenMs is how much the part's file holds, Samples at the file's
+	// rate: what its WAV header says, whatever its span on the capture's
+	// timeline. nil on a part written before the key existed.
+	WrittenMs *int64 `json:"written_ms,omitempty"`
+	// Gaps is where the daemon dropped samples inside the part before the
+	// recording saw them, because it fell behind the radio: the file holds the
+	// audio either side back to back, so the span is WrittenMs plus the gaps.
+	// Empty when nothing was dropped.
+	Gaps []RecordingPartGap `json:"gaps,omitempty"`
+}
+
+// RecordingPartGap is capture samples dropped inside a part: Samples of them
+// from Sample, on the capture's timeline at the capture rate.
+type RecordingPartGap struct {
+	Sample  uint64 `json:"sample"`
+	Samples uint64 `json:"samples"`
 }
 
 // RecordingGap is time the recording does not cover, and why.
@@ -134,6 +150,41 @@ func (m *RecordingManifest) DurationMs() int64 {
 		samples += p.Samples
 	}
 	return int64(float64(samples) / float64(m.SampleRate) * 1000)
+}
+
+// DroppedSamples is the capture samples a part's gaps span.
+func (p RecordingPart) DroppedSamples() uint64 {
+	var n uint64
+	for _, g := range p.Gaps {
+		n += g.Samples
+	}
+	return n
+}
+
+// Dropped is how many gaps the parts list, and how long they span at the
+// capture rate: what the daemon dropped inside what the recording was writing.
+func (m *RecordingManifest) Dropped() (gaps int, d time.Duration) {
+	var samples uint64
+	for _, p := range m.Parts {
+		gaps += len(p.Gaps)
+		samples += p.DroppedSamples()
+	}
+	rate := m.CaptureRate()
+	if rate == 0 {
+		return gaps, 0
+	}
+	return gaps, time.Duration(float64(samples) / float64(rate) * float64(time.Second))
+}
+
+// CaptureRate is the rate the manifest's sample indices count at: the first
+// anchor that states one, else the file rate.
+func (m *RecordingManifest) CaptureRate() uint64 {
+	for _, a := range m.Anchors {
+		if a.SampleRate > 0 {
+			return a.SampleRate
+		}
+	}
+	return m.SampleRate
 }
 
 // SquelchOpens is how many times the squelch opened across the whole recording.

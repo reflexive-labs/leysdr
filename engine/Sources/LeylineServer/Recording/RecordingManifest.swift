@@ -36,9 +36,19 @@ struct RecordingPart: Codable, Sendable {
     /// transcription would send) without opening every sidecar. Absent on a continuous recording,
     /// which has no intervals, and on a part written by a daemon older than the field.
     var squelchOpenMs: Int64? = nil
+    /// Milliseconds of audio (or IQ) the file holds: `samples` at the file's rate, so it is what
+    /// the WAV's header and length say, whatever the part's span on the capture's timeline. The
+    /// two differ by the part's `gaps`. Absent on a part written by a daemon older than the field.
+    var writtenMs: Int64? = nil
+    /// Where the daemon dropped samples inside the part before the recording saw them, because the
+    /// pipeline fell behind the radio: each on the capture's timeline at the capture rate. The
+    /// file holds the audio either side of a gap back to back, so the part's span is its written
+    /// time plus its gaps (docs/design/recording.md, "Gaps"). Absent when nothing was dropped.
+    var gaps: [RecordingPartGap]? = nil
 
     enum CodingKeys: String, CodingKey {
-        case part, file, samples, bytes
+        case part, file, samples, bytes, gaps
+        case writtenMs = "written_ms"
         case startSample = "start_sample"
         case endSample = "end_sample"
         case peakDbfs = "peak_dbfs"
@@ -47,6 +57,13 @@ struct RecordingPart: Codable, Sendable {
         case clippedMs = "clipped_ms"
         case squelchOpenMs = "squelch_open_ms"
     }
+}
+
+/// Samples dropped inside a part: `samples` capture samples from `sample`, on the capture's
+/// timeline (invariant 5).
+struct RecordingPartGap: Codable, Sendable, Equatable {
+    var sample: UInt64
+    var samples: UInt64
 }
 
 /// One open-and-close of the squelch inside a part, on the capture's timeline. The part sidecar
@@ -65,6 +82,10 @@ struct RecordingSquelchOpen: Codable, Sendable {
 /// stretches its capture was tuned away are listed rather than hidden inside one file
 /// (invariant 5).
 struct RecordingGap: Codable, Sendable {
+    /// The reason a stretch the daemon dropped inside a part is listed under, beside the part's
+    /// own `gaps`.
+    static let samplesDropped = "samples dropped"
+
     var fromSample: UInt64
     var toSample: UInt64
     var reason: String
@@ -263,6 +284,21 @@ struct RecordingManifest: Codable, Sendable {
         return Int64((Double(samples) / Double(sampleRate)) * 1000)
     }
 
+    /// Gaps inside the parts, where samples were dropped, and the capture samples they span.
+    var droppedGaps: (count: Int, samples: UInt64) {
+        parts.reduce((0, UInt64(0))) { acc, p in
+            let g = p.gaps ?? []
+            return (acc.0 + g.count, acc.1 + g.reduce(UInt64(0)) { $0 + $1.samples })
+        }
+    }
+
+    /// The milliseconds `droppedGaps` spans, at the capture rate of the newest anchor.
+    var droppedMs: Int64 {
+        let dropped = droppedGaps.samples
+        guard dropped > 0, let rate = anchors.last(where: { $0.sampleRate > 0 })?.sampleRate else { return 0 }
+        return Int64((Double(dropped) / Double(rate) * 1000).rounded())
+    }
+
     /// The frozen metadata keys `ListResources` filters on (docs/design/recording.md, "The wire").
     /// Frozen because `metadata_filter` matches them by exact string.
     var resourceMetadata: [String: String] {
@@ -278,6 +314,8 @@ struct RecordingManifest: Codable, Sendable {
             "started_at_ns": String(startedAtNs),
             "ended_at_ns": String(endedAtNs),
             "ended_by": endedBy,
+            "gaps": String(droppedGaps.count),
+            "dropped_ms": String(droppedMs),
         ]
         out["device"] = device.map { $0.model.isEmpty ? $0.driver : $0.model } ?? ""
         return out

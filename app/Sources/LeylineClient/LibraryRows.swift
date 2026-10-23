@@ -32,8 +32,15 @@ public struct PartRow: Sendable, Equatable, Identifiable {
     /// The row opens a recording that follows another on the same day: the page leaves a gap
     /// above it.
     public var gapBefore: Bool
+    /// Where the daemon dropped samples inside the part, as fractions of its level graph
+    /// (`RecordingPart.gapFractions`): the row's faint mark, and a tick on the graph at each.
+    public var gapFractions: [Double] = []
 
     public var id: String { uri }
+
+    /// The daemon fell behind the radio inside this part and its file holds less than its span
+    /// (docs/design/recording.md, "Gaps").
+    public var hasGaps: Bool { !gapFractions.isEmpty }
 
     /// The capture clipped during the part (`clipped_ms` > 0), which the row prints as a
     /// `0.0 dBFS` peak in `accentRec`.
@@ -112,6 +119,9 @@ public struct PartInspectorWords: Sendable, Equatable {
     /// `Clipped for 0.4 s. Lower gain or pull back from the transmitter for the next one.`, or
     /// nil when the part did not clip.
     public var clippedSentence: String?
+    /// `0.6 s dropped in 2 gaps: the daemon fell behind the radio, and the file holds the audio
+    /// either side.`, or nil when the part dropped nothing.
+    public var droppedSentence: String? = nil
     /// Span, Ended, Radio, Gain, Squelch, Files.
     public var recording: [PartTableRow]
     /// `Play all 4`; `Play` for a recording of one part.
@@ -163,7 +173,8 @@ extension Recordings {
                 let row = PartRow(
                     uri: m.uri(of: p), recordingURI: m.uri, jobID: m.jobID, part: p.part,
                     startedAt: date, seconds: m.seconds(of: p), peakDBFS: p.peakDBFS,
-                    clippedMs: p.clippedMs, bytes: p.bytes, bracket: .none, gapBefore: false)
+                    clippedMs: p.clippedMs, bytes: p.bytes, bracket: .none, gapBefore: false,
+                    gapFractions: p.gapFractions)
                 if let i = byDay.firstIndex(where: { $0.key == key }) {
                     byDay[i].rows.append(row)
                 } else {
@@ -266,6 +277,7 @@ extension Recordings {
             return String(format: "Clipped for %.1f s.", Double(ms) / 1000)
                 + " Lower gain or pull back from the transmitter for the next one."
         }
+        let dropped = droppedSentence(part, of: manifest)
         let recording = [
             PartTableRow(
                 label: "Span", value: spanWords(manifest, running: running, timeZone: timeZone)),
@@ -280,8 +292,26 @@ extension Recordings {
         let n = manifest.parts.count
         return PartInspectorWords(
             heading: "PART \(place) OF \(n)", time: time, levels: levels, clipped: clipped,
-            clippedSentence: sentence, recording: recording,
+            clippedSentence: sentence, droppedSentence: dropped, recording: recording,
             playAll: n == 1 ? "Play" : "Play all \(n)", deleteLine: deleteWords(parts: n))
+    }
+
+    /// The inspector's line on a part the daemon dropped samples inside, at the capture rate of the
+    /// part's anchor; nil when it dropped nothing or no rate is known.
+    static func droppedSentence(_ part: RecordingPart, of m: RecordingManifest) -> String? {
+        guard !part.gaps.isEmpty else { return nil }
+        let anchor =
+            m.anchors.last { $0.captureID == (part.captureID ?? "") }
+            ?? m.anchors.last { $0.sampleRate > 0 }
+        let rate = part.captureRate ?? anchor?.sampleRate ?? 0
+        guard rate > 0 else { return nil }
+        let seconds = Double(part.droppedSamples) / Double(rate)
+        let amount =
+            seconds < 0.1
+            ? String(format: "%.0f ms", seconds * 1000) : String(format: "%.1f s", seconds)
+        let n = part.gaps.count
+        return "\(amount) dropped in \(n) gap\(n == 1 ? "" : "s"): the daemon fell behind the"
+            + " radio, and the file holds the audio either side."
     }
 
     /// `14:03:03 – 14:03:26`: the first part's start to the last part's end, through the anchors;

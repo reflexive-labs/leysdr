@@ -133,6 +133,8 @@ func printRecordingsTable(app *App, found []*leylinev1.Resource) {
 		{head: "KIND", drop: 3},
 		{head: "LENGTH"},
 		{head: "PARTS", drop: 1},
+		// Only when a recording fell behind the radio: a clean store's table is unchanged.
+		{head: "DROPPED", drop: 2, hideEmpty: true},
 		{head: "SIZE"},
 		{head: "ID", min: 8},
 	}
@@ -144,8 +146,8 @@ func printRecordingsTable(app *App, found []*leylinev1.Resource) {
 		}
 		add(cols, recordingClock(r.GetCreatedAtNs()), freq, absentIfEmpty(s, m["mode"]),
 			absentIfEmpty(s, m["kind"]), recordingLength(m["duration_ms"]),
-			absentIfEmpty(s, m["parts"]), recordingSize(r.GetSizeBytes()),
-			s.Muted(r.GetOriginatingJobId()))
+			absentIfEmpty(s, m["parts"]), droppedWords(m["gaps"], m["dropped_ms"]),
+			recordingSize(r.GetSizeBytes()), s.Muted(r.GetOriginatingJobId()))
 	}
 	_, _ = printColumns(app.Stdout, s, cols, nil)
 	if len(found) == 0 {
@@ -172,6 +174,32 @@ func recordingLength(ms string) string {
 		return "-"
 	}
 	return forPhrase(time.Duration(n) * time.Millisecond)
+}
+
+// droppedWords is a recording's DROPPED cell, `0.6 s in 2 gaps`, from the resource's gaps and
+// dropped_ms; the absent glyph when it dropped nothing, or the daemon is older than the keys.
+func droppedWords(gaps, ms string) string {
+	n, err := strconv.Atoi(gaps)
+	if err != nil || n <= 0 {
+		return "-"
+	}
+	d, _ := strconv.ParseInt(ms, 10, 64)
+	return droppedPhrase(n, time.Duration(d)*time.Millisecond)
+}
+
+// droppedPhrase is `0.6 s in 2 gaps`: how much the daemon dropped inside what a recording was
+// writing, and in how many places. Under a tenth of a second is in milliseconds, so it never
+// reads as none.
+func droppedPhrase(gaps int, d time.Duration) string {
+	return droppedAmount(d) + " in " + words.Count(gaps, "gap")
+}
+
+// droppedAmount is `0.6 s`, or `40 ms` under a tenth of a second.
+func droppedAmount(d time.Duration) string {
+	if d < 100*time.Millisecond {
+		return fmt.Sprintf("%d ms", d.Milliseconds())
+	}
+	return fmt.Sprintf("%.1f s", d.Seconds())
 }
 
 func recordingSize(bytes uint64) string {
@@ -268,9 +296,15 @@ func printRecordingManifest(app *App, m *leyline.RecordingManifest, dir string, 
 		units.FormatFrequency(m.FrequencyHz), what, m.Format)))
 	// The manifest's own byte count is the samples; the SIZE column of `ley recordings` is what the
 	// directory takes on disk, sidecars included, which is the bigger and different number.
-	fmt.Fprintln(out, leadLabel(s, "Holds    ", fmt.Sprintf("%s of signal in %s, %s of samples",
+	holds := fmt.Sprintf("%s of signal in %s, %s of samples",
 		forPhrase(time.Duration(m.DurationMs())*time.Millisecond),
-		words.Count(len(m.Parts), "part"), recordingSize(m.Bytes))))
+		words.Count(len(m.Parts), "part"), recordingSize(m.Bytes))
+	// A recording that fell behind the radio holds less than its span: the daemon dropped samples
+	// before it saw them, and the parts list where (docs/design/recording.md, "Gaps").
+	if n, d := m.Dropped(); n > 0 {
+		holds += "; " + s.Warn(droppedPhrase(n, d)+" dropped, the daemon falling behind the radio")
+	}
+	fmt.Fprintln(out, leadLabel(s, "Holds    ", holds))
 	if !m.StartedAt().IsZero() {
 		when := m.StartedAt().Format("2006-01-02 15:04:05")
 		if m.EndedBy != "" {
@@ -300,6 +334,8 @@ func printRecordingManifest(app *App, m *leyline.RecordingManifest, dir string, 
 			{head: "PEAK", drop: 1},
 			// Only when a part clipped: a clean recording's table is unchanged.
 			{head: "CLIP", drop: 1, hideEmpty: true},
+			// Only when the daemon dropped samples inside a part.
+			{head: "DROPPED", drop: 1, hideEmpty: true},
 			{head: "OVERS", drop: 2},
 			{head: "FILE", min: 12},
 		}
@@ -328,7 +364,11 @@ func printRecordingManifest(app *App, m *leyline.RecordingManifest, dir string, 
 				// Under a tenth of a second would print as 0.0 s, which reads as none.
 				clip = fmt.Sprintf("%d ms", p.ClippedMs)
 			}
-			add(cols, strconv.Itoa(p.Part), started, length, peak, clip, overs, p.File)
+			dropped := "-"
+			if rate := m.CaptureRate(); len(p.Gaps) > 0 && rate > 0 {
+				dropped = droppedPhrase(len(p.Gaps), time.Duration(float64(p.DroppedSamples())/float64(rate)*float64(time.Second)))
+			}
+			add(cols, strconv.Itoa(p.Part), started, length, peak, clip, dropped, overs, p.File)
 		}
 		fmt.Fprintln(out)
 		_, _ = printColumns(out, tableStyle(app), cols, nil)
@@ -338,8 +378,14 @@ func printRecordingManifest(app *App, m *leyline.RecordingManifest, dir string, 
 	if len(m.Gaps) > 0 && m.SampleRate > 0 {
 		fmt.Fprintf(out, "\n%s\n", s.Muted(words.Count(len(m.Gaps), "gap")+" where nothing was recorded:"))
 		for _, g := range m.Gaps {
-			span := float64(g.ToSample-g.FromSample) / float64(anchorRate(m))
-			fmt.Fprintf(out, "  %s  %s\n", forPhrase(time.Duration(span*float64(time.Second))), s.Muted(g.Reason))
+			span := float64(g.ToSample-g.FromSample) / float64(m.CaptureRate())
+			d := time.Duration(span * float64(time.Second))
+			length := forPhrase(d)
+			if g.Reason == "samples dropped" {
+				// A drop is often under a second, which forPhrase would round to one.
+				length = droppedAmount(d)
+			}
+			fmt.Fprintf(out, "  %s  %s\n", length, s.Muted(g.Reason))
 		}
 	}
 	// One command for either kind: play tunes raw samples back as a radio, and hands an audio
@@ -362,16 +408,6 @@ func endedByPhrase(s ui.Style, endedBy string) string {
 		return s.Err("ended by " + endedBy)
 	}
 	return "ended by " + endedBy
-}
-
-// anchorRate is the capture rate the manifest's sample indices are counted at.
-func anchorRate(m *leyline.RecordingManifest) uint64 {
-	for _, a := range m.Anchors {
-		if a.SampleRate > 0 {
-			return a.SampleRate
-		}
-	}
-	return m.SampleRate
 }
 
 // ---------- path ----------

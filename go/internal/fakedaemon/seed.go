@@ -30,6 +30,10 @@ type SeedRecording struct {
 	NoSquelchOpenMs bool
 	// StartedAt is the wall clock of the first part's first sample. Default: an hour ago.
 	StartedAt time.Time
+	// DroppedMs puts one gap of this many milliseconds in the middle of the first part, as a
+	// daemon that fell behind the radio lists it: the part's span keeps its length and its file
+	// holds that much less.
+	DroppedMs int64
 }
 
 // SeedOver is one opening of the squelch inside a part.
@@ -79,7 +83,11 @@ func (d *Daemon) SeedRecording(spec SeedRecording) (string, error) {
 			return "", fmt.Errorf("part %d has no overs; a gated part holds at least one", i+1)
 		}
 		lengthMs := overs[len(overs)-1].CloseMs + 1000
-		if err := r.writeSeedPart(i+1, startMs, lengthMs, overs, !spec.NoSquelchOpenMs); err != nil {
+		dropped := int64(0)
+		if i == 0 {
+			dropped = spec.DroppedMs
+		}
+		if err := r.writeSeedPart(i+1, startMs, lengthMs, overs, !spec.NoSquelchOpenMs, dropped); err != nil {
 			return "", err
 		}
 		startMs += lengthMs + 10_000
@@ -115,9 +123,9 @@ func (d *Daemon) recordingsRoot() string {
 
 // writeSeedPart writes one part of silence, its sidecar with the overs as squelch_opens, and its
 // manifest entry.
-func (r *recordJob) writeSeedPart(part int, startMs, lengthMs int64, overs []SeedOver, withOpenMs bool) error {
+func (r *recordJob) writeSeedPart(part int, startMs, lengthMs int64, overs []SeedOver, withOpenMs bool, droppedMs int64) error {
 	m := r.manifest
-	frames := int(lengthMs * fakeAudioRate / 1000)
+	frames := int((lengthMs - droppedMs) * fakeAudioRate / 1000)
 	data := silentWAV(frames, fakeAudioRate)
 	name := fmt.Sprintf("%s_%.3fMHz_%s_%03d", time.Unix(0, m.StartedAtNS).Add(time.Duration(startMs)*time.Millisecond).Format("2006-01-02_15-04-05"),
 		float64(m.FrequencyHz)/1e6, partTag(m), part)
@@ -131,6 +139,13 @@ func (r *recordJob) writeSeedPart(part int, startMs, lengthMs int64, overs []See
 		StartSample: toSample(startMs), EndSample: toSample(startMs + lengthMs),
 		Samples: uint64(frames), Bytes: uint64(len(data)),
 		PeakDBFS: &peak, MeanDBFS: &mean, SquelchOpens: len(overs),
+	}
+	written := lengthMs - droppedMs
+	entry.WrittenMs = &written
+	if droppedMs > 0 {
+		from := toSample(startMs + (lengthMs-droppedMs)/2)
+		entry.Gaps = []leyline.RecordingPartGap{{Sample: from, Samples: toSample(droppedMs)}}
+		m.Gaps = append(m.Gaps, leyline.RecordingGap{FromSample: from, ToSample: from + toSample(droppedMs), Reason: "samples dropped"})
 	}
 	var opens []leyline.SquelchOpen
 	var openMs int64

@@ -30,6 +30,55 @@ final class RecordingTests: XCTestCase {
 
     // MARK: The part writer
 
+    /// A part the daemon dropped samples inside lists each gap on the capture's timeline, says how
+    /// much it holds in `written_ms`, which is what the WAV holds, and counts the gaps in the
+    /// resource's metadata (MC-9).
+    func testAPartWithDroppedSamplesListsItsGaps() async throws {
+        let dir = try tempDir("rec-gaps")
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let writer = try PartWriter(directory: dir, manifest: manifest(), captureID: "cap_x", centerHz: 146_520_000)
+        await writer.openPart(at: 2_400_000)
+        // One second on the capture's timeline, of which 0.25 s never arrived.
+        await writer.append(audio: [Float](repeating: 0.5, count: 36000))
+        await writer.noteDropped(from: 3_000_000, to: 3_600_000)
+        await writer.noteDropped(from: 100, to: 200)  // before the part: not its gap
+        await writer.closePart(endSample: 4_800_000)
+        await writer.finish(endedBy: "duration", endSample: 4_800_000)
+
+        let m = await writer.manifest
+        let part = try XCTUnwrap(m.parts.first)
+        XCTAssertEqual(part.gaps, [RecordingPartGap(sample: 3_000_000, samples: 600_000)])
+        XCTAssertEqual(part.writtenMs, 750, "the audio written, not the part's span")
+        let size = try XCTUnwrap(try FileManager.default.attributesOfItem(atPath: dir + "/" + part.file)[.size] as? NSNumber)
+        XCTAssertEqual(Double(size.uint64Value - UInt64(WAVHeader.bytes)) / 2 / 48000 * 1000,
+                       Double(part.writtenMs ?? 0), accuracy: 1, "written_ms is what the WAV holds")
+        XCTAssertEqual(m.coverageGaps.map(\.reason), [RecordingGap.samplesDropped])
+        XCTAssertEqual(m.resourceMetadata["gaps"], "1")
+        XCTAssertEqual(m.resourceMetadata["dropped_ms"], "250")
+        XCTAssertEqual(m.resourceMetadata["duration_ms"], "750")
+
+        // The file a client reads holds the same.
+        let decoded = try JSONDecoder().decode(
+            RecordingManifest.self, from: Data(contentsOf: URL(fileURLWithPath: dir + "/recording.json")))
+        XCTAssertEqual(decoded.parts.first?.gaps, part.gaps)
+        let raw = try String(contentsOfFile: dir + "/recording.json", encoding: .utf8)
+        XCTAssertTrue(raw.contains("\"written_ms\""), raw)
+    }
+
+    func testDropsReportedTwiceOrOutOfOrderAreOneGap() {
+        var ledger = DropLedger()
+        ledger.note(from: 500, to: 600)
+        ledger.note(from: 100, to: 200)
+        ledger.note(from: 150, to: 300)
+        ledger.note(from: 300, to: 320)
+        XCTAssertEqual(ledger.gaps(from: 0, to: 1000),
+                       [RecordingPartGap(sample: 100, samples: 220), RecordingPartGap(sample: 500, samples: 100)])
+        XCTAssertEqual(ledger.gaps(from: 550, to: 1000), [RecordingPartGap(sample: 550, samples: 50)],
+                       "a gap is cut to the part it falls in")
+        ledger.forget(before: 400)
+        XCTAssertEqual(ledger.gaps(from: 0, to: 1000), [RecordingPartGap(sample: 500, samples: 100)])
+    }
+
     func testAWAVPartsHeaderAgreesWithItsLength() async throws {
         let dir = try tempDir("rec")
         defer { try? FileManager.default.removeItem(atPath: dir) }
@@ -419,7 +468,8 @@ final class RecordingTests: XCTestCase {
         let metadata = m.resourceMetadata
         XCTAssertEqual(Set(metadata.keys), ["kind", "frequency_hz", "mode", "bandwidth_hz", "sample_rate",
                                             "format", "duration_ms", "parts", "started_at_ns",
-                                            "ended_at_ns", "ended_by", "device"])
+                                            "ended_at_ns", "ended_by", "device", "gaps", "dropped_ms"])
+        XCTAssertEqual(metadata["gaps"], "0", "nothing was dropped")
         XCTAssertEqual(metadata["bandwidth_hz"], "12500", "the width recorded, so a client tunes back to it")
         XCTAssertEqual(metadata["duration_ms"], "2000", "two seconds of 48 kHz audio")
         XCTAssertEqual(metadata["parts"], "1")

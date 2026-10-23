@@ -271,15 +271,72 @@ actor RecordRunner: RecordRunning {
 
     /// The last `CaptureLevelMeter` generation handed to the writer, so a reading goes in once.
     private var levelGeneration: UInt64 = 0
+    /// The capture's gap log last read, and how far: a log seen for the first time is read from
+    /// where it has got to, since what it dropped before the recording is not the recording's.
+    private var gapLog: ObjectIdentifier?
+    private var gapCursor: UInt64 = 0
+    /// Drops heard inside the recording so far, and the capture samples they span: the status
+    /// detail's `0.6 s dropped in 2 gaps`.
+    private var gapsHeard = 0
+    private var gapSamplesHeard: UInt64 = 0
 
-    /// The capture's clipping, for each part's `clipped_ms`. Read off the same seqlock
-    /// `TelemetryService` publishes `CaptureLevel` from, at its cadence: a copy of four words, and
-    /// never a second reader on the DSP ring (invariant 4).
+    /// The capture's clipping, for each part's `clipped_ms`, and its dropped samples, for each
+    /// part's `gaps`. Read off the seqlocks the device thread publishes them in, at the cadence
+    /// `TelemetryService` publishes `CaptureLevel`: a copy of a few words, and never a second
+    /// reader on the DSP ring (invariant 4).
     private func followLevel() async {
         while !Task.isCancelled, !stopped {
             await readLevel()
+            await readGaps()
             try? await Task.sleep(nanoseconds: TelemetryService.levelPollNs)
         }
+    }
+
+    /// What the capture's block ring dropped since the last read (`CaptureGapLog`), into the
+    /// writer. A burst read at once goes out as one event: each carries the job's whole state, the
+    /// total so far, so one per read says everything one per gap would.
+    private func readGaps() async {
+        guard let engine = await store.captureEngine(captureID) else { return }
+        let gaps = engine.core.gaps
+        let id = ObjectIdentifier(gaps)
+        if gapLog != id {
+            gapLog = id
+            gapCursor = gaps.count
+            return
+        }
+        let read = gaps.read(from: gapCursor)
+        gapCursor = read.next
+        if read.missed > 0 {
+            log.warning("\(jobID.string): \(read.missed) gaps in the capture's samples were overwritten before the recording read them; the parts do not list them")
+        }
+        var heard = false
+        for g in read.gaps {
+            heard = await noteDropped(from: g.fromSample, to: g.toSample, by: "the capture's block ring") || heard
+        }
+        if heard { await publishGaps() }
+    }
+
+    /// Samples `from ..< to` were dropped before the recording saw them: the writer lists them in
+    /// the part they fall in. Counted and logged when they fall inside what the recording is
+    /// writing (after its first sample, and for a gated recording with a part open), which is
+    /// what the status detail reports. Returns whether it was counted.
+    @discardableResult
+    private func noteDropped(from: UInt64, to: UInt64, by source: String) async -> Bool {
+        guard to > from else { return false }
+        await writer.noteDropped(from: from, to: to)
+        guard started, !stopped, to > startSample else { return false }
+        if gated, !(await writer.isPartOpen) { return false }
+        gapsHeard += 1
+        gapSamplesHeard += to - from
+        let ms = captureRateHz > 0 ? Double(to - from) / Double(captureRateHz) * 1000 : 0
+        log.warning("\(jobID.string): \(String(format: "%.0f", ms)) ms of samples dropped at capture sample \(from) by \(source), the daemon falling behind the radio; the part lists the gap")
+        return true
+    }
+
+    /// The event a gap goes out on: the job, with the gaps so far in its detail.
+    private func publishGaps() async {
+        guard !stopped, !degraded, endedBy == nil else { return }
+        await onStatus(.running, await runningDetail(), nil)
     }
 
     private func readLevel() async {
@@ -299,6 +356,7 @@ actor RecordRunner: RecordRunning {
             if !after.isEmpty { keepPreRoll(after, endingAt: Swift.max(now, endSample)) }
         }
         await readLevel()
+        await readGaps()
         await writer.closePart(endSample: endSample)
     }
 
@@ -419,8 +477,11 @@ actor RecordRunner: RecordRunning {
         for await _ in ring.poke {
             if Task.isCancelled || stopped { break }
             while let popped = ring.pop() {
-                if popped.droppedSamples > 0 {
-                    await writer.noteGap(from: now, to: popped.sampleStart, reason: "samples dropped")
+                // The recorder's own ring overflowed: the drain fell behind the capture.
+                if popped.droppedSamples > 0,
+                   await noteDropped(from: now, to: popped.sampleStart, by: "the recorder's own ring")
+                {
+                    await publishGaps()
                 }
                 await handleIQ(popped)
                 if stopped { break }
@@ -481,8 +542,12 @@ actor RecordRunner: RecordRunning {
                 pending.append(contentsOf: gate.seedOpen(at: frame.sampleStart))
             }
         }
-        if frame.droppedSamples > 0 {
-            await writer.noteGap(from: now, to: frame.sampleStart, reason: "samples dropped")
+        // The recorder's own ring overflowed: the drain fell behind the channel. The frame is dated
+        // from the newest block back, so the samples lost sit just before it.
+        if frame.droppedSamples > 0,
+           await noteDropped(from: now, to: now + frame.droppedSamples, by: "the recorder's own ring")
+        {
+            await publishGaps()
         }
         now = frameEnd
         if gated {
@@ -533,6 +598,7 @@ actor RecordRunner: RecordRunning {
         // `sample` is where the written audio has reached, so a gated part's held audio is after
         // the cut: it carries over to the next part, still within reach of a close edge.
         await readLevel()
+        await readGaps()
         await writer.closePart(endSample: sample)
         await openPart(at: sample)
     }
@@ -858,14 +924,23 @@ actor RecordRunner: RecordRunning {
         } else {
             line += ", \(bytesText(await writer.bytes))"
         }
-        return line
+        return line + droppedText()
+    }
+
+    /// `, 0.6 s dropped in 2 gaps`, or nothing when the recording has dropped nothing. Clients
+    /// read the gaps from the manifest; this is the prose.
+    private func droppedText() -> String {
+        guard gapsHeard > 0, captureRateHz > 0 else { return "" }
+        let seconds = Double(gapSamplesHeard) / Double(captureRateHz)
+        let amount = seconds < 0.1 ? String(format: "%.0f ms", seconds * 1000) : String(format: "%.1f s", seconds)
+        return ", \(amount) dropped in \(gapsHeard) gap\(gapsHeard == 1 ? "" : "s")"
     }
 
     private func completedDetail() async -> String {
         let parts = await writer.parts + (await writer.isPartOpen ? 1 : 0)
         let elapsed = captureRateHz > 0 && now > startSample
             ? Double(now - startSample) / Double(captureRateHz) : 0
-        return "recorded \(elapsedText(elapsed)) in \(parts) part\(parts == 1 ? "" : "s"), \(bytesText(await writer.bytes))"
+        return "recorded \(elapsedText(elapsed)) in \(parts) part\(parts == 1 ? "" : "s"), \(bytesText(await writer.bytes))" + droppedText()
     }
 
     // MARK: Ending

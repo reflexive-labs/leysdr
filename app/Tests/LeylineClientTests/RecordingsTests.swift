@@ -91,6 +91,56 @@ final class RecordingsTests: XCTestCase {
         XCTAssertEqual(m.startedAt, Date(timeIntervalSince1970: 1_789_653_802))
     }
 
+    /// A part the daemon dropped samples inside (MC-9): its gaps and written time are read, each gap
+    /// lands on the level graph where its audio does, and the row and the inspector say so.
+    func testAPartWithGapsIsReadMarkedAndPlaced() throws {
+        let json = manifestJSON.replacingOccurrences(
+            of: #""squelch_opens": 1 }"#,
+            with: #""squelch_opens": 1, "written_ms": 700, "#
+                + #""gaps": [ { "sample": 12600000, "samples": 720000 } ] }"#)
+        XCTAssertNotEqual(json, manifestJSON)
+        let m = try RecordingManifest.decode(Data(json.utf8))
+        let part = m.parts[1]
+        XCTAssertEqual(part.writtenMs, 700)
+        XCTAssertEqual(part.gaps, [RecordingPart.Gap(sample: 12_600_000, samples: 720_000)])
+        XCTAssertEqual(part.droppedSamples, 720_000)
+        // A second's span from 12 000 000 with 0.3 s dropped 0.25 s in: 0.25 s into the 0.7 s
+        // the file holds.
+        XCTAssertEqual(part.gapFractions.count, 1)
+        XCTAssertEqual(part.gapFractions[0], 0.25 / 0.7, accuracy: 1e-9)
+        XCTAssertTrue(m.parts[0].gaps.isEmpty, "a part with no key dropped nothing")
+        XCTAssertEqual(m.parts[0].gapFractions, [])
+        XCTAssertNil(m.parts[0].writtenMs)
+
+        let words = Recordings.partInspectorWords(part: part, of: m, running: false)
+        XCTAssertEqual(
+            words.droppedSentence,
+            "0.3 s dropped in 1 gap: the daemon fell behind the radio, and the file holds the audio"
+                + " either side.")
+        XCTAssertNil(
+            Recordings.partInspectorWords(part: m.parts[0], of: m, running: false).droppedSentence)
+
+        let rows = Recordings.dayRows(
+            Recordings.groups(
+                [
+                    RecordingSummary(
+                        .with {
+                            $0.uri = m.uri
+                            $0.originatingJobID = m.jobID
+                        })
+                ],
+                manifests: [m.jobID: m], jobs: []),
+            now: Date(timeIntervalSince1970: 1_789_653_900)
+        )
+        .flatMap(\DayRows.rows)
+        XCTAssertEqual(rows.map(\PartRow.hasGaps), [false, true])
+        XCTAssertEqual(rows[1].gapFractions, part.gapFractions)
+
+        // The daemon's file round-trips: the key is written back only when there are gaps.
+        let again = try RecordingManifest.decode(JSONEncoder().encode(m))
+        XCTAssertEqual(again.parts, m.parts)
+    }
+
     func testReadsFromTheRecordingsDirectory() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("rec-\(UUID().uuidString)")

@@ -168,7 +168,7 @@ parts, and what `ley recordings show` prints.
   "created_by": { "client_id": "cli_01J…", "kind": "cli", "label": "ley record" },
   "anchors": [ { "capture_id": "cap_01J…", "host_time_ns": 1789653700000000000, "sample_rate": 2400000, "drift_ppm": 0, "from_sample": 0 } ],
   "parts": [
-    { "part": 1, "file": "2026-09-17_14-03-22_146.520MHz_NFM_001.wav", "start_sample": 244800000, "end_sample": 290400000, "samples": 912000, "bytes": 1824044, "peak_dbfs": -6.2, "mean_dbfs": -18.4, "squelch_opens": 2, "squelch_open_ms": 11000, "clipped_ms": 400 }
+    { "part": 1, "file": "2026-09-17_14-03-22_146.520MHz_NFM_001.wav", "start_sample": 244800000, "end_sample": 290400000, "samples": 912000, "bytes": 1824044, "peak_dbfs": -6.2, "mean_dbfs": -18.4, "squelch_opens": 2, "squelch_open_ms": 11000, "clipped_ms": 400, "written_ms": 19000 }
   ],
   "coverage_gaps": [ { "from_sample": 300000000, "to_sample": 312000000, "reason": "out of capture" } ],
   "bytes": 1824044
@@ -190,6 +190,44 @@ closes. It is how much signal the part holds, which is what a transcription send
 say so without opening every sidecar. A continuous recording has no intervals and no
 `squelch_open_ms`, and a part written by an older daemon lacks it; a client sums that part's
 sidecar instead.
+
+### Gaps
+
+A recording never claims audio it did not write. When the daemon falls behind the radio (a machine
+too slow for the sample rate, or one busy elsewhere), the capture's block ring is full when the
+device delivers, and the block is dropped there (docs/dev/engine-internals.md, "Threads and
+ownership"). That drop is the one place the samples are known to be gone, so it is counted there:
+`CaptureDSPCore.deliver` writes the dropped stretch into the capture's `CaptureGapLog`, a fixed
+ring of the last 64 gaps by capture sample, preallocated and behind a seqlock per slot, so the
+device thread neither allocates nor locks (invariant 4). Drops in a row are one gap, published
+when the ring takes a block again. The recorder's own ring, which overflows when the drain falls
+behind the channel, reports its drops the same way.
+
+The runner reads the gap log at the cadence it reads the capture's level, and again before it
+closes a part, and hands each gap to the `PartWriter`, which keeps them as intervals and matches
+them against a part when it closes, as it does clipping. A part with gaps lists them:
+
+```json
+{ "part": 1, "start_sample": 2400000, "end_sample": 10304256, "samples": 130560, "written_ms": 2720,
+  "gaps": [ { "sample": 4800000, "samples": 1376256 } ] }
+```
+
+- `gaps` is each stretch dropped inside the part: `sample` where it began and `samples` how many,
+  on the capture's timeline at the capture rate (invariant 5). Absent when nothing was dropped.
+- `written_ms` is `samples` at the file's rate: what the WAV's header and length say. The file
+  holds the audio either side of a gap back to back, so the part's span is `written_ms` plus its
+  gaps, and `samples` never counts audio that is not in the file.
+- Each gap is also listed in `coverage_gaps` with the reason `samples dropped`, and the resource's
+  metadata counts them in `gaps` and `dropped_ms`.
+
+A drop is counted when it falls inside what the recording is writing: after its first sample, and
+for a gated recording while a part is open. Each one is logged (`job_…: 573 ms of samples dropped
+at capture sample 2744064 by the capture's block ring`), and the job's event goes out with the
+total in its `status_detail` (`recording audio: 4 s, 1 part, 380 KB, 0.6 s dropped in 1 gap`), the
+whole job as every event is (invariant 6). Gaps read together go out as one event, since each
+carries the total. `ley recordings` gains a `DROPPED` column only when a recording dropped
+something, `ley recordings show` says how much on its `Holds` line and in the part table, and the
+Library marks the part's row and draws a tick on its level graph at each gap.
 
 A transmission that straddles a cut made by `part_ms` is listed in the first part's
 `squelch_opens` with its close at the cut, and is not listed in the next part, which begins with
@@ -279,7 +317,8 @@ message naming the free space; a code a client can branch on is added when a cli
   string: `kind` (`audio`|`iq`), `frequency_hz`, `mode`, `bandwidth_hz` (the channel's width,
   `0` for IQ; the app's sidebar tunes the width recorded), `sample_rate`,
   `format`, `duration_ms` (the sum of the parts' durations), `parts`, `started_at_ns`,
-  `ended_at_ns`, `ended_by`, `device`. `RECORDS` and `SCAN` are answered too, from the stores that exist, so the
+  `ended_at_ns`, `ended_by`, `device`, `gaps` (the parts' dropped-sample gaps, "Gaps" above) and
+  `dropped_ms` (what they span). `RECORDS` and `SCAN` are answered too, from the stores that exist, so the
   service covers every kind that has a store; `SNAPSHOT` and `TRANSCRIPT` return nothing until
   their milestones.
 - `GetResource(uri)` returns the same `Resource`; `RESOURCE_NOT_FOUND` is not added, the

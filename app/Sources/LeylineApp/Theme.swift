@@ -71,6 +71,10 @@ enum Theme {
     /// clipping, a channel outside the capture. The ramp's fourth stop, so it never competes
     /// with `accent` for the tuned channel.
     static let caution = Color(hex: 0xC9C06A)
+    /// Where the daemon dropped samples inside a Library part (docs/design/recording.md, "Gaps"):
+    /// the row's faint mark and the ticks on its level graph. `caution` at half strength, since a
+    /// gap is worth seeing and is not an alarm; a guess until the Mac.
+    static let gapMark = caution.opacity(0.5)
     /// The left end of the squelch meter's container, which fades from it to the ramp's first
     /// stop. Pure black, darker than `ground` and outside the palette's greys.
     static let meterWell = Color(hex: 0x000000)
@@ -336,6 +340,11 @@ enum Theme {
         static let levelBarPitch: CGFloat = 4
         /// A column at the floor is still drawn, so a silent stretch shows the part's length.
         static let levelBarMinHeight: CGFloat = 2
+        /// A part's dropped-samples mark beside its length, the space before it, and the tick
+        /// across its level graph at each gap.
+        static let gapMarkSize: CGFloat = 4
+        static let gapMarkGap: CGFloat = 4
+        static let gapTickWidth: CGFloat = 1
         /// The day's 24-hour strip: the track, a part's mark (the track is centred on it), the
         /// gap to the hour labels under it, and the whole strip with the labels.
         static let stripTrackHeight: CGFloat = 6

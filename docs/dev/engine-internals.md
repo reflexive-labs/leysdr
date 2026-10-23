@@ -97,7 +97,9 @@ There are exactly three kinds of execution context in the engine. Every function
    with a borrowed native-format `SampleBuffer` (`.cu8` for RTL-SDR, `.cf32` for files) and the
    `SampleTime` of the first sample. `deliver` must return quickly: it converts into the next free
    slot of the capture's block ring and signals the DSP thread. A full ring drops the block, counts
-   an overrun, and emits a signpost — it never blocks the device. A capture ring carries complex
+   an overrun, emits a signpost and writes the dropped samples' place into the capture's
+   `CaptureGapLog` (preallocated slots, a seqlock each; docs/design/recording.md, "Gaps") — it
+   never blocks the device. A capture ring carries complex
    baseband only: a real-valued (`.f32`) buffer is refused before it can take a slot or move the
    timeline, and counted as `CaptureStats.unsupportedBlocks` so a misrouted device never reads as a
    throughput problem.

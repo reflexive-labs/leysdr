@@ -82,8 +82,8 @@ extension RecordingJobTests {
                 XCTAssertEqual(endS, want.end, accuracy: 0.15, "part \(i + 1) ends at the key-down")
             }
             // Unrecorded time is listed rather than hidden inside one file (invariant 5).
-            XCTAssertEqual(manifest.coverageGaps.count, segments.count - 1,
-                           "a gap between every pair of parts")
+            XCTAssertEqual(manifest.coverageGaps.filter { $0.reason != RecordingGap.samplesDropped }.count,
+                           segments.count - 1, "a gap between every pair of parts")
         }
     }
 
@@ -153,8 +153,8 @@ extension RecordingJobTests {
         // The sleep is two seconds of wall clock; the file device plays in real time, and the
         // first frame arrives a block or two after the job starts.
         XCTAssertEqual(seconds, 2, accuracy: 0.5, "about two seconds on the capture's timeline")
-        XCTAssertEqual(Double(part.samples) / Double(manifest.sampleRate), seconds, accuracy: 0.1,
-                       "and the WAV holds that much audio")
+        XCTAssertEqual(Double(part.samples) / Double(manifest.sampleRate) + part.droppedSeconds(at: rate), seconds,
+                       accuracy: 0.1, "and the WAV holds that much audio, less what the part lists as dropped")
         XCTAssertEqual(part.squelchOpens, 1, "one over: the one already in progress")
         let file = dir + "/" + jobID + "/" + part.file
         XCTAssertFalse(WAVHeader.needsRepair(path: file), "cancel finalised the open part")

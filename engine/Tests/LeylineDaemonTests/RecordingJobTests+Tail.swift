@@ -136,8 +136,11 @@ extension RecordingJobTests {
                 let preRollPeak = preRoll.map { abs($0) }.max() ?? 0
                 XCTAssertLessThanOrEqual(preRollPeak, self.silence,
                                          "part \(i + 1): the pre-roll is the squelch's silence, but holds \(self.dbText(preRollPeak)) at sample \(preRoll.firstIndex { abs($0) > self.silence } ?? -1)")
-                XCTAssertEqual(Double(part.samples) / audioRate, Double(part.endSample - part.startSample) / captureRate,
-                               accuracy: 0.01, "part \(i + 1): the WAV holds the span the manifest gives it")
+                // Samples the daemon dropped on a runner too slow for the radio are not in the WAV,
+                // and the part lists them (MC-9).
+                XCTAssertEqual(Double(part.samples) / audioRate + part.droppedSeconds(at: captureRate),
+                               Double(part.endSample - part.startSample) / captureRate,
+                               accuracy: 0.01, "part \(i + 1): the WAV and its gaps hold the span the manifest gives it")
             }
             self.assertOpensFadedIn(parts, manifest)
             self.assertNoSquelchTail(parts, manifest, segments: segments)
@@ -182,8 +185,11 @@ extension RecordingJobTests {
             let gapStarts = Set(manifest.coverageGaps.map(\.fromSample))
             for (i, gated) in parts.enumerated() {
                 let part = gated.part
-                XCTAssertEqual(Double(part.samples) / audioRate, Double(part.endSample - part.startSample) / captureRate,
-                               accuracy: 0.01, "part \(i + 1): the WAV holds the span the manifest gives it")
+                // Samples the daemon dropped on a runner too slow for the radio are not in the WAV,
+                // and the part lists them (MC-9).
+                XCTAssertEqual(Double(part.samples) / audioRate + part.droppedSeconds(at: captureRate),
+                               Double(part.endSample - part.startSample) / captureRate,
+                               accuracy: 0.01, "part \(i + 1): the WAV and its gaps hold the span the manifest gives it")
                 guard i + 1 < parts.count, !gapStarts.contains(part.endSample) else { continue }
                 XCTAssertEqual(parts[i + 1].part.startSample, part.endSample,
                                "part \(i + 2) begins where part \(i + 1) ended: a cut, not a gap")

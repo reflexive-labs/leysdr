@@ -28,6 +28,13 @@ import (
 // a helper client for assertions.
 func harness(t *testing.T, opts fakedaemon.Options) (string, *leyline.Client) {
 	t.Helper()
+	return harnessSeeded(t, opts, nil)
+}
+
+// harnessSeeded is harness with seed run on the daemon before it serves, for a store that needs
+// recordings in it the fake's own record job does not write.
+func harnessSeeded(t *testing.T, opts fakedaemon.Options, seed func(*fakedaemon.Daemon)) (string, *leyline.Client) {
+	t.Helper()
 	sock := testutil.SocketPath(t, "d.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	if opts.PresenceGrace == 0 {
@@ -39,6 +46,9 @@ func harness(t *testing.T, opts fakedaemon.Options) (string, *leyline.Client) {
 		opts.RecordingsDir = t.TempDir()
 	}
 	d := fakedaemon.New(opts)
+	if seed != nil {
+		seed(d)
+	}
 	served := make(chan error, 1)
 	go func() { served <- d.Serve(ctx, sock) }()
 	c, err := leyline.Dial(ctx, sock, leyline.WithKind("cli"), leyline.WithLabel("test"), leyline.WithClientID("cli_test"))

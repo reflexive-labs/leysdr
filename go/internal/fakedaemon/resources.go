@@ -197,6 +197,7 @@ func recordingResource(j *fakeJob) *leylinev1.Resource {
 	if size == 0 {
 		size = m.Bytes
 	}
+	gaps, dropped := m.Dropped()
 	return &leylinev1.Resource{
 		Uri:              m.URI,
 		Kind:             leylinev1.ResourceKind_RECORDING,
@@ -216,6 +217,8 @@ func recordingResource(j *fakeJob) *leylinev1.Resource {
 			"ended_at_ns":   strconv.FormatInt(m.EndedAtNS, 10),
 			"ended_by":      m.EndedBy,
 			"device":        device,
+			"gaps":          strconv.Itoa(gaps),
+			"dropped_ms":    strconv.FormatInt(dropped.Milliseconds(), 10),
 		},
 	}
 }
