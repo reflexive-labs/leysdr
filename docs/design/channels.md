@@ -192,7 +192,9 @@ expands to what is inside it; the rest is collapsed.
   recording dot, editor and context menu. A bookmark on a
   plan channel shows the channel's name in the frequency's place (`ch17`, `WX3`), which is what
   `ley monitor` prints in its CHANNEL column, so the two clients agree on what a frequency is
-  called. A bookmark in no band goes under a final `Other` header. Moving a bookmark with
+  called. One near a channel but not on it, within half the channel's width, reads `≈ calling`
+  (146.525 MHz, 5 kHz off the calling channel), so a neighbour is not taken for the channel. A
+  row never shows the bookmark's tone; the inspector's Tone field holds it. A bookmark in no band goes under a final `Other` header. Moving a bookmark with
   `Replace with …` moves the row to the new band, and the row is selected there, so the move is
   visible.
 - **Out-of-range bands collapse to one line.** An RTL-SDR user sees seven HF rows they can

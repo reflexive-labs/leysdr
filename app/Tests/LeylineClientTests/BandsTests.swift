@@ -248,6 +248,18 @@ final class BandsTests: XCTestCase {
         XCTAssertEqual(Plans.name(at: 462_662_500), "ch5")
     }
 
+    func testARowNamesAChannelOnItAndMarksANearOne() {
+        XCTAssertEqual(Plans.rowLabel(at: 146_520_000), "calling")
+        XCTAssertEqual(
+            Plans.rowLabel(at: 146_525_000), "≈ calling", "5 kHz up, inside 12.5 kHz's half")
+        XCTAssertEqual(Plans.rowLabel(at: 162_481_000), "≈ WX3")
+        XCTAssertEqual(Plans.rowLabel(at: 462_662_500), "ch5")
+        XCTAssertEqual(Plans.name(at: 151_826_000), "1", "the naming rule's 6 kHz reaches it")
+        XCTAssertNil(
+            Plans.rowLabel(at: 151_826_000), "6 kHz is past half of MURS 1's 11.25 kHz")
+        XCTAssertNil(Plans.rowLabel(at: 146_940_000))
+    }
+
     func testANameResolvesInBandContextAndAnAliasGlobally() throws {
         let marine = try band("marine")
         XCTAssertEqual(Plans.resolve("16", in: marine)?.hz, 156_800_000)

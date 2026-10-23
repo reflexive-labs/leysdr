@@ -445,8 +445,9 @@ struct OutOfRangeLine: View {
 /// frequency and mode, tuned or not and whoever started it, a 6 pt `accentRec` dot sits 6 pt
 /// left of the frequency, whose ink does not change. The row is an editor while `editing`. A
 /// bookmark on a plan channel shows the channel's name in the frequency's place (`ch17`, `WX3`),
-/// what `ley monitor` prints in its CHANNEL column. The row sits in from the band's name by
-/// `sidebarIndent`, under its band.
+/// what `ley monitor` prints in its CHANNEL column, and `≈ calling` for one near a channel but
+/// not on it (`Plans.rowLabel`). The row never shows the bookmark's tone, which the inspector's
+/// field holds. The row sits in from the band's name by `sidebarIndent`, under its band.
 struct BookmarkRow: View {
     let bookmark: Bookmark
     let selected: Bool
@@ -479,7 +480,7 @@ struct BookmarkRow: View {
                 if modified {
                     Text("changed").font(Theme.Font.valueSmall).foregroundStyle(Theme.caution)
                 } else {
-                    Text(Plans.name(at: bookmark.hz) ?? Frequency.fieldParts(bookmark.hz).major)
+                    Text(Plans.rowLabel(at: bookmark.hz) ?? Frequency.fieldParts(bookmark.hz).major)
                         .font(Theme.Font.valueSmall)
                         .foregroundStyle(selected ? Theme.inkTertiary : Theme.inkFaint)
                         .help(Frequency.format(bookmark.hz))
