@@ -11,6 +11,7 @@
 // name the file or the keychain status, never what was being stored.
 
 import Foundation
+import Logging
 #if canImport(Security)
 import Security
 #endif
@@ -25,10 +26,67 @@ protocol SecretStore: Sendable {
 }
 
 /// Why a secret could not be stored, read or removed. The message names the file or the
-/// keychain's own words, so it can go into a log line or an `ErrorDetail` as it stands.
+/// keychain's own words and status, so it can go into a log line or an `ErrorDetail` as it
+/// stands. `remedy` is what to do about it when the cause says more than "add the key again"
+/// (`KeychainFailure.remedy`); empty otherwise.
 struct SecretStoreError: Error, CustomStringConvertible {
     let message: String
-    var description: String { message }
+    var remedy: String = ""
+    /// The message and the remedy in one line.
+    var description: String { remedy.isEmpty ? message : "\(message); \(remedy)" }
+}
+
+/// How a failed keychain call reads (docs/plans/app.md, MC-8). Here rather than in
+/// `KeychainSecrets` so the words are tested on every platform; only the numbers are needed.
+enum KeychainFailure {
+    /// Statuses with which the keychain refuses the calling program rather than reporting on the
+    /// item: the item's access list names another build of leylined. A source build signed ad hoc
+    /// is a new program after every relink, and a daemon whose file was relinked under it fails
+    /// every read. Under launchd no prompt can be shown, so the refusal arrives as one of these.
+    static let identityStatuses: [Int32: String] = [
+        -25293: "errSecAuthFailed",
+        -25308: "errSecInteractionNotAllowed",
+        -25244: "errSecInvalidOwnerEdit",
+        -25243: "errSecNoAccessForItem",
+        -128: "errSecUserCanceled",
+    ]
+
+    static func isIdentity(_ status: Int32) -> Bool { identityStatuses[status] != nil }
+
+    /// `what: the keychain's words (OSStatus n)`; the status alone when the keychain has no words.
+    static func message(_ what: String, status: Int32, words: String?) -> String {
+        guard let words, !words.isEmpty else { return "\(what): OSStatus \(status)" }
+        return "\(what): \(words) (OSStatus \(status))"
+    }
+
+    /// Whether `executable` is a daemon built from source: one in a SwiftPM build directory, or
+    /// the copy `make reload` installs. The app's helper and a packaged install are neither.
+    static func runsFromSource(_ executable: String) -> Bool {
+        executable.contains("/.build/") || executable.contains("/Library/Application Support/Leyline/bin/")
+    }
+
+    /// The developer's way out of a refusal for code identity: `make reload` installs a signed
+    /// copy, and the key is added again so its access list names that copy. Empty for any other
+    /// status, and for a daemon not built from source, whose user has no `make`.
+    static func remedy(status: Int32, provider: String, executable: String) -> String {
+        guard isIdentity(status), runsFromSource(executable) else { return "" }
+        let again = "run make reload, then add the key again with ley ai add \(provider)"
+        guard executable.contains("/.build/") else { return again }
+        return "this leylined runs from a build directory that a rebuild replaces under it; \(again)"
+    }
+
+    static func error(_ what: String, provider: String, status: Int32, words: String?,
+                      executable: String) -> SecretStoreError
+    {
+        SecretStoreError(message: message(what, status: status, words: words),
+                         remedy: remedy(status: status, provider: provider, executable: executable))
+    }
+
+    /// The running daemon's executable, with symlinks resolved.
+    static var executable: String {
+        (Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments.first ?? ""))
+            .resolvingSymlinksInPath().path
+    }
 }
 
 /// Which store holds the keys: `leylined --secrets`, else `LEYLINE_SECRETS`, else the platform's.
@@ -150,14 +208,14 @@ struct KeychainSecrets: SecretStore {
         // build's access list, and a fresh item carries this one's.
         let deleted = SecItemDelete(query(provider) as CFDictionary)
         guard deleted == errSecSuccess || deleted == errSecItemNotFound else {
-            throw Self.error(deleted, "cannot replace the \(provider) key in the keychain")
+            throw Self.error(deleted, "cannot replace the \(provider) key in the keychain", provider)
         }
         var add = query(provider)
         add[kSecValueData as String] = Data(secret.utf8)
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
         add[kSecAttrLabel as String] = "Leyline: \(provider) key"
         let status = SecItemAdd(add as CFDictionary, nil)
-        guard status == errSecSuccess else { throw Self.error(status, "cannot store the \(provider) key in the keychain") }
+        guard status == errSecSuccess else { throw Self.error(status, "cannot store the \(provider) key in the keychain", provider) }
     }
 
     func get(provider: String) throws -> String? {
@@ -168,7 +226,7 @@ struct KeychainSecrets: SecretStore {
         let status = SecItemCopyMatching(search as CFDictionary, &item)
         if status == errSecItemNotFound { return nil }
         guard status == errSecSuccess, let data = item as? Data else {
-            throw Self.error(status, "cannot read the \(provider) key from the keychain")
+            throw Self.error(status, "cannot read the \(provider) key from the keychain", provider)
         }
         return String(decoding: data, as: UTF8.self)
     }
@@ -176,13 +234,20 @@ struct KeychainSecrets: SecretStore {
     func remove(provider: String) throws {
         let status = SecItemDelete(query(provider) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw Self.error(status, "cannot remove the \(provider) key from the keychain")
+            throw Self.error(status, "cannot remove the \(provider) key from the keychain", provider)
         }
     }
 
-    private static func error(_ status: OSStatus, _ what: String) -> SecretStoreError {
-        let words = (SecCopyErrorMessageString(status, nil) as String?) ?? "status \(status)"
-        return SecretStoreError(message: "\(what): \(words)")
+    private static let log = Logger(label: "leyline.ai")
+
+    /// The failure in the keychain's words and status, logged here so no failed call goes
+    /// unrecorded whichever caller swallows it (a worker's key read used to).
+    private static func error(_ status: OSStatus, _ what: String, _ provider: String) -> SecretStoreError {
+        let words = SecCopyErrorMessageString(status, nil) as String?
+        let error = KeychainFailure.error(what, provider: provider, status: status, words: words,
+                                          executable: KeychainFailure.executable)
+        log.error("\(error.description)")
+        return error
     }
 }
 #endif

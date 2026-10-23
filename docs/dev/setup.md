@@ -45,9 +45,32 @@ texts match.
 
 ### The edit-build-try loop
 
-After a change, `make reload` is the whole loop: it rebuilds `ley` and the release `leylined`, stops
-the daemon that is running (launchd job or bare spawn), reinstalls the LaunchAgent on the fresh
-binary and prints `ley daemon status` so you can see the version it came up with.
+After a change, `make reload` is the whole loop: it rebuilds `ley` and the release `leylined`,
+copies both to `~/Library/Application Support/Leyline/bin/` and signs the copies, stops the daemon
+that is running (launchd job or bare spawn), reinstalls the LaunchAgent on the copy and prints
+`ley daemon status` so you can see the version it came up with (`scripts/reload.sh`).
+
+Never point the LaunchAgent at a build directory. `make app-check`, `make hot-path` and every other
+release build relink `engine/.build/release/leylined` under a daemon running from it, and a
+keychain read from a process whose file has changed under it fails: Settings and the assistant
+then say the key cannot be read while `ley ai` still lists it. `ley daemon install --bin
+engine/.build/...` does exactly that; `make reload` does not.
+
+The copies are signed with `CODESIGN_IDENTITY`, the build Mac's Developer ID (the Makefile names
+it; `security find-identity -v -p codesigning` lists what the keychain holds), under the
+identifiers the app's helpers carry, so a key the daemon stores in the keychain stays readable
+after the next reload. Without that identity `make reload` warns and signs ad hoc: each reload is
+then a new program to the keychain, and a key has to be added again after it (`ley ai add
+<provider>`, or Settings). The copies are not signed with the hardened runtime, whose library
+validation would refuse Homebrew's `librtlsdr`. `DRY_RUN=1` prints what the script would do.
+
+The Leyline app's agent uses the same launchd label, `com.leysdr.daemon`, so only one daemon runs.
+The LaunchAgent `make reload` writes, `~/Library/LaunchAgents/com.leysdr.daemon.plist`, wins: an
+app that finds it registers nothing and connects to the source build's daemon, and never restarts
+it after an update. When the app registered its agent first, `make reload` (like `ley daemon
+install`) refuses before it stops anything; switch Leyline off in System Settings > General >
+Login Items & Extensions and run it again. To go back to the app's daemon, run `ley daemon
+uninstall` and open the app.
 
 Something not working on the Mac (no radio listed, a busy dongle, no audio)?
 [Troubleshooting](../guide/troubleshooting.md).

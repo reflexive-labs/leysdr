@@ -311,6 +311,12 @@ public enum AssistantWords {
     /// "Assistant"). No key, a rejected key and no model point to Settings, where each is fixed.
     public static func failed(_ action: AssistantAction, _ e: LeylineError) -> AssistantNotice {
         switch e.code {
+        // A key the daemon lists but cannot read comes with the store's words, status and remedy
+        // (`docs/plans/app.md`, MC-8); only "no … key is set" means there is none.
+        case "CREDENTIAL_MISSING" where !e.message.isEmpty && !e.message.hasPrefix("no "):
+            return AssistantNotice(
+                text: "The assistant could not read its key: \(e.message).",
+                pointsToSettings: true)
         case "CREDENTIAL_MISSING":
             return AssistantNotice(
                 text: "The assistant has no key to call with. Add one in \(settingsPlace).",

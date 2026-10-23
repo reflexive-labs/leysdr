@@ -134,20 +134,25 @@ empty device list, a busy radio and no audio.
 
 ### Start at login
 
-`ley daemon install` writes a LaunchAgent so the daemon starts when you log in and is restarted if
-it crashes:
+`make reload` copies the release `leylined` and `ley` to `~/Library/Application
+Support/Leyline/bin/`, signs them, and writes a LaunchAgent on the copy, so the daemon starts when
+you log in and is restarted if it crashes:
 
 ```sh
-ley daemon install --bin $PWD/engine/.build/release/leylined   # writes ~/Library/LaunchAgents/com.leysdr.daemon.plist
+make reload                 # writes ~/Library/LaunchAgents/com.leysdr.daemon.plist
 ley daemon status
 ley daemon logs --follow
-ley daemon uninstall                                            # stops it and removes the plist
+ley daemon uninstall        # stops it and removes the plist
 ```
 
-A source build is signed ad hoc, so the login keychain treats each rebuilt `leylined` as a new
-program: the first time a rebuilt daemon reads a key it stored (`ley ai add`), macOS asks once.
-Choose Always Allow and it stays quiet until the next rebuild. The signed release has a stable
-identity and never asks.
+`ley daemon install --bin <path>` writes the same LaunchAgent on any `leylined`, but not on one in
+`engine/.build`: the next release build replaces that file under the running daemon, and the
+daemon can then no longer read the keys it stored in the keychain.
+
+The copies are signed with the Developer ID that `CODESIGN_IDENTITY` names (see the Makefile), so
+the keychain sees the same program after every reload. A Mac without that identity gets an ad hoc
+signature and a warning: each reload is then a new program to the keychain, and a key stored with
+`ley ai add` must be added again after it. The signed release has a stable identity throughout.
 
 `ley daemon start|stop` work with or without the plist; without it they spawn and kill the binary
 directly. A clean `stop` stays stopped; only a crash is relaunched.

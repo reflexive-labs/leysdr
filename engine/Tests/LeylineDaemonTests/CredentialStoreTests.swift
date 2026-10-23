@@ -176,4 +176,84 @@ final class CredentialStoreTests: XCTestCase {
         let after = await second.snapshot()
         XCTAssertTrue(after.credentials.isEmpty)
     }
+    // MARK: A key the keychain will not give up (docs/plans/app.md, MC-8)
+
+    private static let buildTree = "/Users/me/leysdr/engine/.build/arm64-apple-macosx/release/leylined"
+    private static let reloadCopy = "/Users/me/Library/Application Support/Leyline/bin/leylined"
+    private static let appHelper = "/Applications/Leyline.app/Contents/Helpers/leylined"
+
+    func testAFailedKeychainCallNamesItsWordsAndStatus() {
+        XCTAssertEqual(KeychainFailure.message("cannot read the openai key from the keychain", status: -25308,
+                                               words: "User interaction is not allowed."),
+                       "cannot read the openai key from the keychain: User interaction is not allowed. (OSStatus -25308)")
+        XCTAssertEqual(KeychainFailure.message("cannot read the openai key from the keychain", status: -50, words: nil),
+                       "cannot read the openai key from the keychain: OSStatus -50",
+                       "a status the Security framework has no words for is named by its number")
+        XCTAssertEqual(KeychainFailure.message("x", status: -50, words: ""), "x: OSStatus -50")
+    }
+
+    func testOnlyARefusalOfTheProgramSendsADeveloperToMakeReload() {
+        for status: Int32 in [-25293, -25308, -25244, -25243, -128] {
+            XCTAssertTrue(KeychainFailure.isIdentity(status), "\(status)")
+            XCTAssertEqual(KeychainFailure.remedy(status: status, provider: "openai", executable: Self.buildTree),
+                           "this leylined runs from a build directory that a rebuild replaces under it; "
+                               + "run make reload, then add the key again with ley ai add openai")
+            XCTAssertEqual(KeychainFailure.remedy(status: status, provider: "openai", executable: Self.reloadCopy),
+                           "run make reload, then add the key again with ley ai add openai",
+                           "an ad-hoc reload copy is a new program after the next reload too")
+            XCTAssertEqual(KeychainFailure.remedy(status: status, provider: "openai", executable: Self.appHelper), "",
+                           "the app's daemon has no make to run")
+        }
+        for status: Int32 in [-25300, -25299, -50, -34018, 0] {
+            XCTAssertFalse(KeychainFailure.isIdentity(status), "\(status)")
+            XCTAssertEqual(KeychainFailure.remedy(status: status, provider: "openai", executable: Self.buildTree), "",
+                           "status \(status) is not about which program asked")
+        }
+    }
+
+    func testAKeyTheStoreCannotReadIsMissingInTheStoresWords() async throws {
+        let dir = try makeTempDir("credentials")
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let refusal = KeychainFailure.error("cannot read the openai key from the keychain", provider: "openai",
+                                            status: -25308, words: "User interaction is not allowed.",
+                                            executable: Self.buildTree)
+        let store = CredentialStore(path: dir + "/ai.json", secrets: UnreadableSecrets(error: refusal))
+        _ = try await store.set(provider: "openai", secret: secret, label: "", endpoint: "")
+        do {
+            _ = try await store.pluginCredential("openai")
+            XCTFail("an unreadable key was handed out")
+        } catch let error as EngineError {
+            XCTAssertEqual(error.code, EngineError.Code.credentialMissing)
+            XCTAssertEqual(error.message,
+                           "cannot read the openai key from the keychain: User interaction is not allowed. (OSStatus -25308); "
+                               + "this leylined runs from a build directory that a rebuild replaces under it; "
+                               + "run make reload, then add the key again with ley ai add openai")
+        }
+
+        let plain = UnreadableSecrets(error: KeychainFailure.error("cannot read the openai key from the keychain",
+                                                                    provider: "openai", status: -25300, words: nil,
+                                                                    executable: Self.appHelper))
+        let other = CredentialStore(path: dir + "/other.json", secrets: plain)
+        _ = try await other.set(provider: "openai", secret: secret, label: "", endpoint: "")
+        do {
+            _ = try await other.pluginCredential("openai")
+            XCTFail("an unreadable key was handed out")
+        } catch let error as EngineError {
+            XCTAssertEqual(error.message,
+                           "cannot read the openai key from the keychain: OSStatus -25300; add it again with ley ai add openai")
+        }
+    }
+
+    func testNoKeyAtAllKeepsItsSentence() {
+        XCTAssertEqual(EngineError.credentialMissing("openai").message, "no openai key is set; add one with ley ai add openai")
+    }
+}
+
+/// A store that keeps what it is given and refuses to give it back, as the keychain does to a
+/// daemon whose program it no longer recognises. Never the real keychain.
+private struct UnreadableSecrets: SecretStore {
+    let error: SecretStoreError
+    func set(provider _: String, secret _: String) throws {}
+    func get(provider _: String) throws -> String? { throw error }
+    func remove(provider _: String) throws {}
 }

@@ -82,12 +82,14 @@ actor CredentialStore {
     /// What a decoder plugin whose manifest names `provider` reads before its stream descriptor:
     /// the provider, the secret and the endpoint, read now so a restarted plugin gets the key as it
     /// stands. Throws `CREDENTIAL_MISSING` when no key is set or the store cannot give it up (the
-    /// keychain's own words go in the message).
+    /// keychain's own words, status and remedy go in the message).
     func pluginCredential(_ provider: String) throws -> Leyline_V1_SetCredentialRequest {
         loadIfNeeded()
         let secret: String?
         do {
             secret = try self.secret(provider: provider)
+        } catch let error as SecretStoreError {
+            throw EngineError.credentialMissing(provider, detail: error.message, remedy: error.remedy)
         } catch {
             throw EngineError.credentialMissing(provider, detail: (error as? EngineError)?.message ?? "\(error)")
         }

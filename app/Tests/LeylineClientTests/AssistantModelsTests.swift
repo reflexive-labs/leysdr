@@ -432,6 +432,23 @@ final class AssistantModelsTests: XCTestCase {
             .start, LeylineError(code: "CREDENTIAL_MISSING", message: "no anthropic key"))
         XCTAssertTrue(missing.pointsToSettings)
         XCTAssertTrue(missing.text.contains("Settings"), missing.text)
+        // A key the daemon lists but the keychain will not give up says why, in the daemon's words.
+        let unreadable = AssistantWords.failed(
+            .start,
+            LeylineError(
+                code: "CREDENTIAL_MISSING",
+                message:
+                    "cannot read the openai key from the keychain: User interaction is not allowed."
+                    + " (OSStatus -25308); run make reload, then add the key again with ley ai add openai"
+            ))
+        XCTAssertEqual(
+            unreadable,
+            AssistantNotice(
+                text:
+                    "The assistant could not read its key: cannot read the openai key from the keychain:"
+                    + " User interaction is not allowed. (OSStatus -25308); run make reload, then add the"
+                    + " key again with ley ai add openai.",
+                pointsToSettings: true))
         let noModel = AssistantWords.failed(
             .start,
             LeylineError(

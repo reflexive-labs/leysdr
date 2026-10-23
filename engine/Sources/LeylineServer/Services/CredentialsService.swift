@@ -47,7 +47,7 @@ struct CredentialsService: Leyline_V1_Credentials.SimpleServiceProtocol {
                 stored = try await credentials.set(provider: provider, secret: secret, label: request.label,
                                                    endpoint: request.endpoint.trimmingCharacters(in: .whitespaces))
             } catch let error as SecretStoreError {
-                throw EngineError.internalError("the \(provider) key could not be stored: \(error.message)", target: provider)
+                throw EngineError.internalError("the \(provider) key could not be stored: \(error)", target: provider)
             }
             log.info("stored a key for \(provider) for \(client.kind) \(client.label)")
             await store.publishAI(from: credentials, by: client)
@@ -81,7 +81,7 @@ struct CredentialsService: Leyline_V1_Credentials.SimpleServiceProtocol {
             do {
                 removed = try await credentials.remove(provider: provider)
             } catch let error as SecretStoreError {
-                throw EngineError.internalError("the \(provider) key could not be removed: \(error.message)", target: provider)
+                throw EngineError.internalError("the \(provider) key could not be removed: \(error)", target: provider)
             }
             guard removed else { throw EngineError.credentialMissing(provider) }
             log.info("deleted the key for \(provider) for \(client.kind) \(client.label)")
@@ -106,10 +106,10 @@ struct CredentialsService: Leyline_V1_Credentials.SimpleServiceProtocol {
             } catch let error as SecretStoreError {
                 // The keychain's own words: a daemon started outside the login session may not be
                 // able to read its item, and this is where that shows.
-                throw EngineError.credentialMissing(provider, detail: error.message)
+                throw EngineError.credentialMissing(provider, detail: error.message, remedy: error.remedy)
             }
             guard let secret else {
-                throw EngineError.credentialMissing(provider, detail: "the key list names it but the key itself is gone")
+                throw EngineError.credentialMissing(provider, detail: "the key list names a \(provider) key but the key itself is gone")
             }
             return await check(credential, secret: secret, by: client)
         }
