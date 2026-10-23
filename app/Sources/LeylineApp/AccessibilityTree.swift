@@ -721,7 +721,7 @@ enum AXWalk {
     }
 
     /// The application's element for the target: the one of its windows with the target's title
-    /// and size, else the first; nil when it lists none.
+    /// and size; nil when it lists none such, and the window's objects are read instead.
     private static func element(_ target: TreeTarget) -> AXNode? {
         let windows =
             ((AXNode.attribute(application(), kAXWindowsAttribute) as? [AXUIElement]) ?? [])
@@ -732,7 +732,9 @@ enum AXWalk {
             return abs(s.width - want.width) < 1 && abs(s.height - want.height) < 1
                 && w.string(kAXTitleAttribute) == target.title
         }
-        return match ?? windows.first
+        // No match is no window: the first of the list would be another window (Settings,
+        // over the main one), whose tree would be read in the main one's place.
+        return match
     }
 
     /// Visits `element` and everything under it until `visit` returns true.

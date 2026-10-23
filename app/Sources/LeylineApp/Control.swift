@@ -152,6 +152,12 @@ final class ControlChannel {
                     return ControlAnswer(
                         id: c.id, ok: false, error: "the Settings window is not open")
                 }
+                if settings.colorSpace != .sRGB {
+                    // Opened by ⌘, or the menu rather than the stage: steadied now, and given
+                    // a moment to draw again before its picture.
+                    Staging.steady(settings: settings)
+                    try? await Task.sleep(for: .milliseconds(300))
+                }
                 return try snapshot(c.id, settings, regions: false)
             case .state:
                 if let window = staging.window { await AccessibilityTree.ready(window) }

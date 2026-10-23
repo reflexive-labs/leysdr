@@ -312,6 +312,13 @@ final class Staging {
         }
     }
 
+    /// The Settings window in sRGB and drawn as key, as the main window is, so its picture is
+    /// the same on every run however it was opened (the stage, ⌘, or the app menu).
+    static func steady(settings w: NSWindow) {
+        if w.colorSpace != .sRGB { w.colorSpace = .sRGB }
+        DeterministicFrames.drawAsKey(w)
+    }
+
     /// Opens Settings through the app menu's item, as ⌘, does, and waits for its window; or
     /// closes the window.
     private func settings(open: Bool) async {
@@ -324,12 +331,7 @@ final class Staging {
             menu.performActionForItem(at: index)
         }
         let shown = await until(seconds: Self.confirmSeconds) { Self.settingsWindow != nil }
-        if shown, let w = Self.settingsWindow {
-            // On the menu bar's screen in sRGB, as the main window is, so its picture is the
-            // same on every run.
-            w.colorSpace = .sRGB
-            DeterministicFrames.drawAsKey(w)
-        }
+        if shown, let w = Self.settingsWindow { Self.steady(settings: w) }
         note(shown ? "settings open" : "settings did not open within \(Int(Self.confirmSeconds)) s")
     }
 
