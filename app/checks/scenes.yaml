@@ -930,8 +930,9 @@ scenes:
       - {cmd: state, expect: {assistant.state: waiting for you, focused: assistant.input}}
       # The card says what the call does in words, with no tool id (its tree shows the
       # sentence); Decline and Allow for this conversation are plain text, Allow the one filled
-      # button (docs/plans/app.md, MC-2).
-      - {cmd: state, expect: {assistant.buttons.1.title: "remove_bookmark APRS, asks", assistant.buttons.2.id: assistant.decline, assistant.buttons.3.id: assistant.allow.conversation, assistant.buttons.4.id: assistant.allow}}
+      # button (docs/plans/app.md, MC-2). The three do not fit on one line of the column, so
+      # Allow for this conversation sits on its own over the other two, first in the tree.
+      - {cmd: state, expect: {assistant.buttons.1.title: "remove_bookmark APRS, asks", assistant.buttons.2.id: assistant.allow.conversation, assistant.buttons.3.id: assistant.decline, assistant.buttons.4.id: assistant.allow}}
       - {cmd: snapshot, name: asks}
       - {cmd: ax, name: asks}
       # Return does not answer the card; Decline does, and the card goes.
