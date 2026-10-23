@@ -620,6 +620,18 @@ public struct ControlViewState: Sendable, Equatable, Codable {
     public var tooltip: String?
     /// The transport bar's words, or nil while the window shows no transport bar.
     public var transport: ControlTransport?
+    /// The bookmarks on the tuned frequency in the sidebar's order, the first leading
+    /// (`BookmarkGroup`); empty when none is.
+    public var entries: [String]
+    /// The sidebar's bookmark rows that read tuned, and the first of them as drawn, its name and
+    /// count (`Club net +1`).
+    public var tunedRows: Int
+    public var tunedRow: String?
+    /// The entry the inspector marks on air, on a frequency with several; nil when none is.
+    public var onAirEntry: String?
+    /// The names the transmissions log's rows are logged under, each once, sorted, joined by
+    /// ` · `; nil when the rows name none (a frequency with one bookmark or none).
+    public var logNames: String?
 
     enum CodingKeys: String, CodingKey {
         case place, mode, band, bookmark, zoom, focused, notices, popover, heard, hits, transport
@@ -637,6 +649,11 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         case filterCaret = "filter_caret"
         case settingsOpen = "settings_open"
         case viewWindow = "view_window"
+        case entries
+        case tunedRows = "tuned_rows"
+        case tunedRow = "tuned_row"
+        case onAirEntry = "on_air_entry"
+        case logNames = "log_names"
     }
 
     public init(
@@ -650,7 +667,9 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         sink: String = "none", window: ControlWindowSize? = nil, filterCaret: Int? = nil,
         settingsOpen: Bool = false, alert: ControlAlert? = nil,
         viewWindow: ControlViewWindow? = nil, assistant: ControlAssistant? = nil,
-        tooltip: String? = nil, transport: ControlTransport? = nil
+        tooltip: String? = nil, transport: ControlTransport? = nil, entries: [String] = [],
+        tunedRows: Int = 0, tunedRow: String? = nil, onAirEntry: String? = nil,
+        logNames: String? = nil
     ) {
         self.place = place
         self.tunedHz = tunedHz
@@ -683,6 +702,11 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         self.assistant = assistant
         self.tooltip = tooltip
         self.transport = transport
+        self.entries = entries
+        self.tunedRows = tunedRows
+        self.tunedRow = tunedRow
+        self.onAirEntry = onAirEntry
+        self.logNames = logNames
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -720,6 +744,11 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         try c.encode(assistant, forKey: .assistant)
         try c.encode(tooltip, forKey: .tooltip)
         try c.encode(transport, forKey: .transport)
+        try c.encode(entries, forKey: .entries)
+        try c.encode(tunedRows, forKey: .tunedRows)
+        try c.encode(tunedRow, forKey: .tunedRow)
+        try c.encode(onAirEntry, forKey: .onAirEntry)
+        try c.encode(logNames, forKey: .logNames)
     }
 }
 

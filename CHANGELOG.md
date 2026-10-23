@@ -48,7 +48,10 @@ plain requests, and speech-to-text for each over on a recording or a live channe
 - **Squelch.** A measured squelch reads `auto` in the sidebar and `(auto)` after its level in
   `ley state`, `ley set` and the event lines.
 - **Bookmarks.** Leaving a Tone or Note field saves it, as Return does; Escape throws the edit
-  away.
+  away. Bookmarks on one frequency (a repeater and its net from a CHIRP export) are one sidebar
+  row, `Club net +1`; the inspector lists each with its own tone and note, marks the one whose
+  tone is on the air, and the transmissions log names each over by it. The file keeps every
+  entry.
 - **Fixes.** A window that opens before the radio, or across a restart of the engine, takes the
   channel once the radio comes. A wide file radio keeps its tuned band in the sidebar. After Stop
   Listening, a band moves the radio another client left rather than asking for a second one. The

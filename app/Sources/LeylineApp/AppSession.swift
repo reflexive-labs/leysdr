@@ -481,12 +481,23 @@ final class AppSession {
         guard let now = telemetry.newestTime else { return nil }
         return transmissions?.timeOnAir(at: now)
     }
-    /// The bookmark on the tuned frequency, the first by name when there are several: the name
-    /// the inspector leads with, and what its pencil renames.
-    var tunedBookmark: Bookmark? {
+    /// The bookmarks on the tuned frequency, one row in the sidebar and a list in the inspector
+    /// when there are several (`BookmarkGroup`, docs/plans/app.md, MC-5); nil when none is.
+    var tunedGroup: BookmarkGroup? {
         guard let hz = tunedHz else { return nil }
-        return bookmarks.list.first { $0.hz == hz }
+        return BookmarkGroup.at(hz, in: bookmarks.list)
     }
+    /// The first bookmark on the tuned frequency, by name when there are several: the name the
+    /// inspector's title, the volume caption and `state`'s `bookmark` give, the settings a click
+    /// on the row tunes and Revert puts back, and what the title's pencil renames when it is
+    /// alone.
+    var tunedBookmark: Bookmark? { tunedGroup?.lead }
+    /// The entry of the tuned frequency whose tone the open transmission carries
+    /// (`BookmarkGroup.speaker`): the one the inspector marks on air. Nil between overs, before
+    /// the tone is decoded, and when no entry has it.
+    var onAirEntry: Bookmark? { tunedGroup?.speaker(heard: transmissions?.onAir?.tone) }
+    /// The entry last logged as on air, by id, so the line is written once per change.
+    @ObservationIgnored private var loggedOnAirEntry: String?
     var isLive: Bool { if case .live = connection { true } else { false } }
 
     /// The waterfall's cold end: the squelch, as a level per bin, so raising the squelch darkens
@@ -685,8 +696,10 @@ final class AppSession {
     var editingBookmarkID: String?
     /// The sentence under the inspector's tone field after a tone the store refused
     /// (`ToneError.sentence`), until a tone is accepted, the field puts the saved tone back, or
-    /// the tuned frequency changes; `toneErrorHz` is the frequency it was typed on.
+    /// the tuned frequency changes; `toneErrorHz` is the frequency it was typed on, and
+    /// `toneErrorID` the entry, whose fields alone show it on a frequency with several.
     private(set) var toneError: String?
+    private(set) var toneErrorID: String?
     private var toneErrorHz: UInt64?
     /// Set by `tune(bookmark:)` for the tune it starts, so the band-follow rule does not write
     /// the band's mode over the bookmark's: one write, the bookmark's.
@@ -822,6 +835,7 @@ final class AppSession {
         telemetry.onMeter = { [weak self] m, seconds in
             self?.foldReading(m, atSeconds: seconds)
             self?.audioLevels.meterChanged(m)
+            self?.logOnAirEntry()
         }
         log("session", "start: socket \(socketPath), log \(AppLog.shared.path)")
         loadBookmarks()
@@ -2546,6 +2560,11 @@ final class AppSession {
             try bookmarks.save()
             log("bookmark", "added \(name) at \(hz) Hz")
             editingBookmarkID = b.id
+            // An entry that joins another on its frequency, after it, is named in the
+            // inspector's list: the sidebar's row is the first entry's.
+            if let group = tunedGroup, group.isMerged, group.lead.id != b.id, !inspectorShown {
+                toggleInspector()
+            }
         } catch {
             lastError = bookmarkWriteError(error)
         }
@@ -2687,7 +2706,7 @@ final class AppSession {
     func editBookmark(_ id: String, tone text: String) {
         guard let b = bookmarks.bookmarks[id] else { return }
         let tone = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let tuned = tunedBookmark?.id == id
+        let tuned = tunedGroup?.entries.contains { $0.id == id } ?? false
         guard tone != b.tone else {
             if tuned { clearToneError() }
             return
@@ -2700,6 +2719,7 @@ final class AppSession {
         } catch BookmarkError.invalidTone(let sentence) {
             if tuned {
                 toneError = sentence
+                toneErrorID = b.id
                 toneErrorHz = b.hz
             }
             log("bookmark", "tone \"\(tone)\" refused for \(b.name): \(sentence)")
@@ -2723,11 +2743,29 @@ final class AppSession {
         }
     }
 
+    /// One line when the entry marked on air changes, on a frequency with several entries:
+    /// `on air: Club net (PL 100.0)`, or `on air: none` when the over ends or names nobody.
+    private func logOnAirEntry() {
+        guard let group = tunedGroup, group.isMerged else {
+            loggedOnAirEntry = nil
+            return
+        }
+        let entry = onAirEntry
+        guard entry?.id != loggedOnAirEntry else { return }
+        loggedOnAirEntry = entry?.id
+        if let entry, let tone = transmissions?.onAir?.tone {
+            log("inspector", "on air: \(entry.name) (\(tone.words))")
+        } else {
+            log("inspector", "on air: none")
+        }
+    }
+
     /// The tone field put the saved tone back (Escape, or `ley bookmarks` writing the bookmark
     /// while a refused tone waited in the field), so the sentence about the typed one goes with
     /// it.
     func clearToneError() {
         toneError = nil
+        toneErrorID = nil
         toneErrorHz = nil
     }
 
@@ -3255,12 +3293,13 @@ final class AppSession {
     var storeUsedBytes: UInt64 { Recordings.storeUsedBytes(recordings) }
     var storeCapBytes: UInt64 { state.daemon.recordingsCapBytes }
 
-    /// What the tuned channel is called where it is heard: the bookmark's name, else the plan
-    /// channel's (`ch5`, `WX3`), else the frequency (`Frequency.format`); nil with no
-    /// channel. The volume caption's name.
+    /// What the tuned channel is called where it is heard: the bookmark's name, with `+1` when
+    /// others share its frequency (`BookmarkGroup.words`), else the plan channel's (`ch5`,
+    /// `WX3`), else the frequency (`Frequency.format`); nil with no channel. The volume
+    /// caption's name.
     var listeningName: String? {
         guard let hz = tunedHz else { return nil }
-        return tunedBookmark?.name ?? BookmarkNaming.name(for: hz)
+        return tunedGroup?.words ?? BookmarkNaming.name(for: hz)
     }
 
     /// Whether the Library's centre column shows a channel page: the Library is showing and a

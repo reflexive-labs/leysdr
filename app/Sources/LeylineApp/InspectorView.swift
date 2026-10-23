@@ -127,7 +127,8 @@ struct IdentityView: View {
     @State private var editing = false
 
     var body: some View {
-        let bookmark = session.tunedBookmark
+        let group = session.tunedGroup
+        let bookmark = group?.lead
         let hz = session.tunedHz
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -140,8 +141,14 @@ struct IdentityView: View {
                         .font(Theme.Font.name).tracking(Theme.nameTracking)
                         .foregroundStyle(hz == nil ? Theme.inkMuted : Theme.ink)
                         .lineLimit(1).truncationMode(.tail)
+                    if let count = group?.countWords {
+                        // The title is the first entry's; the list below names every one.
+                        Text(count).font(Theme.Font.value).foregroundStyle(Theme.inkFaint)
+                            .fixedSize()
+                    }
                     Spacer(minLength: 0)
-                    if hz != nil {
+                    // On a frequency with several entries each has its own pencil.
+                    if hz != nil, !(group?.isMerged ?? false) {
                         Button {
                             editing = true
                         } label: {
@@ -190,7 +197,20 @@ struct IdentityView: View {
                 // it was changing to at the height it had last been given anywhere (the 15 pt
                 // of a 12.5 pt field closing in the same pass), so on about one change in five
                 // Tone and Note came out 2 pt taller and the rows under them moved.
-                BookmarkFieldsView(bookmark: b).id(b.id)
+                if let group, group.isMerged {
+                    // Several entries on this frequency (MC-5): each with its name, tone and
+                    // note, its own pencil and Remove, and the one talking marked on air.
+                    ForEach(group.entries) { entry in
+                        BookmarkEntryView(
+                            bookmark: entry, onAir: session.onAirEntry?.id == entry.id,
+                            showsHeard: entry.id
+                                == group.entry(heard: session.heardTone).id
+                        )
+                        .id(entry.id)
+                    }
+                } else {
+                    BookmarkFieldsView(bookmark: b).id(b.id)
+                }
             }
             if session.bookmarkModified, !editing {
                 // The channel's settings differ from the bookmark's: say so on a line of its
@@ -360,6 +380,15 @@ struct NameField: View {
 /// with it.
 struct BookmarkFieldsView: View {
     let bookmark: Bookmark
+    /// The fields' identifiers are this and `.tone`, `.note`: `inspector` for the bookmark alone
+    /// on its frequency, `inspector.entry.<name>` for one of several.
+    var identifier = "inspector"
+    /// Whether the heard tone is written beside this tone field: the one bookmark's, or among
+    /// several the entry whose tone was heard, else the first (`BookmarkGroup.entry(heard:)`).
+    var showsHeard = true
+    /// Whether the open transmission carries this entry's tone, among several: the words read
+    /// `on air PL 127.3` in `good` rather than `heard PL 127.3`.
+    var onAir = false
     @Environment(AppSession.self) private var session
 
     var body: some View {
@@ -368,26 +397,31 @@ struct BookmarkFieldsView: View {
                 label("Tone")
                 BookmarkField(
                     saved: bookmark.tone, placeholder: "100.0 or D023N",
-                    identifier: "inspector.tone",
+                    identifier: "\(identifier).tone",
                     onCommit: { session.editBookmark(bookmark.id, tone: $0) },
                     onRevert: { session.clearToneError() }
                 )
                 // Laid out with or without a tone, so the first tone heard neither moves the
-                // field nor pushes the panel below it down a point.
-                Text(session.heardTone.map { "heard \($0.words)" } ?? " ")
-                    .font(Theme.Font.valueSmall)
-                    .foregroundStyle(Theme.inkTertiary).lineLimit(1)
-                    .frame(width: Theme.Layout.heardToneWidth, alignment: .trailing)
-                    .stageRegion(.heard)
+                // field nor pushes the panel below it down a point. Only the field that shows
+                // the tone is the region a check masks, so the mask follows it from entry to
+                // entry.
+                let heard = showsHeard ? session.heardTone : nil
+                let label = Text(
+                    heard.map { "\(onAir ? "on air" : "heard") \($0.words)" } ?? " "
+                )
+                .font(Theme.Font.valueSmall)
+                .foregroundStyle(onAir ? Theme.good : Theme.inkTertiary).lineLimit(1)
+                .frame(width: Theme.Layout.heardToneWidth, alignment: .trailing)
+                if showsHeard { label.stageRegion(.heard) } else { label }
             }
-            if let sentence = session.toneError {
+            if let sentence = session.toneError, session.toneErrorID == bookmark.id {
                 Text(sentence).font(Theme.Font.aside).foregroundStyle(Theme.caution)
                     .fixedSize(horizontal: false, vertical: true)
             }
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 label("Note")
                 BookmarkField(
-                    saved: bookmark.note, placeholder: "A note", identifier: "inspector.note",
+                    saved: bookmark.note, placeholder: "A note", identifier: "\(identifier).note",
                     onCommit: { session.editBookmark(bookmark.id, note: $0) }
                 )
             }
@@ -399,6 +433,73 @@ struct BookmarkFieldsView: View {
     private func label(_ word: String) -> some View {
         Text(word).font(Theme.Font.aside).foregroundStyle(Theme.inkFaint)
             .frame(width: Theme.Layout.readingLabelWidth, alignment: .leading)
+    }
+}
+
+/// One of several bookmarks on the tuned frequency (docs/plans/app.md, MC-5): the name, its
+/// pencil and Remove, then its tone and note (`BookmarkFieldsView`). The tone heard sits beside
+/// the tone of the entry it names, else the first entry's, and reads `on air PL 127.3` in
+/// `good` while the open transmission carries it: inside the region a check masks, which moves
+/// with it, because when an over starts is not the scene's to choose. The pencil, and
+/// ⌘D's new entry when it is not the first, edit the name in place here; the sidebar's row is
+/// the first entry's. Its group is `inspector.entry.<name>`, and its controls `.rename`,
+/// `.remove`, `.tone` and `.note` under it.
+struct BookmarkEntryView: View {
+    let bookmark: Bookmark
+    let onAir: Bool
+    let showsHeard: Bool
+    @Environment(AppSession.self) private var session
+    @State private var editingHere = false
+
+    private var identifier: String { "inspector.entry.\(ViewIdentifier.slug(bookmark.name))" }
+
+    var body: some View {
+        let editing = Binding(
+            get: { editingHere || session.editingBookmarkID == bookmark.id },
+            set: { now in
+                editingHere = now
+                if !now, session.editingBookmarkID == bookmark.id {
+                    session.editingBookmarkID = nil
+                }
+            })
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if editing.wrappedValue {
+                    NameField(
+                        initial: bookmark.name, font: Theme.Font.label,
+                        height: Theme.Layout.labelFieldHeight, editing: editing
+                    ) {
+                        session.rename(bookmark: bookmark, to: $0)
+                    }
+                } else {
+                    Text(bookmark.name).font(Theme.Font.label).foregroundStyle(Theme.ink)
+                        .lineLimit(1).truncationMode(.tail)
+                    Spacer(minLength: 0)
+                    Button {
+                        editingHere = true
+                    } label: {
+                        Image(systemName: "pencil").font(Theme.Font.editGlyph)
+                            .foregroundStyle(Theme.inkFaint)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Rename \(bookmark.name)")
+                    .accessibilityIdentifier("\(identifier).rename")
+                    Button {
+                        session.remove(bookmark: bookmark)
+                    } label: {
+                        Image(systemName: "minus.circle").font(Theme.Font.editGlyph)
+                            .foregroundStyle(Theme.inkFaint)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Remove \(bookmark.name); the others on this frequency stay")
+                    .accessibilityIdentifier("\(identifier).remove")
+                }
+            }
+            BookmarkFieldsView(
+                bookmark: bookmark, identifier: identifier, showsHeard: showsHeard, onAir: onAir)
+        }
+        .padding(.top, 6)
+        .identifiedGroup(identifier)
     }
 }
 

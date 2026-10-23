@@ -88,7 +88,8 @@
 #
 # Fixtures made for checks (go/cmd/leyfix/scenes.go): scene_gmrs (GMRS 462 MHz, channels 1, 5 and
 # 21), scene_vhf20 (2 m, MURS, marine and NOAA WX2 in one capture, 142.7 to 163.7 MHz),
-# scene_wx (the NOAA channels with nothing on the air) and scene_wx_on (WX2 and WX1 on the air);
+# scene_wx (the NOAA channels with nothing on the air), scene_wx_on (WX2 and WX1 on the air) and
+# scene_club (146.940 MHz keyed in turns under PL 127.3 and PL 100.0);
 # ../../fixtures/chirp/nofreq.csv is a CSV the CHIRP import refuses. `make app-check` runs a
 # release leylined whatever SWIFT_CONFIG says: a debug one plays scene_vhf20 at about half of real
 # time, so its timings would be wrong.
@@ -529,6 +530,40 @@ scenes:
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {bookmark: Simplex, notices.0: "Imported 9 from sample.csv: 0 added, 9 updated, 1 skipped"}}
       - {cmd: ax, name: reimported}
+
+  # Bookmarks that share a frequency (docs/plans/app.md, MC-5): club.csv's two memories on
+  # 146.940 MHz, PL 127.3 and PL 100.0, are one sidebar row named after the first by name,
+  # `Club net +1`, which alone reads tuned; the inspector lists both, each with its own fields
+  # under inspector.entry.<name>; the volume caption, in the tree, says `Club net +1`; and over
+  # scene_club, whose stations key the two tones in turns (each twice in its 40 s loop), the
+  # entry marked on air follows the tone heard and the log names each over by its entry. The
+  # log and the heard tone are masked; the log lines and state say what they showed.
+  - name: merged-bookmarks
+    covers: [BookmarkGroup.swift, Tone.swift, SidebarView.swift, InspectorView.swift,
+      InspectorGroups.swift, Transmissions.swift, TransportBarView.swift]
+    fixtures: [{name: scene_club}]
+    clock: "19:42"
+    steps:
+      - ley: [set, squelch, "-45"]
+    stage:
+      place: radio
+      inspector: true
+      import_chirp: ../../fixtures/chirp/club.csv
+      settle: 3
+    app:
+      - {cmd: state, expect: {notices.0: "Imported 2 from club.csv: 2 added, 0 updated, 0 skipped"}}
+      - {cmd: press, identifier: sidebar.bookmark.club-net}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club net, entries.0: Club net, entries.1: Club repeater, tuned_rows: 1, tuned_row: Club net +1}}
+      - {cmd: snapshot, name: merged}
+      - {cmd: ax, name: merged}
+      - {cmd: press, identifier: inspector.entry.club-repeater.tone}
+      - {cmd: state, expect: {focused: inspector.entry.club-repeater.tone}}
+      - {cmd: key, keys: escape}
+      - {cmd: wait, seconds: 42, expect_log: ['on air: Club repeater \(PL 127\.3\)', 'on air: Club net \(PL 100\.0\)']}
+      - {cmd: state, expect: {bookmark: Club net, log_names: Club net · Club repeater}}
+      # The file still holds both entries.
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: ['"name":"Club net"', '"name":"Club repeater"']}
 
   # Scan band on the tuned 2 m row (docs/plans/app.md, U5), as the site's scan-app shot runs it:
   # once the sweep's hits show, the audio is back on Calling with the band's mode and width; the

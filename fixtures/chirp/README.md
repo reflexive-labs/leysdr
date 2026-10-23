@@ -5,3 +5,4 @@
 Both parsers are held to these two files: `go/pkg/chirp` (`chirp_test.go`, `normalise`) and `LeylineClient/CHIRP.swift` (`CHIRPTests.swift`) import `sample.csv`, normalise the result the same way, and compare it with `expected.json` as decoded JSON values, so whitespace and key order do not matter.
 `nofreq.csv` is a channel list from some other program, with frequencies under `RX MHz` and no `Frequency` column, so it is not a CHIRP export and is refused whole (`go/pkg/chirp`, `TestParseHeaderRules`); the app's check scenes import it to see the refusal.
 The files are written by hand, not generated: a change to the mapping changes the design first, then this file, then both parsers.
+`club.csv` is two memories on one frequency, 146.940 MHz, with PL 127.3 (`Club repeater`) and PL 100.0 (`Club net`): the app's check scene `merged-bookmarks` imports it over `scene_club`, whose stations key both tones there, to see the two drawn as one row (docs/plans/app.md, MC-5).

@@ -145,7 +145,7 @@ struct SidebarView: View {
         if let other = byRow[""], !other.isEmpty {
             SectionHeader(text: "Other")
                 .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 6)
-            ForEach(other) { bookmarkRow($0) }
+            ForEach(BookmarkGroup.grouped(other)) { bookmarkRow($0) }
         }
     }
 
@@ -183,7 +183,8 @@ struct SidebarView: View {
                 if session.sweepRow?.id == row.id, let outcome = session.sweep?.outcome {
                     sweepOutcome(outcome, row: row)
                 }
-                ForEach(bookmarks) { bookmarkRow($0) }
+                // One row per frequency, the first entry's (`BookmarkGroup`, MC-5).
+                ForEach(BookmarkGroup.grouped(bookmarks)) { bookmarkRow($0) }
             }
         }
         .background(expanded ? Theme.raised : Color.clear)
@@ -314,11 +315,15 @@ struct SidebarView: View {
         )
     }
 
-    private func bookmarkRow(_ b: Bookmark) -> some View {
+    /// A frequency's row: its first entry's name, identifier and actions, with `+N` for the
+    /// entries the inspector lists beside it (MC-5). One row per frequency, so one reads tuned.
+    private func bookmarkRow(_ group: BookmarkGroup) -> some View {
+        let b = group.lead
         let tuned = session.tunedHz == b.hz
         return BookmarkRow(
-            bookmark: b, selected: tuned, modified: tuned && session.bookmarkModified,
-            recording: session.isRecording(b),
+            bookmark: b, count: group.countWords, selected: tuned,
+            modified: tuned && session.bookmarkModified,
+            recording: group.entries.contains { session.isRecording($0) },
             editing: Binding(
                 get: { session.editingBookmarkID == b.id },
                 set: {
@@ -345,7 +350,10 @@ struct SidebarView: View {
                     session.replace(bookmark: b)
                 }
             }
-            Button("Remove", role: .destructive) { session.remove(bookmark: b) }
+            // On a merged row the first entry alone; the inspector removes the others.
+            Button(group.isMerged ? "Remove \(b.name)" : "Remove", role: .destructive) {
+                session.remove(bookmark: b)
+            }
         }
         .pressableGroup("sidebar.bookmark.\(ViewIdentifier.slug(b.name))") {
             if session.editingBookmarkID != b.id { session.tune(bookmark: b) }
@@ -509,9 +517,12 @@ struct OutOfRangeLine: View {
 /// bookmark on a plan channel shows the channel's name in the frequency's place (`ch17`, `WX3`),
 /// what `ley monitor` prints in its CHANNEL column, and `≈ calling` for one near a channel but
 /// not on it (`Plans.rowLabel`). The row never shows the bookmark's tone, which the inspector's
-/// field holds. The row sits in from the band's name by `sidebarIndent`, under its band.
+/// field holds. The row sits in from the band's name by `sidebarIndent`, under its band. A row
+/// that stands for several entries on one frequency (MC-5) shows the first entry's name and
+/// `count`, `+1`, after it in `inkFaint`.
 struct BookmarkRow: View {
     let bookmark: Bookmark
+    var count: String? = nil
     let selected: Bool
     let modified: Bool
     let recording: Bool
@@ -531,6 +542,11 @@ struct BookmarkRow: View {
             } else {
                 Text(bookmark.name).font(Theme.Font.label)
                     .foregroundStyle(selected ? Theme.ink : Theme.inkSecondary).lineLimit(1)
+                if let count {
+                    Text(count).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
+                        .fixedSize()
+                        .help("Other bookmarks share this frequency; the inspector lists them")
+                }
             }
             Spacer()
             // The dot sits against the frequency, 6 pt from it, not against the name.
