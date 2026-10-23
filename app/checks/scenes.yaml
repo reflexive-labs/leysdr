@@ -590,6 +590,9 @@ scenes:
       - {cmd: press, identifier: settings.ai.add.key}
       - {cmd: state, expect: {focused: settings.ai.add.key}}
       - {cmd: type, text: sk-made-up-0042}
+      # The focus leaves the key's field, which closes the system's password AutoFill list that
+      # a secure field opens now and then, and which a tree would otherwise read.
+      - {cmd: press, identifier: settings.ai.add.label}
       - {cmd: ax, name: typed, window: settings}
       - {cmd: press, identifier: settings.ai.add}
       - {cmd: ax, name: adding, window: settings}
@@ -625,13 +628,12 @@ scenes:
       - {cmd: press, identifier: settings.ai.key.anthropic.check}
       - {cmd: wait, seconds: 1}
       - {cmd: ax, name: checked, window: settings}
-      # A turn's usage in the table, by day and by month.
+      # A turn's usage in the table, by day and by month. No tree is kept: the rows are named
+      # by today's date, and Settings has no regions to mask them by.
       - {cmd: ley, args: [ask, where am i]}
       - {cmd: wait, seconds: 1}
       - {cmd: snapshot, name: usage, window: settings}
-      - {cmd: ax, name: usage, window: settings}
       - {cmd: pick, identifier: settings.ai.usage.period, text: By month}
-      - {cmd: ax, name: month, window: settings}
       # Remove asks; the row, Features and Usage leave, and with them the open column, the
       # toolbar's toggle and the menu item.
       - {cmd: stage, stage: {assistant: true}}
@@ -665,6 +667,7 @@ scenes:
       - {cmd: wait, seconds: 1}
       - {cmd: press, identifier: settings.ai.add.key}
       - {cmd: type, text: sk-made-up-0044}
+      - {cmd: press, identifier: settings.ai.add.label}
       - {cmd: press, identifier: settings.ai.add}
       - {cmd: wait, seconds: 2}
       - {cmd: ax, name: refused, window: settings}
@@ -896,3 +899,42 @@ scenes:
       - {cmd: state, expect: {place: library, assistant.state: ready}}
       - {cmd: snapshot, name: library}
       - {cmd: file, path: ai/record.jsonl, contains: show me 2 m}
+
+  # The window follows the assistant (docs/plans/app.md, "The window follows the radio"). The
+  # fixture's own channel is stopped first, so the window makes one of its own on Calling.
+  # With Record transmissions on for it, the window's panel tuning the club repeater moves the
+  # readout, the inspector and the log there, says who tuned and with what squelch, and keeps
+  # the recording's channel open with a line saying so; then `ley ask --continue` from a
+  # terminal tunes the evening net and the window follows that too.
+  - name: follow-assistant
+    fixtures: [{name: scene_2m}]
+    bookmarks: ../../site/shots/home.csv
+    ai: {script: assistant/follow.script}
+    steps:
+      - ley: [stop, "146.52"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      assistant: true
+      settle: 3
+    app:
+      - {cmd: ley, args: [state], expect_stdout: ["by app:Leyline", "!by mcp:assistant"]}
+      - {cmd: state, expect: {tuned_hz: 146520000, sink: own}}
+      - {cmd: press, identifier: inspector.record}
+      - {cmd: wait, seconds: 2}
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: listen to the club repeater}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 4}
+      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater}}
+      # The column closes, as its steps carry the run's channel ids.
+      - {cmd: stage, stage: {assistant: false}}
+      - {cmd: snapshot, name: followed}
+      - {cmd: ax, name: followed}
+      - {cmd: ley, args: [state]}
+      - {cmd: ley, args: [ask, --yes, --continue, now the evening net]}
+      - {cmd: wait, seconds: 3}
+      - {cmd: state, expect: {tuned_hz: 147180000, bookmark: Evening net}}
+      - {cmd: ax, name: terminal}
+      - {cmd: ley, args: [state]}
