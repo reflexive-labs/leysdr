@@ -173,12 +173,14 @@ detail is [`docs/plans/build-order.md`](docs/plans/build-order.md).
 | Bands, channel plans, bookmarks, CHIRP import | works | in `ley` and the app |
 | Decoders: APRS, SAME, AIS | works | more are planned (`docs/plans/decoders.md`) |
 | `ley watch` notifications | works | webhook, shell command or macOS notification |
+| Speech-to-text | works | the `speech` decoder sends each over to OpenAI or an OpenAI-compatible server on your key, for gated recordings (`ley transcribe`, the Library) and live channels; no on-device engine yet |
+| The assistant | works | in the app, on your Anthropic, OpenAI or OpenAI-compatible key; runs the radio with `ley mcp`'s tools, and asks first before paid work or taking the radio from another listener |
+| Provider keys and usage | works | `ley ai` and Settings > AI; the key stays in the login keychain |
 | MCP adapter (`ley mcp`) | partial | signal identification and transcript tools are not implemented (`docs/plans/mcp.md`) |
 | Mac app | partial | starts its own daemon as a login item; the layer 2 parameter inspector is incomplete |
-| Signed app bundle and installer | partial | `make release` builds a notarized DMG that carries the drivers and updates through Sparkle; not yet released (`docs/plans/distribution.md`) |
+| Signed app bundle and installer | partial | `make release` builds a notarized DMG that carries the drivers and updates through Sparkle; released to a small group of testers since 0.1.0, not yet public (`docs/plans/distribution.md`) |
 | Terminal dashboard | planned | |
 | Durable watch jobs | partial | kept decode jobs survive a daemon restart; other jobs do not |
-| Audio transcripts | planned | |
 | Channel occupancy and burst capture | planned | `docs/plans/band-watching.md` |
 | Audio spectrogram (`ley sonogram`) | planned | |
 | Transmit | not planned | Leyline is receive only |
