@@ -5,6 +5,7 @@
 // that 12.5 kHz channel plans use, so 462.612 cannot look like GMRS CH3's 462.6125, and a radio
 // on 146.940186 MHz reads `146.9401`, under the hertz it is on. The exact hertz is in the
 // tooltip and the inspector (`exactWords`), and a typed frequency may carry all six digits.
+// Return with nothing typed keeps that exact hertz (`commit`).
 
 import Foundation
 
@@ -54,6 +55,28 @@ public enum FrequencyEntry {
         guard !over else { return nil }
         let (total, past) = scaled.addingReportingOverflow(sub)
         return past ? nil : total
+    }
+
+    /// What Return in the field does.
+    public enum Commit: Equatable, Sendable {
+        /// Nothing was typed, or what was typed is where the radio is: no tune at all.
+        case keep
+        /// Tune to the typed hertz.
+        case tune(UInt64)
+        /// Not a frequency `tunableHz` holds; the field keeps its focus.
+        case refused
+    }
+
+    /// Return with the field holding `whole` and `fraction`, opened on `loadedHz` (the radio's
+    /// frequency when the edit began). Unchanged digits keep the radio on its exact hertz:
+    /// the field shows four decimals, and tuning what it shows would drop the hertz past them,
+    /// taking 146.940186 to 146.9401 (MC-3). Any edit tunes exactly what was typed.
+    public static func commit(whole: String, fraction: String, loadedHz: UInt64?) -> Commit {
+        if let loadedHz, "\(whole).\(fraction)" == fieldText(loadedHz) { return .keep }
+        guard let hz = hz(whole: whole, fraction: fraction), tunableHz.contains(hz) else {
+            return .refused
+        }
+        return hz == loadedHz ? .keep : .tune(hz)
     }
 
     private static func padded(_ v: UInt64, _ width: Int) -> String {

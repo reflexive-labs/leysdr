@@ -1566,9 +1566,10 @@ scenes:
 
   # The tuning field (docs/plans/app.md, MC-1b): four decimals, cut and never rounded, while the
   # radio stays on the exact hertz, which the field's tooltip and the inspector's line give. A
-  # typed 146.940186 tunes to the hertz and reads 146.9401; the fine step keeps the hertz, the
-  # band's step lands on its 5 kHz grid, and a hit's row tunes its measure to 100 Hz (MC-3). At
-  # 1440 pt the squelch's three words and its long caption both show.
+  # typed 146.940186 tunes to the hertz and reads 146.9401, and Return with nothing typed keeps
+  # that hertz (MC-3); the fine step keeps the hertz, the band's step lands on its 5 kHz grid,
+  # and a hit's row tunes its measure to 100 Hz (MC-3). At 1440 pt the squelch's three words and
+  # its long caption both show.
   - name: transport-tuning
     covers: [TransportBarView.swift, Frequency.swift, FrequencyEntry.swift, InspectorView.swift]
     fixtures: [{name: scene_vhf20}]
@@ -1595,6 +1596,11 @@ scenes:
       - {cmd: hover, identifier: tuning.field, expect: {tooltip: "146.940186 MHz"}}
       - {cmd: ax, name: typed}
       - {cmd: snapshot, name: typed}
+      # Return with nothing typed keeps the exact hertz and tunes nothing (MC-3).
+      - {cmd: menu, menu: "Tune>Enter Frequency..."}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1, expect_log: ["tune: kept 146940186 Hz, 146.9401 unchanged", "!tune: typed"]}
+      - {cmd: state, expect: {tuned_hz: 146940186, transport.tuning: "146.9401", focused: ""}}
       - {cmd: menu, menu: "Tune>Fine Tune Up"}
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {tuned_hz: 146940686, transport.tuning: "146.9406"}}
