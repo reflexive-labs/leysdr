@@ -1122,3 +1122,47 @@ scenes:
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {tuned_hz: 462700000, bookmark: ch21}}
       - {cmd: ley, args: [bookmarks], expect_stdout: ["ch5 +462.6625 MHz", "ch21 +462.700 MHz"]}
+
+  # scene_vhf20 holds 2 m, MURS, marine and NOAA WX2 in one 21 MSPS capture (docs/plans/app.md,
+  # U4), so the window tunes across bands without moving the radio, and the sidebar offers each
+  # band the capture holds. From Calling, a row opened by its chevron (marine) closes on a tune
+  # into another row (MURS); a pick of MURS 4 by Return arrives at 20 kHz, where the band's
+  # group is 11.25 kHz, and closes the picker. wx3 typed into the filter and Returned tunes
+  # 162.475 MHz and clears and lets go of the field; and marine's rail shows no plan ticks.
+  - name: vhf-wide
+    fixtures: [{name: scene_vhf20}]
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: state, expect: {tuned_hz: 146520000, band: 2m, open_rows.0: 2m}}
+      - {cmd: snapshot, name: initial}
+      - {cmd: ax, name: initial}
+      - {cmd: press, identifier: sidebar.band.marine.chevron}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {open_rows.0: 2m, open_rows.1: marine}}
+      - {cmd: press, identifier: sidebar.band.murs}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {band: murs-151, bandwidth_hz: 11250, open_rows.0: murs}}
+      - {cmd: press, identifier: sidebar.band.murs.channels}
+      - {cmd: wait, seconds: 1}
+      - {cmd: type, text: "4"}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {popover: "", tuned_hz: 154570000, bandwidth_hz: 20000, band: murs-154}}
+      - {cmd: ax, name: murs}
+      - {cmd: key, keys: cmd+g}
+      - {cmd: type, text: wx3}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {tuned_hz: 162475000, band: noaa, filter_query: "", focused: ""}}
+      - {cmd: press, identifier: sidebar.band.marine}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {band: marine}}
+      - {cmd: ax, name: marine}
+      - {cmd: snapshot, name: marine}
