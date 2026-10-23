@@ -106,8 +106,9 @@ names its file.
 
 ### Hero (`src/components/Hero.astro`)
 
-- The `specs` list gains a row, for example `['AI', 'Your key: Anthropic, OpenAI']`, or
-  `['Speech', 'Each over to text, on your key']`. One row, not both.
+- The `specs` list gains one row, `AI`: an assistant and speech-to-text on your own key, for
+  example `['AI', 'Assistant and speech-to-text, on your key']`. Decided 2026-10-23: one row for
+  both features, rather than a `Speech` row.
 - The nav's `app · terminal · agents` can stay; "agents" still covers the assistant and `ley mcp`.
 - The fine print (`Free · macOS 26 or later · signed and notarized · receive only`) stays.
   Leyline is still free; the AI features bill the user's own provider, which the AI section says.
