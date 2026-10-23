@@ -419,3 +419,6 @@ receives frequencies, channel parameters and job requests without band-plan name
   and ship and coast entries, in the data, the picker and `ley bands marine`, because the
   picker's filter copes with a hundred rows and a boater's dozen is a subset of it.
 - **The Scan band measurement:** how long audio is unavailable during a sweep on real hardware.
+  The app's own share is measured (`sweep-lifecycle`, 2026-10-22, a file radio held 4 s per
+  sweep): the channel goes 15 ms before the job starts and is back 11 ms after it ends, so the
+  silence is the sweep's own length plus about 0.1 s; the sweep's length on a real radio is not.
