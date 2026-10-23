@@ -1073,3 +1073,52 @@ scenes:
       - {cmd: wait, seconds: 6}
       - {cmd: state, expect: {tuned_hz: 147180000, bookmark: Evening net, muted: true, sink: none}}
       - {cmd: ley, args: [state], expect_stdout: "!by app:Leyline"}
+
+  # GMRS's plan (docs/plans/app.md, U4) on scene_gmrs, which the fixture's play tunes to ch5:
+  # GMRS is one row, the tuned one; the rail shows the 462 MHz half's channels only; the inspector
+  # is titled by the band and the volume caption reads ch5 while no bookmark is there. Hovering
+  # a plan tick names its channel, a press and a click on one tune it, the picker opens on the
+  # tuned channel and a click on a row picks it; ⌘D on ch5 makes a bookmark named ch5 with its
+  # row open as an editor, and the pencil committed empty on ch21 one named ch21.
+  - name: gmrs-plan
+    fixtures: [{name: scene_gmrs}]
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      settle: 3
+    app:
+      - {cmd: state, expect: {tuned_hz: 462662500, band: gmrs-462, open_rows.0: gmrs, bookmark: null}}
+      - {cmd: snapshot, name: initial}
+      - {cmd: ax, name: initial}
+      - {cmd: hover, identifier: rail.channel.ch1, expect: {tooltip: ch1}}
+      - {cmd: press, identifier: rail.channel.ch1}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 462562500, band: gmrs-462}}
+      - {cmd: click, identifier: rail.channel.ch21}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 462700000}}
+      - {cmd: press, identifier: sidebar.band.gmrs.channels}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "channels:gmrs"}}
+      - {cmd: snapshot, name: picker}
+      - {cmd: ax, name: picker, window: popover}
+      - {cmd: click, identifier: planpicker.row.ch16}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "", tuned_hz: 462575000, bookmark: null}}
+      - {cmd: press, identifier: rail.channel.ch5}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 462662500, bookmark: null}}
+      - {cmd: key, keys: cmd+d}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {bookmark: ch5, focused: "AXUnknown \"Name\"", open_rows.0: gmrs}}
+      - {cmd: ax, name: bookmarked}
+      - {cmd: key, keys: escape}
+      - {cmd: click, identifier: rail.channel.ch21}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: inspector.rename}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 462700000, bookmark: ch21}}
+      - {cmd: ley, args: [bookmarks], expect_stdout: ["ch5 +462.6625 MHz", "ch21 +462.700 MHz"]}
