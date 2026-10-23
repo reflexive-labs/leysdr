@@ -230,7 +230,7 @@ Built 2026-10-22, not ticked until an agent has used it on ML-9's first scenes:
   gate; on a failure it prints the first 30 error lines and exits 2. A build error and a theme
   hit were tried in a scratch package, and an edit in a worktree builds that worktree.
 
-### ML-9 `[ ]` Burn down the Unverified lists
+### ML-9 `[x]` Burn down the Unverified lists
 
 Turn each item under "Unverified on the Mac" in `app.md` (U4 onward, Settings, the assistant
 panel, the window following the radio) and `ai-features.md` into a check scene, a `state` or
@@ -341,7 +341,7 @@ person or hardware, 3 obsolete. Its numbering (U4.02, P.45, H3, F2) is used belo
     and a popover without its arrow, because the window server draws both; an open menu is not
     drawn; the menu items' titles are read once (`Show Assistant` stays so while the panel
     shows, as the Commands body's comment says).
-- **ML-9d `[ ]` The remaining scenes**: `settings-ai`, `assistant-conversation`,
+- **ML-9d `[x]` The remaining scenes**: `settings-ai`, `assistant-conversation`,
   `assistant-cards`, `assistant-view-tools`, `follow-terminal`, `follow-assistant`,
   `follow-launch-and-daemon`, `gmrs-plan`, `vhf-wide`, `sweep-lifecycle`, `change-note`,
   `alert-and-menus`.

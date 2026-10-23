@@ -574,9 +574,9 @@ ones, and ends with how it is verified. The order is the dependency order: the c
 because every daemon item compiles against it; keys and the ledger before anything that calls a
 provider; speech on stored recordings before live speech; the assistant after the tools it needs.
 
-Three items need the owner's Mac or a key and cannot be finished from the Linux container: AI-0
-(real receiver audio), AI-12 (a key and the eval run) and the Mac acceptance pass of every app
-item. Everything else runs against the fake, the Linux-built daemon and a scripted provider.
+Two items need the owner's radio or a key: AI-0 (real receiver audio) and AI-12 (a key and the
+eval run). Everything else runs against the fake, the daemon and a scripted provider, and the
+app's views are checked on the Mac by the scenes `docs/plans/app.md` names.
 
 ### AI-0 `[ ]` Spike: speech-to-text on receiver audio
 
@@ -1002,7 +1002,7 @@ Linux**: `StartPlaybackRequest` and `Playback` carry `start_sample`/`end_sample`
 12), `ley play --over` cuts with the speech decoder's own pre-roll so it plays what was
 transcribed, the façade folds speech records onto parts and overs with the newest job shown
 and older versions kept, searches by words once per channel, and exports text and SRT (two-anchor
-test with drift); the views are unverified and listed in `docs/plans/app.md`.
+test with drift); the views are checked by the scenes `docs/plans/app.md` names.
 
 ### AI-7 `[x]` Live speech and speech watches
 
@@ -1032,7 +1032,7 @@ retuning, the mirror keeps who changed each object from `caused_by` and the insp
 assistant set the squelch to -45 dBFS" (and `ley` now says "the assistant" too); the e2e drives
 a conversation with the scripted fake worker, including a view tool, against the real daemon.
 The attribution e2e uses a stand-in connection labelled `assistant`, because the fake worker
-makes no real write; the views are unverified and listed in `docs/plans/app.md`.
+makes no real write; the views are checked by the scenes `docs/plans/app.md` names.
 
 ### AI-12 `[ ]` Assistant evals and the default model
 
@@ -1214,8 +1214,8 @@ id, ends or keeps its own, moves the sink, and on the followed channel's `.lost`
 channel with the last copy's settings. Tested in `ChannelFollowTests` and against the daemon in
 `AssistantDaemonTests` (a stand-in `assistant` client's kept channel on the app's capture); the
 daemon takes a sink on another client's channel (it checks only the channel), which Linux can
-show only as `PLATFORM_UNSUPPORTED`. The views and the session's half are unverified, listed in
-`docs/plans/app.md`. The assistant's `listen_summary` makes a short-lived channel of its own on the
+show only as `PLATFORM_UNSUPPORTED`. The views and the session's half are checked by the scenes
+`docs/plans/app.md` names. The assistant's `listen_summary` makes a short-lived channel of its own on the
 radio, and the rule follows it too: when it ends, the window has its own channel on that
 frequency.
 
@@ -1279,8 +1279,7 @@ and the CLI no longer approves anything itself; a WAITING call runs once when th
 AUTO. The prompt is rebuilt for the mode, and the model call reads copies of the prompt and
 transcript taken before it starts. The fake daemon keys grants by a step's row, checked against
 the gate's names. The panel's card shows a button per offer and drops a second click while an
-answer is on its way; the card is unverified on Linux and on the Mac checklist in
-`docs/plans/app.md`.
+answer is on its way; the card is checked by the scenes `docs/plans/app.md` names.
 
 ### AI-19 `[x]` The panel's feel
 
