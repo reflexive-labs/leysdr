@@ -197,8 +197,13 @@ struct RadioBody: View {
                 canvas
                 if session.inspectorShown {
                     Rectangle().fill(Theme.hairline).frame(width: 1)
+                    // Offered the height left above the transport bar and no more: an inspector
+                    // taller than that (a short window, a tall identity) is cut at its foot
+                    // rather than pushing the bar out of the window.
                     InspectorView()
-                        .frame(width: Theme.Layout.inspectorWidth)
+                        .frame(width: Theme.Layout.inspectorWidth, alignment: .top)
+                        .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
+                        .clipped()
                         .stageRegion(.inspector)
                 }
             }
