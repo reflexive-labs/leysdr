@@ -1633,6 +1633,57 @@ the Mac, and the system-audio sink cannot attach on Linux.
 Checked by `follow-assistant`, `follow-terminal` and `follow-launch-and-daemon`; what no scene
 reaches is in APP-9's "Unverified on the Mac".
 
+### MC-1 `[ ]` The owner's calls on the Mac-check findings (2026-10-22)
+
+The owner decided the findings above one at a time on 2026-10-22, and sent a mockup for the
+sidebar's actions (`tmp/sidebar-actions-mock.png` on the build Mac). The work runs as one batch
+in three lanes, then a single verify loop (`mac-loop.md`, ML-11). Every change comes with a check
+scene, or extends one.
+
+**MC-1a. The sidebar and the inspector.**
+- The open band's actions become list rows: `Scan band` and `Channels` at bookmark height, the
+  glyph lined up with the bookmark dots and the label with the bookmark names, in a dimmer ink
+  than a bookmark's name, with no strip, border or button chrome. `Channels` has a trailing `›`
+  and still opens the picker beside it. The band header, its range line, the actions and the
+  bookmarks share one raised ground. The identifiers stay as they are.
+- Shorter words where the sidebar cuts them: `17 bands out of range ›`, and the squelch in the
+  range line in one short form (`sq −53`, `sq auto`). The sidebar keeps its width.
+- The inspector's tags line keeps its place, so nothing under it moves between a tagged and an
+  untagged bookmark.
+- A band the radio cannot tune reads disabled to accessibility, its actions included, and its
+  hint says why.
+- A sidebar row never shows a tone: the U6 promise of `100.0` is dropped.
+- A near plan match, within the channel's width but not on it, reads `≈ calling`.
+- The step arrows: an accessibility press always takes a normal step, and two named actions,
+  "Step up finely" and "Step down finely", take the fine one. ⇧-click with the mouse stays.
+- `＋` on a hit, and a click on a hit's row, use the named channel's frequency (146.940 MHz); the
+  measured one only when the hit names no channel.
+- When the Channels picker closes, by a pick or by Escape, nothing has the focus, so Space mutes
+  and the arrows tune. The filter takes the focus on ⌘G or a click only.
+- A click on empty space ends an edit in the Tone or Note field.
+
+**MC-1b. The transport bar and the palette.**
+- The tuning field always shows 4 decimal places in MHz, truncated (146.940186 reads
+  `146.9401`). The radio stays on the exact Hz, which the inspector line and the tooltip show in
+  full. Typing more than 4 decimals is accepted and tunes exactly.
+- A narrow bar drops the three words under the squelch track first, then shortens its caption
+  (`open · 33 dB`). The track keeps its size, and no pop-up label ever wraps.
+- The audio ladder shows an en dash under rms and under peak when the audio is silent.
+- `inkFaintest` rises to about `#666C71` so it clears 3:1 on every ground. The contrast test
+  drops its two exceptions and `app.md`'s palette table follows. `meterWell` stays pure black.
+
+**MC-1c. The assistant and Settings.**
+- Text typed while a card waits stays in the field as the draft, and Return sends it.
+- While the window's old channel still records after the window follows, the inspector shows
+  `Still recording <frequency> <name> · Stop`.
+- The change note names the squelch only when the assistant set a level itself.
+- A stopped turn shows a faint `Stopped.` line under its message, after any steps it took.
+- Settings ▸ AI names providers by their display names (`Anthropic key …0042 added`). `ley ai`
+  keeps the ids.
+- Settings' controls take palette colours by role. The system-drawn tab stays as macOS draws it.
+- The API key field opts out of AutoFill. Then closing Settings with the field focused is
+  checked again.
+
 ## Backlog
 
 - **Two frequency affine maps remain separate.** `SquelchTrack` and `GainSlider` share

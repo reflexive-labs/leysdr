@@ -397,3 +397,32 @@ first needs an `AppSession` that can be built without a daemon, which is its own
 
 ML-0, then ML-1 and ML-2 together, ML-4 on the existing stage, ML-3, ML-5, ML-6 (which can start
 any time), ML-8, then ML-9 as the first real workload. ML-7 and ML-10 when ML-9 shows the need.
+
+### ML-11 `[ ]` Timing, tiers and the batch loop (agreed 2026-10-22)
+
+- **Timing.** Each scene and size records its wall time, split into launch to ready, commands and
+  quit. Every scene line carries its time, and the summary line gives the total and the three
+  slowest. `summary.json` keeps the last runs, so a scene that has become much slower than its
+  history is named.
+- **Tiers: smoke, then targeted, then full.**
+  - Smoke: `make app-check-smoke` runs the scenes marked `smoke: true` (radio-2m, identifiers,
+    goto-bookmark; about 35 s).
+  - Targeted: `make app-check-affected` (`leyshots check --affected [--base REF]`) picks the
+    scenes whose hand-written `covers:` globs match the changed files, uncommitted ones
+    included. A shared file (`Theme.swift`, `AppSession.swift`, `Staging.swift`, the control
+    code) brings in the smoke scenes plus the scenes that list it. A changed file that no scene
+    covers prints `uncovered: <file>`. A test fails when a file in `LeylineApp` is covered by no
+    scene at all. `ONLY=` still vets one feature by name.
+  - Full: `make app-check` runs everything (about 12 minutes on 2026-10-22). With `--jobs N` (1
+    until runs at 3 show no flakes) scenes run side by side, except those marked `serial: true`
+    (vhf-wide, the sweeps).
+- **Sleep.** `make app-check` runs under `caffeinate -i`, and a staged run holds a
+  `.userInitiated` and `.latencyCritical` activity so App Nap leaves its timers alone. A full run
+  with the display asleep on 2026-10-22 passed at its usual pace.
+- **The batch loop.** Implementers work in parallel worktrees: they build and run `make
+  app-test` and the lints, never a full check, because one run at a time owns the staged app and
+  its Accessibility grant belongs to the main checkout's copy. The coordinator merges the batch.
+  One verify agent then runs the full check, sorts every diff into a regression, an intended
+  change (re-recorded, and named) or a new finding, and fixes or files each. It loops on the
+  smoke and targeted tiers until a full run is clean, and a review of the batch follows. The
+  skill and `../dev/swift-style.md`, section 12, carry the tier table and the loop.
