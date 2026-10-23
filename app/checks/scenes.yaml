@@ -430,7 +430,7 @@ scenes:
       - {cmd: state, expect: {bookmark: Evening net, heard: DCS 023}}
       - {cmd: press, identifier: sidebar.bookmark.calling}
       - {cmd: press, identifier: sidebar.bookmark.evening-net}
-      - {cmd: wait, seconds: 0.5}
+      - {cmd: wait, seconds: 0.2, expect_log: "tune: bookmark Evening net"}
       - {cmd: state, expect: {bookmark: Evening net, heard: null}}
       - {cmd: press, identifier: sidebar.bookmark.calling}
       - {cmd: wait, seconds: 1}
