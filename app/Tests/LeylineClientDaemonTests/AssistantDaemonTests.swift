@@ -180,7 +180,7 @@ final class AssistantDaemonTests: XCTestCase {
         view = ConversationView(try XCTUnwrap(assistant.conversation))
         let question = try XCTUnwrap(view.pending)
         XCTAssertFalse(question.isViewTool)
-        XCTAssertEqual(question.question, "The assistant wants to delete_recording job_1.")
+        XCTAssertEqual(question.question, "The assistant wants to delete a recording.")
         XCTAssertEqual(
             question.reason, "delete the recording and its files; this cannot be undone")
         await assistant.resolve(callID: question.callID, approve: true)

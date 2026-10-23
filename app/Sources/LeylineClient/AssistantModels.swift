@@ -199,6 +199,8 @@ public struct PendingQuestion: Sendable, Equatable {
     public let callID: String
     public let tool: String
     public let summary: String
+    /// What the call would do, as the rest of `question`: `remove the APRS bookmark`.
+    public let action: String
     /// Why it asks, the gate's words (`docs/dev/assistant.md`, "The gate").
     public let reason: String
     /// A call to one of the app's own view tools: answered by the app, never put to the person.
@@ -211,6 +213,7 @@ public struct PendingQuestion: Sendable, Equatable {
         callID = p.callID
         tool = p.tool
         summary = AssistantWords.summary(argumentsJSON: p.argumentsJson)
+        action = AssistantWords.action(tool: p.tool, argumentsJSON: p.argumentsJson)
         reason = p.reason.trimmingCharacters(in: .whitespacesAndNewlines)
         isViewTool = p.viewTool
         offers = p.offers
@@ -222,12 +225,10 @@ public struct PendingQuestion: Sendable, Equatable {
     /// never offer it.
     public var offersConversation: Bool { offers.contains(.conversation) }
 
-    /// "The assistant wants to delete_recording rec_01…", `ley ask`'s question without the
-    /// letters it offers; the reason goes on a line of its own under it.
-    public var question: String {
-        let what = summary.isEmpty ? tool : "\(tool) \(summary)"
-        return "The assistant wants to \(what)."
-    }
+    /// "The assistant wants to remove the APRS bookmark.": what the call would do in words,
+    /// never the tool's name or an id (`AssistantWords.action`); the reason goes on a line of
+    /// its own under it. `ley ask` asks with the tool's name and arguments instead.
+    public var question: String { "The assistant wants to \(action)." }
 }
 
 /// The tokens one conversation has used so far: its usage lines summed over the days they fall on.

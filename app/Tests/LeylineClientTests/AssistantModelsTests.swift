@@ -190,7 +190,7 @@ final class AssistantModelsTests: XCTestCase {
         let view = ConversationView(c)
         let q = try XCTUnwrap(view.pending)
         XCTAssertEqual(q.callID, "c4")
-        XCTAssertEqual(q.question, "The assistant wants to delete_recording rec_1.")
+        XCTAssertEqual(q.question, "The assistant wants to delete a recording.")
         XCTAssertEqual(q.reason, "delete the recording and its files; this cannot be undone")
         XCTAssertFalse(q.isViewTool)
         XCTAssertEqual(q.offers, [], "a daemon that sends no offers offers once alone")
@@ -214,6 +214,65 @@ final class AssistantModelsTests: XCTestCase {
         c.state = .conversationIdle
         XCTAssertNil(ConversationView(c).pending)
         XCTAssertTrue(ConversationView(c).canSend)
+    }
+
+    func testAQuestionSaysWhatTheCallDoesWithoutAToolNameOrAnID() {
+        let cases: [(String, String, String)] = [
+            ("remove_bookmark", #"{"bookmark":"APRS"}"#, "remove the APRS bookmark"),
+            ("remove_bookmark", "{}", "remove a bookmark"),
+            (
+                "add_bookmark", #"{"frequency":"146.52","name":"Calling"}"#,
+                "bookmark 146.52 as Calling"
+            ),
+            (
+                "import_chirp", #"{"path":"/Users/me/club.csv"}"#,
+                "import the channels in club.csv into your bookmarks"
+            ),
+            ("delete_recording", #"{"recording":"job_01J"}"#, "delete a recording"),
+            ("cancel_job", #"{"job":"job_01J"}"#, "cancel a job"),
+            ("tune", #"{"frequency":"146.94","take_over":true}"#, "tune to 146.94"),
+            ("scan", #"{"range":"2m"}"#, "scan 2m"),
+            ("record", #"{"target":"noaa","duration_s":30}"#, "record noaa for 30 s"),
+            ("record", #"{"target":"chan_01J","duration_s":30}"#, "record a channel for 30 s"),
+            (
+                "listen_summary", #"{"target":"146.52","duration_s":10}"#,
+                "listen to 146.52 for 10 s"
+            ),
+            (
+                "snapshot", #"{"band":"2m","take_over":true}"#,
+                "take a snapshot of the spectrum of 2m"
+            ),
+            (
+                "start_decode_job", #"{"decoder":"aprs","frequency":"144.39","keep":true}"#,
+                "run the aprs decoder on 144.39"
+            ),
+            (
+                "watch", #"{"decoder":"aprs","notify":"webhook:https://x"}"#,
+                "watch for aprs records"
+            ),
+            (
+                "set", #"{"param":"squelch","value":"-45","channel":"chan_1"}"#,
+                "set the squelch to -45"
+            ),
+            ("stop", #"{"all":true}"#, "stop every channel"),
+            ("stop", #"{"channel":"chan_1"}"#, "stop a channel"),
+            (
+                "attach_device", #"{"kind":"file","path":"/tmp/ht.cu8"}"#,
+                "attach a radio from ht.cu8"
+            ),
+            ("list_presets", "{}", "use the list presets tool"),
+            ("", "", "use a tool"),
+        ]
+        for (tool, args, want) in cases {
+            XCTAssertEqual(
+                AssistantWords.action(tool: tool, argumentsJSON: args), want, "\(tool) \(args)")
+        }
+        var p = Leyline_V1_PendingAction()
+        p.callID = "c1"
+        p.tool = "remove_bookmark"
+        p.argumentsJson = #"{"bookmark":"APRS"}"#
+        XCTAssertEqual(
+            PendingQuestion(p).question, "The assistant wants to remove the APRS bookmark.")
     }
 
     func testAFailedConversationSaysWhy() {
