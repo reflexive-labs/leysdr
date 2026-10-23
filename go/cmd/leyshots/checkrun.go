@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -40,6 +41,12 @@ type checkOptions struct {
 	// release is the running macOS as major.minor.
 	release string
 	record  bool
+	// smoke runs the smoke scenes; affected the scenes a change since base touches (the merge
+	// base with main when empty), in the checkout at root. Each replaces only.
+	smoke, affected bool
+	base            string
+	// jobs is how many scenes run side by side; 1 or less runs them one at a time.
+	jobs int
 	// hold leaves the one scene's app and daemon running after its commands, for driving by hand
 	// over the command file, until the app quits or the run is interrupted.
 	hold bool
@@ -160,6 +167,13 @@ type checker struct {
 	o       checkOptions
 	f       *CheckFile
 	results []checkResult
+	// times are each scene and size's, in the order they ran; history the earlier runs' from
+	// history.jsonl, which each is compared with.
+	times   []sceneTime
+	history []historyRun
+	// buffered keeps the lines for the checker the scene ran beside others for (runParallel)
+	// rather than printing them.
+	buffered bool
 }
 
 // checkScenes runs each selected scene at each of its sizes, prints a line per artefact and
@@ -170,9 +184,24 @@ func checkScenes(ctx context.Context, o checkOptions) error {
 	if err != nil {
 		return err
 	}
-	scenes, err := f.Select(o.only)
-	if err != nil {
-		return err
+	var scenes []*CheckScene
+	switch {
+	case o.affected:
+		sel, err := affectedScenes(ctx, o.root, o.base, f, o.checks)
+		if err != nil {
+			return err
+		}
+		sel.print(o.stdout)
+		if len(sel.scenes) == 0 {
+			return nil // the lines above say what changed and that no scene checks it
+		}
+		scenes = sel.scenes
+	case o.smoke:
+		scenes = f.Smoke()
+	default:
+		if scenes, err = f.Select(o.only); err != nil {
+			return err
+		}
 	}
 	if o.hold && len(scenes) != 1 {
 		return errors.New("--hold takes one scene: name it with --only")
@@ -185,20 +214,31 @@ func checkScenes(ctx context.Context, o checkOptions) error {
 			return err
 		}
 	}
-	c := &checker{o: o, f: f}
+	history := filepath.Join(o.out, "history.jsonl")
+	c := &checker{o: o, f: f, history: readHistory(history)}
+	var units []runUnit
 	for _, s := range scenes {
 		sizes := s.sizes()
 		if o.hold {
 			sizes = sizes[:1] // a hold ends the run, so the scene's first size is the only one
 		}
 		for _, size := range sizes {
+			units = append(units, runUnit{s, size})
+		}
+	}
+	start := time.Now()
+	if o.jobs > 1 && !o.hold {
+		c.runParallel(ctx, units)
+	} else {
+		for _, u := range units {
 			if ctx.Err() != nil {
 				break
 			}
-			c.o.logf("%s %s", s.Name, size)
-			c.runSize(ctx, s, size)
+			c.o.logf("%s %s", u.s.Name, u.size)
+			c.timeSize(ctx, u.s, u.size)
 		}
 	}
+	total := time.Since(start)
 	if err := ctx.Err(); err != nil {
 		// An interrupted run checked less than it was asked to: it fails, with what did run above.
 		c.add(checkResult{Status: "error", Scene: "-", Size: "-", Item: "-", Detail: "interrupted: " + err.Error()})
@@ -215,14 +255,23 @@ func checkScenes(ctx context.Context, o checkOptions) error {
 			parts = append(parts, fmt.Sprintf("%d %s", counts[st], st))
 		}
 	}
+	// A held scene's time is how long it was held, which says nothing about the scene.
+	if !o.hold {
+		if err := writeHistory(history, c.history, time.Now(), max(o.jobs, 1), c.times); err != nil {
+			return err
+		}
+	}
 	summary := filepath.Join(o.out, "summary.json")
-	fmt.Fprintf(o.stdout, "%d checked: %s; %s\n", len(c.results), strings.Join(parts, ", "), c.rel(summary))
+	fmt.Fprintf(o.stdout, "%d checked: %s; %s; %s\n", len(c.results), strings.Join(parts, ", "),
+		timeSummary(total, c.times), c.rel(summary))
 	b, err := json.MarshalIndent(struct {
 		Goldens string         `json:"goldens"`
 		Record  bool           `json:"record"`
+		Seconds float64        `json:"seconds"`
 		Counts  map[string]int `json:"counts"`
 		Results []checkResult  `json:"results"`
-	}{c.goldenRoot(), o.record, counts, c.results}, "", "  ")
+		Times   []sceneTime    `json:"times"`
+	}{c.goldenRoot(), o.record, total.Seconds(), counts, c.results, c.times}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -235,10 +284,74 @@ func checkScenes(ctx context.Context, o checkOptions) error {
 	return nil
 }
 
-// add records a result and prints its line.
+// add records a result and prints its line, or keeps it for merge when the checker runs one
+// scene beside others.
 func (c *checker) add(r checkResult) {
 	c.results = append(c.results, r)
-	fmt.Fprintln(c.o.stdout, r.line())
+	if !c.buffered {
+		fmt.Fprintln(c.o.stdout, r.line())
+	}
+}
+
+// runUnit is one scene at one window size.
+type runUnit struct {
+	s    *CheckScene
+	size Size
+}
+
+// runParallel runs the units o.jobs at a time, each on a checker of its own whose lines are
+// printed together when it ends, so one scene's lines are never split by another's. The serial
+// scenes run after the rest, one at a time with nothing beside them.
+func (c *checker) runParallel(ctx context.Context, units []runUnit) {
+	var side, alone []runUnit
+	for _, u := range units {
+		if u.s.Serial {
+			alone = append(alone, u)
+		} else {
+			side = append(side, u)
+		}
+	}
+	var mu sync.Mutex
+	run := func(u runUnit) {
+		c.o.logf("%s %s", u.s.Name, u.size)
+		one := &checker{o: c.o, f: c.f, history: c.history, buffered: true}
+		one.timeSize(ctx, u.s, u.size)
+		mu.Lock()
+		defer mu.Unlock()
+		c.results = append(c.results, one.results...)
+		c.times = append(c.times, one.times...)
+		for _, r := range one.results {
+			fmt.Fprintln(c.o.stdout, r.line())
+		}
+		for _, t := range one.times {
+			fmt.Fprintln(c.o.stdout, t.line())
+		}
+	}
+	queue := make(chan runUnit)
+	var wg sync.WaitGroup
+	for range min(c.o.jobs, len(side)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for u := range queue {
+				run(u)
+			}
+		}()
+	}
+	for _, u := range side {
+		if ctx.Err() != nil {
+			break
+		}
+		queue <- u
+	}
+	close(queue)
+	wg.Wait()
+	for _, u := range alone {
+		if ctx.Err() != nil {
+			break
+		}
+		run(u)
+	}
 }
 
 // rel is p relative to the checkout when it is inside it, so the lines stay short.
@@ -256,8 +369,30 @@ func (c *checker) goldenRoot() string {
 	return filepath.Join(c.o.goldens, c.o.release+"-"+runtime.GOARCH)
 }
 
-// runSize runs one scene at one window size: its daemon, the app, the commands, then quit.
-func (c *checker) runSize(ctx context.Context, s *CheckScene, size Size) {
+// timeSize runs one scene at one window size, timing each phase, and prints its time after its
+// lines, compared with the scene's median in the earlier runs.
+func (c *checker) timeSize(ctx context.Context, s *CheckScene, size Size) {
+	t := sceneTime{Scene: s.Name, Size: size.String()}
+	before := len(c.results)
+	p := newPhases(&t)
+	c.runSize(ctx, s, size, p)
+	p.end()
+	for _, r := range c.results[before:] {
+		t.errored = t.errored || r.Status == "error"
+	}
+	if c.o.hold {
+		return
+	}
+	t.compare(c.history)
+	c.times = append(c.times, t)
+	if !c.buffered {
+		fmt.Fprintln(c.o.stdout, t.line())
+	}
+}
+
+// runSize runs one scene at one window size: its daemon, the app, the commands, then quit. Each
+// phase ends with a lap of p.
+func (c *checker) runSize(ctx context.Context, s *CheckScene, size Size, p *phases) {
 	dir := filepath.Join(c.o.out, s.Name, size.String())
 	fail := func(err error) {
 		c.add(checkResult{Status: "error", Scene: s.Name, Size: size.String(), Item: "-", Detail: err.Error()})
@@ -273,14 +408,20 @@ func (c *checker) runSize(ctx context.Context, s *CheckScene, size Size) {
 		return
 	}
 	defer sd.stop()
+	p.lap(&p.t.Daemon)
 	env := sd.env
 	app, err := c.launch(ctx, s.Stage, size, run, env)
+	p.lap(&p.t.Ready)
 	if err != nil {
 		fail(err)
 		return
 	}
 	// A held app may have been sent commands by hand, so quit takes the id after the last used.
-	defer func() { app.quit(ctx, app.nextID(len(s.App)+1)) }()
+	defer func() {
+		p.lap(&p.t.Commands)
+		app.quit(ctx, app.nextID(len(s.App)+1))
+		p.lap(&p.t.Quit)
+	}()
 	// The runner's own commands; a background ley still running at the end is interrupted
 	// before the app quits and the daemon stops.
 	local := &localRun{c: c, daemon: sd, run: run, bg: map[string]*bgProcess{}}
@@ -1024,9 +1165,10 @@ func holdsWhole(s, sub string) bool {
 	}
 }
 
-// listChecks prints one row per check scene: its name, sizes and commands.
+// listChecks prints one row per check scene: its name, sizes, tier (smoke, serial or -) and
+// commands.
 func listChecks(f *CheckFile, w io.Writer) {
-	fmt.Fprintf(w, "%-22s %-22s %s\n", "SCENE", "SIZES", "APP")
+	fmt.Fprintf(w, "%-24s %-22s %-6s %s\n", "SCENE", "SIZES", "TIER", "APP")
 	for i := range f.Scenes {
 		s := &f.Scenes[i]
 		var sizes, cmds []string
@@ -1036,6 +1178,13 @@ func listChecks(f *CheckFile, w io.Writer) {
 		for j := range s.App {
 			cmds = append(cmds, s.App[j].Cmd)
 		}
-		fmt.Fprintf(w, "%-22s %-22s %s\n", s.Name, strings.Join(sizes, ","), strings.Join(cmds, " "))
+		tier := "-"
+		switch {
+		case s.Smoke:
+			tier = "smoke"
+		case s.Serial:
+			tier = "serial"
+		}
+		fmt.Fprintf(w, "%-24s %-22s %-6s %s\n", s.Name, strings.Join(sizes, ","), tier, strings.Join(cmds, " "))
 	}
 }

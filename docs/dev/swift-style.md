@@ -344,6 +344,25 @@ its own `leylined --no-hardware` and compares its pictures, accessibility trees 
 with local goldens (`app.md`, "Staged runs"). `.claude/skills/app-check/SKILL.md` says how to
 read its lines and look at a picture.
 
+**Check in tiers: smoke, then targeted, then full** (`../plans/mac-loop.md`, ML-11):
+
+| tier | command | runs |
+|---|---|---|
+| smoke | `make app-check-smoke` | the scenes marked `smoke: true`: radio-2m, identifiers, goto-bookmark (about 35 s) |
+| targeted | `make app-check-affected` (`BASE=<ref>`) | the scenes whose hand-written `covers:` globs match a file changed since the merge base with main, uncommitted ones included; a shared file (`Theme.swift`, `AppSession.swift`, `Staging.swift`, the control code) brings in the smoke scenes plus the scenes that list it, and a changed file no scene covers prints `uncovered: <file>`. `make app-check ONLY=a,b` still vets one feature by name |
+| full | `make app-check` | everything (about 12 minutes on 2026-10-22); with `JOBS=N` (1 until runs at 3 show no flakes) scenes run side by side, except those marked `serial: true` (vhf-wide, the sweeps) |
+
+Each run is under `caffeinate -i`, every scene prints its time, and the summary line gives the
+total and the three slowest. A test fails when a file in `LeylineApp` is covered by no scene at
+all, so a new file comes with a `covers:` glob on the scene that checks it.
+
+**The batch loop.** Implementers work in parallel worktrees: they build and run `make app-test`
+and the lints, never a full check, because one run at a time owns the staged app and its
+Accessibility grant belongs to the main checkout's copy. The coordinator merges the batch. One
+verify agent then runs the full check, sorts every diff into a regression, an intended change
+(re-recorded, and named) or a new finding, and fixes or files each. It loops on the smoke and
+targeted tiers until a full run is clean, and a review of the batch follows.
+
 **Add or extend a check scene for each behaviour the change touches**: a `state` expectation for
 what the window holds, an `ax` tree for its structure, a snapshot for its layout. Read the
 pictures for section 7's layout rules too (offset against frame alignment, overlay before

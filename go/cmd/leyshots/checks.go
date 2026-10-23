@@ -15,6 +15,10 @@ import (
 
 // CheckFile is app/checks/scenes.yaml: the app's check scenes (docs/plans/mac-loop.md, ML-4).
 type CheckFile struct {
+	// Shared are globs, relative to app/Sources, of the files every scene leans on (the theme,
+	// the session, the staging and the control code): a change to one brings in the smoke
+	// scenes as well as those that cover it (--affected).
+	Shared []string     `yaml:"shared"`
 	Scenes []CheckScene `yaml:"scenes"`
 	// dir is the directory the file was read from; scene paths are relative to it.
 	dir string
@@ -23,7 +27,17 @@ type CheckFile struct {
 // CheckScene is one state of the app to check: a site scene's inputs, the window sizes to take it
 // at, and the commands sent to the running app over its command file (ML-3).
 type CheckScene struct {
-	Name      string       `yaml:"name"`
+	Name string `yaml:"name"`
+	// Smoke puts the scene in the smoke tier (--smoke, make app-check-smoke), which --affected
+	// also runs when a shared file changed.
+	Smoke bool `yaml:"smoke"`
+	// Serial runs the scene with nothing beside it under --jobs: a scene whose timings a busy
+	// Mac would put out.
+	Serial bool `yaml:"serial"`
+	// Covers are globs, relative to app/Sources, of the files whose behaviour the scene
+	// checks, written by hand from what it presses and pictures: --affected runs the scenes
+	// whose globs match a changed file.
+	Covers    []string     `yaml:"covers"`
 	Fixtures  []FixtureRef `yaml:"fixtures"`
 	Clock     string       `yaml:"clock"`
 	Bookmarks string       `yaml:"bookmarks"`
@@ -142,6 +156,9 @@ func LoadChecks(path string) (*CheckFile, error) {
 	}
 	f.dir = filepath.Dir(path)
 	var errs []error
+	if err := validGlobs(f.Shared); err != nil {
+		errs = append(errs, fmt.Errorf("shared: %w", err))
+	}
 	seen := map[string]bool{}
 	for i := range f.Scenes {
 		s := &f.Scenes[i]
@@ -191,6 +208,17 @@ func (f *CheckFile) Select(only []string) ([]*CheckScene, error) {
 	return out, nil
 }
 
+// Smoke returns the smoke scenes, in the file's order.
+func (f *CheckFile) Smoke() []*CheckScene {
+	var out []*CheckScene
+	for i := range f.Scenes {
+		if f.Scenes[i].Smoke {
+			out = append(out, &f.Scenes[i])
+		}
+	}
+	return out
+}
+
 // sizes is the scene's window sizes, or the default one.
 func (s *CheckScene) sizes() []Size {
 	if len(s.Sizes) == 0 {
@@ -233,6 +261,9 @@ func (s *CheckScene) validate(path func(string) string) error {
 	}
 	if s.Threshold != nil && (*s.Threshold < 0 || *s.Threshold > 100) {
 		return fmt.Errorf("threshold %g is not a percentage", *s.Threshold)
+	}
+	if err := validGlobs(s.Covers); err != nil {
+		return fmt.Errorf("covers: %w", err)
 	}
 	if s.SweepDwell < 0 || s.SweepDwell > 60 {
 		return fmt.Errorf("sweep_dwell %g is not between 0 and 60 seconds", s.SweepDwell)

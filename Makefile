@@ -37,7 +37,10 @@
 #   make app-check  macOS: the app's checks (docs/plans/mac-loop.md, ML-4): each scene in
 #                   app/checks/scenes.yaml against its own daemon, its pictures and trees compared
 #                   with the goldens in tmp/goldens, a line each in tmp/checks; ONLY=a,b runs those
-#                   scenes, RECORD=1 writes their goldens instead
+#                   scenes, RECORD=1 writes their goldens instead, JOBS=N runs N side by side
+#   make app-check-smoke     macOS: the smoke scenes alone (ML-11's first tier)
+#   make app-check-affected  macOS: the scenes covering what changed since the merge base with
+#                   main (BASE=<ref> for another), uncommitted files included
 #   make release    macOS: cut the next release from start to finish (scripts/cut-release.sh):
 #                   check the build Mac, bump VERSION, date the CHANGELOG's Unreleased section,
 #                   commit and tag, make release-build, push, make release-publish, then name the
@@ -93,7 +96,7 @@ ACTIONLINT_VERSION := v1.7.12
 CODESIGN_IDENTITY ?= Developer ID Application: Reflexive Labs LLC. (P2KZW25PL8)
 NOTARY_PROFILE ?= leysdr-notary
 
-.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval eval-test speech-spike shots shots-bundle shots-publish shots-release app-check release release-build release-publish release-rehearse release-test app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders
+.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval eval-test speech-spike shots shots-bundle shots-publish shots-release app-check app-check-smoke app-check-affected release release-build release-publish release-rehearse release-test app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders
 
 all: go swift app
 
@@ -301,9 +304,21 @@ shots-release: $(SHOTS_ASSETS) | go
 # leyshots check. Every scene runs, or ONLY's; RECORD=1 writes the goldens rather than comparing.
 # The daemon is a release build whatever SWIFT_CONFIG says: a debug leylined plays scene_vhf20's
 # 21 MSPS at about half of real time, which puts every timing in a scene out.
+# The run is under caffeinate -i, so the Mac does not sleep through it with the display off.
+# JOBS=N runs N scenes side by side (leyshots check --jobs; serial: true scenes run alone).
+# app-check-smoke runs the smoke scenes; app-check-affected the scenes whose covers match a file
+# changed under app/Sources or app/checks since the merge base with main, or BASE=<ref>.
+APP_CHECK = LEYLINED_BIN="$$(cd engine && swift build -c release --show-bin-path)/leylined" LEY_BIN=$(GOBIN)/ley \
+	LEYFIX_BIN=$(GOBIN)/leyfix caffeinate -i $(GOBIN)/leyshots check $(if $(JOBS),--jobs $(JOBS)) \
+	$(if $(filter 1,$(RECORD)),--record)
 app-check: go swift-release shots-bundle
-	LEYLINED_BIN="$$(cd engine && swift build -c release --show-bin-path)/leylined" LEY_BIN=$(GOBIN)/ley \
-		LEYFIX_BIN=$(GOBIN)/leyfix $(GOBIN)/leyshots check $(if $(ONLY),--only $(ONLY)) $(if $(filter 1,$(RECORD)),--record)
+	$(APP_CHECK) $(if $(ONLY),--only $(ONLY))
+
+app-check-smoke: go swift-release shots-bundle
+	$(APP_CHECK) --smoke
+
+app-check-affected: go swift-release shots-bundle
+	$(APP_CHECK) --affected $(if $(BASE),--base $(BASE))
 
 # Every step of a release in order, resumable (docs/dev/release-checklist.md, "The signed build").
 # It calls make release-build, release-publish and release-rehearse itself. The recipe does not

@@ -64,10 +64,21 @@ func checkWithFakeApp(t *testing.T, dir, scenes string, prepare func(run string)
 	return fake, stdout.String(), err
 }
 
-// expectOutput checks the output's lines in order, each by its start.
+// resultLines is the output without the time lines, which TestCheckTiming checks.
+func resultLines(out string) []string {
+	var lines []string
+	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		if !strings.HasPrefix(l, "time ") {
+			lines = append(lines, l)
+		}
+	}
+	return lines
+}
+
+// expectOutput checks the output's lines in order, each by its start, the time lines left out.
 func expectOutput(t *testing.T, out string, want ...string) {
 	t.Helper()
-	got := strings.Split(strings.TrimSpace(out), "\n")
+	got := resultLines(out)
 	if len(got) != len(want) {
 		t.Fatalf("output:\n%s\nwant %d lines", out, len(want))
 	}

@@ -460,7 +460,7 @@ func TestCheckEndToEnd(t *testing.T) {
 	}
 	expectLines := func(out string, want ...string) {
 		t.Helper()
-		got := strings.Split(strings.TrimSpace(out), "\n")
+		got := resultLines(out)
 		if len(got) != len(want) {
 			t.Fatalf("output:\n%s\nwant %d lines", out, len(want))
 		}

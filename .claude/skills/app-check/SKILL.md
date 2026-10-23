@@ -13,15 +13,38 @@ file", is the full reference.
 
 ## When to run what
 
-- **Every edit under `app/Sources`**: the PostToolUse hook (`scripts/claude-app-hook.sh`) runs an
-  incremental `swift build` and `scripts/check-theme.sh`. Fix what it prints before going on.
-- **While iterating on a view**: `make app-check ONLY=radio-2m,goto-bookmark`, the scenes the
-  change touches. `go/bin/leyshots check --list` lists them.
-- **Before handing over**: `make app-check` (every scene) and `make app-lint`. The make target
-  rebuilds `ley`, the engine and the bundle first, so it always checks the code as it is. The
-  scenes' daemon is always the release `leylined` (`make swift-release`): a debug one plays
-  `scene_vhf20`'s 21 MSPS at about half of real time. Running `go/bin/leyshots check` by hand
-  takes the debug one unless `LEYLINED_BIN` names the release build.
+**Every edit under `app/Sources`**: the PostToolUse hook (`scripts/claude-app-hook.sh`) runs an
+incremental `swift build` and `scripts/check-theme.sh`. Fix what it prints before going on.
+
+**Then the tiers: smoke, then targeted, then full** (`docs/plans/mac-loop.md`, ML-11).
+
+| tier | command | runs |
+|---|---|---|
+| smoke | `make app-check-smoke` | the scenes marked `smoke: true`: radio-2m, identifiers, goto-bookmark (about 35 s) |
+| targeted | `make app-check-affected` (`BASE=<ref>`) | the scenes whose `covers:` match a file changed under `app/Sources` or `app/checks` since the merge base with main, uncommitted and untracked files included; a shared file (`Theme.swift`, `AppSession.swift`, `Staging.swift`, the control code, the file's `shared:` list) brings in the smoke scenes as well. `make app-check ONLY=a,b` still vets one feature by name |
+| full | `make app-check` | every scene (about 12 minutes on 2026-10-22); `JOBS=N` runs N side by side, the `serial: true` scenes (vhf-wide, the sweeps) alone. Leave it at 1 until runs at 3 show no flakes |
+
+The targeted tier prints, before its lines, `since <commit>: …`, one `affected <scene>: <files>`
+line per scene and `uncovered: <file>` for a changed file no scene covers: name that file in the
+handover, or give the scene that checks it a `covers:` glob. The merge base with main can be far
+back on a long branch; `BASE=HEAD~3` (or the batch's base) narrows it.
+
+**Before handing over**: `make app-check` (every scene) and `make app-lint`. The make targets
+rebuild `ley`, the engine and the bundle first, so they always check the code as it is, and run
+under `caffeinate -i`, so the Mac does not sleep through them. The scenes' daemon is always the
+release `leylined` (`make swift-release`): a debug one plays `scene_vhf20`'s 21 MSPS at about
+half of real time. Running `go/bin/leyshots check` by hand takes the debug one unless
+`LEYLINED_BIN` names the release build. `go/bin/leyshots check --list` lists the scenes and their
+tiers.
+
+## The batch loop
+
+Implementers work in parallel worktrees: they build and run `make app-test` and the lints, never
+a full check, because one run at a time owns the staged app and its Accessibility grant belongs
+to the main checkout's copy. The coordinator merges the batch. One verify agent then runs the
+full check, sorts every diff into a regression, an intended change (re-recorded, and named) or a
+new finding, and fixes or files each. It loops on the smoke and targeted tiers until a full run
+is clean, and a review of the batch follows.
 
 ## Reading the output
 
@@ -38,8 +61,16 @@ item is a snapshot's name, `<name>.ax` for a tree, `state#<id> <path>` for an ex
 | `fail` | a `state` value (`got … want …`), a tree that differs (the path is `<name>.ax.diff`), a picture of another size, or a command the app answered `ok:false` (`the app: …`) | read the detail |
 | `error` | the run could not check: the app never became ready, exited, or did not answer | read `run/app.log` |
 
-The last line is `N checked: …; tmp/checks/summary.json`; the run exits 1 on any `diff`, `fail`
-or `error`.
+After each scene and size's lines comes its time:
+`time     radio-2m 1440x820 34.2 s  daemon 3.1 s, ready 6.0 s, commands 24.1 s, quit 1.0 s`, the
+daemon set up, the app from launch to `ready.json`, the commands and the quit. One that took over
+1.5 times its median in the earlier runs (three at least) ends `; slower than usual (median
+20.1 s)`: look at its `run/app.log` for what waited. `tmp/checks/history.jsonl` keeps the last 20
+runs' times.
+
+The last line is `N checked: …; <total> s, slowest <scene> <size> <time>, … (three);
+tmp/checks/summary.json`, naming any scene slower than usual before the path; `summary.json`
+holds every result and time. The run exits 1 on any `diff`, `fail` or `error`.
 
 Artefacts, in `tmp/checks/<scene>/<W>x<H>/`:
 
@@ -74,6 +105,7 @@ launch), `sizes`, and `app`, the commands in order.
 
 ```yaml
   - name: filter-focus
+    covers: [SidebarView.swift, Sidebar.swift]
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: ../../site/shots/home.csv
@@ -85,6 +117,11 @@ launch), `sizes`, and `app`, the commands in order.
       - {cmd: ax, name: focused}
 ```
 
+- `covers` lists globs of the files under `app/Sources` whose behaviour the scene checks: the
+  views it presses and pictures, and the façade rules behind them. A glob without a `/` matches
+  a file's name in either target (`SidebarView.swift`). `make app-check-affected` runs a scene
+  when one of its globs matches a changed file, and `TestCheckCoverage` (`make go-test`) fails on
+  a file in `LeylineApp` no scene covers. `smoke: true` and `serial: true` are the tiers above.
 - `expect` maps a dotted path into the `state` answer to a value; the keys are in
   `docs/dev/app.md`, "The command file".
 - `mask` on a `snapshot` or `ax` replaces the default list of masked regions; `[]` compares
@@ -186,4 +223,6 @@ Each id is used once. `ley --socket <the printed socket> …` reads the scene's 
 - The goldens re-recorded, by scene, and why.
 - The scenes added or extended.
 - What no check covers: behaviour the change touches that no scene reaches (audio, a real
-  radio, a masked region, a path with no key or identifier yet).
+  radio, a masked region, a path with no key or identifier yet), and each `uncovered:` file
+  the targeted tier named.
+- A scene the run named slower than usual, if it stayed so on a second run.
