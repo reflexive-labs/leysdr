@@ -4,6 +4,7 @@ package fakedaemon_test
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -96,6 +97,28 @@ func TestStoredWritesWhileOutOfCapture(t *testing.T) {
 	got = channel()
 	if got.State != leylinev1.ChannelState_CHANNEL_ACTIVE || got.BandwidthHz != 8_000 || got.Mode != leylinev1.DemodMode_AM || got.SquelchDb != -60 {
 		t.Errorf("re-entered channel = %v", got)
+	}
+
+	// A measured level is applied and the channel says AUTO; NaN is not one; a level written as a
+	// number is MANUAL again, and off has no source.
+	if n := write(&leylinev1.ParamWrite{TargetId: ch.ChannelId, Param: &leylinev1.ParamWrite_SquelchAutoDb{SquelchAutoDb: -53}}); n != 1 {
+		t.Errorf("auto squelch: applied = %d, want 1", n)
+	}
+	if got := channel(); got.SquelchDb != -53 || got.SquelchSource != leylinev1.SquelchSource_SQUELCH_AUTO {
+		t.Errorf("auto squelch: %v %v", got.SquelchDb, got.SquelchSource)
+	}
+	if n := write(&leylinev1.ParamWrite{TargetId: ch.ChannelId, Param: &leylinev1.ParamWrite_SquelchAutoDb{SquelchAutoDb: math.NaN()}}); n != 0 {
+		t.Errorf("auto squelch NaN: applied = %d, want 0", n)
+	}
+	if n := write(&leylinev1.ParamWrite{TargetId: ch.ChannelId, Param: &leylinev1.ParamWrite_SquelchDb{SquelchDb: -53}}); n != 1 {
+		t.Errorf("manual squelch: applied = %d, want 1", n)
+	}
+	if got := channel(); got.SquelchSource != leylinev1.SquelchSource_SQUELCH_MANUAL {
+		t.Errorf("manual squelch source: %v", got.SquelchSource)
+	}
+	write(&leylinev1.ParamWrite{TargetId: ch.ChannelId, Param: &leylinev1.ParamWrite_SquelchDb{SquelchDb: math.NaN()}})
+	if got := channel(); got.SquelchSource != leylinev1.SquelchSource_SQUELCH_SOURCE_UNSPECIFIED {
+		t.Errorf("squelch off source: %v", got.SquelchSource)
 	}
 }
 

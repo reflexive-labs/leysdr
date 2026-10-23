@@ -33,6 +33,9 @@ func TestATurnRunsReadsAndAskedForChanges(t *testing.T) {
 	if turn.GetText() != "Looking.\n\nTuned 146.520 MHz NFM. ley stop ends it." {
 		t.Errorf("text: %q", turn.GetText())
 	}
+	if turn.GetStopReason() != leylinev1.StopReason_STOP_REASON_COMPLETED {
+		t.Errorf("stop reason: %v", turn.GetStopReason())
+	}
 	var names []string
 	for _, c := range turn.GetTools() {
 		names = append(names, c.GetTool())
@@ -51,7 +54,8 @@ func TestATurnRunsReadsAndAskedForChanges(t *testing.T) {
 	for _, c := range w.state().GetChannels() {
 		ch = c
 	}
-	if ch == nil || !ch.GetPersistent() || ch.GetOwner().GetLabel() != "assistant" || ch.GetOwner().GetKind() != "mcp" || ch.GetSquelchDb() != -45 {
+	if ch == nil || !ch.GetPersistent() || ch.GetOwner().GetLabel() != "assistant" || ch.GetOwner().GetKind() != "mcp" || ch.GetSquelchDb() != -45 ||
+		ch.GetSquelchSource() != leylinev1.SquelchSource_SQUELCH_MANUAL {
 		t.Errorf("the assistant's channel: %v", ch)
 	}
 }
@@ -294,8 +298,8 @@ func TestStopDuringAResponse(t *testing.T) {
 	if took := time.Since(began); took > time.Second {
 		t.Errorf("the stop took %v", took)
 	}
-	if turn.GetText() != "" {
-		t.Errorf("a stopped response wrote text: %q", turn.GetText())
+	if turn.GetText() != "" || turn.GetStopReason() != leylinev1.StopReason_STOP_REASON_STOPPED {
+		t.Errorf("a stopped response: text %q, stop reason %v", turn.GetText(), turn.GetStopReason())
 	}
 	w.say("t3", "again")
 	if turn := w.doneTurn(); turn.GetTurnId() != "t4" || turn.GetText() != "next" {
@@ -313,6 +317,9 @@ func TestStopWhileAsking(t *testing.T) {
 	turn := w.doneTurn()
 	if c := lastCall(turn); c.GetCallId() != call.GetCallId() || c.GetState() != leylinev1.ToolCallState_TOOL_CALL_REFUSED || c.GetResultText() != assistant.Stopped {
 		t.Errorf("the waiting call after a stop: %v", c)
+	}
+	if turn.GetStopReason() != leylinev1.StopReason_STOP_REASON_STOPPED {
+		t.Errorf("stop reason: %v", turn.GetStopReason())
 	}
 }
 
@@ -335,6 +342,9 @@ func TestStopWhileAToolRuns(t *testing.T) {
 	}
 	if c := lastCall(turn); c.GetState() != leylinev1.ToolCallState_TOOL_CALL_DONE || !c.GetIsError() || c.GetResultText() != assistant.Stopped {
 		t.Errorf("the running call after a stop: %v", c)
+	}
+	if turn.GetStopReason() != leylinev1.StopReason_STOP_REASON_STOPPED {
+		t.Errorf("stop reason: %v", turn.GetStopReason())
 	}
 	w.say("t3", "go on")
 	if turn := w.doneTurn(); turn.GetTurnId() != "t4" || turn.GetText() != "next" {
@@ -486,7 +496,8 @@ func TestMaxTokensEndsTheTurn(t *testing.T) {
 	}})
 	w.say("t1", "tune")
 	turn := w.doneTurn()
-	if len(turn.GetTools()) != 0 || !strings.HasPrefix(turn.GetText(), "Tuning\n\n(The response reached the model's output limit") {
+	if len(turn.GetTools()) != 0 || !strings.HasPrefix(turn.GetText(), "Tuning\n\n(The response reached the model's output limit") ||
+		turn.GetStopReason() != leylinev1.StopReason_STOP_REASON_MAX_TOKENS {
 		t.Errorf("turn: %v", turn)
 	}
 	if n := len(w.state().GetChannels()); n != 0 {
@@ -495,6 +506,25 @@ func TestMaxTokensEndsTheTurn(t *testing.T) {
 	w.say("t3", "go on")
 	if turn := w.doneTurn(); turn.GetText() != "again" {
 		t.Errorf("after the cut: %v", turn)
+	}
+}
+
+// A refusal and the step bound each end the turn, and the turn says which.
+func TestARefusalAndTheStepLimitSayWhyTheTurnEnded(t *testing.T) {
+	t.Parallel()
+	script := []string{line(map[string]any{"text": "No.", "stop_reason": "refusal"})}
+	for range 40 {
+		script = append(script, toolLine("get_state", map[string]any{}))
+	}
+	w := startWorker(t, workerConfig{script: script})
+	w.say("t1", "something it will not do")
+	if turn := w.doneTurn(); turn.GetStopReason() != leylinev1.StopReason_STOP_REASON_REFUSAL {
+		t.Errorf("refused turn: %v", turn)
+	}
+	w.say("t3", "look forever")
+	turn := w.doneTurn()
+	if turn.GetStopReason() != leylinev1.StopReason_STOP_REASON_STEP_LIMIT || !strings.Contains(turn.GetText(), "stopped after 40 steps") {
+		t.Errorf("turn at the step bound: %v", turn)
 	}
 }
 

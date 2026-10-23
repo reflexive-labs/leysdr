@@ -274,7 +274,7 @@ func showSettings(s *verbSession, ch *leylinev1.Channel, capture *leylinev1.Capt
 	}
 	squelch := "off (audio always on)"
 	if !units.SquelchOff(ch.SquelchDb) {
-		squelch = fmt.Sprintf("%.0f dBFS", ch.SquelchDb)
+		squelch = fmt.Sprintf("%.0f dBFS", ch.SquelchDb) + autoSuffix(ch)
 	}
 	volume := "no speaker sink"
 	for _, sk := range s.State.Sinks {
@@ -438,9 +438,13 @@ func buildChannelWrites(ctx context.Context, s *verbSession, param, value string
 			}
 			s.say("squelch auto → %.0f dBFS (10 dB above the band's noise floor, %.0f dBFS)\n", db, floor)
 		}
-		w := &leylinev1.ParamWrite{Tag: 1, TargetId: ch.ChannelId, Param: &leylinev1.ParamWrite_SquelchDb{SquelchDb: db}}
+		w := squelchWrite(1, ch.ChannelId, db, auto)
+		want := leylinev1.SquelchSource_SQUELCH_MANUAL
+		if auto {
+			want = leylinev1.SquelchSource_SQUELCH_AUTO
+		}
 		return []*leylinev1.ParamWrite{w}, channelEvent(func(c *leylinev1.Channel) bool {
-			return units.SquelchOff(db) && units.SquelchOff(c.SquelchDb) || c.SquelchDb == db
+			return units.SquelchOff(db) && units.SquelchOff(c.SquelchDb) || c.SquelchDb == db && c.SquelchSource == want
 		}), nil
 	case "bw":
 		bw, err := units.ParseBandwidth(value)
@@ -710,7 +714,7 @@ func setValue(param string, stages []string, els []*leylinev1.GainElement, ev *l
 		if units.SquelchOff(ch.GetSquelchDb()) {
 			return "off (audio always on)", "squelch"
 		}
-		return fmt.Sprintf("%.0f dBFS", ch.GetSquelchDb()), "squelch"
+		return fmt.Sprintf("%.0f dBFS", ch.GetSquelchDb()) + autoSuffix(ch), "squelch"
 	case "bw":
 		return units.FormatFrequency(uint64(ch.GetBandwidthHz())), "bandwidth"
 	case "mode":

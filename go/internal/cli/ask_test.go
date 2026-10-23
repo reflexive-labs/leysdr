@@ -141,7 +141,8 @@ func TestAskWritesJSONLines(t *testing.T) {
 		}
 		last := states[len(states)-1]
 		if last.State != leylinev1.ConversationState_CONVERSATION_IDLE || len(last.Turns) != 2 || len(last.Turns[1].Tools) != 2 ||
-			last.Turns[1].Text != "Tuning to the NOAA station. It is playing now; ley stop ends it." {
+			last.Turns[1].Text != "Tuning to the NOAA station. It is playing now; ley stop ends it." ||
+			last.Turns[1].StopReason != leylinev1.StopReason_STOP_REASON_COMPLETED {
 			t.Errorf("%v: last line: %v", flags, last)
 		}
 		if got := newestConversation(t, c); got.ConversationId != last.ConversationId || got.Turns[0].Text != "listen to the weather" {
@@ -455,6 +456,10 @@ func TestAskInterrupt(t *testing.T) {
 			}
 			if last := lastState(t, out.String()); last.State != leylinev1.ConversationState_CONVERSATION_IDLE {
 				t.Errorf("one Ctrl-C: the last line is %v", last.State)
+			}
+			// The line says the turn was stopped, in the mapping's words.
+			if lines := strings.Split(strings.TrimSpace(out.String()), "\n"); !strings.Contains(lines[len(lines)-1], `"stopReason":"STOP_REASON_STOPPED"`) {
+				t.Errorf("one Ctrl-C: the last line does not say the turn was stopped:\n%s", lines[len(lines)-1])
 			}
 			if !strings.Contains(errOut.String(), "Stopping the assistant; Ctrl-C again ends the conversation") {
 				t.Errorf("stderr:\n%s", errOut.String())

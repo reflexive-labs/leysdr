@@ -255,6 +255,9 @@ func TestTuneAutoSquelch(t *testing.T) {
 	if got := st.Channels[0].SquelchDb; math.Abs(got-(-80)) > 1.5 {
 		t.Fatalf("auto squelch: got %v, want about -80", got)
 	}
+	if got := st.Channels[0].SquelchSource; got != leylinev1.SquelchSource_SQUELCH_AUTO {
+		t.Fatalf("auto squelch source: got %v, want SQUELCH_AUTO", got)
+	}
 	cancel()
 	err = <-done
 	// The banner is prose and lives on stderr; the assertion below is about

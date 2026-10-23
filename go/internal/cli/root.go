@@ -907,5 +907,5 @@ func deviceSummary(s ui.Style, d *leylinev1.DeviceDescriptor) string {
 func orientChannelLine(s ui.Style, state *leylinev1.GetStateResponse, ch *leylinev1.Channel) string {
 	freq := channelFreqLabel(state, ch)
 	return fmt.Sprintf("%s %s, squelch %s, %s %s", freq, strings.ToUpper(leyline.ModeName(ch.Mode)),
-		squelchString(ch.SquelchDb), inkState(s, stateWord(ch.State.String())), s.Muted("("+ch.ChannelId+")"))
+		channelSquelch(ch), inkState(s, stateWord(ch.State.String())), s.Muted("("+ch.ChannelId+")"))
 }
