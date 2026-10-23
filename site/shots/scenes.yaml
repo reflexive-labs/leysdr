@@ -457,8 +457,8 @@ scenes:
       accepted by the provider, and the provider and model the assistant and speech use.
     fixtures: [{name: scene_2m}]
     clock: "19:42"
-    # No ley ask first: LAST USED is dated by the real clock while CHECKED follows --wall-clock,
-    # so a use would print the time the shot was taken.
+    # No ley ask first, so the key reads never used. A use would be dated by the daemon's
+    # --wall-clock as CHECKED is, so one could be added.
     ai: {script: assistant/usage.script, provider: openai}
     terminal:
       cols: 100
