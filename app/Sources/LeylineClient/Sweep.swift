@@ -132,16 +132,24 @@ public struct SweepHit: Sendable, Hashable, Identifiable {
     public var looksPossible: UInt32
     /// The radio-printed name of the plan channel the hit is on (`Plans.name(at:)`), or nil.
     public var name: String?
+    /// That plan channel's own frequency, or nil with `name`.
+    public var channelHz: UInt64?
 
     public var id: UInt64 { hz }
 
+    /// What a click on the hit's row and its `＋` use: the frequency the row names, never the
+    /// measured centre, which moves by a few hundred hertz from sweep to sweep and would bookmark
+    /// 146.940186 MHz beside a repeater at 146.940. The plan channel's frequency when the hit is
+    /// on one, else the measured centre to the kilohertz its words print (`146.940 MHz`).
+    public var tuneHz: UInt64 { channelHz ?? (hz + 500) / 1_000 * 1_000 }
+
     /// What the row prints: the channel's name, else the frequency in the words a bookmark made
-    /// there would carry (`BookmarkNaming.frequencyWords`).
-    public var label: String { name ?? BookmarkNaming.frequencyWords(hz) }
+    /// there would carry (`BookmarkNaming.frequencyWords`), of `tuneHz`.
+    public var label: String { name ?? BookmarkNaming.frequencyWords(tuneHz) }
 
     public init(
         hz: UInt64, snrDb: Double, bandwidthHz: UInt32, looks: UInt32, looksPossible: UInt32,
-        name: String?
+        name: String?, channelHz: UInt64? = nil
     ) {
         self.hz = hz
         self.snrDb = snrDb
@@ -149,6 +157,7 @@ public struct SweepHit: Sendable, Hashable, Identifiable {
         self.looks = looks
         self.looksPossible = looksPossible
         self.name = name
+        self.channelHz = channelHz
     }
 }
 
@@ -186,9 +195,10 @@ public struct SweepResult: Sendable, Hashable {
                 ? a.element.snrDb > b.element.snrDb : a.offset < b.offset
         }
         .map { _, d in
-            SweepHit(
+            let on = Plans.channel(at: d.centerHz, in: bands)?.channel
+            return SweepHit(
                 hz: d.centerHz, snrDb: d.snrDb, bandwidthHz: d.bandwidthHz, looks: d.looks,
-                looksPossible: d.looksPossible, name: Plans.name(at: d.centerHz, in: bands))
+                looksPossible: d.looksPossible, name: on?.name, channelHz: on?.hz)
         }
         covered =
             scan.hasCovered && scan.covered.maxHz > scan.covered.minHz

@@ -246,7 +246,10 @@ and not a second one a watch or another window is using) and puts the detections
 rail as ticks with their SNR in the help text, strongest first in the expanded row for the
 sweep's duration and until the next tune. One click on a hit tunes it; the plan channel nearest
 within half a step names it, as `presetAt` names a detection in `ley scan`; `＋` on a hit makes
-the bookmark, named after the channel when there is one. A NOAA newcomer therefore clicks the
+the bookmark, named after the channel when there is one. Both use the frequency the row names:
+the channel's own, else the measured centre to the kilohertz the row prints (`146.940 MHz`),
+because the measure moves by a few hundred hertz from sweep to sweep and a bookmark at
+146.940186 MHz is not the repeater at 146.940 beside it. A NOAA newcomer therefore clicks the
 band, clicks Scan band, and clicks the loudest row. A sweep that finds nothing replaces the
 progress text with one line, `Nothing on the air right now; repeaters and towers key up
 briefly`, and leaves the rail without hits; a previous sweep's hits stay until the next sweep

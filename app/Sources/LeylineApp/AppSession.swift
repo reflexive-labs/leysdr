@@ -2018,33 +2018,34 @@ final class AppSession {
         Task { await startSweep(row: row) }
     }
 
-    /// A hit's row and its rail tick: the frequency tunes as a click on the chart would. With
+    /// A hit's row and its rail tick: the frequency the row names (`SweepHit.tuneHz`) tunes as
+    /// a click on the chart would. With
     /// no capture (Stop listening after the sweep) the band opens the radio there, as a bookmark
     /// click does.
     func tune(hit: SweepHit) {
-        log("tune", "hit \(hit.label) at \(hit.hz) Hz")
-        if capture == nil, let b = Bands.band(containing: hit.hz, in: bands),
+        log("tune", "hit \(hit.label) at \(hit.tuneHz) Hz")
+        if capture == nil, let b = Bands.band(containing: hit.tuneHz, in: bands),
             outOfRangeWords(b) == nil
         {
-            Task { await select(band: b, at: hit.hz) }
+            Task { await select(band: b, at: hit.tuneHz) }
             return
         }
-        tune(to: hit.hz)
+        tune(to: hit.tuneHz)
     }
 
     /// `＋` on a hit: a bookmark named as the row names the hit, the plan channel's name else
-    /// the frequency, with the band's mode and width there, and its row
+    /// the frequency, on that frequency (`SweepHit.tuneHz`) with the band's mode and width, and its row
     /// opened as an editor as ⌘D opens one. The same name on the same frequency twice updates
     /// the bookmark in place (`BookmarkStore.add`).
     func bookmark(hit: SweepHit) {
-        let band = Bands.band(containing: hit.hz, in: bands)
-        let mode = band?.mode(at: hit.hz) ?? Bands.defaultMode(at: hit.hz, in: bands)
+        let band = Bands.band(containing: hit.tuneHz, in: bands)
+        let mode = band?.mode(at: hit.tuneHz) ?? Bands.defaultMode(at: hit.tuneHz, in: bands)
         let bandwidthHz = band?.bandwidthHz ?? mode.defaultBandwidthHz
         do {
             let b = try bookmarks.add(
-                name: hit.label, hz: hit.hz, mode: mode, bandwidthHz: bandwidthHz)
+                name: hit.label, hz: hit.tuneHz, mode: mode, bandwidthHz: bandwidthHz)
             try bookmarks.save()
-            log("bookmark", "added \(hit.label) at \(hit.hz) Hz from a sweep hit")
+            log("bookmark", "added \(hit.label) at \(hit.tuneHz) Hz from a sweep hit")
             editingBookmarkID = b.id
         } catch {
             lastError = bookmarkWriteError(error)
