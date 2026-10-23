@@ -538,6 +538,9 @@ private struct SettingsField: ViewModifier {
         content
             .textFieldStyle(.plain)
             .font(Theme.Font.label).foregroundStyle(Theme.ink)
+            // The line's height, set: left to the field, an empty one and one with text
+            // differ by a point, and the rows under the Key field moved between runs.
+            .frame(height: Theme.Layout.labelFieldHeight)
             .focused($focused)
             .focusEffectDisabled()
             .padding(.horizontal, 6).padding(.vertical, 4)
