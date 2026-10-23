@@ -416,12 +416,14 @@ scenes:
     crop: {regions: [parts], size: {width: 2000, height: 700}, anchor: top-left}
 
   # The window follows a terminal: the fixture's channel goes, the window makes its own on
-  # Calling, and `ley tune 146.940` is typed once the window shows.
+  # Calling, and `ley tune 146.940 --bw 25` is typed once the window shows. The width is the Club
+  # repeater bookmark's (CHIRP's FM, NFM at 25 kHz); tuned at the 2 m default of 12.5 kHz the
+  # inspector would read the bookmark as changed.
   - asset: app-follow-terminal.png
     kind: composite
     alt: >-
-      A terminal running ley tune 146.940 beside the Leyline window, which has moved to the club
-      repeater on 146.940 MHz, says another terminal tuned it and that the audio plays there.
+      A terminal running ley tune 146.940 --bw 25 beside the Leyline window, which has moved to the
+      club repeater on 146.940 MHz, says another terminal tuned it and that the audio plays there.
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: home.csv
@@ -438,7 +440,7 @@ scenes:
       cols: 80
       rows: 24
       panes:
-        - command: ley tune 146.940
+        - command: ley tune 146.940 --bw 25
           after_app: true
     settle: 4
     app:
