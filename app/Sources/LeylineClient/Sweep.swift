@@ -137,11 +137,13 @@ public struct SweepHit: Sendable, Hashable, Identifiable {
 
     public var id: UInt64 { hz }
 
-    /// What a click on the hit's row and its `＋` use: the frequency the row names, never the
-    /// measured centre, which moves by a few hundred hertz from sweep to sweep and would bookmark
-    /// 146.940186 MHz beside a repeater at 146.940. The plan channel's frequency when the hit is
-    /// on one, else the measured centre to the kilohertz its words print (`146.940 MHz`).
-    public var tuneHz: UInt64 { channelHz ?? (hz + 500) / 1_000 * 1_000 }
+    /// What a click on the hit's row and its `＋` use. The plan channel's frequency when the hit
+    /// is on one, never the measured centre, which moves by a few hundred hertz from sweep to
+    /// sweep and would bookmark 146.940186 MHz beside a repeater at 146.940. Else the measured
+    /// centre rounded to 100 Hz (MC-3): fine enough for a 12.5 kHz offset channel (462.5625 MHz)
+    /// and an SSB voice, which a kilohertz moved off by up to 500 Hz, and coarse enough not to
+    /// carry the measure's last digits.
+    public var tuneHz: UInt64 { channelHz ?? (hz + 50) / 100 * 100 }
 
     /// What the row prints: the channel's name, else the frequency in the words a bookmark made
     /// there would carry (`BookmarkNaming.frequencyWords`), of `tuneHz`.

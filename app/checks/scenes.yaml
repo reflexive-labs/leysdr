@@ -1567,7 +1567,7 @@ scenes:
   # The tuning field (docs/plans/app.md, MC-1b): four decimals, cut and never rounded, while the
   # radio stays on the exact hertz, which the field's tooltip and the inspector's line give. A
   # typed 146.940186 tunes to the hertz and reads 146.9401; the fine step keeps the hertz, the
-  # band's step lands on its 5 kHz grid, and a hit's row tunes the channel it names (MC-1a). At
+  # band's step lands on its 5 kHz grid, and a hit's row tunes its measure to 100 Hz (MC-3). At
   # 1440 pt the squelch's three words and its long caption both show.
   - name: transport-tuning
     covers: [TransportBarView.swift, Frequency.swift, FrequencyEntry.swift, InspectorView.swift]
@@ -1610,8 +1610,8 @@ scenes:
       - {cmd: wait, seconds: 6, expect_log: ["sweep: job_.* ended: [0-9]+ hits?", "sweep: resuming bookmark Calling"]}
       - {cmd: state, expect: {tuned_hz: 146520000}}
       - {cmd: click, identifier: sidebar.hit.146-940-mhz}
-      - {cmd: wait, seconds: 1}
-      - {cmd: state, expect: {tuned_hz: 146940000, transport.tuning: "146.9400"}}
+      # On no plan channel, so the measure to 100 Hz (MC-3).
+      - {cmd: wait, seconds: 1, expect_log: "tune: hit 146.940 MHz at 1469(39[5-9]|40[0-4])00 Hz"}
 
   # The transport bar at the window's minimum (MC-1b): too narrow for the squelch's three words
   # and its long caption, so the words are dropped and the caption is the short one.
@@ -1646,7 +1646,8 @@ scenes:
   # still opens it. Closing the picker by Escape or by a pick leaves nothing focused, so Space
   # mutes and → tunes. marine's picker is twelve rows of its 110, and 24 narrows them. An
   # accessibility press on a step arrow takes the band's step whatever key is held. A hit's row
-  # and its ＋ use the frequency the row names, 146.940 MHz, not the one the sweep measured.
+  # and its ＋ use the plan channel's frequency when there is one; 146.940 MHz is on none, so
+  # they use the measure rounded to 100 Hz (MC-3).
   - name: mc1a-sidebar-actions
     covers: [SidebarView.swift, PlanPickerView.swift, Sidebar.swift, Bands.swift, Sweep.swift,
       TransportBarView.swift]
@@ -1724,11 +1725,12 @@ scenes:
       - {cmd: wait, seconds: 1}
       - {cmd: press, identifier: sidebar.band.2m.scan}
       - {cmd: wait, seconds: 6, expect_log: ["sweep: job_.* ended: [0-9]+ hits?", "sweep: resuming bookmark Calling"]}
+      # 146.940 is on no 2 m plan channel, so the measure is used to 100 Hz (MC-3): within
+      # 500 Hz of the repeater, and never the measure's last two digits.
       - {cmd: click, identifier: sidebar.hit.146-940-mhz}
-      - {cmd: wait, seconds: 1, expect_log: "tune: hit 146.940 MHz at 146940000 Hz"}
-      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater}}
+      - {cmd: wait, seconds: 1, expect_log: "tune: hit 146.940 MHz at 1469(39[5-9]|40[0-4])00 Hz"}
       - {cmd: press, identifier: sidebar.hit.146-940-mhz.add}
-      - {cmd: wait, seconds: 1, expect_log: "bookmark: added 146.940 MHz at 146940000 Hz from a sweep hit"}
+      - {cmd: wait, seconds: 1, expect_log: "bookmark: added 146.940 MHz at 1469(39[5-9]|40[0-4])00 Hz from a sweep hit"}
 
   # The inspector as the owner decided it (docs/plans/app.md, MC-1a): the tags line keeps its
   # place, so the frequency line and the Tone and Note fields sit at the same height on Tagged

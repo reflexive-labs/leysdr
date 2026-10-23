@@ -2033,7 +2033,7 @@ final class AppSession {
         Task { await startSweep(row: row) }
     }
 
-    /// A hit's row and its rail tick: the frequency the row names (`SweepHit.tuneHz`) tunes as
+    /// A hit's row and its rail tick: the hit's frequency (`SweepHit.tuneHz`) tunes as
     /// a click on the chart would. With
     /// no capture (Stop listening after the sweep) the band opens the radio there, as a bookmark
     /// click does.
