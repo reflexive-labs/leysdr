@@ -6,7 +6,8 @@
 // usage lines, so the Linux tests read every string the panel prints. The conversation is daemon
 // state (`docs/design/ai.md`, "The assistant"): the panel renders it and moves it only through the
 // `Assistant` RPCs, as `ley ask` does, and the words follow `ley ask`'s (`go/internal/cli/ask.go`):
-// a step is `→ tool arguments` and its result's first line, a declined call says so, and usage is
+// a step is its tool and arguments (`ley ask`'s `→ tool arguments`, without the arrow, since the
+// panel's row has a chevron), opened to `StepDetail`, a declined call says so, and usage is
 // in the provider's units, never a price (`docs/design/ai.md`, "Usage").
 
 import Foundation
@@ -122,9 +123,10 @@ public struct StepRow: Sendable, Equatable, Identifiable {
     public let tool: String
     /// The arguments on one line: `noaa`, `frequency 146.52 · mode nfm`.
     public let summary: String
-    /// The arguments as indented JSON for the expanded row; the text as it came when it is not
-    /// JSON.
+    /// The arguments as indented JSON; the text as it came when it is not JSON.
     public let arguments: String
+    /// The arguments as the call carried them, for `detail`.
+    public let argumentsJSON: String
     public let state: Leyline_V1_ToolCallState
     public let isError: Bool
     /// The result's first line, under the step while it is closed; empty until the call is done.
@@ -141,6 +143,7 @@ public struct StepRow: Sendable, Equatable, Identifiable {
         tool = c.tool
         summary = AssistantWords.summary(argumentsJSON: c.argumentsJson)
         arguments = AssistantWords.pretty(json: c.argumentsJson)
+        argumentsJSON = c.argumentsJson
         state = c.state
         isError = c.isError
         resultFirstLine = AssistantWords.firstLine(c.resultText)
@@ -149,9 +152,10 @@ public struct StepRow: Sendable, Equatable, Identifiable {
         reason = c.reason
     }
 
-    /// `→ tune noaa`: the closed row's line, `ley ask`'s.
+    /// `tune noaa`: the row's tool and arguments, `ley ask`'s line without its arrow, since the
+    /// row's chevron is its one glyph.
     public var line: String {
-        summary.isEmpty ? "\u{2192} \(tool)" : "\u{2192} \(tool) \(summary)"
+        summary.isEmpty ? tool : "\(tool) \(summary)"
     }
 
     /// What became of the call, in one word.
@@ -174,6 +178,8 @@ public struct PendingQuestion: Sendable, Equatable {
     public let callID: String
     public let tool: String
     public let summary: String
+    /// What the call would do, as the rest of `question`: `remove the APRS bookmark`.
+    public let action: String
     /// Why it asks, the gate's words (`docs/dev/assistant.md`, "The gate").
     public let reason: String
     /// A call to one of the app's own view tools: answered by the app, never put to the person.
@@ -186,6 +192,7 @@ public struct PendingQuestion: Sendable, Equatable {
         callID = p.callID
         tool = p.tool
         summary = AssistantWords.summary(argumentsJSON: p.argumentsJson)
+        action = AssistantWords.action(tool: p.tool, argumentsJSON: p.argumentsJson)
         reason = p.reason.trimmingCharacters(in: .whitespacesAndNewlines)
         isViewTool = p.viewTool
         offers = p.offers
@@ -197,12 +204,10 @@ public struct PendingQuestion: Sendable, Equatable {
     /// never offer it.
     public var offersConversation: Bool { offers.contains(.conversation) }
 
-    /// "The assistant wants to delete_recording rec_01…", `ley ask`'s question without the
-    /// letters it offers; the reason goes on a line of its own under it.
-    public var question: String {
-        let what = summary.isEmpty ? tool : "\(tool) \(summary)"
-        return "The assistant wants to \(what)."
-    }
+    /// "The assistant wants to remove the APRS bookmark.": what the call would do in words,
+    /// never the tool's name or an id (`AssistantWords.action`); the reason goes on a line of
+    /// its own under it. `ley ask` asks with the tool's name and arguments instead.
+    public var question: String { "The assistant wants to \(action)." }
 }
 
 /// The tokens one conversation has used so far: its usage lines summed over the days they fall on.

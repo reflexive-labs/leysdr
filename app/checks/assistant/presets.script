@@ -1,0 +1,2 @@
+{"tool": "list_presets", "args": {}}
+{"text": "There are 187 presets: the CB channels, MURS, FRS and GMRS, marine, NOAA weather and the 2 m calling frequencies.", "usage": {"input_tokens": 3100, "output_tokens": 40}}

@@ -112,7 +112,7 @@ struct AssistantHeader: View {
                 .accessibilityIdentifier("assistant.new")
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Theme.Layout.assistantInset)
         .frame(height: Theme.Layout.inspectorHeaderHeight)
         .background(Theme.panelHeader)
     }
@@ -137,28 +137,40 @@ struct AssistantEmpty: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(16)
+        .padding(Theme.Layout.assistantInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
-/// The turns, oldest first, kept scrolled to the newest.
+/// The turns, oldest first, kept scrolled to the newest. Your message and the assistant's turn
+/// that answers it are one exchange, `assistantInTurnGap` apart; exchanges are
+/// `assistantTurnGap` apart.
 struct AssistantTranscript: View {
     let view: ConversationView
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: Theme.Layout.assistantTurnGap) {
-                ForEach(view.turns) { turn in
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(view.turns.enumerated()), id: \.element.id) { i, turn in
                     TurnView(turn: turn)
+                        .padding(.top, gap(before: i))
                 }
                 if view.isWaitingOnModel {
                     WaitingRow(since: view.waitingSince(now: Date()))
+                        .padding(.top, Theme.Layout.assistantInTurnGap)
                 }
             }
-            .padding(16)
+            .padding(Theme.Layout.assistantInset)
         }
         .defaultScrollAnchor(.bottom)
+    }
+
+    /// Nothing over the first turn; the small gap over the assistant's turn, which answers what
+    /// is over it; the large one over your message, which starts an exchange.
+    private func gap(before i: Int) -> CGFloat {
+        guard i > 0 else { return 0 }
+        return view.turns[i].role == .assistant
+            ? Theme.Layout.assistantInTurnGap : Theme.Layout.assistantTurnGap
     }
 }
 
@@ -195,38 +207,45 @@ struct WaitingRow: View {
     }
 }
 
-/// A user turn right-aligned in muted ink; an assistant turn's steps, then its text in secondary
-/// ink, the brightest in the column after the field's own typing, which keeps `ink`. A stopped
-/// turn ends with a faint `Stopped.`, under the user's message when the assistant had written
-/// nothing yet.
+/// Your message on a `raised` bubble at the right, at most about 80 % of the column wide; an
+/// assistant turn's steps, then its reply across the column with no bubble. Both are
+/// `inkSecondary` in `Font.reply` with `Theme.replyLeading` between lines; `ink`, the
+/// brightest, is kept for the field's typing. A stopped turn (`stop_reason` STOPPED, an empty
+/// one included) ends with a faint `Stopped.` after its steps.
 struct TurnView: View {
     let turn: TurnRow
 
     var body: some View {
         switch turn.role {
         case .user:
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Spacer(minLength: Theme.Layout.assistantUserInset)
-                    Text(turn.text).font(Theme.Font.body).foregroundStyle(Theme.inkMuted)
-                        .multilineTextAlignment(.trailing)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if turn.stopped { StoppedLine() }
+            VStack(alignment: .trailing, spacing: Theme.Layout.assistantInTurnGap) {
+                Text(turn.text).font(Theme.Font.reply).lineSpacing(Theme.replyLeading)
+                    .foregroundStyle(Theme.inkSecondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, Theme.Layout.assistantBubblePaddingH)
+                    .padding(.vertical, Theme.Layout.assistantBubblePaddingV)
+                    .background(
+                        Theme.raised,
+                        in: RoundedRectangle(cornerRadius: Theme.Layout.assistantRadius)
+                    )
+                    .frame(maxWidth: Theme.Layout.assistantBubbleMaxWidth, alignment: .trailing)
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         case .assistant:
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Theme.Layout.assistantInTurnGap) {
                 ForEach(turn.steps) { step in
                     StepView(step: step)
                 }
                 if !turn.text.isEmpty {
-                    Text(turn.text).font(Theme.Font.body).foregroundStyle(Theme.inkSecondary)
+                    Text(turn.text).font(Theme.Font.reply).lineSpacing(Theme.replyLeading)
+                        .foregroundStyle(Theme.inkSecondary)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if turn.stopped { StoppedLine() }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -238,14 +257,14 @@ struct StoppedLine: View {
     }
 }
 
-/// One tool call: `→ tool arguments` and its state word, the result's first line under it, and
-/// when opened the arguments and the whole result.
+/// One tool call: the chevron, the tool and its arguments, and its state word at the right;
+/// opened, the call read through `StepDetail` on the column's left edge.
 struct StepView: View {
     let step: StepRow
     @State private var open = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: Theme.Layout.assistantInTurnGap) {
             Button {
                 open.toggle()
             } label: {
@@ -253,7 +272,10 @@ struct StepView: View {
                     Image(systemName: "chevron.right").font(Theme.Font.glyph)
                         .foregroundStyle(Theme.inkFaintest)
                         .rotationEffect(.degrees(open ? 90 : 0))
-                    Text(step.line).font(Theme.Font.value).foregroundStyle(Theme.inkTertiary)
+                    let arguments = Text(step.summary.isEmpty ? "" : " \(step.summary)")
+                        .foregroundStyle(Theme.inkFaint)
+                    Text("\(Text(step.tool).foregroundStyle(Theme.inkTertiary))\(arguments)")
+                        .font(Theme.Font.value)
                         .lineLimit(1).truncationMode(.tail)
                     Spacer(minLength: 4)
                     Text(step.stateWord).font(Theme.Font.valueSmall)
@@ -262,30 +284,10 @@ struct StepView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("\(step.line), \(step.stateWord)")
             .accessibilityIdentifier("assistant.step.\(ViewIdentifier.slug(step.callID))")
-            if !open, !step.resultFirstLine.isEmpty {
-                Text(step.resultFirstLine).font(Theme.Font.valueSmall)
-                    .foregroundStyle(step.isError ? Theme.recording : Theme.inkFaint)
-                    .lineLimit(1).truncationMode(.tail)
-                    .padding(.leading, Theme.Layout.assistantStepIndent)
-            }
             if open {
-                VStack(alignment: .leading, spacing: 6) {
-                    if !step.reason.isEmpty {
-                        Text(step.reason).font(Theme.Font.aside).foregroundStyle(Theme.caution)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    if !step.arguments.isEmpty {
-                        StepBlock(title: "Arguments", text: step.arguments)
-                    }
-                    if !step.resultText.isEmpty {
-                        StepBlock(title: "Result", text: step.resultText)
-                    }
-                    if !step.resultJSON.isEmpty {
-                        StepBlock(title: "JSON", text: AssistantWords.pretty(json: step.resultJSON))
-                    }
-                }
-                .padding(.leading, Theme.Layout.assistantStepIndent)
+                StepBody(step: step)
             }
         }
     }
@@ -299,28 +301,135 @@ struct StepView: View {
     }
 }
 
-/// A section of an opened step: a section header over mono text that can be selected.
-struct StepBlock: View {
-    let title: String
-    let text: String
+/// An opened step: the gate's reason when it asked, the arguments as `key value` lines and the
+/// result as a table or compact text, or with `JSON` on, the JSON behind them. The box is at
+/// most `assistantStepBodyMaxHeight` tall and scrolls inside past that.
+struct StepBody: View {
+    let step: StepRow
+    @State private var showJSON = false
+    /// The content's own height, measured, so a short body's box hugs it.
+    @State private var contentHeight: CGFloat = 0
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            SectionHeader(text: title)
-            Text(text).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkSecondary)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+        let detail = step.detail
+        VStack(alignment: .trailing, spacing: 4) {
+            ScrollView {
+                Group {
+                    if showJSON { json(detail) } else { readable(detail) }
+                }
+                .padding(Theme.Layout.assistantBoxPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(8)
-                .background(Theme.raised, in: RoundedRectangle(cornerRadius: 4))
+                .onGeometryChange(for: CGFloat.self) {
+                    $0.size.height
+                } action: {
+                    contentHeight = $0
+                }
+            }
+            .frame(height: min(contentHeight, Theme.Layout.assistantStepBodyMaxHeight))
+            .background(
+                Theme.raised, in: RoundedRectangle(cornerRadius: Theme.Layout.assistantBoxRadius))
+            if detail.hasJSON {
+                Button(showJSON ? "Readable" : "JSON") { showJSON.toggle() }
+                    .buttonStyle(.plain)
+                    .font(Theme.Font.valueSmall)
+                    .foregroundStyle(Theme.inkFaint)
+                    .help(showJSON ? "Show the call as lines" : "Show the call's JSON")
+                    .accessibilityIdentifier(
+                        "assistant.step.\(ViewIdentifier.slug(step.callID)).json")
+            }
         }
+    }
+
+    private func readable(_ d: StepDetail) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Layout.assistantInTurnGap) {
+            if !step.reason.isEmpty {
+                Text(step.reason).font(Theme.Font.aside).foregroundStyle(Theme.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !d.arguments.isEmpty {
+                Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 2)
+                {
+                    ForEach(Array(d.arguments.enumerated()), id: \.offset) { _, a in
+                        GridRow {
+                            Text(a.key).foregroundStyle(Theme.inkFaint)
+                            Text(a.value).foregroundStyle(Theme.inkSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .font(Theme.Font.valueSmall)
+                .textSelection(.enabled)
+            }
+            switch d.result {
+            case .none:
+                EmptyView()
+            case .text(let text):
+                Text(text).font(Theme.Font.valueSmall)
+                    .foregroundStyle(step.isError ? Theme.recording : Theme.inkSecondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            case .table(let t):
+                StepTable(table: t)
+            }
+        }
+    }
+
+    private func json(_ d: StepDetail) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Layout.assistantInTurnGap) {
+            if !d.argumentsJSON.isEmpty {
+                SectionHeader(text: "Arguments")
+                jsonText(d.argumentsJSON)
+            }
+            if !d.resultJSON.isEmpty {
+                SectionHeader(text: "Result")
+                jsonText(d.resultJSON)
+            }
+        }
+    }
+
+    private func jsonText(_ s: String) -> some View {
+        Text(s).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkSecondary)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
-/// What the assistant asks to do, the reason in its gate's words, and a button per answer the
-/// question offers: Decline, Allow for this conversation when it can be granted for the rest of
-/// the conversation (never for a delete or a cancel of another client's job), and Allow. No
-/// button takes Return: a delete or a takeover is answered with a click, never a stray key.
+/// A result that is rows: the column heads, the rows shown, and `… N more`.
+struct StepTable: View {
+    let table: StepDetail.Table
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 2) {
+                GridRow {
+                    ForEach(table.columns, id: \.self) { c in
+                        Text(c.uppercased()).font(Theme.Font.columnHead)
+                            .foregroundStyle(Theme.inkFaint)
+                    }
+                }
+                ForEach(Array(table.rows.enumerated()), id: \.offset) { _, row in
+                    GridRow {
+                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                            Text(cell).font(Theme.Font.valueSmall)
+                                .foregroundStyle(Theme.inkSecondary)
+                                .lineLimit(1).truncationMode(.tail)
+                        }
+                    }
+                }
+            }
+            if let more = table.moreWords {
+                Text(more).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
+            }
+        }
+        .textSelection(.enabled)
+    }
+}
+
+/// What the assistant asks to do in words, the reason in its gate's words, and a button per
+/// answer the question offers: Decline and Allow for this conversation (when it can be granted
+/// for the rest of the conversation, never for a delete or a cancel of another client's job) as
+/// plain text, and Allow, the one filled button. No button takes Return: a delete or a takeover
+/// is answered with a click, never a stray key.
 struct PendingCard: View {
     @Environment(AppSession.self) private var session
     let question: PendingQuestion
@@ -347,35 +456,94 @@ struct PendingCard: View {
             Text(question.question).font(Theme.Font.label).foregroundStyle(Theme.ink)
                 .fixedSize(horizontal: false, vertical: true)
             if !question.reason.isEmpty {
-                Text(question.reason).font(Theme.Font.aside).foregroundStyle(Theme.caution)
+                Text(question.reason).font(Theme.Font.aside).foregroundStyle(Theme.inkSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            // The three at their full width, 279 pt: the panel's 320 pt leaves the card 280
-            // inside its padding, with no room given to the spacer and 6 pt between.
-            HStack(spacing: 6) {
-                Spacer(minLength: 0)
-                let session = session
-                let id = question.callID
-                Button("Decline") { answer { await session.decline(callID: id) } }
-                    .accessibilityIdentifier("assistant.decline")
-                if question.offersConversation {
-                    Button("Allow for this conversation") {
-                        answer { await session.approve(callID: id, forConversation: true) }
-                    }
-                    .accessibilityIdentifier("assistant.allow.conversation")
+            // On one line when the three fit the card, else Allow for this conversation over
+            // Decline and Allow, so none is cut at the window's narrowest.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    Spacer(minLength: 0)
+                    decline
+                    if question.offersConversation { allowForConversation }
+                    allow
                 }
-                Button("Allow") { answer { await session.approve(callID: id) } }
-                    .accessibilityIdentifier("assistant.allow")
+                VStack(alignment: .trailing, spacing: 6) {
+                    if question.offersConversation { allowForConversation }
+                    HStack(spacing: 12) {
+                        decline
+                        allow
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
-            .fixedSize(horizontal: true, vertical: false)
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .buttonStyle(.bordered).controlSize(.small)
+            .font(Theme.Font.label)
             .disabled(answering == question.callID)
         }
-        .padding(12)
-        .background(Theme.raised, in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.borderStrong))
-        .padding(.horizontal, 8).padding(.bottom, 10)
+        .padding(Theme.Layout.assistantCardPadding)
+        .background(Theme.raised, in: RoundedRectangle(cornerRadius: Theme.Layout.assistantRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Layout.assistantRadius)
+                .strokeBorder(Theme.borderStrong)
+        )
+        .padding(.horizontal, Theme.Layout.assistantInset)
+        .padding(.bottom, Theme.Layout.assistantTurnGap)
+    }
+
+    private var decline: some View {
+        let session = session
+        let id = question.callID
+        return Button("Decline") { answer { await session.decline(callID: id) } }
+            .buttonStyle(AssistantButtonStyle(filled: false))
+            .accessibilityIdentifier("assistant.decline")
+    }
+
+    private var allowForConversation: some View {
+        let session = session
+        let id = question.callID
+        return Button("Allow for this conversation") {
+            answer { await session.approve(callID: id, forConversation: true) }
+        }
+        .buttonStyle(AssistantButtonStyle(filled: false))
+        .accessibilityIdentifier("assistant.allow.conversation")
+    }
+
+    private var allow: some View {
+        let session = session
+        let id = question.callID
+        return Button("Allow") { answer { await session.approve(callID: id) } }
+            .buttonStyle(AssistantButtonStyle(filled: true))
+            .accessibilityIdentifier("assistant.allow")
+    }
+}
+
+/// A card's button: Allow filled in `inkSecondary` with the panel's ground for its words, the
+/// others plain text in `inkTertiary`; disabled, both in `inkDisabled`.
+struct AssistantButtonStyle: ButtonStyle {
+    let filled: Bool
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed
+        return configuration.label
+            .foregroundStyle(
+                filled
+                    ? (isEnabled ? Theme.panel : Theme.inkDisabled)
+                    : (isEnabled
+                        ? (pressed ? Theme.inkSecondary : Theme.inkTertiary)
+                        : Theme.inkDisabled)
+            )
+            .padding(.horizontal, filled ? Theme.Layout.assistantButtonPaddingH : 0)
+            .padding(.vertical, Theme.Layout.assistantButtonPaddingV)
+            .background {
+                if filled {
+                    RoundedRectangle(cornerRadius: Theme.Layout.assistantButtonRadius)
+                        .fill(
+                            isEnabled
+                                ? (pressed ? Theme.inkTertiary : Theme.inkSecondary) : Theme.border)
+                }
+            }
+            .contentShape(Rectangle())
     }
 }
 
@@ -395,7 +563,7 @@ struct AssistantNoticeLine: View {
                     .accessibilityIdentifier("assistant.settings")
             }
         }
-        .padding(.horizontal, 16).padding(.vertical, 8)
+        .padding(.horizontal, Theme.Layout.assistantInset).padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -435,14 +603,20 @@ struct AssistantField: View {
                 Text(words).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
             }
             HStack(spacing: 8) {
-                TextField("Ask the assistant", text: $session.assistantDraft, axis: .vertical)
+                // The placeholder is drawn in `inkFaint`, as the sidebar filter's is: the
+                // field's own takes the system's colour, dimmed only by vibrancy.
+                TextField("", text: $session.assistantDraft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(Theme.Font.body).foregroundStyle(Theme.ink)
                     .lineLimit(1...4)
                     .focused($focused)
                     .onSubmit(send)
                     .modifier(TuningKeyGuard(focused: focused))
+                    .accessibilityLabel("Ask the assistant")
                     .accessibilityIdentifier("assistant.input")
+                    .fieldPlaceholder(
+                        "Ask the assistant", font: Theme.Font.body,
+                        shown: session.assistantDraft.isEmpty)
                 if view?.canStop == true {
                     Button("Stop") { Task { await session.stopTurn() } }
                         .buttonStyle(.bordered).controlSize(.small)
@@ -450,10 +624,12 @@ struct AssistantField: View {
                         .accessibilityIdentifier("assistant.stop")
                 }
             }
-            .padding(8)
-            .background(Theme.raised, in: RoundedRectangle(cornerRadius: 6))
+            .padding(Theme.Layout.assistantBoxPadding)
+            .background(
+                Theme.raised, in: RoundedRectangle(cornerRadius: Theme.Layout.assistantRadius)
+            )
             .overlay(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: Theme.Layout.assistantRadius)
                     .strokeBorder(focused ? Theme.borderFocus : Theme.border))
             if !canSend,
                 !session.assistantDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -462,7 +638,8 @@ struct AssistantField: View {
                     .foregroundStyle(Theme.inkFaint)
             }
         }
-        .padding(12)
+        .padding(.horizontal, Theme.Layout.assistantInset)
+        .padding(.vertical, Theme.Layout.assistantFooterPadding)
     }
 
     private func send() {

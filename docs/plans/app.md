@@ -1723,6 +1723,13 @@ the open options. The defects are from the 2026-10-22 pictures of `assistant-con
 It is checked by `assistant-conversation`, `assistant-cards` and `assistant-view-tools`, with their
 pictures re-recorded once the owner has seen them, plus a scene with a long result opened.
 
+Built 2026-10-23 in a batch lane, which launches no app; not ticked until a verify run on the Mac
+has recorded the pictures and the owner has seen them. The card's sentence is the app's
+(`AssistantWords.action`): the daemon's question has the tool, its arguments and the gate's
+reason, and no sentence, and `ley ask` still asks with the tool's name. The step row keeps the
+call's arguments after the tool's name, fainter, so two tunes tell apart; an opened step's reason
+is `inkSecondary` like the card's. `assistant-long-result` opens `list_presets`.
+
 ### MC-3 `[ ]` Batch 1's review, decided (2026-10-23)
 
 A review of Batch 1 found three defects. The owner settled three questions it raised.
