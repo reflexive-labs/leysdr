@@ -1885,6 +1885,30 @@ Checked on `scene_vhf20` (21 MSPS) and on the RTL-width 2 m scenes: the thumb's 
 spectrum's, a drag that leaves `tuned_hz` alone, a drag past the capture's edge that retunes, the
 edge marker, a click on a dense run of ticks tuning the nearest, and the zoom steps' spans.
 
+### MC-8 `[ ]` The person's daemon runs a signed, installed copy (2026-10-23, for 0.2.0)
+
+Found in the owner's QA: Settings' Check and the assistant both said no openai key was set, while
+`ley ai` showed the key accepted. The owner's LaunchAgent ran `engine/.build/release/leylined` in
+place. `make app-check` depends on `swift-release`, so a check run relinked that file under the
+running daemon. Local builds are ad-hoc signed, so each relink has a new code identity, and a
+keychain read from a process whose file has changed under it fails. The add's own check used the
+key it held in memory and passed. Every later read failed, and no failed read is logged. The
+owner's call:
+
+- **`make reload` installs a copy.** It builds `leylined` and `ley` in release, copies them to
+  `~/Library/Application Support/Leyline/bin/`, signs them with the build Mac's Developer ID
+  (`CODESIGN_IDENTITY`, ad hoc with a stated warning when there is none), points the LaunchAgent
+  at the copy and restarts it. A check run rebuilding `engine/.build` no longer touches the daemon
+  the person runs. Signed by a stable identity, its keychain access survives a reinstall. Square it
+  with the app's own registration of the daemon (`EngineAgent`, `SMAppService`, the bundled
+  plist): one LaunchAgent label, and the app and `make reload` agree on which binary it runs.
+- **A failed keychain read is logged and shown.** The daemon logs the Security framework's status
+  and message for every failed read. Settings' Check notice and the assistant's refusal carry the
+  detail (`cannot read the openai key from the keychain: …`). A read that fails for code identity
+  says to run `make reload` and add the key again.
+- **The trap is written down.** `docs/dev/setup.md` and `AGENTS.local.md` say not to run a
+  LaunchAgent on a build directory a check rebuilds.
+
 ## Backlog
 
 - **Two frequency affine maps remain separate.** `SquelchTrack` and `GainSlider` share
