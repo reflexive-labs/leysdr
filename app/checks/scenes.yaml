@@ -903,7 +903,7 @@ scenes:
 
   # The assistant's questions (docs/plans/app.md, the assistant panel): a call the gate asks
   # about is a card under the transcript that Return does not answer and Decline does; a take
-  # over offers Allow for this conversation between Decline and Allow, all three inside the
+  # over offers Allow in this chat between Decline and Allow, all three on one line of the
   # column at the window's narrowest, and once it is allowed for the conversation the next take
   # over runs without a card; a delete offers Decline and Allow alone, enabled at once. Once a
   # tune has run its step carries the run's channel ids, so state carries the checks from there.
@@ -928,11 +928,10 @@ scenes:
       - {cmd: key, keys: return}
       - {cmd: wait, seconds: 2}
       - {cmd: state, expect: {assistant.state: waiting for you, focused: assistant.input}}
-      # The card says what the call does in words, with no tool id (its tree shows the
-      # sentence); Decline and Allow for this conversation are plain text, Allow the one filled
-      # button (docs/plans/app.md, MC-2). The three do not fit on one line of the column, so
-      # Allow for this conversation sits on its own over the other two, first in the tree.
-      - {cmd: state, expect: {assistant.buttons.1.title: "remove_bookmark APRS, asks", assistant.buttons.2.id: assistant.allow.conversation, assistant.buttons.3.id: assistant.decline, assistant.buttons.4.id: assistant.allow}}
+      # The card says what the call does in words, with no tool id; the gate's reason only
+      # restates it, so no line goes under the sentence. Decline, Allow in this chat and Allow,
+      # the one filled button, sit on one line in that order (docs/plans/app.md, MC-2, MC-4).
+      - {cmd: state, expect: {assistant.question: The assistant wants to remove the APRS bookmark., assistant.note: null, assistant.buttons.1.title: "remove_bookmark APRS, asks", assistant.buttons.2.id: assistant.decline, assistant.buttons.3.id: assistant.allow.conversation, assistant.buttons.3.title: Allow in this chat, assistant.buttons.4.id: assistant.allow}}
       - {cmd: snapshot, name: asks}
       - {cmd: ax, name: asks}
       # Return does not answer the card; Decline does, and the card goes.
@@ -944,13 +943,14 @@ scenes:
       - {cmd: state, expect: {assistant.state: ready}}
       - {cmd: ax, name: declined}
       - {cmd: ley, args: [bookmarks], expect_stdout: APRS}
-      # A take over: Decline, Allow for this conversation and Allow; once it is allowed for the
-      # conversation, the second take over runs without a card.
+      # A take over: the line under the sentence says it takes the radio, in words and without
+      # `take_over`; Decline, Allow in this chat and Allow; once it is allowed in this chat, the
+      # second take over runs without a card.
       - {cmd: press, identifier: assistant.input}
       - {cmd: type, text: take the radio for 146.94}
       - {cmd: key, keys: return}
       - {cmd: wait, seconds: 2}
-      - {cmd: state, expect: {assistant.state: waiting for you}}
+      - {cmd: state, expect: {assistant.state: waiting for you, assistant.question: The assistant wants to tune to 146.94., assistant.note: It takes the radio from whoever is using it., assistant.buttons.3.id: assistant.decline, assistant.buttons.4.id: assistant.allow.conversation, assistant.buttons.5.id: assistant.allow}}
       - {cmd: snapshot, name: takeover}
       - {cmd: ax, name: takeover}
       - {cmd: press, identifier: assistant.allow.conversation}
@@ -966,7 +966,7 @@ scenes:
       - {cmd: type, text: then stop}
       - {cmd: key, keys: return}
       - {cmd: wait, seconds: 1}
-      - {cmd: state, expect: {assistant.state: waiting for you, assistant.input: then stop, assistant.buttons.4.title: "delete_recording job_none, asks", assistant.buttons.5.id: assistant.decline, assistant.buttons.5.enabled: true, assistant.buttons.6.id: assistant.allow, assistant.buttons.6.enabled: true}}
+      - {cmd: state, expect: {assistant.state: waiting for you, assistant.input: then stop, assistant.note: "Its files go with it, and this cannot be undone.", assistant.buttons.4.title: "delete_recording job_none, asks", assistant.buttons.5.id: assistant.decline, assistant.buttons.5.enabled: true, assistant.buttons.6.id: assistant.allow, assistant.buttons.6.enabled: true}}
       - {cmd: press, identifier: assistant.decline}
       - {cmd: wait, seconds: 2}
       - {cmd: state, expect: {assistant.state: ready, assistant.input: then stop}}

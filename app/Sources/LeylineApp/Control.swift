@@ -499,7 +499,11 @@ final class ControlChannel {
             stopShown: elements.contains { $0.identifier == "assistant.stop" },
             buttons: elements.filter { $0.role == kAXButtonRole }.map {
                 ControlAssistant.Button(id: $0.identifier, title: $0.label, enabled: $0.enabled)
-            })
+            },
+            question: elements.first { $0.identifier == "assistant.card.question" }
+                .map { $0.value ?? $0.label },
+            note: elements.first { $0.identifier == "assistant.card.note" }
+                .map { $0.value ?? $0.label })
     }
 
     /// The insertion point of the field being typed into, in characters from its start.
