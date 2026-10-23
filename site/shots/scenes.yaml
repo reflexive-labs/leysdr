@@ -410,6 +410,8 @@ scenes:
       place: library
       select_part: 0
       play_part: true
+      # The scripted engine's `scripted · 100%` would claim a model ran.
+      hide_engine_label: true
       settle: 4
     app:
       - {cmd: snapshot, name: shot}

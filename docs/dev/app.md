@@ -838,6 +838,7 @@ file. It holds JSON that `ShotStage` decodes, and every key is optional:
 | `settle` | the seconds the window keeps drawing after the stage is applied, before the regions are measured |
 | `on_air` | after `settle`, waits up to 30 s for an over to start and keep the tuned channel's squelch open through 1.5 s, so the readings and audio meters are live in the shot with the rest of the over to come; an over already on the air when the wait begins, or one that ends sooner, is passed over for the next. The scene needs a squelch level set |
 | `focus_filter` | after `settle`, gives the sidebar's filter field the focus, as Go to… (⌘G) does |
+| `hide_engine_label` | `true` leaves out the model and confidence after each over's words in the Library (`scripted · 100%` with the scripted speech engine), so a shot shows the words without naming a model that did not run; a launch that is not staged always shows them |
 | `zoom` | the spectrum and waterfall's zoom, as the band rail's − and + set it: 1, 2, 4 or 8, centred on the tuned frequency |
 | `scan_band` | with `expanded_band`, presses that row's Scan band as a click does and waits up to 60 s for the sweep to end before `settle` starts, so its hits show |
 

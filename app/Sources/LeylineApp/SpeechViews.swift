@@ -91,8 +91,8 @@ struct SpeechLineView: View {
                 ForEach(line.callsigns, id: \.self) { call in
                     CallsignChip(call: call)
                 }
-                if !line.sourceWords.isEmpty {
-                    Text(line.sourceWords).font(Theme.Font.footnote)
+                if !sourceWords.isEmpty {
+                    Text(sourceWords).font(Theme.Font.footnote)
                         .foregroundStyle(Theme.inkFaint).lineLimit(1)
                 }
             }
@@ -106,6 +106,15 @@ struct SpeechLineView: View {
         }
         .buttonStyle(.plain)
         .help(help(playing: playing))
+    }
+
+    /// The model and confidence after the words; a staged shot may hide them
+    /// (`ShotStage.hideEngineLabel`), since its engine is the scripted one.
+    private var sourceWords: String {
+        #if LEYLINE_STAGING
+            if session.hidesEngineLabel { return "" }
+        #endif
+        return line.sourceWords
     }
 
     private func help(playing: Bool) -> String {

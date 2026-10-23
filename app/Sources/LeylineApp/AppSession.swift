@@ -109,6 +109,9 @@ final class AppSession {
     #if LEYLINE_STAGING
         let staging = Staging.fromEnvironment()
         private var unstaged: Bool { staging == nil }
+        /// Set by a stage's `hide_engine_label`: the Library leaves out each over's model and
+        /// confidence, which in a shot name the scripted engine (`SpeechLineView`).
+        var hidesEngineLabel = false
     #else
         private var unstaged: Bool { true }
     #endif
