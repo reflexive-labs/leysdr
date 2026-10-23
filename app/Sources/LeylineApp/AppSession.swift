@@ -1053,9 +1053,21 @@ final class AppSession {
             if let step { perform(step, daemon: daemon, why: "on reconnecting") }
             return
         }
-        guard captureID == nil, hasRadio else { return }
+        guard captureID == nil else { return }
+        // No radio yet (a daemon just started, still finding its devices): adopt again on the
+        // next change, so the capture and channel that come with the radio are taken.
+        guard hasRadio else {
+            adopted = false
+            return
+        }
         let id = selectedBandID ?? "fm"
         if let b = bands.first(where: { $0.id == id }) ?? bands.first(where: { $0.id == "fm" }) {
+            // A radio that cannot tune the band (a file radio before its playback opens a
+            // capture) is waited for: the capture that comes is adopted on a later change.
+            guard outOfRangeWords(b) == nil else {
+                adopted = false
+                return
+            }
             Task { await select(band: b) }
         }
     }
