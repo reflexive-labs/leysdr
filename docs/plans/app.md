@@ -1604,7 +1604,9 @@ Found by the ML-9d scenes' second half (2026-10-22), not fixed on the spot:
   (146.520 to 146.535 MHz, 50 ms apart) just after the Remove press in Settings, and its
   `main-removed` tree differed. The three `tune:` lines match a scroll over the waterfall, which
   a check run does not send; most likely the pointer of the person using this Mac. It did not
-  happen again. A staged run could ignore scroll events it did not post.
+  happen again. A staged run could ignore scroll events it did not post. In another full run at
+  `JOBS=3` a `click` on the waterfall (804, 400) tuned nothing in both `pointer-and-menus` and
+  `sweep-lifecycle`, three minutes apart; both passed alone and in the two full runs after.
 
 #### Residuals after APP-9 review
 
@@ -1711,7 +1713,7 @@ scene, or extends one.
 - The API key field opts out of AutoFill. Then closing Settings with the field focused is
   checked again.
 
-### MC-2 `[ ]` The assistant column, refined (2026-10-22)
+### MC-2 `[x]` The assistant column, refined (2026-10-22)
 
 The owner asked for the chat column's text colour, spacing and alignment to be refined, and chose
 the open options. The defects are from the 2026-10-22 pictures of `assistant-conversation` and
@@ -1747,7 +1749,15 @@ reason, and no sentence, and `ley ask` still asks with the tool's name. The step
 call's arguments after the tool's name, fainter, so two tunes tell apart; an opened step's reason
 is `inkSecondary` like the card's. `assistant-long-result` opens `list_presets`.
 
-### MC-3 `[ ]` Batch 1's review, decided (2026-10-23)
+Verified 2026-10-23 on the Mac in Batch 2's verify loop: one left edge at 16 pt
+(`assistantInset`; the header, step rows, an opened step's box, the reply, the token line and the
+field's box all start at x 1136 in a column from 1120, and the bubble and field end 16 pt from its
+right), the pictures of `assistant-conversation`, `assistant-cards`, `assistant-view-tools` and
+`assistant-long-result` recorded. Three buttons do not fit one line of the column, so Allow for
+this conversation always sits over Decline and Allow, and the scene expects it first. Copies of
+the first pictures are in `tmp/batch2/` for the owner to see.
+
+### MC-3 `[x]` Batch 1's review, decided (2026-10-23)
 
 A review of Batch 1 found three defects. The owner settled three questions it raised.
 

@@ -398,7 +398,7 @@ first needs an `AppSession` that can be built without a daemon, which is its own
 ML-0, then ML-1 and ML-2 together, ML-4 on the existing stage, ML-3, ML-5, ML-6 (which can start
 any time), ML-8, then ML-9 as the first real workload. ML-7 and ML-10 when ML-9 shows the need.
 
-### ML-11 `[ ]` Timing, tiers and the batch loop (agreed 2026-10-22)
+### ML-11 `[x]` Timing, tiers and the batch loop (agreed 2026-10-22)
 
 - **Timing.** Each scene and size records its wall time, split into launch to ready, commands and
   quit. Every scene line carries its time, and the summary line gives the total and the three
@@ -462,3 +462,8 @@ Mac has used each tier:
   will show whether anything else there is shared.
 - **Sleep.** The make targets run under `caffeinate -i`; `Staging` holds the activity from its
   `init`, so the site's shots hold it too.
+
+Verified 2026-10-23 in Batch 2's verify loop, each tier used: smoke (36 checked, 35 s), affected
+with `BASE=` the batch's base (29 scenes, 790 checked, 766 s at one job), and full at `JOBS=3`
+(823 checked in about 363 s, against about 800 s at one). Two full runs in a row at 3 were clean;
+two flakes seen at 3 earlier are under "Found by the Mac checks" in `app.md`.
