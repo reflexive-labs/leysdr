@@ -782,3 +782,63 @@ scenes:
       - {cmd: state, expect: {assistant.state: null, assistant.input: draft kept}}
       - {cmd: ax, name: new}
       - {cmd: file, path: ai/record.jsonl, contains: where am i}
+
+  # The assistant's questions (docs/plans/app.md, the assistant panel): a call the gate asks
+  # about is a card under the transcript that Return does not answer and Decline does; a take
+  # over offers Allow for this conversation between Decline and Allow, all three inside the
+  # column at the window's narrowest, and once it is allowed for the conversation the next take
+  # over runs without a card; a delete offers Decline and Allow alone, enabled at once.
+  - name: assistant-cards
+    sizes: [{width: 1440, height: 820}, {width: 1221, height: 820}]
+    fixtures: [{name: scene_2m}]
+    bookmarks: ../../site/shots/home.csv
+    ai: {script: assistant/cards.script}
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      assistant: true
+      settle: 3
+    app:
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: remove the APRS bookmark}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {assistant.state: waiting for you, focused: assistant.input}}
+      - {cmd: snapshot, name: asks}
+      # Return does not answer the card; Decline does, and the card goes.
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {assistant.state: waiting for you}}
+      - {cmd: press, identifier: assistant.decline}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {assistant.state: ready}}
+      - {cmd: ley, args: [bookmarks], expect_stdout: APRS}
+      # A take over: Decline, Allow for this conversation and Allow; once it is allowed for the
+      # conversation, the second take over runs without a card.
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: take the radio for 146.94}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {assistant.state: waiting for you}}
+      - {cmd: snapshot, name: takeover}
+      - {cmd: press, identifier: assistant.allow.conversation}
+      - {cmd: wait, seconds: 3}
+      - {cmd: state, expect: {assistant.state: ready, assistant.buttons.2.title: "→ tune frequency 146.94 · keep true · take_over true, done", assistant.buttons.3.title: "→ tune frequency 147.18 · keep true · take_over true, done"}}
+      # A delete offers Decline and Allow alone, enabled at once; while it waits the field takes
+      # typing, Return keeps it, and the line under the field says why.
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: delete job_none}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {assistant.state: waiting for you}}
+      - {cmd: type, text: then stop}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {assistant.state: waiting for you, assistant.input: then stop, assistant.buttons.4.title: "→ delete_recording job_none, asks", assistant.buttons.5.id: assistant.decline, assistant.buttons.5.enabled: true, assistant.buttons.6.id: assistant.allow, assistant.buttons.6.enabled: true}}
+      - {cmd: press, identifier: assistant.decline}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {assistant.state: ready}}
+      - {cmd: file, path: ai/record.jsonl, contains: remove the APRS bookmark}
