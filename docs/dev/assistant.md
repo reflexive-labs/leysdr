@@ -82,7 +82,9 @@ message of `tool_result` blocks in the same order, and the model is called again
 when a response has no tool calls, when the user stops it, or after 40 model calls, which ends a
 model that keeps calling tools without finishing. A response that stops with `max_tokens` (cut
 at the output limit, perhaps mid tool call) or `refusal` ends the turn too: its text is kept, its
-tool calls do not run, and the turn ends with a line saying which it was.
+tool calls do not run, and the turn ends with a line saying which it was. The done turn says why
+it ended in `Turn.stop_reason`: `COMPLETED`, `STOPPED`, `STEP_LIMIT`, `MAX_TOKENS` or `REFUSAL`.
+A worker failure has none: the conversation is `FAILED` and its `error` says why.
 
 The model reads at most 32 KB of one result; a longer one is cut there and ends with "(result cut
 at 32 KB; ask for fewer)". The client's `result_text` and `result_json` stay whole.
@@ -102,6 +104,11 @@ this ran"), because the Messages API refuses a transcript without one. A cancell
 (SIGTERM) ends any wait the same way and the worker exits.
 A turn stopped before the model answered leaves the user's message last in the transcript; the
 next message joins it.
+
+The daemon sets `stop_reason` too on the turns it closes itself: a `StopTurn` the worker did not
+answer within 2 s is closed `STOPPED`, and when the worker had not written its turn yet, an empty
+done turn `STOPPED` answers the user's, so every stop is on a turn. A turn a restart cut short is
+closed with its note and `RESTARTED`.
 
 A model error is written as a `WorkerFailure` with its code: `CREDENTIAL_REJECTED` for a key the
 provider refused, `PROVIDER_REFUSED` for a rate or spend limit or an overloaded provider, with the

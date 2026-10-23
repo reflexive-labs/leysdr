@@ -1734,6 +1734,12 @@ A review of Batch 1 found three defects. The owner settled three questions it ra
   automatically) on `Channel`, and a stop reason on an assistant turn. The app reads them, and
   the guesses `AppSession.autoSquelch` and `stopped(_:at:)` go. The change note's squelch rule
   then reads the source instead of looking for the tool call.
+  Done 2026-10-23: `Channel.squelch_source` (`SQUELCH_MANUAL`, `SQUELCH_AUTO`, unset while off),
+  set by the new `ParamWrite.squelch_auto_db` and by the record and decode jobs that measure a
+  squelch; `Turn.stop_reason`, set by the worker and by the daemon on a turn it closes for a stop
+  or a restart. `ley` writes its auto as `squelch_auto_db` and reads `(auto)` after a measured
+  level in `ley state`, `ley set` and the event and change lines; `ley ask`'s lines carry the
+  reason.
 - **A scan hit with no plan channel** is tuned and bookmarked at its measured frequency rounded
   to 100 Hz.
 - **Return in the tuning field without an edit keeps the exact frequency.** Today it retunes to
