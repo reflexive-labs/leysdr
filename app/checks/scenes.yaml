@@ -790,7 +790,8 @@ scenes:
   # about is a card under the transcript that Return does not answer and Decline does; a take
   # over offers Allow for this conversation between Decline and Allow, all three inside the
   # column at the window's narrowest, and once it is allowed for the conversation the next take
-  # over runs without a card; a delete offers Decline and Allow alone, enabled at once.
+  # over runs without a card; a delete offers Decline and Allow alone, enabled at once. Once a
+  # tune has run its step carries the run's channel ids, so state carries the checks from there.
   - name: assistant-cards
     sizes: [{width: 1440, height: 820}, {width: 1221, height: 820}]
     fixtures: [{name: scene_2m}]
@@ -811,6 +812,7 @@ scenes:
       - {cmd: wait, seconds: 2}
       - {cmd: state, expect: {assistant.state: waiting for you, focused: assistant.input}}
       - {cmd: snapshot, name: asks}
+      - {cmd: ax, name: asks}
       # Return does not answer the card; Decline does, and the card goes.
       - {cmd: key, keys: return}
       - {cmd: wait, seconds: 1}
@@ -818,6 +820,7 @@ scenes:
       - {cmd: press, identifier: assistant.decline}
       - {cmd: wait, seconds: 2}
       - {cmd: state, expect: {assistant.state: ready}}
+      - {cmd: ax, name: declined}
       - {cmd: ley, args: [bookmarks], expect_stdout: APRS}
       # A take over: Decline, Allow for this conversation and Allow; once it is allowed for the
       # conversation, the second take over runs without a card.
@@ -827,6 +830,7 @@ scenes:
       - {cmd: wait, seconds: 2}
       - {cmd: state, expect: {assistant.state: waiting for you}}
       - {cmd: snapshot, name: takeover}
+      - {cmd: ax, name: takeover}
       - {cmd: press, identifier: assistant.allow.conversation}
       - {cmd: wait, seconds: 3}
       - {cmd: state, expect: {assistant.state: ready, assistant.buttons.2.title: "→ tune frequency 146.94 · keep true · take_over true, done", assistant.buttons.3.title: "→ tune frequency 147.18 · keep true · take_over true, done"}}
