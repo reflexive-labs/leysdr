@@ -42,6 +42,30 @@ final class AppSession {
     private var heldChannel = HeldObject<Leyline_V1_Channel>()
     var captureID: String? { heldCapture.id }
     var channelID: String? { heldChannel.id }
+    /// The follow rule: another client's channel on this capture becomes the window's
+    /// (`ChannelFollow`). Not observed: every tune moves its floor, and what a view reads from it
+    /// (`followKeptWords`) changes only inside `mirrorChanged`, beside `state`, which is.
+    @ObservationIgnored private var follow = ChannelFollow()
+    /// The sink this window attached, held as the capture and channel are: a `Sink` names no
+    /// owner, and after a follow another client's sink may play the held channel, which mute,
+    /// volume, a sweep and a part's playback must never detach or change.
+    private var heldSink = HeldObject<Leyline_V1_Sink>()
+    /// The window's volume, given to every sink it attaches, so an unmute or a follow does not
+    /// come back at full volume.
+    @ObservationIgnored private var volume: Double = 1
+    /// Whether the person muted the window: the intent, set by `toggleMute` and cleared by any
+    /// attach, because no sink also means a channel playing through another client's, a part
+    /// playing, or a channel just reconnected to. A follow, a reconnect and the settle timer
+    /// attach nothing while it holds.
+    @ObservationIgnored private var muted = false
+    /// An attach in flight: a second would make a second sink, since the first's reply has not
+    /// set `heldSink` yet.
+    @ObservationIgnored private var attachingSink = false
+    /// Sinks of the window's own being detached, so a fold does not ask twice.
+    @ObservationIgnored private var detachingSinks: Set<String> = []
+    /// The mirror's snapshot count last seen: a new snapshot (a connect, or a resync after a seq
+    /// gap, which may be a restarted daemon counting from 0) resets the follow floor.
+    @ObservationIgnored private var snapshotsSeen = 0
     private(set) var selectedBandID: String?
     private var adopted = false
     /// The frequency this app last asked for, until the daemon confirms it or two seconds pass:
@@ -82,11 +106,20 @@ final class AppSession {
     /// A staged run for the site's screenshots (`Staging.swift`), or nil. While set, the
     /// session writes nothing to UserDefaults and does not reopen the remembered band, so a shot
     /// neither changes nor depends on what the person last used.
-    let staging = Staging.fromEnvironment()
+    #if LEYLINE_STAGING
+        let staging = Staging.fromEnvironment()
+        private var unstaged: Bool { staging == nil }
+    #else
+        private var unstaged: Bool { true }
+    #endif
 
     // View state local to the window: presentation only, never radio state.
     var maxHold = true
-    var zoom = 1
+    /// The waterfall's zoom, 1 to 8. Back at 1 the whole span shows, and a view tool's focus has
+    /// nothing left to centre, so it goes.
+    var zoom = 1 {
+        didSet { keepViewFocus() }
+    }
     /// The frequency under the pointer on either chart, so the hairline shows on both; nil when
     /// the pointer is over neither.
     var pointerHz: UInt64?
@@ -105,7 +138,7 @@ final class AppSession {
         ?? true
     {
         didSet {
-            if staging == nil {
+            if unstaged {
                 UserDefaults.standard.set(inspectorShown, forKey: Self.inspectorShownKey)
             }
             // The audio ladder subscribes only while the panel draws it.
@@ -121,7 +154,7 @@ final class AppSession {
         .flatMap(WindowPlace.init(rawValue:)) ?? .radio
     {
         didSet {
-            if staging == nil { UserDefaults.standard.set(place.rawValue, forKey: Self.placeKey) }
+            if unstaged { UserDefaults.standard.set(place.rawValue, forKey: Self.placeKey) }
             guard place != oldValue else { return }
             log("session", "place: \(place.rawValue)")
             if place == .library { selectFirstChannel() }
@@ -130,6 +163,25 @@ final class AppSession {
             followAudioLevels()
         }
     }
+    /// Whether the assistant's panel is on the window's right, beside the inspector. Remembered
+    /// in the defaults under `assistantShownKey`, as `inspectorShown` is; hidden until someone
+    /// opens it, and drawn only while `hasAnyAI` holds (`assistantPanelShown`).
+    var assistantShown =
+        UserDefaults.standard.object(forKey: AppSession.assistantShownKey) as? Bool ?? false
+    {
+        didSet {
+            if unstaged {
+                UserDefaults.standard.set(assistantShown, forKey: Self.assistantShownKey)
+            }
+        }
+    }
+    /// What is typed in the assistant's field and not sent yet. Held here rather than in the
+    /// field's own state, so it outlives the field being made again: once a question card was
+    /// answered the field showed the text while its state had lost it, and Return sent nothing.
+    var assistantDraft = ""
+    /// Where a view tool centred the zoomed waterfall, while the radio stays tuned where it was
+    /// then (`ViewFocus`); nil centres the window on the tuned frequency, as it always has.
+    private(set) var viewFocus: ViewFocus?
     /// The Library's selected channel row (`RecordingChannel.id`), or nil. While one is selected
     /// and the Library shows, the centre column is that channel's page (`RecordingsPage`), and
     /// the manifests of its recordings are read. Another row, or none, clears the selected part:
@@ -189,6 +241,30 @@ final class AppSession {
             }
         }
     }
+    /// The Settings window's one line about the last key or model write: what the provider said
+    /// about a key, or why a write failed. Its own line rather than `notice`, which shows over the
+    /// main window's waterfall where a person in Settings would not see it; logged the same way.
+    private(set) var settingsNotice: String? {
+        didSet {
+            if let n = settingsNotice, n != oldValue { log("shown", "settings: \(n)") }
+        }
+    }
+    // The assistant (`AssistantController`): the conversation this window started, copied out
+    // of the controller on every change as `state` is copied out of the mirror.
+    @ObservationIgnored private var assistant: AssistantController?
+    /// The conversation as the daemon last sent it, or nil before the first message and after
+    /// New Conversation.
+    private(set) var conversation: Leyline_V1_Conversation?
+    /// Why the last start, message or answer failed, or that the daemon forgot the conversation.
+    private(set) var assistantNotice: AssistantNotice? {
+        didSet {
+            if let n = assistantNotice, n != oldValue { log("shown", "assistant: \(n.text)") }
+        }
+    }
+    /// A start or a message is on its way, and the field waits.
+    private(set) var assistantSending = false
+    /// The daemon no longer knows the conversation shown; only a new one can follow.
+    private(set) var assistantLost = false
     /// The empty-state and out-of-capture messages last logged, so a change logs one line.
     private var shownEmptyWords: String?
     private var shownOutOfCapture: String?
@@ -242,7 +318,9 @@ final class AppSession {
     /// and the time gutter's bars come from (`tunedManifests`). Each is kept while the listing
     /// holds the recording, read once, and read again on each event of its job, which is how a
     /// running card grows and a new row is kept as parts land.
-    private(set) var manifests: [String: RecordingManifest] = [:]
+    private(set) var manifests: [String: RecordingManifest] = [:] {
+        didSet { forgetSpeech(changedIn: oldValue, manifests) }
+    }
     @ObservationIgnored private var manifestLoads: [String: Task<Void, Never>] = [:]
     /// Job ids whose manifest a job event made stale.
     @ObservationIgnored private var staleManifests: Set<String> = []
@@ -250,8 +328,11 @@ final class AppSession {
     /// again: a mirror change arrives four times a second while a part plays.
     @ObservationIgnored private var failedManifests: Set<String> = []
     /// The part the Library's inspector and player show: the last row clicked, and
-    /// the part Play all or Play day moved on to. Cleared when its recording is deleted.
-    var selectedPartURI: String?
+    /// the part Play all or Play day moved on to. Cleared when its recording is deleted. Another
+    /// part clears `selectedOver`.
+    var selectedPartURI: String? {
+        didSet { if selectedPartURI != oldValue { selectedOver = nil } }
+    }
     /// The EARLIER days (older than `Recordings.collapseAfterDays`) opened in place by a click,
     /// by `DayRows.id`. Presentation only.
     var openedDays: Set<String> = []
@@ -265,6 +346,40 @@ final class AppSession {
     /// playing playback four times a second.
     private var partPlayback = PartPlayback()
     private var playbackID: String? { partPlayback.playbackID }
+    var playingOver: Int? { partPlayback.playingOver }
+    /// Speech lines by recording id, from the daemon's speech records (`SpeechRecords.byRecording`),
+    /// read for each recording on the channel page and, while the search field holds words, for
+    /// every recording listed; read again on each event of a transcription of the recording.
+    private(set) var speechLines: [String: [SpeechLine]] = [:] {
+        didSet { forgetSpeech(changedIn: oldValue, speechLines) }
+    }
+    /// Recordings whose last speech read the daemon cut at the query's limit: their lines are
+    /// kept and the page says more were not loaded.
+    private(set) var speechTruncated: Set<String> = []
+    /// The read in flight for each recording, by a token that one read shares across the
+    /// recordings it covers; a result is applied only to recordings still waiting on it.
+    @ObservationIgnored private var speechLoads: [String: UUID] = [:]
+    /// Recordings whose speech read failed, not read again until the listing is read again: a
+    /// mirror change arrives four times a second while a part plays.
+    @ObservationIgnored private var failedSpeech: Set<String> = []
+    /// Recordings a transcription event asked to read again while a read was in flight.
+    @ObservationIgnored private var staleSpeech: Set<String> = []
+    /// `RecordingSpeech` per recording, built once and dropped when its lines or its manifest
+    /// change (`forgetSpeech`), so a render of the page or the search does not rebuild it.
+    @ObservationIgnored private var speechCache: [String: RecordingSpeech] = [:]
+    /// The transcription jobs as last seen, so a change to one reads its recording's speech again.
+    @ObservationIgnored private var transcriptionsSeen: [Leyline_V1_Job] = []
+    /// The speech decoder as `ListDecoders` lists it, nil until read or when none is installed.
+    private(set) var speechDecoder: Leyline_V1_DecoderManifest?
+    @ObservationIgnored private var speechDecoderRead = false
+    /// The over the search or a speech line's click selected in `selectedPartURI`, for the page
+    /// to scroll to and mark. Presentation only.
+    var selectedOver: Int?
+    /// Transcribe's question while its dialog is up: the recording, the question's words, and the
+    /// model "Transcribe again…" chose (empty: the speech feature's own).
+    var transcribeAsk: TranscribeAsk?
+    /// The recording whose Transcribe again sheet is up, or nil. Presentation only.
+    var transcribeAgainFor: String?
     var playingURI: String? { partPlayback.playingURI }
     var playingRowStart: Leyline_V1_SampleTime? { partPlayback.playingRowStart }
     var playQueue: PlayQueue { partPlayback.queue }
@@ -312,17 +427,29 @@ final class AppSession {
     }
     private static let inspectorShownKey = "inspectorShown"
     private static let placeKey = "place"
+    private static let assistantShownKey = "assistantShown"
 
     // MARK: Derived
 
     var capture: Leyline_V1_Capture? { heldCapture.current { state.capture($0) } }
     var channel: Leyline_V1_Channel? { heldChannel.current { state.channel($0) } }
     var device: Leyline_V1_DeviceDescriptor? { capture.flatMap { state.device($0.deviceID) } }
+    /// The window's own sink on the held channel; nil when it has none there, even while
+    /// another client's sink plays the channel (`audioElsewhere`).
     var sink: Leyline_V1_Sink? {
-        guard let channelID else { return nil }
-        return state.sinks(of: channelID).first {
-            if case .systemAudio? = $0.kind { true } else { false }
-        }
+        guard let channelID,
+            let s = heldSink.current({ id in state.sinks.first { $0.sinkID == id } }),
+            s.channelID == channelID
+        else { return nil }
+        return s
+    }
+    /// "The audio plays through another terminal.": another client's sink plays the held
+    /// channel and the window has none, so mute and volume have nothing of the window's to act
+    /// on.
+    var audioElsewhere: String? {
+        ChannelFollow.playsThroughWords(
+            in: state, held: channelID, windowSinkID: heldSink.id,
+            selfClientID: daemon?.identity.id ?? "")
     }
     var tunedHz: UInt64? { channel.flatMap { state.frequencyHz(of: $0) } }
     /// The frequency to show: the one asked for while it is in flight, else the daemon's.
@@ -331,7 +458,7 @@ final class AppSession {
     var displayHz: UInt64? { requestedHz ?? tunedHz ?? (sweeping ? sweep?.paused?.hz : nil) }
     /// The transport bar's speaker: muted is no sink on the channel (the daemon has no mute), and
     /// the channel, its squelch and the meter carry on.
-    var isMuted: Bool { sink == nil }
+    var isMuted: Bool { sink == nil && audioElsewhere == nil }
     var meter: Leyline_V1_Meter? { telemetry.meter }
     /// The inspector's reading, steadied (`ChannelReading`): folded from every meter in
     /// `foldReading`. Presentation only; the raw meter is `meter`.
@@ -449,9 +576,26 @@ final class AppSession {
         return max(perBin, feed.floorDB - 10)
     }
 
-    /// The radio whose tuning range applies: the capture's device, else the first connected one.
+    /// The radio whose tuning range applies: the capture's device, else the first connected one,
+    /// with the span its capture holds now. A file radio's range is its recorded centre alone,
+    /// and a band elsewhere in the capture is heard all the same: without the span, the tuned
+    /// band of a wide recording was folded away as one the radio cannot tune.
     private var radioRanges: [Leyline_V1_FrequencyRange] {
-        (device ?? state.devices.first { $0.state != .disconnected })?.tuningRanges ?? []
+        guard let radio = device ?? state.devices.first(where: { $0.state != .disconnected })
+        else { return [] }
+        var ranges = radio.tuningRanges
+        // No range means every band is offered; a span would narrow that. Every capture on
+        // the radio counts, as after Stop Listening the window holds none.
+        guard !ranges.isEmpty else { return ranges }
+        for cap in state.captures where cap.deviceID == radio.deviceID && cap.sampleRate > 0 {
+            let span = ViewWindow.span(centerHz: cap.centerHz, sampleRate: cap.sampleRate)
+            ranges.append(
+                .with {
+                    $0.minHz = span.lowerBound
+                    $0.maxHz = span.upperBound
+                })
+        }
+        return ranges
     }
 
     /// The bands this radio can reach; without a radio, all of them.
@@ -475,10 +619,12 @@ final class AppSession {
     /// `GMRS` row is the tuned one while the capture sits on either half.
     var tunedRow: Band? { band.map { Bands.group(of: $0) ?? $0 } }
 
-    /// Whether a sidebar row shows its contents: the tuned row always, and the one opened by
-    /// its chevron.
+    /// Whether a sidebar row shows its contents: the tuned row always, the one opened by its
+    /// chevron, and the one being swept, whose words and Stop are under its item while the
+    /// sweep holds the radio and nothing is tuned.
     func isExpanded(_ row: Band) -> Bool {
         row.id == tunedRow?.id || row.id == expandedBandID
+            || (sweeping && row.id == sweepRow?.id)
     }
 
     /// The chevron: opens or closes a row without tuning. The tuned row stays open.
@@ -601,16 +747,14 @@ final class AppSession {
     var fineStepHz: UInt32 { band?.fineStepHz ?? 1_000 }
 
     /// The frequencies the spectrum and waterfall show: the capture's span at zoom 1, a window
-    /// of it centred on the tuned frequency when zoomed, clamped inside the capture.
+    /// of it when zoomed, centred on where the assistant's `show_band` put it while the radio
+    /// stays tuned there and on the tuned frequency otherwise, clamped inside the capture
+    /// (`ViewWindow.visible`).
     var visibleRange: ClosedRange<UInt64>? {
-        guard let cap = capture, cap.sampleRate > 0 else { return nil }
-        let span = cap.sampleRate
-        let lo = cap.centerHz > span / 2 ? cap.centerHz - span / 2 : 0
-        let hi = cap.centerHz + span / 2
-        if zoom <= 1 { return lo...hi }
-        let width = span / UInt64(zoom)
-        let centre = (tunedHz ?? cap.centerHz).clamped(to: (lo + width / 2)...(hi - width / 2))
-        return (centre - width / 2)...(centre + width / 2)
+        guard let cap = capture else { return nil }
+        let focus = viewFocus?.centre(tunedHz: tunedHz) ?? tunedHz ?? cap.centerHz
+        return ViewWindow.visible(
+            centerHz: cap.centerHz, sampleRate: cap.sampleRate, zoom: zoom, focusHz: focus)
     }
 
     /// The empty-state message, worded as in the guide, shown when there is nothing to draw.
@@ -682,7 +826,7 @@ final class AppSession {
         log("session", "start: socket \(socketPath), log \(AppLog.shared.path)")
         loadBookmarks()
         watchBookmarks()
-        if staging == nil {
+        if unstaged {
             selectedBandID = UserDefaults.standard.string(forKey: Self.lastBandKey)
         }
         do {
@@ -693,6 +837,11 @@ final class AppSession {
             mirror.onChange = { [weak self] m in self?.mirrorChanged(m) }
             self.mirror = mirror
             self.writes = WriteCoalescer(connection: daemon)
+            let assistant = AssistantController(calls: daemon)
+            assistant.performer = self
+            assistant.onChange = { [weak self] a in self?.assistantChanged(a) }
+            assistant.log = { line in log("assistant", line) }
+            self.assistant = assistant
             running = Task { await mirror.run() }
             await running?.value
         } catch {
@@ -711,6 +860,19 @@ final class AppSession {
         let wasLive = isLive
         state = m.state
         connection = m.connection
+        if m.snapshots != snapshotsSeen {
+            // A replaced state: a restarted daemon counts its seq from 0 again, so the follow
+            // floor becomes the snapshot's. `snapshots` is counted before the state is replaced.
+            snapshotsSeen = m.snapshots
+            follow.connected(atSeq: state.seq)
+        }
+        keepViewFocus()
+        // The conversation's event, which the watch may not have delivered yet.
+        if let id = assistant?.conversationID,
+            let c = state.conversations.first(where: { $0.conversationID == id })
+        {
+            assistant?.absorb(c)
+        }
         if wasLive != isLive {
             log(
                 "session",
@@ -768,7 +930,11 @@ final class AppSession {
             switch verdict {
             case .lost:
                 log("session", "channel \(id) is gone")
+                let followed = follow.lost(id)
                 dropChannel()
+                // Its maker ended the channel the window followed: the window makes its own
+                // where it was, so the picture stays on the frequency.
+                if let followed { Task { await listenOnOwn(like: followed) } }
             case .neverArrived:
                 log("session", "the mirror has no channel \(id) 3 s after the window took it")
                 dropChannel()
@@ -776,6 +942,15 @@ final class AppSession {
                 break
             }
         }
+        if let id = heldSink.id {
+            var folded = heldSink
+            let verdict = folded.observe(
+                inMirror: state.sinks.contains { $0.sinkID == id }, now: Date(),
+                dropAfter: Self.neverSeenDropSeconds)
+            if folded != heldSink { heldSink = folded }
+            if verdict == .lost || verdict == .neverArrived { heldSink.drop() }
+        }
+        followOwnSinks()
         if case .live = connection {
             // A sweep with no capture opens the daemon's own; adopting it would put a channel
             // on a radio being swept.
@@ -784,11 +959,15 @@ final class AppSession {
             adopted = false
             var capturesCopy = heldCapture
             var channelsCopy = heldChannel
+            var sinkCopy = heldSink
             capturesCopy.disconnected()
             channelsCopy.disconnected()
+            sinkCopy.disconnected()
             if capturesCopy != heldCapture { heldCapture = capturesCopy }
             if channelsCopy != heldChannel { heldChannel = channelsCopy }
+            if sinkCopy != heldSink { heldSink = sinkCopy }
         }
+        followOtherClients()
         spectrum.follow(capture, connection: daemon)
         telemetry.follow(
             channelID, offsetHz: channel?.offsetHz, centerHz: capture?.centerHz,
@@ -830,6 +1009,7 @@ final class AppSession {
     /// than until the mirror happens to change.
     private func request(_ hz: UInt64) {
         requestedHz = hz
+        follow.tuned(at: state.seq)
         requestedExpiry?.cancel()
         requestedExpiry = Task { [weak self] in
             try? await Task.sleep(for: .seconds(2))
@@ -857,7 +1037,10 @@ final class AppSession {
                 ?? state.captures.first
         {
             heldCapture.adopted(id: cap.captureID, at: Date())
-            if channelID == nil, let ch = state.channels(in: cap.captureID).first {
+            if channelID == nil,
+                let ch = ChannelFollow.adoptable(in: state, captureID: cap.captureID, except: nil)
+                    ?? state.channels(in: cap.captureID).first
+            {
                 heldChannel.adopted(id: ch.channelID, at: Date())
             }
             log(
@@ -869,9 +1052,31 @@ final class AppSession {
             }
             return
         }
-        guard captureID == nil, hasRadio else { return }
+        if captureID != nil, let daemon {
+            // Back after a disconnect: when another client moved the radio or tuned while the
+            // window was away, its own channel is gone or out of capture, and the newest channel
+            // on the capture is taken as a follow takes one (`ChannelFollow.stepOnConnect`).
+            let step = follow.stepOnConnect(
+                in: state, captureID: captureID, held: channel, windowSinkID: heldSink.id,
+                muted: muted, audioHeld: playbackID != nil, selfClientID: daemon.identity.id)
+            if let step { perform(step, daemon: daemon, why: "on reconnecting") }
+            return
+        }
+        guard captureID == nil else { return }
+        // No radio yet (a daemon just started, still finding its devices): adopt again on the
+        // next change, so the capture and channel that come with the radio are taken.
+        guard hasRadio else {
+            adopted = false
+            return
+        }
         let id = selectedBandID ?? "fm"
         if let b = bands.first(where: { $0.id == id }) ?? bands.first(where: { $0.id == "fm" }) {
+            // A radio that cannot tune the band (a file radio before its playback opens a
+            // capture) is waited for: the capture that comes is adopted on a later change.
+            guard outOfRangeWords(b) == nil else {
+                adopted = false
+                return
+            }
             Task { await select(band: b) }
         }
     }
@@ -989,12 +1194,22 @@ final class AppSession {
     /// a new capture (no radio open, another radio) or leaves every recording inside the span.
     /// The centre is the one `moveToBand` computes.
     private func bandMoveWords(_ band: Band, at hz: UInt64?) -> String? {
-        guard !busy, !sweeping, outOfRangeWords(band) == nil, let cap = capture,
-            let dev = try? pickDevice(), dev.deviceID == cap.deviceID
+        guard !busy, !sweeping, outOfRangeWords(band) == nil, let dev = try? pickDevice(),
+            let cap = movableCapture(on: dev)
         else { return nil }
         let centre =
             hz.map { captureCentre(for: band, at: $0, rate: cap.sampleRate) } ?? band.centerHz
         return leftOutWords(centre: Int64(centre), rate: cap.sampleRate)
+    }
+
+    /// The capture a band change moves: the window's on that radio, else, while the window
+    /// holds none (after Stop Listening), the one another client left on it, since a radio
+    /// opens one capture and asking for a second is refused with `DEVICE_BUSY`.
+    private func movableCapture(on dev: Leyline_V1_DeviceDescriptor) -> Leyline_V1_Capture? {
+        if let cap = capture { return cap.deviceID == dev.deviceID ? cap : nil }
+        return state.captures.first {
+            $0.deviceID == dev.deviceID && $0.state == .captureActive
+        }
     }
 
     private func moveToBand(_ band: Band, at hz: UInt64?) async {
@@ -1009,18 +1224,26 @@ final class AppSession {
         listeningStopped = false
         selectedBandID = band.id
         closeOpenedRows(tuning: Bands.group(of: band) ?? band)
-        if staging == nil { UserDefaults.standard.set(band.id, forKey: Self.lastBandKey) }
+        if unstaged { UserDefaults.standard.set(band.id, forKey: Self.lastBandKey) }
         lastError = nil
         log("session", "select band \(band.name)\(hz.map { " at \($0) Hz" } ?? "")")
         do {
             let dev = try pickDevice()
+            if capture == nil, let other = movableCapture(on: dev) {
+                heldCapture.adopted(id: other.captureID, at: Date())
+                log(
+                    "session",
+                    "adopted capture \(other.captureID) for \(band.name): it holds the radio")
+            }
             // The capture's rate is the radio's setting: an existing capture keeps its own, a
             // new one opens at the remembered rate. The band only decides where the span sits.
             let existing = capture.flatMap { $0.deviceID == dev.deviceID ? $0 : nil }
             let rate = existing?.sampleRate ?? preferredSampleRate(for: dev)
             let target = hz ?? band.centerHz
             let centre =
-                hz == nil ? band.centerHz : captureCentre(for: band, at: target, rate: rate)
+                hz == nil
+                ? UInt64(max(0, clampCentre(Int64(band.centerHz), span: Int64(rate))))
+                : captureCentre(for: band, at: target, rate: rate)
             let cap = try await ensureCapture(on: dev, centerHz: centre, sampleRate: rate)
             let mode = band.mode(at: target)
             if hz != nil { request(target) }
@@ -1123,16 +1346,157 @@ final class AppSession {
             "session",
             "created channel \(ch.channelID): \(mode.word) \(bandwidthHz) Hz at offset \(offsetHz)")
         heldChannel.made(ch, id: ch.channelID, at: Date())
+        follow.tuned(at: state.seq)
         return ch
     }
 
     private func ensureSink(on ch: Leyline_V1_Channel) async throws {
         guard let daemon else { throw LeylineError.notDialled }
-        if let s = sink, s.channelID == ch.channelID { return }
+        // The window's own sink, one on its way, or another client's: a second would echo.
+        if attachingSink || sink != nil || state.plays(ch.channelID) { return }
+        attachingSink = true
+        defer { attachingSink = false }
         var req = Leyline_V1_AttachSinkRequest()
         req.channelID = ch.channelID
         req.sink.systemAudio = Leyline_V1_SystemAudioSink()
-        do { _ = try await daemon.control.attachSink(req) } catch { throw LeylineError(error) }
+        req.sink.systemAudio.volume = volume
+        do {
+            let s = try await daemon.control.attachSink(req)
+            heldSink.made(s, id: s.sinkID, at: Date())
+            muted = false
+        } catch {
+            throw LeylineError(error)
+        }
+    }
+
+    /// The window's own sinks it does not hold (the mirror names who attached each): one on the
+    /// held channel is held again when none is, unless the window is muted, and every other is
+    /// detached, since nothing else would ever mute it. Not while an attach is in flight, whose
+    /// sink's event may come before its reply.
+    private func followOwnSinks() {
+        guard let me = daemon?.identity.id, isLive, !attachingSink else { return }
+        if heldSink.id == nil, !muted,
+            let own = ChannelFollow.ownSink(in: state, held: channelID, selfClientID: me)
+        {
+            log("session", "sink \(own) is the window's own; held again")
+            heldSink.adopted(id: own, at: Date())
+        }
+        for id in ChannelFollow.strayOwnSinks(
+            in: state, windowSinkID: heldSink.id, selfClientID: me)
+        where !detachingSinks.contains(id) {
+            log("session", "sink \(id) is the window's own and not held; detached")
+            Task { await detachSink(id) }
+        }
+    }
+
+    // MARK: Following another client's channel
+
+    /// The follow rule over the latest mirror state (`ChannelFollow`): a channel another client
+    /// made on this capture becomes the held channel, the window's own is ended unless a
+    /// recording runs on it, and the window's audio moves with it. Not while the window is making
+    /// a channel itself, sweeping, or stopped.
+    private func followOtherClients() {
+        guard let daemon, isLive, !busy, !creatingChannel, !sweeping, !listeningStopped else {
+            return
+        }
+        let step = follow.step(
+            in: state, captureID: captureID, held: channel, windowSinkID: heldSink.id,
+            muted: muted, audioHeld: playbackID != nil, selfClientID: daemon.identity.id)
+        let endKept = step == nil ? follow.keptToEnd(in: state) : nil
+        if let endKept {
+            log("session", "channel \(endKept) no longer records; ended")
+            Task { await destroyChannel(endKept) }
+        }
+        // Another client attached its sink to the channel the window plays: two sinks echo, so
+        // the window's goes and the channel plays through theirs.
+        // The held id goes with the sink's tombstone, not before, so a detach that fails leaves
+        // the sink held and mutable.
+        if let extra = ChannelFollow.redundantSink(
+            in: state, held: channelID, windowSinkID: heldSink.id, selfClientID: daemon.identity.id),
+            !detachingSinks.contains(extra)
+        {
+            log("session", "sink \(extra) detached: another client's sink plays this channel")
+            Task { await detachSink(extra) }
+        }
+        guard let step else { return }
+        perform(step, daemon: daemon, why: "")
+    }
+
+    /// Carries out a follow: the new channel held, the window's own ended or kept, its sink
+    /// detached from a channel that keeps running, and after `ChannelFollow.attachSettle` a sink
+    /// attached when the window wanted audio and nothing plays the channel by then (the maker
+    /// may attach its own a moment after making it).
+    private func perform(_ step: ChannelFollow.Step, daemon: DaemonConnection, why: String) {
+        let by = state.made[step.follow.channelID].map { ChangeNote.author($0.causedBy) } ?? ""
+        log(
+            "session",
+            "following \(step.follow.channelID)\(by.isEmpty ? "" : ", made by \(by)")\(why.isEmpty ? "" : " " + why), from \(step.from ?? "no channel")\(step.endFrom ? ", ended" : step.keepFrom ? ", kept for its recording" : "")"
+        )
+        heldChannel.drop()
+        heldChannel.adopted(id: step.follow.channelID, at: Date())
+        clearRequested()
+        Task {
+            if let s = step.detachSink { await detachSink(s) }
+            if step.endFrom, let from = step.from { await destroyChannel(from) }
+            guard step.attachSink else { return }
+            try? await Task.sleep(for: ChannelFollow.attachSettle)
+            guard
+                ChannelFollow.shouldAttach(
+                    in: state, channelID: step.follow.channelID, held: channelID, muted: muted),
+                playbackID == nil, !sweeping
+            else { return }
+            do { try await ensureSink(on: step.follow) } catch {
+                lastError = LeylineError(error)
+            }
+        }
+    }
+
+    /// Detaches one of the window's own sinks. A failure is logged and the sink stays in the
+    /// mirror, where `followOwnSinks` finds it again.
+    private func detachSink(_ id: String) async {
+        guard let daemon, !detachingSinks.contains(id) else { return }
+        detachingSinks.insert(id)
+        defer { detachingSinks.remove(id) }
+        var req = Leyline_V1_DetachSinkRequest()
+        req.sinkID = id
+        do { _ = try await daemon.control.detachSink(req) } catch {
+            log("session", "sink \(id) not detached: \(LeylineError(error))")
+        }
+    }
+
+    /// Ends one of the window's own channels; one already gone is not an error.
+    private func destroyChannel(_ id: String) async {
+        guard let daemon else { return }
+        var req = Leyline_V1_DestroyChannelRequest()
+        req.channelID = id
+        do { _ = try await daemon.control.destroyChannel(req) } catch {
+            let e = LeylineError(error)
+            if e.code != "CHANNEL_NOT_FOUND" { log("session", "channel \(id) not ended: \(e)") }
+        }
+    }
+
+    /// A channel of the window's own with the settings of the one its maker ended, and a sink
+    /// unless a recorded part holds the audio.
+    private func listenOnOwn(like was: Leyline_V1_Channel) async {
+        guard let cap = capture, let writes, !creatingChannel, channelID == nil else { return }
+        creatingChannel = true
+        defer { creatingChannel = false }
+        do {
+            let ch = try await ensureChannel(
+                in: cap, offsetHz: was.offsetHz, mode: was.mode, bandwidthHz: was.bandwidthHz)
+            if was.squelchSource == .squelchAuto {
+                writes.squelchAutoDb(was.squelchDb, channel: ch.channelID)
+            } else if !was.squelchDb.isNaN {
+                writes.squelchDb(was.squelchDb, channel: ch.channelID)
+            }
+            if playbackID == nil, !muted { try await ensureSink(on: ch) }
+            log("session", "own channel \(ch.channelID) where \(was.channelID) was")
+        } catch {
+            lastError = LeylineError(error)
+            log(
+                "session",
+                "no channel of its own where \(was.channelID) was: \(LeylineError(error))")
+        }
     }
 
     /// `ley tune`'s auto squelch from the next fresh row: 10 dB above the floor scaled to the
@@ -1165,7 +1529,7 @@ final class AppSession {
         let (threshold, floor) = SpectrumFold.autoSquelch(
             spectrum.latest, sampleRate: sampleRate, bandwidthHz: bandwidthHz)
         guard threshold.isFinite else { return }
-        writes.squelchDb(threshold, channel: ch.channelID)
+        writes.squelchAutoDb(threshold, channel: ch.channelID)
         log("session", "auto squelch \(threshold) dBFS from floor \(floor)")
     }
 
@@ -1362,7 +1726,9 @@ final class AppSession {
         followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
     }
 
-    /// A centre inside the radio's tuning range, with half a span to spare on each side.
+    /// A centre inside the radio's tuning range, with half a span to spare on each side. A
+    /// range narrower than the span (a file radio's, which tunes only the centre it was
+    /// recorded at) has no such centre, and the centre is kept inside the range itself.
     private func clampCentre(_ centre: Int64, span: Int64) -> Int64 {
         guard
             let r = device?.tuningRanges.first(where: {
@@ -1370,7 +1736,10 @@ final class AppSession {
             })
                 ?? device?.tuningRanges.first
         else { return max(0, centre) }
-        return min(max(centre, Int64(r.minHz) + span / 2), Int64(r.maxHz) - span / 2)
+        var lo = Int64(r.minHz) + span / 2
+        var hi = Int64(r.maxHz) - span / 2
+        if lo > hi { (lo, hi) = (Int64(r.minHz), Int64(r.maxHz)) }
+        return min(max(centre, lo), hi)
     }
 
     /// The centre write, the wait for its event, then the offset, and then whatever move was
@@ -1560,20 +1929,25 @@ final class AppSession {
 
     func setVolume(_ v: Double) {
         guard let s = sink, let writes else { return }
-        writes.volume(v.clamped(to: 0...1), sink: s.sinkID)
+        volume = v.clamped(to: 0...1)
+        writes.volume(volume, sink: s.sinkID)
     }
 
     /// Mute detaches the sink and unmute attaches one; the channel and its squelch stay, and so
     /// does the radio: the button is the audio control.
     func toggleMute() async {
-        guard let daemon, let ch = channel else { return }
+        // Another client's sink plays the channel: the window has nothing of its own to mute,
+        // and attaching one would echo.
+        guard let daemon, let ch = channel, audioElsewhere == nil else { return }
         do {
             if let s = sink {
                 var req = Leyline_V1_DetachSinkRequest()
                 req.sinkID = s.sinkID
                 _ = try await daemon.control.detachSink(req)
+                muted = true
                 log("session", "muted: sink \(s.sinkID) detached")
             } else {
+                muted = false
                 try await ensureSink(on: ch)
                 log("session", "unmuted: sink attached")
             }
@@ -1657,33 +2031,34 @@ final class AppSession {
         Task { await startSweep(row: row) }
     }
 
-    /// A hit's row and its rail tick: the frequency tunes as a click on the chart would. With
+    /// A hit's row and its rail tick: the hit's frequency (`SweepHit.tuneHz`) tunes as
+    /// a click on the chart would. With
     /// no capture (Stop listening after the sweep) the band opens the radio there, as a bookmark
     /// click does.
     func tune(hit: SweepHit) {
-        log("tune", "hit \(hit.label) at \(hit.hz) Hz")
-        if capture == nil, let b = Bands.band(containing: hit.hz, in: bands),
+        log("tune", "hit \(hit.label) at \(hit.tuneHz) Hz")
+        if capture == nil, let b = Bands.band(containing: hit.tuneHz, in: bands),
             outOfRangeWords(b) == nil
         {
-            Task { await select(band: b, at: hit.hz) }
+            Task { await select(band: b, at: hit.tuneHz) }
             return
         }
-        tune(to: hit.hz)
+        tune(to: hit.tuneHz)
     }
 
     /// `＋` on a hit: a bookmark named as the row names the hit, the plan channel's name else
-    /// the frequency, with the band's mode and width there, and its row
+    /// the frequency, on that frequency (`SweepHit.tuneHz`) with the band's mode and width, and its row
     /// opened as an editor as ⌘D opens one. The same name on the same frequency twice updates
     /// the bookmark in place (`BookmarkStore.add`).
     func bookmark(hit: SweepHit) {
-        let band = Bands.band(containing: hit.hz, in: bands)
-        let mode = band?.mode(at: hit.hz) ?? Bands.defaultMode(at: hit.hz, in: bands)
+        let band = Bands.band(containing: hit.tuneHz, in: bands)
+        let mode = band?.mode(at: hit.tuneHz) ?? Bands.defaultMode(at: hit.tuneHz, in: bands)
         let bandwidthHz = band?.bandwidthHz ?? mode.defaultBandwidthHz
         do {
             let b = try bookmarks.add(
-                name: hit.label, hz: hit.hz, mode: mode, bandwidthHz: bandwidthHz)
+                name: hit.label, hz: hit.tuneHz, mode: mode, bandwidthHz: bandwidthHz)
             try bookmarks.save()
-            log("bookmark", "added \(hit.label) at \(hit.hz) Hz from a sweep hit")
+            log("bookmark", "added \(hit.label) at \(hit.tuneHz) Hz from a sweep hit")
             editingBookmarkID = b.id
         } catch {
             lastError = bookmarkWriteError(error)
@@ -2300,36 +2675,43 @@ final class AppSession {
         }
     }
 
-    /// The inspector's tone field: the tuned bookmark takes the tone, trimmed, in the file's
-    /// spelling; empty clears it. A tone the store refuses (`Tone.parse`) leaves the bookmark
-    /// as it was and puts the shared sentence in `toneError`, under the field, rather than in
-    /// `lastError`: it is the field's mistake, not the file's. Not `setX`: that verb is one
-    /// coalesced parameter write to the daemon (`../dev/swift-style.md`, "Naming"), and this
-    /// writes a file.
-    func editTunedBookmark(tone text: String) {
-        guard let b = tunedBookmark else { return }
+    /// The inspector's tone field: the bookmark the field was made for takes the tone, trimmed,
+    /// in the file's spelling; empty clears it. By id rather than the tuned bookmark, because a
+    /// field left by a tune away saves as the tune happens, and the text belongs to the
+    /// bookmark it was typed on. A tone the store refuses (`Tone.parse`) leaves the bookmark as
+    /// it was and puts the shared sentence in `toneError`, under the field, rather than in
+    /// `lastError`: it is the field's mistake, not the file's. The sentence is kept only while
+    /// that bookmark is the tuned one, so it never shows under the next bookmark's field. Not
+    /// `setX`: that verb is one coalesced parameter write to the daemon
+    /// (`../dev/swift-style.md`, "Naming"), and this writes a file.
+    func editBookmark(_ id: String, tone text: String) {
+        guard let b = bookmarks.bookmarks[id] else { return }
         let tone = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tuned = tunedBookmark?.id == id
         guard tone != b.tone else {
-            clearToneError()
+            if tuned { clearToneError() }
             return
         }
         do {
             try bookmarks.setTone(b.id, to: tone)
             try bookmarks.save()
-            clearToneError()
+            if tuned { clearToneError() }
             log("bookmark", tone.isEmpty ? "\(b.name) tone cleared" : "\(b.name) tone \(tone)")
         } catch BookmarkError.invalidTone(let sentence) {
-            toneError = sentence
-            toneErrorHz = b.hz
+            if tuned {
+                toneError = sentence
+                toneErrorHz = b.hz
+            }
             log("bookmark", "tone \"\(tone)\" refused for \(b.name): \(sentence)")
         } catch {
             lastError = bookmarkWriteError(error)
         }
     }
 
-    /// The inspector's note field: the tuned bookmark takes the note, trimmed; empty clears it.
-    func editTunedBookmark(note text: String) {
-        guard let b = tunedBookmark else { return }
+    /// The inspector's note field: the bookmark the field was made for takes the note,
+    /// trimmed; empty clears it.
+    func editBookmark(_ id: String, note text: String) {
+        guard let b = bookmarks.bookmarks[id] else { return }
         let note = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard note != b.note else { return }
         do {
@@ -2341,8 +2723,9 @@ final class AppSession {
         }
     }
 
-    /// The tone field put the saved tone back (Escape, or the focus going elsewhere), so the
-    /// sentence about the typed one goes with it.
+    /// The tone field put the saved tone back (Escape, or `ley bookmarks` writing the bookmark
+    /// while a refused tone waited in the field), so the sentence about the typed one goes with
+    /// it.
     func clearToneError() {
         toneError = nil
         toneErrorHz = nil
@@ -2772,6 +3155,7 @@ final class AppSession {
         }
         followTunedRecordings()
         followPage()
+        followTranscriptions()
         noticeFailedRecordJobs()
         settleRecordSwitch()
         markRecordToggles()
@@ -2848,6 +3232,7 @@ final class AppSession {
                 if list != self.recordings { self.recordings = list }
                 self.prunePage()
                 self.failedManifests = []
+                self.failedSpeech = []
                 if self.place == .library, self.selectedRecordingChannel == nil {
                     self.selectFirstChannel()
                 }
@@ -2923,6 +3308,9 @@ final class AppSession {
     private func followPage() {
         guard recordingsPageShown, let c = selectedChannel else { return }
         for r in c.recordings { readManifestIfNeeded(r.jobID) }
+        // One read for the channel's recordings whose speech has not been read.
+        loadSpeech(of: c.recordings.map(\.jobID).filter { speechLines[$0] == nil })
+        readSpeechDecoderIfNeeded()
     }
 
     /// `ResolveLocalPath(ley://recordings/<id>)`, then `recording.json` from that directory:
@@ -2936,7 +3324,13 @@ final class AppSession {
             ref.uri = "ley://recordings/\(id)"
             do {
                 let local: Leyline_V1_LocalPath = try await daemon.resources.resolveLocalPath(ref)
-                let manifest = try RecordingManifest.read(at: URL(fileURLWithPath: local.path))
+                // The sidecar reads are file I/O: off the main actor, and only the sidecars of parts
+                // the earlier read did not have.
+                let earlier = self?.manifests[id]
+                let url = URL(fileURLWithPath: local.path)
+                let manifest = try await Task.detached(priority: .utility) {
+                    try RecordingManifest.read(at: url, reusing: earlier)
+                }.value
                 guard let self, !Task.isCancelled else { return }
                 self.manifestLoads[id] = nil
                 if self.manifests[id] != manifest {
@@ -2964,6 +3358,7 @@ final class AppSession {
         var listed = Set(recordings.map(\.jobID))
         if let running = recordingJob?.jobID { listed.insert(running) }
         for id in manifests.keys where !listed.contains(id) { manifests[id] = nil }
+        for id in speechLines.keys where !listed.contains(id) { speechLines[id] = nil }
         for (id, task) in manifestLoads where !listed.contains(id) {
             task.cancel()
             manifestLoads[id] = nil
@@ -3000,6 +3395,7 @@ final class AppSession {
     /// ends a Play all or a Play day.
     func clickRow(_ uri: String) async {
         selectedPartURI = uri
+        selectedOver = nil
         if playingURI == uri, playback != nil {
             await pausePlayback(!isPaused)
         } else if playingURI != uri {
@@ -3073,7 +3469,10 @@ final class AppSession {
 
     /// `play(partURI:)` without touching Play all's queue, which `playAll` and `endPlayback`
     /// have set for the parts after this one.
-    private func startPlayback(_ uri: String, row: Leyline_V1_SampleTime? = nil) async {
+    private func startPlayback(
+        _ uri: String, row: Leyline_V1_SampleTime? = nil, over: Int? = nil,
+        range: (start: UInt64, end: UInt64)? = nil
+    ) async {
         guard let daemon else { return }
         if let old = partPlayback.replace(sinkAttached: sink != nil) {
             var stop = Leyline_V1_StopPlaybackRequest()
@@ -3081,7 +3480,7 @@ final class AppSession {
             _ = try? await daemon.control.stopPlayback(stop)
             log("playback", "\(old) stopped for \(uri)")
         }
-        partPlayback.playing(uri, row: row)
+        partPlayback.playing(uri, row: row, over: over)
         if let s = sink {
             var detach = Leyline_V1_DetachSinkRequest()
             detach.sinkID = s.sinkID
@@ -3094,6 +3493,10 @@ final class AppSession {
         }
         var req = Leyline_V1_StartPlaybackRequest()
         req.resourceUri = uri
+        if let range {
+            req.startSample = range.start
+            req.endSample = range.end
+        }
         do {
             let pb = try await daemon.control.startPlayback(req)
             partPlayback.started(id: pb.playbackID, at: Date())
@@ -3400,6 +3803,308 @@ final class AppSession {
         }
     }
 
+    // MARK: Speech in the Library
+
+    /// A recording's speech as the page shows it: its lines dated through its manifest, the
+    /// newest transcription of each over shown (`RecordingSpeech.shown`). nil until read.
+    func speech(for recordingID: String) -> RecordingSpeech? {
+        if let held = speechCache[recordingID] { return held }
+        guard let lines = speechLines[recordingID] else { return nil }
+        let built = RecordingSpeech(lines: lines, manifest: manifests[recordingID])
+        speechCache[recordingID] = built
+        return built
+    }
+
+    /// Drops the cached speech of every recording whose entry differs between `old` and `new`.
+    private func forgetSpeech<V: Equatable>(changedIn old: [String: V], _ new: [String: V]) {
+        guard !speechCache.isEmpty else { return }
+        for id in Set(old.keys).union(new.keys) where old[id] != new[id] {
+            speechCache[id] = nil
+        }
+    }
+
+    /// Reads `recordingID`'s speech again now, or once the read in flight lands: a transcription
+    /// of it changed.
+    func loadSpeech(for recordingID: String) {
+        if speechLoads[recordingID] != nil {
+            staleSpeech.insert(recordingID)
+            return
+        }
+        failedSpeech.remove(recordingID)
+        loadSpeech(of: [recordingID])
+    }
+
+    /// `Decoders.QueryRecords` for some recordings' speech in one call: protocol `speech` over
+    /// their span (`SpeechRecords.query`), since a record query has no filter on `clip_uri`, and
+    /// each recording's own sorted out by `SpeechRecords.byRecording`. A recording whose read is
+    /// in flight, or whose last read failed, is left out. A failure is logged and leaves what was
+    /// read before: the words are an addition to the page.
+    private func loadSpeech(of ids: [String]) {
+        guard let daemon else { return }
+        let summaries = recordings.filter {
+            ids.contains($0.jobID) && speechLoads[$0.jobID] == nil
+                && !failedSpeech.contains($0.jobID)
+        }
+        guard !summaries.isEmpty else { return }
+        let token = UUID()
+        let covered = summaries.map(\.jobID)
+        for id in covered { speechLoads[id] = token }
+        let query = SpeechRecords.query(for: summaries, now: Date())
+        Task { [weak self] in
+            let result: Result<Leyline_V1_RecordPage, LeylineError>
+            do {
+                result = .success(try await daemon.decoders.queryRecords(query))
+            } catch {
+                result = .failure(LeylineError(error))
+            }
+            self?.landSpeech(result, for: covered, token: token)
+        }
+    }
+
+    /// A speech read landed: each recording still waiting on it takes its lines (none is an
+    /// answer too), or on a failure is not read again until the listing is.
+    private func landSpeech(
+        _ result: Result<Leyline_V1_RecordPage, LeylineError>, for ids: [String], token: UUID
+    ) {
+        let mine = ids.filter { speechLoads[$0] == token }
+        for id in mine { speechLoads[id] = nil }
+        switch result {
+        case .success(let page):
+            let byRecording = SpeechRecords.byRecording(page.records)
+            for id in mine {
+                let lines = byRecording[id] ?? []
+                if speechLines[id] != lines { speechLines[id] = lines }
+                if page.truncated {
+                    speechTruncated.insert(id)
+                } else {
+                    speechTruncated.remove(id)
+                }
+            }
+            log(
+                "speech",
+                "\(page.records.count) speech records for \(mine.count) recordings"
+                    + (page.truncated ? ", cut at the query's limit" : ""))
+        case .failure(let e):
+            failedSpeech.formUnion(mine)
+            log("speech", "speech of \(mine.joined(separator: ", ")) not read: \(e)")
+        }
+        let again = staleSpeech.intersection(mine)
+        staleSpeech.subtract(again)
+        for id in again { loadSpeech(for: id) }
+    }
+
+    /// A transcription job (a decode job reading a recording) changed: its recording's speech is
+    /// read again, so lines appear as the job writes them, and a failure is the session's notice.
+    private func followTranscriptions() {
+        let jobs = state.jobs.filter {
+            if case .decode(let d)? = $0.config { return !d.sourceUri.isEmpty }
+            return false
+        }
+        guard jobs != transcriptionsSeen else { return }
+        let changed = jobs.filter { !transcriptionsSeen.contains($0) }
+        transcriptionsSeen = jobs
+        for j in changed {
+            guard case .decode(let d)? = j.config,
+                let id = RecordingPartRef.recordingID(of: d.sourceUri)
+            else { continue }
+            loadSpeech(for: id)
+            if j.state == .failed,
+                let line = SpeechRecords.statusLine(job: j, speech: speech(for: id))
+            {
+                notice = line
+            }
+        }
+    }
+
+    /// The newest transcription of a recording and its status line (`Transcribing · 3 overs so
+    /// far`, the daemon's `status_detail` while degraded, `Could not transcribe: …`); nil when none
+    /// runs or failed.
+    func transcriptionStatus(for recordingID: String) -> (job: Leyline_V1_Job, line: String)? {
+        guard
+            let job = SpeechRecords.transcription(
+                of: "ley://recordings/\(recordingID)", in: state.jobs),
+            let line = SpeechRecords.statusLine(job: job, speech: speech(for: recordingID))
+        else { return nil }
+        return (job, line)
+    }
+
+    /// `ListDecoders` once, for the speech decoder's manifest: whether Transcribe is offered,
+    /// whether it needs a key, and which hosts the question names.
+    private func readSpeechDecoderIfNeeded() {
+        guard !speechDecoderRead, let daemon else { return }
+        speechDecoderRead = true
+        Task { [weak self] in
+            do {
+                let listed = try await daemon.decoders.listDecoders(
+                    Leyline_V1_ListDecodersRequest())
+                let found = listed.decoders.first {
+                    $0.name == SpeechRecords.protocolName
+                        || $0.aliases.contains(SpeechRecords.protocolName)
+                }
+                self?.speechDecoder = found
+                log(
+                    "speech",
+                    found.map { "speech decoder \($0.name) \($0.version)" }
+                        ?? "no speech decoder installed")
+            } catch {
+                self?.speechDecoderRead = false
+                log("speech", "decoders not listed: \(LeylineError(error))")
+            }
+        }
+    }
+
+    /// Whether a recording's manifest lists squelch openings: speech is cut at the squelch, so only
+    /// a gated recording can be transcribed. False until the manifest has been read.
+    func isGated(recordingID: String) -> Bool {
+        manifests[recordingID]?.parts.contains { $0.squelchOpens > 0 } ?? false
+    }
+
+    /// Whether the Library offers Transcribe: a speech decoder is installed, and it needs no key
+    /// or a key is set. While false no speech control shows (docs/design/ai.md).
+    var canTranscribe: Bool { SpeechRecords.canTranscribe(decoder: speechDecoder, ai: state.ai) }
+
+    /// The speech model in use and the models "Transcribe again…" offers.
+    var speechModels: (current: String, offered: [String]) { SpeechRecords.models(state.ai) }
+
+    /// Transcribe and Transcribe again…: puts the question `ley transcribe` asks into
+    /// `transcribeAsk`, which the view shows as a confirmation dialog; nothing is sent until
+    /// `transcribe(recordingID:model:)`.
+    func askTranscribe(recordingID: String, model: String = "") {
+        guard let m = manifests[recordingID], let d = speechDecoder else {
+            notice =
+                "Could not transcribe: the recording or the speech decoder has not been read yet."
+            return
+        }
+        transcribeAsk = TranscribeAsk(
+            recordingID: recordingID, model: model,
+            question: SpeechRecords.question(manifest: m, decoder: d, model: model))
+    }
+
+    /// Starts the kept speech job over the stored recording (`StartJob` with `source_uri`), as
+    /// `ley transcribe --yes` does. With `model`, the speech feature is set to it first, because the
+    /// model reaches the plugin when it starts, and put back when the daemon refuses the job. The
+    /// job's records arrive through `followTranscriptions`.
+    func transcribe(recordingID: String, model: String = "") async {
+        transcribeAsk = nil
+        guard let daemon, let d = speechDecoder else { return }
+        let previous =
+            state.ai.features.first { $0.feature == SpeechRecords.feature }
+            ?? .with { $0.feature = SpeechRecords.feature }
+        if !model.isEmpty {
+            var fm = Leyline_V1_FeatureModel()
+            fm.feature = SpeechRecords.feature
+            fm.provider = d.credentialProvider
+            fm.model = model
+            do {
+                _ = try await daemon.credentials.setFeatureModel(fm)
+            } catch {
+                let e = LeylineError(error)
+                notice =
+                    "Could not choose the speech model: \(e.message.isEmpty ? e.code : e.message)"
+                return
+            }
+        }
+        var req = Leyline_V1_StartJobRequest()
+        req.decode = SpeechRecords.transcribeConfig(
+            recordingURI: "ley://recordings/\(recordingID)", decoder: d.name)
+        do {
+            let job = try await daemon.jobs.startJob(req)
+            log(
+                "speech",
+                "\(job.jobID) transcribing \(recordingID)\(model.isEmpty ? "" : " with \(model)")")
+        } catch {
+            let e = LeylineError(error)
+            log("speech", "\(recordingID) not transcribed: \(e.code) \(e.message)")
+            notice = "Could not transcribe: \(e.message.isEmpty ? e.code : e.message)"
+            // An empty provider and model clear the choice, which is what it was if none was set.
+            if !model.isEmpty {
+                let restore =
+                    previous.model.isEmpty
+                    ? Leyline_V1_FeatureModel.with { $0.feature = SpeechRecords.feature } : previous
+                _ = try? await daemon.credentials.setFeatureModel(restore)
+            }
+        }
+    }
+
+    /// Writes a recording's shown speech to `url` as plain text or SRT (`SpeechRecords.export`);
+    /// the view's save panel chose the file. A failure is the session's notice.
+    func exportSpeech(recordingID: String, format: SpeechExportFormat, to url: URL) {
+        guard let s = speech(for: recordingID), let m = manifests[recordingID] else { return }
+        let t = SpeechRecords.timings(speechDecoder)
+        let out = SpeechRecords.export(
+            s, manifest: m, format: format, preRollMs: t.preRollMs, hangMs: t.hangMs)
+        do {
+            try Data(out.text.utf8).write(to: url)
+            log("speech", "\(recordingID) exported as \(format.rawValue) to \(url.path)")
+            if out.skipped > 0 {
+                log("speech", "\(out.skipped) lines left out of the SRT: nothing dates them")
+            }
+        } catch {
+            notice = "Could not export the words: \(error.localizedDescription)"
+        }
+    }
+
+    /// A speech line's click: the part is selected with the over, and only that over plays, its
+    /// segment as the speech decoder heard it (`SpeechRecords.range`, `StartPlayback`'s sample
+    /// range); a part whose openings were not read plays whole. A click on the over playing
+    /// pauses or resumes it.
+    func play(part uri: String, over: Int) async {
+        selectedPartURI = uri
+        selectedOver = over
+        if playingURI == uri, playingOver == over, playback != nil {
+            await pausePlayback(!isPaused)
+            return
+        }
+        partPlayback.queue.clear()
+        var range: (start: UInt64, end: UInt64)?
+        if let ref = RecordingPartRef(uri: uri), let m = manifests[ref.jobID],
+            let part = m.parts.first(where: { $0.part == ref.part })
+        {
+            let t = SpeechRecords.timings(speechDecoder)
+            range = SpeechRecords.range(
+                over: over, of: part, in: m, preRollMs: t.preRollMs, hangMs: t.hangMs)
+        }
+        log("playback", "over \(over) of \(uri)\(range == nil ? ", whole part" : "")")
+        // Without a range the whole part plays, and no one line is what is playing.
+        await startPlayback(uri, over: range == nil ? nil : over, range: range)
+    }
+
+    /// The search field's words changed: while it holds some, each channel's unread speech is
+    /// read, one query a channel, once (a read in flight or failed is not sent again), so a
+    /// channel is found by what was said in it.
+    func searchSpeech() {
+        guard !recordingsQuery.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        for c in recordingChannels {
+            loadSpeech(of: c.recordings.map(\.jobID).filter { speechLines[$0] == nil })
+        }
+    }
+
+    /// The speech line the search finds in `c`, or nil.
+    func speechHit(in c: RecordingChannel) -> SpeechHit? {
+        var speech: [String: RecordingSpeech] = [:]
+        for r in c.recordings { speech[r.jobID] = self.speech(for: r.jobID) }
+        return SpeechRecords.hit(recordingsQuery, in: c, speech: speech)
+    }
+
+    /// The search's hit chosen: the channel, the part and the over are selected, and the page
+    /// scrolls to the over (`selectedOver`), its EARLIER day opened first.
+    func select(hit: SpeechHit, in c: RecordingChannel) {
+        if selectedRecordingChannel != c.id { selectedRecordingChannel = c.id }
+        selectedPartURI = hit.partURI
+        selectedOver = hit.over
+        openDay(holding: hit.partURI)
+    }
+
+    /// Opens the EARLIER day that holds `partURI`, so a row the page is asked to show is not
+    /// folded away; a recent day is always open.
+    func openDay(holding partURI: String) {
+        guard let c = selectedChannel,
+            let day = pageDays(for: c).first(where: { d in d.rows.contains { $0.uri == partURI } }),
+            day.earlier, !openedDays.contains(day.id)
+        else { return }
+        openedDays.insert(day.id)
+    }
+
     // MARK: Moving the radio over a recording
 
     /// A move of the radio that would leave a record job's frequency outside the capture, until
@@ -3443,6 +4148,223 @@ final class AppSession {
         retuneQuestion = nil
         log("record", moveAnyway ? "moved anyway" : "move cancelled; the radio stays")
         if moveAnyway { q.proceed() } else { q.cancel() }
+    }
+
+    // MARK: Settings, AI
+
+    /// An AI control shows outside Settings only while this holds, which is when the daemon
+    /// holds a key or a feature names an on-device engine (`AISettings.hasAnyAI`).
+    var hasAnyAI: Bool { AISettings.hasAnyAI(state.ai) }
+
+    /// Stores `secret` as the key for `provider` and has the daemon check it once
+    /// (`Credentials.SetCredential`). The secret lives in this call's request and nowhere else:
+    /// never in the session's state and never in a log line. The reply's check is worded into
+    /// `settingsNotice`; the key's row arrives with the mirror's `ai` event, as a key `ley ai add`
+    /// stored does. Returns whether the daemon stored the key, so the form can clear its field.
+    func addKey(provider: String, secret: String, label: String, endpoint: String) async -> Bool {
+        guard let daemon else {
+            settingsNotice = Self.notDialledWords
+            return false
+        }
+        var req = Leyline_V1_SetCredentialRequest()
+        req.provider = provider
+        req.secret = secret
+        req.label = label
+        req.endpoint = endpoint
+        do {
+            let c = try await daemon.credentials.setCredential(req)
+            log("ai", "\(AISettings.keyWords(c)) added: \(KeyOutcome(c.lastCheck).word)")
+            settingsNotice = AISettings.addedWords(c)
+            return true
+        } catch {
+            settingsNotice = aiFailed("add the \(ProviderCatalog.name(provider)) key", error)
+            return false
+        }
+    }
+
+    /// Tries the stored key against the provider again (`Credentials.CheckCredential`).
+    func checkKey(provider: String) async {
+        guard let daemon else {
+            settingsNotice = Self.notDialledWords
+            return
+        }
+        var ref = Leyline_V1_CredentialRef()
+        ref.provider = provider
+        do {
+            let c = try await daemon.credentials.checkCredential(ref)
+            log("ai", "\(AISettings.keyWords(c)) checked: \(KeyOutcome(c.lastCheck).word)")
+            settingsNotice = AISettings.checkedWords(c)
+        } catch {
+            settingsNotice = aiFailed("check the \(ProviderCatalog.name(provider)) key", error)
+        }
+    }
+
+    /// Removes the key (`Credentials.DeleteCredential`); the daemon ends every job and
+    /// conversation that uses it, each with a line naming the key.
+    func removeKey(provider: String) async {
+        guard let daemon else {
+            settingsNotice = Self.notDialledWords
+            return
+        }
+        var ref = Leyline_V1_CredentialRef()
+        ref.provider = provider
+        do {
+            _ = try await daemon.credentials.deleteCredential(ref)
+            log("ai", "\(provider) key removed")
+            settingsNotice =
+                "\(ProviderCatalog.name(provider)) key removed; anything that was using it has stopped."
+        } catch {
+            settingsNotice = aiFailed("remove the \(ProviderCatalog.name(provider)) key", error)
+        }
+    }
+
+    /// Chooses the provider and model a feature calls (`Credentials.SetFeatureModel`), as `ley ai
+    /// use` does; the pane's pickers show the mirror's value once the `ai` event carries it.
+    func setFeatureModel(feature: String, provider: String, model: String) async {
+        guard let daemon else {
+            settingsNotice = Self.notDialledWords
+            return
+        }
+        var fm = Leyline_V1_FeatureModel()
+        fm.feature = feature
+        fm.provider = provider
+        fm.model = model
+        do {
+            let got = try await daemon.credentials.setFeatureModel(fm)
+            log("ai", "\(got.feature) now calls \(got.provider) \(got.model)")
+            settingsNotice = AISettings.nowCallsWords(got)
+        } catch {
+            let what = "choose the \(AISettings.title(feature).lowercased()) model"
+            settingsNotice = aiFailed(what, error)
+        }
+    }
+
+    func clearSettingsNotice() { settingsNotice = nil }
+
+    private static let notDialledWords = "The daemon is not running, so nothing was written."
+
+    /// The settings line for a write the daemon refused or never received, logged with its code.
+    private func aiFailed(_ what: String, _ error: any Error) -> String {
+        let e = LeylineError(error)
+        log("ai", "could not \(what): \(e.code) \(e.message)")
+        // No daemon answered: the transport's own words name its channel states and the socket.
+        if e.daemonUnreachable {
+            return "Could not \(what): the daemon is not running."
+        }
+        return "Could not \(what): \(e.message.isEmpty ? e.code : e.message)"
+    }
+
+    // MARK: The assistant
+
+    /// The panel shows while it is switched on and any AI feature can run (`hasAnyAI`): no AI
+    /// control appears outside Settings until a key or an on-device engine is set
+    /// (`docs/design/ai.md`, "Context").
+    var assistantPanelShown: Bool { assistantShown && hasAnyAI }
+
+    /// A provider is chosen for the assistant (`ley ai use assistant`, or the Settings pane);
+    /// without one a start is refused, so the empty panel says where to choose it.
+    var hasAssistantModel: Bool {
+        state.ai.features.contains { $0.feature == "assistant" && !$0.provider.isEmpty }
+    }
+
+    var conversationView: ConversationView? { conversation.map(ConversationView.init) }
+
+    /// The tokens the conversation shown has used, from the mirror's usage lines.
+    var assistantUsage: UsageSoFar {
+        UsageSoFar(lines: state.usage, conversationID: conversation?.conversationID ?? "")
+    }
+
+    /// The inspector's line while the window follows another client's channel and its own stays
+    /// for a recording (`ChannelFollow.keptRecording`).
+    var keptRecording: ChannelFollow.KeptRecording? {
+        follow.keptRecording(in: state, bookmarks: bookmarks.list)
+    }
+
+    /// The kept line's Stop: `CancelJob` on the recording that keeps the window's old channel
+    /// open, as the Record switch's off does; once the job ends the window ends that channel
+    /// (`followOtherClients`).
+    func stopKeptRecording() async {
+        guard let k = keptRecording else { return }
+        await stopRecording(k.jobID, frequencyHz: k.hz, mode: k.mode)
+    }
+
+    /// The inspector's line under the channel's parameters: the newest change to the tuned
+    /// channel when another client made it (`ChangeNote`).
+    var changeNote: ChangeNote? {
+        guard let ch = channel, let id = daemon?.identity.id else { return nil }
+        return ChangeNote.latest(for: ch, in: state, selfClientID: id)
+    }
+
+    func toggleAssistant() {
+        assistantShown.toggle()
+        log("session", assistantShown ? "assistant shown" : "assistant hidden")
+    }
+
+    /// The field's Return: the message, starting a conversation first when none is going, with
+    /// the app's view tools and on the assistant feature's provider and model (the request names
+    /// neither). No key or no model is a notice that points to Settings
+    /// (`AssistantWords.failed`).
+    /// Returns whether the daemon took it, so the field keeps what was typed when it did not.
+    func send(_ text: String) async -> Bool {
+        guard let assistant else {
+            assistantNotice = AssistantNotice(text: Self.notDialledWords)
+            return false
+        }
+        return await assistant.send(text)
+    }
+
+    /// Allow, once or, with `forConversation`, for the rest of the conversation: the worker then
+    /// runs later calls of that kind without asking (`docs/dev/assistant.md`, "The gate").
+    func approve(callID: String, forConversation: Bool = false) async {
+        await assistant?.resolve(
+            callID: callID, approve: true, scope: forConversation ? .conversation : .once)
+    }
+
+    func decline(callID: String) async {
+        await assistant?.resolve(callID: callID, approve: false)
+    }
+
+    func stopTurn() async { await assistant?.stopTurn() }
+
+    /// New Conversation: the one shown ends, if it is still going, and the panel empties.
+    func newConversation() async { await assistant?.clear() }
+
+    /// Clears `viewFocus` once the radio is tuned elsewhere or the view is zoomed back out
+    /// (`ViewFocus.kept`), after every mirror change and every zoom.
+    private func keepViewFocus() {
+        let kept = ViewFocus.kept(viewFocus, tunedHz: tunedHz, zoom: zoom)
+        if kept != viewFocus { viewFocus = kept }
+    }
+
+    private func assistantChanged(_ a: AssistantController) {
+        if conversation != a.conversation { conversation = a.conversation }
+        if assistantNotice != a.notice { assistantNotice = a.notice }
+        if assistantSending != a.sending { assistantSending = a.sending }
+        if assistantLost != a.isLost { assistantLost = a.isLost }
+    }
+
+    /// Opens the Library on recording `id` (its job id), and on its part `part` when one is
+    /// given, as a click on its channel's row and then on the part's row would. Returns false
+    /// when the listing has no such recording. A part whose manifest has not been read yet is
+    /// selected anyway; the inspector shows it once the read lands, as after a click.
+    @discardableResult
+    func selectRecording(id: String, part: Int?) -> Bool {
+        guard
+            let row = recordingChannels.first(where: { c in
+                c.recordings.contains { $0.jobID == id }
+            })
+        else { return false }
+        place = .library
+        // A new channel row clears the selected part, so the part is set after it.
+        selectedRecordingChannel = row.id
+        selectedPartURI = part.map { "ley://recordings/\(id)/\($0)" }
+        log("session", "select recording \(id)\(part.map { " part \($0)" } ?? "")")
+        return true
+    }
+
+    /// The Library row's title for recording `id`: its bookmark's name, else its frequency.
+    private func recordingTitle(_ id: String) -> String? {
+        recordingChannels.first { c in c.recordings.contains { $0.jobID == id } }?.title
     }
 
     // MARK: The daemon's launch agent
@@ -3550,4 +4472,48 @@ enum WindowPlace: String, CaseIterable, Identifiable {
     var title: String { self == .radio ? "Radio" : "Library" }
     /// ⌘1 and ⌘2, the View menu's items and the switch's tooltip.
     var shortcut: Character { self == .radio ? "1" : "2" }
+}
+
+/// The view tools the window declares (`AppViewTools`), performed on the main actor when the
+/// assistant calls one. None of them moves the radio: `show_band` zooms and centres the view
+/// inside the span the radio captures and says to tune when the band is outside it, because
+/// retuning goes through the radio tools and their don't-disturb check.
+extension AppSession: ViewToolPerformer {
+    func perform(_ request: AppViewTools.Request) async -> ViewToolAnswer {
+        switch request {
+        case .showRange(let lowHz, let highHz, let label):
+            let (answer, fit) = AppViewTools.showRange(
+                lowHz: lowHz, highHz: highHz, label: label, centerHz: capture?.centerHz,
+                sampleRate: capture?.sampleRate ?? 0)
+            if let fit {
+                place = .radio
+                // The focus first: zooming to 1 clears it, and a fit at zoom 1 needs none.
+                viewFocus = ViewFocus(hz: fit.focusHz, tunedHz: tunedHz)
+                zoom = fit.zoom
+                log("assistant", "view \(fit.shown.lowerBound)-\(fit.shown.upperBound) Hz")
+            }
+            return answer
+        case .selectRecording(let id, let part):
+            if let part, let m = manifests[id], !m.parts.contains(where: { $0.part == part }) {
+                return AppViewTools.unknownRecording(id, part: part)
+            }
+            guard selectRecording(id: id, part: part), let title = recordingTitle(id) else {
+                return AppViewTools.unknownRecording(id)
+            }
+            return AppViewTools.selected(recording: id, part: part, title: title)
+        case .showPlace(let p):
+            place = p == .library ? .library : .radio
+            return AppViewTools.shown(p)
+        }
+    }
+}
+
+/// Transcribe's question while it is asked: the recording, the model chosen (empty for the
+/// speech feature's own) and `ley transcribe`'s words.
+struct TranscribeAsk: Equatable, Identifiable {
+    var recordingID: String
+    var model: String
+    var question: String
+
+    var id: String { recordingID + "\u{0}" + model }
 }

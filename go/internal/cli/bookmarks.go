@@ -150,7 +150,8 @@ in 'ley bookmarks --json' shape, and {line, reason} for the rest.`,
   ley bookmarks import ~/memories.csv --json | jq '.skipped'`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			return runBookmarkImport(app, args[0], dryRun)
+			_, err := runBookmarkImport(app, args[0], dryRun)
+			return err
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what the import would add, update and skip, and write nothing")
@@ -167,32 +168,33 @@ type importJSON struct {
 }
 
 // runBookmarkImport parses the file before the store is opened, so a file that is not a CHIRP
-// export leaves the bookmarks file untouched, and saves once after every row is filed.
-func runBookmarkImport(app *App, file string, dryRun bool) error {
+// export leaves the bookmarks file untouched, and saves once after every row is filed. It
+// returns what --json prints, for the MCP adapter's import_chirp.
+func runBookmarkImport(app *App, file string, dryRun bool) (*importJSON, error) {
 	f, err := os.Open(file)
 	if err != nil {
-		return usageErrorf("cannot read %s: %v", file, err)
+		return nil, usageErrorf("cannot read %s: %v", file, err)
 	}
 	rows, skipped, err := chirp.Parse(f)
 	f.Close()
 	if errors.Is(err, chirp.ErrNoFrequency) {
-		return usageErrorf("%s has no Frequency column; is it a CHIRP CSV export?", file)
+		return nil, usageErrorf("%s has no Frequency column; is it a CHIRP CSV export?", file)
 	}
 	if err != nil {
-		return usageErrorf("cannot read %s as CSV: %v", file, err)
+		return nil, usageErrorf("cannot read %s as CSV: %v", file, err)
 	}
 	store, err := openBookmarks(app)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	tag := chirp.Tag(file)
 	res, err := chirp.Apply(store, rows, tag)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !dryRun {
 		if err := store.Save(); err != nil {
-			return fmt.Errorf("cannot write the bookmarks file: %w", err)
+			return nil, fmt.Errorf("cannot write the bookmarks file: %w", err)
 		}
 	}
 	// The lines a person reads: the parser's skips and the store's, by line, then the warnings
@@ -227,20 +229,20 @@ func runBookmarkImport(app *App, file string, dryRun bool) error {
 	for _, w := range warnings {
 		fmt.Fprintf(app.Stderr, "  line %d: %s\n", w.Line, w.Reason)
 	}
+	out := &importJSON{Added: []bookmarkJSON{}, Updated: []bookmarkJSON{}, Skipped: lines, Warnings: warnings}
+	for _, b := range res.Added {
+		out.Added = append(out.Added, bookmarkRow(b))
+	}
+	for _, b := range res.Updated {
+		out.Updated = append(out.Updated, bookmarkRow(b))
+	}
 	if app.JSON {
-		out := importJSON{Added: []bookmarkJSON{}, Updated: []bookmarkJSON{}, Skipped: lines, Warnings: warnings}
-		for _, b := range res.Added {
-			out.Added = append(out.Added, bookmarkRow(b))
-		}
-		for _, b := range res.Updated {
-			out.Updated = append(out.Updated, bookmarkRow(b))
-		}
-		return app.printArray(out)
+		return out, app.printArray(out)
 	}
 	if !dryRun && len(res.Added)+len(res.Updated) > 0 {
 		fmt.Fprintf(app.Stderr, "  %s\n", es.Cmd("ley bookmarks --tag "+tag))
 	}
-	return nil
+	return out, nil
 }
 
 func newBookmarksAddCommand(app *App) *cobra.Command {
@@ -281,7 +283,8 @@ them.`,
 			if len(args) == 1 {
 				arg = args[0]
 			}
-			return runBookmarkAdd(app, arg, name, mode, bw, band, fields)
+			_, err := runBookmarkAdd(app, arg, name, mode, bw, band, fields)
+			return err
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "what to call it in the list, e.g. --name \"Local repeater\" (required)")
@@ -329,7 +332,8 @@ removes nothing, because this is the one thing here that cannot be undone.`,
   ley bookmarks remove bm_01J8Z6R9TC7QK3W4M5N6P7Q8R9`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			return runBookmarkRemove(app, args[0])
+			_, err := runBookmarkRemove(app, args[0])
+			return err
 		},
 	}
 }
@@ -346,37 +350,38 @@ func openBookmarks(app *App) (*bookmarks.Store, error) {
 }
 
 // runBookmarkAdd resolves the frequency and mode the way `ley tune` does, so a bookmark tunes to
-// what tuning the same argument would have done.
-func runBookmarkAdd(app *App, arg, nameFlag, modeFlag, bwFlag, bandFlagValue string, fields bookmarkFields) error {
+// what tuning the same argument would have done. It returns the bookmark it filed, which
+// --json prints and the MCP adapter's add_bookmark returns.
+func runBookmarkAdd(app *App, arg, nameFlag, modeFlag, bwFlag, bandFlagValue string, fields bookmarkFields) (bookmarks.Bookmark, error) {
 	if nameFlag == "" {
-		return usageErrorf("a bookmark needs a name: ley bookmarks add %s --name \"Local repeater\"", orDefault(arg, "146.94"))
+		return bookmarks.Bookmark{}, usageErrorf("a bookmark needs a name: ley bookmarks add %s --name \"Local repeater\"", orDefault(arg, "146.94"))
 	}
 	// The tone is checked before the store is opened, so a mistyped one leaves the file as it
 	// was; the sentence is the one the app's validator prints (docs/design/channels.md,
 	// "Bookmarks gain three fields").
 	if fields.tone != "" {
 		if _, err := bookmarks.ParseTone(fields.tone); err != nil {
-			return usageError(err)
+			return bookmarks.Bookmark{}, usageError(err)
 		}
 	}
 	band, err := bandFlag(bandFlagValue)
 	if err != nil {
-		return err
+		return bookmarks.Bookmark{}, err
 	}
 	t, err := resolveDialTarget(arg, "bookmarks add", "ley bookmarks add 146.94 --name \"Local repeater\"", "146.94 (MHz)", band)
 	if err != nil {
-		return err
+		return bookmarks.Bookmark{}, err
 	}
 	mode, reason, err := bookmarkMode(t, modeFlag)
 	if err != nil {
-		return err
+		return bookmarks.Bookmark{}, err
 	}
 	var bw uint32
 	switch {
 	case bwFlag != "":
 		bw, err = units.ParseBandwidth(bwFlag)
 		if err != nil {
-			return usageError(fmt.Errorf("--bw %w (examples: 12.5, 12.5k, 200k, 12500)", err))
+			return bookmarks.Bookmark{}, usageError(fmt.Errorf("--bw %w (examples: 12.5, 12.5k, 200k, 12500)", err))
 		}
 	case t.Preset != nil && mode == t.Preset.Mode:
 		// A channel's own width is part of what the channel is (MURS 1 is
@@ -389,7 +394,7 @@ func runBookmarkAdd(app *App, arg, nameFlag, modeFlag, bwFlag, bandFlagValue str
 	}
 	store, err := openBookmarks(app)
 	if err != nil {
-		return err
+		return bookmarks.Bookmark{}, err
 	}
 	// One filing and one write: Keep sets a tone, a note and the tags with the rules an
 	// update follows (a blank one keeps what is there, the tags join the set), so the fields
@@ -399,13 +404,13 @@ func runBookmarkAdd(app *App, arg, nameFlag, modeFlag, bwFlag, bandFlagValue str
 		Tone: fields.tone, Note: fields.note, Tags: fields.tags,
 	})
 	if err != nil {
-		return usageError(err)
+		return bookmarks.Bookmark{}, usageError(err)
 	}
 	if err := store.Save(); err != nil {
-		return err
+		return bookmarks.Bookmark{}, err
 	}
 	if app.JSON {
-		return app.printArray(bookmarkRow(b))
+		return b, app.printArray(bookmarkRow(b))
 	}
 	s := app.Style
 	line := []string{b.Name, units.FormatFrequency(b.Hz), leyline.ModeName(mode), bookmarkBandwidth(s, b)}
@@ -424,7 +429,7 @@ func runBookmarkAdd(app *App, arg, nameFlag, modeFlag, bwFlag, bandFlagValue str
 		next += " --band " + bandFlagValue
 	}
 	fmt.Fprintf(app.Stdout, "  %s\n", s.Cmd(next))
-	return nil
+	return b, nil
 }
 
 // bookmarkMode applies tune's precedence: --mode, then a preset's own mode, then the band table.
@@ -447,20 +452,20 @@ func bookmarkMode(t dialTarget, modeFlag string) (leylinev1.DemodMode, string, e
 	return m, "no band recognised, using NFM", nil
 }
 
-func runBookmarkRemove(app *App, arg string) error {
+func runBookmarkRemove(app *App, arg string) (bookmarks.Bookmark, error) {
 	store, err := openBookmarks(app)
 	if err != nil {
-		return err
+		return bookmarks.Bookmark{}, err
 	}
 	b, err := store.Remove(arg)
 	if err != nil {
-		return usageError(err)
+		return bookmarks.Bookmark{}, usageError(err)
 	}
 	if app.JSON {
-		return app.printArray(bookmarkRow(b))
+		return b, app.printArray(bookmarkRow(b))
 	}
 	fmt.Fprintf(app.Stdout, "%s\n", app.Style.Muted(fmt.Sprintf("forgot %s (%s)", b.Name, units.FormatFrequency(b.Hz))))
-	return nil
+	return b, nil
 }
 
 // runBookmarkMove resolves the frequency the way add does, so the bookmark lands where tuning the

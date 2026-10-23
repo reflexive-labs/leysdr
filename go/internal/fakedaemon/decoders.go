@@ -16,9 +16,11 @@ import (
 )
 
 // The decoders service, faked the way the scan job is: the shape of the contract with synthetic
-// traffic behind it. One decoder is installed (`aprs`, the shape of decoders/aprs/manifest.json),
-// a decode job emits records from three invented stations, and every rule the Swift daemon keeps
-// is kept here -- a kept job outlives its client, a decoder name nobody installed is
+// traffic behind it. Three decoders are installed (`aprs`, `speech` and `speech-scripted`, the
+// shapes of their manifests in decoders/), a decode job on a radio emits records from three
+// invented stations, a
+// speech job on a recording emits one record per over, and every rule the Swift daemon keeps is
+// kept here -- a kept job outlives its client, a decoder name nobody installed is
 // DECODER_NOT_FOUND, and a job's records replay from since_seq.
 
 // RecordInterval is how often a fake decode job emits a record. Short enough that a test waits
@@ -67,6 +69,61 @@ func AprsManifest() *leylinev1.DecoderManifest {
 	}
 }
 
+// SpeechManifest is the speech decoder as decoders/speech/manifest.json has it: SEGMENTED input,
+// no frequency of its own, and OpenAI's transcription API on the user's key.
+func SpeechManifest() *leylinev1.DecoderManifest {
+	m := speechBase()
+	m.Name = "speech"
+	m.Aliases = []string{"transcribe"}
+	m.Description = "Speech to text, one record per over, by OpenAI's transcription API on your key: " +
+		"each over's squelch-open audio leaves this Mac for api.openai.com, or for the endpoint the key was added with"
+	m.CredentialProvider = "openai"
+	m.ContactsHosts = []string{"api.openai.com"}
+	m.Args = []string{"--engine", "openai"}
+	return m
+}
+
+// ScriptedSpeechManifest is decoders/speech-scripted/manifest.json: the same plugin with the
+// engine that replays a script, no provider and no alias.
+func ScriptedSpeechManifest() *leylinev1.DecoderManifest {
+	m := speechBase()
+	m.Name = "speech-scripted"
+	m.Description = "Speech to text for tests: replays the lines of the file LEYDEC_SPEECH_SCRIPT names, " +
+		"one per over, and sends nothing anywhere"
+	m.Args = []string{"--engine", "scripted"}
+	return m
+}
+
+// speechBase is what the two speech manifests share.
+func speechBase() *leylinev1.DecoderManifest {
+	return &leylinev1.DecoderManifest{
+		Version: "0.2.0",
+		License: "Apache-2.0",
+		Recipe:  &leylinev1.DecoderRecipe{Mode: leylinev1.DemodMode_NFM, Gain: leylinev1.GainPolicy_GAIN_LEAVE},
+		Input:   &leylinev1.DecoderInput{Mode: leylinev1.InputMode_SEGMENTED, Tap: leylinev1.AudioTap_TAP_AUDIO},
+		Outputs: []leylinev1.OutputShape{leylinev1.OutputShape_SHAPE_RECORDS},
+		Fields: []*leylinev1.FieldHint{
+			{Name: "text", Type: leylinev1.FieldType_TEXT, Description: "what the speech engine heard, as it wrote it"},
+			{Name: "language", Type: leylinev1.FieldType_TEXT, Description: "the language the engine transcribed, as an ISO 639-1 code"},
+			{Name: "model", Type: leylinev1.FieldType_TEXT, Description: "the model that produced the text"},
+			{Name: "confidence", Type: leylinev1.FieldType_NUMBER, Description: "the engine's own confidence in the text, 0 to 1, when it reports one"},
+			{Name: "callsigns", Type: leylinev1.FieldType_TEXT, Description: "callsigns in the text, comma-separated: a pattern match over the normalised text (prefix, one digit, 1 to 3 letters; a 4-letter suffix such as N0CALL is not matched), not a decoded identity"},
+		},
+		Executable: "leydec-speech",
+	}
+}
+
+// installedDecoders is the fake's registry: APRS, speech as Options.SpeechProvider and
+// SpeechHosts adjust it, and speech-scripted.
+func (d *Daemon) installedDecoders() []*leylinev1.DecoderManifest {
+	speech := SpeechManifest()
+	if d.opts.SpeechProvider != "" {
+		speech.CredentialProvider = d.opts.SpeechProvider
+		speech.ContactsHosts = append([]string(nil), d.opts.SpeechHosts...)
+	}
+	return []*leylinev1.DecoderManifest{AprsManifest(), speech, ScriptedSpeechManifest()}
+}
+
 // FakeDecoderPath and FakeStorePath are the directories ListDecoders reports it looked in and
 // keeps kept records under.
 const (
@@ -78,7 +135,7 @@ const (
 func (d *Daemon) ListDecoders(ctx context.Context, _ *leylinev1.ListDecodersRequest) (*leylinev1.ListDecodersResponse, error) {
 	d.touchUnary(clientFrom(ctx))
 	return &leylinev1.ListDecodersResponse{
-		Decoders:      []*leylinev1.DecoderManifest{AprsManifest()},
+		Decoders:      d.installedDecoders(),
 		SearchPath:    []string{FakeDecoderPath},
 		StorePath:     FakeStorePath,
 		StoreCapBytes: FakeStoreCapBytes,
@@ -87,10 +144,12 @@ func (d *Daemon) ListDecoders(ctx context.Context, _ *leylinev1.ListDecodersRequ
 }
 
 // decoderByName is the registry lookup StartJob makes. Caller need not hold the lock: the fake's
-// registry is a constant.
-func decoderByName(name string) *leylinev1.DecoderManifest {
-	if m := AprsManifest(); name == m.Name {
-		return m
+// registry is fixed when it starts.
+func (d *Daemon) decoderByName(name string) *leylinev1.DecoderManifest {
+	for _, m := range d.installedDecoders() {
+		if m.GetName() == name {
+			return m
+		}
 	}
 	return nil
 }

@@ -127,13 +127,21 @@ struct ControlService: Leyline_V1_Control.SimpleServiceProtocol {
                     target: request.resourceUri)
             }
             let wanted = part ?? manifest.parts.first?.part ?? 1
-            guard let path = await recordings.localPath(jobID: jobID, part: wanted) else {
+            guard let path = await recordings.localPath(jobID: jobID, part: wanted),
+                  let entry = manifest.parts.first(where: { $0.part == wanted })
+            else {
                 throw EngineError.invalidArgument("\(jobID) has no part \(wanted)", target: request.resourceUri)
             }
+            // A range is capture samples, as the sidecar dates the part and its overs; the file is
+            // at the audio rate, so the two rates place it.
+            let range = try PlaybackRange.resolve(
+                start: request.startSample, end: request.endSample, part: entry, audioRate: manifest.sampleRate,
+                captureRate: PlaybackRange.captureRate(of: entry, in: manifest, directory: recordings.directory + "/" + jobID),
+                target: request.resourceUri)
             let volume = request.hasVolume ? Swift.max(0, Swift.min(1, request.volume)) : 1
             let device = request.audioDeviceUid.isEmpty ? nil : request.audioDeviceUid
             return try await store.startPlayback(path: path, resourceURI: "ley://recordings/\(jobID)/\(wanted)",
-                                                 volume: volume, deviceUID: device, by: client)
+                                                 volume: volume, deviceUID: device, range: range, by: client)
         }
     }
 

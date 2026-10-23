@@ -30,3 +30,18 @@ package final class NullSink: AudioSink, Sendable {
     package func flush() async {}
     package func closeSink() async {}
 }
+
+/// A system audio sink that plays nothing: what `SinkFactory.systemAudio` builds in a daemon started
+/// with `--no-audio` (a staged or check run's), so a channel's sink, its state and its meters are
+/// what they would be and nothing reaches the speakers. PCM-only, as the sink it stands for.
+package final class SilentAudioSink: PCMOnlyAudioSink, Sendable {
+    package let id: SinkID
+
+    package init(id: SinkID = SinkID()) {
+        self.id = id
+    }
+
+    package func write(_ audio: SampleBuffer, at time: SampleTime) {}
+    package func flush() async {}
+    package func closeSink() async {}
+}

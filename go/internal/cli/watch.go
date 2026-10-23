@@ -61,7 +61,9 @@ form and works on any field a decoder emits; --near and --county are shortcuts
 for two common cases:
 
   --where field=value   the general test: any field, by name. Also field!=value
-                        (not equal), field~value (contains), and field>value,
+                        (not equal), field~value (contains: a whole word, or
+                        words in order, ignoring case, so 'text~net control'
+                        finds a speech record that says it), and field>value,
                         >=, <, <= (numeric). Repeat for more tests.
   --near LAT,LON --radius R   records with a position within R of a point
                         (R is 10km, 500m, 5nm, 3mi). Position is a field every
@@ -83,7 +85,8 @@ notifier, so it fires whether or not ley is attached.
   ley watch aprs --where device_id=LEYTST-1     # one station
   ley watch aprs --where 'temp_c>25'            # only when it is warm
   ley watch aprs --near 37.76,-122.42 --radius 10km
-  ley watch same --county 06009 --notify=shell:'say alert' --detach`,
+  ley watch same --county 06009 --notify=shell:'say alert' --detach
+  ley watch speech --freq 146.52 --where 'text~net control' --notify --detach`,
 		GroupID: GroupLooking,
 		Args:    cobra.ExactArgs(1),
 		ValidArgsFunction: func(_ *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
@@ -93,23 +96,12 @@ notifier, so it fires whether or not ley is attached.
 			return completeDecoders(app, toComplete)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			o.decoder = args[0]
-			if freq != "" {
-				hz, err := units.ParseFrequency(freq)
-				if err != nil {
-					return usageErrorf("--freq %v", err)
-				}
-				o.freqHz = hz
-			}
-			pred, words, err := buildPredicate(where, counties, near, radius)
-			if err != nil {
-				return err
-			}
-			o.predicate, o.predWords = pred, words
+			var notifyValue *string
 			if cmd.Flags().Changed("notify") {
-				if o.notify, err = parseNotify(notify); err != nil {
-					return err
-				}
+				notifyValue = &notify
+			}
+			if err := o.build(args[0], freq, where, counties, near, radius, notifyValue); err != nil {
+				return err
 			}
 			o.detach = asJob
 			s, err := openSession(cmd.Context(), app)
@@ -143,14 +135,35 @@ notifier, so it fires whether or not ley is attached.
 	return cmd
 }
 
-// runWatch starts the decode job with its predicate and notifier. Attached (the default) it
-// streams the matching records the way decode streams every record; detached it leaves the job
-// running for the notifier and prints how to stop it.
-func runWatch(ctx context.Context, s *verbSession, o watchOptions) error {
-	if name, _, err := s.Client.ResolveDecoder(ctx, o.decoder); err == nil {
-		o.decoder = name
+// build fills in what a watch decodes and keeps from the verb's flags (the MCP adapter's watch
+// tool passes its arguments as the same strings): the decoder, the frequency, the filter and
+// the notifier. A nil notify is no notifier.
+func (o *watchOptions) build(decoder, freq string, where, counties []string, near, radius string, notify *string) error {
+	o.decoder = decoder
+	if freq != "" {
+		hz, err := units.ParseFrequency(freq)
+		if err != nil {
+			return usageErrorf("--freq %v", err)
+		}
+		o.freqHz = hz
 	}
-	cfg := &leylinev1.DecodeConfig{
+	pred, words, err := buildPredicate(where, counties, near, radius)
+	if err != nil {
+		return err
+	}
+	o.predicate, o.predWords = pred, words
+	if notify != nil {
+		if o.notify, err = parseNotify(*notify); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// config is the decode job a watch starts: the decoder with the filter and the notifier, kept
+// when the watch is detached.
+func (o watchOptions) config() *leylinev1.DecodeConfig {
+	return &leylinev1.DecodeConfig{
 		Decoder:     o.decoder,
 		FrequencyHz: o.freqHz,
 		DeviceId:    o.deviceID,
@@ -159,7 +172,19 @@ func runWatch(ctx context.Context, s *verbSession, o watchOptions) error {
 		Predicate:   o.predicate,
 		Notify:      o.notify,
 	}
-	job, err := s.Client.StartDecode(ctx, cfg)
+}
+
+// runWatch starts the decode job with its predicate and notifier. Attached (the default) it
+// streams the matching records the way decode streams every record; detached it leaves the job
+// running for the notifier and prints how to stop it.
+func runWatch(ctx context.Context, s *verbSession, o watchOptions) error {
+	if name, _, err := s.Client.ResolveDecoder(ctx, o.decoder); err == nil {
+		o.decoder = name
+	}
+	if err := requireFrequency(ctx, s, o.decoder, o.freqHz); err != nil {
+		return err
+	}
+	job, err := s.Client.StartDecode(ctx, o.config())
 	if err != nil {
 		return decodeFailure(s, decodeOptions{decoder: o.decoder}, err)
 	}
@@ -218,6 +243,17 @@ func watchStopped(ctx context.Context, s *verbSession, job *leylinev1.Job) error
 // reach them.
 func watchBanner(ctx context.Context, s *verbSession, job *leylinev1.Job, o watchOptions) string {
 	st := s.app.ErrStyle
+	line := watchWhat(ctx, s, job, o)
+	if o.detach {
+		return line + "\n" + st.Muted("kept: it runs on after ley exits")
+	}
+	return line + "\nCtrl-C stops"
+}
+
+// watchWhat is the banner without its last line, which says how the watch ends: the decoder,
+// where it listens, the filter and the notifier. The MCP adapter's watch tool ends it its own way.
+func watchWhat(ctx context.Context, s *verbSession, job *leylinev1.Job, o watchOptions) string {
+	st := s.app.ErrStyle
 	where := ""
 	if hz := decodeFrequency(ctx, s, job); hz > 0 {
 		where = " on " + units.FormatFrequency(hz)
@@ -230,10 +266,10 @@ func watchBanner(ctx context.Context, s *verbSession, job *leylinev1.Job, o watc
 	if o.notify != nil {
 		line += "\n  " + st.Muted("notify: "+notifierWords(o.notify))
 	}
-	if o.detach {
-		return line + "\n" + st.Muted("kept: it runs on after ley exits")
+	if clips := clipsURI(job); clips != "" {
+		line += "\n  " + st.Muted("overs recorded as "+clips)
 	}
-	return line + "\nCtrl-C stops"
+	return line
 }
 
 // buildPredicate turns the filter flags into a Predicate whose clauses are ANDed, and a plain

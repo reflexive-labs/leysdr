@@ -1,0 +1,45 @@
+transcribe runs a speech decoder over a gated audio recording and prints the
+words of each over as the records arrive: the time the over was heard, its
+part and its number in that part, the text, and any callsigns a pattern found
+in it.
+
+The daemon reads the stored parts, faster than real time, and hands the
+decoder one over at a time, cut at the squelch with half a second either
+side; the audio between overs is never sent. Before it starts, transcribe
+states how many minutes the squelch was open and where the audio goes (the
+hosts the decoder's manifest lists, or this Mac), and asks. --yes skips the
+question, and is required when stdin is not a terminal.
+
+The records are kept, so 'ley records --protocol speech' reads them later,
+and transcribing again with another model adds records beside these.
+
+--engine picks the speech decoder ('ley decoders' lists them; the default is
+speech). --model sets the model the speech feature uses with the decoder's
+provider, as 'ley ai use speech' does, so this job and later ones use it; if
+the daemon refuses the job, the previous choice is put back. A decoder that
+calls no provider has no model to choose.
+
+The recording is a job id, an id prefix, or a ley://recordings/ URI.
+
+--json prints one DecodeRecord per line (NDJSON) and nothing else on stdout.
+
+Usage:
+  ley transcribe <recording> [flags]
+
+Examples:
+  ley transcribe job_01J...                 # asks first
+  ley transcribe job_01J... --yes           # no question, for a script
+  ley transcribe ley://recordings/job_01J... --json | jq -r '.fields.text.text'
+  ley records --protocol speech --job-id job_01K...   # read them again
+
+Flags:
+      --engine string   the speech decoder to run ('ley decoders' lists them) (default "speech")
+  -h, --help            help for transcribe
+      --model string    the speech model for this and later jobs, as 'ley ai use speech' sets it
+  -y, --yes             start without asking
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

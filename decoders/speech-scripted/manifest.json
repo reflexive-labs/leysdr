@@ -1,0 +1,49 @@
+{
+  "name": "speech-scripted",
+  "version": "0.2.0",
+  "description": "Speech to text for tests: replays the lines of the file LEYDEC_SPEECH_SCRIPT names, one per over, and sends nothing anywhere",
+  "license": "Apache-2.0",
+  "recipe": {
+    "mode": "NFM",
+    "gain": "GAIN_LEAVE"
+  },
+  "input": {
+    "mode": "SEGMENTED",
+    "tap": "TAP_AUDIO"
+  },
+  "outputs": [
+    "SHAPE_RECORDS"
+  ],
+  "fields": [
+    {
+      "name": "text",
+      "type": "TEXT",
+      "description": "what the speech engine heard, as it wrote it"
+    },
+    {
+      "name": "language",
+      "type": "TEXT",
+      "description": "the language the engine transcribed, as an ISO 639-1 code"
+    },
+    {
+      "name": "model",
+      "type": "TEXT",
+      "description": "the model that produced the text"
+    },
+    {
+      "name": "confidence",
+      "type": "NUMBER",
+      "description": "the engine's own confidence in the text, 0 to 1, when it reports one"
+    },
+    {
+      "name": "callsigns",
+      "type": "TEXT",
+      "description": "callsigns in the text, comma-separated: a pattern match over the normalised text (prefix, one digit, 1 to 3 letters; a 4-letter suffix such as N0CALL is not matched), not a decoded identity"
+    }
+  ],
+  "executable": "leydec-speech",
+  "args": [
+    "--engine",
+    "scripted"
+  ]
+}

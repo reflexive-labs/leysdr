@@ -16,9 +16,9 @@ enum Frequency {
         BookmarkNaming.frequencyWords(hz)
     }
 
-    /// `146.5200` and `000`: the MHz digits the field shows in ink and the sub-hundred-hertz ones
-    /// it dims. Four fractional digits are always visible so `.6120` cannot masquerade as the
-    /// `.6125` centre of a 12.5 kHz channel plan.
+    /// `146.5200` and `86`: the MHz digits to the hundreds of hertz, cut and never rounded, and
+    /// the hertz under them. Four fractional digits are always visible so `.6120` cannot
+    /// masquerade as the `.6125` centre of a 12.5 kHz channel plan.
     static func fieldParts(_ hz: UInt64) -> (major: String, minor: String) {
         FrequencyEntry.fieldParts(hz)
     }

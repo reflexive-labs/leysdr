@@ -36,13 +36,17 @@ struct PlayerBar: View {
                     Task { await session.stepPart(-1) }
                 }
                 .help("Previous part")
+                .accessibilityIdentifier("player.previous")
                 PlayerButton(
                     sounding: sounding,
-                    enabled: session.playback != nil || session.playingURI != nil || player != nil)
+                    enabled: session.playback != nil || session.playingURI != nil || player != nil
+                )
+                .accessibilityIdentifier("player.play")
                 PartStepButton(symbol: "forward.end.fill", enabled: session.canStepPart(1)) {
                     Task { await session.stepPart(1) }
                 }
                 .help("Next part")
+                .accessibilityIdentifier("player.next")
             }
             .frame(maxHeight: .infinity)
             VStack(alignment: .leading, spacing: 4) {

@@ -63,6 +63,14 @@ func (d *Daemon) emit(by *leylinev1.ClientInfo, body any) {
 		// A playback has no capture: it is a file playing, with no radio in it, so it is
 		// daemon-scoped like a job.
 		ev.Body = &leylinev1.Event_Playback{Playback: proto.Clone(b).(*leylinev1.Playback)}
+	case *leylinev1.AIState:
+		// Keys and the ledger belong to the daemon, not to a capture.
+		ev.Body = &leylinev1.Event_Ai{Ai: proto.Clone(b).(*leylinev1.AIState)}
+	case *leylinev1.UsageLine:
+		ev.Body = &leylinev1.Event_Usage{Usage: proto.Clone(b).(*leylinev1.UsageLine)}
+	case *leylinev1.Conversation:
+		// A conversation belongs to the daemon, not to a capture.
+		ev.Body = &leylinev1.Event_Conversation{Conversation: proto.Clone(b).(*leylinev1.Conversation)}
 	}
 	d.history = append(d.history, retainedEvent{captureID: captureID, event: ev})
 	if n := len(d.history) - eventHistoryLimit; n > 0 {
@@ -154,6 +162,9 @@ func (d *Daemon) snapshot(scope *leylinev1.EventScope) *leylinev1.GetStateRespon
 		for _, id := range ids {
 			resp.Playbacks = append(resp.Playbacks, proto.Clone(d.playbacks[id].proto).(*leylinev1.Playback))
 		}
+		resp.Ai = d.aiSnapshot()
+		resp.Usage = d.usageLines(nil)
+		resp.Conversations = d.conversationsLocked()
 	}
 	for _, c := range d.captures {
 		if capFilter == "" || c.CaptureId == capFilter {

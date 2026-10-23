@@ -12,6 +12,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
@@ -27,10 +30,19 @@ type Options struct {
 	Decoders string
 	// WallClock, as HH:MM, starts the daemon's clock at that time today (leylined --wall-clock).
 	WallClock string
+	// NoAudio starts the daemon with --no-audio: every audio sink and playback is discarded, so
+	// nothing reaches the speakers of the Mac it runs on.
+	NoAudio bool
+	// FileScanDwellMs, when set, starts the daemon with --file-scan-dwell: a scan on a file device
+	// dwells that long when it asks for less, so a check sees a sweep in progress.
+	FileScanDwellMs int
 	// Label is the client label the readiness connection uses, as the daemon's log shows it.
 	Label string
 	// Env is added to the daemon's environment, as KEY=value.
 	Env []string
+	// Unset names variables of this process's environment the daemon must not inherit: a key the
+	// caller holds, say.
+	Unset []string
 }
 
 // Daemon is a running hermetic daemon.
@@ -40,10 +52,16 @@ type Daemon struct {
 	// Client is connected and has answered GetState.
 	Client *leyline.Client
 
+	// cmd is the running process; nil before the first start and while halted.
 	cmd *exec.Cmd
+	// What launch starts: the binary, its flags and environment, and the readiness label.
+	bin, label string
+	args, env  []string
 	// socketDir is the short temp directory the socket was moved to, or empty; removed on Stop.
 	socketDir string
-	logFile   *os.File
+	// dataDir is the daemon's --data, a temp directory of its own; removed on Stop.
+	dataDir string
+	logFile *os.File
 }
 
 // socketPathMax is the longest Unix socket path both platforms accept (104 bytes on macOS,
@@ -73,6 +91,14 @@ func Start(ctx context.Context, o Options) (*Daemon, error) {
 		d.Socket = filepath.Join(short, "d.sock")
 		_ = os.WriteFile(filepath.Join(o.Dir, "socket.txt"), []byte(d.Socket+"\n"), 0o644)
 	}
+	// The AI data directory (keys, feature models) is a temp directory outside Dir, removed on
+	// Stop, so a key a caller adds never lands in a run directory a person keeps or shares.
+	data, err := os.MkdirTemp("", "leydata")
+	if err != nil {
+		d.Stop()
+		return nil, err
+	}
+	d.dataDir = data
 	f, err := os.Create(d.Log)
 	if err != nil {
 		d.Stop()
@@ -81,53 +107,67 @@ func Start(ctx context.Context, o Options) (*Daemon, error) {
 	d.logFile = f
 	// --no-hardware: the machine's own dongles stay out of the run. A client that tunes "146.52"
 	// with no device named gets the fixture, not the machine's radio.
-	args := []string{
+	d.args = []string{
 		"--socket", d.Socket, "--pidfile", filepath.Join(o.Dir, "leylined.pid"),
 		"--store", d.Store, "--recordings", d.Recordings, "--log-level", "info", "--no-hardware",
+		"--data", d.dataDir, "--secrets", "file",
 	}
 	if o.Decoders != "" {
-		args = append(args, "--decoders", o.Decoders)
+		d.args = append(d.args, "--decoders", o.Decoders)
 	}
 	if o.WallClock != "" {
-		args = append(args, "--wall-clock", o.WallClock)
+		d.args = append(d.args, "--wall-clock", o.WallClock)
 	}
-	d.cmd = exec.Command(o.Bin, args...)
-	d.cmd.Stdout, d.cmd.Stderr = f, f
-	if len(o.Env) > 0 {
-		d.cmd.Env = append(os.Environ(), o.Env...)
+	if o.NoAudio {
+		d.args = append(d.args, "--no-audio")
 	}
-	if err := d.cmd.Start(); err != nil {
-		d.Stop()
-		return nil, fmt.Errorf("start %s: %w", o.Bin, err)
+	if o.FileScanDwellMs > 0 {
+		d.args = append(d.args, "--file-scan-dwell", strconv.Itoa(o.FileScanDwellMs))
 	}
-	label := o.Label
-	if label == "" {
-		label = "daemonrun"
+	d.bin, d.env, d.label = o.Bin, daemonEnv(os.Environ(), o), o.Label
+	if d.label == "" {
+		d.label = "daemonrun"
 	}
-	c, err := leyline.Dial(ctx, d.Socket, leyline.WithKind("cli"), leyline.WithLabel(label))
-	if err != nil {
+	if err := d.launch(ctx); err != nil {
 		d.Stop()
 		return nil, err
+	}
+	return d, nil
+}
+
+// launch starts the process, connects Client and waits until the daemon answers GetState.
+func (d *Daemon) launch(ctx context.Context) error {
+	d.cmd = exec.Command(d.bin, d.args...)
+	d.cmd.Stdout, d.cmd.Stderr = d.logFile, d.logFile
+	d.cmd.Env = d.env
+	if err := d.cmd.Start(); err != nil {
+		d.cmd = nil
+		return fmt.Errorf("start %s: %w", d.bin, err)
+	}
+	c, err := leyline.Dial(ctx, d.Socket, leyline.WithKind("cli"), leyline.WithLabel(d.label))
+	if err != nil {
+		return err
 	}
 	d.Client = c
 	deadline := time.Now().Add(readyTimeout)
 	for {
 		if _, err := c.State(ctx); err == nil {
-			return d, nil
+			return d.checkKeysInData()
 		}
 		if time.Now().After(deadline) || ctx.Err() != nil {
-			d.Stop()
-			return nil, fmt.Errorf("leylined did not answer on %s within %s; its log is %s", d.Socket, readyTimeout, d.Log)
+			return fmt.Errorf("leylined did not answer on %s within %s; its log is %s", d.Socket, readyTimeout, d.Log)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 }
 
-// Stop interrupts the daemon, kills it if it has not exited 5 s later, and removes the short
-// socket directory. It is safe on a partly started Daemon.
-func (d *Daemon) Stop() {
+// Halt stops the daemon as Stop does but keeps its socket path, store, recordings, data and log,
+// so Resume starts one that clients reconnect to and that holds the same keys and records: a
+// daemon restart, as launchd or a person would make one. Halt on a halted daemon does nothing.
+func (d *Daemon) Halt() {
 	if d.Client != nil {
 		_ = d.Client.Close()
+		d.Client = nil
 	}
 	if d.cmd != nil && d.cmd.Process != nil {
 		_ = d.cmd.Process.Signal(os.Interrupt)
@@ -140,10 +180,85 @@ func (d *Daemon) Stop() {
 			<-done
 		}
 	}
+	d.cmd = nil
+}
+
+// Running reports whether the daemon was started and not halted since.
+func (d *Daemon) Running() bool { return d.cmd != nil }
+
+// Resume starts a halted daemon again with the same flags and environment, and waits until it
+// answers. On a running daemon it is an error.
+func (d *Daemon) Resume(ctx context.Context) error {
+	if d.cmd != nil {
+		return fmt.Errorf("leylined on %s is already running", d.Socket)
+	}
+	fmt.Fprintf(d.logFile, "--- daemonrun: started again at %s ---\n", time.Now().Format(time.RFC3339))
+	if err := d.launch(ctx); err != nil {
+		d.Halt()
+		return err
+	}
+	return nil
+}
+
+// Stop interrupts the daemon, kills it if it has not exited 5 s later, and removes the short
+// socket directory and the data directory. It is safe on a partly started or halted Daemon.
+func (d *Daemon) Stop() {
+	d.Halt()
+	if d.dataDir != "" {
+		_ = os.RemoveAll(d.dataDir)
+	}
 	if d.socketDir != "" {
 		_ = os.RemoveAll(d.socketDir)
 	}
 	if d.logFile != nil {
 		_ = d.logFile.Close()
 	}
+}
+
+// keysLine starts the line a daemon logs before it listens: where it keeps AI keys.
+const keysLine = "AI keys in "
+
+// checkKeysInData reads the daemon's last keysLine and fails unless it names a file in the
+// daemon's own --data: a hermetic daemon must never keep a key a caller adds in the login
+// keychain, where it would replace the person's own.
+func (d *Daemon) checkKeysInData() error {
+	b, err := os.ReadFile(d.Log)
+	if err != nil {
+		return err
+	}
+	return KeysInData(string(b), d.dataDir, d.Log)
+}
+
+// KeysInData fails unless the last `AI keys in …` line of a daemon's log names a file under
+// data; log is the log's path, for the message.
+func KeysInData(text, data, log string) error {
+	i := strings.LastIndex(text, keysLine)
+	if i < 0 {
+		return fmt.Errorf("leylined never said where it keeps AI keys (%s); a test daemon must say a file in %s", log, data)
+	}
+	where, _, _ := strings.Cut(text[i+len(keysLine):], "\n")
+	if !strings.HasPrefix(where, data+string(filepath.Separator)) {
+		return fmt.Errorf("leylined keeps AI keys in %s, not in its data directory %s: a test daemon must never use the login keychain", where, data)
+	}
+	return nil
+}
+
+// secretsEnv asks the daemon to keep provider keys in a file in its --data directory rather than
+// the macOS login keychain, so a hermetic daemon's keys go when its data directory does. A
+// daemon that does not know the variable ignores it.
+const secretsEnv = "LEYLINE_SECRETS=file"
+
+// daemonEnv is the daemon's environment: this process's without the names o.Unset lists, then
+// o.Env, then secretsEnv; a LEYLINE_SECRETS in either of the first two is dropped, so nothing
+// can point the daemon at the keychain.
+func daemonEnv(environ []string, o Options) []string {
+	out := make([]string, 0, len(environ)+len(o.Env)+1)
+	for _, kv := range environ {
+		if name, _, _ := strings.Cut(kv, "="); !slices.Contains(o.Unset, name) {
+			out = append(out, kv)
+		}
+	}
+	out = append(out, o.Env...)
+	out = slices.DeleteFunc(out, func(kv string) bool { return strings.HasPrefix(kv, "LEYLINE_SECRETS=") })
+	return append(out, secretsEnv)
 }

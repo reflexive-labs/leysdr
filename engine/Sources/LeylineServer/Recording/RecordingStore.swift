@@ -40,6 +40,21 @@ actor RecordingStore {
                               captureID: captureID, centerHz: centerHz)
     }
 
+    /// Opens the recording a kept decode job was writing before the daemon restarted, to carry it
+    /// on under the same id: the parts already there stay, the new ones are numbered after them,
+    /// and the manifest is open again (no `ended_by`) with the new capture's anchor beside the
+    /// old. Nil when there is none -- the last run heard nothing, or retention took it -- and the
+    /// caller opens a new one. Only a decode job's clips resume; a record job's recording ends at
+    /// a restart (docs/design/recording.md, "Retune, detach and restart").
+    func carryOn(job: JobID, anchor: StoredAnchor, captureID: String, centerHz: UInt64) throws -> PartWriter? {
+        guard var manifest = manifest(jobID: job.string) else { return nil }
+        retain(keeping: [job.string])
+        manifest.endedBy = ""
+        manifest.endedAtNs = 0
+        manifest.anchors.append(anchor)
+        return try PartWriter(directory: directory(for: job), manifest: manifest, captureID: captureID, centerHz: centerHz)
+    }
+
     // MARK: Reading
 
     /// Every manifest in the store, newest first by the time its recording started.
@@ -117,6 +132,14 @@ actor RecordingStore {
     func repairUnfinished() -> [String] {
         var repaired: [String] = []
         for entry in entries() where entry.manifest.endedBy.isEmpty {
+            // An unkept speech job's clips that the last daemon died before removing: nobody
+            // asked to keep them (invariant 8), so they go rather than being closed as a restart.
+            if entry.manifest.keep == false {
+                log.info("dropping \(entry.path): the clips of a decode job that was not kept, left by the last daemon")
+                try? FileManager.default.removeItem(atPath: entry.path)
+                repaired.append(entry.manifest.jobID)
+                continue
+            }
             var manifest = entry.manifest
             // Any part file the manifest does not list is one the last daemon had open. Its header
             // is patched from the file's own length, and it joins the manifest with what it holds.

@@ -72,6 +72,7 @@ func newPlayCommand(app *App) *cobra.Command {
 		loop     bool
 		freq     string
 		playPart int
+		span     playSpan
 	)
 	cmd := &cobra.Command{
 		Use:   "play <file.cf32>",
@@ -91,20 +92,41 @@ needed.
 
 A recording 'ley record' made is named by its id or its ley://recordings/
 URI. An IQ recording is tuned as above; an audio one is played by the daemon
-through its own speakers, and on a terminal space pauses and resumes it.`,
+through its own speakers, and on a terminal space pauses and resumes it.
+
+--over plays one over of a gated audio recording's part: the over's number in
+the part (1 is the first time the squelch opened), from half a second before it
+to half a second after it closed, as the speech decoder heard it. --from and --to play a stretch of the part instead, in capture samples on
+the timeline 'ley recordings show --json' and the part's sidecar give.`,
 		Example: `  ley play fixtures/nfm_tone.cf32              # decode a fixture and listen
   ley play recording.cf32 --loop               # keep playing until Ctrl-C
   ley play recording.cf32 --freq 146.52 --mode nfm
-  ley play recording.cf32 --persistent --json  # leave it running, print ids`,
+  ley play recording.cf32 --persistent --json  # leave it running, print ids
+  ley play job_01J... --part 2 --over 3        # the third over of part 2`,
 		GroupID: GroupListening,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			arg := args[0]
+			if span.set() {
+				if span.over != 0 && (span.from != 0 || span.to != 0) {
+					return usageErrorf("--over chooses the stretch itself; give it or --from and --to, not both")
+				}
+				if span.over < 0 {
+					return usageErrorf("--over counts from 1, the first time the squelch opened in the part")
+				}
+				if !namesARecording(arg) {
+					return usageErrorf("--from, --to and --over play part of a recording ley kept; name it by its id or ley://recordings/ URI")
+				}
+				if app.JSON {
+					// LocalPath, the shape --json prints, has no field for a range.
+					return usageErrorf("--json prints the part's path and plays nothing, so --from, --to and --over do not apply; drop one or the other")
+				}
+			}
 			// A recording the daemon kept, named by its uri or by the job id `ley recordings`
 			// prints. The daemon says where it is on this machine and the rest of play is
 			// unchanged -- playing a part is playing a file.
 			if namesARecording(arg) {
-				resolved, rerr := resolveRecordingPlayPath(cmd.Context(), app, arg, playPart)
+				resolved, rerr := resolveRecordingPlayPath(cmd.Context(), app, arg, playPart, span)
 				if rerr != nil {
 					return rerr
 				}
@@ -224,9 +246,21 @@ through its own speakers, and on a terminal space pauses and resumes it.`,
 	addTuneFlags(cmd, &f, false)
 	cmd.Flags().BoolVar(&loop, "loop", false, "start over when the file ends, until Ctrl-C (default: stop at the end)")
 	cmd.Flags().IntVar(&playPart, "part", 0, "which part of a ley://recordings/ recording to play, e.g. 2 (default: the first)")
+	cmd.Flags().IntVar(&span.over, "over", 0, "play one over of the part, by its number in the part, e.g. 3 (default: the whole part)")
+	cmd.Flags().Uint64Var(&span.from, "from", 0, "play the part from this capture sample on (default: its start)")
+	cmd.Flags().Uint64Var(&span.to, "to", 0, "play the part up to this capture sample (default: its end)")
 	cmd.Flags().StringVar(&freq, "freq", "", "frequency to listen to within the recording; a bare number is MHz, e.g. 146.52 (default: the file's centre plus its first expect offset)")
 	return cmd
 }
+
+// playSpan is the stretch of an audio part to play: one over, or capture samples from..<to. The
+// zero value plays the whole part.
+type playSpan struct {
+	over     int
+	from, to uint64
+}
+
+func (sp playSpan) set() bool { return sp.over != 0 || sp.from != 0 || sp.to != 0 }
 
 // namesARecording reports whether the positional is a recording rather than a
 // path: the uri `ley record` prints, or the job id `ley recordings` lists.
@@ -244,7 +278,7 @@ func namesARecording(arg string) bool {
 // An audio recording is a WAV of demodulator output, with no RF left in it to
 // tune, so it is never attached as a file device. playAudioPart plays it
 // through the daemon's audio output, or this machine's player, instead.
-func resolveRecordingPlayPath(ctx context.Context, app *App, uri string, part int) (string, error) {
+func resolveRecordingPlayPath(ctx context.Context, app *App, uri string, part int, span playSpan) (string, error) {
 	jobID, inURI, ok := leyline.ParseRecordingURI(uri)
 	if !ok {
 		// A bare job id, as `ley recordings` prints it.
@@ -289,7 +323,14 @@ func resolveRecordingPlayPath(ctx context.Context, app *App, uri string, part in
 	}
 	path := filepath.Join(dir, chosen.File)
 	if manifest.Kind != "iq" {
-		return "", playAudioPart(ctx, app, jobID, path, manifest, part)
+		r, err := spanRange(dir, manifest, *chosen, span)
+		if err != nil {
+			return "", err
+		}
+		return "", playAudioPart(ctx, app, jobID, path, manifest, part, r)
+	}
+	if span.set() {
+		return "", usageErrorf("%s is an IQ recording, which is tuned rather than played; --from, --to and --over play part of an audio one", jobID)
 	}
 	// Printed only once the part is one play will actually tune: a recording that turns out to be
 	// audio should not first announce which of its parts it picked.
@@ -300,6 +341,33 @@ func resolveRecordingPlayPath(ctx context.Context, app *App, uri string, part in
 	return path, nil
 }
 
+// audioRange is the capture samples of an audio part to play, and the words the banner names them
+// by. The zero value plays the whole part.
+type audioRange struct {
+	start, end uint64
+	words      string
+}
+
+// spanRange is the range span names in part p: --over is the over's segment from the part's
+// sidecar, while --from and --to go to the daemon as given, and it checks them.
+func spanRange(dir string, m *leyline.RecordingManifest, p leyline.RecordingPart, span playSpan) (audioRange, error) {
+	switch {
+	case span.over != 0:
+		sc, err := leyline.ReadPartSidecar(dir, p)
+		if err != nil {
+			return audioRange{}, fmt.Errorf("part %d's sidecar, which lists its overs, could not be read: %w", p.Part, err)
+		}
+		start, end, err := m.OverRange(sc, p, span.over)
+		if err != nil {
+			return audioRange{}, usageErrorf("%v", err)
+		}
+		return audioRange{start: start, end: end, words: fmt.Sprintf("over %d", span.over)}, nil
+	case span.from != 0 || span.to != 0:
+		return audioRange{start: span.from, end: span.to, words: "a stretch"}, nil
+	}
+	return audioRange{}, nil
+}
+
 // playAudioPart plays an audio recording. The file holds demodulator output, so there is no
 // signal left in it for a channel to tune, and attaching it as a file device would put a fake
 // capture and mode into `ley state`. Instead the file goes to the daemon's audio output, or to
@@ -307,10 +375,13 @@ func resolveRecordingPlayPath(ctx context.Context, app *App, uri string, part in
 //
 // It always returns an error, because the caller's next step is to tune a file device and there
 // is none here. `errDone` means playback worked.
-func playAudioPart(ctx context.Context, app *App, jobID, path string, manifest *leyline.RecordingManifest, part int) error {
+func playAudioPart(ctx context.Context, app *App, jobID, path string, manifest *leyline.RecordingManifest, part int, r audioRange) error {
 	where := jobID
 	if len(manifest.Parts) > 1 {
 		where = fmt.Sprintf("%s, part %d of %d", jobID, part, len(manifest.Parts))
+	}
+	if r.words != "" {
+		where += ", " + r.words
 	}
 	// A script wants the path, not a sound: --json answers with the shape `ley recordings path`
 	// uses and starts nothing.
@@ -322,12 +393,15 @@ func playAudioPart(ctx context.Context, app *App, jobID, path string, manifest *
 	}
 	// The daemon owns the speakers, as it does for a channel's audio, so the sound comes out on
 	// the radio's host and this terminal shows progress and can stop it.
-	err := playThroughDaemon(ctx, app, jobID, where, part)
+	err := playThroughDaemon(ctx, app, jobID, where, part, r)
 	if err == nil || !errors.Is(err, errNoDaemonAudio) {
 		return err
 	}
 	// A daemon with no audio device (a headless Linux one, which is usually the one on this
-	// machine) leaves the file to the machine's own player.
+	// machine) leaves the file to the machine's own player, which starts at the beginning.
+	if r.words != "" {
+		fmt.Fprintln(app.Stderr, app.ErrStyle.Muted("the whole part plays: a player opened on the file starts at its beginning"))
+	}
 	return playThroughLocalPlayer(app, where, path)
 }
 
@@ -340,17 +414,21 @@ var errNoDaemonAudio = errors.New("the daemon has no audio device")
 //
 // The session's event stream is open before StartPlayback is sent, so every event of the
 // playback reaches followPlayback, the tombstone of a clip shorter than the round trip included.
-func playThroughDaemon(ctx context.Context, app *App, jobID, where string, part int) error {
+func playThroughDaemon(ctx context.Context, app *App, jobID, where string, part int, r audioRange) error {
 	s, err := openSession(ctx, app)
 	if err != nil {
 		return err
 	}
 	defer s.Close()
 	c := s.Client
-	pb, err := c.StartPlayback(ctx, leyline.RecordingPartURI(jobID, part), -1)
+	pb, err := c.StartPlaybackRange(ctx, leyline.RecordingPartURI(jobID, part), -1, r.start, r.end)
 	if err != nil {
 		if leyline.Code(err) == leyline.CodePlatformUnsupported {
 			return errNoDaemonAudio
+		}
+		if leyline.Code(err) == leyline.CodeInvalidArgument && r.words != "" {
+			// The daemon's sentence says what the part holds; the range was the reader's to fix.
+			return usageErrorf("%s", leyline.FromStatus(err).Message)
 		}
 		return err
 	}

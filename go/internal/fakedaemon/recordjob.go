@@ -180,11 +180,7 @@ func recordBandwidth(cfg *leylinev1.RecordConfig) uint32 {
 // openRecordingLocked makes the recording's directory and its first manifest.
 // Caller holds the lock.
 func (d *Daemon) openRecordingLocked(j *fakeJob, cfg *leylinev1.RecordConfig, hz uint64, iq, gated bool) (*recordJob, error) {
-	root := d.opts.RecordingsDir
-	if root == "" {
-		root = filepath.Join(os.TempDir(), "leyline-fake-recordings")
-	}
-	dir := filepath.Join(root, j.proto.GetJobId())
+	dir := filepath.Join(d.recordingsRoot(), j.proto.GetJobId())
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
@@ -416,8 +412,14 @@ func (r *recordJob) closePart(startMs, endMs int64, clipped bool) {
 		Samples:     uint64(n), Bytes: uint64(len(data)),
 		PeakDBFS: &peak, MeanDBFS: &mean,
 	}
+	// The fake's gate has no pre-roll or hang, so a gated part is one over from its first sample
+	// to its last.
+	var opens []leyline.SquelchOpen
 	if m.Gate != nil {
 		entry.SquelchOpens = 1
+		openMs := endMs - startMs
+		entry.SquelchOpenMs = &openMs
+		opens = []leyline.SquelchOpen{{OpenSample: entry.StartSample, CloseSample: entry.EndSample}}
 	}
 	if clipped {
 		entry.ClippedMs = endMs - startMs
@@ -430,7 +432,7 @@ func (r *recordJob) closePart(startMs, endMs int64, clipped bool) {
 	}
 	m.Parts = append(m.Parts, entry)
 	m.Bytes += entry.Bytes
-	writePartSidecar(r, entry)
+	writePartSidecar(r, entry, opens)
 	_ = writeManifest(r)
 }
 
@@ -558,16 +560,25 @@ func writeManifest(r *recordJob) error {
 }
 
 // writePartSidecar writes the iqfile sidecar with the recording block, which is
-// what `ley play` reads off a part.
-func writePartSidecar(r *recordJob, p leyline.RecordingPart) {
+// what `ley play` reads off a part. The anchor is the capture's, the one the part's
+// samples and squelch_opens are counted on.
+func writePartSidecar(r *recordJob, p leyline.RecordingPart, opens []leyline.SquelchOpen) {
 	m := r.manifest
+	anchor := map[string]any{"host_time_ns": m.StartedAtNS, "sample_rate": m.SampleRate, "drift_ppm": 0}
+	if len(m.Anchors) > 0 {
+		a := m.Anchors[0]
+		anchor = map[string]any{"capture_id": a.CaptureID, "host_time_ns": a.HostTimeNS, "sample_rate": a.SampleRate, "drift_ppm": a.DriftPPM}
+	}
+	if opens == nil {
+		opens = []leyline.SquelchOpen{}
+	}
 	doc := map[string]any{
 		"format":        m.Format,
 		"sample_rate":   m.SampleRate,
 		"center_hz":     m.FrequencyHz,
 		"samples":       p.Samples,
 		"created_at_ns": time.Now().UnixNano(),
-		"anchor":        map[string]any{"host_time_ns": m.StartedAtNS, "sample_rate": m.SampleRate, "drift_ppm": 0},
+		"anchor":        anchor,
 		"metadata": map[string]string{
 			"mode": m.Mode, "frequency_hz": strconv.FormatUint(m.FrequencyHz, 10), "kind": m.Kind,
 		},
@@ -575,7 +586,7 @@ func writePartSidecar(r *recordJob, p leyline.RecordingPart) {
 			"job_id": m.JobID, "part": p.Part, "kind": m.Kind,
 			"start_sample": p.StartSample, "end_sample": p.EndSample,
 			"bandwidth_hz": m.BandwidthHz, "peak_dbfs": p.PeakDBFS, "mean_dbfs": p.MeanDBFS,
-			"squelch_opens": []any{},
+			"squelch_opens": opens,
 		},
 	}
 	if p.ClippedMs > 0 {
@@ -592,19 +603,7 @@ func writePartSidecar(r *recordJob, p leyline.RecordingPart) {
 // fakeWAV is a canonical 16-bit mono WAV holding a 1 kHz tone: a real file every
 // audio tool reads, so a test can check the header agrees with the length.
 func fakeWAV(frames int, rate uint64) []byte {
-	out := make([]byte, 44+frames*2)
-	copy(out[0:], "RIFF")
-	binary.LittleEndian.PutUint32(out[4:], uint32(36+frames*2))
-	copy(out[8:], "WAVEfmt ")
-	binary.LittleEndian.PutUint32(out[16:], 16)
-	binary.LittleEndian.PutUint16(out[20:], 1)
-	binary.LittleEndian.PutUint16(out[22:], 1)
-	binary.LittleEndian.PutUint32(out[24:], uint32(rate))
-	binary.LittleEndian.PutUint32(out[28:], uint32(rate)*2)
-	binary.LittleEndian.PutUint16(out[32:], 2)
-	binary.LittleEndian.PutUint16(out[34:], 16)
-	copy(out[36:], "data")
-	binary.LittleEndian.PutUint32(out[40:], uint32(frames*2))
+	out := silentWAV(frames, rate)
 	for i := range frames {
 		v := int16(16000 * math.Sin(2*math.Pi*1000*float64(i)/float64(rate)))
 		binary.LittleEndian.PutUint16(out[44+i*2:], uint16(v))

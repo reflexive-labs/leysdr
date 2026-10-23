@@ -66,11 +66,13 @@ private func matches(_ record: Leyline_V1_DecodeRecord, _ test: Leyline_V1_Field
         let member = test.values.contains { valueMatchesText(have, $0) }
         return test.op == .predIn ? member : !member
     case .predContains:
-        // The field is a delimited list (a SAME FIPS list "006001-006013" or "006001 006013");
-        // split it and match a whole token against one of `values`.
+        // The field is a delimited list (a SAME FIPS list "006001-006013" or "006001 006013", or
+        // the words of a speech record's text); split it and match one of `values` as a whole
+        // token, or as a run of whole tokens in order, so "net control" finds those two words
+        // together and "06001" never matches inside "106001".
         guard let have else { return false }
         let tokens = tokenise(have.text)
-        return test.values.contains { want in tokens.contains(normalise(textForm(want))) }
+        return test.values.contains { want in containsRun(tokens, tokenise(textForm(want))) }
     case .unspecified, .UNRECOGNIZED:
         return false
     }
@@ -148,6 +150,12 @@ private func formatNumber(_ d: Double) -> String {
 /// upper, and neither should turn on surrounding space or case.
 private func normalise(_ s: String) -> String {
     s.trimmingCharacters(in: .whitespaces).lowercased()
+}
+
+/// Whether `run` appears in `tokens` as consecutive tokens. An empty run never matches.
+private func containsRun(_ tokens: [String], _ run: [String]) -> Bool {
+    guard !run.isEmpty, run.count <= tokens.count else { return false }
+    return (0...(tokens.count - run.count)).contains { Array(tokens[$0..<($0 + run.count)]) == run }
 }
 
 /// A delimited list split on comma, space and '-', so "006001-006013" and "006001 006013" both

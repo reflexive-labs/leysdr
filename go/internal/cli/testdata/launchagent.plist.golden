@@ -8,6 +8,8 @@
 		<string>/Users/a&amp;b/bin/leylined</string>
 		<string>--socket</string>
 		<string>/Users/a&lt;b&gt;/Library/Application Support/Leyline/leyline.sock</string>
+		<string>--ley</string>
+		<string>/Users/a&amp;b/go/bin/ley</string>
 	</array>
 	<key>RunAtLoad</key><true/>
 	<key>KeepAlive</key>

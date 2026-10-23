@@ -95,4 +95,21 @@ final class PartPlaybackTests: XCTestCase {
         var idle = PartPlayback()
         XCTAssertNil(idle.observe(listed: false, now: t0, dropAfter: deadline))
     }
+
+    /// A speech line's click plays one over: the playback holds the over until it ends or fails,
+    /// so only that line shows as playing.
+    func testOneOverIsHeldUntilItsPlaybackEnds() {
+        var p = PartPlayback()
+        _ = p.replace(sinkAttached: false)
+        p.playing(part1, row: nil, over: 3)
+        p.started(id: "pb_1", at: t0)
+        XCTAssertEqual(p.playingOver, 3)
+        XCTAssertEqual(p.end("pb_1"), .finished)
+        XCTAssertNil(p.playingOver)
+        p.playing(part2, row: nil, over: 1)
+        p.failed()
+        XCTAssertNil(p.playingOver, "a refused start holds nothing")
+        p.playing(part2, row: nil)
+        XCTAssertNil(p.playingOver, "a whole part plays with no over")
+    }
 }

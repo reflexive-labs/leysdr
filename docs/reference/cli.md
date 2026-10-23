@@ -49,14 +49,22 @@ ley                                  # bare: orientation screen on a TTY (see be
 ├── monitor <band|range> [--for D] [--min-snr DB] [--min-hold D] [--skirt-db DB] [--take-over] [--device SEL]
 │                                    # scan's stationary sibling: parks one capture on a band for --for and prints a
 │                                    # time-ordered transmission log; Jobs.StartJob(MonitorConfig), detections on telemetry
-├── decoders                         # the installed decoder plugins: name, recipe, output shapes, version
+├── decoders                         # the installed decoder plugins: name, recipe, output shapes, version,
+│                                    # and for one that calls a provider the key it needs and the hosts it sends to
 ├── decode <decoder> [--freq F] [--device SEL] [--take-over] [--job] [--count N]
 │                                    # Jobs.StartJob(DecodeConfig): the daemon finds or makes the capture,
 │                                    # adds the channel the job owns and spawns the plugin; records arrive
 │                                    # on Decoders.SubscribeRecords, one line each; --job keeps them as
-│                                    # the resource ley://records/<job_id>
+│                                    # the resource ley://records/<job_id>; a decoder with no frequency
+│                                    # of its own (speech) needs --freq; speech also records its overs
+│                                    # as ley://recordings/<job_id>, kept only with --job
 ├── records [--protocol P] [--job-id ID] [--device-id ID] [--kind K] [--since 1h] [--near LAT,LON --radius 10km] [--in-effect] [--limit N]
-│                                    # Decoders.QueryRecords over what kept jobs wrote, newest first
+│                                    # Decoders.QueryRecords over what kept jobs wrote, newest first;
+│                                    # an OVER column (<part>/<over>) when a record names a clip
+├── transcribe <recording> [--engine D] [--model M] [--yes]
+│                                    # a kept decode job with DecodeConfig.source_uri: a speech decoder reads
+│                                    # a gated recording one over at a time; states the minutes of
+│                                    # squelch-open audio and where they go, and asks first
 ├── watch <decoder> [--where field=value] [--county FIPS] [--near LAT,LON --radius R] [--notify[=TARGET]] [--freq F] [--device SEL] [--take-over] [--detach|--job] [--count N]
 │                                    # a decode job with a daemon-side predicate and a notifier:
 │                                    # attached it streams only the matching records; --detach leaves
@@ -102,6 +110,9 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # remembers it across restarts; detach removes any device a client attached
 ├── state                            # GetState snapshot, the debugging entry point
 ├── daemon [install|uninstall|start|stop|status|logs]
+├── ai [add <provider> [--label L] [--endpoint URL] | check <provider> | remove <provider> | use <feature> <provider> <model> | usage [--since D] [--by day|month]]
+│                                    # the model-provider keys the daemon holds (never printed: the last four
+│                                    # characters tell them apart), the model each feature calls, and the usage ledger
 ├── version
 ├── help [command|topic]             # topics: squelch, frequencies, modes, gain, presets, glossary, scripting, roadmap
 └── (planned) transcript             # arrives with the durable job store
@@ -230,17 +241,28 @@ band table from `app/Sources/LeylineClient/Resources/bands.json`, the checked-in
 "Decoders" below.
 
 **Decoders.** `ley decoders --json` prints a `ListDecodersResponse`: the manifests the daemon
-found, the directories it looked in, and the store's path, cap and age. `ley decode <name> --json`
-prints one `DecodeRecord` per line (NDJSON) and nothing else on stdout; the banner naming the
+found, the directories it looked in, and the store's path, cap and age. The table adds `NEEDS` (the
+manifest's `credential_provider` as `<provider> key`) and `SENDS TO` (its `contacts_hosts`) when
+any decoder names a provider; they are the first columns dropped at a narrow width, `SENDS TO`
+before `NEEDS`. `ley decode <name> --json` prints one `DecodeRecord` per line (NDJSON) and nothing
+else on stdout; the banner naming the
 decoder, the frequency and the channel it got is stderr prose, as is the line a `--job` run ends
-with. `ley watch <decoder> --json` prints the same NDJSON `DecodeRecord`s as `decode`, but only
+with. A decoder whose manifest names no frequency (`speech`) needs `--freq`, and `decode` and
+`watch` refuse it without one as a usage error naming the flag. `ley decode speech --freq F`
+prints each over as `ley transcribe` does, `HH:MM:SS part P over O  <text> (<callsigns>)`, from the
+record's `clip_uri` and `over`: a live speech job records its overs as a gated recording under its
+own id, which the banner names (`ley://recordings/<job_id>`, listed in `Job.result_uris`), kept
+with `--job` and deleted when an unkept job ends. `ley watch <decoder> --json` prints the same NDJSON `DecodeRecord`s as `decode`, but only
 the ones its predicate matched: `--where field=value` (with `!=`, `~` for contains, and `>`, `>=`,
-`<`, `<=` numeric), `--county FIPS` (a `PRED_CONTAINS` on the `fips` field, repeatable; the five-digit FIPS code or the six-digit SAME code, whose leading part digit is dropped), and
+`<`, `<=` numeric; `~` matches a whole word or words in order, ignoring case, so `ley watch speech
+--freq 146.52 --where 'text~net control' --notify --detach` fires on the over that says it), `--county FIPS` (a `PRED_CONTAINS` on the `fips` field, repeatable; the five-digit FIPS code or the six-digit SAME code, whose leading part digit is dropped), and
 `--near LAT,LON --radius R` (a `GeoTest`) become a `DecodeConfig.predicate`; `--notify` (bare for a
 macOS notification, `--notify=webhook:URL` or `--notify=shell:CMD`) becomes a
 `DecodeConfig.notify` the daemon fires on each match. Attached it streams and cancels on exit;
 `--detach` (alias `--job`) keeps the job so the notifier fires unattended, printing the id and
-`ley jobs cancel` on stderr. `ley records --json` prints a `RecordPage`: the records newest first plus the
+`ley jobs cancel` on stderr. The `ley records` table adds an OVER column, `<part>/<over>` of the
+recording named by the record's `clip_uri`, when any record on the page has one; DEVICE, which a
+speech record never fills, is then the first column a narrow terminal drops. `ley records --json` prints a `RecordPage`: the records newest first plus the
 `RecordAnchor`s that date them, because no record carries a clock of its own and wall time is
 derived from the anchor whose `from_sample` is not past the record's (`docs/design/decoders.md`,
 "Decisions"). `ley track --json` is the fourth documented exception to the proto3 rule, beside the
@@ -384,7 +406,10 @@ cannot be reached is exit 1 with the daemon's `DEVICE_IO` sentence and nothing r
 print the same `DaemonInfo` as `daemon status --json` (start from a fresh `GetState` after the
 action; stop the last info the daemon reported, pid included, or only `socketPath` when nothing was
 running); `daemon install`, `uninstall` and `logs` have no JSON shape and reject `--json` as a
-usage error (exit 2).
+usage error (exit 2). `ley worker` is hidden from help: it holds the processes the daemon starts to
+make a call on a stored key (`ley worker check --provider P [--endpoint URL]` reads the key on stdin,
+asks the provider to list its models, prints one `{"outcome", "message"}` JSON line and reports the
+request to the ledger), and nobody runs it by hand.
 
 **Recording** (`docs/design/recording.md`). A recording is a job's output, not a sink somebody
 attaches: `Control.AttachSink(file)` stays refused, because a sink attached to a channel dies with
@@ -453,8 +478,24 @@ machine's own player (`$LEYLINE_PLAYER` when set — `afplay`, `mpv`, `vlc` — 
 and `xdg-open` elsewhere), saying which happened. Under `--json` nothing is played at all and the
 `LocalPath` is printed instead: a script wants the path, not a sound.
 
+**Part of an audio part plays with `--over`, or `--from` and `--to`.** `ley play <recording>
+--part N --over O` plays over `O` of the part, counted from 1 as the part sidecar's
+`squelch_opens` lists them: the segment that holds that opening, from half a second before its
+first opening to half a second after its last close, with an opening less than half a second after
+a close continuing the segment. Those are the speech decoder's pre-roll and hang, not the
+recording's own `gate.pre_roll_ms`, so a speech record's `over` plays exactly what was transcribed.
+`--from` and `--to` take capture samples on the part's timeline (`start_sample`, `end_sample` and
+`squelch_opens` in `ley recordings show --json` and the sidecar) and go to the daemon as given,
+either left out meaning the part's own end. The banner names the stretch (`job_…, part 1 of 2, over
+3`). An over the part does not list (`part 1 has 3 overs; choose one from 1 to 3`), `--over` beside
+`--from` or `--to`, any of the three with `--json` (which prints the part's `LocalPath`, with no room
+for a range), a range on a file path or an IQ recording, and a range the daemon refuses are usage
+errors. With a daemon that has no audio device the local player gets the whole part, and a
+line says so.
+
 A **`Playback`** is daemon state like everything else (`playback_id`, `resource_uri`, `path`,
-`sample_rate`, `samples`, `position`, `volume`, `created_by`, `state`, `paused`), so it appears in
+`sample_rate`, `samples`, `position`, `volume`, `created_by`, `state`, `paused`, `start_sample`,
+`end_sample`), so it appears in
 `GetState` and on the event stream, `ley state` lists what is playing and how far in, and a second
 client — the Mac app — renders a position and a stop button without polling. It is not a job (a
 job's output is a resource; a playback produces nothing) and not a sink (a sink is where a
@@ -463,8 +504,11 @@ stops when that client goes, which is what makes Ctrl-C stop the sound; `Control
 stops one early, and the final event carries `state` unset as the tombstone, so a client can tell
 "it reached the end" from "somebody stopped it". `Control.SetPlaybackPaused` pauses and resumes
 one, and any client may: `position` holds while `paused` is true, resuming continues from it, and
-the four-a-second event is not sent while paused. Seeking and looping are not in v1: `position` is
-reported and not writable.
+the four-a-second event is not sent while paused. `StartPlaybackRequest.start_sample` and
+`end_sample` play a range of the part, in capture samples (0 for either is the part's own end);
+the playback carries the range, and `samples` and `position` then count the range's frames. A
+range outside the part is `INVALID_ARGUMENT` naming the samples the part holds. Seeking and looping
+are not in v1: `position` is reported and not writable.
 
 **A recording that heard nothing is not kept.** A record job that ends with no part written (a
 gated recording whose squelch never opened) ends `COMPLETED` with `status_detail` `nothing was
@@ -483,9 +527,10 @@ would drift from what Finder shows. Its keys are snake_case: `{job_id, uri, kind
 mode, bandwidth_hz, sample_rate, format, device, gains, squelch_dbfs, gate, part_ms, started_at_ns,
 ended_at_ns, ended_by, created_by, anchors, parts, coverage_gaps, bytes}`, where `parts` is
 `[{part, file, start_sample, end_sample, samples, bytes, peak_dbfs, mean_dbfs, squelch_opens,
-clipped_ms}]` (`peak_dbfs` and `mean_dbfs` absent on a part nobody finished measuring, such as one
-a restart repaired; `clipped_ms`, how long the capture's `CaptureLevel` reported clipping inside the
-part, absent when nothing clipped), `coverage_gaps` is `[{from_sample, to_sample, reason}]` and `anchors` is one entry per
+squelch_open_ms, clipped_ms}]` (`peak_dbfs` and `mean_dbfs` absent on a part nobody finished
+measuring, such as one a restart repaired; `squelch_open_ms`, how long the squelch was open inside
+the part, absent in a recording made before the key existed; `clipped_ms`, how long the capture's
+`CaptureLevel` reported clipping inside the part, absent when nothing clipped), `coverage_gaps` is `[{from_sample, to_sample, reason}]` and `anchors` is one entry per
 capture the recording spanned, each dating its own capture's samples. `ended_by` is one of
 `duration`, `quiet`, `cancelled`, `channel ended`, `restart`, `store full`, `error`. Beside each
 part is its own sidecar — the `iqfile` document (`iq-files.md`) with a `recording` block — which is
@@ -506,6 +551,170 @@ user's retune to protect a job: it marks the job `DEGRADED`, closes the open par
 gap.
 The guard is in the client, so `ley tune` and `ley set freq` refuse a retune of a capture a
 recording is riding on, name the job and `ley jobs cancel`, and go ahead with `--retune`.
+
+**Keys and usage** (`proto/leyline/v1/ai.proto`). The daemon holds one key per model provider
+(`anthropic`, `openai`, `deepgram`, ...) and never returns it: no RPC, event or `--json` shape
+carries the text of a key, and `ley ai` shows its last four characters so two keys can be told
+apart. `ley ai add <provider>` reads the key from stdin, never from an argument (visible in `ps`)
+or the environment; on a terminal it asks for it with echo off, otherwise it reads one line, and
+an empty line is a usage error. A terminal on which echo cannot be turned off is refused with
+a usage error that says to pipe the key in (`pbpaste | ley ai add anthropic`). The daemon stores the key and checks it once by asking the
+provider to list its models. A key the provider refuses is still stored, so `add` exits 0 and its
+line ends with the command that replaces the key; `ley ai check <provider>` exits 1 unless the
+provider accepted the key. For a refused key the line reads `ley: the provider rejected the openai
+key: invalid x-api-key. Paste a working key with: ley ai add openai`, and for a check that could
+not run it gives the reason and `ley ai check <provider>` to try again. The daemon answers both with the `Credential` and its
+outcome, not an error; `CREDENTIAL_REJECTED` is what a job gets when it starts on a key whose last
+check was refused. A provider with no key is `CREDENTIAL_MISSING` from `check` and `remove`.
+
+One key is enough to start. Unless the provider rejects it, the daemon gives every feature the
+provider serves, and that has no provider chosen yet, the provider's default model: `openai`
+serves the assistant (`gpt-5`) and speech (`whisper-1`), `anthropic` the assistant
+(`claude-sonnet-5-5`). A choice already made is never overwritten. `add` compares `ley ai`'s state
+before and after and ends its line with what was set and the command that changes it, or, when
+every feature already had a choice, with `ley ai` to list them. A key added with `--endpoint` sets
+nothing, since the defaults are the provider's own models and a gateway or a local server names
+its own, so its line ends with `ley ai use assistant <provider> <model>`; neither does a provider
+`ley` does not know, which has no defaults.
+`ley ai use` chooses what the `assistant` and `speech` features call, in three forms:
+`ley ai use <provider>` sets every feature the provider serves with its default models,
+`ley ai use <feature> <provider>` one feature with the default, and
+`ley ai use <feature> <provider> <model>` one feature with the model named. `ley ai use <provider>
+<model>` is taken when the provider serves one feature and refused as ambiguous when it serves two,
+naming the feature whose default the model is, or both forms. A provider `ley` does not know is
+taken in the short forms only when its key was added with `--endpoint`, which makes it an
+OpenAI-compatible server for the assistant; otherwise the refusal names the three-word form for
+each feature (`ley ai use speech deepgram nova-3` for a speech decoder's provider). A provider
+that cannot serve the feature is refused by the daemon with
+`INVALID_ARGUMENT` naming those that can: speech is served by `openai` and by the provider of any
+speech decoder installed, and a provider `ley` does not know serves the assistant as an
+OpenAI-compatible server, so once its key is added it must have an endpoint. `use` may name a
+provider whose key is not added yet, and says so. Bare `ley ai` ends with the next command for
+what is missing: with no key, `ley ai add openai, or anthropic`; with keys, a `ley ai use` line for
+each feature with no model, or the `ley ai add` of a key that serves it. Under `--json`, `ley ai`
+prints the `AIState`, `add` and `check` the `Credential`, `use` the `FeatureModel` (one line per
+feature it set) and `remove` `{}`; every sentence goes to stderr.
+
+`ley ai usage [--since 30d] [--by day|month]` prints the ledger in the provider's units: one row
+per day (or month), provider, model and feature, summed over the jobs and conversations that made
+the calls, with a total row. Days are UTC because the providers' consoles count UTC days, and the
+numbers are what the workers reported after each response; `ley` prints no prices. `--since`
+counts whole UTC days back (`0` is the whole ledger, `1y` a year), and a column empty in every row
+is left out. `--json` prints the `GetUsageResponse`, the daemon's lines one per scope and day,
+unsummed. A key check is counted as one request under the feature `check` and the model
+`/v1/models`, the endpoint it called. The check follows no redirect, so the key reaches no host
+but the one it names, and it cuts the key out of any message the provider echoes back. Recorded against the contract's fake daemon at 100
+columns, so your keys, dates and counts will differ:
+
+```
+$ ley ai
+PROVIDER  LABEL  KEY  ENDPOINT  LAST USED  CHECKED
+(no keys; add one with: ley ai add openai, or anthropic)
+
+FEATURE    PROVIDER  MODEL
+assistant  -         -
+speech     -         -
+
+$ ley ai add openai
+Paste the openai key and press Enter:
+openai key …7c2e added; the provider accepted it. The assistant and speech now use openai (gpt-5, whisper-1); change one with ley ai use <feature> <provider> [<model>]
+
+$ ley ai add anthropic --label work < anthropic.key
+anthropic key …9f10 added; the provider accepted it. No feature changed; ley ai lists what each calls
+
+$ ley ai use assistant anthropic
+assistant now calls anthropic claude-sonnet-5-5
+
+$ ley ai use speech anthropic nova-3
+ley: anthropic does not serve speech; openai does: ley ai use speech openai (anthropic) [INVALID_ARGUMENT]
+
+$ ley ai use openai gpt-5
+ley: gpt-5 could be a model for assistant or speech, since openai serves both; say which: ley ai use assistant openai gpt-5
+
+$ ley ai
+PROVIDER   LABEL  KEY    LAST USED  CHECKED
+anthropic  work   …9f10  -          accepted 23:01:18
+openai     -      …7c2e  -          accepted 23:01:18
+
+FEATURE    PROVIDER   MODEL
+assistant  anthropic  claude-sonnet-5-5
+speech     openai     whisper-1
+
+$ ley ai usage
+Days are UTC, as the providers count them. The numbers are what the workers reported, from
+2026-09-14.
+DAY         PROVIDER   MODEL              FEATURE    REQUESTS      IN    OUT  CACHE RD  AUDIO (min)
+2026-10-13  anthropic  /v1/models         check             1       -      -         -            -
+2026-10-13  openai     /v1/models         check             1       -      -         -            -
+2026-10-13  openai     whisper-1          speech           40       -      -         -         20.6
+2026-10-14  anthropic  claude-sonnet-5-5  assistant        15  49,210  4,104   120,000            -
+total                                                      57  49,210  4,104   120,000         20.6
+```
+
+The KEY column reads `-` for a key of four characters or fewer, which shows none of itself. On a
+narrower terminal `ley ai usage` drops the cache columns first, then the feature and the provider.
+
+**Speech on a recording** (`docs/design/ai.md`, "Speech-to-text is a decoder"). `ley transcribe
+<recording>` runs a speech decoder over a gated audio recording: `Jobs.StartJob` with a kept
+`DecodeConfig` whose `source_uri` is `ley://recordings/<id>`, so the daemon reads the stored parts
+with no capture, channel or lease, and hands the decoder one segment at a time, cut at each part's
+`squelch_opens` with half a second either side. Before it starts, `ley` reads the manifest through
+`Resources.ResolveLocalPath` and states the parts, the minutes the squelch was open (each part's
+`squelch_open_ms`, or the sum of its sidecar's `squelch_opens` for a recording made before that
+key), the frequency and mode, the decoder, and where the audio goes: the decoder manifest's
+`contacts_hosts`, or `on this Mac; no audio leaves it` when it lists none. On a terminal it asks
+`[y/N]`; `--yes` (`-y`) starts without asking and is required when stdin is not a terminal, a
+usage error otherwise. It then prints one line per record as the records arrive: the wall clock of
+the over, from the recording's anchor; its part and its 1-based over within the part (the record's
+`clip_uri` and `over`); the text; and the record's `callsigns`, a pattern match over the text, in
+parentheses. When the job leaves `RUNNING` it prints any record the live stream had not yet
+delivered, read back with `QueryRecords`, then the count and the `ley records` command that reads
+them again. A job that fails exits 1 with its reason and code, and one another client cancels exits 1 saying so; Ctrl-C cancels the job and keeps
+the records it made. `--json` prints each `DecodeRecord` as one line of NDJSON and nothing else on
+stdout.
+
+`--engine` picks the speech decoder, by name or alias (default `speech`); a decoder whose input is
+not `SEGMENTED` is a usage error. `--model` sets the speech feature's model for the decoder's
+provider, as `ley ai use speech <provider> <model>` does, before the job starts, because the
+daemon passes the speech model to the decoder when it starts it; this job and later ones use it,
+and the statement says so. When the daemon refuses the job, `ley` puts the previous choice back,
+or clears it (`SetFeatureModel` with an empty provider and model) when there was none. It is a
+usage error with a decoder that calls no provider. A decoder whose manifest names a provider with
+no key set is refused by the daemon with `CREDENTIAL_MISSING`, whose message names `ley ai add`. A
+recording that lists no squelch openings (one recorded without `--gate squelch`) and an IQ
+recording are refused before anything is asked, each with the `ley record` command that makes one
+that can be transcribed. Two speech decoders ship, one program with two manifests: `speech` sends
+each over to OpenAI's transcription API on the `openai` key (`ley ai add openai`; an endpoint on
+the key points it at a compatible server instead), and `speech-scripted` replays a file of lines,
+needs no key and sends nothing anywhere, which is what the tests transcribe with
+(`docs/reference/writing-a-decoder.md`, "Speech decoders"). A key OpenAI rejects is not a refusal
+the daemon waits out: a live speech job's status reads "the decoder exited (status 1); restarting
+in …" on every restart until the key is replaced with `ley ai add openai`, and `ley ai check
+openai` shows why the provider turned it away; `ley transcribe` ends with `DECODER_FAILED` after
+four such exits. Recorded against the contract's fake daemon, whose recording and words are seeded, so ids and times will differ:
+
+```
+$ ley transcribe job_01SEEDSEEDSEEDSEEDSEEDSE < /dev/null
+Transcribe 2 parts, 0.1 min of squelch-open audio from 146.520 MHz NFM, with speech (sends the audio to api.openai.com).
+ley: stdin is not a terminal, so nobody can confirm sending the audio. Run: ley transcribe job_01SEEDSEEDSEEDSEEDSEEDSE --yes
+
+$ ley transcribe job_01SEEDSEEDSEEDSEEDSEEDSE --yes
+Transcribing 2 parts, 0.1 min of squelch-open audio from 146.520 MHz NFM, with speech (sends the audio to api.openai.com).
+14:03:00 part 1 over 1  this is whiskey six alpha bravo charlie (W6ABC)
+14:03:03 part 1 over 3  kilo delta two x-ray yankee zulu, go ahead (KD2XYZ)
+14:03:16 part 2 over 1  roger, see you at six alpha
+Transcribed 3 records, kept as ley://records/job_01M4YD5AKAGK8S2QREFDM9RV91
+Next: ley records --protocol speech --job-id job_01M4YD5AKAGK8S2QREFDM9RV91
+
+$ ley records --protocol speech
+TIME          PROTOCOL  DEVICE  KIND  SUMMARY
+Oct 13 14:03  speech    -       -     roger, see you at six alpha
+Oct 13 14:03  speech    -       -     kilo delta two x-ray yankee zulu, go ahead
+Oct 13 14:03  speech    -       -     this is whiskey six alpha bravo charlie
+```
+
+Part 1's first two overs are 300 ms apart, inside the half-second hang, so they are one segment
+and one record, numbered by its first over; that is why the next line is over 3.
 
 **Exit status** (also `ley help scripting`): 0 on success, including a Ctrl-C that ends a live
 `tune`/`play`/`spectrum --watch`/`fft`/`listen`/`devices --watch` session; 1 when the daemon refused or
@@ -532,9 +741,14 @@ function the dashboard reuses for its no-daemon and no-device states, so the wor
 **Auto squelch and the daemon-side follow-up.** `tune --squelch auto` (the default for NFM and
 AM, whatever the run prints; `--squelch off` opts out) and `set squelch auto` subscribe one FFT row of the capture, take the median bin
 as the floor, scale it to the channel bandwidth (`+10·log10(bw / bin width)`) and write
-`floor + 10 dB` with `WriteParams`. The measurement is the daemon's own spectrum and a median is
-presentation, so no DSP moves client-side (AGENTS.md invariant 2); but the threshold is a
-snapshot, and every client would have to repeat it. The recorded follow-up is an additive
+`floor + 10 dB` with `WriteParams` as `squelch_auto_db`, so the channel says the level was
+measured (`Channel.squelch_source` `SQUELCH_AUTO`; a level typed as a number is `SQUELCH_MANUAL`).
+`ley state`, `ley set` and the event lines put `(auto)` after a measured level
+(`squelch -80.0 dB (auto)`, `squelch    -80 dBFS (auto)`), whichever client or job measured it:
+the daemon's own auto squelch for a gated recording or a decoder's segments says the same. The
+measurement is the daemon's own spectrum and a median is presentation, so no DSP moves
+client-side (AGENTS.md invariant 2); but the threshold is a snapshot, and every client would have
+to repeat it. The recorded follow-up is an additive
 daemon-side relative squelch — `ParamWrite.squelch_relative_db`, "mute at noise floor + N dB"
 tracked by the daemon — after which `auto` becomes a one-field write. Not in v0.
 

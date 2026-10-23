@@ -1394,126 +1394,219 @@ The items here are the record:
 
 #### Unverified on the Mac
 
-Each unit that touches `app/Sources/LeylineApp` leaves its list here; the container compiles
-none of those files (`../dev/swift-style.md`, section 12). The owner runs the accumulated list
-once and files fixes as new items.
+Each unit that touched `app/Sources/LeylineApp` left a list of facts here for the owner to try on
+the Mac, because the container compiled none of those files. Since 2026-10-22 the check scenes in
+`app/checks/scenes.yaml` (`mac-loop.md`, ML-9) check them on every `make app-check`. This section
+says which scenes check which list, then gives the one list of what no scene checks. The facts as
+the units wrote them are in this file's history before 2026-10-23; what the scenes found is under
+"Found by the Mac checks (2026-10-22)" below.
 
-- **U4** (`SidebarView.swift`, new `PlanPickerView.swift`, `BandRailView.swift`,
-  `AppSession.swift`, `LeylineApp.swift`, `Theme.swift`; none compiled here):
-  - A band row's tap tunes it as before; its chevron opens and closes the row without tuning,
-    and a tune into another row closes a row the chevron opened.
-  - The tuned row is open, with the range line, a compact raised, bordered action strip, then
-    its bookmarks indented under it. `Scan band` and `Channels…` sit together in the strip and
-    do not read as bookmark rows; a band without a plan shows only `Scan band`. `GMRS` is one
-    row and is the tuned one on either half; a bookmark at
-    462.6625 MHz sits under it and reads `ch5` where its frequency was; a bookmark at 500 MHz
-    is under `Other`.
-  - The filter field takes focus on ⌘G (`Go to…` in the Tune menu, from the Library too);
-    while it has focus Space types a space and ← → move the caret, neither mutes nor tunes.
-  - Typing `wx3` lists the NOAA row and Return tunes 162.475 MHz, clears the field and drops
-    its focus; Escape clears and blurs; `zz` shows `No matches for “zz”.`; a row of a band the
-    radio cannot tune is dimmed and does nothing.
-  - `Channels…` opens the picker to the right of its action; it opens with the field focused and
-    the highlight on the tuned channel when the plan has it, else the first row; Up and Down
-    move the highlight and stop at the ends, and the list scrolls to keep it in view; typing
-    narrows the rows and puts the highlight back on the first; Return picks it and closes;
-    Escape closes; a click picks. On marine's list (110 rows) the popover is about twelve rows
-    tall and scrolls; typing `24` leaves `24`, `24 coast`, `24A`.
-  - The plan ticks on the rail are visibly fainter than the bookmark ticks and sit under them;
-    hovering one names the channel; a click on one tunes it; the rail on `gmrs-462` shows only
-    the channels in that half; marine shows none.
-  - With an RTL-SDR the list opens on `7 bands below what this radio tunes`, one dim line;
-    clicking it shows the seven rows disabled with the existing tooltip; the next tune folds
-    it again.
-  - ⌘D on 462.6625 MHz makes a bookmark named `ch5` with its row open as an editor; on
-    146.52 MHz it is named `146.520 MHz`. The inspector's pencil committed empty on a plan
-    channel makes one named after the channel.
-  - The inspector title on a plan channel reads the band's name until a bookmark is made, then
-    the bookmark's; the volume caption reads `ch5` on 462.6625 MHz with no bookmark.
-  - A pick of MURS 4 arrives at 20 kHz where the group is 11.25 kHz.
-  - The app builds without a `Sendable` diagnostic from the filter and picker key monitor;
-    holding Up or Down in the picker moves every repeated step and leaves the field focused.
-- **U5** (`AppSession.swift`, `SidebarView.swift`, `BandRailView.swift`, `MainWindow.swift`,
-  `Theme.swift`; none compiled here):
-  - Scan band on the tuned 2 m row: the audio stops, the field keeps showing the tuned
-    frequency, the row reads `Sweeping 2 m amateur, 7 steps…` from the job's events, and the
-    audio is back on the same frequency with the band's mode and width when the row shows its
-    hits. Record how long the audio was gone, in the design's open question
-    (`../design/channels.md`, "Open questions").
-  - The hits are listed strongest first, `WX3` or `146.520 MHz` with `23 dB` beside it; the
-    rail shows a tick per hit, brighter than the plan ticks and distinct from a bookmark's,
-    hovering one reads `WX3 · 23 dB`, and a click on a hit's row or its tick tunes it.
-  - `＋` on a hit makes a bookmark named after the channel (`WX3`), else the frequency, under
-    the band with its row open as an editor, as ⌘D does.
-  - The item reads `Stop` while the row is swept, in the row and in its context menu; Stop
-    ends the job and the audio comes back where it was; the row shows nothing under the item
-    afterwards.
-  - If the cancel RPC fails, the notice reports it and Stop remains available for another try
-    on the same sweep.
-  - A band click, a bookmark click, a rail click, a chart click and a picker pick during a
-    sweep stop it and happen once the audio is back, without a `DEVICE_SWEEPING` error.
-  - With a recording running on the window's capture, Scan band asks on the move alert
-    with `Sweep anyway` and `Cancel`; Sweep anyway sweeps, Cancel leaves the radio alone; a
-    band switch over the recording still reads `Move anyway`.
-  - After Stop listening, Scan band on NOAA runs without a pause, the row shows its hits and
-    the band is selected afterwards, so the audio plays.
-- **U7** (`LeylineApp.swift`, `AppSession.swift`; neither compiled here):
-  - `File > Import CHIRP…` sits after `Show Recordings in Finder` and opens a panel that
-    offers only `.csv` files; Cancel does nothing.
-  - Choosing `fixtures/chirp/sample.csv` shows the notice `Imported 9 from sample.csv: 8
-    added, 1 updated, 1 skipped`, opens no row and no editor, and the log carries `sample.csv
-    line 9: frequency "abc" is not a number` and the DV row's warning.
-  - The 2 m and 70 cm rows stay collapsed and hold the new bookmarks once opened: `Club`,
-    `Simplex`, `Tsql`, `Digital` under 2 m; `Dcs`, `Cross`, `445.925 MHz` under 70 cm; `ch5`
-    under GMRS, reading its channel name.
-  - The inspector on `Club` shows `PL 100.0` and the note `club repeater`; on `Dcs` it shows
-    `DCS 023`.
-  - Typing a note on `Simplex`, then importing the file again, keeps the note and shows
-    `Imported 9 from sample.csv: 0 added, 9 updated, 1 skipped`; `ley bookmarks --tag sample`
-    lists nine.
-  - A file with no Frequency column (any other CSV) shows the error `<name> has no Frequency
-    column; is it a CHIRP CSV export?` and `bookmarks.json` is unchanged.
-  - If the bookmarks file cannot be saved, the import reports the write error and the sidebar
-    reloads the file from disk instead of showing the unsaved rows.
-  - Scan band on a second band while one sweeps stops the first and sweeps the second once
-    the radio is back; the first row's words go, the second's hits arrive.
-  - A bookmark tuned when Scan band is clicked comes back with the bookmark's own mode and
-    width (a bookmark saved at AM on airband, say), and `changed` is not shown.
-  - A NOAA sweep with the antenna off reads `Nothing on the air right now; repeaters and
-    towers key up briefly` and the rail has no hit ticks; the previous sweep's hits stay until
-    the next sweep or a tune into another row, and a tune within the row keeps them.
-  - A sweep on a row opened by its chevron while listening elsewhere keeps that row open with
-    its hits once the audio is back.
-- **U6** (`InspectorView.swift`: `BookmarkFieldsView`, `BookmarkField`, the tags line;
-  `AppSession.swift`: `heardTone`, `toneError`, `editTunedBookmark(tone:)`,
-  `editTunedBookmark(note:)`, `clearToneError`; `SpectrumFeed.swift`: `tunedAt`; none compiled
-  here):
-  - On a bookmarked frequency the identity region shows `Tone` and `Note` fields under the
-    frequency line, labelled in the reading's label column, each showing the saved value or
-    its placeholder (`100.0 or D023N`, `A note`); on a frequency with no bookmark neither
-    field is there, and naming the frequency with the pencil brings both.
-  - A click in the tone field takes focus; while it has focus Space types a space and ← →
-    move the caret, neither mutes nor tunes; the same in the note field.
-  - Typing `100.0` and Return keeps the field focused, the sidebar row and `ley bookmarks`
-    read `100.0` for that bookmark; `ley bookmarks --json` carries `"tone": "100.0"`; clearing
-    the field and Return removes the tone from both.
-  - Typing `D024N` and Return leaves the text in the field and puts `tone must be a CTCSS tone
-    such as 100.0 or a DCS code such as D023N` under it in `caution`, wrapped, and the bookmark
-    is unchanged; a good tone then, or Escape, or a click elsewhere, removes the sentence;
-    a tune to another frequency removes it too.
-  - Escape and a click elsewhere put the saved value back in either field without writing;
-    `ley bookmarks add … --note x` on the tuned bookmark's frequency and name replaces an
-    idle field's text within a second (the file watcher), and does not replace one being
-    edited.
-  - With a keyed transmission carrying a PL, `heard PL 100.0` appears beside the tone field in
-    `inkTertiary` and stays after the transmission ends; a DCS transmission reads `heard DCS
-    023`; a tune away and back to the frequency clears it until the next transmission there;
-    a bookmark tone that differs from the heard one shows both and no word like mismatch.
-  - A bookmark with tags (`ley bookmarks add 146.94 --name r --tag home --tag vhf`) shows
-    `home · vhf` in `inkFaint` between the name and the frequency line; without tags the line
-    is absent and nothing shifts.
-  - The panel's width (312 pt) holds the label, the field and `heard DCS 023 inverted` on one
-    line; if it does not, the heard words truncate and the field keeps its width.
+Checked, by list:
+
+- **U4**, the sidebar, the filter, the plan picker and the rail: `sidebar-rows` (the chevron, the
+  tuned row's strip, a band with no plan, bookmarks under GMRS and Other, the out-of-range fold
+  and a folded band ignoring a press), `goto-bookmark` (⌘G from both places, Space, the caret and
+  no mute while typing, `wx3`, `zz`, Escape and Return), `plan-picker` (beside its action and
+  focused, narrowing, Escape, Return, Up, marine's twelve rows and `24`), `gmrs-plan` (GMRS one
+  row, the 462 MHz half's ticks, a tick's hover, press and click, the picker opened on the tuned
+  channel and a click on a row, ⌘D and the pencil naming bookmarks `ch5` and `ch21`, the title
+  and the volume caption) and `vhf-wide` (a tune into another row closing a chevron's row, `wx3`
+  Returned tuning 162.475 MHz, MURS 4 picked at 20 kHz, marine with no ticks). The `Sendable`
+  diagnostic is the hook's build on every edit.
+- **U5**, Scan band: `scan-hits` (the hits strongest first, named, ticked, and ＋) and
+  `sweep-lifecycle` (the audio stopped and back, the field keeping the frequency, `Sweeping 2 m
+  amateur, 1 step…` and Stop in the row, Stop, a click on a hit's row and on its tick, a tick's
+  hover, a bookmark, band and chart click during a sweep done once it stops, the move alert's
+  Sweep anyway and Cancel, Scan band after Stop Listening). How long the audio is gone is in
+  `../design/channels.md`, "Open questions".
+- **U7**, CHIRP import and sweeps: `chirp-import` and `alert-and-menus` (the menu item's place,
+  the notice, the log's two lines, the rows, Club's tone, a note kept through a second import,
+  `ley bookmarks --tag sample`, a file with no Frequency column refused and `bookmarks.json` left
+  as it was), `sweep-lifecycle` (a second row's sweep replacing the first, an AM bookmark back at
+  AM, hits kept by a tune within the row and dropped by one into another) and `sweep-quiet`
+  (nothing on the air, no ticks). `ley bookmarks --tag sample` lists eight, not nine: Club is in
+  the file twice.
+- **U6**, the bookmark's fields: `bookmark-fields` (the fields and placeholders, the focus, Space
+  and ← in the note, a good tone, a refused one and its sentence, Escape, a tune away, `ley
+  bookmarks --json` reading the tone and losing it when the field is cleared, a terminal's note
+  replacing an idle field and not one being edited), `heard-tones`, and `sidebar-rows` (the tags
+  line).
+- **Settings, AI**: `settings-ai`, `settings-sheet`, and `alert-and-menus` (the app menu's
+  Settings…).
+- **The assistant panel**: `assistant-absent`, `settings-ai`, `assistant-conversation`,
+  `assistant-cards`, `assistant-view-tools`, `change-note`, and `alert-and-menus` (Show Assistant
+  disabled with no key).
+- **The window follows the radio**: `follow-assistant`, `follow-terminal` (a terminal's tune
+  followed and its audio left to it, mute and volume disabled, then the window's own again; a muted
+  window staying muted; the window's own channel a few seconds after Ctrl-C, at its own volume; `ley
+  stop`; a part playing through a follow, and the live audio after it) and
+  `follow-launch-and-daemon` (a launch onto a terminal's channel past a newer recording's, a daemon
+  restart and then `ley ask`, a muted window reconnecting onto a terminal's channel).
+
+Not checked by any scene: C needs a person or a real radio, H a harness addition (numbered as in
+`mac-loop.md`, ML-9) or a fixture.
+
+- C, a file radio cannot retune, so nothing that moves the capture's centre is reached: GMRS
+  tuned on its 467 MHz half (U4), a band switch over a recording reading `Move anyway` (U5), and
+  another client moving the radio without a channel, which leaves the window's channel with the
+  out-of-capture caution and Tune inside (follows).
+- C, an RTL-SDR: the fold reading `7 bands out of range ›`, its help `Show them; they lie below
+  what this radio tunes` (U4, MC-1a); a file radio's help reads `outside`.
+- C, by ear: the audio after Scan band on NOAA, the window's volume, no echo when the window
+  follows, the live audio after a part (U5, follows). Each sink is checked.
+- C, the open panel runs outside the app: File ▸ Import CHIRP… offering only `.csv` files, and
+  Cancel doing nothing (U7).
+- C, a hand or VoiceOver: holding Up or Down in the picker (U4; a burst of keys stands in for the
+  repeat), selecting a step's result text, and a VoiceOver pass over the waiting row (the panel).
+- C, a minute's wait: Settings' relative words moving on the minute.
+- H4, an `appearance` key: Settings under the light system appearance.
+- H8, beyond the menu bar: Stop in a swept row's context menu (an open menu is neither read nor
+  drawn), and ⇧⌘A, which never reaches View ▸ Show Assistant in a check run.
+- H11: the assistant's column remembered across a relaunch; a staged run writes no defaults.
+- H12, fault injection: a cancel the daemon refuses leaving Stop (U5), a bookmarks file that
+  cannot be saved (U7), and a second click on a card before the daemon answers the first.
+- H3, scripts the stub cannot play yet: a key with no model (adding one chooses Anthropic's), a
+  conversation deleted under the panel, a view tool the app does not answer at once (Stop while
+  it waits), "Open the recording …" on one made in the run, and the waiting row's 300 ms, its
+  absence while a step runs and its count after a Decline.
+- H5, a scroll offset in `state`: the transcript's scroll kept across ⌘1 and ⌘2.
+- A fixture: a 70 cm capture for `Dcs` reading `DCS 023` (U7), and an inverted DCS transmission
+  for `heard DCS 023 inverted` on one line at 312 pt (U6); `nfm_dcs_inverted` reads as DCS 047.
+
+#### Found by the Mac checks (2026-10-22)
+
+Faults and questions the ML-9a scenes found that were not fixed on the spot; each names its
+scene, whose pictures and trees in `tmp/checks/<scene>/` show it.
+
+- `sidebar-rows`: at the sidebar's 236 pt the out-of-range line is cut to `17 bands outside what
+  this radio…` (a file radio's words; an RTL-SDR's `7 bands below…` are shorter) and the tuned
+  row's range line to `144 – 148 MHz · 12.5 kHz · sq −…`. Shorter words, or a wider sidebar?
+- `sidebar-rows`: between a tagged and an untagged bookmark everything under the tags line
+  moves 17 pt. Is that the "nothing shifts" U6 meant, or should the line keep its place?
+- `sidebar-rows`: a band row the radio cannot tune is dimmed and ignores a press, but its
+  accessibility element reads enabled, and its `Channels…` stays enabled although no pick in it
+  can tune. Its tooltip's words (`GMRS is outside what this radio tunes …`) are not on that
+  element either: `hover` there reads no help, so VoiceOver gives no reason.
+- `bookmark-fields`: a bookmark's sidebar row shows its channel or frequency and never its tone,
+  so U6's "the sidebar row reads `100.0`" cannot hold. Show the tone, or drop the words?
+- `bookmark-fields`: a bookmark at 146.525 MHz, 5 kHz off the calling channel, reads `calling`
+  in the sidebar where its frequency would be: the plan lookup names a neighbour.
+- `bookmark-fields`: the arrows beside the frequency read the keyboard's ⇧ when they are
+  pressed (`NSEvent.modifierFlags`), so an accessibility press, VoiceOver's included, steps
+  finely whenever a key is held elsewhere.
+- `scan-hits`: `＋` on a hit bookmarks the frequency the sweep measured (146.940186 MHz, shown
+  `146.9402`), not the `146.940 MHz` the hit is named. A click on the hit's row does the same
+  (`sweep-lifecycle`: 146.940014 MHz), so the Club repeater bookmark there is not the tuned one.
+- `plan-picker`: once a pick closes the picker the sidebar's filter has the focus, so Space and
+  the arrows type there rather than mute and tune. Seen in a check run, whose app is never
+  active; look in a real session before changing it. ML-9c saw why: Escape out of the picker
+  does the same, because AppKit gives a window that becomes key with nothing focused to its
+  first key view, the filter.
+
+Found by the ML-9d scenes (2026-10-22), not fixed on the spot:
+
+- `assistant-cards`: text typed while a card waits is lost once the card is answered. The field
+  still shows it, but Return then sends nothing, and what is typed next is sent alone (a probe
+  sent `x` with `then take the radio for 146.94` on screen). After Stop the same text is kept
+  (`assistant-conversation`), so it is the card's going that resets the field's `draft`.
+- `follow-assistant`: once the window follows, Record transmissions reads off (it is the
+  followed channel's), and nothing in the window switches off the recording on the window's old
+  channel, though the inspector says that channel "stays open while it records". Where is it
+  switched off?
+- `follow-assistant`: a tune with the squelch on auto reads "The assistant tuned to 147.180 MHz
+  NFM and set the squelch to -53 dBFS.": the measured level is told as one the assistant chose.
+- `follow-assistant`: with the audio silent the ladder's rms and peak read `-200-200`, run
+  together under the two bars.
+- `assistant-cards`, `assistant-view-tools`: at the window's narrowest with the column open
+  (1221 pt), the squelch's caption and its three words under the track are cut (`open ·…`,
+  `mut… sque… hear…`).
+- `assistant-conversation`: a stopped turn leaves nothing in the transcript under the message it
+  answered; the next message follows the unanswered one. Say it was stopped?
+- `settings-ai`: the key's words name the provider by its id (`anthropic key …0042 added`,
+  "Remove the anthropic key?", "Assistant now calls anthropic claude-opus-5-5", "No openai key is
+  set yet") beside rows that name it `Anthropic` and `OpenAI-compatible`; `ley ai`'s words, or
+  the names?
+- `settings-ai`: the Settings window's AI tab draws as a white tile with a system-blue glyph and
+  the usage switch in system blue, both off the palette.
+- `settings-ai`: closing Settings while the key's field has the focus and holds text brought the
+  window straight back in a check run, with the system's password AutoFill list (it offers
+  1Password) open at the field. Look in a real session.
+- The harness: `ax` read through the window's objects (when the API answers no window) moves an
+  AppKit field's height by a point, and what is under it; the inspector's identity and the AI
+  pane's Key row moved so in pictures (`assistant-view-tools` masks the inspector for it). The
+  frames now agree, the layout under them does not always. In a check run ⇧⌘A never reaches
+  View ▸ Hide Assistant, ⌘W closes no window (no key window), and a staged run writes no
+  defaults, so a relaunch cannot show a remembered choice.
+
+Found by the ML-9d scenes' second half (2026-10-22), not fixed on the spot:
+
+- `follow-terminal`, `transport-sizes`, at the window's minimum size (900 × 612 pt, toolbar
+  included): the inspector does not fit. With a terminal's two lines in the identity it asks 641
+  pt where 472 pt is left between the toolbar and the transport bar, and its fixed parts alone
+  (header, identity of a bookmark with Tone and Note, readings 84, audio 112, one log row,
+  Measurements 33) come to about 560. It pushed the transport bar out of the window; it is now
+  cut at its foot instead (fixed, 71a1698), so at the minimum Measurements and the log's rows go.
+  Raise the minimum height while the inspector shows, or let the inspector scroll?
+- `transport-sizes`: at 900 pt with the inspector the band rail's track shrinks to a few points
+  between its two neighbours' labels (`◂ 148.0000`, `154.5600 ▸`), and the squelch's words are
+  cut to `mut… mark… hear…`.
+- `assistant-conversation` (from the first half's fix 214c9bf): the transcript lost all its rows
+  when a step with a long result opened, while it was a `LazyVStack`; it is a `VStack` now, which
+  lays out every turn of a long conversation. Why the lazy stack dropped its rows is not known.
+- `follow-launch-and-daemon`: with the daemon stopped the window keeps its last moment beside
+  "The daemon is not running": the inspector reads `On air Now 3.1 s` and "The audio plays
+  through another terminal.", the squelch's words `open`, and the volume `playing Club
+  repeater`.
+- `bookmark-fields`: a click on the inspector's empty header neither ends an edit nor takes a
+  refused tone's sentence away. The note's unsaved `a b` stays in the field (unwritten), and the
+  sentence stays, until the focus moves into another field, which puts the saved value back. U6
+  said a click elsewhere does both.
+- `sweep-lifecycle`, `transport-sizes`: MURS's hits read `1` and `4`, a hit tick's hover `1 · 46
+  dB`, and the volume's caption on MURS 2 `playing 2`: the plan's bare channel numbers, where
+  NOAA's read `WX2`. `MURS 1`?
+- `sweep-lifecycle`: with a recording running, Scan band on a file radio asks "Move the radio?"
+  with Sweep anyway, though a file radio's sweep is one step at the recorded centre and moves
+  nothing.
+- `alert-and-menus`: the File menu has two separators in a row after Import CHIRP… (its items
+  read `Import CHIRP…, -, -, Close`, the empty groups SwiftUI keeps for Save and Print). An open
+  menu is not drawn in a check run, so whether macOS shows both is for a person to look at.
+- The harness: in a full `make app-check` the inspector's identity in `plan-picker` measured 117
+  pt where its golden has 116 once more (ML-9c's flake), and `settings-ai`'s key read `added 1
+  min ago` for `just now` (and `settings-sheet`'s `21 min ago`), because their `clock` shifted
+  the daemon's time and not the app's; neither scene sets one now. During a sweep the
+  transport's squelch words read `disabled` in one run and `enabled` in the next, with no
+  channel either time, so `sweep-lifecycle` keeps no tree of the sweep; its picture and the
+  Stop item's help stand in. scene_vhf20's sweep of 2 m found Calling in most runs and not in
+  one, so its hits are asserted by 146.940 MHz alone.
+- Batch 1's verify loop (MC-1): AppKit still makes the password AutoFill panel
+  (`SPRoundedWindow`) for the API key's secure field whatever its content type. Since the window
+  ends the edit before it closes, the panel stays hidden and Settings stays closed. Whether a
+  person ever sees the list in a real session is still for a person to look at.
+- Batch 1's verify loop: since the inspector's empty space ends an edit (MC-1a), the `inspector`
+  group's accessibility frame starts at y 52 (`1128,52 312×679`), but its header child still
+  reads from y 0, so the group no longer contains its children.
+- Batch 1's verify loop: at 900 pt the squelch's short caption fits beside its header only
+  because the bar's blocks close up to 12 pt. A three-figure reading (`muted · 100 dB`) would
+  still be cut.
+- Batch 2's verify loop (MC-2): the take-over card reads `The assistant wants to tune to
+  146.94.` and does not say it takes the radio from whoever is using it; that is left to the
+  gate's reason under it, the daemon's words, which name `take_over` twice (`assistant-cards`,
+  takeover). Should the sentence say "take the radio from another listener to tune to 146.94",
+  and the reason lose the argument's name?
+- Batch 2's verify loop: an opened `list_presets` step shows 8 rows and `… 179 more` in a box
+  that never needs to scroll; the full rows are only in the JSON view, which does scroll
+  (`assistant-long-result`). Enough, or should the table scroll through every row?
+- Batch 2's verify loop: a disabled band row's labels (`AM broadcast`, `AM`) read `enabled` in
+  the tree on one launch and `disabled` on the next, with the same picture (`chirp-import`,
+  `mc1a-sidebar-actions`, `sidebar-rows`). The comparison now leaves out a label's state word;
+  the row's own button keeps it.
+- Batch 2's verify loop: in one full run at `JOBS=3`, `settings-ai` stepped finely three times
+  (146.520 to 146.535 MHz, 50 ms apart) just after the Remove press in Settings, and its
+  `main-removed` tree differed. The three `tune:` lines match a scroll over the waterfall, which
+  a check run does not send; most likely the pointer of the person using this Mac. It did not
+  happen again. A staged run could ignore scroll events it did not post. In another full run at
+  `JOBS=3` a `click` on the waterfall (804, 400) tuned nothing in both `pointer-and-menus` and
+  `sweep-lifecycle`, three minutes apart; both passed alone and in the two full runs after.
 
 #### Residuals after APP-9 review
 
@@ -1526,6 +1619,200 @@ once and files fixes as new items.
   structural change, with the Mac-only isolation and lifecycle checks from `../dev/swift-style.md`.
 - `ley bookmarks` has no edit verb, so the terminal cannot clear a tone or note the app wrote.
   Add `ley bookmarks edit` rather than changing `add`'s update contract.
+
+### Settings, AI `[x]` (built under `ai-features.md`, AI-4)
+
+The Settings scene (⌘,) and its AI pane: keys, the provider and model per feature with what each
+choice sends to which host, and usage by UTC day and month (`../dev/app.md`, "Settings"). The
+façade's rows are Linux-tested and the RPCs run in `make app-e2e`; the views are not compiled
+off the Mac. The pane is forced dark like the window rather than giving `Theme` light values.
+
+#### Unverified on the Mac
+
+Checked by `settings-ai`, `settings-sheet` and `alert-and-menus`; what no scene reaches (the light
+appearance, the minute tick) is in APP-9's "Unverified on the Mac".
+
+### The assistant panel `[x]` (built under `ai-features.md`)
+
+A column beside the inspector holding one conversation with the assistant: steps that open to
+their arguments and result, questions as Allow and Decline, Stop, the tokens so far, and the
+app's three view tools (`../dev/app.md`, "The assistant panel"). The façade's rows, the view
+tools' parsing and the attribution fold are Linux-tested; the conversation, a question, a view
+tool answered through `AnswerViewTool`, Stop, End and the attribution story run against the daemon
+and the fake worker in `make app-e2e`. The views are not compiled off the Mac.
+
+#### Unverified on the Mac
+
+Checked by `assistant-absent`, `settings-ai`, `assistant-conversation`, `assistant-cards`,
+`assistant-view-tools`, `change-note` and `alert-and-menus`; what no scene reaches is in APP-9's
+"Unverified on the Mac".
+
+### The window follows the radio `[x]` (built under `ai-features.md`, AI-17)
+
+When another client makes a channel on the window's capture, the window follows it: the
+readout, the inspector, the rail's selection, the transmissions log and the audio move to it,
+and the inspector says who tuned (`../dev/app.md`, "The window follows the radio"). The rule
+(`ChannelFollow`), the mirror's `made` and the "tuned to" note are Linux-tested, and the follow
+runs against the daemon with a stand-in `assistant` client in `make app-e2e`; the session's half
+(`AppSession.followOtherClients`, `listenOnOwn`) and the inspector's line are not compiled off
+the Mac, and the system-audio sink cannot attach on Linux.
+
+#### Unverified on the Mac
+
+Checked by `follow-assistant`, `follow-terminal` and `follow-launch-and-daemon`; what no scene
+reaches is in APP-9's "Unverified on the Mac".
+
+### MC-1 `[x]` The owner's calls on the Mac-check findings (2026-10-22)
+
+The owner decided the findings above one at a time on 2026-10-22, and sent a mockup for the
+sidebar's actions (`tmp/sidebar-actions-mock.png` on the build Mac). The work runs as one batch
+in three lanes, then a single verify loop (`mac-loop.md`, ML-11). Every change comes with a check
+scene, or extends one.
+
+**MC-1a. The sidebar and the inspector.**
+- The open band's actions become list rows: `Scan band` and `Channels` at bookmark height, the
+  glyph lined up with the bookmark dots and the label with the bookmark names, in a dimmer ink
+  than a bookmark's name, with no strip, border or button chrome. `Channels` has a trailing `›`
+  and still opens the picker beside it. The band header, its range line, the actions and the
+  bookmarks share one raised ground. The identifiers stay as they are.
+- Shorter words where the sidebar cuts them: `17 bands out of range ›`, and the squelch in the
+  range line in one short form (`sq −53`, `sq auto`). The sidebar keeps its width.
+- The inspector's tags line keeps its place, so nothing under it moves between a tagged and an
+  untagged bookmark.
+- A band the radio cannot tune reads disabled to accessibility, its actions included, and its
+  hint says why.
+- A sidebar row never shows a tone: the U6 promise of `100.0` is dropped.
+- A near plan match, within the channel's width but not on it, reads `≈ calling`.
+- The step arrows: an accessibility press always takes a normal step, and two named actions,
+  "Step up finely" and "Step down finely", take the fine one. ⇧-click with the mouse stays.
+- `＋` on a hit, and a click on a hit's row, use the named channel's frequency (146.940 MHz); the
+  measured one only when the hit names no channel.
+- When the Channels picker closes, by a pick or by Escape, nothing has the focus, so Space mutes
+  and the arrows tune. The filter takes the focus on ⌘G or a click only.
+- A click on empty space ends an edit in the Tone or Note field.
+
+**MC-1b. The transport bar and the palette.**
+- The tuning field always shows 4 decimal places in MHz, truncated (146.940186 reads
+  `146.9401`). The radio stays on the exact Hz, which the inspector line and the tooltip show in
+  full. Typing more than 4 decimals is accepted and tunes exactly.
+- A narrow bar drops the three words under the squelch track first, then shortens its caption
+  (`open · 33 dB`). The track keeps its size, and no pop-up label ever wraps.
+- The audio ladder shows an en dash under rms and under peak when the audio is silent.
+- `inkFaintest` rises to about `#666C71` so it clears 3:1 on every ground. The contrast test
+  drops its two exceptions and `app.md`'s palette table follows. `meterWell` stays pure black.
+
+**MC-1c. The assistant and Settings.**
+- Text typed while a card waits stays in the field as the draft, and Return sends it.
+- While the window's old channel still records after the window follows, the inspector shows
+  `Still recording <frequency> <name> · Stop`.
+- The change note names the squelch only when the assistant set a level itself.
+- A stopped turn shows a faint `Stopped.` line under its message, after any steps it took.
+- Settings ▸ AI names providers by their display names (`Anthropic key …0042 added`). `ley ai`
+  keeps the ids.
+- Settings' controls take palette colours by role. The system-drawn tab stays as macOS draws it.
+- The API key field opts out of AutoFill. Then closing Settings with the field focused is
+  checked again.
+
+Verified 2026-10-23 on the Mac: the scenes of the three lanes (`mc1a-sidebar-actions`,
+`mc1a-inspector`, `transport-tuning`, `transport-narrow`, `transport-sizes`, `settings-ai` and
+the assistant's) pass in Batch 1's and Batch 2's verify loops and in two full runs at `JOBS=3`
+before the merge into main (841 checked, 841 ok, each).
+
+### MC-2 `[x]` The assistant column, refined (2026-10-22)
+
+The owner asked for the chat column's text colour, spacing and alignment to be refined, and chose
+the open options. The defects are from the 2026-10-22 pictures of `assistant-conversation` and
+`assistant-cards`.
+
+- **One left edge.** The header, the transcript, the steps and their bodies, a card, the token
+  line and the input field share one inset (a `Theme.Layout` token). Today they sit 2 to 10 pt
+  apart.
+- **Your messages** sit right-aligned on a `raised` bubble, at most about 80 % of the column wide,
+  with a 6 pt radius and `inkSecondary` text. The assistant's reply runs the full width with no
+  bubble.
+- **The reply** is `inkSecondary` at 13 pt, with 3 pt of extra leading, as "Palette and type"
+  already gives it.
+- **Rhythm.** One gap between turns and a smaller one inside a turn (message to steps to reply),
+  both `Theme.Layout` tokens, the same everywhere.
+- **A step row** has one disclosure glyph, then the tool name, then its status at the right. The
+  one-line preview under a closed step goes.
+- **An opened step** shows its arguments as `key value` lines and its result as compact text, a
+  table when the result is rows (`name frequency mode`, with `… 18 more`). It is at most about 12
+  lines tall and scrolls inside, sits on the text inset, and a `JSON` toggle shows the raw JSON.
+- **A question card** says what the tool does in words ("The assistant wants to remove the APRS
+  bookmark.") and never shows a tool id. Its description is `inkSecondary`, not `caution`. Allow is
+  the one filled button; Decline and "Allow for this conversation" are plain text buttons.
+- **The input field's placeholder** is `inkFaint`, as the sidebar's filter now is.
+
+It is checked by `assistant-conversation`, `assistant-cards` and `assistant-view-tools`, with their
+pictures re-recorded once the owner has seen them, plus a scene with a long result opened.
+
+Built 2026-10-23 in a batch lane, which launches no app; not ticked until a verify run on the Mac
+has recorded the pictures and the owner has seen them. The card's sentence is the app's
+(`AssistantWords.action`): the daemon's question has the tool, its arguments and the gate's
+reason, and no sentence, and `ley ask` still asks with the tool's name. The step row keeps the
+call's arguments after the tool's name, fainter, so two tunes tell apart; an opened step's reason
+is `inkSecondary` like the card's. `assistant-long-result` opens `list_presets`.
+
+Verified 2026-10-23 on the Mac in Batch 2's verify loop: one left edge at 16 pt
+(`assistantInset`; the header, step rows, an opened step's box, the reply, the token line and the
+field's box all start at x 1136 in a column from 1120, and the bubble and field end 16 pt from its
+right), the pictures of `assistant-conversation`, `assistant-cards`, `assistant-view-tools` and
+`assistant-long-result` recorded. Three buttons do not fit one line of the column, so Allow for
+this conversation always sits over Decline and Allow, and the scene expects it first. Copies of
+the first pictures are in `tmp/batch2/` for the owner to see.
+
+### MC-3 `[x]` Batch 1's review, decided (2026-10-23)
+
+A review of Batch 1 found three defects. The owner settled three questions it raised.
+
+- **Leaving a Note or Tone field saves it**, as Return does; Escape is how to throw the text away.
+  A refused value (`D024N`) stays in the field with its error and is not saved.
+- **The daemon says whether a squelch is automatic, and why a turn ended.** Two additive fields,
+  each with its `ley` mirror and tests: the source of a channel's squelch (set by hand or measured
+  automatically) on `Channel`, and a stop reason on an assistant turn. The app reads them, and
+  the guesses `AppSession.autoSquelch` and `stopped(_:at:)` go. The change note's squelch rule
+  then reads the source instead of looking for the tool call.
+  Done 2026-10-23: `Channel.squelch_source` (`SQUELCH_MANUAL`, `SQUELCH_AUTO`, unset while off),
+  set by the new `ParamWrite.squelch_auto_db` and by the record and decode jobs that measure a
+  squelch; `Turn.stop_reason`, set by the worker and by the daemon on a turn it closes for a stop
+  or a restart. `ley` writes its auto as `squelch_auto_db` and reads `(auto)` after a measured
+  level in `ley state`, `ley set` and the event and change lines; `ley ask`'s lines carry the
+  reason.
+- **A scan hit with no plan channel** is tuned and bookmarked at its measured frequency rounded
+  to 100 Hz.
+- **Return in the tuning field without an edit keeps the exact frequency.** Today it retunes to
+  the 4 decimals shown and drops the hertz beyond them.
+- **`leyshots check --affected` never passes having checked nothing.** When the base is HEAD and
+  the tree is clean, it compares with the last commit instead. A file nothing covers fails the
+  run. Changes to `app/Package.swift` and the façade count. A smoke run that selects no scene is
+  an error.
+
+### MC-4 `[x]` The question card, second pass (2026-10-23)
+
+From the owner's look at Batch 2's pictures (`tmp/batch2/` on the build Mac):
+
+- The card shows the daemon's reason only when it says something the sentence does not, such as
+  why the call asks ("it takes the radio from your window"). The take-over card says so in words
+  and never shows `take_over`.
+- The option is named `Allow in this chat`, so all three fit one row: Decline · Allow in this chat
+  · Allow, with Allow the filled one. The buttons stack only when even that does not fit.
+
+Built 2026-10-23 in a batch lane, which launches no app; not ticked until a verify run on the Mac
+has recorded the pictures. The façade decides the line (`AssistantWords.cardReason`, unit-tested
+per gate row): the take-over reads `It takes the radio from the window.` (or `a ley command`,
+`another assistant`, by the kinds the refusal named; `from whoever is using it` with none), a
+bookmark's removal and a CHIRP import show no line, a delete reads `Its files go with it, and
+this cannot be undone.` The daemon's reason is unchanged, since the model reads it too, and an
+opened step still shows it whole. `ley ask` names no option, so it has nothing to rename. The
+identifier `assistant.allow.conversation` stays. `state` gains `assistant.question` and
+`assistant.note`, which `assistant-cards` now expects, with the buttons in one row's order.
+
+Verified 2026-10-23 on the Mac: at 1440 and 1221 pt the card's buttons read Decline · Allow in
+this chat · Allow on one row (y 697 in both), the bookmark's removal shows no line under its
+sentence, and the take-over reads `It takes the radio from whoever is using it.` with no
+`take_over`. `assistant-cards`'s pictures and trees were re-recorded for it; two full runs at
+`JOBS=3` after were clean.
 
 ## Backlog
 

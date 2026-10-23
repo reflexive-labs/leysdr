@@ -10,6 +10,7 @@ package leyline.v1;
 
 option go_package = "github.com/reflexive-labs/leysdr/go/gen/leyline/v1;leylinev1";
 import "leyline/v1/common.proto";
+import "leyline/v1/ai.proto";
 
 // ---------- Manifest ----------
 // Static, shipped with the plugin as manifest.json (proto3 JSON) in the plugin's directory.
@@ -41,6 +42,13 @@ message DecoderManifest {
   // The program to spawn: a path relative to the manifest's directory, or a name on PATH.
   string executable = 14;
   repeated string args = 15;
+  // The provider whose key the plugin calls with ("deepgram", "openai"); empty when it needs none.
+  // The daemon refuses to start the job with CREDENTIAL_MISSING when no key is set for it, and
+  // hands the key to the plugin when it spawns it (docs/design/ai.md).
+  string credential_provider = 17;
+  // The hosts the plugin contacts, so a person can see where the audio goes before running it.
+  // Advisory: nothing enforces it.
+  repeated string contacts_hosts = 18;
 }
 
 message DecoderRecipe {
@@ -79,6 +87,10 @@ message DecoderInput {
   // demodulated. Many IQ decoders share one wide capture (docs/design/decoders.md,
   // "Multiplexing"); an IQ frame carries the whole band around the recipe's frequency.
   DecoderSignal signal = 5;
+  // SEGMENTED only: how much audio a segment keeps before the squelch opened and after it closed.
+  // A squelch that reopens inside the hang continues the same segment. 0 = 500 ms for each.
+  uint32 pre_roll_ms = 6;
+  uint32 hang_ms = 7;
 }
 
 enum DecoderSignal {
@@ -87,7 +99,11 @@ enum DecoderSignal {
   SIGNAL_IQ = 2;
 }
 
-enum InputMode { INPUT_MODE_UNSPECIFIED = 0; CONTINUOUS = 1; SLOT_ALIGNED = 2; }
+// SEGMENTED delivers one over at a time: audio from `pre_roll_ms` before the squelch opened to
+// `hang_ms` after it closed, bracketed by frames marked SEGMENT_START and SEGMENT_END
+// (bulk.proto, Frame.segment), and nothing while the squelch is shut. A speech decoder reads it so
+// that one record is one speaker.
+enum InputMode { INPUT_MODE_UNSPECIFIED = 0; CONTINUOUS = 1; SLOT_ALIGNED = 2; SEGMENTED = 3; }
 
 enum OutputShape { OUTPUT_SHAPE_UNSPECIFIED = 0; SHAPE_RECORDS = 1; SHAPE_ENTITIES = 2; SHAPE_REGISTRY = 3; }
 
@@ -133,6 +149,16 @@ message DecodeRecord {
   // The protocol's own record type, when it has more than one: APRS uses "position", "weather",
   // "telemetry", "message", "status", "object". Empty for a protocol with one kind of record.
   string kind = 14;
+  // What the plugin's provider call for this record used, set by a plugin that calls one. The
+  // daemon fills `feature` and `job_id` and adds it to the ledger (ai.proto, Usage).
+  UsageReport usage = 15;
+  // Set by the daemon: the recording part that holds this record's audio,
+  // ley://recordings/<id>/<part>, so the record can be checked by ear or decoded again. Empty when
+  // no recording holds it.
+  string clip_uri = 16;
+  // Set by the daemon under SEGMENTED input: which over within the part the record came from,
+  // 1-based. 0 when the input was not segmented.
+  uint32 over = 17;
 }
 
 message Position {
@@ -179,6 +205,10 @@ message DecodeConfig {
   // hook. A notifier is a channel output like any other (docs/design/decoders.md), not a parallel
   // delivery path: it receives the same records.
   NotifyTarget notify = 7;
+  // Decode a stored audio recording instead of a radio: ley://recordings/<id>. The daemon reads
+  // its parts in order as fast as the plugin accepts them, with no capture, channel or lease, so
+  // frequency_hz, device_id and take_over do not apply. Empty = tune a radio as above.
+  string source_uri = 8;
 }
 
 // A stateless record filter. `all` clauses must match (AND); an empty predicate matches every
@@ -214,7 +244,11 @@ enum PredicateOp {
   PRED_GTE = 6;
   PRED_IN = 7;
   PRED_NOT_IN = 8;
-  // The field is a delimited list (a SAME alert's FIPS county codes) and one of `values` is in it.
+  // The field is a delimited list (a SAME alert's FIPS county codes, or the words of a speech
+  // record's text) and one of `values` is in it: the field and each value split into tokens on
+  // ',', space and '-', and a value matches when its tokens appear among the field's, whole,
+  // consecutive and in order, case-folded. "net control" matches "Net Control here"; "contr"
+  // matches nothing.
   PRED_CONTAINS = 9;
   // The field is present and non-empty; `values` is ignored.
   PRED_EXISTS = 10;

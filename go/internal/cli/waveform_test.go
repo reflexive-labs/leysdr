@@ -5,6 +5,8 @@ package cli
 import (
 	"encoding/json"
 	"math"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -312,9 +314,17 @@ func TestWaveformDrawsTheDaemonsAudio(t *testing.T) {
 	}
 	// The demod tap sits on the detector's offset, which comes out of the clip
 	// and is named where it went.
+	// The fake's demod tap is a 0.02 offset under a 1 kHz voice and a 0.1
+	// sub-audible tone, and the tone's partial cycles at a slice's ends leave
+	// up to about 0.015 on the mean, so the number is read with that allowance
+	// rather than matched as text; the floor keeps the audio tap's 0 out.
 	demod := mustRun(t, sock, "waveform", "145.23", "--tap", "demod", "--seconds", "2", "--count", "12")
-	if !strings.Contains(demod, "dc removed +0.02") {
-		t.Errorf("the demod clip does not name the offset it removed:\n%s", demod)
+	m := regexp.MustCompile(`dc removed ([+-]\d+\.\d+)`).FindStringSubmatch(demod)
+	if m == nil {
+		t.Fatalf("the demod clip does not name the offset it removed:\n%s", demod)
+	}
+	if dc, err := strconv.ParseFloat(m[1], 64); err != nil || dc < 0.005 || math.Abs(dc-0.02) > 0.02 {
+		t.Errorf("the demod clip removed %s, want about +0.02:\n%s", m[1], demod)
 	}
 }
 

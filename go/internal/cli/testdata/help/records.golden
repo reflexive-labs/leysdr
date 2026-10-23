@@ -4,7 +4,9 @@ nothing, so an empty table usually means no kept job has run.
 
 Rows are newest first. TIME is wall clock derived from the capture's anchor,
 the way every time in ley is; a record whose capture the daemon no longer has
-an anchor for shows no time rather than a guessed one.
+an anchor for shows no time rather than a guessed one. Speech records add
+OVER, the part and over of the recording that holds the words' audio:
+3/2 is the second over in part 3, which 'ley play' plays.
 
 --since takes a duration: 90s, 30m, 1h, 2d. --near takes a latitude and a
 longitude ('37.76,-122.42') and --radius a distance with its unit (10km, 500m,
@@ -18,6 +20,7 @@ Usage:
 Examples:
   ley records                              # everything kept, newest first
   ley records --protocol aprs --since 1h   # the last hour of APRS
+  ley records --protocol speech --since 12h # what a repeater said today
   ley records --device-id LEYTST-1         # one transmitter
   ley records --near 37.76,-122.42 --radius 10km
   ley records --json | jq -r '.records[].deviceId'

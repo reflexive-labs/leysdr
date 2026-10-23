@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -147,7 +148,22 @@ func (srv *mcpServer) registerTools() {
 		Description: "Stop a job and hand the radio back (Jobs.CancelJob; ley jobs cancel). A job that has already finished is left as it is. Returns the Job in the state the daemon left it.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: boolPtr(false)},
 	}, srv.cancelJob)
+	srv.registerControlTools()
+	srv.registerReferenceTools()
+	srv.registerBookmarkTools()
+	srv.registerWatchTool()
+	srv.registerDeviceTools()
 }
+
+// The annotations the later tool families share. Each matches a row of the assistant's policy
+// table (docs/plans/ai-features.md, "What the assistant may do"): reading runs; a change the user
+// asked for runs and is reported; removing what cannot be brought back is destructive, which a
+// client confirms.
+var (
+	toolReadOnly    = &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: boolPtr(false)}
+	toolMutates     = &mcp.ToolAnnotations{DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(false)}
+	toolDestructive = &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: boolPtr(false)}
+)
 
 // gainSchema is the input schema the SDK would infer for a tool's arguments, with the gain field
 // described by gainHelp and the tool's own default after it. A struct tag cannot name a constant,
@@ -158,9 +174,14 @@ func gainSchema[T any](tail string) *jsonschema.Schema {
 	if err != nil {
 		panic(fmt.Sprintf("mcp: the %T schema: %v", *new(T), err))
 	}
-	sch.Properties["gain"].Description = gainHelp + tail
+	sch.Properties["gain"].Description = gainHelp + gainToolNote + tail
 	return sch
 }
+
+// gainToolNote is what an agent cannot learn from gainHelp alone: which radios take auto, and
+// where to read it. A first sweep sent auto to a HackRF, which has no automatic gain, and failed.
+// It is on four tools' schemas, so it stays one clause.
+const gainToolNote = "; auto only where get_state lists a gain element with supportsAuto (an RTL-SDR's TUNER); a HackRF takes LNA=24,VGA=24,AMP=0|11"
 
 // registerResources exposes the ley:// resources the daemon can answer: a
 // recording, which has a store and outlives the daemon; a kept decode job's
@@ -375,8 +396,15 @@ func (srv *mcpServer) tune(ctx context.Context, _ *mcp.CallToolRequest, in tuneA
 	if s.failureNote != "" {
 		fmt.Fprintln(app.Stderr, s.failureNote)
 	}
-	fmt.Fprintf(app.Stdout, "listening to %s (%s) on %s: channel %s on capture %s.\n",
-		units.FormatFrequency(o.freq), strings.ToUpper(leyline.ModeName(o.mode)), deviceName(s.device),
+	sq := "squelch off"
+	if !units.SquelchOff(o.squelch) {
+		sq = fmt.Sprintf("squelch %.0f dBFS", o.squelch)
+		if o.squelchAuto {
+			sq += " (auto)"
+		}
+	}
+	fmt.Fprintf(app.Stdout, "listening to %s %s, %s, on %s: channel %s on capture %s.\n",
+		units.FormatFrequency(o.freq), strings.ToUpper(leyline.ModeName(o.mode)), sq, deviceName(s.device),
 		s.Channel.GetChannelId(), s.Capture.GetCaptureId())
 	switch {
 	case in.Keep:
@@ -389,7 +417,10 @@ func (srv *mcpServer) tune(ctx context.Context, _ *mcp.CallToolRequest, in tuneA
 		return nil, nil, err
 	}
 	srv.touched(s.Capture.GetCaptureId())
-	return jsonResult(errb.String()+out.String(), raw), nil, nil
+	// The tuned line leads and what the session said on the way (the band's default mode, a
+	// retune, how the squelch was measured) follows: a result's first line is what a client shows
+	// under the call.
+	return jsonResult(out.String()+errb.String(), raw), nil, nil
 }
 
 // sinkOrNil is a sink for composite, or JSON null when there is none: a typed
@@ -418,9 +449,16 @@ func refuseRetune(s *verbSession, freq uint64, bw uint32, takeOver bool) error {
 	if capture == nil || covers(capture, freq, bw) {
 		return nil
 	}
+	return retuneRefusal(s.State, capture, freq, "")
+}
+
+// retuneRefusal names the channels listening on a capture that moving it to freq would
+// silence, leaving out the one channel (except, when set) the move is for: set moves its own
+// channel with the radio. nil when nobody else is listening.
+func retuneRefusal(st *leylinev1.GetStateResponse, capture *leylinev1.Capture, freq uint64, except string) error {
 	var who []string
-	for _, ch := range s.State.GetChannels() {
-		if ch.GetCaptureId() != capture.GetCaptureId() || ch.GetState() != leylinev1.ChannelState_CHANNEL_ACTIVE {
+	for _, ch := range st.GetChannels() {
+		if ch.GetCaptureId() != capture.GetCaptureId() || ch.GetState() != leylinev1.ChannelState_CHANNEL_ACTIVE || ch.GetChannelId() == except {
 			continue
 		}
 		hz := uint64(int64(capture.GetCenterHz()) + ch.GetOffsetHz())
@@ -488,8 +526,7 @@ func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanA
 		return nil, nil, errors.New(strings.TrimSpace(errb.String()))
 	}
 	errb.Reset()
-	printScan(app, scan, o, scanGainElements(s.State, o.deviceID, scan))
-	text := note + out.String() + errb.String()
+	text := scanToolText(app, scan, o, scanGainElements(s.State, o.deviceID, scan), out, errb) + note
 	// min_snr trims the Scan the way `ley scan --min-snr` trims its rows: the message is still a
 	// Scan, with fewer detections. A 20 MHz sweep is hundreds of detections and more JSON than
 	// an agent's result budget holds, and detections under the requested floor are ones it asked
@@ -510,6 +547,28 @@ func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanA
 		scan = kept
 	}
 	return protoResult(scan, text)
+}
+
+// scanToolText is printScan's output in the order a tool result reads: the outcome first (how
+// many signals over which range, at what floor and gain, in ley scan's words), then the table, then the notes. On a
+// terminal the table comes first because it is the answer on stdout and the sentence follows on
+// stderr; a result's first line is what a client shows under the call.
+func scanToolText(app *App, scan *leylinev1.Scan, o scanOptions, els []*leylinev1.GainElement, out, errb *bytes.Buffer) string {
+	rows := scanRows(scan, o)
+	over := units.FormatFrequency(o.minHz) + " to " + units.FormatFrequency(o.maxHz)
+	if o.bandName != "" {
+		over = "the " + o.bandName + " band, " + over
+	}
+	var outcome string
+	if len(rows) == 0 {
+		outcome = fmt.Sprintf("0 signals over %s: %s\n", over, emptyScanLine(scan, o, els))
+		emptyScanHints(app, scan, o)
+	} else {
+		outcome = fmt.Sprintf("%s over %s%s%s\n", words.Count(len(rows), "signal"), over, floorPhrase(scan), gainPhrase(scan, els))
+		printScanTable(app, scan, o, rows)
+		printScanNotes(app, scan, o, rows)
+	}
+	return outcome + out.String() + errb.String()
 }
 
 // scanToolFailure rewrites the remedies scanFailure phrases as flags and verbs into the tool's
@@ -664,7 +723,8 @@ func (srv *mcpServer) listenSummary(ctx context.Context, _ *mcp.CallToolRequest,
 		return nil, nil, err
 	}
 	srv.touched(s.Capture.GetCaptureId())
-	return jsonResult(errb.String()+sum.text(s, dur), raw), nil, nil
+	// The count leads and a retune note follows, as tune's line does.
+	return jsonResult(sum.text(s, dur)+errb.String(), raw), nil, nil
 }
 
 func subAudibleOrNil(sa *leylinev1.SubAudible) any {
@@ -850,6 +910,20 @@ func (sum *listenSummary) finish() {
 func (sum *listenSummary) text(s *verbSession, dur time.Duration) string {
 	var b strings.Builder
 	what := audioWhat(s)
+	m := sum.meter
+	// With the squelch off nothing opens or closes, so "0 transmissions" would be a count of
+	// nothing that reads as an empty channel: say that nothing was counted and give the level,
+	// which is what was measured.
+	if units.SquelchOff(m.SquelchDb) {
+		fmt.Fprintf(&b, "%s for %s, squelch off: transmissions are not counted", what, fmtDuration(dur.Seconds()))
+		if m.Samples > 0 {
+			fmt.Fprintf(&b, "; level %.0f to %.0f dBFS (mean %.0f).", m.MinPowerDbfs, m.MaxPowerDbfs, m.MeanPowerDbfs)
+		} else {
+			b.WriteString(", and no meter readings arrived.")
+		}
+		sum.toneLine(&b)
+		return b.String() + "\n"
+	}
 	segs := sum.transcript.GetSegments()
 	fmt.Fprintf(&b, "%s for %s: %s", what, fmtDuration(dur.Seconds()), words.Count(len(segs), "transmission"))
 	if len(segs) > 0 {
@@ -878,32 +952,33 @@ func (sum *listenSummary) text(s *verbSession, dur time.Duration) string {
 	if sum.meter.OpenAtEnd {
 		b.WriteString(" A transmission was still in progress when the window ended.")
 	}
-	m := sum.meter
 	// A squelch that never opened while the level sat just under it is the 10 dB margin of the
 	// auto squelch excluding a weak, steady signal, not silence: say so, or the agent reads
 	// "0 transmissions" as an empty channel and listens again to find out.
-	if m.Samples > 0 && !units.SquelchOff(m.SquelchDb) && m.SquelchOpenFraction == 0 && !math.IsNaN(m.MaxPowerDbfs) &&
+	if m.Samples > 0 && m.SquelchOpenFraction == 0 && !math.IsNaN(m.MaxPowerDbfs) &&
 		m.SquelchDb-m.MaxPowerDbfs <= squelchNearMissDb {
 		fmt.Fprintf(&b, " The squelch never opened, but the level reached %.0f dBFS against a threshold of %.0f: a steady signal just under the margin, not an empty channel. squelch: off (or a lower squelch) hears it.",
 			m.MaxPowerDbfs, m.SquelchDb)
 	}
-	switch {
-	case m.Samples > 0 && units.SquelchOff(m.SquelchDb):
-		fmt.Fprintf(&b, "\nsignal %.0f to %.0f dBFS (mean %.0f), squelch off: the level range is the whole story.",
-			m.MinPowerDbfs, m.MaxPowerDbfs, m.MeanPowerDbfs)
-	case m.Samples > 0:
+	if m.Samples > 0 {
 		fmt.Fprintf(&b, "\nsignal %.0f to %.0f dBFS (mean %.0f), squelch %s, open %.0f%% of the time.",
 			m.MinPowerDbfs, m.MaxPowerDbfs, m.MeanPowerDbfs, squelchString(m.SquelchDb), 100*m.SquelchOpenFraction)
-	default:
+	} else {
 		b.WriteString("\nno meter readings arrived.")
 	}
-	if sum.tone != nil {
-		var tr subAudibleTracker
-		if line, ok := tr.line(sum.tone, ui.Style{}); ok {
-			b.WriteString("\n" + line)
-		}
-	}
+	sum.toneLine(&b)
 	return b.String() + "\n"
+}
+
+// toneLine adds the sub-audible tone or code on a line of its own, as `ley tune` prints it.
+func (sum *listenSummary) toneLine(b *strings.Builder) {
+	if sum.tone == nil {
+		return
+	}
+	var tr subAudibleTracker
+	if line, ok := tr.line(sum.tone, ui.Style{}); ok {
+		b.WriteString("\n" + line)
+	}
 }
 
 type snapshotArgs struct {
@@ -987,7 +1062,7 @@ func (srv *mcpServer) snapshot(ctx context.Context, _ *mcp.CallToolRequest, in s
 	if err != nil {
 		return nil, nil, err
 	}
-	text := errb.String() + snapshotText(row, s)
+	text := snapshotText(row, s)
 	if bo.freq != 0 {
 		text += levelAtText(row, bo.freq)
 	}
@@ -1001,6 +1076,8 @@ func (srv *mcpServer) snapshot(ctx context.Context, _ *mcp.CallToolRequest, in s
 			units.FormatFrequency(b.MinHz), units.FormatFrequency(b.MaxHz),
 			fmt.Sprintf("%.0f%%", 100*float64(row.SpanHz)/float64(b.WidthHz())))
 	}
+	// What the session said on the way (a retune) follows the row's own lines.
+	text += errb.String()
 	res := jsonResult(text, raw)
 	if !in.NoImage {
 		png, err := renderSpectrumPNG(row.Bins, row.FloorDb, row.CenterHz, row.SpanHz, row.Peaks, bo.freq)
@@ -1366,15 +1443,15 @@ func (srv *mcpServer) startDecodeJob(ctx context.Context, _ *mcp.CallToolRequest
 		}
 		cfg.DeviceId = d.GetDeviceId()
 	}
-	var b strings.Builder
+	var note string
 	if !cfg.TakeOver && srv.ownGrace(st, cfg.DeviceId) {
-		cfg.TakeOver = true
-		b.WriteString(ownGraceNote)
+		cfg.TakeOver, note = true, ownGraceNote
 	}
 	job, err := c.StartDecode(ctx, cfg)
 	if err != nil {
 		return nil, nil, toolError(decodeToolFailure(cfg.Decoder, err))
 	}
+	var b strings.Builder
 	fmt.Fprintf(&b, "%s: job %s", job.GetStatusDetail(), job.GetJobId())
 	if in.Keep {
 		fmt.Fprintf(&b, ", kept: it runs on after this server exits and its records are ley://records/%s, which query_records reads.", job.GetJobId())
@@ -1382,7 +1459,7 @@ func (srv *mcpServer) startDecodeJob(ctx context.Context, _ *mcp.CallToolRequest
 		b.WriteString(", running until this server exits; list_entities folds its records, and keep: true would store them for query_records.")
 	}
 	b.WriteString("\ncancel_job stops it.")
-	return protoResult(job, b.String())
+	return protoResult(job, afterOutcome(b.String(), note))
 }
 
 // decodeToolFailure is decodeFailure's sentence with the tool's remedies in

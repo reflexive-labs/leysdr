@@ -127,12 +127,17 @@ func (DecoderSignal) EnumDescriptor() ([]byte, []int) {
 	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{1}
 }
 
+// SEGMENTED delivers one over at a time: audio from `pre_roll_ms` before the squelch opened to
+// `hang_ms` after it closed, bracketed by frames marked SEGMENT_START and SEGMENT_END
+// (bulk.proto, Frame.segment), and nothing while the squelch is shut. A speech decoder reads it so
+// that one record is one speaker.
 type InputMode int32
 
 const (
 	InputMode_INPUT_MODE_UNSPECIFIED InputMode = 0
 	InputMode_CONTINUOUS             InputMode = 1
 	InputMode_SLOT_ALIGNED           InputMode = 2
+	InputMode_SEGMENTED              InputMode = 3
 )
 
 // Enum value maps for InputMode.
@@ -141,11 +146,13 @@ var (
 		0: "INPUT_MODE_UNSPECIFIED",
 		1: "CONTINUOUS",
 		2: "SLOT_ALIGNED",
+		3: "SEGMENTED",
 	}
 	InputMode_value = map[string]int32{
 		"INPUT_MODE_UNSPECIFIED": 0,
 		"CONTINUOUS":             1,
 		"SLOT_ALIGNED":           2,
+		"SEGMENTED":              3,
 	}
 )
 
@@ -298,7 +305,11 @@ const (
 	PredicateOp_PRED_GTE                 PredicateOp = 6
 	PredicateOp_PRED_IN                  PredicateOp = 7
 	PredicateOp_PRED_NOT_IN              PredicateOp = 8
-	// The field is a delimited list (a SAME alert's FIPS county codes) and one of `values` is in it.
+	// The field is a delimited list (a SAME alert's FIPS county codes, or the words of a speech
+	// record's text) and one of `values` is in it: the field and each value split into tokens on
+	// ',', space and '-', and a value matches when its tokens appear among the field's, whole,
+	// consecutive and in order, case-folded. "net control" matches "Net Control here"; "contr"
+	// matches nothing.
 	PredicateOp_PRED_CONTAINS PredicateOp = 9
 	// The field is present and non-empty; `values` is ignored.
 	PredicateOp_PRED_EXISTS PredicateOp = 10
@@ -386,8 +397,15 @@ type DecoderManifest struct {
 	NeedsDedicatedCapture       bool         `protobuf:"varint,12,opt,name=needs_dedicated_capture,json=needsDedicatedCapture,proto3" json:"needs_dedicated_capture,omitempty"`
 	StatefulPredicatesAvailable bool         `protobuf:"varint,13,opt,name=stateful_predicates_available,json=statefulPredicatesAvailable,proto3" json:"stateful_predicates_available,omitempty"`
 	// The program to spawn: a path relative to the manifest's directory, or a name on PATH.
-	Executable    string   `protobuf:"bytes,14,opt,name=executable,proto3" json:"executable,omitempty"`
-	Args          []string `protobuf:"bytes,15,rep,name=args,proto3" json:"args,omitempty"`
+	Executable string   `protobuf:"bytes,14,opt,name=executable,proto3" json:"executable,omitempty"`
+	Args       []string `protobuf:"bytes,15,rep,name=args,proto3" json:"args,omitempty"`
+	// The provider whose key the plugin calls with ("deepgram", "openai"); empty when it needs none.
+	// The daemon refuses to start the job with CREDENTIAL_MISSING when no key is set for it, and
+	// hands the key to the plugin when it spawns it (docs/design/ai.md).
+	CredentialProvider string `protobuf:"bytes,17,opt,name=credential_provider,json=credentialProvider,proto3" json:"credential_provider,omitempty"`
+	// The hosts the plugin contacts, so a person can see where the audio goes before running it.
+	// Advisory: nothing enforces it.
+	ContactsHosts []string `protobuf:"bytes,18,rep,name=contacts_hosts,json=contactsHosts,proto3" json:"contacts_hosts,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -534,6 +552,20 @@ func (x *DecoderManifest) GetArgs() []string {
 	return nil
 }
 
+func (x *DecoderManifest) GetCredentialProvider() string {
+	if x != nil {
+		return x.CredentialProvider
+	}
+	return ""
+}
+
+func (x *DecoderManifest) GetContactsHosts() []string {
+	if x != nil {
+		return x.ContactsHosts
+	}
+	return nil
+}
+
 type DecoderRecipe struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Where the protocol lives. One entry for most; several for a protocol with regional
@@ -632,7 +664,11 @@ type DecoderInput struct {
 	// mode (ADS-B, the 433 MHz soup) needs because the signal is gone by the time it is
 	// demodulated. Many IQ decoders share one wide capture (docs/design/decoders.md,
 	// "Multiplexing"); an IQ frame carries the whole band around the recipe's frequency.
-	Signal        DecoderSignal `protobuf:"varint,5,opt,name=signal,proto3,enum=leyline.v1.DecoderSignal" json:"signal,omitempty"`
+	Signal DecoderSignal `protobuf:"varint,5,opt,name=signal,proto3,enum=leyline.v1.DecoderSignal" json:"signal,omitempty"`
+	// SEGMENTED only: how much audio a segment keeps before the squelch opened and after it closed.
+	// A squelch that reopens inside the hang continues the same segment. 0 = 500 ms for each.
+	PreRollMs     uint32 `protobuf:"varint,6,opt,name=pre_roll_ms,json=preRollMs,proto3" json:"pre_roll_ms,omitempty"`
+	HangMs        uint32 `protobuf:"varint,7,opt,name=hang_ms,json=hangMs,proto3" json:"hang_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -700,6 +736,20 @@ func (x *DecoderInput) GetSignal() DecoderSignal {
 		return x.Signal
 	}
 	return DecoderSignal_DECODER_SIGNAL_UNSPECIFIED
+}
+
+func (x *DecoderInput) GetPreRollMs() uint32 {
+	if x != nil {
+		return x.PreRollMs
+	}
+	return 0
+}
+
+func (x *DecoderInput) GetHangMs() uint32 {
+	if x != nil {
+		return x.HangMs
+	}
+	return 0
 }
 
 type FieldHint struct {
@@ -801,7 +851,17 @@ type DecodeRecord struct {
 	ChannelId string `protobuf:"bytes,13,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
 	// The protocol's own record type, when it has more than one: APRS uses "position", "weather",
 	// "telemetry", "message", "status", "object". Empty for a protocol with one kind of record.
-	Kind          string `protobuf:"bytes,14,opt,name=kind,proto3" json:"kind,omitempty"`
+	Kind string `protobuf:"bytes,14,opt,name=kind,proto3" json:"kind,omitempty"`
+	// What the plugin's provider call for this record used, set by a plugin that calls one. The
+	// daemon fills `feature` and `job_id` and adds it to the ledger (ai.proto, Usage).
+	Usage *UsageReport `protobuf:"bytes,15,opt,name=usage,proto3" json:"usage,omitempty"`
+	// Set by the daemon: the recording part that holds this record's audio,
+	// ley://recordings/<id>/<part>, so the record can be checked by ear or decoded again. Empty when
+	// no recording holds it.
+	ClipUri string `protobuf:"bytes,16,opt,name=clip_uri,json=clipUri,proto3" json:"clip_uri,omitempty"`
+	// Set by the daemon under SEGMENTED input: which over within the part the record came from,
+	// 1-based. 0 when the input was not segmented.
+	Over          uint32 `protobuf:"varint,17,opt,name=over,proto3" json:"over,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -932,6 +992,27 @@ func (x *DecodeRecord) GetKind() string {
 		return x.Kind
 	}
 	return ""
+}
+
+func (x *DecodeRecord) GetUsage() *UsageReport {
+	if x != nil {
+		return x.Usage
+	}
+	return nil
+}
+
+func (x *DecodeRecord) GetClipUri() string {
+	if x != nil {
+		return x.ClipUri
+	}
+	return ""
+}
+
+func (x *DecodeRecord) GetOver() uint32 {
+	if x != nil {
+		return x.Over
+	}
+	return 0
 }
 
 type Position struct {
@@ -1197,7 +1278,11 @@ type DecodeConfig struct {
 	// Where a record that passes the predicate goes when it fires: a notification, a webhook, a shell
 	// hook. A notifier is a channel output like any other (docs/design/decoders.md), not a parallel
 	// delivery path: it receives the same records.
-	Notify        *NotifyTarget `protobuf:"bytes,7,opt,name=notify,proto3" json:"notify,omitempty"`
+	Notify *NotifyTarget `protobuf:"bytes,7,opt,name=notify,proto3" json:"notify,omitempty"`
+	// Decode a stored audio recording instead of a radio: ley://recordings/<id>. The daemon reads
+	// its parts in order as fast as the plugin accepts them, with no capture, channel or lease, so
+	// frequency_hz, device_id and take_over do not apply. Empty = tune a radio as above.
+	SourceUri     string `protobuf:"bytes,8,opt,name=source_uri,json=sourceUri,proto3" json:"source_uri,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1279,6 +1364,13 @@ func (x *DecodeConfig) GetNotify() *NotifyTarget {
 		return x.Notify
 	}
 	return nil
+}
+
+func (x *DecodeConfig) GetSourceUri() string {
+	if x != nil {
+		return x.SourceUri
+	}
+	return ""
 }
 
 // A stateless record filter. `all` clauses must match (AND); an empty predicate matches every
@@ -2154,7 +2246,7 @@ var File_leyline_v1_decode_proto protoreflect.FileDescriptor
 const file_leyline_v1_decode_proto_rawDesc = "" +
 	"\n" +
 	"\x17leyline/v1/decode.proto\x12\n" +
-	"leyline.v1\x1a\x17leyline/v1/common.proto\"\x8c\x05\n" +
+	"leyline.v1\x1a\x17leyline/v1/common.proto\x1a\x13leyline/v1/ai.proto\"\xe4\x05\n" +
 	"\x0fDecoderManifest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x18\n" +
@@ -2174,25 +2266,29 @@ const file_leyline_v1_decode_proto_rawDesc = "" +
 	"\n" +
 	"executable\x18\x0e \x01(\tR\n" +
 	"executable\x12\x12\n" +
-	"\x04args\x18\x0f \x03(\tR\x04args\"\xd1\x01\n" +
+	"\x04args\x18\x0f \x03(\tR\x04args\x12/\n" +
+	"\x13credential_provider\x18\x11 \x01(\tR\x12credentialProvider\x12%\n" +
+	"\x0econtacts_hosts\x18\x12 \x03(\tR\rcontactsHosts\"\xd1\x01\n" +
 	"\rDecoderRecipe\x12%\n" +
 	"\x0efrequencies_hz\x18\x01 \x03(\x04R\rfrequenciesHz\x12\x1f\n" +
 	"\vsample_rate\x18\x02 \x01(\x04R\n" +
 	"sampleRate\x12!\n" +
 	"\fbandwidth_hz\x18\x03 \x01(\rR\vbandwidthHz\x12)\n" +
 	"\x04mode\x18\x04 \x01(\x0e2\x15.leyline.v1.DemodModeR\x04mode\x12*\n" +
-	"\x04gain\x18\x05 \x01(\x0e2\x16.leyline.v1.GainPolicyR\x04gain\"\xd5\x01\n" +
+	"\x04gain\x18\x05 \x01(\x0e2\x16.leyline.v1.GainPolicyR\x04gain\"\x8e\x02\n" +
 	"\fDecoderInput\x12)\n" +
 	"\x04mode\x18\x01 \x01(\x0e2\x15.leyline.v1.InputModeR\x04mode\x12\x17\n" +
 	"\aslot_ms\x18\x02 \x01(\rR\x06slotMs\x12&\n" +
 	"\x0fepoch_offset_ms\x18\x03 \x01(\x03R\repochOffsetMs\x12&\n" +
 	"\x03tap\x18\x04 \x01(\x0e2\x14.leyline.v1.AudioTapR\x03tap\x121\n" +
-	"\x06signal\x18\x05 \x01(\x0e2\x19.leyline.v1.DecoderSignalR\x06signal\"\x80\x01\n" +
+	"\x06signal\x18\x05 \x01(\x0e2\x19.leyline.v1.DecoderSignalR\x06signal\x12\x1e\n" +
+	"\vpre_roll_ms\x18\x06 \x01(\rR\tpreRollMs\x12\x17\n" +
+	"\ahang_ms\x18\a \x01(\rR\x06hangMs\"\x80\x01\n" +
 	"\tFieldHint\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12)\n" +
 	"\x04type\x18\x02 \x01(\x0e2\x15.leyline.v1.FieldTypeR\x04type\x12\x12\n" +
 	"\x04unit\x18\x03 \x01(\tR\x04unit\x12 \n" +
-	"\vdescription\x18\x04 \x01(\tR\vdescription\"\xa7\x04\n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\"\x85\x05\n" +
 	"\fDecodeRecord\x12\x1b\n" +
 	"\trecord_id\x18\x01 \x01(\tR\brecordId\x12\x1a\n" +
 	"\bprotocol\x18\x02 \x01(\tR\bprotocol\x12*\n" +
@@ -2209,7 +2305,10 @@ const file_leyline_v1_decode_proto_rawDesc = "" +
 	"\x03seq\x18\f \x01(\x04R\x03seq\x12\x1d\n" +
 	"\n" +
 	"channel_id\x18\r \x01(\tR\tchannelId\x12\x12\n" +
-	"\x04kind\x18\x0e \x01(\tR\x04kind\x1aQ\n" +
+	"\x04kind\x18\x0e \x01(\tR\x04kind\x12-\n" +
+	"\x05usage\x18\x0f \x01(\v2\x17.leyline.v1.UsageReportR\x05usage\x12\x19\n" +
+	"\bclip_uri\x18\x10 \x01(\tR\aclipUri\x12\x12\n" +
+	"\x04over\x18\x11 \x01(\rR\x04over\x1aQ\n" +
 	"\vFieldsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12,\n" +
 	"\x05value\x18\x02 \x01(\v2\x16.leyline.v1.FieldValueR\x05value:\x028\x01\"w\n" +
@@ -2229,7 +2328,7 @@ const file_leyline_v1_decode_proto_rawDesc = "" +
 	"\x06number\x18\x03 \x01(\x01H\x00R\x06number\x12\x14\n" +
 	"\x04flag\x18\x04 \x01(\bH\x00R\x04flag\x12\x14\n" +
 	"\x04data\x18\x05 \x01(\fH\x00R\x04dataB\a\n" +
-	"\x05value\"\x80\x02\n" +
+	"\x05value\"\x9f\x02\n" +
 	"\fDecodeConfig\x12\x18\n" +
 	"\adecoder\x18\x01 \x01(\tR\adecoder\x12!\n" +
 	"\ffrequency_hz\x18\x02 \x01(\x04R\vfrequencyHz\x12\x1b\n" +
@@ -2237,7 +2336,9 @@ const file_leyline_v1_decode_proto_rawDesc = "" +
 	"\ttake_over\x18\x04 \x01(\bR\btakeOver\x12\x12\n" +
 	"\x04keep\x18\x05 \x01(\bR\x04keep\x123\n" +
 	"\tpredicate\x18\x06 \x01(\v2\x15.leyline.v1.PredicateR\tpredicate\x120\n" +
-	"\x06notify\x18\a \x01(\v2\x18.leyline.v1.NotifyTargetR\x06notify\"1\n" +
+	"\x06notify\x18\a \x01(\v2\x18.leyline.v1.NotifyTargetR\x06notify\x12\x1d\n" +
+	"\n" +
+	"source_uri\x18\b \x01(\tR\tsourceUri\"1\n" +
 	"\tPredicate\x12$\n" +
 	"\x03all\x18\x01 \x03(\v2\x12.leyline.v1.ClauseR\x03all\"h\n" +
 	"\x06Clause\x12-\n" +
@@ -2308,12 +2409,13 @@ const file_leyline_v1_decode_proto_rawDesc = "" +
 	"\rDecoderSignal\x12\x1e\n" +
 	"\x1aDECODER_SIGNAL_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fSIGNAL_AUDIO\x10\x01\x12\r\n" +
-	"\tSIGNAL_IQ\x10\x02*I\n" +
+	"\tSIGNAL_IQ\x10\x02*X\n" +
 	"\tInputMode\x12\x1a\n" +
 	"\x16INPUT_MODE_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
 	"CONTINUOUS\x10\x01\x12\x10\n" +
-	"\fSLOT_ALIGNED\x10\x02*f\n" +
+	"\fSLOT_ALIGNED\x10\x02\x12\r\n" +
+	"\tSEGMENTED\x10\x03*f\n" +
 	"\vOutputShape\x12\x1c\n" +
 	"\x18OUTPUT_SHAPE_UNSPECIFIED\x10\x00\x12\x11\n" +
 	"\rSHAPE_RECORDS\x10\x01\x12\x12\n" +
@@ -2391,7 +2493,8 @@ var file_leyline_v1_decode_proto_goTypes = []any{
 	(DemodMode)(0),               // 28: leyline.v1.DemodMode
 	(AudioTap)(0),                // 29: leyline.v1.AudioTap
 	(*SampleTime)(nil),           // 30: leyline.v1.SampleTime
-	(*CaptureAnchor)(nil),        // 31: leyline.v1.CaptureAnchor
+	(*UsageReport)(nil),          // 31: leyline.v1.UsageReport
+	(*CaptureAnchor)(nil),        // 32: leyline.v1.CaptureAnchor
 }
 var file_leyline_v1_decode_proto_depIdxs = []int32{
 	7,  // 0: leyline.v1.DecoderManifest.recipe:type_name -> leyline.v1.DecoderRecipe
@@ -2408,33 +2511,34 @@ var file_leyline_v1_decode_proto_depIdxs = []int32{
 	11, // 11: leyline.v1.DecodeRecord.position:type_name -> leyline.v1.Position
 	12, // 12: leyline.v1.DecodeRecord.validity:type_name -> leyline.v1.Validity
 	27, // 13: leyline.v1.DecodeRecord.fields:type_name -> leyline.v1.DecodeRecord.FieldsEntry
-	15, // 14: leyline.v1.DecodeConfig.predicate:type_name -> leyline.v1.Predicate
-	19, // 15: leyline.v1.DecodeConfig.notify:type_name -> leyline.v1.NotifyTarget
-	16, // 16: leyline.v1.Predicate.all:type_name -> leyline.v1.Clause
-	17, // 17: leyline.v1.Clause.field:type_name -> leyline.v1.FieldTest
-	18, // 18: leyline.v1.Clause.geo:type_name -> leyline.v1.GeoTest
-	5,  // 19: leyline.v1.FieldTest.op:type_name -> leyline.v1.PredicateOp
-	13, // 20: leyline.v1.FieldTest.values:type_name -> leyline.v1.FieldValue
-	11, // 21: leyline.v1.GeoTest.center:type_name -> leyline.v1.Position
-	6,  // 22: leyline.v1.ListDecodersResponse.decoders:type_name -> leyline.v1.DecoderManifest
-	11, // 23: leyline.v1.RecordQuery.near:type_name -> leyline.v1.Position
-	24, // 24: leyline.v1.RecordQuery.fields:type_name -> leyline.v1.FieldMatch
-	13, // 25: leyline.v1.FieldMatch.equals:type_name -> leyline.v1.FieldValue
-	10, // 26: leyline.v1.RecordPage.records:type_name -> leyline.v1.DecodeRecord
-	26, // 27: leyline.v1.RecordPage.anchors:type_name -> leyline.v1.RecordAnchor
-	31, // 28: leyline.v1.RecordAnchor.anchor:type_name -> leyline.v1.CaptureAnchor
-	13, // 29: leyline.v1.DecodeRecord.FieldsEntry.value:type_name -> leyline.v1.FieldValue
-	20, // 30: leyline.v1.Decoders.ListDecoders:input_type -> leyline.v1.ListDecodersRequest
-	22, // 31: leyline.v1.Decoders.SubscribeRecords:input_type -> leyline.v1.RecordSubscription
-	23, // 32: leyline.v1.Decoders.QueryRecords:input_type -> leyline.v1.RecordQuery
-	21, // 33: leyline.v1.Decoders.ListDecoders:output_type -> leyline.v1.ListDecodersResponse
-	10, // 34: leyline.v1.Decoders.SubscribeRecords:output_type -> leyline.v1.DecodeRecord
-	25, // 35: leyline.v1.Decoders.QueryRecords:output_type -> leyline.v1.RecordPage
-	33, // [33:36] is the sub-list for method output_type
-	30, // [30:33] is the sub-list for method input_type
-	30, // [30:30] is the sub-list for extension type_name
-	30, // [30:30] is the sub-list for extension extendee
-	0,  // [0:30] is the sub-list for field type_name
+	31, // 14: leyline.v1.DecodeRecord.usage:type_name -> leyline.v1.UsageReport
+	15, // 15: leyline.v1.DecodeConfig.predicate:type_name -> leyline.v1.Predicate
+	19, // 16: leyline.v1.DecodeConfig.notify:type_name -> leyline.v1.NotifyTarget
+	16, // 17: leyline.v1.Predicate.all:type_name -> leyline.v1.Clause
+	17, // 18: leyline.v1.Clause.field:type_name -> leyline.v1.FieldTest
+	18, // 19: leyline.v1.Clause.geo:type_name -> leyline.v1.GeoTest
+	5,  // 20: leyline.v1.FieldTest.op:type_name -> leyline.v1.PredicateOp
+	13, // 21: leyline.v1.FieldTest.values:type_name -> leyline.v1.FieldValue
+	11, // 22: leyline.v1.GeoTest.center:type_name -> leyline.v1.Position
+	6,  // 23: leyline.v1.ListDecodersResponse.decoders:type_name -> leyline.v1.DecoderManifest
+	11, // 24: leyline.v1.RecordQuery.near:type_name -> leyline.v1.Position
+	24, // 25: leyline.v1.RecordQuery.fields:type_name -> leyline.v1.FieldMatch
+	13, // 26: leyline.v1.FieldMatch.equals:type_name -> leyline.v1.FieldValue
+	10, // 27: leyline.v1.RecordPage.records:type_name -> leyline.v1.DecodeRecord
+	26, // 28: leyline.v1.RecordPage.anchors:type_name -> leyline.v1.RecordAnchor
+	32, // 29: leyline.v1.RecordAnchor.anchor:type_name -> leyline.v1.CaptureAnchor
+	13, // 30: leyline.v1.DecodeRecord.FieldsEntry.value:type_name -> leyline.v1.FieldValue
+	20, // 31: leyline.v1.Decoders.ListDecoders:input_type -> leyline.v1.ListDecodersRequest
+	22, // 32: leyline.v1.Decoders.SubscribeRecords:input_type -> leyline.v1.RecordSubscription
+	23, // 33: leyline.v1.Decoders.QueryRecords:input_type -> leyline.v1.RecordQuery
+	21, // 34: leyline.v1.Decoders.ListDecoders:output_type -> leyline.v1.ListDecodersResponse
+	10, // 35: leyline.v1.Decoders.SubscribeRecords:output_type -> leyline.v1.DecodeRecord
+	25, // 36: leyline.v1.Decoders.QueryRecords:output_type -> leyline.v1.RecordPage
+	34, // [34:37] is the sub-list for method output_type
+	31, // [31:34] is the sub-list for method input_type
+	31, // [31:31] is the sub-list for extension type_name
+	31, // [31:31] is the sub-list for extension extendee
+	0,  // [0:31] is the sub-list for field type_name
 }
 
 func init() { file_leyline_v1_decode_proto_init() }
@@ -2443,6 +2547,7 @@ func file_leyline_v1_decode_proto_init() {
 		return
 	}
 	file_leyline_v1_common_proto_init()
+	file_leyline_v1_ai_proto_init()
 	file_leyline_v1_decode_proto_msgTypes[5].OneofWrappers = []any{}
 	file_leyline_v1_decode_proto_msgTypes[7].OneofWrappers = []any{
 		(*FieldValue_Text)(nil),

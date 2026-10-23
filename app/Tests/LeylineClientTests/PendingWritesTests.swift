@@ -38,6 +38,16 @@ final class PendingWritesTests: XCTestCase {
         XCTAssertEqual(out[1].squelchDb, -60)
     }
 
+    /// A measured squelch and a level are one parameter, as the daemon keys them: the last wins.
+    func testAnAutoSquelchAndALevelAreOneParameter() {
+        var p = PendingWrites()
+        p.set(.squelchDb(-60), target: "chan_1")
+        p.set(.squelchAutoDb(-53), target: "chan_1")
+        let out = p.drain()
+        XCTAssertEqual(out.count, 1)
+        XCTAssertEqual(out[0].param, .squelchAutoDb(-53))
+    }
+
     func testEmptyParameterIsDropped() {
         var p = PendingWrites()
         var w = Leyline_V1_ParamWrite()

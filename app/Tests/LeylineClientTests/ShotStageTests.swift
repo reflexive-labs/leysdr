@@ -27,7 +27,8 @@ final class ShotStageTests: XCTestCase {
             """
             {"window":{"width":1440,"height":820},"place":"library","inspector":true,
              "expanded_band":"2m","select_bookmark":"Calling","select_part":2,
-             "import_chirp":"/tmp/handheld.csv","settle":4.5,"on_air":true,"zoom":2,"scan_band":true,"play_part":true}
+             "import_chirp":"/tmp/handheld.csv","settle":4.5,"on_air":true,"zoom":2,"scan_band":true,"play_part":true,
+             "assistant":true,"focus_filter":true,"channels_picker":"gmrs"}
             """)
         let stage = try ShotStage.read(at: url)
         XCTAssertEqual(
@@ -36,7 +37,7 @@ final class ShotStageTests: XCTestCase {
                 window: .init(width: 1440, height: 820), place: .library, inspector: true,
                 expandedBand: "2m", selectBookmark: "Calling", selectPart: 2,
                 importCHIRP: "/tmp/handheld.csv", settle: 4.5, onAir: true, zoom: 2, scanBand: true,
-                playPart: true)
+                playPart: true, assistant: true, focusFilter: true, channelsPicker: "gmrs")
         )
     }
 
@@ -66,6 +67,9 @@ final class ShotStageTests: XCTestCase {
         XCTAssertEqual(
             ShotStage.regionsURL(besideStage: URL(fileURLWithPath: "/s/stage.json")).path,
             "/s/regions.json")
+        XCTAssertEqual(
+            ShotStage.pictureURL(besideStage: URL(fileURLWithPath: "/s/stage.json")).path,
+            "/s/window.png")
     }
 
     func testAWindowRectIsMeasuredFromTheTopLeft() throws {
@@ -81,7 +85,7 @@ final class ShotStageTests: XCTestCase {
         let url = try stageFile("{}").deletingLastPathComponent()
             .appendingPathComponent("regions.json")
         let regions = ShotRegions(
-            windowNumber: 4242,
+            windowNumber: 4242, scale: 2,
             regions: [
                 .window: .init(x: 0, y: 0, width: 1440, height: 820),
                 .toolbar: .init(x: 0, y: 0, width: 1440, height: 52),
@@ -89,6 +93,7 @@ final class ShotStageTests: XCTestCase {
         try regions.write(to: url)
         let back = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
         XCTAssertEqual(back?["window_number"] as? Int, 4242)
+        XCTAssertEqual(back?["scale"] as? Double, 2)
         let named = back?["regions"] as? [String: [String: Double]]
         XCTAssertEqual(named?["toolbar"], ["x": 0, "y": 0, "width": 1440, "height": 52])
         XCTAssertEqual(named?.keys.sorted(), ["toolbar", "window"])

@@ -9,6 +9,8 @@ import Foundation
 import LeylineServer
 import Logging
 
+extension SecretsKind: ExpressibleByArgument {}
+
 @main
 struct DaemonCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -31,6 +33,9 @@ struct DaemonCommand: AsyncParsableCommand {
 
     @Flag(name: .customLong("no-hardware"), help: "Never look for USB dongles: the daemon hosts only what is attached to it (file devices, rtl_tcp). For a daemon that must see nothing but its test radios, such as an eval's.")
     var noHardware = false
+
+    @Flag(name: .customLong("no-audio"), help: "Play nothing through the speakers: every audio sink a client attaches, and every recording played, is accepted and discarded. For a staged or check run beside a person at the Mac.")
+    var noAudio = false
 
     @Option(name: .customLong("rtltcp"), help: "Remote dongle served by rtl_tcp, as host:port, for foreground runs (repeatable; env LEYLINE_RTLTCP, comma-separated). A radio the daemon should keep is attached over the protocol instead, with `ley devices attach`.")
     var rtltcp: [String] = []
@@ -56,11 +61,23 @@ struct DaemonCommand: AsyncParsableCommand {
     @Option(name: .customLong("recordings-age"), help: "Days a recording is held before it is dropped; 0 keeps them until the cap does.")
     var recordingsAge: UInt32 = 0
 
+    @Option(help: "The data directory: what the daemon keeps about AI keys and each feature's model, and, where there is no keychain, the keys themselves (platform default otherwise).")
+    var data: String = defaultDataDirectory()
+
+    @Option(help: "Where AI keys are kept: file (secrets/credentials.json in --data, on every platform) or keychain (the login keychain; macOS only). Env LEYLINE_SECRETS; the default is the keychain on macOS and the file elsewhere. A daemon started for tests or evals uses file, so its keys never reach the login keychain.")
+    var secrets: SecretsKind?
+
+    @Option(help: "The ley executable the daemon runs to check keys and call providers (env LEYLINE_LEY; otherwise the one beside leylined, then PATH).")
+    var ley: String?
+
     @Option(name: .customLong("log-file"), help: "Append standard output and error to this file, creating it and its directory; a leading ~/ is the home directory. For a launch agent that cannot redirect them itself.")
     var logFile: String?
 
     @Option(name: .customLong("wall-clock"), help: "Development: shift the wall clock captures, recordings and records are dated from so the daemon starts at HH:MM local time today, for staged screenshots. Retention still runs on the real clock.")
     var wallClock: String?
+
+    @Option(name: .customLong("file-scan-dwell"), help: "Development: a scan on a file device that asks for a shorter dwell dwells this many milliseconds, so its single step lasts long enough for a check scene to see the sweep in progress. A scan on any other radio is unchanged.")
+    var fileScanDwell: UInt32 = 0
 
     func run() async throws {
         if let logFile {
@@ -73,6 +90,7 @@ struct DaemonCommand: AsyncParsableCommand {
             // A file is fully buffered by default; a log line must reach it when it is written.
             setvbuf(stdout, nil, _IOLBF, 0)
         }
+        if noAudio { SinkFactory.setSilenced(true) }
         if let wallClock {
             do {
                 let (hour, minute) = try WallClock.parseClockTime(wallClock)
@@ -94,11 +112,16 @@ struct DaemonCommand: AsyncParsableCommand {
         let pid = pidfile ?? (URL(fileURLWithPath: socket).deletingLastPathComponent().path + "/leylined.pid")
         let remotes = try Daemon.parseRTLTCPEndpoints(rtltcp + rtltcpEndpointsFromEnvironment())
         let searchPath = decoderSearchPath(configured: decoders)
-        let daemon = Daemon(config: .init(socketPath: socket, pidfile: pid, pollMs: pollMs, enumerateHardware: !noHardware, rtltcp: remotes,
-                                          decoderSearchPath: searchPath, storePath: store,
-                                          storeCapBytes: storeCap, storeAgeDays: storeAge,
-                                          recordingsPath: recordings, recordingsCapBytes: recordingsCap,
-                                          recordingsAgeDays: recordingsAge, version: leylinedVersion))
+        var config = Daemon.Config(socketPath: socket, pidfile: pid, pollMs: pollMs, enumerateHardware: !noHardware, rtltcp: remotes,
+                                   decoderSearchPath: searchPath, storePath: store,
+                                   storeCapBytes: storeCap, storeAgeDays: storeAge,
+                                   recordingsPath: recordings, recordingsCapBytes: recordingsCap,
+                                   recordingsAgeDays: recordingsAge, dataPath: data,
+                                   leyPath: ley.map { expandingTilde($0) } ?? leyPathFromEnvironment(),
+                                   version: leylinedVersion)
+        config.secrets = secrets
+        config.fileScanDwellMs = fileScanDwell
+        let daemon = Daemon(config: config)
         // A write to a socket whose peer vanished (rtl_tcp dying mid-command) must be an error
         // return, never a process-killing SIGPIPE.
         signal(SIGPIPE, SIG_IGN)

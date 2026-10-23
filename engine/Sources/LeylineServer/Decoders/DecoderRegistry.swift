@@ -12,6 +12,7 @@ import Foundation
 import LeylineProto
 import Logging
 import SwiftProtobuf
+import Synchronization
 
 struct DecoderRegistry: Sendable {
     /// One decoder as found on disk: its manifest, the directory it was found in, and the
@@ -33,16 +34,13 @@ struct DecoderRegistry: Sendable {
     /// executables beside the daemon (`bundledDecodersPath`).
     let programDirectories: [String]
     private let log = Logger(label: "leyline.decoders")
+    /// The shadowed manifests already logged, so a listing does not repeat the line every time.
+    /// A class so every copy of the registry shares it.
+    private let shadowsLogged = LoggedOnce()
 
-    init(searchPath: [String], programDirectories: [String] = DecoderRegistry.daemonDirectory()) {
+    init(searchPath: [String], programDirectories: [String] = ProgramLocator.daemonDirectory()) {
         self.searchPath = searchPath
         self.programDirectories = programDirectories
-    }
-
-    /// The directory of the running `leylined`, or nothing when it cannot be found.
-    static func daemonDirectory() -> [String] {
-        guard let exe = currentExecutablePath() else { return [] }
-        return [URL(fileURLWithPath: exe).deletingLastPathComponent().path]
     }
 
     func scan() -> [Installed] {
@@ -52,7 +50,9 @@ struct DecoderRegistry: Sendable {
             for sub in subdirectories(of: dir) {
                 guard let installed = read(directory: sub) else { continue }
                 guard seen.insert(installed.manifest.name).inserted else {
-                    log.debug("decoder \(installed.manifest.name) in \(sub) is shadowed by an earlier one")
+                    if shadowsLogged.first(sub) {
+                        log.debug("decoder \(installed.manifest.name) in \(sub) is shadowed by an earlier one")
+                    }
                     continue
                 }
                 out.append(installed)
@@ -115,13 +115,16 @@ struct DecoderRegistry: Sendable {
         }
         let local = directory + "/" + executable
         if fm.isExecutableFile(atPath: local) { return local }
-        guard !executable.contains("/") else { return nil }
-        let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
-        let dirs = programDirectories + path.split(separator: ":").map(String.init)
-        for dir in dirs where !dir.isEmpty {
-            let candidate = String(dir) + "/" + executable
-            if fm.isExecutableFile(atPath: candidate) { return candidate }
-        }
-        return nil
+        return ProgramLocator(directories: programDirectories).find(executable)
+    }
+}
+
+/// Keys seen before, for a log line said once.
+private final class LoggedOnce: Sendable {
+    private let seen = Mutex<Set<String>>([])
+
+    /// True the first time `key` is given.
+    func first(_ key: String) -> Bool {
+        seen.withLock { $0.insert(key).inserted }
     }
 }

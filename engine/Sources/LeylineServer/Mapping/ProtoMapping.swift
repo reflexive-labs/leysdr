@@ -170,7 +170,10 @@ enum ProtoMapping {
         return out
     }
 
-    static func channel(id: ChannelID, captureID: CaptureID, config: ChannelConfig, state: ChannelState?, owner: Leyline_V1_ClientInfo) -> Leyline_V1_Channel {
+    /// `squelchAuto` is how the level was chosen (`SessionStore.ChannelEntry.squelchAuto`); a
+    /// squelch that is off has no source.
+    static func channel(id: ChannelID, captureID: CaptureID, config: ChannelConfig, state: ChannelState?, owner: Leyline_V1_ClientInfo,
+                        squelchAuto: Bool = false) -> Leyline_V1_Channel {
         var out = Leyline_V1_Channel()
         out.channelID = id.string
         out.captureID = captureID.string
@@ -178,6 +181,7 @@ enum ProtoMapping {
         out.bandwidthHz = config.bandwidthHz
         out.mode = demodMode(config.mode)
         out.squelchDb = config.squelchDB
+        out.squelchSource = config.squelchDB.isNaN ? .unspecified : squelchAuto ? .squelchAuto : .squelchManual
         out.agc = gainMode(config.agc)
         out.state = state.map(channelState) ?? .unspecified
         out.persistent = config.persistent
@@ -208,9 +212,10 @@ enum ProtoMapping {
              EngineError.Code.scanNotFound, EngineError.Code.decoderNotFound:
             return .notFound
         case EngineError.Code.deviceBusy, EngineError.Code.deviceSweeping, EngineError.Code.noDevice,
-             EngineError.Code.failedPrecondition, EngineError.Code.decoderFailed:
+             EngineError.Code.failedPrecondition, EngineError.Code.decoderFailed, EngineError.Code.credentialMissing,
+             EngineError.Code.credentialRejected, EngineError.Code.providerRefused:
             return .failedPrecondition
-        case EngineError.Code.deviceDetached, EngineError.Code.deviceIO:
+        case EngineError.Code.deviceDetached, EngineError.Code.deviceIO, EngineError.Code.providerUnavailable:
             return .unavailable
         case EngineError.Code.freqOutOfRange, EngineError.Code.rateUnsupported, EngineError.Code.offsetOutOfCapture,
              EngineError.Code.blindSpot, EngineError.Code.gainElementUnknown, EngineError.Code.invalidArgument:

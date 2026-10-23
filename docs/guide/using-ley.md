@@ -784,6 +784,43 @@ A recording that is still being made is refused, because the daemon has a part o
 `ley jobs cancel job_…` first, and the recording is complete when it stops. Deleting the
 directory in Finder does the same as `delete`, and the daemon does not need to be told.
 
+### Transcribing a recording
+
+`ley transcribe` turns the overs of a gated recording into text, one record per over, which
+`ley records --protocol speech` reads back later. The daemon reads the stored parts faster than
+real time and sends a speech decoder only the audio around each over, so before it starts,
+`transcribe` states how many minutes of squelch-open audio that is and where it goes, and asks.
+`--yes` skips the question. A recording made without `--gate squelch` lists no overs and has
+nothing to transcribe. This was recorded against the fake daemon, with its words seeded:
+
+```console
+$ ley transcribe job_01SEED
+Transcribe 2 parts, 0.1 min of squelch-open audio from 146.520 MHz NFM, with speech (sends the audio to api.openai.com)? [y/N] y
+14:03:00 part 1 over 1  this is whiskey six alpha bravo charlie (W6ABC)
+14:03:03 part 1 over 3  kilo delta two x-ray yankee zulu, go ahead (KD2XYZ)
+14:03:16 part 2 over 1  roger, see you at six alpha
+Transcribed 3 records, kept as ley://records/job_01M4YD5AKAGK8S2QREFDM9RV91
+Next: ley records --protocol speech --job-id job_01M4YD5AKAGK8S2QREFDM9RV91
+```
+
+Each line is one over: when it was heard, which part of the recording holds it, and the words. The
+callsigns in parentheses are what a pattern found in the text after the phonetic alphabet was
+folded into letters, so check a doubtful one by ear: `ley play job_01SEED --part 1 --over 3`
+plays just that over. `ley transcribe --help` lists the rest.
+
+The `speech` decoder sends each over to OpenAI's transcription API on your own key, so add one
+first with `ley ai add openai`, which also makes `whisper-1` the speech model when none is chosen;
+it is billed by the minute of audio, and `ley ai usage` shows how much was sent.
+`ley ai use speech openai <model>` chooses another model, and `transcribe --model` does the same
+for one run and the ones after it. A key added with
+`--endpoint` sends the audio to that OpenAI-compatible server instead, such as a Whisper server on
+your own network; it chooses no model, since the server names its own, so choose one with
+`ley ai use speech openai <model>`. What leaves the Mac is the audio of each over, half a second either side, and a
+vocabulary hint that helps the model spell callsigns: the phonetic alphabet and a few net phrases.
+Where passing on what you received is restricted, keep speech off or transcribe on a server of
+your own. A decoder named `speech-scripted` is installed beside it: it replays a file of lines,
+sends nothing anywhere, and is what the tests transcribe with.
+
 ## 12. Decode what is being said
 
 `ley decode` shows what the packets on a frequency contain. The daemon runs a decoder,
@@ -792,12 +829,19 @@ line per record. `ley decoders` lists what is installed and where each one liste
 
 ```console
 $ ley decoders
-NAME  FREQUENCY         MODE        OUTPUTS            VERSION
-aprs  144.390 MHz (+1)  NFM 15 kHz  records, entities  0.1.0
+NAME                 FREQUENCY         MODE        OUTPUTS            VERSION  NEEDS       SENDS TO
+ais (vessels)        161.975 MHz (+1)  NFM 25 kHz  records, entities  0.1.0    -           -
+aprs                 144.390 MHz (+1)  NFM 15 kHz  records, entities  0.1.0    -           -
+iqstat               100.000 MHz       NFM         records            0.1.0    -           -
+same                 162.400 MHz (+6)  NFM 15 kHz  records            0.1.0    -           -
+speech (transcribe)  -                 NFM         records            0.2.0    openai key  api.openai.com
+speech-scripted      -                 NFM         records            0.2.0    -           -
 looked in /Users/you/Library/Application Support/Leyline/decoders
 kept records in /Users/you/Library/Application Support/Leyline/store, 2 GiB or 90 days, whichever comes first
 ```
 
+`NEEDS` and `SENDS TO` are filled in for a decoder that calls a model provider: `speech` runs on
+your OpenAI key and sends what it hears to api.openai.com ("Transcribing a recording", above).
 A decoder carries its own recipe (the frequency, the mode, the bandwidth), so `decode` takes no
 tune flags. APRS is the first one: position, weather, telemetry, status and message packets that
 amateur stations send on 144.390 MHz in North America (`--freq 144.8` is the European
@@ -925,6 +969,37 @@ contract every decoder speaks is in
 the others (ADS-B aircraft, 433 MHz sensors, FT8) is `docs/plans/decoders.md`, and `ley help
 roadmap` names what is next.
 
+### Listening with words
+
+`ley decode speech` transcribes a channel as it plays, one line per over, the way `ley transcribe`
+does a recording. Speech has no frequency of its own, so `--freq` says where to listen. While it
+runs, the daemon records the overs as a gated recording under the job's id, so each line names the
+part and the over that hold the words, and `ley play` plays them when one looks doubtful. This was
+recorded against the real daemon playing the `nfm_keyed` fixture, with the scripted engine
+standing in for OpenAI and reading three lines:
+
+```console
+$ ley decode speech --freq 146.62 --job --count 2
+decoding speech on 146.620 MHz. The overs are recorded as ley://recordings/job_01M4YPPH53MVHM3WWX83TDNP0A. kept: it runs on after ley exits
+02:36:45 part 1 over 1  this is whiskey six alpha bravo charlie (W6ABC)
+02:36:48 part 1 over 2  kilo delta two x-ray yankee zulu, go ahead (KD2XYZ)
+left running; ley jobs cancel 2 stops it
+$ ley records --protocol speech
+TIME      PROTOCOL  DEVICE  KIND  OVER  SUMMARY
+02:36:47  speech    -       -     1/2   kilo delta two x-ray yankee zulu, go ahead
+02:36:43  speech    -       -     1/1   this is whiskey six alpha bravo charlie
+```
+
+With `--job` the job transcribes until `ley jobs cancel`, and the words and the recording are both
+kept; without it, the recording goes when the job ends. The recording holds every over, including
+the ones a watch's filter leaves out. A kept job's recording may grow to a tenth of the record
+store's cap (`leylined --store-cap`, 2 GiB by default) before its own oldest parts are removed, so
+a job left running for weeks keeps its latest overs without pushing out your other recordings. Once the job has ended, `ley transcribe`
+can read its recording again with another model and gives the same parts and overs. A watch works
+on the words too: `ley watch speech --freq 146.52 --where 'text~net control' --notify --detach`
+shows a notification whenever an over says "net control", since `~` matches whole words in order
+and ignores case.
+
 ## 13. For scripts and agents
 
 `ley help scripting` is the authoritative short version; every `--json` shape and exit code is
@@ -989,6 +1064,32 @@ $ ley presets --json | jq -r '.[].name'                  # client-local tables, 
 $ ley spectrum 101.1 --json                              # {seq, sample_index, center_hz, span_hz, bins, floor_db, peaks}
 $ ley daemon status --json                               # DaemonInfo; exit 3 and no pid when not running
 ```
+
+### Keys for the assistant and speech
+
+The assistant is Leyline's own agent, running on your provider key with the same tools `ley mcp`
+gives any agent; you talk to it in the app, in the Assistant panel (View ▸ Show Assistant, ⇧⌘A). One
+key is the whole setup, and it transcribes a gated recording too:
+
+```console
+$ ley ai add openai
+Paste the openai key and press Enter:
+openai key …7c2e added; the provider accepted it. The assistant and speech now use openai (gpt-5, whisper-1); change one with ley ai use <feature> <provider> [<model>]
+$ ley transcribe job_01SEED
+```
+
+The key gives every feature its provider serves, and that has no model yet, the provider's default:
+an `openai` key serves both, an `anthropic` key the assistant (`claude-sonnet-5-5`). A model
+already chosen is kept, so a second key changes nothing until you ask: `ley ai use anthropic`
+moves every feature anthropic serves to it, `ley ai use assistant anthropic claude-opus-5-5` one
+feature to a model you name, and `ley ai` shows what each feature calls. A key added with
+`--endpoint`, for a gateway or a server on your own network, sets no model, since its server names
+its own: `ley ai use assistant <provider> <model>` chooses one.
+
+In the app, Leyline > Settings… (⌘,), AI does the same: paste the key into Add a key, see the
+models it set under Features, change one there, and read under each choice what it sends and to
+which host. The daemon holds the key and makes the choices, so one added in either place shows in
+the other.
 
 ## 14. When things go wrong
 

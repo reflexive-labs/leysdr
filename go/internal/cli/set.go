@@ -204,17 +204,23 @@ func resolveTarget(s *verbSession, channelSel, captureSel string, hint targetHin
 				return nil, nil, fmt.Errorf("nothing is playing; start with: ley tune 146.52 (or pick a channel with %s)", hint.pick)
 			}
 		default:
-			var cli []*leylinev1.Channel
+			// "Made by ley" is made by a client of the caller's own kind: a ley verb prefers
+			// what ley made, the MCP adapter what an agent made through it.
+			kind, maker := "cli", "ley"
+			if s.app.clientKind == "mcp" {
+				kind, maker = "mcp", "an agent"
+			}
+			var own []*leylinev1.Channel
 			for _, c := range active {
-				if c.GetOwner().GetKind() == "cli" {
-					cli = append(cli, c)
+				if c.GetOwner().GetKind() == kind {
+					own = append(own, c)
 				}
 			}
-			if len(cli) != 1 {
+			if len(own) != 1 {
 				return nil, nil, fmt.Errorf("%d channels are playing; pick one with %s:\n%s\ne.g. %s", len(active), hint.pick, channelTable(st, active), hint.example)
 			}
-			ch = cli[0]
-			s.say("using channel %d, %s (the only active channel ley made)\n", channelRow(st, ch), channelSummary(st, ch))
+			ch = own[0]
+			s.say("using channel %d, %s (the only active channel %s made)\n", channelRow(st, ch), channelSummary(st, ch), maker)
 		}
 	}
 	if capture == nil && ch != nil {
@@ -268,7 +274,7 @@ func showSettings(s *verbSession, ch *leylinev1.Channel, capture *leylinev1.Capt
 	}
 	squelch := "off (audio always on)"
 	if !units.SquelchOff(ch.SquelchDb) {
-		squelch = fmt.Sprintf("%.0f dBFS", ch.SquelchDb)
+		squelch = fmt.Sprintf("%.0f dBFS", ch.SquelchDb) + autoSuffix(ch)
 	}
 	volume := "no speaker sink"
 	for _, sk := range s.State.Sinks {
@@ -339,11 +345,10 @@ func buildWrites(ctx context.Context, s *verbSession, param, value string, ch *l
 		return nil
 	}
 	if param == "freq" {
-		t, terr := resolveDial(value, "146.52 (MHz)", nil)
-		if terr != nil {
+		var terr error
+		if hz, terr = setFreqHz(value); terr != nil {
 			return nil, nil, 0, paramErr(param, terr)
 		}
-		hz = t.Hz
 		if err := needCapture(); err != nil {
 			return nil, nil, 0, err
 		}
@@ -397,6 +402,14 @@ func buildWrites(ctx context.Context, s *verbSession, param, value string, ch *l
 	return writes, confirmed, 0, err
 }
 
+// setFreqHz reads a set freq value the way tune reads a frequency: a number, a unit or a preset.
+// buildWrites and the MCP adapter's retune refusal both read it here, so they agree on where
+// the write goes.
+func setFreqHz(value string) (uint64, error) {
+	t, err := resolveDial(value, "146.52 (MHz)", nil)
+	return t.Hz, err
+}
+
 // buildChannelWrites handles the channel-scoped parameters (squelch, bw,
 // mode, volume) for buildWrites.
 func buildChannelWrites(ctx context.Context, s *verbSession, param, value string, ch *leylinev1.Channel, capture *leylinev1.Capture, needChannel func() error) ([]*leylinev1.ParamWrite, func(*leylinev1.Event) bool, error) {
@@ -425,9 +438,13 @@ func buildChannelWrites(ctx context.Context, s *verbSession, param, value string
 			}
 			s.say("squelch auto → %.0f dBFS (10 dB above the band's noise floor, %.0f dBFS)\n", db, floor)
 		}
-		w := &leylinev1.ParamWrite{Tag: 1, TargetId: ch.ChannelId, Param: &leylinev1.ParamWrite_SquelchDb{SquelchDb: db}}
+		w := squelchWrite(1, ch.ChannelId, db, auto)
+		want := leylinev1.SquelchSource_SQUELCH_MANUAL
+		if auto {
+			want = leylinev1.SquelchSource_SQUELCH_AUTO
+		}
 		return []*leylinev1.ParamWrite{w}, channelEvent(func(c *leylinev1.Channel) bool {
-			return units.SquelchOff(db) && units.SquelchOff(c.SquelchDb) || c.SquelchDb == db
+			return units.SquelchOff(db) && units.SquelchOff(c.SquelchDb) || c.SquelchDb == db && c.SquelchSource == want
 		}), nil
 	case "bw":
 		bw, err := units.ParseBandwidth(value)
@@ -554,24 +571,58 @@ func buildGainWrites(s *verbSession, value string, capture *leylinev1.Capture) (
 
 // runSet writes, waits for confirmation (or a rejection) and prints the result.
 func runSet(ctx context.Context, s *verbSession, param, value string, ch *leylinev1.Channel, capture *leylinev1.Capture, retune bool) error {
-	var (
-		writes    []*leylinev1.ParamWrite
-		confirmed func(*leylinev1.Event) bool
-		hz        uint64
-		stages    []string
-		err       error
-	)
-	if param == "gain" {
-		writes, confirmed, stages, err = buildGainWrites(s, value, capture)
-	} else {
-		writes, confirmed, hz, err = buildWrites(ctx, s, param, value, ch, capture, retune)
-	}
+	res, err := applySet(ctx, s, param, value, ch, capture, retune)
 	if err != nil {
 		return err
 	}
+	if s.app.JSON {
+		if err := s.app.printJSON(res.event); err != nil {
+			return err
+		}
+		if res.rejected != nil {
+			// The event on stdout is the whole report; the status says it failed.
+			return &ExitError{Code: 1, Err: rejectedError(res.rejected)}
+		}
+		return nil
+	}
+	if res.rejected != nil {
+		return fmt.Errorf("rejected: %w", s.friendly(rejectedError(res.rejected), value, res.hz))
+	}
+	fmt.Fprintln(s.app.Stdout, confirmLine(s.app.Style, s.State, param, res.stages, res.event, ch, capture))
+	return nil
+}
+
+// setResult is what one set came back with: the event that confirmed the write or the
+// rejection the daemon sent instead, the gain stages written (for the confirmation line), and
+// the frequency the write concerned (for a friendly out-of-range error), 0 when none.
+type setResult struct {
+	event    *leylinev1.Event
+	rejected *leylinev1.WriteRejected
+	stages   []string
+	hz       uint64
+}
+
+// applySet builds the writes for one parameter, sends them and waits for the event that
+// confirms or rejects them. It prints only the decisions the session says on the way (a
+// measured squelch, a retune); runSet and the MCP adapter's set tool report the result.
+func applySet(ctx context.Context, s *verbSession, param, value string, ch *leylinev1.Channel, capture *leylinev1.Capture, retune bool) (*setResult, error) {
+	var (
+		writes    []*leylinev1.ParamWrite
+		confirmed func(*leylinev1.Event) bool
+		res       setResult
+		err       error
+	)
+	if param == "gain" {
+		writes, confirmed, res.stages, err = buildGainWrites(s, value, capture)
+	} else {
+		writes, confirmed, res.hz, err = buildWrites(ctx, s, param, value, ch, capture, retune)
+	}
+	if err != nil {
+		return nil, err
+	}
 	sum, err := s.Client.WriteParams(ctx, writes...)
 	if err != nil {
-		return s.friendly(err, value, hz)
+		return nil, s.friendly(err, value, res.hz)
 	}
 	rejected := sum.GetWritesApplied() < sum.GetWritesReceived()
 	ev, err := s.AwaitEvent(ctx, func(ev *leylinev1.Event) bool {
@@ -587,26 +638,15 @@ func runSet(ctx context.Context, s *verbSession, param, value string, ch *leylin
 	})
 	if err != nil {
 		if rejected {
-			return fmt.Errorf("the radio rejected the change (%d of %d writes applied) without saying why; ley state shows what it is doing now", sum.GetWritesApplied(), sum.GetWritesReceived())
+			return nil, fmt.Errorf("the radio rejected the change (%d of %d writes applied) without saying why; ley state shows what it is doing now", sum.GetWritesApplied(), sum.GetWritesReceived())
 		}
-		return err
+		return nil, err
 	}
-	r, wasRejected := ev.Body.(*leylinev1.Event_WriteRejected)
-	if s.app.JSON {
-		if err := s.app.printJSON(ev); err != nil {
-			return err
-		}
-		if wasRejected {
-			// The event on stdout is the whole report; the status says it failed.
-			return &ExitError{Code: 1, Err: rejectedError(r.WriteRejected)}
-		}
-		return nil
+	res.event = ev
+	if r, ok := ev.Body.(*leylinev1.Event_WriteRejected); ok {
+		res.rejected = r.WriteRejected
 	}
-	if wasRejected {
-		return fmt.Errorf("rejected: %w", s.friendly(rejectedError(r.WriteRejected), value, hz))
-	}
-	fmt.Fprintln(s.app.Stdout, confirmLine(s.app.Style, s.State, param, stages, ev, ch, capture))
-	return nil
+	return &res, nil
 }
 
 // confirmLine is the one line a successful set prints: the setting, the
@@ -674,7 +714,7 @@ func setValue(param string, stages []string, els []*leylinev1.GainElement, ev *l
 		if units.SquelchOff(ch.GetSquelchDb()) {
 			return "off (audio always on)", "squelch"
 		}
-		return fmt.Sprintf("%.0f dBFS", ch.GetSquelchDb()), "squelch"
+		return fmt.Sprintf("%.0f dBFS", ch.GetSquelchDb()) + autoSuffix(ch), "squelch"
 	case "bw":
 		return units.FormatFrequency(uint64(ch.GetBandwidthHz())), "bandwidth"
 	case "mode":

@@ -129,12 +129,21 @@ func (a *App) logPath(f *daemonFlags) string {
 	return leyline.DefaultLogPath()
 }
 
+// launchAgentPath is the LaunchAgent plist's path: the test's stand-in when
+// set, otherwise defaultLaunchAgentPath.
+func (a *App) launchAgentPath() string {
+	if a.launchAgentPlist != "" {
+		return a.launchAgentPlist
+	}
+	return defaultLaunchAgentPath()
+}
+
 // launchAgentInstalled reports whether the plist exists (macOS only).
-func launchAgentInstalled() bool {
+func (a *App) launchAgentInstalled() bool {
 	if runtime.GOOS != "darwin" {
 		return false
 	}
-	_, err := os.Stat(defaultLaunchAgentPath())
+	_, err := os.Stat(a.launchAgentPath())
 	return err == nil
 }
 
@@ -184,7 +193,7 @@ func (a *App) printJob(ctx context.Context) (string, error) {
 // disk, or the label is loaded without one, which is how the app registers
 // its agent.
 func (a *App) launchdOwnsDaemon(ctx context.Context) bool {
-	if launchAgentInstalled() {
+	if a.launchAgentInstalled() {
 		return true
 	}
 	_, err := a.printJob(ctx)
@@ -216,16 +225,37 @@ func (a *App) appDaemonProgram(ctx context.Context) string {
 			plistPath = value
 		}
 	}
-	if plistPath == defaultLaunchAgentPath() || !strings.Contains(program, ".app/Contents/Helpers/") {
+	if plistPath == a.launchAgentPath() || !strings.Contains(program, ".app/Contents/Helpers/") {
 		return ""
 	}
 	return program
 }
 
-// plist renders the LaunchAgent for bin/socket/log. The paths are XML-escaped:
-// a home directory with & or < in it must not break the plist.
-func plist(bin, socket, logPath string) string {
+// leyExecutable is the absolute path of the running ley, or "" when the
+// system cannot say. The daemon runs `ley` for its workers (a key check, the
+// assistant) and looks beside itself and on PATH, which under launchd is the
+// system's and holds no Go bin, so install and start name this one: the ley
+// that installs a daemon is the same build as the daemon.
+func leyExecutable() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	if abs, err := filepath.Abs(exe); err == nil {
+		exe = abs
+	}
+	return exe
+}
+
+// plist renders the LaunchAgent for bin/ley/socket/log; an empty ley leaves
+// the daemon to find one. The paths are XML-escaped: a home directory with &
+// or < in it must not break the plist.
+func plist(bin, ley, socket, logPath string) string {
 	bin, socket, logPath = xmlEscape(bin), xmlEscape(socket), xmlEscape(logPath)
+	leyArgs := ""
+	if ley != "" {
+		leyArgs = "\n\t\t<string>--ley</string>\n\t\t<string>" + xmlEscape(ley) + "</string>"
+	}
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -235,7 +265,7 @@ func plist(bin, socket, logPath string) string {
 	<array>
 		<string>%s</string>
 		<string>--socket</string>
-		<string>%s</string>
+		<string>%s</string>%s
 	</array>
 	<key>RunAtLoad</key><true/>
 	<key>KeepAlive</key>
@@ -246,7 +276,7 @@ func plist(bin, socket, logPath string) string {
 	<key>StandardErrorPath</key><string>%s</string>
 </dict>
 </plist>
-`, launchAgentLabel, bin, socket, logPath, logPath)
+`, launchAgentLabel, bin, socket, leyArgs, logPath, logPath)
 }
 
 // xmlEscape escapes s for use as XML character data.
@@ -279,7 +309,7 @@ func (a *App) daemonInstall(ctx context.Context, f *daemonFlags) error {
 	if err != nil {
 		return err
 	}
-	for _, p := range []string{defaultLaunchAgentPath(), logPath, socket} {
+	for _, p := range []string{a.launchAgentPath(), logPath, socket} {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			return err
 		}
@@ -294,8 +324,8 @@ func (a *App) daemonInstall(ctx context.Context, f *daemonFlags) error {
 	} else if info != nil {
 		return fmt.Errorf("another daemon is serving %s; stop it before installing", socket)
 	}
-	path := defaultLaunchAgentPath()
-	if err := os.WriteFile(path, []byte(plist(bin, socket, logPath)), 0o644); err != nil {
+	path := a.launchAgentPath()
+	if err := os.WriteFile(path, []byte(plist(bin, leyExecutable(), socket, logPath)), 0o644); err != nil {
 		return err
 	}
 	_ = a.launchctl(ctx, "bootout", launchTarget())
@@ -326,7 +356,7 @@ func (a *App) daemonUninstall(ctx context.Context, _ *daemonFlags) error {
 	if runtime.GOOS != "darwin" {
 		return errors.New("daemon uninstall needs launchd (macOS)")
 	}
-	path := defaultLaunchAgentPath()
+	path := a.launchAgentPath()
 	if _, err := os.Stat(path); err != nil {
 		return fmt.Errorf("not installed: %s", path)
 	}
@@ -405,7 +435,11 @@ func (a *App) daemonStart(ctx context.Context, f *daemonFlags) error {
 		return err
 	}
 	defer logFile.Close()
-	cmd := exec.Command(bin, "--socket", a.socketPath(), "--pidfile", a.pidPath())
+	args := []string{"--socket", a.socketPath(), "--pidfile", a.pidPath()}
+	if ley := leyExecutable(); ley != "" {
+		args = append(args, "--ley", ley)
+	}
+	cmd := exec.Command(bin, args...)
 	cmd.Stdout, cmd.Stderr, cmd.Stdin = logFile, logFile, nil
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {

@@ -1,0 +1,1842 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The app's check scenes, which `make app-check` runs (docs/plans/mac-loop.md, ML-4). go/cmd/leyshots
+# reads this file with `leyshots check`. Paths are relative to this directory.
+#
+# A check scene takes a site scene's inputs (site/shots/scenes.yaml, the header comment):
+# fixtures, clock, bookmarks, steps and an optional stage, which is applied at launch. It runs once
+# per entry of sizes, a window size in points (default 1440 x 820), each with its own
+# leylined --no-hardware and its own launch of the app; the stage may not set window, the size
+# does. Then it sends the app commands in order over the app's command file (mac-loop.md, ML-3,
+# "The protocol") and quits it. A stage takes the keys of docs/dev/app.md, "Staged runs",
+# among them assistant, channels_picker, focus_filter and settings (true opens the Settings
+# window). Each entry of app is one protocol command, without the id, which the runner assigns:
+#
+#   {cmd: stage, stage: {...}}            a stage applied to the running window (no window)
+#   {cmd: snapshot, name: N}              the window's picture, compared with the golden N.png,
+#                                         an open popover or sheet drawn in; settle waits first;
+#                                         mask lists regions left out of the diff (default
+#                                         [spectrum, waterfall, readings, transmissions, log_day,
+#                                         heard, squelch], which change between runs; [] compares
+#                                         everything); window: settings takes the Settings window
+#   {cmd: state, expect: {path: value}}   the view state; each dotted path into the answer's
+#                                         result must hold the value, or the line fails
+#   {cmd: ax, name: N}                    the accessibility tree, compared as text with N.ax.txt;
+#                                         mask as snapshot's: an element inside a masked region
+#                                         reads value=<masked> (<masked>) on both sides; window:
+#                                         settings reads the Settings window (open it with the
+#                                         stage's settings: true) instead of the main one,
+#                                         unmasked; popover or sheet reads the open one alone
+#   {cmd: key, keys: cmd+g}               a key, as the protocol names keys
+#   {cmd: type, text: wx3}                one key event per character
+#   {cmd: press, identifier: I}           presses the element with that accessibility identifier,
+#                                         in the main window, then Settings; alert.<title> presses
+#                                         the open sheet's button by its title slugged (alert.cancel)
+#   {cmd: pick, identifier: I, text: T}   chooses the item titled T in a pop-up or segmented
+#                                         control, as a choice from its menu would
+#   {cmd: hover, identifier: I}           rests the pointer on I (or x: X, y: Y, points from the
+#                                         window's top-left corner); expect checks its answer's
+#                                         tooltip, which state.tooltip then gives
+#   {cmd: click, identifier: I}           a mouse click there (or x and y), for a point on a chart or
+#                                         anything press cannot reach; button: right
+#   {cmd: menu, menu: "View>Show Assistant"}
+#                                         presses the menu bar item; read: true only describes it;
+#                                         expect checks the answer's title, enabled, checked and
+#                                         items (its menu's titles in order, - for a separator)
+#   {cmd: wait, seconds: S}
+#
+# A state or a wait may take expect_log, patterns the app's log (run/app.log) must hold among the
+# lines written from the moment the command before was sent; a line that matches is printed with
+# its timestamp. A pattern is a Go regular expression, and one that starts with ! must not match;
+# expect_log, expect_stdout and contains each take one pattern or a list.
+#
+# These entries of app the runner runs itself, in order with the others; they never reach the app:
+#
+#   {cmd: ley, args: [bookmarks, --json]} a ley command against the scene's daemon and bookmarks;
+#                                         expect_exit (default 0) and expect_stdout are checked,
+#                                         and the output goes to run/steps.log
+#   {cmd: ley_bg, id: T, args: [tune, 146.52]}
+#                                         a ley started in the background, its output in
+#                                         run/ley_bg-T.log; one still running when the scene ends
+#                                         is interrupted
+#   {cmd: kill, id: T}                    interrupts ley_bg T as Ctrl-C would and waits for it; it
+#                                         fails when T had exited already or does not exit
+#   {cmd: file, path: bookmarks.json, contains: ["Club", "!Simplex"]}
+#                                         a file of the run directory (bookmarks.json, app.log,
+#                                         leylined.log, steps.log, ai/record.jsonl) matched
+#   {cmd: daemon, op: stop}               stops the scene's leylined; op: start starts it again on
+#                                         the same socket, store and keys and plays the fixtures
+#                                         again, so the app reconnects
+#   {cmd: relaunch, stage: {...}}         quits the app and starts it again on the same daemon,
+#                                         command file, log and staged defaults domain, with this
+#                                         stage at the scene's size (the window only, without one);
+#                                         ids go on from where they were
+#
+# ai: {script: assistant/hello.script, model: M, provider: P, key: true} runs the daemon's
+# assistant on a scripted model (go/internal/assistant, Scripted: one JSON response a line), with
+# a ley shim that accepts any key as the daemon's worker check. Before the app starts a made-up
+# key is added for P (default anthropic) and M chosen (default the provider's); key: false adds
+# none. Nothing reaches a provider, and the key lives in the scene daemon's own data directory.
+#
+# sweep_dwell: S makes a scan on the scene's file radio dwell S seconds (leylined
+# --file-scan-dwell): a file radio sweeps in one step, which otherwise ends in a quarter of a
+# second, too soon to see the sweep or stop it.
+#
+# threshold is the percentage of compared pixels a snapshot may change and still pass (default
+# 0.1). Goldens live in tmp/goldens/<macOS major.minor>-<arch>/<scene>/<W>x<H>/ and are written only
+# by `make app-check RECORD=1`.
+#
+# Fixtures made for checks (go/cmd/leyfix/scenes.go): scene_gmrs (GMRS 462 MHz, channels 1, 5 and
+# 21), scene_vhf20 (2 m, MURS, marine and NOAA WX2 in one capture, 142.7 to 163.7 MHz),
+# scene_wx (the NOAA channels with nothing on the air) and scene_wx_on (WX2 and WX1 on the air);
+# ../../fixtures/chirp/nofreq.csv is a CSV the CHIRP import refuses. `make app-check` runs a
+# release leylined whatever SWIFT_CONFIG says: a debug one plays scene_vhf20 at about half of real
+# time, so its timings would be wrong.
+#
+# The tiers (docs/plans/mac-loop.md, ML-11). smoke: true puts a scene in `make app-check-smoke`.
+# covers lists globs of the files under app/Sources whose behaviour the scene checks, written by
+# hand from what it presses and pictures; a glob without a / matches a file's name in either
+# target (SidebarView.swift), one with a / the path from app/Sources (LeylineApp/*.swift).
+# `make app-check-affected` runs the scenes whose covers match a file changed since the merge
+# base with main (the commit before, when that is HEAD and nothing has changed since), and a
+# change to a shared file below brings in the smoke scenes as well; app/Package.swift is
+# matched as Package.swift. A changed file no scene covers fails the run, as does a selection of
+# no scene. Every file under app/Sources, the façade's too, is covered by some scene or shared
+# (go/cmd/leyshots, TestCheckCoverage).
+# serial: true runs a scene with nothing beside it under `leyshots check --jobs N`: the scenes on
+# scene_vhf20's 21 MS/s and the sweeps, whose timings a busy Mac would put out.
+
+# The files every scene leans on: the theme, the session and the window, the daemon's mirror,
+# and the staging and command-file code a check run drives the app through, and the package
+# manifest that builds both targets.
+shared: [Theme.swift, AppSession.swift, Staging.swift, Control.swift, AccessibilityTree.swift,
+  AppMenus.swift, WindowPicture.swift, DeterministicFrames.swift, AppLog.swift, AppControl.swift,
+  ShotStage.swift, KeyChord.swift, LeylineApp.swift, MainWindow.swift, Info.plist,
+  DaemonConnection.swift, DaemonMirror.swift, ClientIdentity.swift, SocketPath.swift,
+  HeldObject.swift, WriteCoalescer.swift, LeylineError.swift, JSONValue.swift,
+  ResourceBundle.swift, Package.swift]
+
+scenes:
+  # The site's app-radio-2m inputs, without its on_air wait: the 2 m band open on Calling.
+  - name: radio-2m
+    smoke: true
+    covers: [BrandMark.swift, SplashView.swift, Frequency.swift, SidebarView.swift,
+      BandRailView.swift, SpectrumView.swift, SpectrumFeed.swift, WaterfallView.swift,
+      WaterfallShader.swift, InspectorView.swift, InspectorGroups.swift, AudioLevelsView.swift,
+      MeterTrack.swift, Scale.swift, TransportBarView.swift, AudioOutputName.swift, Bands.swift,
+      Bookmarks.swift, Sidebar.swift, Streams.swift, SpectrumFold.swift, SampleClock.swift,
+      ClippedRows.swift, ChannelReading.swift, Reading.swift, AudioLevels.swift,
+      Transmissions.swift, FailureState.swift, FrequencyEntry.swift, bands.json]
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "-45"]
+    stage:
+      place: radio
+      inspector: true
+      expanded_band: 2m
+      select_bookmark: Calling
+      settle: 5
+      zoom: 4
+    app:
+      - {cmd: snapshot, name: initial}
+      - {cmd: state, expect: {tuned_hz: 146520000}}
+      - {cmd: ax, name: initial}
+
+  # Go to… (⌘G) by name: Club repeater, a bookmark at 146.940 MHz, inside scene_2m's capture
+  # (146.400 MHz centre at 2.88 MS/s, so 144.96 to 147.84 MHz). A file radio tunes only inside
+  # the capture it was recorded with, so the name must lie there.
+  - name: goto-bookmark
+    smoke: true
+    covers: [SidebarView.swift, LibraryView.swift, Sidebar.swift, Bookmarks.swift,
+      RetuneQueue.swift]
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "-45"]
+    stage:
+      place: radio
+      settle: 3
+    app:
+      - {cmd: key, keys: cmd+g}
+      - {cmd: type, text: club}
+      - {cmd: state, expect: {filter_query: club, filter_caret: 4}}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater}}
+      - {cmd: snapshot, name: after}
+      # The filter (docs/plans/app.md, U4): ⌘G from the Library brings the Radio and the
+      # field's focus; wx3 lists the NOAA row, dimmed because this radio cannot tune it; Escape
+      # clears the field and lets it go; zz matches nothing; and a name with a space in it
+      # types the space rather than muting, and Return tunes it, clears the field and lets it go.
+      - {cmd: press, identifier: toolbar.place.library}
+      - {cmd: key, keys: cmd+g}
+      - {cmd: state, expect: {place: radio, focused: sidebar.filter}}
+      - {cmd: type, text: wx3}
+      - {cmd: state, expect: {filter_query: wx3, focused: sidebar.filter}}
+      - {cmd: ax, name: wx3}
+      - {cmd: key, keys: escape}
+      - {cmd: state, expect: {filter_query: "", focused: ""}}
+      - {cmd: key, keys: cmd+g}
+      - {cmd: type, text: zz}
+      - {cmd: ax, name: zz}
+      - {cmd: snapshot, name: zz}
+      - {cmd: key, keys: escape}
+      - {cmd: key, keys: cmd+g}
+      - {cmd: type, text: evening net}
+      - {cmd: key, keys: left}
+      - {cmd: state, expect: {filter_query: evening net, focused: sidebar.filter, filter_caret: 10, muted: false, tuned_hz: 146940000}}
+      - {cmd: key, keys: right}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {tuned_hz: 147180000, bookmark: Evening net, filter_query: "", focused: ""}}
+
+  # The window's accessibility identifiers (docs/dev/app.md, "Staged runs"), reached by press:
+  # the toolbar's switch both ways, the rail's zoom, a bookmark's row (a tap gesture, which is an
+  # accessibility button too), then a band row's Channels…, whose popover the second tree holds,
+  # and the device chip; last, Settings, opened by its key, whose AI pane the third tree holds.
+  - name: identifiers
+    smoke: true
+    covers: [BandRailView.swift, SidebarView.swift, PlanPickerView.swift, DeviceMenuView.swift,
+      LibraryView.swift, SettingsView.swift, AISettingsView.swift, Scale.swift,
+      GainPreferences.swift, AISettings.swift]
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "-45"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: ax, name: radio}
+      - {cmd: press, identifier: toolbar.place.library}
+      - {cmd: state, expect: {place: library}}
+      - {cmd: press, identifier: toolbar.place.radio}
+      - {cmd: state, expect: {place: radio}}
+      - {cmd: press, identifier: rail.zoom.in}
+      - {cmd: state, expect: {zoom: 2}}
+      - {cmd: press, identifier: sidebar.bookmark.club-repeater}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater}}
+      - {cmd: press, identifier: sidebar.band.2m.channels}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "channels:2m"}}
+      - {cmd: ax, name: planpicker}
+      - {cmd: press, identifier: toolbar.device}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: device_menu}}
+      - {cmd: key, keys: "cmd+,"}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ax, name: settings, window: settings}
+
+  # The sidebar's rows (docs/plans/app.md, U4, U6 and MC-1a): the tuned 2 m row open with its
+  # range line, action rows and bookmarks; the bands outside the file radio's capture folded into
+  # one line, which a press opens and the next tune folds again; a folded band dimmed and disabled,
+  # its help saying why, its chevron opening it without a tune; a bookmark at 462.6625 MHz reading
+  # ch5 under GMRS, one at 500 MHz under Other; and the inspector's tags line, present on a tagged
+  # bookmark and blank on one without. The squelch is off, because the words over the squelch track
+  # follow the noise while it is muted, and no region masks them; the track itself moves with
+  # the signal, about 1.2 % of the picture, hence the threshold.
+  - name: sidebar-rows
+    covers: [SidebarView.swift, InspectorView.swift, Sidebar.swift, Bands.swift, Bookmarks.swift]
+    threshold: 1.5
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "off"]
+      - ley: [bookmarks, add, "462.6625", --name, Family]
+      - ley: [bookmarks, add, "500", --name, Far]
+      - ley: [bookmarks, add, "146.85", --name, Tagged, --tag, home, --tag, vhf]
+      - ley: [bookmarks, add, "146.7", --name, Plain]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: snapshot, name: initial}
+      - {cmd: ax, name: initial}
+      - {cmd: state, expect: {tuned_hz: 146520000, open_rows.0: 2m}}
+      - {cmd: press, identifier: sidebar.outofrange}
+      - {cmd: hover, identifier: sidebar.band.gmrs, expect: {tooltip: "GMRS is above what this radio tunes (144.96 – 147.84 MHz)"}}
+      - {cmd: state, expect: {tuned_hz: 146520000}}
+      - {cmd: press, identifier: sidebar.band.gmrs.chevron}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146520000, open_rows.0: 2m, open_rows.1: gmrs}}
+      - {cmd: snapshot, name: unfolded}
+      - {cmd: ax, name: unfolded}
+      # 6 m has no plan, so its strip holds Scan band alone; one row opens by its chevron at a
+      # time, so GMRS closes.
+      - {cmd: press, identifier: sidebar.band.6m.chevron}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146520000, open_rows.0: 6m, open_rows.1: 2m}}
+      - {cmd: ax, name: noplan}
+      - {cmd: press, identifier: sidebar.bookmark.tagged}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146850000, bookmark: Tagged, open_rows.0: 2m}}
+      - {cmd: ax, name: tagged}
+      - {cmd: press, identifier: sidebar.bookmark.plain}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146700000, bookmark: Plain}}
+      - {cmd: ax, name: plain}
+
+  # The plan picker, Channels… (docs/plans/app.md, U4): it opens beside its action with its
+  # field focused; typing narrows the rows; Escape closes it; Return picks the highlighted row
+  # and closes it. Then marine, opened from the out-of-range fold, whose Channels is disabled
+  # with its help saying why (MC-1a); marine's 110 rows are in mc1a-sidebar-actions. The
+  # popover is a window of its own, which the
+  # window's picture leaves out, and the focused field is named by its label, because state
+  # finds no identifier on it. Up and Down are not sent: keys reach the main window, so the
+  # picker's key monitor never sees them in a check run.
+  - name: plan-picker
+    covers: [PlanPickerView.swift, SidebarView.swift, Sidebar.swift, Bands.swift]
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Club repeater
+      settle: 3
+    app:
+      - {cmd: press, identifier: sidebar.band.2m.channels}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "channels:2m", focused: "AXUnknown \"Filter 2 m amateur channels\""}}
+      - {cmd: ax, name: open}
+      - {cmd: type, text: cal}
+      - {cmd: ax, name: narrowed}
+      - {cmd: key, keys: escape}
+      - {cmd: state, expect: {popover: "", tuned_hz: 146940000}}
+      - {cmd: press, identifier: sidebar.band.2m.channels}
+      - {cmd: wait, seconds: 1}
+      - {cmd: type, text: cal}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "", tuned_hz: 146520000, bookmark: Calling}}
+      - {cmd: press, identifier: sidebar.outofrange}
+      - {cmd: press, identifier: sidebar.band.marine.chevron}
+      - {cmd: hover, identifier: sidebar.band.marine.channels, expect: {tooltip: "marine VHF is above what this radio tunes (144.96 – 147.84 MHz)"}}
+      # Keys reach the open popover, so Up moves its highlight from Calling to APRS, which
+      # Return picks and this capture refuses; the picture shows the popover over the window
+      # and the tree reads it alone.
+      - {cmd: press, identifier: sidebar.band.2m.channels}
+      - {cmd: wait, seconds: 1}
+      - {cmd: key, keys: up}
+      - {cmd: snapshot, name: up}
+      - {cmd: ax, name: up, window: popover}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "", tuned_hz: 146520000, notices.1: "offset -2010000 Hz falls outside the capture bandwidth"}}
+
+  # The bookmark's Tone and Note in the inspector (docs/plans/app.md, U6): on Calling they show
+  # its saved values; a step up with →, to a frequency with no bookmark, takes both away, and
+  # naming that frequency with the pencil brings them back with their placeholders.
+  # A tone typed and Returned keeps the field's focus; a bad one stays in the field
+  # with the reason under it, which a good tone, Escape (putting the saved value back) and a
+  # tune to another bookmark each take away. Leaving a field saves it as Return does (MC-3).
+  - name: bookmark-fields
+    covers: [InspectorView.swift, SidebarView.swift, Bookmarks.swift, Tone.swift,
+      FrequencyEntry.swift]
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: ax, name: calling}
+      - {cmd: key, keys: right}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146525000, bookmark: null}}
+      - {cmd: ax, name: unnamed}
+      - {cmd: press, identifier: inspector.rename}
+      - {cmd: type, text: Spot}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {bookmark: Spot}}
+      - {cmd: snapshot, name: named}
+      - {cmd: ax, name: named}
+      - {cmd: press, identifier: inspector.tone}
+      - {cmd: state, expect: {focused: inspector.tone}}
+      - {cmd: type, text: "100.0"}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {focused: inspector.tone}}
+      - {cmd: ax, name: toned}
+      - {cmd: key, keys: cmd+a}
+      - {cmd: type, text: D024N}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: snapshot, name: refused}
+      - {cmd: ax, name: refused}
+      - {cmd: key, keys: cmd+a}
+      - {cmd: type, text: D023N}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ax, name: good}
+      - {cmd: key, keys: cmd+a}
+      - {cmd: type, text: D024N}
+      - {cmd: key, keys: return}
+      - {cmd: key, keys: escape}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ax, name: escaped}
+      - {cmd: press, identifier: inspector.tone}
+      - {cmd: key, keys: cmd+a}
+      - {cmd: type, text: D024N}
+      - {cmd: key, keys: return}
+      - {cmd: press, identifier: sidebar.bookmark.club-repeater}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146940000}}
+      - {cmd: ax, name: tuned}
+      # The refused tone, left by the tune, reached neither Spot nor the bookmark tuned next
+      # (MC-3).
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: '!D024N'}
+      # The terminal's side: ley bookmarks reads the tone the field wrote, and loses it when
+      # the field is cleared; in the note field Space and ← type rather than mute and tune; and
+      # `ley bookmarks add` with a note replaces an idle field's text and not one being edited.
+      # A click on the inspector's header ends the edit and saves it, as Return does (U6,
+      # MC-1a, MC-3); a refused tone left that way stays in the field, unsaved.
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: '"name":"Spot"[^}]*"tone":"D023N"'}
+      - {cmd: press, identifier: inspector.note}
+      - {cmd: key, keys: cmd+a}
+      - {cmd: type, text: "a b"}
+      - {cmd: key, keys: left}
+      - {cmd: state, expect: {focused: inspector.note, muted: false, tuned_hz: 146940000}}
+      - {cmd: click, x: 1300, y: 70}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {focused: ""}}
+      - {cmd: file, path: bookmarks.json, contains: '"note"\s*:\s*"a b"'}
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: '"name":"Club repeater"[^}]*"note":"a b"'}
+      - {cmd: press, identifier: inspector.tone}
+      - {cmd: key, keys: cmd+a}
+      - {cmd: type, text: D024N}
+      - {cmd: click, x: 1300, y: 70}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {focused: ""}}
+      - {cmd: ax, name: left-refused}
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: '!D024N'}
+      - {cmd: ley, args: [bookmarks, add, "146.94", --name, Club repeater, --note, from the terminal]}
+      - {cmd: wait, seconds: 1.5}
+      - {cmd: ax, name: watched}
+      - {cmd: press, identifier: inspector.note}
+      - {cmd: key, keys: right}
+      - {cmd: type, text: " and mine"}
+      - {cmd: ley, args: [bookmarks, add, "146.94", --name, Club repeater, --note, again]}
+      - {cmd: wait, seconds: 1.5}
+      - {cmd: ax, name: editing}
+      # Escape throws the edit away, and the tune away after it saves nothing.
+      - {cmd: key, keys: escape}
+      - {cmd: press, identifier: sidebar.bookmark.spot}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: ['"name":"Club repeater"[^}]*"note":"again"', '!and mine']}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: inspector.tone}
+      - {cmd: key, keys: cmd+a}
+      - {cmd: key, keys: delete}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: '!"name":"Spot"[^}]*"tone"'}
+
+  # The tone last heard beside the bookmark's (docs/plans/app.md, U6): Calling's overs carry PL
+  # 100.0, and once one has been measured it stays between overs; Evening net's read DCS 023; a
+  # tune away and straight back clears it until the next over is measured; and a bookmark whose
+  # tone differs from the heard one shows both. state's heard says what the inspector writes;
+  # the picture shows the words beside the field, and the tree reads it with the squelch's words
+  # and level, which follow the noise between overs, masked as the squelch region.
+  - name: heard-tones
+    covers: [InspectorView.swift, Tone.swift, ChannelReading.swift, Reading.swift]
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "-45"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: wait, seconds: 10}
+      - {cmd: state, expect: {bookmark: Calling, heard: PL 100.0}}
+      - {cmd: wait, seconds: 5}
+      - {cmd: state, expect: {heard: PL 100.0}}
+      - {cmd: press, identifier: sidebar.bookmark.evening-net}
+      - {cmd: wait, seconds: 12}
+      - {cmd: state, expect: {bookmark: Evening net, heard: DCS 023}}
+      - {cmd: press, identifier: sidebar.bookmark.calling}
+      - {cmd: press, identifier: sidebar.bookmark.evening-net}
+      - {cmd: wait, seconds: 0.2, expect_log: "tune: bookmark Evening net"}
+      - {cmd: state, expect: {bookmark: Evening net, heard: null}}
+      - {cmd: press, identifier: sidebar.bookmark.calling}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: inspector.tone}
+      - {cmd: key, keys: cmd+a}
+      - {cmd: type, text: "88.5"}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 10}
+      - {cmd: state, expect: {bookmark: Calling, heard: PL 100.0}}
+      - {cmd: snapshot, name: differs, mask: [spectrum, waterfall, readings, transmissions, log_day, squelch]}
+      - {cmd: ax, name: differs, mask: [spectrum, waterfall, readings, transmissions, log_day, squelch]}
+
+  # CHIRP import (docs/plans/app.md, U7), through File ▸ Import CHIRP…'s code path: the notice
+  # gives the counts and no row or editor opens; the bookmarks land under their bands, the
+  # 70 cm ones and GMRS's unnamed ch5 in the out-of-range fold; Club shows its tone and note;
+  # and a note typed on Simplex survives the file imported again, which updates all nine.
+  - name: chirp-import
+    covers: [SidebarView.swift, InspectorView.swift, CHIRP.swift, Bookmarks.swift, Sidebar.swift]
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      import_chirp: ../../fixtures/chirp/sample.csv
+      settle: 3
+    app:
+      - {cmd: state, expect: {notices.0: "Imported 9 from sample.csv: 8 added, 1 updated, 1 skipped", open_rows.0: 2m}}
+      - {cmd: ax, name: imported}
+      - {cmd: press, identifier: sidebar.outofrange}
+      - {cmd: press, identifier: sidebar.band.70cm.chevron}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ax, name: seventy}
+      - {cmd: press, identifier: sidebar.band.gmrs.chevron}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ax, name: gmrs}
+      - {cmd: press, identifier: sidebar.bookmark.club}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club}}
+      - {cmd: ax, name: club}
+      - {cmd: press, identifier: sidebar.bookmark.simplex}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: inspector.note}
+      - {cmd: type, text: kept}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: stage, stage: {import_chirp: ../../fixtures/chirp/sample.csv}}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {bookmark: Simplex, notices.0: "Imported 9 from sample.csv: 0 added, 9 updated, 1 skipped"}}
+      - {cmd: ax, name: reimported}
+
+  # Scan band on the tuned 2 m row (docs/plans/app.md, U5), as the site's scan-app shot runs it:
+  # once the sweep's hits show, the audio is back on Calling with the band's mode and width; the
+  # hits are listed strongest first, each named by its channel or else its frequency, with a
+  # tick on the rail; and a hit's ＋ makes a bookmark named after it, its row open as an editor.
+  # scene_scan sweeps in one step, so nothing here holds the sweep's own words or its Stop. The
+  # tree is not kept: the levels move by a decibel between runs, and the two 41 dB hits trade
+  # places, so state asserts the order where it is clear. The picture leaves the sidebar out.
+  - name: scan-hits
+    covers: [SidebarView.swift, BandRailView.swift, Sweep.swift]
+    threshold: 1.5
+    fixtures: [{name: scene_scan}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [stop, all]
+      - ley: [tune, "146", --persistent]
+    stage:
+      place: radio
+      inspector: true
+      expanded_band: 2m
+      select_bookmark: Calling
+      scan_band: true
+      settle: 3
+    app:
+      - {cmd: state, expect: {tuned_hz: 146520000, mode: NFM, bandwidth_hz: 12500, bookmark: Calling, hits.0: calling, hits.1: 146.940 MHz, hits.4: 145.230 MHz}}
+      - {cmd: snapshot, name: hits, mask: [spectrum, waterfall, readings, transmissions, log_day, heard, sidebar]}
+      - {cmd: press, identifier: sidebar.hit.146-940-mhz.add}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146520000, focused: "AXUnknown \"Name\""}}
+
+  # The assistant with no AI provider set up (docs/plans/app.md, the assistant panel, K1): the
+  # toolbar has no toggle and ⇧⌘A opens no column. (leyshots's stage has no assistant key yet.)
+  - name: assistant-absent
+    covers: [AssistantPanel.swift, AISettings.swift]
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: key, keys: shift+cmd+a}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {assistant_shown: false}}
+      - {cmd: snapshot, name: absent}
+      - {cmd: ax, name: absent}
+
+  # Settings in the loop (docs/plans/app.md, the Settings AI list): the stage opens it, its
+  # picture and tree are taken, a key's Remove asks in a sheet that state, ax and press reach,
+  # Cancel keeps the key, and the stage closes the window again.
+  - name: settings-sheet
+    covers: [SettingsView.swift, AISettingsView.swift, AISettings.swift]
+    fixtures: [{name: scene_2m}]
+    bookmarks: ../../site/shots/home.csv
+    ai: {script: assistant/hello.script}
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      settle: 3
+      settings: true
+    app:
+      - {cmd: state, expect: {settings_open: true, alert: null}}
+      - {cmd: snapshot, name: settings, window: settings}
+      - {cmd: ax, name: settings, window: settings}
+      - {cmd: press, identifier: settings.ai.key.anthropic.remove}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {alert.title: "Remove the Anthropic key?", alert.message: "Every job and conversation using it stops.", alert.buttons.0: Cancel, alert.buttons.1: Remove}}
+      - {cmd: ax, name: sheet, window: sheet}
+      - {cmd: snapshot, name: sheet, window: settings}
+      - {cmd: press, identifier: alert.cancel}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {alert: null, settings_open: true}}
+      - {cmd: stage, stage: {settings: false}}
+      - {cmd: state, expect: {settings_open: false}}
+
+  # The pointer, the menus and a relaunch: a tooltip by hover; a click on the waterfall at
+  # 146.940 MHz (the capture's 144.960 to 147.840 MHz across its 825 pt from x 237); View ▸
+  # Show Assistant read and pressed; the panel's field typed into and its turns read through
+  # state; and the app quit and started again on the same daemon, which it finds tuned where it
+  # left it.
+  - name: pointer-and-menus
+    covers: [ChartMouse.swift, WaterfallView.swift, SidebarView.swift, AssistantPanel.swift,
+      LeylineApp.swift, AssistantController.swift, AssistantModels.swift, ChannelFollow.swift]
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    ai: {script: assistant/hello.script}
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: state, expect: {muted: false, sink: other, volume: null, window.width: 1440, window.min_width: 900, view_window.low_hz: 144960000, view_window.high_hz: 147840000, settings_open: false, alert: null, assistant: null, tooltip: null}}
+      - {cmd: hover, identifier: sidebar.add, expect: {tooltip: "Bookmark the tuned frequency (⌘D)"}}
+      - {cmd: state, expect: {tooltip: "Bookmark the tuned frequency (⌘D)"}}
+      - {cmd: click, x: 804, y: 400}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146939345, bookmark: null, tooltip: null}}
+      - {cmd: menu, menu: "View>Show Assistant", read: true, expect: {title: Show Assistant, enabled: true, checked: false, items.8: Hide Inspector}}
+      - {cmd: menu, menu: "View>Show Assistant"}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {assistant_shown: true, window.min_width: 1221, assistant.input: "", assistant.state: null}}
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: where am i}
+      - {cmd: state, expect: {focused: assistant.input, assistant.input: where am i, assistant.input_focused: true}}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 4}
+      - {cmd: state, expect: {assistant.turns.0.role: user, assistant.turns.0.text: where am i, assistant.turns.1.role: assistant, assistant.turns.1.text: "The radio is on 146.520 MHz, the 2 m calling frequency, in NFM.", assistant.state: ready, assistant.thinking: false, assistant.stop_shown: false, assistant.input: "", assistant.buttons.0.id: assistant.new, assistant.buttons.0.enabled: true}}
+      - {cmd: snapshot, name: answered}
+      - {cmd: relaunch, stage: {place: radio, settle: 3}}
+      - {cmd: state, expect: {tuned_hz: 146939345, assistant_shown: false}}
+
+  # Settings, AI (docs/plans/app.md, "Settings, AI"): ⌘, and the app menu open the pane; with no
+  # key it holds the explanation and the Add form alone, Add disabled while the key is empty and
+  # the Endpoint field only for OpenAI-compatible; a key typed is hidden and cleared the moment
+  # Add is pressed, and once the daemon holds it Features and Usage come in, with the toolbar's
+  # toggle and View ▸ Show Assistant in the main window. The pickers write what they show;
+  # Check, the usage table and its switch, Remove asking and the row leaving, the column going
+  # with the key, a refused Add putting the key back and a closed window clearing it follow.
+  - name: settings-ai
+    covers: [SettingsView.swift, AISettingsView.swift, AssistantPanel.swift, LeylineApp.swift,
+      AISettings.swift]
+    fixtures: [{name: scene_2m}]
+    bookmarks: ../../site/shots/home.csv
+    ai: {script: assistant/hello.script, key: false}
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: ax, name: main-nokey}
+      - {cmd: menu, menu: "View>Show Assistant", read: true, expect: {enabled: false}}
+      - {cmd: key, keys: "cmd+,"}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {settings_open: true}}
+      - {cmd: snapshot, name: nokey, window: settings}
+      - {cmd: ax, name: nokey, window: settings}
+      - {cmd: pick, identifier: settings.ai.add.provider, text: OpenAI-compatible}
+      - {cmd: ax, name: endpoint, window: settings}
+      - {cmd: pick, identifier: settings.ai.add.provider, text: Anthropic}
+      - {cmd: press, identifier: settings.ai.add.key}
+      - {cmd: state, expect: {focused: settings.ai.add.key}}
+      - {cmd: type, text: sk-made-up-0042}
+      # The focus leaves the key's field, which closes the system's password AutoFill list that
+      # a secure field opens now and then, and which a tree would otherwise read.
+      - {cmd: press, identifier: settings.ai.add.label}
+      - {cmd: ax, name: typed, window: settings}
+      - {cmd: press, identifier: settings.ai.add}
+      - {cmd: ax, name: adding, window: settings}
+      # The pane's words name the provider as its rows do; `ley ai` keeps the ids
+      # (docs/plans/app.md, MC-1c).
+      - {cmd: wait, seconds: 2, expect_log: ["settings: Anthropic key …0042 added", "!settings: anthropic key"]}
+      - {cmd: snapshot, name: added, window: settings}
+      - {cmd: ax, name: added, window: settings}
+      - {cmd: ax, name: main-key}
+      - {cmd: menu, menu: "View>Show Assistant", read: true, expect: {enabled: true}}
+      - {cmd: ley, args: [ai, --json], expect_stdout: '"provider":"anthropic",\s*"model":"claude-sonnet-5-5"'}
+      # The model picker writes; OpenAI-compatible shows a model field and writes nothing until
+      # a model is entered, the sentence under the pickers following the provider shown; back
+      # to Anthropic, the one the daemon holds, drops the field and rewrites nothing.
+      - {cmd: pick, identifier: settings.ai.feature.assistant.model, text: claude-opus-5-5}
+      - {cmd: wait, seconds: 1, expect_log: "settings: Assistant now calls Anthropic claude-opus-5-5\\."}
+      - {cmd: ley, args: [ai, --json], expect_stdout: '"provider":"anthropic",\s*"model":"claude-opus-5-5"'}
+      - {cmd: pick, identifier: settings.ai.feature.assistant.provider, text: OpenAI-compatible}
+      - {cmd: ax, name: typedmodel, window: settings}
+      - {cmd: ley, args: [ai, --json], expect_stdout: '"provider":"anthropic",\s*"model":"claude-opus-5-5"'}
+      - {cmd: pick, identifier: settings.ai.feature.assistant.provider, text: Anthropic}
+      - {cmd: ax, name: heldagain, window: settings}
+      - {cmd: ley, args: [ai, --json], expect_stdout: '"provider":"anthropic",\s*"model":"claude-opus-5-5"'}
+      - {cmd: pick, identifier: settings.ai.feature.assistant.provider, text: OpenAI-compatible}
+      - {cmd: press, identifier: settings.ai.feature.assistant.model}
+      - {cmd: type, text: gpt-made-up}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ley, args: [ai, --json], expect_stdout: '"provider":"openai",\s*"model":"gpt-made-up"'}
+      - {cmd: ax, name: openai, window: settings}
+      # The provider picker writes Anthropic's first model at once.
+      - {cmd: pick, identifier: settings.ai.feature.assistant.provider, text: Anthropic}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ley, args: [ai, --json], expect_stdout: '"provider":"anthropic",\s*"model":"claude-opus-5-5"'}
+      # Check updates the row's outcome and the line at the top.
+      - {cmd: press, identifier: settings.ai.key.anthropic.check}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ax, name: checked, window: settings}
+      # A turn's usage in the table, by day and by month. No tree is kept: the rows are named
+      # by today's date, and Settings has no regions to mask them by.
+      - {cmd: ley, args: [ask, where am i]}
+      - {cmd: wait, seconds: 1}
+      - {cmd: snapshot, name: usage, window: settings}
+      # The period switch is drawn in the palette, as the toolbar's Radio | Library switch is,
+      # not as the system's blue segmented control (docs/plans/app.md, MC-1c).
+      - {cmd: press, identifier: settings.ai.usage.period.month}
+      - {cmd: snapshot, name: bymonth, window: settings}
+      # Remove asks; the row, Features and Usage leave, and with them the open column, the
+      # toolbar's toggle and the menu item.
+      - {cmd: stage, stage: {assistant: true}}
+      - {cmd: state, expect: {assistant_shown: true}}
+      - {cmd: press, identifier: settings.ai.key.anthropic.remove}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {alert.title: "Remove the Anthropic key?"}}
+      - {cmd: ax, name: removesheet, window: sheet}
+      - {cmd: press, identifier: alert.remove}
+      - {cmd: wait, seconds: 1, expect_log: "settings: Anthropic key removed"}
+      - {cmd: ax, name: removed, window: settings}
+      - {cmd: state, expect: {assistant_shown: false, assistant: null}}
+      - {cmd: ax, name: main-removed}
+      - {cmd: menu, menu: "View>Hide Assistant", read: true, expect: {enabled: false}}
+      # A closed window clears a typed key, so Add is disabled once it is open again. (⌘W
+      # closes no window in a check run: the app is never active, so File ▸ Close has no key
+      # window; the stage closes it as its button would.)
+      # The key's field opts out of AutoFill (docs/plans/app.md, MC-1c): focused and holding
+      # text, its tree has no AutoFill list, and Settings closed with the focus still there stays
+      # closed, where the list once brought it straight back.
+      - {cmd: press, identifier: settings.ai.add.key}
+      - {cmd: type, text: sk-made-up-0043}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {focused: settings.ai.add.key, settings_open: true}}
+      - {cmd: ax, name: keyfocused, window: settings}
+      - {cmd: stage, stage: {settings: false}}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {settings_open: false}}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {settings_open: false}}
+      - {cmd: menu, menu: "Leyline>Settings..."}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {settings_open: true}}
+      - {cmd: ax, name: reopened, window: settings}
+      # A refused Add (the daemon not running) puts the key back, so Add is enabled again, and
+      # says why in plain words.
+      - {cmd: daemon, op: stop}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: settings.ai.add.key}
+      - {cmd: type, text: sk-made-up-0044}
+      - {cmd: press, identifier: settings.ai.add.label}
+      - {cmd: press, identifier: settings.ai.add}
+      - {cmd: wait, seconds: 2, expect_log: "settings: Could not add the Anthropic key: the daemon is not running\\."}
+      - {cmd: ax, name: refused, window: settings}
+      - {cmd: daemon, op: start}
+      - {cmd: wait, seconds: 3}
+      - {cmd: file, path: ai/record.jsonl, contains: where am i}
+
+  # The assistant's conversation (docs/plans/app.md, the assistant panel): the toolbar's toggle
+  # closes and opens the column, whose width the window's minimum gives back; Return sends and
+  # clears the field, which keeps the focus; a slow answer shows the waiting row, one element for VoiceOver, counting from three seconds; a step opens to
+  # its arguments, result and JSON and closes; two quick Returns send one message; Option-Return
+  # makes a line and Space and ← type rather than mute and tune; while the assistant thinks the
+  # field takes typing, Return keeps it and the line under it says why, and Stop ends the turn,
+  # after which Return sends it; ⌘2 and ⌘1 keep the transcript and the field; a send the
+  # stopped daemon refused puts the text back; and New Conversation empties the panel.
+  # The scene sets no clock: the waiting row counts from the daemon's time of the turn
+  # against the app's own clock, and a shifted daemon (leylined --wall-clock) puts it hours ahead.
+  # ⇧⌘A is not sent: in a check run it never reaches View > Hide Assistant, which the menu
+  # command reads instead.
+  - name: assistant-conversation
+    covers: [AssistantPanel.swift, LibraryView.swift, AssistantController.swift,
+      AssistantModels.swift, AssistantStepDetail.swift]
+    fixtures: [{name: scene_2m}]
+    bookmarks: ../../site/shots/home.csv
+    ai: {script: assistant/conversation.script}
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      assistant: true
+      settle: 3
+    app:
+      - {cmd: state, expect: {assistant_shown: true, window.min_width: 1221, assistant.state: null, assistant.input: ""}}
+      - {cmd: snapshot, name: empty}
+      - {cmd: ax, name: empty}
+      - {cmd: menu, menu: "View>Hide Assistant", read: true, expect: {enabled: true}}
+      - {cmd: press, identifier: toolbar.assistant}
+      - {cmd: state, expect: {assistant_shown: false, window.min_width: 900}}
+      - {cmd: press, identifier: toolbar.assistant}
+      - {cmd: state, expect: {assistant_shown: true}}
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: where am i}
+      - {cmd: key, keys: return}
+      - {cmd: state, expect: {assistant.input: "", focused: assistant.input, assistant.turns.0.text: where am i}}
+      - {cmd: wait, seconds: 1.5}
+      - {cmd: state, expect: {assistant.thinking: true, assistant.stop_shown: true, focused: assistant.input}}
+      - {cmd: ax, name: thinking}
+      - {cmd: wait, seconds: 2.5}
+      - {cmd: snapshot, name: counting}
+      - {cmd: wait, seconds: 4}
+      - {cmd: state, expect: {assistant.thinking: false, assistant.stop_shown: false, assistant.state: ready, assistant.turns.1.role: assistant, focused: assistant.input}}
+      # The step's row is its tool and state, with no arrow and no preview line under it
+      # (docs/plans/app.md, MC-2).
+      - {cmd: state, expect: {assistant.buttons.1.id: assistant.step.c1, assistant.buttons.1.title: "list_presets, done"}}
+      - {cmd: snapshot, name: answered}
+      - {cmd: ax, name: answered}
+      - {cmd: press, identifier: assistant.step.c1}
+      - {cmd: wait, seconds: 0.5}
+      - {cmd: state, expect: {assistant.buttons.2.id: assistant.step.c1.json, assistant.buttons.2.title: JSON}}
+      - {cmd: snapshot, name: stepopen}
+      - {cmd: ax, name: stepopen}
+      - {cmd: press, identifier: assistant.step.c1}
+      - {cmd: wait, seconds: 0.5}
+      - {cmd: ax, name: stepclosed}
+      # Space and ← go into the field rather than mute and tune; two Returns back to back
+      # send one message.
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: a}
+      - {cmd: key, keys: space}
+      - {cmd: type, text: b}
+      - {cmd: key, keys: left}
+      - {cmd: type, text: c}
+      - {cmd: state, expect: {assistant.input: a cb, muted: false, tuned_hz: 146520000}}
+      - {cmd: key, keys: return}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {assistant.turns.2.text: a cb, assistant.turns.3.text: "Still on 146.520 MHz."}}
+      - {cmd: ax, name: once}
+      # Option-Return makes a new line. While the assistant thinks, Return keeps what is typed
+      # and the line under the field says why; Stop ends the turn and Return then sends it.
+      - {cmd: type, text: line one}
+      - {cmd: key, keys: opt+return}
+      - {cmd: type, text: line two}
+      - {cmd: state, expect: {assistant.input: "line one\nline two"}}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1.5}
+      - {cmd: state, expect: {assistant.input: "", assistant.turns.4.text: "line one\nline two", assistant.thinking: true, assistant.stop_shown: true}}
+      - {cmd: type, text: next one}
+      - {cmd: key, keys: return}
+      - {cmd: state, expect: {assistant.input: next one, assistant.thinking: true}}
+      - {cmd: ax, name: waits}
+      - {cmd: press, identifier: assistant.stop}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {assistant.thinking: false, assistant.stop_shown: false, assistant.input: next one}}
+      # The stopped turn says `Stopped.` under the message it answered (docs/plans/app.md, MC-1c).
+      - {cmd: state, expect: {assistant.turns.4.text: "line one\nline two", assistant.turns.5.role: assistant, assistant.turns.5.stopped: true, assistant.turns.3.stopped: false}}
+      - {cmd: ax, name: stopped}
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {assistant.input: "", assistant.turns.5.stopped: true, assistant.turns.6.text: next one, assistant.turns.7.text: Here is the next one., assistant.turns.7.stopped: false}}
+      - {cmd: snapshot, name: later}
+      # ⌘2 and ⌘1 keep the transcript and the field's text.
+      - {cmd: type, text: draft kept}
+      - {cmd: key, keys: cmd+2}
+      - {cmd: state, expect: {place: library, assistant.input: draft kept, assistant.turns.0.text: where am i}}
+      - {cmd: key, keys: cmd+1}
+      - {cmd: state, expect: {place: radio, assistant.input: draft kept, assistant.turns.7.text: Here is the next one.}}
+      # A message the stopped daemon did not take goes back into the field.
+      - {cmd: daemon, op: stop}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {assistant.input: draft kept}}
+      - {cmd: ax, name: refused}
+      - {cmd: daemon, op: start}
+      - {cmd: wait, seconds: 3}
+      - {cmd: press, identifier: assistant.new}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {assistant.state: null, assistant.input: draft kept}}
+      - {cmd: ax, name: new}
+      - {cmd: file, path: ai/record.jsonl, contains: where am i}
+
+  # The assistant's questions (docs/plans/app.md, the assistant panel): a call the gate asks
+  # about is a card under the transcript that Return does not answer and Decline does; a take
+  # over offers Allow in this chat between Decline and Allow, all three on one line of the
+  # column at the window's narrowest, and once it is allowed for the conversation the next take
+  # over runs without a card; a delete offers Decline and Allow alone, enabled at once. Once a
+  # tune has run its step carries the run's channel ids, so state carries the checks from there.
+  - name: assistant-cards
+    covers: [AssistantPanel.swift, AssistantController.swift, AssistantModels.swift,
+      AssistantActionWords.swift]
+    sizes: [{width: 1440, height: 820}, {width: 1221, height: 820}]
+    fixtures: [{name: scene_2m}]
+    bookmarks: ../../site/shots/home.csv
+    ai: {script: assistant/cards.script}
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      assistant: true
+      settle: 3
+    app:
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: remove the APRS bookmark}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {assistant.state: waiting for you, focused: assistant.input}}
+      # The card says what the call does in words, with no tool id; the gate's reason only
+      # restates it, so no line goes under the sentence. Decline, Allow in this chat and Allow,
+      # the one filled button, sit on one line in that order (docs/plans/app.md, MC-2, MC-4).
+      - {cmd: state, expect: {assistant.question: The assistant wants to remove the APRS bookmark., assistant.note: null, assistant.buttons.1.title: "remove_bookmark APRS, asks", assistant.buttons.2.id: assistant.decline, assistant.buttons.3.id: assistant.allow.conversation, assistant.buttons.3.title: Allow in this chat, assistant.buttons.4.id: assistant.allow}}
+      - {cmd: snapshot, name: asks}
+      - {cmd: ax, name: asks}
+      # Return does not answer the card; Decline does, and the card goes.
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {assistant.state: waiting for you}}
+      - {cmd: press, identifier: assistant.decline}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {assistant.state: ready}}
+      - {cmd: ax, name: declined}
+      - {cmd: ley, args: [bookmarks], expect_stdout: APRS}
+      # A take over: the line under the sentence says it takes the radio, in words and without
+      # `take_over`; Decline, Allow in this chat and Allow; once it is allowed in this chat, the
+      # second take over runs without a card.
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: take the radio for 146.94}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {assistant.state: waiting for you, assistant.question: The assistant wants to tune to 146.94., assistant.note: It takes the radio from whoever is using it., assistant.buttons.3.id: assistant.decline, assistant.buttons.4.id: assistant.allow.conversation, assistant.buttons.5.id: assistant.allow}}
+      - {cmd: snapshot, name: takeover}
+      - {cmd: ax, name: takeover}
+      - {cmd: press, identifier: assistant.allow.conversation}
+      - {cmd: wait, seconds: 3}
+      - {cmd: state, expect: {assistant.state: ready, assistant.buttons.2.title: "tune frequency 146.94 · keep true · take_over true, done", assistant.buttons.3.title: "tune frequency 147.18 · keep true · take_over true, done"}}
+      # A delete offers Decline and Allow alone, enabled at once; while it waits the field takes
+      # typing, Return keeps it, and the line under the field says why.
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: delete job_none}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {assistant.state: waiting for you}}
+      - {cmd: type, text: then stop}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {assistant.state: waiting for you, assistant.input: then stop, assistant.note: "Its files go with it, and this cannot be undone.", assistant.buttons.4.title: "delete_recording job_none, asks", assistant.buttons.5.id: assistant.decline, assistant.buttons.5.enabled: true, assistant.buttons.6.id: assistant.allow, assistant.buttons.6.enabled: true}}
+      - {cmd: press, identifier: assistant.decline}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {assistant.state: ready, assistant.input: then stop}}
+      # What was typed while the card waited is still the draft once the card has gone, and
+      # Return sends all of it (docs/plans/app.md, MC-1c).
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {assistant.input: "", assistant.turns.6.text: then stop, assistant.turns.7.text: Stopping there.}}
+      - {cmd: file, path: ai/record.jsonl, contains: remove the APRS bookmark}
+      - {cmd: file, path: ai/record.jsonl, contains: then stop}
+
+  # The app's view tools (docs/plans/app.md, the assistant panel): the column opened in a narrow
+  # window widens the window rather than squeezing the canvas, and the window's minimum grows by
+  # it; "show me 2 m" fits the part of 2 m the radio captures, which on scene_2m is the whole
+  # capture, and a range inside it zooms the waterfall and the rail onto it without moving the
+  # radio; a tune puts the window back on the tuned frequency, "show me airband"
+  # answers that a tune is needed and moves nothing, and show_place switches to the Library.
+  # The pictures leave the inspector out: the fields of its identity come out a point taller
+  # in some runs and move what is under them (docs/plans/app.md, "Found by the Mac checks").
+  - name: assistant-view-tools
+    covers: [AssistantPanel.swift, BandRailView.swift, WaterfallView.swift, SpectrumView.swift,
+      LibraryView.swift, RecordingsPage.swift, PlayerBar.swift, AssistantViewTools.swift,
+      AssistantController.swift, AssistantModels.swift]
+    sizes: [{width: 1000, height: 820}]
+    fixtures: [{name: scene_2m}]
+    bookmarks: ../../site/shots/home.csv
+    ai: {script: assistant/viewtools.script}
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: state, expect: {window.width: 1000, window.min_width: 900, assistant_shown: false}}
+      - {cmd: press, identifier: toolbar.assistant}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {assistant_shown: true, window.width: 1221, window.min_width: 1221}}
+      - {cmd: snapshot, name: widened, mask: [spectrum, waterfall, readings, transmissions, log_day, heard, squelch, inspector]}
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: show me 2 m}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 3}
+      - {cmd: state, expect: {tuned_hz: 146520000, assistant.state: ready, zoom: 1, view_window.low_hz: 144960000, view_window.high_hz: 147840000, assistant.buttons.1.title: "show_band 2m, done"}}
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: show me 146.0 to 146.6}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 3}
+      - {cmd: state, expect: {tuned_hz: 146520000, assistant.state: ready, zoom: 4, view_window.low_hz: 145940000, view_window.high_hz: 146660000}}
+      - {cmd: snapshot, name: range, mask: [spectrum, waterfall, readings, transmissions, log_day, heard, squelch, inspector]}
+      - {cmd: press, identifier: sidebar.bookmark.club-repeater}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146940000, view_window.low_hz: 146580000, view_window.high_hz: 147300000}}
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: show me airband}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 3}
+      - {cmd: state, expect: {tuned_hz: 146940000, assistant.state: ready, view_window.low_hz: 146580000, view_window.high_hz: 147300000}}
+      - {cmd: snapshot, name: airband, mask: [spectrum, waterfall, readings, transmissions, log_day, heard, squelch, inspector]}
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: open the library}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 3}
+      - {cmd: state, expect: {place: library, assistant.state: ready}}
+      - {cmd: snapshot, name: library}
+      - {cmd: file, path: ai/record.jsonl, contains: show me 2 m}
+
+  # A step with a long result opened (docs/plans/app.md, MC-2): list_presets's rows read as a
+  # table of name, frequency and mode with "… N more", in a box about twelve lines tall that
+  # scrolls inside and sits on the column's left edge; JSON shows the raw JSON in the same box
+  # and Readable puts the table back; the step closes again.
+  - name: assistant-long-result
+    covers: [AssistantPanel.swift, AssistantStepDetail.swift, AssistantModels.swift]
+    fixtures: [{name: scene_2m}]
+    bookmarks: ../../site/shots/home.csv
+    ai: {script: assistant/presets.script}
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      assistant: true
+      settle: 3
+    app:
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: what presets are there}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 3}
+      - {cmd: state, expect: {assistant.state: ready, assistant.buttons.1.id: assistant.step.c1, assistant.buttons.1.title: "list_presets, done"}}
+      - {cmd: press, identifier: assistant.step.c1}
+      - {cmd: wait, seconds: 0.5}
+      - {cmd: state, expect: {assistant.buttons.2.id: assistant.step.c1.json, assistant.buttons.2.title: JSON}}
+      - {cmd: snapshot, name: table}
+      - {cmd: ax, name: table}
+      - {cmd: press, identifier: assistant.step.c1.json}
+      - {cmd: wait, seconds: 0.5}
+      - {cmd: state, expect: {assistant.buttons.2.title: Readable}}
+      - {cmd: snapshot, name: json}
+      - {cmd: press, identifier: assistant.step.c1.json}
+      - {cmd: wait, seconds: 0.5}
+      - {cmd: state, expect: {assistant.buttons.2.title: JSON}}
+      - {cmd: press, identifier: assistant.step.c1}
+      - {cmd: wait, seconds: 0.5}
+      - {cmd: ax, name: closed}
+      - {cmd: file, path: ai/record.jsonl, contains: what presets are there}
+
+  # The window follows the assistant (docs/plans/app.md, "The window follows the radio"). The
+  # fixture's own channel is stopped first, so the window makes one of its own on Calling.
+  # With Record transmissions on for it, the window's panel tuning the club repeater moves the
+  # readout, the inspector and the log there, says who tuned and with what squelch, and keeps
+  # the recording's channel open with a line saying so; then `ley ask --continue` from a
+  # terminal tunes the evening net and the window follows that too, its note leaving out the
+  # squelch it measured on auto. Last the line's Stop ends the recording, and the window the
+  # old channel.
+  - name: follow-assistant
+    covers: [InspectorView.swift, InspectorGroups.swift, AssistantPanel.swift, ChannelFollow.swift,
+      ChangeNote.swift, AssistantController.swift, Transmissions.swift]
+    fixtures: [{name: scene_2m}]
+    bookmarks: ../../site/shots/home.csv
+    ai: {script: assistant/follow.script}
+    steps:
+      - ley: [stop, "146.52"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      assistant: true
+      settle: 3
+    app:
+      - {cmd: ley, args: [state], expect_stdout: ["by app:Leyline", "!by mcp:assistant"]}
+      - {cmd: state, expect: {tuned_hz: 146520000, sink: own}}
+      - {cmd: press, identifier: inspector.record}
+      - {cmd: wait, seconds: 2}
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: listen to the club repeater}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 4}
+      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater}}
+      # The panel's tune asked for -42 dBFS, a level of the assistant's own, so the note names it
+      # (docs/plans/app.md, MC-1c).
+      - {cmd: state, expect: {notices.0: "The assistant tuned to 146.940 MHz NFM and set the squelch to -42 dBFS."}}
+      # The window's old channel still records, and the inspector says so with a Stop.
+      - {cmd: state, expect: {notices.1: Still recording 146.520 MHz Calling}}
+      # The column closes, as its steps carry the run's channel ids.
+      - {cmd: stage, stage: {assistant: false}}
+      - {cmd: snapshot, name: followed}
+      - {cmd: ax, name: followed}
+      - {cmd: ley, args: [state]}
+      - {cmd: ley, args: [ask, --yes, --continue, now the evening net]}
+      - {cmd: wait, seconds: 3}
+      - {cmd: state, expect: {tuned_hz: 147180000, bookmark: Evening net}}
+      # This tune left the squelch on auto: the level it measured is not one the assistant
+      # chose, so the note leaves the squelch out.
+      - {cmd: state, expect: {notices.0: "The assistant tuned to 147.180 MHz NFM.", notices.1: Still recording 146.520 MHz Calling}}
+      - {cmd: ax, name: terminal}
+      - {cmd: ley, args: [state]}
+      # The line's Stop ends the recording on the old channel, and the window then lets that
+      # channel go (docs/plans/app.md, MC-1c).
+      - {cmd: ley, args: [jobs], expect_stdout: running}
+      - {cmd: press, identifier: inspector.kept.stop}
+      - {cmd: wait, seconds: 3, expect_log: ["job_\\S+ stopped", "no longer records; ended"]}
+      - {cmd: ley, args: [jobs], expect_stdout: ["!running", cancelled]}
+      - {cmd: state, expect: {tuned_hz: 147180000, notices.0: "The assistant tuned to 147.180 MHz NFM."}}
+      - {cmd: ax, name: stopped}
+
+  # Who changed the channel (docs/plans/app.md, the assistant panel's last item): a terminal's
+  # `ley set squelch -45` puts a line under the inspector's frequency naming it, and the
+  # window's own next change, a step up with →, takes the line away.
+  - name: change-note
+    covers: [InspectorView.swift, ChangeNote.swift]
+    fixtures: [{name: scene_2m}]
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: ley, args: [set, squelch, "-45"]}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {notices.0: "Another terminal set the squelch to -45 dBFS."}}
+      - {cmd: ax, name: noted}
+      - {cmd: key, keys: right}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146525000}}
+      - {cmd: ax, name: cleared}
+
+  # The window follows a terminal (docs/plans/app.md, "The window follows the radio"). The
+  # fixture's own channel is stopped first, so the window makes one of its own on Calling, and
+  # a click at the volume slider's middle halves that sink's volume. Muted, the window follows
+  # a terminal's `ley tune 146.94`: the terminal's sink plays, so the window has none, says so in
+  # the inspector and disables its mute and volume, and the terminal's sink keeps its own
+  # volume. Once the terminal is interrupted the window makes a channel of its own on 146.940
+  # MHz about 5 s later, still muted; unmuted, it plays at the half it had. Then a terminal's
+  # `ley tune --persistent` is followed and ended with `ley stop`, and the window goes back to a
+  # channel of its own at that frequency, mode and squelch, playing.
+  - name: follow-terminal
+    covers: [TransportBarView.swift, AudioOutputName.swift, InspectorView.swift,
+      InspectorGroups.swift, ChannelFollow.swift, PartPlayback.swift, Recordings.swift,
+      Transmissions.swift]
+    fixtures: [{name: scene_2m}]
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [stop, "146.52"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: state, expect: {tuned_hz: 146520000, sink: own, muted: false, volume: 1}}
+      - {cmd: click, identifier: transport.volume}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {sink: own}}
+      - {cmd: ley, args: [state], expect_stdout: "volume 0.50"}
+      - {cmd: press, identifier: transport.mute}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {muted: true, sink: none}}
+      - {cmd: ley_bg, id: tune, args: [tune, "146.94"]}
+      - {cmd: wait, seconds: 3, expect_log: "following chan_.*made by another terminal"}
+      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater, sink: other, muted: false}}
+      - {cmd: ley, args: [state], expect_stdout: ["volume 1.00", "!volume 0.50", "!(?s)system_audio.*system_audio"]}
+      - {cmd: snapshot, name: terminal}
+      - {cmd: ax, name: terminal}
+      - {cmd: kill, id: tune}
+      - {cmd: wait, seconds: 7, expect_log: "own channel chan_"}
+      - {cmd: state, expect: {tuned_hz: 146940000, sink: none, muted: true}}
+      - {cmd: press, identifier: transport.mute}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146940000, sink: own, muted: false}}
+      - {cmd: ley, args: [state], expect_stdout: "volume 0.50"}
+      - {cmd: ley, args: [tune, "147.18", --persistent, --squelch, "-47"]}
+      - {cmd: wait, seconds: 3, expect_log: "following chan_.*made by another terminal"}
+      - {cmd: state, expect: {tuned_hz: 147180000, sink: other}}
+      - {cmd: ley, args: [stop, "147.18"]}
+      - {cmd: wait, seconds: 3, expect_log: "own channel chan_"}
+      - {cmd: state, expect: {tuned_hz: 147180000, sink: own, mode: NFM, bandwidth_hz: 12500}}
+      - {cmd: ley, args: [state], expect_stdout: "volume 0.50"}
+      - {cmd: ley, args: [state], expect_stdout: "squelch -47.0 dB"}
+      # A part playing from the log keeps playing when the window follows a terminal that plays
+      # nothing, and once it ends the live audio comes back on the channel followed.
+      - {cmd: press, identifier: inspector.record}
+      - {cmd: wait, seconds: 16}
+      - {cmd: press, identifier: inspector.log.play}
+      - {cmd: wait, seconds: 0.3, expect_log: "live sink sink_.* detached for the clip"}
+      - {cmd: ley, args: [tune, "147.18", --persistent, --no-audio]}
+      - {cmd: wait, seconds: 1, expect_log: ["following chan_.*made by another terminal", "!playback: .* (stopped|ended)"]}
+      - {cmd: state, expect: {tuned_hz: 147180000, sink: none}}
+      - {cmd: wait, seconds: 6, expect_log: ["playback: .* ended", "live sink attached again"]}
+      - {cmd: state, expect: {tuned_hz: 147180000, sink: own}}
+      - {cmd: ley, args: [state], expect_stdout: "(?s)by cli:ley\\s+└─ system_audio"}
+
+  # The window at launch and across a daemon restart (docs/plans/app.md, "The window follows the
+  # radio"). Before the app starts, the fixture's channel is stopped, a terminal's `ley tune
+  # 146.94 --persistent` plays and a recording tunes 147.18 after it: the window takes the
+  # terminal's channel, the newest that is not a recording's, with no sink of its own, says the
+  # audio plays through another terminal and disables its mute and volume. The daemon is then
+  # stopped and started again, which plays the fixture anew, and `ley ask` tunes the club
+  # repeater: the window still follows. Muted, the window is disconnected once more, and a
+  # terminal tunes the evening net with no audio as the daemon comes back: the window reconnects
+  # onto that channel and stays muted.
+  - name: follow-launch-and-daemon
+    covers: [MainWindow.swift, TransportBarView.swift, EngineAgent.swift, com.leysdr.daemon.plist,
+      ChannelFollow.swift, DaemonAgent.swift, DaemonConnection.swift, DaemonMirror.swift,
+      HeldObject.swift]
+    fixtures: [{name: scene_2m}]
+    bookmarks: ../../site/shots/home.csv
+    ai: {script: assistant/follow.script}
+    steps:
+      - ley: [stop, "146.52"]
+      - ley: [tune, "146.94", --persistent]
+      - ley: [record, "147.18", --detach]
+    stage:
+      place: radio
+      inspector: true
+      settle: 3
+    app:
+      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater, sink: other, muted: false}}
+      - {cmd: ley, args: [state], expect_stdout: ["!by app:Leyline", "147.180 MHz"]}
+      - {cmd: snapshot, name: launched}
+      - {cmd: ax, name: launched}
+      - {cmd: daemon, op: stop}
+      - {cmd: wait, seconds: 2}
+      - {cmd: snapshot, name: stopped}
+      - {cmd: daemon, op: start}
+      - {cmd: wait, seconds: 6}
+      - {cmd: state, expect: {tuned_hz: 146520000, sink: other}}
+      - {cmd: ley, args: [ask, --yes, listen to the club repeater]}
+      - {cmd: wait, seconds: 3, expect_log: "following chan_.*made by the assistant"}
+      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater, sink: own}}
+      - {cmd: press, identifier: transport.mute}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {muted: true, sink: none}}
+      - {cmd: daemon, op: stop}
+      - {cmd: wait, seconds: 2}
+      - {cmd: daemon, op: start}
+      - {cmd: ley, args: [tune, "147.18", --persistent, --no-audio]}
+      - {cmd: wait, seconds: 6}
+      - {cmd: state, expect: {tuned_hz: 147180000, bookmark: Evening net, muted: true, sink: none}}
+      - {cmd: ley, args: [state], expect_stdout: "!by app:Leyline"}
+
+  # GMRS's plan (docs/plans/app.md, U4) on scene_gmrs, which the fixture's play tunes to ch5:
+  # GMRS is one row, the tuned one; the rail shows the 462 MHz half's channels only; the inspector
+  # is titled by the band and the volume caption reads ch5 while no bookmark is there. Hovering
+  # a plan tick names its channel, a press and a click on one tune it, the picker opens on the
+  # tuned channel and a click on a row picks it; ⌘D on ch5 makes a bookmark named ch5 with its
+  # row open as an editor, and the pencil committed empty on ch21 one named ch21.
+  - name: gmrs-plan
+    covers: [BandRailView.swift, PlanPickerView.swift, SidebarView.swift, InspectorView.swift,
+      TransportBarView.swift, Bands.swift, Sidebar.swift, Bookmarks.swift]
+    fixtures: [{name: scene_gmrs}]
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      settle: 3
+    app:
+      - {cmd: state, expect: {tuned_hz: 462662500, band: gmrs-462, open_rows.0: gmrs, bookmark: null}}
+      - {cmd: snapshot, name: initial}
+      - {cmd: ax, name: initial}
+      - {cmd: hover, identifier: rail.channel.ch1, expect: {tooltip: ch1}}
+      - {cmd: press, identifier: rail.channel.ch1}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 462562500, band: gmrs-462}}
+      - {cmd: click, identifier: rail.channel.ch21}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 462700000}}
+      - {cmd: press, identifier: sidebar.band.gmrs.channels}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "channels:gmrs"}}
+      - {cmd: snapshot, name: picker}
+      - {cmd: ax, name: picker, window: popover}
+      - {cmd: click, identifier: planpicker.row.ch16}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "", tuned_hz: 462575000, bookmark: null}}
+      - {cmd: press, identifier: rail.channel.ch5}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 462662500, bookmark: null}}
+      - {cmd: key, keys: cmd+d}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {bookmark: ch5, focused: "AXUnknown \"Name\"", open_rows.0: gmrs}}
+      - {cmd: ax, name: bookmarked}
+      - {cmd: key, keys: escape}
+      - {cmd: click, identifier: rail.channel.ch21}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: inspector.rename}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 462700000, bookmark: ch21}}
+      - {cmd: ley, args: [bookmarks], expect_stdout: ["ch5 +462.6625 MHz", "ch21 +462.700 MHz"]}
+
+  # scene_vhf20 holds 2 m, MURS, marine and NOAA WX2 in one 21 MSPS capture (docs/plans/app.md,
+  # U4), so the window tunes across bands without moving the radio, and the sidebar offers each
+  # band the capture holds. From Calling, a row opened by its chevron (marine) closes on a tune
+  # into another row (MURS); a pick of MURS 4 by Return arrives at 20 kHz, where the band's
+  # group is 11.25 kHz, and closes the picker. wx3 typed into the filter and Returned tunes
+  # 162.475 MHz and clears and lets go of the field; and marine's rail shows no plan ticks.
+  # A band sets a squelch it measures, which moves by a decibel between runs, so a terminal
+  # sets one before each tree.
+  - name: vhf-wide
+    serial: true
+    covers: [SidebarView.swift, BandRailView.swift, PlanPickerView.swift, InspectorView.swift,
+      Sidebar.swift, Bands.swift, RetuneQueue.swift, bands.json]
+    fixtures: [{name: scene_vhf20}]
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: state, expect: {tuned_hz: 146520000, band: 2m, open_rows.0: 2m}}
+      - {cmd: snapshot, name: initial}
+      - {cmd: ax, name: initial}
+      - {cmd: press, identifier: sidebar.band.marine.chevron}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {open_rows.0: 2m, open_rows.1: marine}}
+      - {cmd: press, identifier: sidebar.band.murs}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {band: murs-151, bandwidth_hz: 11250, open_rows.0: murs}}
+      - {cmd: press, identifier: sidebar.band.murs.channels}
+      - {cmd: wait, seconds: 1}
+      - {cmd: type, text: "4"}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {popover: "", tuned_hz: 154570000, bandwidth_hz: 20000, band: murs-154}}
+      - {cmd: ley, args: [set, squelch, "-50", --channel, "154.57"]}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ax, name: murs}
+      - {cmd: key, keys: cmd+g}
+      - {cmd: type, text: wx3}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {tuned_hz: 162475000, band: noaa, filter_query: "", focused: ""}}
+      - {cmd: press, identifier: sidebar.band.marine}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {band: marine}}
+      - {cmd: ley, args: [set, squelch, "-50", --channel, "159.0125"]}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ax, name: marine}
+      - {cmd: snapshot, name: marine}
+
+  # A sweep from start to end (docs/plans/app.md, U5 and U7), on scene_vhf20 with each sweep
+  # held for 4 s (sweep_dwell). The fixture's channel is stopped first, so the window plays its
+  # own. Scan band on the tuned 2 m row stops the audio, keeps the frequency in the field and
+  # the row open with its words and Stop; Stop ends the sweep and the audio comes back on
+  # Calling with nothing under the item. A sweep left to run comes back with its hits, and a
+  # click on a hit's row and on a hit's tick tunes it, keeping the hits. A bookmark, a band and
+  # a chart click during a sweep stop it and are done once the radio is back. Scan band on NOAA,
+  # opened by its chevron while marine sweeps, stops marine and sweeps NOAA, whose row keeps its
+  # hits. An AM bookmark comes back at AM after a sweep. With a recording running Scan band
+  # asks first; Cancel leaves the radio alone and Sweep anyway sweeps. After Stop Listening,
+  # Scan band on NOAA sweeps, selects the band and plays it.
+  - name: sweep-lifecycle
+    serial: true
+    covers: [SidebarView.swift, BandRailView.swift, ChartMouse.swift, WaterfallView.swift,
+      InspectorGroups.swift, LeylineApp.swift, Sweep.swift]
+    fixtures: [{name: scene_vhf20}]
+    bookmarks: ../../site/shots/home.csv
+    sweep_dwell: 4
+    steps:
+      - ley: [stop, "146.52"]
+      - ley: [bookmarks, add, "147.3", --name, Wide, --mode, am]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: state, expect: {tuned_hz: 146520000, sink: own}}
+      - {cmd: press, identifier: sidebar.band.2m.scan}
+      - {cmd: wait, seconds: 1.5, expect_log: ["sweep: paused: channel", "sweep: job_.* started: 2 m amateur"]}
+      - {cmd: state, expect: {tuned_hz: null, sink: none, open_rows.0: 2m}}
+      - {cmd: hover, identifier: sidebar.band.2m.scan, expect: {tooltip: "Stop the sweep; listening comes back where it was"}}
+      - {cmd: snapshot, name: sweeping}
+      - {cmd: press, identifier: sidebar.band.2m.scan}
+      - {cmd: wait, seconds: 2, expect_log: ["sweep: stop asked on 2 m amateur", "sweep: resuming bookmark Calling"]}
+      - {cmd: state, expect: {tuned_hz: 146520000, sink: own, bookmark: Calling}}
+      # Left to run, then its hits tuned by their row and their tick.
+      - {cmd: press, identifier: sidebar.band.2m.scan}
+      - {cmd: wait, seconds: 6, expect_log: ["sweep: job_.* ended: [0-9]+ hits?", "sweep: resuming bookmark Calling"]}
+      - {cmd: state, expect: {tuned_hz: 146520000, mode: NFM, bandwidth_hz: 12500, sink: own}}
+      - {cmd: click, identifier: sidebar.hit.146-940-mhz}
+      - {cmd: wait, seconds: 1, expect_log: "tune: 1469[34][0-9]{4} Hz"}
+      - {cmd: press, identifier: sidebar.bookmark.calling}
+      - {cmd: wait, seconds: 1}
+      - {cmd: click, identifier: rail.hit.146-940-mhz}
+      - {cmd: wait, seconds: 1, expect_log: "tune: 1469[34][0-9]{4} Hz"}
+      - {cmd: state, expect: {band: 2m}}
+      # A bookmark, a band and a chart click during a sweep.
+      - {cmd: press, identifier: sidebar.band.2m.scan}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: sidebar.bookmark.club-repeater}
+      - {cmd: wait, seconds: 3, expect_log: ["sweep: tune bookmark Club repeater waits for the sweep to stop", "ended: cancelled", "!DEVICE_SWEEPING"]}
+      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater, sink: own}}
+      - {cmd: press, identifier: sidebar.band.2m.scan}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: sidebar.band.murs}
+      - {cmd: wait, seconds: 3, expect_log: ["sweep: tune row MURS waits for the sweep to stop", "ended: cancelled", "!DEVICE_SWEEPING"]}
+      - {cmd: state, expect: {band: murs-151, sink: own}}
+      # A hit with no bookmark under its tick names itself and its level on hover.
+      - {cmd: press, identifier: sidebar.band.murs.scan}
+      - {cmd: wait, seconds: 6, expect_log: "sweep: job_.* ended: [0-9]+ hits?"}
+      - {cmd: state, expect: {hits.0: "1", hits.1: "4"}}
+      - {cmd: hover, identifier: rail.hit.1}
+      - {cmd: state}
+      - {cmd: press, identifier: sidebar.band.murs.scan}
+      - {cmd: wait, seconds: 1}
+      - {cmd: click, x: 804, y: 400}
+      - {cmd: wait, seconds: 3, expect_log: ["sweep: tune to 15[0-9]+ Hz waits for the sweep to stop", "ended: cancelled", "!DEVICE_SWEEPING"]}
+      - {cmd: state, expect: {band: marine, sink: own}}
+      # Scan band on a second row while the first sweeps.
+      - {cmd: press, identifier: sidebar.band.marine.scan}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: sidebar.band.noaa.chevron}
+      - {cmd: press, identifier: sidebar.band.noaa.scan}
+      - {cmd: wait, seconds: 7, expect_log: ["sweep: scan NOAA weather waits for the sweep to stop", "ended: cancelled", "sweep: job_.* started: NOAA weather", "sweep: job_.* ended: 1 hit"]}
+      - {cmd: state, expect: {band: marine, sink: own, open_rows.0: marine, open_rows.1: noaa, hits.0: WX2}}
+      # An AM bookmark keeps its mode through a sweep.
+      - {cmd: press, identifier: sidebar.band.2m}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: sidebar.bookmark.wide}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {bookmark: Wide, mode: AM}}
+      - {cmd: press, identifier: sidebar.band.2m.scan}
+      - {cmd: wait, seconds: 6, expect_log: "sweep: resuming bookmark Wide"}
+      - {cmd: state, expect: {bookmark: Wide, mode: AM, tuned_hz: 147300000}}
+      # After Stop Listening, Scan band on NOAA.
+      - {cmd: menu, menu: "Tune>Stop Listening"}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: null, sink: none}}
+      - {cmd: press, identifier: sidebar.band.noaa.chevron}
+      - {cmd: press, identifier: sidebar.band.noaa.scan}
+      - {cmd: wait, seconds: 6, expect_log: ["sweep: job_.* started: NOAA weather, .* no capture to pause", "sweep: job_.* ended: 1 hit", "selecting NOAA weather after the sweep"]}
+      - {cmd: state, expect: {band: noaa, sink: own, hits.0: WX2, notices.0: "NOAA weather: NFM at 12.5 kHz"}}
+      # A recording on the window's capture: Scan band asks.
+      - {cmd: press, identifier: inspector.record}
+      - {cmd: wait, seconds: 2}
+      - {cmd: press, identifier: sidebar.band.noaa.scan}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {alert.title: "Move the radio?", alert.buttons.0: Sweep anyway, alert.buttons.1: Cancel}}
+      - {cmd: press, identifier: alert.cancel}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {band: noaa, sink: own, alert: null}}
+      - {cmd: press, identifier: sidebar.band.noaa.scan}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: alert.sweep-anyway}
+      - {cmd: wait, seconds: 6, expect_log: ["sweep: job_.* started: NOAA weather", "sweep: job_.* ended: 1 hit"]}
+      - {cmd: state, expect: {band: noaa, sink: own, hits.0: WX2}}
+
+  # A NOAA sweep with nothing on the air (docs/plans/app.md, U7), as with the antenna off:
+  # scene_wx is the floor alone, so the row says nothing was heard and why, and the rail has
+  # no hit ticks.
+  - name: sweep-quiet
+    serial: true
+    covers: [SidebarView.swift, BandRailView.swift, Sweep.swift]
+    fixtures: [{name: scene_wx}]
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      settle: 3
+    app:
+      - {cmd: state, expect: {band: noaa}}
+      - {cmd: press, identifier: sidebar.band.noaa.scan}
+      - {cmd: wait, seconds: 3, expect_log: "sweep: job_.* ended: nothing on the air"}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {band: noaa, sink: own}}
+      - {cmd: ax, name: quiet}
+      - {cmd: snapshot, name: quiet}
+
+  # The Library on a part (docs/plans/app.md, the Library), as the site's library-net shot takes
+  # it on a shorter recording: a squelch-gated recording of Calling holds an over or two of
+  # scene_2m, and the Library opens on the first part, selected, so the channel page's rows, the
+  # part's inspector and the player all draw. No tree is kept: a part's start and length depend
+  # on where the recording caught the fixture's loop. Added for coverage (ML-11): no other scene
+  # selects a part.
+  - name: library-part
+    covers: [LibraryView.swift, RecordingsPage.swift, PartInspector.swift, PlayerBar.swift,
+      SpeechViews.swift, LibraryRows.swift, RecordingPages.swift, Recordings.swift,
+      LevelGraph.swift, SpeechRecords.swift]
+    threshold: 1.5
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [record, "146.52", --gate, squelch, --squelch, "-45", --for, 25s, --detach]
+      - wait: 27
+    stage:
+      place: library
+      select_part: 0
+      settle: 3
+    app:
+      - {cmd: state, expect: {place: library}}
+      - {cmd: snapshot, name: part}
+
+  # The menus and the CHIRP import's words (docs/plans/app.md, U7 and the assistant panel's
+  # K1): File ▸ Import CHIRP… after Show Recordings in Finder, View ▸ Show Assistant disabled
+  # with no AI provider, the app menu's Settings… and Tune ▸ Stop Listening enabled. The import
+  # runs through the menu item's code path (the open panel runs out of the app's process, so a
+  # check cannot answer it): sample.csv logs the line it skipped and the mode it changed, and
+  # `ley bookmarks --tag sample` lists the nine; a CSV with no Frequency column is refused in
+  # those words and leaves bookmarks.json as it was.
+  - name: alert-and-menus
+    covers: [LeylineApp.swift, Updater.swift, CommandLineInstaller.swift, MainWindow.swift,
+      CHIRP.swift, AppUpdates.swift, CommandLineTool.swift, BuildInfo.swift]
+    fixtures: [{name: scene_2m}]
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: menu, menu: "File>Import CHIRP...", read: true, expect: {enabled: true, items.4: Show Recordings in Finder, items.5: Import CHIRP…}}
+      - {cmd: menu, menu: "View>Show Assistant", read: true, expect: {enabled: false}}
+      - {cmd: menu, menu: "Leyline>Settings...", read: true, expect: {enabled: true}}
+      - {cmd: menu, menu: "Tune>Stop Listening", read: true, expect: {enabled: true}}
+      - {cmd: stage, stage: {import_chirp: ../../fixtures/chirp/sample.csv}}
+      - {cmd: wait, seconds: 1, expect_log: ["sample.csv line 9: frequency \"abc\" is not a number", "sample.csv line 10: mode \"DV\" is not one ley decodes"]}
+      - {cmd: state, expect: {notices.0: "Imported 9 from sample.csv: 8 added, 1 updated, 1 skipped"}}
+      - {cmd: ley, args: [bookmarks, --tag, sample], expect_stdout: ["(?s)(\\bbm_.*){8}", "!(?s)(\\bbm_.*){9}"]}
+      - {cmd: stage, stage: {import_chirp: ../../fixtures/chirp/nofreq.csv}}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {notices.1: "nofreq.csv has no Frequency column; is it a CHIRP CSV export?"}}
+      - {cmd: snapshot, name: nofreq}
+      - {cmd: file, path: bookmarks.json, contains: ["Digital", "!evening net\"", "!RX MHz"]}
+      - {cmd: ley, args: [bookmarks, --tag, sample], expect_stdout: ["(?s)(\\bbm_.*){8}", "!(?s)(\\bbm_.*){9}"]}
+
+  # The transport bar at the window's smaller sizes (docs/plans/app.md, decision 13): the Mode
+  # and Width pop-ups keep their labels on one line at 900 × 612 pt (the minimum), 1000 and
+  # 1100 pt, with and without the inspector, through the longest widths a band or a mode
+  # brings: MURS 151's 11.25 kHz, WFM's 200 kHz, CW's 500 Hz. A terminal sets the mode and width
+  # on the window's channel. At the minimum the inspector is cut at its foot, and the bar stays.
+  # With the assistant's column the bar is narrow at every size (MC-1b): the three words under
+  # the squelch track are dropped and the caption is the short one, never cut inside a word.
+  - name: transport-sizes
+    covers: [TransportBarView.swift, MainWindow.swift, InspectorView.swift, AssistantPanel.swift]
+    sizes: [{width: 900, height: 612}, {width: 1000, height: 820}, {width: 1100, height: 820}]
+    fixtures: [{name: scene_vhf20}]
+    bookmarks: ../../site/shots/home.csv
+    ai: {script: assistant/hello.script}
+    steps:
+      - ley: [stop, "146.52"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: snapshot, name: calling}
+      - {cmd: press, identifier: sidebar.band.murs}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {bandwidth_hz: 11250}}
+      - {cmd: snapshot, name: murs}
+      - {cmd: ax, name: murs, mask: [spectrum, waterfall, readings, transmissions, log_day, squelch, sidebar, inspector]}
+      - {cmd: ley, args: [set, mode, wfm, --channel, "151.88"]}
+      - {cmd: ley, args: [set, bw, 200k, --channel, "151.88"]}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {mode: WFM, bandwidth_hz: 200000}}
+      - {cmd: snapshot, name: wfm}
+      - {cmd: ley, args: [set, bw, "0.5", --channel, "151.88"]}
+      - {cmd: ley, args: [set, mode, cw, --channel, "151.88"]}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {mode: CW, bandwidth_hz: 500}}
+      - {cmd: snapshot, name: cw}
+      - {cmd: press, identifier: toolbar.inspector}
+      - {cmd: ley, args: [set, mode, nfm, --channel, "151.88"]}
+      - {cmd: ley, args: [set, bw, "11.25", --channel, "151.88"]}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {inspector_shown: false, bandwidth_hz: 11250}}
+      - {cmd: snapshot, name: noinspector}
+      - {cmd: press, identifier: toolbar.inspector}
+      - {cmd: press, identifier: toolbar.assistant}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {inspector_shown: true, assistant_shown: true, window.width: 1221}}
+      - {cmd: snapshot, name: assistant}
+      - {cmd: ax, name: assistant, mask: [spectrum, waterfall, readings, transmissions, log_day, squelch, sidebar, inspector]}
+      - {cmd: state, expect: {transport.squelch_words: "", transport.squelch_caption_short: true}}
+
+  # The tuning field (docs/plans/app.md, MC-1b): four decimals, cut and never rounded, while the
+  # radio stays on the exact hertz, which the field's tooltip and the inspector's line give. A
+  # typed 146.940186 tunes to the hertz and reads 146.9401, and Return with nothing typed keeps
+  # that hertz (MC-3); the fine step keeps the hertz, the band's step lands on its 5 kHz grid,
+  # and a hit's row tunes its measure to 100 Hz (MC-3). At 1440 pt the squelch's three words and
+  # its long caption both show.
+  - name: transport-tuning
+    covers: [TransportBarView.swift, Frequency.swift, FrequencyEntry.swift, InspectorView.swift]
+    fixtures: [{name: scene_vhf20}]
+    bookmarks: ../../site/shots/home.csv
+    # A sweep's one step sees an over of 146.940 MHz, which a quarter-second step can miss.
+    sweep_dwell: 3
+    steps:
+      - ley: [stop, "146.52"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: ley, args: [set, squelch, "off"]}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146520000, transport.tuning: "146.5200", transport.squelch_caption: "open · squelch off", transport.squelch_caption_short: false, transport.squelch_words: "muted below · squelch off · heard above"}}
+      - {cmd: menu, menu: "Tune>Enter Frequency..."}
+      - {cmd: type, text: "146.940186"}
+      - {cmd: state, expect: {transport.tuning: "146.940186"}}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1, expect_log: "tune: typed 146.940186 -> 146940186 Hz"}
+      - {cmd: state, expect: {tuned_hz: 146940186, transport.tuning: "146.9401"}}
+      - {cmd: hover, identifier: tuning.field, expect: {tooltip: "146.940186 MHz"}}
+      - {cmd: ax, name: typed}
+      - {cmd: snapshot, name: typed}
+      # Return with nothing typed keeps the exact hertz and tunes nothing (MC-3).
+      - {cmd: menu, menu: "Tune>Enter Frequency..."}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1, expect_log: ["tune: kept 146940186 Hz, 146.9401 unchanged", "!tune: typed"]}
+      - {cmd: state, expect: {tuned_hz: 146940186, transport.tuning: "146.9401", focused: ""}}
+      - {cmd: menu, menu: "Tune>Fine Tune Up"}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146940686, transport.tuning: "146.9406"}}
+      - {cmd: menu, menu: "Tune>Tune Up"}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146945000, transport.tuning: "146.9450"}}
+      - {cmd: press, identifier: tuning.down}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146940000, transport.tuning: "146.9400"}}
+      - {cmd: press, identifier: sidebar.bookmark.calling}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: sidebar.band.2m.scan}
+      - {cmd: wait, seconds: 6, expect_log: ["sweep: job_.* ended: [0-9]+ hits?", "sweep: resuming bookmark Calling"]}
+      - {cmd: state, expect: {tuned_hz: 146520000}}
+      - {cmd: click, identifier: sidebar.hit.146-940-mhz}
+      # On no plan channel, so the measure to 100 Hz (MC-3).
+      - {cmd: wait, seconds: 1, expect_log: "tune: hit 146.940 MHz at 1469(39[5-9]|40[0-4])00 Hz"}
+
+  # The transport bar at the window's minimum (MC-1b): too narrow for the squelch's three words
+  # and its long caption, so the words are dropped and the caption is the short one.
+  - name: transport-narrow
+    covers: [TransportBarView.swift, AudioLevelsView.swift, SquelchCaption.swift, AudioLevels.swift]
+    sizes: [{width: 900, height: 612}]
+    fixtures: [{name: scene_vhf20}]
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [stop, "146.52"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: ley, args: [set, squelch, "off"]}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {transport.squelch_words: "", transport.squelch_caption: "open · off", transport.squelch_caption_short: true, transport.tuning: "146.5200"}}
+      - {cmd: snapshot, name: narrow}
+      - {cmd: ax, name: narrow, mask: [spectrum, waterfall, readings, transmissions, log_day, sidebar, inspector]}
+
+  # The sidebar as the owner decided it (docs/plans/app.md, MC-1a, and the mockup
+  # tmp/sidebar-actions-mock.png): the open 2 m row's Scan band and Channels as list rows at a
+  # bookmark row's height, the glyph under the bookmark dots and the label under their names,
+  # dimmer than a name, with no chrome, Channels ending in ›, and the header, range line, actions
+  # and bookmarks on one raised ground. The range line ends `sq auto` while the daemon says the
+  # channel's level was measured, `sq −45` once a terminal sets one, and its squelch is never cut.
+  # Near, 5 kHz up from the calling channel, reads `≈ calling`; Club repeater shows no tone. The
+  # fold reads `N bands out of range` and its help says where; GMRS, out of range, is disabled
+  # (its row and Channels read disabled in the tree) with its help saying why, and its chevron
+  # still opens it. Closing the picker by Escape or by a pick leaves nothing focused, so Space
+  # mutes and → tunes. marine's picker is twelve rows of its 110, and 24 narrows them. An
+  # accessibility press on a step arrow takes the band's step whatever key is held. A hit's row
+  # and its ＋ use the plan channel's frequency when there is one; 146.940 MHz is on none, so
+  # they use the measure rounded to 100 Hz (MC-3).
+  - name: mc1a-sidebar-actions
+    covers: [SidebarView.swift, PlanPickerView.swift, Sidebar.swift, Bands.swift, Sweep.swift,
+      TransportBarView.swift]
+    fixtures: [{name: scene_vhf20}]
+    bookmarks: ../../site/shots/home.csv
+    # A sweep's one step sees an over of 146.940 MHz, which a quarter-second step can miss.
+    sweep_dwell: 3
+    steps:
+      - ley: [stop, "146.52"]
+      - ley: [bookmarks, add, "146.525", --name, Near]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: state, expect: {tuned_hz: 146520000, bookmark: Calling, open_rows.0: 2m, focused: ""}}
+      - {cmd: snapshot, name: open}
+      - {cmd: ax, name: open}
+      - {cmd: hover, identifier: sidebar.band.2m.channels, expect: {tooltip: "The 2 m amateur plan: pick a channel by name"}}
+      - {cmd: hover, identifier: sidebar.outofrange, expect: {tooltip: "Show them; they lie outside what this radio tunes"}}
+      - {cmd: ley, args: [set, squelch, "-45", --channel, "146.52"]}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ax, name: squelch-set}
+      # Out of range: the row and its actions disabled, the reason in their help.
+      - {cmd: press, identifier: sidebar.outofrange}
+      - {cmd: press, identifier: sidebar.band.gmrs.chevron}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146520000, open_rows.0: 2m, open_rows.1: gmrs}}
+      - {cmd: hover, identifier: sidebar.band.gmrs, expect: {tooltip: "GMRS is above what this radio tunes (142.7 – 163.7 MHz)"}}
+      - {cmd: hover, identifier: sidebar.band.gmrs.channels, expect: {tooltip: "GMRS is above what this radio tunes (142.7 – 163.7 MHz)"}}
+      - {cmd: snapshot, name: outofrange}
+      - {cmd: ax, name: outofrange}
+      - {cmd: press, identifier: sidebar.band.gmrs.chevron}
+      # The picker closed by Escape, then by a pick: nothing focused, Space mutes, → tunes.
+      - {cmd: press, identifier: sidebar.band.2m.channels}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "channels:2m"}}
+      - {cmd: key, keys: escape}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "", focused: "", muted: false}}
+      - {cmd: key, keys: space}
+      - {cmd: state, expect: {focused: "", muted: true, filter_query: ""}}
+      - {cmd: key, keys: space}
+      - {cmd: state, expect: {muted: false}}
+      - {cmd: press, identifier: sidebar.band.2m.channels}
+      - {cmd: wait, seconds: 1}
+      - {cmd: type, text: cal}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "", focused: "", tuned_hz: 146520000}}
+      - {cmd: key, keys: right}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {focused: "", filter_query: "", tuned_hz: 146525000, bookmark: Near}}
+      # The step arrows by accessibility: the band's step, never the fine one.
+      - {cmd: press, identifier: tuning.up}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146530000}}
+      - {cmd: press, identifier: tuning.down}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146525000, bookmark: Near}}
+      # marine, tunable on this capture: twelve rows of 110, and 24 narrows them.
+      - {cmd: press, identifier: sidebar.band.marine.chevron}
+      - {cmd: press, identifier: sidebar.band.marine.channels}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "channels:marine", focused: "AXUnknown \"Filter marine VHF channels\""}}
+      - {cmd: ax, name: marine, window: popover}
+      - {cmd: type, text: "24"}
+      - {cmd: ax, name: marine24, window: popover}
+      - {cmd: key, keys: escape}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "", focused: ""}}
+      # A hit tunes, and is bookmarked at, the frequency its row names.
+      - {cmd: press, identifier: sidebar.bookmark.calling}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: sidebar.band.2m.scan}
+      - {cmd: wait, seconds: 6, expect_log: ["sweep: job_.* ended: [0-9]+ hits?", "sweep: resuming bookmark Calling"]}
+      # 146.940 is on no 2 m plan channel, so the measure is used to 100 Hz (MC-3): within
+      # 500 Hz of the repeater, and never the measure's last two digits.
+      - {cmd: click, identifier: sidebar.hit.146-940-mhz}
+      - {cmd: wait, seconds: 1, expect_log: "tune: hit 146.940 MHz at 1469(39[5-9]|40[0-4])00 Hz"}
+      - {cmd: press, identifier: sidebar.hit.146-940-mhz.add}
+      - {cmd: wait, seconds: 1, expect_log: "bookmark: added 146.940 MHz at 1469(39[5-9]|40[0-4])00 Hz from a sweep hit"}
+
+  # The inspector as the owner decided it (docs/plans/app.md, MC-1a): the tags line keeps its
+  # place, so the frequency line and the Tone and Note fields sit at the same height on Tagged
+  # and on Plain (compare the two trees' frames); and a click on the inspector's empty header
+  # ends an edit in Tone or Note and saves it, as Return does (MC-3), while a refused tone
+  # stays in the field with its sentence and is not saved.
+  - name: mc1a-inspector
+    covers: [InspectorView.swift, Tone.swift, Bookmarks.swift]
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "off"]
+      - ley: [bookmarks, add, "146.85", --name, Tagged, --tag, home, --tag, vhf]
+      - ley: [bookmarks, add, "146.7", --name, Plain]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Tagged
+      settle: 3
+    app:
+      - {cmd: state, expect: {tuned_hz: 146850000, bookmark: Tagged}}
+      - {cmd: snapshot, name: tagged}
+      - {cmd: ax, name: tagged}
+      - {cmd: press, identifier: sidebar.bookmark.plain}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146700000, bookmark: Plain}}
+      - {cmd: snapshot, name: plain}
+      - {cmd: ax, name: plain}
+      - {cmd: press, identifier: inspector.note}
+      - {cmd: type, text: "a b"}
+      - {cmd: state, expect: {focused: inspector.note}}
+      - {cmd: click, x: 1300, y: 70}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {focused: ""}}
+      - {cmd: file, path: bookmarks.json, contains: '"note"\s*:\s*"a b"'}
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: '"name":"Plain"[^}]*"note":"a b"'}
+      - {cmd: ax, name: note-ended}
+      - {cmd: press, identifier: inspector.tone}
+      - {cmd: type, text: D024N}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {focused: inspector.tone}}
+      - {cmd: ax, name: refused}
+      - {cmd: click, x: 1300, y: 70}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {focused: ""}}
+      - {cmd: ax, name: tone-ended}
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: '!"name":"Plain"[^}]*"tone"'}

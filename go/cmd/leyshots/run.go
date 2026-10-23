@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/reflexive-labs/leysdr/go/internal/daemonrun"
@@ -30,6 +31,9 @@ type runOptions struct {
 	logf                                            func(string, ...any)
 	// leyfixSrc is leyfixSourceHash of the checkout, which a cached fixture must match.
 	leyfixSrc string
+	// stageApp turns app into the bundle a staged run launches (stagedApp: a copy under its own
+	// bundle identifier); nil launches app as it is.
+	stageApp func(ctx context.Context, app string) (string, error)
 }
 
 // errHTMLOnly is a page rendered to HTML on a machine that cannot draw it to a PNG.
@@ -69,6 +73,13 @@ func runScenes(ctx context.Context, o runOptions) error {
 	manifest, err := readManifest(manifestPath)
 	if err != nil {
 		return err
+	}
+	if o.stageApp != nil && o.goos == "darwin" && slices.ContainsFunc(scenes, func(s *Scene) bool {
+		return s.Kind == kindApp || s.Kind == kindComposite
+	}) {
+		if o.app, err = o.stageApp(ctx, o.app); err != nil {
+			return err
+		}
 	}
 	tm := &tmuxRunner{bin: o.tmux}
 	defer tm.stop()
@@ -159,74 +170,18 @@ func runScene(ctx context.Context, o runOptions, f *File, s *Scene, tm *tmuxRunn
 	}
 
 	run := filepath.Join(o.out, "run", s.Name())
-	if err := os.RemoveAll(run); err != nil {
+	sr, err := startScene(ctx, o, sceneSetup{
+		fixtures: s.Fixtures, clock: s.Clock, bookmarks: f.Path(s.Bookmarks), steps: s.Steps,
+	}, run)
+	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(run, 0o755); err != nil {
-		return nil, err
-	}
-	var files []*fixtureFile
+	defer sr.stop()
 	shot.Fixtures = map[string]json.RawMessage{}
-	for _, ref := range s.Fixtures {
-		ff, err := ensureFixture(ctx, o.leyfix, o.cache, ref, o.leyfixSrc, o.logf)
-		if err != nil {
-			return nil, err
-		}
-		files = append(files, ff)
-		shot.Fixtures[ref.Name] = ff.Generator
+	for i, ref := range s.Fixtures {
+		shot.Fixtures[ref.Name] = sr.fixtures[i].Generator
 	}
-	// The plugins (leydec-*) are installed beside ley; the daemon finds them on PATH.
-	pathEnv := "PATH=" + filepath.Dir(o.ley) + string(os.PathListSeparator) + os.Getenv("PATH")
-	d, err := daemonrun.Start(ctx, daemonrun.Options{
-		Bin: o.leylined, Dir: run, Decoders: o.decoders, WallClock: s.Clock, Label: "leyshots", Env: []string{pathEnv},
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer d.Stop()
-	env := []string{
-		"LEYLINE_SOCKET=" + d.Socket, "LEYLINE_BOOKMARKS=" + filepath.Join(run, "bookmarks.json"),
-		pathEnv, "COLORTERM=truecolor", "LANG=en_US.UTF-8",
-	}
-	steps, err := os.Create(filepath.Join(run, "steps.log"))
-	if err != nil {
-		return nil, err
-	}
-	defer steps.Close()
-	ley := func(args ...string) error {
-		fmt.Fprintf(steps, "$ ley %s\n", strings.Join(args, " "))
-		cmd := exec.CommandContext(ctx, o.ley, args...)
-		cmd.Env = append(os.Environ(), env...)
-		cmd.Stdout, cmd.Stderr = steps, steps
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("ley %s: %w; the output is in %s", strings.Join(args, " "), err, steps.Name())
-		}
-		return nil
-	}
-	if s.Bookmarks != "" {
-		if err := ley("bookmarks", "import", f.Path(s.Bookmarks)); err != nil {
-			return nil, err
-		}
-	}
-	// Each fixture becomes a radio with a channel tuned on it, and the channel outlives the
-	// command. The app needs one tuned before it starts: a staged run does not reopen a band.
-	for _, ff := range files {
-		if err := ley("play", ff.Path, "--persistent", "--loop"); err != nil {
-			return nil, err
-		}
-	}
-	for _, st := range s.Steps {
-		if st.Wait > 0 {
-			o.logf("waiting %.0f s", st.Wait)
-			if err := sleep(ctx, st.Wait); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		if err := ley(st.Ley...); err != nil {
-			return nil, err
-		}
-	}
+	env := sr.env
 	tm.env = env
 
 	switch s.Kind {
@@ -301,6 +256,158 @@ func runScene(ctx context.Context, o runOptions, f *File, s *Scene, tm *tmuxRunn
 		return finish(shot, out)
 	}
 	return nil, fmt.Errorf("unknown kind %q", s.Kind)
+}
+
+// sceneSetup is what a scene does before anything is shot or checked: the fixtures it plays, the
+// daemon's clock, the bookmarks it imports (a path already resolved, or empty) and its ley steps.
+type sceneSetup struct {
+	fixtures  []FixtureRef
+	clock     string
+	bookmarks string
+	steps     []Step
+	// ai, when set, runs the daemon's assistant on a script and adds its key first (ai.go).
+	ai *aiStub
+	// sweepDwellMs, when set, is the shortest dwell of a scan on a file radio (--file-scan-dwell).
+	sweepDwellMs int
+}
+
+// sceneRun is a scene's own daemon, set up and running.
+type sceneRun struct {
+	daemon   *daemonrun.Daemon
+	fixtures []*fixtureFile // in the order of sceneSetup.fixtures
+	// env points a client at the daemon and the scene's bookmarks file.
+	env      []string
+	stepsLog *os.File
+}
+
+// stop ends the daemon and closes the steps log.
+func (sr *sceneRun) stop() {
+	_ = sr.stepsLog.Close() // only appended to; a lost line is not worth failing the scene over
+	sr.daemon.Stop()
+}
+
+// startScene empties the run directory, generates the fixtures, starts the scene's
+// leylined --no-hardware there, imports the bookmarks, plays each fixture and runs the steps,
+// logging every ley command and its output to steps.log in the run directory.
+func startScene(ctx context.Context, o runOptions, in sceneSetup, run string) (*sceneRun, error) {
+	if err := os.RemoveAll(run); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(run, 0o755); err != nil {
+		return nil, err
+	}
+	var files []*fixtureFile
+	for _, ref := range in.fixtures {
+		ff, err := ensureFixture(ctx, o.leyfix, o.cache, ref, o.leyfixSrc, o.logf)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, ff)
+	}
+	// The plugins (leydec-*) are installed beside ley; the daemon finds them on PATH.
+	pathEnv := "PATH=" + filepath.Dir(o.ley) + string(os.PathListSeparator) + os.Getenv("PATH")
+	daemonEnv := []string{pathEnv}
+	if in.ai != nil {
+		aiEnv, err := in.ai.install(run, o.ley)
+		if err != nil {
+			return nil, err
+		}
+		daemonEnv = append(daemonEnv, aiEnv...)
+	}
+	d, err := daemonrun.Start(ctx, daemonrun.Options{
+		// A shot or check plays its fixtures on the Mac's speakers otherwise, beside the person
+		// working there; the channel still has its sink, so the app shows what it would.
+		Bin: o.leylined, Dir: run, Decoders: o.decoders, WallClock: in.clock, Label: "leyshots", Env: daemonEnv,
+		Unset: aiEnvNames, NoAudio: true, FileScanDwellMs: in.sweepDwellMs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	steps, err := os.Create(filepath.Join(run, "steps.log"))
+	if err != nil {
+		d.Stop()
+		return nil, err
+	}
+	sr := &sceneRun{
+		daemon: d, fixtures: files, stepsLog: steps,
+		env: []string{
+			"LEYLINE_SOCKET=" + d.Socket, "LEYLINE_BOOKMARKS=" + filepath.Join(run, "bookmarks.json"),
+			pathEnv, "COLORTERM=truecolor", "LANG=en_US.UTF-8",
+		},
+	}
+	if err := sr.setUp(ctx, o, in); err != nil {
+		sr.stop()
+		return nil, err
+	}
+	return sr, nil
+}
+
+// ley runs one ley command against the scene's daemon with stdin, its output in steps.log.
+func (sr *sceneRun) ley(ctx context.Context, o runOptions, stdin string, args ...string) error {
+	fmt.Fprintf(sr.stepsLog, "$ ley %s\n", strings.Join(args, " "))
+	cmd := exec.CommandContext(ctx, o.ley, args...)
+	cmd.Env = append(os.Environ(), sr.env...)
+	cmd.Stdin = strings.NewReader(stdin)
+	cmd.Stdout, cmd.Stderr = sr.stepsLog, sr.stepsLog
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ley %s: %w; the output is in %s", strings.Join(args, " "), err, sr.stepsLog.Name())
+	}
+	return nil
+}
+
+// play makes each fixture a radio with a channel tuned on it; the channel outlives the command.
+// The app needs one tuned before it starts: a staged run does not reopen a band.
+func (sr *sceneRun) play(ctx context.Context, o runOptions) error {
+	for _, ff := range sr.fixtures {
+		if err := sr.ley(ctx, o, "", "play", ff.Path, "--persistent", "--loop"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// restart starts the halted daemon again on the same socket, store and data, and plays the
+// fixtures again: a daemon does not keep a file device across a restart, while the bookmarks,
+// keys and recordings it keeps are still there.
+func (sr *sceneRun) restart(ctx context.Context, o runOptions) error {
+	if err := sr.daemon.Resume(ctx); err != nil {
+		return err
+	}
+	return sr.play(ctx, o)
+}
+
+// setUp imports the bookmarks, plays the fixtures, adds the AI key and runs the steps.
+func (sr *sceneRun) setUp(ctx context.Context, o runOptions, in sceneSetup) error {
+	leyIn := func(stdin string, args ...string) error { return sr.ley(ctx, o, stdin, args...) }
+	ley := func(args ...string) error { return leyIn("", args...) }
+	if in.bookmarks != "" {
+		if err := ley("bookmarks", "import", in.bookmarks); err != nil {
+			return err
+		}
+	}
+	if err := sr.play(ctx, o); err != nil {
+		return err
+	}
+	if in.ai != nil {
+		for _, c := range in.ai.steps() {
+			if err := leyIn(c.stdin, c.args...); err != nil {
+				return err
+			}
+		}
+	}
+	for _, st := range in.steps {
+		if st.Wait > 0 {
+			o.logf("waiting %.0f s", st.Wait)
+			if err := sleep(ctx, st.Wait); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := ley(st.Ley...); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // finish reads the written image's size and sha256 into the shot.

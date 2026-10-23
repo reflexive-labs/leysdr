@@ -3,6 +3,7 @@
 package fakedaemon
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -65,13 +66,15 @@ func matchField(ft *leylinev1.FieldTest, rec *leylinev1.DecodeRecord) bool {
 	case leylinev1.PredicateOp_PRED_NOT_IN:
 		return !present || !anyEquals(sval, num, isNum, vals)
 	case leylinev1.PredicateOp_PRED_CONTAINS:
-		// The field is a delimited list (a SAME alert's FIPS codes); it matches when any of the
-		// test's values is contained in it, which is what --county over several codes asks for.
+		// The field is a delimited list (a SAME alert's FIPS codes, or the words of a speech
+		// record's text); it matches when any of the test's values is a whole token of it, or a
+		// run of whole tokens in order, case-folded, as the daemon's PredicateEval does it.
 		if !present {
 			return false
 		}
+		have := predicateTokens(sval)
 		for _, v := range vals {
-			if s := fieldValueString(v); s != "" && strings.Contains(sval, s) {
+			if containsRun(have, predicateTokens(fieldValueString(v))) {
 				return true
 			}
 		}
@@ -218,3 +221,22 @@ func fieldValueNumber(v *leylinev1.FieldValue) (float64, bool) {
 }
 
 func numString(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
+
+// predicateTokens splits a field on comma, space and '-', trimmed and case-folded: the daemon's
+// tokenise, so "006001-006013" and "Net Control" read as lists.
+func predicateTokens(s string) []string {
+	return strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return r == ',' || r == ' ' || r == '-' })
+}
+
+// containsRun reports whether run appears in tokens as consecutive tokens; an empty run never does.
+func containsRun(tokens, run []string) bool {
+	if len(run) == 0 {
+		return false
+	}
+	for i := 0; i+len(run) <= len(tokens); i++ {
+		if slices.Equal(tokens[i:i+len(run)], run) {
+			return true
+		}
+	}
+	return false
+}

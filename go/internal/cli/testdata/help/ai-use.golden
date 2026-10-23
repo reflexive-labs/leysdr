@@ -1,0 +1,44 @@
+use sets the provider and model a feature calls: assistant is the
+assistant that runs the radio for you, speech is speech-to-text on received
+audio.
+
+With a provider alone, every feature the provider serves calls it, with the
+provider's default model (openai: the assistant gpt-5 and speech
+whisper-1; anthropic: the assistant claude-sonnet-5-5). With a feature and a
+provider, that feature calls it with the default model. A provider and a
+model with no feature is taken when the provider serves one feature, and
+refused when it serves two, since the model could be either's. A provider
+ley does not know needs the feature and the model named, unless its key
+was added with --endpoint: then it is an OpenAI-compatible server, which
+serves the assistant.
+
+The model is the provider's own name for it, passed on as typed, so a model
+the provider has not heard of fails on the first call rather than here. A
+provider that cannot serve the feature is refused here, naming those that
+can: speech is served by openai and by the provider of any speech decoder
+installed, and a provider ley does not know serves the assistant as an
+OpenAI-compatible server, at the endpoint its key was added with.
+
+A model can be chosen before the provider's key is added; ley says so and
+prints the command that adds it.
+
+--json prints the FeatureModel the daemon stored, one line per feature.
+
+Usage:
+  ley ai use [<feature>] <provider> [<model>] [flags]
+
+Examples:
+  ley ai use openai                                # the assistant and speech
+  ley ai use assistant anthropic                   # its default model
+  ley ai use assistant anthropic claude-opus-5-5
+  ley ai use assistant openai llama3               # a key added with --endpoint
+  ley ai use speech deepgram nova-3                # a speech decoder's provider
+
+Flags:
+  -h, --help   help for use
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

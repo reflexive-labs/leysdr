@@ -25,6 +25,11 @@ audio of a channel and writes records back, so 'ley decode aprs' needs no
 frequency, mode or bandwidth -- the decoder's recipe says where its protocol
 lives and how to demodulate it.
 
+A decoder that calls a model provider says so: NEEDS names the key it runs
+on ('ley ai add <provider>' adds it), and SENDS TO the hosts its manifest
+says the audio goes to. They are the manifest's word, not something the
+daemon enforces, and the columns are left out when no decoder calls one.
+
 The daemon reads manifests and runs nothing to build this list, so a broken
 plugin is missing from it rather than breaking the verb; the directories it
 looked in are printed under the table.
@@ -68,6 +73,10 @@ func printDecoderTable(app *App, resp *leylinev1.ListDecodersResponse) {
 		{head: "MODE"},
 		{head: "OUTPUTS", min: 7, drop: 2},
 		{head: "VERSION", drop: 1},
+		// What a decoder that calls a provider needs and where it sends what it hears
+		// (docs/design/ai.md): advisory, from the manifest, and gone when no decoder calls one.
+		{head: "NEEDS", drop: 3, hideEmpty: true},
+		{head: "SENDS TO", drop: 4, hideEmpty: true},
 	}
 	for _, m := range resp.GetDecoders() {
 		name := m.GetName()
@@ -76,8 +85,13 @@ func printDecoderTable(app *App, resp *leylinev1.ListDecodersResponse) {
 		if a := m.GetAliases(); len(a) > 0 {
 			name += " " + s.Muted("("+strings.Join(a, ", ")+")")
 		}
+		needs := ""
+		if p := m.GetCredentialProvider(); p != "" {
+			needs = p + " key"
+		}
 		add(cols, name, decoderFrequencies(m), decoderMode(m),
-			absentIfEmpty(s, decoderOutputs(m)), absentIfEmpty(s, m.GetVersion()))
+			absentIfEmpty(s, decoderOutputs(m)), absentIfEmpty(s, m.GetVersion()),
+			absentIfEmpty(s, needs), absentIfEmpty(s, strings.Join(m.GetContactsHosts(), ", ")))
 	}
 	_, _ = printColumns(app.Stdout, s, cols, nil)
 	if len(resp.GetDecoders()) == 0 {

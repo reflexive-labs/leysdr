@@ -2,9 +2,13 @@
 
 // Command leyshots takes the screenshots for leysdr.com from the real app and the real `ley`,
 // each scene against its own `leylined --no-hardware` playing synthetic IQ, and publishes them
-// as a GitHub release (docs/plans/site-shots.md).
+// as a GitHub release (docs/plans/site-shots.md). It also checks the app: each scene in
+// app/checks/scenes.yaml is run against its own daemon, driven over the app's command file, and
+// its pictures, accessibility trees and state compared with local goldens
+// (docs/plans/mac-loop.md, ML-4).
 //
 //	leyshots run [--only a,b] [--out tmp/shots]
+//	leyshots check [--only a,b | --smoke | --affected [--base REF]] [--jobs N] [--record] [--hold] [--out tmp/checks] [--goldens tmp/goldens] [--list]
 //	leyshots publish [--only a,b] [--out tmp/shots] [--dry-run]
 //	leyshots list
 //	leyshots keys [--out tmp/shots/keys] [--leyfix PATH]
@@ -26,11 +30,14 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 )
 
 func usage(w io.Writer) {
 	fmt.Fprintln(w, "usage: leyshots run [--only a,b] [--out DIR]       take the scenes in site/shots/scenes.yaml")
+	fmt.Fprintln(w, "       leyshots check [--only a,b | --smoke | --affected [--base REF]] [--jobs N] [--record] [--hold] [--out DIR] [--goldens DIR] [--list]")
+	fmt.Fprintln(w, "                                                 run app/checks/scenes.yaml against the app and its goldens")
 	fmt.Fprintln(w, "       leyshots publish [--only a,b] [--out DIR] [--dry-run]")
 	fmt.Fprintln(w, "                                                 release the reviewed images as shots-YYYY-MM-DD")
 	fmt.Fprintln(w, "       leyshots list                             the scenes, their kind and what they need")
@@ -46,12 +53,14 @@ func realMain(args []string) int {
 		usage(os.Stderr)
 		return 2
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	var err error
 	switch args[0] {
 	case "run":
 		err = cmdRun(ctx, args[1:], os.Stdout)
+	case "check":
+		err = cmdCheck(ctx, args[1:], os.Stdout)
 	case "publish":
 		err = cmdPublish(ctx, args[1:], os.Stdout)
 	case "list":
@@ -66,6 +75,9 @@ func realMain(args []string) int {
 	default:
 		usage(os.Stderr)
 		return 2
+	}
+	if errors.Is(err, errChecksFailed) {
+		return 1 // the lines and the summary have said which
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "leyshots:", err)
@@ -140,6 +152,7 @@ func cmdRun(ctx context.Context, args []string, stdout io.Writer) error {
 		goos:     runtime.GOOS,
 		stdout:   stdout,
 		logf:     logf,
+		stageApp: stagedAppIn(root),
 	}
 	if o.out == "" {
 		o.out = filepath.Join(root, "tmp", "shots")
@@ -148,6 +161,118 @@ func cmdRun(ctx context.Context, args []string, stdout io.Writer) error {
 		return err
 	}
 	return runScenes(ctx, o)
+}
+
+func cmdCheck(ctx context.Context, args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("check", flag.ContinueOnError)
+	only := fs.String("only", "", "comma-separated check scenes to run, e.g. radio-2m,goto-bookmark (default: all)")
+	record := fs.Bool("record", false, "write each picture and tree over its golden instead of comparing")
+	out := fs.String("out", "", "output directory for the artefacts and summary.json (default: tmp/checks in the checkout)")
+	goldens := fs.String("goldens", "", "goldens directory, above <macOS>-<arch> (default: tmp/goldens in the checkout)")
+	list := fs.Bool("list", false, "list the check scenes and run nothing")
+	hold := fs.Bool("hold", false, "with --only naming one scene: run it at its first size, then leave the app and daemon running to be driven over the command file until the app quits")
+	smoke := fs.Bool("smoke", false, "run the scenes marked smoke: true")
+	affected := fs.Bool("affected", false, "run the scenes whose covers match a file changed under app/Sources or app/checks, or app/Package.swift, since --base, uncommitted and untracked files included; a shared file brings in the smoke scenes, a changed file no scene covers fails the run, and so does selecting no scene")
+	base := fs.String("base", "", "with --affected, the commit to compare with (default: the merge base of HEAD and main; when that is HEAD and nothing has changed since, the commit before)")
+	jobs := fs.Int("jobs", 1, "how many scenes to run side by side; a scene marked serial: true runs with nothing beside it")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *jobs < 1 {
+		return fmt.Errorf("--jobs %d: run at least one scene at a time", *jobs)
+	}
+	if *jobs > 1 && *hold {
+		return errors.New("--hold runs one scene; it takes no --jobs")
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("check takes no arguments; name scenes with --only")
+	}
+	picks := 0
+	for _, on := range []bool{*only != "", *smoke, *affected} {
+		if on {
+			picks++
+		}
+	}
+	if picks > 1 {
+		return errors.New("--only, --smoke and --affected each choose the scenes; give one")
+	}
+	if *base != "" && !*affected {
+		return errors.New("--base goes with --affected")
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	root, err := findRoot(cwd)
+	if err != nil {
+		return err
+	}
+	checks := filepath.Join(root, "app", "checks", "scenes.yaml")
+	if *list {
+		f, err := LoadChecks(checks)
+		if err != nil {
+			return err
+		}
+		listChecks(f, stdout)
+		return nil
+	}
+	if runtime.GOOS != "darwin" {
+		return errors.New("check drives the Mac app; it runs on macOS")
+	}
+	o := checkOptions{
+		runOptions: runOptions{
+			root: root, out: *out, cache: defaultCacheDir(), only: splitList(*only),
+			leylined: envOr("LEYLINED_BIN", filepath.Join(root, "engine", ".build", "debug", "leylined")),
+			ley:      envOr("LEY_BIN", filepath.Join(root, "go", "bin", "ley")),
+			leyfix:   envOr("LEYFIX_BIN", filepath.Join(root, "go", "bin", "leyfix")),
+			app:      envOr("LEYLINE_APP", filepath.Join(root, "app", "dist", "Leyline.app")),
+			decoders: filepath.Join(root, "decoders"),
+			goos:     runtime.GOOS, stdout: stdout, logf: logf,
+			stageApp: stagedAppIn(root),
+		},
+		checks: checks, goldens: *goldens, record: *record, hold: *hold,
+		smoke: *smoke, affected: *affected, base: *base, jobs: *jobs,
+		launch: openApp, alive: processAlive, kill: killProcess, findPID: findAppPID,
+		grace: answerGrace, poll: 100 * time.Millisecond,
+	}
+	if o.out == "" {
+		o.out = filepath.Join(root, "tmp", "checks")
+	}
+	if o.goldens == "" {
+		o.goldens = filepath.Join(root, "tmp", "goldens")
+	}
+	for _, p := range []*string{&o.out, &o.goldens} {
+		if *p, err = filepath.Abs(*p); err != nil {
+			return err
+		}
+	}
+	if o.release, err = macOSRelease(ctx); err != nil {
+		return err
+	}
+	if o.leyfixSrc, err = leyfixSourceHash(root); err != nil {
+		return err
+	}
+	o.prepare = func(ctx context.Context, f *CheckFile, s *CheckScene, run string) (*sceneDaemon, error) {
+		in := sceneSetup{
+			fixtures: s.Fixtures, clock: s.Clock, bookmarks: f.Path(s.Bookmarks), steps: s.Steps,
+			sweepDwellMs: int(s.SweepDwell * 1000),
+		}
+		if s.AI != nil {
+			var err error
+			if in.ai, err = s.AI.stub(f.Path); err != nil {
+				return nil, err
+			}
+		}
+		sr, err := startScene(ctx, o.runOptions, in, run)
+		if err != nil {
+			return nil, err
+		}
+		return &sceneDaemon{
+			env: sr.env, stop: sr.stop, halt: sr.daemon.Halt,
+			resume: func(ctx context.Context) error { return sr.restart(ctx, o.runOptions) },
+		}, nil
+	}
+	return checkScenes(ctx, o)
 }
 
 func cmdPublish(ctx context.Context, args []string, stdout io.Writer) error {

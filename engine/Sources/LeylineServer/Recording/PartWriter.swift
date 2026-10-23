@@ -215,6 +215,10 @@ actor PartWriter {
     private var sumSquares: Double = 0
     private var squelchOpens: [RecordingSquelchOpen] = []
     private var pendingOpen: UInt64?
+    /// The intervals of the parts closed most recently, newest last, so a live decode job can name
+    /// the part and over a segment's audio is in after the part has closed (`clip(forSegmentAt:)`).
+    private var closedOpens: [(part: Int, opens: [RecordingSquelchOpen])] = []
+    private static let keptClosedParts = 64
     /// The capture's clipping, matched against each part as it closes.
     private var clips = ClipLedger()
     /// The capture rate the ledger's samples are counted at; 0 until the first reading.
@@ -234,6 +238,8 @@ actor PartWriter {
         self.manifest = manifest
         self.captureID = captureID
         self.centerHz = centerHz
+        // A recording carried on after a daemon restart numbers its new parts after the old ones.
+        partNumber = manifest.parts.map(\.part).max() ?? 0
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
         try Self.writeManifest(manifest, to: directory)
     }
@@ -292,6 +298,63 @@ actor PartWriter {
         } else if let from = pendingOpen {
             squelchOpens.append(RecordingSquelchOpen(openSample: from, closeSample: sample))
             pendingOpen = nil
+        }
+    }
+
+    /// Where a segment's audio is, as far as the writer can tell.
+    enum ClipLookup: Equatable, Sendable {
+        /// The part and the 1-based index of the segment's first opening in its `squelch_opens`.
+        case found(part: Int, over: UInt32)
+        /// The recorder has not reached the segment's opening yet.
+        case notYet
+        /// It never will: the recording has moved past the segment without it.
+        case never
+    }
+
+    /// The part and over holding a segment that starts at capture sample `start`: the first squelch
+    /// opening, in the order they happened, that was still open at `start`, and its 1-based index
+    /// in its part's `squelch_opens`. A segment reaches back a pre-roll before its first opening
+    /// and never before the previous segment ended, which was a hang after that segment's last
+    /// close, so every earlier opening had closed by `start` and the first one open at it is the
+    /// segment's own (docs/dev/engine-internals.md, "Decoders"). The open part's opening that has
+    /// not closed yet counts as open.
+    ///
+    /// Not found, it is `never` when no part is open and the segment's opening, at most `preRoll`
+    /// after its start, came before the last closed part ended: that part would have listed it.
+    /// Otherwise the recorder may still be on its way, and it is `notYet`.
+    func clip(forSegmentAt start: UInt64, preRoll: UInt64) -> ClipLookup {
+        for (part, opens) in closedOpens {
+            if let i = opens.firstIndex(where: { $0.closeSample > start }) { return .found(part: part, over: UInt32(i + 1)) }
+        }
+        guard handle != nil else {
+            if closed { return .never }
+            if let last = manifest.parts.last, start + preRoll < last.endSample { return .never }
+            return .notYet
+        }
+        if let i = squelchOpens.firstIndex(where: { $0.closeSample > start }) { return .found(part: partNumber, over: UInt32(i + 1)) }
+        if pendingOpen != nil { return .found(part: partNumber, over: UInt32(squelchOpens.count + 1)) }
+        return .notYet
+    }
+
+    /// A ceiling on the recording's closed parts, in bytes: past it the oldest parts are removed
+    /// as each new one closes, the newest always kept. Nil is no ceiling of its own; the store's
+    /// cap still applies. A kept speech job's clips get one, so a job that runs for weeks keeps
+    /// its latest overs rather than evicting the user's other recordings.
+    private(set) var capBytes: UInt64?
+
+    func setCap(_ bytes: UInt64?) { capBytes = bytes }
+
+    /// Removes the oldest closed parts, files and sidecars, until the closed parts fit the cap.
+    private func trimToCap() {
+        guard let capBytes else { return }
+        while manifest.bytes > capBytes, manifest.parts.count > 1 {
+            let oldest = manifest.parts.removeFirst()
+            manifest.bytes -= Swift.min(manifest.bytes, oldest.bytes)
+            let base = (oldest.file as NSString).deletingPathExtension
+            try? FileManager.default.removeItem(atPath: directory + "/" + oldest.file)
+            try? FileManager.default.removeItem(atPath: directory + "/" + base + ".json")
+            closedOpens.removeAll { $0.part == oldest.part }
+            log.info("\(directory): dropped part \(oldest.part), the oldest, to keep the clips under \(capBytes) bytes")
         }
     }
 
@@ -402,16 +465,30 @@ actor PartWriter {
                                  startSample: partStartSample, endSample: endSample,
                                  samples: partSamples, bytes: partBytes,
                                  peakDbfs: peakDb, meanDbfs: meanDb, squelchOpens: squelchOpens.count,
-                                 clippedMs: clippedMs)
+                                 clippedMs: clippedMs, squelchOpenMs: squelchOpenMs())
         manifest.parts.append(part)
         manifest.bytes += partBytes
+        closedOpens.append((partNumber, squelchOpens))
+        if closedOpens.count > Self.keptClosedParts { closedOpens.removeFirst(closedOpens.count - Self.keptClosedParts) }
         // The per-part accumulators belong to the part that just closed. `bytes` adds the open
         // part to the manifest's total, so leaving them set counts the last part twice -- which is
         // exactly the number a finished recording reports.
         partBytes = 0
         partSamples = 0
         writeSidecar(for: part, peak: peakDb, mean: meanDb)
+        trimToCap()
         persist()
+    }
+
+    /// The closing part's `squelch_open_ms`: its intervals summed on the capture's timeline and
+    /// turned into milliseconds once, so the figure is the sidecar's sum rather than a sum of
+    /// rounded intervals. Nil for a continuous recording, and while the capture's rate is unknown.
+    private func squelchOpenMs() -> Int64? {
+        guard manifest.gate != nil else { return nil }
+        let anchor = manifest.anchors.last { ($0.captureID ?? "") == captureID } ?? manifest.anchors.last
+        guard let rate = anchor?.sampleRate, rate > 0 else { return nil }
+        let samples = squelchOpens.reduce(UInt64(0)) { $0 + ($1.closeSample > $1.openSample ? $1.closeSample - $1.openSample : 0) }
+        return Int64((Double(samples) / Double(rate) * 1000).rounded())
     }
 
     /// Ends the recording: the open part is closed and the manifest records how it ended.

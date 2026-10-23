@@ -77,12 +77,15 @@ func WithDialOptions(opts ...grpc.DialOption) Option {
 // Client is a connection to one daemon. The typed service clients are exposed
 // directly; the helpers below wrap the common client workflows.
 type Client struct {
-	Control   leylinev1.ControlClient
-	Telemetry leylinev1.TelemetryClient
-	Bulk      leylinev1.BulkClient
-	Jobs      leylinev1.JobsClient
-	Resources leylinev1.ResourcesClient
-	Decoders  leylinev1.DecodersClient
+	Control     leylinev1.ControlClient
+	Telemetry   leylinev1.TelemetryClient
+	Bulk        leylinev1.BulkClient
+	Jobs        leylinev1.JobsClient
+	Resources   leylinev1.ResourcesClient
+	Decoders    leylinev1.DecodersClient
+	Credentials leylinev1.CredentialsClient
+	Usage       leylinev1.UsageClient
+	Assistant   leylinev1.AssistantClient
 
 	conn     *grpc.ClientConn
 	path     string
@@ -131,6 +134,9 @@ func Dial(_ context.Context, socketPath string, opts ...Option) (*Client, error)
 	c.Jobs = leylinev1.NewJobsClient(conn)
 	c.Resources = leylinev1.NewResourcesClient(conn)
 	c.Decoders = leylinev1.NewDecodersClient(conn)
+	c.Credentials = leylinev1.NewCredentialsClient(conn)
+	c.Usage = leylinev1.NewUsageClient(conn)
+	c.Assistant = leylinev1.NewAssistantClient(conn)
 	return c, nil
 }
 

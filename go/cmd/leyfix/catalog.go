@@ -141,8 +141,9 @@ var keyedSegments = []keySegment{{1.0, 2.0}, {5.0, 5.5}, {8.5, 10.5}}
 
 const keyedDurationS = 10.5
 
-// catalog is every fixture leyfix can write: the default set and the scenes.
-var catalog = slices.Concat(defaultFixtures, sceneFixtures)
+// catalog is every fixture leyfix can write: the default set (the agent evals' among them) and
+// the scenes.
+var catalog = slices.Concat(defaultFixtures, evalFixtures, sceneFixtures)
 
 // defaultFixtures are the fixtures `make fixtures` writes.
 var defaultFixtures = []fixture{

@@ -12,6 +12,15 @@
 #                                         Contents/Frameworks and the daemon's launch agent under
 #                                         Contents/Library/LaunchAgents (what a distributed build
 #                                         ships: E.7)
+#   scripts/bundle-app.sh --no-harness    leave the check harness out (what scripts/release.sh
+#                                         builds; below)
+#
+# The app is built with -DLEYLINE_STAGING, which compiles in the check harness that `leyshots`
+# drives (the stage, the command file, the tree and picture readers, the deterministic frames;
+# docs/dev/app.md, "Staged runs"), so `make app-bundle`, `make shots-bundle` and `make app-check`
+# get it. --no-harness builds without it: a notarized build carries none of that code and ignores
+# LEYLINE_APP_STAGE and LEYLINE_APP_CONTROL. -Xswiftc reaches every target, so switching between
+# the two recompiles the app's dependencies once.
 #
 # CODESIGN_IDENTITY names a signing identity ("Developer ID Application: …"); unset, the bundle is
 # ad-hoc signed, which runs on this machine and nowhere else. Notarization is scripts/release.sh's
@@ -103,7 +112,14 @@ JS
 }
 
 with_daemon=0
-[ "${1:-}" = "--with-daemon" ] && with_daemon=1
+harness=1
+for arg in "$@"; do
+  case "$arg" in
+    --with-daemon) with_daemon=1 ;;
+    --no-harness) harness=0 ;;
+    *) die "unknown argument $arg (--with-daemon, --no-harness)" ;;
+  esac
+done
 identity=${CODESIGN_IDENTITY:--}
 
 version=$(tr -d '[:space:]' < VERSION)
@@ -113,8 +129,10 @@ build=$(git describe --tags --always --dirty --match 'v*' --abbrev=7 2>/dev/null
 build_number=$(git rev-list --count HEAD 2>/dev/null || echo 0)
 gobin=${BUNDLE_GOBIN:-go/bin}
 
-echo "==> swift build -c release (app/)"
-(cd app && swift build -c release --product LeylineApp)
+swift_flags=()
+[ $harness -eq 1 ] && swift_flags=(-Xswiftc -DLEYLINE_STAGING)
+echo "==> swift build -c release ${swift_flags[*]:-without the harness} (app/)"
+(cd app && swift build -c release --product LeylineApp ${swift_flags[@]+"${swift_flags[@]}"})
 bin=$(cd app && swift build -c release --show-bin-path)
 
 out=${BUNDLE_OUT:-app/dist/Leyline.app}
@@ -174,7 +192,10 @@ if [ $with_daemon -eq 1 ]; then
     name=$(basename "$d")
     mkdir -p "$out/Contents/Resources/decoders/$name"
     cp "$d"/*.json "$out/Contents/Resources/decoders/$name/" 2>/dev/null || true
-    [ -x "$gobin/leydec-$name" ] && cp "$gobin/leydec-$name" "$out/Contents/Helpers/"
+    # The binary the manifest names, which two decoders may share (leydec-speech is speech and
+    # speech-scripted). Bare sed rather than jq: this runs on a stock Mac.
+    exe=$(sed -n 's/.*"executable"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$d/manifest.json" | head -1)
+    if [ -n "$exe" ] && [ -x "$gobin/$exe" ]; then cp "$gobin/$exe" "$out/Contents/Helpers/"; fi
   done
   # The GPL engine travels with its licence text and the source offer (docs/decisions/D2-licensing.md).
   cp engine/LICENSE "$out/Contents/Resources/licenses/LICENSE.leylined"

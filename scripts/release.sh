@@ -114,11 +114,28 @@ release_assets() {
   printf '%s\n' "$1/drivers.json" "$1/appcast.xml"
 }
 
+# Names compiled into the app only with the check harness (scripts/bundle-app.sh, --no-harness):
+# the command file's reader, the tree walk, the picture and the region probe, as Swift's type
+# metadata spells them, and a line the deterministic frames log.
+HARNESS_MARKERS='ControlChannel|AXWalk|WindowPicture|StageRegionProbe|drawn as key whatever the focus'
+
+# harness_markers <executable>: each harness name found in <executable>, one per line, or nothing.
+# A release's app must print nothing.
+harness_markers() {
+  { grep -a -o -E "$HARNESS_MARKERS" "$1" || true; } | LC_ALL=C sort -u
+}
+
+# manifest_executable <manifest.json>: the binary a decoder's manifest names. One binary can serve
+# two decoders (leydec-speech is speech and speech-scripted), so the directory's name is not it.
+manifest_executable() {
+  sed -n 's/.*"executable"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" | head -1
+}
+
 # build_app <version> <work> <identity> <app>: ley and the decoders for the one architecture a
 # release ships, stamped with the bare version, then the bundle at <app> signed by <identity> ("-"
 # for ad hoc) and verified. Not go/bin, which holds whatever the last `make go` built.
 build_app() {
-  local version=$1 gobin=$2/gobin identity=$3 app=$4 d name
+  local version=$1 gobin=$2/gobin identity=$3 app=$4 d name exe
   mkdir -p "$gobin"
   echo "==> go build (darwin/arm64): ley, leydec-*"
   (cd go && GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -trimpath \
@@ -126,10 +143,15 @@ build_app() {
     -o "$gobin/" ./cmd/ley ./cmd/leydec-*)
   for d in decoders/*/; do
     name=$(basename "$d")
-    [ -x "$gobin/leydec-$name" ] || die "decoders/$name has no go/cmd/leydec-$name to build"
+    exe=$(manifest_executable "$d/manifest.json")
+    [ -x "$gobin/$exe" ] || die "decoders/$name names $exe, and there is no go/cmd/$exe to build"
   done
 
-  BUNDLE_GOBIN=$gobin BUNDLE_OUT=$app CODESIGN_IDENTITY=$identity ./scripts/bundle-app.sh --with-daemon
+  BUNDLE_GOBIN=$gobin BUNDLE_OUT=$app CODESIGN_IDENTITY=$identity ./scripts/bundle-app.sh --with-daemon --no-harness
+  local found
+  found=$(harness_markers "$app/Contents/MacOS/LeylineApp")
+  [ -z "$found" ] || die "$app carries the check harness ($(echo "$found" | xargs)); bundle-app.sh must build it with --no-harness"
+  echo "==> no check harness in $app"
   echo "==> codesign --verify --strict --deep"
   codesign --verify --strict --deep --verbose=2 "$app"
 }
@@ -160,12 +182,13 @@ rehearse() {
 
 # build: the release, from the Go build to the appcast.
 build() {
-  local version=$1 out=$2 identity app dmg json id status stage d tagged
+  local version=$1 out=$2 identity identities app dmg json id status stage d tagged
   identity=${CODESIGN_IDENTITY:-}
   [ -n "$identity" ] && [ "$identity" != "-" ] \
     || die "CODESIGN_IDENTITY must name the Developer ID Application identity (security find-identity -v -p codesigning)"
   [ -n "${NOTARY_PROFILE:-}" ] || die "NOTARY_PROFILE must name the notarytool keychain profile (xcrun notarytool store-credentials)"
-  security find-identity -v -p codesigning | grep -qF "\"$identity\"" \
+  identities=$(security find-identity -v -p codesigning)
+  grep -qF "\"$identity\"" <<<"$identities" \
     || die "no valid signing identity \"$identity\" in the keychain"
   [ "$(engine_version engine/Sources/LeylineDaemon/Version.swift)" = "$version" ] \
     || die "engine/Sources/LeylineDaemon/Version.swift does not say $version; run make version and commit it"

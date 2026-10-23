@@ -105,16 +105,21 @@ package func defaultStorePath() -> String { defaultDataPath("store") }
 /// Spotlight can index, beside the kept-records store (docs/design/recording.md, "Files").
 package func defaultRecordingsPath() -> String { defaultDataPath("recordings") }
 
-private func defaultDataPath(_ leaf: String) -> String {
+/// The daemon's data directory, which holds what it keeps about the user's AI keys and the
+/// default homes of everything else: `~/Library/Application Support/Leyline` on macOS,
+/// `$XDG_DATA_HOME/leyline` (or `~/.local/share/leyline`) elsewhere.
+package func defaultDataDirectory() -> String {
     #if os(macOS)
-    return NSHomeDirectory() + "/Library/Application Support/Leyline/" + leaf
+    return NSHomeDirectory() + "/Library/Application Support/Leyline"
     #else
     if let dir = ProcessInfo.processInfo.environment["XDG_DATA_HOME"], !dir.isEmpty {
-        return dir + "/leyline/" + leaf
+        return dir + "/leyline"
     }
-    return NSHomeDirectory() + "/.local/share/leyline/" + leaf
+    return NSHomeDirectory() + "/.local/share/leyline"
     #endif
 }
+
+private func defaultDataPath(_ leaf: String) -> String { defaultDataDirectory() + "/" + leaf }
 
 /// `LEYLINE_DECODERS=dir[:dir...]` — appended to the `--decoders` flags, ahead of the default.
 package func decoderPathsFromEnvironment() -> [String] {
@@ -143,6 +148,12 @@ package func serveUntilStopped(
         // listener -- has nothing left to report.
         group.cancelAll()
     }
+}
+
+/// `LEYLINE_LEY=/path/to/ley`: the `ley` the daemon runs for its workers when `--ley` is not given.
+package func leyPathFromEnvironment() -> String? {
+    guard let env = ProcessInfo.processInfo.environment["LEYLINE_LEY"], !env.isEmpty else { return nil }
+    return env
 }
 
 /// `LEYLINE_RTLTCP=host:port[,host:port...]` — appended to the `--rtltcp` flags.

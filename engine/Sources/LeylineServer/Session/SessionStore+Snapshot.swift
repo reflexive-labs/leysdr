@@ -39,6 +39,16 @@ extension SessionStore {
         if capFilter == nil {
             out.playbacks = await playbackProtos()
         }
+        // The keys are the station's, not a capture's.
+        if capFilter == nil, let provider = aiProvider {
+            out.ai = await provider()
+        }
+        if capFilter == nil, let provider = usageProvider {
+            out.usage = await provider()
+        }
+        if capFilter == nil, let provider = conversationsProvider {
+            out.conversations = await provider()
+        }
         out.eventSeq = at
         return out
     }

@@ -42,6 +42,26 @@ package final class Daemon: Sendable {
         var recordingsPath: String
         var recordingsCapBytes: UInt64
         var recordingsAgeDays: UInt32
+        /// The data directory: `ai.json`, and `secrets/credentials.json` where there is no keychain
+        /// (docs/dev/engine-internals.md, "Credentials and usage").
+        var dataPath: String
+        /// Where provider keys are kept; nil is the platform's (`defaultSecretStore`), the login
+        /// keychain on macOS. A test passes a file store in its own directory so it never writes
+        /// to the Mac's keychain; `DaemonTestHarness` stops a test daemon that would reach the
+        /// keychain or the default data directory, store or recordings.
+        var secretStore: (any SecretStore)?
+        /// `--secrets`: which store `defaultSecretStore` makes when `secretStore` is nil; nil reads
+        /// `LEYLINE_SECRETS`, then takes the platform's.
+        package var secrets: SecretsKind?
+        /// The `ley` the daemon runs for its workers (`--ley`, `LEYLINE_LEY`); nil finds one with
+        /// `programLocator`: beside `leylined`, then `PATH`.
+        var leyPath: String?
+        var programLocator: ProgramLocator = .init()
+        /// When an idle conversation ends; a test shortens it and brings its own clock.
+        var conversationTiming = ConversationStore.Timing()
+        /// `--file-scan-dwell`: the shortest dwell a scan on a file device runs at, in ms; 0 leaves
+        /// the request's. A check scene sets it to see a sweep in progress; other radios ignore it.
+        package var fileScanDwellMs: UInt32 = 0
         /// Reported in `DaemonInfo` and the startup log line: the executable passes its generated
         /// `leylinedVersion`, a test its own string.
         var version: String
@@ -52,7 +72,8 @@ package final class Daemon: Sendable {
                      decoderSearchPath: [String] = [defaultDecodersPath()], storePath: String = defaultStorePath(),
                      storeCapBytes: UInt64 = 2 << 30, storeAgeDays: UInt32 = 90,
                      recordingsPath: String = defaultRecordingsPath(), recordingsCapBytes: UInt64 = 20 << 30,
-                     recordingsAgeDays: UInt32 = 0, version: String)
+                     recordingsAgeDays: UInt32 = 0, dataPath: String = defaultDataDirectory(),
+                     leyPath: String? = nil, version: String)
         {
             self.socketPath = socketPath
             self.pidfile = pidfile
@@ -69,6 +90,8 @@ package final class Daemon: Sendable {
             self.recordingsPath = recordingsPath
             self.recordingsCapBytes = recordingsCapBytes
             self.recordingsAgeDays = recordingsAgeDays
+            self.dataPath = dataPath
+            self.leyPath = leyPath
             self.version = version
         }
     }
@@ -100,8 +123,16 @@ package final class Daemon: Sendable {
     let remembered: RememberedDevices
     let streams: StreamRegistry
     let jobs: JobStore
+    /// The user's provider keys and each feature's model.
+    let credentials: CredentialStore
+    /// What every provider call used, as its worker or plugin reported it.
+    let ledger: Ledger
+    /// The assistant's conversations and their workers.
+    let conversations: ConversationStore
     private let server: GRPCServer<HTTP2ServerTransport.Posix>
     private let log = Logger(label: "leyline.daemon")
+    /// `secretStoreLocation` of the key store, logged at start-up.
+    private let secretsLocation: String
     private let teardown = TeardownGate()
 
     package init(config: Config) {
@@ -118,8 +149,23 @@ package final class Daemon: Sendable {
         let recordStore = RecordStore(directory: config.storePath, capBytes: config.storeCapBytes, ageDays: config.storeAgeDays)
         let recordings = RecordingStore(directory: config.recordingsPath, capBytes: config.recordingsCapBytes,
                                         ageDays: config.recordingsAgeDays)
+        let secrets = config.secretStore
+            ?? defaultSecretStore(dataPath: config.dataPath, kind: config.secrets ?? SecretsKind.fromEnvironment())
+        secretsLocation = secretStoreLocation(secrets)
+        credentials = CredentialStore(path: CredentialStore.path(inData: config.dataPath), secrets: secrets)
+        ledger = Ledger(path: Ledger.path(inStore: config.storePath))
+        let usage = UsageRecorder(ledger: ledger, credentials: credentials, store: store)
         jobs = JobStore(store: store, allocator: allocator, decoders: decoders, records: recordStore,
-                        recordings: recordings)
+                        recordings: recordings, usage: usage, credentials: credentials,
+                        fileScanDwellMs: config.fileScanDwellMs)
+        let worker = WorkerProcess(leyPath: config.leyPath, locator: config.programLocator, socketPath: config.socketPath)
+        let session = store
+        conversations = ConversationStore(credentials: credentials, spawner: worker,
+                                          directory: ConversationStore.directory(inData: config.dataPath),
+                                          timing: config.conversationTiming,
+                                          forget: { await session.forgetConversation($0) }) {
+            await session.publishConversation($0, by: $1)
+        }
         // Transport policy for a local, user-trusted socket. The default keepalive policy counts any
         // client PING arriving sooner than five minutes after the previous one as a strike while a
         // stream is open and sends GOAWAY on the third strike — but grpc-go pings for bandwidth
@@ -136,6 +182,9 @@ package final class Daemon: Sendable {
                 JobsService(jobs: jobs, store: store),
                 DecodersService(jobs: jobs, store: store),
                 ResourcesService(jobs: jobs, store: store),
+                CredentialsService(credentials: credentials, worker: worker, store: store, jobs: jobs),
+                UsageService(recorder: usage, store: store),
+                AssistantService(conversations: conversations, store: store),
             ],
             interceptors: [ClientContextInterceptor()]
         )
@@ -205,6 +254,17 @@ package final class Daemon: Sendable {
         let table = jobs
         await store.setJobsProvider { await table.snapshot() }
         await store.setClientGoneHook { await table.clientGone($0) }
+        let keys = credentials
+        await store.setAIProvider { await keys.snapshot() }
+        // The ledger is folded and trimmed to its retention before the first report is added.
+        let ledger = ledger
+        await ledger.load()
+        await store.setUsageProvider { await ledger.lines() }
+        // Kept conversations come back without a worker; the first message to one starts it.
+        let conversations = conversations
+        await conversations.load()
+        await store.setConversationsProvider { await conversations.list() }
+        log.info("AI keys in \(secretsLocation)")
         log.info("leylined \(config.version) listening on \(config.socketPath)")
         var served: (any Error)?
         do { try await server.serve() } catch { served = error }
@@ -278,6 +338,9 @@ package final class Daemon: Sendable {
         // First of all: teardown takes seconds (a running sweep can hold a capture for ~3 s), and an
         // RPC accepted during that window would build state after the store that owns it is gone.
         server.beginGracefulShutdown()
+        // Every assistant worker goes and every conversation watch ends; the conversations stay
+        // on disk for the next daemon.
+        await conversations.stopAll()
         // Before the store: a running sweep holds a lease on a capture and must give it back
         // while there is still a store to give it back to.
         await jobs.cancelAll()

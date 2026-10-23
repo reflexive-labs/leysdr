@@ -115,11 +115,16 @@ public nonisolated enum Leyline_V1_DecoderSignal: SwiftProtobuf.Enum, Swift.Case
 
 }
 
+/// SEGMENTED delivers one over at a time: audio from `pre_roll_ms` before the squelch opened to
+/// `hang_ms` after it closed, bracketed by frames marked SEGMENT_START and SEGMENT_END
+/// (bulk.proto, Frame.segment), and nothing while the squelch is shut. A speech decoder reads it so
+/// that one record is one speaker.
 public nonisolated enum Leyline_V1_InputMode: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case unspecified // = 0
   case continuous // = 1
   case slotAligned // = 2
+  case segmented // = 3
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -131,6 +136,7 @@ public nonisolated enum Leyline_V1_InputMode: SwiftProtobuf.Enum, Swift.CaseIter
     case 0: self = .unspecified
     case 1: self = .continuous
     case 2: self = .slotAligned
+    case 3: self = .segmented
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -140,6 +146,7 @@ public nonisolated enum Leyline_V1_InputMode: SwiftProtobuf.Enum, Swift.CaseIter
     case .unspecified: return 0
     case .continuous: return 1
     case .slotAligned: return 2
+    case .segmented: return 3
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -149,6 +156,7 @@ public nonisolated enum Leyline_V1_InputMode: SwiftProtobuf.Enum, Swift.CaseIter
     .unspecified,
     .continuous,
     .slotAligned,
+    .segmented,
   ]
 
 }
@@ -257,7 +265,11 @@ public nonisolated enum Leyline_V1_PredicateOp: SwiftProtobuf.Enum, Swift.CaseIt
   case predIn // = 7
   case predNotIn // = 8
 
-  /// The field is a delimited list (a SAME alert's FIPS county codes) and one of `values` is in it.
+  /// The field is a delimited list (a SAME alert's FIPS county codes, or the words of a speech
+  /// record's text) and one of `values` is in it: the field and each value split into tokens on
+  /// ',', space and '-', and a value matches when its tokens appear among the field's, whole,
+  /// consecutive and in order, case-folded. "net control" matches "Net Control here"; "contr"
+  /// matches nothing.
   case predContains // = 9
 
   /// The field is present and non-empty; `values` is ignored.
@@ -424,6 +436,21 @@ public nonisolated struct Leyline_V1_DecoderManifest: @unchecked Sendable {
     set {_uniqueStorage()._args = newValue}
   }
 
+  /// The provider whose key the plugin calls with ("deepgram", "openai"); empty when it needs none.
+  /// The daemon refuses to start the job with CREDENTIAL_MISSING when no key is set for it, and
+  /// hands the key to the plugin when it spawns it (docs/design/ai.md).
+  public var credentialProvider: String {
+    get {_storage._credentialProvider}
+    set {_uniqueStorage()._credentialProvider = newValue}
+  }
+
+  /// The hosts the plugin contacts, so a person can see where the audio goes before running it.
+  /// Advisory: nothing enforces it.
+  public var contactsHosts: [String] {
+    get {_storage._contactsHosts}
+    set {_uniqueStorage()._contactsHosts = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -483,6 +510,12 @@ public nonisolated struct Leyline_V1_DecoderInput: Sendable {
   /// demodulated. Many IQ decoders share one wide capture (docs/design/decoders.md,
   /// "Multiplexing"); an IQ frame carries the whole band around the recipe's frequency.
   public var signal: Leyline_V1_DecoderSignal = .unspecified
+
+  /// SEGMENTED only: how much audio a segment keeps before the squelch opened and after it closed.
+  /// A squelch that reopens inside the hang continues the same segment. 0 = 500 ms for each.
+  public var preRollMs: UInt32 = 0
+
+  public var hangMs: UInt32 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -611,6 +644,32 @@ public nonisolated struct Leyline_V1_DecodeRecord: @unchecked Sendable {
   public var kind: String {
     get {_storage._kind}
     set {_uniqueStorage()._kind = newValue}
+  }
+
+  /// What the plugin's provider call for this record used, set by a plugin that calls one. The
+  /// daemon fills `feature` and `job_id` and adds it to the ledger (ai.proto, Usage).
+  public var usage: Leyline_V1_UsageReport {
+    get {_storage._usage ?? Leyline_V1_UsageReport()}
+    set {_uniqueStorage()._usage = newValue}
+  }
+  /// Returns true if `usage` has been explicitly set.
+  public var hasUsage: Bool {_storage._usage != nil}
+  /// Clears the value of `usage`. Subsequent reads from it will return its default value.
+  public mutating func clearUsage() {_uniqueStorage()._usage = nil}
+
+  /// Set by the daemon: the recording part that holds this record's audio,
+  /// ley://recordings/<id>/<part>, so the record can be checked by ear or decoded again. Empty when
+  /// no recording holds it.
+  public var clipUri: String {
+    get {_storage._clipUri}
+    set {_uniqueStorage()._clipUri = newValue}
+  }
+
+  /// Set by the daemon under SEGMENTED input: which over within the part the record came from,
+  /// 1-based. 0 when the input was not segmented.
+  public var over: UInt32 {
+    get {_storage._over}
+    set {_uniqueStorage()._over = newValue}
   }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -772,6 +831,11 @@ public nonisolated struct Leyline_V1_DecodeConfig: Sendable {
   public var hasNotify: Bool {self._notify != nil}
   /// Clears the value of `notify`. Subsequent reads from it will return its default value.
   public mutating func clearNotify() {self._notify = nil}
+
+  /// Decode a stored audio recording instead of a radio: ley://recordings/<id>. The daemon reads
+  /// its parts in order as fast as the plugin accepts them, with no capture, channel or lease, so
+  /// frequency_hz, device_id and take_over do not apply. Empty = tune a radio as above.
+  public var sourceUri: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1147,7 +1211,7 @@ nonisolated extension Leyline_V1_DecoderSignal: SwiftProtobuf._ProtoNameProvidin
 }
 
 nonisolated extension Leyline_V1_InputMode: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0INPUT_MODE_UNSPECIFIED\0\u{1}CONTINUOUS\0\u{1}SLOT_ALIGNED\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0INPUT_MODE_UNSPECIFIED\0\u{1}CONTINUOUS\0\u{1}SLOT_ALIGNED\0\u{1}SEGMENTED\0")
 }
 
 nonisolated extension Leyline_V1_OutputShape: SwiftProtobuf._ProtoNameProviding {
@@ -1164,7 +1228,7 @@ nonisolated extension Leyline_V1_PredicateOp: SwiftProtobuf._ProtoNameProviding 
 
 nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DecoderManifest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}version\0\u{1}description\0\u{1}attribution\0\u{1}license\0\u{1}recipe\0\u{1}input\0\u{1}outputs\0\u{3}entity_silence_s\0\u{1}fields\0\u{3}supports_multi_channel\0\u{3}needs_dedicated_capture\0\u{3}stateful_predicates_available\0\u{1}executable\0\u{1}args\0\u{1}aliases\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}version\0\u{1}description\0\u{1}attribution\0\u{1}license\0\u{1}recipe\0\u{1}input\0\u{1}outputs\0\u{3}entity_silence_s\0\u{1}fields\0\u{3}supports_multi_channel\0\u{3}needs_dedicated_capture\0\u{3}stateful_predicates_available\0\u{1}executable\0\u{1}args\0\u{1}aliases\0\u{3}credential_provider\0\u{3}contacts_hosts\0")
 
   fileprivate class _StorageClass {
     var _name: String = String()
@@ -1183,6 +1247,8 @@ nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftPr
     var _statefulPredicatesAvailable: Bool = false
     var _executable: String = String()
     var _args: [String] = []
+    var _credentialProvider: String = String()
+    var _contactsHosts: [String] = []
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -1209,6 +1275,8 @@ nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftPr
       _statefulPredicatesAvailable = source._statefulPredicatesAvailable
       _executable = source._executable
       _args = source._args
+      _credentialProvider = source._credentialProvider
+      _contactsHosts = source._contactsHosts
     }
   }
 
@@ -1243,6 +1311,8 @@ nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftPr
         case 14: try { try decoder.decodeSingularStringField(value: &_storage._executable) }()
         case 15: try { try decoder.decodeRepeatedStringField(value: &_storage._args) }()
         case 16: try { try decoder.decodeRepeatedStringField(value: &_storage._aliases) }()
+        case 17: try { try decoder.decodeSingularStringField(value: &_storage._credentialProvider) }()
+        case 18: try { try decoder.decodeRepeatedStringField(value: &_storage._contactsHosts) }()
         default: break
         }
       }
@@ -1303,6 +1373,12 @@ nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftPr
       if !_storage._aliases.isEmpty {
         try visitor.visitRepeatedStringField(value: _storage._aliases, fieldNumber: 16)
       }
+      if !_storage._credentialProvider.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._credentialProvider, fieldNumber: 17)
+      }
+      if !_storage._contactsHosts.isEmpty {
+        try visitor.visitRepeatedStringField(value: _storage._contactsHosts, fieldNumber: 18)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -1328,6 +1404,8 @@ nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftPr
         if _storage._statefulPredicatesAvailable != rhs_storage._statefulPredicatesAvailable {return false}
         if _storage._executable != rhs_storage._executable {return false}
         if _storage._args != rhs_storage._args {return false}
+        if _storage._credentialProvider != rhs_storage._credentialProvider {return false}
+        if _storage._contactsHosts != rhs_storage._contactsHosts {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -1389,7 +1467,7 @@ nonisolated extension Leyline_V1_DecoderRecipe: SwiftProtobuf.Message, SwiftProt
 
 nonisolated extension Leyline_V1_DecoderInput: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DecoderInput"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}mode\0\u{3}slot_ms\0\u{3}epoch_offset_ms\0\u{1}tap\0\u{1}signal\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}mode\0\u{3}slot_ms\0\u{3}epoch_offset_ms\0\u{1}tap\0\u{1}signal\0\u{3}pre_roll_ms\0\u{3}hang_ms\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1402,6 +1480,8 @@ nonisolated extension Leyline_V1_DecoderInput: SwiftProtobuf.Message, SwiftProto
       case 3: try { try decoder.decodeSingularInt64Field(value: &self.epochOffsetMs) }()
       case 4: try { try decoder.decodeSingularEnumField(value: &self.tap) }()
       case 5: try { try decoder.decodeSingularEnumField(value: &self.signal) }()
+      case 6: try { try decoder.decodeSingularUInt32Field(value: &self.preRollMs) }()
+      case 7: try { try decoder.decodeSingularUInt32Field(value: &self.hangMs) }()
       default: break
       }
     }
@@ -1423,6 +1503,12 @@ nonisolated extension Leyline_V1_DecoderInput: SwiftProtobuf.Message, SwiftProto
     if self.signal != .unspecified {
       try visitor.visitSingularEnumField(value: self.signal, fieldNumber: 5)
     }
+    if self.preRollMs != 0 {
+      try visitor.visitSingularUInt32Field(value: self.preRollMs, fieldNumber: 6)
+    }
+    if self.hangMs != 0 {
+      try visitor.visitSingularUInt32Field(value: self.hangMs, fieldNumber: 7)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1432,6 +1518,8 @@ nonisolated extension Leyline_V1_DecoderInput: SwiftProtobuf.Message, SwiftProto
     if lhs.epochOffsetMs != rhs.epochOffsetMs {return false}
     if lhs.tap != rhs.tap {return false}
     if lhs.signal != rhs.signal {return false}
+    if lhs.preRollMs != rhs.preRollMs {return false}
+    if lhs.hangMs != rhs.hangMs {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1484,7 +1572,7 @@ nonisolated extension Leyline_V1_FieldHint: SwiftProtobuf.Message, SwiftProtobuf
 
 nonisolated extension Leyline_V1_DecodeRecord: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DecodeRecord"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}record_id\0\u{1}protocol\0\u{1}time\0\u{3}device_id\0\u{1}position\0\u{3}rssi_dbfs\0\u{3}snr_db\0\u{1}validity\0\u{1}fields\0\u{1}raw\0\u{3}job_id\0\u{1}seq\0\u{3}channel_id\0\u{1}kind\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}record_id\0\u{1}protocol\0\u{1}time\0\u{3}device_id\0\u{1}position\0\u{3}rssi_dbfs\0\u{3}snr_db\0\u{1}validity\0\u{1}fields\0\u{1}raw\0\u{3}job_id\0\u{1}seq\0\u{3}channel_id\0\u{1}kind\0\u{1}usage\0\u{3}clip_uri\0\u{1}over\0")
 
   fileprivate class _StorageClass {
     var _recordID: String = String()
@@ -1501,6 +1589,9 @@ nonisolated extension Leyline_V1_DecodeRecord: SwiftProtobuf.Message, SwiftProto
     var _seq: UInt64 = 0
     var _channelID: String = String()
     var _kind: String = String()
+    var _usage: Leyline_V1_UsageReport? = nil
+    var _clipUri: String = String()
+    var _over: UInt32 = 0
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -1525,6 +1616,9 @@ nonisolated extension Leyline_V1_DecodeRecord: SwiftProtobuf.Message, SwiftProto
       _seq = source._seq
       _channelID = source._channelID
       _kind = source._kind
+      _usage = source._usage
+      _clipUri = source._clipUri
+      _over = source._over
     }
   }
 
@@ -1557,6 +1651,9 @@ nonisolated extension Leyline_V1_DecodeRecord: SwiftProtobuf.Message, SwiftProto
         case 12: try { try decoder.decodeSingularUInt64Field(value: &_storage._seq) }()
         case 13: try { try decoder.decodeSingularStringField(value: &_storage._channelID) }()
         case 14: try { try decoder.decodeSingularStringField(value: &_storage._kind) }()
+        case 15: try { try decoder.decodeSingularMessageField(value: &_storage._usage) }()
+        case 16: try { try decoder.decodeSingularStringField(value: &_storage._clipUri) }()
+        case 17: try { try decoder.decodeSingularUInt32Field(value: &_storage._over) }()
         default: break
         }
       }
@@ -1611,6 +1708,15 @@ nonisolated extension Leyline_V1_DecodeRecord: SwiftProtobuf.Message, SwiftProto
       if !_storage._kind.isEmpty {
         try visitor.visitSingularStringField(value: _storage._kind, fieldNumber: 14)
       }
+      try { if let v = _storage._usage {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 15)
+      } }()
+      if !_storage._clipUri.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._clipUri, fieldNumber: 16)
+      }
+      if _storage._over != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._over, fieldNumber: 17)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -1634,6 +1740,9 @@ nonisolated extension Leyline_V1_DecodeRecord: SwiftProtobuf.Message, SwiftProto
         if _storage._seq != rhs_storage._seq {return false}
         if _storage._channelID != rhs_storage._channelID {return false}
         if _storage._kind != rhs_storage._kind {return false}
+        if _storage._usage != rhs_storage._usage {return false}
+        if _storage._clipUri != rhs_storage._clipUri {return false}
+        if _storage._over != rhs_storage._over {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -1817,7 +1926,7 @@ nonisolated extension Leyline_V1_FieldValue: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension Leyline_V1_DecodeConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DecodeConfig"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}decoder\0\u{3}frequency_hz\0\u{3}device_id\0\u{3}take_over\0\u{1}keep\0\u{1}predicate\0\u{1}notify\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}decoder\0\u{3}frequency_hz\0\u{3}device_id\0\u{3}take_over\0\u{1}keep\0\u{1}predicate\0\u{1}notify\0\u{3}source_uri\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1832,6 +1941,7 @@ nonisolated extension Leyline_V1_DecodeConfig: SwiftProtobuf.Message, SwiftProto
       case 5: try { try decoder.decodeSingularBoolField(value: &self.keep) }()
       case 6: try { try decoder.decodeSingularMessageField(value: &self._predicate) }()
       case 7: try { try decoder.decodeSingularMessageField(value: &self._notify) }()
+      case 8: try { try decoder.decodeSingularStringField(value: &self.sourceUri) }()
       default: break
       }
     }
@@ -1863,6 +1973,9 @@ nonisolated extension Leyline_V1_DecodeConfig: SwiftProtobuf.Message, SwiftProto
     try { if let v = self._notify {
       try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
     } }()
+    if !self.sourceUri.isEmpty {
+      try visitor.visitSingularStringField(value: self.sourceUri, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1874,6 +1987,7 @@ nonisolated extension Leyline_V1_DecodeConfig: SwiftProtobuf.Message, SwiftProto
     if lhs.keep != rhs.keep {return false}
     if lhs._predicate != rhs._predicate {return false}
     if lhs._notify != rhs._notify {return false}
+    if lhs.sourceUri != rhs.sourceUri {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

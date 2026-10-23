@@ -36,6 +36,30 @@ public struct MirrorState: Sendable, Equatable {
     public var sinks: [Leyline_V1_Sink] = []
     public var jobs: [Leyline_V1_Job] = []
     public var playbacks: [Leyline_V1_Playback] = []
+    /// The provider keys (never their text) and the model each feature uses. One event carries
+    /// the whole list, so a removed key is a shorter list, not a tombstone.
+    public var ai = Leyline_V1_AIState()
+    /// The usage ledger, one line per provider, model, feature, scope and UTC day. An event
+    /// carries the one line it changed.
+    public var usage: [Leyline_V1_UsageLine] = []
+    /// The assistant's conversations, each whole. An ended or failed one stays listed with its
+    /// state, as a finished job does.
+    public var conversations: [Leyline_V1_Conversation] = []
+    /// The newest attributed event that moved a setting on each capture and channel, with the
+    /// object before it, by id (`AttributedChange`, from `Event.caused_by`): what `ChangeNote`
+    /// words for the inspector. A tombstone removes the entry; a snapshot names nobody, so it
+    /// starts empty.
+    public var changes: [String: AttributedChange] = [:]
+    /// The event that first put each channel in the mirror, when it named who caused it: the
+    /// client that made the channel and the `seq` it was made at (`AttributedChange.Object.made`),
+    /// which is what `ChannelFollow` picks a channel to follow by and `ChangeNote` words as "tuned
+    /// to". Kept for the channel's life, so a setting moved later does not lose it; a tombstone
+    /// removes the entry, and a snapshot, which says who made a channel but not when, starts it
+    /// empty.
+    public var made: [String: AttributedChange] = [:]
+    /// The client that attached each sink, from the `caused_by` of the sink's first event, for
+    /// as long as it lives: a `Sink` names no owner. A snapshot starts it empty.
+    public var sinkAttachedBy: [String: Leyline_V1_ClientInfo] = [:]
     /// The newest event folded (the snapshot's `event_seq` at open). Events at or below it are
     /// already reflected and are skipped.
     public var seq: UInt64 = 0
@@ -55,6 +79,9 @@ public struct MirrorState: Sendable, Equatable {
         sinks = snapshot.sinks
         jobs = snapshot.jobs
         playbacks = snapshot.playbacks
+        ai = snapshot.ai
+        usage = snapshot.usage
+        conversations = snapshot.conversations
         seq = snapshot.eventSeq
     }
 
@@ -71,6 +98,7 @@ public struct MirrorState: Sendable, Equatable {
         }
         if event.seq != 0, event.seq <= seq { return false }
         if event.seq > seq { seq = event.seq }
+        attribute(event)
         switch event.body {
         case .device(let d):
             // A device has no tombstone: an unplugged dongle is listed DISCONNECTED and rebinds
@@ -110,10 +138,57 @@ public struct MirrorState: Sendable, Equatable {
             if let i = captures.firstIndex(where: { $0.captureID == a.captureID }) {
                 captures[i].anchor = a
             }
+        case .ai(let state):
+            ai = state
+        case .usage(let line):
+            if let i = usage.firstIndex(where: { $0.sameLine(as: line) }) {
+                usage[i] = line
+            } else {
+                usage.append(line)
+            }
+        case .conversation(let c):
+            replace(&conversations, c, by: \.conversationID)
         case .writeRejected, .none:
             break
         }
         return true
+    }
+
+    /// Records the change `event` makes and who made it, before it is folded, because the
+    /// change is a diff against the copy the mirror still holds.
+    private mutating func attribute(_ event: Leyline_V1_Event) {
+        let by: Leyline_V1_ClientInfo? = event.hasCausedBy ? event.causedBy : nil
+        switch event.body {
+        case .capture(let c):
+            if c.state == .unspecified { changes[c.captureID] = nil }
+            if let by, c.state != .unspecified, let was = capture(c.captureID),
+                let change = AttributedChange.capture(was, c, causedBy: by, seq: event.seq)
+            {
+                changes[c.captureID] = change
+            }
+        case .sink(let k):
+            if k.state == .unspecified {
+                sinkAttachedBy[k.sinkID] = nil
+            } else if let by, !sinks.contains(where: { $0.sinkID == k.sinkID }) {
+                sinkAttachedBy[k.sinkID] = by
+            }
+        case .channel(let c):
+            if c.state == .unspecified {
+                changes[c.channelID] = nil
+                made[c.channelID] = nil
+            }
+            if let by, c.state != .unspecified, channel(c.channelID) == nil {
+                made[c.channelID] = AttributedChange(
+                    causedBy: by, seq: event.seq, object: .made(c))
+            }
+            if let by, c.state != .unspecified, let was = channel(c.channelID),
+                let change = AttributedChange.channel(was, c, causedBy: by, seq: event.seq)
+            {
+                changes[c.channelID] = change
+            }
+        default:
+            break
+        }
     }
 
     private func replace<T>(_ list: inout [T], _ item: T, by id: KeyPath<T, String>) {
@@ -165,7 +240,8 @@ public final class DaemonMirror {
     public private(set) var state = MirrorState() { didSet { onChange?(self) } }
     public private(set) var connection: MirrorConnection = .idle { didSet { onChange?(self) } }
     /// Counts snapshots taken: one per (re)connect, plus one per seq gap. A test reads it to know
-    /// the mirror re-synced rather than guessed.
+    /// the mirror re-synced rather than guessed, and `onChange` sees it already counted when the
+    /// snapshot's state arrives, so a client can tell a replaced state from a folded event.
     public private(set) var snapshots = 0
     /// Called on the main actor after `state` or `connection` changes.
     public var onChange: (@MainActor (DaemonMirror) -> Void)?
@@ -210,8 +286,8 @@ public final class DaemonMirror {
     /// fresh snapshot only if their seq says so, and `apply` skips the rest.
     private func syncAndFollow() async throws {
         let snapshot = try await connectionToDaemon.state()
-        state = MirrorState(snapshot: snapshot)
         snapshots += 1
+        state = MirrorState(snapshot: snapshot)
         connection = .live
         var expected = state.seq &+ 1
         for try await event in connectionToDaemon.events(sinceSeq: snapshot.eventSeq) {
@@ -221,12 +297,21 @@ public final class DaemonMirror {
                 // complete (docs/dev/engine-internals.md, "SessionStore").
                 let again = try await connectionToDaemon.state()
                 let rejections = state.rejections
-                state = MirrorState(snapshot: again)
-                state.rejections = rejections
                 snapshots += 1
+                var fresh = MirrorState(snapshot: again)
+                fresh.rejections = rejections
+                state = fresh
             }
             state.apply(event)
             if event.seq != 0 { expected = max(expected, event.seq &+ 1) }
         }
+    }
+}
+
+extension Leyline_V1_UsageLine {
+    /// Two lines are the same ledger entry when their five keys match; the counters differ.
+    fileprivate func sameLine(as other: Leyline_V1_UsageLine) -> Bool {
+        provider == other.provider && model == other.model && feature == other.feature
+            && scopeID == other.scopeID && day == other.day
     }
 }

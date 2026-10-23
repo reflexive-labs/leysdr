@@ -233,7 +233,7 @@ func (s *verbSession) createChannel(ctx context.Context, o *tuneOptions) error {
 		// confirm it, and treat a rejection as a tune failure (the caller
 		// tears down what was created) rather than listening with the wrong
 		// squelch and calling it applied.
-		w := &leylinev1.ParamWrite{Tag: 2, TargetId: ch.ChannelId, Param: &leylinev1.ParamWrite_SquelchDb{SquelchDb: o.squelch}}
+		w := squelchWrite(2, ch.ChannelId, o.squelch, o.squelchAuto)
 		sum, err := s.Client.WriteParams(ctx, w)
 		if err != nil {
 			return fmt.Errorf("--squelch was not applied: %w", err)
@@ -327,4 +327,15 @@ func (s *verbSession) teardown(ctx context.Context) {
 // cleanupFailed reports a teardown RPC failure with the way out.
 func (s *verbSession) cleanupFailed(what string, err error) {
 	fmt.Fprintf(s.app.Stderr, "warning: could not remove %s: %v; the radio may still be held, free it with: ley stop --all\n", what, err)
+}
+
+// squelchWrite is the write for a squelch level: one ley measured (auto) goes as squelch_auto_db,
+// so the channel says the level was measured (Channel.squelch_source); a level the user typed,
+// or off, as squelch_db.
+func squelchWrite(tag uint64, channelID string, db float64, auto bool) *leylinev1.ParamWrite {
+	w := &leylinev1.ParamWrite{Tag: tag, TargetId: channelID, Param: &leylinev1.ParamWrite_SquelchDb{SquelchDb: db}}
+	if auto && !units.SquelchOff(db) {
+		w.Param = &leylinev1.ParamWrite_SquelchAutoDb{SquelchAutoDb: db}
+	}
+	return w
 }

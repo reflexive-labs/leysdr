@@ -126,6 +126,13 @@ type App struct {
 	// verbs a job the Leyline app registered.
 	launchctlPrint func(ctx context.Context, target string) (string, error)
 	launchctlRun   func(ctx context.Context, args ...string) error
+	// launchAgentPlist, when set, stands in for the LaunchAgent plist's path
+	// (~/Library/LaunchAgents/com.leysdr.daemon.plist), so a test on a Mac
+	// with ley's agent installed never takes that agent for its daemon.
+	launchAgentPlist string
+	// echoOff, when set, stands in for turning echo off on a terminal stdin, so a test can take
+	// the prompt path of `ley ai add` with a reader that is not a terminal.
+	echoOff func(io.Reader) (restore func(), err error)
 }
 
 // NewRootCommand builds the full `ley` command tree bound to app.
@@ -217,6 +224,7 @@ while it plays, 'ley spectrum' to see what is on the air, and 'ley help
 		newJobsCommand(app),
 		newDecodersCommand(app),
 		newDecodeCommand(app),
+		newTranscribeCommand(app),
 		newWatchCommand(app),
 		newRecordCommand(app),
 		newRecordingsCommand(app),
@@ -233,6 +241,9 @@ while it plays, 'ley spectrum' to see what is on the air, and 'ley help
 		newPlayCommand(app),
 		newStateCommand(app),
 		newDaemonCommand(app),
+		newAICommand(app),
+		newAskCommand(app),
+		newWorkerCommand(app),
 		newVersionCommand(app),
 	)
 	root.AddCommand(newStubCommands(app)...)
@@ -896,5 +907,5 @@ func deviceSummary(s ui.Style, d *leylinev1.DeviceDescriptor) string {
 func orientChannelLine(s ui.Style, state *leylinev1.GetStateResponse, ch *leylinev1.Channel) string {
 	freq := channelFreqLabel(state, ch)
 	return fmt.Sprintf("%s %s, squelch %s, %s %s", freq, strings.ToUpper(leyline.ModeName(ch.Mode)),
-		squelchString(ch.SquelchDb), inkState(s, stateWord(ch.State.String())), s.Muted("("+ch.ChannelId+")"))
+		channelSquelch(ch), inkState(s, stateWord(ch.State.String())), s.Muted("("+ch.ChannelId+")"))
 }

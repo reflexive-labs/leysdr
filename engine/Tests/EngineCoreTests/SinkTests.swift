@@ -30,6 +30,14 @@ final class SinkTests: XCTestCase {
         XCTAssertEqual(received.value, [64, 8])
     }
 
+    func testSilencedSystemAudioPlaysNothing() throws {
+        SinkFactory.setSilenced(true)
+        defer { SinkFactory.setSilenced(false) }
+        let sink = try SinkFactory.systemAudio(rate: 48_000, volume: 1, deviceUID: nil)
+        XCTAssertTrue(sink is SilentAudioSink)
+        XCTAssertTrue(sink is any PCMOnlyAudioSink)
+    }
+
     func testSystemAudioFactory() {
         #if canImport(AVFoundation)
         // Real audio hardware may be absent on CI; only the error code contract is checked here.

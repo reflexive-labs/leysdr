@@ -9,6 +9,8 @@ import GRPCNIOTransportHTTP2
 import GRPCProtobuf
 @testable import LeylineServer
 import LeylineProto
+import Logging
+import Synchronization
 import XCTest
 
 /// Identity the tests send on every RPC.
@@ -32,7 +34,12 @@ struct DaemonClients {
     let bulk: Leyline_V1_Bulk.Client<HTTP2ClientTransport.Posix>
     let jobs: Leyline_V1_Jobs.Client<HTTP2ClientTransport.Posix>
     let resources: Leyline_V1_Resources.Client<HTTP2ClientTransport.Posix>
+    let credentials: Leyline_V1_Credentials.Client<HTTP2ClientTransport.Posix>
+    let usage: Leyline_V1_Usage.Client<HTTP2ClientTransport.Posix>
+    let assistant: Leyline_V1_Assistant.Client<HTTP2ClientTransport.Posix>
     let daemon: Daemon
+    /// The daemon's data directory: `ai.json`, and `secrets/credentials.json` for the test's file store.
+    let dataPath: String
     let socketPath: String
 }
 
@@ -49,7 +56,11 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
                 rtltcp: [Daemon.RTLTCPEndpoint] = [],
                 decoderSearchPath: [String]? = nil, storePath: String? = nil,
                 recordingsPath: String? = nil, recordingsCapBytes: UInt64 = 20 << 30,
+                leyPath: String? = nil, conversationTiming: ConversationStore.Timing? = nil,
+                fileScanDwellMs: UInt32 = 0,
                 _ body: @escaping @Sendable (DaemonClients) async throws -> Void) async throws {
+    // Every logger the daemon makes goes through the capture's handler, so a test can read the log.
+    _ = LogCapture.shared
     let caller = dir
     let dir = caller ?? (NSTemporaryDirectory() + "leyline-test-\(getpid())-\(UInt32.random(in: 0...UInt32.max))")
     try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
@@ -57,12 +68,29 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
     let socket = dir + "/d.sock"
     // A test never looks at the host's own plugin directory or writes to its store: both
     // default to somewhere inside the temp directory the daemon is running in.
-    let daemon = Daemon(config: .init(socketPath: socket, pidfile: dir + "/leylined.pid", pollMs: 100_000,
-                                      presenceGraceNs: presenceGraceNs, rtltcp: rtltcp,
-                                      decoderSearchPath: decoderSearchPath ?? [dir + "/decoders"],
-                                      storePath: storePath ?? (dir + "/store"),
-                                      recordingsPath: recordingsPath ?? (dir + "/recordings"),
-                                      recordingsCapBytes: recordingsCapBytes, version: testDaemonVersion))
+    // Keys go to a file in the test's own data directory, never the Mac's keychain.
+    var config = Daemon.Config(socketPath: socket, pidfile: dir + "/leylined.pid", pollMs: 100_000,
+                               presenceGraceNs: presenceGraceNs, rtltcp: rtltcp,
+                               decoderSearchPath: decoderSearchPath ?? [dir + "/decoders"],
+                               storePath: storePath ?? (dir + "/store"),
+                               recordingsPath: recordingsPath ?? (dir + "/recordings"),
+                               recordingsCapBytes: recordingsCapBytes, dataPath: dir + "/data",
+                               version: testDaemonVersion)
+    config.secretStore = FileSecrets(inData: dir + "/data")
+    // Config's defaults are the person's: the login keychain, ~/Library/Application Support and
+    // the default store and recordings. A test that reached one would write over their keys or
+    // data, so the harness stops rather than run on any of them.
+    precondition((config.secretStore as? FileSecrets)?.path.hasPrefix(dir + "/") == true,
+                 "a test daemon keeps its keys in a file under its own directory, never the keychain")
+    precondition(config.dataPath.hasPrefix(dir + "/") && config.storePath != defaultStorePath()
+                     && config.recordingsPath != defaultRecordingsPath(),
+                 "a test daemon never uses the default data directory, store or recordings")
+    // `ley` is whatever the test names and nothing else: never one on the machine's PATH.
+    config.leyPath = leyPath
+    config.programLocator = ProgramLocator(directories: [], searchPath: [])
+    if let conversationTiming { config.conversationTiming = conversationTiming }
+    config.fileScanDwellMs = fileScanDwellMs
+    let daemon = Daemon(config: config)
     let serverTask = Task { try await daemon.run() }
     let listening = await daemon.waitUntilListening()
     XCTAssertTrue(listening, "daemon did not start listening")
@@ -74,7 +102,9 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
         ) { client in
             let clients = DaemonClients(
                 control: .init(wrapping: client), decoders: .init(wrapping: client), telemetry: .init(wrapping: client),
-                bulk: .init(wrapping: client), jobs: .init(wrapping: client), resources: .init(wrapping: client), daemon: daemon, socketPath: socket
+                bulk: .init(wrapping: client), jobs: .init(wrapping: client), resources: .init(wrapping: client),
+                credentials: .init(wrapping: client), usage: .init(wrapping: client),
+                assistant: .init(wrapping: client), daemon: daemon, dataPath: dir + "/data", socketPath: socket
             )
             do { try await body(clients) } catch { bodyError = error }
         }
@@ -199,7 +229,7 @@ func fakeDecoderPath() -> String {
 func writeFakePlugin(in dir: String, name: String = "fake", executable: String? = nil,
                      recipe: (frequencyHz: UInt64, bandwidthHz: UInt32)? = (146_000_000, 15_000),
                      signal: Leyline_V1_DecoderSignal = .signalAudio,
-                     args: [String] = [], json: String? = nil) throws -> String
+                     args: [String] = [], credentialProvider: String = "", json: String? = nil) throws -> String
 {
     let pluginDir = dir + "/" + name
     try FileManager.default.createDirectory(atPath: pluginDir, withIntermediateDirectories: true)
@@ -213,6 +243,8 @@ func writeFakePlugin(in dir: String, name: String = "fake", executable: String? 
         // (docs/design/decoders.md, "Multiplexing"). The fake decoder is signal-agnostic: it emits
         // one record per frame either way.
         let signalName = signal == .signalIq ? "SIGNAL_IQ" : "SIGNAL_AUDIO"
+        // A manifest that names a provider gets the key before its descriptor, and the fake
+        // knows to read it from LEYLINE_KEY_ON_STDIN, which the daemon sets.
         body = """
         {
           "name": "\(name)",
@@ -222,6 +254,7 @@ func writeFakePlugin(in dir: String, name: String = "fake", executable: String? 
           "input": {"mode": "CONTINUOUS", "tap": "TAP_AUDIO", "signal": "\(signalName)"},
           "outputs": ["SHAPE_RECORDS"],
           "entitySilenceS": 1800,
+          "credentialProvider": "\(credentialProvider)",
           "executable": "\(executable ?? fakeDecoderPath())",
           "args": [\(args.map { "\"\($0)\"" }.joined(separator: ", "))]
         }
@@ -236,4 +269,146 @@ func makeTempDir(_ tag: String) throws -> String {
     let dir = NSTemporaryDirectory() + "leyline-\(tag)-\(getpid())-\(UInt32.random(in: 0...UInt32.max))"
     try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
     return dir
+}
+
+// MARK: Workers
+
+/// Writes `<dir>/ley`, a shell script standing in for `ley worker check`: `body` runs with the
+/// worker's arguments and its stdin, and whatever it prints is the worker's answer. The arguments,
+/// the socket and the whole environment are written to `<dir>/ley.args`, `ley.socket` and
+/// `ley.env` so a test can see what the daemon passed.
+@discardableResult
+func writeScriptedLey(in dir: String, _ body: String) throws -> String {
+    let path = dir + "/ley"
+    let script = """
+    #!/bin/sh
+    echo "$@" > "\(dir)/ley.args"
+    echo "$LEYLINE_SOCKET" > "\(dir)/ley.socket"
+    env > "\(dir)/ley.env"
+    \(body)
+
+    """
+    try script.write(toFile: path, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path)
+    return path
+}
+
+/// A worker that answers every check with `outcome` and the message `message`.
+@discardableResult
+func writeScriptedLey(in dir: String, outcome: String, message: String) throws -> String {
+    try writeScriptedLey(in: dir, """
+    read key
+    printf '%s\\n' '{"outcome": "\(outcome)", "message": "\(message)"}'
+    """)
+}
+
+/// The scripted assistant worker SwiftPM builds from the `leyline-fake-worker` executable target.
+func fakeWorkerPath() -> String {
+    productsDirectory.appendingPathComponent("leyline-fake-worker").path
+}
+
+/// Writes `<dir>/ley`, a wrapper that runs the fake worker for `ley worker assistant` and `ley
+/// worker check` alike. The nth assistant worker the daemon starts plays `scripts[n-1]` (the last
+/// script again once they run out) and dumps what it was given to `<dir>/dump.<n>`
+/// (`Sources/FakeWorker/main.swift` has the script language and the dump's lines). A wrapper rather
+/// than the daemon's environment keeps each test's script its own.
+@discardableResult
+func writeFakeWorkerLey(in dir: String, scripts: [String]) throws -> String {
+    for (i, script) in scripts.enumerated() {
+        try script.write(toFile: dir + "/script.\(i + 1)", atomically: true, encoding: .utf8)
+    }
+    let path = dir + "/ley"
+    let wrapper = """
+    #!/bin/sh
+    n=0
+    if [ "$2" = assistant ]; then
+        # mkdir is atomic, so two workers starting at once never take the same number.
+        n=1
+        until mkdir "\(dir)/started.$n" 2>/dev/null; do n=$((n + 1)); done
+    fi
+    script="\(dir)/script.$n"
+    [ -f "$script" ] || script="\(dir)/script.\(scripts.count)"
+    FAKE_WORKER_SCRIPT="$script" FAKE_WORKER_DUMP="\(dir)/dump.$n" exec "\(fakeWorkerPath())" "$@"
+
+    """
+    try wrapper.write(toFile: path, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path)
+    return path
+}
+
+/// The fake worker's dump as `name -> value`, once it has been written (nil after `seconds`).
+func fakeWorkerDump(_ path: String, within seconds: Double = 5) async -> [String: String]? {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(seconds))
+    while ContinuousClock.now < deadline {
+        if let text = try? String(contentsOfFile: path, encoding: .utf8) {
+            var out: [String: String] = [:]
+            for line in text.split(separator: "\n") {
+                guard let eq = line.firstIndex(of: "=") else { continue }
+                out[String(line[..<eq])] = String(line[line.index(after: eq)...])
+            }
+            return out
+        }
+        try? await Task.sleep(nanoseconds: 20_000_000)
+    }
+    return nil
+}
+
+/// A clock a test moves by hand, for the conversation store's idle limit.
+final class TestClock: Sendable {
+    private let start = ContinuousClock.now
+    private let offset = Mutex<Duration>(.zero)
+
+    func advance(by duration: Duration) { offset.withLock { $0 += duration } }
+
+    var now: @Sendable () -> ContinuousClock.Instant {
+        { [self] in start.advanced(by: offset.withLock { $0 }) }
+    }
+}
+
+// MARK: The daemon's log
+
+/// Every line any `Logger` writes while `capture` runs, for tests that must show something never
+/// reaches the log. swift-log takes one bootstrap per process, so the handler is installed on first
+/// use and tees to standard output, which is where the default handler writes, so the suite's own
+/// output is unchanged.
+final class LogCapture: Sendable {
+    private let state = Mutex<(on: Bool, lines: [String])>((false, []))
+
+    static let shared: LogCapture = {
+        let capture = LogCapture()
+        LoggingSystem.bootstrap { label in
+            MultiplexLogHandler([StreamLogHandler.standardOutput(label: label), CapturingLogHandler(label: label, capture: capture)])
+        }
+        return capture
+    }()
+
+    /// Runs `body` with capture on and returns what was logged meanwhile, as one text.
+    func capture(_ body: () async throws -> Void) async rethrows -> String {
+        state.withLock { $0 = (true, []) }
+        defer { state.withLock { $0.on = false } }
+        try await body()
+        return state.withLock { $0.lines.joined(separator: "\n") }
+    }
+
+    fileprivate func append(_ line: String) {
+        state.withLock { if $0.on { $0.lines.append(line) } }
+    }
+}
+
+private struct CapturingLogHandler: LogHandler {
+    let label: String
+    let capture: LogCapture
+    var metadata: Logger.Metadata = [:]
+    var logLevel: Logger.Level = .trace
+
+    subscript(metadataKey key: String) -> Logger.Metadata.Value? {
+        get { metadata[key] }
+        set { metadata[key] = newValue }
+    }
+
+    func log(level: Logger.Level, message: Logger.Message, metadata: Logger.Metadata?, source _: String,
+             file _: String, function _: String, line _: UInt)
+    {
+        capture.append("\(label) \(level) \(message) \(metadata ?? [:])")
+    }
 }

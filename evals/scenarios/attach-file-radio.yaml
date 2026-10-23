@@ -1,0 +1,32 @@
+# A recording handed to the daemon as a radio. The run directory holds the fixture under its
+# neutral name (radios/radio-a.cf32, sidecar beside it), and `ley mcp` runs in that directory, so
+# the relative path in the task resolves. The fixture is also attached by the runner, idle; the
+# agent attaches a second device from the same file, and the centre its sidecar states is the truth.
+# rtl_tcp is not covered: a scenario must not reach the network.
+name: attach-file-radio
+description: Attach an IQ recording as a radio by path and report the frequency it tunes.
+fixtures:
+  - file: nfm_tone.cf32
+    as: radio-a
+    capture: false
+task: |
+  There is an IQ recording at radios/radio-a.cf32, relative to the directory you were started in.
+  Attach it to the radio daemon as another radio, looping, and tell me the new device's id and the
+  frequency it is tuned to.
+answer_schema: |
+  {"device_id": "<string>", "center_hz": <integer, Hz>}
+truth:
+  center_hz: 146520000
+checks:
+  - type: answered
+  - type: json_equals
+    path: center_hz
+    truth: center_hz
+    why: the sidecar puts the recording at 146.520 MHz
+  - type: used_tool
+    tool: attach_device
+  - type: no_tool_errors
+    why: one call with kind file and the path attaches it
+  - type: max_tool_calls
+    n: 4
+  - type: no_shell

@@ -90,6 +90,15 @@ final class AudioLevelsTests: XCTestCase {
         XCTAssertEqual(LevelScale.fraction(.nan), 0)
     }
 
+    func testTheMetersNumbersDashSilenceAndNothingMeasured() {
+        XCTAssertEqual(LevelScale.number(-18.4), "−18")
+        XCTAssertEqual(LevelScale.number(0), "0")
+        XCTAssertEqual(LevelScale.number(-199.6), "−200", "quiet audio is still a number")
+        XCTAssertEqual(LevelScale.number(-200), "–", "a silent interval is an en dash")
+        XCTAssertEqual(LevelScale.number(-.infinity), "—")
+        XCTAssertEqual(LevelScale.number(.nan), "—", "nothing measured is an em dash")
+    }
+
     func testBallistics() {
         let frame = 0.05
         var b = LevelBar()

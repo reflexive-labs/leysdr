@@ -60,19 +60,21 @@ final class SidebarTests: XCTestCase {
 
     // MARK: The out-of-range line
 
-    func testOutOfRangeBandsFoldToOneLineThatNamesTheSide() {
+    func testOutOfRangeBandsFoldToOneShortLineWhoseHelpNamesTheSide() {
         let rows = Bands.sidebar()
         let below = rows.filter { !Bands.tunable($0, ranges: rtlsdr) }
         XCTAssertGreaterThan(below.count, 1, "the seed has HF bands under 24 MHz")
         XCTAssertTrue(below.allSatisfy { $0.maxHz < 24_000_000 })
         let fold = OutOfRangeFold(rows: rows, ranges: rtlsdr)
         XCTAssertEqual(fold?.bands, below)
-        XCTAssertEqual(fold?.words, "\(below.count) bands below what this radio tunes")
+        XCTAssertEqual(fold?.words, "\(below.count) bands out of range")
+        XCTAssertEqual(fold?.side, "below what this radio tunes")
         // AM broadcast, 160 m, 80 m, 40 m, 20 m and 15 m; CB at 26.965 MHz and 10 m are inside.
         XCTAssertEqual(below.count, 6)
 
         let narrow = OutOfRangeFold(rows: rows, ranges: [range(100_000_000, 200_000_000)])
-        XCTAssertTrue(try XCTUnwrap(narrow).words.hasSuffix(" bands outside what this radio tunes"))
+        XCTAssertEqual(try XCTUnwrap(narrow).side, "outside what this radio tunes")
+        XCTAssertTrue(narrow!.words.hasSuffix(" bands out of range"))
         XCTAssertTrue(narrow!.bands.contains { $0.id == "gmrs" })
         XCTAssertTrue(narrow!.bands.contains { $0.id == "am" })
         XCTAssertFalse(narrow!.bands.contains { $0.id == "2m" })
@@ -82,9 +84,20 @@ final class SidebarTests: XCTestCase {
 
         // A floor at 1.75 MHz leaves AM broadcast (to 1.7 MHz) out and reaches 160 m at 1.8.
         let one = OutOfRangeFold(rows: rows, ranges: [range(1_750_000, 3_000_000_000)])
-        XCTAssertEqual(one?.words, "1 band below what this radio tunes")
+        XCTAssertEqual(one?.words, "1 band out of range")
         let above = OutOfRangeFold(rows: rows, ranges: [range(1, 300_000_000)])
-        XCTAssertEqual(above?.words, "\(above!.bands.count) bands above what this radio tunes")
+        XCTAssertEqual(above?.words, "\(above!.bands.count) bands out of range")
+        XCTAssertEqual(above?.side, "above what this radio tunes")
+    }
+
+    // MARK: The range line
+
+    func testTheSquelchHasOneShortForm() {
+        XCTAssertEqual(SquelchWords.short(-53.4, auto: false), "sq −53")
+        XCTAssertEqual(SquelchWords.short(-52.6, auto: true), "sq auto")
+        XCTAssertEqual(SquelchWords.short(.nan, auto: false), "sq off")
+        XCTAssertEqual(SquelchWords.short(.nan, auto: true), "sq off", "off wins over auto")
+        XCTAssertEqual(SquelchWords.short(3, auto: false), "sq 3")
     }
 
     // MARK: The filter

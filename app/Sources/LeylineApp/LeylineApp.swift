@@ -5,7 +5,8 @@
 // is the sidebar, spectrum, waterfall, transport bar, the device menu, the inspector on the right
 // and a Tune menu that lists every gesture, plus the Library, the window's second place, with its
 // own menu. The app menu checks for updates through Sparkle (`Updater.swift`), installs the
-// bundled `ley` command, and its about panel names the build's tree (`AboutPanel`).
+// bundled `ley` command, and its about panel names the build's tree (`AboutPanel`). Settings (⌘,)
+// holds the AI pane (`SettingsView`, `AISettingsView`).
 
 import AppKit
 import LeylineClient
@@ -24,7 +25,12 @@ struct LeylineApp: App {
             MainWindow()
                 .environment(session)
                 .task { await session.start() }
-                .frame(minWidth: 900, minHeight: 560)
+                // The assistant's column adds its width, so opening it never squeezes the
+                // canvas between the sidebar, the inspector and the column to nothing.
+                .frame(
+                    minWidth: Theme.Layout.windowMinWidth
+                        + (session.assistantPanelShown ? Theme.Layout.assistantPanel + 1 : 0),
+                    minHeight: 560)
         }
         .defaultSize(
             width: Theme.Layout.defaultWindow.width, height: Theme.Layout.defaultWindow.height
@@ -41,17 +47,27 @@ struct LeylineApp: App {
             LibraryCommands(session: session)
             RecordCommands(session: session)
         }
+        // App menu ▸ Settings… and ⌘, come with the scene.
+        Settings {
+            SettingsView().environment(session)
+        }
     }
 }
 
 /// A bare executable (`make app-run`, no bundle) is not activated by macOS: its window opens
 /// behind the terminal without focus or a Dock icon. This is the launch a bundle would get.
 final class Activation: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        #if LEYLINE_STAGING
+            if stagedLaunch { DeterministicFrames.registerDefaults() }
+        #endif
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         NSApp.windows.first?.makeKeyAndOrderFront(nil)
-        if ShotStage.path() != nil {
+        if stagedLaunch {
             // A staged run waits on the window's task; without a window it would wait silently.
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(3))
@@ -159,6 +175,14 @@ struct TuneCommands: Commands {
                 session.toggleInspector()
             }
             .keyboardShortcut("i", modifiers: [.command, .option])
+            // Disabled until an AI feature can run (`hasAnyAI`) rather than left out: a
+            // Commands body is not guaranteed to re-evaluate, so an item left out at launch could
+            // stay out after a key is added. The toolbar's toggle is the live one.
+            Button(session.assistantShown ? "Hide Assistant" : "Show Assistant") {
+                session.toggleAssistant()
+            }
+            .keyboardShortcut("a", modifiers: [.command, .shift])
+            .disabled(!session.hasAnyAI)
         }
         CommandGroup(after: .toolbar) {
             Button("Zoom In") { session.zoomIn() }.keyboardShortcut("=", modifiers: [.command])

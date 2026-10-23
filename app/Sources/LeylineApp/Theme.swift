@@ -6,11 +6,18 @@
 // level ramp") and nothing else: this one runs from near-black to cream and assumes the app's own
 // dark ground.
 
+import Metal
 import SwiftUI
 
 enum Theme {
     // Grounds and chrome.
-    static let ground = Color(hex: 0x0B0D0F)
+    static let groundHex: UInt32 = 0x0B0D0F
+    static let ground = Color(hex: groundHex)
+    /// `ground` for the waterfall's Metal view, which clears to it before the first row arrives.
+    static var groundClearColor: MTLClearColor {
+        let c = rgb(groundHex)
+        return MTLClearColor(red: Double(c.x), green: Double(c.y), blue: Double(c.z), alpha: 1)
+    }
     static let chrome = Color(hex: 0x17191C)
     static let panel = Color(hex: 0x101315)
     static let panelHeader = Color(hex: 0x0E1113)
@@ -29,7 +36,7 @@ enum Theme {
     static let inkTertiary = Color(hex: 0x9BA1A6)
     static let inkMuted = Color(hex: 0x7A8185)
     static let inkFaint = Color(hex: 0x6B7276)
-    static let inkFaintest = Color(hex: 0x5F656A)
+    static let inkFaintest = Color(hex: 0x63696E)
     static let inkDisabled = Color(hex: 0x4A5054)
     /// A plan channel's tick on the band rail: fainter than a bookmark's `good` and than the
     /// tuned `accent`, so a plan reads as a grid under the marks and never as marks. No
@@ -64,6 +71,9 @@ enum Theme {
     /// clipping, a channel outside the capture. The ramp's fourth stop, so it never competes
     /// with `accent` for the tuned channel.
     static let caution = Color(hex: 0xC9C06A)
+    /// The left end of the squelch meter's container, which fades from it to the ramp's first
+    /// stop. Pure black, darker than `ground` and outside the palette's greys.
+    static let meterWell = Color(hex: 0x000000)
 
     /// The level ramp's stops, cold to hot: floor to full scale. `level(_:)` interpolates for
     /// SwiftUI-drawn meters; the waterfall shader gets the same stops as floats.
@@ -107,6 +117,9 @@ enum Theme {
         /// SF at the same size and weight.
         static let name = SwiftUI.Font.system(size: 21, weight: .medium)
         static let body = SwiftUI.Font.system(size: 13)
+        /// The assistant's reply and your message in its panel, with `Theme.replyLeading` between
+        /// lines.
+        static let reply = SwiftUI.Font.system(size: 13)
         static let label = SwiftUI.Font.system(size: 12.5)
         /// `label` in mono: a frequency standing where a name would, the Library's title
         /// for a channel with no bookmark.
@@ -129,10 +142,31 @@ enum Theme {
         static let footnote = SwiftUI.Font.system(size: 10.5)
         /// A clause under a sentence, or a condition line under the identity's frequency.
         static let aside = SwiftUI.Font.system(size: 11.5)
-        /// The play and stop glyphs in a kept row's ring, and the player's ⏮ and ⏭.
+        /// The play and stop glyphs in a kept row's ring, the player's ⏮ and ⏭, and a disclosure
+        /// or pop-up chevron.
         static let glyph = SwiftUI.Font.system(size: 8, weight: .semibold)
-        /// The glyph in the transport bar's 44 pt circle: the player's ▶ and ⏸.
+        /// The glyph in the transport bar's 44 pt circle: the speaker in the Radio, the player's
+        /// ▶ and ⏸.
         static let transportGlyph = SwiftUI.Font.system(size: 16, weight: .bold)
+        /// The arrows on the band rail that point at a band off its edge.
+        static let arrowGlyph = SwiftUI.Font.system(size: 6)
+        /// The × that dismisses a banner or a note.
+        static let closeGlyph = SwiftUI.Font.system(size: 9)
+        /// The spectrum's max hold checkbox.
+        static let checkGlyph = SwiftUI.Font.system(size: 9)
+        /// The magnifying glass at the head of a search or filter field.
+        static let fieldGlyph = SwiftUI.Font.system(size: 10)
+        /// The symbol in a small square button: add a bookmark, zoom the band rail.
+        static let buttonGlyph = SwiftUI.Font.system(size: 10, weight: .semibold)
+        /// The symbol at the head of an open band's action row in the sidebar (Scan band,
+        /// Channels), centred where a bookmark row draws its dot.
+        static let rowGlyph = SwiftUI.Font.system(size: 10)
+        /// The pencil that edits the channel's name in the inspector.
+        static let editGlyph = SwiftUI.Font.system(size: 11)
+        /// A button in a panel's header: the assistant's new conversation.
+        static let panelGlyph = SwiftUI.Font.system(size: 12)
+        /// A toolbar button that shows or hides a panel: the inspector, the assistant.
+        static let toolbarGlyph = SwiftUI.Font.system(size: 13, weight: .medium)
         /// ⏸ or ▶ in the Library's playing row's 28 pt circle.
         static let playingGlyph = SwiftUI.Font.system(size: 10, weight: .bold)
     }
@@ -143,9 +177,18 @@ enum Theme {
     static let frequencyTracking: CGFloat = 29 * -0.02
     /// `-0.015em` at 21 pt, the channel's name.
     static let nameTracking: CGFloat = 21 * -0.015
+    /// The extra leading between the lines of `Font.reply`.
+    static let replyLeading: CGFloat = 3
 
     // Layout, from the design's window: ratios of a 1360×820 design, fixed where it says so.
     enum Layout {
+        /// A plain text field's height in `Font.label` and in `Font.value`: their lines' heights,
+        /// set rather than left to the field. Left to themselves the heights swapped on some
+        /// launches, the filter field 13 pt and the inspector's Tone and Note 15 pt, as if an
+        /// AppKit field made for one font had been reused for the other and kept its height, and
+        /// the rows under them moved.
+        static let labelFieldHeight: CGFloat = 15
+        static let valueFieldHeight: CGFloat = 13
         static let sidebarWidth: CGFloat = 236
         static let bandRailHeight: CGFloat = 40
         static let spectrumHeight: CGFloat = 150
@@ -159,6 +202,43 @@ enum Theme {
         /// The inspector, fixed on the right; the window works without it.
         static let inspectorWidth: CGFloat = 312
         static let inspectorHeaderHeight: CGFloat = 36
+        /// The window's narrowest, with the sidebar and the inspector; the assistant's column
+        /// adds its own width to it while it shows.
+        static let windowMinWidth: CGFloat = 900
+        /// The assistant's panel, fixed beside the inspector; the window works without it. Wide
+        /// enough for a step's tool, its arguments and its state word at `Font.value`; a guess
+        /// until the Mac.
+        static let assistantPanel: CGFloat = 320
+        /// The column's one left edge, and its right: the header, the transcript, a step and its
+        /// opened body, a card, the token line and the field all start this far in.
+        static let assistantInset: CGFloat = 16
+        /// The space between two exchanges: after the assistant's reply, before your next message.
+        static let assistantTurnGap: CGFloat = 14
+        /// The space inside an exchange: your message to the steps, a step to the next, the steps
+        /// to the reply.
+        static let assistantInTurnGap: CGFloat = 6
+        /// Your message's bubble at its widest: about 80 % of the 288 pt between the insets.
+        static let assistantBubbleMaxWidth: CGFloat = 230
+        /// The text inside your message's bubble, from its edges.
+        static let assistantBubblePaddingH: CGFloat = 10
+        static let assistantBubblePaddingV: CGFloat = 6
+        /// The corners of your message's bubble, a question card and the field.
+        static let assistantRadius: CGFloat = 6
+        /// Inside the field's box and an opened step's.
+        static let assistantBoxPadding: CGFloat = 8
+        /// The corners of an opened step's box.
+        static let assistantBoxRadius: CGFloat = 4
+        /// An opened step's box at its tallest: twelve lines of `Font.valueSmall` (13 pt each)
+        /// and its padding. A longer body scrolls inside it.
+        static let assistantStepBodyMaxHeight: CGFloat = 172
+        /// Inside a question card.
+        static let assistantCardPadding: CGFloat = 12
+        /// The field's block above and below: the token line, the field and the line under it.
+        static let assistantFooterPadding: CGFloat = 12
+        /// The filled button's text from its edges, and its corners: a card's Allow.
+        static let assistantButtonPaddingH: CGFloat = 10
+        static let assistantButtonPaddingV: CGFloat = 3
+        static let assistantButtonRadius: CGFloat = 5
         /// The inspector's reading rows are four fixed columns (label, meter, word, number), so
         /// no meter or number moves when a word beside it changes. The label column is 62 pt,
         /// narrower than the design's 74, to make room for the number; `Deviation`, the longest
@@ -169,6 +249,13 @@ enum Theme {
         static let readingWordGap: CGFloat = 10
         /// Wide enough for `+1.2 kHz` in `Font.value`, the longest number a reading prints.
         static let readingNumberWidth: CGFloat = 54
+        /// The heard tone beside a bookmark's Tone field, wide enough for `heard DCS 023N` in
+        /// `Font.valueSmall`, and that wide with no tone heard, so the field does not change width
+        /// when the first one is.
+        static let heardToneWidth: CGFloat = 104
+        /// The day over the transmissions log, wide enough for `yesterday` and `Wednesday` in
+        /// `Font.columnHead`.
+        static let logDayWidth: CGFloat = 64
         /// A meter's track (`MeterTrack`), and the height of its ticks and needle, which is the
         /// meter's own height.
         static let meterTrackHeight: CGFloat = 6
@@ -198,11 +285,6 @@ enum Theme {
         /// name (docs/design/channels.md, "Bands are the spine of the sidebar"); a guess until
         /// the Mac.
         static let sidebarIndent: CGFloat = 12
-        /// The expanded band's action strip: compact controls distinct from bookmark rows.
-        static let sidebarActionGap: CGFloat = 6
-        static let sidebarActionRadius: CGFloat = 4
-        static let sidebarActionPaddingX: CGFloat = 7
-        static let sidebarActionPaddingY: CGFloat = 5
         /// The plan picker (the same design section): its width, one row's height and how many
         /// rows show before it scrolls (about twelve, the design's number).
         static let pickerWidth: CGFloat = 300
@@ -263,6 +345,19 @@ enum Theme {
         static let stripHeight: CGFloat = 24
         /// An EARLIER line's day name column, wide enough for `Wednesday` and `12 Sep`.
         static let earlierDayWidth: CGFloat = 120
+        /// A part's speech lines: indented to the row's `STARTS` column, the gap between two
+        /// lines and inside one, a line's corners when it is selected or playing, and a callsign
+        /// chip's padding and corners. Guesses until the Mac.
+        static let speechIndent: CGFloat = partRowInset + ringColumnWidth + bracketColumnWidth
+        static let speechLineGap: CGFloat = 2
+        static let speechLinePaddingY: CGFloat = 4
+        static let speechLinePaddingX: CGFloat = 6
+        static let speechLineRadius: CGFloat = 4
+        static let chipPaddingX: CGFloat = 5
+        static let chipPaddingY: CGFloat = 1
+        static let chipRadius: CGFloat = 3
+        /// The Transcribe again sheet's width.
+        static let transcribeSheetWidth: CGFloat = 380
         /// The player's progress track, and the inspector's tables' label column at the reading
         /// rows' 62 pt so the two panels line up.
         static let partProgressHeight: CGFloat = 3
@@ -284,6 +379,16 @@ enum Theme {
         static let audioLabelHeight: CGFloat = 14
         static let audioNumberHeight: CGFloat = 13
         static let defaultWindow = CGSize(width: 1360, height: 820)
+        /// The Settings window: wide enough for the usage table's nine columns at `value`'s size,
+        /// tall enough for the three AI groups without a scroll on a 13-inch display.
+        static let settingsWindow = CGSize(width: 680, height: 640)
+        /// The gap between two groups of a Settings pane, and between two rows inside one.
+        static let settingsGroupGap: CGFloat = 22
+        static let settingsRowGap: CGFloat = 10
+        /// The Add form's labels sit in one column this wide, so the fields line up.
+        static let settingsLabelWidth: CGFloat = 72
+        /// The feature rows' two pickers.
+        static let settingsPickerWidth: CGFloat = 190
     }
 }
 

@@ -20,6 +20,13 @@ import Synchronization
 protocol DecodeRunning: AnyObject, Sendable {
     func start() async
     func stop() async
+    /// Ends the job, with the reason a recording the job writes records: "cancelled", or
+    /// "restart" for a daemon going down under it.
+    func stop(endedBy: String) async
+}
+
+extension DecodeRunning {
+    func stop(endedBy _: String) async { await stop() }
 }
 
 extension DecodeRunner: DecodeRunning {}
@@ -40,6 +47,8 @@ actor IQDecodeRunner: DecodeRunning {
     private let predicate: Leyline_V1_Predicate
     private let notify: Leyline_V1_NotifyTarget?
     private let notifier = Notifier()
+    /// The user's keys, for a plugin whose manifest names a provider.
+    private let credentials: CredentialStore?
     private let onStatus: @Sendable (Leyline_V1_JobState, String) async -> Void
     private let log: Logger
 
@@ -62,9 +71,11 @@ actor IQDecodeRunner: DecodeRunning {
     init(jobID: JobID, installed: DecoderRegistry.Installed, lease: any CaptureIQLease, hub: RecordHub,
          writer: RecordWriter?, store: SessionStore,
          predicate: Leyline_V1_Predicate, notify: Leyline_V1_NotifyTarget?,
+         credentials: CredentialStore? = nil,
          onStatus: @escaping @Sendable (Leyline_V1_JobState, String) async -> Void,
          seqStart: UInt64 = 0)
     {
+        self.credentials = credentials
         self.jobID = jobID
         self.installed = installed
         self.lease = lease
@@ -139,9 +150,11 @@ actor IQDecodeRunner: DecodeRunning {
     /// Spawns the plugin and pumps it until it exits or the job is cancelled. Returns its status.
     private func runPlugin() async -> Int32 {
         let process = PluginProcess(name: installed.manifest.name, executable: installed.executablePath,
-                                    args: installed.manifest.args, directory: installed.directory)
+                                    args: await pluginArguments(for: installed.manifest, from: credentials),
+                                    directory: installed.directory)
         do {
-            try await process.start(descriptor: descriptor())
+            let credential = try await pluginCredential(for: installed.manifest, from: credentials)
+            try await process.start(descriptor: descriptor(), credential: credential)
         } catch {
             await onStatus(.failed, (error as? EngineError)?.message ?? "\(error)")
             await teardown()

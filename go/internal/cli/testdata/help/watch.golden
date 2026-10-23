@@ -16,7 +16,9 @@ form and works on any field a decoder emits; --near and --county are shortcuts
 for two common cases:
 
   --where field=value   the general test: any field, by name. Also field!=value
-                        (not equal), field~value (contains), and field>value,
+                        (not equal), field~value (contains: a whole word, or
+                        words in order, ignoring case, so 'text~net control'
+                        finds a speech record that says it), and field>value,
                         >=, <, <= (numeric). Repeat for more tests.
   --near LAT,LON --radius R   records with a position within R of a point
                         (R is 10km, 500m, 5nm, 3mi). Position is a field every
@@ -44,6 +46,7 @@ Examples:
   ley watch aprs --where 'temp_c>25'            # only when it is warm
   ley watch aprs --near 37.76,-122.42 --radius 10km
   ley watch same --county 06009 --notify=shell:'say alert' --detach
+  ley watch speech --freq 146.52 --where 'text~net control' --notify --detach
 
 Flags:
       --count int                 stop after this many matches, e.g. 5 (default: until Ctrl-C)

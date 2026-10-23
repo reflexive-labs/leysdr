@@ -38,6 +38,19 @@ SWIFT
 [ "$(engine_version "$tmp/Version.swift")" = 0.1.2 ] \
   || fail "engine_version read \"$(engine_version "$tmp/Version.swift")\""
 
+# The release's app is built without the check harness, and harness_markers finds it in an
+# executable that has it: here, two files standing in for the app with and without.
+case "$(declare -f build_app)" in
+  *"bundle-app.sh --with-daemon --no-harness"*harness_markers*) ;;
+  *) fail "build_app does not build the app with --no-harness and then look for the harness" ;;
+esac
+printf '\x00\x01LeylineApp\x00AppSession\x00ShotRegion\x00' > "$tmp/plain-app"
+printf '\x00\x01LeylineApp\x00ControlChannel\x00AXWalk\x00' > "$tmp/staged-app"
+[ -z "$(harness_markers "$tmp/plain-app")" ] \
+  || fail "harness_markers found the harness in an app without it: $(harness_markers "$tmp/plain-app")"
+[ "$(harness_markers "$tmp/staged-app" | xargs)" = "AXWalk ControlChannel" ] \
+  || fail "harness_markers printed \"$(harness_markers "$tmp/staged-app" | xargs)\" for an app with the harness"
+
 # drivers.json as bundle-app.sh's bundle_drivers writes it, one driver per line.
 mkdir -p "$tmp/src" "$tmp/out"
 printf 'librtlsdr source\n' > "$tmp/src/rtl.tar.gz"
@@ -384,7 +397,7 @@ released() {
     git log -1 --format=%B | grep -q '^Signed-off-by: Tester <tester@example.com>$' || echo "the release commit is not signed off"
     [ "$(git cat-file -t "v$v")" = tag ] || echo "v$v is not an annotated tag"
     [ "$(git rev-parse "v$v^{commit}")" = "$(git rev-parse HEAD)" ] || echo "the tag is not at HEAD"
-    [ "$(git show --name-only --format= HEAD | sort | xargs)" \
+    [ "$(git show --name-only --format= HEAD | LC_ALL=C sort | xargs)" \
       = "CHANGELOG.md VERSION engine/Sources/LeylineDaemon/Version.swift go/internal/cli/root.go" ] \
       || echo "the release commit holds: $(git show --name-only --format= HEAD | xargs)"
     grep -q "leylinedVersion = \"$v\"" engine/Sources/LeylineDaemon/Version.swift || echo "Version.swift was not regenerated"

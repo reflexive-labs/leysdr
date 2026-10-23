@@ -1,0 +1,42 @@
+ai lists the keys the daemon holds for model providers, and the provider
+and model each feature calls. A key is stored by the daemon and never
+printed or returned: the KEY column shows its last four characters, so two
+keys can be told apart. LAST USED is when a worker last took the key for a
+call; CHECKED is what the provider said when the key was last tried
+(accepted, rejected, or unavailable when the check could not run).
+
+'ley ai add <provider>' stores a key, reading it from stdin; 'ley ai check'
+tries it again, 'ley ai remove' deletes it, 'ley ai use' chooses the model a
+feature calls, and 'ley ai usage' prints what the calls used.
+
+--json prints the AIState: every key's description (never its text) and
+every feature's model.
+
+Usage:
+  ley ai [flags]
+  ley ai [command]
+
+Examples:
+  ley ai add openai                    # paste a key; the assistant and speech use it
+  ley ai                               # which keys are set, and do they work?
+  ley ai use assistant anthropic       # switch a feature, with the default model
+  ley ai usage                         # requests and tokens, last 30 days
+  ley ai --json | jq -r '.credentials[].provider'
+
+Available Commands:
+  add         Store a provider key, read from stdin, and check it
+  check       Try a stored key against its provider again
+  remove      Delete a provider's key from the daemon
+  usage       Print the requests and tokens the provider calls used
+  use         Choose the provider and model a feature calls
+
+Flags:
+  -h, --help   help for ai
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)
+
+Use "ley ai [command] --help" for more information about a command.

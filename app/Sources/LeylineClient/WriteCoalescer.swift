@@ -23,7 +23,8 @@ public enum ParamKind: Sendable, Hashable, CaseIterable {
         case .offsetHz: self = .offsetHz
         case .bandwidthHz: self = .bandwidthHz
         case .mode: self = .mode
-        case .squelchDb: self = .squelchDb
+        // One parameter, as the daemon keys them: the last squelch write wins, measured or not.
+        case .squelchDb, .squelchAutoDb: self = .squelchDb
         case .gain: self = .gain
         case .sinkVolume: self = .sinkVolume
         case .none: return nil
@@ -151,6 +152,11 @@ public final class WriteCoalescer: Sendable {
     }
     @discardableResult public func squelchDb(_ db: Double, channel: String) -> UInt64 {
         set(.squelchDb(db), target: channel)
+    }
+    /// A level measured from the noise floor, which the channel then reports as
+    /// `SQUELCH_AUTO` (`ParamWrite.squelch_auto_db`).
+    @discardableResult public func squelchAutoDb(_ db: Double, channel: String) -> UInt64 {
+        set(.squelchAutoDb(db), target: channel)
     }
     @discardableResult public func volume(_ v: Double, sink: String) -> UInt64 {
         set(.sinkVolume(v), target: sink)

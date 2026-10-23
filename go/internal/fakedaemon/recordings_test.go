@@ -180,3 +180,28 @@ func TestPausingAPlaybackHoldsItsPosition(t *testing.T) {
 		t.Errorf("a playback that does not exist: %v", err)
 	}
 }
+
+// A range plays only its stretch of the part, placed in the file by the sidecar's capture rate as
+// the daemon places it; one outside the part is INVALID_ARGUMENT naming what the part holds.
+func TestPlaybackOfARange(t *testing.T) {
+	const id = "job_01SEEDRANGESEEDRANGESEED"
+	c, _ := harness(t, fakedaemon.Options{RecordingsDir: t.TempDir(), Recordings: []fakedaemon.SeedRecording{{
+		JobID: id, Parts: [][]fakedaemon.SeedOver{{{OpenMs: 600, CloseMs: 1600}}},
+	}}})
+	uri := leyline.RecordingPartURI(id, 1)
+	// 1.0 s to 1.5 s of a part at 2.4 MSPS is 24,000 frames of 48 kHz audio.
+	pb, err := c.StartPlaybackRange(t.Context(), uri, -1, 2_400_000, 3_600_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pb.GetSamples() != 24_000 || pb.GetStartSample() != 2_400_000 || pb.GetEndSample() != 3_600_000 {
+		t.Errorf("the range's playback: %d frames, %d..<%d", pb.GetSamples(), pb.GetStartSample(), pb.GetEndSample())
+	}
+	if err := c.StopPlayback(t.Context(), pb.GetPlaybackId()); err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.StartPlaybackRange(t.Context(), uri, -1, 2_400_000, 99_000_000)
+	if leyline.Code(err) != leyline.CodeInvalidArgument || !strings.Contains(err.Error(), "not a range inside part 1") {
+		t.Errorf("a range past the part: %v", err)
+	}
+}

@@ -44,28 +44,49 @@ struct RecordingsPage: View {
         let days = Recordings.dayRows(groups, now: Date())
         let recent = days.filter { !$0.earlier }
         let earlier = days.filter(\.earlier)
+        // Each part's place down the page, recent days first, as a stage's `select_part`
+        // counts: the rows' identifiers end in it (`library.part.0`).
+        let indices = Dictionary(
+            (recent + earlier).flatMap(\.rows).enumerated().map { ($1.uri, $0) },
+            uniquingKeysWith: { first, _ in first })
         return VStack(spacing: 0) {
             RecordingsPageHeader(channel: channel, groups: groups)
                 .frame(height: Theme.Layout.pageHeaderHeight)
             Rectangle().fill(Theme.border).frame(height: 1)
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(recent) { day in
-                        DaySection(day: day)
-                            .padding(.top, Theme.Layout.pageDayGap)
-                    }
-                    if !earlier.isEmpty {
-                        SectionHeader(text: "Earlier")
-                            .padding(.top, Theme.Layout.pageDayGap).padding(.bottom, 8)
-                        ForEach(earlier) { day in
-                            EarlierDay(day: day, opened: session.openedDays.contains(day.id))
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(recent) { day in
+                            DaySection(day: day)
+                                .padding(.top, Theme.Layout.pageDayGap)
+                        }
+                        if !earlier.isEmpty {
+                            SectionHeader(text: "Earlier")
+                                .padding(.top, Theme.Layout.pageDayGap).padding(.bottom, 8)
+                            ForEach(earlier) { day in
+                                EarlierDay(day: day, opened: session.openedDays.contains(day.id))
+                            }
                         }
                     }
+                    .padding(.horizontal, Theme.Layout.pageInset)
+                    .padding(.bottom, Theme.Layout.pageInset)
+                    .environment(\.partIndices, indices)
                 }
-                .padding(.horizontal, Theme.Layout.pageInset)
-                .padding(.bottom, Theme.Layout.pageInset)
+                // The search selected an over: bring its line into view.
+                .onChange(of: scrollTarget) { _, target in
+                    guard let target, let uri = session.selectedPartURI else { return }
+                    // A hit on an EARLIER day: open it first, so the line exists to scroll to.
+                    session.openDay(holding: uri)
+                    withAnimation { proxy.scrollTo(target, anchor: .center) }
+                }
             }
         }
+    }
+
+    /// The selected over's line id, while an over is selected.
+    private var scrollTarget: String? {
+        guard let uri = session.selectedPartURI, let over = session.selectedOver else { return nil }
+        return SpeechLineView.scrollID(partURI: uri, over: over)
     }
 }
 
@@ -99,12 +120,14 @@ struct RecordingsPageHeader: View {
             // One tint, always, as the log's switch (`RecordSwitch`).
             .tint(Theme.accentRec)
             .disabled(!session.isLive)
+            .accessibilityIdentifier("library.page.record")
             .help(
                 job == nil
                     ? "Record this channel while its squelch is open, at the daemon's auto squelch. The daemon keeps recording after the window closes."
                     : "Stop recording \(job?.jobID ?? ""); its parts stay on disk")
             Button("Tune") { session.tune(recordingChannel: channel) }
                 .buttonStyle(.bordered)
+                .accessibilityIdentifier("library.page.tune")
                 .help("Back to Radio, tuned to \(Frequency.format(channel.frequencyHz))")
         }
         .padding(.horizontal, Theme.Layout.pageInset)
@@ -163,6 +186,7 @@ struct PlayDayButton: View {
         }
         .buttonStyle(.plain)
         .help("Play day")
+        .accessibilityIdentifier("library.day.\(ViewIdentifier.slug(day.title)).play")
     }
 }
 
@@ -181,6 +205,7 @@ struct DayBody: View {
             ForEach(day.rows) { row in
                 PartRowView(row: row)
                     .padding(.top, row.gapBefore ? Theme.Layout.recordingGap : 0)
+                PartSpeechLines(row: row)
             }
         }
     }
@@ -211,6 +236,9 @@ struct EarlierDay: View {
             .padding(.vertical, 10)
             .contentShape(Rectangle())
             .onTapGesture { session.toggleOpened(day: day.id) }
+            .pressableGroup("library.day.\(ViewIdentifier.slug(day.title))") {
+                session.toggleOpened(day: day.id)
+            }
             .help(opened ? "Fold \(day.title)" : "Show \(day.title)'s parts")
             if opened {
                 DayBody(day: day).padding(.top, 4).padding(.bottom, 12)
@@ -300,6 +328,7 @@ struct PartColumnHead: View {
 struct PartRowView: View {
     let row: PartRow
     @Environment(AppSession.self) private var session
+    @Environment(\.partIndices) private var indices
 
     var body: some View {
         let playing = session.playingURI == row.uri
@@ -339,6 +368,8 @@ struct PartRowView: View {
         }
         .buttonStyle(.plain)
         .help(playing ? (paused ? "Resume" : "Pause") : "Play")
+        .accessibilityIdentifier("library.part.\(indices[row.uri].map(String.init) ?? "_")")
+        .contextMenu { SpeechActions(recordingID: row.jobID) }
         .onAppear { session.loadLevelGraph(row) }
     }
 
@@ -405,4 +436,10 @@ struct LevelBars: View {
         }
         .accessibilityHidden(true)
     }
+}
+
+extension EnvironmentValues {
+    /// Each part's place down the channel's page by its URI, which its row's accessibility
+    /// identifier ends in.
+    @Entry var partIndices: [String: Int] = [:]
 }

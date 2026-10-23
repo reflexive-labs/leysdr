@@ -14,9 +14,22 @@ package protocol PCMOnlyAudioSink: AudioSink {}
 
 /// Builds platform audio sinks.
 package enum SinkFactory {
-    /// A sink that plays mono float32 audio at `rate` on the default (or `deviceUID`) output device.
+    private static let silenced = Atomic<Bool>(false)
+
+    /// Whether system audio sinks are `SilentAudioSink`s (`leylined --no-audio`).
+    package static var isSilenced: Bool { silenced.load(ordering: .relaxed) }
+
+    /// Makes every system audio sink built from now on a `SilentAudioSink`. Called once at daemon
+    /// start, before any sink exists; tests reset it.
+    package static func setSilenced(_ on: Bool) {
+        silenced.store(on, ordering: .relaxed)
+    }
+
+    /// A sink that plays mono float32 audio at `rate` on the default (or `deviceUID`) output device,
+    /// or discards it when the daemon was started with `--no-audio`.
     /// - Throws: `PLATFORM_UNSUPPORTED` where AVFoundation is unavailable; `DEVICE_IO` if the engine fails to start.
     package static func systemAudio(rate: UInt32, volume: Double, deviceUID: String?) throws -> any AudioSink {
+        if isSilenced { return SilentAudioSink() }
         #if canImport(AVFoundation)
         return try CoreAudioSink(rate: rate, volume: volume, deviceUID: deviceUID)
         #else

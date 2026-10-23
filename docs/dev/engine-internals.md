@@ -58,17 +58,26 @@ engine/                       SwiftPM package (macOS 26+, Swift 6 toolchain, Swi
 │   │                         restart repair), PlaybackEngine + WAVReader (playing a recording back
 │   │                         through the daemon's own audio device)
 │   ├── Services/             Control, Telemetry, Bulk, Jobs (scan, monitor, decode and record
-│   │                         implemented; watch UNIMPLEMENTED), Decoders, Resources
+│   │                         implemented; watch UNIMPLEMENTED), Decoders, Resources, Credentials,
+│   │                         Usage, Assistant
+│   ├── AI/                   SecretStore (keychain or key file), CredentialStore (ai.json),
+│   │                         WorkerProcess (`ley worker check`), Ledger (usage.jsonl), UsageRecorder,
+│   │                         ConversationStore (the assistant's conversations), AssistantWorker
+│   │                         (`ley worker assistant`)
+│   ├── ChildProcess.swift    a spawned program on pipes: decoder plugins and `ley` workers
+│   ├── ProgramLocator.swift  finds a program by name beside `leylined`, then on `PATH`
 │   ├── Bulk/                 stream registry: FFT/audio/IQ subscriptions -> rings -> gRPC frames
 │   ├── WriteCoalescer.swift  ParamWrite coalescing
 │   ├── RememberedDevices.swift  devices.json beside the socket: the rtl_tcp endpoints to re-attach
 │   └── Mapping/              engine <-> proto conversions
 ├── Sources/LeylineDaemon     executable `leylined`: DaemonCommand (ArgumentParser: --socket,
-│                             --log-level, --pidfile, ...) and the generated Version.swift
+│                             --log-level, --pidfile, --data, --ley, ...) and the generated Version.swift
 ├── Sources/S2Throughput      executable `s2-throughput`, the S2 harness (../decisions/S2-throughput.md);
 │                             built, not shipped
 ├── Sources/FakeDecoder       executable `leyline-fake-decoder`, a decoder plugin that decodes nothing,
 │                             for the decode-job tests; built, not shipped
+├── Sources/FakeWorker        executable `leyline-fake-worker`, a `ley worker assistant` that plays a
+│                             script, for the assistant tests; built, not shipped
 ├── Tests/EngineCoreTests     unit tests; fixture round-trips. Most of the target builds and runs on Linux;
 │                             `KernelParityTests` and anything under `#if canImport(Accelerate)` or
 │                             `#if canImport(AVFoundation)` need macOS and do not compile elsewhere.
@@ -173,6 +182,20 @@ elapsed time uses `WallClock.realNowNs()`: the retention cutoffs (`--store-age`,
 `--recordings-age`), the don't-disturb window, the overrun log's rate limit, the daemon's start
 time, an alert's validity check and the ULID timestamp. Clients compare dates against their own
 clock, so under a shift `ley track --since` and `ley devices-seen` ages are off by the offset.
+
+**A silent daemon.** `leylined --no-audio` makes every system audio sink a `SilentAudioSink`
+(`SinkFactory.setSilenced`, once at startup): a client's sink is attached, reported and fed as
+usual, a recording's playback paces as usual, and nothing is played. `leyshots` starts its daemons
+with it, so a shot or a check run plays nothing through the speakers of the Mac it runs on.
+
+**A slow sweep on a file.** A file device tunes only the point it was recorded at, so a scan on
+one is a single step that ends a quarter of a second after it starts. `leylined
+--file-scan-dwell MS` raises the dwell of a scan on a file device to MS milliseconds when it asks
+for less (`JobStore.scanDwellMs`), so a check scene can press Stop or click elsewhere while the
+sweep runs. The step ends once it has the rows that dwell implies, a whole number of row
+intervals, so it lasts about MS; it gathers more rows at the same false-alarm budget per sweep. A
+scan on any other driver keeps the dwell it asked for. `leyshots` passes it for a check scene's
+`sweep_dwell`.
 
 **Capture-owned index base.** Devices number samples per stream: `RTLTCPDevice`, the rtl-sdr
 callback and `FilePlaybackDevice` all restart at 0 on every `startStreaming`. The capture, not the
@@ -553,6 +576,12 @@ Activity: `last_interactive_write_ns` is updated by any capture/channel write wh
   confirmed value comes back in the `Capture.gains` field of the capture event under that name.
   A `mode` write re-decides `subaudible_detect` (on for NFM, the only mode CTCSS is sent under,
   off otherwise), so a channel that started in another mode looks for a tone once it is NFM.
+  `squelch_auto_db` is a level the writer measured from the noise floor: it is applied as
+  `squelch_db` is (NaN is refused, since off is `squelch_db`'s), shares its coalescing key, and
+  marks the channel `squelch_source` `SQUELCH_AUTO`; a `squelch_db` write marks it
+  `SQUELCH_MANUAL`, and a squelch that is off has no source. The source lives on the session's
+  channel entry, not in `ChannelConfig`, because the DSP never reads it; the record and decode
+  jobs that measure a squelch themselves mark it `AUTO` when they publish the channel.
   On a channel that is `OUT_OF_CAPTURE` every non-offset write (`bandwidth_hz`, `mode`, `squelch_db`)
   is stored and used by the rebuild when the capture moves back over the channel — the channel stays
   `OUT_OF_CAPTURE` at its absolute frequency; only an `offset_hz` write is checked against the capture
@@ -595,6 +624,218 @@ brings it in as soon as it responds; the log line says the daemon is waiting for
 never keeps the daemon from serving local dongles. An unreadable `devices.json` is read as an empty
 list: losing the remembered remote endpoints is better than refusing to serve local dongles.
 
+### Credentials and usage
+
+Model calls run on the user's own provider key, and the daemon holds the keys so a kept job can use
+one with no client attached and every client sees the same list (invariant 7). The contract can
+write a key and never read one: `Credentials` returns a `Credential` with the provider, label, the
+secret's last four characters (none for a secret of four or fewer) and the times, and no reply, event,
+error or log line carries the secret. On macOS the secret is a login-keychain item `leylined`
+creates (service `com.leysdr.leyline`, account the provider, readable after first unlock);
+elsewhere it is `secrets/credentials.json` in the data directory, mode 0600, in a `secrets`
+directory the daemon creates 0700 and sets back to 0700 if it finds it otherwise: the data
+directory itself may already be 0755, made by the record store or the recordings (`SecretStore`,
+`FileSecrets`, `KeychainSecrets`). What a listing shows is `ai.json` in the data directory, the
+proto3 JSON of `AIState`, so a listing never opens the keychain (`CredentialStore`). The key file,
+`ai.json`, a rewritten ledger and each kept conversation ("Assistant" below) are written to a temporary file created 0600 and renamed over the
+old one, so each stays 0600 (`writePrivateFile(_:to:)`); a temporary key file a crash left is
+removed the next time the key file is read. The data directory is `--data`, by default
+`~/Library/Application Support/Leyline` on macOS and `$XDG_DATA_HOME/leyline` (or
+`~/.local/share/leyline`) elsewhere. `--secrets file` (or `LEYLINE_SECRETS=file`, which the flag
+overrides) keeps the keys in that file on macOS too, so a daemon that tests or the eval runner start
+never writes to the login keychain; `--secrets keychain` names the keychain, and any other value of
+the variable is the platform default (`SecretsKind`, `defaultSecretStore`). Before it listens the daemon logs
+`AI keys in <path>`, or `AI keys in the login keychain`; every test harness and `daemonrun` read
+that line and refuse a daemon that does not name a file under its own `--data`.
+
+The daemon makes no model call. A check runs `ley worker check --provider P [--endpoint E]` with
+`LEYLINE_SOCKET` set to the daemon's socket, writes the secret and a newline to its stdin and reads
+one JSON line, `{"outcome": "accepted"|"rejected"|"unavailable", "message": "…"}`, within 30 s
+(`WorkerProcess`). `ley` is `--ley` or `LEYLINE_LEY`, else the one beside `leylined`, else `PATH`
+(`ProgramLocator`, the lookup a decoder's bare `executable` uses). No `ley`, no answer or an answer
+that does not parse is an `UNAVAILABLE` outcome with the reason, never an RPC error. The answer's
+message and the worker's stderr have the secret replaced before they are logged or stored, as
+does the last stderr line of a decoder that refuses ("Decoders" below), in three forms: as it
+stands, JSON-escaped and percent-encoded (`WorkerProcess.redacting(_:in:)`). A worker or plugin
+that transforms the key any other way is not caught. `SetCredential` stores the
+key and then checks it; `CheckCredential` checks the stored one. Both return the `Credential` with
+the outcome in `last_check`, a rejected key included, and fail only with `CREDENTIAL_MISSING` when
+there is no key to check, as `DeleteCredential` does when there is none to delete. Deleting a key
+ends every live decode job whose manifest names that `credential_provider`, `FAILED` with
+`CREDENTIAL_MISSING`, and a decode job whose provider's key was last checked `REJECTED` is refused
+at start with `CREDENTIAL_REJECTED` in the provider's words. `SetFeatureModel` takes `assistant`
+or `speech`; an empty provider and model clears the choice.
+
+Which provider serves which feature, and the model a feature gets when nobody named one, is one
+table (`ProviderDefaults`): `openai` serves the assistant with `gpt-5` and speech with `whisper-1`,
+`anthropic` the assistant with `claude-sonnet-5-5`. The names are placeholders until the assistant evals
+and the speech spike confirm them. `ley` and the fake daemon keep the same table in
+`go/pkg/leyline/providers.go` and the app in its provider catalogue (`ProviderCatalog`), and Go's
+`TestProviderTablesAgree` reads the two Swift sources as text and holds all three equal, so a
+change to one is a change to the three. After `SetCredential`'s check, every feature the
+provider serves and that has no provider chosen gets the table's model, and the `AIState` is
+published again; a choice is never overwritten, and a key the provider rejected sets nothing. A
+key whose check could not run does set them, since nothing else would once a later check
+succeeds. A key with an endpoint sets nothing: the table's models are the provider's own, and a
+gateway or a local server names its own. The reply is the `Credential` as before; `ley ai add` and the app see what was set in
+the state. `SetFeatureModel` refuses with `INVALID_ARGUMENT` a provider that cannot serve the
+feature, naming those that can: a provider serves a feature the table gives it, speech is also
+served by the `credential_provider` of any installed `SEGMENTED` decoder (so a third-party speech
+plugin's choice stands), and a provider the table does not list serves the assistant as an
+OpenAI-compatible server, refused once its key is stored with no endpoint. A conversation started
+with no assistant model chosen is `FAILED_PRECONDITION` naming the command to paste, built from
+the keys there are: `ley ai use assistant openai` for the table's first provider with a key, `ley
+ai use assistant <provider> <model>` for a server's key, else `ley ai add openai (or
+anthropic)`.
+
+The ledger is `<store>/usage.jsonl`: one `UsageReport` per line as proto3 JSON, appended as each
+arrives with one `write(2)` (`Ledger`). That reaches the kernel, not the disk: a power cut can
+lose the last reports, a daemon crash cannot. The append happens on the path of the record that
+carried the usage, so a slow disk slows record delivery of a speech job. At start the file is folded into `UsageLine`s by provider, model, feature, scope
+(the job or conversation) and UTC day, the day the providers' consoles count, and reports older
+than 400 days are dropped and the file rewritten. A report names a job or a conversation or
+neither (a key check has no scope), never both. A report arrives by `Usage.ReportUsage` from a
+worker, or on a decode record (`DecodeRunner`, "Decoders" below); either way `UsageRecorder` adds
+it, publishes the whole line and sets `last_used_at_ns` on the provider's key. `GetUsage` filters
+by provider, feature, scope and the UTC day `since_ns` falls on, sorted by day then provider.
+
+Every change to a key or a feature model publishes `Event.ai` with the whole `AIState`, so a deleted
+key is a shorter list rather than a tombstone (invariant 6); every report publishes `Event.usage`
+with the line it changed. `GetState` carries both. Two changes that race to the store are published
+in the order they were made: each carries its store's version, and an older one is dropped
+(`SessionStore.publishAI(from:by:)`, `publishUsage`).
+
+### Assistant
+
+A conversation with the assistant is daemon state the daemon keeps on disk (`ConversationStore`),
+and the model runs in a worker the daemon spawns for it, as a key check does: the daemon makes no
+model call and holds no provider SDK. `Assistant` (`AssistantService`) maps the RPCs onto the
+store, and any client may watch, answer, end or delete any conversation, so one client carries
+on a conversation another started, before a restart or after.
+
+`StartConversation` takes the request's provider and model, else the `assistant` feature's; with
+neither it is `FAILED_PRECONDITION` naming the command that chooses one ("Credentials and usage"). No key for the provider is `CREDENTIAL_MISSING`, and a key whose last check was `REJECTED`
+is `CREDENTIAL_REJECTED` in the provider's words. An empty model is the worker's default for the
+provider. The daemon then mints `conv_<ulid>` and runs `ley worker assistant --conversation <id>`
+(`WorkerProcess.startAssistant`, the same `ley` lookup as a check) with the daemon's environment
+plus `LEYLINE_SOCKET` and `LEYLINE_KEY_ON_STDIN=1`. Both directions of its stdio are
+varint-delimited protobuf, framed as a decoder plugin's are (`AssistantWorker`). On stdin the
+worker reads, in order: one `SetCredentialRequest` (provider, secret, endpoint), one
+`WorkerEvent.start` (`WorkerStart`: the conversation id, provider, model, endpoint, the client's
+view tools, the socket, the transcript path and `resume`), then `WorkerEvent`s until stdin
+closes. Both are written before the
+reply, into the pipe, so the worker may read them at its own pace; the key is never an argument
+or a variable. On stdout it writes `WorkerMessage`s. Its tool calls and its `ReportUsage` go over
+the socket like any client's, with the conversation id as the usage scope; the daemon reports no
+usage for a conversation itself. A worker that cannot be found or started is
+`PROVIDER_UNAVAILABLE` and leaves no conversation behind. The reply is the conversation `IDLE`.
+Every write to the worker goes through a queue of its own, in order, so no RPC waits on a pipe;
+a write the worker takes nothing of for 2 s fails that conversation alone, `INTERNAL` "the
+assistant is not reading its input", and stops its worker.
+
+The daemon derives the state from the turns the worker writes. A `Turn` replaces the turn with
+its id, or is appended when the id is new; its role is set to the assistant's whatever the worker
+wrote, and a turn that names a user turn's id is ignored with a warning. A turn marked `done`
+makes the conversation `IDLE`; one whose last call is `AWAITING_APPROVAL` or `AWAITING_CLIENT`
+makes it `WAITING` with that call copied into `pending`; any other makes it `THINKING`. A
+`WorkerFailure` makes it `FAILED` with the worker's error (`INTERNAL` when the worker gives no
+code). What the worker writes, turns and errors alike, has the key replaced as a check's answer
+does: the text, each call's tool name, id, arguments, result and reason, and the error's code,
+message and target.
+
+The clients move it only by what they send. `SendMessage` is `FAILED_PRECONDITION` unless `IDLE`;
+it adds the user turn `t<n>`, one past the highest `tN` so far, writes `UserMessage` with that id
+and makes the conversation `THINKING`. The worker names its own turn; the fake worker and the
+daemon's tests use `t<n+1>`. `ResolveAction` and `AnswerViewTool` are `FAILED_PRECONDITION`
+unless the conversation is `WAITING` on that call and the call is of their kind (an approval, a
+view tool); each writes `ActionResolved` or `ViewToolAnswer`, marks the call `RUNNING`
+(approved), `REFUSED` (declined) or `DONE` with the client's answer until the worker's next turn
+says otherwise, and makes the conversation `THINKING`. `StopTurn` writes `WorkerStop`, which the
+worker answers by marking the turn done, and waits up to 2 s for that. Then, whether the worker
+answered or not, the daemon closes the turn: it is marked done, a call still `AWAITING_APPROVAL`
+or `AWAITING_CLIENT` becomes `REFUSED`, one still `RUNNING` becomes `DONE` with `is_error` and
+the result "stopped", and the conversation is `IDLE`. It closes only the turn it stopped (the
+assistant's newest, or `t<n+1>` when the worker had not written one yet), and only while that turn
+is still the newest, so a message sent in the meantime keeps its own turn; a later `Turn` from the
+worker for the closed turn is ignored. On an `IDLE` conversation `StopTurn` changes nothing, and on
+an ended or failed one it is `FAILED_PRECONDITION`.
+
+`SetApprovalMode` is allowed in every state but `ENDED` and `FAILED`, where it is
+`FAILED_PRECONDITION`. It sets `mode` (anything but `AUTO` is stored as `ASK`), which is saved with
+the conversation and goes into every later `WorkerStart`, and writes `WorkerEvent.set_mode` to a
+running worker. The daemon holds no policy, but on a `WAITING` conversation set to `AUTO` with a
+question pending (not a view tool) it marks that call `RUNNING`, clears `pending` and makes the
+conversation `THINKING` itself, as `ResolveAction` does, before the worker's next write; the worker
+approves the call once and its next turn says how it ended. `ResolveAction`'s `scope` must be one
+of the pending call's `offers` (unset is `ONCE`; a call with no offers accepts `ONCE`), or it is
+`INVALID_ARGUMENT` and the question stays open.
+
+Every change bumps the conversation's own `seq` and goes out whole (invariant 6): to each
+`WatchConversation` stream, then as `Event.conversation`. The event is version-guarded like
+`Event.ai`: a state no newer than the one last published for that conversation is dropped
+(`SessionStore.publishConversation`). `WatchConversation` first catches the client up from
+`since_seq`: 0 sends the current state alone, the current `seq` sends nothing, and any other
+sends every version after it from the last 64 the daemon keeps per conversation; a `since_seq`
+older than those, or newer than the conversation, sends the current state. The stream then goes
+live and ends after it delivers `ENDED` or `FAILED`, or at the daemon's shutdown.
+`ListConversations` is every conversation the daemon keeps, the one started last first;
+`GetState.conversations` is the same list.
+
+A conversation is kept (invariant 8: the user started it and comes back to it). Each one is a
+directory `<data>/conversations/<id>/`, created 0700 (and set back to 0700 if found otherwise, as
+`secrets` is), holding two files. `conversation.json` is the `Conversation` as proto3 JSON,
+written through `writePrivateFile` (0600, a temporary file and a rename) whenever a turn is done, a
+call is asked, answered or changes state, a turn or the pending action is added or cleared, or the
+state changes: whenever the conversation differs from the last one written other than in its
+`seq`, its last-turn time and the text of a turn still being written (`ConversationStore.milestones`),
+so a text delta writes nothing and a crash mid-turn loses that turn's latest text. The shutdown
+writes each one whose `seq` moved past the file's, so the next daemon's `seq` is never behind what
+a client saw. `transcript.jsonl` is the worker's model transcript, which the worker appends to and
+the daemon only names and removes (`docs/dev/assistant.md`, "The transcript"). Neither holds the
+key: the turns are redacted as above before they are kept, and the worker redacts its lines.
+
+At start, before the listener opens, `load()` reads every `conv_*` directory: each conversation
+comes back with its `seq` and no worker, and one whose file is missing, cannot be parsed (a write
+a crash cut short cannot leave one, since the file is replaced by a rename, but a disk fault or a
+hand edit can) or names another id, is logged and left on disk unlisted. Such a directory is not
+counted against the retention below and stays until it is removed by hand. One the last daemon left `THINKING` or `WAITING` is closed: its
+last turn, the assistant's, is marked done with "(the daemon restarted during this turn)" after its
+text, a call still waiting on someone is `REFUSED` and one still running is `DONE` as an error,
+"stopped"; when the worker had not written its turn yet, a done assistant turn `t<n+1>` with the
+note alone answers the user's. It is then `IDLE`, its `seq` bumped once, and written back. The
+retention runs there too: of the conversations by last turn (their start when they have none),
+the newest 100 are kept and none whose last turn is more than 90 days old
+(`keptConversations`, `keptDays`); the rest are deleted with their directories. A new conversation
+past 100 deletes the one used longest ago that has no worker. The replay history is in memory
+only, so a loaded conversation replays nothing older than its load and a `since_seq` from before
+it gets the current state.
+
+A conversation's worker comes and goes with use. `SendMessage` to an `IDLE` conversation with no
+worker (loaded at start, or whose worker was stopped) first starts one, with the key as it stands
+now and `WorkerStart.resume` set, so the worker loads its transcript before the model's first call;
+it fails as `StartConversation` does (no key, a rejected one, no `ley`), and then the conversation
+is as it was. After 30 minutes `IDLE` (a sweep every 30 s; `ConversationStore.Timing` takes both
+and the clock, for tests) the worker is stopped and the conversation stays `IDLE`, with no new
+`seq`: nothing a client sees has changed. A worker that exits between turns leaves the
+conversation the same way. A worker that exits while `THINKING` or `WAITING` fails its own
+conversation, `INTERNAL` "the assistant stopped unexpectedly (status N)", and no other; a worker the
+store stopped itself (by an end, a failure, the sweep or the shutdown) is no longer the
+conversation's when it exits, and its exit and anything it still writes change nothing.
+
+A conversation ends (`ENDED`) only when a client calls `EndConversation`; `FAILED` is as above.
+Ending closes the worker's stdin, gives it 2 s to exit, then sends `SIGTERM` and, a second later,
+`SIGKILL`; `EndConversation` replies once the worker has gone. An ended or failed conversation
+stays listed and on disk, without a replay history. `DeleteConversation` ends a conversation still
+going, so its watchers and the event plane see it `ENDED`, then forgets it and removes its
+directory; nothing is published for the deletion itself, so a deleted conversation simply stops
+being listed (`GetState`, `ListConversations`), and a mirror holds it until its next snapshot. The
+daemon's shutdown stops every worker and ends every `WatchConversation` stream straight after the
+listener stops, and leaves each conversation as it stands; one stopped mid-turn is closed by the
+next daemon's load. An unknown `conversation_id` (never known, deleted, or past the retention) is
+`INVALID_ARGUMENT` to every RPC. The worker's stderr is logged a line at a time under
+`leyline.assistant.<conversation id>` with the key replaced; the store's own lines are
+`leyline.assistant`.
+
 ### Error codes
 
 Every stable code a daemon puts in `ErrorDetail.code`, and the gRPC status it is served with. This
@@ -604,7 +845,7 @@ on each side holds its switch against these rows, and the same tests assert that
 rather than the trailer (a retry interceptor, a mesh policy, a client in a fourth language) then gets
 the same result from `leylined` and from the fake daemon. `FAILED_PRECONDITION` is deliberate where
 `RESOURCE_EXHAUSTED` would read as natural: the latter is retriable under default gRPC retry policies,
-and a radio someone else is using must not be retried blind.
+and neither a radio someone else is using nor a provider account at its limit may be retried blind.
 
 | Code | gRPC status | Raised when |
 | --- | --- | --- |
@@ -627,6 +868,10 @@ and a radio someone else is using must not be retried blind.
 | `SCAN_NOT_FOUND` | `NOT_FOUND` | no scan result with that id (sixteen are kept) |
 | `DECODER_NOT_FOUND` | `NOT_FOUND` | no installed decoder by that name (`ley decoders` lists them) |
 | `DECODER_FAILED` | `FAILED_PRECONDITION` | the decoder's program could not be started: missing, not executable, or exited before reading its descriptor |
+| `CREDENTIAL_MISSING` | `FAILED_PRECONDITION` | the feature or decoder needs a provider's key and none is set; the message names `ley ai add <provider>` |
+| `CREDENTIAL_REJECTED` | `FAILED_PRECONDITION` | the provider refused the key itself |
+| `PROVIDER_UNAVAILABLE` | `UNAVAILABLE` | the provider, or the worker that calls it, could not be reached |
+| `PROVIDER_REFUSED` | `FAILED_PRECONDITION` | the provider refused a request for its own reason, such as a rate or spend limit; the message is the provider's |
 | `MODE_UNSUPPORTED` | `UNIMPLEMENTED` | the demodulator is not built into this daemon |
 | `UNIMPLEMENTED` | `UNIMPLEMENTED` | the RPC or option arrives in a later milestone |
 | `PLATFORM_UNSUPPORTED` | `UNIMPLEMENTED` | the feature needs macOS frameworks |
@@ -739,12 +984,26 @@ then `PATH`.
 varint-delimited `Frame`s (`AUDIO`, `F32`, mono, the channel's rate, `GAP_MARKED`, the tap the
 manifest asked for), stdout carries varint-delimited `DecodeRecord`s, and stderr is prose logged
 under `leyline.decoder.<name>`. The framing is protobuf's own delimited convention, coded by hand
-because `BinaryDelimited` takes Foundation streams and a pipe file descriptor is not one. `stop()`
+because `BinaryDelimited` takes Foundation streams and a pipe file descriptor is not one. A plugin
+whose manifest names `credential_provider` reads one varint-delimited `SetCredentialRequest`
+(`provider`, `secret`, `endpoint`) before the `StreamDescriptor`, and is spawned with
+`LEYLINE_KEY_ON_STDIN=1` in its environment exactly then (the variable is removed otherwise),
+because the installed manifest may name a provider the binary's own does not
+(`PluginProcess.environment`). The runner reads it from
+`CredentialStore.pluginCredential` each time it spawns the plugin, restarts included, so a replaced
+key reaches the next start; a key that cannot be read then ends the job `CREDENTIAL_MISSING` with
+the store's words. The plugin's stderr is logged with the key replaced (`WorkerProcess.redacting`). When the user has
+chosen a speech model on that provider (a `FeatureModel` for `speech` with a non-empty `model`),
+`--model <model>` is appended to the manifest's `args` at every spawn (`pluginArguments`); that is
+the only way the model reaches a plugin.
+`stop()`
 closes stdin, waits 2 s, then `SIGTERM`, then `SIGKILL`; a write to a dead pipe is an error return,
 never a signal.
 
 `JobStore.startDecode` looks the decoder up (`DECODER_NOT_FOUND`), refuses `SLOT_ALIGNED` with
-`UNIMPLEMENTED`, and asks `SessionCaptureAllocator` for `AllocationRequest.channel`. That path takes
+`UNIMPLEMENTED`, refuses a manifest whose `credential_provider` has no key with
+`CREDENTIAL_MISSING` (naming `ley ai add <provider>`) and one whose key the provider refused with
+`CREDENTIAL_REJECTED`, and asks `SessionCaptureAllocator` for `AllocationRequest.channel`. That path takes
 a capture that already covers the frequency on any device, else a device with no capture (creating
 one centred `frequency − Fs/8`, so the channel sits clear of the tuner's DC spike and inside the
 flat part of the passband), else a capture the don't-disturb test calls free (retuned), else it
@@ -759,10 +1018,130 @@ contiguous per job), `channel_id` and `rssi_dbfs`/`snr_db` from the channel's la
 plugin's own values for those are overwritten. A plugin that exits is spawned again after 1 s,
 doubling to 30 s, with the job in `DEGRADED` and `status_detail` saying so; the drain outlives the
 restart, because `AudioFrameSource.poke` has one iterator and a second one would feed the new plugin
-nothing. A channel that goes `OUT_OF_CAPTURE` degrades the job and comes back to `RUNNING` with the
+nothing. Exit status 75 (`EX_TEMPFAIL`, `DecodeRunner.refusedExitStatus`) is the plugin saying its
+provider refused a request, with the provider's words as its last stderr line: a kept job waits it
+out on the same backoff with `status_detail` "the provider refused: …", and any other job ends
+`FAILED` with `PROVIDER_REFUSED`. A record carrying `usage` goes to the ledger before the predicate
+judges it, since a call the filter discards was still paid for, under feature `speech`, the job's
+id, and the manifest's `credential_provider` when the plugin left the provider empty.
+A channel that goes `OUT_OF_CAPTURE` degrades the job and comes back to `RUNNING` with the
 capture, and only then: records still arrive after the move, so the record count's republish and a
 plugin restart keep the job `DEGRADED` while the channel is away. `keep` jobs are not cancelled when their client goes; cancel stops the plugin, closes the
 writer and releases the lease.
+
+**Segmented input.** A manifest with `input.mode = SEGMENTED` (audio only; an IQ one is
+`UNIMPLEMENTED`) is fed one over at a time. A segment starts `pre_roll_ms` before the squelch
+opened and ends `hang_ms` after it closed, 500 ms each when the manifest leaves them 0, and a
+squelch that reopens inside the hang continues the segment. Its first frame carries
+`segment = SEGMENT_START` and audio, the frames after it carry no mark, and one last frame carries
+`SEGMENT_END`, an empty payload and the `time` of the sample after the segment's last. Nothing is
+written while the squelch is shut. On a channel, `Segmenter` (`Jobs/Segmenter.swift`) sits behind
+the drain and follows the squelch the way `RecordRunner.followSquelch` does: squelch records and
+meters arrive by the telemetry subscription, frames wait until the telemetry has been heard through
+their end, and each frame is walked in sample order, so an edge or a hang that ends inside a frame
+cuts it at its own sample. While the squelch is shut the audio goes into a pre-roll ring of
+`pre_roll_ms`; a segment never reaches back before the last one ended, and the pre-roll goes out
+in frames of at most 4096 samples, the first marked START, so the 2 s stall limit, which applies
+to each frame, is never one slow read of a large frame. The first meter opens a
+segment at once when the squelch was already open, and a meter that disagrees with the state is
+the edge the follower missed. A frame left waiting 2 s behind the newest audio goes on without
+its telemetry. On the wire a segment exists only between a START the plugin took and its END: a
+START the pipe cannot take skips the segment, an END it cannot take is owed before anything else,
+and a restarted plugin gets nothing of a segment opened on the one before. A segmented job's own
+channel gets the recorder's auto squelch when it has none, because a squelch that is off has no
+edges; when no level can be measured, or the channel refuses it, the job runs `DEGRADED` with
+"no level measured; squelch left as it was" (or the refusal) for its whole run.
+
+**The clips.** A live segmented job also records its channel as a gated audio recording under its
+own id (`Jobs/LiveClips.swift`), so `ley://recordings/<job_id>` holds the audio of the overs whose
+words `ley://records/<job_id>` holds. The recorder is `RecordRunner` itself, driven as a component
+rather than through a record job: `JobStore.openClips` builds it on a `BorrowedChannelLease` over
+the decode job's own `ChannelLease`, so the job makes one allocation and the channel carries two
+sinks, the decoder's and the recorder's (invariant 9). Its gate is a record job's default, 500 ms
+of pre-roll, a 5 s hang and one part per exchange, with the sidecar's `squelch_opens` and the
+manifest's `squelch_open_ms` as any gated recording has them. The recorder starts before the
+decoder's sink is attached, so its first frame is never later than the segmenter's, and it stops
+before the lease is released. Its status is not the job's: the job's state is the decoder's, and
+a recorder that stops on its own (a full disk) is logged while the words go on without clips. The
+job's `result_uris` lists `ley://recordings/<job_id>` while it runs, after `ley://records/<job_id>`
+when it is kept.
+
+A record from a live segmented job carries `clip_uri`, the part that holds its segment, and
+`over`, the 1-based index of the segment's first opening in that part's `squelch_opens`: the
+stored path's rule, so transcribing the clips later gives the same overs. The record's `time` finds
+its segment, the newest that started at or before it or less than 1 ms after it
+(`Segmenter.overTolerance`), so a plugin's rounding does not move a record into the over before.
+The segment's first sample then finds the opening (`PartWriter.clip(forSegmentAt:)`): the first
+interval in the recording that was still open at that sample. A segment reaches back a pre-roll
+before its first opening and never before the previous segment ended, a hang after that segment's
+last close, so every earlier interval had closed by then. The recorder's part boundaries (a 5 s
+hang) and the segmenter's (500 ms) differ by design; `over` indexes openings, which both read from
+the same squelch records. A record waits up to 2 s for a recorder that has not reached its opening
+yet, and goes out with no clip and `over` 0 if it never does; it does not wait at all once the
+recorder has stopped (by the job's stop or on its own, which its status reports) or when no part
+is open and the last closed part ended after the segment's opening could have been
+(`PartWriter.ClipLookup.never`). The writer keeps the intervals of the last 64 closed parts for
+this. The clips hold every over the squelch opened on, including those a watch's predicate drops.
+
+The clips are bounded: they may hold a tenth of the record store's cap
+(`JobStore.clipsShareOfStoreCap`; `--store-cap`, 2 GiB by default, so about 200 MiB), and each
+time a part closes past it the recording's own oldest parts are removed, files and sidecars, the
+newest always kept (`PartWriter.trimToCap`). Parts are also cut at half that share in time, so
+the part being written never holds more; a transmission across such a cut is listed in the part
+it began in, as any `part_ms` cut does. A job that runs for weeks keeps its latest overs, and its
+clips never push the user's other recordings out of the recordings store. A record whose part was
+removed keeps a `clip_uri` that no longer resolves.
+
+The clips persist only when the job is kept (invariant 8): an unkept job's recording is deleted
+when the job ends, however it ends, a daemon shutdown included, after `RecordRunner.stop` has
+returned, which waits for a teardown the recorder began on its own, so the directory is never
+removed under a manifest write. Unkept clips carry `"keep": false` in `recording.json`, and a
+daemon killed before it could remove them leaves an orphan that the next boot's repair deletes
+instead of closing it as a restart. A kept job the daemon takes down
+closes its recording with `ended_by = restart`; when `kept-jobs.json` brings the job back,
+`RecordingStore.carryOn` opens the same recording again, clears `ended_by`, adds the new capture's
+anchor beside the old, and numbers the new parts after the old ones. A kept job whose recording is
+gone (the last run heard nothing, or retention took it) starts a new one under the same id. A
+recording whose job is still running cannot be decoded (`FAILED_PRECONDITION`) or deleted, so
+`ley transcribe <job_id>` reads the clips once the job has been cancelled.
+
+**A stored recording.** `DecodeConfig.source_uri = ley://recordings/<id>` decodes an audio
+recording instead of a radio (`Jobs/RecordingSource.swift`). `startDecode` reads the manifest and
+plans the job there, so a missing recording is `JOB_NOT_FOUND` as `ResolveLocalPath` gives it, an
+IQ recording or an IQ decoder is `UNIMPLEMENTED`, a recording whose job is still running (no
+`ended_by` yet) is `FAILED_PRECONDITION`, and a part URI or any URI that is not
+`ley://recordings/<id>` is `INVALID_ARGUMENT`. The branch comes before the frequency check, since
+a speech manifest names no frequency. It makes no
+allocation, channel or lease, so a `--no-hardware` daemon runs it. Under `SEGMENTED` input each
+part is cut by `Segmenter.cut` from its sidecar's `squelch_opens` with the live rule, clamped to the
+part, so a recording decoded later yields the segments the live job would have sent; under any other
+input each part goes whole, with a `Gap` for the time between parts. A capture sample is placed in
+the WAV by the sidecar's two rates (the anchor's capture rate and the file's audio rate), and a
+START is dated by its segment's exact first sample. `WAVReader` reads 4096 samples a frame and the
+runner writes them patiently: a full pipe is waited out rather than dropped, since nothing here is
+live and the plugin sets the pace. The fd lock covers one non-blocking write at a time, never the
+wait for room, and the wait watches a closing flag, so a cancel or a daemon shutdown never queues
+behind a plugin that has stopped reading; such a plugin gets 0.5 s after its input closes and is
+then killed. When every part has gone the plugin's stdin is closed, its
+records are read until it exits, and the job ends `COMPLETED`; a recording with no squelch
+openings sends nothing and ends `COMPLETED` with no records. A plugin that has not exited 30 s plus
+2 s per unanswered segment after its input closed (`DecodeRunner.sourceExitAllowance`) is stopped
+and the job fails `DECODER_FAILED` naming the decoder. An item counts as done when a record for it
+comes back (a segment's record arrives at its END, so the segment and every one before it are
+done; a whole part only every one before it), so a plugin that dies is restarted at the first item
+it has not answered: a segment it took but died on is sent again, and an item that legitimately
+yields no record may be sent twice. Duplicates are preferred to losses. Restarts are bounded here,
+unlike a live job's: a fourth exit in a row with the cursor where the previous start left it
+(`DecodeRunner.maxFruitlessSourceExits`, 3; a refusal not counted) fails the job
+`DECODER_FAILED` with "<decoder> exited 4 times without decoding ley://recordings/<id>; last status
+<s>: <last stderr line>", the line with the key replaced. A part that cannot be read
+fails the job. The descriptor is
+`AUDIO`, `F32` mono at the recording's rate, centred on its frequency. Records carry `clip_uri`
+(`ley://recordings/<id>/<part>`) and `over` (the index in that part's `squelch_opens` of the
+segment's first opening, 0 when not segmented), found by the record's `time` with the same 1 ms
+tolerance as the live path; `channel_id` is empty and the levels are NaN. A kept
+job's records are dated by the recording's own anchors. A kept source job the daemon restarts reads
+the recording again from the start.
 
 `RecordHub` is the live plane: drop-oldest, 256 deep, scoped to everything, one job or one protocol,
 with the last 256 records per job replayed for `since_seq` — replay and live delivery both happen on
@@ -837,13 +1216,20 @@ minutes running for ever.
 
 `PartWriter` owns one open file at a time: a WAV opens with placeholder lengths that are patched
 from the file's own size on close, a cf32 is appended raw, and the part's sidecar and the manifest
-are written when it closes. The manifest is rewritten atomically on every change, so a client
+are written when it closes. Closing a gated part also writes its `squelch_open_ms`: the sidecar's
+`squelch_opens` intervals summed on the capture's timeline and turned into milliseconds once at the
+anchor's rate, so the figure is the sidecar's sum and not a sum of rounded intervals. A
+transmission that straddles a cut made by `part_ms` is listed in the first part with its close at
+the cut, and is not listed in the next part, which opens with the squelch already open and no
+entry for it. A stored decode therefore ends that over's segment at the first part's end and sends
+nothing of its rest, where the live cut carried on through it. The manifest is rewritten atomically on every change, so a client
 reading a running recording always sees a consistent file. `RecordingStore` is the directory
 (`--recordings`, default beside the record store), its retention (`--recordings-cap`, default
 20 GiB; `--recordings-age`, default 0) and the restart repair: at boot, any manifest with no
 `ended_by` has its unlisted part files' headers patched from their lengths, those parts joined to
 it, and `ended_by = restart` written. A recording is a bounded artefact and does not resume;
-whoever wanted a longer one starts another. Retention runs when a recording opens and when one
+whoever wanted a longer one starts another. The one exception is a kept speech job's clips, which
+go on with the job ("Decoders", "The clips"). Retention runs when a recording opens and when one
 ends, and never removes a recording whose job is running.
 
 **Playing one back.** `PlaybackEngine` (`Recording/PlaybackEngine.swift`) is the one place the
@@ -907,17 +1293,23 @@ resolved values in `PersistenceParams` on the stream descriptor.
   after the socket, `leyline.pid` / `/tmp/leyline-<uid>.pid`, so two sockets in one directory never
   share it). `SIGTERM`/`SIGINT` → graceful stop (captures stopped, devices closed, socket unlinked).
 - Stop order: the listener stops accepting first, because an RPC admitted during teardown builds
-  state the store that owns it is about to drop; then jobs are cancelled (a running sweep gets its
+  state the store that owns it is about to drop; then every assistant conversation ends and its
+  worker is stopped ("Assistant"), jobs are cancelled (a running sweep gets its
   seconds to hand a capture lease back), streams close, the store shuts down and the registry stops.
   The socket and pidfile are unlinked last, after the devices are closed — while those paths exist a
   replacement daemon takes itself for the live one and races this one for the radios. Teardown runs
   in the process's own task, never in a child that the serve loop's return could cancel.
+- Data directory: `--data`, `~/Library/Application Support/Leyline` on macOS and
+  `$XDG_DATA_HOME/leyline` (or `~/.local/share/leyline`) elsewhere; it holds `ai.json` and, off
+  macOS, `secrets/credentials.json` ("Credentials and usage"). `--ley` (or `LEYLINE_LEY`) names the `ley`
+  the daemon runs for its workers.
 - Logs to stderr via swift-log. The plist `ley daemon install` writes has launchd redirect it to
   `~/Library/Logs/Leyline/leylined.log`; the app's launch agent cannot name a path under `~`, so it
   passes `--log-file ~/Library/Logs/Leyline/leylined.log` and the daemon appends stdout and stderr
   there itself (`appendOutput(toLogFile:)`).
 - `ley daemon install` writes `~/Library/LaunchAgents/com.leysdr.daemon.plist` (KeepAlive, RunAtLoad)
-  pointing at the `leylined` binary and bootstraps it; `start` and `stop` drive launchctl when
+  pointing at the `leylined` binary, with the installing `ley` as `--ley` because launchd's `PATH`
+  holds no Go bin, and bootstraps it (`daemon start`'s bare spawn passes the same flag); `start` and `stop` drive launchctl when
   that plist exists or launchd has the `com.leysdr.daemon` label loaded (the app's agent has no
   plist there), and fall back to spawning/killing the binary directly (pidfile) when neither.
 

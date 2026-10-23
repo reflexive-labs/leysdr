@@ -37,6 +37,25 @@ var mcpToolNames = []string{
 	"list_decoders", "query_records", "list_entities", "start_decode_job",
 	"record", "find_recordings", "get_recording", "delete_recording",
 	"list_jobs", "get_job", "cancel_job",
+	"set", "stop", "list_bands", "list_presets", "help",
+	"list_bookmarks", "add_bookmark", "remove_bookmark", "import_chirp",
+	"watch", "attach_device",
+}
+
+// mcpToolAnnotations is each tool's kind as the assistant's policy table reads it
+// (docs/plans/ai-features.md, "What the assistant may do"): reading runs, a change the user
+// asked for runs and is reported, and a removal that cannot be undone is destructive.
+var mcpToolAnnotations = map[string]string{
+	"list_devices": "readOnly", "get_state": "readOnly", "daemon_logs": "readOnly",
+	"tune": "mutates", "scan": "mutates", "listen_summary": "mutates", "snapshot": "mutates",
+	"list_decoders": "readOnly", "query_records": "readOnly", "list_entities": "mutates",
+	"start_decode_job": "mutates", "record": "mutates", "find_recordings": "readOnly",
+	"get_recording": "readOnly", "delete_recording": "destructive", "list_jobs": "readOnly",
+	"get_job": "readOnly", "cancel_job": "destructive",
+	"set": "mutates", "stop": "mutates", "list_bands": "readOnly", "list_presets": "readOnly",
+	"help": "readOnly", "list_bookmarks": "readOnly", "add_bookmark": "mutates",
+	"remove_bookmark": "destructive", "import_chirp": "mutates", "watch": "mutates",
+	"attach_device": "mutates",
 }
 
 // mcpHarness starts a fake daemon, an MCP server dialled to it the way `ley
@@ -120,7 +139,7 @@ func resultText(res *mcp.CallToolResult) string {
 			texts = append(texts, tc.Text)
 		}
 	}
-	if n := len(texts); n > 0 && json.Valid([]byte(texts[n-1])) && strings.HasPrefix(strings.TrimSpace(texts[n-1]), "{") {
+	if n := len(texts); n > 0 && json.Valid([]byte(texts[n-1])) && strings.ContainsAny(strings.TrimSpace(texts[n-1])[:1], "{[") {
 		texts = texts[:n-1]
 	}
 	return strings.Join(texts, "")
@@ -181,6 +200,18 @@ func TestMCPListsTheToolTable(t *testing.T) {
 		names = append(names, tool.Name)
 		if tool.Description == "" || tool.InputSchema == nil {
 			t.Errorf("%s: no description or input schema", tool.Name)
+		}
+		kind := "mutates"
+		switch a := tool.Annotations; {
+		case a == nil:
+			kind = "none"
+		case a.ReadOnlyHint:
+			kind = "readOnly"
+		case a.DestructiveHint != nil && *a.DestructiveHint:
+			kind = "destructive"
+		}
+		if want := mcpToolAnnotations[tool.Name]; kind != want {
+			t.Errorf("%s is annotated %s, want %s", tool.Name, kind, want)
 		}
 		// Every tool that takes a gain describes it in the sentence every --gain uses.
 		var schema struct {
@@ -299,6 +330,41 @@ func TestMCPTuneRefusesAnActiveCaptureAndNamesWhy(t *testing.T) {
 	structuredField(t, moved, "capture", &capture)
 	if capture.GetCenterHz() != 150_000_000 {
 		t.Errorf("take_over did not move the radio: %v", &capture)
+	}
+}
+
+// A tool's text leads with its outcome: the app's assistant panel shows the first line beside the
+// call, and a retune note or the band's default mode there read as the result. What the
+// session said on the way follows.
+func TestMCPToolTextLeadsWithTheOutcome(t *testing.T) {
+	t.Parallel()
+	h := newMCPHarness(t)
+	firstLine := func(text string) string { line, _, _ := strings.Cut(text, "\n"); return line }
+	h.must(t, "tune", map[string]any{"frequency": "146.52"})
+	cases := []struct {
+		tool  string
+		args  map[string]any
+		first string // the first line's start
+		later string // a preliminary that follows it
+	}{
+		{"tune", map[string]any{"frequency": "162.55", "take_over": true}, "listening to 162.550 MHz NFM, squelch ", "retuning capture"},
+		{"listen_summary", map[string]any{"target": "146.52", "duration_s": 1, "take_over": true}, "146.520 MHz NFM for 1.0 s", "retuning capture"},
+		{"snapshot", map[string]any{"frequency": "162.55", "no_image": true, "take_over": true}, "2.400 MHz wide around 162.550 MHz", "retuning capture"},
+		{"scan", map[string]any{"range": "145M..147M", "take_over": true}, "3 signals over 145.000 MHz to 147.000 MHz, floor ", "FREQUENCY"},
+	}
+	for _, c := range cases {
+		text := resultText(h.must(t, c.tool, c.args))
+		if !strings.HasPrefix(firstLine(text), c.first) {
+			t.Errorf("%s's text does not lead with %q:\n%s", c.tool, c.first, text)
+		}
+		if !strings.Contains(text, c.later) {
+			t.Errorf("%s's text lost %q:\n%s", c.tool, c.later, text)
+		}
+	}
+	// The tuned line names the squelch, and the note on how it was measured comes after it.
+	text := resultText(h.must(t, "tune", map[string]any{"frequency": "146.52", "take_over": true}))
+	if !strings.Contains(firstLine(text), "squelch -80 dBFS (auto)") || !strings.Contains(text, "\nSquelch auto") {
+		t.Errorf("tune's text:\n%s", text)
 	}
 }
 
@@ -488,7 +554,7 @@ func TestMCPDecoderAndJobTools(t *testing.T) {
 	h := newMCPHarness(t)
 	var decs leylinev1.ListDecodersResponse
 	structured(t, h.must(t, "list_decoders", nil), &decs)
-	if len(decs.Decoders) != 1 || decs.Decoders[0].Name != "aprs" {
+	if len(decs.Decoders) != 3 || decs.Decoders[0].Name != "aprs" || decs.Decoders[1].Name != "speech" || decs.Decoders[2].Name != "speech-scripted" {
 		t.Fatalf("decoders: %v", decs.Decoders)
 	}
 	// An alias resolves to the canonical decoder, as `ley decode packets` does.
@@ -868,9 +934,18 @@ func TestListenSummarySquelchOffReportsNoOpenFraction(t *testing.T) {
 	if err != nil || !strings.Contains(string(raw), `"squelch_open_fraction":null`) || !strings.Contains(string(raw), `"squelch_db":null`) {
 		t.Errorf("meter JSON: %s (%v)", raw, err)
 	}
+	// A transmission is a squelch-open interval, so with the squelch off none is counted: the
+	// text says so rather than "0 transmissions", which an agent read as an empty channel, and
+	// gives the level, which is what was measured.
 	text := sum.text(&verbSession{Session: &session.Session{Channel: &leylinev1.Channel{}, State: &leylinev1.GetStateResponse{}}}, 3*time.Second)
-	if !strings.Contains(text, "squelch off") || strings.Contains(text, "% of the time") {
+	if !strings.Contains(text, "for 3.0 s, squelch off: transmissions are not counted; level -83 to -82 dBFS") ||
+		strings.Contains(text, "0 transmissions") || strings.Contains(text, "% of the time") {
 		t.Errorf("text:\n%s", text)
+	}
+	quiet := newListenSummary(math.NaN(), 2_400_000)
+	quiet.finish()
+	if text := quiet.text(&verbSession{Session: &session.Session{Channel: &leylinev1.Channel{}, State: &leylinev1.GetStateResponse{}}}, 3*time.Second); !strings.Contains(text, "transmissions are not counted, and no meter readings arrived") {
+		t.Errorf("text with no readings:\n%s", text)
 	}
 }
 

@@ -5,6 +5,8 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,6 +43,8 @@ type jsonVerbCase struct {
 	env func(t *testing.T) map[string]string
 	// timeout bounds a verb that otherwise streams until Ctrl-C.
 	timeout time.Duration
+	// stdin is what the verb reads on stdin (a key for `ai add`); empty is an empty stdin.
+	stdin string
 }
 
 // jsonNoOutput is the refusal shared by every verb whose output is a script, a
@@ -65,6 +69,18 @@ var jsonVerbs = []jsonVerbCase{
 	{path: "daemon install", args: []string{"daemon", "install"}, refuse: jsonNoOutput},
 	{path: "daemon logs", args: []string{"daemon", "logs"}, refuse: jsonNoOutput},
 	{path: "daemon uninstall", args: []string{"daemon", "uninstall"}, refuse: jsonNoOutput},
+	{path: "ai", args: []string{"ai"}},
+	{path: "ai add", args: []string{"ai", "add", "anthropic"}, stdin: "sk-ant-test-1234\n"},
+	{path: "ai check", args: []string{"ai", "check", "anthropic"}, prep: prepKey},
+	{path: "ai remove", args: []string{"ai", "remove", "anthropic"}, prep: prepKey},
+	{path: "ai use", args: []string{"ai", "use", "assistant", "anthropic", "claude-sonnet-5-5"}},
+	{path: "ai usage", args: []string{"ai", "usage"}},
+	{path: "ask", args: []string{"ask", "hello"}, prep: prepAssistant},
+	{path: "ask", args: []string{"ask", "--list"}, prep: func(t *testing.T, sock string, c *leyline.Client) []string {
+		prepConversation(t, sock, c)
+		return nil
+	}},
+	{path: "ask", args: []string{"ask", "--yes", "--delete"}, prep: prepConversation},
 	{path: "decode", args: []string{"decode", "aprs", "--count", "2"}},
 	{path: "decoders", args: []string{"decoders"}},
 	// start against a daemon already answering reports it rather than
@@ -93,6 +109,7 @@ var jsonVerbs = []jsonVerbCase{
 	{path: "recordings path", args: []string{"recordings", "path"}, prep: prepRecording},
 	{path: "recordings delete", args: []string{"recordings", "delete", "--yes"}, prep: prepRecording},
 	{path: "records", args: []string{"records"}, prep: prepKeptDecode},
+	{path: "transcribe", args: []string{"transcribe", "--yes"}, prep: prepGatedRecording},
 	{path: "track", args: []string{"track", "aprs", "--count", "1"}},
 	{path: "devices-seen", args: []string{"devices-seen"}, prep: prepKeptDecode},
 	{path: "label", args: []string{"label", "LEYTST-1"}},
@@ -104,6 +121,8 @@ var jsonVerbs = []jsonVerbCase{
 	{path: "stop", args: []string{"stop", "all"}, prep: prepChannel},
 	{path: "tune", args: []string{"tune", "146.52", "--no-audio"}, timeout: 2 * time.Second},
 	{path: "version", args: []string{"version"}},
+	{path: "worker assistant", args: []string{"worker", "assistant"}, refuse: jsonNoOutput},
+	{path: "worker check", args: []string{"worker", "check", "--provider", "openai"}, prep: prepProvider, stdin: "sk-test-1234\n"},
 	{path: "watch", args: []string{"watch", "aprs", "--where", "device_id=LEYTST-1", "--count", "2"}},
 	{path: "waveform", args: []string{"waveform", "146.52", "--seconds", "2", "--count", "2"}},
 	{path: "waterfall", args: []string{"waterfall", "146.52", "--count", "2", "--rate", "10"}},
@@ -129,6 +148,46 @@ func seededBookmarks(t *testing.T) map[string]string {
 		t.Fatal(err)
 	}
 	return env
+}
+
+// prepKey stores an anthropic key for the verbs that check or remove one.
+func prepKey(t *testing.T, _ string, c *leyline.Client) []string {
+	t.Helper()
+	if _, err := c.Credentials.SetCredential(t.Context(), &leylinev1.SetCredentialRequest{Provider: "anthropic", Secret: "sk-ant-test-1234"}); err != nil {
+		t.Fatal(err)
+	}
+	return nil
+}
+
+// prepAssistant stores a key and chooses the assistant's model, so `ask` can start a
+// conversation.
+func prepAssistant(t *testing.T, sock string, c *leyline.Client) []string {
+	t.Helper()
+	prepKey(t, sock, c)
+	if _, err := c.Credentials.SetFeatureModel(t.Context(), &leylinev1.FeatureModel{Feature: "assistant", Provider: "anthropic", Model: "claude-sonnet-5-5"}); err != nil {
+		t.Fatal(err)
+	}
+	return nil
+}
+
+// prepConversation starts a conversation with the assistant and names it, for `ask --delete`
+// (`ask --list` lists it).
+func prepConversation(t *testing.T, sock string, c *leyline.Client) []string {
+	t.Helper()
+	prepAssistant(t, sock, c)
+	cv, err := c.Assistant.StartConversation(t.Context(), &leylinev1.StartConversationRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return []string{cv.GetConversationId()}
+}
+
+// prepProvider starts a model API that accepts every key, and names it for `worker check`.
+func prepProvider(t *testing.T, _ string, _ *leyline.Client) []string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{}`)) }))
+	t.Cleanup(srv.Close)
+	return []string{"--endpoint", srv.URL}
 }
 
 // prepChannel leaves a channel running for the verbs that adjust or stop one.
@@ -163,6 +222,22 @@ func prepRecording(t *testing.T, sock string, _ *leyline.Client) []string {
 	}
 	if err := json.Unmarshal([]byte(lines[0]), &job); err != nil || job.JobID == "" {
 		t.Fatalf("ley record --json: no job id in %q (%v)", lines[0], err)
+	}
+	return []string{job.JobID}
+}
+
+// prepGatedRecording leaves a gated recording in the store, which lists where its squelch opened
+// and so is one a speech decoder can read, and names it. The openai key is set, because the
+// bundled speech decoder calls OpenAI.
+func prepGatedRecording(t *testing.T, sock string, c *leyline.Client) []string {
+	t.Helper()
+	setOpenAIKey(t, c)
+	out := mustRun(t, sock, "--json", "record", "146.52", "--for", "300ms", "--gate", "squelch")
+	var job struct {
+		JobID string `json:"jobId"`
+	}
+	if err := json.Unmarshal([]byte(strings.Split(strings.TrimSpace(out), "\n")[0]), &job); err != nil || job.JobID == "" {
+		t.Fatalf("ley record --json: no job id in %q (%v)", out, err)
 	}
 	return []string{job.JobID}
 }
@@ -257,7 +332,7 @@ func TestEveryVerbAnswersOrRefusesJSON(t *testing.T) {
 			if c.env != nil {
 				env = c.env(t)
 			}
-			out, errOut, err := runEnv(t, ctx, sock, env, args...)
+			out, errOut, err := runEnvIn(t, ctx, sock, env, c.stdin, args...)
 			if c.refuse != "" {
 				if exitCode(err) != ExitUsage || err == nil || !strings.Contains(err.Error(), c.refuse) {
 					t.Fatalf("ley %v: want exit %d saying %q, got exit %d (%v)", args, ExitUsage, c.refuse, exitCode(err), err)

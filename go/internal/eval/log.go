@@ -9,6 +9,8 @@ import (
 	"io"
 	"regexp"
 	"strings"
+
+	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
 // The agent's message log, as `claude -p --output-format stream-json` writes it: one JSON object
@@ -50,6 +52,13 @@ type Log struct {
 	Usage json.RawMessage `json:"usage,omitempty"`
 	// Lines is the raw stream, one JSON object each, for the transcript and for a replay.
 	Lines []string `json:"-"`
+	// DaemonEvents is the daemon's event log from seq 0 until the agent exited (events.go), what
+	// no_write reads. HasDaemonEvents says it was recorded at all, so a run without one fails
+	// no_write rather than passing it for want of evidence.
+	DaemonEvents    []*leylinev1.Event `json:"-"`
+	HasDaemonEvents bool               `json:"-"`
+	// ConversationID is the assistant's conversation, for a log `ley ask --json` wrote.
+	ConversationID string `json:"conversation_id,omitempty"`
 }
 
 // ShortTool is a tool's name without the server prefix: "scan".
@@ -106,18 +115,30 @@ func (l *Log) ResultFor(id string) *Event {
 	return nil
 }
 
-// ParseStream reads a stream-json conversation. Lines that are not JSON, or JSON of a kind the
-// log does not model, are kept in Lines and otherwise ignored: the agent's stream gains kinds
-// over time and a log must never fail to parse because of one.
+// ParseStream reads a stream-json conversation, or the Conversation lines `ley ask --json`
+// writes (conversation.go), told apart by the first line. Lines that are not JSON, or JSON of a
+// kind the log does not model, are kept in Lines and otherwise ignored: the agent's stream gains
+// kinds over time and a log must never fail to parse because of one.
 func ParseStream(r io.Reader) (*Log, error) {
-	log := &Log{}
+	var lines []string
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 1<<20), 64<<20)
 	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" {
-			continue
+		if line := strings.TrimSpace(sc.Text()); line != "" {
+			lines = append(lines, line)
 		}
+	}
+	if len(lines) > 0 && isConversationLine(lines[0]) {
+		return parseConversation(lines), sc.Err()
+	}
+	log := parseClaudeStream(lines)
+	return log, sc.Err()
+}
+
+// parseClaudeStream reads claude's stream-json lines.
+func parseClaudeStream(lines []string) *Log {
+	log := &Log{}
+	for _, line := range lines {
 		log.Lines = append(log.Lines, line)
 		var head struct {
 			Type    string `json:"type"`
@@ -153,9 +174,6 @@ func ParseStream(r io.Reader) (*Log, error) {
 			log.Events = append(log.Events, Event{Kind: "result", Text: res.Result})
 		}
 	}
-	if err := sc.Err(); err != nil {
-		return log, err
-	}
 	// A run that never reached a result line (the agent was killed, or the stream is a fragment)
 	// still has a final answer: the last prose.
 	if log.Final == "" {
@@ -166,7 +184,7 @@ func ParseStream(r io.Reader) (*Log, error) {
 			}
 		}
 	}
-	return log, nil
+	return log
 }
 
 func parseInit(line string) Event {

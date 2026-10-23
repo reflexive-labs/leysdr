@@ -55,10 +55,12 @@ final class SyntheticBandDevice: VirtualDevice, @unchecked Sendable {
     private let done = DispatchSemaphore(value: 0)
     let tunes = LockedValue(0)
 
-    init(carriers: [Carrier], floorDBFS: Double = -60, imageRejectionDB: Double = 30) {
+    /// `driver` is the descriptor's: a test of a rule that depends on the kind of radio names one.
+    init(carriers: [Carrier], floorDBFS: Double = -60, imageRejectionDB: Double = 30, driver: String = "test") {
         self.carriers = carriers
         self.floorDBFS = floorDBFS
         self.imageRejectionDB = imageRejectionDB
+        _descriptor.driver = driver
     }
 
     var descriptor: DeviceDescriptor { lock.lock(); defer { lock.unlock() }; return _descriptor }
@@ -465,6 +467,54 @@ final class ScanSweepTests: XCTestCase {
 
             await events.stop()
             _ = try await c.jobs.cancelJob(.with { $0.jobID = job.jobID }, metadata: testMetadata)
+        }
+    }
+
+    /// `--file-scan-dwell` raises the dwell of a sweep on a file device only, and never lowers one.
+    func testTheFileScanDwellFloorTouchesOnlyFileDevices() {
+        XCTAssertEqual(JobStore.scanDwellMs(requested: 0, driver: "file", fileFloorMs: 0), 250)
+        XCTAssertEqual(JobStore.scanDwellMs(requested: 0, driver: "file", fileFloorMs: 3000), 3000)
+        XCTAssertEqual(JobStore.scanDwellMs(requested: 5000, driver: "file", fileFloorMs: 3000), 5000)
+        XCTAssertEqual(JobStore.scanDwellMs(requested: 0, driver: "rtlsdr", fileFloorMs: 3000), 250)
+        XCTAssertEqual(JobStore.scanDwellMs(requested: 200, driver: "rtltcp", fileFloorMs: 3000), 200)
+        XCTAssertEqual(JobStore.scanDwellMs(requested: 0, driver: nil, fileFloorMs: 3000), 250)
+    }
+
+    /// Through the daemon: with the floor set, a sweep over a radio whose driver is a file's runs
+    /// each step for about the floor, and the same sweep over another radio does not.
+    func testAFileDeviceSweepLastsTheFloor() async throws {
+        let floorMs: UInt32 = 1500
+        for driver in [FilePlaybackDevice.driverName, "test"] {
+            try await withDaemon(fileScanDwellMs: floorMs) { c in
+                let device = SyntheticBandDevice(carriers: [.init(hz: 145_400_000, dbfs: -25, widthHz: 12_500)],
+                                                 driver: driver)
+                _ = try await c.daemon.registry.attachVirtualDevice(device).descriptor
+                try await Task.sleep(nanoseconds: 200_000_000)
+                var config = Leyline_V1_ScanConfig()
+                // Inside one window: the plan is its two end caps.
+                config.range.minHz = 145_300_000
+                config.range.maxHz = 145_500_000
+                config.once = true
+                let started = ContinuousClock.now
+                let job = try await c.jobs.startJob(.with { $0.config = .scan(config) }, metadata: testMetadata)
+                var final = job
+                while final.state == .running, ContinuousClock.now - started < .seconds(60) {
+                    try await Task.sleep(nanoseconds: 50_000_000)
+                    final = try await c.jobs.getJob(.with { $0.jobID = job.jobID }, metadata: testMetadata)
+                }
+                let elapsed = ContinuousClock.now - started
+                XCTAssertEqual(final.state, .completed, final.statusDetail)
+                XCTAssertTrue(final.statusDetail.contains("in 2 steps"), final.statusDetail)
+                // A step ends once it has the rows its dwell implies, a whole number of row
+                // intervals, so two steps take a little under twice the floor: three quarters of
+                // it is the line, and the default 250 ms dwell stays well under it.
+                let line = Duration.milliseconds(2 * Int(floorMs) * 3 / 4)
+                if driver == FilePlaybackDevice.driverName {
+                    XCTAssertGreaterThanOrEqual(elapsed, line, "a file device's sweep ended early")
+                } else {
+                    XCTAssertLessThan(elapsed, line, "another radio's sweep took the file floor")
+                }
+            }
         }
     }
 

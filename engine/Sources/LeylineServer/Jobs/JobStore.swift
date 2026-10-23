@@ -40,6 +40,9 @@ actor JobStore {
         var record: (any RecordRunning)?
         /// `keep`: persistence follows intent (invariant 8). A kept job outlives its client.
         var keep = false
+        /// The provider whose key a decode job's decoder uses (its manifest's
+        /// `credential_provider`); empty for every other job.
+        var credentialProvider = ""
     }
 
     /// Live states. A decode job sits in DEGRADED while its capture has moved away from it, and is
@@ -55,6 +58,14 @@ actor JobStore {
     let records: RecordStore
     /// Where recordings are written (docs/design/recording.md, "Files").
     let recordings: RecordingStore
+    /// Where a decoder's usage goes (`DecodeRunner.emit`); nil when nothing records it.
+    let usage: UsageRecorder?
+    /// The user's keys, so a decoder that needs one is refused when the provider has turned it
+    /// down; nil when the daemon holds none (tests that build a store of their own).
+    let credentials: CredentialStore?
+    /// `leylined --file-scan-dwell`: the shortest dwell a scan on a file device runs at, in ms
+    /// (`scanDwellMs`); 0 leaves every scan's own.
+    let fileScanDwellMs: UInt32
     let hub = RecordHub()
     let log = Logger(label: "leyline.jobs")
     var entries: [JobID: Entry] = [:]
@@ -67,13 +78,17 @@ actor JobStore {
     private var shuttingDown = false
 
     init(store: SessionStore, allocator: SessionCaptureAllocator, decoders: DecoderRegistry,
-         records: RecordStore, recordings: RecordingStore)
+         records: RecordStore, recordings: RecordingStore, usage: UsageRecorder? = nil,
+         credentials: CredentialStore? = nil, fileScanDwellMs: UInt32 = 0)
     {
         self.store = store
         self.allocator = allocator
         self.decoders = decoders
         self.records = records
         self.recordings = recordings
+        self.usage = usage
+        self.credentials = credentials
+        self.fileScanDwellMs = fileScanDwellMs
     }
 
     // MARK: Kept jobs across a restart
@@ -230,7 +245,9 @@ actor JobStore {
         // A decode job's teardown is the runner's: the plugin goes, the store writer is closed and
         // the channel and any capture it built go back.
         if let runner = e.decode {
-            await runner.stop()
+            // A live speech job's clips record which: a kept job the daemon takes down with it
+            // carries its recording on when it is resumed.
+            await runner.stop(endedBy: shuttingDown ? "restart" : "cancelled")
             await finish(id, state: .cancelled, detail: "cancelled")
             return entries[id]?.proto
         }

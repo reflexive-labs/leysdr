@@ -1,0 +1,8 @@
+{"tool": "show_band", "args": {"band": "2m"}}
+{"text": "That is the part of 2 m the radio captures."}
+{"tool": "show_band", "args": {"from_hz": 146000000, "to_hz": 146600000}}
+{"text": "146.0 to 146.6 MHz."}
+{"tool": "show_band", "args": {"band": "airband"}}
+{"text": "Airband is outside what the radio captures; it needs a tune first."}
+{"tool": "show_place", "args": {"place": "library"}}
+{"text": "The Library."}

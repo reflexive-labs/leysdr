@@ -8,7 +8,7 @@
 // number is printed beside it, which is how the app meets invariant 12. The panel keeps no radio
 // state of its own: it renders the session's copy of the mirror, the feeds and the session's
 // steadied reading, and writes one kind of thing, a bookmark's name, tone and note, through the
-// store both clients own (`AppSession.renameTuned`, `editTunedBookmark`).
+// store both clients own (`AppSession.renameTuned`, `editBookmark`).
 
 import AppKit
 import LeylineClient
@@ -24,7 +24,7 @@ struct InspectorToggle: View {
         Button {
             session.toggleInspector()
         } label: {
-            Image(systemName: "sidebar.right").font(.system(size: 13, weight: .medium))
+            Image(systemName: "sidebar.right").font(Theme.Font.toolbarGlyph)
                 .foregroundStyle(session.inspectorShown ? Theme.inkSecondary : Theme.inkMuted)
                 .padding(.horizontal, 8).padding(.vertical, 6)
                 .background(Theme.border, in: RoundedRectangle(cornerRadius: 6))
@@ -32,6 +32,9 @@ struct InspectorToggle: View {
         }
         .buttonStyle(.plain)
         .help(session.inspectorShown ? "Hide Inspector (⌥⌘I)" : "Show Inspector (⌥⌘I)")
+        // The symbol's own name would be read otherwise ("Split View Horizontally Right").
+        .accessibilityLabel("Inspector")
+        .accessibilityIdentifier("toolbar.inspector")
     }
 }
 
@@ -47,21 +50,42 @@ struct InspectorView: View {
 struct ChannelPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            InspectorHeader()
+            InspectorHeader().identifiedGroup("inspector.header")
             Rectangle().fill(Theme.hairline).frame(height: 1)
-            IdentityView()
+            IdentityView().identifiedGroup("inspector.identity")
             Rectangle().fill(Theme.hairline).frame(height: 1)
-            ReadingsView()
-            Rectangle().fill(Theme.hairline).frame(height: 1)
-            AudioLevelsView()
+            VStack(alignment: .leading, spacing: 0) {
+                ReadingsView().identifiedGroup("inspector.readings")
+                Rectangle().fill(Theme.hairline).frame(height: 1)
+                AudioLevelsView().identifiedGroup("inspector.audio")
+            }
+            .stageRegion(.readings)
             Rectangle().fill(Theme.hairline).frame(height: 1)
             // The log takes the height the other regions leave, and fills it with rows.
-            RecentLog()
+            RecentLog().identifiedGroup("inspector.log")
             Rectangle().fill(Theme.hairline).frame(height: 1)
-            DisclosureSection()
+            DisclosureSection().identifiedGroup("inspector.measurements")
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.panel)
+        // A click on the panel's empty space (the header, a label, the gaps between regions)
+        // ends an edit in the name, Tone or Note field, as a click elsewhere does in any Mac
+        // window; the controls' own clicks reach them first.
+        .contentShape(Rectangle())
+        .onTapGesture { Self.endFieldEdit() }
+        .identifiedGroup("inspector")
+    }
+
+    /// Takes the focus from the field being edited, whose lost focus saves what was typed
+    /// (`BookmarkField`) or, for the name, puts it back (`NameField`). The key window, or in a check run, whose app is never active and has
+    /// none, the window a field editor is typing in.
+    static func endFieldEdit() {
+        let window =
+            NSApp.keyWindow
+            ?? NSApp.windows.first {
+                $0.isVisible && ($0.firstResponder as? NSTextView)?.isFieldEditor == true
+            }
+        window?.makeFirstResponder(nil)
     }
 }
 
@@ -121,28 +145,52 @@ struct IdentityView: View {
                         Button {
                             editing = true
                         } label: {
-                            Image(systemName: "pencil").font(.system(size: 11))
+                            Image(systemName: "pencil").font(Theme.Font.editGlyph)
                                 .foregroundStyle(Theme.inkFaint)
                         }
                         .buttonStyle(.plain)
                         .help(
                             bookmark == nil
                                 ? "Name this frequency; the name is kept as a bookmark"
-                                : "Rename the bookmark")
+                                : "Rename the bookmark"
+                        )
+                        .accessibilityIdentifier("inspector.rename")
                     }
                 }
             }
-            if let b = bookmark, !b.tags.isEmpty {
+            if let b = bookmark {
                 // Tags are shown, not edited (docs/design/channels.md, "Bookmarks
-                // gain three fields").
-                Text(b.tags.joined(separator: " · ")).font(Theme.Font.valueSmall)
+                // gain three fields"). The line is there for an untagged bookmark too, blank,
+                // so nothing under it moves between a tagged bookmark and an untagged one.
+                Text(b.tags.isEmpty ? " " : b.tags.joined(separator: " · "))
+                    .font(Theme.Font.valueSmall)
                     .foregroundStyle(Theme.inkFaint).lineLimit(1).truncationMode(.tail)
+                    .accessibilityHidden(b.tags.isEmpty)
             }
             Text(detail(bookmark: bookmark, hz: hz))
                 .font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
                 .lineLimit(1)
+            if let note = session.changeNote {
+                // Who changed the channel last when it was not this window: the assistant, a
+                // terminal, an agent (`ChangeNote`). It goes when this window writes.
+                Text(note.text).font(Theme.Font.aside).foregroundStyle(Theme.inkTertiary)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+            }
+            if let through = session.audioElsewhere {
+                // Another client's sink plays the channel; mute and volume act on the window's
+                // own sink only (`ChannelFollow.playsThroughWords`).
+                Text(through).font(Theme.Font.aside).foregroundStyle(Theme.inkTertiary)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+            }
+            if let kept = session.keptRecording { KeptRecordingLine(kept: kept) }
             if let b = bookmark {
-                BookmarkFieldsView(bookmark: b)
+                // A view of their own for each bookmark, made new when the tuned bookmark
+                // changes. Kept across the change, the fields took the new bookmark's text in
+                // the same layout pass as the move, and AppKit measured the field with the text
+                // it was changing to at the height it had last been given anywhere (the 15 pt
+                // of a 12.5 pt field closing in the same pass), so on about one change in five
+                // Tone and Note came out 2 pt taller and the rows under them moved.
+                BookmarkFieldsView(bookmark: b).id(b.id)
             }
             if session.bookmarkModified, !editing {
                 // The channel's settings differ from the bookmark's: say so on a line of its
@@ -154,8 +202,10 @@ struct IdentityView: View {
                     Spacer(minLength: 0)
                     Button("Revert") { session.revertToTunedBookmark() }
                         .help("Back to the bookmark's saved mode and width")
+                        .accessibilityIdentifier("inspector.revert")
                     Button("Save") { session.saveTunedBookmark() }
                         .help("The bookmark takes the mode and width it is heard with now")
+                        .accessibilityIdentifier("inspector.save")
                 }
                 .buttonStyle(.bordered).controlSize(.mini)
                 .padding(.top, 4)
@@ -172,6 +222,7 @@ struct IdentityView: View {
                     Spacer(minLength: 0)
                     Button("Tune inside") { session.tuneInside() }
                         .help("Moves the radio's centre so this frequency is captured again")
+                        .accessibilityIdentifier("inspector.tuneinside")
                 }
                 .buttonStyle(.bordered).controlSize(.mini)
                 .padding(.top, 4)
@@ -187,12 +238,15 @@ struct IdentityView: View {
         return "No channel"
     }
 
-    /// `146.520 MHz · NFM 12.5 kHz`, and ` · bookmarked` when it is.
+    /// `146.520 MHz · NFM 12.5 kHz`, and ` · bookmarked` when it is. The frequency is exact
+    /// (`146.940186 MHz`), where the tuning field cuts it to four decimals.
     private func detail(bookmark: Bookmark?, hz: UInt64?) -> String {
         guard let hz, let ch = session.channel else {
             return "Pick a band, or click the waterfall, to hear something"
         }
-        var parts = [Frequency.format(hz), "\(ch.mode.word) \(Frequency.width(ch.bandwidthHz))"]
+        var parts = [
+            FrequencyEntry.exactWords(hz), "\(ch.mode.word) \(Frequency.width(ch.bandwidthHz))",
+        ]
         if bookmark != nil { parts.append("bookmarked") }
         return parts.joined(separator: " · ")
     }
@@ -208,6 +262,8 @@ struct IdentityView: View {
 struct NameField: View {
     let initial: String
     var font: Font = Theme.Font.name
+    /// The field's height, set for the fonts `Theme.Layout` gives one for (`labelFieldHeight`).
+    var height: CGFloat? = nil
     @Binding var editing: Bool
     /// What the name becomes on Return; Escape and a lost focus end the edit without it.
     let onCommit: (String) -> Void
@@ -222,12 +278,14 @@ struct NameField: View {
             .textFieldStyle(.plain)
             .font(font)
             .foregroundStyle(Theme.ink)
+            .frame(height: height)
             .focused($focused)
             .onSubmit { commit() }
             .onExitCommand { end() }
             .onAppear {
                 draft = initial
-                focused = true
+                // A focus asked for before the field is in the window does not take.
+                DispatchQueue.main.async { focused = true }
             }
             .onChange(of: focused) { _, isFocused in
                 if isFocused { watchKeys() } else { end() }
@@ -310,12 +368,17 @@ struct BookmarkFieldsView: View {
                 label("Tone")
                 BookmarkField(
                     saved: bookmark.tone, placeholder: "100.0 or D023N",
-                    onCommit: { session.editTunedBookmark(tone: $0) },
-                    onRevert: { session.clearToneError() })
-                if let heard = session.heardTone {
-                    Text("heard \(heard.words)").font(Theme.Font.valueSmall)
-                        .foregroundStyle(Theme.inkTertiary).lineLimit(1)
-                }
+                    identifier: "inspector.tone",
+                    onCommit: { session.editBookmark(bookmark.id, tone: $0) },
+                    onRevert: { session.clearToneError() }
+                )
+                // Laid out with or without a tone, so the first tone heard neither moves the
+                // field nor pushes the panel below it down a point.
+                Text(session.heardTone.map { "heard \($0.words)" } ?? " ")
+                    .font(Theme.Font.valueSmall)
+                    .foregroundStyle(Theme.inkTertiary).lineLimit(1)
+                    .frame(width: Theme.Layout.heardToneWidth, alignment: .trailing)
+                    .stageRegion(.heard)
             }
             if let sentence = session.toneError {
                 Text(sentence).font(Theme.Font.aside).foregroundStyle(Theme.caution)
@@ -324,8 +387,9 @@ struct BookmarkFieldsView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 label("Note")
                 BookmarkField(
-                    saved: bookmark.note, placeholder: "A note",
-                    onCommit: { session.editTunedBookmark(note: $0) })
+                    saved: bookmark.note, placeholder: "A note", identifier: "inspector.note",
+                    onCommit: { session.editBookmark(bookmark.id, note: $0) }
+                )
             }
         }
         .padding(.top, 4)
@@ -340,42 +404,118 @@ struct BookmarkFieldsView: View {
 
 /// A bookmark's tone or note, edited in place. Unlike `NameField`, which appears for one edit
 /// and goes, this field is there for as long as the frequency is bookmarked and shows the
-/// saved value until it has focus. Return commits through `onCommit` and keeps the focus, so a
-/// refused tone stays in the field with its sentence under it; Escape, or the focus going
-/// elsewhere, puts the saved value back and says so through `onRevert`. A value `ley
-/// bookmarks` writes while the field is idle replaces the draft. While it has focus
-/// `TuningKeyGuard` hands Space and the arrows to the field editor, or typing `club net`
-/// would mute the radio and tune it.
+/// saved value until it has focus. Return commits through `onCommit` and keeps the focus.
+/// Leaving the field saves it as Return does, as a Mac field does: the focus going elsewhere, a
+/// click on the panel's empty space (`ChannelPanel.endFieldEdit`), or a tune away, which makes
+/// the field anew for the next bookmark (`.id(b.id)`) and saves the old one's text as it goes.
+/// Escape is the only way to throw the text away: it puts the saved value back and says so
+/// through `onRevert`. A refused tone stays in the field with its sentence under it, focused or
+/// not, and is sent once, not again each time the field is left. A value `ley bookmarks` writes
+/// while the field is idle replaces the draft, a refused one included. While it has focus
+/// `TuningKeyGuard` hands Space and the arrows to the field editor, or typing `club net` would
+/// mute the radio and tune it.
 struct BookmarkField: View {
     let saved: String
     let placeholder: String
+    let identifier: String
     let onCommit: (String) -> Void
-    var onRevert: () -> Void = {}
-    @State private var draft = ""
+    var onRevert: () -> Void
+    @State private var draft: String
+    /// The text last sent to `onCommit`, so a refused value is not sent again on every leave.
+    @State private var sent: String?
     @FocusState private var focused: Bool
 
+    /// The draft starts as the saved value. Started empty and filled on appear, the AppKit field
+    /// was laid out at an empty field's 14 pt and on some runs kept it with the text in, a point
+    /// taller than the 13 pt row it sits in.
+    init(
+        saved: String, placeholder: String, identifier: String,
+        onCommit: @escaping (String) -> Void, onRevert: @escaping () -> Void = {}
+    ) {
+        self.saved = saved
+        self.placeholder = placeholder
+        self.identifier = identifier
+        self.onCommit = onCommit
+        self.onRevert = onRevert
+        _draft = State(initialValue: saved)
+    }
+
     var body: some View {
-        TextField(placeholder, text: $draft)
+        // The field's own placeholder is a space: an empty one left its first baseline, which
+        // the row aligns on, unsettled on some launches, and the row grew 11 pt.
+        TextField(" ", text: $draft)
             .textFieldStyle(.plain)
             .font(Theme.Font.value)
             .foregroundStyle(Theme.ink)
+            .frame(height: Theme.Layout.valueFieldHeight)
+            .accessibilityLabel(placeholder)
+            .fieldPlaceholder(placeholder, font: Theme.Font.value, shown: draft.isEmpty)
             .focused($focused)
-            .onSubmit { onCommit(draft) }
-            .onExitCommand { focused = false }
+            .onSubmit { commit() }
+            .onExitCommand {
+                revert()
+                focused = false
+            }
             .onAppear { draft = saved }
             .onChange(of: saved) { _, now in
-                if !focused { draft = now }
+                guard !focused else { return }
+                // A refused value waiting in the idle field gives way to the written one.
+                if draft != now { onRevert() }
+                draft = now
+                sent = nil
             }
             .onChange(of: focused) { _, isFocused in
-                if !isFocused { revert() }
+                if !isFocused { leave() }
             }
+            // A tune away removes the field, focused or not, before it reports the focus lost.
+            .onDisappear { leave() }
             .modifier(TuningKeyGuard(focused: focused))
+            .accessibilityIdentifier(identifier)
+            .onTextLine(Theme.Font.value, height: Theme.Layout.valueFieldHeight)
+    }
+
+    private func commit() {
+        sent = draft
+        onCommit(draft)
+    }
+
+    /// The field was left: what was typed is saved, unless it is the saved value or was sent
+    /// already (a refused tone, left in the field).
+    private func leave() {
+        guard draft != saved, draft != sent else { return }
+        commit()
     }
 
     private func revert() {
+        sent = nil
         guard draft != saved else { return }
         draft = saved
         onRevert()
+    }
+}
+
+extension View {
+    /// The view laid over one blank line of `font`, which gives the row its first baseline. An
+    /// AppKit field's own baseline moved by a point between runs as the field was laid out at
+    /// an empty field's height or a filled one's, and a row aligned on it moved everything
+    /// under it; a line of text sits the same on every run.
+    func onTextLine(_ font: Font, height: CGFloat) -> some View {
+        Text(" ").font(font)
+            .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .leading)
+            .accessibilityHidden(true)
+            .overlay(alignment: .leading) { self }
+    }
+
+    /// A plain text field's placeholder, drawn behind it in `inkFaint` while `shown`. The
+    /// field's own placeholder takes the field's ink, and the system's placeholder colour is
+    /// dimmed only by vibrancy, which a staged run's picture does not apply.
+    func fieldPlaceholder(_ text: String, font: Font, shown: Bool) -> some View {
+        background(alignment: .leading) {
+            if shown {
+                Text(text).font(font).foregroundStyle(Theme.inkFaint).lineLimit(1)
+                    .allowsHitTesting(false).accessibilityHidden(true)
+            }
+        }
     }
 }
 
@@ -612,5 +752,26 @@ struct ReadingRow<Meter: View, Word: View>: View {
         }
         .contentShape(Rectangle())
         .help(help)
+    }
+}
+
+/// `Still recording 146.520 MHz Calling · Stop`: the window follows another client's channel
+/// while its own stays open for a recording (`ChannelFollow.keptRecording`). Stop ends that
+/// recording, and the window then ends the channel; the line goes with them.
+struct KeptRecordingLine: View {
+    @Environment(AppSession.self) private var session
+    let kept: ChannelFollow.KeptRecording
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text(kept.words + " \u{00B7}").foregroundStyle(Theme.inkTertiary)
+                .lineLimit(1).truncationMode(.middle)
+            Button("Stop") { Task { await session.stopKeptRecording() } }
+                .buttonStyle(.plain).foregroundStyle(Theme.inkSecondary)
+                .help("Stops this recording, and the window then lets the channel go")
+                .accessibilityIdentifier("inspector.kept.stop")
+        }
+        .font(Theme.Font.aside)
+        .identifiedGroup("inspector.kept")
     }
 }

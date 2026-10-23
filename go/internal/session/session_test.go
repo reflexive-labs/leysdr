@@ -4,6 +4,7 @@ package session
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
@@ -34,6 +35,87 @@ func TestApplySkipsWhatTheMirrorAlreadyHolds(t *testing.T) {
 	rejected := &leylinev1.Event{Seq: 1, Body: &leylinev1.Event_WriteRejected{WriteRejected: &leylinev1.WriteRejected{Tag: 1}}}
 	if !s.Apply(rejected) {
 		t.Fatal("a WriteRejected is not state and is never stale")
+	}
+}
+
+// TestFoldKeysAndUsage: an ai event replaces the whole AIState, so a deleted key leaves the
+// mirror; a usage event replaces its line by provider, model, feature, scope and day.
+func TestFoldKeysAndUsage(t *testing.T) {
+	s := &Session{State: &leylinev1.GetStateResponse{
+		Ai: &leylinev1.AIState{Credentials: []*leylinev1.Credential{{Provider: "anthropic"}, {Provider: "openai"}}},
+		Usage: []*leylinev1.UsageLine{
+			{Provider: "anthropic", Model: "m", Feature: "assistant", ScopeId: "conv_1", Day: "2026-10-14", Requests: 1},
+		},
+	}}
+	s.Apply(&leylinev1.Event{Seq: 1, Body: &leylinev1.Event_Ai{Ai: &leylinev1.AIState{
+		Credentials: []*leylinev1.Credential{{Provider: "openai"}},
+	}}})
+	if got := s.State.GetAi().GetCredentials(); len(got) != 1 || got[0].Provider != "openai" {
+		t.Errorf("after the delete the mirror holds %v", got)
+	}
+	s.Apply(&leylinev1.Event{Seq: 2, Body: &leylinev1.Event_Usage{Usage: &leylinev1.UsageLine{
+		Provider: "anthropic", Model: "m", Feature: "assistant", ScopeId: "conv_1", Day: "2026-10-14", Requests: 2,
+	}}})
+	s.Apply(&leylinev1.Event{Seq: 3, Body: &leylinev1.Event_Usage{Usage: &leylinev1.UsageLine{
+		Provider: "anthropic", Model: "m", Feature: "assistant", ScopeId: "conv_1", Day: "2026-10-15", Requests: 1,
+	}}})
+	if u := s.State.GetUsage(); len(u) != 2 || u[0].Requests != 2 || u[1].Day != "2026-10-15" {
+		t.Errorf("usage lines: %v", u)
+	}
+}
+
+// TestFoldConversations: a conversation event replaces the conversation with its id, an ended one
+// included, and a new id is added.
+func TestFoldConversations(t *testing.T) {
+	s := &Session{State: &leylinev1.GetStateResponse{
+		Conversations: []*leylinev1.Conversation{{ConversationId: "conv_1", State: leylinev1.ConversationState_CONVERSATION_IDLE, Seq: 1}},
+	}}
+	s.Apply(&leylinev1.Event{Seq: 1, Body: &leylinev1.Event_Conversation{Conversation: &leylinev1.Conversation{
+		ConversationId: "conv_1", State: leylinev1.ConversationState_CONVERSATION_THINKING, Seq: 2,
+		Turns: []*leylinev1.Turn{{TurnId: "t1", Role: leylinev1.Role_ROLE_USER, Text: "tune to 146.52", Done: true}},
+	}}})
+	s.Apply(&leylinev1.Event{Seq: 2, Body: &leylinev1.Event_Conversation{Conversation: &leylinev1.Conversation{
+		ConversationId: "conv_2", State: leylinev1.ConversationState_CONVERSATION_IDLE, Seq: 1,
+	}}})
+	s.Apply(&leylinev1.Event{Seq: 3, Body: &leylinev1.Event_Conversation{Conversation: &leylinev1.Conversation{
+		ConversationId: "conv_1", State: leylinev1.ConversationState_CONVERSATION_ENDED, Seq: 3,
+	}}})
+	got := s.State.GetConversations()
+	if len(got) != 2 || got[1].ConversationId != "conv_1" || got[1].State != leylinev1.ConversationState_CONVERSATION_ENDED ||
+		got[1].Seq != 3 || got[0].ConversationId != "conv_2" {
+		t.Errorf("conversations: %v", got)
+	}
+}
+
+// TestFoldConversationsNewestFirst: a conversation the mirror has not seen goes before the
+// others, as GetState and ListConversations list them.
+func TestFoldConversationsNewestFirst(t *testing.T) {
+	s := &Session{State: &leylinev1.GetStateResponse{
+		Conversations: []*leylinev1.Conversation{{ConversationId: "conv_2", Seq: 1}, {ConversationId: "conv_1", Seq: 4}},
+	}}
+	s.Apply(&leylinev1.Event{Seq: 1, Body: &leylinev1.Event_Conversation{Conversation: &leylinev1.Conversation{ConversationId: "conv_3", Seq: 1}}})
+	var ids []string
+	for _, cv := range s.State.GetConversations() {
+		ids = append(ids, cv.ConversationId)
+	}
+	if strings.Join(ids, " ") != "conv_3 conv_2 conv_1" {
+		t.Errorf("order: %v", ids)
+	}
+}
+
+// TestFoldConversationsSkipsAnOlderState: an event whose conversation seq is not above the one
+// held is a state the mirror has already passed, and is ignored.
+func TestFoldConversationsSkipsAnOlderState(t *testing.T) {
+	s := &Session{State: &leylinev1.GetStateResponse{
+		Conversations: []*leylinev1.Conversation{{ConversationId: "conv_1", State: leylinev1.ConversationState_CONVERSATION_IDLE, Seq: 5}},
+	}}
+	for i, seq := range []uint64{4, 5} {
+		s.Apply(&leylinev1.Event{Seq: uint64(i + 1), Body: &leylinev1.Event_Conversation{Conversation: &leylinev1.Conversation{
+			ConversationId: "conv_1", State: leylinev1.ConversationState_CONVERSATION_THINKING, Seq: seq,
+		}}})
+	}
+	if got := s.State.GetConversations()[0]; got.State != leylinev1.ConversationState_CONVERSATION_IDLE || got.Seq != 5 {
+		t.Errorf("an older state replaced the newer one: %v", got)
 	}
 }
 

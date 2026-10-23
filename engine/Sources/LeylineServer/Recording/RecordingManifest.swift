@@ -31,6 +31,11 @@ struct RecordingPart: Codable, Sendable {
     /// reason the levels are: nobody measured it. A client prints `0.0 dBFS · clipped` from this,
     /// not from `peak_dbfs`, which measures the audio rather than the IQ.
     var clippedMs: Int64? = nil
+    /// Milliseconds the squelch was open inside this part: the sidecar's `squelch_opens` intervals
+    /// summed at the capture rate, so a client can say how much signal a recording holds (what a
+    /// transcription would send) without opening every sidecar. Absent on a continuous recording,
+    /// which has no intervals, and on a part written by a daemon older than the field.
+    var squelchOpenMs: Int64? = nil
 
     enum CodingKeys: String, CodingKey {
         case part, file, samples, bytes
@@ -40,6 +45,7 @@ struct RecordingPart: Codable, Sendable {
         case meanDbfs = "mean_dbfs"
         case squelchOpens = "squelch_opens"
         case clippedMs = "clipped_ms"
+        case squelchOpenMs = "squelch_open_ms"
     }
 }
 
@@ -144,9 +150,14 @@ struct RecordingManifest: Codable, Sendable {
     var parts: [RecordingPart]
     var coverageGaps: [RecordingGap]
     var bytes: UInt64
+    /// False for the clips of a live speech job that was not kept: they go when the job ends, and
+    /// a daemon that died before it could remove them leaves an orphan the next boot deletes
+    /// rather than closing (`RecordingStore.repairUnfinished`). Absent, and so kept, on every
+    /// other recording.
+    var keep: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case uri, kind, mode, format, device, gains, gate, parts, bytes
+        case uri, kind, mode, format, device, gains, gate, parts, bytes, keep
         case jobID = "job_id"
         case frequencyHz = "frequency_hz"
         case bandwidthHz = "bandwidth_hz"
@@ -187,6 +198,7 @@ struct RecordingManifest: Codable, Sendable {
         parts = try c.decodeIfPresent([RecordingPart].self, forKey: .parts) ?? []
         coverageGaps = try c.decodeIfPresent([RecordingGap].self, forKey: .coverageGaps) ?? []
         bytes = try c.decodeIfPresent(UInt64.self, forKey: .bytes) ?? 0
+        keep = try c.decodeIfPresent(Bool.self, forKey: .keep)
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -212,6 +224,7 @@ struct RecordingManifest: Codable, Sendable {
         try c.encode(parts, forKey: .parts)
         try c.encode(coverageGaps, forKey: .coverageGaps)
         try c.encode(bytes, forKey: .bytes)
+        try c.encodeIfPresent(keep, forKey: .keep)
     }
 
     init(jobID: String, kind: String, frequencyHz: UInt64, mode: String, bandwidthHz: UInt32,

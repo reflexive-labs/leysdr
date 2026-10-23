@@ -206,4 +206,79 @@ extension RecordingJobTests {
             XCTAssertNotNil(tomb, "a paused playback stops like any other")
         }
     }
+
+    /// A sample range plays only that stretch of the part: the playback counts the range's frames,
+    /// carries the range it was given, starts from frame 0 of it and ends on its own once the range
+    /// has played. A range outside the part is refused before anything plays.
+    func testPlaybackOfARangePlaysOnlyThatStretch() async throws {
+        let dir = try recordings()
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        try await withDaemon(recordingsPath: dir) { c in
+            let done = try await self.playableRecording(c)
+            let data = try XCTUnwrap(FileManager.default.contents(atPath: dir + "/" + done.jobID + "/recording.json"))
+            let manifest = try JSONDecoder().decode(RecordingManifest.self, from: data)
+            let part = try XCTUnwrap(manifest.parts.first)
+            let span = part.endSample - part.startSample
+            let from = part.startSample + span / 4
+            let to = part.startSample + span / 2
+
+            let events = await EventCollector.start(c.control, daemon: c.daemon)
+            defer { Task { await events.stop() } }
+            var request = Leyline_V1_StartPlaybackRequest()
+            request.resourceUri = "ley://recordings/\(done.jobID)/\(part.part)"
+            request.startSample = from
+            request.endSample = to
+            let pb = try await c.control.startPlayback(request, metadata: testMetadata)
+            XCTAssertEqual(pb.startSample, from, "the playback carries the range it plays")
+            XCTAssertEqual(pb.endSample, to)
+            // A quarter of the part's frames, to the frame either way for the rounding of each end.
+            let quarter = Double(part.samples) / 4
+            XCTAssertEqual(Double(pb.samples), quarter, accuracy: 2, "samples counts the range, not the file")
+            XCTAssertLessThan(pb.position, pb.samples)
+
+            let tomb = await events.waitFor(timeoutMs: 5000) {
+                $0.playback.playbackID == pb.playbackID && $0.playback.state == .unspecified
+            }
+            XCTAssertNotNil(tomb, "the playback ends at the end of the range")
+            XCTAssertEqual(tomb?.playback.position, pb.samples, "and it played every frame of the range")
+            XCTAssertEqual(tomb?.playback.startSample, from)
+
+            // Outside the part, empty, and backwards: each refused with what the part holds.
+            for (start, end) in [(part.startSample &- 1, to), (from, part.endSample + 1), (to, from)] {
+                request.startSample = start
+                request.endSample = end
+                do {
+                    _ = try await c.control.startPlayback(request, metadata: testMetadata)
+                    XCTFail("played \(start)..<\(end) of a part that holds \(part.startSample)..<\(part.endSample)")
+                } catch let e as RPCError {
+                    XCTAssertEqual(e.code, .invalidArgument)
+                    XCTAssertTrue(e.message.contains("not a range inside part \(part.part)"), e.message)
+                }
+            }
+        }
+    }
+
+    /// The range is placed in the file by the two rates: capture samples at the anchor's rate,
+    /// frames at the audio rate. A 0 start is the part's start and a 0 end its end; 0 and 0 is
+    /// the whole part. With no capture rate, the part's own span over its frames stands in.
+    func testAPlaybackRangeIsPlacedByTheTwoRates() throws {
+        // One second of capture at 2.4 MSPS from sample 2,400,000, as 48,000 frames at 48 kHz.
+        let part = RecordingPart(part: 2, file: "x.wav", startSample: 2_400_000, endSample: 4_800_000,
+                                 samples: 48000, bytes: 96044, peakDbfs: nil, meanDbfs: nil, squelchOpens: 1)
+        XCTAssertNil(try PlaybackRange.resolve(start: 0, end: 0, part: part, audioRate: 48000,
+                                               captureRate: 2_400_000, target: "t"))
+        let r = try XCTUnwrap(PlaybackRange.resolve(start: 3_000_000, end: 3_600_000, part: part, audioRate: 48000,
+                                                    captureRate: 2_400_000, target: "t"))
+        XCTAssertEqual(r.frames, 12000..<24000)
+        let open = try XCTUnwrap(PlaybackRange.resolve(start: 3_600_000, end: 0, part: part, audioRate: 48000,
+                                                       captureRate: 0, target: "t"))
+        XCTAssertEqual(open.frames, 24000..<48000, "to the part's end, by the part's own span")
+        XCTAssertEqual(open.endSample, 4_800_000)
+        let head = try XCTUnwrap(PlaybackRange.resolve(start: 0, end: 2_400_050, part: part, audioRate: 48000,
+                                                       captureRate: 2_400_000, target: "t"))
+        XCTAssertEqual(head.frames, 0..<1, "from the part's start; fifty samples is one frame")
+        XCTAssertThrowsError(try PlaybackRange.resolve(start: 2_400_000, end: 2_400_010, part: part, audioRate: 48000,
+                                                       captureRate: 2_400_000, target: "t"),
+                             "ten capture samples are less than one frame of audio")
+    }
 }

@@ -1,0 +1,376 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// leyline.v1 — keys, usage and the assistant
+// Model calls on the user's own provider key (docs/design/ai.md). The daemon holds the keys and
+// never returns one: a client can set, check and delete a key and read what is known about it,
+// and the workers the daemon spawns are the only processes that see the secret. Usage is kept in
+// the provider's own units (requests, tokens, audio seconds); cost and spend limits stay with the
+// provider. The assistant's conversations are daemon state like any other: a worker the daemon
+// spawns runs the model, and every client renders the conversation it is sent.
+syntax = "proto3";
+package leyline.v1;
+
+option go_package = "github.com/reflexive-labs/leysdr/go/gen/leyline/v1;leylinev1";
+import "leyline/v1/common.proto";
+
+// ---------- Keys ----------
+// One key per provider. A provider is the name of a kind of endpoint ("anthropic", "openai",
+// "deepgram"); `endpoint` points one at a gateway or an OpenAI-compatible server instead of the
+// provider's own API.
+
+// What the daemon knows about a stored key. It never carries the secret.
+message Credential {
+  string provider = 1;
+  string label = 2;
+  string last_four = 3;          // the secret's last four characters, so a person can tell keys apart
+  string endpoint = 4;           // empty = the provider's own API
+  int64 added_at_ns = 5;         // CLOCK_REALTIME
+  int64 last_used_at_ns = 6;     // a worker took the key for a call; 0 = never
+  CredentialCheck last_check = 7;
+}
+
+// The result of the last time a worker tried the key against the provider.
+message CredentialCheck {
+  // UNAVAILABLE means the check could not run (no worker, the provider unreachable), which says
+  // nothing about the key itself.
+  enum Outcome { OUTCOME_UNSPECIFIED = 0; ACCEPTED = 1; REJECTED = 2; UNAVAILABLE = 3; }
+  Outcome outcome = 1;
+  string message = 2;            // the provider's words, or why the check could not run
+  int64 at_ns = 3;               // CLOCK_REALTIME
+}
+
+// The only message that carries a secret, and only towards the daemon.
+message SetCredentialRequest {
+  string provider = 1;
+  string secret = 2;
+  string label = 3;
+  string endpoint = 4;           // empty = the provider's own API
+}
+message CredentialRef { string provider = 1; }
+
+// The provider and model a feature calls. feature: "assistant" | "speech".
+message FeatureModel {
+  string feature = 1;
+  string provider = 2;
+  string model = 3;
+}
+
+// Every key and every feature's model. Event.ai and GetStateResponse.ai carry the whole of it, so
+// a deleted key is a shorter list and needs no tombstone.
+message AIState {
+  repeated Credential credentials = 1;
+  repeated FeatureModel features = 2;
+}
+message GetAIStateRequest {}
+
+service Credentials {
+  // Stores the key, replacing any for the provider, then checks it once; the reply carries the
+  // outcome in `last_check`.
+  rpc SetCredential(SetCredentialRequest) returns (Credential);
+  // Removes the key and ends every job that uses the provider with CREDENTIAL_MISSING.
+  rpc DeleteCredential(CredentialRef) returns (Empty);
+  rpc CheckCredential(CredentialRef) returns (Credential);
+  rpc GetAIState(GetAIStateRequest) returns (AIState);
+  rpc SetFeatureModel(FeatureModel) returns (FeatureModel);
+}
+
+// ---------- Usage ----------
+
+// What one provider response used, in the provider's units. A worker sends one per response with
+// Usage.ReportUsage; a decoder plugin, which has no socket, puts one on its DecodeRecord instead.
+message UsageReport {
+  string provider = 1;
+  string model = 2;
+  string feature = 3;            // "assistant" | "speech" | "check"
+  // The scope the call was made for: one of these two is set.
+  string job_id = 4;
+  string conversation_id = 5;
+  uint64 requests = 6;
+  uint64 input_tokens = 7;
+  uint64 output_tokens = 8;
+  uint64 cache_read_tokens = 9;
+  uint64 cache_write_tokens = 10;
+  double audio_seconds = 11;
+  int64 at_ns = 12;              // CLOCK_REALTIME
+}
+
+// The ledger's grain: the sum of reports for one provider, model, feature, scope and UTC day.
+// Days are UTC because that is how the providers' consoles count, so the two can be compared.
+message UsageLine {
+  string provider = 1;
+  string model = 2;
+  string feature = 3;
+  string scope_id = 4;           // the job or conversation id
+  string day = 5;                // "2026-10-14", UTC
+  uint64 requests = 6;
+  uint64 input_tokens = 7;
+  uint64 output_tokens = 8;
+  uint64 cache_read_tokens = 9;
+  uint64 cache_write_tokens = 10;
+  double audio_seconds = 11;
+  int64 last_at_ns = 12;         // CLOCK_REALTIME of the latest report folded in
+}
+
+// Every field filters; an empty one matches everything.
+message GetUsageRequest {
+  int64 since_ns = 1;            // CLOCK_REALTIME; 0 = the whole ledger
+  string provider = 2;
+  string feature = 3;
+  string scope_id = 4;
+}
+message GetUsageResponse { repeated UsageLine lines = 1; }
+
+service Usage {
+  rpc GetUsage(GetUsageRequest) returns (GetUsageResponse);
+  // Adds a report to the ledger. Workers call it over the socket like any client, so any socket
+  // client can add to the ledger.
+  rpc ReportUsage(UsageReport) returns (Empty);
+}
+
+// ---------- Assistant ----------
+// A conversation with the model, held by the daemon and kept on disk, so it outlives a restart.
+// The daemon spawns a worker for a conversation while it is in use, passes it what the user says
+// and decides, and derives the conversation's state from the turns the worker writes back; a
+// conversation idle for a while keeps its state and loses only its worker, which the next message
+// starts again. Any client may watch, answer, end or delete any conversation.
+
+// One conversation, whole on every event and every reply.
+message Conversation {
+  string conversation_id = 1;          // conv_<ulid>
+  ConversationState state = 2;
+  string provider = 3;
+  string model = 4;
+  repeated Turn turns = 5;             // every turn so far, user and assistant alternating
+  // Set while WAITING: the call the assistant asks to make or waits on a client for. Unset in
+  // every other state.
+  PendingAction pending = 6;
+  ErrorDetail error = 7;               // set when FAILED
+  ClientInfo started_by = 8;
+  int64 started_at_ns = 9;             // CLOCK_REALTIME
+  int64 last_turn_at_ns = 10;          // CLOCK_REALTIME of the newest turn's last change
+  repeated ViewTool view_tools = 11;   // declared by the client that started it
+  // Bumps on every change to this conversation; WatchConversation replays from since_seq. Its own
+  // count, not Event.seq.
+  uint64 seq = 12;
+  // How the conversation's calls are allowed, as StartConversationRequest.mode set it; ASK when
+  // the request left it unset.
+  ApprovalMode mode = 13;
+}
+
+// How a conversation treats a call the policy says asks first.
+enum ApprovalMode {
+  APPROVAL_MODE_UNSPECIFIED = 0;       // ASK
+  APPROVAL_MODE_ASK = 1;               // the call waits for ResolveAction unless a grant covers it
+  APPROVAL_MODE_AUTO = 2;              // every call runs and is reported with its reason; nothing waits
+}
+
+// How far an approval reaches.
+enum ApprovalScope {
+  APPROVAL_SCOPE_UNSPECIFIED = 0;      // ONCE when it approves
+  APPROVAL_SCOPE_ONCE = 1;             // this call only
+  // This call, and every later call in the conversation for which the question's policy rows are
+  // the reason to ask. A grant comes only from ResolveAction, never from the user's words.
+  APPROVAL_SCOPE_CONVERSATION = 2;
+}
+
+// The daemon derives the state from the turns the worker writes: a turn whose last tool call is
+// AWAITING_APPROVAL or AWAITING_CLIENT makes the conversation WAITING with that call as
+// `pending`; a turn marked `done` makes it IDLE.
+enum ConversationState {
+  CONVERSATION_STATE_UNSPECIFIED = 0;
+  CONVERSATION_IDLE = 1;               // waiting for the user
+  CONVERSATION_THINKING = 2;           // the worker is on a turn
+  CONVERSATION_WAITING = 3;            // the assistant asked; ResolveAction or AnswerViewTool answers
+  CONVERSATION_ENDED = 4;              // a client ended it; it stays listed and readable
+  CONVERSATION_FAILED = 5;             // the worker failed or exited mid-turn; `error` says why
+}
+
+// One turn of the conversation. A user turn is whole when the daemon adds it; an assistant turn
+// grows while the worker is on it and is replaced whole each time.
+message Turn {
+  string turn_id = 1;                  // "t1", "t2", … within the conversation
+  Role role = 2;
+  string text = 3;                     // the text so far; the whole text once done
+  repeated ToolCall tools = 4;         // in the order the assistant made them; empty on a user turn
+  int64 at_ns = 5;                     // CLOCK_REALTIME the turn began
+  bool done = 6;                       // the assistant has finished the turn, or it was stopped
+  // Why a done assistant turn ended; UNSPECIFIED while it runs, on a user turn, and on a turn a
+  // daemon kept from before the field. The worker sets it, and the daemon when it closes a turn
+  // itself: a StopTurn the worker did not answer in time, or a restart.
+  StopReason stop_reason = 7;
+}
+enum StopReason {
+  STOP_REASON_UNSPECIFIED = 0;
+  STOP_REASON_COMPLETED = 1;           // the model ended the turn
+  STOP_REASON_STOPPED = 2;             // StopTurn: a client stopped it
+  STOP_REASON_STEP_LIMIT = 3;          // the worker's bound on model calls in one turn
+  STOP_REASON_MAX_TOKENS = 4;          // the response reached the model's output limit
+  STOP_REASON_REFUSAL = 5;             // the model declined to answer
+  STOP_REASON_RESTARTED = 6;           // the daemon restarted during the turn
+}
+enum Role { ROLE_UNSPECIFIED = 0; ROLE_USER = 1; ROLE_ASSISTANT = 2; }
+
+// One tool call the assistant made within a turn.
+message ToolCall {
+  string call_id = 1;                  // unique within the conversation
+  string tool = 2;                     // a `ley mcp` tool name, a view tool, or "undo"
+  string arguments_json = 3;
+  ToolCallState state = 4;
+  string result_text = 5;              // the tool's prose, once DONE
+  string result_json = 6;              // the tool's JSON, once DONE
+  bool is_error = 7;                   // the tool ran and failed; result_text says why
+  string reason = 8;                   // why it asked: the policy row, in words; set when the call asks first and kept after it runs, so a reader knows the call was one the user allowed
+  int64 at_ns = 9;                     // CLOCK_REALTIME the call was made
+  // Set when the call ran without asking because the user had granted its kind of action for the
+  // conversation: the call_id of the question whose answer granted it. `reason` is set as well.
+  string allowed_by = 10;
+  // Set when the call asks: the scopes the question offers, which PendingAction.offers copies.
+  // Kept after the call is answered.
+  repeated ApprovalScope offers = 11;
+}
+enum ToolCallState {
+  TOOL_CALL_STATE_UNSPECIFIED = 0;
+  TOOL_CALL_RUNNING = 1;
+  TOOL_CALL_DONE = 2;
+  TOOL_CALL_AWAITING_APPROVAL = 3;     // ResolveAction decides
+  TOOL_CALL_AWAITING_CLIENT = 4;       // a view tool; AnswerViewTool answers
+  TOOL_CALL_REFUSED = 5;               // the user said no; the model is told so
+}
+
+// What a WAITING conversation waits on: a copy of the call so a client need not search the turns.
+message PendingAction {
+  string call_id = 1;
+  string tool = 2;
+  string arguments_json = 3;
+  string reason = 4;                   // why it asks, as ToolCall.reason; empty for a view tool
+  bool view_tool = 5;                  // true: AnswerViewTool answers it; false: ResolveAction
+  // Every scope ResolveAction may approve this call with, ONCE included, in the order a client
+  // shows them. Empty for a view tool.
+  repeated ApprovalScope offers = 6;
+}
+
+// A tool the client that starts a conversation offers the model, answered by that client and
+// not by the daemon (move the client's own view, say). The model calls it like any other tool.
+message ViewTool {
+  string name = 1;
+  string description = 2;              // what the model reads to decide when to call it
+  string input_schema_json = 3;        // a JSON Schema object for the arguments
+}
+
+// Empty provider and model: the assistant feature model (FeatureModel "assistant").
+message StartConversationRequest {
+  string provider = 1;
+  string model = 2;
+  repeated ViewTool view_tools = 3;
+  ApprovalMode mode = 4;               // unset: ASK
+}
+message SendMessageRequest { string conversation_id = 1; string text = 2; }
+message ConversationRef { string conversation_id = 1; }
+// since_seq is the seq of the Conversation the client already has (0 = none): what changed after
+// it is sent first, then the stream goes live.
+message WatchConversationRequest { string conversation_id = 1; uint64 since_seq = 2; }
+// approve false refuses the call; the model is told the user declined. scope, with approve true,
+// is one of the pending call's offers; unset means ONCE. INVALID_ARGUMENT for a scope the call
+// did not offer.
+message ResolveActionRequest {
+  string conversation_id = 1;
+  string call_id = 2;
+  bool approve = 3;
+  ApprovalScope scope = 4;
+}
+message AnswerViewToolRequest {
+  string conversation_id = 1;
+  string call_id = 2;
+  string result_text = 3;
+  string result_json = 4;
+  bool is_error = 5;
+}
+// mode unset is ASK.
+message SetApprovalModeRequest { string conversation_id = 1; ApprovalMode mode = 2; }
+message ListConversationsRequest {}
+message ListConversationsResponse { repeated Conversation conversations = 1; }
+
+// Every reply is the conversation's whole state after the call, the same state Event.conversation
+// carries.
+service Assistant {
+  // Starts a worker and returns the conversation IDLE. CREDENTIAL_MISSING without a key for the
+  // provider.
+  rpc StartConversation(StartConversationRequest) returns (Conversation);
+  // Adds a user turn and hands it to the worker. FAILED_PRECONDITION unless IDLE.
+  rpc SendMessage(SendMessageRequest) returns (Conversation);
+  rpc WatchConversation(WatchConversationRequest) returns (stream Conversation);
+  // Approves or refuses the pending call. FAILED_PRECONDITION unless WAITING on that call.
+  rpc ResolveAction(ResolveActionRequest) returns (Conversation);
+  // Answers the pending view tool call. FAILED_PRECONDITION unless WAITING on that call.
+  rpc AnswerViewTool(AnswerViewToolRequest) returns (Conversation);
+  // Ends the running turn; the conversation stays and becomes IDLE.
+  rpc StopTurn(ConversationRef) returns (Conversation);
+  // Stops the worker; the conversation is ENDED and stays listed, on disk, until it is deleted.
+  rpc EndConversation(ConversationRef) returns (Conversation);
+  // Every conversation the daemon keeps, those from before its last restart included, newest
+  // first.
+  rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse);
+  // Removes a conversation and its files. One still going is ended first, and its ENDED state is
+  // the last event about it; after that it is simply not listed. INVALID_ARGUMENT for an id the
+  // daemon does not keep.
+  rpc DeleteConversation(ConversationRef) returns (Empty);
+  // Changes the conversation's mode from now on, kept across a restart. Allowed in any state but
+  // ENDED and FAILED: set to AUTO on a WAITING conversation, the call it waits on runs, approved
+  // once. FAILED_PRECONDITION on an ended or failed conversation.
+  rpc SetApprovalMode(SetApprovalModeRequest) returns (Conversation);
+}
+
+// ---------- Assistant worker ----------
+// What the daemon and the worker it spawns for a conversation say to each other on the worker's
+// stdio, each message varint-delimited as a decoder plugin's are. The worker starts with
+// LEYLINE_KEY_ON_STDIN=1: the key comes first on stdin as one SetCredentialRequest, then
+// WorkerEvents until stdin closes. The worker writes WorkerMessages on stdout. Its tool calls and
+// usage reports go over the daemon's socket like any client's.
+
+// The daemon to the worker.
+message WorkerEvent {
+  oneof event {
+    WorkerStart start = 1;             // once, straight after the key
+    UserMessage user = 2;              // the user said something; begin a turn
+    ActionResolved resolved = 3;       // the user approved or refused a call that asked
+    ViewToolAnswer view_answer = 4;    // a client answered a view tool call
+    WorkerStop stop = 5;               // stop the running turn
+    SetMode set_mode = 6;              // the conversation's mode changed
+  }
+}
+message WorkerStart {
+  string conversation_id = 1;
+  string provider = 2;
+  string model = 3;
+  string endpoint = 4;                 // the key's endpoint; empty = the provider's own API
+  repeated ViewTool view_tools = 5;
+  string socket = 6;                   // the daemon's socket, for tool calls and ReportUsage
+  // The worker's own model transcript, one message per line, which it appends to as it goes and
+  // only it reads. The daemon names it and keeps it beside the conversation.
+  string transcript_path = 7;
+  // The conversation went on before this worker: load transcript_path before the first model
+  // call. False for a new conversation, whose transcript starts empty.
+  bool resume = 8;
+  ApprovalMode mode = 9;               // the conversation's mode; unset: ASK
+}
+message UserMessage { string turn_id = 1; string text = 2; }
+// scope is the ResolveActionRequest's, unset when it refuses.
+message ActionResolved { string call_id = 1; bool approved = 2; ApprovalScope scope = 3; }
+message ViewToolAnswer {
+  string call_id = 1;
+  string result_text = 2;
+  string result_json = 3;
+  bool is_error = 4;
+}
+message WorkerStop {}
+// The gate's mode from now on. AUTO while the worker waits on a question approves that call once.
+message SetMode { ApprovalMode mode = 1; }
+
+// The worker to the daemon.
+message WorkerMessage {
+  oneof message {
+    Turn turn = 1;                     // the assistant's turn so far, whole each time
+    WorkerFailure failure = 2;         // the conversation cannot go on; the daemon fails it
+  }
+}
+message WorkerFailure { ErrorDetail error = 1; }

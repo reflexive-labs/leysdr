@@ -12,13 +12,15 @@ extension SessionStore {
     // MARK: Playing a recording back
 
     /// Opens the file, starts the audio device and publishes the playback. The caller has already
-    /// resolved the uri to a path; this handles the audio output.
+    /// resolved the uri to a path, and a sample range to the frames it covers (`PlaybackRange`);
+    /// this handles the audio output.
     func startPlayback(path: String, resourceURI: String, volume: Double, deviceUID: String?,
-                       by client: ClientContext) async throws -> Leyline_V1_Playback
+                       range: PlaybackRange? = nil, by client: ClientContext) async throws -> Leyline_V1_Playback
     {
         let id = PlaybackID()
         let engine = try PlaybackEngine(id: id, path: path, resourceURI: resourceURI, volume: volume,
-                                        deviceUID: deviceUID, makeSink: playbackSink) { [weak self] ended in
+                                        deviceUID: deviceUID, range: range,
+                                        makeSink: playbackSink) { [weak self] ended in
             // The file ran out: the playback goes the way a stopped one does, so a client watching
             // its own sees the same tombstone either way.
             await self?.endPlayback(ended, by: .daemon)
@@ -105,6 +107,10 @@ extension SessionStore {
         p.position = await entry.engine.position
         p.paused = await entry.engine.paused
         p.volume = entry.engine.volume
+        if let range = entry.engine.range {
+            p.startSample = range.startSample
+            p.endSample = range.endSample
+        }
         p.createdBy = entry.owner.proto
         p.state = .playbackPlaying
         return p

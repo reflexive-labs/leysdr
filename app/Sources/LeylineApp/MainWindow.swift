@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The window's regions: chrome above and below a body of two panels, and a third on the right, the
-// inspector. The sidebar, the inspector and the transport bar are fixed; the waterfall
+// The window's regions: chrome above and below a body of two panels, and a third on the right,
+// the inspector, with the assistant's column beside the whole body when it is open
+// (`AssistantPanel`). The sidebar, the inspector and the transport bar are fixed; the waterfall
 // takes what is left. The inspector can be closed, and the window works without it. Two places
 // share the toolbar: the Radio is that window, and the Library replaces the
 // whole body under the toolbar with what has been kept (`LibraryView.swift`) while the radio keeps
@@ -20,7 +21,7 @@ struct MainWindow: View {
     /// clears it; a window opened later starts with the splash `done`. A launch by URL would skip
     /// it too (the spec's clause), but the app opens no URLs yet. A staged run
     /// (`Staging.swift`) has no splash, so a screenshot never catches it.
-    private static var splashPending = ShotStage.path() == nil
+    private static var splashPending = !stagedLaunch
     @State private var splash: SplashPhase = MainWindow.splashPending ? .before : .done
     @State private var flight: SplashFlight?
     @State private var splashMark = WindowFrameAnchor()
@@ -38,12 +39,26 @@ struct MainWindow: View {
         // One container for both places, so the toolbar and the alert stay put across a switch.
         VStack(spacing: 0) {
             if session.engineUpdatePending { EngineUpdateStrip() }
-            switch session.place {
-            case .radio: RadioBody()
-            case .library: LibraryBody().stageRegion(.library)
+            // The assistant's column is beside both places rather than inside each body, so a
+            // switch of place (⌘1, ⌘2, or the assistant's own `show_place`) leaves the
+            // conversation, its scroll and its field where they are.
+            HStack(spacing: 0) {
+                switch session.place {
+                case .radio: RadioBody()
+                case .library: LibraryBody().stageRegion(.library)
+                }
+                AssistantColumn()
             }
         }
         .background(Theme.ground)
+        // A staged run draws no animation, so two pictures of one scene match
+        // (`DeterministicFrames`).
+        .transaction { t in
+            if stagedLaunch {
+                t.disablesAnimations = true
+                t.animation = nil
+            }
+        }
         .stageRegion(.window)
         .overlay {
             if splash != .done {
@@ -51,7 +66,9 @@ struct MainWindow: View {
             }
         }
         .task { await playSplash() }
-        .task { await session.staging?.run(session) }
+        #if LEYLINE_STAGING
+            .task { await session.staging?.run(session) }
+        #endif
         .toolbar {
             // The toolbar's glass is a capsule, a shape nothing else in the window has, so it
             // is hidden and each item draws the pop-ups' ground instead. The items are hidden
@@ -72,6 +89,8 @@ struct MainWindow: View {
                 .sharedBackgroundVisibility(.hidden)
             ToolbarSpacer(.fixed, placement: .primaryAction)
             ToolbarItem(placement: .primaryAction) { InspectorToggle().shown(chromeShown) }
+                .sharedBackgroundVisibility(.hidden)
+            ToolbarItem(placement: .primaryAction) { AssistantToggle().shown(chromeShown) }
                 .sharedBackgroundVisibility(.hidden)
         }
         // `Leyline` is drawn by `BrandTitle`, so the window's own title is removed from the
@@ -180,8 +199,13 @@ struct RadioBody: View {
                 canvas
                 if session.inspectorShown {
                     Rectangle().fill(Theme.hairline).frame(width: 1)
+                    // Offered the height left above the transport bar and no more: an inspector
+                    // taller than that (a short window, a tall identity) is cut at its foot
+                    // rather than pushing the bar out of the window.
                     InspectorView()
-                        .frame(width: Theme.Layout.inspectorWidth)
+                        .frame(width: Theme.Layout.inspectorWidth, alignment: .top)
+                        .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
+                        .clipped()
                         .stageRegion(.inspector)
                 }
             }
@@ -202,6 +226,7 @@ struct RadioBody: View {
                     VStack(spacing: 0) {
                         SpectrumView()
                             .frame(height: Theme.Layout.spectrumHeight)
+                            .stageRegion(.spectrum)
                         // The seam between them is drawn by the waterfall, over its Metal view:
                         // a line laid here sat under the hosted view's rounded-out frame.
                         WaterfallView()
@@ -282,6 +307,7 @@ struct PlaceSwitch: View {
                 .buttonStyle(.plain)
                 .help(Text(verbatim: "\(p.title) (⌘\(p.shortcut))"))
                 .accessibilityAddTraits(shown ? .isSelected : [])
+                .accessibilityIdentifier("toolbar.place.\(p.rawValue)")
             }
         }
         .padding(inset)
@@ -339,7 +365,7 @@ struct EngineUpdateStrip: View {
             Button {
                 session.dismissEngineUpdate()
             } label: {
-                Image(systemName: "xmark").font(.system(size: 9))
+                Image(systemName: "xmark").font(Theme.Font.closeGlyph)
             }
             .buttonStyle(.plain).foregroundStyle(Theme.inkFaint)
         }
@@ -369,7 +395,7 @@ struct NoticeStrip: View {
         HStack {
             Text(text).font(Theme.Font.label).foregroundStyle(colour).lineLimit(2)
             Spacer()
-            Button(action: dismiss) { Image(systemName: "xmark").font(.system(size: 9)) }
+            Button(action: dismiss) { Image(systemName: "xmark").font(Theme.Font.closeGlyph) }
                 .buttonStyle(.plain).foregroundStyle(Theme.inkFaint)
         }
         .padding(.horizontal, 12).padding(.vertical, 6)

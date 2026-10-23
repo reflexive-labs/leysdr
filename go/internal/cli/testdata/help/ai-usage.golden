@@ -1,0 +1,34 @@
+usage prints what the calls made with your keys used, in the provider's
+own units: requests, input and output tokens, cache reads and writes, and
+minutes of audio. One row is one provider, model and feature for one day
+(or month with --by month), summed over the jobs and conversations that
+made the calls, with a total row at the end.
+
+Days are UTC, the days the providers' consoles count, so a row can be
+compared with the provider's own usage page. The numbers are what the
+workers reported to the daemon after each response; ley prints no prices,
+and the provider's bill is the authority on what was spent. A column that
+is empty in every row is left out.
+
+--since takes a duration (30d, 12h) and counts whole UTC days, so the day it
+falls in is included; --since 0 is the whole ledger. --json prints the
+GetUsageResponse: the daemon's lines, one per scope and day, unsummed.
+
+Usage:
+  ley ai usage [--since 30d] [--by day|month] [flags]
+
+Examples:
+  ley ai usage                         # the last 30 days, by day
+  ley ai usage --since 1y --by month   # a year, by month
+  ley ai usage --json | jq '[.lines[].requests | tonumber] | add'
+
+Flags:
+      --by string      one row per day or per month: day or month (default "day")
+  -h, --help           help for usage
+      --since string   how far back to count, e.g. 7d, 12h, 1y; 0 is the whole ledger (default "30d")
+
+Global Flags:
+      --ascii           draw with ASCII only (no box, bar or tree glyphs)
+      --color string    colour output: auto, always or never (default "auto")
+      --json            machine output: proto3 JSON (NDJSON for streams)
+      --socket string   daemon socket path (default: user daemon UDS, $LEYLINE_SOCKET)

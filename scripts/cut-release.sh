@@ -194,13 +194,16 @@ preflight_tools() {
 # preflight_credentials: the signing identity, the notary profile, notarytool and stapler, GitHub
 # access to the repository, and the Sparkle key when Sparkle's tools are already resolved.
 preflight_credentials() {
-  local team bin want got found
+  local team bin want got found identities
   [ -n "${CODESIGN_IDENTITY:-}" ] && [ -n "${NOTARY_PROFILE:-}" ] \
     || die "CODESIGN_IDENTITY and NOTARY_PROFILE are not set. Run it as: make release"
-  if ! security find-identity -v -p codesigning 2>/dev/null | grep -qF "\"$CODESIGN_IDENTITY\""; then
+  # The listing is read whole and matched from the variable: `security | grep -q` under pipefail
+  # fails whenever grep exits on its match before security has written its last line (SIGPIPE).
+  identities=$(security find-identity -v -p codesigning 2>/dev/null || true)
+  if ! grep -qF "\"$CODESIGN_IDENTITY\"" <<<"$identities"; then
     # The usual cause is a name that differs by punctuation from the certificate's, so list what
     # the keychain does hold before suggesting a re-import.
-    found=$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/^ *[0-9]*) [0-9A-F]* "\(Developer ID Application:.*\)"$/  \1/p')
+    found=$(sed -n 's/^ *[0-9]*) [0-9A-F]* "\(Developer ID Application:.*\)"$/  \1/p' <<<"$identities")
     if [ -n "$found" ]; then
       die "the keychain has no signing identity named \"$CODESIGN_IDENTITY\". It has:
 $found

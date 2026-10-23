@@ -1,0 +1,5 @@
+{"tool": "list_presets", "args": {}, "sleep_ms": 6500}
+{"text": "The radio is on 146.520 MHz, the 2 m national simplex calling frequency, in NFM with a 12.5 kHz channel. The squelch is off, so you hear the noise between overs. Calling carries PL 100.0 on its overs; the club repeater on 146.940 MHz and the evening net on 147.180 MHz are inside the same capture, so either is one click away without moving the radio.", "sleep_ms": 300, "usage": {"input_tokens": 1800, "output_tokens": 120}}
+{"text": "Still on 146.520 MHz.", "usage": {"input_tokens": 2000, "output_tokens": 10}}
+{"text": "This answer is stopped before it comes.", "sleep_ms": 20000}
+{"text": "Here is the next one.", "usage": {"input_tokens": 2100, "output_tokens": 8}}

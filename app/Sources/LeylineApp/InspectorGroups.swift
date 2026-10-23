@@ -30,6 +30,10 @@ import SwiftUI
 struct RecentLog: View {
     @Environment(AppSession.self) private var session
 
+    /// The rows the log asks for at least while the panel has the room; with less (a tall
+    /// identity: a change note, the kept-channel line and the bookmark's edits under the name),
+    /// it gives rows up down to one rather than push the panel, and the transport bar under it,
+    /// past the window's bottom.
     static let minRows = 5
     /// The height above and below the rows: the padding and the section header, rounded up so
     /// the count errs toward one row fewer rather than a clipped one.
@@ -44,10 +48,11 @@ struct RecentLog: View {
             let fit = Int(
                 (geo.size.height - Self.chromeHeight - Self.switchHeight)
                     / Theme.Layout.logRowHeight)
-            content(rows: max(Self.minRows, fit))
+            content(rows: max(1, fit))
         }
         .frame(
-            minHeight: Self.chromeHeight + Self.switchHeight + CGFloat(Self.minRows)
+            minHeight: Self.chromeHeight + Self.switchHeight + Theme.Layout.logRowHeight,
+            idealHeight: Self.chromeHeight + Self.switchHeight + CGFloat(Self.minRows)
                 * Theme.Layout.logRowHeight
         )
         .clipped()
@@ -64,50 +69,63 @@ struct RecentLog: View {
             HStack(alignment: .firstTextBaseline) {
                 SectionHeader(text: "Transmissions")
                 Spacer(minLength: 8)
-                Text(dayWords(log)).font(Theme.Font.columnHead).foregroundStyle(Theme.inkFaint)
-                    .lineLimit(1)
+                // Blank until the first over, so a check masks it; laid out at a weekday's
+                // width either way, so the mask covers whichever word a run shows.
+                let day = dayWords(log)
+                Text(day.isEmpty ? " " : day).font(Theme.Font.columnHead)
+                    .foregroundStyle(Theme.inkFaint).lineLimit(1)
+                    .frame(minWidth: Theme.Layout.logDayWidth, alignment: .trailing)
+                    .stageRegion(.logDay)
             }
             .padding(.bottom, 6)
             RecordSwitch().padding(.bottom, 8)
-            if let open {
-                LogRow(
-                    time: Text("now").foregroundStyle(Theme.accent),
-                    length: Reading.seconds(session.timeOnAirSeconds ?? .nan),
-                    lengthInk: Theme.inkSecondary,
-                    signal: session.channelReading?.signalWord?.word ?? Reading.absent,
-                    tone: open.tone, open: true, trailing: writing ? .writing : .empty,
-                    startMarker: open.startMarker)
-            }
-            // Keyed by capture and start sample, so a new transmission adds a row instead of
-            // changing what every row's position means.
-            ForEach(closed, id: \.start) { t in
-                let uri = session.keptPartURI(t)
-                let ink = uri == nil ? Theme.inkTertiary : Theme.ink
-                LogRow(
-                    time: Text(timeWords(t)).foregroundStyle(ink),
-                    length: Reading.seconds(t.seconds), lengthInk: ink,
-                    signal: SignalWord(overNoiseDB: t.peakSNRDB)?.word ?? Reading.absent,
-                    tone: t.tone, open: false,
-                    trailing: uri.map { LogRow.Trailing.part(part($0, row: t.start)) } ?? .empty,
-                    startMarker: t.startMarker, endMarker: t.endMarker
-                )
-                .contextMenu {
-                    if let uri {
-                        Button("Show in Finder") {
-                            Task { await session.revealInFinder(uri: uri) }
+            // The rows change whenever an over starts or ends, so a check masks them.
+            VStack(alignment: .leading, spacing: 0) {
+                if let open {
+                    LogRow(
+                        time: Text("now").foregroundStyle(Theme.accent),
+                        length: Reading.seconds(session.timeOnAirSeconds ?? .nan),
+                        lengthInk: Theme.inkSecondary,
+                        signal: session.channelReading?.signalWord?.word ?? Reading.absent,
+                        tone: open.tone, open: true, trailing: writing ? .writing : .empty,
+                        startMarker: open.startMarker)
+                }
+                // Keyed by capture and start sample, so a new transmission adds a row instead of
+                // changing what every row's position means.
+                ForEach(closed, id: \.start) { t in
+                    let uri = session.keptPartURI(t)
+                    let ink = uri == nil ? Theme.inkTertiary : Theme.ink
+                    LogRow(
+                        time: Text(timeWords(t)).foregroundStyle(ink),
+                        length: Reading.seconds(t.seconds), lengthInk: ink,
+                        signal: SignalWord(overNoiseDB: t.peakSNRDB)?.word ?? Reading.absent,
+                        tone: t.tone, open: false,
+                        trailing: uri.map { LogRow.Trailing.part(part($0, row: t.start)) }
+                            ?? .empty,
+                        startMarker: t.startMarker, endMarker: t.endMarker
+                    )
+                    .contextMenu {
+                        if let uri {
+                            Button("Show in Finder") {
+                                Task { await session.revealInFinder(uri: uri) }
+                            }
                         }
                     }
                 }
+                if open == nil, closed.isEmpty {
+                    Text(
+                        log == nil
+                            ? "No channel."
+                            : "Nothing yet. A transmission is logged when the squelch closes behind it."
+                    )
+                    .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+                    .padding(.horizontal, 6).padding(.top, 4)
+                }
             }
-            if open == nil, closed.isEmpty {
-                Text(
-                    log == nil
-                        ? "No channel."
-                        : "Nothing yet. A transmission is logged when the squelch closes behind it."
-                )
-                .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
-                .padding(.horizontal, 6).padding(.top, 4)
-            }
+            // The rows take the log's whole height, so the region a check masks is the same
+            // whether a run has no row yet or several.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .stageRegion(.transmissions)
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
     }
@@ -177,6 +195,7 @@ struct RecordSwitch: View {
                 // switch.
                 .tint(Theme.accentRec)
                 .disabled(session.tunedHz == nil)
+                .accessibilityIdentifier("inspector.record")
                 .help(
                     job == nil
                         ? "Record this channel while its squelch is open (⌘R). The daemon keeps recording after the window closes."
@@ -287,6 +306,7 @@ struct LogRow: View {
             }
             .buttonStyle(.plain)
             .help(part.playing ? "Stop" : "Play")
+            .accessibilityIdentifier("inspector.log.play")
         }
     }
 
@@ -348,6 +368,7 @@ struct DisclosureRow<Content: View>: View {
                 DisclosureLabel(title: title, hint: hint, open: open)
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("inspector.\(ViewIdentifier.slug(title)).toggle")
             if open {
                 content.padding(.horizontal, 16).padding(.bottom, 10)
             }
@@ -364,7 +385,7 @@ struct DisclosureLabel: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold))
+            Image(systemName: "chevron.right").font(Theme.Font.glyph)
                 .foregroundStyle(Theme.inkFaintest)
                 .rotationEffect(.degrees(open ? 90 : 0))
             Text(title).font(Theme.Font.label).foregroundStyle(Theme.inkTertiary)

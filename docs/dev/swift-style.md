@@ -3,8 +3,8 @@
 How Leyline's Swift is written: what a file looks like, what things are called, where state
 lives, and which mistakes this codebase has already made. It covers the engine
 package, the app package and the tests around both. Read it before writing Swift anywhere in the
-repository, and read section 12 first if you are working on Linux, because most
-of the Swift you will touch there is never compiled before you hand the work over.
+repository, and read section 12 first: it says how a change to the app is checked on the Mac,
+and what the Linux container cannot check.
 
 Four things are not here because they have their own page. Prose — comments and log lines
 included — follows [`../writing-guide.md`](../writing-guide.md). The engine's threads, hot path
@@ -34,9 +34,10 @@ judgement, and says "prefer".
    both happen; each wait names the seconds it gives up after
    (`AppSession.request(_:)` and `AppSession.confirmed(within:_:)`).
 6. **Colours, fonts and fixed dimensions come from `Theme`.** No `Color(red:)`, no
-   `.font(.system(size:))` on text (an SF Symbol's glyph size is the one inline size allowed),
-   no system or white colours: the window owns a dark ground, and a design change is meant to
-   be one file's worth of edits.
+   `.font(.system(size:))`, an SF Symbol's included (its size is a `Theme.Font` glyph token), no
+   system or white colours: the window owns a dark ground, and a design change is meant to be
+   one file's worth of edits. `scripts/check-theme.sh`, run by `make app-lint`, enforces the
+   colours and fonts.
 7. **Only `Sendable` values cross into `MainActor.assumeIsolated`.** An `NSEvent` is not
    `Sendable`; the scalars it yields are, and are extracted first
    (the key monitor in `TransportBarView.watchClicks()`).
@@ -335,27 +336,59 @@ testing, goes against that same harness (`app.md`, "Testing").
 
 ## 12. Working as an agent on this repository
 
-**Linux builds and tests the façade, and nothing else of the app.**
+**On the Mac, a change to the app is checked by running it.** `make app` builds both targets,
+and Claude Code builds the app again after each edit under `app/Sources`
+(`scripts/claude-app-hook.sh`, with `scripts/check-theme.sh`). Before handing over, run
+`make app-check`: each scene in `app/checks/scenes.yaml` runs a staged copy of the app against
+its own `leylined --no-hardware` and compares its pictures, accessibility trees and view state
+with local goldens (`app.md`, "Staged runs"). `.claude/skills/app-check/SKILL.md` says how to
+read its lines and look at a picture.
+
+**Test and check daemons keep keys in a file.** Every daemon a test, a check scene or an eval
+starts runs with `--secrets file`, so its AI keys sit under its own data directory, and
+`go/internal/daemonrun` refuses one that says it keeps them in the keychain, where a made-up key
+would replace the person's own.
+
+**Check in tiers: smoke, then targeted, then full** (`../plans/mac-loop.md`, ML-11):
+
+| tier | command | runs |
+|---|---|---|
+| smoke | `make app-check-smoke` | the scenes marked `smoke: true`: radio-2m, identifiers, goto-bookmark (about 35 s) |
+| targeted | `make app-check-affected` (`BASE=<ref>`) | the scenes whose hand-written `covers:` globs match a file changed since the merge base with main, uncommitted ones included, and the commit before when that base is HEAD and nothing has changed since; a shared file (`Theme.swift`, `AppSession.swift`, `Staging.swift`, the control code, `app/Package.swift`) brings in the smoke scenes plus the scenes that list it. A changed file no scene covers prints `uncovered: <file>` and fails the run, and a selection of no scene is an error. `make app-check ONLY=a,b` still vets one feature by name |
+| full | `make app-check` | everything (about 12 minutes on 2026-10-22); with `JOBS=N` (1 until runs at 3 show no flakes) scenes run side by side, except those marked `serial: true` (vhf-wide, the sweeps) |
+
+Each run is under `caffeinate -i`, every scene prints its time, and the summary line gives the
+total and the three slowest. A test fails when a file under `app/Sources`, the façade's
+included, is covered by no scene at all, so a new file comes with a `covers:` glob on the scene
+that checks it.
+
+**The batch loop.** Implementers work in parallel worktrees: they build and run `make app-test`
+and the lints, never a full check, because one run at a time owns the staged app and its
+Accessibility grant belongs to the main checkout's copy. The coordinator merges the batch. One
+verify agent then runs the full check, sorts every diff into a regression, an intended change
+(re-recorded, and named) or a new finding, and fixes or files each. It loops on the smoke and
+targeted tiers until a full run is clean, and a review of the batch follows.
+
+**Add or extend a check scene for each behaviour the change touches**: a `state` expectation for
+what the window holds, an `ax` tree for its structure, a snapshot for its layout. Read the
+pictures for section 7's layout rules too (offset against frame alignment, overlay before
+offset, what a hosted view covers), because a diff shows that pixels changed and not whether the
+layout is right. A golden is re-recorded only for a change that was intended, and the handover
+names each one and why.
+
+**State what no check covers.** Name the behaviours the change touches that no scene reaches,
+such as audio, a real radio, a masked region (the spectrum, the waterfall, the live readings) or
+an interaction with no key or identifier to drive it, in the handoff message and commit body.
+
+**The Linux container builds and tests the façade, and nothing else of the app.** There
 `cd app && swift build` builds `LeylineClient` only, because `app/Package.swift` declares
-`LeylineApp` inside `#if os(macOS)`. `make app-test` runs the façade's cases in well under a
-second; `make app-e2e` runs on Linux too, given `LEYLINED_BIN` and fixtures (`setup.md`).
-
-**Only the Mac catches the rest.** Every file in `app/Sources/LeylineApp` — the SwiftUI, AppKit,
-MetalKit, CoreAudio and `os` imports — is untouched by a green Linux run. So are the engine's
-Accelerate kernels, the engine's actor-isolation mistakes while it stays in Swift 5 mode, Xcode's
-stricter type checker, shader compilation and texture formats, and every layout and interaction
-fact in section 7.
-
-**Before handing over, read the diff by eye for the five things the compiler would have caught.**
-Is every `static let` that a value type or an off-actor closure reads marked `nonisolated`? After
-extracting a helper, does every identifier still resolve — a body moved into a new function kept
-a `press.key` that no longer existed? Does every `guard let` binding get used? Is every
-`UInt`/`Int` conversion of a value that can be negative or NaN guarded? Does anything crossing an
-AppKit closure carry only `Sendable` values? Then check the layout rules: offset against frame
-alignment, overlay before offset, and what a hosted view covers.
-
-**State what was not compiled.** Name the files and unverified behaviours, including layout,
-gestures and shaders, in the handoff message and commit body.
+`LeylineApp` inside `#if os(macOS)`; `make app-test` and `make app-e2e` run too (`setup.md`).
+Every file in `app/Sources/LeylineApp`, the engine's Accelerate kernels, shader compilation and
+every layout fact are untouched by a green container run. Read the diff there for what the
+compiler would have caught: `nonisolated` on a `static let` read off the main actor, identifiers
+that still resolve after a body moves into a helper, every `guard let` binding used, guarded
+`UInt`/`Int` conversions, and only `Sendable` values crossing an AppKit closure. Then name the
+files and behaviours changed, for a `make app-check` run on the Mac.
 
 **Small diffs, and only the change that was asked for.** No speculative abstraction: a layer
 added for a use that does not exist yet costs the next reader time for no benefit. No reformatting

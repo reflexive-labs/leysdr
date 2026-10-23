@@ -13,9 +13,12 @@ import SwiftUI
 
 struct TransportBarView: View {
     @Environment(AppSession.self) private var session
+    /// The bar's width. Near the window's minimum the blocks sit closer, so the squelch's header
+    /// and its short caption (`muted · 11 dB`) fit beside each other uncut.
+    @State private var width: CGFloat = 0
 
     var body: some View {
-        HStack(alignment: .top, spacing: 20) {
+        HStack(alignment: .top, spacing: width > 0 && width < 960 ? 12 : 20) {
             PlayButton()
                 .frame(maxHeight: .infinity)
             FrequencyField()
@@ -32,6 +35,12 @@ struct TransportBarView: View {
         .padding(.top, 12)
         .padding(.bottom, 10)
         .background(Theme.chrome)
+        .onGeometryChange(for: CGFloat.self) {
+            $0.size.width
+        } action: {
+            width = $0
+        }
+        .identifiedGroup("transport")
     }
 }
 
@@ -61,12 +70,13 @@ struct PlayButton: View {
             ZStack {
                 Circle().fill(Theme.accent).frame(width: 44, height: 44)
                 Image(systemName: session.isMuted ? "speaker.slash" : "speaker.wave.2")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(Theme.Font.transportGlyph)
                     .foregroundStyle(Theme.ground)
             }
         }
         .buttonStyle(.plain)
-        .disabled(session.channel == nil)
+        .disabled(session.channel == nil || session.audioElsewhere != nil)
+        .accessibilityIdentifier("transport.mute")
         .help(
             session.isMuted
                 ? "Unmute: the channel's audio is attached again"
@@ -74,20 +84,24 @@ struct PlayButton: View {
     }
 }
 
-/// `146.5200` in ink, `000` dimmed, `MHz`. Entry works the way a radio's keypad does, by
-/// overwriting: click or ⌘L puts the caret on the first digit, each digit typed replaces the one
-/// under the caret and moves on, `.` jumps to the kHz digits (dropping whatever MHz digits were
-/// not retyped), Backspace steps back, Enter tunes, Escape or a click anywhere else puts the
-/// daemon's number back. The fourth fractional digit is the hundreds of hertz (GMRS sits on
-/// `462.6125`) and is always present; below that the digits are shown dimmed and never typed. The
-/// stepper against the right edge does what the Tune menu's arrows do: the band's step, and the
-/// fine step with ⇧.
+/// `146.9401` and `MHz`: four fractional digits, cut from the hertz and never rounded, so a radio
+/// on 146.940186 MHz reads `146.9401`; the tooltip and the inspector give the exact hertz. Entry
+/// works the way a radio's keypad does, by overwriting: click or ⌘L puts the caret on the first
+/// digit, each digit typed replaces the one under the caret and moves on, `.` jumps to the kHz
+/// digits (dropping whatever MHz digits were not retyped), Backspace steps back, Enter tunes,
+/// Escape or a click anywhere else puts the daemon's number back. The fourth fractional digit is
+/// the hundreds of hertz (GMRS sits on `462.6125`) and is always present; two more may be typed
+/// past it, down to the hertz, and tune exactly. The stepper against the right edge does what the
+/// Tune menu's arrows do: the band's step, and the fine step with ⇧.
 struct FrequencyField: View {
     @Environment(AppSession.self) private var session
     @State private var mhz: [Character] = []
     @State private var khz: [Character] = ["0", "0", "0", "0"]
     @State private var caret = 0
     @State private var inKhz = false
+    /// The frequency the digits were last loaded from: the radio's when the edit began, which
+    /// Return with nothing typed keeps.
+    @State private var loadedHz: UInt64?
     @State private var monitor: Any?
     /// The window the field was focused in, so the monitor below can tell its own keys from the
     /// device popover's. An identity is all that is compared, and it crosses actors where an
@@ -99,17 +113,17 @@ struct FrequencyField: View {
         let hz = session.displayHz
         Block(header: "Tuning") {
             HStack(alignment: .firstTextBaseline, spacing: 0) {
-                digits(mhz, active: focused && !inKhz, dim: hz == nil && !focused)
-                Text(".").font(Theme.Font.frequency).foregroundStyle(
-                    hz == nil && !focused ? Theme.inkDisabled : Theme.ink)
-                digits(khz, active: focused && inKhz, dim: hz == nil && !focused)
-                // Digits under the hundreds of hertz only when they are non-zero: a drag can
-                // land on any hertz, keypad entry never does.
-                if let hz, hz % 100 != 0, !focused {
-                    Text(Frequency.fieldParts(hz).minor)
-                        .font(Theme.Font.frequency).tracking(Theme.frequencyTracking)
-                        .foregroundStyle(Theme.inkDisabled)
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    digits(mhz, active: focused && !inKhz, dim: hz == nil && !focused)
+                    Text(".").font(Theme.Font.frequency).foregroundStyle(
+                        hz == nil && !focused ? Theme.inkDisabled : Theme.ink)
+                    digits(khz, active: focused && inKhz, dim: hz == nil && !focused)
                 }
+                // One element with the digits as drawn, which `state` reads as `transport.tuning`.
+                // A plain group with a value reads as AXUnknown with no value, so the element
+                // is represented as the text it draws; the field's header says what it is.
+                .accessibilityRepresentation { Text("\(String(mhz)).\(String(khz))") }
+                .accessibilityIdentifier("tuning.text")
                 Rectangle().fill(Theme.accent).frame(width: 1.5, height: 26).padding(.horizontal, 4)
                 Text("MHz").font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
             }
@@ -126,12 +140,14 @@ struct FrequencyField: View {
             .focusEffectDisabled()
             .focused($focused)
             .onKeyPress { handle($0) }
+            .help(hz.map(FrequencyEntry.exactWords) ?? "")
             // Above the focusable field, not inside it, so a click on an arrow never takes the
             // field's focus. During an edit the field's own monitor ends the edit on the
             // mouse-down, so the arrow steps the daemon's number, never the digits being typed.
             .overlay(alignment: .trailing) {
                 StepArrows(enabled: session.channel != nil).padding(.trailing, 9)
             }
+            .identifiedGroup("tuning.field")
         }
         .onAppear { load(hz) }
         .onChange(of: hz) { _, new in
@@ -170,13 +186,14 @@ struct FrequencyField: View {
     }
 
     private func load(_ hz: UInt64?) {
+        loadedHz = hz
         guard let hz else {
             mhz = []
             khz = ["0", "0", "0", "0"]
             return
         }
         mhz = Array(String(hz / 1_000_000))
-        khz = Array(Frequency.fieldParts(hz).major.split(separator: ".").last ?? "000")
+        khz = Array(FrequencyEntry.fieldText(hz).split(separator: ".").last ?? "0000")
     }
 
     private func begin() {
@@ -195,21 +212,24 @@ struct FrequencyField: View {
         load(session.displayHz)
     }
 
-    /// Nothing below 500 kHz (AM broadcast starts at 530) or above 6 GHz is a frequency a radio
-    /// here can be tuned to, and the keypad makes both easy to type: a `.` into an empty MHz part
-    /// followed by three digits reads as 0.500. A refused number keeps the field focused, so it
-    /// can be finished rather than tuning the radio to an unintended frequency.
+    /// The digits as typed, to the hertz, or with no edit nothing at all, so the radio stays on
+    /// the exact hertz the four decimals cut (`FrequencyEntry.commit`). A number outside
+    /// `FrequencyEntry.tunableHz` keeps the field focused, so it can be finished rather than
+    /// tuning the radio to an unintended frequency.
     private func commit() {
-        let whole = UInt64(String(mhz)) ?? 0
-        let thousandths = UInt64(String(khz.prefix(3))) ?? 0
-        let hundreds = khz.count > 3 ? UInt64(String(khz[3])) ?? 0 : 0
-        let hz = whole * 1_000_000 + thousandths * 1_000 + hundreds * 100
-        if hz < 500_000 || hz > 6_000_000_000 {
-            log("field", "refused \(String(mhz)).\(String(khz))")
+        let typed = "\(String(mhz)).\(String(khz))"
+        let decision = FrequencyEntry.commit(
+            whole: String(mhz), fraction: String(khz), loadedHz: loadedHz)
+        switch decision {
+        case .refused:
+            log("field", "refused \(typed)")
             return
+        case .keep:
+            log("tune", "kept \(loadedHz.map { "\($0) Hz" } ?? "no frequency"), \(typed) unchanged")
+        case .tune(let hz):
+            log("tune", "typed \(typed) -> \(hz) Hz")
+            session.tune(to: hz)
         }
-        log("tune", "typed \(String(mhz)).\(String(khz)) -> \(hz) Hz")
-        session.tune(to: hz)
         focused = false
     }
 
@@ -225,9 +245,16 @@ struct FrequencyField: View {
         return handleEditingKey(press.key, press.characters)
     }
 
+    /// The digits past the hundreds of hertz are typed ones only; a field shows four.
+    private static let shownFractionDigits = 4
+
     private func forwardDelete() {
         if inKhz {
-            if caret < khz.count { khz[caret] = "0" }
+            if caret >= Self.shownFractionDigits, caret < khz.count {
+                khz.remove(at: caret)
+            } else if caret < khz.count {
+                khz[caret] = "0"
+            }
         } else if caret < mhz.count, mhz.count > 1 {
             mhz.remove(at: caret)
         }
@@ -262,7 +289,11 @@ struct FrequencyField: View {
             if inKhz {
                 if caret > 0 {
                     caret -= 1
-                    khz[caret] = "0"
+                    if caret >= Self.shownFractionDigits {
+                        khz.remove(at: caret)
+                    } else {
+                        khz[caret] = "0"
+                    }
                 } else {
                     inKhz = false
                     caret = mhz.count
@@ -286,6 +317,9 @@ struct FrequencyField: View {
         if inKhz {
             if caret < khz.count {
                 khz[caret] = c
+                caret += 1
+            } else if khz.count < FrequencyEntry.maxFractionDigits {
+                khz.append(c)
                 caret += 1
             }
         } else if caret < mhz.count {
@@ -371,8 +405,10 @@ struct FrequencyField: View {
 }
 
 /// The two-arrow stepper on the tuning field: up and down by the band's step, the fine step
-/// with ⇧ held, exactly the Tune menu's arrows. `inkMuted` at rest as the pop-ups' carets are,
-/// `ink` under the pointer, `inkDisabled` with no channel to step.
+/// on a ⇧-click, exactly the Tune menu's arrows. An accessibility press always takes the
+/// normal step, and each arrow has a named action for the fine one ("Step up finely"), so a
+/// key held elsewhere never makes VoiceOver's press fine. `inkMuted` at rest as the pop-ups'
+/// carets are, `ink` under the pointer, `inkDisabled` with no channel to step.
 struct StepArrows: View {
     @Environment(AppSession.self) private var session
     let enabled: Bool
@@ -381,14 +417,28 @@ struct StepArrows: View {
         VStack(spacing: 3) {
             StepArrow(symbol: "chevron.up", enabled: enabled) { step(1) }
                 .help("Tune up by the band's step; ⇧ for the fine step")
+                .accessibilityIdentifier("tuning.up")
+                .accessibilityAction(named: "Step up finely") { session.step(1, fine: true) }
             StepArrow(symbol: "chevron.down", enabled: enabled) { step(-1) }
                 .help("Tune down by the band's step; ⇧ for the fine step")
+                .accessibilityIdentifier("tuning.down")
+                .accessibilityAction(named: "Step down finely") { session.step(-1, fine: true) }
         }
         .disabled(!enabled)
     }
 
+    /// Fine only when the click that pressed the arrow held ⇧: the event being handled is a
+    /// mouse button's, and recent. An accessibility press runs this with no such event, or
+    /// with a stale one, and the keyboard's state then says nothing about the press.
     private func step(_ direction: Int) {
-        session.step(direction, fine: NSEvent.modifierFlags.contains(.shift))
+        var fine = false
+        if let event = NSApp.currentEvent,
+            event.type == .leftMouseUp || event.type == .leftMouseDown,
+            ProcessInfo.processInfo.systemUptime - event.timestamp < 1
+        {
+            fine = event.modifierFlags.contains(.shift)
+        }
+        session.step(direction, fine: fine)
     }
 }
 
@@ -400,7 +450,7 @@ struct StepArrow: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 8, weight: .semibold))
+            Image(systemName: symbol).font(Theme.Font.glyph)
                 .foregroundStyle(
                     !enabled ? Theme.inkDisabled : hovering ? Theme.ink : Theme.inkMuted
                 )
@@ -432,13 +482,16 @@ struct PopupButton<T: Hashable>: View {
             }
         } label: {
             HStack(spacing: 8) {
+                // One line always: a value longer than the design's width (MURS's `11.25 kHz`)
+                // widens the button, and the squelch beside it gives the room up.
                 Text(label(pending ?? current)).font(Theme.Font.body).foregroundStyle(Theme.ink)
+                    .lineLimit(1).fixedSize()
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+                Image(systemName: "chevron.down").font(Theme.Font.glyph)
                     .foregroundStyle(Theme.inkMuted)
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
-            .frame(width: 106)
+            .frame(minWidth: 106)
             // A control's ground inside the chrome is the border token; the label is ink and
             // the caret inkMuted.
             .background(Theme.border, in: RoundedRectangle(cornerRadius: 6))
@@ -461,6 +514,7 @@ struct ModePopup: View {
                 current: session.channel?.mode ?? .nfm
             ) { session.setMode($0) }
             .disabled(session.channel == nil)
+            .accessibilityIdentifier("transport.mode")
         }
     }
 }
@@ -481,13 +535,15 @@ struct WidthPopup: View {
                 session.setBandwidth($0)
             }
             .disabled(session.channel == nil)
+            .accessibilityIdentifier("transport.width")
         }
     }
 }
 
 /// A track with a marked threshold: muted left of it, audible right of it, the level as a
 /// ramp-filled bar the height of the track, the marker draggable and written as it moves. The
-/// label text is the primary readout.
+/// label text is the primary readout. A narrow bar drops the three words under the track first,
+/// then shortens the caption (`SquelchCaption`); the track keeps its size and no word is cut.
 struct SquelchTrack: View {
     @Environment(AppSession.self) private var session
     @State private var dragDB: Double?
@@ -500,78 +556,114 @@ struct SquelchTrack: View {
         let open = session.meter?.squelchOpen ?? false
         let power = session.meter?.powerDbfs ?? .nan
         VStack(alignment: .leading, spacing: 7) {
-            HStack {
-                SectionHeader(text: "Squelch")
-                Spacer()
-                Text(headerWords(squelch: squelch, power: power, open: open))
-                    .font(Theme.Font.valueSmall).foregroundStyle(open ? Theme.good : Theme.inkMuted)
-            }
-            GeometryReader { geo in
-                let w = geo.size.width
-                let markerX = squelch.isNaN ? 0 : x(of: squelch, width: w)
-                let levelX = power.isNaN ? 0 : x(of: power, width: w)
-                let inset: CGFloat = 3
-                ZStack(alignment: .leading) {
-                    // The container: black at the left to the ramp's first stop, the near-black
-                    // teal, at the right.
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(
-                            LinearGradient(
-                                colors: [.black, Theme.levelStops[0]], startPoint: .leading,
-                                endPoint: .trailing))
-                    // The colour region, inset, as long as the level: dark teal at its left to
-                    // the ramp's yellow at its right whatever its length, as the design draws it.
-                    LinearGradient(
-                        colors: Array(Theme.levelStops[1...3]), startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .frame(width: max(0, levelX - inset))
-                    .clipShape(RoundedRectangle(cornerRadius: 2))
-                    .padding(.vertical, inset)
-                    .offset(x: inset)
-                    Rectangle().fill(Theme.ink).frame(width: 2.5)
-                        .overlay(alignment: .top) {
-                            Circle().fill(Theme.ink).frame(width: 7, height: 7).offset(y: -2)
-                        }
-                        .offset(x: markerX - 1.25)
+            // The words over the track and the level in it follow the noise between overs, so
+            // a staged run measures the block as the `squelch` region a check masks (below).
+            VStack(alignment: .leading, spacing: 7) {
+                HStack {
+                    SectionHeader(text: "Squelch")
+                    Spacer()
+                    ViewThatFits(in: .horizontal) {
+                        caption(squelch: squelch, power: power, open: open, short: false)
+                        caption(squelch: squelch, power: power, open: open, short: true)
+                    }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.border))
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { v in
-                            let d = db(atX: v.location.x, width: w)
-                            dragDB = d
-                            // Coalesced: one write a tick, the last value wins.
-                            session.setSquelch(d)
-                        }
-                        .onEnded { v in
-                            let d = db(atX: v.location.x, width: w)
-                            dragDB = nil
-                            session.setSquelch(d)
-                        })
+                GeometryReader { geo in
+                    let w = geo.size.width
+                    let markerX = squelch.isNaN ? 0 : x(of: squelch, width: w)
+                    let levelX = power.isNaN ? 0 : x(of: power, width: w)
+                    let inset: CGFloat = 3
+                    ZStack(alignment: .leading) {
+                        // The container: black at the left to the ramp's first stop, the near-black
+                        // teal, at the right.
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Theme.meterWell, Theme.levelStops[0]],
+                                    startPoint: .leading,
+                                    endPoint: .trailing))
+                        // The colour region, inset, as long as the level: dark teal at its left to
+                        // the ramp's yellow at its right whatever its length, as the design draws it.
+                        LinearGradient(
+                            colors: Array(Theme.levelStops[1...3]), startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: max(0, levelX - inset))
+                        .clipShape(RoundedRectangle(cornerRadius: 2))
+                        .padding(.vertical, inset)
+                        .offset(x: inset)
+                        Rectangle().fill(Theme.ink).frame(width: 2.5)
+                            .overlay(alignment: .top) {
+                                Circle().fill(Theme.ink).frame(width: 7, height: 7).offset(y: -2)
+                            }
+                            .offset(x: markerX - 1.25)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.border))
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { v in
+                                let d = db(atX: v.location.x, width: w)
+                                dragDB = d
+                                // Coalesced: one write a tick, the last value wins.
+                                session.setSquelch(d)
+                            }
+                            .onEnded { v in
+                                let d = db(atX: v.location.x, width: w)
+                                dragDB = nil
+                                session.setSquelch(d)
+                            })
+                }
+                .frame(height: 18)
+                .identifiedGroup("transport.squelch.track")
             }
-            .frame(height: 18)
-            HStack {
-                Text("muted below").font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
-                Spacer()
-                Text(squelch.isNaN ? "squelch off" : String(format: "marker %.0f dBFS", squelch))
-                    .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
-                Spacer()
-                Text("heard above").font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+            // The words show only while they and the long caption both fit, so they go before
+            // the caption shortens; without them the row keeps its height and the bar its own.
+            ViewThatFits(in: .horizontal) {
+                ZStack(alignment: .leading) {
+                    words(squelch: squelch)
+                    HStack {
+                        SectionHeader(text: "Squelch")
+                        Spacer()
+                        caption(squelch: squelch, power: power, open: open, short: false)
+                    }
+                    .hidden().accessibilityHidden(true)
+                }
+                ZStack {
+                    Text(" ").font(Theme.Font.footnote)
+                    Text(" ").font(Theme.Font.valueSmall)
+                }
+                .hidden().accessibilityHidden(true)
             }
         }
+        // The marker's level under the track follows the measured noise too while the squelch
+        // is automatic, so the region takes the words as well.
+        .stageRegion(.squelch)
         .disabled(session.channel == nil)
+        .identifiedGroup("transport.squelch")
     }
 
-    private func headerWords(squelch: Double, power: Double, open: Bool) -> String {
-        guard power.isFinite else { return "no signal measured yet" }
-        guard squelch.isFinite else { return "open · squelch off" }
-        let d = power - squelch
-        return open
-            ? String(format: "open · %.0f dB above the marker", d)
-            : String(format: "muted · %.0f dB below the marker", -d)
+    private func caption(squelch: Double, power: Double, open: Bool, short: Bool) -> some View {
+        Text(SquelchCaption.words(squelchDB: squelch, powerDB: power, open: open, short: short))
+            .font(Theme.Font.valueSmall).foregroundStyle(open ? Theme.good : Theme.inkMuted)
+            .lineLimit(1)
+            .accessibilityIdentifier("transport.squelch.caption" + (short ? ".short" : ""))
+    }
+
+    /// `muted below`, the marker's level, `heard above`, spread under the track.
+    private func words(squelch: Double) -> some View {
+        HStack {
+            Text("muted below").font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+                .accessibilityIdentifier("transport.squelch.words.below")
+            Spacer()
+            Text(squelch.isNaN ? "squelch off" : String(format: "marker %.0f dBFS", squelch))
+                .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
+                .accessibilityIdentifier("transport.squelch.words.marker")
+            Spacer()
+            Text("heard above").font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+                .accessibilityIdentifier("transport.squelch.words.above")
+        }
+        .lineLimit(1)
     }
 
     private func x(of db: Double, width: CGFloat) -> CGFloat {
@@ -602,6 +694,7 @@ struct VolumeControl: View {
                     .controlSize(.small)
                     .tint(Theme.inkTertiary)
                     .disabled(sink == nil)
+                    .accessibilityIdentifier(library ? "player.volume" : "transport.volume")
                 Text(caption(sink))
                     .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest).lineLimit(1)
                     .help(outputWords(sink))
@@ -614,6 +707,7 @@ struct VolumeControl: View {
         guard let name = session.listeningName else { return "not playing" }
         if session.playingURI != nil { return "playing a part · \(name) held" }
         if library, sink != nil { return "\(name) · live" }
+        if sink == nil, session.audioElsewhere != nil { return "playing \(name)" }
         return sink == nil ? "muted · \(name)" : "playing \(name)"
     }
 

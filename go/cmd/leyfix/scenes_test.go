@@ -23,9 +23,67 @@ import (
 // that takes the shots and cached there, never committed.
 const maxSceneBytes = 300_000_000
 
+// sceneSetNames is the scenes set in catalog order.
+var sceneSetNames = []string{
+	"scene_2m", "scene_net", "scene_scan", "scene_aprs", "scene_ais",
+	"scene_gmrs", "scene_vhf20", "scene_wx", "scene_wx_on",
+}
+
+// The check scenes' fixtures put their stations where the app's band table has them: GMRS
+// channels 1, 5 and 21; 2 m, MURS 1 and 4, marine 16 and NOAA WX2 in one capture; WX2 and WX1.
+// Every keyed station keys inside the loop, scene_gmrs's at least three times.
+func TestCheckSceneStations(t *testing.T) {
+	at := func(center float64, cs []sceneCarrier) []float64 {
+		var out []float64
+		for _, c := range cs {
+			out = append(out, center+c.offsetHz)
+		}
+		return out
+	}
+	cases := []struct {
+		name     string
+		carriers []sceneCarrier
+		center   float64
+		duration float64
+		minKeys  int
+		want     []float64
+	}{
+		{"scene_gmrs", sceneGMRSCarriers(), sceneGMRSCenterHz, sceneGMRSDurationS, 3, []float64{462_662_500, 462_562_500, 462_700_000}},
+		{"scene_vhf20", sceneVHF20Carriers(), sceneVHF20CenterHz, sceneVHF20DurationS, 1, []float64{146_520_000, 146_940_000, 151_820_000, 154_570_000, 156_800_000, 162_400_000}},
+		{"scene_wx_on", sceneWXCarriers(), sceneWXCenterHz, sceneWXDurationS, 0, []float64{162_400_000, 162_550_000}},
+	}
+	for _, c := range cases {
+		if got := at(c.center, c.carriers); !slices.Equal(got, c.want) {
+			t.Errorf("%s stations at %v, want %v", c.name, got, c.want)
+		}
+		f := findFixture(c.name)
+		if f.metadata["frequency_hz"] != hz(c.want[0]) {
+			t.Errorf("%s opens on %s, want its first station", c.name, f.metadata["frequency_hz"])
+		}
+		for i, s := range c.carriers {
+			if s.segs == nil {
+				continue
+			}
+			if len(s.segs) < c.minKeys || len(s.segs) == 0 {
+				t.Errorf("%s station %d keys %d times", c.name, i, len(s.segs))
+			}
+			for _, seg := range s.segs {
+				if seg.startS <= 0 || seg.endS >= c.duration {
+					t.Errorf("%s station %d over [%.2f, %.2f] is outside the %.0f s loop", c.name, i, seg.startS, seg.endS, c.duration)
+				}
+			}
+		}
+	}
+	// The silent weather capture has no station, and its channels read the floor.
+	wx := findFixture("scene_wx")
+	if len(wx.build(sceneWXRate)) != 0 || wx.centerHz != sceneWXCenterHz {
+		t.Error("scene_wx is not the floor alone on the weather channels")
+	}
+}
+
 // Every scene is in the scenes set, is cu8, fits its own rate and stays under the size bound.
 func TestSceneCatalog(t *testing.T) {
-	want := []string{"scene_2m", "scene_net", "scene_scan", "scene_aprs", "scene_ais"}
+	want := sceneSetNames
 	var got []string
 	for i := range catalog {
 		f := &catalog[i]
@@ -93,7 +151,7 @@ func TestSceneSetSelection(t *testing.T) {
 			t.Errorf("%s: file %s, sidecar %+v", line.Name, line.File, line.Sidecar)
 		}
 	}
-	if !slices.Equal(names, []string{"scene_2m", "scene_net", "scene_scan", "scene_aprs", "scene_ais"}) {
+	if !slices.Equal(names, sceneSetNames) {
 		t.Errorf("--set scenes printed %v", names)
 	}
 	if err := generate(genOptions{out: dir, rate: refRate, duration: 1, set: "nope", dryRun: true}, &out); err == nil {

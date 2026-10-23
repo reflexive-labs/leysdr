@@ -23,3 +23,18 @@ func cbreak(fd int) (restore func(), err error) {
 	}
 	return func() { _ = unix.IoctlSetTermios(fd, ioctlSetTermios, old) }, nil
 }
+
+// noEcho turns off echo on the terminal at fd and keeps line editing and signal keys, so a key
+// pasted at a prompt is read a line at a time and never shown. restore puts the terminal back.
+func noEcho(fd int) (restore func(), err error) {
+	old, err := unix.IoctlGetTermios(fd, ioctlGetTermios)
+	if err != nil {
+		return nil, err
+	}
+	quiet := *old
+	quiet.Lflag &^= unix.ECHO
+	if err := unix.IoctlSetTermios(fd, ioctlSetTermios, &quiet); err != nil {
+		return nil, err
+	}
+	return func() { _ = unix.IoctlSetTermios(fd, ioctlSetTermios, old) }, nil
+}

@@ -24,13 +24,15 @@ struct PlanPickerView: View {
         let highlight = session.pickerHighlight
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").font(.system(size: 10))
+                Image(systemName: "magnifyingglass").font(Theme.Font.fieldGlyph)
                     .foregroundStyle(Theme.inkFaint)
                 TextField("Filter \(band.name) channels", text: $session.pickerQuery)
                     .textFieldStyle(.plain).font(Theme.Font.label).foregroundStyle(Theme.ink)
+                    .frame(height: Theme.Layout.labelFieldHeight)
                     .focused($focused)
                     .onSubmit { session.pickHighlighted() }
                     .onExitCommand { session.pickerBand = nil }
+                    .accessibilityIdentifier("planpicker.filter")
             }
             .padding(.horizontal, 8).padding(.vertical, 5)
             .background(Theme.ground, in: RoundedRectangle(cornerRadius: 6))
@@ -50,6 +52,9 @@ struct PlanPickerView: View {
                                 .id(channel.id)
                                 .contentShape(Rectangle())
                                 .onTapGesture { session.pick(channel: channel, in: band) }
+                                .pressableGroup(
+                                    "planpicker.row.\(ViewIdentifier.slug(channel.id))"
+                                ) { session.pick(channel: channel, in: band) }
                         }
                     }
                 }
@@ -64,6 +69,7 @@ struct PlanPickerView: View {
         .padding(14)
         .frame(width: Theme.Layout.pickerWidth)
         .background(Theme.chrome)
+        .identifiedGroup("planpicker")
         .onAppear { focused = true }
     }
 }

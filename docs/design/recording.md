@@ -42,6 +42,16 @@ part length is two parts, contiguous on the sample timebase.
 This is the shape the semantic-tier doc gives a watch job's transcript, so when the durable job store builds the
 watch job its `record_clips` is this sink and this manifest, not a second format.
 
+**A live speech job's clips are a recording.** A decode job whose decoder reads overs (a
+`SEGMENTED` manifest, such as `speech`) on a live channel writes a gated audio recording of that
+channel under its own id, with the standard gate, so `ley://recordings/<job_id>` holds the audio
+and `ley://records/<job_id>` the words. Each record's `clip_uri` names the part that holds its
+over and `over` that over's index in the part's `squelch_opens`, which is what transcribing the
+recording later reproduces. The recorder reads the job's own channel, so the job allocates once.
+The recording follows the job's intent (invariant 8): kept with the job's `keep`, deleted when an
+unkept job ends, and the one recording that a daemon restart does not end, since a resumed kept
+job carries it on with new parts under the same id (docs/dev/engine-internals.md, "Decoders").
+
 **Time is never edited.** Silence is not removed from a file; the file is not written while the
 squelch is closed, and each part records where on the capture's timeline it starts. A recording
 that is played back therefore keeps the original timing, with the gaps between parts stated in the
@@ -158,7 +168,7 @@ parts, and what `ley recordings show` prints.
   "created_by": { "client_id": "cli_01J…", "kind": "cli", "label": "ley record" },
   "anchors": [ { "capture_id": "cap_01J…", "host_time_ns": 1789653700000000000, "sample_rate": 2400000, "drift_ppm": 0, "from_sample": 0 } ],
   "parts": [
-    { "part": 1, "file": "2026-09-17_14-03-22_146.520MHz_NFM_001.wav", "start_sample": 244800000, "end_sample": 290400000, "samples": 912000, "bytes": 1824044, "peak_dbfs": -6.2, "mean_dbfs": -18.4, "squelch_opens": 2, "clipped_ms": 400 }
+    { "part": 1, "file": "2026-09-17_14-03-22_146.520MHz_NFM_001.wav", "start_sample": 244800000, "end_sample": 290400000, "samples": 912000, "bytes": 1824044, "peak_dbfs": -6.2, "mean_dbfs": -18.4, "squelch_opens": 2, "squelch_open_ms": 11000, "clipped_ms": 400 }
   ],
   "coverage_gaps": [ { "from_sample": 300000000, "to_sample": 312000000, "reason": "out of capture" } ],
   "bytes": 1824044
@@ -168,7 +178,24 @@ parts, and what `ley recordings show` prints.
 `ended_by` is one of `duration`, `quiet`, `cancelled`, `channel ended`, `restart`, `store full`,
 `error`. `anchors` is a list for the same reason the kept-records sidecar's is: a recording that
 spans a device detach and reattach spans two captures, and each part's samples are dated by the
-anchor of its own capture.
+anchor of its own capture. `keep` is present, and `false`, only on the clips of a live speech job
+that was not kept: they are deleted when the job ends, and the boot after a daemon that died first
+deletes them too rather than closing them as a restart. A kept speech job's clips drop their own
+oldest parts past a tenth of the record store's cap, so the part numbers of a long-running job's
+recording need not start at 1.
+
+A part's `squelch_open_ms` is how long the squelch was open inside it: its sidecar's
+`squelch_opens` intervals summed at the capture rate and rounded once, written when the part
+closes. It is how much signal the part holds, which is what a transcription sends, so a client can
+say so without opening every sidecar. A continuous recording has no intervals and no
+`squelch_open_ms`, and a part written by an older daemon lacks it; a client sums that part's
+sidecar instead.
+
+A transmission that straddles a cut made by `part_ms` is listed in the first part's
+`squelch_opens` with its close at the cut, and is not listed in the next part, which begins with
+the squelch already open. So a decode of the stored recording ends that over's segment at the
+first part's end and does not send the rest, where the live cut continued through the cut. The
+next part's audio still holds it; only the listing does not.
 
 ### Nothing heard
 
@@ -435,7 +462,7 @@ runner closes the open part, records a coverage gap, marks the job `DEGRADED`, a
 a new part when the capture comes back to cover it. It does not hunt for another device; that
 rebinding belongs to the durable job store, and the control-plane doc's "the human is never blocked by a job" is
 honoured by degrading, not refusing. A device detach is the same story through the capture's
-`detached` state. A daemon restart does not resume a recording: the next daemon finds the job in
+`detached` state. A daemon restart does not resume a record job's recording: the next daemon finds the job in
 `kept-jobs.json`, repairs the last part's WAV header from the file length, closes the manifest
 with `ended_by = restart`, and marks the job `COMPLETED` with "ended by a daemon restart". A
 recording is a bounded artefact; whoever wanted a longer one starts another. The reserved
@@ -595,6 +622,8 @@ message Playback {
   ClientInfo created_by = 8;
   PlaybackState state = 9;      // PLAYBACK_PLAYING; unset on the final event is the tombstone
   bool paused = 10;             // position held (SetPlaybackPaused)
+  uint64 start_sample = 11;     // the range asked for, on the capture's timeline; 0 and 0 when
+  uint64 end_sample = 12;       //   the whole part plays
 }
 ```
 
@@ -617,6 +646,20 @@ moved and repeating it would only push real events out of the replay window. Any
 a playback, as any client may stop one; the event names who did. `ley play` pauses and resumes on
 space when stdin is a terminal, and its progress line reads `0:02 / 0:05, paused; space resumes`.
 `RecordingJobTests` holds the position across half a second paused and sees it move after resume.
+
+**A playback can be one stretch of a part.** `StartPlaybackRequest.start_sample` and `end_sample`
+name capture samples on the part's timeline, the same numbers as the sidecar's `start_sample`,
+`end_sample` and `squelch_opens`, so a client plays one over of a gated part rather than the whole
+exchange: the Library's speech lines and `ley play --over` play the segment the speech decoder
+heard, cut with the decoder's pre-roll and hang (half a second each by default) rather than the
+recording's gate pre-roll, so what plays is what was transcribed.
+0 for either end is the part's own. The daemon places the range in the WAV by the audio rate and
+the capture rate of the part's sidecar anchor (else the manifest's anchor, else the part's own
+span over its frames), seeks the reader to the first frame and stops at the last; a range that is
+empty, outside the part, or shorter than one frame of audio is `INVALID_ARGUMENT` with the samples
+the part holds. The playback carries the range, and `samples` and `position` count its frames, so a
+client's progress line reads the same for a range as for a part. `RecordingJobTests` plays a
+quarter of a part and sees every frame of the range played before the tombstone.
 
 **A playback belongs to the client that started it**, like a non-persistent channel: it stops when
 that client goes, which is what makes Ctrl-C in `ley play` stop the sound. There is no `persistent`
@@ -656,8 +699,9 @@ then passes the local file to the configured player.
   no samples over the socket either: the daemon opens the file itself and the client sees a
   position.
 - **Seeking and looping a playback.** `position` is reported and not writable; a person who wants
-  to hear a passage again plays the part again. A seek is one additive request field when somebody
-  asks. Pausing exists ("Playing a recording back").
+  to hear a passage again plays it again, the whole part or a range of it. A seek within a playing
+  one is one additive request when somebody asks. Pausing and ranges exist ("Playing a recording
+  back").
 - **Opus or any compressed audio.** Tied to the remote-access milestone, as the data-planes doc
   says, and measurement (2026-09-18) shows disk space is not a reason for it. On real
   captures, lossless compression buys 25% on NFM transmissions (75% of PCM) and 39% on

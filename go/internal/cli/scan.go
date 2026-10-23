@@ -404,6 +404,19 @@ func (p *scanProgress) clear() {
 // printScan renders the table and the summary. The table is stdout (it is the answer); the
 // summary sentence and the next command are stderr.
 func printScan(app *App, scan *leylinev1.Scan, o scanOptions, els []*leylinev1.GainElement) {
+	rows := scanRows(scan, o)
+	if len(rows) == 0 {
+		printEmptyScan(app, scan, o, els)
+		return
+	}
+	printScanTable(app, scan, o, rows)
+	fmt.Fprintf(app.Stderr, "%s%s%s\n", words.Count(len(rows), "signal"), floorPhrase(scan), gainPhrase(scan, els))
+	printScanNotes(app, scan, o, rows)
+}
+
+// scanRows is the detections the table shows: those at --min-snr or above, in frequency order
+// (or strongest first with --sort snr).
+func scanRows(scan *leylinev1.Scan, o scanOptions) []*leylinev1.Detection {
 	rows := make([]*leylinev1.Detection, 0, len(scan.Detections))
 	for _, d := range scan.Detections {
 		if o.minSNR > 0 && d.SnrDb < o.minSNR {
@@ -417,21 +430,38 @@ func printScan(app *App, scan *leylinev1.Scan, o scanOptions, els []*leylinev1.G
 		}
 		return rows[i].CenterHz < rows[j].CenterHz
 	})
+	return rows
+}
+
+// printEmptyScan says why a sweep has no rows to show and what to try next, on stderr.
+func printEmptyScan(app *App, scan *leylinev1.Scan, o scanOptions, els []*leylinev1.GainElement) {
+	fmt.Fprintln(app.Stderr, emptyScanLine(scan, o, els))
+	emptyScanHints(app, scan, o)
+}
+
+// emptyScanLine is why a sweep has no rows. Rows hidden by --min-snr get a different sentence
+// from an empty sweep, because the remedy differs: a longer dwell will not bring back a row
+// --min-snr filtered out.
+func emptyScanLine(scan *leylinev1.Scan, o scanOptions, els []*leylinev1.GainElement) string {
+	if hidden := len(scan.Detections); hidden > 0 {
+		return fmt.Sprintf("%s below %.0f dB, so nothing to show%s", words.Count(hidden, "signal"), o.minSNR, floorPhrase(scan))
+	}
+	return "nothing stood above the noise floor" + floorPhrase(scan) + gainPhrase(scan, els)
+}
+
+// emptyScanHints is what to try after an empty sweep, and the coverage when it fell short.
+func emptyScanHints(app *App, scan *leylinev1.Scan, o scanOptions) {
 	st := app.ErrStyle
-	if len(rows) == 0 {
-		// Rows hidden by --min-snr get a different message from an empty sweep, because the
-		// remedy differs: a longer dwell will not bring back a row --min-snr filtered out.
-		if hidden := len(scan.Detections); hidden > 0 {
-			fmt.Fprintf(app.Stderr, "%s below %.0f dB, so nothing to show%s\n",
-				words.Count(hidden, "signal"), o.minSNR, floorPhrase(scan))
-			fmt.Fprintf(app.Stderr, "drop the filter to see them: %s\n", st.Cmd("ley scan "+scanArg(o)))
-			return
-		}
-		fmt.Fprintf(app.Stderr, "nothing stood above the noise floor%s%s\n", floorPhrase(scan), gainPhrase(scan, els))
-		fmt.Fprintf(app.Stderr, "a longer look finds weaker signals: %s\n", st.Cmd("ley scan "+scanArg(o)+" --dwell 1000"))
-		coverageNote(app, scan, o)
+	if len(scan.Detections) > 0 {
+		fmt.Fprintf(app.Stderr, "drop the filter to see them: %s\n", st.Cmd("ley scan "+scanArg(o)))
 		return
 	}
+	fmt.Fprintf(app.Stderr, "a longer look finds weaker signals: %s\n", st.Cmd("ley scan "+scanArg(o)+" --dwell 1000"))
+	coverageNote(app, scan, o)
+}
+
+// printScanTable writes the rows as a table on stdout.
+func printScanTable(app *App, scan *leylinev1.Scan, o scanOptions, rows []*leylinev1.Detection) {
 	cols := []column{
 		{head: "FREQUENCY", cells: mapDet(rows, func(d *leylinev1.Detection) string { return units.FormatFrequency(d.CenterHz) })},
 		{head: "WIDTH", cells: mapDet(rows, func(d *leylinev1.Detection) string { return widthCell(d, scan) })},
@@ -446,11 +476,15 @@ func printScan(app *App, scan *leylinev1.Scan, o scanOptions, els []*leylinev1.G
 	// tableStyle, not app.Style: off a terminal the width is unknown rather than 80, and fitting
 	// to 80 would silently drop the BAND column out of a piped table.
 	_, _ = printColumns(app.Stdout, tableStyle(app), cols, nil)
-	fmt.Fprintf(app.Stderr, "%s%s%s\n", words.Count(len(rows), "signal"), floorPhrase(scan), gainPhrase(scan, els))
+}
+
+// printScanNotes writes what follows the summary sentence on stderr: the rows few looks saw, the
+// coverage, and the command that listens to the strongest.
+func printScanNotes(app *App, scan *leylinev1.Scan, o scanOptions, rows []*leylinev1.Detection) {
 	unconfirmedNote(app, rows)
 	coverageNote(app, scan, o)
 	if best := strongest(rows); best != nil {
-		fmt.Fprintf(app.Stderr, "  %s\n", st.Cmd("ley listen "+trimZeros(float64(best.CenterHz)/1e6)))
+		fmt.Fprintf(app.Stderr, "  %s\n", app.ErrStyle.Cmd("ley listen "+trimZeros(float64(best.CenterHz)/1e6)))
 	}
 }
 

@@ -286,7 +286,8 @@ The device id is on stdout; --json prints the DeviceDescriptor instead.`,
   ley devices detach 2                     # remove it again, by row number`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDevicesAttach(cmd, app, args[0], args[1])
+			_, err := runDevicesAttach(cmd.Context(), app, args[0], args[1])
+			return err
 		},
 	}
 }
@@ -294,18 +295,19 @@ The device id is on stdout; --json prints the DeviceDescriptor instead.`,
 // rtlTCPPort is what rtl_tcp listens on unless it is told otherwise, so it is the port to suggest.
 const rtlTCPPort = 1234
 
-func runDevicesAttach(cmd *cobra.Command, app *App, kind, endpoint string) error {
+// runDevicesAttach attaches a remote radio and reports it; it returns the descriptor --json
+// prints, which the MCP adapter's attach_device returns.
+func runDevicesAttach(ctx context.Context, app *App, kind, endpoint string) (*leylinev1.DeviceDescriptor, error) {
 	if kind != "rtltcp" {
-		return usageErrorf("%q is not a kind of radio ley can attach; the kinds are: rtltcp", kind)
+		return nil, usageErrorf("%q is not a kind of radio ley can attach; the kinds are: rtltcp", kind)
 	}
 	host, port, err := parseEndpoint(endpoint)
 	if err != nil {
-		return usageError(err)
+		return nil, usageError(err)
 	}
-	ctx := cmd.Context()
 	c, err := app.dial(ctx)
 	if err != nil {
-		return app.notRunning(err)
+		return nil, app.notRunning(err)
 	}
 	defer c.Close()
 	// A second attach of one endpoint hands back the radio the daemon already
@@ -315,27 +317,27 @@ func runDevicesAttach(cmd *cobra.Command, app *App, kind, endpoint string) error
 	if !app.JSON {
 		resp, lerr := c.Control.ListDevices(ctx, &leylinev1.ListDevicesRequest{})
 		if lerr != nil {
-			return app.notRunning(lerr)
+			return nil, app.notRunning(lerr)
 		}
 		before = resp.GetDevices()
 	}
 	dev, err := c.AttachDevice(ctx, leyline.RtlTCPSource(host, port))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if app.JSON {
-		return app.printJSON(dev)
+		return dev, app.printJSON(dev)
 	}
 	// The id is machine output and goes to stdout; the sentence about it is
 	// prose for the person, as in ley play.
 	fmt.Fprintf(app.Stdout, "device %s\n", dev.DeviceId)
 	if hasDevice(before, dev.DeviceId) {
 		fmt.Fprintf(app.Stderr, "%s is already attached as %s\n", dev.Model, dev.DeviceId)
-		return nil
+		return dev, nil
 	}
 	fmt.Fprintf(app.Stderr, "attached %s as %s; the daemon remembers it. Forget it with: ley devices detach %s\n",
 		dev.Model, dev.DeviceId, detachSelector(ctx, c, dev))
-	return nil
+	return dev, nil
 }
 
 // parseEndpoint splits host:port, which is how an rtl_tcp server is spelled everywhere else (its

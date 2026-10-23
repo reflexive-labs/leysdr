@@ -43,6 +43,8 @@ Contributors and coding agents. Read first, in this order:
 | [Swift style](dev/swift-style.md) | writing Swift anywhere in the repository: file headers and SPDX, comment and doc-comment voice, naming and unit suffixes, isolation and `Task`, the session, mirror and coalescer patterns, what only the Mac can check |
 | [Release checklist](dev/release-checklist.md) | tagging a release: the mechanical gate, licence obligations, the acceptance pass on a real dongle |
 | [Agent evals](dev/evals.md) | measuring an agent's use of `ley mcp` against fixtures: running `leyeval`, reading a transcript, adding a scenario and its checks |
+| [The speech-to-text spike](dev/speech-spike.md) | measuring a speech engine on receiver audio: recording the corpus, writing the hand transcript, running `leyspeech` for word error rate, callsign recall, cost per hour and latency, and the decision record's template |
+| [The assistant worker](dev/assistant.md) | touching `ley worker assistant`: the worker protocol, the loop, the policy gate, received text, undo, the scripted model and the Messages API client |
 | [App internals](dev/app.md) | touching the Mac app: the `app/` package, the client façade (identity, mirror, coalescer, streams), building, bundling and testing it against the daemon |
 
 ### Why it is built this way (`design/`)
@@ -54,7 +56,7 @@ behaviour that contradicts it.
 |---|---|---|
 | [Control plane](design/control-plane.md) | how clients discover, tune, share and arbitrate; gRPC over UDS; the session model | partial: local control is implemented; remote access and watch jobs are not |
 | [Data planes](design/data-planes.md) | telemetry and bulk: the sample timebase, latest-wins and gap-marked delivery, negotiation | partial: gRPC streams are implemented; shared memory and historical positions are not |
-| [Semantic tier](design/semantic-tier.md) | detections, scans, transcripts, jobs and resources; the MCP surface | partial: scans, recordings, monitor and decode jobs are implemented; watch jobs and transcripts are not |
+| [Semantic tier](design/semantic-tier.md) | detections, scans, transcripts, jobs and resources; the MCP surface | partial: scans, recordings, monitor and decode jobs, decoder records (speech among them) and the MCP adapter are implemented; watch jobs and their durable transcripts are not |
 | [Scan](design/scan.md) | the sweep geometry and the detector, with every number measured | implemented |
 | [Signal views](design/signal-views.md) | the waterfall, the channel view and sub-audible tones | implemented except tone squelch and the sonogram |
 | [Scope](design/scope.md) | the audio waveform and the demod tap under it | implemented (`ley scope`) |
@@ -64,6 +66,7 @@ behaviour that contradicts it.
 | [Recording](design/recording.md) | recording as a job whose output is a resource: parts, the squelch gate, the manifest, the store, the `Resources` service | implemented |
 | [Brand](design/brand/README.md) | the mark and the splash, drawn in code; how the icon is made | implemented |
 | [Bands, channels and bookmarks](design/channels.md) | the three kinds of frequency; plan channels as data in the band table; bands as the sidebar's spine; Scan band over the scan job; tone, note and tags; CHIRP import; the engine and CLI pass | implemented |
+| [AI features](design/ai.md) | model features on the user's own provider key: keys in the daemon, usage, speech-to-text as a decoder, the assistant as a `ley` worker with `ley mcp`'s tools, what it may do | designed, being built |
 
 ### Decisions (`decisions/`)
 
@@ -88,8 +91,12 @@ What is being built, in what order, and the record of what each step found.
   [a signed release build](plans/distribution.md) (bundled drivers, the daemon as the app's login
   item, Sparkle, notarization),
   [MCP adapter](plans/mcp.md) (the tools the daemon can back are done; the rest wait on their
-  milestones) and [the Mac app](plans/app.md) (Milestone E: the window, recording and the bands
-  sidebar are done; lifecycle and distribution remain).
+  milestones), [the Mac app](plans/app.md) (Milestone E: the window, recording and the bands
+  sidebar are done; lifecycle and distribution remain) and [the agent's loop on the
+  Mac](plans/mac-loop.md) (`make app-check`, its scenes and tiers, and the batch loop).
+- [AI features on the user's own key](plans/ai-features.md) (keys, usage, speech-to-text as a
+  decoder, and an assistant that runs the radio from plain requests): built in lanes, with AI-0
+  (the speech spike on real receiver audio) and AI-12 (the assistant evals on a key) still open.
 - [`plans/archive/`](plans/archive/): finished plans and review records, among them
   [bands, channels and bookmarks](plans/archive/channels.md), kept because commit messages cite
   their item ids. Nothing in there is a work list any more.
@@ -120,6 +127,6 @@ docs/
 ├── reference/             lookup: cli, iq-files, clients, mcp, writing-a-decoder
 ├── design/                why it is built this way, with the measured numbers; brand/
 ├── decisions/             decision records (D2, S2, S3)
-├── dev/                   contributor contracts: setup, engine-internals, cli-style, swift-style, app, evals, release-checklist
+├── dev/                   contributor contracts: setup, engine-internals, cli-style, swift-style, app, assistant, evals, speech-spike, release-checklist
 └── plans/                 build-order, user-stories, live plans; archive/ for finished ones
 ```

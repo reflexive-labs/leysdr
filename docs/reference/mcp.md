@@ -57,15 +57,19 @@ the job kept, and it outlives the agent.
 
 Every tool's result is two text blocks. The first is what the verb would have printed on a
 terminal: the decisions a tune made, the scan table, one line per record, the squelch that never
-opened. The second is the proto3 JSON mapping of the `leyline.v1` messages, the same shape
+opened. Its first line is the outcome (the channel a tune made, with its mode and squelch; how
+many signals a scan found over which range, above its table; what a listen counted), because a
+client such as the app's assistant panel shows that line beside the call. What the verb says on the
+way, the band's default mode, a retune, how the squelch was measured, follows it, where the terminal
+prints it first. The second is the proto3 JSON mapping of the `leyline.v1` messages, the same shape
 `ley <verb> --json` prints for the mirror verb (lowerCamelCase keys, 64-bit integers as strings),
 and the compatibility test of every tool is that mirror: the fake-daemon tests hold `list_devices`
 against `ley devices --json` message for message. An agent reasons over the text and parses the
-JSON. Nothing is sent as `structuredContent`: the server began by putting the JSON
-there with the text beside it, the way the MCP specification suggests, and the first agent evals
-showed that Claude Code hands the model only `structuredContent` when there is one and drops the
-content blocks ([anthropics/claude-code#55677](https://github.com/anthropics/claude-code/issues/55677)),
-so none of the tools' text had reached an agent. Content is what every client shows.
+JSON. Nothing is sent as `structuredContent`: the server began by putting the JSON there with the
+text beside it, the way the MCP specification suggests, and the first agent evals showed that Claude
+Code hands the model only `structuredContent` when there is one and drops the content blocks
+([anthropics/claude-code#55677](https://github.com/anthropics/claude-code/issues/55677)), so none of
+the tools' text had reached an agent. Content is what every client shows.
 
 Three results are composites, one message under each key, each still its message's proto3 JSON:
 `tune` returns `{capture, channel, sink}` (`sink` is `null` unless `audio` was asked for),
@@ -96,7 +100,13 @@ are optional in the schema; the defaults are the mirror verb's.
 | `list_devices` | `ley devices` | `Control.ListDevices` | none | `ListDevicesResponse` |
 | `get_state` | `ley state` | `Control.GetState` | none | `GetStateResponse` |
 | `daemon_logs` | `ley daemon logs` | the log file on the host | `lines` (default 50, at most 500), `include_driver` | `{daemon: DaemonInfo, path, lines: […]}` |
+| `help` | `ley help <topic>` | the topics in `ley` | `topic` (none lists them) | `{name, summary, text}` or `{topics: [{name, summary}]}` |
+| `list_bands` | `ley bands`, `ley bands <query>` | the band table in `ley` | `query` (a frequency, preset or band name) | the array or object `ley bands --json` prints |
+| `list_presets` | `ley presets` | the band plans in `ley` | none | the array `ley presets --json` prints |
 | `tune` | `ley tune` | `CreateCapture`, `CreateChannel`, `WriteParams` | `frequency`; `mode`, `bandwidth`, `squelch`, `gain`, `device`, `audio`, `keep`, `take_over` | `{capture, channel, sink}` |
+| `set` | `ley set` | `WriteParams`, confirmed by its event | `param` (`freq`, `mode`, `bw`, `squelch`, `gain`, `volume`), `value`; `channel`, `take_over` | the confirming `Event` |
+| `stop` | `ley stop`, `ley stop all` | `Control.DestroyChannel`, `DestroyCapture` | none (this server's channels), `channel`, or `all` with `device`; `take_over` | `Empty` |
+| `attach_device` | `ley devices attach`, `ley play` | `Control.AttachDevice` | `kind` (`rtltcp` or `file`); `endpoint` (host:port) or `path` and `loop` | `DeviceDescriptor` |
 | `scan` | `ley scan` | `Jobs.StartJob(ScanConfig{once})`, `Jobs.GetScan` | `range` (`144M..148M` or a band name); `dwell_ms`, `min_snr`, `gain`, `device`, `take_over` | `Scan` |
 | `listen_summary` | `ley tune`, `ley listen` | `Telemetry.Subscribe`, bounded | `target` (frequency, preset or `chan_…`); `duration_s` (default 10, at most 300), `mode`, `bandwidth`, `squelch`, `gain`, `device`, `take_over` | `{channel, transcript, meter, tone}` |
 | `snapshot` | `ley spectrum --json` | `Bulk.Subscribe(FFT)`, one row | `frequency` or `band`; `span`, `bins` (default 1024), `device`, `take_over`, `no_image`, `include_bins` | the spectrum row (`bins` null unless `include_bins`), plus a PNG |
@@ -104,10 +114,15 @@ are optional in the schema; the defaults are the mirror verb's.
 | `query_records` | `ley records` | `Decoders.QueryRecords` | `protocol`, `job_id`, `device_id`, `kind`, `since_s`, `near` + `radius`, `in_effect`, `limit` | `RecordPage` |
 | `list_entities` | `ley track --json` | `Decoders.SubscribeRecords` + the `records.Table` fold | `protocol`; `duration_s` (default 5, at most 300), `since_s`, `device`, `take_over` | `{entities: […]}` |
 | `start_decode_job` | `ley decode`, `ley decode --job` | `Jobs.StartJob(DecodeConfig)` | `decoder`; `frequency`, `device`, `take_over`, `keep` | `Job` |
+| `watch` | `ley watch`, `ley watch --detach` | `Jobs.StartJob(DecodeConfig)` with a predicate and a notifier | `decoder`; `where` (a list), `county` (a list), `near` + `radius`, `notify` (`macos` or `webhook:URL`), `frequency`, `device`, `take_over`, `keep` | `Job` |
 | `record` | `ley record` | `Jobs.StartJob(RecordConfig)` | `target` (frequency, preset or `chan_…`), `duration_s` (**required**, 1 to 3600); `iq`, `gate`, `pre_roll_ms`, `hang_ms`, `mode`, `bandwidth`, `squelch`, `gain`, `device`, `take_over` | the finished `Job` |
 | `find_recordings` | `ley recordings` | `Resources.ListResources(RECORDING)` | `kind`, `frequency`, `mode`, `since_s`, `limit` | `ListResourcesResponse` |
 | `get_recording` | `ley recordings show`, `ley recordings path` | `Resources.GetResource` + `ResolveLocalPath` | `id` (job id or `ley://recordings/` uri) | `{manifest, directory, parts: [{part, path, samples}]}` |
 | `delete_recording` | `ley recordings delete` | `Resources.DeleteResource` | `recording` (whole job id or `ley://recordings/` uri) | `DeletedResource` |
+| `list_bookmarks` | `ley bookmarks` | the bookmarks file | `tag` | the array `ley bookmarks --json` prints |
+| `add_bookmark` | `ley bookmarks add` | the bookmarks file | `frequency`, `name`; `band`, `mode`, `bandwidth`, `tone`, `note`, `tags` | the row `ley bookmarks add --json` prints |
+| `remove_bookmark` | `ley bookmarks remove` | the bookmarks file | `bookmark` (id or name) | the row removed |
+| `import_chirp` | `ley bookmarks import` | the bookmarks file | `path`; `dry_run` | `{added, updated, skipped, warnings}` |
 | `list_jobs` | `ley jobs` | `Jobs.ListJobs` | none | `ListJobsResponse` |
 | `get_job` | `ley jobs` | `Jobs.GetJob` | `job` (id, prefix or row) | `Job` |
 | `cancel_job` | `ley jobs cancel` | `Jobs.CancelJob` | `job` | `Job` |
@@ -163,7 +178,10 @@ Notes a table cell cannot hold:
   daemon's own close edge as an `ActivitySegment` (start and end on the capture's timeline,
   `peakDbfs` the loudest block, `meanDbfs` the mean of the meter readings while open), so the
   default squelch is `auto` for voice modes as `ley tune`'s is; with `squelch: off` there are no
-  edges and the meter statistics form the result. A close edge with no open edge before it in the
+  edges and the meter statistics form the result, and the text says that transmissions are not
+  counted and gives the level range (`49.856 MHz NFM for 20.0 s, squelch off: transmissions are not
+  counted; level -62 to -58 dBFS`), since "0 transmissions" from a squelch-off run was read as a
+  channel with nothing intelligible on it. A close edge with no open edge before it in the
   window is the squelch having been open when listening began (a channel made with the squelch off
   starts open, and the threshold written a moment later closes it on the first quiet block), not a
   transmission this call observed: it is reported as `meter.open_at_start` and never as a segment. A
@@ -230,6 +248,55 @@ Notes a table cell cannot hold:
   id and no prefix, since a prefix that matched another recording would delete that one. No eval
   scenario covers it: `docs/dev/evals.md` has no rule for destructive tools, and a scenario that
   deletes has nothing to grade that `TestMCPDeleteRecording` does not.
+- **`set`** takes `ley set`'s settings and values (`ley set --help` is the table; `bw` is the
+  bandwidth, `filter` and `frequency` work too) and chooses the channel as `ley set` does: the
+  only active one, else the one channel an agent made through `ley mcp` when exactly one is, else
+  the one `channel` names. The text is the line `ley set` prints (`squelch -80 dBFS → -50 dBFS on
+  146.550 MHz NFM (channel 2)`), after the decisions on the way (a measured `squelch auto`, a
+  retune). Three writes are refused before anything is written, naming what they would
+  disturb, until `take_over: true`: any setting of a channel another client made; a `gain` while
+  another client's channel is on the radio, since the gain belongs to the radio and moves every
+  channel on it; and a `freq` outside what the radio is tuned to while other channels listen on
+  it, as `tune` refuses, or while a recording runs on it, which `ley set` overrides with
+  `--retune` (the recording logs the gap).
+- **`stop`** with no arguments stops every channel this server made and nothing else. `channel`
+  is `ley stop <channel>` and `all` is `ley stop all`, which also removes the capture so the radio
+  is free. A channel another client made (the app's, a `ley tune --persistent`, an earlier
+  agent's kept one) is refused with its frequency and owner until `take_over: true`, because
+  stopping it silences whoever is listening.
+- **`attach_device`** with `kind: rtltcp` is `ley devices attach rtltcp`: the daemon connects
+  once, refuses an endpoint it cannot reach, and remembers the radio across restarts. With
+  `kind: file` it attaches a recording as a radio the way `ley play` does before it tunes, and
+  the device lasts until the daemon restarts; a relative path is read from the directory `ley mcp`
+  was started in. There is no detach tool; `ley devices detach` removes either kind.
+- **`watch`** is `ley watch` without the stream: it starts the decode job with the filter and the
+  notifier and returns it, with `ley watch`'s banner (the decoder, where it listens, the filter in
+  words, the notifier) as the text. `where`, `county`, `near` and `radius` are the verb's flags as
+  lists and strings, parsed by the verb's code, so a bad test is refused in the verb's words.
+  `notify` is `macos` or `webhook:URL`; a `shell:` notifier is refused, because it runs a command
+  on the Mac with a record's text from the air on its stdin, and the assistant's policy keeps that
+  for a person to set up (`docs/plans/ai-features.md`, "What the assistant may do"). Without
+  `keep` the job ends with this server; `list_entities` and `query_records` read what it matches
+  as they read any decode job's records.
+- **The bookmarks tools** edit the file `ley bookmarks` edits and the Mac app's sidebar reads
+  (`$LEYLINE_BOOKMARKS` names another); nothing reaches the daemon. `add_bookmark` reads its
+  frequency as `tune` does and takes the mode from the band unless given; the same name at the
+  same frequency updates that bookmark. `remove_bookmark` takes an id or a name in any case and
+  refuses a name two bookmarks answer to. `import_chirp` reads a CHIRP CSV export and tags each
+  row with the file's name; `dry_run: true` says what it would add, update and skip and writes
+  nothing.
+- **`list_bands`, `list_presets` and `list_bookmarks`** run their verb twice, as a person sees it
+  and with `--json`, so the text is the verb's table and the JSON is its `--json`. These three,
+  `help`, the bookmark rows and the import counts are client-local data with no proto message, so
+  their JSON is the verb's own shape (snake_case keys), not the proto3 mapping.
+- **Annotations.** Each tool carries the MCP hints the assistant's policy table reads: `readOnly`
+  for the tools that only read (`help`, `list_bands`, `list_presets`, `list_bookmarks`, and the
+  orient, records, recordings and jobs reads); `destructive` for a removal that cannot be undone
+  (`delete_recording`, `cancel_job`, `remove_bookmark`); the rest change something the user
+  asked for and are marked neither. `watch` and `attach_device` are also `openWorld`, since a
+  webhook and an `rtl_tcp` server are on the network. The confirmations the policy asks for are
+  the caller's: a kept `watch` or a webhook notifier, several bookmarks at once, and a take-over;
+  the descriptions say so.
 
 Job status: a decode job reads `RUNNING` whether the decoder is producing records or
 not, by design: a silent decoder is indistinguishable from a quiet
@@ -277,7 +344,7 @@ $ ley --socket /tmp/ley-mcp-rec.sock mcp
    {"type":"text","text":"{\"devices\":[{\"deviceId\":\"dev_01K…\",\"driver\":\"file\",\"model\":\"scan_band.cf32\",…}]}"}]}}
 → {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"scan","arguments":{"range":"145M..147M","dwell_ms":300}}}
 ← {"jsonrpc":"2.0","id":4,"result":{"content":[{"type":"text","text":
-   "FREQUENCY    WIDTH            SNR (dB)  SEEN  BAND\n145.200 MHz  5.954 kHz              66   2/2  2 m amateur\n145.398 MHz  under 2.344 kHz         4   1/2  2 m amateur\n145.600 MHz  6.182 kHz              58   2/2  2 m amateur\n146.400 MHz  under 2.344 kHz        52   2/2  2 m amateur\n146.805 MHz  187.624 kHz            35   2/2  2 m amateur\n5 signals, floor -88 dBFS per 2.344 kHz bin\n  ley listen 145.2"}],
+   "5 signals over 145.000 MHz to 147.000 MHz, floor -88 dBFS per 2.344 kHz bin\nFREQUENCY    WIDTH            SNR (dB)  SEEN  BAND\n145.200 MHz  5.954 kHz              66   2/2  2 m amateur\n145.398 MHz  under 2.344 kHz         4   1/2  2 m amateur\n145.600 MHz  6.182 kHz              58   2/2  2 m amateur\n146.400 MHz  under 2.344 kHz        52   2/2  2 m amateur\n146.805 MHz  187.624 kHz            35   2/2  2 m amateur\n  ley listen 145.2"}],
    {"type":"text","text":"{\"scanId\":\"scan_01K…\",\"config\":{…},\"detections\":[{\"centerHz\":\"145200000\",\"bandwidthHz\":5954,\"snrDb\":66.…,\"looks\":2,\"looksPossible\":2,\"floorDbfs\":-88.…},…],\"noiseFloor\":[…],\"resolutionHz\":2344,\"covered\":{…}}"}]}}
 ```
 

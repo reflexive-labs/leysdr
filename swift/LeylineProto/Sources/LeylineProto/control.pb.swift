@@ -185,6 +185,44 @@ public nonisolated enum Leyline_V1_GainMode: SwiftProtobuf.Enum, Swift.CaseItera
 
 }
 
+public nonisolated enum Leyline_V1_SquelchSource: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case squelchManual // = 1
+  case squelchAuto // = 2
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .squelchManual
+    case 2: self = .squelchAuto
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .squelchManual: return 1
+    case .squelchAuto: return 2
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Leyline_V1_SquelchSource] = [
+    .unspecified,
+    .squelchManual,
+    .squelchAuto,
+  ]
+
+}
+
 public nonisolated enum Leyline_V1_ChannelState: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case unspecified // = 0
@@ -573,6 +611,13 @@ public nonisolated struct Leyline_V1_Channel: Sendable {
   /// no visible cause.
   public var subaudibleDetect: Bool = false
 
+  /// How squelch_db was chosen, so a client can say "auto" without remembering what it wrote.
+  /// AUTO when it was measured from the band's noise floor: by the daemon (a gated recording, a
+  /// decoder's segments) or by the client that wrote it as ParamWrite.squelch_auto_db. MANUAL when
+  /// a client wrote a level as squelch_db. UNSPECIFIED while the squelch is off. The level is a
+  /// snapshot either way: an auto squelch does not follow the floor once it is set.
+  public var squelchSource: Leyline_V1_SquelchSource = .unspecified
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -785,6 +830,17 @@ public nonisolated struct Leyline_V1_ParamWrite: Sendable {
     set {param = .sinkVolume(newValue)}
   }
 
+  /// A squelch level the writer measured from the noise floor (`ley tune`'s auto, the app's):
+  /// applied as squelch_db is, and the channel says SQUELCH_AUTO. It and squelch_db are one
+  /// parameter, so the last of the two in a tick wins. Not NaN: off is squelch_db NaN.
+  public var squelchAutoDb: Double {
+    get {
+      if case .squelchAutoDb(let v)? = param {return v}
+      return 0
+    }
+    set {param = .squelchAutoDb(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Param: Equatable, Sendable {
@@ -800,6 +856,10 @@ public nonisolated struct Leyline_V1_ParamWrite: Sendable {
     case gain(Leyline_V1_GainWrite)
     /// target_id = sink_id
     case sinkVolume(Double)
+    /// A squelch level the writer measured from the noise floor (`ley tune`'s auto, the app's):
+    /// applied as squelch_db is, and the channel says SQUELCH_AUTO. It and squelch_db are one
+    /// parameter, so the last of the two in a tick wins. Not NaN: off is squelch_db NaN.
+    case squelchAutoDb(Double)
 
   }
 
@@ -918,6 +978,36 @@ public nonisolated struct Leyline_V1_Event: @unchecked Sendable {
     set {_uniqueStorage()._body = .playback(newValue)}
   }
 
+  /// The keys and feature models changed: a key was set, checked, used or deleted, or a feature's
+  /// model was chosen. The whole AIState each time, so a deleted key is a shorter list rather
+  /// than a tombstone. Never carries a secret (ai.proto, Credential).
+  public var ai: Leyline_V1_AIState {
+    get {
+      if case .ai(let v)? = _storage._body {return v}
+      return Leyline_V1_AIState()
+    }
+    set {_uniqueStorage()._body = .ai(newValue)}
+  }
+
+  /// A usage report was added to the ledger: the whole line it was folded into, after the fold,
+  /// never the report alone.
+  public var usage: Leyline_V1_UsageLine {
+    get {
+      if case .usage(let v)? = _storage._body {return v}
+      return Leyline_V1_UsageLine()
+    }
+    set {_uniqueStorage()._body = .usage(newValue)}
+  }
+
+  /// An assistant conversation changed: the whole Conversation, an ended one included.
+  public var conversation: Leyline_V1_Conversation {
+    get {
+      if case .conversation(let v)? = _storage._body {return v}
+      return Leyline_V1_Conversation()
+    }
+    set {_uniqueStorage()._body = .conversation(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Body: Equatable, Sendable {
@@ -937,6 +1027,15 @@ public nonisolated struct Leyline_V1_Event: @unchecked Sendable {
     /// starts, four times a second while it plays with `position` current (the whole object each
     /// time, never a delta), and once more as the tombstone when it ends.
     case playback(Leyline_V1_Playback)
+    /// The keys and feature models changed: a key was set, checked, used or deleted, or a feature's
+    /// model was chosen. The whole AIState each time, so a deleted key is a shorter list rather
+    /// than a tombstone. Never carries a secret (ai.proto, Credential).
+    case ai(Leyline_V1_AIState)
+    /// A usage report was added to the ledger: the whole line it was folded into, after the fold,
+    /// never the report alone.
+    case usage(Leyline_V1_UsageLine)
+    /// An assistant conversation changed: the whole Conversation, an ended one included.
+    case conversation(Leyline_V1_Conversation)
 
   }
 
@@ -1019,16 +1118,7 @@ public nonisolated struct Leyline_V1_EventScope: Sendable {
   fileprivate var _sinceSeq: UInt64? = nil
 }
 
-public nonisolated struct Leyline_V1_Empty: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  public init() {}
-}
-
+/// Empty lives in common.proto: ai.proto's services return it, and control.proto imports ai.proto.
 public nonisolated struct Leyline_V1_ListDevicesRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -1103,11 +1193,28 @@ public nonisolated struct Leyline_V1_GetStateResponse: Sendable {
   /// recordings the daemon is playing right now
   public var playbacks: [Leyline_V1_Playback] = []
 
+  /// the keys (never their secrets) and each feature's model
+  public var ai: Leyline_V1_AIState {
+    get {_ai ?? Leyline_V1_AIState()}
+    set {_ai = newValue}
+  }
+  /// Returns true if `ai` has been explicitly set.
+  public var hasAi: Bool {self._ai != nil}
+  /// Clears the value of `ai`. Subsequent reads from it will return its default value.
+  public mutating func clearAi() {self._ai = nil}
+
+  /// the ledger's lines, the same ones Event.usage updates
+  public var usage: [Leyline_V1_UsageLine] = []
+
+  /// the assistant's conversations, ended ones included
+  public var conversations: [Leyline_V1_Conversation] = []
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _daemon: Leyline_V1_DaemonInfo? = nil
+  fileprivate var _ai: Leyline_V1_AIState? = nil
 }
 
 public nonisolated struct Leyline_V1_DaemonInfo: Sendable {
@@ -1154,12 +1261,14 @@ public nonisolated struct Leyline_V1_Playback: Sendable {
 
   public var sampleRate: UInt32 = 0
 
-  /// frames in the file; 0 when it could not be counted
+  /// Frames this playback plays: the whole file, or the range `start_sample` and `end_sample`
+  /// name. 0 when it could not be counted.
   public var samples: UInt64 = 0
 
-  /// Frames played so far, published on Event.playback four times a second while it plays. A
-  /// client renders elapsed time from this and the rate rather than from a clock of its own, and
-  /// it is reported rather than written: seeking is not in v1.
+  /// Frames played so far, from the start of the range (the file's first frame when there is no
+  /// range), published on Event.playback four times a second while it plays. A client renders
+  /// elapsed time from this and the rate rather than from a clock of its own, and it is reported
+  /// rather than written: seeking is not in v1.
   public var position: UInt64 = 0
 
   public var volume: Double = 0
@@ -1182,6 +1291,12 @@ public nonisolated struct Leyline_V1_Playback: Sendable {
   /// four-a-second event is not sent until it resumes. The playback still belongs to its client
   /// and still ends when that client goes. The tombstone carries the value it had.
   public var paused: Bool = false
+
+  /// The range StartPlaybackRequest asked for, on the capture's timeline at the capture rate, as
+  /// the part's sidecar dates it; both 0 when the whole part plays.
+  public var startSample: UInt64 = 0
+
+  public var endSample: UInt64 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1211,6 +1326,15 @@ public nonisolated struct Leyline_V1_StartPlaybackRequest: Sendable {
 
   /// empty = the daemon's default output
   public var audioDeviceUid: String = String()
+
+  /// Play only capture samples start_sample..<end_sample of the part, on the capture's timeline
+  /// at the capture rate (the part sidecar's start_sample, end_sample and squelch_opens), so one
+  /// over plays rather than the whole exchange. The daemon places them in the file by the rates
+  /// the sidecar gives. Both 0 = the whole part; start_sample 0 = from the part's start, end_sample
+  /// 0 = to its end. A range that is empty or not inside the part is INVALID_ARGUMENT.
+  public var startSample: UInt64 = 0
+
+  public var endSample: UInt64 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1500,6 +1624,10 @@ nonisolated extension Leyline_V1_CaptureState: SwiftProtobuf._ProtoNameProviding
 
 nonisolated extension Leyline_V1_GainMode: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0GAIN_MODE_UNSPECIFIED\0\u{1}MANUAL\0\u{1}AUTO\0")
+}
+
+nonisolated extension Leyline_V1_SquelchSource: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0SQUELCH_SOURCE_UNSPECIFIED\0\u{1}SQUELCH_MANUAL\0\u{1}SQUELCH_AUTO\0")
 }
 
 nonisolated extension Leyline_V1_ChannelState: SwiftProtobuf._ProtoNameProviding {
@@ -1850,7 +1978,7 @@ nonisolated extension Leyline_V1_CaptureActivity: SwiftProtobuf.Message, SwiftPr
 
 nonisolated extension Leyline_V1_Channel: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Channel"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}channel_id\0\u{3}capture_id\0\u{3}offset_hz\0\u{3}bandwidth_hz\0\u{1}mode\0\u{3}squelch_db\0\u{1}agc\0\u{1}state\0\u{1}persistent\0\u{3}required_hz\0\u{1}owner\0\u{3}subaudible_detect\0\u{c}\u{d}\u{1}")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}channel_id\0\u{3}capture_id\0\u{3}offset_hz\0\u{3}bandwidth_hz\0\u{1}mode\0\u{3}squelch_db\0\u{1}agc\0\u{1}state\0\u{1}persistent\0\u{3}required_hz\0\u{1}owner\0\u{3}subaudible_detect\0\u{4}\u{2}squelch_source\0\u{c}\u{d}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1870,6 +1998,7 @@ nonisolated extension Leyline_V1_Channel: SwiftProtobuf.Message, SwiftProtobuf._
       case 10: try { try decoder.decodeSingularUInt64Field(value: &self.requiredHz) }()
       case 11: try { try decoder.decodeSingularMessageField(value: &self._owner) }()
       case 12: try { try decoder.decodeSingularBoolField(value: &self.subaudibleDetect) }()
+      case 14: try { try decoder.decodeSingularEnumField(value: &self.squelchSource) }()
       default: break
       }
     }
@@ -1916,6 +2045,9 @@ nonisolated extension Leyline_V1_Channel: SwiftProtobuf.Message, SwiftProtobuf._
     if self.subaudibleDetect != false {
       try visitor.visitSingularBoolField(value: self.subaudibleDetect, fieldNumber: 12)
     }
+    if self.squelchSource != .unspecified {
+      try visitor.visitSingularEnumField(value: self.squelchSource, fieldNumber: 14)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1932,6 +2064,7 @@ nonisolated extension Leyline_V1_Channel: SwiftProtobuf.Message, SwiftProtobuf._
     if lhs.requiredHz != rhs.requiredHz {return false}
     if lhs._owner != rhs._owner {return false}
     if lhs.subaudibleDetect != rhs.subaudibleDetect {return false}
+    if lhs.squelchSource != rhs.squelchSource {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2142,7 +2275,7 @@ nonisolated extension Leyline_V1_FileSink: SwiftProtobuf.Message, SwiftProtobuf.
 
 nonisolated extension Leyline_V1_ParamWrite: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ParamWrite"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}tag\0\u{3}target_id\0\u{3}center_hz\0\u{3}capture_sample_rate\0\u{3}offset_hz\0\u{3}bandwidth_hz\0\u{1}mode\0\u{3}squelch_db\0\u{1}gain\0\u{3}sink_volume\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}tag\0\u{3}target_id\0\u{3}center_hz\0\u{3}capture_sample_rate\0\u{3}offset_hz\0\u{3}bandwidth_hz\0\u{1}mode\0\u{3}squelch_db\0\u{1}gain\0\u{3}sink_volume\0\u{3}squelch_auto_db\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2221,6 +2354,14 @@ nonisolated extension Leyline_V1_ParamWrite: SwiftProtobuf.Message, SwiftProtobu
           self.param = .sinkVolume(v)
         }
       }()
+      case 11: try {
+        var v: Double?
+        try decoder.decodeSingularDoubleField(value: &v)
+        if let v = v {
+          if self.param != nil {try decoder.handleConflictingOneOf()}
+          self.param = .squelchAutoDb(v)
+        }
+      }()
       default: break
       }
     }
@@ -2269,6 +2410,10 @@ nonisolated extension Leyline_V1_ParamWrite: SwiftProtobuf.Message, SwiftProtobu
     case .sinkVolume?: try {
       guard case .sinkVolume(let v)? = self.param else { preconditionFailure() }
       try visitor.visitSingularDoubleField(value: v, fieldNumber: 10)
+    }()
+    case .squelchAutoDb?: try {
+      guard case .squelchAutoDb(let v)? = self.param else { preconditionFailure() }
+      try visitor.visitSingularDoubleField(value: v, fieldNumber: 11)
     }()
     case nil: break
     }
@@ -2321,7 +2466,7 @@ nonisolated extension Leyline_V1_WriteSummary: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension Leyline_V1_Event: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Event"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}seq\0\u{3}caused_by\0\u{1}device\0\u{1}capture\0\u{1}channel\0\u{1}sink\0\u{3}write_rejected\0\u{1}anchor\0\u{1}job\0\u{1}playback\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}seq\0\u{3}caused_by\0\u{1}device\0\u{1}capture\0\u{1}channel\0\u{1}sink\0\u{3}write_rejected\0\u{1}anchor\0\u{1}job\0\u{1}playback\0\u{1}ai\0\u{1}usage\0\u{1}conversation\0")
 
   fileprivate class _StorageClass {
     var _seq: UInt64 = 0
@@ -2464,6 +2609,45 @@ nonisolated extension Leyline_V1_Event: SwiftProtobuf.Message, SwiftProtobuf._Me
             _storage._body = .playback(v)
           }
         }()
+        case 11: try {
+          var v: Leyline_V1_AIState?
+          var hadOneofValue = false
+          if let current = _storage._body {
+            hadOneofValue = true
+            if case .ai(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._body = .ai(v)
+          }
+        }()
+        case 12: try {
+          var v: Leyline_V1_UsageLine?
+          var hadOneofValue = false
+          if let current = _storage._body {
+            hadOneofValue = true
+            if case .usage(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._body = .usage(v)
+          }
+        }()
+        case 13: try {
+          var v: Leyline_V1_Conversation?
+          var hadOneofValue = false
+          if let current = _storage._body {
+            hadOneofValue = true
+            if case .conversation(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._body = .conversation(v)
+          }
+        }()
         default: break
         }
       }
@@ -2514,6 +2698,18 @@ nonisolated extension Leyline_V1_Event: SwiftProtobuf.Message, SwiftProtobuf._Me
       case .playback?: try {
         guard case .playback(let v)? = _storage._body else { preconditionFailure() }
         try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
+      }()
+      case .ai?: try {
+        guard case .ai(let v)? = _storage._body else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 11)
+      }()
+      case .usage?: try {
+        guard case .usage(let v)? = _storage._body else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 12)
+      }()
+      case .conversation?: try {
+        guard case .conversation(let v)? = _storage._body else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 13)
       }()
       case nil: break
       }
@@ -2639,25 +2835,6 @@ nonisolated extension Leyline_V1_EventScope: SwiftProtobuf.Message, SwiftProtobu
   }
 }
 
-nonisolated extension Leyline_V1_Empty: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".Empty"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
-
-  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    // Load everything into unknown fields
-    while try decoder.nextFieldNumber() != nil {}
-  }
-
-  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  public static func ==(lhs: Leyline_V1_Empty, rhs: Leyline_V1_Empty) -> Bool {
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
 nonisolated extension Leyline_V1_ListDevicesRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ListDevicesRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
@@ -2743,7 +2920,7 @@ nonisolated extension Leyline_V1_GetStateRequest: SwiftProtobuf.Message, SwiftPr
 
 nonisolated extension Leyline_V1_GetStateResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".GetStateResponse"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}devices\0\u{1}captures\0\u{1}channels\0\u{1}sinks\0\u{3}event_seq\0\u{1}daemon\0\u{1}jobs\0\u{1}playbacks\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}devices\0\u{1}captures\0\u{1}channels\0\u{1}sinks\0\u{3}event_seq\0\u{1}daemon\0\u{1}jobs\0\u{1}playbacks\0\u{1}ai\0\u{1}usage\0\u{1}conversations\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2759,6 +2936,9 @@ nonisolated extension Leyline_V1_GetStateResponse: SwiftProtobuf.Message, SwiftP
       case 6: try { try decoder.decodeSingularMessageField(value: &self._daemon) }()
       case 7: try { try decoder.decodeRepeatedMessageField(value: &self.jobs) }()
       case 8: try { try decoder.decodeRepeatedMessageField(value: &self.playbacks) }()
+      case 9: try { try decoder.decodeSingularMessageField(value: &self._ai) }()
+      case 10: try { try decoder.decodeRepeatedMessageField(value: &self.usage) }()
+      case 11: try { try decoder.decodeRepeatedMessageField(value: &self.conversations) }()
       default: break
       }
     }
@@ -2793,6 +2973,15 @@ nonisolated extension Leyline_V1_GetStateResponse: SwiftProtobuf.Message, SwiftP
     if !self.playbacks.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.playbacks, fieldNumber: 8)
     }
+    try { if let v = self._ai {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
+    } }()
+    if !self.usage.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.usage, fieldNumber: 10)
+    }
+    if !self.conversations.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.conversations, fieldNumber: 11)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2805,6 +2994,9 @@ nonisolated extension Leyline_V1_GetStateResponse: SwiftProtobuf.Message, SwiftP
     if lhs._daemon != rhs._daemon {return false}
     if lhs.jobs != rhs.jobs {return false}
     if lhs.playbacks != rhs.playbacks {return false}
+    if lhs._ai != rhs._ai {return false}
+    if lhs.usage != rhs.usage {return false}
+    if lhs.conversations != rhs.conversations {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2862,7 +3054,7 @@ nonisolated extension Leyline_V1_DaemonInfo: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension Leyline_V1_Playback: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Playback"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}playback_id\0\u{3}resource_uri\0\u{1}path\0\u{3}sample_rate\0\u{1}samples\0\u{1}position\0\u{1}volume\0\u{3}created_by\0\u{1}state\0\u{1}paused\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}playback_id\0\u{3}resource_uri\0\u{1}path\0\u{3}sample_rate\0\u{1}samples\0\u{1}position\0\u{1}volume\0\u{3}created_by\0\u{1}state\0\u{1}paused\0\u{3}start_sample\0\u{3}end_sample\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2880,6 +3072,8 @@ nonisolated extension Leyline_V1_Playback: SwiftProtobuf.Message, SwiftProtobuf.
       case 8: try { try decoder.decodeSingularMessageField(value: &self._createdBy) }()
       case 9: try { try decoder.decodeSingularEnumField(value: &self.state) }()
       case 10: try { try decoder.decodeSingularBoolField(value: &self.paused) }()
+      case 11: try { try decoder.decodeSingularUInt64Field(value: &self.startSample) }()
+      case 12: try { try decoder.decodeSingularUInt64Field(value: &self.endSample) }()
       default: break
       }
     }
@@ -2920,6 +3114,12 @@ nonisolated extension Leyline_V1_Playback: SwiftProtobuf.Message, SwiftProtobuf.
     if self.paused != false {
       try visitor.visitSingularBoolField(value: self.paused, fieldNumber: 10)
     }
+    if self.startSample != 0 {
+      try visitor.visitSingularUInt64Field(value: self.startSample, fieldNumber: 11)
+    }
+    if self.endSample != 0 {
+      try visitor.visitSingularUInt64Field(value: self.endSample, fieldNumber: 12)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2934,6 +3134,8 @@ nonisolated extension Leyline_V1_Playback: SwiftProtobuf.Message, SwiftProtobuf.
     if lhs._createdBy != rhs._createdBy {return false}
     if lhs.state != rhs.state {return false}
     if lhs.paused != rhs.paused {return false}
+    if lhs.startSample != rhs.startSample {return false}
+    if lhs.endSample != rhs.endSample {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2941,7 +3143,7 @@ nonisolated extension Leyline_V1_Playback: SwiftProtobuf.Message, SwiftProtobuf.
 
 nonisolated extension Leyline_V1_StartPlaybackRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".StartPlaybackRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}resource_uri\0\u{1}volume\0\u{3}audio_device_uid\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}resource_uri\0\u{1}volume\0\u{3}audio_device_uid\0\u{3}start_sample\0\u{3}end_sample\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2952,6 +3154,8 @@ nonisolated extension Leyline_V1_StartPlaybackRequest: SwiftProtobuf.Message, Sw
       case 1: try { try decoder.decodeSingularStringField(value: &self.resourceUri) }()
       case 2: try { try decoder.decodeSingularDoubleField(value: &self._volume) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self.audioDeviceUid) }()
+      case 4: try { try decoder.decodeSingularUInt64Field(value: &self.startSample) }()
+      case 5: try { try decoder.decodeSingularUInt64Field(value: &self.endSample) }()
       default: break
       }
     }
@@ -2971,6 +3175,12 @@ nonisolated extension Leyline_V1_StartPlaybackRequest: SwiftProtobuf.Message, Sw
     if !self.audioDeviceUid.isEmpty {
       try visitor.visitSingularStringField(value: self.audioDeviceUid, fieldNumber: 3)
     }
+    if self.startSample != 0 {
+      try visitor.visitSingularUInt64Field(value: self.startSample, fieldNumber: 4)
+    }
+    if self.endSample != 0 {
+      try visitor.visitSingularUInt64Field(value: self.endSample, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2978,6 +3188,8 @@ nonisolated extension Leyline_V1_StartPlaybackRequest: SwiftProtobuf.Message, Sw
     if lhs.resourceUri != rhs.resourceUri {return false}
     if lhs._volume != rhs._volume {return false}
     if lhs.audioDeviceUid != rhs.audioDeviceUid {return false}
+    if lhs.startSample != rhs.startSample {return false}
+    if lhs.endSample != rhs.endSample {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

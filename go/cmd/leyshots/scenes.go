@@ -72,6 +72,9 @@ type Size struct {
 	Height float64 `yaml:"height" json:"height"`
 }
 
+// String is the size as a directory name: 1440x820.
+func (s Size) String() string { return fmt.Sprintf("%gx%g", s.Width, s.Height) }
+
 // Stage is the app's stage file (docs/dev/app.md, "Staged runs"). The JSON is what the app
 // reads; ImportChirp is relative to scenes.yaml here and absolute in the file.
 type Stage struct {
@@ -91,6 +94,15 @@ type Stage struct {
 	ScanBand bool `yaml:"scan_band" json:"scan_band,omitempty"`
 	// PlayPart plays the selected part and pauses it, so the Library draws it as current.
 	PlayPart bool `yaml:"play_part" json:"play_part,omitempty"`
+	// Assistant shows or hides the assistant's panel, as its toolbar button does.
+	Assistant *bool `yaml:"assistant" json:"assistant,omitempty"`
+	// ChannelsPicker opens this sidebar row's Channels… popover, by the row's id.
+	ChannelsPicker string `yaml:"channels_picker" json:"channels_picker,omitempty"`
+	// FocusFilter gives the sidebar's filter the focus after Settle, as Go to… does.
+	FocusFilter bool `yaml:"focus_filter" json:"focus_filter,omitempty"`
+	// Settings opens the Settings window (true) or closes it (false), as ⌘, and its close
+	// button do.
+	Settings *bool `yaml:"settings" json:"settings,omitempty"`
 }
 
 // Crop says which part of the window an app shot keeps: the union of Regions, or a box of Size
@@ -129,6 +141,8 @@ type Table struct {
 // regionNames are the regions regions.json can hold.
 var regionNames = map[string]bool{
 	"window": true, "toolbar": true, "sidebar": true, "inspector": true, "waterfall": true, "library": true, "notice": true, "parts": true,
+	"spectrum": true, "readings": true, "transmissions": true, "heard": true, "log_day": true,
+	"squelch": true,
 }
 
 // Load reads and validates a scenes file.
@@ -243,21 +257,34 @@ func (s *Scene) validate(f *File) error {
 		}
 	}
 	if s.Stage != nil {
-		if p := s.Stage.Place; p != "" && p != "radio" && p != "library" {
-			return fmt.Errorf("place is radio or library, not %q", p)
-		}
-		if c := s.Stage.ImportChirp; c != "" {
-			if _, err := os.Stat(f.Path(c)); err != nil {
-				return err
-			}
-		}
-	}
-	if s.Bookmarks != "" {
-		if _, err := os.Stat(f.Path(s.Bookmarks)); err != nil {
+		if err := s.Stage.validate(f.Path); err != nil {
 			return err
 		}
 	}
-	for i, st := range s.Steps {
+	return validateSetup(f.Path, s.Bookmarks, s.Steps)
+}
+
+// validate checks a stage's place and that its CHIRP import exists, resolved by path.
+func (st *Stage) validate(path func(string) string) error {
+	if p := st.Place; p != "" && p != "radio" && p != "library" {
+		return fmt.Errorf("place is radio or library, not %q", p)
+	}
+	if c := st.ImportChirp; c != "" {
+		if _, err := os.Stat(path(c)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateSetup checks that a scene's bookmarks file exists and that each step is one thing.
+func validateSetup(path func(string) string, bookmarks string, steps []Step) error {
+	if bookmarks != "" {
+		if _, err := os.Stat(path(bookmarks)); err != nil {
+			return err
+		}
+	}
+	for i, st := range steps {
 		if (len(st.Ley) > 0) == (st.Wait > 0) {
 			return fmt.Errorf("step %d needs exactly one of ley and wait", i+1)
 		}

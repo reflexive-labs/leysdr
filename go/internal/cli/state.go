@@ -314,7 +314,7 @@ func channelNode(s ui.Style, st *leylinev1.GetStateResponse, ch *leylinev1.Chann
 	head := []string{
 		freq + " " + strings.ToUpper(leyline.ModeName(ch.Mode)),
 		"bw " + formatBandwidth(ch.BandwidthHz),
-		"squelch " + squelchString(ch.SquelchDb),
+		"squelch " + channelSquelch(ch),
 		inkState(s, stateWord(ch.State.String())),
 	}
 	// The absolute frequency is the answer; the offset it sits at inside the
@@ -481,7 +481,7 @@ func printStateTables(app *App, st *leylinev1.GetStateResponse) {
 			freq = channelFreqLabel(st, ch)
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%+d\t%s\t%d\t%s\t%s\t%v\t%s\n", ch.ChannelId, ch.CaptureId, freq, ch.OffsetHz,
-			leyline.ModeName(ch.Mode), ch.BandwidthHz, squelchString(ch.SquelchDb), enumName(ch.State.String()), ch.Persistent, clientString(ch.Owner))
+			leyline.ModeName(ch.Mode), ch.BandwidthHz, channelSquelch(ch), enumName(ch.State.String()), ch.Persistent, clientString(ch.Owner))
 	}
 	w.Flush()
 	fmt.Fprintln(app.Stdout, "\nSinks")

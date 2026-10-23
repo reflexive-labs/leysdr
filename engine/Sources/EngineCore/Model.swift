@@ -181,6 +181,13 @@ package struct EngineError: Error, Hashable, Sendable, CustomStringConvertible {
         /// name, and the plugin's program could not be started.
         package static let decoderNotFound = "DECODER_NOT_FOUND"
         package static let decoderFailed = "DECODER_FAILED"
+        /// Model calls on the user's own key (docs/design/ai.md): no key is set for the provider,
+        /// the provider refused the key, the provider or the worker could not be reached, and the
+        /// provider refused a request for a reason of its own (a rate or spend limit).
+        package static let credentialMissing = "CREDENTIAL_MISSING"
+        package static let credentialRejected = "CREDENTIAL_REJECTED"
+        package static let providerUnavailable = "PROVIDER_UNAVAILABLE"
+        package static let providerRefused = "PROVIDER_REFUSED"
         package static let failedPrecondition = "FAILED_PRECONDITION"
         package static let invalidArgument = "INVALID_ARGUMENT"
         package static let internalError = "INTERNAL"
@@ -196,6 +203,7 @@ package struct EngineError: Error, Hashable, Sendable, CustomStringConvertible {
             captureNotFound, channelNotFound, sinkNotFound, streamNotFound, jobNotFound, scanNotFound,
             modeUnsupported, unimplemented, platformUnsupported, failedPrecondition, invalidArgument,
             internalError, decoderNotFound, decoderFailed,
+            credentialMissing, credentialRejected, providerUnavailable, providerRefused,
         ]
     }
 
@@ -222,6 +230,17 @@ package struct EngineError: Error, Hashable, Sendable, CustomStringConvertible {
     package static func platformUnsupported(_ what: String) -> EngineError { .init(code: Code.platformUnsupported, message: "\(what) requires macOS", target: "") }
     package static func decoderNotFound(_ name: String) -> EngineError { .init(code: Code.decoderNotFound, message: "no decoder named \(name) is installed", target: name) }
     package static func decoderFailed(_ msg: String, target: String = "") -> EngineError { .init(code: Code.decoderFailed, message: msg, target: target) }
+    /// `detail` is why the key could not be read when one may exist (the keychain's own message).
+    package static func credentialMissing(_ provider: String, detail: String = "") -> EngineError {
+        let why = detail.isEmpty ? "" : " (\(detail))"
+        return .init(code: Code.credentialMissing, message: "no \(provider) key is set\(why); add one with ley ai add \(provider)", target: provider)
+    }
+    /// `providerMessage` is the provider's own words, passed on unedited.
+    package static func credentialRejected(_ provider: String, providerMessage: String) -> EngineError { .init(code: Code.credentialRejected, message: "\(provider) refused the key: \(providerMessage); paste a working key with ley ai add \(provider)", target: provider) }
+    package static func providerUnavailable(_ provider: String, detail: String) -> EngineError { .init(code: Code.providerUnavailable, message: "\(provider) could not be reached: \(detail); try again with ley ai check \(provider)", target: provider) }
+    /// A refusal for the provider's own reason, such as a rate or spend limit. Served as
+    /// FAILED_PRECONDITION so that no default retry policy repeats the call against the account.
+    package static func providerRefused(_ provider: String, providerMessage: String) -> EngineError { .init(code: Code.providerRefused, message: "\(provider) refused the request: \(providerMessage); check the account at the provider, then try again with ley ai check \(provider)", target: provider) }
     /// A precondition the caller can see and fix, where no more specific code fits.
     package static func failedPrecondition(_ msg: String, target: String = "") -> EngineError { .init(code: Code.failedPrecondition, message: msg, target: target) }
     /// A fault the caller did not cause and cannot act on; the prose is whatever went wrong.

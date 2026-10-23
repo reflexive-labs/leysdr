@@ -131,6 +131,8 @@ actor RecordRunner: RecordRunning {
     private var heardThrough: UInt64?
     private var draining = false
     private var tearingDown = false
+    /// Set when `teardown` has finished: the files are closed and the radio is back.
+    private var tornDown = false
 
     /// What the channel's telemetry said, for the drain to apply when it reaches `sample`.
     private enum Heard {
@@ -202,10 +204,14 @@ actor RecordRunner: RecordRunning {
     }
 
     /// Ends the job: the open part is closed, the manifest records how, and the radio goes back.
+    /// Returns once the files are final, even when a teardown the runner began on its own (a full
+    /// disk, the channel closing) is still under way: a caller that removes the directory next
+    /// must not do it under a manifest write.
     func stop(endedBy reason: String) async {
         task?.cancel()
         wake?()
         await teardown(endedBy: endedBy ?? reason)
+        while !tornDown { try? await Task.sleep(nanoseconds: 10_000_000) }
     }
 
     private func teardown(endedBy reason: String) async {
@@ -244,6 +250,7 @@ actor RecordRunner: RecordRunning {
         // recording finished too, rather than a manifest missing the part still being written.
         let end = pendingEnd
         pendingEnd = nil
+        tornDown = true
         if heardNothing, end?.state != .failed {
             // Cancelled, duration, quiet or the channel closing: the job did what it was asked
             // and there was nothing on the air. A client's CancelJob lands here too, and

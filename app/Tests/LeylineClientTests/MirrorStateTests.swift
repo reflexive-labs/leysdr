@@ -130,6 +130,68 @@ final class MirrorStateTests: XCTestCase {
         XCTAssertNil(s.frequencyHz(of: s.channel("chan_1")!))
     }
 
+    func testKeysArriveWholeAndUsageLinesReplaceByKey() {
+        var snap = Leyline_V1_GetStateResponse()
+        snap.eventSeq = 5
+        var key = Leyline_V1_Credential()
+        key.provider = "anthropic"
+        key.lastFour = "0042"
+        snap.ai.credentials = [key]
+        var line = Leyline_V1_UsageLine()
+        line.provider = "anthropic"
+        line.model = "claude-sonnet-5-5"
+        line.feature = "assistant"
+        line.scopeID = "conv_1"
+        line.day = "2026-10-14"
+        line.requests = 1
+        snap.usage = [line]
+        var s = MirrorState(snapshot: snap)
+        XCTAssertEqual(s.ai.credentials.map(\.lastFour), ["0042"])
+
+        // A removed key is a shorter list in the next event, never a tombstone.
+        var fewer = Leyline_V1_AIState()
+        var feature = Leyline_V1_FeatureModel()
+        feature.feature = "speech"
+        feature.provider = "openai"
+        fewer.features = [feature]
+        XCTAssertTrue(s.apply(event(6, .ai(fewer))))
+        XCTAssertTrue(s.ai.credentials.isEmpty)
+        XCTAssertEqual(s.ai.features.map(\.provider), ["openai"])
+
+        // The same line again carries new counters; a different day is a second line.
+        line.requests = 3
+        XCTAssertTrue(s.apply(event(7, .usage(line))))
+        XCTAssertEqual(s.usage.map(\.requests), [3])
+        line.day = "2026-10-15"
+        line.requests = 1
+        XCTAssertTrue(s.apply(event(8, .usage(line))))
+        XCTAssertEqual(s.usage.map(\.requests), [3, 1])
+    }
+
+    func testConversationsReplaceByIdAndEndedOnesStay() {
+        var conv = Leyline_V1_Conversation()
+        conv.conversationID = "conv_1"
+        conv.state = .conversationIdle
+        var snap = Leyline_V1_GetStateResponse()
+        snap.eventSeq = 5
+        snap.conversations = [conv]
+        var s = MirrorState(snapshot: snap)
+
+        var turn = Leyline_V1_Turn()
+        turn.turnID = "t1"
+        turn.role = .user
+        turn.text = "what is on 162.400?"
+        conv.turns = [turn]
+        conv.state = .conversationThinking
+        XCTAssertTrue(s.apply(event(6, .conversation(conv))))
+        XCTAssertEqual(s.conversations.count, 1)
+        XCTAssertEqual(s.conversations[0].turns.map(\.text), ["what is on 162.400?"])
+
+        conv.state = .conversationEnded
+        XCTAssertTrue(s.apply(event(7, .conversation(conv))))
+        XCTAssertEqual(s.conversations.map(\.state), [.conversationEnded])
+    }
+
     func testAnchorUpdatesItsCapture() {
         var s = MirrorState()
         s.apply(event(1, .capture(capture("cap_a"))))

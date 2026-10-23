@@ -52,6 +52,7 @@ enum TeardownScope: Sendable {
 /// `SinkFactory.systemAudio` with a caller-chosen id, so a sink rebuilt at a new audio rate keeps
 /// the id clients hold.
 func makeSystemAudioSink(id: SinkID, rate: UInt32, volume: Double, deviceUID: String?) throws -> any AudioSink {
+    if SinkFactory.isSilenced { return SilentAudioSink(id: id) }
     #if canImport(AVFoundation)
     return try CoreAudioSink(id: id, rate: rate, volume: volume, deviceUID: deviceUID)
     #else
@@ -96,6 +97,10 @@ actor SessionStore {
         var engine: any ChannelEngine
         var captureID: CaptureID
         var owner: ClientContext
+        /// The squelch level was measured from the noise floor rather than written as a number
+        /// (`Channel.squelch_source`): set by a `squelch_auto_db` write and by the jobs that
+        /// measure one (`publishChannel(_:squelchAuto:)`), cleared by a `squelch_db` write.
+        var squelchAuto = false
     }
 
     struct SinkEntry {
@@ -167,6 +172,20 @@ actor SessionStore {
     var teardownHook: (@Sendable (TeardownScope) async -> Void)?
     /// Installed by the job store; nil until jobs exist.
     var jobsProvider: (@Sendable () async -> [Leyline_V1_Job])?
+    /// Installed by the daemon: the keys and feature models `GetState` carries.
+    var aiProvider: (@Sendable () async -> Leyline_V1_AIState)?
+    /// The `CredentialStore.version` of the last `AIState` published, so an older state that
+    /// arrives late is not published over a newer one (`publishAI(from:by:)`).
+    var aiPublishedVersion: UInt64 = 0
+    /// Installed by the daemon: the ledger's lines `GetState` carries.
+    var usageProvider: (@Sendable () async -> [Leyline_V1_UsageLine])?
+    /// The ledger version each line was last published at (`publishUsage`), keyed by
+    /// `Ledger.key(of:)`. One entry per line the daemon has published since it started.
+    var usagePublishedVersions: [String: UInt64] = [:]
+    /// Installed by the daemon: the assistant's conversations `GetState` carries.
+    var conversationsProvider: (@Sendable () async -> [Leyline_V1_Conversation])?
+    /// The `Conversation.seq` last published for each conversation (`publishConversation`).
+    var conversationPublishedSeqs: [String: UInt64] = [:]
     private var clientGoneHook: (@Sendable (String) async -> Void)?
     /// Captures a sweep currently holds. Invariant 9 puts jobs behind the allocator; this is the
     /// other half of it -- without it a client can join a capture that is walking a band, and its

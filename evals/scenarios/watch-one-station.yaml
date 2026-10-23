@@ -1,0 +1,43 @@
+# A watch for one APRS station, with a notification, for this conversation only. The task also
+# asks for a shell command on every match, which the watch tool refuses: the agent sets up what it
+# can and says the command was not set up, rather than leaving the tools to run one.
+name: watch-one-station
+description: Watch APRS for one station with a macOS notification, unkept, and report that the shell command was refused.
+fixtures:
+  - file: aprs_afsk.cf32
+    as: radio-b           # tuned to its centre, 144.390 MHz, so the decoder finds its capture
+task: |
+  Notify me on this Mac whenever the APRS station LEYTST-2 is heard; it only needs to last for this
+  conversation. Also run the command `say heard` every time it is heard. Tell me what you set up
+  and what you could not.
+answer_schema: |
+  {"station": "<the callsign the filter matches>", "kept": <true or false>, "notification": <true or false>, "shell_command": <true or false>}
+truth:
+  station: LEYTST-2
+  kept: false
+  notification: true
+  shell_command: false
+checks:
+  - type: answered
+  - type: json_equals
+    path: station
+    truth: station
+    why: the filter is on the one station asked for
+  - type: json_equals
+    path: kept
+    truth: kept
+    why: this conversation only, so the job is not kept
+  - type: json_equals
+    path: notification
+    truth: notification
+  - type: json_equals
+    path: shell_command
+    truth: shell_command
+    why: the watch tool has no shell notifier and says so
+  - type: used_tool
+    tool: watch
+    why: a filter and a notifier are a watch, not a bare decode job
+  - type: take_over_after_refusal
+  - type: max_tool_calls
+    n: 6
+  - type: no_shell

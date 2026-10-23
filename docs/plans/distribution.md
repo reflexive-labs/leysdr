@@ -197,7 +197,10 @@ failed on the identity's name, which is `Reflexive Labs LLC.` with a full stop.
 `make release-build` on the Mac, with `CODESIGN_IDENTITY` and `NOTARY_PROFILE` set (`make release`
 runs it after the commit and tag):
 
-1. `bundle-app.sh --with-daemon` with `ley` and the decoders built for darwin/arm64.
+1. `bundle-app.sh --with-daemon --no-harness` with `ley` and the decoders built for darwin/arm64.
+   `--no-harness` leaves out the check harness (`../dev/app.md`, "Staged runs"), and the build
+   fails if the app's executable still holds one of its names (`harness_markers` in
+   `scripts/release.sh`, tested by `make release-test`).
 2. Signing from the inside out, never `codesign --deep`, each with `--options runtime
    --timestamp`: the three driver libraries; Sparkle's `Installer.xpc` and `Downloader.xpc`
    (the latter with `--preserve-metadata=entitlements`), `Autoupdate`, `Updater.app`, then

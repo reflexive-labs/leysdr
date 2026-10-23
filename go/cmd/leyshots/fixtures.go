@@ -14,9 +14,13 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/reflexive-labs/leysdr/go/pkg/iqfile"
 )
+
+// fixtureLocks holds a mutex per cached fixture file, so one process generates each once.
+var fixtureLocks sync.Map
 
 // cacheDir is where generated scene fixtures are kept between runs: the platform's cache
 // directory, because they are a few hundred megabytes each and rebuilt from a seed.
@@ -84,6 +88,11 @@ func ensureFixture(ctx context.Context, leyfix, dir string, ref FixtureRef, leyf
 		return nil, err
 	}
 	path := filepath.Join(dir, want.File)
+	// Scenes run side by side (check --jobs) share the cache: one generates a fixture while the
+	// others wait for it rather than write the same file at once.
+	lock, _ := fixtureLocks.LoadOrStore(path, &sync.Mutex{})
+	lock.(*sync.Mutex).Lock()
+	defer lock.(*sync.Mutex).Unlock()
 	if current(path, &want.Sidecar, leyfixSrc) {
 		logf("fixture %s: cached at %s", ref.Name, path)
 		return &fixtureFile{Path: path, Generator: want.Sidecar.Generator}, nil

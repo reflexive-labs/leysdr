@@ -15,6 +15,11 @@
 #   make fixtures   generate IQ fixtures into fixtures/ with leyfix (FIXTURE_DURATION=0.5 for a quick set)
 #   make e2e        cross-language contract test: `ley` driving a locally built leylined over UDS
 #   make eval       the agent evals: an agent on `ley mcp` against fixtures, graded (costs tokens)
+#   make eval-test  the eval runner's own tests against a locally built leylined: scripted agents,
+#                   no tokens
+#   make speech-spike RECORDING=<id> ENGINES="speech=whisper-1 speech=gpt-4o-transcribe"
+#                   one row per speech engine on a gated recording, scored against its hand
+#                   transcript (docs/dev/speech-spike.md); a cloud engine costs what it bills
 #   make shots      the site's screenshots into tmp/shots (docs/plans/site-shots.md): only the scenes
 #                   whose inputs changed since their image was taken; ONLY=a,b takes those scenes
 #                   whatever changed. The app scenes need the Mac; elsewhere terminal
@@ -29,6 +34,14 @@
 #   make app-e2e    the façade against a locally built leylined --no-hardware playing a fixture
 #   make app-run    macOS: run the app straight from the package (no bundle, no signature)
 #   make app-bundle macOS: assemble and sign app/dist/Leyline.app (scripts/bundle-app.sh)
+#   make app-check  macOS: the app's checks (docs/plans/mac-loop.md, ML-4): each scene in
+#                   app/checks/scenes.yaml against its own daemon, its pictures and trees compared
+#                   with the goldens in tmp/goldens, a line each in tmp/checks; ONLY=a,b runs those
+#                   scenes, RECORD=1 writes their goldens instead, JOBS=N runs N side by side
+#   make app-check-smoke     macOS: the smoke scenes alone (ML-11's first tier)
+#   make app-check-affected  macOS: the scenes covering what changed since the merge base with
+#                   main (BASE=<ref> for another), uncommitted files included; fails on a
+#                   changed file no scene covers, and on selecting no scene
 #   make release    macOS: cut the next release from start to finish (scripts/cut-release.sh):
 #                   check the build Mac, bump VERSION, date the CHANGELOG's Unreleased section,
 #                   commit and tag, make release-build, push, make release-publish, then name the
@@ -49,7 +62,7 @@
 #   make reload     macOS: rebuild ley and leylined (release), stop the running daemon, reinstall the
 #                   LaunchAgent on the new binary and start it — the edit-build-try loop in one step
 #   make lint       golangci-lint + gofumpt (pinned versions, installed into .tools/<host>/bin)
-#   make app-lint   swift-format over the app package
+#   make app-lint   swift-format over the app package, and no colour or font outside Theme.swift
 #   make docs-check every relative link and backticked repository path in the docs resolves
 #   make vulncheck  govulncheck over the Go module: known vulnerabilities in code ley calls
 #   make workflow-lint  actionlint over .github/workflows
@@ -84,7 +97,7 @@ ACTIONLINT_VERSION := v1.7.12
 CODESIGN_IDENTITY ?= Developer ID Application: Reflexive Labs LLC. (P2KZW25PL8)
 NOTARY_PROFILE ?= leysdr-notary
 
-.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval shots shots-bundle shots-publish shots-release release release-build release-publish release-rehearse release-test app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders
+.PHONY: reload all proto proto-check version version-check go go-test bands-json race swift swift-release swift-test sdr-loader-test fixtures e2e eval eval-test speech-spike shots shots-bundle shots-publish shots-release app-check app-check-smoke app-check-affected release release-build release-publish release-rehearse release-test app app-test app-e2e app-run app-bundle lint app-lint docs-check vulncheck workflow-lint hot-path check clean install-decoders
 
 all: go swift app
 
@@ -209,6 +222,24 @@ eval: go swift fixtures
 		LEYLINE_FIXTURES=$(CURDIR)/fixtures LEYLINE_DECODERS=$(CURDIR)/decoders PATH="$(GOBIN):$$PATH" \
 		go run ./cmd/leyeval run --scenarios $(CURDIR)/evals/scenarios --out $(CURDIR)/evals/runs $(EVAL_ARGS)
 
+# The eval runner's own tests (go/internal/eval) against the real daemon, with scripted agents and
+# the keyless speech-scripted decoder, so they cost nothing. They skip themselves unless the
+# binaries, the decoder manifests and the leydec-* plugins are named, as the e2e does, and
+# `make e2e` runs only ./internal/e2e/..., so this is where they run.
+eval-test: go swift fixtures
+	cd go && LEYLINED_BIN="$$(cd ../engine && swift build -c $(SWIFT_CONFIG) --show-bin-path)/leylined" LEY_BIN=$(GOBIN)/ley \
+		LEYLINE_DECODERS=$(CURDIR)/decoders PATH="$(GOBIN):$$PATH" \
+		go test -count=1 ./internal/eval/...
+
+# The speech-to-text spike (docs/dev/speech-spike.md): leyspeech transcribes RECORDING once per
+# engine on the running daemon and scores each against the transcript.txt beside it. ENGINES is
+# space-separated, each a decoder or decoder=model; SPIKE_ARGS passes more flags (--json, --ref F,
+# --daemon). Costs whatever a cloud engine bills, so it is not in `check`.
+speech-spike: go
+	@test -n "$(RECORDING)" || { echo 'usage: make speech-spike RECORDING=<id> ENGINES="speech=whisper-1 speech=gpt-4o-transcribe"' >&2; exit 2; }
+	$(GOBIN)/leyspeech compare --ley $(GOBIN)/ley --recording $(RECORDING) \
+		$(foreach e,$(or $(ENGINES),speech),--engine $(e)) $(SPIKE_ARGS)
+
 # The site's screenshots (docs/plans/site-shots.md): leyshots runs each scene in site/shots/scenes.yaml
 # against its own leylined --no-hardware playing a scene fixture it generates into the cache. On the
 # Mac the app is bundled first, because the app scenes launch app/dist/Leyline.app.
@@ -223,8 +254,9 @@ eval: go swift fixtures
 # prerequisites they would make every image stale on every run. Scenes share tmp/shots/shots.json
 # and one tmux server, so the run is serial. A failed scene stops make; `make -k shots` goes on.
 SHOTS_OUT := $(CURDIR)/tmp/shots
-SHOTS_RUN = LEYLINED_BIN="$$(cd engine && swift build -c $(SWIFT_CONFIG) --show-bin-path)/leylined" LEY_BIN=$(GOBIN)/ley \
-	LEYFIX_BIN=$(GOBIN)/leyfix $(GOBIN)/leyshots run
+LEYSHOTS = LEYLINED_BIN="$$(cd engine && swift build -c $(SWIFT_CONFIG) --show-bin-path)/leylined" LEY_BIN=$(GOBIN)/ley \
+	LEYFIX_BIN=$(GOBIN)/leyfix $(GOBIN)/leyshots
+SHOTS_RUN = $(LEYSHOTS) run
 ifneq ($(filter shots-release,$(MAKECMDGOALS))$(if $(ONLY),,$(filter shots,$(MAKECMDGOALS))),)
 SHOTS_GEN := $(shell mkdir -p $(SHOTS_OUT)/bin && cd go && go build -o $(SHOTS_OUT)/bin/ ./cmd/leyshots ./cmd/leyfix && \
 	$(SHOTS_OUT)/bin/leyshots keys --leyfix $(SHOTS_OUT)/bin/leyfix --out $(SHOTS_OUT)/keys >&2 && \
@@ -268,6 +300,27 @@ shots-publish: go
 # release's; with none, leyshots says the latest release is up to date and creates nothing.
 shots-release: $(SHOTS_ASSETS) | go
 	$(GOBIN)/leyshots publish $(SHOTS_ARGS)
+
+# The app's checks (docs/plans/mac-loop.md, ML-4): what make shots builds for an app scene, then
+# leyshots check. Every scene runs, or ONLY's; RECORD=1 writes the goldens rather than comparing.
+# The daemon is a release build whatever SWIFT_CONFIG says: a debug leylined plays scene_vhf20's
+# 21 MSPS at about half of real time, which puts every timing in a scene out.
+# The run is under caffeinate -i, so the Mac does not sleep through it with the display off.
+# JOBS=N runs N scenes side by side (leyshots check --jobs; serial: true scenes run alone).
+# app-check-smoke runs the smoke scenes; app-check-affected the scenes whose covers match a file
+# changed under app/Sources or app/checks, or app/Package.swift, since the merge base with main,
+# or BASE=<ref>; a base that is HEAD with nothing changed since compares with the commit before.
+APP_CHECK = LEYLINED_BIN="$$(cd engine && swift build -c release --show-bin-path)/leylined" LEY_BIN=$(GOBIN)/ley \
+	LEYFIX_BIN=$(GOBIN)/leyfix caffeinate -i $(GOBIN)/leyshots check $(if $(JOBS),--jobs $(JOBS)) \
+	$(if $(filter 1,$(RECORD)),--record)
+app-check: go swift-release shots-bundle
+	$(APP_CHECK) $(if $(ONLY),--only $(ONLY))
+
+app-check-smoke: go swift-release shots-bundle
+	$(APP_CHECK) --smoke
+
+app-check-affected: go swift-release shots-bundle
+	$(APP_CHECK) --affected $(if $(BASE),--base $(BASE))
 
 # Every step of a release in order, resumable (docs/dev/release-checklist.md, "The signed build").
 # It calls make release-build, release-publish and release-rehearse itself. The recipe does not
@@ -322,12 +375,14 @@ app-bundle:
 	./scripts/bundle-app.sh $(BUNDLE_ARGS)
 
 # swift-format ships in the toolchain; app/.swift-format pins its defaults at four spaces and 100
-# columns (docs/dev/swift-style.md, "Files"). app-format rewrites, app-lint only reports.
+# columns (docs/dev/swift-style.md, "Files"). app-format rewrites, app-lint only reports. app-lint
+# also runs scripts/check-theme.sh: no colour or font in the app outside Theme.swift.
 app-format:
 	cd app && swift format --in-place --recursive Sources Tests Package.swift
 
 app-lint:
 	cd app && swift format lint --strict --recursive Sources Tests Package.swift
+	./scripts/check-theme.sh
 
 lint: $(GOLANGCI_LINT) $(GOFUMPT)
 	cd go && $(GOLANGCI_LINT) run ./... && test -z "$$($(GOFUMPT) -l .)"

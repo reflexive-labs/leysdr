@@ -590,6 +590,44 @@ func (*StreamPosition_AtSample) isStreamPosition_Position() {}
 
 func (*StreamPosition_AtHostTimeNs) isStreamPosition_Position() {}
 
+// The reply of an RPC that returns nothing. Here rather than in control.proto because ai.proto's
+// services return it and control.proto imports ai.proto (same package, wire-identical).
+type Empty struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Empty) Reset() {
+	*x = Empty{}
+	mi := &file_leyline_v1_common_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Empty) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Empty) ProtoMessage() {}
+
+func (x *Empty) ProtoReflect() protoreflect.Message {
+	mi := &file_leyline_v1_common_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Empty.ProtoReflect.Descriptor instead.
+func (*Empty) Descriptor() ([]byte, []int) {
+	return file_leyline_v1_common_proto_rawDescGZIP(), []int{6}
+}
+
 type ErrorDetail struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Code          string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"` // stable machine string, e.g. "FREQ_OUT_OF_RANGE"
@@ -601,7 +639,7 @@ type ErrorDetail struct {
 
 func (x *ErrorDetail) Reset() {
 	*x = ErrorDetail{}
-	mi := &file_leyline_v1_common_proto_msgTypes[6]
+	mi := &file_leyline_v1_common_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -613,7 +651,7 @@ func (x *ErrorDetail) String() string {
 func (*ErrorDetail) ProtoMessage() {}
 
 func (x *ErrorDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_common_proto_msgTypes[6]
+	mi := &file_leyline_v1_common_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -626,7 +664,7 @@ func (x *ErrorDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ErrorDetail.ProtoReflect.Descriptor instead.
 func (*ErrorDetail) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_common_proto_rawDescGZIP(), []int{6}
+	return file_leyline_v1_common_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ErrorDetail) GetCode() string {
@@ -663,7 +701,7 @@ type GainState struct {
 
 func (x *GainState) Reset() {
 	*x = GainState{}
-	mi := &file_leyline_v1_common_proto_msgTypes[7]
+	mi := &file_leyline_v1_common_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -675,7 +713,7 @@ func (x *GainState) String() string {
 func (*GainState) ProtoMessage() {}
 
 func (x *GainState) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_common_proto_msgTypes[7]
+	mi := &file_leyline_v1_common_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -688,7 +726,7 @@ func (x *GainState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GainState.ProtoReflect.Descriptor instead.
 func (*GainState) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_common_proto_rawDescGZIP(), []int{7}
+	return file_leyline_v1_common_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GainState) GetElement() string {
@@ -729,7 +767,7 @@ type GainWrite struct {
 
 func (x *GainWrite) Reset() {
 	*x = GainWrite{}
-	mi := &file_leyline_v1_common_proto_msgTypes[8]
+	mi := &file_leyline_v1_common_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -741,7 +779,7 @@ func (x *GainWrite) String() string {
 func (*GainWrite) ProtoMessage() {}
 
 func (x *GainWrite) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_common_proto_msgTypes[8]
+	mi := &file_leyline_v1_common_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -754,7 +792,7 @@ func (x *GainWrite) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GainWrite.ProtoReflect.Descriptor instead.
 func (*GainWrite) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_common_proto_rawDescGZIP(), []int{8}
+	return file_leyline_v1_common_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GainWrite) GetElement() string {
@@ -841,7 +879,8 @@ const file_leyline_v1_common_proto_rawDesc = "" +
 	"\tat_sample\x18\x02 \x01(\v2\x16.leyline.v1.SampleTimeH\x00R\batSample\x12'\n" +
 	"\x0fat_host_time_ns\x18\x03 \x01(\x03H\x00R\fatHostTimeNsB\n" +
 	"\n" +
-	"\bposition\"S\n" +
+	"\bposition\"\a\n" +
+	"\x05Empty\"S\n" +
 	"\vErrorDetail\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x16\n" +
@@ -887,7 +926,7 @@ func file_leyline_v1_common_proto_rawDescGZIP() []byte {
 }
 
 var file_leyline_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_leyline_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_leyline_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_leyline_v1_common_proto_goTypes = []any{
 	(DeliveryPolicy)(0),    // 0: leyline.v1.DeliveryPolicy
 	(DemodMode)(0),         // 1: leyline.v1.DemodMode
@@ -898,9 +937,10 @@ var file_leyline_v1_common_proto_goTypes = []any{
 	(*ClientInfo)(nil),     // 6: leyline.v1.ClientInfo
 	(*Gap)(nil),            // 7: leyline.v1.Gap
 	(*StreamPosition)(nil), // 8: leyline.v1.StreamPosition
-	(*ErrorDetail)(nil),    // 9: leyline.v1.ErrorDetail
-	(*GainState)(nil),      // 10: leyline.v1.GainState
-	(*GainWrite)(nil),      // 11: leyline.v1.GainWrite
+	(*Empty)(nil),          // 9: leyline.v1.Empty
+	(*ErrorDetail)(nil),    // 10: leyline.v1.ErrorDetail
+	(*GainState)(nil),      // 11: leyline.v1.GainState
+	(*GainWrite)(nil),      // 12: leyline.v1.GainWrite
 }
 var file_leyline_v1_common_proto_depIdxs = []int32{
 	3, // 0: leyline.v1.StreamPosition.at_sample:type_name -> leyline.v1.SampleTime
@@ -921,7 +961,7 @@ func file_leyline_v1_common_proto_init() {
 		(*StreamPosition_AtSample)(nil),
 		(*StreamPosition_AtHostTimeNs)(nil),
 	}
-	file_leyline_v1_common_proto_msgTypes[8].OneofWrappers = []any{
+	file_leyline_v1_common_proto_msgTypes[9].OneofWrappers = []any{
 		(*GainWrite_Db)(nil),
 		(*GainWrite_Auto)(nil),
 	}
@@ -931,7 +971,7 @@ func file_leyline_v1_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_leyline_v1_common_proto_rawDesc), len(file_leyline_v1_common_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   9,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // One connection to one daemon: the gRPC client over the Unix socket, the identity interceptor,
-// and the six typed service clients. Lazy like the Go client (`go/pkg/leyline/client.go`): nothing
-// connects until the first RPC, and a socket with no listener fails that RPC with `UNAVAILABLE`.
-// Everything else in this module is built on it.
+// and the nine typed service clients. Lazy like the Go client (`go/pkg/leyline/client.go`):
+// nothing connects until the first RPC, and a socket with no listener fails that RPC with
+// `UNAVAILABLE`. Everything else in this module is built on it.
 
 import Foundation
 import GRPCCore
@@ -23,6 +23,9 @@ public final class DaemonConnection: Sendable {
     public let jobs: Leyline_V1_Jobs.Client<Transport>
     public let resources: Leyline_V1_Resources.Client<Transport>
     public let decoders: Leyline_V1_Decoders.Client<Transport>
+    public let credentials: Leyline_V1_Credentials.Client<Transport>
+    public let usage: Leyline_V1_Usage.Client<Transport>
+    public let assistant: Leyline_V1_Assistant.Client<Transport>
 
     let client: GRPCClient<Transport>
     private let runner: Task<Void, any Error>
@@ -46,6 +49,9 @@ public final class DaemonConnection: Sendable {
         self.jobs = .init(wrapping: client)
         self.resources = .init(wrapping: client)
         self.decoders = .init(wrapping: client)
+        self.credentials = .init(wrapping: client)
+        self.usage = .init(wrapping: client)
+        self.assistant = .init(wrapping: client)
         self.runner = Task { try await client.runConnections() }
     }
 
@@ -71,6 +77,13 @@ public final class DaemonConnection: Sendable {
             st.sinks.sort { $0.sinkID < $1.sinkID }
             st.jobs.sort { $0.jobID < $1.jobID }
             st.playbacks.sort { $0.playbackID < $1.playbackID }
+            st.ai.credentials.sort { $0.provider < $1.provider }
+            st.ai.features.sort { $0.feature < $1.feature }
+            st.usage.sort {
+                ($0.day, $0.provider, $0.model, $0.feature, $0.scopeID)
+                    < ($1.day, $1.provider, $1.model, $1.feature, $1.scopeID)
+            }
+            st.conversations.sort { $0.conversationID < $1.conversationID }
             return st
         } catch {
             throw LeylineError(error)
@@ -105,6 +118,24 @@ public final class DaemonConnection: Sendable {
         pump(bufferingPolicy: .bufferingNewest(buffer)) { deliver in
             try await self.telemetry.subscribe(subscription) { response in
                 for try await msg in response.messages { await deliver(msg) }
+            }
+        }
+    }
+
+    /// `Assistant.WatchConversation` as a stream: the conversation whole on every change, from
+    /// `sinceSeq` on (0 sends the current state first), ending after it delivers `ENDED` or
+    /// `FAILED`. Unbounded, because each message is a whole state and a dropped one would leave a
+    /// question unanswered until the next change.
+    public func conversation(_ id: String, sinceSeq: UInt64 = 0) -> AsyncThrowingStream<
+        Leyline_V1_Conversation, any Error
+    > {
+        var req = Leyline_V1_WatchConversationRequest()
+        req.conversationID = id
+        req.sinceSeq = sinceSeq
+        let request = req
+        return pump(bufferingPolicy: .unbounded) { deliver in
+            try await self.assistant.watchConversation(request) { response in
+                for try await c in response.messages { await deliver(c) }
             }
         }
     }

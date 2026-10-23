@@ -36,13 +36,14 @@ func TestSetParams(t *testing.T) {
 		return st
 	}
 	// The persistent tune measured its own squelch, so the confirmation reads
-	// as a move from that threshold rather than from off.
+	// as a move from that threshold, which the channel says was measured,
+	// rather than from off.
 	out := mustRun(t, sock, "set", "squelch", "-40")
-	if !strings.Contains(out, "squelch -80 dBFS → -40 dBFS on 146.520 MHz NFM (channel 1)") || strings.Contains(out, "cli:") {
+	if !strings.Contains(out, "squelch -80 dBFS (auto) → -40 dBFS on 146.520 MHz NFM (channel 1)") || strings.Contains(out, "cli:") {
 		t.Fatalf("squelch confirmation: %s", out)
 	}
-	if st := state(); st.Channels[0].SquelchDb != -40 {
-		t.Fatalf("squelch not applied: %v", st.Channels[0].SquelchDb)
+	if st := state(); st.Channels[0].SquelchDb != -40 || st.Channels[0].SquelchSource != leylinev1.SquelchSource_SQUELCH_MANUAL {
+		t.Fatalf("squelch not applied as a level: %v %v", st.Channels[0].SquelchDb, st.Channels[0].SquelchSource)
 	}
 	mustRun(t, sock, "set", "squelch", "off")
 	if st := state(); !math.IsNaN(st.Channels[0].SquelchDb) {
@@ -251,6 +252,16 @@ func TestSetSquelchAuto(t *testing.T) {
 	st, _ := c.State(t.Context())
 	if got := st.Channels[0].SquelchDb; math.Abs(got-(-80)) > 1.5 {
 		t.Fatalf("auto squelch value: %v", got)
+	}
+	if got := st.Channels[0].SquelchSource; got != leylinev1.SquelchSource_SQUELCH_AUTO {
+		t.Fatalf("auto squelch source: %v", got)
+	}
+	// ley state and ley set's own screen say the level was measured.
+	if out := mustRun(t, sock, "state"); !strings.Contains(out, "squelch -80.0 dB (auto)") {
+		t.Fatalf("state does not say the squelch is auto:\n%s", out)
+	}
+	if out := mustRun(t, sock, "set"); !strings.Contains(out, "squelch    -80 dBFS (auto)") {
+		t.Fatalf("set does not say the squelch is auto:\n%s", out)
 	}
 	// A wider channel sits higher above the per-bin floor: 200 kHz → about -68. Only a wide-FM
 	// channel can be that wide: every other mode is filtered at ~48 kHz.

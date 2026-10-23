@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make app-check:*)",
+      "Bash(make app:*)",
+      "Bash(make app-lint:*)",
+      "Bash(make app-test:*)",
+      "Bash(make app-bundle:*)",
+      "Bash(go/bin/leyshots:*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/claude-app-hook.sh",
+            "timeout": 300
+          }
+        ]
+      }
+    ]
+  }
+}

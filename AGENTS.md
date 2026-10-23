@@ -31,10 +31,10 @@ A launchd daemon (the engine) owning SDR hardware, with the SwiftUI app (`app/`,
   state of their own; its
   tests run against `leylined --no-hardware` with a fixture as the radio (`make app-e2e`). Colours
   and type live in `Theme.swift` only. Every contract addition the app needs ships with its `ley`
-  mirror. `LeylineApp` is declared under `#if os(macOS)` and is never compiled on Linux, so
-  a passing Linux run does not test any view: read the diff by eye for isolation, scope, `Sendable`
-  and layout, and name the files and behaviours left unverified when handing over
-  (`docs/dev/swift-style.md`, "Working as an agent on this repository").
+  mirror. A view change is checked on the Mac with `make app-check`, which runs the app's check
+  scenes against their goldens: add or extend a scene for the behaviour changed, and name what no
+  check covers when handing over (`docs/dev/swift-style.md`, "Working as an agent on this
+  repository"; Linux never compiles `LeylineApp`).
 - **Commits carry no agent attribution.** No `Co-Authored-By` trailer and no "Generated with" line in a commit message or a pull request description; the author is the person committing.
 - **Lint is always fixed, never left red.** `make lint` (Go) and `make app-lint` (Swift) must pass before work is handed over. A lint failure you did not cause is fixed too, in a commit of its own so it does not hide inside an unrelated diff.
 - `--json` CLI output is the standard proto3 JSON mapping — no custom shapes.

@@ -111,8 +111,8 @@ struct AudioLevelsView: View {
         ctx.stroke(
             line, with: .color(Theme.borderStrong), style: StrokeStyle(lineWidth: 1, dash: dash))
 
-        // Labels under the slots, and the meter's two numbers under the pair: `—` before the
-        // first meter, because nothing was measured.
+        // Labels under the slots, and the meter's two numbers under the pair: `–` while the
+        // audio is silent, `—` before the first meter, because nothing was measured.
         let labelY = plotH + labelGap
         for (i, label) in labels.enumerated() where i < f.bars.count {
             let cx = slotX(i, bands: bands) + Theme.Layout.audioSlotWidth / 2
@@ -124,7 +124,7 @@ struct AudioLevelsView: View {
         for (i, db) in [f.rmsDB, f.peakDB].enumerated() {
             let cx = slotX(bands + i, bands: bands) + Theme.Layout.audioSlotWidth / 2
             ctx.draw(
-                Text(Measure.bare(db)).font(Theme.Font.valueSmall)
+                Text(LevelScale.number(db)).font(Theme.Font.valueSmall)
                     .foregroundStyle(Theme.inkTertiary),
                 at: CGPoint(x: cx, y: numberY), anchor: .top)
         }

@@ -39,15 +39,25 @@ type appShot struct {
 
 // stageJSON is the stage file for s: the scene's stage with import_chirp made absolute.
 func stageJSON(f *File, s *Stage) ([]byte, error) {
+	st, err := resolveStage(f.Path, s)
+	if err != nil {
+		return nil, err
+	}
+	return json.MarshalIndent(st, "", "  ")
+}
+
+// resolveStage is a copy of s with import_chirp resolved by path and made absolute, as the app,
+// which runs in another directory, needs it.
+func resolveStage(path func(string) string, s *Stage) (Stage, error) {
 	st := *s
 	if st.ImportChirp != "" {
-		abs, err := filepath.Abs(f.Path(st.ImportChirp))
+		abs, err := filepath.Abs(path(st.ImportChirp))
 		if err != nil {
-			return nil, err
+			return Stage{}, err
 		}
 		st.ImportChirp = abs
 	}
-	return json.MarshalIndent(st, "", "  ")
+	return st, nil
 }
 
 // launchApp starts the app on the scene's daemon with its stage file in the run directory, and

@@ -8,6 +8,7 @@ package leyline.v1;
 option go_package = "github.com/reflexive-labs/leysdr/go/gen/leyline/v1;leylinev1";
 import "leyline/v1/common.proto";
 import "leyline/v1/jobs.proto";
+import "leyline/v1/ai.proto";
 
 // ---------- Capability model ----------
 
@@ -98,9 +99,16 @@ message Channel {
   // no visible cause.
   bool subaudible_detect = 12;
   reserved 13;  // subaudible_squelch_hz
+  // How squelch_db was chosen, so a client can say "auto" without remembering what it wrote.
+  // AUTO when it was measured from the band's noise floor: by the daemon (a gated recording, a
+  // decoder's segments) or by the client that wrote it as ParamWrite.squelch_auto_db. MANUAL when
+  // a client wrote a level as squelch_db. UNSPECIFIED while the squelch is off. The level is a
+  // snapshot either way: an auto squelch does not follow the floor once it is set.
+  SquelchSource squelch_source = 14;
 }
 
 enum GainMode { GAIN_MODE_UNSPECIFIED = 0; MANUAL = 1; AUTO = 2; }
+enum SquelchSource { SQUELCH_SOURCE_UNSPECIFIED = 0; SQUELCH_MANUAL = 1; SQUELCH_AUTO = 2; }
 enum ChannelState { CHANNEL_STATE_UNSPECIFIED = 0; CHANNEL_ACTIVE = 1; OUT_OF_CAPTURE = 2; }
 
 message Sink {
@@ -155,6 +163,10 @@ message ParamWrite {
     double squelch_db = 8;
     GainWrite gain = 9;          // device gain element, addressed via the capture
     double sink_volume = 10;     // target_id = sink_id
+    // A squelch level the writer measured from the noise floor (`ley tune`'s auto, the app's):
+    // applied as squelch_db is, and the channel says SQUELCH_AUTO. It and squelch_db are one
+    // parameter, so the last of the two in a tick wins. Not NaN: off is squelch_db NaN.
+    double squelch_auto_db = 11;
   }
 }
 // GainWrite lives in common.proto: ScanConfig (jobs.proto) carries one too, and jobs.proto
@@ -184,6 +196,15 @@ message Event {
     // starts, four times a second while it plays with `position` current (the whole object each
     // time, never a delta), and once more as the tombstone when it ends.
     Playback playback = 10;
+    // The keys and feature models changed: a key was set, checked, used or deleted, or a feature's
+    // model was chosen. The whole AIState each time, so a deleted key is a shorter list rather
+    // than a tombstone. Never carries a secret (ai.proto, Credential).
+    AIState ai = 11;
+    // A usage report was added to the ledger: the whole line it was folded into, after the fold,
+    // never the report alone.
+    UsageLine usage = 12;
+    // An assistant conversation changed: the whole Conversation, an ended one included.
+    Conversation conversation = 13;
   }
 }
 message WriteRejected { uint64 tag = 1; ErrorDetail error = 2; }
@@ -235,7 +256,7 @@ service Control {
   rpc DetachFileDevice(DetachFileDeviceRequest) returns (Empty);
 }
 
-message Empty {}
+// Empty lives in common.proto: ai.proto's services return it, and control.proto imports ai.proto.
 message ListDevicesRequest {}
 message ListDevicesResponse { repeated DeviceDescriptor devices = 1; }
 message GetStateRequest { EventScope scope = 1; }
@@ -248,6 +269,9 @@ message GetStateResponse {
   DaemonInfo daemon = 6;
   repeated Job jobs = 7;   // running and recently finished; reconnect renders these like the rest
   repeated Playback playbacks = 8;  // recordings the daemon is playing right now
+  AIState ai = 9;                   // the keys (never their secrets) and each feature's model
+  repeated UsageLine usage = 10;    // the ledger's lines, the same ones Event.usage updates
+  repeated Conversation conversations = 11;  // the assistant's conversations, ended ones included
 }
 message DaemonInfo {
   string version = 1;
@@ -268,10 +292,13 @@ message Playback {
   string resource_uri = 2;      // ley://recordings/<id>/<part>
   string path = 3;              // the file the daemon opened, for a client on the same machine
   uint32 sample_rate = 4;
-  uint64 samples = 5;           // frames in the file; 0 when it could not be counted
-  // Frames played so far, published on Event.playback four times a second while it plays. A
-  // client renders elapsed time from this and the rate rather than from a clock of its own, and
-  // it is reported rather than written: seeking is not in v1.
+  // Frames this playback plays: the whole file, or the range `start_sample` and `end_sample`
+  // name. 0 when it could not be counted.
+  uint64 samples = 5;
+  // Frames played so far, from the start of the range (the file's first frame when there is no
+  // range), published on Event.playback four times a second while it plays. A client renders
+  // elapsed time from this and the rate rather than from a clock of its own, and it is reported
+  // rather than written: seeking is not in v1.
   uint64 position = 6;
   double volume = 7;
   ClientInfo created_by = 8;
@@ -283,6 +310,10 @@ message Playback {
   // four-a-second event is not sent until it resumes. The playback still belongs to its client
   // and still ends when that client goes. The tombstone carries the value it had.
   bool paused = 10;
+  // The range StartPlaybackRequest asked for, on the capture's timeline at the capture rate, as
+  // the part's sidecar dates it; both 0 when the whole part plays.
+  uint64 start_sample = 11;
+  uint64 end_sample = 12;
 }
 enum PlaybackState { PLAYBACK_STATE_UNSPECIFIED = 0; PLAYBACK_PLAYING = 1; }
 
@@ -292,6 +323,13 @@ message StartPlaybackRequest {
   string resource_uri = 1;
   optional double volume = 2;   // 0..1; absent = 1.0 (full), explicit 0 = muted
   string audio_device_uid = 3;  // empty = the daemon's default output
+  // Play only capture samples start_sample..<end_sample of the part, on the capture's timeline
+  // at the capture rate (the part sidecar's start_sample, end_sample and squelch_opens), so one
+  // over plays rather than the whole exchange. The daemon places them in the file by the rates
+  // the sidecar gives. Both 0 = the whole part; start_sample 0 = from the part's start, end_sample
+  // 0 = to its end. A range that is empty or not inside the part is INVALID_ARGUMENT.
+  uint64 start_sample = 4;
+  uint64 end_sample = 5;
 }
 message StopPlaybackRequest { string playback_id = 1; }
 message SetPlaybackPausedRequest {

@@ -102,7 +102,7 @@ extension SessionStore {
                 if case .db(let db) = value { captures[id]?.manualGainDB[element] = db }
                 touchActivity(id, by: by)
                 await emitCapture(id, by: by)
-            case .offsetHz?, .bandwidthHz?, .mode?, .squelchDb?:
+            case .offsetHz?, .bandwidthHz?, .mode?, .squelchDb?, .squelchAutoDb?:
                 guard let chanID = ChannelID(string: w.targetID), let entry = channels[chanID] else {
                     throw EngineError.channelNotFound(w.targetID)
                 }
@@ -141,10 +141,21 @@ extension SessionStore {
                         throw EngineError.invalidArgument("squelch must be a dBFS value <= 0 or NaN", target: w.targetID)
                     }
                     config.squelchDB = db
+                case .squelchAutoDb(let db)?:
+                    // A measured level, so not off: NaN here is a writer that measured nothing.
+                    guard db <= 0 && db >= -200 else {
+                        throw EngineError.invalidArgument("an auto squelch must be a dBFS value <= 0", target: w.targetID)
+                    }
+                    config.squelchDB = db
                 default: break
                 }
                 let audioRateBefore = entry.engine.audioRate
                 try await entry.engine.update(config)
+                switch w.param {
+                case .squelchDb?: channels[chanID]?.squelchAuto = false
+                case .squelchAutoDb?: channels[chanID]?.squelchAuto = true
+                default: break
+                }
                 // A channel write re-plans the chain, and a channel the capture had moved away from
                 // is re-planned at the capture's current rate -- which can move its audio rate. Every
                 // stream negotiated at the old one is then stale, so reconcile

@@ -80,6 +80,31 @@ type Options struct {
 	// CTCSS tone, which the daemon suppresses while DCS is locked. The demod tap then carries no
 	// sub-audible tone either. Empty keeps every carrier as the table has it.
 	DCS map[uint64]DCSCode
+	// CheckCredential is the provider's answer when a key is set or checked, standing in for the
+	// daemon's check worker. nil accepts every key but RejectedSecret.
+	CheckCredential CheckFunc
+	// Usage preloads the ledger, folded as ReportUsage folds a report but with no event, so a test
+	// starts with days of usage already counted.
+	Usage []*leylinev1.UsageReport
+	// Recordings are gated audio recordings already in the store when the daemon starts, written
+	// into RecordingsDir as SeedRecording describes; a recording is what `ley transcribe` reads.
+	Recordings []SeedRecording
+	// SpeechScript is the text of the fake speech decoders' records, one line per over in order,
+	// the last repeated when they run out; with none, each record says "segment N", as the
+	// scripted engine of leydec-speech does. Both speech and speech-scripted write it.
+	SpeechScript []string
+	// SpeechProvider and SpeechHosts replace the fake speech decoder's credential_provider and
+	// contacts_hosts. Empty keeps the manifest as decoders/speech/manifest.json has it, which
+	// needs an openai key and sends audio to api.openai.com; speech-scripted needs no key.
+	SpeechProvider string
+	SpeechHosts    []string
+	// AssistantScript is what the fake's assistant says and does: one turn per SendMessage, in
+	// order across conversations, each a list of steps (AssistantStep). With none, or once the
+	// script has run out, a turn answers "You said: " and the user's words.
+	AssistantScript []AssistantTurn
+	// AssistantStepDelay is the pause before each step of a scripted turn, so a client sees the
+	// turn's intermediate states arrive one at a time. Default 0.
+	AssistantStepDelay time.Duration
 }
 
 // DCSCode is a DCS code the fake sends on a carrier (Options.DCS).
@@ -90,12 +115,13 @@ type DCSCode struct {
 	Inverted bool
 }
 
-// Daemon is the in-memory state store plus all six service implementations.
+// Daemon is the in-memory state store plus every service implementation.
 type Daemon struct {
 	leylinev1.UnimplementedControlServer
 	leylinev1.UnimplementedJobsServer
 	leylinev1.UnimplementedResourcesServer
 	leylinev1.UnimplementedDecodersServer
+	leylinev1.UnimplementedCredentialsServer
 
 	opts      Options
 	startedNs int64
@@ -134,6 +160,10 @@ type Daemon struct {
 	// and reported afresh by the next one.
 	detectionEpoch int
 	socket         string
+	// ai is the keys, the feature models and the usage ledger.
+	ai aiState
+	// talk is the assistant's conversations.
+	talk assistantState
 	// history holds the last eventHistoryLimit events, oldest first, for
 	// WatchEvents(since_seq) replay (the Swift daemon keeps the same window).
 	history []retainedEvent
@@ -219,6 +249,16 @@ func New(opts Options) *Daemon {
 		presence:     map[string]*presence{},
 		socket:       opts.SocketPath,
 		closing:      make(chan struct{}),
+		ai:           newAIState(),
+	}
+	for _, r := range opts.Usage {
+		d.foldUsage(r)
+	}
+	for _, rec := range opts.Recordings {
+		// A seed that cannot be written is a broken test setup, not a state the daemon can be in.
+		if _, err := d.SeedRecording(rec); err != nil {
+			panic("fakedaemon: seed a recording: " + err.Error())
+		}
 	}
 	if !opts.NoDevice {
 		dev := fakeRTLSDR()
@@ -230,7 +270,7 @@ func New(opts Options) *Daemon {
 	return d
 }
 
-// Register registers all six services on s.
+// Register registers every service on s.
 func (d *Daemon) Register(s grpc.ServiceRegistrar) {
 	leylinev1.RegisterControlServer(s, d)
 	leylinev1.RegisterTelemetryServer(s, telemetrySvc{d: d})
@@ -238,6 +278,9 @@ func (d *Daemon) Register(s grpc.ServiceRegistrar) {
 	leylinev1.RegisterJobsServer(s, d)
 	leylinev1.RegisterResourcesServer(s, d)
 	leylinev1.RegisterDecodersServer(s, d)
+	leylinev1.RegisterCredentialsServer(s, d)
+	leylinev1.RegisterUsageServer(s, usageSvc{d: d})
+	leylinev1.RegisterAssistantServer(s, assistantSvc{d: d})
 }
 
 // refuseWhileClosing answers every unary call made after shutdown began with UNAVAILABLE. Closing

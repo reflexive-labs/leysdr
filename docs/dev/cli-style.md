@@ -73,7 +73,7 @@ Six roles. Use the role, never a colour name, at the call site.
 | Role | Rendering | Use for |
 |---|---|---|
 | `Label` | bold | table headers, field labels, the left column of a label block, verb names in help |
-| `Muted` | dim | ids the user is not being asked to read, units, hints, scaffolding, values below the noise floor |
+| `Muted` | dim | ids the user is not being asked to read, units, hints, scaffolding, values below the noise floor, `ley scan`'s progress line |
 | `Ok` | green | `ACTIVE`, `AVAILABLE`, audio flowing, squelch open, a successful action |
 | `Warn` | yellow | `OUT_OF_CAPTURE`, `IN_USE` by another program, muted audio, a degraded but working state |
 | `Err` | red | `DISCONNECTED`, `CAPTURE_DETACHED`, the `ley:` error prefix, a rejected write |
@@ -151,6 +151,7 @@ survives as height.
 | Frame | `╭╮╰╯│─` | `+|-` | `ui.Style.Box`, for a chart that deserves one |
 | Tree branch / last / trunk | `├─` `└─` `│` | `+-` `\-` `|` | `ley state` hierarchy |
 | Absent value | `-` | `-` | never blank, never the same glyph as a range separator |
+| Ellipsis | `…` | `...` | the end of text `Truncate` cut |
 
 Ranges read `24.000 MHz to 1.766 GHz`, never with a dash, so a dash always means
 "no value".
@@ -177,6 +178,20 @@ Ranges read `24.000 MHz to 1.766 GHz`, never with a dash, so a dash always means
 - **A screen ends with what to do next** when the user is likely to be mid-task:
   one `Cmd` line, never a paragraph.
 - **Blank lines group**; rules separate sections only when a blank line is not enough.
+- **A wait says so, and leaves nothing behind.** Something slow shows that it is under way, on
+  one line that is gone once the wait is over, so a long wait reads as a wait and not as a hang
+  and nothing of it is left above the result. It has two forms today:
+  - **A terminal verb's progress line.** `ley scan` writes what the sweep is doing as one `Muted`
+    line on stderr, drawn with `\r\033[K` and rewritten in place as the detail changes, and
+    erased the same way when the sweep ends, before anything else is printed. It is drawn so only
+    when stderr is a terminal: a pipe has no line to erase, so there each detail is a line of its
+    own, and under `--json` there is none, since it is prose (principle 3). A line drawn this way
+    must never land while other text on the same terminal is part-way through a line, which the
+    erase would wipe.
+  - **The app's waiting row.** While the assistant is thinking, the panel shows `thinking…` under
+    the turn (`app.md`, "The assistant panel"), only once nothing has changed for 300 ms, so an
+    answer that comes at once does not flicker it, and from three seconds with the count since the
+    last step, `thinking… 4s`, redrawn once a second.
 - **A chart draws its trace, not its area.** One glyph per column, on the row that column's
   value falls in, with a thin stem beneath it only where it stands above the reference line.
   Filling every cell under a column adds area without information: a flat noise floor covers

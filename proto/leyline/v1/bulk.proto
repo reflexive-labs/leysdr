@@ -170,7 +170,12 @@ message Frame {
   SampleTime time = 3;
   Gap gap = 4;           // present only under GAP_MARKED after a drop
   bytes payload = 5;     // format per StreamDescriptor
+  // Set only on a decoder's SEGMENTED input (decode.proto, InputMode): the first frame of an over
+  // is SEGMENT_START and an END frame with an empty payload closes it. Unset on every other frame.
+  SegmentMark segment = 6;
 }
+
+enum SegmentMark { SEGMENT_MARK_UNSPECIFIED = 0; SEGMENT_START = 1; SEGMENT_END = 2; }
 
 service Bulk {
   rpc Subscribe(SubscribeRequest) returns (StreamDescriptor);

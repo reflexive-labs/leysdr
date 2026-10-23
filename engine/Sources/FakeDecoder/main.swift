@@ -5,7 +5,9 @@
 // It keeps the contract of docs/design/decoders.md, "Decisions" ("Transport: stdio") and nothing
 // else: read the varint-delimited StreamDescriptor, then one DecodeRecord per Frame. A frame with
 // an empty payload makes it exit(3), which is how the restart path is tested; FAKE_DECODER_SLEEP_MS
-// delays its start, which is how a slow plugin is tested.
+// delays its start, which is how a slow plugin is tested; FAKE_DECODER_USAGE stamps each record
+// with the usage a paid decoder would report; LEYLINE_KEY_ON_STDIN (or FAKE_DECODER_EXPECT_KEY)
+// reads the credential handshake; FAKE_DECODER_SEGMENTS answers SEGMENTED input once per segment.
 //
 // Framing is coded here rather than through `BinaryDelimited` because that API takes Foundation
 // `InputStream`/`OutputStream`, which cannot be built from the process's own pipes; the bytes are
@@ -66,10 +68,51 @@ if let ms = ProcessInfo.processInfo.environment["FAKE_DECODER_SLEEP_MS"], let n 
     usleep(n * 1000)
 }
 
+/// `LEYLINE_KEY_ON_STDIN=1`, which the daemon sets when it sends a key, reads the credential
+/// handshake: one `SetCredentialRequest` before the descriptor. `FAKE_DECODER_EXPECT_KEY=1` and
+/// `--expect-key` still ask for it too. Every record then carries the key's last four characters
+/// in `key_last_four`, and never the key.
+let expectKey = ProcessInfo.processInfo.environment["LEYLINE_KEY_ON_STDIN"] == "1"
+    || ProcessInfo.processInfo.environment["FAKE_DECODER_EXPECT_KEY"] == "1"
+    || CommandLine.arguments.dropFirst().contains("--expect-key")
+/// `--model <model>`, which the daemon appends when the user chose a speech model on this
+/// decoder's provider, goes into every record as `model`.
+let modelField: Leyline_V1_FieldValue? = {
+    let args = Array(CommandLine.arguments.dropFirst())
+    guard let i = args.firstIndex(of: "--model"), i + 1 < args.count else { return nil }
+    var v = Leyline_V1_FieldValue()
+    v.text = args[i + 1]
+    return v
+}()
+
+let keyLastFour: Leyline_V1_FieldValue? = {
+    guard expectKey else { return nil }
+    guard let bytes = readDelimited(), let key = try? Leyline_V1_SetCredentialRequest(serializedBytes: bytes),
+          !key.secret.isEmpty
+    else { exit(6) }
+    var v = Leyline_V1_FieldValue()
+    v.text = String(key.secret.suffix(4))
+    return v
+}()
+
 guard let head = readDelimited(), let descriptor = try? Leyline_V1_StreamDescriptor(serializedBytes: head) else {
     exit(1)
 }
 FileHandle.standardError.write(Data("fake decoder up on \(descriptor.streamID)\n".utf8))
+/// `--exit-at-start=N` exits with status 3 straight after its descriptor, before answering
+/// anything, the first N times it is started, counted by a file in the working directory (the
+/// plugin's own directory, per test): the plugin that cannot get going, which a source job must
+/// give up on rather than restart for ever.
+for arg in CommandLine.arguments.dropFirst() where arg.hasPrefix("--exit-at-start=") {
+    let limit = Int(arg.dropFirst("--exit-at-start=".count)) ?? 0
+    let counter = FileManager.default.currentDirectoryPath + "/.exits-at-start"
+    let before = (try? String(contentsOfFile: counter, encoding: .utf8)).flatMap { Int($0) } ?? 0
+    if before < limit {
+        try? String(before + 1).write(toFile: counter, atomically: true, encoding: .utf8)
+        FileHandle.standardError.write(Data("fake decoder giving up at start \(before + 1)\n".utf8))
+        exit(3)
+    }
+}
 
 /// `--die-after=N` exits after N frames, the way a decoder with a bug in it would. A decode job's
 /// restart path has no other way to be provoked: every frame the daemon sends is a real one. It
@@ -87,6 +130,21 @@ let dieAfter: UInt64 = {
     return 0
 }()
 
+/// `--refuse-after=N` exits with status 75 after N frames, its last stderr line a provider's
+/// refusal, the way a speech plugin says its provider turned a request down
+/// (`DecodeRunner.refusedExitStatus`). It refuses once, recorded by a marker file the way
+/// `--die-after` records its death, so a kept job can be seen to come back.
+let refuseAfter: UInt64 = {
+    for arg in CommandLine.arguments.dropFirst() where arg.hasPrefix("--refuse-after=") {
+        let n = UInt64(arg.dropFirst("--refuse-after=".count)) ?? 0
+        let marker = FileManager.default.currentDirectoryPath + "/.refused-once"
+        if FileManager.default.fileExists(atPath: marker) { return 0 }
+        FileManager.default.createFile(atPath: marker, contents: nil)
+        return n
+    }
+    return 0
+}()
+
 /// `--deaf-after=N` reads and answers N frames, then stops reading its input, the way a plugin that
 /// has wedged does. The daemon's non-blocking write must drop-and-gap rather than stall.
 let deafAfter: UInt64 = {
@@ -94,6 +152,20 @@ let deafAfter: UInt64 = {
         return UInt64(arg.dropFirst("--deaf-after=".count)) ?? 0
     }
     return 0
+}()
+
+/// `FAKE_DECODER_USAGE=provider,model,audio_seconds`: every record carries one request of that
+/// much audio, as a speech plugin reports what each call used (decode.proto, `DecodeRecord.usage`).
+let usagePerRecord: Leyline_V1_UsageReport? = {
+    guard let spec = ProcessInfo.processInfo.environment["FAKE_DECODER_USAGE"] else { return nil }
+    let parts = spec.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+    guard parts.count == 3, let seconds = Double(parts[2]) else { return nil }
+    var usage = Leyline_V1_UsageReport()
+    usage.provider = parts[0]
+    usage.model = parts[1]
+    usage.requests = 1
+    usage.audioSeconds = seconds
+    return usage
 }()
 
 func writeLastAndSleep(frame: Leyline_V1_Frame, seq: UInt64) -> Never {
@@ -105,6 +177,76 @@ func writeLastAndSleep(frame: Leyline_V1_Frame, seq: UInt64) -> Never {
     writeDelimited(rec)
     while true { sleep(3600) }
 }
+
+/// `FAKE_DECODER_SEGMENTS=1` reads SEGMENTED input (decode.proto, InputMode) the way a speech
+/// decoder does: one record per segment, written at its END, dated by its START frame, with
+/// `frames` (the audio frames, START included and END not), `samples` (the audio samples they
+/// carried), `text` ("segment N"), `rate` (the descriptor's audio rate) and `outside` (frames that
+/// arrived with no segment open, which the daemon must never send).
+let segmented = ProcessInfo.processInfo.environment["FAKE_DECODER_SEGMENTS"] == "1"
+
+struct OpenSegment {
+    var time: Leyline_V1_SampleTime
+    var frames: Int64 = 0
+    var samples: Int64 = 0
+}
+
+func runSegmented() -> Never {
+    var open: OpenSegment?
+    var count: Int64 = 0
+    var outside: Int64 = 0
+    while let bytes = readDelimited() {
+        guard let frame = try? Leyline_V1_Frame(serializedBytes: bytes) else { exit(2) }
+        switch frame.segment {
+        case .segmentStart:
+            open = OpenSegment(time: frame.time, frames: 1, samples: Int64(frame.payload.count / 4))
+        case .segmentEnd:
+            guard let done = open else {
+                outside += 1
+                continue
+            }
+            open = nil
+            // `--die-after=N`: having answered N segments, die on the next one's END before
+            // answering it, the case that loses a segment if the daemon counts it as done.
+            if dieAfter > 0, count == Int64(dieAfter) { exit(3) }
+            count += 1
+            var rec = Leyline_V1_DecodeRecord()
+            rec.protocol = "fake"
+            rec.time = done.time
+            func field(_ v: Int64) -> Leyline_V1_FieldValue { var f = Leyline_V1_FieldValue(); f.integer = v; return f }
+            rec.fields["frames"] = field(done.frames)
+            rec.fields["samples"] = field(done.samples)
+            rec.fields["outside"] = field(outside)
+            rec.fields["rate"] = field(Int64(descriptor.audio.sampleRate))
+            var text = Leyline_V1_FieldValue()
+            text.text = "segment \(count)"
+            rec.fields["text"] = text
+            if let usagePerRecord { rec.usage = usagePerRecord }
+            if let keyLastFour { rec.fields["key_last_four"] = keyLastFour }
+            if let modelField { rec.fields["model"] = modelField }
+            writeDelimited(rec)
+        default:
+            guard open != nil else {
+                outside += 1
+                continue
+            }
+            open!.frames += 1
+            open!.samples += Int64(frame.payload.count / 4)
+        }
+    }
+    exitAtEOF()
+}
+
+/// `FAKE_DECODER_IGNORE_EOF=1` never exits when stdin closes, the way a plugin with a bug in its
+/// shutdown hangs; the daemon must not wait on it for ever.
+func exitAtEOF() -> Never {
+    if ProcessInfo.processInfo.environment["FAKE_DECODER_IGNORE_EOF"] == "1" {
+        while true { sleep(3600) }
+    }
+    exit(0)
+}
+
+if segmented { runSegmented() }
 
 var seq: UInt64 = 0
 while let bytes = readDelimited() {
@@ -124,6 +266,18 @@ while let bytes = readDelimited() {
     rec.position.longitude = 2.0
     rec.time = frame.time
     rec.raw = frame.payload.prefix(4)
+    if let usagePerRecord { rec.usage = usagePerRecord }
+    if let keyLastFour { rec.fields["key_last_four"] = keyLastFour }
+    if let modelField { rec.fields["model"] = modelField }
     writeDelimited(rec)
     if dieAfter > 0, seq >= dieAfter { exit(3) }
+    if refuseAfter > 0, seq >= refuseAfter {
+        // FAKE_DECODER_REFUSAL replaces the words, so a test can make a plugin echo its key.
+        let words = ProcessInfo.processInfo.environment["FAKE_DECODER_REFUSAL"]
+            ?? "rate_limit_error: this request would exceed your rate limit (fake provider)"
+        FileHandle.standardError.write(Data("\(words)\n".utf8))
+        exit(75)
+    }
 }
+
+exitAtEOF()

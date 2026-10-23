@@ -27,6 +27,12 @@ type Scenario struct {
 	// Setup runs after the fixtures are attached and before the agent: a `ley` verb against the
 	// eval daemon, or a decode job started through the client library.
 	Setup []SetupStep `yaml:"setup"`
+	// SpeechScript is what the speech-scripted decoder hears: one line per over, in order, the
+	// last line again for every over after. The runner writes it to the run directory and names
+	// the file in the daemon's LEYDEC_SPEECH_SCRIPT, which leydec-speech's scripted engine
+	// inherits, so a speech-scripted job in the setup stores records whose words the scenario
+	// fixed in advance.
+	SpeechScript []string `yaml:"speech_script"`
 	// Task is what the agent is asked, verbatim.
 	Task string `yaml:"task"`
 	// AnswerSchema is the JSON block the agent must end its answer with, shown to it verbatim,
@@ -35,11 +41,15 @@ type Scenario struct {
 	// Truth is what the fixtures make known; checks refer to it by key.
 	Truth  map[string]any `yaml:"truth"`
 	Checks []Check        `yaml:"checks"`
-	// MaxTurns bounds the agent (claude's --max-turns). 0 is the runner's default.
+	// MaxTurns bounds the agent (claude's --max-turns). 0 is the runner's default. The assistant
+	// has its own bound (40 model calls a turn) and ignores it.
 	MaxTurns int `yaml:"max_turns"`
-	// Mode overrides the runner's: "mcp" (tools only) or "shell" (a shell as well, to measure how
-	// often the agent leaves the tools).
+	// Mode overrides the runner's: "mcp" (tools only), "shell" (a shell as well, to measure how
+	// often the agent leaves the tools) or "assistant" (`ley ask` is the agent).
 	Mode string `yaml:"mode"`
+	// Modes runs the scenario once in each mode listed, each in its own run directory
+	// (<name>.<mode>); a mode given to the runner picks one of them. Not with Mode.
+	Modes []string `yaml:"modes"`
 	// Skip, when set, is why this scenario is not run (a fixture that only exists on one machine
 	// is handled by the runner; this is for a scenario disabled by hand).
 	Skip string `yaml:"skip"`
@@ -84,6 +94,9 @@ type JobStep struct {
 	Decoder   string `yaml:"decoder"`
 	Frequency string `yaml:"frequency"`
 	Keep      bool   `yaml:"keep"`
+	// Records, for a kept job, waits until the job has stored at least this many records before
+	// the next step, so the agent starts with them on hand however quickly it asks.
+	Records int `yaml:"records"`
 }
 
 // Check is one graded assertion. `Type` picks the checker (checks.go); the rest are its
@@ -109,6 +122,10 @@ type Check struct {
 	Tool string `yaml:"tool"`
 	// N is a count bound (max_tool_calls).
 	N int `yaml:"n"`
+	// Kind and Where are no_write's: the kind of object the event changed (job, channel, capture,
+	// device, playback) and field equalities on it (events.go, whereKeys).
+	Kind  string            `yaml:"kind"`
+	Where map[string]string `yaml:"where"`
 	// Why says what the check proves, for the report.
 	Why string `yaml:"why"`
 }
@@ -137,10 +154,29 @@ func Load(path string) (*Scenario, error) {
 		if _, ok := checkers[c.Type]; !ok {
 			return nil, fmt.Errorf("%s: check %d: unknown type %q (known: %s)", path, i+1, c.Type, strings.Join(checkTypes(), ", "))
 		}
+		if c.Type == "no_write" {
+			if err := validateNoWrite(c); err != nil {
+				return nil, fmt.Errorf("%s: check %d: %w", path, i+1, err)
+			}
+		}
+	}
+	if s.Mode != "" && len(s.Modes) > 0 {
+		return nil, fmt.Errorf("%s: mode and modes both set; modes lists every mode the scenario runs in", path)
+	}
+	for _, m := range append([]string{s.Mode}, s.Modes...) {
+		if m != "" && !knownModes[m] {
+			return nil, fmt.Errorf("%s: unknown mode %q (known: assistant, mcp, shell)", path, m)
+		}
 	}
 	for i, f := range s.Fixtures {
 		if f.File == "" || f.As == "" {
 			return nil, fmt.Errorf("%s: fixture %d needs file and as", path, i+1)
+		}
+	}
+	// The script file is one over a line, so a line holding a newline would become two overs.
+	for i, line := range s.SpeechScript {
+		if strings.ContainsAny(line, "\r\n") {
+			return nil, fmt.Errorf("%s: speech_script line %d holds a line break; each line is one over", path, i+1)
 		}
 	}
 	return &s, nil
@@ -166,15 +202,40 @@ func LoadDir(dir string) ([]*Scenario, error) {
 	return out, nil
 }
 
+var knownModes = map[string]bool{"mcp": true, "shell": true, "assistant": true}
+
+// ModesFor is the modes the scenario runs in under env: every mode it lists (only the runner's,
+// when the runner was told one), else its own mode, else the runner's. Empty when the runner's
+// chosen mode is not among the scenario's.
+func (s *Scenario) ModesFor(env Env) []string {
+	switch {
+	case len(s.Modes) > 0 && env.ModeChosen:
+		for _, m := range s.Modes {
+			if m == env.Mode {
+				return []string{m}
+			}
+		}
+		return nil
+	case len(s.Modes) > 0:
+		return s.Modes
+	case s.Mode != "":
+		return []string{s.Mode}
+	}
+	return []string{env.Mode}
+}
+
 // Prompt is what the agent is given: the task, the answer block it must end with, and the
 // rule of the mode.
 func (s *Scenario) Prompt(mode string) string {
 	var b strings.Builder
 	b.WriteString(strings.TrimSpace(s.Task))
 	b.WriteString("\n\n")
-	if mode == "mcp" {
+	switch mode {
+	case "mcp":
 		b.WriteString("Use only the leyline MCP tools; there is no shell for this task.\n\n")
-	} else {
+	case "assistant":
+		b.WriteString("Use only your tools; there is no shell for this task.\n\n")
+	default:
 		b.WriteString("The leyline MCP tools are available, and so is a shell with `ley` on it; prefer the tools.\n\n")
 	}
 	if strings.TrimSpace(s.AnswerSchema) != "" {
