@@ -453,6 +453,20 @@ final class ChannelFollowTests: XCTestCase {
                 audioHeld: false, selfClientID: "app_self")?.attachSink, true)
     }
 
+    func testASnapshotsSinkIsNamedByItsChannelsMaker() {
+        // At launch the terminal's sink is in the snapshot, with no attach event behind it.
+        var snap = Leyline_V1_GetStateResponse()
+        snap.captures = [capture()]
+        snap.channels = [channel("chan_t", offset: 100_000, by: terminal)]
+        snap.sinks = [sink("sink_t", on: "chan_t")]
+        let s = MirrorState(snapshot: snap)
+        XCTAssertNil(s.sinkAttachedBy["sink_t"])
+        XCTAssertEqual(
+            ChannelFollow.playsThroughWords(
+                in: s, held: "chan_t", windowSinkID: nil, selfClientID: "app_self"),
+            "The audio plays through another terminal.")
+    }
+
     func testTheWindowsOwnUnheldSinkIsTakenBackAndNeverAnotherClients() {
         // The window attached two sinks (an overlap, or a reply after the never-seen limit) and
         // holds neither.

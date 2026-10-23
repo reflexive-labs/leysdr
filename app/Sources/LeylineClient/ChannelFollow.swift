@@ -262,7 +262,12 @@ public struct ChannelFollow: Sendable, Equatable {
         guard !all.contains(where: { $0.sinkID == windowSinkID }) else { return nil }
         let sinks = all.filter { !isOwn($0, in: state, selfClientID: selfClientID) }
         guard !sinks.isEmpty, sinks.count == all.count else { return nil }
-        let by = sinks.lazy.compactMap { state.sinkAttachedBy[$0.sinkID] }.first
+        // A sink in the snapshot came with no attach event to name who attached it, so the
+        // channel's maker stands in (`ley tune` makes the channel and attaches its sink).
+        let owner = state.channel(held).flatMap { ch in
+            ch.hasOwner && ch.owner.clientID != selfClientID ? ch.owner : nil
+        }
+        let by = sinks.lazy.compactMap { state.sinkAttachedBy[$0.sinkID] }.first ?? owner
         let who = by.map { ChangeNote.author($0) } ?? "another client"
         return "The audio plays through \(who)."
     }
