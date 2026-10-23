@@ -942,3 +942,25 @@ scenes:
       - {cmd: state, expect: {tuned_hz: 147180000, bookmark: Evening net}}
       - {cmd: ax, name: terminal}
       - {cmd: ley, args: [state]}
+
+  # Who changed the channel (docs/plans/app.md, the assistant panel's last item): a terminal's
+  # `ley set squelch -45` puts a line under the inspector's frequency naming it, and the
+  # window's own next change, a step up with →, takes the line away.
+  - name: change-note
+    fixtures: [{name: scene_2m}]
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: ley, args: [set, squelch, "-45"]}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ax, name: noted}
+      - {cmd: key, keys: right}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146525000}}
+      - {cmd: ax, name: cleared}
