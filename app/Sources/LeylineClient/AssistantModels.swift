@@ -145,9 +145,10 @@ public struct StepRow: Sendable, Equatable, Identifiable {
     public let tool: String
     /// The arguments on one line: `noaa`, `frequency 146.52 · mode nfm`.
     public let summary: String
-    /// The arguments as indented JSON for the expanded row; the text as it came when it is not
-    /// JSON.
+    /// The arguments as indented JSON; the text as it came when it is not JSON.
     public let arguments: String
+    /// The arguments as the call carried them, for `detail`.
+    public let argumentsJSON: String
     public let state: Leyline_V1_ToolCallState
     public let isError: Bool
     /// The result's first line, under the step while it is closed; empty until the call is done.
@@ -164,6 +165,7 @@ public struct StepRow: Sendable, Equatable, Identifiable {
         tool = c.tool
         summary = AssistantWords.summary(argumentsJSON: c.argumentsJson)
         arguments = AssistantWords.pretty(json: c.argumentsJson)
+        argumentsJSON = c.argumentsJson
         state = c.state
         isError = c.isError
         resultFirstLine = AssistantWords.firstLine(c.resultText)
