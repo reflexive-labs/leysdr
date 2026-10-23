@@ -402,8 +402,8 @@ any time), ML-8, then ML-9 as the first real workload. ML-7 and ML-10 when ML-9 
 
 - **Timing.** Each scene and size records its wall time, split into launch to ready, commands and
   quit. Every scene line carries its time, and the summary line gives the total and the three
-  slowest. `summary.json` keeps the last runs, so a scene that has become much slower than its
-  history is named.
+  slowest. `history.jsonl` beside `summary.json` keeps the last runs, so a scene that has become
+  much slower than its history is named.
 - **Tiers: smoke, then targeted, then full.**
   - Smoke: `make app-check-smoke` runs the scenes marked `smoke: true` (radio-2m, identifiers,
     goto-bookmark; about 35 s).
@@ -426,3 +426,39 @@ any time), ML-8, then ML-9 as the first real workload. ML-7 and ML-10 when ML-9 
   change (re-recorded, and named) or a new finding, and fixes or files each. It loops on the
   smoke and targeted tiers until a full run is clean, and a review of the batch follows. The
   skill and `../dev/swift-style.md`, section 12, carry the tier table and the loop.
+
+Built 2026-10-22 in a batch lane, which launches no app; not ticked until a verify run on the
+Mac has used each tier:
+
+- **Timing.** After each scene and size's lines, `time <scene> <W>x<H> 34.2 s  daemon 3.1 s,
+  ready 6.0 s, commands 24.1 s, quit 1.0 s` (the daemon set up, launch to `ready.json`, the
+  commands with any relaunch, the quit). The summary line reads `N checked: …; 712.4 s, slowest
+  vhf-wide 1440x820 61.0 s, …; tmp/checks/summary.json`, and `summary.json` gains `seconds` and
+  `times`. `tmp/checks/history.jsonl` keeps the last 20 runs; a scene and size over 1.5 times its
+  median in at least three earlier runs ends its line `; slower than usual (median …)` and is
+  named in the summary. A scene that ended in an error, and a held one, stay out of the history.
+- **Tiers.** `smoke`, `serial` and `covers` on a scene and `shared` on the file. A glob is
+  relative to `app/Sources`, and one without a `/` matches a file's name in either target, which
+  keeps the lists short (file names are unique across the two). `shared` is the four the bullet
+  names (the control code being `Control.swift`, `AccessibilityTree.swift`, `AppMenus.swift`,
+  `WindowPicture.swift`, `DeterministicFrames.swift`, `AppLog.swift`, `AppControl.swift`,
+  `ShotStage.swift` and `KeyChord.swift`) plus what every scene runs through: `LeylineApp.swift`,
+  `MainWindow.swift`, `Info.plist` and the façade's connection and mirror. `--affected` also
+  reads `app/checks`: a script, bookmarks or CHIRP file brings in the scenes that read it, and
+  `scenes.yaml` the scenes whose own lines changed, tier keys aside. Every covers list was
+  written from the identifiers a scene presses and the views in its pictures. No scene selected
+  a part, so `PartInspector.swift` had none: `library-part` was added (a 25 s squelch-gated
+  recording of Calling, the Library on its first part), unrun. `EngineAgent.swift` and the
+  launch agent's plist are covered by `follow-launch-and-daemon` only as far as its stopped
+  daemon shows: a check run names its own socket, so the agent is never registered.
+  `TestCheckCoverage` is the test. On a long branch the merge base with main is far back, so
+  `BASE=` is the useful form in a batch.
+- **Jobs.** `--jobs N` (`JOBS=` in make) runs scene-sizes N at a time, each one's lines printed
+  together when it ends, then the serial ones alone; a cached fixture is generated under a lock.
+  Run, control and data directories and sockets were already per scene and size, and the staged
+  copy is made once before any launch. The app's side was not changed: keys, clicks and the
+  picture stay in-process. Runs side by side share the staged copy's defaults domain, where
+  AppKit may keep a window frame that each stage then places and sizes over; a first run at 3
+  will show whether anything else there is shared.
+- **Sleep.** The make targets run under `caffeinate -i`; `Staging` holds the activity from its
+  `init`, so the site's shots hold it too.
