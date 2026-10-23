@@ -61,17 +61,18 @@ public enum ProviderCatalog {
         defaultModels: ["assistant": "claude-sonnet-5-5"],
         models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
         reach: .cloud(host: "api.anthropic.com"), takesEndpoint: false)
-    /// OpenAI's API or any server that speaks it; the endpoint names the server. Its key serves
-    /// speech too, through the bundled `speech` decoder.
-    public static let openAICompatible = AIProvider(
-        id: "openai", name: "OpenAI-compatible", features: ["assistant", "speech"],
+    /// OpenAI's API, or any server that speaks it when its key is added with an endpoint (then
+    /// the key reads "OpenAI-compatible", `name(_:endpoint:in:)`). Its key serves speech too,
+    /// through the bundled `speech` decoder.
+    public static let openAI = AIProvider(
+        id: "openai", name: "OpenAI", features: ["assistant", "speech"],
         defaultModels: ["assistant": "gpt-5", "speech": "whisper-1"], models: [],
         reach: .cloud(host: "api.openai.com"), takesEndpoint: true)
     /// Providers for speech alone. None yet: a dedicated speech engine is chosen by measurement,
     /// so none is offered before it.
     public static let speech: [AIProvider] = []
 
-    public static let all: [AIProvider] = [anthropic, openAICompatible] + speech
+    public static let all: [AIProvider] = [anthropic, openAI] + speech
 
     /// The features a model can be chosen for, in the order `ley ai` lists them.
     public static let features = ["assistant", "speech"]
@@ -85,6 +86,21 @@ public enum ProviderCatalog {
     /// which are what `ley ai add` and `ley ai use` take.
     public static func name(_ id: String, in providers: [AIProvider] = all) -> String {
         provider(id, in: providers)?.name ?? id
+    }
+
+    /// What a key added with an endpoint is called: a server of its own that speaks OpenAI's API.
+    public static let openAICompatibleName = "OpenAI-compatible"
+
+    /// The name for a key, which knows its endpoint: `openai` at an endpoint, or a provider the
+    /// catalog does not list at one, is an OpenAI-compatible server (as `ley ai use` and the
+    /// assistant's worker treat it), not OpenAI; any other key reads as `name(_:in:)`.
+    public static func name(_ id: String, endpoint: String, in providers: [AIProvider] = all)
+        -> String
+    {
+        guard !endpoint.isEmpty, id == openAI.id || provider(id, in: providers) == nil else {
+            return name(id, in: providers)
+        }
+        return openAICompatibleName
     }
 }
 
@@ -135,7 +151,7 @@ public struct KeyRow: Equatable, Sendable, Identifiable {
         _ c: Leyline_V1_Credential, now: Date, providers: [AIProvider] = ProviderCatalog.all
     ) {
         provider = c.provider
-        providerName = ProviderCatalog.name(c.provider, in: providers)
+        providerName = ProviderCatalog.name(c.provider, endpoint: c.endpoint, in: providers)
         label = c.label
         maskedKey = AISettings.maskedKey(c.lastFour)
         endpoint = c.endpoint
@@ -466,7 +482,7 @@ public enum AISettings {
     /// "Anthropic key …1234", or "Anthropic key" when no characters are shown: the provider by
     /// the name its row shows (`ProviderCatalog.name`).
     public static func keyWords(_ c: Leyline_V1_Credential) -> String {
-        let key = "\(ProviderCatalog.name(c.provider)) key"
+        let key = "\(ProviderCatalog.name(c.provider, endpoint: c.endpoint)) key"
         return c.lastFour.isEmpty ? key : "\(key) \(maskedKey(c.lastFour))"
     }
 

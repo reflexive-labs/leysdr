@@ -4177,7 +4177,8 @@ final class AppSession {
             settingsNotice = AISettings.addedWords(c)
             return true
         } catch {
-            settingsNotice = aiFailed("add the \(ProviderCatalog.name(provider)) key", error)
+            settingsNotice = aiFailed(
+                "add the \(ProviderCatalog.name(provider, endpoint: endpoint)) key", error)
             return false
         }
     }

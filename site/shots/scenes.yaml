@@ -370,9 +370,9 @@ scenes:
   - asset: settings-ai.png
     kind: app
     alt: >-
-      Leyline's Settings, AI: an OpenAI key, listed as OpenAI-compatible and shown by its last four
-      characters, the models the assistant and speech use with what each sends to api.openai.com,
-      and the requests and tokens the assistant used today.
+      Leyline's Settings, AI: an OpenAI key, shown by its last four characters, the models the
+      assistant and speech use with what each sends to api.openai.com, and the requests and tokens
+      the assistant used today.
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: home.csv
