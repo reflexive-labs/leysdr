@@ -155,6 +155,9 @@ enum Theme {
         static let fieldGlyph = SwiftUI.Font.system(size: 10)
         /// The symbol in a small square button: add a bookmark, zoom the band rail.
         static let buttonGlyph = SwiftUI.Font.system(size: 10, weight: .semibold)
+        /// The symbol at the head of an open band's action row in the sidebar (Scan band,
+        /// Channels), centred where a bookmark row draws its dot.
+        static let rowGlyph = SwiftUI.Font.system(size: 10)
         /// The pencil that edits the channel's name in the inspector.
         static let editGlyph = SwiftUI.Font.system(size: 11)
         /// A button in a panel's header: the assistant's new conversation.
@@ -255,11 +258,6 @@ enum Theme {
         /// name (docs/design/channels.md, "Bands are the spine of the sidebar"); a guess until
         /// the Mac.
         static let sidebarIndent: CGFloat = 12
-        /// The expanded band's action strip: compact controls distinct from bookmark rows.
-        static let sidebarActionGap: CGFloat = 6
-        static let sidebarActionRadius: CGFloat = 4
-        static let sidebarActionPaddingX: CGFloat = 7
-        static let sidebarActionPaddingY: CGFloat = 5
         /// The plan picker (the same design section): its width, one row's height and how many
         /// rows show before it scrolls (about twelve, the design's number).
         static let pickerWidth: CGFloat = 300

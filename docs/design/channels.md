@@ -159,9 +159,12 @@ expands to what is inside it; the rest is collapsed.
 - **A band row** shows its name and mode, and a click on it tunes the band: a
   newcomer who clicks FM broadcast hears it, and FM broadcast has no plan and no bookmarks, so
   a click that only expanded the row would leave a sweep as the only way in. Expanded, the row
-  shows its range line, then a compact action strip with `Scan band` and, where the band has a
-  plan, `Channels…`. The raised, bordered controls distinguish actions from the bookmark rows
-  below them. A sweep's progress or hits sit beneath the strip, followed by the bookmarks. The
+  shows its range line, then two actions as rows of the list, `Scan band` and, where the band
+  has a plan, `Channels ›`: at a bookmark row's height, the glyph where a bookmark's dot sits and
+  the label where its name starts, in a dimmer ink than a bookmark's name and with no button
+  chrome. A sweep's progress or hits sit beneath them, followed by the bookmarks, and the band
+  header, its range line, the actions and the bookmarks share one raised ground, so the open
+  band reads as one group. The
   band the tuned frequency is in is the expanded one, following the rule that selection reflects
   state rather than causing it, so the click expands the row by tuning it; a
   disclosure chevron at the row's edge expands or collapses without tuning, for a ham looking
@@ -179,7 +182,7 @@ expands to what is inside it; the rest is collapsed.
   for the band lookup; `Bands.plain` has a sidebar-facing sibling that folds parts into their
   group. On the Go side `presetAt` and `ResolvePreset` walk the groups' plans as well as the
   bands'. Picking a channel in the other half moves the capture.
-- **The plan picker** is a popover from the `Channels…` action, the shape the mode and width
+- **The plan picker** is a popover from the `Channels` action, the shape the mode and width
   pop-ups use, sized to about twelve rows and scrolling past that. A row is the channel's name,
   its frequency, and its note in `inkTertiary` where there is one; the order is the plan's own,
   channel number first, so marine's ship and coast entries sit together. A filter field at the
