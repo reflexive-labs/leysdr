@@ -344,6 +344,11 @@ its own `leylined --no-hardware` and compares its pictures, accessibility trees 
 with local goldens (`app.md`, "Staged runs"). `.claude/skills/app-check/SKILL.md` says how to
 read its lines and look at a picture.
 
+**Test and check daemons keep keys in a file.** Every daemon a test, a check scene or an eval
+starts runs with `--secrets file`, so its AI keys sit under its own data directory, and
+`go/internal/daemonrun` refuses one that says it keeps them in the keychain, where a made-up key
+would replace the person's own.
+
 **Check in tiers: smoke, then targeted, then full** (`../plans/mac-loop.md`, ML-11):
 
 | tier | command | runs |
