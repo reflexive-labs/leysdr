@@ -346,6 +346,25 @@ person or hardware, 3 obsolete. Its numbering (U4.02, P.45, H3, F2) is used belo
   `follow-launch-and-daemon`, `gmrs-plan`, `vhf-wide`, `sweep-lifecycle`, `change-note`,
   `alert-and-menus`.
 
+  First half built 2026-10-22: `settings-ai`, `assistant-conversation`, `assistant-cards` (at
+  1440 and 1221 pt), `assistant-view-tools` (at 1000 pt), `follow-assistant` and `change-note`,
+  the first scenes on ML-9b's AI stub; every scripted turn is in `run/ai/record.jsonl` and no
+  run reached a provider. `app.md` marks what each checks and lists what they found. Fixed on
+  the way: Settings' pop-ups off their column by 12 pt, a refused key write in the transport's
+  words, the toolbar's toggles and New Conversation named by their symbols for VoiceOver, a step
+  opened on a long result emptying the transcript, the take-over card's middle button cut
+  short, a tall inspector pushing the transport bar out of the window, and the key guard
+  letting ← tune the radio from the assistant's field. The harness gained `pick` (a pop-up's or
+  segmented control's item), Settings' fields taking typed keys, `press` refusing a disabled
+  element, and fixes for what the scenes met: a tree read from Settings in the main window's
+  place, the objects reading giving hosted AppKit controls frames a point larger, an alert
+  button's AppKit name in some runs only, Settings' pictures drawn in another colour space when
+  ⌘, opened it, a failed `relaunch` panicking `leyshots`. Facts left for the second half or
+  filed: ⇧⌘A (never reaches the menu in a check run), a relaunch remembering the column (a staged
+  run writes no defaults), the minute tick, the light appearance, a key with no model, a lost
+  conversation, a recording selected by the assistant, the double click on a card, the 300 ms
+  before the waiting row.
+
 ML-9a and ML-9b run side by side; ML-9c follows ML-9a in the same tree, since both edit the app;
 ML-9d needs all three. Light appearance stays out (Decisions: dark only).
 

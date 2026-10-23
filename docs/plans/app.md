@@ -1572,6 +1572,41 @@ scene, whose pictures and trees in `tmp/checks/<scene>/` show it.
   does the same, because AppKit gives a window that becomes key with nothing focused to its
   first key view, the filter.
 
+Found by the ML-9d scenes (2026-10-22), not fixed on the spot:
+
+- `assistant-cards`: text typed while a card waits is lost once the card is answered. The field
+  still shows it, but Return then sends nothing, and what is typed next is sent alone (a probe
+  sent `x` with `then take the radio for 146.94` on screen). After Stop the same text is kept
+  (`assistant-conversation`), so it is the card's going that resets the field's `draft`.
+- `follow-assistant`: once the window follows, Record transmissions reads off (it is the
+  followed channel's), and nothing in the window switches off the recording on the window's old
+  channel, though the inspector says that channel "stays open while it records". Where is it
+  switched off?
+- `follow-assistant`: a tune with the squelch on auto reads "The assistant tuned to 147.180 MHz
+  NFM and set the squelch to -53 dBFS.": the measured level is told as one the assistant chose.
+- `follow-assistant`: with the audio silent the ladder's rms and peak read `-200-200`, run
+  together under the two bars.
+- `assistant-cards`, `assistant-view-tools`: at the window's narrowest with the column open
+  (1221 pt), the squelch's caption and its three words under the track are cut (`open ·…`,
+  `mut… sque… hear…`).
+- `assistant-conversation`: a stopped turn leaves nothing in the transcript under the message it
+  answered; the next message follows the unanswered one. Say it was stopped?
+- `settings-ai`: the key's words name the provider by its id (`anthropic key …0042 added`,
+  "Remove the anthropic key?", "Assistant now calls anthropic claude-opus-5-5", "No openai key is
+  set yet") beside rows that name it `Anthropic` and `OpenAI-compatible`; `ley ai`'s words, or
+  the names?
+- `settings-ai`: the Settings window's AI tab draws as a white tile with a system-blue glyph and
+  the usage switch in system blue, both off the palette.
+- `settings-ai`: closing Settings while the key's field has the focus and holds text brought the
+  window straight back in a check run, with the system's password AutoFill list (it offers
+  1Password) open at the field. Look in a real session.
+- The harness: `ax` read through the window's objects (when the API answers no window) moves an
+  AppKit field's height by a point, and what is under it; the inspector's identity and the AI
+  pane's Key row moved so in pictures (`assistant-view-tools` masks the inspector for it). The
+  frames now agree, the layout under them does not always. In a check run ⇧⌘A never reaches
+  View ▸ Hide Assistant, ⌘W closes no window (no key window), and a staged run writes no
+  defaults, so a relaunch cannot show a remembered choice.
+
 #### Residuals after APP-9 review
 
 - `JSONValue` decodes an unknown JSON integer through `Double`, so an unknown field above 2^53
@@ -1597,22 +1632,33 @@ off the Mac. The pane is forced dark like the window rather than giving `Theme` 
   `LeylineApp.swift`, `AppSession`'s AI section and `hasAnyAI`, the `Theme.Layout.settings*`
   tokens.
 - ⌘, and the app menu's Settings… open the window, at `settingsWindow`'s size, with the AI tab.
+  Checked: `settings-ai`.
 - The pane is dark under both system appearances, with no light-on-light text or controls.
+  Dark appearance checked by eye in `settings-ai`'s pictures; the light one needs an
+  `appearance` key in `leyshots`.
 - K1: with no key, only the explanation and the Add form show; adding one brings Features and
   Usage in, and removing it takes them out again; nothing in the main window changes.
+  Checked: `settings-ai`; the main window's tree changes by the toolbar's assistant toggle alone.
 - The `SecureField` hides the key and clears the moment Add is pressed; a refused Add (the daemon
   not running) puts the key back. Closing the Settings window clears it: check that
   `willCloseNotification` fires for the Settings window, since `onDisappear` may not. The
   Endpoint field shows for OpenAI-compatible only; Add is disabled while the key is empty.
+  Checked: `settings-ai`, all of it (the key field reads empty to the API while it holds a key,
+  so Add's enabled state stands for what it holds; the window is closed by the stage, as ⌘W
+  closes nothing in a check run). A refused Add said the transport's words; fixed (found below).
 - Choosing another provider and then the one the daemon holds again drops the model field and
-  rewrites nothing.
+  rewrites nothing. Checked: `settings-ai` (`ley ai --json` before and after).
 - Check updates the row's outcome and the top line; Remove asks, then the row leaves.
+  Checked: `settings-ai` (the shim accepts every key, so the outcome reads `accepted` both
+  times; the top line changes).
 - The provider picker writes Anthropic's first model at once; OpenAI-compatible shows a model
   field that writes on Return; the model picker writes; the sentence under the pickers follows
-  the provider shown.
+  the provider shown. Checked: `settings-ai`, through `pick` and `ley ai --json`.
 - The usage `Grid`: the numeric columns right-aligned, the divider across the table, the total
-  row, and the day and month switch.
-- The relative words move on each minute (`TimelineView(.everyMinute)`).
+  row, and the day and month switch. Seen in `settings-ai`'s trees on 2026-10-22 (right-aligned,
+  total row, the switch to months); no golden keeps them, as the rows are named by the date.
+- The relative words move on each minute (`TimelineView(.everyMinute)`). Not checked: a scene
+  would wait a minute and more, and the words' boundary falls anywhere in it.
 
 ### The assistant panel `[x]` (built under `ai-features.md`)
 
@@ -1631,53 +1677,77 @@ and the fake worker in `make app-e2e`. The views are not compiled off the Mac.
   `InspectorView.swift`, the `Theme.Layout.assistant*` tokens.
 - K1: with no key, no toggle and no column, and View ▸ Show Assistant is disabled; adding a key
   in Settings brings the toggle and enables the item, and removing the key takes the column away
-  even while it was open. Checked: `assistant-absent`, no toggle and no column with ⇧⌘A; the
-  menu item and a key need `menu` and the AI provider stub.
+  even while it was open. Checked: `assistant-absent`, no toggle and no column (its ⇧⌘A proves
+  nothing: in a check run ⇧⌘A never reaches the menu item); `settings-ai`, the item disabled
+  without a key and enabled with one, the toggle in, and the open column gone with the key.
 - With the column open the window cannot be made narrower than 900 pt plus the column, and
-  opening it in a narrow window widens the window rather than squeezing the canvas.
+  opening it in a narrow window widens the window rather than squeezing the canvas. Checked:
+  `assistant-view-tools` (1000 pt to 1221, the minimum 1221), `assistant-conversation`.
 - Stop shows while the assistant waits on a view tool; after a message the field keeps the focus
-  through the turn.
+  through the turn. The focus checked: `assistant-conversation`; the app answers a view tool at
+  once, so no scene sees Stop while it waits.
 - ⇧⌘A and the toolbar toggle open and close the column in both places, and the choice survives
   a relaunch; ⌘1 and ⌘2 with the column open keep the transcript, its scroll and the field's text.
+  Checked: `assistant-conversation`, the toolbar's toggle, and ⌘2 and ⌘1 keeping the transcript
+  and the field. Not checked: ⇧⌘A (it never reaches the menu in a check run), the relaunch (a
+  staged run writes no defaults), the scroll.
 - The empty panel's words wrap inside 320 pt; with no model chosen, Open Settings opens the AI
-  pane.
+  pane. The words checked: `assistant-conversation`'s empty picture. Not checked: a key with no
+  model, since adding a key chooses Anthropic's model for the assistant.
 - Return in the field sends and clears it; Option-Return makes a new line; Space and the arrows
   type into the field rather than muting and tuning the radio; a refused send puts the text back.
+  Checked: `assistant-conversation`. ← tuned the radio in a check run; fixed (found below).
 - While the assistant thinks the field takes typing; Return then does nothing and keeps the text,
   also while a question card waits, and the line under the field reads `Return sends once the
   assistant is done.` (`Return sends once you have answered.` under a card). Once the turn ends,
   Return sends it and the line goes. Two quick Returns on an idle conversation send one message. A lost conversation (deleted
   from `ley ask` while the panel shows it) still takes a message, which starts a new one.
+  Checked: `assistant-conversation` (thinking, Stop, then Return), `assistant-cards` (under a
+  card), save that what was typed under a card is lost once it is answered (found below). Not
+  checked: a lost conversation.
 - The waiting row: an answer that comes back within 300 ms shows no row at all; after a slower
   message, a small spinner and `thinking…` appear under the turns and stay
   in view at the bottom of the transcript; from 3 s it reads `thinking… 3s`, `4s`, once a second;
   while a step reads `running` the row is gone, and it comes back counting from 0 when the model
   thinks again; after a Decline on a card that sat for a while, the count starts from 0, not from
   when the question was asked; when the reply arrives, a question shows or Stop is pressed, nothing of it stays.
-  VoiceOver reads it as one element, "The assistant is thinking".
+  VoiceOver reads it as one element, "The assistant is thinking". Checked:
+  `assistant-conversation`, the row at 1.5 s, `thinking… 4s` in its picture, gone on the reply and
+  on Stop, one element so named. Not checked: the 300 ms, the row's absence while a step runs and
+  its count after a Decline.
 - The assistant's reply text is in `inkSecondary`, dimmer than the field's typing and brighter
   than the steps and the user's turn, and no longer stands out against the rest of the panel.
+  Checked by eye in `assistant-conversation`'s pictures.
 - The transcript stays scrolled to the newest turn as text and steps arrive; a user turn sits on
   the right in muted ink; a step's row opens and closes and shows the arguments, the result and
-  its JSON; long results wrap and can be selected.
+  its JSON; long results wrap and can be selected. Checked: `assistant-conversation`, all but the
+  selection; a step opened on a long result emptied the transcript, fixed (found below).
 - A question shows as a card under the transcript; Allow and Decline answer it and the card
-  goes; Return does not answer it.
+  goes; Return does not answer it. Checked: `assistant-cards`.
 - A take-over question ("take the radio from the terminal on 146.52") shows a third button,
   Allow for this conversation, between Decline and Allow, and the three fit the panel at its
   narrowest without clipping. After it, a second take-over in the same conversation runs without
   a card, and its step reads `done` with the receipt. A delete's card shows only Decline and
-  Allow.
+  Allow. Checked: `assistant-cards`, at 1440 and 1221 pt; Allow for this conversation was cut
+  short at every width, fixed (found below).
 - A quick second click on the card, Allow then Allow for this conversation, sends nothing: the
   three buttons are disabled from the first click until the daemon replies, and the panel shows
-  no failure notice. A new question's buttons are enabled at once.
+  no failure notice. A new question's buttons are enabled at once. The new question's buttons
+  checked: `assistant-cards`. Not checked: the second click, as the daemon answers the first
+  before a second press arrives.
 - Stop shows only while the assistant thinks and ends the turn; New Conversation ends the
-  conversation and empties the panel.
+  conversation and empties the panel. Checked: `assistant-conversation`.
 - "Show me 2 m" with the radio on 146.52 MHz zooms the waterfall and the rail's window onto the
   part of 2 m the radio captures without moving the radio; a tune puts the window back on the
   tuned frequency; "show me airband" from there answers that a tune is needed and moves nothing.
-- "Open the recording …" switches to the Library on that recording's channel and part.
+  Checked: `assistant-view-tools`. On `scene_2m` the whole capture lies inside 2 m, so "show me
+  2 m" moves nothing there; a range inside the capture zooms to 4.
+- "Open the recording …" switches to the Library on that recording's channel and part. Not
+  checked: a script cannot name a recording made in the run; `show_place` switching to the
+  Library is checked in `assistant-view-tools`.
 - With `ley set squelch -45` from a terminal, the inspector's identity reads "Another terminal
-  set the squelch to -45 dBFS.", and the line goes on the window's own next change.
+  set the squelch to -45 dBFS.", and the line goes on the window's own next change. Checked:
+  `change-note`.
 
 ### The window follows the radio `[x]` (built under `ai-features.md`, AI-17)
 
@@ -1697,11 +1767,16 @@ the Mac, and the system-audio sink cannot attach on Linux.
 - With the window on a GMRS channel, `ley ask "listen to the weather radio"` from a terminal
   moves the readout, the inspector, the rail's selection and the transmissions log to the
   assistant's channel, the audio with them (one stream, no echo), and the inspector reads "The
-  assistant tuned to 162.400 MHz NFM." (with the squelch it set, when it set one).
+  assistant tuned to 162.400 MHz NFM." (with the squelch it set, when it set one). Checked:
+  `follow-assistant`, on 2 m (`ley ask --continue` to the evening net): the readout, the
+  inspector with its line, one sink in `ley state`. Not checked: the echo, by ear.
 - With no recording on it, the window's GMRS channel is ended, so the sidebar's out-of-capture
   flag on it ("Outside the radio's 20 MHz around …") goes and `ley state` lists no channel of the
   app's beside the assistant's. With a recording on it, the channel stays (next item).
-- "Listen to NOAA" in the window's own assistant panel does the same.
+  Checked: `follow-assistant`, the recording's channel staying beside the assistant's. Not
+  checked: the window's own channel ended when nothing records on it.
+- "Listen to NOAA" in the window's own assistant panel does the same. Checked:
+  `follow-assistant`, from the panel to the club repeater.
 - `ley tune 146.52` in a terminal on the window's radio: the window follows it, with no second
   sink after the 1 s settle (the terminal's plays), the inspector reads "The audio plays through
   another terminal.", and the mute button and volume slider are disabled; when the terminal is
@@ -1720,7 +1795,9 @@ the Mac, and the system-audio sink cannot attach on Linux.
   moves the radio and tunes leaves the window, on reconnecting, on the terminal's channel.
 - With Record transmissions on for the window's channel, a tune from `ley ask` leaves the
   recording running and the inspector shows "Your channel on … stays open while it records.";
-  switching the recording off ends that channel and the line goes.
+  switching the recording off ends that channel and the line goes. Checked: `follow-assistant`,
+  the recording running and the line, from the panel and from `ley ask`. Not checked: switching
+  it off (found below).
 - `ley stop` on the assistant's channel puts the window back on a channel of its own at the
   same frequency, mode and squelch.
 - A muted window stays muted after following; a part playing in the log keeps playing, and the
