@@ -141,11 +141,14 @@ struct IdentityView: View {
                     }
                 }
             }
-            if let b = bookmark, !b.tags.isEmpty {
+            if let b = bookmark {
                 // Tags are shown, not edited (docs/design/channels.md, "Bookmarks
-                // gain three fields").
-                Text(b.tags.joined(separator: " · ")).font(Theme.Font.valueSmall)
+                // gain three fields"). The line is there for an untagged bookmark too, blank,
+                // so nothing under it moves between a tagged bookmark and an untagged one.
+                Text(b.tags.isEmpty ? " " : b.tags.joined(separator: " · "))
+                    .font(Theme.Font.valueSmall)
                     .foregroundStyle(Theme.inkFaint).lineLimit(1).truncationMode(.tail)
+                    .accessibilityHidden(b.tags.isEmpty)
             }
             Text(detail(bookmark: bookmark, hz: hz))
                 .font(Theme.Font.value).foregroundStyle(Theme.inkMuted)

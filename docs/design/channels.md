@@ -311,7 +311,8 @@ Additive, in `bookmarks.json`, all optional, unknown keys preserved by both read
 written by the CHIRP import and read by nothing yet: recording a repeater's input as data is not
 transmitting, and a sentence in `note` could not become a field later without parsing prose. The
 inspector's identity region edits `tone` and `note` beside the name; `tags` are edited nowhere and
-are shown as words under the name when present. Neither client gates audio on `tone`: tone
+are shown as words under the name when present, on a line a bookmark without tags keeps blank, so
+nothing under it moves from one bookmark to the next. Neither client gates audio on `tone`: tone
 squelch is the engine's separate decision (`control.proto`, `ChannelConfig`'s reserved field 13),
 and a
 bookmark's tone stays a record of what the repeater uses.
