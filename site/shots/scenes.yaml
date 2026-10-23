@@ -14,10 +14,23 @@
 #
 # fixtures are leyfix catalog entries, attached with `ley play --persistent --loop` in order, so
 # the first one's channel is the one tuned when the app starts. rate and duration apply to a
-# fixture outside the scenes set. clock is leylined --wall-clock: only app scenes set it, because
-# `ley track --since` seeds from the real clock and a shifted daemon can open a track empty.
-# steps run after the fixtures and before the shot: `ley` with the scene's socket and bookmarks,
-# or `wait` seconds.
+# fixture outside the scenes set. clock is leylined --wall-clock; a scene whose terminal runs
+# `ley track` may not set it, because `ley track --since` seeds from the real clock and a shifted
+# daemon can open a track empty. steps run after the fixtures and before the shot: `ley` with the
+# scene's socket and bookmarks, or `wait` seconds.
+#
+# ai: {script: assistant/x.script, provider: openai} runs the daemon's assistant on a scripted
+# model with a made-up key, as a check scene's ai does (app/checks/scenes.yaml): nothing reaches a
+# provider. speech: {script: net-speech.txt} makes the daemon's speech decoder leydec-speech's
+# scripted engine, which replays the file's lines one an over, so `ley transcribe` and
+# `ley watch speech` need no key and send nothing anywhere.
+#
+# app, on an app or composite scene, are commands sent to the running app over its command file
+# once it is ready, in the check scenes' format (ax and relaunch excepted): the app is launched in
+# the background and takes no focus, and the shot is the last snapshot's picture (window: settings
+# takes the Settings window), cropped. A state expectation that fails fails the shot. Without app,
+# the window is brought forward and taken with screencapture once its stage has settled. A
+# composite's first pane is typed before the app starts unless it says after_app: true.
 
 repo: reflexive-labs/leysdr
 

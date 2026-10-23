@@ -170,9 +170,19 @@ func runScene(ctx context.Context, o runOptions, f *File, s *Scene, tm *tmuxRunn
 	}
 
 	run := filepath.Join(o.out, "run", s.Name())
-	sr, err := startScene(ctx, o, sceneSetup{
-		fixtures: s.Fixtures, clock: s.Clock, bookmarks: f.Path(s.Bookmarks), steps: s.Steps,
-	}, run)
+	in := sceneSetup{fixtures: s.Fixtures, clock: s.Clock, bookmarks: f.Path(s.Bookmarks), steps: s.Steps}
+	var err error
+	if s.AI != nil {
+		if in.ai, err = s.AI.stub(f.Path); err != nil {
+			return nil, err
+		}
+	}
+	if s.Speech != nil {
+		if in.speech, err = s.Speech.stub(f.Path); err != nil {
+			return nil, err
+		}
+	}
+	sr, err := startScene(ctx, o, in, run)
 	if err != nil {
 		return nil, err
 	}
@@ -195,6 +205,20 @@ func runScene(ctx context.Context, o runOptions, f *File, s *Scene, tm *tmuxRunn
 		}
 		return finish(shot, out)
 	case kindApp:
+		if len(s.App) > 0 {
+			d, err := startDriven(ctx, o, f, s, sr, run)
+			if err != nil {
+				return nil, err
+			}
+			defer d.quit(ctx)
+			if err := d.commands(ctx); err != nil {
+				return nil, err
+			}
+			if err := d.crop(s.Crop, out); err != nil {
+				return nil, err
+			}
+			return finish(shot, out)
+		}
 		a, err := launchApp(ctx, o.app, f, s, run, env, o.logf)
 		if err != nil {
 			return nil, err
@@ -206,36 +230,57 @@ func runScene(ctx context.Context, o runOptions, f *File, s *Scene, tm *tmuxRunn
 		return finish(shot, out)
 	case kindComposite:
 		// The first pane's command runs before the app starts, so the app opens on the channel it
-		// tunes; the rest are typed once the app is showing, so it shows them land.
+		// tunes, unless it is to be seen following it (after_app); the rest are typed once the app
+		// is showing, so it shows them land.
 		if err := tm.open(ctx, s.Name(), s.Terminal); err != nil {
 			return nil, err
 		}
 		defer tm.closeSession(ctx, s.Name())
-		if err := tm.typePane(ctx, s.Name(), 0, s.Terminal.Panes[0]); err != nil {
-			return nil, err
+		first := 0
+		if !s.Terminal.Panes[0].AfterApp {
+			if err := tm.typePane(ctx, s.Name(), 0, s.Terminal.Panes[0]); err != nil {
+				return nil, err
+			}
+			if err := sleep(ctx, 2); err != nil {
+				return nil, err
+			}
+			first = 1
 		}
-		if err := sleep(ctx, 2); err != nil {
-			return nil, err
+		var takeApp func(string) error
+		if len(s.App) > 0 {
+			d, err := startDriven(ctx, o, f, s, sr, run)
+			if err != nil {
+				return nil, err
+			}
+			defer d.quit(ctx)
+			takeApp = func(p string) error {
+				if err := d.commands(ctx); err != nil {
+					return err
+				}
+				return d.crop(s.Crop, p)
+			}
+		} else {
+			a, err := launchApp(ctx, o.app, f, s, run, env, o.logf)
+			if err != nil {
+				return nil, err
+			}
+			defer a.quit()
+			takeApp = func(p string) error { return a.capture(ctx, s.Crop, p) }
 		}
-		a, err := launchApp(ctx, o.app, f, s, run, env, o.logf)
-		if err != nil {
-			return nil, err
-		}
-		defer a.quit()
-		for i, p := range s.Terminal.Panes[1:] {
-			if err := tm.typePane(ctx, s.Name(), i+1, p); err != nil {
+		for i := first; i < len(s.Terminal.Panes); i++ {
+			if err := tm.typePane(ctx, s.Name(), i, s.Terminal.Panes[i]); err != nil {
 				return nil, err
 			}
 		}
 		if err := sleep(ctx, s.Settle); err != nil {
 			return nil, err
 		}
-		panes, err := tm.read(ctx, s.Name())
-		if err != nil {
+		appPNG, termPNG := filepath.Join(run, "app.png"), filepath.Join(run, "terminal.png")
+		if err := takeApp(appPNG); err != nil {
 			return nil, err
 		}
-		appPNG, termPNG := filepath.Join(run, "app.png"), filepath.Join(run, "terminal.png")
-		if err := a.capture(ctx, s.Crop, appPNG); err != nil {
+		panes, err := tm.read(ctx, s.Name())
+		if err != nil {
 			return nil, err
 		}
 		if err := renderTerminal(ctx, o, s, panes, termPNG); err != nil {
@@ -269,6 +314,8 @@ type sceneSetup struct {
 	ai *aiStub
 	// sweepDwellMs, when set, is the shortest dwell of a scan on a file radio (--file-scan-dwell).
 	sweepDwellMs int
+	// speech, when set, makes the daemon's speech decoder the scripted engine (speech.go).
+	speech *speechStub
 }
 
 // sceneRun is a scene's own daemon, set up and running.
@@ -314,11 +361,20 @@ func startScene(ctx context.Context, o runOptions, in sceneSetup, run string) (*
 		}
 		daemonEnv = append(daemonEnv, aiEnv...)
 	}
+	decoders := o.decoders
+	if in.speech != nil {
+		dir, speechEnv, err := in.speech.install(run, o.decoders)
+		if err != nil {
+			return nil, err
+		}
+		decoders = dir
+		daemonEnv = append(daemonEnv, speechEnv...)
+	}
 	d, err := daemonrun.Start(ctx, daemonrun.Options{
 		// A shot or check plays its fixtures on the Mac's speakers otherwise, beside the person
 		// working there; the channel still has its sink, so the app shows what it would.
-		Bin: o.leylined, Dir: run, Decoders: o.decoders, WallClock: in.clock, Label: "leyshots", Env: daemonEnv,
-		Unset: aiEnvNames, NoAudio: true, FileScanDwellMs: in.sweepDwellMs,
+		Bin: o.leylined, Dir: run, Decoders: decoders, WallClock: in.clock, Label: "leyshots", Env: daemonEnv,
+		Unset: append(slices.Clone(aiEnvNames), speechScriptEnv), NoAudio: true, FileScanDwellMs: in.sweepDwellMs,
 	})
 	if err != nil {
 		return nil, err

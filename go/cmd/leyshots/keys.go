@@ -64,9 +64,10 @@ type fixturePlanner func(FixtureRef) ([]byte, error)
 
 // sceneKey is the content of a scene's key file: a sha256 over everything the scene's image
 // depends on that is particular to it, then one line per input. The inputs are the scene as
-// parsed, every file it reads (bookmarks, the stage's CHIRP import, a table's source), each
-// fixture's dry run and the leyfix source hash. What every scene of a kind shares (ley, the
-// engine, the app, the render scripts) is the Makefile's SHOTS_DEPS_* instead.
+// parsed, every file it reads (bookmarks, the stage's CHIRP import, a table's source, the
+// assistant's and the speech engine's scripts), each fixture's dry run and the leyfix source
+// hash. What every scene of a kind shares (ley, the engine, the app, the render scripts) is the
+// Makefile's SHOTS_DEPS_* instead.
 func sceneKey(f *File, s *Scene, plan fixturePlanner, leyfixSrc string) (string, error) {
 	var lines strings.Builder
 	scene, err := json.Marshal(s)
@@ -83,6 +84,12 @@ func sceneKey(f *File, s *Scene, plan fixturePlanner, leyfixSrc string) (string,
 	}
 	if s.Table != nil && s.Table.Source != "" {
 		refs = append(refs, s.Table.Source)
+	}
+	if s.AI != nil {
+		refs = append(refs, s.AI.Script)
+	}
+	if s.Speech != nil {
+		refs = append(refs, s.Speech.Script)
 	}
 	for _, r := range refs {
 		b, err := os.ReadFile(f.Path(r))

@@ -47,6 +47,16 @@ type Scene struct {
 	Table     *Table    `yaml:"table"`
 	// Settle is the seconds a terminal waits after its last pane starts before it is read.
 	Settle float64 `yaml:"settle"`
+	// AI puts the assistant on a scripted model with a made-up key, as a check scene's ai does
+	// (ai.go).
+	AI *AISetup `yaml:"ai"`
+	// Speech makes the scene's speech decoder the scripted engine (speech.go).
+	Speech *SpeechSetup `yaml:"speech"`
+	// App are commands sent to the running app over its command file once it is ready, as a
+	// check scene's are (app/checks/scenes.yaml): the shot is the last snapshot's picture,
+	// cropped, and nothing takes the focus. Without them the window is taken with screencapture
+	// once its stage has settled.
+	App []AppCommand `yaml:"app"`
 }
 
 // Name is the scene's name: its asset without the extension.
@@ -127,6 +137,9 @@ type Terminal struct {
 type Pane struct {
 	Command string  `yaml:"command"`
 	Delay   float64 `yaml:"delay"`
+	// AfterApp types a composite's first pane once the app is showing, as the others are, rather
+	// than before it starts: for a command the app is to be seen following.
+	AfterApp bool `yaml:"after_app"`
 }
 
 // Table draws the first Rows rows of a CSV.
@@ -227,10 +240,26 @@ func (s *Scene) validate(f *File) error {
 	if err != nil {
 		return err
 	}
-	if s.Clock != "" && s.Kind != kindApp {
+	if s.Clock != "" && s.tracks() {
 		// `ley track --since` seeds from the real clock, so a shifted daemon can open a track
-		// empty; only the app's own views read the shifted dates.
-		return errors.New("only an app scene may set clock")
+		// empty.
+		return errors.New("a scene whose terminal runs ley track may not set clock")
+	}
+	if s.Clock != "" && s.Kind != kindApp && s.Kind != kindComposite && s.Kind != kindTerminal {
+		return fmt.Errorf("a %s scene has no daemon to set the clock of", s.Kind)
+	}
+	if s.AI != nil {
+		if err := s.AI.validate(f.Path); err != nil {
+			return err
+		}
+	}
+	if s.Speech != nil {
+		if err := s.Speech.validate(f.Path); err != nil {
+			return err
+		}
+	}
+	if err := s.validateApp(f.Path); err != nil {
+		return err
 	}
 	if s.Terminal != nil {
 		t := s.Terminal
@@ -262,6 +291,59 @@ func (s *Scene) validate(f *File) error {
 		}
 	}
 	return validateSetup(f.Path, s.Bookmarks, s.Steps)
+}
+
+// tracks reports whether one of the scene's panes runs ley track.
+func (s *Scene) tracks() bool {
+	if s.Terminal == nil {
+		return false
+	}
+	for _, p := range s.Terminal.Panes {
+		if f := strings.Fields(p.Command); len(f) >= 2 && f[0] == "ley" && f[1] == "track" {
+			return true
+		}
+	}
+	return false
+}
+
+// validateApp checks the scene's app commands: only an app or composite scene has them, each is
+// a check scene's command, a snapshot gives the shot, and a composite's first pane waits for the
+// app only when the app is driven.
+func (s *Scene) validateApp(path func(string) string) error {
+	if s.Terminal != nil && len(s.Terminal.Panes) > 0 && s.Terminal.Panes[0].AfterApp && (s.Kind != kindComposite || len(s.App) == 0) {
+		return errors.New("after_app is for the first pane of a composite scene with app commands")
+	}
+	if len(s.App) == 0 {
+		return nil
+	}
+	if s.Kind != kindApp && s.Kind != kindComposite {
+		return fmt.Errorf("a %s scene has no app to send commands to", s.Kind)
+	}
+	snapshot := false
+	bg := map[string]bool{}
+	for i := range s.App {
+		c := &s.App[i]
+		if err := c.validate(path); err != nil {
+			return fmt.Errorf("app command %d (%s): %w", i+1, c.Cmd, err)
+		}
+		if c.isLocal() {
+			if err := c.validateLocal(bg); err != nil {
+				return fmt.Errorf("app command %d (%s): %w", i+1, c.Cmd, err)
+			}
+		}
+		switch c.Cmd {
+		case "snapshot":
+			snapshot = true
+		case "ax", "relaunch":
+			// An ax tree is compared with a golden, which a shot has none of; a relaunch would
+			// leave the shot's app another process.
+			return fmt.Errorf("app command %d: a site scene does not take %s", i+1, c.Cmd)
+		}
+	}
+	if !snapshot {
+		return errors.New("app commands need a snapshot, whose picture is the shot")
+	}
+	return nil
 }
 
 // validate checks a stage's place and that its CHIRP import exists, resolved by path.

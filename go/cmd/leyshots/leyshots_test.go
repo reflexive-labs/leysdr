@@ -66,16 +66,16 @@ func TestScenesCoverThePlan(t *testing.T) {
 }
 
 // The scenes file parses, and its scenes keep the plan's rules:
-// only app scenes shift the clock, every app scene has a stage with a window, and every alt text
-// is a sentence the manifest can append to.
+// no scene that runs ley track shifts the clock, every app scene has a stage with a window, and
+// every alt text is a sentence the manifest can append to.
 func TestScenesFile(t *testing.T) {
 	f := loadScenes(t)
 	if f.Repo != "reflexive-labs/leysdr" {
 		t.Errorf("repo %q", f.Repo)
 	}
 	for _, s := range f.Scenes {
-		if s.Clock != "" && s.Kind != kindApp {
-			t.Errorf("%s: a %s scene sets clock", s.Asset, s.Kind)
+		if s.Clock != "" && s.tracks() {
+			t.Errorf("%s: a scene that runs ley track sets clock", s.Asset)
 		}
 		if s.Stage != nil && (s.Stage.Window == nil || s.Stage.Settle <= 0) {
 			t.Errorf("%s: a stage needs a window and a settle time", s.Asset)
@@ -96,7 +96,14 @@ func TestScenesFile(t *testing.T) {
 func TestLoadRejects(t *testing.T) {
 	cases := map[string]string{
 		"unknown kind":     "kind: photo\n    alt: A.",
-		"clock off app":    "kind: terminal\n    alt: A.\n    clock: \"19:42\"\n    fixtures: [{name: x}]\n    terminal: {cols: 80, rows: 10, panes: [{command: ley}]}",
+		"clock on a track": "kind: terminal\n    alt: A.\n    clock: \"19:42\"\n    fixtures: [{name: x}]\n    terminal: {cols: 80, rows: 10, panes: [{command: ley track aprs}]}",
+		"clock on a table": "kind: table\n    alt: A.\n    clock: \"19:42\"\n    table: {source: scenes.yaml}",
+		"app on terminal":  "kind: terminal\n    alt: A.\n    fixtures: [{name: x}]\n    terminal: {cols: 80, rows: 10, panes: [{command: a}]}\n    app: [{cmd: snapshot, name: s}]",
+		"app sans shot":    "kind: app\n    alt: A.\n    fixtures: [{name: x}]\n    stage: {settle: 1}\n    crop: {regions: [window]}\n    app: [{cmd: wait, seconds: 1}]",
+		"app with ax":      "kind: app\n    alt: A.\n    fixtures: [{name: x}]\n    stage: {settle: 1}\n    crop: {regions: [window]}\n    app: [{cmd: ax, name: t}, {cmd: snapshot, name: s}]",
+		"after_app alone":  "kind: composite\n    alt: A.\n    fixtures: [{name: x}]\n    stage: {settle: 1}\n    crop: {regions: [window]}\n    terminal: {cols: 80, rows: 10, panes: [{command: a, after_app: true}]}",
+		"ai sans script":   "kind: app\n    alt: A.\n    fixtures: [{name: x}]\n    stage: {settle: 1}\n    crop: {regions: [window]}\n    ai: {provider: openai}",
+		"speech missing":   "kind: terminal\n    alt: A.\n    fixtures: [{name: x}]\n    terminal: {cols: 80, rows: 10, panes: [{command: a}]}\n    speech: {script: nowhere.txt}",
 		"unknown region":   "kind: app\n    alt: A.\n    fixtures: [{name: x}]\n    stage: {settle: 1}\n    crop: {regions: [dock]}",
 		"split missing":    "kind: terminal\n    alt: A.\n    fixtures: [{name: x}]\n    terminal: {cols: 80, rows: 10, panes: [{command: a}, {command: b}]}",
 		"unknown field":    "kind: icon\n    alt: A.\n    colour: red",

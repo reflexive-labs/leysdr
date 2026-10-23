@@ -101,6 +101,26 @@ the app the scene's `settle` plus 30 s to write `regions.json`, then stops with 
 app's log (`LEYLINE_APP_LOG`, `tmp/shots/run/<scene>/app.log`). With the variable unset, nothing
 in the app changes.
 
+### Driven app shots (from 2026-10-23)
+
+An app or composite scene with an `app:` list is driven over the command file, as a check scene
+is (`docs/plans/mac-loop.md`, ML-3): `leyshots` launches the app with `open -g`, so it takes no
+focus, sends the commands in order (a request typed into the assistant's field, a `wait`, a
+`state` with expectations, a `ley` command), and the shot is the last `snapshot`'s picture, the
+app's own drawing of its window (`WindowPicture`), cropped as an app shot is. `window: settings`
+takes the Settings window, whose picture has no regions, so its crop is a box of the window. A
+failed expectation or a refused command fails the shot. `ax` and `relaunch` are refused: a shot
+has no golden, and a relaunch would leave the shot another process. A composite's first pane
+with `after_app: true` is typed once the app is ready, so the window is seen following it.
+
+Two more keys stand in for a provider. `ai:` is the check scenes' key (`go/cmd/leyshots/ai.go`):
+the assistant plays a script, the key is made up and kept in the scene daemon's own data, and
+each response's `usage` is what Settings and `ley ai usage` count. `speech: {script: …}` gives the
+daemon a copy of `decoders/` whose `speech` is `speech-scripted`'s manifest under that name, and
+`LEYDEC_SPEECH_SCRIPT` names the script, so `ley transcribe` and `ley watch speech` give its lines,
+one an over, with no key and nothing sent anywhere. The Library shows those records' model as
+`scripted`.
+
 ### Terminal shots
 
 Each terminal scene runs `ley` in its own tmux server (`tmux -L leyshots`) at a fixed size,
@@ -181,10 +201,13 @@ that has a channel on it, so the scene runs `ley stop all` after `ley play` and 
 scan. A default 250 ms dwell at 5 MSPS gives four looks, not eight; `--dwell 500` would give
 eight, at the cost of a longer command in the shot.
 
-Only app scenes set `clock`. `ley track --since` seeds its table from the real clock, so a
-daemon started with `--wall-clock` can open a track empty. `ways-sync` shares one daemon
-between an app shot and a terminal, so it leaves the clock unset as well, and `leyshots`
-refuses a `clock` on any scene that is not an app scene.
+A scene whose terminal runs `ley track` does not set `clock`, and `leyshots` refuses one there:
+`ley track --since` seeds its table from the real clock, so a daemon started with `--wall-clock`
+can open a track empty. Any other scene with a daemon may set it, and each whose image shows a
+time sets `clock: "19:42"`, so the times are the same on every run (from 2026-10-23; before,
+only app scenes set it).
+`ley ai`'s LAST USED is dated by the real clock while CHECKED follows `--wall-clock`, so
+`ley-ai` runs nothing that uses the key.
 
 ## Assets
 
