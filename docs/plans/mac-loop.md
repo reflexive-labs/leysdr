@@ -365,6 +365,21 @@ person or hardware, 3 obsolete. Its numbering (U4.02, P.45, H3, F2) is used belo
   conversation, a recording selected by the assistant, the double click on a card, the 300 ms
   before the waiting row.
 
+  Second half built 2026-10-22: `follow-terminal`, `follow-launch-and-daemon`, `gmrs-plan`,
+  `vhf-wide`, `sweep-lifecycle`, `alert-and-menus`, and `sweep-quiet` for the NOAA sweep with
+  nothing on the air (its fixture, `scene_wx`, holds no other band); `goto-bookmark` and
+  `bookmark-fields` were extended for the caret, the mute and the terminal's side of the fields.
+  They are the first scenes on `ley_bg`, `kill`, `daemon`, `expect_log`, `sweep_dwell` and the
+  three new fixtures. Fixed on the way: the inspector at launch naming the audio's player
+  "another client" for a terminal, a wide file radio folding its tuned band away (the radio's
+  range is its recorded centre, so the capture's span now counts as tunable), the swept row
+  closing during its sweep with its words and Stop, and a band after Stop Listening asking for a
+  second capture (`DEVICE_BUSY`) where another client's still held the radio. The harness gained
+  a click over the open popover reaching it (the plan picker's rows) and an identifier on a log
+  row's ▶. `app.md`'s four "Unverified on the Mac" lists are now one: the scenes that check each,
+  and what is left, by reason (needs a person or a real radio, or a harness addition by
+  H-number). What the second half found is in `app.md` beside the first half's.
+
 ML-9a and ML-9b run side by side; ML-9c follows ML-9a in the same tree, since both edit the app;
 ML-9d needs all three. Light appearance stays out (Decisions: dark only).
 
