@@ -68,7 +68,24 @@ struct ChannelPanel: View {
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.panel)
+        // A click on the panel's empty space (the header, a label, the gaps between regions)
+        // ends an edit in the name, Tone or Note field, as a click elsewhere does in any Mac
+        // window; the controls' own clicks reach them first.
+        .contentShape(Rectangle())
+        .onTapGesture { Self.endFieldEdit() }
         .identifiedGroup("inspector")
+    }
+
+    /// Takes the focus from the field being edited, whose lost focus puts its saved value back
+    /// (`BookmarkField`). The key window, or in a check run, whose app is never active and has
+    /// none, the window a field editor is typing in.
+    static func endFieldEdit() {
+        let window =
+            NSApp.keyWindow
+            ?? NSApp.windows.first {
+                $0.isVisible && ($0.firstResponder as? NSTextView)?.isFieldEditor == true
+            }
+        window?.makeFirstResponder(nil)
     }
 }
 
