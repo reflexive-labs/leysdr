@@ -1578,6 +1578,16 @@ Found by the ML-9d scenes' second half (2026-10-22), not fixed on the spot:
   channel either time, so `sweep-lifecycle` keeps no tree of the sweep; its picture and the
   Stop item's help stand in. scene_vhf20's sweep of 2 m found Calling in most runs and not in
   one, so its hits are asserted by 146.940 MHz alone.
+- Batch 1's verify loop (MC-1): AppKit still makes the password AutoFill panel
+  (`SPRoundedWindow`) for the API key's secure field whatever its content type. Since the window
+  ends the edit before it closes, the panel stays hidden and Settings stays closed. Whether a
+  person ever sees the list in a real session is still for a person to look at.
+- Batch 1's verify loop: since the inspector's empty space ends an edit (MC-1a), the `inspector`
+  group's accessibility frame starts at y 52 (`1128,52 312×679`), but its header child still
+  reads from y 0, so the group no longer contains its children.
+- Batch 1's verify loop: at 900 pt the squelch's short caption fits beside its header only
+  because the bar's blocks close up to 12 pt. A three-figure reading (`muted · 100 dB`) would
+  still be cut.
 
 #### Residuals after APP-9 review
 
