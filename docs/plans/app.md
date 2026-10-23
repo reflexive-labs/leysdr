@@ -1840,6 +1840,16 @@ them in the app:
 A check scene imports a CHIRP file with two entries on 146.940 MHz (PL 127.3 and PL 100.0) over a
 fixture that keys both tones.
 
+### MC-6 `[ ]` Sorting the sidebar's bookmarks (2026-10-23, for 0.2.0)
+
+The owner's choice: the person picks the order. A small sort control in the sidebar's header row,
+beside `+`, switches the bookmarks under every band between **frequency** (low to high, the order
+of the rail and the spectrum, ties by name) and **name** (A–Z, ties by frequency). Frequency is the
+default. The choice is a view preference kept in UserDefaults and never written in a staged run.
+A merged row (MC-5) sorts by its first entry. Plan channels in the Channels picker keep the plan's
+order, and the filter's matches keep their own order (tuned band first, then by frequency).
+`ley bookmarks` keeps the file's order.
+
 ## Backlog
 
 - **Two frequency affine maps remain separate.** `SquelchTrack` and `GainSlider` share
