@@ -770,7 +770,20 @@ enum AXWalk {
         if let value = e.value { parts.append("value=" + quoted(value)) }
         let p = e.point ?? .zero
         let s = e.size ?? .zero
-        let rect = CGRect(x: p.x - origin.x, y: p.y - origin.y, width: s.width, height: s.height)
+        var rect = CGRect(x: p.x - origin.x, y: p.y - origin.y, width: s.width, height: s.height)
+        // A group drawn as the union of its children's frames took a text field's height,
+        // left out of the field's own line (below), back in: the inspector's identity read
+        // 116, 117 or 121 pt with nothing in it moved. Such a group spans what its other
+        // children span, top to bottom; a group with a frame of its own keeps it.
+        if parts[0] == kAXGroupRole, holdsTextField(e),
+            let all = verticalExtent(of: e, besidesFields: false),
+            abs(p.y - all.lowerBound) < 0.5, abs(p.y + s.height - all.upperBound) < 0.5,
+            let v = verticalExtent(of: e, besidesFields: true)
+        {
+            rect = CGRect(
+                x: rect.minX, y: v.lowerBound - origin.y, width: rect.width,
+                height: v.upperBound - v.lowerBound)
+        }
         // An AppKit text field's height follows its text (14 pt empty, 13 with text in the
         // inspector's fields) while the row it sits in keeps its own, so its top and height are
         // left out.
@@ -784,6 +797,42 @@ enum AXWalk {
         }
         parts.append(e.bool(kAXEnabledAttribute) == false ? "disabled" : "enabled")
         return parts.joined(separator: " ")
+    }
+
+    /// Whether a text field is anywhere under `e`.
+    private static func holdsTextField<N: TreeNode>(_ e: N, depth: Int = 0) -> Bool {
+        guard depth <= maxDepth else { return false }
+        return e.children.contains {
+            $0.string(kAXRoleAttribute) == kAXTextFieldRole
+                || holdsTextField($0, depth: depth + 1)
+        }
+    }
+
+    /// The top and bottom, in screen points, of what `e`'s children span, its text fields left
+    /// out when `besidesFields`; a child group that holds a field counts by the same rule.
+    private static func verticalExtent<N: TreeNode>(
+        of e: N, besidesFields: Bool, depth: Int = 0
+    ) -> ClosedRange<CGFloat>? {
+        guard depth <= maxDepth else { return nil }
+        var extent: ClosedRange<CGFloat>?
+        for child in e.children {
+            let role = child.string(kAXRoleAttribute)
+            if besidesFields, role == kAXTextFieldRole { continue }
+            let span: ClosedRange<CGFloat>?
+            if besidesFields, role == kAXGroupRole, holdsTextField(child) {
+                span = verticalExtent(of: child, besidesFields: true, depth: depth + 1)
+            } else if let p = child.point, let s = child.size {
+                span = p.y...(p.y + s.height)
+            } else {
+                span = nil
+            }
+            guard let span else { continue }
+            extent =
+                extent.map {
+                    min($0.lowerBound, span.lowerBound)...max($0.upperBound, span.upperBound)
+                } ?? span
+        }
+        return extent
     }
 
     /// In double quotes, with backslashes, quotes and newlines escaped, so a reader of the line
