@@ -58,9 +58,12 @@
 #                   commit it was built from is pushed
 #   make release-rehearse  macOS: the tree as it is as an ad-hoc-signed app and DMG in OUT (default a
 #                   new temporary directory), without credentials
-#   make release-test  the parts of scripts/release.sh and scripts/cut-release.sh that need no Mac
-#   make reload     macOS: rebuild ley and leylined (release), stop the running daemon, reinstall the
-#                   LaunchAgent on the new binary and start it — the edit-build-try loop in one step
+#   make release-test  the parts of scripts/release.sh, scripts/cut-release.sh and scripts/reload.sh
+#                   that need no Mac
+#   make reload     macOS: rebuild ley and leylined (release), copy them to ~/Library/Application
+#                   Support/Leyline/bin signed with CODESIGN_IDENTITY (ad hoc, with a warning, without
+#                   it), stop the running daemon, reinstall the LaunchAgent on the copy and start it —
+#                   the edit-build-try loop in one step (scripts/reload.sh)
 #   make lint       golangci-lint + gofumpt (pinned versions, installed into .tools/<host>/bin)
 #   make app-lint   swift-format over the app package, and no colour or font outside Theme.swift
 #   make docs-check every relative link and backticked repository path in the docs resolves
@@ -92,8 +95,8 @@ ACTIONLINT_VERSION := v1.7.12
 
 # The build Mac's Developer ID Application identity and `xcrun notarytool store-credentials`
 # profile (docs/plans/distribution.md, "Owner prerequisites"); either can be overridden from the
-# environment or the command line. Only the release targets pass them on, so `make app-bundle`
-# stays ad-hoc signed.
+# environment or the command line. Only the release targets and reload pass them on, so `make
+# app-bundle` stays ad-hoc signed.
 CODESIGN_IDENTITY ?= Developer ID Application: Reflexive Labs LLC. (P2KZW25PL8)
 NOTARY_PROFILE ?= leysdr-notary
 
@@ -165,9 +168,11 @@ e2e: go swift fixtures
 		go test -count=1 -v ./internal/e2e/...
 
 # The daemon under test is the one launchd runs, so a rebuild is only half the loop: the old process
-# keeps serving until it is replaced. `ley daemon stop` ends a launchd job or a bare spawn alike;
-# `install` rewrites the plist, boots out what is loaded and bootstraps the new binary, so this is
-# safe to run whether or not an agent was installed before.
+# keeps serving until it is replaced. scripts/reload.sh copies the build out of engine/.build, which
+# a check run relinks under a running daemon, signs the copy, and has the copied ley stop the daemon
+# (a launchd job or a bare spawn alike) and `install` the plist on the copy, so this is safe to run
+# whether or not an agent was installed before. It refuses when the Leyline app's agent holds the
+# label.
 # Copies the repo's decoder plugins (manifest + binary together) into the platform default decoder
 # directory the daemon searches, so `ley decode`/`ley watch` find them. Depends on `go` for the
 # leydec-* binaries.
@@ -176,9 +181,8 @@ install-decoders: go
 
 reload: go swift-release install-decoders
 	@[ "$$(uname -s)" = Darwin ] || { echo "make reload drives launchd; run it on the Mac" >&2; exit 2; }
-	-$(GOBIN)/ley daemon stop
-	$(GOBIN)/ley daemon install --bin $(CURDIR)/engine/.build/release/leylined
-	@$(GOBIN)/ley daemon status || { echo "--- leylined log (last 20 lines)" >&2; $(GOBIN)/ley daemon logs | tail -20 >&2; exit 1; }
+	CODESIGN_IDENTITY="$(CODESIGN_IDENTITY)" LEY_SRC=$(GOBIN)/ley \
+		LEYLINED_SRC="$$(cd engine && swift build -c release --show-bin-path)/leylined" ./scripts/reload.sh
 
 # Each tool's file name carries its version and the Go toolchain it was built with, so bumping
 # either (here or in go/go.mod) reinstalls it: golangci-lint refuses to lint code for a newer Go
@@ -343,6 +347,7 @@ release-rehearse:
 
 release-test:
 	./scripts/test-release.sh
+	./scripts/test-reload.sh
 
 # The Mac app (docs/dev/app.md). One package at app/, depending on swift/LeylineProto for the
 # generated contract and on the engine package not at all. `swift test` in app/ would run the
