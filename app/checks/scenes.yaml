@@ -1290,3 +1290,36 @@ scenes:
       - {cmd: state, expect: {band: noaa}}
       - {cmd: ax, name: quiet}
       - {cmd: snapshot, name: quiet}
+
+  # The menus and the CHIRP import's words (docs/plans/app.md, U7 and the assistant panel's
+  # K1): File ▸ Import CHIRP… after Show Recordings in Finder, View ▸ Show Assistant disabled
+  # with no AI provider, the app menu's Settings… and Tune ▸ Stop Listening enabled. The import
+  # runs through the menu item's code path (the open panel runs out of the app's process, so a
+  # check cannot answer it): sample.csv logs the line it skipped and the mode it changed, and
+  # `ley bookmarks --tag sample` lists the nine; a CSV with no Frequency column is refused in
+  # those words and leaves bookmarks.json as it was.
+  - name: alert-and-menus
+    fixtures: [{name: scene_2m}]
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: menu, menu: "File>Import CHIRP...", read: true, expect: {enabled: true, items.4: Show Recordings in Finder, items.5: Import CHIRP…}}
+      - {cmd: menu, menu: "View>Show Assistant", read: true, expect: {enabled: false}}
+      - {cmd: menu, menu: "Leyline>Settings...", read: true, expect: {enabled: true}}
+      - {cmd: menu, menu: "Tune>Stop Listening", read: true, expect: {enabled: true}}
+      - {cmd: stage, stage: {import_chirp: ../../fixtures/chirp/sample.csv}}
+      - {cmd: wait, seconds: 1, expect_log: ["sample.csv line 9: frequency \"abc\" is not a number", "sample.csv line 10: mode \"DV\" is not one ley decodes"]}
+      - {cmd: state, expect: {notices.0: "Imported 9 from sample.csv: 8 added, 1 updated, 1 skipped"}}
+      - {cmd: ley, args: [bookmarks, --tag, sample], expect_stdout: ["(?s)(\\bbm_.*){8}", "!(?s)(\\bbm_.*){9}"]}
+      - {cmd: stage, stage: {import_chirp: ../../fixtures/chirp/nofreq.csv}}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {notices.1: "nofreq.csv has no Frequency column; is it a CHIRP CSV export?"}}
+      - {cmd: snapshot, name: nofreq}
+      - {cmd: file, path: bookmarks.json, contains: ["Digital", "!evening net\"", "!RX MHz"]}
+      - {cmd: ley, args: [bookmarks, --tag, sample], expect_stdout: ["(?s)(\\bbm_.*){8}", "!(?s)(\\bbm_.*){9}"]}
