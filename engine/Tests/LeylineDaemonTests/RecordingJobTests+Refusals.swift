@@ -64,10 +64,8 @@ extension RecordingJobTests {
         let dir = try recordings()
         defer { try? FileManager.default.removeItem(atPath: dir) }
         try await withDaemon(recordingsPath: dir) { c in
-            try await self.attach(c, fixture: "nfm_tone.cf32", loop: true)
             // Somebody listening, with the squelch off, is the case the refusal exists for.
-            let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
-            let device = try XCTUnwrap(state.devices.first)
+            let device = try await self.attach(c, fixture: "nfm_tone.cf32", loop: true)
             var capture = Leyline_V1_CreateCaptureRequest()
             capture.deviceID = device.deviceID
             capture.centerHz = 146_520_000

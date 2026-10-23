@@ -117,13 +117,17 @@ extension Int {
 }
 
 final class RecordingJobTests: XCTestCase {
-    func attach(_ c: DaemonClients, fixture: String, loop: Bool) async throws {
+    /// Attaches `fixture` as a file device and returns it. A test that opens a capture of its own
+    /// uses this one: the daemon's device list also holds whatever radio is plugged into the
+    /// machine, and a plugged-in dongle can come first.
+    @discardableResult
+    func attach(_ c: DaemonClients, fixture: String, loop: Bool) async throws -> Leyline_V1_DeviceDescriptor {
         let path = fixturePath(fixture)
         guard FileManager.default.fileExists(atPath: path) else { throw XCTSkip("fixture missing: \(path)") }
         var request = Leyline_V1_AttachFileDeviceRequest()
         request.path = path
         request.loop = loop
-        _ = try await c.control.attachFileDevice(request, metadata: testMetadata)
+        return try await c.control.attachFileDevice(request, metadata: testMetadata)
     }
 
     func start(_ c: DaemonClients, _ config: Leyline_V1_RecordConfig) async throws -> Leyline_V1_Job {
