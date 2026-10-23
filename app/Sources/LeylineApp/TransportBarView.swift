@@ -99,6 +99,9 @@ struct FrequencyField: View {
     @State private var khz: [Character] = ["0", "0", "0", "0"]
     @State private var caret = 0
     @State private var inKhz = false
+    /// The frequency the digits were last loaded from: the radio's when the edit began, which
+    /// Return with nothing typed keeps.
+    @State private var loadedHz: UInt64?
     @State private var monitor: Any?
     /// The window the field was focused in, so the monitor below can tell its own keys from the
     /// device popover's. An identity is all that is compared, and it crosses actors where an
@@ -183,6 +186,7 @@ struct FrequencyField: View {
     }
 
     private func load(_ hz: UInt64?) {
+        loadedHz = hz
         guard let hz else {
             mhz = []
             khz = ["0", "0", "0", "0"]
@@ -208,18 +212,24 @@ struct FrequencyField: View {
         load(session.displayHz)
     }
 
-    /// The digits as typed, to the hertz. A number outside `FrequencyEntry.tunableHz` keeps the
-    /// field focused, so it can be finished rather than tuning the radio to an unintended
-    /// frequency.
+    /// The digits as typed, to the hertz, or with no edit nothing at all, so the radio stays on
+    /// the exact hertz the four decimals cut (`FrequencyEntry.commit`). A number outside
+    /// `FrequencyEntry.tunableHz` keeps the field focused, so it can be finished rather than
+    /// tuning the radio to an unintended frequency.
     private func commit() {
-        guard let hz = FrequencyEntry.hz(whole: String(mhz), fraction: String(khz)),
-            FrequencyEntry.tunableHz.contains(hz)
-        else {
-            log("field", "refused \(String(mhz)).\(String(khz))")
+        let typed = "\(String(mhz)).\(String(khz))"
+        let decision = FrequencyEntry.commit(
+            whole: String(mhz), fraction: String(khz), loadedHz: loadedHz)
+        switch decision {
+        case .refused:
+            log("field", "refused \(typed)")
             return
+        case .keep:
+            log("tune", "kept \(loadedHz.map { "\($0) Hz" } ?? "no frequency"), \(typed) unchanged")
+        case .tune(let hz):
+            log("tune", "typed \(typed) -> \(hz) Hz")
+            session.tune(to: hz)
         }
-        log("tune", "typed \(String(mhz)).\(String(khz)) -> \(hz) Hz")
-        session.tune(to: hz)
         focused = false
     }
 

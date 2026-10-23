@@ -172,8 +172,8 @@ func cmdCheck(ctx context.Context, args []string, stdout io.Writer) error {
 	list := fs.Bool("list", false, "list the check scenes and run nothing")
 	hold := fs.Bool("hold", false, "with --only naming one scene: run it at its first size, then leave the app and daemon running to be driven over the command file until the app quits")
 	smoke := fs.Bool("smoke", false, "run the scenes marked smoke: true")
-	affected := fs.Bool("affected", false, "run the scenes whose covers match a file changed under app/Sources or app/checks since --base, uncommitted and untracked files included; a shared file brings in the smoke scenes")
-	base := fs.String("base", "", "with --affected, the commit to compare with (default: the merge base of HEAD and main)")
+	affected := fs.Bool("affected", false, "run the scenes whose covers match a file changed under app/Sources or app/checks, or app/Package.swift, since --base, uncommitted and untracked files included; a shared file brings in the smoke scenes, a changed file no scene covers fails the run, and so does selecting no scene")
+	base := fs.String("base", "", "with --affected, the commit to compare with (default: the merge base of HEAD and main; when that is HEAD and nothing has changed since, the commit before)")
 	jobs := fs.Int("jobs", 1, "how many scenes to run side by side; a scene marked serial: true runs with nothing beside it")
 	if err := fs.Parse(args); err != nil {
 		return err

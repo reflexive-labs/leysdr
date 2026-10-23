@@ -10,9 +10,11 @@ import (
 	"testing"
 )
 
-// Every file in LeylineApp is covered by a scene or is shared, every glob matches a file, and
-// the smoke and serial scenes are the ones ML-11 names. A file no scene covers is fixed by
-// covering it, with a glob on the scene that checks it or a scene that does.
+// Every file under app/Sources, the façade's included, and the package manifest is covered by a
+// scene or is shared, so --affected, which fails on a changed file nothing covers (MC-3), fails
+// on none of them; every glob matches a file; and the smoke and serial scenes are the ones
+// ML-11 names. A file no scene covers is fixed by covering it, with a glob on the scene that
+// checks it or a scene that does.
 func TestCheckCoverage(t *testing.T) {
 	f, err := LoadChecks(checksPath)
 	if err != nil {
@@ -31,6 +33,9 @@ func TestCheckCoverage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The manifest is matched by its name, as --affected matches it (globPath).
+	manifest, _ := globPath(packageFile)
+	files = append(files, manifest)
 	covered := func(rel string) bool {
 		if matchesAny(f.Shared, rel) {
 			return true
@@ -43,8 +48,8 @@ func TestCheckCoverage(t *testing.T) {
 		return false
 	}
 	for _, rel := range files {
-		if strings.HasPrefix(rel, "LeylineApp/") && !covered(rel) {
-			t.Errorf("app/Sources/%s is covered by no scene in app/checks/scenes.yaml: add it to the covers of the scenes that check it", rel)
+		if !covered(rel) {
+			t.Errorf("%s is covered by no scene in app/checks/scenes.yaml: add it to the covers of the scenes that check it", rel)
 		}
 	}
 	unused := func(where string, globs []string) {

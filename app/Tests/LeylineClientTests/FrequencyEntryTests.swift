@@ -74,4 +74,34 @@ final class FrequencyEntryTests: XCTestCase {
         XCTAssertTrue(FrequencyEntry.tunableHz.contains(6_000_000_000))
         XCTAssertFalse(FrequencyEntry.tunableHz.contains(6_000_000_001))
     }
+
+    func testReturnWithNoEditKeepsTheExactHertz() {
+        XCTAssertEqual(
+            FrequencyEntry.commit(whole: "146", fraction: "9401", loadedHz: 146_940_186), .keep,
+            "the four decimals shown are not a frequency to tune to")
+        XCTAssertEqual(
+            FrequencyEntry.commit(whole: "146", fraction: "5200", loadedHz: 146_520_000), .keep)
+    }
+
+    func testReturnAfterAnEditTunesWhatWasTyped() {
+        XCTAssertEqual(
+            FrequencyEntry.commit(whole: "146", fraction: "9400", loadedHz: 146_940_186),
+            .tune(146_940_000), "a digit typed over the shown ones")
+        XCTAssertEqual(
+            FrequencyEntry.commit(whole: "146", fraction: "940186", loadedHz: 146_520_000),
+            .tune(146_940_186))
+        XCTAssertEqual(
+            FrequencyEntry.commit(whole: "146", fraction: "9401", loadedHz: nil),
+            .tune(146_940_100), "with no radio, what is typed")
+        XCTAssertEqual(
+            FrequencyEntry.commit(whole: "146", fraction: "940186", loadedHz: 146_940_186), .keep,
+            "the exact hertz typed out is where the radio is")
+    }
+
+    func testReturnOnANumberThatIsNoFrequencyIsRefused() {
+        XCTAssertEqual(
+            FrequencyEntry.commit(whole: "0", fraction: "0000", loadedHz: 146_520_000), .refused)
+        XCTAssertEqual(
+            FrequencyEntry.commit(whole: "7000", fraction: "0000", loadedHz: nil), .refused)
+    }
 }

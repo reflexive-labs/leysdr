@@ -133,7 +133,7 @@ final class SweepTests: XCTestCase {
         let off = try XCTUnwrap(result.hits.first)
         XCTAssertNil(off.channelHz, "146.940 MHz is on no 2 m plan channel")
         XCTAssertEqual(off.label, "146.940 MHz")
-        XCTAssertEqual(off.tuneHz, 146_940_000, "the kilohertz the row prints, not the measure")
+        XCTAssertEqual(off.tuneHz, 146_940_200, "the measure to 100 Hz, not its last digits")
         XCTAssertEqual(off.hz, 146_940_186)
         let calling = try XCTUnwrap(result.hits.last)
         XCTAssertEqual(calling.label, "calling")
@@ -141,9 +141,24 @@ final class SweepTests: XCTestCase {
         XCTAssertEqual(calling.tuneHz, 146_520_000, "the named channel's own frequency")
         XCTAssertEqual(
             SweepHit(
-                hz: 146_940_500, snrDb: 9, bandwidthHz: 12_500, looks: 1, looksPossible: 8,
+                hz: 146_940_550, snrDb: 9, bandwidthHz: 12_500, looks: 1, looksPossible: 8,
                 name: nil
-            ).label, "146.941 MHz", "a half kilohertz rounds up, and the words follow")
+            ).tuneHz, 146_940_600, "fifty hertz rounds up")
+    }
+
+    func testAHitOnNoPlanChannelTunesTheMeasureToAHundredHertz() {
+        func hit(_ hz: UInt64) -> SweepHit {
+            SweepHit(
+                hz: hz, snrDb: 12, bandwidthHz: 12_500, looks: 4, looksPossible: 8, name: nil)
+        }
+        // Off the kilohertz raster: a kilohertz would put it 500 Hz away, at 462.563 MHz.
+        let offRaster = hit(462_562_480)
+        XCTAssertEqual(offRaster.tuneHz, 462_562_500)
+        XCTAssertEqual(offRaster.label, "462.5625 MHz")
+        // An SSB voice on 20 m: a kilohertz would move it 300 Hz and pitch the voice with it.
+        let ssb = hit(14_230_690)
+        XCTAssertEqual(ssb.tuneHz, 14_230_700)
+        XCTAssertEqual(hit(14_230_649).tuneHz, 14_230_600)
     }
 
     func testHitsWithEqualSNRKeepTheDetectionsOrder() throws {

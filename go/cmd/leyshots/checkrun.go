@@ -185,6 +185,8 @@ func checkScenes(ctx context.Context, o checkOptions) error {
 		return err
 	}
 	var scenes []*CheckScene
+	// uncovered are the failures --affected's uncovered files make, added before any scene runs.
+	var uncovered []checkResult
 	switch {
 	case o.affected:
 		sel, err := affectedScenes(ctx, o.root, o.base, f, o.checks)
@@ -193,11 +195,13 @@ func checkScenes(ctx context.Context, o checkOptions) error {
 		}
 		sel.print(o.stdout)
 		if len(sel.scenes) == 0 {
-			return nil // the lines above say what changed and that no scene checks it
+			return sel.emptyError()
 		}
-		scenes = sel.scenes
+		scenes, uncovered = sel.scenes, sel.uncoveredResults()
 	case o.smoke:
-		scenes = f.Smoke()
+		if scenes = f.Smoke(); len(scenes) == 0 {
+			return fmt.Errorf("--smoke selected no scene: none in %s is marked smoke: true", o.checks)
+		}
 	default:
 		if scenes, err = f.Select(o.only); err != nil {
 			return err
@@ -216,6 +220,9 @@ func checkScenes(ctx context.Context, o checkOptions) error {
 	}
 	history := filepath.Join(o.out, "history.jsonl")
 	c := &checker{o: o, f: f, history: readHistory(history)}
+	for _, r := range uncovered {
+		c.add(r)
+	}
 	var units []runUnit
 	for _, s := range scenes {
 		sizes := s.sizes()

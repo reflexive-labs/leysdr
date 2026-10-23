@@ -8,7 +8,7 @@
 // number is printed beside it, which is how the app meets invariant 12. The panel keeps no radio
 // state of its own: it renders the session's copy of the mirror, the feeds and the session's
 // steadied reading, and writes one kind of thing, a bookmark's name, tone and note, through the
-// store both clients own (`AppSession.renameTuned`, `editTunedBookmark`).
+// store both clients own (`AppSession.renameTuned`, `editBookmark`).
 
 import AppKit
 import LeylineClient
@@ -76,8 +76,8 @@ struct ChannelPanel: View {
         .identifiedGroup("inspector")
     }
 
-    /// Takes the focus from the field being edited, whose lost focus puts its saved value back
-    /// (`BookmarkField`). The key window, or in a check run, whose app is never active and has
+    /// Takes the focus from the field being edited, whose lost focus saves what was typed
+    /// (`BookmarkField`) or, for the name, puts it back (`NameField`). The key window, or in a check run, whose app is never active and has
     /// none, the window a field editor is typing in.
     static func endFieldEdit() {
         let window =
@@ -369,7 +369,7 @@ struct BookmarkFieldsView: View {
                 BookmarkField(
                     saved: bookmark.tone, placeholder: "100.0 or D023N",
                     identifier: "inspector.tone",
-                    onCommit: { session.editTunedBookmark(tone: $0) },
+                    onCommit: { session.editBookmark(bookmark.id, tone: $0) },
                     onRevert: { session.clearToneError() }
                 )
                 // Laid out with or without a tone, so the first tone heard neither moves the
@@ -388,7 +388,7 @@ struct BookmarkFieldsView: View {
                 label("Note")
                 BookmarkField(
                     saved: bookmark.note, placeholder: "A note", identifier: "inspector.note",
-                    onCommit: { session.editTunedBookmark(note: $0) }
+                    onCommit: { session.editBookmark(bookmark.id, note: $0) }
                 )
             }
         }
@@ -404,12 +404,16 @@ struct BookmarkFieldsView: View {
 
 /// A bookmark's tone or note, edited in place. Unlike `NameField`, which appears for one edit
 /// and goes, this field is there for as long as the frequency is bookmarked and shows the
-/// saved value until it has focus. Return commits through `onCommit` and keeps the focus, so a
-/// refused tone stays in the field with its sentence under it; Escape, or the focus going
-/// elsewhere, puts the saved value back and says so through `onRevert`. A value `ley
-/// bookmarks` writes while the field is idle replaces the draft. While it has focus
-/// `TuningKeyGuard` hands Space and the arrows to the field editor, or typing `club net`
-/// would mute the radio and tune it.
+/// saved value until it has focus. Return commits through `onCommit` and keeps the focus.
+/// Leaving the field saves it as Return does, as a Mac field does: the focus going elsewhere, a
+/// click on the panel's empty space (`ChannelPanel.endFieldEdit`), or a tune away, which makes
+/// the field anew for the next bookmark (`.id(b.id)`) and saves the old one's text as it goes.
+/// Escape is the only way to throw the text away: it puts the saved value back and says so
+/// through `onRevert`. A refused tone stays in the field with its sentence under it, focused or
+/// not, and is sent once, not again each time the field is left. A value `ley bookmarks` writes
+/// while the field is idle replaces the draft, a refused one included. While it has focus
+/// `TuningKeyGuard` hands Space and the arrows to the field editor, or typing `club net` would
+/// mute the radio and tune it.
 struct BookmarkField: View {
     let saved: String
     let placeholder: String
@@ -417,6 +421,8 @@ struct BookmarkField: View {
     let onCommit: (String) -> Void
     var onRevert: () -> Void
     @State private var draft: String
+    /// The text last sent to `onCommit`, so a refused value is not sent again on every leave.
+    @State private var sent: String?
     @FocusState private var focused: Bool
 
     /// The draft starts as the saved value. Started empty and filled on appear, the AppKit field
@@ -445,21 +451,43 @@ struct BookmarkField: View {
             .accessibilityLabel(placeholder)
             .fieldPlaceholder(placeholder, font: Theme.Font.value, shown: draft.isEmpty)
             .focused($focused)
-            .onSubmit { onCommit(draft) }
-            .onExitCommand { focused = false }
+            .onSubmit { commit() }
+            .onExitCommand {
+                revert()
+                focused = false
+            }
             .onAppear { draft = saved }
             .onChange(of: saved) { _, now in
-                if !focused { draft = now }
+                guard !focused else { return }
+                // A refused value waiting in the idle field gives way to the written one.
+                if draft != now { onRevert() }
+                draft = now
+                sent = nil
             }
             .onChange(of: focused) { _, isFocused in
-                if !isFocused { revert() }
+                if !isFocused { leave() }
             }
+            // A tune away removes the field, focused or not, before it reports the focus lost.
+            .onDisappear { leave() }
             .modifier(TuningKeyGuard(focused: focused))
             .accessibilityIdentifier(identifier)
             .onTextLine(Theme.Font.value, height: Theme.Layout.valueFieldHeight)
     }
 
+    private func commit() {
+        sent = draft
+        onCommit(draft)
+    }
+
+    /// The field was left: what was typed is saved, unless it is the saved value or was sent
+    /// already (a refused tone, left in the field).
+    private func leave() {
+        guard draft != saved, draft != sent else { return }
+        commit()
+    }
+
     private func revert() {
+        sent = nil
         guard draft != saved else { return }
         draft = saved
         onRevert()

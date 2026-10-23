@@ -98,19 +98,23 @@
 # hand from what it presses and pictures; a glob without a / matches a file's name in either
 # target (SidebarView.swift), one with a / the path from app/Sources (LeylineApp/*.swift).
 # `make app-check-affected` runs the scenes whose covers match a file changed since the merge
-# base with main, and a change to a shared file below brings in the smoke scenes as well. Every
-# file in LeylineApp is covered by some scene or shared (go/cmd/leyshots, TestCheckCoverage).
+# base with main (the commit before, when that is HEAD and nothing has changed since), and a
+# change to a shared file below brings in the smoke scenes as well; app/Package.swift is
+# matched as Package.swift. A changed file no scene covers fails the run, as does a selection of
+# no scene. Every file under app/Sources, the façade's too, is covered by some scene or shared
+# (go/cmd/leyshots, TestCheckCoverage).
 # serial: true runs a scene with nothing beside it under `leyshots check --jobs N`: the scenes on
 # scene_vhf20's 21 MS/s and the sweeps, whose timings a busy Mac would put out.
 
 # The files every scene leans on: the theme, the session and the window, the daemon's mirror,
-# and the staging and command-file code a check run drives the app through.
+# and the staging and command-file code a check run drives the app through, and the package
+# manifest that builds both targets.
 shared: [Theme.swift, AppSession.swift, Staging.swift, Control.swift, AccessibilityTree.swift,
   AppMenus.swift, WindowPicture.swift, DeterministicFrames.swift, AppLog.swift, AppControl.swift,
   ShotStage.swift, KeyChord.swift, LeylineApp.swift, MainWindow.swift, Info.plist,
   DaemonConnection.swift, DaemonMirror.swift, ClientIdentity.swift, SocketPath.swift,
   HeldObject.swift, WriteCoalescer.swift, LeylineError.swift, JSONValue.swift,
-  ResourceBundle.swift]
+  ResourceBundle.swift, Package.swift]
 
 scenes:
   # The site's app-radio-2m inputs, without its on_air wait: the 2 m band open on Calling.
@@ -337,7 +341,7 @@ scenes:
   # naming that frequency with the pencil brings them back with their placeholders.
   # A tone typed and Returned keeps the field's focus; a bad one stays in the field
   # with the reason under it, which a good tone, Escape (putting the saved value back) and a
-  # tune to another bookmark each take away.
+  # tune to another bookmark each take away. Leaving a field saves it as Return does (MC-3).
   - name: bookmark-fields
     covers: [InspectorView.swift, SidebarView.swift, Bookmarks.swift, Tone.swift,
       FrequencyEntry.swift]
@@ -396,10 +400,14 @@ scenes:
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {tuned_hz: 146940000}}
       - {cmd: ax, name: tuned}
+      # The refused tone, left by the tune, reached neither Spot nor the bookmark tuned next
+      # (MC-3).
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: '!D024N'}
       # The terminal's side: ley bookmarks reads the tone the field wrote, and loses it when
       # the field is cleared; in the note field Space and ← type rather than mute and tune; and
       # `ley bookmarks add` with a note replaces an idle field's text and not one being edited.
-      # A click on the inspector's header ends the edit (U6, MC-1a).
+      # A click on the inspector's header ends the edit and saves it, as Return does (U6,
+      # MC-1a, MC-3); a refused tone left that way stays in the field, unsaved.
       - {cmd: ley, args: [bookmarks, --json], expect_stdout: '"name":"Spot"[^}]*"tone":"D023N"'}
       - {cmd: press, identifier: inspector.note}
       - {cmd: key, keys: cmd+a}
@@ -409,13 +417,16 @@ scenes:
       - {cmd: click, x: 1300, y: 70}
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {focused: ""}}
-      - {cmd: file, path: bookmarks.json, contains: "!a b"}
+      - {cmd: file, path: bookmarks.json, contains: '"note"\s*:\s*"a b"'}
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: '"name":"Club repeater"[^}]*"note":"a b"'}
       - {cmd: press, identifier: inspector.tone}
       - {cmd: key, keys: cmd+a}
       - {cmd: type, text: D024N}
-      - {cmd: key, keys: return}
       - {cmd: click, x: 1300, y: 70}
       - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {focused: ""}}
+      - {cmd: ax, name: left-refused}
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: '!D024N'}
       - {cmd: ley, args: [bookmarks, add, "146.94", --name, Club repeater, --note, from the terminal]}
       - {cmd: wait, seconds: 1.5}
       - {cmd: ax, name: watched}
@@ -425,8 +436,11 @@ scenes:
       - {cmd: ley, args: [bookmarks, add, "146.94", --name, Club repeater, --note, again]}
       - {cmd: wait, seconds: 1.5}
       - {cmd: ax, name: editing}
+      # Escape throws the edit away, and the tune away after it saves nothing.
       - {cmd: key, keys: escape}
       - {cmd: press, identifier: sidebar.bookmark.spot}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: ['"name":"Club repeater"[^}]*"note":"again"', '!and mine']}
       - {cmd: wait, seconds: 1}
       - {cmd: press, identifier: inspector.tone}
       - {cmd: key, keys: cmd+a}
@@ -1556,9 +1570,10 @@ scenes:
 
   # The tuning field (docs/plans/app.md, MC-1b): four decimals, cut and never rounded, while the
   # radio stays on the exact hertz, which the field's tooltip and the inspector's line give. A
-  # typed 146.940186 tunes to the hertz and reads 146.9401; the fine step keeps the hertz, the
-  # band's step lands on its 5 kHz grid, and a hit's row tunes the channel it names (MC-1a). At
-  # 1440 pt the squelch's three words and its long caption both show.
+  # typed 146.940186 tunes to the hertz and reads 146.9401, and Return with nothing typed keeps
+  # that hertz (MC-3); the fine step keeps the hertz, the band's step lands on its 5 kHz grid,
+  # and a hit's row tunes its measure to 100 Hz (MC-3). At 1440 pt the squelch's three words and
+  # its long caption both show.
   - name: transport-tuning
     covers: [TransportBarView.swift, Frequency.swift, FrequencyEntry.swift, InspectorView.swift]
     fixtures: [{name: scene_vhf20}]
@@ -1585,6 +1600,11 @@ scenes:
       - {cmd: hover, identifier: tuning.field, expect: {tooltip: "146.940186 MHz"}}
       - {cmd: ax, name: typed}
       - {cmd: snapshot, name: typed}
+      # Return with nothing typed keeps the exact hertz and tunes nothing (MC-3).
+      - {cmd: menu, menu: "Tune>Enter Frequency..."}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1, expect_log: ["tune: kept 146940186 Hz, 146.9401 unchanged", "!tune: typed"]}
+      - {cmd: state, expect: {tuned_hz: 146940186, transport.tuning: "146.9401", focused: ""}}
       - {cmd: menu, menu: "Tune>Fine Tune Up"}
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {tuned_hz: 146940686, transport.tuning: "146.9406"}}
@@ -1600,8 +1620,8 @@ scenes:
       - {cmd: wait, seconds: 6, expect_log: ["sweep: job_.* ended: [0-9]+ hits?", "sweep: resuming bookmark Calling"]}
       - {cmd: state, expect: {tuned_hz: 146520000}}
       - {cmd: click, identifier: sidebar.hit.146-940-mhz}
-      - {cmd: wait, seconds: 1}
-      - {cmd: state, expect: {tuned_hz: 146940000, transport.tuning: "146.9400"}}
+      # On no plan channel, so the measure to 100 Hz (MC-3).
+      - {cmd: wait, seconds: 1, expect_log: "tune: hit 146.940 MHz at 1469(39[5-9]|40[0-4])00 Hz"}
 
   # The transport bar at the window's minimum (MC-1b): too narrow for the squelch's three words
   # and its long caption, so the words are dropped and the caption is the short one.
@@ -1636,7 +1656,8 @@ scenes:
   # still opens it. Closing the picker by Escape or by a pick leaves nothing focused, so Space
   # mutes and → tunes. marine's picker is twelve rows of its 110, and 24 narrows them. An
   # accessibility press on a step arrow takes the band's step whatever key is held. A hit's row
-  # and its ＋ use the frequency the row names, 146.940 MHz, not the one the sweep measured.
+  # and its ＋ use the plan channel's frequency when there is one; 146.940 MHz is on none, so
+  # they use the measure rounded to 100 Hz (MC-3).
   - name: mc1a-sidebar-actions
     covers: [SidebarView.swift, PlanPickerView.swift, Sidebar.swift, Bands.swift, Sweep.swift,
       TransportBarView.swift]
@@ -1714,17 +1735,18 @@ scenes:
       - {cmd: wait, seconds: 1}
       - {cmd: press, identifier: sidebar.band.2m.scan}
       - {cmd: wait, seconds: 6, expect_log: ["sweep: job_.* ended: [0-9]+ hits?", "sweep: resuming bookmark Calling"]}
+      # 146.940 is on no 2 m plan channel, so the measure is used to 100 Hz (MC-3): within
+      # 500 Hz of the repeater, and never the measure's last two digits.
       - {cmd: click, identifier: sidebar.hit.146-940-mhz}
-      - {cmd: wait, seconds: 1, expect_log: "tune: hit 146.940 MHz at 146940000 Hz"}
-      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater}}
+      - {cmd: wait, seconds: 1, expect_log: "tune: hit 146.940 MHz at 1469(39[5-9]|40[0-4])00 Hz"}
       - {cmd: press, identifier: sidebar.hit.146-940-mhz.add}
-      - {cmd: wait, seconds: 1, expect_log: "bookmark: added 146.940 MHz at 146940000 Hz from a sweep hit"}
+      - {cmd: wait, seconds: 1, expect_log: "bookmark: added 146.940 MHz at 1469(39[5-9]|40[0-4])00 Hz from a sweep hit"}
 
   # The inspector as the owner decided it (docs/plans/app.md, MC-1a): the tags line keeps its
   # place, so the frequency line and the Tone and Note fields sit at the same height on Tagged
   # and on Plain (compare the two trees' frames); and a click on the inspector's empty header
-  # ends an edit in Tone or Note, putting the saved value back and taking a refused tone's
-  # sentence away.
+  # ends an edit in Tone or Note and saves it, as Return does (MC-3), while a refused tone
+  # stays in the field with its sentence and is not saved.
   - name: mc1a-inspector
     covers: [InspectorView.swift, Tone.swift, Bookmarks.swift]
     fixtures: [{name: scene_2m}]
@@ -1754,7 +1776,8 @@ scenes:
       - {cmd: click, x: 1300, y: 70}
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {focused: ""}}
-      - {cmd: file, path: bookmarks.json, contains: "!a b"}
+      - {cmd: file, path: bookmarks.json, contains: '"note"\s*:\s*"a b"'}
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: '"name":"Plain"[^}]*"note":"a b"'}
       - {cmd: ax, name: note-ended}
       - {cmd: press, identifier: inspector.tone}
       - {cmd: type, text: D024N}
