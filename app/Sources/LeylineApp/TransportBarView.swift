@@ -437,13 +437,16 @@ struct PopupButton<T: Hashable>: View {
             }
         } label: {
             HStack(spacing: 8) {
+                // One line always: a value longer than the design's width (MURS's `11.25 kHz`)
+                // widens the button, and the squelch beside it gives the room up.
                 Text(label(pending ?? current)).font(Theme.Font.body).foregroundStyle(Theme.ink)
+                    .lineLimit(1).fixedSize()
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.down").font(Theme.Font.glyph)
                     .foregroundStyle(Theme.inkMuted)
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
-            .frame(width: 106)
+            .frame(minWidth: 106)
             // A control's ground inside the chrome is the border token; the label is ink and
             // the caret inkMuted.
             .background(Theme.border, in: RoundedRectangle(cornerRadius: 6))
