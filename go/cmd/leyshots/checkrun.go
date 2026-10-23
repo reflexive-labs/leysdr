@@ -160,6 +160,10 @@ type checker struct {
 	o       checkOptions
 	f       *CheckFile
 	results []checkResult
+	// times are each scene and size's, in the order they ran; history the earlier runs' from
+	// history.jsonl, which each is compared with.
+	times   []sceneTime
+	history []historyRun
 }
 
 // checkScenes runs each selected scene at each of its sizes, prints a line per artefact and
@@ -185,7 +189,9 @@ func checkScenes(ctx context.Context, o checkOptions) error {
 			return err
 		}
 	}
-	c := &checker{o: o, f: f}
+	history := filepath.Join(o.out, "history.jsonl")
+	c := &checker{o: o, f: f, history: readHistory(history)}
+	start := time.Now()
 	for _, s := range scenes {
 		sizes := s.sizes()
 		if o.hold {
@@ -196,9 +202,10 @@ func checkScenes(ctx context.Context, o checkOptions) error {
 				break
 			}
 			c.o.logf("%s %s", s.Name, size)
-			c.runSize(ctx, s, size)
+			c.timeSize(ctx, s, size)
 		}
 	}
+	total := time.Since(start)
 	if err := ctx.Err(); err != nil {
 		// An interrupted run checked less than it was asked to: it fails, with what did run above.
 		c.add(checkResult{Status: "error", Scene: "-", Size: "-", Item: "-", Detail: "interrupted: " + err.Error()})
@@ -215,14 +222,23 @@ func checkScenes(ctx context.Context, o checkOptions) error {
 			parts = append(parts, fmt.Sprintf("%d %s", counts[st], st))
 		}
 	}
+	// A held scene's time is how long it was held, which says nothing about the scene.
+	if !o.hold {
+		if err := writeHistory(history, c.history, time.Now(), 1, c.times); err != nil {
+			return err
+		}
+	}
 	summary := filepath.Join(o.out, "summary.json")
-	fmt.Fprintf(o.stdout, "%d checked: %s; %s\n", len(c.results), strings.Join(parts, ", "), c.rel(summary))
+	fmt.Fprintf(o.stdout, "%d checked: %s; %s; %s\n", len(c.results), strings.Join(parts, ", "),
+		timeSummary(total, c.times), c.rel(summary))
 	b, err := json.MarshalIndent(struct {
 		Goldens string         `json:"goldens"`
 		Record  bool           `json:"record"`
+		Seconds float64        `json:"seconds"`
 		Counts  map[string]int `json:"counts"`
 		Results []checkResult  `json:"results"`
-	}{c.goldenRoot(), o.record, counts, c.results}, "", "  ")
+		Times   []sceneTime    `json:"times"`
+	}{c.goldenRoot(), o.record, total.Seconds(), counts, c.results, c.times}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -256,8 +272,28 @@ func (c *checker) goldenRoot() string {
 	return filepath.Join(c.o.goldens, c.o.release+"-"+runtime.GOARCH)
 }
 
-// runSize runs one scene at one window size: its daemon, the app, the commands, then quit.
-func (c *checker) runSize(ctx context.Context, s *CheckScene, size Size) {
+// timeSize runs one scene at one window size, timing each phase, and prints its time after its
+// lines, compared with the scene's median in the earlier runs.
+func (c *checker) timeSize(ctx context.Context, s *CheckScene, size Size) {
+	t := sceneTime{Scene: s.Name, Size: size.String()}
+	before := len(c.results)
+	p := newPhases(&t)
+	c.runSize(ctx, s, size, p)
+	p.end()
+	for _, r := range c.results[before:] {
+		t.errored = t.errored || r.Status == "error"
+	}
+	if c.o.hold {
+		return
+	}
+	t.compare(c.history)
+	c.times = append(c.times, t)
+	fmt.Fprintln(c.o.stdout, t.line())
+}
+
+// runSize runs one scene at one window size: its daemon, the app, the commands, then quit. Each
+// phase ends with a lap of p.
+func (c *checker) runSize(ctx context.Context, s *CheckScene, size Size, p *phases) {
 	dir := filepath.Join(c.o.out, s.Name, size.String())
 	fail := func(err error) {
 		c.add(checkResult{Status: "error", Scene: s.Name, Size: size.String(), Item: "-", Detail: err.Error()})
@@ -273,14 +309,20 @@ func (c *checker) runSize(ctx context.Context, s *CheckScene, size Size) {
 		return
 	}
 	defer sd.stop()
+	p.lap(&p.t.Daemon)
 	env := sd.env
 	app, err := c.launch(ctx, s.Stage, size, run, env)
+	p.lap(&p.t.Ready)
 	if err != nil {
 		fail(err)
 		return
 	}
 	// A held app may have been sent commands by hand, so quit takes the id after the last used.
-	defer func() { app.quit(ctx, app.nextID(len(s.App)+1)) }()
+	defer func() {
+		p.lap(&p.t.Commands)
+		app.quit(ctx, app.nextID(len(s.App)+1))
+		p.lap(&p.t.Quit)
+	}()
 	// The runner's own commands; a background ley still running at the end is interrupted
 	// before the app quits and the daemon stops.
 	local := &localRun{c: c, daemon: sd, run: run, bg: map[string]*bgProcess{}}
