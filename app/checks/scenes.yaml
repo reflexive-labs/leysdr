@@ -675,7 +675,10 @@ scenes:
       - {cmd: ley, args: [ask, where am i]}
       - {cmd: wait, seconds: 1}
       - {cmd: snapshot, name: usage, window: settings}
-      - {cmd: pick, identifier: settings.ai.usage.period, text: By month}
+      # The period switch is drawn in the palette, as the toolbar's Radio | Library switch is,
+      # not as the system's blue segmented control (docs/plans/app.md, MC-1c).
+      - {cmd: press, identifier: settings.ai.usage.period.month}
+      - {cmd: snapshot, name: bymonth, window: settings}
       # Remove asks; the row, Features and Usage leave, and with them the open column, the
       # toolbar's toggle and the menu item.
       - {cmd: stage, stage: {assistant: true}}

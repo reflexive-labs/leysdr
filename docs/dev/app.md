@@ -425,7 +425,12 @@ the window with the same `AppSession` in its environment. `SettingsView` is the 
 pane, one today, AI. It is forced dark with `.preferredColorScheme(.dark)`, as the main window is,
 whatever the system's appearance: `Theme`'s colours are literals drawn for a dark ground, and a
 Settings window that followed a light system would put that ink on a light ground. Giving every
-token a light value is the larger change and waits for a pane that needs it.
+token a light value is the larger change and waits for a pane that needs it. The pane's controls
+take the palette by role rather than the system's blue: a text field is `raised` with a `border`
+edge that is `borderFocus` while it has the focus, and no system focus ring; the usage period is
+two plain buttons drawn as the toolbar's `Radio | Library` switch, because a segmented `Picker`'s
+selected segment is the system's accent; and anything the system still tints takes `inkTertiary`,
+as the volume slider does. The tab above the pane is the system's and stays as macOS draws it.
 
 **The AI pane** (`AISettingsView`) renders the mirror's `ai` and `usage` through the façade's rows
 in `AISettings.swift` and writes through four session calls, each one unary RPC as recordings and
@@ -957,7 +962,7 @@ them and nothing else: an identifier changes no layout and no behaviour.
 | `library.` | `sidebar`, `search`, `channel.<hz>`, `page`, `page.record`, `page.tune`, `day.<day>` (an EARLIER day's line) and `day.<day>.play`, `part.<n>` (counted from 0 down the page, as `select_part` counts), `inspector`, `inspector.playall`, `inspector.finder`, `inspector.delete` |
 | `player` | the Library's bar; `.previous`, `.play`, `.next`, `.volume` |
 | `assistant.` | `panel`, `new`, `input`, `stop`, `settings`, `decline`, `allow`, `allow.conversation`, `step.<call id>` (a step's row, which opens and closes it, by the id the daemon gave its tool call: `step.c1`) |
-| `settings.ai` | the Settings window's AI pane; `.key.<provider>` with `.check` and `.remove`, `.add` with `.add.provider`, `.add.label`, `.add.key` and `.add.endpoint`, `.feature.<feature>` with `.provider` and `.model`, `.usage.period`, `.notice.close` |
+| `settings.ai` | the Settings window's AI pane; `.key.<provider>` with `.check` and `.remove`, `.add` with `.add.provider`, `.add.label`, `.add.key` and `.add.endpoint`, `.feature.<feature>` with `.provider` and `.model`, `.usage.period` with `.day` and `.month`, `.notice.close` |
 
 A region or a row is made an element of its own before it is named (`identifiedGroup`, in
 `AccessibilityTree.swift`), because an identifier on a stack that is not an element is given to

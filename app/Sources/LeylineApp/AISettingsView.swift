@@ -68,6 +68,10 @@ private struct AIPaneContent: View {
             .padding(Theme.Layout.pageInset)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // What the system still colours in a control of the pane (a pop-up's arrows) takes a
+        // neutral ink, as the transport's volume slider does, rather than the system's blue. The
+        // tab above the pane is the system's own and stays as macOS draws it.
+        .tint(Theme.inkTertiary)
         .accessibilityIdentifier("settings.ai")
     }
 }
@@ -235,17 +239,17 @@ private struct AddKeyForm: View {
                 .accessibilityIdentifier("settings.ai.add.provider")
             }
             field("Label") {
-                TextField("optional, such as home", text: $label).textFieldStyle(.roundedBorder)
+                TextField("optional, such as home", text: $label).modifier(SettingsField())
                     .accessibilityIdentifier("settings.ai.add.label")
             }
             field("Key") {
-                SecureField("paste the key", text: $secret).textFieldStyle(.roundedBorder)
+                SecureField("paste the key", text: $secret).modifier(SettingsField())
                     .accessibilityIdentifier("settings.ai.add.key")
             }
             if provider?.takesEndpoint == true {
                 field("Endpoint") {
                     TextField("empty for the provider's own API", text: $endpoint)
-                        .textFieldStyle(.roundedBorder)
+                        .modifier(SettingsField())
                         .accessibilityIdentifier("settings.ai.add.endpoint")
                 }
             }
@@ -380,7 +384,7 @@ private struct FeatureRowView: View {
         let models = ProviderCatalog.provider(shownProvider)?.models ?? []
         if typedProvider != nil || (models.isEmpty && !shownProvider.isEmpty) {
             TextField("model", text: $typedModel)
-                .textFieldStyle(.roundedBorder)
+                .modifier(SettingsField())
                 .frame(width: Theme.Layout.settingsPickerWidth)
                 .onSubmit { writeTyped() }
                 .onAppear { if typedProvider == nil { typedModel = row.model } }
@@ -456,14 +460,7 @@ private struct UsageGroup: View {
             HStack {
                 SectionHeader(text: "Usage")
                 Spacer()
-                Picker("", selection: $period) {
-                    Text("By day").tag(UsageFold.Period.day)
-                    Text("By month").tag(UsageFold.Period.month)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                .accessibilityIdentifier("settings.ai.usage.period")
+                PeriodSwitch(period: $period)
             }
             if fold.rows.isEmpty {
                 Text("No usage reported yet; calls made with these keys are counted here.")
@@ -474,6 +471,66 @@ private struct UsageGroup: View {
             Text(UsageFold.note).font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+/// `By day | By month`, drawn as the toolbar's `Radio | Library` switch (`PlaceSwitch`): the
+/// period showing raised on `border` in `ink`, the other in `inkTertiary`, inside a `border`
+/// stroke on `chrome`. Two plain buttons rather than a segmented `Picker`, whose selected segment
+/// the system draws in its own accent colour, which `Theme` cannot set.
+private struct PeriodSwitch: View {
+    @Binding var period: UsageFold.Period
+
+    var body: some View {
+        let outer = Theme.Layout.placeSwitchRadius
+        let inset = Theme.Layout.placeSwitchInset
+        HStack(spacing: 0) {
+            ForEach(UsageFold.Period.allCases, id: \.self) { p in
+                let shown = period == p
+                Button {
+                    period = p
+                } label: {
+                    Text(p == .day ? "By day" : "By month").font(Theme.Font.label)
+                        .foregroundStyle(shown ? Theme.ink : Theme.inkTertiary)
+                        .padding(.horizontal, 10).padding(.vertical, 3)
+                        .background(
+                            shown ? Theme.border : Color.clear,
+                            in: RoundedRectangle(cornerRadius: outer - inset)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(shown ? .isSelected : [])
+                .accessibilityIdentifier("settings.ai.usage.period.\(p.rawValue)")
+            }
+        }
+        .padding(inset)
+        .background(Theme.chrome, in: RoundedRectangle(cornerRadius: outer))
+        .overlay(
+            RoundedRectangle(cornerRadius: outer).strokeBorder(Theme.border, lineWidth: 1)
+        )
+        .fixedSize()
+        .identifiedGroup("settings.ai.usage.period")
+    }
+}
+
+/// A text field of the pane in the palette's roles: `raised` ground, a `border` edge that is
+/// `borderFocus` while it has the focus, `ink` text, and no system focus ring, which would draw
+/// in the system's accent colour.
+private struct SettingsField: ViewModifier {
+    @FocusState private var focused: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .textFieldStyle(.plain)
+            .font(Theme.Font.label).foregroundStyle(Theme.ink)
+            .focused($focused)
+            .focusEffectDisabled()
+            .padding(.horizontal, 6).padding(.vertical, 4)
+            .background(Theme.raised, in: RoundedRectangle(cornerRadius: 5))
+            .overlay(
+                RoundedRectangle(cornerRadius: 5)
+                    .strokeBorder(focused ? Theme.borderFocus : Theme.border, lineWidth: 1))
     }
 }
 
