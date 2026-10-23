@@ -54,8 +54,10 @@ public struct ShotStage: Sendable, Equatable, Codable {
     /// After `settle`, the regions wait for the tuned channel's squelch to be open, so the shot
     /// shows a station on the air.
     public var onAir: Bool
-    /// The spectrum and waterfall's zoom as the band rail's − and + set it: 1, 2, 4 or 8.
-    public var zoom: Int?
+    /// The spectrum and waterfall's width in Hz, centred on the tuned frequency, as the band
+    /// rail's − and + set it; the app holds it between the narrowest span the spectrum's bins
+    /// allow and the capture.
+    public var zoom: UInt64?
     /// Presses the expanded band row's Scan band, as a click does, and waits for the sweep to end
     /// before `settle` starts; its hits then show on the row and the band rail.
     public var scanBand: Bool
@@ -91,7 +93,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
         window: WindowSize? = nil, place: Place? = nil, inspector: Bool? = nil,
         expandedBand: String? = nil, selectBookmark: String? = nil, selectPart: Int? = nil,
         importCHIRP: String? = nil, settle: Double = 0, onAir: Bool = false,
-        zoom: Int? = nil, scanBand: Bool = false, playPart: Bool = false,
+        zoom: UInt64? = nil, scanBand: Bool = false, playPart: Bool = false,
         assistant: Bool? = nil, focusFilter: Bool = false, channelsPicker: String? = nil,
         settings: Bool? = nil
     ) {
@@ -124,7 +126,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
         importCHIRP = try c.decodeIfPresent(String.self, forKey: .importCHIRP)
         settle = try c.decodeIfPresent(Double.self, forKey: .settle) ?? 0
         onAir = try c.decodeIfPresent(Bool.self, forKey: .onAir) ?? false
-        zoom = try c.decodeIfPresent(Int.self, forKey: .zoom)
+        zoom = try c.decodeIfPresent(UInt64.self, forKey: .zoom)
         scanBand = try c.decodeIfPresent(Bool.self, forKey: .scanBand) ?? false
         playPart = try c.decodeIfPresent(Bool.self, forKey: .playPart) ?? false
         assistant = try c.decodeIfPresent(Bool.self, forKey: .assistant)
@@ -149,8 +151,8 @@ public struct ShotStage: Sendable, Equatable, Codable {
     }
 
     /// Refuses a negative or non-finite `settle`, a window without a positive size, a negative
-    /// part and a zoom the band rail cannot set, so the app never sleeps or sizes on a value it
-    /// cannot use.
+    /// part and a zoom under a kilohertz, which would be the factor `zoom` once took (1 to 8), so
+    /// the app never sleeps or sizes on a value it cannot use.
     public func validate() throws {
         guard settle.isFinite, settle >= 0 else {
             throw ShotStageError.invalid("settle must be zero or more seconds")
@@ -163,10 +165,14 @@ public struct ShotStage: Sendable, Equatable, Codable {
         if let p = selectPart, p < 0 {
             throw ShotStageError.invalid("select_part must be 0 or more")
         }
-        if let z = zoom, ![1, 2, 4, 8].contains(z) {
-            throw ShotStageError.invalid("zoom must be 1, 2, 4 or 8")
+        if let z = zoom, z < Self.leastZoomHz {
+            throw ShotStageError.invalid(
+                "zoom is the span shown in Hz, at least \(Self.leastZoomHz)")
         }
     }
+
+    /// The least `zoom` a stage may ask for, in Hz.
+    public static let leastZoomHz: UInt64 = 1_000
 
     /// Where `regions.json` goes: beside the stage file.
     public static func regionsURL(besideStage url: URL) -> URL {

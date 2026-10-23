@@ -90,6 +90,10 @@ type AppCommand struct {
 	Y *float64 `yaml:"y"`
 	// Button is a click's left (the default) or right.
 	Button string `yaml:"button"`
+	// Dx and Dy are how far a drag moves the pointer from its point, in points; at least one
+	// is not zero.
+	Dx *float64 `yaml:"dx"`
+	Dy *float64 `yaml:"dy"`
 	// Menu is a menu command's item, its titles from the menu bar joined by >:
 	// View>Show Assistant.
 	Menu string `yaml:"menu"`
@@ -138,6 +142,8 @@ type wireCommand struct {
 	X          *float64 `json:"x,omitempty"`
 	Y          *float64 `json:"y,omitempty"`
 	Button     string   `json:"button,omitempty"`
+	Dx         *float64 `json:"dx,omitempty"`
+	Dy         *float64 `json:"dy,omitempty"`
 	Menu       string   `json:"menu,omitempty"`
 	Read       bool     `json:"read,omitempty"`
 }
@@ -308,7 +314,7 @@ func (c *AppCommand) validate(path func(string) string) error {
 		"args": len(c.Args) > 0, "expect_stdout": len(c.ExpectStdout) > 0, "expect_exit": c.ExpectExit != nil,
 		"id": c.ID != "", "path": c.Path != "", "contains": len(c.Contains) > 0, "op": c.Op != "",
 		"expect_log": len(c.ExpectLog) > 0, "x": c.X != nil, "y": c.Y != nil, "button": c.Button != "",
-		"menu": c.Menu != "", "read": c.Read,
+		"menu": c.Menu != "", "read": c.Read, "dx": c.Dx != nil, "dy": c.Dy != nil,
 	}
 	var need, may []string
 	switch c.Cmd {
@@ -338,13 +344,19 @@ func (c *AppCommand) validate(path func(string) string) error {
 		need, may = []string{"seconds"}, []string{"expect_log"}
 	case "menu":
 		need, may = []string{"menu"}, []string{"read", "expect"}
-	case "hover", "click":
+	case "hover", "click", "drag":
 		may = []string{"identifier", "x", "y"}
 		if c.Cmd == "hover" {
 			may = append(may, "expect")
 		}
 		if c.Cmd == "click" {
 			may = append(may, "button")
+		}
+		if c.Cmd == "drag" {
+			may = append(may, "dx", "dy")
+			if (c.Dx == nil || *c.Dx == 0) && (c.Dy == nil || *c.Dy == 0) {
+				return errors.New("drag needs dx or dy, a distance in points")
+			}
 		}
 		if (c.Identifier != "") == (c.X != nil || c.Y != nil) || (c.X == nil) != (c.Y == nil) {
 			return fmt.Errorf("%s needs an identifier, or x and y", c.Cmd)
@@ -423,7 +435,7 @@ func (c *AppCommand) wire(id int, path func(string) string) (wireCommand, error)
 	w := wireCommand{
 		ID: id, Cmd: c.Cmd, Settle: c.Settle, Keys: c.Keys, Text: c.Text,
 		Identifier: c.Identifier, Seconds: c.Seconds, Window: c.Window,
-		X: c.X, Y: c.Y, Button: c.Button, Menu: c.Menu, Read: c.Read,
+		X: c.X, Y: c.Y, Button: c.Button, Dx: c.Dx, Dy: c.Dy, Menu: c.Menu, Read: c.Read,
 	}
 	if c.Stage != nil {
 		st, err := resolveStage(path, c.Stage)

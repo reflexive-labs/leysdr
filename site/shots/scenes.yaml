@@ -58,7 +58,7 @@ scenes:
       select_bookmark: Calling
       settle: 40
       on_air: true
-      zoom: 4
+      zoom: 720000
     crop: {regions: [window]}
 
   - asset: sidebar-chirp-import.png
@@ -245,7 +245,7 @@ scenes:
       select_bookmark: Calling
       settle: 25
       on_air: true
-      zoom: 4
+      zoom: 720000
     crop: {regions: [waterfall, inspector], size: {width: 760, height: 475}, anchor: top-right}
 
   - asset: ways-terminal.png

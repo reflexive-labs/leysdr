@@ -171,8 +171,8 @@ import SwiftUI
                 if stage.scanBand { await scan(row: id, session) }
             }
             if let z = stage.zoom {
-                session.zoom = z
-                note("zoom \(z)")
+                session.setView(spanHz: z, centreHz: nil)
+                note("zoom \(z) Hz across")
             }
             if let p = stage.place, let place = WindowPlace(rawValue: p.rawValue) {
                 session.place = place

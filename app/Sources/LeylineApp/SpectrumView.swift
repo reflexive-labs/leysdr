@@ -33,6 +33,8 @@ struct SpectrumView: View {
             tunedHz: session.tunedHz,
             channel: session.channel
         )
+        let edge = session.tunedEdge
+        let edgeWords = session.edgeMarkerWords
         GeometryReader { geo in
             let columns = rows.columns(width: geo.size.width)
             ZStack(alignment: .topLeading) {
@@ -62,6 +64,13 @@ struct SpectrumView: View {
                 }
                 MaxHoldChip()
                     .padding(8)
+                if let edge, let edgeWords {
+                    EdgeMarker(words: edgeWords) { session.showTuned() }
+                        .padding(.horizontal, 8)
+                        .frame(
+                            width: geo.size.width, height: geo.size.height,
+                            alignment: edge == .below ? .leading : .trailing)
+                }
             }
         }
         .background(Theme.ground)
@@ -268,6 +277,26 @@ struct Columns {
         var m: Float = -.infinity
         for i in r where i < levels.count { m = max(m, levels[i]) }
         return m
+    }
+}
+
+/// The tuned channel's marker at the spectrum's edge while the view does not show it
+/// (`146.940 ▸`), on the side it lies: a press brings the view to the channel and tunes nothing,
+/// because the view moved and the radio did not.
+struct EdgeMarker: View {
+    let words: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(words).font(Theme.Font.valueSmall).foregroundStyle(Theme.accent)
+                .padding(.horizontal, 7).padding(.vertical, 4)
+        }
+        .buttonStyle(.plain)
+        .background(Theme.ground.opacity(0.85), in: RoundedRectangle(cornerRadius: 4))
+        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Theme.border))
+        .help("Show the tuned channel")
+        .accessibilityIdentifier("spectrum.edge")
     }
 }
 

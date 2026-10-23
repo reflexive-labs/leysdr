@@ -27,7 +27,7 @@ final class ShotStageTests: XCTestCase {
             """
             {"window":{"width":1440,"height":820},"place":"library","inspector":true,
              "expanded_band":"2m","select_bookmark":"Calling","select_part":2,
-             "import_chirp":"/tmp/handheld.csv","settle":4.5,"on_air":true,"zoom":2,"scan_band":true,"play_part":true,
+             "import_chirp":"/tmp/handheld.csv","settle":4.5,"on_air":true,"zoom":720000,"scan_band":true,"play_part":true,
              "assistant":true,"focus_filter":true,"channels_picker":"gmrs"}
             """)
         let stage = try ShotStage.read(at: url)
@@ -36,7 +36,8 @@ final class ShotStageTests: XCTestCase {
             ShotStage(
                 window: .init(width: 1440, height: 820), place: .library, inspector: true,
                 expandedBand: "2m", selectBookmark: "Calling", selectPart: 2,
-                importCHIRP: "/tmp/handheld.csv", settle: 4.5, onAir: true, zoom: 2, scanBand: true,
+                importCHIRP: "/tmp/handheld.csv", settle: 4.5, onAir: true, zoom: 720_000,
+                scanBand: true,
                 playPart: true, assistant: true, focusFilter: true, channelsPicker: "gmrs")
         )
     }
@@ -53,7 +54,10 @@ final class ShotStageTests: XCTestCase {
 
     func testUnusableNumbersAreRefused() throws {
         XCTAssertThrowsError(try ShotStage.read(at: try stageFile(#"{"settle":-1}"#)))
-        XCTAssertThrowsError(try ShotStage.read(at: try stageFile(#"{"zoom":3}"#)))
+        // The factor zoom once took reads as a span under a kilohertz, and is refused.
+        XCTAssertThrowsError(try ShotStage.read(at: try stageFile(#"{"zoom":4}"#)))
+        XCTAssertThrowsError(try ShotStage.read(at: try stageFile(#"{"zoom":-1}"#)))
+        XCTAssertNoThrow(try ShotStage.read(at: try stageFile(#"{"zoom":1000}"#)))
         XCTAssertThrowsError(
             try ShotStage.read(at: try stageFile(#"{"window":{"width":0,"height":820}}"#)))
         XCTAssertThrowsError(try ShotStage.read(at: try stageFile(#"{"select_part":-1}"#)))

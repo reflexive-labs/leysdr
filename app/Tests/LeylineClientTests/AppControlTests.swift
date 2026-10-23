@@ -52,6 +52,12 @@ final class AppControlTests: XCTestCase {
             parse(#"{"id":22,"cmd":"click","identifier":"rail.track"}"#),
             .command(.init(id: 22, action: .click(.identifier("rail.track"), right: false))))
         XCTAssertEqual(
+            parse(#"{"id":25,"cmd":"drag","identifier":"rail.thumb","dx":-40}"#),
+            .command(.init(id: 25, action: .drag(.identifier("rail.thumb"), dx: -40, dy: 0))))
+        XCTAssertEqual(
+            parse(#"{"id":26,"cmd":"drag","x":500,"y":60,"dx":10,"dy":2}"#),
+            .command(.init(id: 26, action: .drag(.point(x: 500, y: 60), dx: 10, dy: 2))))
+        XCTAssertEqual(
             parse(#"{"id":23,"cmd":"menu","menu":"View>Show Assistant","read":true}"#),
             .command(.init(id: 23, action: .menu(path: "View>Show Assistant", read: true))))
         XCTAssertEqual(
@@ -93,6 +99,11 @@ final class AppControlTests: XCTestCase {
             #"{"id":19,"cmd":"click","identifier":"a","button":"middle"}"#,
             #"{"id":19,"cmd":"menu"}"#, #"{"id":19,"cmd":"menu","menu":"View>"}"#,
             #"{"id":20,"cmd":"pick","identifier":"a"}"#, #"{"id":20,"cmd":"pick","text":"b"}"#,
+            #"{"id":21,"cmd":"drag","identifier":"a"}"#,
+            #"{"id":21,"cmd":"drag","identifier":"a","dx":0,"dy":0}"#,
+            #"{"id":21,"cmd":"drag","dx":5}"#,
+            #"{"id":21,"cmd":"drag","identifier":"a","dx":5,"button":"right"}"#,
+            #"{"id":21,"cmd":"click","identifier":"a","dx":5}"#,
         ] {
             guard case .refused(let id, let reason) = parse(line) else {
                 return XCTFail("\(line) was not refused")
@@ -145,14 +156,15 @@ final class AppControlTests: XCTestCase {
             back.keys.sorted(),
             [
                 "alert", "assistant", "assistant_shown", "band", "bandwidth_hz", "bookmark",
-                "capture_id", "channel_id", "filter_caret", "filter_query", "focused", "heard",
-                "hits", "inspector_shown", "mode", "muted", "notices", "open_rows", "place",
+                "capture", "capture_id", "channel_id", "filter_caret", "filter_query", "focused",
+                "heard", "hits", "inspector_shown", "mode", "muted", "notices", "open_rows",
+                "place",
                 "popover", "selected_part", "selected_recording_channel", "settings_open", "sink",
-                "tooltip", "transport", "tuned_hz", "view_window", "volume", "window", "zoom",
+                "tooltip", "transport", "tuned_hz", "view", "volume", "window",
             ])
         for key in [
-            "alert", "assistant", "filter_caret", "tooltip", "transport", "view_window", "volume",
-            "window",
+            "alert", "assistant", "capture", "filter_caret", "tooltip", "transport", "view",
+            "volume", "window",
         ] {
             XCTAssertTrue(back[key] is NSNull, key)
         }
@@ -163,7 +175,10 @@ final class AppControlTests: XCTestCase {
             place: "radio",
             window: ControlWindowSize(width: 1440, height: 820, minWidth: 980, minHeight: 600),
             alert: ControlAlert(title: "Move the radio?", buttons: ["Cancel", "Move"]),
-            viewWindow: ControlViewWindow(lowHz: 146_000_000, highHz: 147_000_000),
+            view: ControlView(
+                loHz: 146_000_000, hiHz: 147_000_000, thumbLoHz: 146_000_000,
+                thumbHiHz: 147_000_000),
+            capture: ControlSpan(loHz: 144_960_000, hiHz: 147_840_000),
             assistant: ControlAssistant(
                 turns: [.init(role: "user", text: "hi")], inputFocused: true,
                 buttons: [.init(id: "assistant.new", title: "New", enabled: false)]))
@@ -174,7 +189,12 @@ final class AppControlTests: XCTestCase {
         let alert = try XCTUnwrap(back["alert"] as? [String: Any])
         XCTAssertTrue(alert["message"] is NSNull)
         XCTAssertEqual(alert["buttons"] as? [String], ["Cancel", "Move"])
-        XCTAssertEqual((back["view_window"] as? [String: Any])?["high_hz"] as? Int, 147_000_000)
+        let view = try XCTUnwrap(back["view"] as? [String: Any])
+        XCTAssertEqual(view["hi_hz"] as? Int, 147_000_000)
+        XCTAssertEqual(view["span_hz"] as? Int, 1_000_000)
+        XCTAssertEqual(view["thumb_lo_hz"] as? Int, 146_000_000)
+        XCTAssertTrue(view["edge"] is NSNull)
+        XCTAssertEqual((back["capture"] as? [String: Any])?["lo_hz"] as? Int, 144_960_000)
         let assistant = try XCTUnwrap(back["assistant"] as? [String: Any])
         XCTAssertEqual(assistant["input_focused"] as? Bool, true)
         XCTAssertTrue(assistant["state"] is NSNull)

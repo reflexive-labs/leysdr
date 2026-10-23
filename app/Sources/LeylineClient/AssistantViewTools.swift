@@ -183,9 +183,11 @@ public enum AppViewTools {
 
     /// The answer to `show_band` and the view to apply: the waterfall moved to the part of the
     /// range the radio captures, or an error when the radio captures none of it. `centerHz` and
-    /// `sampleRate` are the capture's, nil with no radio open.
+    /// `sampleRate` are the capture's, nil with no radio open; `bins` the spectrum's, which set
+    /// the narrowest view.
     public static func showRange(
-        lowHz: UInt64, highHz: UInt64, label: String, centerHz: UInt64?, sampleRate: UInt64
+        lowHz: UInt64, highHz: UInt64, label: String, centerHz: UInt64?, sampleRate: UInt64,
+        bins: Int
     ) -> (answer: ViewToolAnswer, fit: ViewWindow.Fit?) {
         let asked = "\(label) (\(rangeWords(lowHz...highHz)))"
         let named = label.contains(" to ") ? label : asked
@@ -199,7 +201,8 @@ public enum AppViewTools {
         let span = ViewWindow.span(centerHz: centerHz, sampleRate: sampleRate)
         guard
             let fit = ViewWindow.fit(
-                lowHz: lowHz, highHz: highHz, centerHz: centerHz, sampleRate: sampleRate)
+                lowHz: lowHz, highHz: highHz, centerHz: centerHz, sampleRate: sampleRate,
+                bins: bins)
         else {
             return (
                 .error(
@@ -216,7 +219,7 @@ public enum AppViewTools {
             "place": .string(ViewPlace.radio.rawValue),
             "from_hz": .number(Double(fit.shown.lowerBound)),
             "to_hz": .number(Double(fit.shown.upperBound)),
-            "zoom": .number(Double(fit.zoom)),
+            "span_hz": .number(Double(fit.spanHz)),
             "whole": .bool(fit.whole),
         ])
         return (ViewToolAnswer(text: text, json: json), fit)
@@ -259,90 +262,4 @@ public struct ViewToolError: Error, Sendable, Equatable {
     public init(_ message: String) { self.message = message }
 
     public var answer: ViewToolAnswer { .error(message) }
-}
-
-/// Which frequencies the spectrum and waterfall show: the capture's span at zoom 1, and at a
-/// higher zoom a window of it, centred on the tuned frequency or on where a view tool put it.
-/// Presentation only: the radio is not moved.
-public enum ViewWindow {
-    /// The zooms the View menu steps through, ⌘= and ⌘-.
-    public static let zooms = [1, 2, 4, 8]
-
-    /// The capture's span, its lower edge held at 0 Hz.
-    public static func span(centerHz: UInt64, sampleRate: UInt64) -> ClosedRange<UInt64> {
-        let lo = centerHz > sampleRate / 2 ? centerHz - sampleRate / 2 : 0
-        return lo...(centerHz + sampleRate / 2)
-    }
-
-    /// The span at `zoom` 1; otherwise a window `zoom` times narrower centred on `focusHz`, kept
-    /// inside the span.
-    public static func visible(centerHz: UInt64, sampleRate: UInt64, zoom: Int, focusHz: UInt64)
-        -> ClosedRange<UInt64>?
-    {
-        guard sampleRate > 0 else { return nil }
-        let full = span(centerHz: centerHz, sampleRate: sampleRate)
-        guard zoom > 1 else { return full }
-        let width = sampleRate / UInt64(zoom)
-        let centre = min(
-            max(focusHz, full.lowerBound + width / 2), full.upperBound - width / 2)
-        return (centre - width / 2)...(centre + width / 2)
-    }
-
-    /// How a range is shown: the zoom, the frequency the window centres on, what it then shows,
-    /// and whether that holds the whole range asked for.
-    public struct Fit: Sendable, Equatable {
-        public let zoom: Int
-        public let focusHz: UInt64
-        public let shown: ClosedRange<UInt64>
-        public let whole: Bool
-    }
-
-    /// The closest view of `lowHz` to `highHz`: the part of it inside the span, at the highest
-    /// zoom whose window still holds that part, centred on it. Nil when the span holds none of it.
-    public static func fit(lowHz: UInt64, highHz: UInt64, centerHz: UInt64, sampleRate: UInt64)
-        -> Fit?
-    {
-        guard sampleRate > 0, lowHz < highHz else { return nil }
-        let full = span(centerHz: centerHz, sampleRate: sampleRate)
-        let lo = max(lowHz, full.lowerBound)
-        let hi = min(highHz, full.upperBound)
-        guard lo < hi else { return nil }
-        let need = hi - lo
-        let zoom = zooms.last { sampleRate / UInt64($0) >= need } ?? 1
-        let focus = lo + need / 2
-        guard
-            let shown = visible(
-                centerHz: centerHz, sampleRate: sampleRate, zoom: zoom, focusHz: focus)
-        else { return nil }
-        return Fit(
-            zoom: zoom, focusHz: focus, shown: shown,
-            whole: lowHz >= full.lowerBound && highHz <= full.upperBound)
-    }
-}
-
-/// Where a view tool centred the zoomed window, held only while the radio stays tuned where it was
-/// then and the view is zoomed: a tune, from this window or any client, puts the window back on the
-/// tuned frequency, and so does zooming back out to the whole span.
-public struct ViewFocus: Sendable, Equatable {
-    public let hz: UInt64
-    public let tunedHz: UInt64?
-
-    public init(hz: UInt64, tunedHz: UInt64?) {
-        self.hz = hz
-        self.tunedHz = tunedHz
-    }
-
-    /// The centre the zoomed window takes now: the focus while the tuned frequency is the one it
-    /// was set against, else nil.
-    public func centre(tunedHz now: UInt64?) -> UInt64? {
-        now == tunedHz ? hz : nil
-    }
-
-    /// The focus the session keeps after a mirror change or a zoom: `focus` while the radio is
-    /// tuned where it was set and the view is zoomed in, else nil, so it is cleared rather than
-    /// left to come back the next time the frequency or the zoom returns.
-    public static func kept(_ focus: ViewFocus?, tunedHz: UInt64?, zoom: Int) -> ViewFocus? {
-        guard let focus, zoom > 1, focus.tunedHz == tunedHz else { return nil }
-        return focus
-    }
 }
