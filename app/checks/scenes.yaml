@@ -782,7 +782,7 @@ scenes:
   # command reads instead.
   - name: assistant-conversation
     covers: [AssistantPanel.swift, LibraryView.swift, AssistantController.swift,
-      AssistantModels.swift]
+      AssistantModels.swift, AssistantStepDetail.swift]
     fixtures: [{name: scene_2m}]
     bookmarks: ../../site/shots/home.csv
     ai: {script: assistant/conversation.script}
@@ -814,10 +814,14 @@ scenes:
       - {cmd: snapshot, name: counting}
       - {cmd: wait, seconds: 4}
       - {cmd: state, expect: {assistant.thinking: false, assistant.stop_shown: false, assistant.state: ready, assistant.turns.1.role: assistant, focused: assistant.input}}
+      # The step's row is its tool and state, with no arrow and no preview line under it
+      # (docs/plans/app.md, MC-2).
+      - {cmd: state, expect: {assistant.buttons.1.id: assistant.step.c1, assistant.buttons.1.title: "list_presets, done"}}
       - {cmd: snapshot, name: answered}
       - {cmd: ax, name: answered}
       - {cmd: press, identifier: assistant.step.c1}
       - {cmd: wait, seconds: 0.5}
+      - {cmd: state, expect: {assistant.buttons.2.id: assistant.step.c1.json, assistant.buttons.2.title: JSON}}
       - {cmd: snapshot, name: stepopen}
       - {cmd: ax, name: stepopen}
       - {cmd: press, identifier: assistant.step.c1}
@@ -890,7 +894,8 @@ scenes:
   # over runs without a card; a delete offers Decline and Allow alone, enabled at once. Once a
   # tune has run its step carries the run's channel ids, so state carries the checks from there.
   - name: assistant-cards
-    covers: [AssistantPanel.swift, AssistantController.swift, AssistantModels.swift]
+    covers: [AssistantPanel.swift, AssistantController.swift, AssistantModels.swift,
+      AssistantActionWords.swift]
     sizes: [{width: 1440, height: 820}, {width: 1221, height: 820}]
     fixtures: [{name: scene_2m}]
     bookmarks: ../../site/shots/home.csv
@@ -909,6 +914,10 @@ scenes:
       - {cmd: key, keys: return}
       - {cmd: wait, seconds: 2}
       - {cmd: state, expect: {assistant.state: waiting for you, focused: assistant.input}}
+      # The card says what the call does in words, with no tool id (its tree shows the
+      # sentence); Decline and Allow for this conversation are plain text, Allow the one filled
+      # button (docs/plans/app.md, MC-2).
+      - {cmd: state, expect: {assistant.buttons.1.title: "remove_bookmark APRS, asks", assistant.buttons.2.id: assistant.decline, assistant.buttons.3.id: assistant.allow.conversation, assistant.buttons.4.id: assistant.allow}}
       - {cmd: snapshot, name: asks}
       - {cmd: ax, name: asks}
       # Return does not answer the card; Decline does, and the card goes.
@@ -931,7 +940,7 @@ scenes:
       - {cmd: ax, name: takeover}
       - {cmd: press, identifier: assistant.allow.conversation}
       - {cmd: wait, seconds: 3}
-      - {cmd: state, expect: {assistant.state: ready, assistant.buttons.2.title: "→ tune frequency 146.94 · keep true · take_over true, done", assistant.buttons.3.title: "→ tune frequency 147.18 · keep true · take_over true, done"}}
+      - {cmd: state, expect: {assistant.state: ready, assistant.buttons.2.title: "tune frequency 146.94 · keep true · take_over true, done", assistant.buttons.3.title: "tune frequency 147.18 · keep true · take_over true, done"}}
       # A delete offers Decline and Allow alone, enabled at once; while it waits the field takes
       # typing, Return keeps it, and the line under the field says why.
       - {cmd: press, identifier: assistant.input}
@@ -942,7 +951,7 @@ scenes:
       - {cmd: type, text: then stop}
       - {cmd: key, keys: return}
       - {cmd: wait, seconds: 1}
-      - {cmd: state, expect: {assistant.state: waiting for you, assistant.input: then stop, assistant.buttons.4.title: "→ delete_recording job_none, asks", assistant.buttons.5.id: assistant.decline, assistant.buttons.5.enabled: true, assistant.buttons.6.id: assistant.allow, assistant.buttons.6.enabled: true}}
+      - {cmd: state, expect: {assistant.state: waiting for you, assistant.input: then stop, assistant.buttons.4.title: "delete_recording job_none, asks", assistant.buttons.5.id: assistant.decline, assistant.buttons.5.enabled: true, assistant.buttons.6.id: assistant.allow, assistant.buttons.6.enabled: true}}
       - {cmd: press, identifier: assistant.decline}
       - {cmd: wait, seconds: 2}
       - {cmd: state, expect: {assistant.state: ready, assistant.input: then stop}}
@@ -988,7 +997,7 @@ scenes:
       - {cmd: type, text: show me 2 m}
       - {cmd: key, keys: return}
       - {cmd: wait, seconds: 3}
-      - {cmd: state, expect: {tuned_hz: 146520000, assistant.state: ready, zoom: 1, view_window.low_hz: 144960000, view_window.high_hz: 147840000}}
+      - {cmd: state, expect: {tuned_hz: 146520000, assistant.state: ready, zoom: 1, view_window.low_hz: 144960000, view_window.high_hz: 147840000, assistant.buttons.1.title: "show_band 2m, done"}}
       - {cmd: press, identifier: assistant.input}
       - {cmd: type, text: show me 146.0 to 146.6}
       - {cmd: key, keys: return}
@@ -1011,6 +1020,46 @@ scenes:
       - {cmd: state, expect: {place: library, assistant.state: ready}}
       - {cmd: snapshot, name: library}
       - {cmd: file, path: ai/record.jsonl, contains: show me 2 m}
+
+  # A step with a long result opened (docs/plans/app.md, MC-2): list_presets's rows read as a
+  # table of name, frequency and mode with "… N more", in a box about twelve lines tall that
+  # scrolls inside and sits on the column's left edge; JSON shows the raw JSON in the same box
+  # and Readable puts the table back; the step closes again.
+  - name: assistant-long-result
+    covers: [AssistantPanel.swift, AssistantStepDetail.swift, AssistantModels.swift]
+    fixtures: [{name: scene_2m}]
+    bookmarks: ../../site/shots/home.csv
+    ai: {script: assistant/presets.script}
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      assistant: true
+      settle: 3
+    app:
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: what presets are there}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 3}
+      - {cmd: state, expect: {assistant.state: ready, assistant.buttons.1.id: assistant.step.c1, assistant.buttons.1.title: "list_presets, done"}}
+      - {cmd: press, identifier: assistant.step.c1}
+      - {cmd: wait, seconds: 0.5}
+      - {cmd: state, expect: {assistant.buttons.2.id: assistant.step.c1.json, assistant.buttons.2.title: JSON}}
+      - {cmd: snapshot, name: table}
+      - {cmd: ax, name: table}
+      - {cmd: press, identifier: assistant.step.c1.json}
+      - {cmd: wait, seconds: 0.5}
+      - {cmd: state, expect: {assistant.buttons.2.title: Readable}}
+      - {cmd: snapshot, name: json}
+      - {cmd: press, identifier: assistant.step.c1.json}
+      - {cmd: wait, seconds: 0.5}
+      - {cmd: state, expect: {assistant.buttons.2.title: JSON}}
+      - {cmd: press, identifier: assistant.step.c1}
+      - {cmd: wait, seconds: 0.5}
+      - {cmd: ax, name: closed}
+      - {cmd: file, path: ai/record.jsonl, contains: what presets are there}
 
   # The window follows the assistant (docs/plans/app.md, "The window follows the radio"). The
   # fixture's own channel is stopped first, so the window makes one of its own on Calling.
