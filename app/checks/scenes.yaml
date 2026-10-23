@@ -1563,6 +1563,8 @@ scenes:
     covers: [TransportBarView.swift, Frequency.swift, FrequencyEntry.swift, InspectorView.swift]
     fixtures: [{name: scene_vhf20}]
     bookmarks: ../../site/shots/home.csv
+    # A sweep's one step sees an over of 146.940 MHz, which a quarter-second step can miss.
+    sweep_dwell: 3
     steps:
       - ley: [stop, "146.52"]
     stage:
@@ -1585,7 +1587,7 @@ scenes:
       - {cmd: snapshot, name: typed}
       - {cmd: menu, menu: "Tune>Fine Tune Up"}
       - {cmd: wait, seconds: 1}
-      - {cmd: state, expect: {tuned_hz: 146941186, transport.tuning: "146.9411"}}
+      - {cmd: state, expect: {tuned_hz: 146940686, transport.tuning: "146.9406"}}
       - {cmd: menu, menu: "Tune>Tune Up"}
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {tuned_hz: 146945000, transport.tuning: "146.9450"}}
@@ -1640,6 +1642,8 @@ scenes:
       TransportBarView.swift]
     fixtures: [{name: scene_vhf20}]
     bookmarks: ../../site/shots/home.csv
+    # A sweep's one step sees an over of 146.940 MHz, which a quarter-second step can miss.
+    sweep_dwell: 3
     steps:
       - ley: [stop, "146.52"]
       - ley: [bookmarks, add, "146.525", --name, Near]
