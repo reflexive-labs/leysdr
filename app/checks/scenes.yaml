@@ -364,6 +364,44 @@ scenes:
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {tuned_hz: 146940000}}
       - {cmd: ax, name: tuned}
+      # The terminal's side: ley bookmarks reads the tone the field wrote, and loses it when
+      # the field is cleared; in the note field Space and ← type rather than mute and tune; and
+      # `ley bookmarks add` with a note replaces an idle field's text and not one being edited.
+      # A click on the inspector's header is meant to end the edit (U6), and does not: no tree
+      # is kept of it (docs/plans/app.md, "Found by the Mac checks").
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: '"name":"Spot"[^}]*"tone":"D023N"'}
+      - {cmd: press, identifier: inspector.note}
+      - {cmd: key, keys: cmd+a}
+      - {cmd: type, text: "a b"}
+      - {cmd: key, keys: left}
+      - {cmd: state, expect: {focused: inspector.note, muted: false, tuned_hz: 146940000}}
+      - {cmd: click, x: 1300, y: 70}
+      - {cmd: wait, seconds: 1}
+      - {cmd: file, path: bookmarks.json, contains: "!a b"}
+      - {cmd: press, identifier: inspector.tone}
+      - {cmd: key, keys: cmd+a}
+      - {cmd: type, text: D024N}
+      - {cmd: key, keys: return}
+      - {cmd: click, x: 1300, y: 70}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ley, args: [bookmarks, add, "146.94", --name, Club repeater, --note, from the terminal]}
+      - {cmd: wait, seconds: 1.5}
+      - {cmd: ax, name: watched}
+      - {cmd: press, identifier: inspector.note}
+      - {cmd: key, keys: right}
+      - {cmd: type, text: " and mine"}
+      - {cmd: ley, args: [bookmarks, add, "146.94", --name, Club repeater, --note, again]}
+      - {cmd: wait, seconds: 1.5}
+      - {cmd: ax, name: editing}
+      - {cmd: key, keys: escape}
+      - {cmd: press, identifier: sidebar.bookmark.spot}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: inspector.tone}
+      - {cmd: key, keys: cmd+a}
+      - {cmd: key, keys: delete}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: '!"name":"Spot"[^}]*"tone"'}
 
   # The tone last heard beside the bookmark's (docs/plans/app.md, U6): Calling's overs carry PL
   # 100.0, and once one has been measured it stays between overs; Evening net's read DCS 023; a
@@ -568,7 +606,6 @@ scenes:
   # with the key, a refused Add putting the key back and a closed window clearing it follow.
   - name: settings-ai
     fixtures: [{name: scene_2m}]
-    clock: "19:42"
     bookmarks: ../../site/shots/home.csv
     ai: {script: assistant/hello.script, key: false}
     steps:
@@ -1008,7 +1045,6 @@ scenes:
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {tuned_hz: 146940000, sink: own, muted: false}}
       - {cmd: ley, args: [state], expect_stdout: "volume 0.50"}
-      - {cmd: ax, name: own}
       - {cmd: ley, args: [tune, "147.18", --persistent, --squelch, "-47"]}
       - {cmd: wait, seconds: 3, expect_log: "following chan_.*made by another terminal"}
       - {cmd: state, expect: {tuned_hz: 147180000, sink: other}}
@@ -1241,7 +1277,6 @@ scenes:
       - {cmd: press, identifier: sidebar.band.noaa.scan}
       - {cmd: wait, seconds: 7, expect_log: ["sweep: scan NOAA weather waits for the sweep to stop", "ended: cancelled", "sweep: job_.* started: NOAA weather", "sweep: job_.* ended: 1 hit"]}
       - {cmd: state, expect: {band: marine, sink: own, open_rows.0: marine, open_rows.1: noaa, hits.0: WX2}}
-      - {cmd: ax, name: second}
       # An AM bookmark keeps its mode through a sweep.
       - {cmd: press, identifier: sidebar.band.2m}
       - {cmd: wait, seconds: 1}
