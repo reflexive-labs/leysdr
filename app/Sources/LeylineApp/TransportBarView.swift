@@ -13,9 +13,12 @@ import SwiftUI
 
 struct TransportBarView: View {
     @Environment(AppSession.self) private var session
+    /// The bar's width. Near the window's minimum the blocks sit closer, so the squelch's header
+    /// and its short caption (`muted · 11 dB`) fit beside each other uncut.
+    @State private var width: CGFloat = 0
 
     var body: some View {
-        HStack(alignment: .top, spacing: 20) {
+        HStack(alignment: .top, spacing: width > 0 && width < 960 ? 12 : 20) {
             PlayButton()
                 .frame(maxHeight: .infinity)
             FrequencyField()
@@ -32,6 +35,11 @@ struct TransportBarView: View {
         .padding(.top, 12)
         .padding(.bottom, 10)
         .background(Theme.chrome)
+        .onGeometryChange(for: CGFloat.self) {
+            $0.size.width
+        } action: {
+            width = $0
+        }
         .identifiedGroup("transport")
     }
 }
