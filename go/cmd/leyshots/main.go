@@ -8,7 +8,7 @@
 // (docs/plans/mac-loop.md, ML-4).
 //
 //	leyshots run [--only a,b] [--out tmp/shots]
-//	leyshots check [--only a,b | --smoke | --affected [--base REF]] [--record] [--hold] [--out tmp/checks] [--goldens tmp/goldens] [--list]
+//	leyshots check [--only a,b | --smoke | --affected [--base REF]] [--jobs N] [--record] [--hold] [--out tmp/checks] [--goldens tmp/goldens] [--list]
 //	leyshots publish [--only a,b] [--out tmp/shots] [--dry-run]
 //	leyshots list
 //	leyshots keys [--out tmp/shots/keys] [--leyfix PATH]
@@ -36,7 +36,7 @@ import (
 
 func usage(w io.Writer) {
 	fmt.Fprintln(w, "usage: leyshots run [--only a,b] [--out DIR]       take the scenes in site/shots/scenes.yaml")
-	fmt.Fprintln(w, "       leyshots check [--only a,b | --smoke | --affected [--base REF]] [--record] [--hold] [--out DIR] [--goldens DIR] [--list]")
+	fmt.Fprintln(w, "       leyshots check [--only a,b | --smoke | --affected [--base REF]] [--jobs N] [--record] [--hold] [--out DIR] [--goldens DIR] [--list]")
 	fmt.Fprintln(w, "                                                 run app/checks/scenes.yaml against the app and its goldens")
 	fmt.Fprintln(w, "       leyshots publish [--only a,b] [--out DIR] [--dry-run]")
 	fmt.Fprintln(w, "                                                 release the reviewed images as shots-YYYY-MM-DD")
@@ -174,8 +174,15 @@ func cmdCheck(ctx context.Context, args []string, stdout io.Writer) error {
 	smoke := fs.Bool("smoke", false, "run the scenes marked smoke: true")
 	affected := fs.Bool("affected", false, "run the scenes whose covers match a file changed under app/Sources or app/checks since --base, uncommitted and untracked files included; a shared file brings in the smoke scenes")
 	base := fs.String("base", "", "with --affected, the commit to compare with (default: the merge base of HEAD and main)")
+	jobs := fs.Int("jobs", 1, "how many scenes to run side by side; a scene marked serial: true runs with nothing beside it")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *jobs < 1 {
+		return fmt.Errorf("--jobs %d: run at least one scene at a time", *jobs)
+	}
+	if *jobs > 1 && *hold {
+		return errors.New("--hold runs one scene; it takes no --jobs")
 	}
 	if fs.NArg() > 0 {
 		return fmt.Errorf("check takes no arguments; name scenes with --only")
@@ -224,7 +231,7 @@ func cmdCheck(ctx context.Context, args []string, stdout io.Writer) error {
 			stageApp: stagedAppIn(root),
 		},
 		checks: checks, goldens: *goldens, record: *record, hold: *hold,
-		smoke: *smoke, affected: *affected, base: *base,
+		smoke: *smoke, affected: *affected, base: *base, jobs: *jobs,
 		launch: openApp, alive: processAlive, kill: killProcess, findPID: findAppPID,
 		grace: answerGrace, poll: 100 * time.Millisecond,
 	}

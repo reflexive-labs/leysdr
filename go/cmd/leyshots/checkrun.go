@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -44,6 +45,8 @@ type checkOptions struct {
 	// base with main when empty), in the checkout at root. Each replaces only.
 	smoke, affected bool
 	base            string
+	// jobs is how many scenes run side by side; 1 or less runs them one at a time.
+	jobs int
 	// hold leaves the one scene's app and daemon running after its commands, for driving by hand
 	// over the command file, until the app quits or the run is interrupted.
 	hold bool
@@ -168,6 +171,9 @@ type checker struct {
 	// history.jsonl, which each is compared with.
 	times   []sceneTime
 	history []historyRun
+	// buffered keeps the lines for the checker the scene ran beside others for (runParallel)
+	// rather than printing them.
+	buffered bool
 }
 
 // checkScenes runs each selected scene at each of its sizes, prints a line per artefact and
@@ -210,18 +216,26 @@ func checkScenes(ctx context.Context, o checkOptions) error {
 	}
 	history := filepath.Join(o.out, "history.jsonl")
 	c := &checker{o: o, f: f, history: readHistory(history)}
-	start := time.Now()
+	var units []runUnit
 	for _, s := range scenes {
 		sizes := s.sizes()
 		if o.hold {
 			sizes = sizes[:1] // a hold ends the run, so the scene's first size is the only one
 		}
 		for _, size := range sizes {
+			units = append(units, runUnit{s, size})
+		}
+	}
+	start := time.Now()
+	if o.jobs > 1 && !o.hold {
+		c.runParallel(ctx, units)
+	} else {
+		for _, u := range units {
 			if ctx.Err() != nil {
 				break
 			}
-			c.o.logf("%s %s", s.Name, size)
-			c.timeSize(ctx, s, size)
+			c.o.logf("%s %s", u.s.Name, u.size)
+			c.timeSize(ctx, u.s, u.size)
 		}
 	}
 	total := time.Since(start)
@@ -243,7 +257,7 @@ func checkScenes(ctx context.Context, o checkOptions) error {
 	}
 	// A held scene's time is how long it was held, which says nothing about the scene.
 	if !o.hold {
-		if err := writeHistory(history, c.history, time.Now(), 1, c.times); err != nil {
+		if err := writeHistory(history, c.history, time.Now(), max(o.jobs, 1), c.times); err != nil {
 			return err
 		}
 	}
@@ -270,10 +284,74 @@ func checkScenes(ctx context.Context, o checkOptions) error {
 	return nil
 }
 
-// add records a result and prints its line.
+// add records a result and prints its line, or keeps it for merge when the checker runs one
+// scene beside others.
 func (c *checker) add(r checkResult) {
 	c.results = append(c.results, r)
-	fmt.Fprintln(c.o.stdout, r.line())
+	if !c.buffered {
+		fmt.Fprintln(c.o.stdout, r.line())
+	}
+}
+
+// runUnit is one scene at one window size.
+type runUnit struct {
+	s    *CheckScene
+	size Size
+}
+
+// runParallel runs the units o.jobs at a time, each on a checker of its own whose lines are
+// printed together when it ends, so one scene's lines are never split by another's. The serial
+// scenes run after the rest, one at a time with nothing beside them.
+func (c *checker) runParallel(ctx context.Context, units []runUnit) {
+	var side, alone []runUnit
+	for _, u := range units {
+		if u.s.Serial {
+			alone = append(alone, u)
+		} else {
+			side = append(side, u)
+		}
+	}
+	var mu sync.Mutex
+	run := func(u runUnit) {
+		c.o.logf("%s %s", u.s.Name, u.size)
+		one := &checker{o: c.o, f: c.f, history: c.history, buffered: true}
+		one.timeSize(ctx, u.s, u.size)
+		mu.Lock()
+		defer mu.Unlock()
+		c.results = append(c.results, one.results...)
+		c.times = append(c.times, one.times...)
+		for _, r := range one.results {
+			fmt.Fprintln(c.o.stdout, r.line())
+		}
+		for _, t := range one.times {
+			fmt.Fprintln(c.o.stdout, t.line())
+		}
+	}
+	queue := make(chan runUnit)
+	var wg sync.WaitGroup
+	for range min(c.o.jobs, len(side)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for u := range queue {
+				run(u)
+			}
+		}()
+	}
+	for _, u := range side {
+		if ctx.Err() != nil {
+			break
+		}
+		queue <- u
+	}
+	close(queue)
+	wg.Wait()
+	for _, u := range alone {
+		if ctx.Err() != nil {
+			break
+		}
+		run(u)
+	}
 }
 
 // rel is p relative to the checkout when it is inside it, so the lines stay short.
@@ -307,7 +385,9 @@ func (c *checker) timeSize(ctx context.Context, s *CheckScene, size Size) {
 	}
 	t.compare(c.history)
 	c.times = append(c.times, t)
-	fmt.Fprintln(c.o.stdout, t.line())
+	if !c.buffered {
+		fmt.Fprintln(c.o.stdout, t.line())
+	}
 }
 
 // runSize runs one scene at one window size: its daemon, the app, the commands, then quit. Each
