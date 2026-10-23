@@ -563,7 +563,8 @@ enum AXWalk {
         var found: NSTextField?
         walk(root, depth: 0) { e, _ in
             guard e.string(kAXIdentifierAttribute) == identifier else { return false }
-            found = (e.object as? NSTextField) ?? ((e.object as? NSCell)?.controlView as? NSTextField)
+            found =
+                (e.object as? NSTextField) ?? ((e.object as? NSCell)?.controlView as? NSTextField)
             return true
         }
         return found

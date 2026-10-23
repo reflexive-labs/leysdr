@@ -65,9 +65,13 @@ final class AppControlTests: XCTestCase {
             parse(#"{"id":7,"cmd":"press","identifier":"transport.play"}"#),
             .command(.init(id: 7, action: .press(identifier: "transport.play"))))
         XCTAssertEqual(
-            parse(#"{"id":24,"cmd":"pick","identifier":"settings.ai.usage.period","text":"By month"}"#),
+            parse(
+                #"{"id":24,"cmd":"pick","identifier":"settings.ai.usage.period","text":"By month"}"#
+            ),
             .command(
-                .init(id: 24, action: .pick(identifier: "settings.ai.usage.period", item: "By month"))))
+                .init(
+                    id: 24, action: .pick(identifier: "settings.ai.usage.period", item: "By month"))
+            ))
         XCTAssertEqual(
             parse(#"{"id":8,"cmd":"wait","seconds":0.5}"#),
             .command(.init(id: 8, action: .wait(seconds: 0.5))))
