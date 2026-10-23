@@ -224,6 +224,9 @@ private struct AddKeyForm: View {
     @State private var endpoint = ""
     @State private var adding = false
 
+    /// The key field's content type: the app's own, which no AutoFill source answers.
+    private static let apiKeyContent = NSTextContentType(rawValue: "com.leysdr.api-key")
+
     private var providers: [AIProvider] { ProviderCatalog.all.filter(\.needsKey) }
     private var provider: AIProvider? { ProviderCatalog.provider(providerID) }
 
@@ -244,6 +247,12 @@ private struct AddKeyForm: View {
             }
             field("Key") {
                 SecureField("paste the key", text: $secret).modifier(SettingsField())
+                    // An API key is no password AutoFill holds. Without a content type a secure
+                    // field reads as a password one, and the system opened its AutoFill list at
+                    // the field, and brought a closed Settings back to show it; a type of the
+                    // app's own, which AutoFill has nothing for, opts the field out.
+                    .textContentType(Self.apiKeyContent)
+                    .autocorrectionDisabled()
                     .accessibilityIdentifier("settings.ai.add.key")
             }
             if provider?.takesEndpoint == true {

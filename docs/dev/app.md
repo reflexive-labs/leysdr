@@ -443,7 +443,11 @@ over the waterfall, where a person in Settings would not see it. The key typed i
 and nowhere else: not in the session, not in a log line. The field clears the moment Add is
 pressed and gets the key back only if the daemon did not store it, so a mistyped key can be
 corrected. It also clears when a window closes, on `NSWindow.willCloseNotification`, because
-`onDisappear` is not reliably sent to a `Settings` scene's content when its window closes.
+`onDisappear` is not reliably sent to a `Settings` scene's content when its window closes. The
+field opts out of AutoFill with a content type of the app's own (`com.leysdr.api-key`), which no
+AutoFill source answers: as a plain secure field it read as a password one, the system opened its
+password list at it (1Password's among them), and closing Settings with the field focused brought
+the window straight back to show the list.
 
 The pane has three groups. **Keys** lists each key with its provider, label, last four characters,
 when it was added, last used and last checked, the check's outcome (`good` accepted, `recording`

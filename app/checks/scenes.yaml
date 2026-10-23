@@ -696,11 +696,18 @@ scenes:
       # A closed window clears a typed key, so Add is disabled once it is open again. (⌘W
       # closes no window in a check run: the app is never active, so File ▸ Close has no key
       # window; the stage closes it as its button would.)
+      # The key's field opts out of AutoFill (docs/plans/app.md, MC-1c): focused and holding
+      # text, its tree has no AutoFill list, and Settings closed with the focus still there stays
+      # closed, where the list once brought it straight back.
       - {cmd: press, identifier: settings.ai.add.key}
       - {cmd: type, text: sk-made-up-0043}
-      - {cmd: press, identifier: settings.ai.add.label}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {focused: settings.ai.add.key, settings_open: true}}
+      - {cmd: ax, name: keyfocused, window: settings}
       - {cmd: stage, stage: {settings: false}}
       - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {settings_open: false}}
+      - {cmd: wait, seconds: 2}
       - {cmd: state, expect: {settings_open: false}}
       - {cmd: menu, menu: "Leyline>Settings..."}
       - {cmd: wait, seconds: 1}
