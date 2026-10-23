@@ -443,6 +443,8 @@ scenes:
     settle: 4
     app:
       - {cmd: state, expect: {tuned_hz: 146940000}}
+      # The tune lands just after an over; the repeater's next one is on the air by now.
+      - {cmd: wait, seconds: 5}
       - {cmd: snapshot, name: shot}
     crop: {regions: [window]}
 
