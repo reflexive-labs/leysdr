@@ -1814,6 +1814,32 @@ sentence, and the take-over reads `It takes the radio from whoever is using it.`
 `take_over`. `assistant-cards`'s pictures and trees were re-recorded for it; two full runs at
 `JOBS=3` after were clean.
 
+### MC-5 `[ ]` Bookmarks that share a frequency (2026-10-23, for 0.2.0)
+
+Found in the owner's QA after a CHIRP import. Two bookmarks on one frequency with different tones
+both drew as tuned in the sidebar, and the inspector showed only the first, because the tuned
+bookmark is chosen by frequency alone (`AppSession.tunedBookmark`, `SidebarView`). Leyline has no
+tone squelch (the proto: "tone squelch is a separate, later decision"), so one frequency is one
+channel. The tone tells the listener who is talking, not what is heard. The owner chose to merge
+them in the app:
+
+- **The file keeps every entry.** `bookmarks.json`, CHIRP import and export, and `ley bookmarks`
+  stay as they are. The merge is how the app draws the entries.
+- **The sidebar** draws one row per frequency within a band: the first entry's name, a faint `+N`,
+  then the frequency or channel (`Club repeater +1   146.9400`). One row reads tuned.
+- **The inspector** on a merged row lists each entry as name, tone and note, each with its own
+  edit and remove. The pencil, a new bookmark (⌘D) and the tone and note fields act on the entry
+  they belong to.
+- **The heard tone names the speaker.** The entry whose tone matches the decoded tone is marked
+  on air in the inspector. The transmissions log names each over by its matching entry
+  (`19:42  Club net · PL 100.0`), and by the first entry when no tone matches.
+- Everything else that names "the bookmark at this frequency" keeps the first entry and says
+  `+N`: the title, the volume caption, the change note.
+- Later, with tone squelch: an entry's "open only on this tone".
+
+A check scene imports a CHIRP file with two entries on 146.940 MHz (PL 127.3 and PL 100.0) over a
+fixture that keys both tones.
+
 ## Backlog
 
 - **Two frequency affine maps remain separate.** `SquelchTrack` and `GainSlider` share
