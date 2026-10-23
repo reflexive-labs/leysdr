@@ -964,3 +964,66 @@ scenes:
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {tuned_hz: 146525000}}
       - {cmd: ax, name: cleared}
+
+  # The window follows a terminal (docs/plans/app.md, "The window follows the radio"). The
+  # fixture's own channel is stopped first, so the window makes one of its own on Calling, and
+  # a click at the volume slider's middle halves that sink's volume. Muted, the window follows
+  # a terminal's `ley tune 146.94`: the terminal's sink plays, so the window has none, says so in
+  # the inspector and disables its mute and volume, and the terminal's sink keeps its own
+  # volume. Once the terminal is interrupted the window makes a channel of its own on 146.940
+  # MHz about 5 s later, still muted; unmuted, it plays at the half it had. Then a terminal's
+  # `ley tune --persistent` is followed and ended with `ley stop`, and the window goes back to a
+  # channel of its own at that frequency, mode and squelch, playing.
+  - name: follow-terminal
+    fixtures: [{name: scene_2m}]
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [stop, "146.52"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: state, expect: {tuned_hz: 146520000, sink: own, muted: false, volume: 1}}
+      - {cmd: click, identifier: transport.volume}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {sink: own}}
+      - {cmd: ley, args: [state], expect_stdout: "volume 0.50"}
+      - {cmd: press, identifier: transport.mute}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {muted: true, sink: none}}
+      - {cmd: ley_bg, id: tune, args: [tune, "146.94"]}
+      - {cmd: wait, seconds: 3, expect_log: "following chan_.*made by another terminal"}
+      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater, sink: other, muted: false}}
+      - {cmd: ley, args: [state], expect_stdout: ["volume 1.00", "!volume 0.50", "!(?s)system_audio.*system_audio"]}
+      - {cmd: snapshot, name: terminal}
+      - {cmd: ax, name: terminal}
+      - {cmd: kill, id: tune}
+      - {cmd: wait, seconds: 7, expect_log: "own channel chan_"}
+      - {cmd: state, expect: {tuned_hz: 146940000, sink: none, muted: true}}
+      - {cmd: press, identifier: transport.mute}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146940000, sink: own, muted: false}}
+      - {cmd: ley, args: [state], expect_stdout: "volume 0.50"}
+      - {cmd: ax, name: own}
+      - {cmd: ley, args: [tune, "147.18", --persistent, --squelch, "-47"]}
+      - {cmd: wait, seconds: 3, expect_log: "following chan_.*made by another terminal"}
+      - {cmd: state, expect: {tuned_hz: 147180000, sink: other}}
+      - {cmd: ley, args: [stop, "147.18"]}
+      - {cmd: wait, seconds: 3, expect_log: "own channel chan_"}
+      - {cmd: state, expect: {tuned_hz: 147180000, sink: own, mode: NFM, bandwidth_hz: 12500}}
+      - {cmd: ley, args: [state], expect_stdout: "volume 0.50"}
+      - {cmd: ley, args: [state], expect_stdout: "squelch -47.0 dB"}
+      # A part playing from the log keeps playing when the window follows a terminal that plays
+      # nothing, and once it ends the live audio comes back on the channel followed.
+      - {cmd: press, identifier: inspector.record}
+      - {cmd: wait, seconds: 16}
+      - {cmd: press, identifier: inspector.log.play}
+      - {cmd: wait, seconds: 0.3, expect_log: "live sink sink_.* detached for the clip"}
+      - {cmd: ley, args: [tune, "147.18", --persistent, --no-audio]}
+      - {cmd: wait, seconds: 1, expect_log: ["following chan_.*made by another terminal", "!playback: .* (stopped|ended)"]}
+      - {cmd: state, expect: {tuned_hz: 147180000, sink: none}}
+      - {cmd: wait, seconds: 6, expect_log: ["playback: .* ended", "live sink attached again"]}
+      - {cmd: state, expect: {tuned_hz: 147180000, sink: own}}
+      - {cmd: ley, args: [state], expect_stdout: "(?s)by cli:ley\\s+└─ system_audio"}
