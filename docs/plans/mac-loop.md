@@ -376,12 +376,13 @@ person or hardware, 3 obsolete. Its numbering (U4.02, P.45, H3, F2) is used belo
   its words and Stop, a band after Stop Listening asking for a second capture (`DEVICE_BUSY`) where
   another client's still held the radio, the Width pop-up wrapping `11.25 kHz` onto two lines at
   every width (`transport-sizes` takes 900 × 612, 1000 and 1100 pt, without the inspector and with
-  the assistant's column), the squelch's words breaking inside a word, and a tall inspector pushing
-  the transport bar out of a short window. The harness gained a click over the open popover reaching
-  it (the plan picker's rows) and an identifier on a log row's ▶. `app.md`'s four "Unverified on the
-  Mac" lists are now one: the scenes that check each, and what is left, by reason (needs a person or
-  a real radio, or a harness addition by H-number). What the second half found is in `app.md` beside
-  the first half's.
+  the assistant's column), the squelch's words breaking inside a word, a tall inspector pushing the
+  transport bar out of a short window, and a window that came up after a daemon restart before the
+  radio did keeping no channel once the radio and its capture came. The harness gained a click over
+  the open popover reaching it (the plan picker's rows) and an identifier on a log row's ▶.
+  `app.md`'s four "Unverified on the Mac" lists are now one: the scenes that check each, and what is
+  left, by reason (needs a person or a real radio, or a harness addition by H-number). What the
+  second half found is in `app.md` beside the first half's.
 
 ML-9a and ML-9b run side by side; ML-9c follows ML-9a in the same tree, since both edit the app;
 ML-9d needs all three. Light appearance stays out (Decisions: dark only).
