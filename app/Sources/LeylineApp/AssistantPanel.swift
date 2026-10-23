@@ -419,9 +419,12 @@ struct AssistantField: View {
     /// Return sends only while the daemon would take the message: not while one is on its way,
     /// and not while the assistant thinks or asks. With no conversation, or one that is over or
     /// lost, the message starts a new one (`AssistantController.needsStart`).
+    /// The conversation is read from the session, not `view`: the field's Return action is the
+    /// closure SwiftUI installed when it last drew the field, and a card that went without the
+    /// field drawing again left it judging by the conversation as it waited.
     private var canSend: Bool {
         guard !submitting, !session.assistantSending else { return false }
-        guard let view, !session.assistantLost else { return true }
+        guard let view = session.conversationView, !session.assistantLost else { return true }
         return view.canSend || view.isOver
     }
 
