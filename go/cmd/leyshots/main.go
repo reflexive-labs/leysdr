@@ -8,7 +8,7 @@
 // (docs/plans/mac-loop.md, ML-4).
 //
 //	leyshots run [--only a,b] [--out tmp/shots]
-//	leyshots check [--only a,b] [--record] [--hold] [--out tmp/checks] [--goldens tmp/goldens] [--list]
+//	leyshots check [--only a,b | --smoke | --affected [--base REF]] [--record] [--hold] [--out tmp/checks] [--goldens tmp/goldens] [--list]
 //	leyshots publish [--only a,b] [--out tmp/shots] [--dry-run]
 //	leyshots list
 //	leyshots keys [--out tmp/shots/keys] [--leyfix PATH]
@@ -36,7 +36,7 @@ import (
 
 func usage(w io.Writer) {
 	fmt.Fprintln(w, "usage: leyshots run [--only a,b] [--out DIR]       take the scenes in site/shots/scenes.yaml")
-	fmt.Fprintln(w, "       leyshots check [--only a,b] [--record] [--hold] [--out DIR] [--goldens DIR] [--list]")
+	fmt.Fprintln(w, "       leyshots check [--only a,b | --smoke | --affected [--base REF]] [--record] [--hold] [--out DIR] [--goldens DIR] [--list]")
 	fmt.Fprintln(w, "                                                 run app/checks/scenes.yaml against the app and its goldens")
 	fmt.Fprintln(w, "       leyshots publish [--only a,b] [--out DIR] [--dry-run]")
 	fmt.Fprintln(w, "                                                 release the reviewed images as shots-YYYY-MM-DD")
@@ -171,8 +171,26 @@ func cmdCheck(ctx context.Context, args []string, stdout io.Writer) error {
 	goldens := fs.String("goldens", "", "goldens directory, above <macOS>-<arch> (default: tmp/goldens in the checkout)")
 	list := fs.Bool("list", false, "list the check scenes and run nothing")
 	hold := fs.Bool("hold", false, "with --only naming one scene: run it at its first size, then leave the app and daemon running to be driven over the command file until the app quits")
+	smoke := fs.Bool("smoke", false, "run the scenes marked smoke: true")
+	affected := fs.Bool("affected", false, "run the scenes whose covers match a file changed under app/Sources or app/checks since --base, uncommitted and untracked files included; a shared file brings in the smoke scenes")
+	base := fs.String("base", "", "with --affected, the commit to compare with (default: the merge base of HEAD and main)")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("check takes no arguments; name scenes with --only")
+	}
+	picks := 0
+	for _, on := range []bool{*only != "", *smoke, *affected} {
+		if on {
+			picks++
+		}
+	}
+	if picks > 1 {
+		return errors.New("--only, --smoke and --affected each choose the scenes; give one")
+	}
+	if *base != "" && !*affected {
+		return errors.New("--base goes with --affected")
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -206,6 +224,7 @@ func cmdCheck(ctx context.Context, args []string, stdout io.Writer) error {
 			stageApp: stagedAppIn(root),
 		},
 		checks: checks, goldens: *goldens, record: *record, hold: *hold,
+		smoke: *smoke, affected: *affected, base: *base,
 		launch: openApp, alive: processAlive, kill: killProcess, findPID: findAppPID,
 		grace: answerGrace, poll: 100 * time.Millisecond,
 	}

@@ -40,6 +40,10 @@ type checkOptions struct {
 	// release is the running macOS as major.minor.
 	release string
 	record  bool
+	// smoke runs the smoke scenes; affected the scenes a change since base touches (the merge
+	// base with main when empty), in the checkout at root. Each replaces only.
+	smoke, affected bool
+	base            string
 	// hold leaves the one scene's app and daemon running after its commands, for driving by hand
 	// over the command file, until the app quits or the run is interrupted.
 	hold bool
@@ -174,9 +178,24 @@ func checkScenes(ctx context.Context, o checkOptions) error {
 	if err != nil {
 		return err
 	}
-	scenes, err := f.Select(o.only)
-	if err != nil {
-		return err
+	var scenes []*CheckScene
+	switch {
+	case o.affected:
+		sel, err := affectedScenes(ctx, o.root, o.base, f, o.checks)
+		if err != nil {
+			return err
+		}
+		sel.print(o.stdout)
+		if len(sel.scenes) == 0 {
+			return nil // the lines above say what changed and that no scene checks it
+		}
+		scenes = sel.scenes
+	case o.smoke:
+		scenes = f.Smoke()
+	default:
+		if scenes, err = f.Select(o.only); err != nil {
+			return err
+		}
 	}
 	if o.hold && len(scenes) != 1 {
 		return errors.New("--hold takes one scene: name it with --only")
@@ -1066,9 +1085,10 @@ func holdsWhole(s, sub string) bool {
 	}
 }
 
-// listChecks prints one row per check scene: its name, sizes and commands.
+// listChecks prints one row per check scene: its name, sizes, tier (smoke, serial or -) and
+// commands.
 func listChecks(f *CheckFile, w io.Writer) {
-	fmt.Fprintf(w, "%-22s %-22s %s\n", "SCENE", "SIZES", "APP")
+	fmt.Fprintf(w, "%-24s %-22s %-6s %s\n", "SCENE", "SIZES", "TIER", "APP")
 	for i := range f.Scenes {
 		s := &f.Scenes[i]
 		var sizes, cmds []string
@@ -1078,6 +1098,13 @@ func listChecks(f *CheckFile, w io.Writer) {
 		for j := range s.App {
 			cmds = append(cmds, s.App[j].Cmd)
 		}
-		fmt.Fprintf(w, "%-22s %-22s %s\n", s.Name, strings.Join(sizes, ","), strings.Join(cmds, " "))
+		tier := "-"
+		switch {
+		case s.Smoke:
+			tier = "smoke"
+		case s.Serial:
+			tier = "serial"
+		}
+		fmt.Fprintf(w, "%-24s %-22s %-6s %s\n", s.Name, strings.Join(sizes, ","), tier, strings.Join(cmds, " "))
 	}
 }
