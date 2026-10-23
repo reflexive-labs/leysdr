@@ -605,10 +605,12 @@ final class AppSession {
     /// `GMRS` row is the tuned one while the capture sits on either half.
     var tunedRow: Band? { band.map { Bands.group(of: $0) ?? $0 } }
 
-    /// Whether a sidebar row shows its contents: the tuned row always, and the one opened by
-    /// its chevron.
+    /// Whether a sidebar row shows its contents: the tuned row always, the one opened by its
+    /// chevron, and the one being swept, whose words and Stop are under its item while the
+    /// sweep holds the radio and nothing is tuned.
     func isExpanded(_ row: Band) -> Bool {
         row.id == tunedRow?.id || row.id == expandedBandID
+            || (sweeping && row.id == sweepRow?.id)
     }
 
     /// The chevron: opens or closes a row without tuning. The tuned row stays open.
