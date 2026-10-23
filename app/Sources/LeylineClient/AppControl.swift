@@ -632,6 +632,10 @@ public struct ControlViewState: Sendable, Equatable, Codable {
     /// The names the transmissions log's rows are logged under, each once, sorted, joined by
     /// ` · `; nil when the rows name none (a frequency with one bookmark or none).
     public var logNames: String?
+    /// The order of the sidebar's bookmark rows, `frequency` or `name` (`BookmarkSort`), and
+    /// the rows under the open band rows as drawn, in that order (`Club net +1`).
+    public var sort: String
+    public var bookmarkRows: [String]
 
     enum CodingKeys: String, CodingKey {
         case place, mode, band, bookmark, zoom, focused, notices, popover, heard, hits, transport
@@ -654,6 +658,8 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         case tunedRow = "tuned_row"
         case onAirEntry = "on_air_entry"
         case logNames = "log_names"
+        case sort
+        case bookmarkRows = "bookmark_rows"
     }
 
     public init(
@@ -669,7 +675,7 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         viewWindow: ControlViewWindow? = nil, assistant: ControlAssistant? = nil,
         tooltip: String? = nil, transport: ControlTransport? = nil, entries: [String] = [],
         tunedRows: Int = 0, tunedRow: String? = nil, onAirEntry: String? = nil,
-        logNames: String? = nil
+        logNames: String? = nil, sort: String = "frequency", bookmarkRows: [String] = []
     ) {
         self.place = place
         self.tunedHz = tunedHz
@@ -707,6 +713,8 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         self.tunedRow = tunedRow
         self.onAirEntry = onAirEntry
         self.logNames = logNames
+        self.sort = sort
+        self.bookmarkRows = bookmarkRows
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -749,6 +757,8 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         try c.encode(tunedRow, forKey: .tunedRow)
         try c.encode(onAirEntry, forKey: .onAirEntry)
         try c.encode(logNames, forKey: .logNames)
+        try c.encode(sort, forKey: .sort)
+        try c.encode(bookmarkRows, forKey: .bookmarkRows)
     }
 }
 

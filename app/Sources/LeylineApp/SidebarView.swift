@@ -71,6 +71,25 @@ struct SidebarView: View {
             .background(Theme.ground, in: RoundedRectangle(cornerRadius: 6))
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.border))
             .modifier(TuningKeyGuard(focused: filterFocused))
+            // The bookmarks' order under every band (MC-6): one click switches between
+            // frequency and name, and the help says which it is.
+            Button {
+                session.toggleBookmarkSort()
+            } label: {
+                Image(
+                    systemName: session.bookmarkSort == .frequency
+                        ? "arrow.up.arrow.down" : "textformat"
+                )
+                .font(Theme.Font.buttonGlyph)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.inkTertiary)
+            .help(
+                "\(session.bookmarkSort.words); click to sort by \(session.bookmarkSort.next.rawValue)"
+            )
+            .accessibilityLabel("Sort bookmarks")
+            .accessibilityValue(session.bookmarkSort.words)
+            .accessibilityIdentifier("sidebar.sort")
             Button {
                 session.bookmarkCurrent()
             } label: {
@@ -145,7 +164,7 @@ struct SidebarView: View {
         if let other = byRow[""], !other.isEmpty {
             SectionHeader(text: "Other")
                 .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 6)
-            ForEach(BookmarkGroup.grouped(other)) { bookmarkRow($0) }
+            ForEach(session.bookmarkRows(other)) { bookmarkRow($0) }
         }
     }
 
@@ -183,8 +202,9 @@ struct SidebarView: View {
                 if session.sweepRow?.id == row.id, let outcome = session.sweep?.outcome {
                     sweepOutcome(outcome, row: row)
                 }
-                // One row per frequency, the first entry's (`BookmarkGroup`, MC-5).
-                ForEach(BookmarkGroup.grouped(bookmarks)) { bookmarkRow($0) }
+                // One row per frequency, the first entry's (`BookmarkGroup`, MC-5), in the order the
+                // header's control chose (`BookmarkSort`, MC-6).
+                ForEach(session.bookmarkRows(bookmarks)) { bookmarkRow($0) }
             }
         }
         .background(expanded ? Theme.raised : Color.clear)

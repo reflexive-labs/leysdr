@@ -469,7 +469,19 @@ import LeylineClient
                 entries: s.tunedGroup?.entries.map(\.name) ?? [],
                 tunedRows: tunedRows.count, tunedRow: tunedRows.first?.words,
                 onAirEntry: s.tunedGroup?.isMerged == true ? s.onAirEntry?.name : nil,
-                logNames: Self.logNames(s))
+                logNames: Self.logNames(s), sort: s.bookmarkSort.rawValue,
+                bookmarkRows: Self.bookmarkRows(s))
+        }
+
+        /// The bookmark rows under the open band rows, as the sidebar draws them
+        /// (`AppSession.bookmarkRows`), band by band down the list.
+        private static func bookmarkRows(_ s: AppSession) -> [String] {
+            let byRow = Dictionary(grouping: s.bookmarks.list) {
+                Bands.sidebarRow(for: $0.hz)?.id ?? ""
+            }
+            return s.sidebarRows.filter { s.isExpanded($0) }.flatMap { row in
+                s.bookmarkRows(byRow[row.id] ?? []).map(\.words)
+            }
         }
 
         /// The names the log's rows show on a frequency with several bookmarks, as `RecentLog`

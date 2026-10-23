@@ -42,6 +42,42 @@ extension Bands {
     }
 }
 
+// MARK: The bookmarks' order
+
+/// The order of the bookmark rows under every band and under `Other` (docs/plans/app.md, MC-6),
+/// the person's choice in the sidebar's header and a view preference: by frequency, low to high
+/// as the rail and the spectrum run, ties by name; or by name, A to Z, ties by frequency. A row
+/// that stands for several entries on one frequency (`BookmarkGroup`) sorts by its first. The
+/// Channels picker keeps the plan's order and the filter's matches their own (`SidebarIndex`),
+/// and `ley bookmarks` the file's.
+public enum BookmarkSort: String, Sendable, CaseIterable {
+    case frequency, name
+
+    /// The rows in this order. Names compare without case, then as written, then by id, so two
+    /// runs never disagree.
+    public func sorted(_ groups: [BookmarkGroup]) -> [BookmarkGroup] {
+        groups.sorted { a, b in
+            let (x, y) = (a.lead, b.lead)
+            let nameKey = { (b: Bookmark) in (b.name.lowercased(), b.name) }
+            switch self {
+            case .frequency:
+                if x.hz != y.hz { return x.hz < y.hz }
+                if nameKey(x) != nameKey(y) { return nameKey(x) < nameKey(y) }
+            case .name:
+                if nameKey(x) != nameKey(y) { return nameKey(x) < nameKey(y) }
+                if x.hz != y.hz { return x.hz < y.hz }
+            }
+            return x.id < y.id
+        }
+    }
+
+    /// The other order, which the header's control switches to.
+    public var next: BookmarkSort { self == .frequency ? .name : .frequency }
+
+    /// `Sorted by frequency`, the control's help with what a click does after it.
+    public var words: String { "Sorted by \(rawValue)" }
+}
+
 // MARK: The out-of-range line
 
 /// The rows the radio cannot tune and the one dim line that stands in for them, `17 bands out of

@@ -145,6 +145,28 @@ final class AppSession {
             followAudioLevels()
         }
     }
+    /// The order of the sidebar's bookmark rows (`BookmarkSort`, MC-6), the header's control.
+    /// A view preference, remembered in the defaults under `bookmarkSortKey` as `inspectorShown`
+    /// is, and never written in a staged run; by frequency until someone picks name.
+    var bookmarkSort =
+        UserDefaults.standard.string(forKey: AppSession.bookmarkSortKey)
+        .flatMap(BookmarkSort.init(rawValue:)) ?? .frequency
+    {
+        didSet {
+            if unstaged {
+                UserDefaults.standard.set(bookmarkSort.rawValue, forKey: Self.bookmarkSortKey)
+            }
+        }
+    }
+    /// The header's sort control: the other order.
+    func toggleBookmarkSort() {
+        bookmarkSort = bookmarkSort.next
+        log("sidebar", "bookmarks \(bookmarkSort.words.lowercased())")
+    }
+    /// The bookmark rows of one sidebar row, `bookmarks` filed under it, in the chosen order.
+    func bookmarkRows(_ bookmarks: [Bookmark]) -> [BookmarkGroup] {
+        bookmarkSort.sorted(BookmarkGroup.grouped(bookmarks))
+    }
     /// Which of the window's two places shows, the toolbar's `Radio | Library`. The live radio keeps running in the Library: its channel, sink and
     /// subscriptions are the session's, not the Radio body's. Remembered in the defaults under
     /// `placeKey`, the way `inspectorShown` is. Arriving in the Library selects its first channel
@@ -426,6 +448,7 @@ final class AppSession {
         } ?? want
     }
     private static let inspectorShownKey = "inspectorShown"
+    private static let bookmarkSortKey = "bookmarkSort"
     private static let placeKey = "place"
     private static let assistantShownKey = "assistantShown"
 

@@ -1864,6 +1864,14 @@ A merged row (MC-5) sorts by its first entry. Plan channels in the Channels pick
 order, and the filter's matches keep their own order (tuned band first, then by frequency).
 `ley bookmarks` keeps the file's order.
 
+Built 2026-10-23 in a batch lane, which launches no app; not ticked until a verify run on the Mac
+has recorded the pictures. `BookmarkSort.sorted` is the rule, unit-tested; names compare without
+case. The control is one button (`sidebar.sort`, `arrow.up.arrow.down` by frequency,
+`textformat` by name) whose help says the order and what a click does; the defaults key is
+`bookmarkSort`. `state` gains `sort` and `bookmark_rows`, and `merged-bookmarks` presses the
+control. Every scene's tree and picture of the sidebar's header gains the button, so their
+goldens are re-recorded once.
+
 ### MC-7 `[ ]` The band rail for a capture wider than the band (2026-10-23, for 0.2.0)
 
 Found in the owner's QA with a HackRF at 20 MHz. The rail was built when the capture (an RTL-SDR's

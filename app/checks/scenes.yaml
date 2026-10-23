@@ -537,9 +537,11 @@ scenes:
   # under inspector.entry.<name>; the volume caption, in the tree, says `Club net +1`; and over
   # scene_club, whose stations key the two tones in turns (each twice in its 40 s loop), the
   # entry marked on air follows the tone heard and the log names each over by its entry. The
-  # log and the heard tone are masked; the log lines and state say what they showed.
+  # log and the heard tone are masked; the log lines and state say what they showed. Then the
+  # header's sort control (MC-6) puts the rows A to Z, the merged row by its first entry, and
+  # back to frequency order.
   - name: merged-bookmarks
-    covers: [BookmarkGroup.swift, Tone.swift, SidebarView.swift, InspectorView.swift,
+    covers: [BookmarkGroup.swift, Tone.swift, SidebarView.swift, Sidebar.swift, InspectorView.swift,
       InspectorGroups.swift, Transmissions.swift, TransportBarView.swift]
     fixtures: [{name: scene_club}]
     clock: "19:42"
@@ -564,6 +566,18 @@ scenes:
       - {cmd: state, expect: {bookmark: Club net, log_names: Club net · Club repeater}}
       # The file still holds both entries.
       - {cmd: ley, args: [bookmarks, --json], expect_stdout: ['"name":"Club net"', '"name":"Club repeater"']}
+      # The header's sort control (MC-6): by frequency, then by name, the merged row by its
+      # first entry, and back.
+      - {cmd: ley, args: [bookmarks, add, "146.7", --name, Zulu]}
+      - {cmd: ley, args: [bookmarks, add, "147.1", --name, Alpha]}
+      - {cmd: wait, seconds: 1.5}
+      - {cmd: state, expect: {sort: frequency, bookmark_rows.0: Zulu, bookmark_rows.1: Club net +1, bookmark_rows.2: Alpha}}
+      - {cmd: press, identifier: sidebar.sort}
+      - {cmd: state, expect: {sort: name, bookmark_rows.0: Alpha, bookmark_rows.1: Club net +1, bookmark_rows.2: Zulu}, expect_log: 'sidebar: bookmarks sorted by name'}
+      - {cmd: snapshot, name: byname}
+      - {cmd: ax, name: byname}
+      - {cmd: press, identifier: sidebar.sort}
+      - {cmd: state, expect: {sort: frequency, bookmark_rows.0: Zulu}}
 
   # Scan band on the tuned 2 m row (docs/plans/app.md, U5), as the site's scan-app shot runs it:
   # once the sweep's hits show, the audio is back on Calling with the band's mode and width; the
