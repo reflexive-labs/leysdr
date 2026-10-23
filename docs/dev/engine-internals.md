@@ -648,6 +648,16 @@ the variable is the platform default (`SecretsKind`, `defaultSecretStore`). Befo
 `AI keys in <path>`, or `AI keys in the login keychain`; every test harness and `daemonrun` read
 that line and refuse a daemon that does not name a file under its own `--data`.
 
+A keychain call that fails is logged with the Security framework's words and its `OSStatus`
+(`KeychainSecrets`), and a read that fails reaches the caller as `CREDENTIAL_MISSING` in those
+words, `cannot read the openai key from the keychain: User interaction is not allowed. (OSStatus
+-25308); add it again with ley ai add openai`, rather than as "no openai key is set". The keychain
+refuses a program its item's access list does not name with `errSecAuthFailed`,
+`errSecInteractionNotAllowed`, `errSecInvalidOwnerEdit`, `errSecNoAccessForItem` or
+`errSecUserCanceled`; a source build signed ad hoc is a new program after every relink, so when a
+daemon in a build directory or in `make reload`'s copy gets one of those the remedy is `run make
+reload, then add the key again` (`KeychainFailure`, [setup](setup.md), "The edit-build-try loop").
+
 The daemon makes no model call. A check runs `ley worker check --provider P [--endpoint E]` with
 `LEYLINE_SOCKET` set to the daemon's socket, writes the secret and a newline to its stdin and reads
 one JSON line, `{"outcome": "accepted"|"rejected"|"unavailable", "message": "…"}`, within 30 s
@@ -868,7 +878,7 @@ and neither a radio someone else is using nor a provider account at its limit ma
 | `SCAN_NOT_FOUND` | `NOT_FOUND` | no scan result with that id (sixteen are kept) |
 | `DECODER_NOT_FOUND` | `NOT_FOUND` | no installed decoder by that name (`ley decoders` lists them) |
 | `DECODER_FAILED` | `FAILED_PRECONDITION` | the decoder's program could not be started: missing, not executable, or exited before reading its descriptor |
-| `CREDENTIAL_MISSING` | `FAILED_PRECONDITION` | the feature or decoder needs a provider's key and none is set; the message names `ley ai add <provider>` |
+| `CREDENTIAL_MISSING` | `FAILED_PRECONDITION` | the feature or decoder needs a provider's key and none is set, or the store cannot give it up (the message then carries the store's words and status); the message names `ley ai add <provider>` |
 | `CREDENTIAL_REJECTED` | `FAILED_PRECONDITION` | the provider refused the key itself |
 | `PROVIDER_UNAVAILABLE` | `UNAVAILABLE` | the provider, or the worker that calls it, could not be reached |
 | `PROVIDER_REFUSED` | `FAILED_PRECONDITION` | the provider refused a request for its own reason, such as a rate or spend limit; the message is the provider's |

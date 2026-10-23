@@ -230,10 +230,15 @@ package struct EngineError: Error, Hashable, Sendable, CustomStringConvertible {
     package static func platformUnsupported(_ what: String) -> EngineError { .init(code: Code.platformUnsupported, message: "\(what) requires macOS", target: "") }
     package static func decoderNotFound(_ name: String) -> EngineError { .init(code: Code.decoderNotFound, message: "no decoder named \(name) is installed", target: name) }
     package static func decoderFailed(_ msg: String, target: String = "") -> EngineError { .init(code: Code.decoderFailed, message: msg, target: target) }
-    /// `detail` is why the key could not be read when one may exist (the keychain's own message).
-    package static func credentialMissing(_ provider: String, detail: String = "") -> EngineError {
-        let why = detail.isEmpty ? "" : " (\(detail))"
-        return .init(code: Code.credentialMissing, message: "no \(provider) key is set\(why); add one with ley ai add \(provider)", target: provider)
+    /// `detail` is why the key could not be read when one may exist (the keychain's own words and
+    /// status), and the message then starts with it rather than with "no … key is set". `remedy`
+    /// replaces "add it again with ley ai add <provider>" when the cause calls for more.
+    package static func credentialMissing(_ provider: String, detail: String = "", remedy: String = "") -> EngineError {
+        guard !detail.isEmpty else {
+            return .init(code: Code.credentialMissing, message: "no \(provider) key is set; add one with ley ai add \(provider)", target: provider)
+        }
+        let then = remedy.isEmpty ? "add it again with ley ai add \(provider)" : remedy
+        return .init(code: Code.credentialMissing, message: "\(detail); \(then)", target: provider)
     }
     /// `providerMessage` is the provider's own words, passed on unedited.
     package static func credentialRejected(_ provider: String, providerMessage: String) -> EngineError { .init(code: Code.credentialRejected, message: "\(provider) refused the key: \(providerMessage); paste a working key with ley ai add \(provider)", target: provider) }
