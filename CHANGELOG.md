@@ -5,31 +5,40 @@ What changed for someone using Leyline, newest first. Each released version has 
 
 ## Unreleased
 
-- **AI on your own key.** Settings > AI and `ley ai` add, check and remove a key for Anthropic,
-  OpenAI or an OpenAI-compatible endpoint, choose the provider and model for each feature, and
-  show what each one used by day and month. The engine keeps the key in the login keychain and
-  sends it only to its provider. Adding a key sets every feature it can serve that has no choice
-  yet; `ley ai use` changes one.
+Leyline 0.2 adds AI on your own provider key: an assistant in the app that runs the radio from
+plain requests, and speech-to-text for each over on a recording or a live channel.
+
 - **The assistant.** A column beside the inspector (the toolbar's Assistant button, or View >
-  Show Assistant) takes plain requests and runs the radio with `ley mcp`'s tools: it tunes, sets
-  the squelch, scans, keeps bookmarks, and shows a band, a place or a recording in the window.
-  Each step opens to its arguments and result. A call that changes something asks first, in
-  words, with Decline, Allow in this chat and Allow, and says when it would take the radio from
-  another listener. Stop ends a turn. Conversations are kept across a restart of the engine. The
-  assistant never hears the audio.
-- **The window follows the radio.** When the assistant or a terminal's `ley tune` makes a
-  channel on the window's radio, the readout, the inspector, the transmissions log and the audio
-  move to it, and the inspector says who tuned. While the window's old channel is still
-  recording, the inspector shows Still recording with a Stop.
-- **Speech.** The speech decoder transcribes each over through OpenAI's speech API: `ley
-  transcribe` over a recording, `ley decode speech` on a live channel with each over kept as a
-  clip, and `ley watch speech --where 'text~net control'`. The Library shows each over's words,
-  searches them, plays one over and exports them as text or SRT. `ley play --over`, `--from` and
-  `--to` play part of a recording.
+  Show Assistant, ⇧⌘A, once a key is added) takes plain requests and runs the radio with
+  `ley mcp`'s tools: it tunes, sets the squelch, scans, records, keeps bookmarks, and moves the
+  window to a band, the Library or a recording. Each step opens to its arguments and result. A
+  call that takes the radio from another listener, deletes a recording, starts a kept job or paid
+  transcription, imports or removes bookmarks, or follows text received over the air asks first,
+  in words, with Decline, Allow in this chat and Allow. Stop ends a turn. Conversations are kept
+  across a restart of the engine. The assistant never hears the audio.
+- **AI on your own key.** Settings > AI and `ley ai` add, check and remove a key for Anthropic,
+  OpenAI or an OpenAI-compatible server, choose the provider and model for each feature, and show
+  the requests and tokens each one used by day or month, with no prices. The engine keeps the key
+  in the login keychain and never returns it to a client. Adding a key gives every feature it
+  serves that has no model yet the provider's default (OpenAI: gpt-5 and whisper-1; Anthropic:
+  claude-sonnet-5-5 for the assistant); `ley ai use` changes one. Settings says, for each
+  feature, what it sends to which host.
+- **Speech.** The speech decoder sends the audio of each over, and none of the silence between,
+  to OpenAI's transcription API or the server a key's endpoint names, and keeps the words tied to
+  the over: `ley transcribe` over a gated recording, after stating the minutes and the host;
+  `ley decode speech --freq` on a live channel, with each over kept as a clip; and
+  `ley watch speech --freq 146.52 --where 'text~net control'`. The Library transcribes a gated
+  recording, shows each over's words and the callsigns a pattern found in them, searches them,
+  plays one over and exports them as text or SRT. `ley play --over`, `--from` and `--to` play
+  part of a recording. There is no on-device speech engine yet.
+- **The window follows the radio.** When another client (the assistant, a terminal's `ley tune`,
+  an agent on `ley mcp`) makes a channel on the window's radio, the readout, the inspector, the
+  transmissions log and the audio move to it, and the inspector says who tuned. While the
+  window's old channel is still recording, the inspector shows Still recording with a Stop.
 - **`ley mcp`.** Eleven more tools: `set`, `stop`, `list_bookmarks`, `add_bookmark`,
   `remove_bookmark`, `list_bands`, `list_presets`, `watch`, `attach_device`, `import_chirp` and
-  `help`. `set` asks before it changes another client's channel, and each tool's text starts with
-  what it did.
+  `help`. `set` refuses to change another client's channel until `take_over`, as `tune` does, and
+  each tool's text starts with what it did.
 - **The sidebar.** An open band's Scan band and Channels are rows under its header, and the
   words are shorter (`17 bands out of range ›`, `sq auto`). A band the radio cannot tune reads
   disabled. A bookmark near a plan channel reads `≈` and the channel. A scan hit tunes and
