@@ -1909,6 +1909,30 @@ owner's call:
 - **The trap is written down.** `docs/dev/setup.md` and `AGENTS.local.md` say not to run a
   LaunchAgent on a build directory a check rebuilds.
 
+### MC-9 `[ ]` A recording that falls behind says so (2026-10-23, for 0.2.0)
+
+Found while fixing CI: on a slow runner the debug daemon fell behind 2.4 MSPS playback (`ring
+overrun: 386 blocks dropped`), and a recording part's WAV then held less audio than its manifest
+claimed (`37356.0` against `48000.0`). Invariant 3 says anything that must not drop samples is a
+daemon-side FileSink. When the pipeline cannot keep up, a recording must at least never claim audio
+it did not write. The owner's calls:
+
+- **A gap is recorded, not hidden.** When samples are dropped upstream of a recording, the part's
+  manifest records each gap: its sample time and length on the capture's timebase (invariant 5),
+  and the part's written duration is the audio actually written. A part with gaps says so in
+  `ley recordings` and in the Library (a faint mark on the part's row, and the gaps on its
+  timeline). The daemon logs and emits an event per gap, carrying full state (invariant 6). Any
+  proto change is additive, with its `ley` mirror.
+- **The hot path stays allocation-free** (invariant 4): a gap is counted where the overrun is
+  already detected and written by the sink's writer, never with allocation or a lock on the
+  sample path. `make hot-path` proves it.
+- **A test forces an overrun** (a throttled sink or a blocked writer) and checks that the manifest's
+  duration matches the WAV, that the gaps are listed, and that the event arrives.
+- **CI runs the engine's real-time tests optimised.** The macOS and Linux engine jobs run `swift
+  test -c release -Xswiftc -enable-testing`, nearer the daemon people run, with a smaller debug run
+  kept for the checks that need debug (assertions). Tests that time real-time work state their
+  margin.
+
 ## Backlog
 
 - **Two frequency affine maps remain separate.** `SquelchTrack` and `GainSlider` share
