@@ -3,8 +3,10 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 
 	"github.com/reflexive-labs/leysdr/go/pkg/dcs"
@@ -306,6 +308,44 @@ func sceneWXCarriers() []sceneCarrier {
 	}
 }
 
+// The scene_club stations: two bookmarks' worth of one repeater (docs/plans/app.md, MC-5), on
+// 146.940 MHz in a capture around 146.910 MHz at 480 kSPS. The club repeater keys under PL 127.3
+// and the club's net under PL 100.0, in turns with 3 s between them, so a scene sees the heard
+// tone name one entry and then the other. Forty seconds is 38 MB, each keys twice, and the gap
+// at the loop's join is 7 s.
+const (
+	sceneClubCenterHz  = 146_910_000
+	sceneClubRate      = 480_000
+	sceneClubDurationS = 40
+)
+
+func sceneClubCarriers() []sceneCarrier {
+	return []sceneCarrier{
+		// The repeater, PL 127.3: the first expect entry, so ley play tunes it.
+		{offsetHz: 30_000, dbfs: -18, voiceSeed: 81, toneHz: 127.3, segs: []keySegment{{2, 8}, {20, 26}}},
+		// The net on the same frequency, PL 100.0, between the repeater's overs.
+		{offsetHz: 30_000, dbfs: -18, voiceSeed: 82, toneHz: 100.0, segs: []keySegment{{11, 17}, {29, 35}}},
+	}
+}
+
+// sceneClubExpect is the one channel both stations share: its overs are the two stations' in
+// time order, and its tone changes from over to over, so it carries no sub-audible expectation
+// (one tone for the whole file is what that checks).
+func sceneClubExpect() iqfile.Expect {
+	cs := sceneClubCarriers()
+	e := cs[0].expect(true)
+	e.SubAudible = nil
+	var segs []iqfile.RecordSegment
+	for _, c := range cs {
+		for _, s := range c.segs {
+			segs = append(segs, iqfile.RecordSegment{StartS: s.startS, EndS: s.endS})
+		}
+	}
+	slices.SortFunc(segs, func(a, b iqfile.RecordSegment) int { return cmp.Compare(a.StartS, b.StartS) })
+	e.Record.Segments = segs
+	return e
+}
+
 // sceneQuietExpect is a channel on a capture with nothing in it: the floor through a 12.5 kHz
 // channel, with the squelch at the checker's reference closed.
 func sceneQuietExpect(offsetHz, rate float64) iqfile.Expect {
@@ -520,6 +560,15 @@ var sceneFixtures = []fixture{
 			}
 			return out
 		},
+	},
+	{
+		name: "scene_club", centerHz: sceneClubCenterHz, set: sceneSet, format: iqfile.FormatCU8,
+		fixedRate: sceneClubRate, fixedDurationS: sceneClubDurationS, noiseDBFS: sceneNoiseDBFS,
+		label:       sceneRadio,
+		description: "one repeater on 146.940 heard as two bookmarks: the club repeater's overs under PL 127.3 and the club net's under PL 100.0, in turns; speech-shaped voice",
+		metadata:    sceneMetadata(146_940_000),
+		build:       func(rate float64) []source { return sources(rate, sceneClubCarriers()) },
+		expect:      func(float64) []iqfile.Expect { return []iqfile.Expect{sceneClubExpect()} },
 	},
 }
 

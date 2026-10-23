@@ -101,6 +101,25 @@ public enum Tone: Sendable, Hashable {
         }
     }
 
+    /// Whether the daemon heard this tone (docs/plans/app.md, MC-5): a CTCSS tone when the
+    /// standard tone it classified is this one, compared in the spelling both write (`100.0`),
+    /// so the table's binary fractions never decide it; a DCS code when the code and the
+    /// polarity are both this one's. The wire carries the code's octal digits read as decimal
+    /// (`SubAudibleTone.dcs`, 023 as 23), so this code is read that way first. A code and its
+    /// inverted alias (D023I is on the air as D047N) are not matched to each other: each is
+    /// matched only as written.
+    public func matches(_ heard: SubAudibleTone) -> Bool {
+        switch (self, heard) {
+        case (.ctcss(let hz), .ctcss(let standardHz, _)):
+            return Self.formatCTCSS(hz) == Self.formatCTCSS(standardHz)
+        case (.dcs(let code, let inverted), .dcs(let wire, let heardInverted)):
+            let digits = (code >> 6 & 7) * 100 + (code >> 3 & 7) * 10 + (code & 7)
+            return digits == wire && inverted == heardInverted
+        default:
+            return false
+        }
+    }
+
     /// One decimal, Go's `%.1f`.
     private static func formatCTCSS(_ hz: Double) -> String { String(format: "%.1f", hz) }
 }

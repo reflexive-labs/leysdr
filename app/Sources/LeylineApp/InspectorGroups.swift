@@ -65,6 +65,9 @@ struct RecentLog: View {
         let closed = Array((log?.closed ?? []).prefix(max(0, room)))
         // The live dot: a part is being written while the job runs and the squelch is open.
         let writing = open != nil && session.recordingJob?.state == .running
+        // Several bookmarks on this frequency: each row names the one whose tone it carried,
+        // else the first (MC-5).
+        let group = session.tunedGroup.flatMap { $0.isMerged ? $0 : nil }
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 SectionHeader(text: "Transmissions")
@@ -87,7 +90,8 @@ struct RecentLog: View {
                         length: Reading.seconds(session.timeOnAirSeconds ?? .nan),
                         lengthInk: Theme.inkSecondary,
                         signal: session.channelReading?.signalWord?.word ?? Reading.absent,
-                        tone: open.tone, open: true, trailing: writing ? .writing : .empty,
+                        tone: open.tone, name: group?.entry(heard: open.tone).name, open: true,
+                        trailing: writing ? .writing : .empty,
                         startMarker: open.startMarker)
                 }
                 // Keyed by capture and start sample, so a new transmission adds a row instead of
@@ -99,7 +103,7 @@ struct RecentLog: View {
                         time: Text(timeWords(t)).foregroundStyle(ink),
                         length: Reading.seconds(t.seconds), lengthInk: ink,
                         signal: SignalWord(overNoiseDB: t.peakSNRDB)?.word ?? Reading.absent,
-                        tone: t.tone, open: false,
+                        tone: t.tone, name: group?.entry(heard: t.tone).name, open: false,
                         trailing: uri.map { LogRow.Trailing.part(part($0, row: t.start)) }
                             ?? .empty,
                         startMarker: t.startMarker, endMarker: t.endMarker
@@ -220,7 +224,9 @@ struct RecordSwitch: View {
 /// the row's bottom as far as it has played, on the open row a 6 pt `accentRec` dot while a part
 /// is being written, and on a heard row nothing. A row a recording's switch began or ended
 /// (`TransmissionLog.mark`) has a 2 pt `accentRec` bar the row's height in its leading padding,
-/// before the time.
+/// before the time. On a frequency with several bookmarks the row's word is the name of the
+/// entry it is logged under, in `inkSecondary` and cut at the tail (`19:42  Club net · PL
+/// 100.0`), and the signal word moves to its tooltip: the panel holds one of them, not both.
 struct LogRow: View {
     /// A recorded part's control on the row.
     struct Part {
@@ -243,6 +249,8 @@ struct LogRow: View {
     let lengthInk: Color
     let signal: String
     let tone: SubAudibleTone?
+    /// The entry the row is logged under, on a frequency with several bookmarks; else nil.
+    var name: String? = nil
     let open: Bool
     var trailing: Trailing = .empty
     /// The markers that began and ended the transmission, when a recording's switch cut it.
@@ -256,10 +264,16 @@ struct LogRow: View {
             Text(length).font(Theme.Font.valueSmall).foregroundStyle(lengthInk)
                 .frame(width: Theme.Layout.logLengthWidth, alignment: .trailing)
             HStack(spacing: 0) {
-                Text(signal).foregroundStyle(Theme.inkTertiary)
-                toneText
+                if let name {
+                    Text(name).foregroundStyle(Theme.inkSecondary)
+                        .lineLimit(1).truncationMode(.tail)
+                } else {
+                    Text(signal).foregroundStyle(Theme.inkTertiary)
+                }
+                toneText.fixedSize()
             }.font(Theme.Font.valueSmall)
                 .frame(maxWidth: .infinity, alignment: .trailing)
+                .help(name == nil ? "" : signal)
             trailingColumn.frame(width: Theme.Layout.logPlayWidth, alignment: .trailing)
         }
         .padding(.horizontal, 6)

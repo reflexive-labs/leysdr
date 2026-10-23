@@ -1840,6 +1840,20 @@ them in the app:
 A check scene imports a CHIRP file with two entries on 146.940 MHz (PL 127.3 and PL 100.0) over a
 fixture that keys both tones.
 
+Built 2026-10-23 in a batch lane, which launches no app; not ticked until a verify run on the Mac
+has recorded `merged-bookmarks`. The façade groups (`BookmarkGroup.grouped`, the sidebar's order,
+so the first by name leads: `Club net +1`) by frequency alone, whatever the modes, because one
+frequency is one channel; a click on the row tunes the first entry's mode. `Tone.matches` holds
+a CTCSS tone to the classified standard tone and a DCS code to the wire's code and polarity; an
+inverted code is not matched to its normal alias (D023I is on the air as D047N, and the daemon
+reports the normal one), so such an entry names no over yet. The on-air mark is the heard words
+beside the speaker's Tone, `on air PL 127.3` in `good`, inside the region a check masks, which
+follows them from entry to entry; the log names an over in place of its signal word. The change
+note names no bookmark, so nothing there changed. `state` gains `entries`, `tuned_rows`,
+`tuned_row`, `on_air_entry` and `log_names`, and the app's log `on air: <entry> (<tone>)`. The
+fixture is `scene_club` (146.910 MHz at 480 kSPS, 40 s, the two stations on 146.940 in turns),
+and the file `fixtures/chirp/club.csv`.
+
 ### MC-6 `[ ]` Sorting the sidebar's bookmarks (2026-10-23, for 0.2.0)
 
 The owner's choice: the person picks the order. A small sort control in the sidebar's header row,
@@ -1849,6 +1863,14 @@ default. The choice is a view preference kept in UserDefaults and never written 
 A merged row (MC-5) sorts by its first entry. Plan channels in the Channels picker keep the plan's
 order, and the filter's matches keep their own order (tuned band first, then by frequency).
 `ley bookmarks` keeps the file's order.
+
+Built 2026-10-23 in a batch lane, which launches no app; not ticked until a verify run on the Mac
+has recorded the pictures. `BookmarkSort.sorted` is the rule, unit-tested; names compare without
+case. The control is one button (`sidebar.sort`, `arrow.up.arrow.down` by frequency,
+`textformat` by name) whose help says the order and what a click does; the defaults key is
+`bookmarkSort`. `state` gains `sort` and `bookmark_rows`, and `merged-bookmarks` presses the
+control. Every scene's tree and picture of the sidebar's header gains the button, so their
+goldens are re-recorded once.
 
 ### MC-7 `[ ]` The band rail for a capture wider than the band (2026-10-23, for 0.2.0)
 

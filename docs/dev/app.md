@@ -268,6 +268,33 @@ the log comes through `SampleClock` from the capture's anchor and is relative ot
 keeps no state of its own; its one write is a bookmark's name, through `BookmarkStore`. The
 signal readout is the panel's, not the transport bar's.
 
+**Bookmarks that share a frequency** (`BookmarkGroup.swift`, `../plans/app.md`, MC-5). Leyline
+has no tone squelch, so one frequency is one channel, and two bookmarks on it with different
+tones (a CHIRP export's repeater and its net) are two names for who is talking there. The file
+keeps every entry; the app draws them merged. `BookmarkGroup.grouped` takes the bookmarks in the
+sidebar's order and makes one group per frequency, whatever the entries' modes, with the first
+entry leading. The sidebar draws one row per group, the lead's name and identifier with a faint
+`+1` after the name, so one row reads tuned; its click tunes the lead's settings, and its Remove
+removes the lead alone. `AppSession.tunedGroup` is the tuned frequency's group and
+`tunedBookmark` its lead, which the inspector's title (`Club net +1`), the volume caption and
+`state`'s `bookmark` name. On a merged frequency the inspector lists each entry
+(`BookmarkEntryView`) with its own pencil, Remove, Tone and Note, and the title has no pencil. A
+new bookmark (⌘D) that joins a frequency after its lead is named in place in that list. The
+heard tone names the speaker: `Tone.matches` holds a CTCSS tone to the standard tone the daemon
+classified and a DCS code to the wire's code and its polarity (an inverted code's normal alias is
+not matched), `BookmarkGroup.speaker` takes the first entry with the heard tone, and the heard
+words sit beside that entry's tone, else the lead's, reading `on air PL 127.3` in `good` while
+the open transmission carries it. The log names each over by its entry, else the lead, in place
+of the signal word, which moves to the row's tooltip. The change note names no bookmark, so it
+has nothing to merge.
+
+**The bookmarks' order** (`BookmarkSort` in `Sidebar.swift`, `../plans/app.md`, MC-6). The
+control beside the sidebar's `+` (`sidebar.sort`) switches the bookmark rows under every band and
+under `Other` between frequency (the default, ties by name) and name (A to Z without case, ties
+by frequency); a merged row sorts by its first entry. It is a view preference,
+`AppSession.bookmarkSort` under the defaults key `bookmarkSort`, never written in a staged run.
+The Channels picker keeps the plan's order and the filter's matches their own.
+
 **Recording** (`Recordings.swift`; `AppSession`'s "Recording" and "Moving the radio over a
 recording" sections). A recording is a record job's output
 (`../design/recording.md`), and one rule decides every surface: a transmission is heard, a
@@ -948,7 +975,7 @@ and the next line still runs; a line with no `id` has no answer file, so it is o
 |---|---|---|
 | `stage` | `stage`: a stage object as above (`settle` is slept, `window` resizes) | `result.applied`: the steps, as the log lines give them |
 | `snapshot` | `settle`: seconds to wait first, default 0; `window`: `main` (the default) or `settings` | `out/<id>.png`, with the popover and the sheet open over the window drawn in at their places (a menu that is open is not); `result`: `scale`, `width_pt`, `height_pt` and `regions`, as `regions.json` gives them, `{}` for `regions` of the Settings window |
-| `state` | | `result`: `place`, `tuned_hz`, `mode`, `bandwidth_hz`, `channel_id`, `capture_id`, `band`, `bookmark`, `open_rows`, `filter_query`, `inspector_shown`, `assistant_shown`, `zoom`, `focused` (the focused control's identifier, else its role and label), `notices` (every message the window shows), `popover` (`channels:<row>`, `device_menu` or empty), `selected_recording_channel`, `selected_part`, `heard` (the tone the tuned channel last heard, as the inspector writes it: `PL 100.0`), `hits` (the last sweep's hits as its row lists them, strongest first), `muted` (the transport's speaker), `volume` (the window's own sink's, 0 to 1), `sink` (`own`, `other` when another client's sink plays the channel, `none`), `window` (`width`, `height`, `min_width`, `min_height` in points, toolbar included), `filter_caret` (the insertion point in the sidebar's filter while it has the focus), `settings_open`, `alert` (the sheet over the main window or Settings: `title`, `message`, `buttons` in order), `view_window` (`low_hz` and `high_hz`, the frequencies at the charts' two edges), `assistant` (while its panel shows: `turns`, each `role`, `text` and `stopped`; `state`, the header's word; `thinking`; `input`, the field's text; `input_focused`; `stop_shown`; `buttons`, each `id`, `title` and `enabled`; `question`, the card's sentence as drawn, and `note`, the line under it), `tooltip` (the help of what the last `hover` rested on, else the frequency under the pointer while it is over a chart), `transport` (the bar's words as drawn: `tuning`, the field's digits; `squelch_caption`, and `squelch_caption_short` when it is the short one; `squelch_words`, the three under the track joined by ` · `, empty once a narrow bar drops them; `null` without a bar); every key is present, `null` when it has no value |
+| `state` | | `result`: `place`, `tuned_hz`, `mode`, `bandwidth_hz`, `channel_id`, `capture_id`, `band`, `bookmark`, `open_rows`, `filter_query`, `inspector_shown`, `assistant_shown`, `zoom`, `focused` (the focused control's identifier, else its role and label), `notices` (every message the window shows), `popover` (`channels:<row>`, `device_menu` or empty), `selected_recording_channel`, `selected_part`, `heard` (the tone the tuned channel last heard, as the inspector writes it: `PL 100.0`), `hits` (the last sweep's hits as its row lists them, strongest first), `muted` (the transport's speaker), `volume` (the window's own sink's, 0 to 1), `sink` (`own`, `other` when another client's sink plays the channel, `none`), `window` (`width`, `height`, `min_width`, `min_height` in points, toolbar included), `filter_caret` (the insertion point in the sidebar's filter while it has the focus), `settings_open`, `alert` (the sheet over the main window or Settings: `title`, `message`, `buttons` in order), `view_window` (`low_hz` and `high_hz`, the frequencies at the charts' two edges), `assistant` (while its panel shows: `turns`, each `role`, `text` and `stopped`; `state`, the header's word; `thinking`; `input`, the field's text; `input_focused`; `stop_shown`; `buttons`, each `id`, `title` and `enabled`; `question`, the card's sentence as drawn, and `note`, the line under it), `tooltip` (the help of what the last `hover` rested on, else the frequency under the pointer while it is over a chart), `transport` (the bar's words as drawn: `tuning`, the field's digits; `squelch_caption`, and `squelch_caption_short` when it is the short one; `squelch_words`, the three under the track joined by ` · `, empty once a narrow bar drops them; `null` without a bar), `entries` (the bookmarks on the tuned frequency in the sidebar's order), `tuned_rows` (how many sidebar bookmark rows read tuned) and `tuned_row` (the first as drawn: `Club net +1`), `on_air_entry` (the entry the inspector marks on air, on a frequency with several), `log_names` (the names the log's rows are logged under there, each once, sorted, joined by ` · `), `sort` (the sidebar's bookmark order, `frequency` or `name`), `bookmark_rows` (the bookmark rows under the open band rows as drawn, in that order); every key is present, `null` when it has no value |
 | `ax` | `window`: `main` (the default; its popovers and sheets are in its tree), `settings` (the Settings window, while it is open: the stage's `settings` or the key `cmd+,` opens it), `popover` (the main window's open popover alone) or `sheet` (the sheet over the main window, else over Settings, alone) | `out/<id>.ax.txt`: the window's accessibility tree, one element per line indented two spaces a level: role, `id=` and the identifier when there is one, the label, `value=` when there is one (quoted, with `\`, `"` and newlines escaped), the frame in points from the window's top-left corner as the regions are measured (a text field's left edge and width only, `(38,– 161×–)`, because the AppKit field's height follows its text, 14 pt empty and 13 with text in the inspector's fields, while the row it sits in keeps its height; a group whose frame is the union of its children's and that holds a field spans what its other children span, top to bottom, for the same reason), `enabled` or `disabled`; `result`: as `snapshot`'s, so a reader can tell which elements lie in which region, and `{}` for the Settings window or a sheet over it; a popover or a sheet alone is framed from its window's corner |
 | `key` | `keys`: `cmd+g`, `shift+cmd+left`, `escape`, `return`, `down`… | a key down and up |
 | `type` | `text` | a key down and up for each character |
@@ -1002,14 +1029,14 @@ them and nothing else: an identifier changes no layout and no behaviour.
 | prefix | views |
 |---|---|
 | `toolbar.` | `place.radio`, `place.library`, `device` (the chip), `inspector`, `assistant` |
-| `sidebar` | the Radio's sidebar; `.filter`, `.add` (＋), `.list`, `.outofrange`, `.band.<id>` (a band row by its id in `bands.json`) with `.chevron`, `.scan` and `.channels` under it, `.bookmark.<name>`, `.hit.<label>` (a sweep's hit, by the name or frequency it shows, because the frequency it measured moves from run to run; a label two hits share is `-2`, `-3` on the second and later by frequency) with `.add` (its ＋), `.match.<id>` (a row of the filtered list) |
+| `sidebar` | the Radio's sidebar; `.filter`, `.sort` (the bookmarks' order, frequency or name), `.add` (＋), `.list`, `.outofrange`, `.band.<id>` (a band row by its id in `bands.json`) with `.chevron`, `.scan` and `.channels` under it, `.bookmark.<name>`, `.hit.<label>` (a sweep's hit, by the name or frequency it shows, because the frequency it measured moves from run to run; a label two hits share is `-2`, `-3` on the second and later by frequency) with `.add` (its ＋), `.match.<id>` (a row of the filtered list) |
 | `planpicker` | the Channels… popover; `.filter`, `.row.<channel>` |
 | `devicemenu` | the device chip's popover; `.rate`, `.gain.<stage>` and `.gain.<stage>.auto`, `.device.<id>` |
 | `rail` | the band rail; `.track`, `.below`, `.above`, `.zoom.out`, `.zoom.in`, `.channel.<channel>` and `.hit.<label>` (the ticks on the track; a hit's as the sidebar names it) |
 | `spectrum.` | `maxhold`, `clear` |
 | `tuning.` | `field` (the frequency's digits), `up`, `down` |
 | `transport` | the bar under the Radio; `.mute`, `.mode`, `.width`, `.squelch` with `.squelch.track`, `.volume` |
-| `inspector` | the Radio's inspector; its groups `.header`, `.identity`, `.readings`, `.audio`, `.log`, `.measurements`; its controls `.rename`, `.tone`, `.note`, `.revert`, `.save`, `.tuneinside`, `.record`, `.kept.stop` (the Stop of `Still recording …`), `.log.play` (a kept row's ▶ or ■; every row's is the same, and `press` takes the newest), `.measurements.toggle` |
+| `inspector` | the Radio's inspector; its groups `.header`, `.identity`, `.readings`, `.audio`, `.log`, `.measurements`; its controls `.rename`, `.tone`, `.note`, `.entry.<name>` (one of several bookmarks on the tuned frequency) with `.rename`, `.remove`, `.tone` and `.note` under it, `.revert`, `.save`, `.tuneinside`, `.record`, `.kept.stop` (the Stop of `Still recording …`), `.log.play` (a kept row's ▶ or ■; every row's is the same, and `press` takes the newest), `.measurements.toggle` |
 | `library.` | `sidebar`, `search`, `channel.<hz>`, `page`, `page.record`, `page.tune`, `day.<day>` (an EARLIER day's line) and `day.<day>.play`, `part.<n>` (counted from 0 down the page, as `select_part` counts), `inspector`, `inspector.playall`, `inspector.finder`, `inspector.delete` |
 | `player` | the Library's bar; `.previous`, `.play`, `.next`, `.volume` |
 | `assistant.` | `panel`, `new`, `input`, `stop`, `settings`, `decline`, `allow`, `allow.conversation`, `step.<call id>` (a step's row, which opens and closes it, by the id the daemon gave its tool call: `step.c1`) with `.json` (an opened step's JSON toggle, titled `JSON` or `Readable`) |
@@ -1037,7 +1064,7 @@ the waterfall, the out-of-capture words, each under `shown`), the failure state 
 the meter's numbers every thirty seconds,
 the FFT subscription's descriptor and a row count every thirty seconds, the audio ladder's
 subscription, its end or failure and a row count every thirty seconds, whether the shader
-compiled, the inspector shown or hidden, every bookmark added, renamed or removed, every
+compiled, the inspector shown or hidden, the entry on air on a frequency with several bookmarks (`on air: Club net (PL 100.0)`, `on air: none`), every bookmark added, renamed or removed, every
 recording started, stopped or refused, each manifest read with its part count, the store's
 listing when its count changes, and every retune question asked and answered (`record`), every clip played, stopped or ended and the live sink detached and attached around it
 (`playback`), and Stop Listening with whether the radio was freed. The line goes to the file, to stderr and to the unified log under `com.leysdr.app`.

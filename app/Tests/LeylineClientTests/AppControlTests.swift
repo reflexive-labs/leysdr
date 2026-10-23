@@ -145,14 +145,17 @@ final class AppControlTests: XCTestCase {
             back.keys.sorted(),
             [
                 "alert", "assistant", "assistant_shown", "band", "bandwidth_hz", "bookmark",
-                "capture_id", "channel_id", "filter_caret", "filter_query", "focused", "heard",
-                "hits", "inspector_shown", "mode", "muted", "notices", "open_rows", "place",
-                "popover", "selected_part", "selected_recording_channel", "settings_open", "sink",
-                "tooltip", "transport", "tuned_hz", "view_window", "volume", "window", "zoom",
+                "bookmark_rows", "capture_id", "channel_id", "entries", "filter_caret",
+                "filter_query", "focused",
+                "heard", "hits", "inspector_shown", "log_names", "mode", "muted", "notices",
+                "on_air_entry", "open_rows", "place", "popover", "selected_part",
+                "selected_recording_channel", "settings_open", "sink", "sort", "tooltip",
+                "transport",
+                "tuned_hz", "tuned_row", "tuned_rows", "view_window", "volume", "window", "zoom",
             ])
         for key in [
             "alert", "assistant", "filter_caret", "tooltip", "transport", "view_window", "volume",
-            "window",
+            "window", "tuned_row", "on_air_entry", "log_names",
         ] {
             XCTAssertTrue(back[key] is NSNull, key)
         }

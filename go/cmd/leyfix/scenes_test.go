@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -26,7 +27,7 @@ const maxSceneBytes = 300_000_000
 // sceneSetNames is the scenes set in catalog order.
 var sceneSetNames = []string{
 	"scene_2m", "scene_net", "scene_scan", "scene_aprs", "scene_ais",
-	"scene_gmrs", "scene_vhf20", "scene_wx", "scene_wx_on",
+	"scene_gmrs", "scene_vhf20", "scene_wx", "scene_wx_on", "scene_club",
 }
 
 // The check scenes' fixtures put their stations where the app's band table has them: GMRS
@@ -51,6 +52,7 @@ func TestCheckSceneStations(t *testing.T) {
 		{"scene_gmrs", sceneGMRSCarriers(), sceneGMRSCenterHz, sceneGMRSDurationS, 3, []float64{462_662_500, 462_562_500, 462_700_000}},
 		{"scene_vhf20", sceneVHF20Carriers(), sceneVHF20CenterHz, sceneVHF20DurationS, 1, []float64{146_520_000, 146_940_000, 151_820_000, 154_570_000, 156_800_000, 162_400_000}},
 		{"scene_wx_on", sceneWXCarriers(), sceneWXCenterHz, sceneWXDurationS, 0, []float64{162_400_000, 162_550_000}},
+		{"scene_club", sceneClubCarriers(), sceneClubCenterHz, sceneClubDurationS, 2, []float64{146_940_000, 146_940_000}},
 	}
 	for _, c := range cases {
 		if got := at(c.center, c.carriers); !slices.Equal(got, c.want) {
@@ -399,6 +401,37 @@ func TestSceneAISDecodes(t *testing.T) {
 		})
 		if !slices.Equal(got, exp.Decode.DeviceIDs) {
 			t.Errorf("channel %+.0f Hz decoded %v, want %v", exp.OffsetHz, got, exp.Decode.DeviceIDs)
+		}
+	}
+}
+
+// scene_club's two stations share 146.940 MHz and key in turns, never together, under PL 127.3
+// and PL 100.0; its one channel expects their overs in time order and no single tone.
+func TestSceneClubKeysTwoTonesInTurns(t *testing.T) {
+	cs := sceneClubCarriers()
+	if len(cs) != 2 || cs[0].toneHz != 127.3 || cs[1].toneHz != 100.0 {
+		t.Fatalf("scene_club stations %+v, want PL 127.3 then PL 100.0", cs)
+	}
+	var all []keySegment
+	for _, c := range cs {
+		all = append(all, c.segs...)
+	}
+	slices.SortFunc(all, func(a, b keySegment) int { return cmp.Compare(a.startS, b.startS) })
+	for i := 1; i < len(all); i++ {
+		if all[i].startS < all[i-1].endS+2 {
+			t.Errorf("overs %v and %v are under 2 s apart", all[i-1], all[i])
+		}
+	}
+	e := sceneClubExpect()
+	if e.SubAudible != nil {
+		t.Error("scene_club's channel expects one tone, but it carries two")
+	}
+	if e.Record == nil || len(e.Record.Segments) != len(all) {
+		t.Fatalf("scene_club's record expectation %+v, want %d overs", e.Record, len(all))
+	}
+	for i, s := range e.Record.Segments {
+		if s.StartS != all[i].startS || s.EndS != all[i].endS {
+			t.Errorf("record over %d is %+v, want %v", i, s, all[i])
 		}
 	}
 }

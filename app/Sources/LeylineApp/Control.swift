@@ -427,6 +427,8 @@ import LeylineClient
             if let n = s.assistantNotice { notices.append(n.text) }
             if let n = s.changeNote { notices.append(n.text) }
             if let k = s.keptRecording { notices.append(k.words) }
+            // The sidebar's rows, one per frequency (`BookmarkGroup.grouped`), that read tuned.
+            let tunedRows = BookmarkGroup.grouped(s.bookmarks.list).filter { $0.hz == s.tunedHz }
             var popover = ""
             if let b = s.pickerBand {
                 popover = "channels:\(b.id)"
@@ -463,7 +465,35 @@ import LeylineClient
                 // The charts draw their own readout under the pointer rather than a tooltip.
                 tooltip: hoverHelp
                     ?? s.pointerHz.map { "\(Frequency.fieldParts($0).major) MHz" },
-                transport: window.flatMap(Self.transportState))
+                transport: window.flatMap(Self.transportState),
+                entries: s.tunedGroup?.entries.map(\.name) ?? [],
+                tunedRows: tunedRows.count, tunedRow: tunedRows.first?.words,
+                onAirEntry: s.tunedGroup?.isMerged == true ? s.onAirEntry?.name : nil,
+                logNames: Self.logNames(s), sort: s.bookmarkSort.rawValue,
+                bookmarkRows: Self.bookmarkRows(s))
+        }
+
+        /// The bookmark rows under the open band rows, as the sidebar draws them
+        /// (`AppSession.bookmarkRows`), band by band down the list.
+        private static func bookmarkRows(_ s: AppSession) -> [String] {
+            let byRow = Dictionary(grouping: s.bookmarks.list) {
+                Bands.sidebarRow(for: $0.hz)?.id ?? ""
+            }
+            return s.sidebarRows.filter { s.isExpanded($0) }.flatMap { row in
+                s.bookmarkRows(byRow[row.id] ?? []).map(\.words)
+            }
+        }
+
+        /// The names the log's rows show on a frequency with several bookmarks, as `RecentLog`
+        /// names them (`BookmarkGroup.entry(heard:)`): each once, sorted, joined by ` · `.
+        private static func logNames(_ s: AppSession) -> String? {
+            guard let group = s.tunedGroup, group.isMerged, let log = s.transmissions else {
+                return nil
+            }
+            let tones = (log.onAir.map { [$0.tone] } ?? []) + log.closed.map(\.tone)
+            guard !tones.isEmpty else { return nil }
+            return Set(tones.map { group.entry(heard: $0).name }).sorted()
+                .joined(separator: " · ")
         }
 
         /// The transport bar's words as its elements read, so a word the bar dropped is absent; nil
