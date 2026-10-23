@@ -1525,6 +1525,7 @@ scenes:
   # band's step lands on its 5 kHz grid, and a hit's row tunes the channel it names (MC-1a). At
   # 1440 pt the squelch's three words and its long caption both show.
   - name: transport-tuning
+    covers: [TransportBarView.swift, Frequency.swift, FrequencyEntry.swift, InspectorView.swift]
     fixtures: [{name: scene_vhf20}]
     bookmarks: ../../site/shots/home.csv
     steps:
@@ -1568,6 +1569,7 @@ scenes:
   # The transport bar at the window's minimum (MC-1b): too narrow for the squelch's three words
   # and its long caption, so the words are dropped and the caption is the short one.
   - name: transport-narrow
+    covers: [TransportBarView.swift, AudioLevelsView.swift, SquelchCaption.swift, AudioLevels.swift]
     sizes: [{width: 900, height: 612}]
     fixtures: [{name: scene_vhf20}]
     bookmarks: ../../site/shots/home.csv
