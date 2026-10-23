@@ -1210,7 +1210,9 @@ final class AppSession {
             let dev = try pickDevice()
             if capture == nil, let other = movableCapture(on: dev) {
                 heldCapture.adopted(id: other.captureID, at: Date())
-                log("session", "adopted capture \(other.captureID) for \(band.name): it holds the radio")
+                log(
+                    "session",
+                    "adopted capture \(other.captureID) for \(band.name): it holds the radio")
             }
             // The capture's rate is the radio's setting: an existing capture keeps its own, a
             // new one opens at the remembered rate. The band only decides where the span sits.
