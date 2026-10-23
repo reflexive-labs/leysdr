@@ -56,6 +56,17 @@ func defaultSecretStore(dataPath: String, kind: SecretsKind? = SecretsKind.fromE
     #endif
 }
 
+/// Where `store` keeps keys, for the daemon's start-up line `AI keys in …`: the file's path, or
+/// `the login keychain`. A test harness reads that line and refuses a daemon that names the
+/// keychain, so a key a test adds can never reach the person's own.
+func secretStoreLocation(_ store: any SecretStore) -> String {
+    if let f = store as? FileSecrets { return f.path }
+    #if canImport(Security)
+    if store is KeychainSecrets { return "the login keychain" }
+    #endif
+    return "a store of \(type(of: store))"
+}
+
 /// `secrets/credentials.json`: a JSON object of provider name to secret, mode 0600, in a
 /// directory of its own kept at mode 0700. The data directory itself is not enough: the record
 /// store and the recordings may have created it 0755 first, and its mode is theirs. Every write

@@ -55,6 +55,15 @@ final class CredentialStoreTests: XCTestCase {
         XCTAssertEqual(try store.get(provider: "anthropic"), secret)
     }
 
+    /// The start-up line `AI keys in …` names the file's path or the keychain; the test harnesses
+    /// read it and refuse a daemon that names the keychain.
+    func testTheStartUpLineNamesWhereKeysAreKept() {
+        XCTAssertEqual(secretStoreLocation(FileSecrets(inData: "/tmp/d")), "/tmp/d/secrets/credentials.json")
+        #if canImport(Security)
+        XCTAssertEqual(secretStoreLocation(KeychainSecrets()), "the login keychain")
+        #endif
+    }
+
     func testSecretsRoundTripPerProvider() throws {
         let dir = try makeTempDir("secrets")
         defer { try? FileManager.default.removeItem(atPath: dir) }

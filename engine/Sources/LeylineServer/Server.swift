@@ -129,6 +129,8 @@ package final class Daemon: Sendable {
     let conversations: ConversationStore
     private let server: GRPCServer<HTTP2ServerTransport.Posix>
     private let log = Logger(label: "leyline.daemon")
+    /// `secretStoreLocation` of the key store, logged at start-up.
+    private let secretsLocation: String
     private let teardown = TeardownGate()
 
     package init(config: Config) {
@@ -145,10 +147,10 @@ package final class Daemon: Sendable {
         let recordStore = RecordStore(directory: config.storePath, capBytes: config.storeCapBytes, ageDays: config.storeAgeDays)
         let recordings = RecordingStore(directory: config.recordingsPath, capBytes: config.recordingsCapBytes,
                                         ageDays: config.recordingsAgeDays)
-        credentials = CredentialStore(path: CredentialStore.path(inData: config.dataPath),
-                                      secrets: config.secretStore
-                                          ?? defaultSecretStore(dataPath: config.dataPath,
-                                                                kind: config.secrets ?? SecretsKind.fromEnvironment()))
+        let secrets = config.secretStore
+            ?? defaultSecretStore(dataPath: config.dataPath, kind: config.secrets ?? SecretsKind.fromEnvironment())
+        secretsLocation = secretStoreLocation(secrets)
+        credentials = CredentialStore(path: CredentialStore.path(inData: config.dataPath), secrets: secrets)
         ledger = Ledger(path: Ledger.path(inStore: config.storePath))
         let usage = UsageRecorder(ledger: ledger, credentials: credentials, store: store)
         jobs = JobStore(store: store, allocator: allocator, decoders: decoders, records: recordStore,
@@ -260,6 +262,7 @@ package final class Daemon: Sendable {
         let conversations = conversations
         await conversations.load()
         await store.setConversationsProvider { await conversations.list() }
+        log.info("AI keys in \(secretsLocation)")
         log.info("leylined \(config.version) listening on \(config.socketPath)")
         var served: (any Error)?
         do { try await server.serve() } catch { served = error }
