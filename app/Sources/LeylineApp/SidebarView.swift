@@ -19,6 +19,8 @@ import SwiftUI
 struct SidebarView: View {
     @Environment(AppSession.self) private var session
     @FocusState private var filterFocused: Bool
+    /// When the plan picker last closed, by a pick, Escape or a click away.
+    @State private var pickerClosedAt: Date?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -87,7 +89,14 @@ struct SidebarView: View {
             if filterFocused != wanted { filterFocused = wanted }
         }
         .onChange(of: filterFocused) { _, has in
+            if has, !session.filterFocused, unaskedAfterPicker() {
+                filterFocused = false
+                return
+            }
             if session.filterFocused != has { session.filterFocused = has }
+        }
+        .onChange(of: session.pickerBand?.id) { was, now in
+            if was != nil, now == nil { pickerClosedAt = Date() }
         }
         // ⌘G from the Library asks for the focus before this field exists, so the change
         // above never fires; it is given once the field is in the window.
@@ -96,6 +105,21 @@ struct SidebarView: View {
                 DispatchQueue.main.async { filterFocused = true }
             }
         }
+    }
+
+    /// Whether the filter took the focus by itself as the plan picker closed: AppKit gives a
+    /// window that becomes key with nothing focused to its first key view, the filter, so
+    /// Space and the arrows typed there rather than muting and tuning. The filter takes the
+    /// focus on ⌘G (the session asks first) or a click only, so a focus within a second of the
+    /// close that no click in the window brought is given back.
+    private func unaskedAfterPicker() -> Bool {
+        guard let closed = pickerClosedAt, Date().timeIntervalSince(closed) < 1 else {
+            return false
+        }
+        let event = NSApp.currentEvent
+        let click =
+            event?.type == .leftMouseDown && event?.window?.styleMask.contains(.titled) == true
+        return !click
     }
 
     /// The list with nothing typed: the out-of-range line and, opened, its rows; the rows the
