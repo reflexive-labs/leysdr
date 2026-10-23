@@ -92,10 +92,37 @@
 # ../../fixtures/chirp/nofreq.csv is a CSV the CHIRP import refuses. `make app-check` runs a
 # release leylined whatever SWIFT_CONFIG says: a debug one plays scene_vhf20 at about half of real
 # time, so its timings would be wrong.
+#
+# The tiers (docs/plans/mac-loop.md, ML-11). smoke: true puts a scene in `make app-check-smoke`.
+# covers lists globs of the files under app/Sources whose behaviour the scene checks, written by
+# hand from what it presses and pictures; a glob without a / matches a file's name in either
+# target (SidebarView.swift), one with a / the path from app/Sources (LeylineApp/*.swift).
+# `make app-check-affected` runs the scenes whose covers match a file changed since the merge
+# base with main, and a change to a shared file below brings in the smoke scenes as well. Every
+# file in LeylineApp is covered by some scene or shared (go/cmd/leyshots, TestCheckCoverage).
+# serial: true runs a scene with nothing beside it under `leyshots check --jobs N`: the scenes on
+# scene_vhf20's 21 MS/s and the sweeps, whose timings a busy Mac would put out.
+
+# The files every scene leans on: the theme, the session and the window, the daemon's mirror,
+# and the staging and command-file code a check run drives the app through.
+shared: [Theme.swift, AppSession.swift, Staging.swift, Control.swift, AccessibilityTree.swift,
+  AppMenus.swift, WindowPicture.swift, DeterministicFrames.swift, AppLog.swift, AppControl.swift,
+  ShotStage.swift, KeyChord.swift, LeylineApp.swift, MainWindow.swift, Info.plist,
+  DaemonConnection.swift, DaemonMirror.swift, ClientIdentity.swift, SocketPath.swift,
+  HeldObject.swift, WriteCoalescer.swift, LeylineError.swift, JSONValue.swift,
+  ResourceBundle.swift]
 
 scenes:
   # The site's app-radio-2m inputs, without its on_air wait: the 2 m band open on Calling.
   - name: radio-2m
+    smoke: true
+    covers: [BrandMark.swift, SplashView.swift, Frequency.swift, SidebarView.swift,
+      BandRailView.swift, SpectrumView.swift, SpectrumFeed.swift, WaterfallView.swift,
+      WaterfallShader.swift, InspectorView.swift, InspectorGroups.swift, AudioLevelsView.swift,
+      MeterTrack.swift, Scale.swift, TransportBarView.swift, AudioOutputName.swift, Bands.swift,
+      Bookmarks.swift, Sidebar.swift, Streams.swift, SpectrumFold.swift, SampleClock.swift,
+      ClippedRows.swift, ChannelReading.swift, Reading.swift, AudioLevels.swift,
+      Transmissions.swift, FailureState.swift, FrequencyEntry.swift, bands.json]
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: ../../site/shots/home.csv
@@ -117,6 +144,9 @@ scenes:
   # (146.400 MHz centre at 2.88 MS/s, so 144.96 to 147.84 MHz). A file radio tunes only inside
   # the capture it was recorded with, so the name must lie there.
   - name: goto-bookmark
+    smoke: true
+    covers: [SidebarView.swift, LibraryView.swift, Sidebar.swift, Bookmarks.swift,
+      RetuneQueue.swift]
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: ../../site/shots/home.csv
@@ -164,6 +194,10 @@ scenes:
   # accessibility button too), then a band row's Channels…, whose popover the second tree holds,
   # and the device chip; last, Settings, opened by its key, whose AI pane the third tree holds.
   - name: identifiers
+    smoke: true
+    covers: [BandRailView.swift, SidebarView.swift, PlanPickerView.swift, DeviceMenuView.swift,
+      LibraryView.swift, SettingsView.swift, AISettingsView.swift, Scale.swift,
+      GainPreferences.swift, AISettings.swift]
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: ../../site/shots/home.csv
@@ -205,6 +239,7 @@ scenes:
   # follow the noise while it is muted, and no region masks them; the track itself moves with
   # the signal, about 1.2 % of the picture, hence the threshold.
   - name: sidebar-rows
+    covers: [SidebarView.swift, InspectorView.swift, Sidebar.swift, Bands.swift, Bookmarks.swift]
     threshold: 1.5
     fixtures: [{name: scene_2m}]
     clock: "19:42"
@@ -256,6 +291,7 @@ scenes:
   # finds no identifier on it. Up and Down are not sent: keys reach the main window, so the
   # picker's key monitor never sees them in a check run.
   - name: plan-picker
+    covers: [PlanPickerView.swift, SidebarView.swift, Sidebar.swift, Bands.swift]
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: ../../site/shots/home.csv
@@ -309,6 +345,8 @@ scenes:
   # with the reason under it, which a good tone, Escape (putting the saved value back) and a
   # tune to another bookmark each take away.
   - name: bookmark-fields
+    covers: [InspectorView.swift, SidebarView.swift, Bookmarks.swift, Tone.swift,
+      FrequencyEntry.swift]
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: ../../site/shots/home.csv
@@ -410,6 +448,7 @@ scenes:
   # the picture shows the words beside the field, and the tree reads it with the squelch's words
   # and level, which follow the noise between overs, masked as the squelch region.
   - name: heard-tones
+    covers: [InspectorView.swift, Tone.swift, ChannelReading.swift, Reading.swift]
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: ../../site/shots/home.csv
@@ -448,6 +487,7 @@ scenes:
   # 70 cm ones and GMRS's unnamed ch5 in the out-of-range fold; Club shows its tone and note;
   # and a note typed on Simplex survives the file imported again, which updates all nine.
   - name: chirp-import
+    covers: [SidebarView.swift, InspectorView.swift, CHIRP.swift, Bookmarks.swift, Sidebar.swift]
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     steps:
@@ -490,6 +530,7 @@ scenes:
   # tree is not kept: the levels move by a decibel between runs, and the two 41 dB hits trade
   # places, so state asserts the order where it is clear. The picture leaves the sidebar out.
   - name: scan-hits
+    covers: [SidebarView.swift, BandRailView.swift, Sweep.swift]
     threshold: 1.5
     fixtures: [{name: scene_scan}]
     clock: "19:42"
@@ -514,6 +555,7 @@ scenes:
   # The assistant with no AI provider set up (docs/plans/app.md, the assistant panel, K1): the
   # toolbar has no toggle and ⇧⌘A opens no column. (leyshots's stage has no assistant key yet.)
   - name: assistant-absent
+    covers: [AssistantPanel.swift, AISettings.swift]
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: ../../site/shots/home.csv
@@ -535,6 +577,7 @@ scenes:
   # picture and tree are taken, a key's Remove asks in a sheet that state, ax and press reach,
   # Cancel keeps the key, and the stage closes the window again.
   - name: settings-sheet
+    covers: [SettingsView.swift, AISettingsView.swift, AISettings.swift]
     fixtures: [{name: scene_2m}]
     bookmarks: ../../site/shots/home.csv
     ai: {script: assistant/hello.script}
@@ -565,6 +608,8 @@ scenes:
   # state; and the app quit and started again on the same daemon, which it finds tuned where it
   # left it.
   - name: pointer-and-menus
+    covers: [ChartMouse.swift, WaterfallView.swift, SidebarView.swift, AssistantPanel.swift,
+      LeylineApp.swift, AssistantController.swift, AssistantModels.swift, ChannelFollow.swift]
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: ../../site/shots/home.csv
@@ -605,6 +650,8 @@ scenes:
   # Check, the usage table and its switch, Remove asking and the row leaving, the column going
   # with the key, a refused Add putting the key back and a closed window clearing it follow.
   - name: settings-ai
+    covers: [SettingsView.swift, AISettingsView.swift, AssistantPanel.swift, LeylineApp.swift,
+      AISettings.swift]
     fixtures: [{name: scene_2m}]
     bookmarks: ../../site/shots/home.csv
     ai: {script: assistant/hello.script, key: false}
@@ -727,6 +774,8 @@ scenes:
   # ⇧⌘A is not sent: in a check run it never reaches View > Hide Assistant, which the menu
   # command reads instead.
   - name: assistant-conversation
+    covers: [AssistantPanel.swift, LibraryView.swift, AssistantController.swift,
+      AssistantModels.swift]
     fixtures: [{name: scene_2m}]
     bookmarks: ../../site/shots/home.csv
     ai: {script: assistant/conversation.script}
@@ -832,6 +881,7 @@ scenes:
   # over runs without a card; a delete offers Decline and Allow alone, enabled at once. Once a
   # tune has run its step carries the run's channel ids, so state carries the checks from there.
   - name: assistant-cards
+    covers: [AssistantPanel.swift, AssistantController.swift, AssistantModels.swift]
     sizes: [{width: 1440, height: 820}, {width: 1221, height: 820}]
     fixtures: [{name: scene_2m}]
     bookmarks: ../../site/shots/home.csv
@@ -898,6 +948,9 @@ scenes:
   # The pictures leave the inspector out: the fields of its identity come out a point taller
   # in some runs and move what is under them (docs/plans/app.md, "Found by the Mac checks").
   - name: assistant-view-tools
+    covers: [AssistantPanel.swift, BandRailView.swift, WaterfallView.swift, SpectrumView.swift,
+      LibraryView.swift, RecordingsPage.swift, PlayerBar.swift, AssistantViewTools.swift,
+      AssistantController.swift, AssistantModels.swift]
     sizes: [{width: 1000, height: 820}]
     fixtures: [{name: scene_2m}]
     bookmarks: ../../site/shots/home.csv
@@ -950,6 +1003,8 @@ scenes:
   # the recording's channel open with a line saying so; then `ley ask --continue` from a
   # terminal tunes the evening net and the window follows that too.
   - name: follow-assistant
+    covers: [InspectorView.swift, InspectorGroups.swift, AssistantPanel.swift, ChannelFollow.swift,
+      ChangeNote.swift, AssistantController.swift, Transmissions.swift]
     fixtures: [{name: scene_2m}]
     bookmarks: ../../site/shots/home.csv
     ai: {script: assistant/follow.script}
@@ -986,6 +1041,7 @@ scenes:
   # `ley set squelch -45` puts a line under the inspector's frequency naming it, and the
   # window's own next change, a step up with →, takes the line away.
   - name: change-note
+    covers: [InspectorView.swift, ChangeNote.swift]
     fixtures: [{name: scene_2m}]
     bookmarks: ../../site/shots/home.csv
     steps:
@@ -1014,6 +1070,9 @@ scenes:
   # `ley tune --persistent` is followed and ended with `ley stop`, and the window goes back to a
   # channel of its own at that frequency, mode and squelch, playing.
   - name: follow-terminal
+    covers: [TransportBarView.swift, AudioOutputName.swift, InspectorView.swift,
+      InspectorGroups.swift, ChannelFollow.swift, PartPlayback.swift, Recordings.swift,
+      Transmissions.swift]
     fixtures: [{name: scene_2m}]
     bookmarks: ../../site/shots/home.csv
     steps:
@@ -1076,6 +1135,9 @@ scenes:
   # terminal tunes the evening net with no audio as the daemon comes back: the window reconnects
   # onto that channel and stays muted.
   - name: follow-launch-and-daemon
+    covers: [MainWindow.swift, TransportBarView.swift, EngineAgent.swift, com.leysdr.daemon.plist,
+      ChannelFollow.swift, DaemonAgent.swift, DaemonConnection.swift, DaemonMirror.swift,
+      HeldObject.swift]
     fixtures: [{name: scene_2m}]
     bookmarks: ../../site/shots/home.csv
     ai: {script: assistant/follow.script}
@@ -1119,6 +1181,8 @@ scenes:
   # tuned channel and a click on a row picks it; ⌘D on ch5 makes a bookmark named ch5 with its
   # row open as an editor, and the pencil committed empty on ch21 one named ch21.
   - name: gmrs-plan
+    covers: [BandRailView.swift, PlanPickerView.swift, SidebarView.swift, InspectorView.swift,
+      TransportBarView.swift, Bands.swift, Sidebar.swift, Bookmarks.swift]
     fixtures: [{name: scene_gmrs}]
     steps:
       - ley: [set, squelch, "off"]
@@ -1170,6 +1234,9 @@ scenes:
   # A band sets a squelch it measures, which moves by a decibel between runs, so a terminal
   # sets one before each tree.
   - name: vhf-wide
+    serial: true
+    covers: [SidebarView.swift, BandRailView.swift, PlanPickerView.swift, InspectorView.swift,
+      Sidebar.swift, Bands.swift, RetuneQueue.swift, bands.json]
     fixtures: [{name: scene_vhf20}]
     bookmarks: ../../site/shots/home.csv
     steps:
@@ -1223,6 +1290,9 @@ scenes:
   # asks first; Cancel leaves the radio alone and Sweep anyway sweeps. After Stop Listening,
   # Scan band on NOAA sweeps, selects the band and plays it.
   - name: sweep-lifecycle
+    serial: true
+    covers: [SidebarView.swift, BandRailView.swift, ChartMouse.swift, WaterfallView.swift,
+      InspectorGroups.swift, LeylineApp.swift, Sweep.swift]
     fixtures: [{name: scene_vhf20}]
     bookmarks: ../../site/shots/home.csv
     sweep_dwell: 4
@@ -1320,6 +1390,8 @@ scenes:
   # scene_wx is the floor alone, so the row says nothing was heard and why, and the rail has
   # no hit ticks.
   - name: sweep-quiet
+    serial: true
+    covers: [SidebarView.swift, BandRailView.swift, Sweep.swift]
     fixtures: [{name: scene_wx}]
     steps:
       - ley: [set, squelch, "off"]
@@ -1336,6 +1408,31 @@ scenes:
       - {cmd: ax, name: quiet}
       - {cmd: snapshot, name: quiet}
 
+  # The Library on a part (docs/plans/app.md, the Library), as the site's library-net shot takes
+  # it on a shorter recording: a squelch-gated recording of Calling holds an over or two of
+  # scene_2m, and the Library opens on the first part, selected, so the channel page's rows, the
+  # part's inspector and the player all draw. No tree is kept: a part's start and length depend
+  # on where the recording caught the fixture's loop. Added for coverage (ML-11): no other scene
+  # selects a part.
+  - name: library-part
+    covers: [LibraryView.swift, RecordingsPage.swift, PartInspector.swift, PlayerBar.swift,
+      SpeechViews.swift, LibraryRows.swift, RecordingPages.swift, Recordings.swift,
+      LevelGraph.swift, SpeechRecords.swift]
+    threshold: 1.5
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [record, "146.52", --gate, squelch, --squelch, "-45", --for, 25s, --detach]
+      - wait: 27
+    stage:
+      place: library
+      select_part: 0
+      settle: 3
+    app:
+      - {cmd: state, expect: {place: library}}
+      - {cmd: snapshot, name: part}
+
   # The menus and the CHIRP import's words (docs/plans/app.md, U7 and the assistant panel's
   # K1): File ▸ Import CHIRP… after Show Recordings in Finder, View ▸ Show Assistant disabled
   # with no AI provider, the app menu's Settings… and Tune ▸ Stop Listening enabled. The import
@@ -1344,6 +1441,8 @@ scenes:
   # `ley bookmarks --tag sample` lists the nine; a CSV with no Frequency column is refused in
   # those words and leaves bookmarks.json as it was.
   - name: alert-and-menus
+    covers: [LeylineApp.swift, Updater.swift, CommandLineInstaller.swift, MainWindow.swift,
+      CHIRP.swift, AppUpdates.swift, CommandLineTool.swift, BuildInfo.swift]
     fixtures: [{name: scene_2m}]
     bookmarks: ../../site/shots/home.csv
     steps:
@@ -1375,6 +1474,7 @@ scenes:
   # brings: MURS 151's 11.25 kHz, WFM's 200 kHz, CW's 500 Hz. A terminal sets the mode and width
   # on the window's channel. At the minimum the inspector is cut at its foot, and the bar stays.
   - name: transport-sizes
+    covers: [TransportBarView.swift, MainWindow.swift, InspectorView.swift, AssistantPanel.swift]
     sizes: [{width: 900, height: 612}, {width: 1000, height: 820}, {width: 1100, height: 820}]
     fixtures: [{name: scene_vhf20}]
     bookmarks: ../../site/shots/home.csv
