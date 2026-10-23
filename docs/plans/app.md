@@ -1850,6 +1850,41 @@ A merged row (MC-5) sorts by its first entry. Plan channels in the Channels pick
 order, and the filter's matches keep their own order (tuned band first, then by frequency).
 `ley bookmarks` keeps the file's order.
 
+### MC-7 `[ ]` The band rail for a capture wider than the band (2026-10-23, for 0.2.0)
+
+Found in the owner's QA with a HackRF at 20 MHz. The rail was built when the capture (an RTL-SDR's
+2.4 MHz) was about the size of the view and narrower than the band. The rail draws two pills: the
+capture's span, and the zoomed view when the zoom is above 1. A drag moves the capture, a retune
+through `AppSession.pan`. The view always centres on the tuned frequency (`visibleRange`). The
+zoom is a factor of the capture, 1 to 8. And every plan and hit tick is its own tap target. With
+a capture wider than the band, `pan` cannot move the capture, the pills overflow the rail, the view
+at 1× is five times the band, and a press on the dense ticks tunes instead of dragging. The
+owner's calls:
+
+- **R-1. The thumb is the view.** The rail has one thumb: the waterfall's visible window, always
+  drawn. The capture is a faint underlay showing what the radio hears, with an overflow mark at the
+  end cap when it runs past the band.
+- **R-2. Dragging the thumb pans the view** inside the capture, with no retune. Only a drag past
+  the capture's edge moves the radio, as `pan` does today, keeping its push and ask rules. The
+  tuned channel never moves because the view did. When it is outside the view, an edge marker on
+  the spectrum (`▸ 146.940`) brings the view back to it. The assistant's `show_band` and
+  `ViewWindow` keep working on the same view state.
+- **R-3. + and − zoom by span.** Each step halves or doubles the width shown. The widest is the
+  capture. The narrowest is set by the spectrum's resolution (at least about 64 bins across).
+  Picking a band fits the view to the band, or to the whole capture when the capture is narrower.
+  The help says the span (`2 MHz across`). The stage key `zoom` takes a span.
+- **R-4. One gesture for the whole track.** No tick is its own tap target. A press that moves
+  drags the thumb. A click that does not move tunes the nearest tick within a few points (a
+  bookmark, a plan channel or a hit), else the frequency under the pointer on the band's grid.
+  Ticks too dense to tell apart draw as a density strip, and the nearest-tick click still works.
+- **Later (not 0.2): deep zoom.** On a 20 MHz capture, the daemon's spectrum bins are about 5 kHz
+  wide, so a view much under 200 kHz needs a narrower, daemon-side FFT of the view (invariant 2).
+  This needs its own plan item and its `ley` mirror.
+
+Checked on `scene_vhf20` (21 MSPS) and on the RTL-width 2 m scenes: the thumb's span against the
+spectrum's, a drag that leaves `tuned_hz` alone, a drag past the capture's edge that retunes, the
+edge marker, a click on a dense run of ticks tuning the nearest, and the zoom steps' spans.
+
 ## Backlog
 
 - **Two frequency affine maps remain separate.** `SquelchTrack` and `GainSlider` share
