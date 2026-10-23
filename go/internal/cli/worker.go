@@ -252,7 +252,7 @@ func reportCheckUsage(ctx context.Context, app *App, provider string) {
 	if err == nil {
 		defer c.Close()
 		_, err = c.Usage.ReportUsage(rctx, &leylinev1.UsageReport{
-			Provider: provider, Model: checkModelsPath, Feature: "check", Requests: 1, AtNs: time.Now().UnixNano(),
+			Provider: provider, Model: checkModelsPath, Feature: "check", Requests: 1,
 		})
 	}
 	if err != nil {

@@ -176,6 +176,30 @@ final class UsageLedgerTests: XCTestCase {
         }
     }
 
+    func testAReportIsDatedByTheDaemonsShiftedClock() async throws {
+        // A worker dates its report by its own clock, which knows nothing of `--wall-clock`; the
+        // daemon replaces that time with its own, so LAST USED reads on the clock CHECKED does.
+        let dir = try makeTempDir("usage-clock")
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let shift: Int64 = -3 * Self.dayNs
+        WallClock.setOffsetNs(shift)
+        defer { WallClock.setOffsetNs(0) }
+        try await withDaemon(dir: dir) { c in
+            var key = Leyline_V1_SetCredentialRequest()
+            key.provider = "anthropic"
+            key.secret = "sk-test-0000-abcd"
+            _ = try await c.credentials.setCredential(key, metadata: testMetadata)
+            let before = WallClock.nowNs()
+            _ = try await c.usage.reportUsage(self.report(input: 1, atNs: WallClock.realNowNs()), metadata: testMetadata)
+            let after = WallClock.nowNs()
+            let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            let used = state.ai.credentials.first?.lastUsedAtNs ?? 0
+            XCTAssertTrue((before...after).contains(used), "last used \(used) is not on the daemon's clock [\(before), \(after)]")
+            XCTAssertEqual(state.usage.first?.lastAtNs, used, "the ledger dates the report by the same clock")
+            XCTAssertEqual(state.usage.first?.day, Ledger.utcDay(used))
+        }
+    }
+
     func testADecodersUsageIsCountedUnderItsJob() async throws {
         let plugins = try makeTempDir("decoders")
         defer { try? FileManager.default.removeItem(atPath: plugins) }

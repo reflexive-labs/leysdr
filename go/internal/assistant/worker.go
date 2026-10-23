@@ -651,7 +651,6 @@ func (w *worker) reportUsage(ctx context.Context, u Usage) {
 		ConversationId: w.start.GetConversationId(), Requests: 1,
 		InputTokens: u.InputTokens, OutputTokens: u.OutputTokens,
 		CacheReadTokens: u.CacheReadInputTokens, CacheWriteTokens: u.CacheCreationInputTokens,
-		AtNs: time.Now().UnixNano(),
 	})
 	if err != nil {
 		w.logf("the response's usage was not reported: %v", err)
