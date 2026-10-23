@@ -368,10 +368,10 @@ struct BookmarkFieldsView: View {
                 label("Tone")
                 BookmarkField(
                     saved: bookmark.tone, placeholder: "100.0 or D023N",
+                    identifier: "inspector.tone",
                     onCommit: { session.editTunedBookmark(tone: $0) },
                     onRevert: { session.clearToneError() }
                 )
-                .accessibilityIdentifier("inspector.tone")
                 // Laid out with or without a tone, so the first tone heard neither moves the
                 // field nor pushes the panel below it down a point.
                 Text(session.heardTone.map { "heard \($0.words)" } ?? " ")
@@ -387,10 +387,9 @@ struct BookmarkFieldsView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 label("Note")
                 BookmarkField(
-                    saved: bookmark.note, placeholder: "A note",
+                    saved: bookmark.note, placeholder: "A note", identifier: "inspector.note",
                     onCommit: { session.editTunedBookmark(note: $0) }
                 )
-                .accessibilityIdentifier("inspector.note")
             }
         }
         .padding(.top, 4)
@@ -414,6 +413,7 @@ struct BookmarkFieldsView: View {
 struct BookmarkField: View {
     let saved: String
     let placeholder: String
+    let identifier: String
     let onCommit: (String) -> Void
     var onRevert: () -> Void
     @State private var draft: String
@@ -423,11 +423,12 @@ struct BookmarkField: View {
     /// was laid out at an empty field's 14 pt and on some runs kept it with the text in, a point
     /// taller than the 13 pt row it sits in.
     init(
-        saved: String, placeholder: String, onCommit: @escaping (String) -> Void,
-        onRevert: @escaping () -> Void = {}
+        saved: String, placeholder: String, identifier: String,
+        onCommit: @escaping (String) -> Void, onRevert: @escaping () -> Void = {}
     ) {
         self.saved = saved
         self.placeholder = placeholder
+        self.identifier = identifier
         self.onCommit = onCommit
         self.onRevert = onRevert
         _draft = State(initialValue: saved)
@@ -454,6 +455,8 @@ struct BookmarkField: View {
                 if !isFocused { revert() }
             }
             .modifier(TuningKeyGuard(focused: focused))
+            .accessibilityIdentifier(identifier)
+            .onTextLine(Theme.Font.value, height: Theme.Layout.valueFieldHeight)
     }
 
     private func revert() {
@@ -464,6 +467,17 @@ struct BookmarkField: View {
 }
 
 extension View {
+    /// The view laid over one blank line of `font`, which gives the row its first baseline. An
+    /// AppKit field's own baseline moved by a point between runs as the field was laid out at
+    /// an empty field's height or a filled one's, and a row aligned on it moved everything
+    /// under it; a line of text sits the same on every run.
+    func onTextLine(_ font: Font, height: CGFloat) -> some View {
+        Text(" ").font(font)
+            .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .leading)
+            .accessibilityHidden(true)
+            .overlay(alignment: .leading) { self }
+    }
+
     /// A plain text field's placeholder, drawn behind it in `inkFaint` while `shown`. The
     /// field's own placeholder takes the field's ink, and the system's placeholder colour is
     /// dimmed only by vibrancy, which a staged run's picture does not apply.

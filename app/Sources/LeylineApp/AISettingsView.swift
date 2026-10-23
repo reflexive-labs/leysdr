@@ -242,24 +242,23 @@ private struct AddKeyForm: View {
                 .accessibilityIdentifier("settings.ai.add.provider")
             }
             field("Label") {
-                TextField("optional, such as home", text: $label).modifier(SettingsField())
-                    .accessibilityIdentifier("settings.ai.add.label")
+                TextField("optional, such as home", text: $label)
+                    .modifier(SettingsField(identifier: "settings.ai.add.label"))
             }
             field("Key") {
-                SecureField("paste the key", text: $secret).modifier(SettingsField())
+                SecureField("paste the key", text: $secret)
                     // An API key is no password AutoFill holds. Without a content type a secure
                     // field reads as a password one; a type of the app's own, which AutoFill has
                     // nothing for, opts the field out of its suggestions. The window closing
                     // ends the edit first (below), or the list brought a closed Settings back.
                     .textContentType(Self.apiKeyContent)
                     .autocorrectionDisabled()
-                    .accessibilityIdentifier("settings.ai.add.key")
+                    .modifier(SettingsField(identifier: "settings.ai.add.key"))
             }
             if provider?.takesEndpoint == true {
                 field("Endpoint") {
                     TextField("empty for the provider's own API", text: $endpoint)
-                        .modifier(SettingsField())
-                        .accessibilityIdentifier("settings.ai.add.endpoint")
+                        .modifier(SettingsField(identifier: "settings.ai.add.endpoint"))
                 }
             }
             HStack {
@@ -398,11 +397,10 @@ private struct FeatureRowView: View {
         let models = ProviderCatalog.provider(shownProvider)?.models ?? []
         if typedProvider != nil || (models.isEmpty && !shownProvider.isEmpty) {
             TextField("model", text: $typedModel)
-                .modifier(SettingsField())
+                .modifier(SettingsField(identifier: "\(identifier).model"))
                 .frame(width: Theme.Layout.settingsPickerWidth)
                 .onSubmit { writeTyped() }
                 .onAppear { if typedProvider == nil { typedModel = row.model } }
-                .accessibilityIdentifier("\(identifier).model")
         } else if !models.isEmpty {
             Picker(
                 "",
@@ -532,17 +530,21 @@ private struct PeriodSwitch: View {
 /// `borderFocus` while it has the focus, `ink` text, and no system focus ring, which would draw
 /// in the system's accent colour.
 private struct SettingsField: ViewModifier {
+    let identifier: String
     @FocusState private var focused: Bool
 
     func body(content: Content) -> some View {
         content
             .textFieldStyle(.plain)
             .font(Theme.Font.label).foregroundStyle(Theme.ink)
-            // The line's height, set: left to the field, an empty one and one with text
-            // differ by a point, and the rows under the Key field moved between runs.
             .frame(height: Theme.Layout.labelFieldHeight)
             .focused($focused)
             .focusEffectDisabled()
+            .accessibilityIdentifier(identifier)
+            // The row's label aligns on a line of text, not on the field: left to the field,
+            // an empty one and one with text sat a point apart, and the rows under the Key
+            // field moved between runs.
+            .onTextLine(Theme.Font.label, height: Theme.Layout.labelFieldHeight)
             .padding(.horizontal, 6).padding(.vertical, 4)
             .background(Theme.raised, in: RoundedRectangle(cornerRadius: 5))
             .overlay(
