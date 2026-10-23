@@ -158,8 +158,8 @@ scenes:
   - asset: scan-app.png
     kind: app
     alt: >-
-      The Leyline sidebar's 2 m band row after a scan, with the carriers it found marked on the
-      band rail.
+      The Leyline sidebar's 2 m band after Scan band: the carriers it found listed under the band
+      with their level over the floor, and marked on the band rail.
     fixtures: [{name: scene_scan}]
     clock: "19:42"
     bookmarks: home.csv
