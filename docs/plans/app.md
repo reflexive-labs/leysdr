@@ -1723,6 +1723,26 @@ the open options. The defects are from the 2026-10-22 pictures of `assistant-con
 It is checked by `assistant-conversation`, `assistant-cards` and `assistant-view-tools`, with their
 pictures re-recorded once the owner has seen them, plus a scene with a long result opened.
 
+### MC-3 `[ ]` Batch 1's review, decided (2026-10-23)
+
+A review of Batch 1 found three defects. The owner settled three questions it raised.
+
+- **Leaving a Note or Tone field saves it**, as Return does; Escape is how to throw the text away.
+  A refused value (`D024N`) stays in the field with its error and is not saved.
+- **The daemon says whether a squelch is automatic, and why a turn ended.** Two additive fields,
+  each with its `ley` mirror and tests: the source of a channel's squelch (set by hand or measured
+  automatically) on `Channel`, and a stop reason on an assistant turn. The app reads them, and
+  the guesses `AppSession.autoSquelch` and `stopped(_:at:)` go. The change note's squelch rule
+  then reads the source instead of looking for the tool call.
+- **A scan hit with no plan channel** is tuned and bookmarked at its measured frequency rounded
+  to 100 Hz.
+- **Return in the tuning field without an edit keeps the exact frequency.** Today it retunes to
+  the 4 decimals shown and drops the hertz beyond them.
+- **`leyshots check --affected` never passes having checked nothing.** When the base is HEAD and
+  the tree is clean, it compares with the last commit instead. A file nothing covers fails the
+  run. Changes to `app/Package.swift` and the façade count. A smoke run that selects no scene is
+  an error.
+
 ## Backlog
 
 - **Two frequency affine maps remain separate.** `SquelchTrack` and `GainSlider` share
