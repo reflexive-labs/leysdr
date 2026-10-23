@@ -4179,7 +4179,7 @@ final class AppSession {
         let e = LeylineError(error)
         log("ai", "could not \(what): \(e.code) \(e.message)")
         // No daemon answered: the transport's own words name its channel states and the socket.
-        if e.code == LeylineError.unavailable {
+        if e.daemonUnreachable {
             return "Could not \(what): the daemon is not running."
         }
         return "Could not \(what): \(e.message.isEmpty ? e.code : e.message)"
