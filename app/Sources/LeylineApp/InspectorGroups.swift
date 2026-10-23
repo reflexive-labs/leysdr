@@ -30,6 +30,10 @@ import SwiftUI
 struct RecentLog: View {
     @Environment(AppSession.self) private var session
 
+    /// The rows the log asks for at least while the panel has the room; with less (a tall
+    /// identity: a change note, the kept-channel line and the bookmark's edits under the name),
+    /// it gives rows up down to one rather than push the panel, and the transport bar under it,
+    /// past the window's bottom.
     static let minRows = 5
     /// The height above and below the rows: the padding and the section header, rounded up so
     /// the count errs toward one row fewer rather than a clipped one.
@@ -44,10 +48,11 @@ struct RecentLog: View {
             let fit = Int(
                 (geo.size.height - Self.chromeHeight - Self.switchHeight)
                     / Theme.Layout.logRowHeight)
-            content(rows: max(Self.minRows, fit))
+            content(rows: max(1, fit))
         }
         .frame(
-            minHeight: Self.chromeHeight + Self.switchHeight + CGFloat(Self.minRows)
+            minHeight: Self.chromeHeight + Self.switchHeight + Theme.Layout.logRowHeight,
+            idealHeight: Self.chromeHeight + Self.switchHeight + CGFloat(Self.minRows)
                 * Theme.Layout.logRowHeight
         )
         .clipped()
