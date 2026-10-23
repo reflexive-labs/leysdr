@@ -453,6 +453,9 @@ the endpoint's host when the key has one; and "nothing leaves the Mac" for an on
 **Usage** is a table by UTC day since the day 30 days back (`ley ai usage`'s default) or by month
 over the whole ledger, summed over jobs and conversations as `ley ai usage` sums them, its empty
 columns left out, with a total row and the note that the numbers are what the workers reported.
+The pane names a provider as its rows do, in its sentences too (`Anthropic key …0042 added`,
+"Remove the Anthropic key?", "No OpenAI-compatible key is set yet"; `ProviderCatalog.name`);
+`ley ai` keeps the ids (`anthropic`, `openai`), which are what `ley ai add` and `ley ai use` take.
 
 With no key and no on-device engine set, the pane shows what each feature does and would send,
 and the Add form, and nothing else; `AppSession.hasAnyAI` is that flag, and any AI control

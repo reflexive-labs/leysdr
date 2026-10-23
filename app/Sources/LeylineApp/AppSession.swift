@@ -4159,7 +4159,7 @@ final class AppSession {
             settingsNotice = AISettings.addedWords(c)
             return true
         } catch {
-            settingsNotice = aiFailed("add the \(provider) key", error)
+            settingsNotice = aiFailed("add the \(ProviderCatalog.name(provider)) key", error)
             return false
         }
     }
@@ -4177,7 +4177,7 @@ final class AppSession {
             log("ai", "\(AISettings.keyWords(c)) checked: \(KeyOutcome(c.lastCheck).word)")
             settingsNotice = AISettings.checkedWords(c)
         } catch {
-            settingsNotice = aiFailed("check the \(provider) key", error)
+            settingsNotice = aiFailed("check the \(ProviderCatalog.name(provider)) key", error)
         }
     }
 
@@ -4193,9 +4193,10 @@ final class AppSession {
         do {
             _ = try await daemon.credentials.deleteCredential(ref)
             log("ai", "\(provider) key removed")
-            settingsNotice = "\(provider) key removed; anything that was using it has stopped."
+            settingsNotice =
+                "\(ProviderCatalog.name(provider)) key removed; anything that was using it has stopped."
         } catch {
-            settingsNotice = aiFailed("remove the \(provider) key", error)
+            settingsNotice = aiFailed("remove the \(ProviderCatalog.name(provider)) key", error)
         }
     }
 
@@ -4213,8 +4214,7 @@ final class AppSession {
         do {
             let got = try await daemon.credentials.setFeatureModel(fm)
             log("ai", "\(got.feature) now calls \(got.provider) \(got.model)")
-            settingsNotice =
-                "\(AISettings.title(got.feature)) now calls \(got.provider) \(got.model)."
+            settingsNotice = AISettings.nowCallsWords(got)
         } catch {
             let what = "choose the \(AISettings.title(feature).lowercased()) model"
             settingsNotice = aiFailed(what, error)

@@ -79,6 +79,13 @@ public enum ProviderCatalog {
     public static func provider(_ id: String, in providers: [AIProvider] = all) -> AIProvider? {
         providers.first { $0.id == id }
     }
+
+    /// The name the pane gives a provider, `Anthropic` for `anthropic`, so its sentences read as
+    /// its rows do; the id itself for one the catalog does not list. `ley ai` keeps the ids,
+    /// which are what `ley ai add` and `ley ai use` take.
+    public static func name(_ id: String, in providers: [AIProvider] = all) -> String {
+        provider(id, in: providers)?.name ?? id
+    }
 }
 
 /// How the last check of a key came out, as `ley ai` words it.
@@ -128,7 +135,7 @@ public struct KeyRow: Equatable, Sendable, Identifiable {
         _ c: Leyline_V1_Credential, now: Date, providers: [AIProvider] = ProviderCatalog.all
     ) {
         provider = c.provider
-        providerName = ProviderCatalog.provider(c.provider, in: providers)?.name ?? c.provider
+        providerName = ProviderCatalog.name(c.provider, in: providers)
         label = c.label
         maskedKey = AISettings.maskedKey(c.lastFour)
         endpoint = c.endpoint
@@ -349,7 +356,8 @@ public enum AISettings {
             let known = ProviderCatalog.provider(provider, in: providers)
             let missing =
                 !provider.isEmpty && key == nil && (known?.needsKey ?? true)
-                ? "No \(provider) key is set yet; add one under Keys." : nil
+                ? "No \(ProviderCatalog.name(provider, in: providers)) key is set yet; add one under Keys."
+                : nil
             let choices = providers.filter { $0.features.contains(feature) }.map { p in
                 let endpoint = ai.credentials.first { $0.provider == p.id }?.endpoint ?? ""
                 return FeatureRow.Choice(
@@ -455,9 +463,17 @@ public enum AISettings {
         "\(keyWords(c)): " + outcomeWords(c)
     }
 
-    /// "anthropic key …1234", or "anthropic key" when no characters are shown.
+    /// "Anthropic key …1234", or "Anthropic key" when no characters are shown: the provider by
+    /// the name its row shows (`ProviderCatalog.name`).
     public static func keyWords(_ c: Leyline_V1_Credential) -> String {
-        c.lastFour.isEmpty ? "\(c.provider) key" : "\(c.provider) key \(maskedKey(c.lastFour))"
+        let key = "\(ProviderCatalog.name(c.provider)) key"
+        return c.lastFour.isEmpty ? key : "\(key) \(maskedKey(c.lastFour))"
+    }
+
+    /// "Assistant now calls Anthropic claude-opus-5-5.": the line after a feature's provider or
+    /// model is chosen.
+    public static func nowCallsWords(_ fm: Leyline_V1_FeatureModel) -> String {
+        "\(title(fm.feature)) now calls \(ProviderCatalog.name(fm.provider)) \(fm.model)."
     }
 
     static func outcomeWords(_ c: Leyline_V1_Credential) -> String {

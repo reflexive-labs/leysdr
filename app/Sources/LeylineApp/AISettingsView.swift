@@ -187,7 +187,7 @@ private struct KeyRowView: View {
         }
         .identifiedGroup("settings.ai.key.\(ViewIdentifier.slug(row.provider))")
         .confirmationDialog(
-            "Remove the \(row.provider) key?", isPresented: $confirmingRemove
+            "Remove the \(row.providerName) key?", isPresented: $confirmingRemove
         ) {
             Button("Remove", role: .destructive) {
                 Task { await session.removeKey(provider: row.provider) }
@@ -364,7 +364,7 @@ private struct FeatureRowView: View {
         ) {
             if shownProvider.isEmpty { Text("Not chosen").tag("") }
             ForEach(providerIDs, id: \.self) { id in
-                Text(ProviderCatalog.provider(id)?.name ?? id).tag(id)
+                Text(ProviderCatalog.name(id)).tag(id)
             }
         }
         .labelsHidden()
@@ -497,7 +497,7 @@ private struct UsageTable: View {
                     Text(r.period).font(Theme.Font.value).foregroundStyle(Theme.inkTertiary)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(r.model).font(Theme.Font.value).foregroundStyle(Theme.inkSecondary)
-                        Text(r.provider).font(Theme.Font.valueSmall)
+                        Text(ProviderCatalog.name(r.provider)).font(Theme.Font.valueSmall)
                             .foregroundStyle(Theme.inkMuted)
                     }
                     Text(r.feature).font(Theme.Font.value).foregroundStyle(Theme.inkTertiary)

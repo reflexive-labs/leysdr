@@ -550,7 +550,7 @@ scenes:
       - {cmd: ax, name: settings, window: settings}
       - {cmd: press, identifier: settings.ai.key.anthropic.remove}
       - {cmd: wait, seconds: 1}
-      - {cmd: state, expect: {alert.title: "Remove the anthropic key?", alert.message: "Every job and conversation using it stops.", alert.buttons.0: Cancel, alert.buttons.1: Remove}}
+      - {cmd: state, expect: {alert.title: "Remove the Anthropic key?", alert.message: "Every job and conversation using it stops.", alert.buttons.0: Cancel, alert.buttons.1: Remove}}
       - {cmd: ax, name: sheet, window: sheet}
       - {cmd: snapshot, name: sheet, window: settings}
       - {cmd: press, identifier: alert.cancel}
@@ -635,7 +635,9 @@ scenes:
       - {cmd: ax, name: typed, window: settings}
       - {cmd: press, identifier: settings.ai.add}
       - {cmd: ax, name: adding, window: settings}
-      - {cmd: wait, seconds: 2}
+      # The pane's words name the provider as its rows do; `ley ai` keeps the ids
+      # (docs/plans/app.md, MC-1c).
+      - {cmd: wait, seconds: 2, expect_log: ["settings: Anthropic key …0042 added", "!settings: anthropic key"]}
       - {cmd: snapshot, name: added, window: settings}
       - {cmd: ax, name: added, window: settings}
       - {cmd: ax, name: main-key}
@@ -645,6 +647,7 @@ scenes:
       # a model is entered, the sentence under the pickers following the provider shown; back
       # to Anthropic, the one the daemon holds, drops the field and rewrites nothing.
       - {cmd: pick, identifier: settings.ai.feature.assistant.model, text: claude-opus-5-5}
+      - {cmd: wait, seconds: 1, expect_log: "settings: Assistant now calls Anthropic claude-opus-5-5\\."}
       - {cmd: ley, args: [ai, --json], expect_stdout: '"provider":"anthropic", "model":"claude-opus-5-5"'}
       - {cmd: pick, identifier: settings.ai.feature.assistant.provider, text: OpenAI-compatible}
       - {cmd: ax, name: typedmodel, window: settings}
@@ -679,10 +682,10 @@ scenes:
       - {cmd: state, expect: {assistant_shown: true}}
       - {cmd: press, identifier: settings.ai.key.anthropic.remove}
       - {cmd: wait, seconds: 1}
-      - {cmd: state, expect: {alert.title: "Remove the anthropic key?"}}
+      - {cmd: state, expect: {alert.title: "Remove the Anthropic key?"}}
       - {cmd: ax, name: removesheet, window: sheet}
       - {cmd: press, identifier: alert.remove}
-      - {cmd: wait, seconds: 1}
+      - {cmd: wait, seconds: 1, expect_log: "settings: Anthropic key removed"}
       - {cmd: ax, name: removed, window: settings}
       - {cmd: state, expect: {assistant_shown: false, assistant: null}}
       - {cmd: ax, name: main-removed}
@@ -708,7 +711,7 @@ scenes:
       - {cmd: type, text: sk-made-up-0044}
       - {cmd: press, identifier: settings.ai.add.label}
       - {cmd: press, identifier: settings.ai.add}
-      - {cmd: wait, seconds: 2}
+      - {cmd: wait, seconds: 2, expect_log: "settings: Could not add the Anthropic key: the daemon is not running\\."}
       - {cmd: ax, name: refused, window: settings}
       - {cmd: daemon, op: start}
       - {cmd: wait, seconds: 3}

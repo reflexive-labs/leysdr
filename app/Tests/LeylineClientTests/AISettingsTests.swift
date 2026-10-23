@@ -103,15 +103,40 @@ final class AISettingsTests: XCTestCase {
     func testOutcomeWordsAfterAddAndCheck() {
         XCTAssertEqual(
             AISettings.addedWords(credential("anthropic")),
-            "anthropic key \u{2026}0042 added; the provider accepted it.")
+            "Anthropic key \u{2026}0042 added; the provider accepted it.")
         XCTAssertEqual(
             AISettings.addedWords(credential("anthropic", outcome: .rejected, message: "bad key")),
-            "anthropic key \u{2026}0042 added; the provider rejected it: bad key. Paste a working key."
+            "Anthropic key \u{2026}0042 added; the provider rejected it: bad key. Paste a working key."
         )
         XCTAssertEqual(
             AISettings.checkedWords(credential("anthropic", outcome: .unavailable)),
-            "anthropic key \u{2026}0042: the check could not run: no reason given. Press Check to try it again."
+            "Anthropic key \u{2026}0042: the check could not run: no reason given. Press Check to try it again."
         )
+    }
+
+    /// The pane names a provider as its rows do; `ley ai` keeps the ids.
+    func testTheWordsNameProvidersByTheirDisplayNames() {
+        XCTAssertEqual(ProviderCatalog.name("anthropic"), "Anthropic")
+        XCTAssertEqual(ProviderCatalog.name("openai"), "OpenAI-compatible")
+        XCTAssertEqual(ProviderCatalog.name("acme"), "acme", "one the catalog does not list")
+        XCTAssertEqual(
+            AISettings.addedWords(credential("openai")),
+            "OpenAI-compatible key \u{2026}0042 added; the provider accepted it.")
+        var fm = Leyline_V1_FeatureModel()
+        fm.feature = "assistant"
+        fm.provider = "anthropic"
+        fm.model = "claude-opus-5-5"
+        XCTAssertEqual(
+            AISettings.nowCallsWords(fm), "Assistant now calls Anthropic claude-opus-5-5.")
+        var ai = Leyline_V1_AIState()
+        var chosen = Leyline_V1_FeatureModel()
+        chosen.feature = "assistant"
+        chosen.provider = "openai"
+        chosen.model = "gpt-5"
+        ai.features = [chosen]
+        XCTAssertEqual(
+            AISettings.featureRows(ai).first?.missingKey,
+            "No OpenAI-compatible key is set yet; add one under Keys.")
     }
 
     // MARK: Features and privacy
@@ -157,7 +182,7 @@ final class AISettingsTests: XCTestCase {
             rows[0].privacy,
             "Sends the conversation and the tool results, which include frequencies, decoded records and speech text, to api.anthropic.com."
         )
-        XCTAssertEqual(rows[0].missingKey, "No anthropic key is set yet; add one under Keys.")
+        XCTAssertEqual(rows[0].missingKey, "No Anthropic key is set yet; add one under Keys.")
         XCTAssertEqual(rows[0].choices.map(\.provider.id), ["anthropic", "openai"])
         XCTAssertEqual(rows[1].provider, "")
         XCTAssertEqual(rows[1].privacy, "Sends nothing until a provider is chosen.")
