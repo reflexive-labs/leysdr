@@ -63,6 +63,10 @@ final class Staging {
     private var started = false
     /// What the stage being applied did, as its log lines say it: a `stage` command's result.
     private var applied: [String] = []
+    /// Held for the run's lifetime, so App Nap neither slows the window's timers nor coalesces
+    /// the command file's 100 ms reads while the app is in the background or the display is
+    /// asleep (docs/plans/mac-loop.md, ML-11). Only a staged run holds it.
+    private let activity: NSObjectProtocol
 
     /// The staged run `LEYLINE_APP_STAGE` and `LEYLINE_APP_CONTROL` ask for, or nil with both
     /// unset.
@@ -74,6 +78,9 @@ final class Staging {
     }
 
     init(stagePath: String?, controlPath: String?) {
+        activity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiated, .latencyCritical],
+            reason: "a staged run for leyshots: its timers and command file must keep their pace")
         controlURL = controlPath.map { URL(fileURLWithPath: $0) }
         guard let stagePath else {
             stageURL = nil
