@@ -415,9 +415,23 @@ struct BookmarkField: View {
     let saved: String
     let placeholder: String
     let onCommit: (String) -> Void
-    var onRevert: () -> Void = {}
-    @State private var draft = ""
+    var onRevert: () -> Void
+    @State private var draft: String
     @FocusState private var focused: Bool
+
+    /// The draft starts as the saved value. Started empty and filled on appear, the AppKit field
+    /// was laid out at an empty field's 14 pt and on some runs kept it with the text in, a point
+    /// taller than the 13 pt row it sits in.
+    init(
+        saved: String, placeholder: String, onCommit: @escaping (String) -> Void,
+        onRevert: @escaping () -> Void = {}
+    ) {
+        self.saved = saved
+        self.placeholder = placeholder
+        self.onCommit = onCommit
+        self.onRevert = onRevert
+        _draft = State(initialValue: saved)
+    }
 
     var body: some View {
         // The field's own placeholder is a space: an empty one left its first baseline, which
