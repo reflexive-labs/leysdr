@@ -174,6 +174,10 @@ import SwiftUI
                 session.zoom = z
                 note("zoom \(z)")
             }
+            if stage.hideEngineLabel {
+                session.hidesEngineLabel = true
+                note("engine label hidden")
+            }
             if let p = stage.place, let place = WindowPlace(rawValue: p.rawValue) {
                 session.place = place
                 note("place \(p.rawValue)")

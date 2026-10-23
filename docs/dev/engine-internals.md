@@ -177,7 +177,8 @@ offset once at startup, before any capture exists, to today's HH:MM in local tim
 time, so the daemon's clock reads HH:MM when it starts and advances in real time from there. Staged
 screenshots use it to show a chosen time of day. Everything the daemon dates goes through the same
 offset: capture anchors, and with them every frame's and decode record's wall clock, recording
-start and end times and part names, job creation times and the record store's job times. Real
+start and end times and part names, job creation times, the record store's job times, and a
+key's added, last-used and checked times and the usage ledger's report times. Real
 elapsed time uses `WallClock.realNowNs()`: the retention cutoffs (`--store-age`,
 `--recordings-age`), the don't-disturb window, the overrun log's rate limit, the daemon's start
 time, an alert's validity check and the ULID timestamp. Clients compare dates against their own
@@ -696,7 +697,9 @@ carried the usage, so a slow disk slows record delivery of a speech job. At star
 than 400 days are dropped and the file rewritten. A report names a job or a conversation or
 neither (a key check has no scope), never both. A report arrives by `Usage.ReportUsage` from a
 worker, or on a decode record (`DecodeRunner`, "Decoders" below); either way `UsageRecorder` adds
-it, publishes the whole line and sets `last_used_at_ns` on the provider's key. `GetUsage` filters
+it, dates it by the daemon's clock on arrival (a reporter's `at_ns` is replaced, because the
+reporter's clock does not carry `--wall-clock`), publishes the whole line and sets
+`last_used_at_ns` on the provider's key to that time. `GetUsage` filters
 by provider, feature, scope and the UTC day `since_ns` falls on, sorted by day then provider.
 
 Every change to a key or a feature model publishes `Event.ai` with the whole `AIState`, so a deleted

@@ -718,7 +718,6 @@ actor DecodeRunner {
             rec.usage.jobID = jobID.string
             rec.usage.conversationID = ""
             if rec.usage.provider.isEmpty { rec.usage.provider = installed.manifest.credentialProvider }
-            if rec.usage.atNs == 0 { rec.usage.atNs = WallClock.nowNs() }
             await usage?.record(rec.usage, by: .daemon)
         }
         // The predicate filters delivery (docs/design/decoders.md, "Predicates and delivery"): a

@@ -28,7 +28,7 @@ final class ShotStageTests: XCTestCase {
             {"window":{"width":1440,"height":820},"place":"library","inspector":true,
              "expanded_band":"2m","select_bookmark":"Calling","select_part":2,
              "import_chirp":"/tmp/handheld.csv","settle":4.5,"on_air":true,"zoom":2,"scan_band":true,"play_part":true,
-             "assistant":true,"focus_filter":true,"channels_picker":"gmrs"}
+             "assistant":true,"focus_filter":true,"channels_picker":"gmrs","hide_engine_label":true}
             """)
         let stage = try ShotStage.read(at: url)
         XCTAssertEqual(
@@ -37,7 +37,8 @@ final class ShotStageTests: XCTestCase {
                 window: .init(width: 1440, height: 820), place: .library, inspector: true,
                 expandedBand: "2m", selectBookmark: "Calling", selectPart: 2,
                 importCHIRP: "/tmp/handheld.csv", settle: 4.5, onAir: true, zoom: 2, scanBand: true,
-                playPart: true, assistant: true, focusFilter: true, channelsPicker: "gmrs")
+                playPart: true, assistant: true, focusFilter: true, channelsPicker: "gmrs",
+                hideEngineLabel: true)
         )
     }
 
@@ -45,6 +46,8 @@ final class ShotStageTests: XCTestCase {
         let stage = try ShotStage.read(at: try stageFile("{}"))
         XCTAssertEqual(stage, ShotStage())
         XCTAssertEqual(stage.settle, 0)
+        XCTAssertFalse(
+            stage.hideEngineLabel, "the Library shows each over's model unless a stage hides it")
     }
 
     func testUnknownPlaceIsRefused() throws {

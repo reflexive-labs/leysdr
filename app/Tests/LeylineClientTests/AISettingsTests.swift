@@ -64,7 +64,7 @@ final class AISettingsTests: XCTestCase {
     func testKeyRowCarriesTheProvidersMessageOnOneLine() {
         let row = KeyRow(
             credential("openai", outcome: .rejected, message: "invalid\n  x-api-key "), now: now)
-        XCTAssertEqual(row.providerName, "OpenAI-compatible")
+        XCTAssertEqual(row.providerName, "OpenAI")
         XCTAssertEqual(row.outcome.word, "rejected")
         XCTAssertEqual(row.message, "invalid x-api-key")
     }
@@ -117,11 +117,11 @@ final class AISettingsTests: XCTestCase {
     /// The pane names a provider as its rows do; `ley ai` keeps the ids.
     func testTheWordsNameProvidersByTheirDisplayNames() {
         XCTAssertEqual(ProviderCatalog.name("anthropic"), "Anthropic")
-        XCTAssertEqual(ProviderCatalog.name("openai"), "OpenAI-compatible")
+        XCTAssertEqual(ProviderCatalog.name("openai"), "OpenAI")
         XCTAssertEqual(ProviderCatalog.name("acme"), "acme", "one the catalog does not list")
         XCTAssertEqual(
             AISettings.addedWords(credential("openai")),
-            "OpenAI-compatible key \u{2026}0042 added; the provider accepted it.")
+            "OpenAI key \u{2026}0042 added; the provider accepted it.")
         var fm = Leyline_V1_FeatureModel()
         fm.feature = "assistant"
         fm.provider = "anthropic"
@@ -136,7 +136,26 @@ final class AISettingsTests: XCTestCase {
         ai.features = [chosen]
         XCTAssertEqual(
             AISettings.featureRows(ai).first?.missingKey,
-            "No OpenAI-compatible key is set yet; add one under Keys.")
+            "No OpenAI key is set yet; add one under Keys.")
+    }
+
+    /// A key added with an endpoint is a server that speaks OpenAI's API, so it is named for that
+    /// rather than for OpenAI; a gateway in front of Anthropic is still Anthropic's.
+    func testAKeyAtAnEndpointIsOpenAICompatible() {
+        var custom = credential("openai")
+        custom.endpoint = "http://localhost:8080/v1"
+        XCTAssertEqual(KeyRow(custom, now: now).providerName, "OpenAI-compatible")
+        XCTAssertEqual(
+            AISettings.addedWords(custom),
+            "OpenAI-compatible key \u{2026}0042 added; the provider accepted it.")
+        var gateway = credential("acme")
+        gateway.endpoint = "https://gw.example/v1"
+        XCTAssertEqual(KeyRow(gateway, now: now).providerName, "OpenAI-compatible")
+        var anthropic = credential("anthropic")
+        anthropic.endpoint = "https://gw.example"
+        XCTAssertEqual(KeyRow(anthropic, now: now).providerName, "Anthropic")
+        XCTAssertEqual(KeyRow(credential("acme"), now: now).providerName, "acme")
+        XCTAssertEqual(ProviderCatalog.name("openai", endpoint: ""), "OpenAI")
     }
 
     // MARK: Features and privacy
@@ -215,7 +234,7 @@ final class AISettingsTests: XCTestCase {
             ProviderCatalog.anthropic.models,
             ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"])
         XCTAssertFalse(ProviderCatalog.anthropic.takesEndpoint)
-        XCTAssertTrue(ProviderCatalog.openAICompatible.takesEndpoint)
+        XCTAssertTrue(ProviderCatalog.openAI.takesEndpoint)
         XCTAssertTrue(ProviderCatalog.speech.isEmpty)
     }
 
@@ -224,7 +243,7 @@ final class AISettingsTests: XCTestCase {
     func testTheCatalogKnowsTheDefaultModelOfEveryFeatureItServes() {
         XCTAssertEqual(ProviderCatalog.anthropic.defaultModels, ["assistant": "claude-sonnet-5-5"])
         XCTAssertEqual(
-            ProviderCatalog.openAICompatible.defaultModels,
+            ProviderCatalog.openAI.defaultModels,
             ["assistant": "gpt-5", "speech": "whisper-1"])
         for p in ProviderCatalog.all {
             XCTAssertEqual(Set(p.defaultModels.keys), Set(p.features), p.id)

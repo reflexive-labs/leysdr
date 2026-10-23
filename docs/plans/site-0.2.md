@@ -106,8 +106,9 @@ names its file.
 
 ### Hero (`src/components/Hero.astro`)
 
-- The `specs` list gains a row, for example `['AI', 'Your key: Anthropic, OpenAI']`, or
-  `['Speech', 'Each over to text, on your key']`. One row, not both.
+- The `specs` list gains one row, `AI`: an assistant and speech-to-text on your own key, for
+  example `['AI', 'Assistant and speech-to-text, on your key']`. Decided 2026-10-23: one row for
+  both features, rather than a `Speech` row.
 - The nav's `app · terminal · agents` can stay; "agents" still covers the assistant and `ley mcp`.
 - The fine print (`Free · macOS 26 or later · signed and notarized · receive only`) stays.
   Leyline is still free; the AI features bill the user's own provider, which the AI section says.
@@ -227,7 +228,7 @@ takes it.
 | `app-assistant-ask.png` | a question card: a take-over or a delete, with Decline, Allow in this chat and Allow | the assistant feature, beside `app-assistant.png` | The assistant asking before it moves a radio another channel is using, naming that channel, with Decline, Allow in this chat and Allow. | Before it takes a radio from someone or deletes a recording, it asks. |
 | `settings-ai.png` | Settings > AI: a key with its last four characters, the features with their models, and each feature's line saying what it sends to which host | the key section | Leyline's Settings, AI: an OpenAI key shown by its last four characters, the assistant and speech models it set, and what each sends to which host. | The key stays in your keychain. Each feature says what it sends, and where. |
 | `library-speech.png` | the Library on a transcribed net: each over's words under its part, callsign chips, one over playing | the speech feature | The Leyline Library on a net recorded on 147.180 MHz, with the words of each over under its part, the callsigns found in them, and one over playing. | Every over's words, kept with the audio they came from. |
-| `app-follow-terminal.png` | a terminal running `ley tune` beside the window, which has moved to that channel and whose inspector names who tuned | Ways | A terminal running ley tune 146.94 beside the Leyline window, which has moved to 146.940 MHz and says another terminal tuned it. | Tune from the terminal and the window follows. |
+| `app-follow-terminal.png` | a terminal running `ley tune` beside the window, which has moved to that channel and whose inspector names who tuned | Ways | A terminal running ley tune 146.940 --bw 25 beside the Leyline window, which has moved to 146.940 MHz and says another terminal tuned it. | Tune from the terminal and the window follows. |
 | `ley-ai.png` | `ley ai` in a terminal: the key's provider, label, last four characters, when it was used and checked, and each feature's provider and model | the key section, under `settings-ai.png` | ley ai in a terminal: one OpenAI key shown by its last four characters, accepted by the provider, and the models the assistant and speech use. | The same keys, from the terminal. |
 | `ley-watch-speech.png` | `ley watch speech --freq … --where 'text~net control'` printing the overs that matched | the speech feature, stacked under `library-speech.png` | ley watch speech in a terminal: the overs on a 2 m net whose words include "net control", each with its time, part and callsigns. | A notification when someone says the phrase you are waiting for. |
 

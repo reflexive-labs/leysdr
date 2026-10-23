@@ -1,8 +1,11 @@
 # Design: AI features on the user's own key
 
-Status: draft. The design is settled, and the contract below is settled except the `Assistant`
-service, which is settled when it is built. Nothing in this document is implemented yet;
-`docs/plans/ai-features.md` holds the build order and its status. Companion to
+Status: partial. Keys and the usage ledger, speech-to-text on gated recordings and live channels,
+and the assistant are implemented as this document describes, with the contract below. The
+assistant runs on Anthropic or an OpenAI-compatible endpoint, and speech on OpenAI's
+transcription API or an OpenAI-compatible server. Not implemented: an on-device speech engine,
+Claude through Bedrock or Vertex, and the measurements that choose the default speech engine and
+assistant model ("Providers"); `docs/plans/ai-features.md` holds the remaining items. Companion to
 [`decoders.md`](decoders.md) (the plugin contract speech reuses), [`recording.md`](recording.md)
 (gated parts and overs), [`semantic-tier.md`](semantic-tier.md) (the state boundary and the MCP
 surface), [`docs/reference/mcp.md`](../reference/mcp.md) (the tools the assistant reuses) and
@@ -147,11 +150,12 @@ in `callsigns` as `W6ABC`, found by a pattern over the text after the phonetic a
 normalised. The field is labelled as a pattern match, because it holds what a pattern matched in
 the model's text.
 
-The first-party plugins will be one that calls a cloud speech API on the user's key and one that
-runs on the Mac; third parties can ship others. Before a batch of
+The first-party plugin is `speech`, which calls OpenAI's transcription API or an
+OpenAI-compatible server on the user's key; one that runs on the Mac is not built yet, and third
+parties can ship others. Before a batch of
 recordings is transcribed, `ley transcribe` and the app state how many minutes of squelch-open
 audio will go to which provider, and start only on confirmation. The minutes come from
-`squelch_open_ms`, which each part in `recording.json` will carry, written at part close; for a
+`squelch_open_ms`, which each part in `recording.json` carries, written at part close; for a
 recording made before that field existed, `ley transcribe` sums the part sidecars.
 
 ## The assistant
@@ -227,9 +231,10 @@ and retries with the decoder's backoff; an unkept one ends with the error.
 
 ## The contract
 
-Every item is additive within v1. `ai.proto` is a new file with two services, `Credentials` and
-`Usage`. A third, `Assistant`, is settled when it is built, because its shape depends on what the
-worker needs. The two settled services:
+Every item is additive within v1. `ai.proto` is a new file with three services: `Credentials` and
+`Usage`, shown here, and `Assistant`, which holds the conversations and whose shape followed what
+the worker needed (`ai.proto` and `docs/dev/engine-internals.md`, "Assistant", are its
+reference). The first two:
 
 ```proto
 message Credential {                 // never carries the secret

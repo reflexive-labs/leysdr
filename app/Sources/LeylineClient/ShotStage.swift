@@ -71,6 +71,9 @@ public struct ShotStage: Sendable, Equatable, Codable {
     public var channelsPicker: String?
     /// Opens the Settings window (true), as Leyline ▸ Settings… does, or closes it (false).
     public var settings: Bool?
+    /// Leaves out the model and confidence after each over's words in the Library, so a shot
+    /// made with the scripted speech engine does not show a model that never ran.
+    public var hideEngineLabel: Bool
 
     enum CodingKeys: String, CodingKey {
         case window, place, inspector, settle, zoom
@@ -85,6 +88,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
         case focusFilter = "focus_filter"
         case channelsPicker = "channels_picker"
         case settings
+        case hideEngineLabel = "hide_engine_label"
     }
 
     public init(
@@ -93,7 +97,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
         importCHIRP: String? = nil, settle: Double = 0, onAir: Bool = false,
         zoom: Int? = nil, scanBand: Bool = false, playPart: Bool = false,
         assistant: Bool? = nil, focusFilter: Bool = false, channelsPicker: String? = nil,
-        settings: Bool? = nil
+        settings: Bool? = nil, hideEngineLabel: Bool = false
     ) {
         self.window = window
         self.place = place
@@ -111,6 +115,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
         self.focusFilter = focusFilter
         self.channelsPicker = channelsPicker
         self.settings = settings
+        self.hideEngineLabel = hideEngineLabel
     }
 
     public init(from decoder: Decoder) throws {
@@ -131,6 +136,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
         focusFilter = try c.decodeIfPresent(Bool.self, forKey: .focusFilter) ?? false
         channelsPicker = try c.decodeIfPresent(String.self, forKey: .channelsPicker)
         settings = try c.decodeIfPresent(Bool.self, forKey: .settings)
+        hideEngineLabel = try c.decodeIfPresent(Bool.self, forKey: .hideEngineLabel) ?? false
     }
 
     /// The stage file's path from the environment, or nil when the run is not staged.

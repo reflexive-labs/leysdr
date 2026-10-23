@@ -109,6 +109,9 @@ final class AppSession {
     #if LEYLINE_STAGING
         let staging = Staging.fromEnvironment()
         private var unstaged: Bool { staging == nil }
+        /// Set by a stage's `hide_engine_label`: the Library leaves out each over's model and
+        /// confidence, which in a shot name the scripted engine (`SpeechLineView`).
+        var hidesEngineLabel = false
     #else
         private var unstaged: Bool { true }
     #endif
@@ -4177,7 +4180,8 @@ final class AppSession {
             settingsNotice = AISettings.addedWords(c)
             return true
         } catch {
-            settingsNotice = aiFailed("add the \(ProviderCatalog.name(provider)) key", error)
+            settingsNotice = aiFailed(
+                "add the \(ProviderCatalog.name(provider, endpoint: endpoint)) key", error)
             return false
         }
     }

@@ -113,6 +113,9 @@ type Stage struct {
 	// Settings opens the Settings window (true) or closes it (false), as ⌘, and its close
 	// button do.
 	Settings *bool `yaml:"settings" json:"settings,omitempty"`
+	// HideEngineLabel leaves out the model and confidence after each over's words in the
+	// Library, which in a shot would name the scripted speech engine.
+	HideEngineLabel bool `yaml:"hide_engine_label" json:"hide_engine_label,omitempty"`
 }
 
 // Crop says which part of the window an app shot keeps: the union of Regions, or a box of Size

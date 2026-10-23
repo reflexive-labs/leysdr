@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
@@ -223,9 +224,17 @@ func fieldValueNumber(v *leylinev1.FieldValue) (float64, bool) {
 func numString(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
 
 // predicateTokens splits a field on comma, space and '-', trimmed and case-folded: the daemon's
-// tokenise, so "006001-006013" and "Net Control" read as lists.
+// tokenise, so "006001-006013" and "Net Control" read as lists. Punctuation at either edge of a
+// token is dropped, so "net control." holds "control"; punctuation inside one ("KJ6ABC/M") stays.
 func predicateTokens(s string) []string {
-	return strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return r == ',' || r == ' ' || r == '-' })
+	fields := strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return r == ',' || r == ' ' || r == '-' })
+	tokens := fields[:0]
+	for _, f := range fields {
+		if t := strings.TrimFunc(f, unicode.IsPunct); t != "" {
+			tokens = append(tokens, t)
+		}
+	}
+	return tokens
 }
 
 // containsRun reports whether run appears in tokens as consecutive tokens; an empty run never does.

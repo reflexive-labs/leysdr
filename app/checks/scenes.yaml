@@ -652,7 +652,7 @@ scenes:
 
   # Settings, AI (docs/plans/app.md, "Settings, AI"): ⌘, and the app menu open the pane; with no
   # key it holds the explanation and the Add form alone, Add disabled while the key is empty and
-  # the Endpoint field only for OpenAI-compatible; a key typed is hidden and cleared the moment
+  # the Endpoint field only for OpenAI; a key typed is hidden and cleared the moment
   # Add is pressed, and once the daemon holds it Features and Usage come in, with the toolbar's
   # toggle and View ▸ Show Assistant in the main window. The pickers write what they show;
   # Check, the usage table and its switch, Remove asking and the row leaving, the column going
@@ -678,7 +678,7 @@ scenes:
       - {cmd: state, expect: {settings_open: true}}
       - {cmd: snapshot, name: nokey, window: settings}
       - {cmd: ax, name: nokey, window: settings}
-      - {cmd: pick, identifier: settings.ai.add.provider, text: OpenAI-compatible}
+      - {cmd: pick, identifier: settings.ai.add.provider, text: OpenAI}
       - {cmd: ax, name: endpoint, window: settings}
       - {cmd: pick, identifier: settings.ai.add.provider, text: Anthropic}
       - {cmd: press, identifier: settings.ai.add.key}
@@ -698,19 +698,19 @@ scenes:
       - {cmd: ax, name: main-key}
       - {cmd: menu, menu: "View>Show Assistant", read: true, expect: {enabled: true}}
       - {cmd: ley, args: [ai, --json], expect_stdout: '"provider":"anthropic",\s*"model":"claude-sonnet-5-5"'}
-      # The model picker writes; OpenAI-compatible shows a model field and writes nothing until
+      # The model picker writes; OpenAI shows a model field and writes nothing until
       # a model is entered, the sentence under the pickers following the provider shown; back
       # to Anthropic, the one the daemon holds, drops the field and rewrites nothing.
       - {cmd: pick, identifier: settings.ai.feature.assistant.model, text: claude-opus-5-5}
       - {cmd: wait, seconds: 1, expect_log: "settings: Assistant now calls Anthropic claude-opus-5-5\\."}
       - {cmd: ley, args: [ai, --json], expect_stdout: '"provider":"anthropic",\s*"model":"claude-opus-5-5"'}
-      - {cmd: pick, identifier: settings.ai.feature.assistant.provider, text: OpenAI-compatible}
+      - {cmd: pick, identifier: settings.ai.feature.assistant.provider, text: OpenAI}
       - {cmd: ax, name: typedmodel, window: settings}
       - {cmd: ley, args: [ai, --json], expect_stdout: '"provider":"anthropic",\s*"model":"claude-opus-5-5"'}
       - {cmd: pick, identifier: settings.ai.feature.assistant.provider, text: Anthropic}
       - {cmd: ax, name: heldagain, window: settings}
       - {cmd: ley, args: [ai, --json], expect_stdout: '"provider":"anthropic",\s*"model":"claude-opus-5-5"'}
-      - {cmd: pick, identifier: settings.ai.feature.assistant.provider, text: OpenAI-compatible}
+      - {cmd: pick, identifier: settings.ai.feature.assistant.provider, text: OpenAI}
       - {cmd: press, identifier: settings.ai.feature.assistant.model}
       - {cmd: type, text: gpt-made-up}
       - {cmd: key, keys: return}
