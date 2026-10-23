@@ -525,7 +525,9 @@ or lost (an over or lost one is replaced by a new one), and no message is on its
 Return does nothing and the text stays, and while the field holds text a line under it says what
 Return waits for (`AssistantWords.returnWaits`): `Return sends once the assistant is done.`, or
 `Return sends once you have answered.` while a question card shows. Return does not queue the
-message: once the turn ends, Return sends it. The field also keeps its own flag from Return until
+message: once the turn ends, Return sends it. The text is the session's `assistantDraft`, not the
+field's own state, so it outlives the field being made again: what was typed while a card waited
+is still the draft once the card goes. The field also keeps its own flag from Return until
 the daemon replies, because `assistantSending` reaches the view only once the controller's change
 is copied to the session, and a second Return in that gap would send the message twice. A message
 the daemon did not take goes back into the

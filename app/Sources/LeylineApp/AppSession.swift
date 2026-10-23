@@ -170,6 +170,10 @@ final class AppSession {
             }
         }
     }
+    /// What is typed in the assistant's field and not sent yet. Held here rather than in the
+    /// field's own state, so it outlives the field being made again: once a question card was
+    /// answered the field showed the text while its state had lost it, and Return sent nothing.
+    var assistantDraft = ""
     /// Where a view tool centred the zoomed waterfall, while the radio stays tuned where it was
     /// then (`ViewFocus`); nil centres the window on the tuned frequency, as it always has.
     private(set) var viewFocus: ViewFocus?

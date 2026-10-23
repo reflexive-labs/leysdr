@@ -886,8 +886,15 @@ scenes:
       - {cmd: state, expect: {assistant.state: waiting for you, assistant.input: then stop, assistant.buttons.4.title: "→ delete_recording job_none, asks", assistant.buttons.5.id: assistant.decline, assistant.buttons.5.enabled: true, assistant.buttons.6.id: assistant.allow, assistant.buttons.6.enabled: true}}
       - {cmd: press, identifier: assistant.decline}
       - {cmd: wait, seconds: 2}
-      - {cmd: state, expect: {assistant.state: ready}}
+      - {cmd: state, expect: {assistant.state: ready, assistant.input: then stop}}
+      # What was typed while the card waited is still the draft once the card has gone, and
+      # Return sends all of it (docs/plans/app.md, MC-1c).
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {assistant.input: "", assistant.turns.6.text: then stop, assistant.turns.7.text: Stopping there.}}
       - {cmd: file, path: ai/record.jsonl, contains: remove the APRS bookmark}
+      - {cmd: file, path: ai/record.jsonl, contains: then stop}
 
   # The app's view tools (docs/plans/app.md, the assistant panel): the column opened in a narrow
   # window widens the window rather than squeezing the canvas, and the window's minimum grows by
