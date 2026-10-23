@@ -1271,3 +1271,22 @@ scenes:
       - {cmd: press, identifier: alert.sweep-anyway}
       - {cmd: wait, seconds: 6, expect_log: ["sweep: job_.* started: NOAA weather", "sweep: job_.* ended: 1 hit"]}
       - {cmd: state, expect: {band: noaa, sink: own, hits.0: WX2}}
+
+  # A NOAA sweep with nothing on the air (docs/plans/app.md, U7), as with the antenna off:
+  # scene_wx is the floor alone, so the row says nothing was heard and why, and the rail has
+  # no hit ticks.
+  - name: sweep-quiet
+    fixtures: [{name: scene_wx}]
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      settle: 3
+    app:
+      - {cmd: state, expect: {band: noaa}}
+      - {cmd: press, identifier: sidebar.band.noaa.scan}
+      - {cmd: wait, seconds: 3, expect_log: "sweep: job_.* ended: nothing on the air"}
+      - {cmd: state, expect: {band: noaa}}
+      - {cmd: ax, name: quiet}
+      - {cmd: snapshot, name: quiet}
