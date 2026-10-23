@@ -572,14 +572,19 @@ final class AppSession {
     /// and a band elsewhere in the capture is heard all the same: without the span, the tuned
     /// band of a wide recording was folded away as one the radio cannot tune.
     private var radioRanges: [Leyline_V1_FrequencyRange] {
-        var ranges = (device ?? state.devices.first { $0.state != .disconnected })?.tuningRanges ?? []
-        // No range means every band is offered; the span would narrow that.
-        if !ranges.isEmpty, let cap = capture, cap.sampleRate > 0 {
+        guard let radio = device ?? state.devices.first(where: { $0.state != .disconnected })
+        else { return [] }
+        var ranges = radio.tuningRanges
+        // No range means every band is offered; a span would narrow that. Every capture on
+        // the radio counts, as after Stop Listening the window holds none.
+        guard !ranges.isEmpty else { return ranges }
+        for cap in state.captures where cap.deviceID == radio.deviceID && cap.sampleRate > 0 {
             let span = ViewWindow.span(centerHz: cap.centerHz, sampleRate: cap.sampleRate)
-            ranges.append(.with {
-                $0.minHz = span.lowerBound
-                $0.maxHz = span.upperBound
-            })
+            ranges.append(
+                .with {
+                    $0.minHz = span.lowerBound
+                    $0.maxHz = span.upperBound
+                })
         }
         return ranges
     }
@@ -1168,12 +1173,22 @@ final class AppSession {
     /// a new capture (no radio open, another radio) or leaves every recording inside the span.
     /// The centre is the one `moveToBand` computes.
     private func bandMoveWords(_ band: Band, at hz: UInt64?) -> String? {
-        guard !busy, !sweeping, outOfRangeWords(band) == nil, let cap = capture,
-            let dev = try? pickDevice(), dev.deviceID == cap.deviceID
+        guard !busy, !sweeping, outOfRangeWords(band) == nil, let dev = try? pickDevice(),
+            let cap = movableCapture(on: dev)
         else { return nil }
         let centre =
             hz.map { captureCentre(for: band, at: $0, rate: cap.sampleRate) } ?? band.centerHz
         return leftOutWords(centre: Int64(centre), rate: cap.sampleRate)
+    }
+
+    /// The capture a band change moves: the window's on that radio, else, while the window
+    /// holds none (after Stop Listening), the one another client left on it, since a radio
+    /// opens one capture and asking for a second is refused with `DEVICE_BUSY`.
+    private func movableCapture(on dev: Leyline_V1_DeviceDescriptor) -> Leyline_V1_Capture? {
+        if let cap = capture { return cap.deviceID == dev.deviceID ? cap : nil }
+        return state.captures.first {
+            $0.deviceID == dev.deviceID && $0.state == .captureActive
+        }
     }
 
     private func moveToBand(_ band: Band, at hz: UInt64?) async {
@@ -1193,6 +1208,10 @@ final class AppSession {
         log("session", "select band \(band.name)\(hz.map { " at \($0) Hz" } ?? "")")
         do {
             let dev = try pickDevice()
+            if capture == nil, let other = movableCapture(on: dev) {
+                heldCapture.adopted(id: other.captureID, at: Date())
+                log("session", "adopted capture \(other.captureID) for \(band.name): it holds the radio")
+            }
             // The capture's rate is the radio's setting: an existing capture keeps its own, a
             // new one opens at the remembered rate. The band only decides where the span sits.
             let existing = capture.flatMap { $0.deviceID == dev.deviceID ? $0 : nil }
