@@ -374,8 +374,10 @@ struct FrequencyField: View {
 }
 
 /// The two-arrow stepper on the tuning field: up and down by the band's step, the fine step
-/// with ⇧ held, exactly the Tune menu's arrows. `inkMuted` at rest as the pop-ups' carets are,
-/// `ink` under the pointer, `inkDisabled` with no channel to step.
+/// on a ⇧-click, exactly the Tune menu's arrows. An accessibility press always takes the
+/// normal step, and each arrow has a named action for the fine one ("Step up finely"), so a
+/// key held elsewhere never makes VoiceOver's press fine. `inkMuted` at rest as the pop-ups'
+/// carets are, `ink` under the pointer, `inkDisabled` with no channel to step.
 struct StepArrows: View {
     @Environment(AppSession.self) private var session
     let enabled: Bool
@@ -385,15 +387,27 @@ struct StepArrows: View {
             StepArrow(symbol: "chevron.up", enabled: enabled) { step(1) }
                 .help("Tune up by the band's step; ⇧ for the fine step")
                 .accessibilityIdentifier("tuning.up")
+                .accessibilityAction(named: "Step up finely") { session.step(1, fine: true) }
             StepArrow(symbol: "chevron.down", enabled: enabled) { step(-1) }
                 .help("Tune down by the band's step; ⇧ for the fine step")
                 .accessibilityIdentifier("tuning.down")
+                .accessibilityAction(named: "Step down finely") { session.step(-1, fine: true) }
         }
         .disabled(!enabled)
     }
 
+    /// Fine only when the click that pressed the arrow held ⇧: the event being handled is a
+    /// mouse button's, and recent. An accessibility press runs this with no such event, or
+    /// with a stale one, and the keyboard's state then says nothing about the press.
     private func step(_ direction: Int) {
-        session.step(direction, fine: NSEvent.modifierFlags.contains(.shift))
+        var fine = false
+        if let event = NSApp.currentEvent,
+            event.type == .leftMouseUp || event.type == .leftMouseDown,
+            ProcessInfo.processInfo.systemUptime - event.timestamp < 1
+        {
+            fine = event.modifierFlags.contains(.shift)
+        }
+        session.step(direction, fine: fine)
     }
 }
 
