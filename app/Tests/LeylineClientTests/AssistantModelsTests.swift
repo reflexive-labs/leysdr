@@ -114,7 +114,9 @@ final class AssistantModelsTests: XCTestCase {
                     // Stopped before the worker wrote a turn: the next message follows.
                     turn("t7", .user, "tune the club"),
                     turn("t8", .user, "the evening net then"),
-                    turn("t9", .assistant, "Tuned.", tools: [call("c2", "tune", state: .toolCallDone)]),
+                    turn(
+                        "t9", .assistant, "Tuned.",
+                        tools: [call("c2", "tune", state: .toolCallDone)]),
                     // Still on it: not stopped yet.
                     turn("t10", .user, "louder"),
                     turn("t11", .assistant, "", done: false),

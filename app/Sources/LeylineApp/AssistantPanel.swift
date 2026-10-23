@@ -452,7 +452,9 @@ struct AssistantField: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
                     .strokeBorder(focused ? Theme.borderFocus : Theme.border))
-            if !canSend, !session.assistantDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if !canSend,
+                !session.assistantDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
                 Text(AssistantWords.returnWaits(view)).font(Theme.Font.valueSmall)
                     .foregroundStyle(Theme.inkFaint)
             }
