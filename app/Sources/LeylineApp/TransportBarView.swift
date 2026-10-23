@@ -571,13 +571,16 @@ struct SquelchTrack: View {
                 .identifiedGroup("transport.squelch.track")
             }
             .stageRegion(.squelch)
+            // One line each: in a narrow bar the words are cut, never broken inside a word.
             HStack {
                 Text("muted below").font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+                    .lineLimit(1)
                 Spacer()
                 Text(squelch.isNaN ? "squelch off" : String(format: "marker %.0f dBFS", squelch))
-                    .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
+                    .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint).lineLimit(1)
                 Spacer()
                 Text("heard above").font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+                    .lineLimit(1)
             }
         }
         .disabled(session.channel == nil)
