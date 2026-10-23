@@ -129,8 +129,9 @@ struct SidebarView: View {
     /// ground: the range line (in the row), the two action rows, the sweep outcome and the
     /// bookmarks.
     private func bandRow(_ row: Band, bookmarks: [Bookmark]) -> some View {
-        // A band the radio cannot reach stays listed, disabled, and the tooltip explains why: a
-        // click that could only fail is not offered.
+        // A band the radio cannot reach stays listed and reads disabled, its actions too, and
+        // its help says why: a click that could only fail is not offered. Its chevron still
+        // opens it, to show its bookmarks.
         let why = session.outOfRangeWords(row).map { "\(row.name) is \($0)" }
         let tuned = session.tunedRow?.id == row.id
         let expanded = session.isExpanded(row)
@@ -152,6 +153,7 @@ struct SidebarView: View {
             }
             .pressableGroup("sidebar.band.\(row.id)") { if why == nil { session.tune(row: row) } }
             .help(why ?? "")
+            .disabled(why != nil)
             if expanded {
                 bandActions(row, why: why)
                 if session.sweepRow?.id == row.id, let outcome = session.sweep?.outcome {
@@ -171,7 +173,7 @@ struct SidebarView: View {
     /// The open row's two actions as rows of the list, at a bookmark row's height and indent:
     /// the glyph where a bookmark's dot is, the label where its name is, in a dimmer ink and
     /// with no chrome. `Channels` ends in `›` and opens the picker beside it; it is absent when
-    /// the band has no plan. `why` disables Scan band.
+    /// the band has no plan. `why` disables both and is their help.
     private func bandActions(_ row: Band, why: String?) -> some View {
         let stopping = session.sweeping && session.sweepRow?.id == row.id
         let pickerOpen = session.pickerBand?.id == row.id
@@ -187,9 +189,10 @@ struct SidebarView: View {
             .disabled(why != nil)
             .accessibilityIdentifier("sidebar.band.\(row.id).scan")
             .help(
-                stopping
-                    ? "Stop the sweep; listening comes back where it was"
-                    : "Sweep \(row.name) for what is on the air now. The radio is taken for a few seconds and the audio stops meanwhile."
+                why
+                    ?? (stopping
+                        ? "Stop the sweep; listening comes back where it was"
+                        : "Sweep \(row.name) for what is on the air now. The radio is taken for a few seconds and the audio stops meanwhile.")
             )
 
             if !row.plan().isEmpty {
@@ -198,10 +201,11 @@ struct SidebarView: View {
                 } label: {
                     SidebarActionRow(
                         title: "Channels", systemImage: "list.bullet", active: pickerOpen,
-                        disabled: false, opens: true)
+                        disabled: why != nil, opens: true)
                 }
                 .buttonStyle(.plain)
-                .help("The \(row.name) plan: pick a channel by name")
+                .disabled(why != nil)
+                .help(why ?? "The \(row.name) plan: pick a channel by name")
                 .accessibilityIdentifier("sidebar.band.\(row.id).channels")
                 .popover(
                     isPresented: Binding(
@@ -349,7 +353,8 @@ struct SidebarView: View {
 /// The band's name and mode, the chevron at the trailing edge, and the range line when the row
 /// is open. `selected` is the tuned row's ink; `expanded` is the tuned row and the one the
 /// chevron opened, whose ground the sidebar raises with its contents'. The chevron is a button
-/// of its own so its click never reaches the row's tap, which tunes.
+/// of its own so its click never reaches the row's tap, which tunes, and it stays enabled on a
+/// band the radio cannot tune, whose row is disabled.
 struct BandRow: View {
     let band: Band
     let selected: Bool
@@ -378,6 +383,7 @@ struct BandRow: View {
                 .buttonStyle(.plain)
                 .help(expanded ? "Close \(band.name)" : "Open \(band.name) without tuning it")
                 .accessibilityIdentifier("sidebar.band.\(band.id).chevron")
+                .environment(\.isEnabled, true)
             }
             if expanded {
                 // The longest form the sidebar's width holds, so the squelch at its end is

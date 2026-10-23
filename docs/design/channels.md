@@ -164,7 +164,8 @@ expands to what is inside it; the rest is collapsed.
   the label where its name starts, in a dimmer ink than a bookmark's name and with no button
   chrome. A sweep's progress or hits sit beneath them, followed by the bookmarks, and the band
   header, its range line, the actions and the bookmarks share one raised ground, so the open
-  band reads as one group. The
+  band reads as one group. A band the radio cannot tune reads disabled to accessibility, its
+  actions included, and its help says why; its chevron still opens it to its bookmarks. The
   band the tuned frequency is in is the expanded one, following the rule that selection reflects
   state rather than causing it, so the click expands the row by tuning it; a
   disclosure chevron at the row's edge expands or collapses without tuning, for a ham looking
