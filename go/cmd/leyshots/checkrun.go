@@ -960,16 +960,24 @@ func (c *checker) compareAX(ctx context.Context, s *CheckScene, size Size, cmd *
 	return checkResult{Status: "fail", Detail: "tree differs", Path: c.rel(path)}
 }
 
-// axFrame matches the end of an ax line: its value, when it has one, its frame and its state,
+// axFrame matches the end of an ax line: its value, when it has one, its frame and its state
+// (gone from a label's line, staticState),
 // ` value="+21 Hz" (1383,270 41×14) enabled`. The frame is in points from the window's top-left
 // corner, as the regions are. A value's quotes and backslashes are escaped, so the value ends at
 // the first bare quote.
-var axFrame = regexp.MustCompile(`(?: value="(?:[^"\\]|\\.)*")? \((-?[0-9.]+),(-?[0-9.]+) ([0-9.]+)×([0-9.]+)\)( (?:enabled|disabled)\n?)$`)
+var axFrame = regexp.MustCompile(`(?: value="(?:[^"\\]|\\.)*")? \((-?[0-9.]+),(-?[0-9.]+) ([0-9.]+)×([0-9.]+)\)((?: (?:enabled|disabled))?\n?)$`)
+
+// staticState is the state word at the end of a label's line. A label has no action, and AppKit
+// reports it enabled or disabled from the control around it as of whenever it last asked, so
+// one disabled band row's name read enabled on one launch and disabled on the next
+// (2026-10-23). The comparison leaves the word out; the control's own line keeps it.
+var staticState = regexp.MustCompile(`^(\s*AXStaticText .*) (?:enabled|disabled)(\n?)$`)
 
 // maskAX hides what a live region shows in an ax tree: an element whose frame lies inside one of
 // rects (to within a point) has its value and its frame replaced by <masked>, and a masked line
 // the same as the one before it is dropped, so a log that gained a row or a figure that moved
-// reads the same. Lines without a frame are kept as they are.
+// reads the same. Lines without a frame are kept as they are. A label's state word goes
+// (staticState).
 func maskAX(tree string, rects []Rect) string {
 	var out []string
 	prev := ""
@@ -977,6 +985,7 @@ func maskAX(tree string, rects []Rect) string {
 		if line == "" {
 			continue
 		}
+		line = staticState.ReplaceAllString(line, "$1$2")
 		m := axFrame.FindStringSubmatchIndex(line)
 		if m == nil || len(rects) == 0 {
 			out, prev = append(out, line), ""

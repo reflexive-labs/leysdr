@@ -659,7 +659,7 @@ func TestMaskAX(t *testing.T) {
 `
 	rects := []Rect{{X: 1128, Y: 233, Width: 312, Height: 100}, {X: 1144, Y: 550, Width: 280, Height: 40}}
 	want := `AXWindow "Leyline" (0,0 1440×820) enabled
-  AXStaticText "" value=<masked> (<masked>) enabled
+  AXStaticText "" value=<masked> (<masked>)
   AXCheckBox "Record transmissions" value="0" (1380,512 44×20) disabled
   AXGroup "" (1120,240 320×100) enabled
   AXButton "Scan band" (26,171 88×23) enabled
@@ -667,8 +667,22 @@ func TestMaskAX(t *testing.T) {
 	if got := maskAX(tree, rects); got != want {
 		t.Errorf("maskAX:\n%s\nwant\n%s", got, want)
 	}
-	if got := maskAX(tree, nil); got != tree {
-		t.Errorf("no rects changed the tree:\n%s", got)
+	// With no rects only the labels' state words go, so a label AppKit reports enabled on one
+	// launch and disabled on the next reads the same.
+	wantPlain := `AXWindow "Leyline" (0,0 1440×820) enabled
+  AXStaticText "" value="Tuning" (1144,269 40×15)
+  AXStaticText "" value="+21 Hz" (1383,270 41×14)
+  AXStaticText "" value="2.6 kHz" (1376,293 48×14)
+  AXStaticText "" value="say \"hi\" (1,2 3×4) enabled" (1150,561 240×26)
+  AXCheckBox "Record transmissions" value="0" (1380,512 44×20) disabled
+  AXGroup "" (1120,240 320×100) enabled
+  AXButton "Scan band" (26,171 88×23) enabled
+`
+	if got := maskAX(tree, nil); got != wantPlain {
+		t.Errorf("no rects:\n%s\nwant\n%s", got, wantPlain)
+	}
+	if a, b := maskAX(`  AXStaticText "" value="AM" (189,128 13×13) enabled`+"\n", nil), maskAX(`  AXStaticText "" value="AM" (189,128 13×13) disabled`+"\n", nil); a != b {
+		t.Errorf("a label's state word still counts: %q, %q", a, b)
 	}
 }
 
