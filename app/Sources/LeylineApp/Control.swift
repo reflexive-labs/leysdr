@@ -234,14 +234,14 @@ final class ControlChannel {
                         windows.append(settings)
                     }
                 }
-                var why: String?
+                var why: PressRefusal?
                 for w in windows {
                     await AccessibilityTree.ready(w)
                     why = AccessibilityTree.press(identifier, in: w)
                     // Found, pressed or disabled: the next window is not looked in.
-                    if why == nil || why?.hasSuffix(" is disabled") == true { break }
+                    if why == nil || why?.disabled == true { break }
                 }
-                return ControlAnswer(id: c.id, ok: why == nil, error: why ?? "")
+                return ControlAnswer(id: c.id, ok: why == nil, error: why?.description ?? "")
             case .pick(let identifier, let item):
                 guard let window = staging.window else { return noWindow }
                 var why: String?

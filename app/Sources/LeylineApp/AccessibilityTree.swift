@@ -110,13 +110,14 @@ enum AccessibilityTree {
 
     /// Presses the first element, depth first, whose identifier is `identifier`, as VoiceOver's
     /// press does. Answers why not when there is no such element or it refused the press.
-    static func press(_ identifier: String, in window: NSWindow) -> String? {
+    static func press(_ identifier: String, in window: NSWindow) -> PressRefusal? {
         // A text field takes the focus as a click gives it, its window's first responder: the
         // API's focus is answered as set without the field editor moving in, and the keys that
         // follow would reach no field.
         if let field = AXWalk.textField(identifier, ObjectNode(object: window)) {
-            guard field.isEnabled else { return "\(identifier) is disabled" }
-            return window.makeFirstResponder(field) ? nil : "\(identifier) refused the focus"
+            guard field.isEnabled else { return .disabled(identifier) }
+            return window.makeFirstResponder(field)
+                ? nil : PressRefusal("\(identifier) refused the focus")
         }
         return AXWalk.press(identifier, TreeTarget(window))
     }
@@ -502,22 +503,22 @@ enum AXWalk {
         return lines.joined(separator: "\n") + "\n"
     }
 
-    static func press(_ identifier: String, _ target: TreeTarget) -> String? {
+    static func press(_ identifier: String, _ target: TreeTarget) -> PressRefusal? {
         do {
             return try withRoot(target) { root in press(identifier, root) }
         } catch {
-            return "\(error)"
+            return PressRefusal("\(error)")
         }
     }
 
-    private static func press<N: TreeNode>(_ identifier: String, _ root: N) -> String? {
+    private static func press<N: TreeNode>(_ identifier: String, _ root: N) -> PressRefusal? {
         // `alert.<title>` is a button of the sheet over the window, by its title slugged: an
         // alert's buttons carry no identifier of the app's.
         var start = root
         var button: String?
         if identifier.hasPrefix(alertPrefix) {
             guard let sheet = first(role: kAXSheetRole, under: root) else {
-                return "the window has no sheet open for \(identifier)"
+                return PressRefusal("the window has no sheet open for \(identifier)")
             }
             start = sheet
             button = String(identifier.dropFirst(alertPrefix.count))
@@ -543,19 +544,20 @@ enum AXWalk {
             return true
         }
         if late {
-            return "no element with the identifier \(identifier) within \(Int(walkSeconds)) s"
+            return PressRefusal(
+                "no element with the identifier \(identifier) within \(Int(walkSeconds)) s")
         }
-        guard let found else { return "no element has the identifier \(identifier)" }
+        guard let found else { return PressRefusal("no element has the identifier \(identifier)") }
         // A disabled element answers a press as if it took it, through either reading, so a
         // check that presses a dead button is told so rather than passing.
-        if found.bool(kAXEnabledAttribute) == false { return "\(identifier) is disabled" }
+        if found.bool(kAXEnabledAttribute) == false { return .disabled(identifier) }
         // A text field is focused rather than pressed, through either reading: the API may
         // answer a press on one as done without focusing it.
         let field = [kAXTextFieldRole, kAXTextAreaRole].contains(found.string(kAXRoleAttribute))
         if !field, found.perform(kAXPressAction) { return nil }
         // A text field has no press; a click there gives it the focus, and so does this.
         if found.focus() { return nil }
-        return "\(identifier) refused the press"
+        return PressRefusal("\(identifier) refused the press")
     }
 
     /// The AppKit text field with that identifier among the window's objects, if it is one.
@@ -805,5 +807,20 @@ enum AXWalk {
             abs($0) < 1e9 ? Int($0.rounded()) : 0
         }
         return "(\(nums[0]),\(nums[1]) \(nums[2])×\(nums[3]))"
+    }
+}
+
+/// Why a `press` was not done: its words for the answer, and whether the element was there but
+/// disabled, which ends the search where an element that is missing goes on to the next window.
+struct PressRefusal: Error, CustomStringConvertible {
+    let description: String
+    var disabled = false
+
+    init(_ description: String) { self.description = description }
+
+    static func disabled(_ identifier: String) -> PressRefusal {
+        var r = PressRefusal("\(identifier) is disabled")
+        r.disabled = true
+        return r
     }
 }
