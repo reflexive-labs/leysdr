@@ -21,13 +21,23 @@ incremental `swift build` and `scripts/check-theme.sh`. Fix what it prints befor
 | tier | command | runs |
 |---|---|---|
 | smoke | `make app-check-smoke` | the scenes marked `smoke: true`: radio-2m, identifiers, goto-bookmark (about 35 s) |
-| targeted | `make app-check-affected` (`BASE=<ref>`) | the scenes whose `covers:` match a file changed under `app/Sources` or `app/checks` since the merge base with main, uncommitted and untracked files included; a shared file (`Theme.swift`, `AppSession.swift`, `Staging.swift`, the control code, the file's `shared:` list) brings in the smoke scenes as well. `make app-check ONLY=a,b` still vets one feature by name |
+| targeted | `make app-check-affected` (`BASE=<ref>`) | the scenes whose `covers:` match a file changed under `app/Sources` or `app/checks`, or `app/Package.swift`, since the merge base with main, uncommitted and untracked files included; a shared file (`Theme.swift`, `AppSession.swift`, `Staging.swift`, the control code, `Package.swift`, the file's `shared:` list) brings in the smoke scenes as well. `make app-check ONLY=a,b` still vets one feature by name |
 | full | `make app-check` | every scene (about 12 minutes on 2026-10-22); `JOBS=N` runs N side by side, the `serial: true` scenes (vhf-wide, the sweeps) alone. Leave it at 1 until runs at 3 show no flakes |
 
 The targeted tier prints, before its lines, `since <commit>: …`, one `affected <scene>: <files>`
-line per scene and `uncovered: <file>` for a changed file no scene covers: name that file in the
-handover, or give the scene that checks it a `covers:` glob. The merge base with main can be far
-back on a long branch; `BASE=HEAD~3` (or the batch's base) narrows it.
+line per scene and `uncovered: <file>` for a changed file no scene covers. It never passes
+having checked nothing:
+
+- An uncovered file fails the run: it also prints `fail - - uncovered … <file>` and the run
+  exits 1 after the scenes it did select. Give the scene that checks the file a `covers:` glob
+  (or, for a file under `app/checks`, a scene that reads it).
+- A selection of no scene is an error, with a line saying why, and runs nothing.
+- When the base is HEAD and nothing has changed since (the work committed on main), it compares
+  with the commit before and says so first:
+  `the base <sha> is HEAD and nothing has changed since: comparing with the commit before, <sha>`.
+
+The merge base with main can be far back on a long branch; `BASE=HEAD~3` (or the batch's base)
+narrows it. `make app-check-smoke` with no scene marked smoke is an error too.
 
 **Before handing over**: `make app-check` (every scene) and `make app-lint`. The make targets
 rebuild `ley`, the engine and the bundle first, so they always check the code as it is, and run
@@ -121,7 +131,7 @@ launch), `sizes`, and `app`, the commands in order.
   views it presses and pictures, and the façade rules behind them. A glob without a `/` matches
   a file's name in either target (`SidebarView.swift`). `make app-check-affected` runs a scene
   when one of its globs matches a changed file, and `TestCheckCoverage` (`make go-test`) fails on
-  a file in `LeylineApp` no scene covers. `smoke: true` and `serial: true` are the tiers above.
+  a file under `app/Sources` (either target) no scene covers. `smoke: true` and `serial: true` are the tiers above.
 - `expect` maps a dotted path into the `state` answer to a value; the keys are in
   `docs/dev/app.md`, "The command file".
 - `mask` on a `snapshot` or `ax` replaces the default list of masked regions; `[]` compares
@@ -223,6 +233,6 @@ Each id is used once. `ley --socket <the printed socket> …` reads the scene's 
 - The goldens re-recorded, by scene, and why.
 - The scenes added or extended.
 - What no check covers: behaviour the change touches that no scene reaches (audio, a real
-  radio, a masked region, a path with no key or identifier yet), and each `uncovered:` file
-  the targeted tier named.
+  radio, a masked region, a path with no key or identifier yet). An `uncovered:` file fails
+  the targeted tier, so it is covered before handing over, not named.
 - A scene the run named slower than usual, if it stayed so on a second run.

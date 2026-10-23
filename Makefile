@@ -40,7 +40,8 @@
 #                   scenes, RECORD=1 writes their goldens instead, JOBS=N runs N side by side
 #   make app-check-smoke     macOS: the smoke scenes alone (ML-11's first tier)
 #   make app-check-affected  macOS: the scenes covering what changed since the merge base with
-#                   main (BASE=<ref> for another), uncommitted files included
+#                   main (BASE=<ref> for another), uncommitted files included; fails on a
+#                   changed file no scene covers, and on selecting no scene
 #   make release    macOS: cut the next release from start to finish (scripts/cut-release.sh):
 #                   check the build Mac, bump VERSION, date the CHANGELOG's Unreleased section,
 #                   commit and tag, make release-build, push, make release-publish, then name the
@@ -307,7 +308,8 @@ shots-release: $(SHOTS_ASSETS) | go
 # The run is under caffeinate -i, so the Mac does not sleep through it with the display off.
 # JOBS=N runs N scenes side by side (leyshots check --jobs; serial: true scenes run alone).
 # app-check-smoke runs the smoke scenes; app-check-affected the scenes whose covers match a file
-# changed under app/Sources or app/checks since the merge base with main, or BASE=<ref>.
+# changed under app/Sources or app/checks, or app/Package.swift, since the merge base with main,
+# or BASE=<ref>; a base that is HEAD with nothing changed since compares with the commit before.
 APP_CHECK = LEYLINED_BIN="$$(cd engine && swift build -c release --show-bin-path)/leylined" LEY_BIN=$(GOBIN)/ley \
 	LEYFIX_BIN=$(GOBIN)/leyfix caffeinate -i $(GOBIN)/leyshots check $(if $(JOBS),--jobs $(JOBS)) \
 	$(if $(filter 1,$(RECORD)),--record)

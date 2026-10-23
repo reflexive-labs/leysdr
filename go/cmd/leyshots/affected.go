@@ -18,12 +18,24 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// sourcesDir and checksDir are where --affected looks for changes, from the checkout's root. A
-// scene's covers and the file's shared globs are relative to sourcesDir.
+// sourcesDir, checksDir and packageFile are where --affected looks for changes, from the
+// checkout's root. A scene's covers and the file's shared globs are relative to sourcesDir, and
+// the package manifest is matched as `Package.swift` (globPath).
 const (
-	sourcesDir = "app/Sources"
-	checksDir  = "app/checks"
+	sourcesDir  = "app/Sources"
+	checksDir   = "app/checks"
+	packageFile = "app/Package.swift"
 )
+
+// globPath is the path a changed file is matched against covers and shared with: relative to
+// app/Sources, or `Package.swift` for the manifest, which builds both targets. ok is false for
+// any other file.
+func globPath(file string) (rel string, ok bool) {
+	if file == packageFile {
+		return path.Base(packageFile), true
+	}
+	return strings.CutPrefix(file, sourcesDir+"/")
+}
 
 // tierKeys are a scene's keys that choose when it runs rather than what it does: a change to
 // them alone does not make the scene affected.
@@ -60,7 +72,9 @@ func matchesAny(globs []string, rel string) bool {
 // selection is what --affected picks: the scenes in the file's order, the changed files that
 // brought each in, and the changed files no scene covers.
 type selection struct {
-	base      string
+	base string
+	// note is a line printed before the others: why base is not the one asked for.
+	note      string
 	changed   []string
 	scenes    []*CheckScene
 	why       map[string][]string
@@ -82,7 +96,7 @@ func (f *CheckFile) affected(root string, changed []string, edited map[string]bo
 	sel := &selection{changed: changed, why: map[string][]string{}}
 	for _, file := range changed {
 		found := false
-		if rel, ok := strings.CutPrefix(file, sourcesDir+"/"); ok {
+		if rel, ok := globPath(file); ok {
 			name := path.Base(rel)
 			shared := matchesAny(f.Shared, rel)
 			if shared {
@@ -150,9 +164,12 @@ func (s *CheckScene) inputs(resolve func(string) string) []string {
 	return out
 }
 
-// print writes the selection: a line on the change, one per scene with what brought it in, and
-// one per uncovered file.
+// print writes the selection: the note, a line on the change, one per scene with what brought
+// it in, and one per uncovered file.
 func (sel *selection) print(w io.Writer) {
+	if sel.note != "" {
+		fmt.Fprintln(w, sel.note)
+	}
 	fmt.Fprintf(w, "since %s: %d changed under %s and %s, %d scenes affected\n",
 		sel.base, len(sel.changed), sourcesDir, checksDir, len(sel.scenes))
 	for _, s := range sel.scenes {
@@ -167,8 +184,31 @@ func (sel *selection) print(w io.Writer) {
 	}
 }
 
+// uncoveredResults are the failures the uncovered files make: a file nothing checks fails the
+// run, so --affected never passes having checked less than changed.
+func (sel *selection) uncoveredResults() []checkResult {
+	var out []checkResult
+	for _, file := range sel.uncovered {
+		out = append(out, checkResult{
+			Status: "fail", Scene: "-", Size: "-", Item: "uncovered", Path: file,
+			Detail: "no scene covers it: give the scene that checks it a covers glob, or the file a scene that reads it",
+		})
+	}
+	return out
+}
+
+// emptyError is the error for a selection of no scene, which checks nothing and so cannot pass.
+func (sel *selection) emptyError() error {
+	if len(sel.uncovered) > 0 {
+		return fmt.Errorf("--affected selected no scene: no scene covers what changed since %s (the uncovered lines above)", sel.base)
+	}
+	return fmt.Errorf("--affected selected no scene: nothing a scene checks changed since %s; give an earlier --base, or name the scenes with --only", sel.base)
+}
+
 // affectedScenes finds what changed in the checkout at root since base (the merge base with
 // main when empty), committed or not, untracked files included, and picks the scenes it touches.
+// A base that is HEAD with nothing changed since, as on main with the work committed, would
+// check nothing, so the comparison is with the commit before HEAD, and a note says so.
 func affectedScenes(ctx context.Context, root, base string, f *CheckFile, checks string) (*selection, error) {
 	if base == "" {
 		mb, err := gitOutput(ctx, root, "merge-base", "HEAD", "main")
@@ -177,16 +217,52 @@ func affectedScenes(ctx context.Context, root, base string, f *CheckFile, checks
 		}
 		base = strings.TrimSpace(mb)
 	}
-	sha, err := gitOutput(ctx, root, "rev-parse", "--verify", "--short", base+"^{commit}")
+	sha, err := shortCommit(ctx, root, base)
 	if err != nil {
 		return nil, fmt.Errorf("--base %s: %w", base, err)
 	}
-	sha = strings.TrimSpace(sha)
-	diff, err := gitOutput(ctx, root, "diff", "--name-only", "--no-renames", sha, "--", sourcesDir, checksDir)
+	changed, err := changedSince(ctx, root, sha)
 	if err != nil {
 		return nil, err
 	}
-	untracked, err := gitOutput(ctx, root, "ls-files", "--others", "--exclude-standard", "--full-name", "--", sourcesDir, checksDir)
+	note := ""
+	if head, err := shortCommit(ctx, root, "HEAD"); err == nil && head == sha && len(changed) == 0 {
+		prev, err := shortCommit(ctx, root, "HEAD~1")
+		if err != nil {
+			return nil, fmt.Errorf("the base %s is HEAD, nothing has changed since, and HEAD has no commit before it to compare with; name scenes with --only", sha)
+		}
+		note = fmt.Sprintf("the base %s is HEAD and nothing has changed since: comparing with the commit before, %s", sha, prev)
+		sha = prev
+		if changed, err = changedSince(ctx, root, sha); err != nil {
+			return nil, err
+		}
+	}
+	var edited map[string]bool
+	if slices.Contains(changed, checksDir+"/scenes.yaml") {
+		if edited, err = editedScenes(ctx, root, sha, checks); err != nil {
+			return nil, err
+		}
+	}
+	sel := f.affected(root, changed, edited)
+	sel.base, sel.note = sha, note
+	return sel, nil
+}
+
+// shortCommit is ref's commit, abbreviated.
+func shortCommit(ctx context.Context, root, ref string) (string, error) {
+	sha, err := gitOutput(ctx, root, "rev-parse", "--verify", "--short", ref+"^{commit}")
+	return strings.TrimSpace(sha), err
+}
+
+// changedSince lists the files under app/Sources and app/checks, and the package manifest, that
+// differ from sha in the working tree, untracked ones included, sorted.
+func changedSince(ctx context.Context, root, sha string) ([]string, error) {
+	paths := []string{sourcesDir, checksDir, packageFile}
+	diff, err := gitOutput(ctx, root, append([]string{"diff", "--name-only", "--no-renames", sha, "--"}, paths...)...)
+	if err != nil {
+		return nil, err
+	}
+	untracked, err := gitOutput(ctx, root, append([]string{"ls-files", "--others", "--exclude-standard", "--full-name", "--"}, paths...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -197,16 +273,7 @@ func affectedScenes(ctx context.Context, root, base string, f *CheckFile, checks
 		}
 	}
 	slices.Sort(changed)
-	changed = slices.Compact(changed)
-	var edited map[string]bool
-	if slices.Contains(changed, checksDir+"/scenes.yaml") {
-		if edited, err = editedScenes(ctx, root, sha, checks); err != nil {
-			return nil, err
-		}
-	}
-	sel := f.affected(root, changed, edited)
-	sel.base = sha
-	return sel, nil
+	return slices.Compact(changed), nil
 }
 
 // editedScenes names the scenes in the scenes file at checks whose definition differs from the

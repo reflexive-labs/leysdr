@@ -349,12 +349,13 @@ read its lines and look at a picture.
 | tier | command | runs |
 |---|---|---|
 | smoke | `make app-check-smoke` | the scenes marked `smoke: true`: radio-2m, identifiers, goto-bookmark (about 35 s) |
-| targeted | `make app-check-affected` (`BASE=<ref>`) | the scenes whose hand-written `covers:` globs match a file changed since the merge base with main, uncommitted ones included; a shared file (`Theme.swift`, `AppSession.swift`, `Staging.swift`, the control code) brings in the smoke scenes plus the scenes that list it, and a changed file no scene covers prints `uncovered: <file>`. `make app-check ONLY=a,b` still vets one feature by name |
+| targeted | `make app-check-affected` (`BASE=<ref>`) | the scenes whose hand-written `covers:` globs match a file changed since the merge base with main, uncommitted ones included, and the commit before when that base is HEAD and nothing has changed since; a shared file (`Theme.swift`, `AppSession.swift`, `Staging.swift`, the control code, `app/Package.swift`) brings in the smoke scenes plus the scenes that list it. A changed file no scene covers prints `uncovered: <file>` and fails the run, and a selection of no scene is an error. `make app-check ONLY=a,b` still vets one feature by name |
 | full | `make app-check` | everything (about 12 minutes on 2026-10-22); with `JOBS=N` (1 until runs at 3 show no flakes) scenes run side by side, except those marked `serial: true` (vhf-wide, the sweeps) |
 
 Each run is under `caffeinate -i`, every scene prints its time, and the summary line gives the
-total and the three slowest. A test fails when a file in `LeylineApp` is covered by no scene at
-all, so a new file comes with a `covers:` glob on the scene that checks it.
+total and the three slowest. A test fails when a file under `app/Sources`, the façade's
+included, is covered by no scene at all, so a new file comes with a `covers:` glob on the scene
+that checks it.
 
 **The batch loop.** Implementers work in parallel worktrees: they build and run `make app-test`
 and the lints, never a full check, because one run at a time owns the staged app and its

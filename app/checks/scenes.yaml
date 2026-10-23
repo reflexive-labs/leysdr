@@ -98,19 +98,23 @@
 # hand from what it presses and pictures; a glob without a / matches a file's name in either
 # target (SidebarView.swift), one with a / the path from app/Sources (LeylineApp/*.swift).
 # `make app-check-affected` runs the scenes whose covers match a file changed since the merge
-# base with main, and a change to a shared file below brings in the smoke scenes as well. Every
-# file in LeylineApp is covered by some scene or shared (go/cmd/leyshots, TestCheckCoverage).
+# base with main (the commit before, when that is HEAD and nothing has changed since), and a
+# change to a shared file below brings in the smoke scenes as well; app/Package.swift is
+# matched as Package.swift. A changed file no scene covers fails the run, as does a selection of
+# no scene. Every file under app/Sources, the façade's too, is covered by some scene or shared
+# (go/cmd/leyshots, TestCheckCoverage).
 # serial: true runs a scene with nothing beside it under `leyshots check --jobs N`: the scenes on
 # scene_vhf20's 21 MS/s and the sweeps, whose timings a busy Mac would put out.
 
 # The files every scene leans on: the theme, the session and the window, the daemon's mirror,
-# and the staging and command-file code a check run drives the app through.
+# and the staging and command-file code a check run drives the app through, and the package
+# manifest that builds both targets.
 shared: [Theme.swift, AppSession.swift, Staging.swift, Control.swift, AccessibilityTree.swift,
   AppMenus.swift, WindowPicture.swift, DeterministicFrames.swift, AppLog.swift, AppControl.swift,
   ShotStage.swift, KeyChord.swift, LeylineApp.swift, MainWindow.swift, Info.plist,
   DaemonConnection.swift, DaemonMirror.swift, ClientIdentity.swift, SocketPath.swift,
   HeldObject.swift, WriteCoalescer.swift, LeylineError.swift, JSONValue.swift,
-  ResourceBundle.swift]
+  ResourceBundle.swift, Package.swift]
 
 scenes:
   # The site's app-radio-2m inputs, without its on_air wait: the 2 m band open on Calling.

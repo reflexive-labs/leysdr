@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -59,7 +60,7 @@ func TestCheckAffected(t *testing.T) {
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	root := t.TempDir()
-	scenes := `shared: [Theme.swift]
+	scenes := `shared: [Theme.swift, Package.swift]
 scenes:
   - name: rows
     smoke: true
@@ -78,6 +79,8 @@ scenes:
 `
 	for name, body := range map[string]string{
 		"app/Sources/LeylineApp/Theme.swift":          "// theme\n",
+		"app/Package.swift":                           "// package\n",
+		".gitignore":                                  "tmp/\n",
 		"app/Sources/LeylineApp/SidebarView.swift":    "// sidebar\n",
 		"app/Sources/LeylineApp/AssistantPanel.swift": "// panel\n",
 		"app/Sources/LeylineApp/InspectorView.swift":  "// inspector\n",
@@ -118,22 +121,23 @@ scenes:
 		return stdout.String(), err
 	}
 
-	// Nothing changed: nothing runs, and that is not a failure.
+	// Nothing changed and nothing before HEAD to compare with: an error, never a pass.
 	out, err := run("")
-	if err != nil || !strings.Contains(out, ": 0 changed under app/Sources and app/checks, 0 scenes affected") || strings.Contains(out, "checked") {
+	if err == nil || !strings.Contains(err.Error(), "HEAD has no commit before it") || strings.Contains(out, "checked") {
 		t.Fatalf("no change: %v\n%s", err, out)
 	}
 
 	// A commit on the branch, an uncommitted edit of a script and an untracked file no scene
-	// covers; a change outside app/ is not looked at.
+	// covers, which fails the run after the scenes have run; a change outside app/ is not
+	// looked at.
 	writeFile(t, filepath.Join(root, "app/Sources/LeylineApp/SidebarView.swift"), "// sidebar, changed\n")
 	writeFile(t, filepath.Join(root, "go/main.go"), "package main // changed\n")
 	git(t, root, "commit", "-q", "-am", "sidebar")
 	writeFile(t, filepath.Join(root, "app/checks/assistant/hello.script"), "{\"text\": \"hello\"}\n")
 	writeFile(t, filepath.Join(root, "app/Sources/LeylineClient/Fresh.swift"), "// new\n")
 	out, err = run("")
-	if err != nil {
-		t.Fatalf("%v\n%s", err, out)
+	if !errors.Is(err, errChecksFailed) {
+		t.Fatalf("an uncovered file: %v\n%s", err, out)
 	}
 	base := git(t, root, "rev-parse", "--short", "main")
 	expectOutput(t, out,
@@ -141,15 +145,19 @@ scenes:
 		"affected rows: SidebarView.swift",
 		"affected talk: hello.script",
 		"uncovered: app/Sources/LeylineClient/Fresh.swift",
+		"fail     - - uncovered            no scene covers it: give the scene that checks it a covers glob, or the file a scene that reads it  app/Sources/LeylineClient/Fresh.swift",
 		"ok       rows 1440x820 state#1 tuned_hz",
 		"ok       talk 1440x820 state#1 tuned_hz",
-		"2 checked: 2 ok; ",
+		"3 checked: 2 ok, 1 fail; ",
 	)
+	if err := os.Remove(filepath.Join(root, "app/Sources/LeylineClient/Fresh.swift")); err != nil {
+		t.Fatal(err)
+	}
 
-	// --base HEAD leaves the commit out: the script and the untracked file are what changed.
-	out, _ = run("HEAD")
-	if !strings.Contains(out, ": 2 changed under") || strings.Contains(out, "affected rows") || !strings.Contains(out, "affected talk") {
-		t.Errorf("--base HEAD:\n%s", out)
+	// --base HEAD leaves the commit out: the script is what changed.
+	out, err = run("HEAD")
+	if err != nil || !strings.Contains(out, ": 1 changed under") || strings.Contains(out, "affected rows") || !strings.Contains(out, "affected talk") {
+		t.Errorf("--base HEAD: %v\n%s", err, out)
 	}
 
 	// A shared file brings in the smoke scene; a scene's own lines changed bring it in, and a
@@ -177,8 +185,83 @@ scenes:
 		"3 checked: 3 ok; ",
 	)
 
+	// The package manifest is matched by its name, here shared, so it brings in the smoke scene.
+	git(t, root, "add", ".")
+	git(t, root, "commit", "-q", "-m", "theme")
+	head = git(t, root, "rev-parse", "--short", "HEAD")
+	writeFile(t, filepath.Join(root, "app/Package.swift"), "// package, changed\n")
+	out, err = run(head)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	expectOutput(t, out,
+		"since "+head+": 1 changed under app/Sources and app/checks, 1 scenes affected",
+		"affected rows: Package.swift (shared)",
+		"ok       rows 1440x820",
+		"1 checked: 1 ok; ",
+	)
+	git(t, root, "checkout", "-q", "--", "app/Package.swift")
+
+	// A change no scene checks selects nothing, which is an error and not a pass: a comment in
+	// scenes.yaml, and an untracked file nothing reads, named as uncovered.
+	writeFile(t, filepath.Join(root, "app/checks/scenes.yaml"), edited+"# a comment\n")
+	out, err = run(head)
+	if err == nil || !strings.Contains(err.Error(), "--affected selected no scene: nothing a scene checks changed since "+head) || strings.Contains(out, "checked") {
+		t.Errorf("a comment: %v\n%s", err, out)
+	}
+	writeFile(t, filepath.Join(root, "app/checks/stray.txt"), "nothing reads this\n")
+	out, err = run(head)
+	if err == nil || !strings.Contains(err.Error(), "no scene covers what changed") || !strings.Contains(out, "uncovered: app/checks/stray.txt") {
+		t.Errorf("a stray file: %v\n%s", err, out)
+	}
+	if err := os.Remove(filepath.Join(root, "app/checks/stray.txt")); err != nil {
+		t.Fatal(err)
+	}
+	git(t, root, "checkout", "-q", "--", "app/checks/scenes.yaml")
+
+	// The work merged and committed on main, the tree clean: the merge base is HEAD, so the
+	// comparison is with the commit before, and a line says so.
+	git(t, root, "checkout", "-q", "main")
+	git(t, root, "merge", "-q", "--ff-only", "work")
+	prev := git(t, root, "rev-parse", "--short", "HEAD~1")
+	out, err = run("")
+	if err != nil {
+		t.Fatalf("committed on main: %v\n%s", err, out)
+	}
+	expectOutput(t, out,
+		"the base "+head+" is HEAD and nothing has changed since: comparing with the commit before, "+prev,
+		"since "+prev+": 2 changed under app/Sources and app/checks, 3 scenes affected",
+		"affected rows: Theme.swift (shared)",
+		"affected talk: scenes.yaml",
+		"affected other: Theme.swift (shared)",
+		"ok       rows 1440x820",
+		"ok       talk 100x60",
+		"ok       other 1440x820",
+		"3 checked: 3 ok; ",
+	)
+
 	// A base that is not a commit is refused in words.
 	if _, err := run("no-such-ref"); err == nil || !strings.Contains(err.Error(), "--base no-such-ref") {
 		t.Errorf("a bad base: %v", err)
+	}
+}
+
+// --smoke with no scene marked smoke is an error, not a pass that checked nothing.
+func TestCheckSmokeSelectsNothing(t *testing.T) {
+	dir := t.TempDir()
+	checks := filepath.Join(dir, "scenes.yaml")
+	writeFile(t, checks, `scenes:
+  - name: rows
+    fixtures: [{name: scene_2m}]
+    app: [{cmd: state, expect: {tuned_hz: 146520000}}]
+`)
+	var stdout bytes.Buffer
+	o := checkOptions{
+		runOptions: runOptions{root: dir, out: filepath.Join(dir, "out"), stdout: &stdout, logf: t.Logf},
+		checks:     checks, goldens: filepath.Join(dir, "goldens"), release: "26.6", smoke: true,
+	}
+	err := checkScenes(context.Background(), o)
+	if err == nil || !strings.Contains(err.Error(), "--smoke selected no scene: none in "+checks+" is marked smoke: true") {
+		t.Errorf("--smoke with none: %v\n%s", err, stdout.String())
 	}
 }
