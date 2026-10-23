@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -100,9 +99,6 @@ func runAssistant(ctx context.Context, env Env, d *daemon, dir, prompt string) (
 	model := env.Model
 	if model == "" {
 		model = DefaultAssistantModel
-	}
-	if runtime.GOOS == "darwin" && env.Script == "" {
-		env.Log("on macOS a daemon that does not honour LEYLINE_SECRETS=file keeps keys in the login keychain: $%s replaces the %s key the app uses, and the run removes it at the end", KeyEnv, provider)
 	}
 	add := []string{"ai", "add", provider}
 	if env.Script != "" {

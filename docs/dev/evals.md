@@ -102,14 +102,12 @@ only `./internal/e2e/...`, so it does not run these).
 
 The daemon's data directory (`--data`) is a temp directory of its own outside the run directory,
 removed when the daemon stops, so a run directory never holds a key or a key's record and can be
-kept or shared. `daemonrun` also sets `LEYLINE_SECRETS=file` in the daemon's environment, which
-asks it to keep keys in that directory rather than the macOS login keychain (a daemon that does
-not know the variable ignores it). Until the engine honours it, a Mac's daemon keeps every key in
-the login keychain under the provider's name whatever its data directory: `LEYEVAL_KEY` replaces
-the `anthropic` key the app uses and the run's `ley ai remove` then deletes it, so add yours
-again with `ley ai add anthropic` after the run; the runner says so when it adds one. A scripted
-run files its placeholder under `leyeval-scripted`, which leaves the `anthropic` key alone, and
-removes that item at the end too.
+kept or shared. `daemonrun` also starts the daemon with `--secrets file` and `LEYLINE_SECRETS=file`
+(dropping any value the caller's environment gave), so keys go to a file in that directory rather
+than the macOS login keychain. The daemon logs `AI keys in <path>` before it listens, and
+`daemonrun` refuses one whose line does not name a file under its `--data`: a key a scenario adds
+can never replace the one the app uses. `make e2e` and `make app-e2e` check their daemons the same
+way.
 
 ## What a run leaves
 

@@ -644,7 +644,9 @@ removed the next time the key file is read. The data directory is `--data`, by d
 `~/.local/share/leyline`) elsewhere. `--secrets file` (or `LEYLINE_SECRETS=file`, which the flag
 overrides) keeps the keys in that file on macOS too, so a daemon that tests or the eval runner start
 never writes to the login keychain; `--secrets keychain` names the keychain, and any other value of
-the variable is the platform default (`SecretsKind`, `defaultSecretStore`).
+the variable is the platform default (`SecretsKind`, `defaultSecretStore`). Before it listens the daemon logs
+`AI keys in <path>`, or `AI keys in the login keychain`; every test harness and `daemonrun` read
+that line and refuse a daemon that does not name a file under its own `--data`.
 
 The daemon makes no model call. A check runs `ley worker check --provider P [--endpoint E]` with
 `LEYLINE_SOCKET` set to the daemon's socket, writes the secret and a newline to its stdin and reads
