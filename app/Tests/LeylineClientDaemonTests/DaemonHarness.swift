@@ -15,9 +15,39 @@ struct DaemonUnderTest {
     let process: Process
     let log: URL
     let fixture: String
+    /// The test's deadline (`Harness.testDeadline`), cancelled by `Harness.stop`.
+    let watchdog: Watchdog
 
     /// Reads the daemon's stderr so a failure can print it.
     func logText() -> String { (try? String(contentsOf: log, encoding: .utf8)) ?? "" }
+}
+
+/// A test's deadline: after `Harness.testDeadline` it says so with the daemon's log and kills
+/// the daemon, and 10 s later ends the test process if `Harness.stop` has still not been called,
+/// so `make app-e2e` fails naming the test (the last `started` line) instead of hanging.
+final class Watchdog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stopped = false
+
+    init(pid: Int32, log: URL, after seconds: TimeInterval) {
+        DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { [self] in
+            guard !isStopped else { return }
+            let text = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
+            let said = "the test did not finish in \(Int(seconds)) s; its daemon's log:\n\(text)"
+            FileHandle.standardError.write(Data("DaemonHarness: \(said)\n".utf8))
+            kill(pid, SIGKILL)
+            DispatchQueue.global().asyncAfter(deadline: .now() + 10) { [self] in
+                guard !isStopped else { return }
+                let said = "DaemonHarness: the test is still stuck; exiting\n"
+                FileHandle.standardError.write(Data(said.utf8))
+                exit(1)
+            }
+        }
+    }
+
+    private var isStopped: Bool { lock.withLock { stopped } }
+
+    func stop() { lock.withLock { stopped = true } }
 }
 
 /// A setup step that failed, with its description; thrown so the test fails there.
@@ -62,24 +92,41 @@ enum Harness {
         FileManager.default.createFile(atPath: log.path, contents: nil)
         let p = Process()
         p.executableURL = URL(fileURLWithPath: bin)
+        // Keys in a file under the daemon's own --data, never the login keychain or the
+        // person's data directory, whatever this process's environment says.
+        let data = arguments.firstIndex(of: "--data").map { arguments[$0 + 1] } ?? dir + "/data"
         p.arguments =
             [
                 "--socket", socket, "--no-hardware", "--log-level", "debug",
                 "--pidfile", dir + "/leylined.pid", "--store", dir + "/store", "--recordings",
-                dir + "/recordings",
-            ] + arguments
+                dir + "/recordings", "--secrets", "file",
+            ] + (arguments.contains("--data") ? [] : ["--data", data]) + arguments
+        var environment = ProcessInfo.processInfo.environment
+        environment["LEYLINE_SECRETS"] = "file"
+        p.environment = environment
         let handle = try FileHandle(forWritingTo: log)
         p.standardError = handle
         p.standardOutput = handle
         try p.run()
-        let d = DaemonUnderTest(socketPath: socket, process: p, log: log, fixture: fixture)
+        let d = DaemonUnderTest(
+            socketPath: socket, process: p, log: log, fixture: fixture,
+            watchdog: Watchdog(pid: p.processIdentifier, log: log, after: testDeadline))
         let deadline = Date().addingTimeInterval(15)
         while Date() < deadline {
             if FileManager.default.fileExists(atPath: socket) {
-                let probe = try DaemonConnection(
-                    socketPath: socket, identity: .fresh(kind: "cli", label: "probe"))
+                let probe: DaemonConnection
+                do {
+                    probe = try DaemonConnection(
+                        socketPath: socket, identity: .fresh(kind: "cli", label: "probe"))
+                } catch {
+                    stop(d)
+                    throw error
+                }
                 defer { probe.close() }
-                if (try? await probe.state()) != nil { return d }
+                if (try? await probe.state()) != nil {
+                    try refuseKeychain(d, data: data)
+                    return d
+                }
             }
             try await Task.sleep(for: .milliseconds(50))
         }
@@ -87,10 +134,37 @@ enum Harness {
         throw XCTSkip("leylined did not come up on \(socket):\n\(d.logText())")
     }
 
+    /// Stops the daemon and fails unless its last `AI keys in …` line, logged before it
+    /// listens, names a file under `data`: a test daemon must never keep a key in the login
+    /// keychain, where it would replace the person's own.
+    static func refuseKeychain(_ d: DaemonUnderTest, data: String) throws {
+        let log = d.logText()
+        let line = log.range(of: "AI keys in ", options: .backwards).map {
+            log[$0.upperBound...].prefix { $0 != "\n" }
+        }
+        guard let line, line.hasPrefix(data + "/") else {
+            stop(d)
+            throw HarnessError(
+                "leylined keeps AI keys in \(line.map(String.init) ?? "a place it never named"), not under \(data):\n\(log)"
+            )
+        }
+    }
+
+    /// How long one test may hold its daemon. The longest takes about 7 s; a test still running
+    /// at this point is waiting on something that will not come.
+    static let testDeadline: TimeInterval = 120
+
+    /// Stops the daemon: SIGTERM, then SIGKILL if it has not exited 10 s later.
     static func stop(_ d: DaemonUnderTest) {
+        d.watchdog.stop()
         if d.process.isRunning {
             d.process.terminate()
-            d.process.waitUntilExit()
+            let end = Date().addingTimeInterval(10)
+            while d.process.isRunning && Date() < end { usleep(20_000) }
+            if d.process.isRunning {
+                kill(d.process.processIdentifier, SIGKILL)
+                d.process.waitUntilExit()
+            }
         }
         try? FileManager.default.removeItem(
             atPath: (d.socketPath as NSString).deletingLastPathComponent)
