@@ -764,7 +764,7 @@ On the Mac (Xcode 26, the same as the engine):
 ```sh
 make app          # swift build in app/: the façade and the app
 make app-run      # the window, straight from the package: no bundle, no signature
-make app-bundle   # app/dist/Leyline.app, ad-hoc signed; --with-daemon via BUNDLE_ARGS
+make app-bundle   # app/dist/Leyline.app, ad-hoc signed, with the check harness; --with-daemon via BUNDLE_ARGS
 open app/Package.swift   # or: Xcode, with previews; Product > Run runs LeylineApp
 ```
 
@@ -805,6 +805,18 @@ under `#if canImport(SwiftUI)`, `Metal` or `AppKit` is never compiled on Linux, 
 `setup.md` records for Accelerate: a green Linux run does not compile any view.
 
 ## Staged runs
+
+The harness behind this section (`Staging.swift`, `Control.swift`, `AccessibilityTree.swift`'s
+walk, `WindowPicture.swift`, `DeterministicFrames.swift`, the region probes and the waterfall's
+offscreen picture) is compiled only under the `LEYLINE_STAGING` condition.
+`scripts/bundle-app.sh` builds with `-Xswiftc -DLEYLINE_STAGING`, so `make app-bundle`, `make
+shots-bundle` and `make app-check` carry it; `scripts/release.sh` passes `--no-harness`, so a
+notarized build has none of it and ignores `LEYLINE_APP_STAGE` and `LEYLINE_APP_CONTROL`, and
+the release fails if its executable holds one of the harness's names. `make app`, `make app-run`,
+the edit hook and Xcode build without it: a change to the harness is compiled by `make
+app-check` (or `cd app && swift build -Xswiftc -DLEYLINE_STAGING`). The façade's side
+(`ShotStage`, `AppControl`, `KeyChord`) is always compiled and tested. The flag reaches every
+target, so a release build after a check recompiles the app's dependencies once.
 
 `LEYLINE_APP_STAGE` names a stage file, and the app then sets its window to it for the site's
 screenshots (`../plans/site-shots.md`, "App shots") and for check runs. `leyshots` writes the

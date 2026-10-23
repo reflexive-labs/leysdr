@@ -408,59 +408,62 @@ final class WaterfallRenderer: NSObject, MTKViewDelegate {
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
     }
 
-    /// The waterfall as the next frame would draw it, rendered into a texture of the view's
-    /// drawable size and read back, for a staged run's picture (`WindowPicture`): a
-    /// `CAMetalLayer` draws nothing through `cacheDisplay`. nil before the first row, when the
-    /// view shows only its clear colour, which `cacheDisplay` draws as the ground anyway.
-    func picture(of view: MTKView) -> CGImage? {
-        guard let device, let queue, let pipeline, let buffer, buffer.bins > 0,
-            let texture = ringTexture(device: device, buffer: buffer, view: view)
-        else { return nil }
-        upload(from: buffer, into: texture)
-        let w = Int(view.drawableSize.width)
-        let h = Int(view.drawableSize.height)
-        guard w > 0, h > 0 else { return nil }
-        let d = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: Self.pixelFormat, width: w, height: h, mipmapped: false)
-        d.usage = [.renderTarget]
-        d.storageMode = .managed
-        guard let target = device.makeTexture(descriptor: d) else { return nil }
-        let pass = MTLRenderPassDescriptor()
-        pass.colorAttachments[0].texture = target
-        pass.colorAttachments[0].loadAction = .clear
-        pass.colorAttachments[0].clearColor = view.clearColor
-        pass.colorAttachments[0].storeAction = .store
-        guard let cmd = queue.makeCommandBuffer(),
-            let enc = cmd.makeRenderCommandEncoder(descriptor: pass)
-        else { return nil }
-        encode(enc, pipeline: pipeline, texture: texture, buffer: buffer, size: view.drawableSize)
-        enc.endEncoding()
-        if let blit = cmd.makeBlitCommandEncoder() {
-            blit.synchronize(resource: target)
-            blit.endEncoding()
+    #if LEYLINE_STAGING
+        /// The waterfall as the next frame would draw it, rendered into a texture of the view's
+        /// drawable size and read back, for a staged run's picture (`WindowPicture`): a
+        /// `CAMetalLayer` draws nothing through `cacheDisplay`. nil before the first row, when the
+        /// view shows only its clear colour, which `cacheDisplay` draws as the ground anyway.
+        func picture(of view: MTKView) -> CGImage? {
+            guard let device, let queue, let pipeline, let buffer, buffer.bins > 0,
+                let texture = ringTexture(device: device, buffer: buffer, view: view)
+            else { return nil }
+            upload(from: buffer, into: texture)
+            let w = Int(view.drawableSize.width)
+            let h = Int(view.drawableSize.height)
+            guard w > 0, h > 0 else { return nil }
+            let d = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: Self.pixelFormat, width: w, height: h, mipmapped: false)
+            d.usage = [.renderTarget]
+            d.storageMode = .managed
+            guard let target = device.makeTexture(descriptor: d) else { return nil }
+            let pass = MTLRenderPassDescriptor()
+            pass.colorAttachments[0].texture = target
+            pass.colorAttachments[0].loadAction = .clear
+            pass.colorAttachments[0].clearColor = view.clearColor
+            pass.colorAttachments[0].storeAction = .store
+            guard let cmd = queue.makeCommandBuffer(),
+                let enc = cmd.makeRenderCommandEncoder(descriptor: pass)
+            else { return nil }
+            encode(
+                enc, pipeline: pipeline, texture: texture, buffer: buffer, size: view.drawableSize)
+            enc.endEncoding()
+            if let blit = cmd.makeBlitCommandEncoder() {
+                blit.synchronize(resource: target)
+                blit.endEncoding()
+            }
+            cmd.commit()
+            cmd.waitUntilCompleted()
+            var bytes = [UInt8](repeating: 0, count: w * h * 4)
+            target.getBytes(
+                &bytes, bytesPerRow: w * 4, from: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0)
+            // The layer's own colour space when it has one; else the window's, which is what a
+            // layer without one is composited as.
+            let space =
+                (view.layer as? CAMetalLayer)?.colorspace ?? view.window?.colorSpace?.cgColorSpace
+                ?? CGColorSpace(name: CGColorSpace.sRGB)
+            guard let space, let provider = CGDataProvider(data: Data(bytes) as CFData) else {
+                return nil
+            }
+            // `pixelFormat`, `bgra8Unorm`, is BGRA in memory: 32-bit little-endian with alpha first.
+            let info =
+                CGBitmapInfo.byteOrder32Little.rawValue
+                | CGImageAlphaInfo.premultipliedFirst.rawValue
+            return CGImage(
+                width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
+                space: space, bitmapInfo: CGBitmapInfo(rawValue: info), provider: provider,
+                decode: nil, shouldInterpolate: false, intent: .defaultIntent)
         }
-        cmd.commit()
-        cmd.waitUntilCompleted()
-        var bytes = [UInt8](repeating: 0, count: w * h * 4)
-        target.getBytes(
-            &bytes, bytesPerRow: w * 4, from: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0)
-        // The layer's own colour space when it has one; else the window's, which is what a
-        // layer without one is composited as.
-        let space =
-            (view.layer as? CAMetalLayer)?.colorspace ?? view.window?.colorSpace?.cgColorSpace
-            ?? CGColorSpace(name: CGColorSpace.sRGB)
-        guard let space, let provider = CGDataProvider(data: Data(bytes) as CFData) else {
-            return nil
-        }
-        // `pixelFormat`, `bgra8Unorm`, is BGRA in memory: 32-bit little-endian with alpha first.
-        let info =
-            CGBitmapInfo.byteOrder32Little.rawValue
-            | CGImageAlphaInfo.premultipliedFirst.rawValue
-        return CGImage(
-            width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
-            space: space, bitmapInfo: CGBitmapInfo(rawValue: info), provider: provider,
-            decode: nil, shouldInterpolate: false, intent: .defaultIntent)
-    }
+    #endif
 
     /// The ring texture, or nil while Metal is refusing one. A refusal is reported in the window
     /// once and is retried at most once a second: `draw(in:)` runs at the row rate, so an

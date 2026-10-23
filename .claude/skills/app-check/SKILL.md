@@ -14,7 +14,10 @@ file", is the full reference.
 ## When to run what
 
 **Every edit under `app/Sources`**: the PostToolUse hook (`scripts/claude-app-hook.sh`) runs an
-incremental `swift build` and `scripts/check-theme.sh`. Fix what it prints before going on.
+incremental `swift build` and `scripts/check-theme.sh`. Fix what it prints before going on. It
+builds without the check harness (`LEYLINE_STAGING`, `docs/dev/app.md`, "Staged runs"), so an
+error in `Staging.swift`, `Control.swift` or the other harness files shows first in `make
+app-check`'s build.
 
 **Then the tiers: smoke, then targeted, then full** (`docs/plans/mac-loop.md`, ML-11).
 

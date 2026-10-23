@@ -106,7 +106,12 @@ final class AppSession {
     /// A staged run for the site's screenshots (`Staging.swift`), or nil. While set, the
     /// session writes nothing to UserDefaults and does not reopen the remembered band, so a shot
     /// neither changes nor depends on what the person last used.
-    let staging = Staging.fromEnvironment()
+    #if LEYLINE_STAGING
+        let staging = Staging.fromEnvironment()
+        private var unstaged: Bool { staging == nil }
+    #else
+        private var unstaged: Bool { true }
+    #endif
 
     // View state local to the window: presentation only, never radio state.
     var maxHold = true
@@ -133,7 +138,7 @@ final class AppSession {
         ?? true
     {
         didSet {
-            if staging == nil {
+            if unstaged {
                 UserDefaults.standard.set(inspectorShown, forKey: Self.inspectorShownKey)
             }
             // The audio ladder subscribes only while the panel draws it.
@@ -149,7 +154,7 @@ final class AppSession {
         .flatMap(WindowPlace.init(rawValue:)) ?? .radio
     {
         didSet {
-            if staging == nil { UserDefaults.standard.set(place.rawValue, forKey: Self.placeKey) }
+            if unstaged { UserDefaults.standard.set(place.rawValue, forKey: Self.placeKey) }
             guard place != oldValue else { return }
             log("session", "place: \(place.rawValue)")
             if place == .library { selectFirstChannel() }
@@ -165,7 +170,7 @@ final class AppSession {
         UserDefaults.standard.object(forKey: AppSession.assistantShownKey) as? Bool ?? false
     {
         didSet {
-            if staging == nil {
+            if unstaged {
                 UserDefaults.standard.set(assistantShown, forKey: Self.assistantShownKey)
             }
         }
@@ -821,7 +826,7 @@ final class AppSession {
         log("session", "start: socket \(socketPath), log \(AppLog.shared.path)")
         loadBookmarks()
         watchBookmarks()
-        if staging == nil {
+        if unstaged {
             selectedBandID = UserDefaults.standard.string(forKey: Self.lastBandKey)
         }
         do {
@@ -1219,7 +1224,7 @@ final class AppSession {
         listeningStopped = false
         selectedBandID = band.id
         closeOpenedRows(tuning: Bands.group(of: band) ?? band)
-        if staging == nil { UserDefaults.standard.set(band.id, forKey: Self.lastBandKey) }
+        if unstaged { UserDefaults.standard.set(band.id, forKey: Self.lastBandKey) }
         lastError = nil
         log("session", "select band \(band.name)\(hz.map { " at \($0) Hz" } ?? "")")
         do {

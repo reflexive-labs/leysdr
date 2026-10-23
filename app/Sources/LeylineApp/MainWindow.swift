@@ -21,7 +21,7 @@ struct MainWindow: View {
     /// clears it; a window opened later starts with the splash `done`. A launch by URL would skip
     /// it too (the spec's clause), but the app opens no URLs yet. A staged run
     /// (`Staging.swift`) has no splash, so a screenshot never catches it.
-    private static var splashPending = !AppControl.isStaged()
+    private static var splashPending = !stagedLaunch
     @State private var splash: SplashPhase = MainWindow.splashPending ? .before : .done
     @State private var flight: SplashFlight?
     @State private var splashMark = WindowFrameAnchor()
@@ -54,7 +54,7 @@ struct MainWindow: View {
         // A staged run draws no animation, so two pictures of one scene match
         // (`DeterministicFrames`).
         .transaction { t in
-            if DeterministicFrames.staged {
+            if stagedLaunch {
                 t.disablesAnimations = true
                 t.animation = nil
             }
@@ -66,7 +66,9 @@ struct MainWindow: View {
             }
         }
         .task { await playSplash() }
-        .task { await session.staging?.run(session) }
+        #if LEYLINE_STAGING
+            .task { await session.staging?.run(session) }
+        #endif
         .toolbar {
             // The toolbar's glass is a capsule, a shape nothing else in the window has, so it
             // is hidden and each item draws the pop-ups' ground instead. The items are hidden

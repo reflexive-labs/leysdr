@@ -58,14 +58,16 @@ struct LeylineApp: App {
 /// behind the terminal without focus or a Dock icon. This is the launch a bundle would get.
 final class Activation: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
-        if DeterministicFrames.staged { DeterministicFrames.registerDefaults() }
+        #if LEYLINE_STAGING
+            if stagedLaunch { DeterministicFrames.registerDefaults() }
+        #endif
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         NSApp.windows.first?.makeKeyAndOrderFront(nil)
-        if AppControl.isStaged() {
+        if stagedLaunch {
             // A staged run waits on the window's task; without a window it would wait silently.
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(3))

@@ -617,7 +617,7 @@ struct TuningKeyGuard: ViewModifier {
         // window, so a staged run alone falls back to the window being typed into, a popover's
         // before the window it opened from.
         var window = NSApp.keyWindow
-        if window == nil, DeterministicFrames.staged {
+        if window == nil, stagedLaunch {
             // A field editor, or the text view a multi-line field (the assistant's) types into.
             window = NSApp.windows.filter {
                 $0.isVisible && ($0.firstResponder as? NSTextView)?.isEditable == true

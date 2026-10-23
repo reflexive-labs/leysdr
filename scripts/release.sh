@@ -114,6 +114,17 @@ release_assets() {
   printf '%s\n' "$1/drivers.json" "$1/appcast.xml"
 }
 
+# Names compiled into the app only with the check harness (scripts/bundle-app.sh, --no-harness):
+# the command file's reader, the tree walk, the picture and the region probe, as Swift's type
+# metadata spells them, and a line the deterministic frames log.
+HARNESS_MARKERS='ControlChannel|AXWalk|WindowPicture|StageRegionProbe|drawn as key whatever the focus'
+
+# harness_markers <executable>: each harness name found in <executable>, one per line, or nothing.
+# A release's app must print nothing.
+harness_markers() {
+  { grep -a -o -E "$HARNESS_MARKERS" "$1" || true; } | LC_ALL=C sort -u
+}
+
 # manifest_executable <manifest.json>: the binary a decoder's manifest names. One binary can serve
 # two decoders (leydec-speech is speech and speech-scripted), so the directory's name is not it.
 manifest_executable() {
@@ -136,7 +147,11 @@ build_app() {
     [ -x "$gobin/$exe" ] || die "decoders/$name names $exe, and there is no go/cmd/$exe to build"
   done
 
-  BUNDLE_GOBIN=$gobin BUNDLE_OUT=$app CODESIGN_IDENTITY=$identity ./scripts/bundle-app.sh --with-daemon
+  BUNDLE_GOBIN=$gobin BUNDLE_OUT=$app CODESIGN_IDENTITY=$identity ./scripts/bundle-app.sh --with-daemon --no-harness
+  local found
+  found=$(harness_markers "$app/Contents/MacOS/LeylineApp")
+  [ -z "$found" ] || die "$app carries the check harness ($(echo "$found" | xargs)); bundle-app.sh must build it with --no-harness"
+  echo "==> no check harness in $app"
   echo "==> codesign --verify --strict --deep"
   codesign --verify --strict --deep --verbose=2 "$app"
 }
