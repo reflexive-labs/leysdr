@@ -347,11 +347,15 @@ final class ControlChannel {
 
     /// Mouse events at `p` (from the window's top-left corner) posted to this process's own
     /// queue, as `send` posts keys: the window's tracking areas, gestures and menus see them as
-    /// a mouse's, and nothing reaches another app or moves the person's pointer.
-    private func post(_ types: [NSEvent.EventType], at p: CGPoint, in window: NSWindow) {
+    /// a mouse's, and nothing reaches another app or moves the person's pointer. A point over an
+    /// open popover goes to the popover, which is a window of its own.
+    private func post(_ types: [NSEvent.EventType], at p: CGPoint, in main: NSWindow) {
+        let screen = NSPoint(x: main.frame.minX + p.x, y: main.frame.maxY - p.y)
+        let window =
+            main.childWindows?.last { $0.isVisible && $0.frame.contains(screen) } ?? main
         if NSApp.keyWindow !== window { window.makeKey() }
         // The event's location is from the window's bottom-left corner.
-        let location = NSPoint(x: p.x, y: window.frame.height - p.y)
+        let location = window.convertPoint(fromScreen: screen)
         for type in types {
             guard
                 let event = NSEvent.mouseEvent(
