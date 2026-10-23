@@ -4,11 +4,11 @@
 // it (docs/design/channels.md, "Bands are the spine of the sidebar"). A click on a band tunes it as
 // it always has, and the tuned row is the open one because selection reflects state rather than
 // causing it; the chevron opens a row without tuning. A group (`GMRS`, `MURS`) is one row standing
-// for its parts. Open, a row shows its range line, a compact strip for Scan band and `Channels…`,
-// then the sweep's words or hits and its bookmarks (the design's "Scan the band"); `Channels…`
-// opens the plan picker (`PlanPickerView.swift`). The bands the radio cannot tune fold to one dim
-// line at the top, a bookmark in no band goes under `Other`, and the filter field flattens
-// everything into one list. Every rule here is `LeylineClient`'s (`Sidebar.swift`) and the
+// for its parts. Open, a row shows its range line, two action rows, Scan band and `Channels ›`,
+// then the sweep's words or hits and its bookmarks (the design's "Scan the band"), all on one
+// raised ground; `Channels` opens the plan picker (`PlanPickerView.swift`). The bands the radio
+// cannot tune fold to one dim line at the top, a bookmark in no band goes under `Other`, and the
+// filter field flattens everything into one list. Every rule here is `LeylineClient`'s (`Sidebar.swift`) and the
 // session's; the views read them.
 
 import AppKit
@@ -19,6 +19,8 @@ import SwiftUI
 struct SidebarView: View {
     @Environment(AppSession.self) private var session
     @FocusState private var filterFocused: Bool
+    /// When the plan picker last closed, by a pick, Escape or a click away.
+    @State private var pickerClosedAt: Date?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -87,7 +89,14 @@ struct SidebarView: View {
             if filterFocused != wanted { filterFocused = wanted }
         }
         .onChange(of: filterFocused) { _, has in
+            if has, !session.filterFocused, unaskedAfterPicker() {
+                filterFocused = false
+                return
+            }
             if session.filterFocused != has { session.filterFocused = has }
+        }
+        .onChange(of: session.pickerBand?.id) { was, now in
+            if was != nil, now == nil { pickerClosedAt = Date() }
         }
         // ⌘G from the Library asks for the focus before this field exists, so the change
         // above never fires; it is given once the field is in the window.
@@ -96,6 +105,21 @@ struct SidebarView: View {
                 DispatchQueue.main.async { filterFocused = true }
             }
         }
+    }
+
+    /// Whether the filter took the focus by itself as the plan picker closed: AppKit gives a
+    /// window that becomes key with nothing focused to its first key view, the filter, so
+    /// Space and the arrows typed there rather than muting and tuning. The filter takes the
+    /// focus on ⌘G (the session asks first) or a click only, so a focus within a second of the
+    /// close that no click in the window brought is given back.
+    private func unaskedAfterPicker() -> Bool {
+        guard let closed = pickerClosedAt, Date().timeIntervalSince(closed) < 1 else {
+            return false
+        }
+        let event = NSApp.currentEvent
+        let click =
+            event?.type == .leftMouseDown && event?.window?.styleMask.contains(.titled) == true
+        return !click
     }
 
     /// The list with nothing typed: the out-of-range line and, opened, its rows; the rows the
@@ -125,34 +149,44 @@ struct SidebarView: View {
         }
     }
 
-    /// One band row and, when it is open, its contents in the design's order: the range line
-    /// (in the row), the action strip, the sweep outcome and the bookmarks.
-    @ViewBuilder private func bandRow(_ row: Band, bookmarks: [Bookmark]) -> some View {
-        // A band the radio cannot reach stays listed, disabled, and the tooltip explains why: a
-        // click that could only fail is not offered.
-        let why = session.outOfRangeWords(row)
+    /// One band row and, when it is open, its contents in the design's order on one raised
+    /// ground: the range line (in the row), the two action rows, the sweep outcome and the
+    /// bookmarks.
+    private func bandRow(_ row: Band, bookmarks: [Bookmark]) -> some View {
+        // A band the radio cannot reach stays listed and reads disabled, its actions too, and
+        // its help says why: a click that could only fail is not offered. Its chevron still
+        // opens it, to show its bookmarks.
+        let why = session.outOfRangeWords(row).map { "\(row.name) is \($0)" }
         let tuned = session.tunedRow?.id == row.id
         let expanded = session.isExpanded(row)
-        BandRow(
-            band: row, selected: tuned, expanded: expanded,
-            squelchDb: tuned ? session.channel?.squelchDb : nil, disabled: why != nil
-        ) {
-            session.toggleExpanded(row)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture { if why == nil { session.tune(row: row) } }
-        .help(why.map { "\(row.name) is \($0)" } ?? "")
-        .contextMenu {
-            Button(scanBandTitle(row)) { session.scanBand(row: row) }.disabled(why != nil)
-        }
-        .pressableGroup("sidebar.band.\(row.id)") { if why == nil { session.tune(row: row) } }
-        if expanded {
-            bandActions(row, scanDisabled: why != nil)
-            if session.sweepRow?.id == row.id, let outcome = session.sweep?.outcome {
-                sweepOutcome(outcome, row: row)
+        return VStack(alignment: .leading, spacing: 0) {
+            BandRow(
+                band: row, selected: tuned, expanded: expanded,
+                squelch: tuned
+                    ? session.channel.map {
+                        SquelchWords.short($0.squelchDb, auto: session.squelchIsAuto)
+                    } : nil,
+                disabled: why != nil
+            ) {
+                session.toggleExpanded(row)
             }
-            ForEach(bookmarks) { bookmarkRow($0) }
+            .contentShape(Rectangle())
+            .onTapGesture { if why == nil { session.tune(row: row) } }
+            .contextMenu {
+                Button(scanBandTitle(row)) { session.scanBand(row: row) }.disabled(why != nil)
+            }
+            .pressableGroup("sidebar.band.\(row.id)") { if why == nil { session.tune(row: row) } }
+            .help(why ?? "")
+            .disabled(why != nil)
+            if expanded {
+                bandActions(row, why: why)
+                if session.sweepRow?.id == row.id, let outcome = session.sweep?.outcome {
+                    sweepOutcome(outcome, row: row)
+                }
+                ForEach(bookmarks) { bookmarkRow($0) }
+            }
         }
+        .background(expanded ? Theme.raised : Color.clear)
     }
 
     /// `Stop` while this row is being swept, else `Scan band`.
@@ -160,38 +194,42 @@ struct SidebarView: View {
         session.sweeping && session.sweepRow?.id == row.id ? "Stop" : "Scan band"
     }
 
-    /// The expanded row's controls. Their raised, bordered treatment separates operations from
-    /// the bookmark rows that follow; the plan action is absent when the band has no plan.
-    private func bandActions(_ row: Band, scanDisabled: Bool) -> some View {
+    /// The open row's two actions as rows of the list, at a bookmark row's height and indent:
+    /// the glyph where a bookmark's dot is, the label where its name is, in a dimmer ink and
+    /// with no chrome. `Channels` ends in `›` and opens the picker beside it; it is absent when
+    /// the band has no plan. `why` disables both and is their help.
+    private func bandActions(_ row: Band, why: String?) -> some View {
         let stopping = session.sweeping && session.sweepRow?.id == row.id
         let pickerOpen = session.pickerBand?.id == row.id
-        return HStack(spacing: Theme.Layout.sidebarActionGap) {
+        return VStack(alignment: .leading, spacing: 0) {
             Button {
                 session.scanBand(row: row)
             } label: {
-                actionLabel(
-                    scanBandTitle(row), systemImage: stopping ? "stop.fill" : "waveform",
-                    active: stopping, disabled: scanDisabled)
+                SidebarActionRow(
+                    title: scanBandTitle(row), systemImage: stopping ? "stop.fill" : "waveform",
+                    active: stopping, disabled: why != nil)
             }
             .buttonStyle(.plain)
-            .disabled(scanDisabled)
+            .disabled(why != nil)
             .accessibilityIdentifier("sidebar.band.\(row.id).scan")
             .help(
-                stopping
-                    ? "Stop the sweep; listening comes back where it was"
-                    : "Sweep \(row.name) for what is on the air now. The radio is taken for a few seconds and the audio stops meanwhile."
+                why
+                    ?? (stopping
+                        ? "Stop the sweep; listening comes back where it was"
+                        : "Sweep \(row.name) for what is on the air now. The radio is taken for a few seconds and the audio stops meanwhile.")
             )
 
             if !row.plan().isEmpty {
                 Button {
                     session.pickerBand = row
                 } label: {
-                    actionLabel(
-                        "Channels…", systemImage: "list.bullet", active: pickerOpen,
-                        disabled: false)
+                    SidebarActionRow(
+                        title: "Channels", systemImage: "list.bullet", active: pickerOpen,
+                        disabled: why != nil, opens: true)
                 }
                 .buttonStyle(.plain)
-                .help("The \(row.name) plan: pick a channel by name")
+                .disabled(why != nil)
+                .help(why ?? "The \(row.name) plan: pick a channel by name")
                 .accessibilityIdentifier("sidebar.band.\(row.id).channels")
                 .popover(
                     isPresented: Binding(
@@ -206,29 +244,7 @@ struct SidebarView: View {
                     PlanPickerView(band: row)
                 }
             }
-            Spacer(minLength: 0)
         }
-        .padding(.leading, 14 + Theme.Layout.sidebarIndent).padding(.trailing, 14)
-        .padding(.vertical, 4)
-    }
-
-    private func actionLabel(
-        _ title: String, systemImage: String, active: Bool, disabled: Bool
-    ) -> some View {
-        Label(title, systemImage: systemImage)
-            .font(Theme.Font.footnote)
-            .foregroundStyle(disabled ? Theme.inkDisabled : Theme.inkTertiary)
-            .padding(.horizontal, Theme.Layout.sidebarActionPaddingX)
-            .padding(.vertical, Theme.Layout.sidebarActionPaddingY)
-            .background(
-                active ? Theme.selected : Theme.raised,
-                in: RoundedRectangle(cornerRadius: Theme.Layout.sidebarActionRadius)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Layout.sidebarActionRadius)
-                    .stroke(active ? Theme.borderFocus : Theme.border)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: Theme.Layout.sidebarActionRadius))
     }
 
     /// Under the item, for the row the sweep is of: the progress words while it runs; then the
@@ -359,14 +375,16 @@ struct SidebarView: View {
 }
 
 /// The band's name and mode, the chevron at the trailing edge, and the range line when the row
-/// is open. `selected` is the tuned row's ground and ink; `expanded` is the tuned row and the
-/// one the chevron opened. The chevron is a button of its own so its click never reaches the
-/// row's tap, which tunes.
+/// is open. `selected` is the tuned row's ink; `expanded` is the tuned row and the one the
+/// chevron opened, whose ground the sidebar raises with its contents'. The chevron is a button
+/// of its own so its click never reaches the row's tap, which tunes, and it stays enabled on a
+/// band the radio cannot tune, whose row is disabled.
 struct BandRow: View {
     let band: Band
     let selected: Bool
     let expanded: Bool
-    let squelchDb: Double?
+    /// `sq −53`, `sq auto` or `sq off` on the tuned row (`SquelchWords.short`), else nil.
+    let squelch: String?
     var disabled = false
     let onChevron: () -> Void
 
@@ -389,36 +407,80 @@ struct BandRow: View {
                 .buttonStyle(.plain)
                 .help(expanded ? "Close \(band.name)" : "Open \(band.name) without tuning it")
                 .accessibilityIdentifier("sidebar.band.\(band.id).chevron")
+                .environment(\.isEnabled, true)
             }
             if expanded {
-                Text(detail).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary)
-                    .lineLimit(1).truncationMode(.tail)
+                // The longest form the sidebar's width holds, so the squelch at its end is
+                // never the part cut (`462.5375 – 467.7375 MHz` alone is 22 characters).
+                let forms = detailForms
+                ViewThatFits(in: .horizontal) {
+                    Text(forms.0).fixedSize()
+                    Text(forms.1).fixedSize()
+                    Text(forms.2).lineLimit(1).truncationMode(.tail)
+                }
+                .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary)
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, expanded ? 7 : 5)
-        .background(selected ? Theme.selected : Color.clear)
     }
 
     /// `87.5 – 108 MHz · 200 kHz · sq −28`, one line: the band's range, never the capture's,
-    /// with trailing zeros dropped.
-    private var detail: String {
-        var parts = [
-            "\(Frequency.mhz(band.minHz)) – \(Frequency.mhz(band.maxHz)) MHz",
-            Frequency.width(band.bandwidthHz),
-        ]
-        if let s = squelchDb {
-            parts.append(
-                s.isNaN
-                    ? "sq off"
-                    : "sq \(String(Int(s.rounded())).replacingOccurrences(of: "-", with: "−"))")
-        }
-        return parts.joined(separator: " · ")
+    /// with trailing zeros dropped. Then the same closed up around the dash, then without the
+    /// width, for the bands whose edges carry four decimals (GMRS, MURS).
+    private var detailForms: (String, String, String) {
+        let lo = Frequency.mhz(band.minHz)
+        let hi = Frequency.mhz(band.maxHz)
+        let tail = squelch.map { " · \($0)" } ?? ""
+        let width = Frequency.width(band.bandwidthHz)
+        return (
+            "\(lo) – \(hi) MHz · \(width)\(tail)",
+            "\(lo)–\(hi) MHz · \(width)\(tail)",
+            "\(lo)–\(hi) MHz\(tail)"
+        )
     }
 }
 
-/// `7 bands below what this radio tunes`, one dim line at the top of the list, with the chevron
-/// showing whether its rows are out. The rows are the disabled band rows themselves.
+/// An open band's action as a row of the list: the glyph centred where a bookmark row draws
+/// its dot, the label where its name starts, in `inkTertiary` with the glyph in `inkFaint`
+/// (a step up each while `active`: the sweep running, the picker open), and `›` at the trailing
+/// edge, under the band rows' chevrons, when it `opens` something beside it.
+struct SidebarActionRow: View {
+    let title: String
+    let systemImage: String
+    let active: Bool
+    let disabled: Bool
+    var opens = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage).font(Theme.Font.rowGlyph)
+                .foregroundStyle(
+                    disabled ? Theme.inkDisabled : active ? Theme.inkTertiary : Theme.inkFaint
+                )
+                .frame(width: Theme.Layout.sidebarDot)
+            Text(title).font(Theme.Font.label)
+                .foregroundStyle(
+                    disabled ? Theme.inkDisabled : active ? Theme.inkSecondary : Theme.inkTertiary
+                )
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if opens {
+                Image(systemName: "chevron.right").font(Theme.Font.glyph)
+                    .foregroundStyle(disabled ? Theme.inkDisabled : Theme.inkFaint)
+                    .frame(width: 12, height: 12)
+            }
+        }
+        .padding(.leading, 14 + Theme.Layout.sidebarIndent).padding(.trailing, 14)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+}
+
+/// `17 bands out of range`, one dim line at the top of the list, with the chevron showing
+/// whether its rows are out and the help saying where they lie. The rows are the disabled band
+/// rows themselves.
 struct OutOfRangeLine: View {
     let fold: OutOfRangeFold
     let expanded: Bool
@@ -434,7 +496,7 @@ struct OutOfRangeLine: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 5)
-        .help(expanded ? "Hide them" : "Show them; they cannot be tuned with this radio")
+        .help(expanded ? "Hide them" : "Show them; they lie \(fold.side)")
     }
 }
 
@@ -445,8 +507,9 @@ struct OutOfRangeLine: View {
 /// frequency and mode, tuned or not and whoever started it, a 6 pt `accentRec` dot sits 6 pt
 /// left of the frequency, whose ink does not change. The row is an editor while `editing`. A
 /// bookmark on a plan channel shows the channel's name in the frequency's place (`ch17`, `WX3`),
-/// what `ley monitor` prints in its CHANNEL column. The row sits in from the band's name by
-/// `sidebarIndent`, under its band.
+/// what `ley monitor` prints in its CHANNEL column, and `≈ calling` for one near a channel but
+/// not on it (`Plans.rowLabel`). The row never shows the bookmark's tone, which the inspector's
+/// field holds. The row sits in from the band's name by `sidebarIndent`, under its band.
 struct BookmarkRow: View {
     let bookmark: Bookmark
     let selected: Bool
@@ -479,7 +542,7 @@ struct BookmarkRow: View {
                 if modified {
                     Text("changed").font(Theme.Font.valueSmall).foregroundStyle(Theme.caution)
                 } else {
-                    Text(Plans.name(at: bookmark.hz) ?? Frequency.fieldParts(bookmark.hz).major)
+                    Text(Plans.rowLabel(at: bookmark.hz) ?? Frequency.fieldParts(bookmark.hz).major)
                         .font(Theme.Font.valueSmall)
                         .foregroundStyle(selected ? Theme.inkTertiary : Theme.inkFaint)
                         .help(Frequency.format(bookmark.hz))

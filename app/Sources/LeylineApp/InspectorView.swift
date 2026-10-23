@@ -68,7 +68,24 @@ struct ChannelPanel: View {
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.panel)
+        // A click on the panel's empty space (the header, a label, the gaps between regions)
+        // ends an edit in the name, Tone or Note field, as a click elsewhere does in any Mac
+        // window; the controls' own clicks reach them first.
+        .contentShape(Rectangle())
+        .onTapGesture { Self.endFieldEdit() }
         .identifiedGroup("inspector")
+    }
+
+    /// Takes the focus from the field being edited, whose lost focus puts its saved value back
+    /// (`BookmarkField`). The key window, or in a check run, whose app is never active and has
+    /// none, the window a field editor is typing in.
+    static func endFieldEdit() {
+        let window =
+            NSApp.keyWindow
+            ?? NSApp.windows.first {
+                $0.isVisible && ($0.firstResponder as? NSTextView)?.isFieldEditor == true
+            }
+        window?.makeFirstResponder(nil)
     }
 }
 
@@ -141,11 +158,14 @@ struct IdentityView: View {
                     }
                 }
             }
-            if let b = bookmark, !b.tags.isEmpty {
+            if let b = bookmark {
                 // Tags are shown, not edited (docs/design/channels.md, "Bookmarks
-                // gain three fields").
-                Text(b.tags.joined(separator: " · ")).font(Theme.Font.valueSmall)
+                // gain three fields"). The line is there for an untagged bookmark too, blank,
+                // so nothing under it moves between a tagged bookmark and an untagged one.
+                Text(b.tags.isEmpty ? " " : b.tags.joined(separator: " · "))
+                    .font(Theme.Font.valueSmall)
                     .foregroundStyle(Theme.inkFaint).lineLimit(1).truncationMode(.tail)
+                    .accessibilityHidden(b.tags.isEmpty)
             }
             Text(detail(bookmark: bookmark, hz: hz))
                 .font(Theme.Font.value).foregroundStyle(Theme.inkMuted)

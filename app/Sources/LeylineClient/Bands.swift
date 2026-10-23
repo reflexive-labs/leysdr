@@ -261,6 +261,19 @@ public enum Plans {
         channel(at: hz, in: bands)?.channel.name
     }
 
+    /// What a bookmark's sidebar row prints in its frequency's place: the plan channel's name
+    /// when `hz` is the channel's own frequency (`calling`), `≈ calling` when it lies off the
+    /// channel by no more than half the channel's width (146.525 MHz, 5 kHz up from calling),
+    /// else nil and the row prints the frequency. Unlike `name(at:)`, which names a new bookmark
+    /// after the channel it nearly sits on, a row says when it does not quite.
+    public static func rowLabel(at hz: UInt64, in bands: [Band] = Bands.builtIn) -> String? {
+        guard let found = channel(at: hz, in: bands) else { return nil }
+        let off = found.channel.hz > hz ? found.channel.hz - hz : hz - found.channel.hz
+        if off == 0 { return found.channel.name }
+        guard off * 2 <= UInt64(found.band.bandwidth(of: found.channel)) else { return nil }
+        return "≈ \(found.channel.name)"
+    }
+
     /// A name typed with a band in hand: the radio-printed name (`16`, `WX3`, `24 coast`), with
     /// or without a leading zero, or any alias, against that band's plan. This is the
     /// band-context lookup, separate from `resolveGlobal`, which is why a channel may carry an

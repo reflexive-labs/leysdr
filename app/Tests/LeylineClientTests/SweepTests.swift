@@ -126,6 +126,26 @@ final class SweepTests: XCTestCase {
         XCTAssertEqual(one.hits.map(\.hz), [462_662_500])
     }
 
+    func testAHitTunesTheFrequencyItsRowNames() throws {
+        let twoM = try band("2m")
+        let s = scan([detection(146_940_186, snr: 30), detection(146_523_400, snr: 20)])
+        let result = SweepResult(scan: s, band: twoM, in: Bands.builtIn)
+        let off = try XCTUnwrap(result.hits.first)
+        XCTAssertNil(off.channelHz, "146.940 MHz is on no 2 m plan channel")
+        XCTAssertEqual(off.label, "146.940 MHz")
+        XCTAssertEqual(off.tuneHz, 146_940_000, "the kilohertz the row prints, not the measure")
+        XCTAssertEqual(off.hz, 146_940_186)
+        let calling = try XCTUnwrap(result.hits.last)
+        XCTAssertEqual(calling.label, "calling")
+        XCTAssertEqual(calling.channelHz, 146_520_000)
+        XCTAssertEqual(calling.tuneHz, 146_520_000, "the named channel's own frequency")
+        XCTAssertEqual(
+            SweepHit(
+                hz: 146_940_500, snrDb: 9, bandwidthHz: 12_500, looks: 1, looksPossible: 8,
+                name: nil
+            ).label, "146.941 MHz", "a half kilohertz rounds up, and the words follow")
+    }
+
     func testHitsWithEqualSNRKeepTheDetectionsOrder() throws {
         let twoM = try band("2m")
         let s = scan([

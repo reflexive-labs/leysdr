@@ -159,9 +159,13 @@ expands to what is inside it; the rest is collapsed.
 - **A band row** shows its name and mode, and a click on it tunes the band: a
   newcomer who clicks FM broadcast hears it, and FM broadcast has no plan and no bookmarks, so
   a click that only expanded the row would leave a sweep as the only way in. Expanded, the row
-  shows its range line, then a compact action strip with `Scan band` and, where the band has a
-  plan, `Channels…`. The raised, bordered controls distinguish actions from the bookmark rows
-  below them. A sweep's progress or hits sit beneath the strip, followed by the bookmarks. The
+  shows its range line, then two actions as rows of the list, `Scan band` and, where the band
+  has a plan, `Channels ›`: at a bookmark row's height, the glyph where a bookmark's dot sits and
+  the label where its name starts, in a dimmer ink than a bookmark's name and with no button
+  chrome. A sweep's progress or hits sit beneath them, followed by the bookmarks, and the band
+  header, its range line, the actions and the bookmarks share one raised ground, so the open
+  band reads as one group. A band the radio cannot tune reads disabled to accessibility, its
+  actions included, and its help says why; its chevron still opens it to its bookmarks. The
   band the tuned frequency is in is the expanded one, following the rule that selection reflects
   state rather than causing it, so the click expands the row by tuning it; a
   disclosure chevron at the row's edge expands or collapses without tuning, for a ham looking
@@ -179,7 +183,7 @@ expands to what is inside it; the rest is collapsed.
   for the band lookup; `Bands.plain` has a sidebar-facing sibling that folds parts into their
   group. On the Go side `presetAt` and `ResolvePreset` walk the groups' plans as well as the
   bands'. Picking a channel in the other half moves the capture.
-- **The plan picker** is a popover from the `Channels…` action, the shape the mode and width
+- **The plan picker** is a popover from the `Channels` action, the shape the mode and width
   pop-ups use, sized to about twelve rows and scrolling past that. A row is the channel's name,
   its frequency, and its note in `inkTertiary` where there is one; the order is the plan's own,
   channel number first, so marine's ship and coast entries sit together. A filter field at the
@@ -192,12 +196,16 @@ expands to what is inside it; the rest is collapsed.
   recording dot, editor and context menu. A bookmark on a
   plan channel shows the channel's name in the frequency's place (`ch17`, `WX3`), which is what
   `ley monitor` prints in its CHANNEL column, so the two clients agree on what a frequency is
-  called. A bookmark in no band goes under a final `Other` header. Moving a bookmark with
+  called. One near a channel but not on it, within half the channel's width, reads `≈ calling`
+  (146.525 MHz, 5 kHz off the calling channel), so a neighbour is not taken for the channel. A
+  row never shows the bookmark's tone; the inspector's Tone field holds it. A bookmark in no band goes under a final `Other` header. Moving a bookmark with
   `Replace with …` moves the row to the new band, and the row is selected there, so the move is
   visible.
 - **Out-of-range bands collapse to one line.** An RTL-SDR user sees seven HF rows they can
-  never click. They become `7 bands below what this radio tunes`, one dim line at the top, which
-  expands to the rows on click; `outside` when they lie on both sides of what the radio tunes.
+  never click. They become `7 bands out of range`, one dim line at the top, which
+  expands to the rows on click; its help says where they lie, `below what this radio tunes`, or
+  `outside` when they lie on both sides of it. The words stay that short so a count of 17 fits
+  the sidebar's width.
   The line counts bands, not their bookmarks, which the filter still lists as disabled rows.
   The rule and its words already exist (`Bands.outOfRangeWords`).
 - **A filter field at the top** flattens everything. Typing narrows the list to bands,
@@ -246,7 +254,10 @@ and not a second one a watch or another window is using) and puts the detections
 rail as ticks with their SNR in the help text, strongest first in the expanded row for the
 sweep's duration and until the next tune. One click on a hit tunes it; the plan channel nearest
 within half a step names it, as `presetAt` names a detection in `ley scan`; `＋` on a hit makes
-the bookmark, named after the channel when there is one. A NOAA newcomer therefore clicks the
+the bookmark, named after the channel when there is one. Both use the frequency the row names:
+the channel's own, else the measured centre to the kilohertz the row prints (`146.940 MHz`),
+because the measure moves by a few hundred hertz from sweep to sweep and a bookmark at
+146.940186 MHz is not the repeater at 146.940 beside it. A NOAA newcomer therefore clicks the
 band, clicks Scan band, and clicks the loudest row. A sweep that finds nothing replaces the
 progress text with one line, `Nothing on the air right now; repeaters and towers key up
 briefly`, and leaves the rail without hits; a previous sweep's hits stay until the next sweep
@@ -300,7 +311,8 @@ Additive, in `bookmarks.json`, all optional, unknown keys preserved by both read
 written by the CHIRP import and read by nothing yet: recording a repeater's input as data is not
 transmitting, and a sentence in `note` could not become a field later without parsing prose. The
 inspector's identity region edits `tone` and `note` beside the name; `tags` are edited nowhere and
-are shown as words under the name when present. Neither client gates audio on `tone`: tone
+are shown as words under the name when present, on a line a bookmark without tags keeps blank, so
+nothing under it moves from one bookmark to the next. Neither client gates audio on `tone`: tone
 squelch is the engine's separate decision (`control.proto`, `ChannelConfig`'s reserved field 13),
 and a
 bookmark's tone stays a record of what the repeater uses.

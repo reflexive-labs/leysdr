@@ -197,6 +197,8 @@ final class AppSession {
     /// Whether the one line standing for the bands this radio cannot tune has been opened to
     /// its rows; the next tune folds it again.
     var outOfRangeExpanded = false
+    /// The level the window's auto squelch last wrote, and the channel it wrote it to.
+    private(set) var autoSquelch: (channelID: String, db: Double)?
     /// The sidebar row whose `Channels…` popover is open, or nil. Opening it empties the query
     /// and puts the highlight on the tuned channel when the plan has it, else the first row.
     var pickerBand: Band? {
@@ -425,6 +427,14 @@ final class AppSession {
     var capture: Leyline_V1_Capture? { heldCapture.current { state.capture($0) } }
     var channel: Leyline_V1_Channel? { heldChannel.current { state.channel($0) } }
     var device: Leyline_V1_DeviceDescriptor? { capture.flatMap { state.device($0.deviceID) } }
+    /// Whether the channel's squelch is still the level `measureSquelch` wrote to it, which the
+    /// sidebar's range line reads as `sq auto` (`SquelchWords.short`).
+    var squelchIsAuto: Bool {
+        guard let a = autoSquelch, let ch = channel, ch.channelID == a.channelID else {
+            return false
+        }
+        return abs(ch.squelchDb - a.db) < 0.05
+    }
     /// The window's own sink on the held channel; nil when it has none there, even while
     /// another client's sink plays the channel (`audioElsewhere`).
     var sink: Leyline_V1_Sink? {
@@ -1517,6 +1527,7 @@ final class AppSession {
             spectrum.latest, sampleRate: sampleRate, bandwidthHz: bandwidthHz)
         guard threshold.isFinite else { return }
         writes.squelchDb(threshold, channel: ch.channelID)
+        autoSquelch = (ch.channelID, threshold)
         log("session", "auto squelch \(threshold) dBFS from floor \(floor)")
     }
 
@@ -2018,33 +2029,34 @@ final class AppSession {
         Task { await startSweep(row: row) }
     }
 
-    /// A hit's row and its rail tick: the frequency tunes as a click on the chart would. With
+    /// A hit's row and its rail tick: the frequency the row names (`SweepHit.tuneHz`) tunes as
+    /// a click on the chart would. With
     /// no capture (Stop listening after the sweep) the band opens the radio there, as a bookmark
     /// click does.
     func tune(hit: SweepHit) {
-        log("tune", "hit \(hit.label) at \(hit.hz) Hz")
-        if capture == nil, let b = Bands.band(containing: hit.hz, in: bands),
+        log("tune", "hit \(hit.label) at \(hit.tuneHz) Hz")
+        if capture == nil, let b = Bands.band(containing: hit.tuneHz, in: bands),
             outOfRangeWords(b) == nil
         {
-            Task { await select(band: b, at: hit.hz) }
+            Task { await select(band: b, at: hit.tuneHz) }
             return
         }
-        tune(to: hit.hz)
+        tune(to: hit.tuneHz)
     }
 
     /// `＋` on a hit: a bookmark named as the row names the hit, the plan channel's name else
-    /// the frequency, with the band's mode and width there, and its row
+    /// the frequency, on that frequency (`SweepHit.tuneHz`) with the band's mode and width, and its row
     /// opened as an editor as ⌘D opens one. The same name on the same frequency twice updates
     /// the bookmark in place (`BookmarkStore.add`).
     func bookmark(hit: SweepHit) {
-        let band = Bands.band(containing: hit.hz, in: bands)
-        let mode = band?.mode(at: hit.hz) ?? Bands.defaultMode(at: hit.hz, in: bands)
+        let band = Bands.band(containing: hit.tuneHz, in: bands)
+        let mode = band?.mode(at: hit.tuneHz) ?? Bands.defaultMode(at: hit.tuneHz, in: bands)
         let bandwidthHz = band?.bandwidthHz ?? mode.defaultBandwidthHz
         do {
             let b = try bookmarks.add(
-                name: hit.label, hz: hit.hz, mode: mode, bandwidthHz: bandwidthHz)
+                name: hit.label, hz: hit.tuneHz, mode: mode, bandwidthHz: bandwidthHz)
             try bookmarks.save()
-            log("bookmark", "added \(hit.label) at \(hit.hz) Hz from a sweep hit")
+            log("bookmark", "added \(hit.label) at \(hit.tuneHz) Hz from a sweep hit")
             editingBookmarkID = b.id
         } catch {
             lastError = bookmarkWriteError(error)
