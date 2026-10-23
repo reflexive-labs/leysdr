@@ -81,8 +81,9 @@ public struct OutOfRangeFold: Sendable, Hashable {
 // MARK: The range line
 
 /// The squelch in an open band row's range line (`144 – 148 MHz · 12.5 kHz · sq −53`), always
-/// one short form: the level to the decibel, `sq auto` while the channel keeps the level the
-/// window measured for it when it tuned, `sq off`.
+/// one short form: the level to the decibel, `sq auto` while the channel says its level was
+/// measured from the noise floor (`Channel.squelch_source` AUTO, by whichever client or job set
+/// it), `sq off`.
 public enum SquelchWords {
     public static func short(_ db: Double, auto: Bool) -> String {
         guard db.isFinite else { return "sq off" }

@@ -331,54 +331,65 @@ final class ChannelFollowTests: XCTestCase {
         XCTAssertEqual(
             ChangeNote.latest(for: s.channel("chan_wx")!, in: s, selfClientID: "app_self")?.text,
             "The assistant tuned to 162.400 MHz NFM.")
-        // The same client's squelch right after: a measured one (auto) is not a level the
-        // assistant chose, so the note leaves it out.
+        // The same client's squelch right after: one the channel says was measured (auto) is not
+        // a level the assistant chose, so the note leaves it out.
         var measured = made
         measured.squelchDb = -42
+        measured.squelchSource = .squelchAuto
         s.apply(event(5, .channel(measured), by: assistant))
         XCTAssertEqual(
             ChangeNote.latest(for: s.channel("chan_wx")!, in: s, selfClientID: "app_self")?.text,
             "The assistant tuned to 162.400 MHz NFM.")
-        s.apply(event(6, .conversation(conversation(tune: #"{"frequency":"wx2"}"#))))
+        // A level the tune wrote as a number is the assistant's own, and reads as one sentence.
+        var level = measured
+        level.squelchSource = .squelchManual
+        s.apply(event(6, .channel(level), by: assistant))
         XCTAssertEqual(
             ChangeNote.latest(for: s.channel("chan_wx")!, in: s, selfClientID: "app_self")?.text,
-            "The assistant tuned to 162.400 MHz NFM.")
-        s.apply(
-            event(7, .conversation(conversation(tune: #"{"frequency":"wx2","squelch":"auto"}"#))))
+            "The assistant tuned to 162.400 MHz NFM.",
+            "the same level with another source is no new change")
+        var asked = made
+        asked.squelchDb = -40
+        asked.squelchSource = .squelchManual
+        s.apply(event(7, .channel(made), by: assistant))
+        s.apply(event(8, .channel(asked), by: assistant))
         XCTAssertEqual(
             ChangeNote.latest(for: s.channel("chan_wx")!, in: s, selfClientID: "app_self")?.text,
-            "The assistant tuned to 162.400 MHz NFM.")
-        // A level the call asked for is the assistant's own, and reads as one sentence.
-        s.apply(
-            event(8, .conversation(conversation(tune: #"{"frequency":"wx2","squelch":"-42"}"#))))
-        XCTAssertEqual(
-            ChangeNote.latest(for: s.channel("chan_wx")!, in: s, selfClientID: "app_self")?.text,
-            "The assistant tuned to 162.400 MHz NFM and set the squelch to -42 dBFS.")
-        // A level set later, by a call of its own, is always named.
-        var later = measured
+            "The assistant tuned to 162.400 MHz NFM and set the squelch to -40 dBFS.")
+        // A level set later is always named, and a measured one says so, as ley does.
+        var later = asked
         later.squelchDb = -35
+        later.squelchSource = .squelchAuto
         s.apply(event(9, .channel(later), by: assistant))
-        s.apply(event(10, .conversation(conversation(tune: #"{"frequency":"wx2"}"#))))
         XCTAssertEqual(
             ChangeNote.latest(for: s.channel("chan_wx")!, in: s, selfClientID: "app_self")?.text,
-            "The assistant tuned to 162.400 MHz NFM and set the squelch to -35 dBFS.")
-        // A terminal's, whose squelch the mirror cannot tell from auto.
+            "The assistant tuned to 162.400 MHz NFM and set the squelch to -35 dBFS (auto).")
+        // A terminal's reads the same way: its auto squelch is left out, its level named.
         var terminalMade = channel("chan_t", offset: 100_000, by: terminal)
         terminalMade.squelchDb = .nan
         s.apply(event(11, .channel(terminalMade), by: terminal))
         XCTAssertEqual(
             ChangeNote.latest(for: s.channel("chan_t")!, in: s, selfClientID: "app_self")?.text,
             "Another terminal tuned to 162.100 MHz NFM.")
-        var terminalSquelch = terminalMade
-        terminalSquelch.squelchDb = -50
-        s.apply(event(12, .channel(terminalSquelch), by: terminal))
+        var terminalAuto = terminalMade
+        terminalAuto.squelchDb = -50
+        terminalAuto.squelchSource = .squelchAuto
+        s.apply(event(12, .channel(terminalAuto), by: terminal))
         XCTAssertEqual(
             ChangeNote.latest(for: s.channel("chan_t")!, in: s, selfClientID: "app_self")?.text,
             "Another terminal tuned to 162.100 MHz NFM.")
+        var terminalLevel = terminalMade
+        terminalLevel.squelchDb = -45
+        terminalLevel.squelchSource = .squelchManual
+        s.apply(event(13, .channel(terminalMade), by: terminal))
+        s.apply(event(14, .channel(terminalLevel), by: terminal))
+        XCTAssertEqual(
+            ChangeNote.latest(for: s.channel("chan_t")!, in: s, selfClientID: "app_self")?.text,
+            "Another terminal tuned to 162.100 MHz NFM and set the squelch to -45 dBFS.")
         // The window's own write takes it away.
         var mine = channel("chan_wx", offset: 400_000, by: assistant)
         mine.squelchDb = -50
-        s.apply(event(13, .channel(mine), by: app))
+        s.apply(event(15, .channel(mine), by: app))
         XCTAssertNil(
             ChangeNote.latest(for: s.channel("chan_wx")!, in: s, selfClientID: "app_self"))
     }

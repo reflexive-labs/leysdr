@@ -26,7 +26,7 @@ final class AssistantModelsTests: XCTestCase {
 
     func turn(
         _ id: String, _ role: Leyline_V1_Role, _ text: String, done: Bool = true,
-        tools: [Leyline_V1_ToolCall] = []
+        tools: [Leyline_V1_ToolCall] = [], stopReason: Leyline_V1_StopReason = .unspecified
     ) -> Leyline_V1_Turn {
         var t = Leyline_V1_Turn()
         t.turnID = id
@@ -34,6 +34,7 @@ final class AssistantModelsTests: XCTestCase {
         t.text = text
         t.done = done
         t.tools = tools
+        t.stopReason = stopReason
         return t
     }
 
@@ -98,10 +99,10 @@ final class AssistantModelsTests: XCTestCase {
                 .conversationIdle,
                 turns: [
                     turn("t1", .user, "where am i"),
-                    turn("t2", .assistant, "On 146.520 MHz."),
-                    // Stopped while the model thought: the worker's empty turn, closed.
+                    turn("t2", .assistant, "On 146.520 MHz.", stopReason: .completed),
+                    // Stopped while the model thought: an empty turn, closed.
                     turn("t3", .user, "and the net"),
-                    turn("t4", .assistant, ""),
+                    turn("t4", .assistant, "", stopReason: .stopped),
                     // Stopped in the middle of a call.
                     turn("t5", .user, "scan 2 m"),
                     turn(
@@ -110,28 +111,24 @@ final class AssistantModelsTests: XCTestCase {
                             call(
                                 "c1", "scan", state: .toolCallDone, result: "stopped",
                                 isError: true)
-                        ]),
-                    // Stopped before the worker wrote a turn: the next message follows.
-                    turn("t7", .user, "tune the club"),
-                    turn("t8", .user, "the evening net then"),
+                        ], stopReason: .stopped),
+                    // Ended for another reason: the daemon says why, and it is not a stop. An
+                    // empty done turn and a step whose result reads "stopped" are not one either.
+                    turn("t7", .user, "list everything"),
                     turn(
-                        "t9", .assistant, "Tuned.",
-                        tools: [call("c2", "tune", state: .toolCallDone)]),
+                        "t8", .assistant, "(The assistant stopped after 40 steps.)",
+                        stopReason: .stepLimit),
+                    turn("t9", .user, "again"),
+                    turn(
+                        "t10", .assistant, "",
+                        tools: [call("c2", "tune", state: .toolCallDone, result: "stopped")]),
                     // Still on it: not stopped yet.
-                    turn("t10", .user, "louder"),
-                    turn("t11", .assistant, "", done: false),
+                    turn("t11", .user, "louder"),
+                    turn("t12", .assistant, "", done: false),
                 ]))
         XCTAssertEqual(
             view.turns.map(\.stopped),
-            [false, false, false, true, false, true, true, false, false, false, false])
-
-        // A user's message left last once the turn was stopped, and one just sent.
-        let stopped = ConversationView(
-            conversation(.conversationIdle, turns: [turn("t1", .user, "where am i")]))
-        XCTAssertEqual(stopped.turns.map(\.stopped), [true])
-        let thinking = ConversationView(
-            conversation(.conversationThinking, turns: [turn("t1", .user, "where am i")]))
-        XCTAssertEqual(thinking.turns.map(\.stopped), [false])
+            [false, false, false, true, false, true, false, false, false, false, false, false])
     }
 
     func testTheWaitingRowShowsWhileTheModelThinksAndNotWhileAToolRuns() {

@@ -107,17 +107,25 @@ enum Harness {
     }
 
     /// Sets a channel's squelch through a coalescer of its own and waits for the mirror to
-    /// confirm it, the way every write is confirmed (invariant 7). NaN turns the squelch off.
+    /// confirm it, the way every write is confirmed (invariant 7). NaN turns the squelch off;
+    /// `auto` writes the level as one measured from the noise floor.
     @MainActor
     static func setSquelch(
-        _ db: Double, channel: String, via c: DaemonConnection, mirror: DaemonMirror
+        _ db: Double, auto: Bool = false, channel: String, via c: DaemonConnection,
+        mirror: DaemonMirror
     ) async throws {
         let writes = WriteCoalescer(connection: c, tick: .milliseconds(50))
-        writes.squelchDb(db, channel: channel)
+        if auto {
+            writes.squelchAutoDb(db, channel: channel)
+        } else {
+            writes.squelchDb(db, channel: channel)
+        }
         await writes.stop()
         let landed = await eventually(.seconds(5)) {
-            let got = mirror.state.channel(channel)?.squelchDb ?? .nan
-            return db.isNaN ? got.isNaN : got == db
+            let ch = mirror.state.channel(channel)
+            let got = ch?.squelchDb ?? .nan
+            guard db.isNaN ? got.isNaN : got == db else { return false }
+            return !auto || ch?.squelchSource == .squelchAuto
         }
         if !landed {
             throw HarnessError(
