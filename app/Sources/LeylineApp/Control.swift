@@ -454,7 +454,24 @@ final class ControlChannel {
             },
             // The charts draw their own readout under the pointer rather than a tooltip.
             tooltip: hoverHelp
-                ?? s.pointerHz.map { "\(Frequency.fieldParts($0).major) MHz" })
+                ?? s.pointerHz.map { "\(Frequency.fieldParts($0).major) MHz" },
+            transport: window.flatMap(Self.transportState))
+    }
+
+    /// The transport bar's words as its elements read, so a word the bar dropped is absent; nil
+    /// when the window draws no bar (the Library).
+    private static func transportState(_ window: NSWindow) -> ControlTransport? {
+        let elements = AccessibilityTree.elements(withPrefix: "t", in: window)
+        func words(_ e: AXElementInfo) -> String { e.value ?? e.label }
+        let tuning = elements.first { $0.identifier == "tuning.text" }.map(words)
+        // The short caption is `transport.squelch.caption.short`.
+        let caption = elements.first { $0.identifier.hasPrefix("transport.squelch.caption") }
+        guard tuning != nil || caption != nil else { return nil }
+        return ControlTransport(
+            tuning: tuning, squelchCaption: caption.map(words),
+            squelchCaptionShort: caption.map { $0.identifier.hasSuffix(".short") },
+            squelchWords: elements.filter { $0.identifier.hasPrefix("transport.squelch.words.") }
+                .map(words).joined(separator: " · "))
     }
 
     /// The assistant's panel as `state` gives it, or nil while it is hidden. The turns and the

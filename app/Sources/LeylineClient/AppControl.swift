@@ -438,6 +438,47 @@ public struct ControlViewWindow: Sendable, Equatable, Codable {
     }
 }
 
+/// `state.transport`: the transport bar's words as it draws them, read from its accessibility
+/// elements, so a narrow bar's dropped words read as gone.
+public struct ControlTransport: Sendable, Equatable, Codable {
+    /// The tuning field's digits without the unit: `146.9401`, or what is being typed.
+    public var tuning: String?
+    /// The words over the squelch track: `open · 33 dB above the marker`, or in a narrow bar
+    /// `open · 33 dB`.
+    public var squelchCaption: String?
+    /// True when the caption is the short one, nil without a caption.
+    public var squelchCaptionShort: Bool?
+    /// The three words under the track, left to right and joined by ` · `
+    /// (`muted below · marker -53 dBFS · heard above`); empty when the bar is too narrow for
+    /// them. One string, so a check's `expect` can say they are gone.
+    public var squelchWords: String
+
+    enum CodingKeys: String, CodingKey {
+        case tuning
+        case squelchCaption = "squelch_caption"
+        case squelchCaptionShort = "squelch_caption_short"
+        case squelchWords = "squelch_words"
+    }
+
+    public init(
+        tuning: String? = nil, squelchCaption: String? = nil, squelchCaptionShort: Bool? = nil,
+        squelchWords: String = ""
+    ) {
+        self.tuning = tuning
+        self.squelchCaption = squelchCaption
+        self.squelchCaptionShort = squelchCaptionShort
+        self.squelchWords = squelchWords
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(tuning, forKey: .tuning)
+        try c.encode(squelchCaption, forKey: .squelchCaption)
+        try c.encode(squelchCaptionShort, forKey: .squelchCaptionShort)
+        try c.encode(squelchWords, forKey: .squelchWords)
+    }
+}
+
 /// `state.assistant`: the assistant's panel while it is shown.
 public struct ControlAssistant: Sendable, Equatable, Codable {
     /// One turn of the conversation, oldest first: `user` or `assistant`, and its text.
@@ -564,9 +605,11 @@ public struct ControlViewState: Sendable, Equatable, Codable {
     /// The tooltip of what the last `hover` rested on, or the charts' pointer readout while the
     /// pointer is over one; nil when neither shows.
     public var tooltip: String?
+    /// The transport bar's words, or nil while the window shows no transport bar.
+    public var transport: ControlTransport?
 
     enum CodingKeys: String, CodingKey {
-        case place, mode, band, bookmark, zoom, focused, notices, popover, heard, hits
+        case place, mode, band, bookmark, zoom, focused, notices, popover, heard, hits, transport
         case tunedHz = "tuned_hz"
         case bandwidthHz = "bandwidth_hz"
         case channelID = "channel_id"
@@ -594,7 +637,7 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         sink: String = "none", window: ControlWindowSize? = nil, filterCaret: Int? = nil,
         settingsOpen: Bool = false, alert: ControlAlert? = nil,
         viewWindow: ControlViewWindow? = nil, assistant: ControlAssistant? = nil,
-        tooltip: String? = nil
+        tooltip: String? = nil, transport: ControlTransport? = nil
     ) {
         self.place = place
         self.tunedHz = tunedHz
@@ -626,6 +669,7 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         self.viewWindow = viewWindow
         self.assistant = assistant
         self.tooltip = tooltip
+        self.transport = transport
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -662,6 +706,7 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         try c.encode(viewWindow, forKey: .viewWindow)
         try c.encode(assistant, forKey: .assistant)
         try c.encode(tooltip, forKey: .tooltip)
+        try c.encode(transport, forKey: .transport)
     }
 }
 

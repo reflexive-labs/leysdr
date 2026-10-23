@@ -148,10 +148,11 @@ final class AppControlTests: XCTestCase {
                 "capture_id", "channel_id", "filter_caret", "filter_query", "focused", "heard",
                 "hits", "inspector_shown", "mode", "muted", "notices", "open_rows", "place",
                 "popover", "selected_part", "selected_recording_channel", "settings_open", "sink",
-                "tooltip", "tuned_hz", "view_window", "volume", "window", "zoom",
+                "tooltip", "transport", "tuned_hz", "view_window", "volume", "window", "zoom",
             ])
         for key in [
-            "alert", "assistant", "filter_caret", "tooltip", "view_window", "volume", "window",
+            "alert", "assistant", "filter_caret", "tooltip", "transport", "view_window", "volume",
+            "window",
         ] {
             XCTAssertTrue(back[key] is NSNull, key)
         }
@@ -180,6 +181,33 @@ final class AppControlTests: XCTestCase {
         XCTAssertEqual(
             ((assistant["buttons"] as? [[String: Any]])?.first)?["enabled"] as? Bool, false)
         XCTAssertEqual(back["sink"] as? String, "none")
+    }
+
+    func testTheTransportsWordsAreWrittenEveryKeyInSnakeCase() throws {
+        let state = ControlViewState(
+            place: "radio", tunedHz: 146_940_186,
+            transport: ControlTransport(
+                tuning: "146.9401", squelchCaption: "open · 33 dB", squelchCaptionShort: true))
+        let back = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: AppControl.encoded(state)) as? [String: Any])
+        let transport = try XCTUnwrap(back["transport"] as? [String: Any])
+        XCTAssertEqual(
+            transport.keys.sorted(),
+            ["squelch_caption", "squelch_caption_short", "squelch_words", "tuning"])
+        XCTAssertEqual(transport["squelch_caption_short"] as? Bool, true)
+        XCTAssertEqual(transport["tuning"] as? String, "146.9401")
+        XCTAssertEqual(transport["squelch_caption"] as? String, "open · 33 dB")
+        XCTAssertEqual(transport["squelch_words"] as? String, "")
+        XCTAssertEqual(back["tuned_hz"] as? Int, 146_940_186)
+        let again = try JSONDecoder().decode(
+            ControlViewState.self, from: AppControl.encoded(state))
+        XCTAssertEqual(again.transport, state.transport)
+        let empty = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: AppControl.encoded(ControlTransport()))
+                as? [String: Any])
+        XCTAssertTrue(empty["tuning"] is NSNull)
+        XCTAssertTrue(empty["squelch_caption"] is NSNull)
+        XCTAssertTrue(empty["squelch_caption_short"] is NSNull)
     }
 
     func testTheEnvironmentStagesTheRunWithEitherVariable() {
