@@ -152,7 +152,9 @@ scenes:
       - {cmd: key, keys: escape}
       - {cmd: key, keys: cmd+g}
       - {cmd: type, text: evening net}
-      - {cmd: state, expect: {filter_query: evening net, focused: sidebar.filter}}
+      - {cmd: key, keys: left}
+      - {cmd: state, expect: {filter_query: evening net, focused: sidebar.filter, filter_caret: 10, muted: false, tuned_hz: 146940000}}
+      - {cmd: key, keys: right}
       - {cmd: key, keys: return}
       - {cmd: wait, seconds: 2}
       - {cmd: state, expect: {tuned_hz: 147180000, bookmark: Evening net, filter_query: "", focused: ""}}
