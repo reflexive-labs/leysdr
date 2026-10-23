@@ -842,3 +842,57 @@ scenes:
       - {cmd: wait, seconds: 2}
       - {cmd: state, expect: {assistant.state: ready}}
       - {cmd: file, path: ai/record.jsonl, contains: remove the APRS bookmark}
+
+  # The app's view tools (docs/plans/app.md, the assistant panel): the column opened in a narrow
+  # window widens the window rather than squeezing the canvas, and the window's minimum grows by
+  # it; "show me 2 m" fits the part of 2 m the radio captures, which on scene_2m is the whole
+  # capture, and a range inside it zooms the waterfall and the rail onto it without moving the
+  # radio; a tune puts the window back on the tuned frequency, "show me airband"
+  # answers that a tune is needed and moves nothing, and show_place switches to the Library.
+  # The pictures leave the inspector out: the fields of its identity come out a point taller
+  # in some runs and move what is under them (docs/plans/app.md, "Found by the Mac checks").
+  - name: assistant-view-tools
+    sizes: [{width: 1000, height: 820}]
+    fixtures: [{name: scene_2m}]
+    bookmarks: ../../site/shots/home.csv
+    ai: {script: assistant/viewtools.script}
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: state, expect: {window.width: 1000, window.min_width: 900, assistant_shown: false}}
+      - {cmd: press, identifier: toolbar.assistant}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {assistant_shown: true, window.width: 1221, window.min_width: 1221}}
+      - {cmd: snapshot, name: widened, mask: [spectrum, waterfall, readings, transmissions, log_day, heard, squelch, inspector]}
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: show me 2 m}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 3}
+      - {cmd: state, expect: {tuned_hz: 146520000, assistant.state: ready, zoom: 1, view_window.low_hz: 144960000, view_window.high_hz: 147840000}}
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: show me 146.0 to 146.6}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 3}
+      - {cmd: state, expect: {tuned_hz: 146520000, assistant.state: ready, zoom: 4, view_window.low_hz: 145940000, view_window.high_hz: 146660000}}
+      - {cmd: snapshot, name: range, mask: [spectrum, waterfall, readings, transmissions, log_day, heard, squelch, inspector]}
+      - {cmd: press, identifier: sidebar.bookmark.club-repeater}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146940000, view_window.low_hz: 146580000, view_window.high_hz: 147300000}}
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: show me airband}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 3}
+      - {cmd: state, expect: {tuned_hz: 146940000, assistant.state: ready, view_window.low_hz: 146580000, view_window.high_hz: 147300000}}
+      - {cmd: snapshot, name: airband, mask: [spectrum, waterfall, readings, transmissions, log_day, heard, squelch, inspector]}
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: open the library}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 3}
+      - {cmd: state, expect: {place: library, assistant.state: ready}}
+      - {cmd: snapshot, name: library}
+      - {cmd: file, path: ai/record.jsonl, contains: show me 2 m}
