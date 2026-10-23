@@ -2677,36 +2677,43 @@ final class AppSession {
         }
     }
 
-    /// The inspector's tone field: the tuned bookmark takes the tone, trimmed, in the file's
-    /// spelling; empty clears it. A tone the store refuses (`Tone.parse`) leaves the bookmark
-    /// as it was and puts the shared sentence in `toneError`, under the field, rather than in
-    /// `lastError`: it is the field's mistake, not the file's. Not `setX`: that verb is one
-    /// coalesced parameter write to the daemon (`../dev/swift-style.md`, "Naming"), and this
-    /// writes a file.
-    func editTunedBookmark(tone text: String) {
-        guard let b = tunedBookmark else { return }
+    /// The inspector's tone field: the bookmark the field was made for takes the tone, trimmed,
+    /// in the file's spelling; empty clears it. By id rather than the tuned bookmark, because a
+    /// field left by a tune away saves as the tune happens, and the text belongs to the
+    /// bookmark it was typed on. A tone the store refuses (`Tone.parse`) leaves the bookmark as
+    /// it was and puts the shared sentence in `toneError`, under the field, rather than in
+    /// `lastError`: it is the field's mistake, not the file's. The sentence is kept only while
+    /// that bookmark is the tuned one, so it never shows under the next bookmark's field. Not
+    /// `setX`: that verb is one coalesced parameter write to the daemon
+    /// (`../dev/swift-style.md`, "Naming"), and this writes a file.
+    func editBookmark(_ id: String, tone text: String) {
+        guard let b = bookmarks.bookmarks[id] else { return }
         let tone = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tuned = tunedBookmark?.id == id
         guard tone != b.tone else {
-            clearToneError()
+            if tuned { clearToneError() }
             return
         }
         do {
             try bookmarks.setTone(b.id, to: tone)
             try bookmarks.save()
-            clearToneError()
+            if tuned { clearToneError() }
             log("bookmark", tone.isEmpty ? "\(b.name) tone cleared" : "\(b.name) tone \(tone)")
         } catch BookmarkError.invalidTone(let sentence) {
-            toneError = sentence
-            toneErrorHz = b.hz
+            if tuned {
+                toneError = sentence
+                toneErrorHz = b.hz
+            }
             log("bookmark", "tone \"\(tone)\" refused for \(b.name): \(sentence)")
         } catch {
             lastError = bookmarkWriteError(error)
         }
     }
 
-    /// The inspector's note field: the tuned bookmark takes the note, trimmed; empty clears it.
-    func editTunedBookmark(note text: String) {
-        guard let b = tunedBookmark else { return }
+    /// The inspector's note field: the bookmark the field was made for takes the note,
+    /// trimmed; empty clears it.
+    func editBookmark(_ id: String, note text: String) {
+        guard let b = bookmarks.bookmarks[id] else { return }
         let note = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard note != b.note else { return }
         do {
@@ -2718,8 +2725,9 @@ final class AppSession {
         }
     }
 
-    /// The tone field put the saved tone back (Escape, or the focus going elsewhere), so the
-    /// sentence about the typed one goes with it.
+    /// The tone field put the saved tone back (Escape, or `ley bookmarks` writing the bookmark
+    /// while a refused tone waited in the field), so the sentence about the typed one goes with
+    /// it.
     func clearToneError() {
         toneError = nil
         toneErrorHz = nil

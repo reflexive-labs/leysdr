@@ -337,7 +337,7 @@ scenes:
   # naming that frequency with the pencil brings them back with their placeholders.
   # A tone typed and Returned keeps the field's focus; a bad one stays in the field
   # with the reason under it, which a good tone, Escape (putting the saved value back) and a
-  # tune to another bookmark each take away.
+  # tune to another bookmark each take away. Leaving a field saves it as Return does (MC-3).
   - name: bookmark-fields
     covers: [InspectorView.swift, SidebarView.swift, Bookmarks.swift, Tone.swift,
       FrequencyEntry.swift]
@@ -396,10 +396,14 @@ scenes:
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {tuned_hz: 146940000}}
       - {cmd: ax, name: tuned}
+      # The refused tone, left by the tune, reached neither Spot nor the bookmark tuned next
+      # (MC-3).
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: '!D024N'}
       # The terminal's side: ley bookmarks reads the tone the field wrote, and loses it when
       # the field is cleared; in the note field Space and ← type rather than mute and tune; and
       # `ley bookmarks add` with a note replaces an idle field's text and not one being edited.
-      # A click on the inspector's header ends the edit (U6, MC-1a).
+      # A click on the inspector's header ends the edit and saves it, as Return does (U6,
+      # MC-1a, MC-3); a refused tone left that way stays in the field, unsaved.
       - {cmd: ley, args: [bookmarks, --json], expect_stdout: '"name":"Spot"[^}]*"tone":"D023N"'}
       - {cmd: press, identifier: inspector.note}
       - {cmd: key, keys: cmd+a}
@@ -409,13 +413,16 @@ scenes:
       - {cmd: click, x: 1300, y: 70}
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {focused: ""}}
-      - {cmd: file, path: bookmarks.json, contains: "!a b"}
+      - {cmd: file, path: bookmarks.json, contains: '"note"\s*:\s*"a b"'}
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: '"name":"Club repeater"[^}]*"note":"a b"'}
       - {cmd: press, identifier: inspector.tone}
       - {cmd: key, keys: cmd+a}
       - {cmd: type, text: D024N}
-      - {cmd: key, keys: return}
       - {cmd: click, x: 1300, y: 70}
       - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {focused: ""}}
+      - {cmd: ax, name: left-refused}
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: '!D024N'}
       - {cmd: ley, args: [bookmarks, add, "146.94", --name, Club repeater, --note, from the terminal]}
       - {cmd: wait, seconds: 1.5}
       - {cmd: ax, name: watched}
@@ -425,8 +432,11 @@ scenes:
       - {cmd: ley, args: [bookmarks, add, "146.94", --name, Club repeater, --note, again]}
       - {cmd: wait, seconds: 1.5}
       - {cmd: ax, name: editing}
+      # Escape throws the edit away, and the tune away after it saves nothing.
       - {cmd: key, keys: escape}
       - {cmd: press, identifier: sidebar.bookmark.spot}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: ['"name":"Club repeater"[^}]*"note":"again"', '!and mine']}
       - {cmd: wait, seconds: 1}
       - {cmd: press, identifier: inspector.tone}
       - {cmd: key, keys: cmd+a}
@@ -1723,8 +1733,8 @@ scenes:
   # The inspector as the owner decided it (docs/plans/app.md, MC-1a): the tags line keeps its
   # place, so the frequency line and the Tone and Note fields sit at the same height on Tagged
   # and on Plain (compare the two trees' frames); and a click on the inspector's empty header
-  # ends an edit in Tone or Note, putting the saved value back and taking a refused tone's
-  # sentence away.
+  # ends an edit in Tone or Note and saves it, as Return does (MC-3), while a refused tone
+  # stays in the field with its sentence and is not saved.
   - name: mc1a-inspector
     covers: [InspectorView.swift, Tone.swift, Bookmarks.swift]
     fixtures: [{name: scene_2m}]
@@ -1754,7 +1764,8 @@ scenes:
       - {cmd: click, x: 1300, y: 70}
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {focused: ""}}
-      - {cmd: file, path: bookmarks.json, contains: "!a b"}
+      - {cmd: file, path: bookmarks.json, contains: '"note"\s*:\s*"a b"'}
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: '"name":"Plain"[^}]*"note":"a b"'}
       - {cmd: ax, name: note-ended}
       - {cmd: press, identifier: inspector.tone}
       - {cmd: type, text: D024N}
