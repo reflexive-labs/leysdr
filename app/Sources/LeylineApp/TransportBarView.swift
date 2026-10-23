@@ -76,14 +76,15 @@ struct PlayButton: View {
     }
 }
 
-/// `146.5200` in ink, `000` dimmed, `MHz`. Entry works the way a radio's keypad does, by
-/// overwriting: click or ⌘L puts the caret on the first digit, each digit typed replaces the one
-/// under the caret and moves on, `.` jumps to the kHz digits (dropping whatever MHz digits were
-/// not retyped), Backspace steps back, Enter tunes, Escape or a click anywhere else puts the
-/// daemon's number back. The fourth fractional digit is the hundreds of hertz (GMRS sits on
-/// `462.6125`) and is always present; below that the digits are shown dimmed and never typed. The
-/// stepper against the right edge does what the Tune menu's arrows do: the band's step, and the
-/// fine step with ⇧.
+/// `146.9401` and `MHz`: four fractional digits, cut from the hertz and never rounded, so a radio
+/// on 146.940186 MHz reads `146.9401`; the tooltip and the inspector give the exact hertz. Entry
+/// works the way a radio's keypad does, by overwriting: click or ⌘L puts the caret on the first
+/// digit, each digit typed replaces the one under the caret and moves on, `.` jumps to the kHz
+/// digits (dropping whatever MHz digits were not retyped), Backspace steps back, Enter tunes,
+/// Escape or a click anywhere else puts the daemon's number back. The fourth fractional digit is
+/// the hundreds of hertz (GMRS sits on `462.6125`) and is always present; two more may be typed
+/// past it, down to the hertz, and tune exactly. The stepper against the right edge does what the
+/// Tune menu's arrows do: the band's step, and the fine step with ⇧.
 struct FrequencyField: View {
     @Environment(AppSession.self) private var session
     @State private var mhz: [Character] = []
@@ -101,17 +102,17 @@ struct FrequencyField: View {
         let hz = session.displayHz
         Block(header: "Tuning") {
             HStack(alignment: .firstTextBaseline, spacing: 0) {
-                digits(mhz, active: focused && !inKhz, dim: hz == nil && !focused)
-                Text(".").font(Theme.Font.frequency).foregroundStyle(
-                    hz == nil && !focused ? Theme.inkDisabled : Theme.ink)
-                digits(khz, active: focused && inKhz, dim: hz == nil && !focused)
-                // Digits under the hundreds of hertz only when they are non-zero: a drag can
-                // land on any hertz, keypad entry never does.
-                if let hz, hz % 100 != 0, !focused {
-                    Text(Frequency.fieldParts(hz).minor)
-                        .font(Theme.Font.frequency).tracking(Theme.frequencyTracking)
-                        .foregroundStyle(Theme.inkDisabled)
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    digits(mhz, active: focused && !inKhz, dim: hz == nil && !focused)
+                    Text(".").font(Theme.Font.frequency).foregroundStyle(
+                        hz == nil && !focused ? Theme.inkDisabled : Theme.ink)
+                    digits(khz, active: focused && inKhz, dim: hz == nil && !focused)
                 }
+                // One element with the digits as drawn, which `state` reads as `transport.tuning`.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Frequency")
+                .accessibilityValue("\(String(mhz)).\(String(khz))")
+                .accessibilityIdentifier("tuning.text")
                 Rectangle().fill(Theme.accent).frame(width: 1.5, height: 26).padding(.horizontal, 4)
                 Text("MHz").font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
             }
@@ -128,6 +129,7 @@ struct FrequencyField: View {
             .focusEffectDisabled()
             .focused($focused)
             .onKeyPress { handle($0) }
+            .help(hz.map(FrequencyEntry.exactWords) ?? "")
             // Above the focusable field, not inside it, so a click on an arrow never takes the
             // field's focus. During an edit the field's own monitor ends the edit on the
             // mouse-down, so the arrow steps the daemon's number, never the digits being typed.
@@ -179,7 +181,7 @@ struct FrequencyField: View {
             return
         }
         mhz = Array(String(hz / 1_000_000))
-        khz = Array(Frequency.fieldParts(hz).major.split(separator: ".").last ?? "000")
+        khz = Array(FrequencyEntry.fieldText(hz).split(separator: ".").last ?? "0000")
     }
 
     private func begin() {
@@ -198,16 +200,13 @@ struct FrequencyField: View {
         load(session.displayHz)
     }
 
-    /// Nothing below 500 kHz (AM broadcast starts at 530) or above 6 GHz is a frequency a radio
-    /// here can be tuned to, and the keypad makes both easy to type: a `.` into an empty MHz part
-    /// followed by three digits reads as 0.500. A refused number keeps the field focused, so it
-    /// can be finished rather than tuning the radio to an unintended frequency.
+    /// The digits as typed, to the hertz. A number outside `FrequencyEntry.tunableHz` keeps the
+    /// field focused, so it can be finished rather than tuning the radio to an unintended
+    /// frequency.
     private func commit() {
-        let whole = UInt64(String(mhz)) ?? 0
-        let thousandths = UInt64(String(khz.prefix(3))) ?? 0
-        let hundreds = khz.count > 3 ? UInt64(String(khz[3])) ?? 0 : 0
-        let hz = whole * 1_000_000 + thousandths * 1_000 + hundreds * 100
-        if hz < 500_000 || hz > 6_000_000_000 {
+        guard let hz = FrequencyEntry.hz(whole: String(mhz), fraction: String(khz)),
+            FrequencyEntry.tunableHz.contains(hz)
+        else {
             log("field", "refused \(String(mhz)).\(String(khz))")
             return
         }
@@ -228,9 +227,16 @@ struct FrequencyField: View {
         return handleEditingKey(press.key, press.characters)
     }
 
+    /// The digits past the hundreds of hertz are typed ones only; a field shows four.
+    private static let shownFractionDigits = 4
+
     private func forwardDelete() {
         if inKhz {
-            if caret < khz.count { khz[caret] = "0" }
+            if caret >= Self.shownFractionDigits, caret < khz.count {
+                khz.remove(at: caret)
+            } else if caret < khz.count {
+                khz[caret] = "0"
+            }
         } else if caret < mhz.count, mhz.count > 1 {
             mhz.remove(at: caret)
         }
@@ -265,7 +271,11 @@ struct FrequencyField: View {
             if inKhz {
                 if caret > 0 {
                     caret -= 1
-                    khz[caret] = "0"
+                    if caret >= Self.shownFractionDigits {
+                        khz.remove(at: caret)
+                    } else {
+                        khz[caret] = "0"
+                    }
                 } else {
                     inKhz = false
                     caret = mhz.count
@@ -289,6 +299,9 @@ struct FrequencyField: View {
         if inKhz {
             if caret < khz.count {
                 khz[caret] = c
+                caret += 1
+            } else if khz.count < FrequencyEntry.maxFractionDigits {
+                khz.append(c)
                 caret += 1
             }
         } else if caret < mhz.count {

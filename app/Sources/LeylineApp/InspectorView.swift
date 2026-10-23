@@ -223,12 +223,15 @@ struct IdentityView: View {
         return "No channel"
     }
 
-    /// `146.520 MHz · NFM 12.5 kHz`, and ` · bookmarked` when it is.
+    /// `146.520 MHz · NFM 12.5 kHz`, and ` · bookmarked` when it is. The frequency is exact
+    /// (`146.940186 MHz`), where the tuning field cuts it to four decimals.
     private func detail(bookmark: Bookmark?, hz: UInt64?) -> String {
         guard let hz, let ch = session.channel else {
             return "Pick a band, or click the waterfall, to hear something"
         }
-        var parts = [Frequency.format(hz), "\(ch.mode.word) \(Frequency.width(ch.bandwidthHz))"]
+        var parts = [
+            FrequencyEntry.exactWords(hz), "\(ch.mode.word) \(Frequency.width(ch.bandwidthHz))",
+        ]
         if bookmark != nil { parts.append("bookmarked") }
         return parts.joined(separator: " · ")
     }
