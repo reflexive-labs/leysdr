@@ -248,9 +248,9 @@ private struct AddKeyForm: View {
             field("Key") {
                 SecureField("paste the key", text: $secret).modifier(SettingsField())
                     // An API key is no password AutoFill holds. Without a content type a secure
-                    // field reads as a password one, and the system opened its AutoFill list at
-                    // the field, and brought a closed Settings back to show it; a type of the
-                    // app's own, which AutoFill has nothing for, opts the field out.
+                    // field reads as a password one; a type of the app's own, which AutoFill has
+                    // nothing for, opts the field out of its suggestions. The window closing
+                    // ends the edit first (below), or the list brought a closed Settings back.
                     .textContentType(Self.apiKeyContent)
                     .autocorrectionDisabled()
                     .accessibilityIdentifier("settings.ai.add.key")
@@ -273,7 +273,12 @@ private struct AddKeyForm: View {
         }
         .onDisappear { secret = "" }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) {
-            _ in secret = ""
+            note in
+            // The secure field gives up the focus first. Closed while it was editing, the
+            // window came back 0.3 s later with the system's password list (`SPRoundedWindow`)
+            // opening over the field, whatever its content type.
+            (note.object as? NSWindow)?.makeFirstResponder(nil)
+            secret = ""
         }
     }
 
