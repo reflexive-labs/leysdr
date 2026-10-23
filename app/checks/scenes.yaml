@@ -1232,7 +1232,7 @@ scenes:
       - {cmd: press, identifier: sidebar.band.2m.scan}
       - {cmd: wait, seconds: 1.5, expect_log: ["sweep: paused: channel", "sweep: job_.* started: 2 m amateur"]}
       - {cmd: state, expect: {tuned_hz: null, sink: none, open_rows.0: 2m}}
-      - {cmd: ax, name: sweeping}
+      - {cmd: hover, identifier: sidebar.band.2m.scan, expect: {tooltip: "Stop the sweep; listening comes back where it was"}}
       - {cmd: snapshot, name: sweeping}
       - {cmd: press, identifier: sidebar.band.2m.scan}
       - {cmd: wait, seconds: 2, expect_log: ["sweep: stop asked on 2 m amateur", "sweep: resuming bookmark Calling"]}
@@ -1240,13 +1240,14 @@ scenes:
       # Left to run, then its hits tuned by their row and their tick.
       - {cmd: press, identifier: sidebar.band.2m.scan}
       - {cmd: wait, seconds: 6, expect_log: ["sweep: job_.* ended: [0-9]+ hits?", "sweep: resuming bookmark Calling"]}
-      - {cmd: state, expect: {tuned_hz: 146520000, mode: NFM, bandwidth_hz: 12500, sink: own, hits.0: calling, hits.1: 146.940 MHz}}
+      - {cmd: state, expect: {tuned_hz: 146520000, mode: NFM, bandwidth_hz: 12500, sink: own}}
       - {cmd: click, identifier: sidebar.hit.146-940-mhz}
+      - {cmd: wait, seconds: 1, expect_log: "tune: 1469[34][0-9]{4} Hz"}
+      - {cmd: press, identifier: sidebar.bookmark.calling}
       - {cmd: wait, seconds: 1}
-      - {cmd: state, expect: {band: 2m, hits.1: 146.940 MHz}}
-      - {cmd: click, identifier: rail.hit.calling}
-      - {cmd: wait, seconds: 1}
-      - {cmd: state, expect: {tuned_hz: 146520000, hits.0: calling}}
+      - {cmd: click, identifier: rail.hit.146-940-mhz}
+      - {cmd: wait, seconds: 1, expect_log: "tune: 1469[34][0-9]{4} Hz"}
+      - {cmd: state, expect: {band: 2m}}
       # A bookmark, a band and a chart click during a sweep.
       - {cmd: press, identifier: sidebar.band.2m.scan}
       - {cmd: wait, seconds: 1}

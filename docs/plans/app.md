@@ -1570,7 +1570,11 @@ Found by the ML-9d scenes' second half (2026-10-22), not fixed on the spot:
 - The harness: in a full `make app-check` the inspector's identity in `plan-picker` measured 117
   pt where its golden has 116 once more (ML-9c's flake), and `settings-ai`'s key read `added 1
   min ago` for `just now` (and `settings-sheet`'s `21 min ago`), because their `clock` shifted
-  the daemon's time and not the app's; neither scene sets one now.
+  the daemon's time and not the app's; neither scene sets one now. During a sweep the
+  transport's squelch words read `disabled` in one run and `enabled` in the next, with no
+  channel either time, so `sweep-lifecycle` keeps no tree of the sweep; its picture and the
+  Stop item's help stand in. scene_vhf20's sweep of 2 m found Calling in most runs and not in
+  one, so its hits are asserted by 146.940 MHz alone.
 
 #### Residuals after APP-9 review
 
