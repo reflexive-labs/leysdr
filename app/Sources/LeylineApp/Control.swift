@@ -469,7 +469,9 @@ final class ControlChannel {
         let input = elements.first { $0.identifier == "assistant.input" }
         return ControlAssistant(
             turns: (view?.turns ?? []).map {
-                ControlAssistant.Turn(role: $0.role == .user ? "user" : "assistant", text: $0.text)
+                ControlAssistant.Turn(
+                    role: $0.role == .user ? "user" : "assistant", text: $0.text,
+                    stopped: $0.stopped)
             },
             state: session.assistantLost ? "gone" : view?.stateWord,
             thinking: view?.isWaitingOnModel ?? false,

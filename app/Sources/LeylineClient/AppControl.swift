@@ -440,14 +440,17 @@ public struct ControlViewWindow: Sendable, Equatable, Codable {
 
 /// `state.assistant`: the assistant's panel while it is shown.
 public struct ControlAssistant: Sendable, Equatable, Codable {
-    /// One turn of the conversation, oldest first: `user` or `assistant`, and its text.
+    /// One turn of the conversation, oldest first: `user` or `assistant`, its text, and whether
+    /// the panel says `Stopped.` under it.
     public struct Turn: Sendable, Equatable, Codable {
         public var role: String
         public var text: String
+        public var stopped: Bool
 
-        public init(role: String, text: String) {
+        public init(role: String, text: String, stopped: Bool = false) {
             self.role = role
             self.text = text
+            self.stopped = stopped
         }
     }
 

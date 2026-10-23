@@ -797,11 +797,13 @@ scenes:
       - {cmd: press, identifier: assistant.stop}
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {assistant.thinking: false, assistant.stop_shown: false, assistant.input: next one}}
+      # The stopped turn says `Stopped.` under the message it answered (docs/plans/app.md, MC-1c).
+      - {cmd: state, expect: {assistant.turns.4.text: "line one\nline two", assistant.turns.5.role: assistant, assistant.turns.5.stopped: true, assistant.turns.3.stopped: false}}
       - {cmd: ax, name: stopped}
       - {cmd: press, identifier: assistant.input}
       - {cmd: key, keys: return}
       - {cmd: wait, seconds: 2}
-      - {cmd: state, expect: {assistant.input: "", assistant.turns.6.text: next one, assistant.turns.7.text: Here is the next one.}}
+      - {cmd: state, expect: {assistant.input: "", assistant.turns.5.stopped: true, assistant.turns.6.text: next one, assistant.turns.7.text: Here is the next one., assistant.turns.7.stopped: false}}
       - {cmd: snapshot, name: later}
       # ⌘2 and ⌘1 keep the transcript and the field's text.
       - {cmd: type, text: draft kept}

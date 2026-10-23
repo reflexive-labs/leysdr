@@ -196,19 +196,24 @@ struct WaitingRow: View {
 }
 
 /// A user turn right-aligned in muted ink; an assistant turn's steps, then its text in secondary
-/// ink, the brightest in the column after the field's own typing, which keeps `ink`.
+/// ink, the brightest in the column after the field's own typing, which keeps `ink`. A stopped
+/// turn ends with a faint `Stopped.`, under the user's message when the assistant had written
+/// nothing yet.
 struct TurnView: View {
     let turn: TurnRow
 
     var body: some View {
         switch turn.role {
         case .user:
-            HStack {
-                Spacer(minLength: Theme.Layout.assistantUserInset)
-                Text(turn.text).font(Theme.Font.body).foregroundStyle(Theme.inkMuted)
-                    .multilineTextAlignment(.trailing)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Spacer(minLength: Theme.Layout.assistantUserInset)
+                    Text(turn.text).font(Theme.Font.body).foregroundStyle(Theme.inkMuted)
+                        .multilineTextAlignment(.trailing)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if turn.stopped { StoppedLine() }
             }
         case .assistant:
             VStack(alignment: .leading, spacing: 6) {
@@ -220,8 +225,16 @@ struct TurnView: View {
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                if turn.stopped { StoppedLine() }
             }
         }
+    }
+}
+
+/// `Stopped.`: the turn ended on Stop, here or from a terminal's Ctrl-C.
+struct StoppedLine: View {
+    var body: some View {
+        Text("Stopped.").font(Theme.Font.aside).foregroundStyle(Theme.inkFaint)
     }
 }
 
