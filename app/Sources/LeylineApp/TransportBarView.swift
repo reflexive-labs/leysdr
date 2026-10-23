@@ -109,9 +109,9 @@ struct FrequencyField: View {
                     digits(khz, active: focused && inKhz, dim: hz == nil && !focused)
                 }
                 // One element with the digits as drawn, which `state` reads as `transport.tuning`.
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Frequency")
-                .accessibilityValue("\(String(mhz)).\(String(khz))")
+                // A plain group with a value reads as AXUnknown with no value, so the element
+                // is represented as the text it draws; the field's header says what it is.
+                .accessibilityRepresentation { Text("\(String(mhz)).\(String(khz))") }
                 .accessibilityIdentifier("tuning.text")
                 Rectangle().fill(Theme.accent).frame(width: 1.5, height: 26).padding(.horizontal, 4)
                 Text("MHz").font(Theme.Font.value).foregroundStyle(Theme.inkMuted)
