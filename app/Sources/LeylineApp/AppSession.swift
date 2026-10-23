@@ -567,9 +567,21 @@ final class AppSession {
         return max(perBin, feed.floorDB - 10)
     }
 
-    /// The radio whose tuning range applies: the capture's device, else the first connected one.
+    /// The radio whose tuning range applies: the capture's device, else the first connected one,
+    /// with the span its capture holds now. A file radio's range is its recorded centre alone,
+    /// and a band elsewhere in the capture is heard all the same: without the span, the tuned
+    /// band of a wide recording was folded away as one the radio cannot tune.
     private var radioRanges: [Leyline_V1_FrequencyRange] {
-        (device ?? state.devices.first { $0.state != .disconnected })?.tuningRanges ?? []
+        var ranges = (device ?? state.devices.first { $0.state != .disconnected })?.tuningRanges ?? []
+        // No range means every band is offered; the span would narrow that.
+        if !ranges.isEmpty, let cap = capture, cap.sampleRate > 0 {
+            let span = ViewWindow.span(centerHz: cap.centerHz, sampleRate: cap.sampleRate)
+            ranges.append(.with {
+                $0.minHz = span.lowerBound
+                $0.maxHz = span.upperBound
+            })
+        }
+        return ranges
     }
 
     /// The bands this radio can reach; without a radio, all of them.
