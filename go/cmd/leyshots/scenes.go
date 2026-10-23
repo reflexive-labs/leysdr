@@ -98,8 +98,9 @@ type Stage struct {
 	Settle         float64 `yaml:"settle" json:"settle,omitempty"`
 	// OnAir holds the shot, after Settle, until the tuned channel's squelch is open.
 	OnAir bool `yaml:"on_air" json:"on_air,omitempty"`
-	// Zoom is the spectrum and waterfall's zoom, as the − and + buttons set it: 1, 2, 4 or 8.
-	Zoom int `yaml:"zoom" json:"zoom,omitempty"`
+	// Zoom is the spectrum and waterfall's width in Hz, centred on the tuned frequency, as the
+	// band rail's − and + set it; the app holds it inside the capture.
+	Zoom int64 `yaml:"zoom" json:"zoom,omitempty"`
 	// ScanBand presses the expanded band row's Scan band and waits for the sweep to end.
 	ScanBand bool `yaml:"scan_band" json:"scan_band,omitempty"`
 	// PlayPart plays the selected part and pauses it, so the Library draws it as current.
@@ -349,10 +350,18 @@ func (s *Scene) validateApp(path func(string) string) error {
 	return nil
 }
 
-// validate checks a stage's place and that its CHIRP import exists, resolved by path.
+// leastZoomHz is the narrowest span a stage's zoom may ask for, as the app's ShotStage refuses
+// a narrower one.
+const leastZoomHz = 1000
+
+// validate checks a stage's place and zoom, and that its CHIRP import exists, resolved by path.
 func (st *Stage) validate(path func(string) string) error {
 	if p := st.Place; p != "" && p != "radio" && p != "library" {
 		return fmt.Errorf("place is radio or library, not %q", p)
+	}
+	// The factor zoom once took, 1 to 8, would read as a span of a few hertz.
+	if st.Zoom != 0 && st.Zoom < leastZoomHz {
+		return fmt.Errorf("zoom is the span shown in Hz, at least %d, not %d", leastZoomHz, st.Zoom)
 	}
 	if c := st.ImportChirp; c != "" {
 		if _, err := os.Stat(path(c)); err != nil {

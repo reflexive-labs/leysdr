@@ -39,6 +39,9 @@
 #                                         tooltip, which state.tooltip then gives
 #   {cmd: click, identifier: I}           a mouse click there (or x and y), for a point on a chart or
 #                                         anything press cannot reach; button: right
+#   {cmd: drag, identifier: I, dx: DX}    the left button pressed there (or at x and y), moved dx
+#                                         and dy points in steps, and released: the band rail's
+#                                         thumb, or anything a press that moves reaches
 #   {cmd: menu, menu: "View>Show Assistant"}
 #                                         presses the menu bar item; read: true only describes it;
 #                                         expect checks the answer's title, enabled, checked and
@@ -127,7 +130,7 @@ scenes:
       MeterTrack.swift, Scale.swift, TransportBarView.swift, AudioOutputName.swift, Bands.swift,
       Bookmarks.swift, Sidebar.swift, Streams.swift, SpectrumFold.swift, SampleClock.swift,
       ClippedRows.swift, ChannelReading.swift, Reading.swift, AudioLevels.swift,
-      Transmissions.swift, FailureState.swift, FrequencyEntry.swift, bands.json]
+      Transmissions.swift, FailureState.swift, FrequencyEntry.swift, ViewWindow.swift, bands.json]
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: ../../site/shots/home.csv
@@ -139,7 +142,7 @@ scenes:
       expanded_band: 2m
       select_bookmark: Calling
       settle: 5
-      zoom: 4
+      zoom: 720000
     app:
       - {cmd: snapshot, name: initial}
       - {cmd: state, expect: {tuned_hz: 146520000}}
@@ -220,7 +223,7 @@ scenes:
       - {cmd: press, identifier: toolbar.place.radio}
       - {cmd: state, expect: {place: radio}}
       - {cmd: press, identifier: rail.zoom.in}
-      - {cmd: state, expect: {zoom: 2}}
+      - {cmd: state, expect: {view.span_hz: 1440000}}
       - {cmd: press, identifier: sidebar.bookmark.club-repeater}
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater}}
@@ -679,7 +682,7 @@ scenes:
       select_bookmark: Calling
       settle: 3
     app:
-      - {cmd: state, expect: {muted: false, sink: other, volume: null, window.width: 1440, window.min_width: 900, view_window.low_hz: 144960000, view_window.high_hz: 147840000, settings_open: false, alert: null, assistant: null, tooltip: null}}
+      - {cmd: state, expect: {muted: false, sink: other, volume: null, window.width: 1440, window.min_width: 900, view.lo_hz: 144960000, view.hi_hz: 147840000, settings_open: false, alert: null, assistant: null, tooltip: null}}
       - {cmd: hover, identifier: sidebar.add, expect: {tooltip: "Bookmark the tuned frequency (⌘D)"}}
       - {cmd: state, expect: {tooltip: "Bookmark the tuned frequency (⌘D)"}}
       - {cmd: click, x: 804, y: 400}
@@ -1031,8 +1034,8 @@ scenes:
   # The app's view tools (docs/plans/app.md, the assistant panel): the column opened in a narrow
   # window widens the window rather than squeezing the canvas, and the window's minimum grows by
   # it; "show me 2 m" fits the part of 2 m the radio captures, which on scene_2m is the whole
-  # capture, and a range inside it zooms the waterfall and the rail onto it without moving the
-  # radio; a tune puts the window back on the tuned frequency, "show me airband"
+  # capture, and a range inside it narrows the view and the rail's thumb to it without moving
+  # the radio; a tune outside the view brings the view to the tuned frequency, "show me airband"
   # answers that a tune is needed and moves nothing, and show_place switches to the Library.
   # The pictures leave the inspector out: the fields of its identity come out a point taller
   # in some runs and move what is under them (docs/plans/app.md, "Found by the Mac checks").
@@ -1061,21 +1064,21 @@ scenes:
       - {cmd: type, text: show me 2 m}
       - {cmd: key, keys: return}
       - {cmd: wait, seconds: 3}
-      - {cmd: state, expect: {tuned_hz: 146520000, assistant.state: ready, zoom: 1, view_window.low_hz: 144960000, view_window.high_hz: 147840000, assistant.buttons.1.title: "show_band 2m, done"}}
+      - {cmd: state, expect: {tuned_hz: 146520000, assistant.state: ready, view.span_hz: 2880000, view.lo_hz: 144960000, view.hi_hz: 147840000, assistant.buttons.1.title: "show_band 2m, done"}}
       - {cmd: press, identifier: assistant.input}
       - {cmd: type, text: show me 146.0 to 146.6}
       - {cmd: key, keys: return}
       - {cmd: wait, seconds: 3}
-      - {cmd: state, expect: {tuned_hz: 146520000, assistant.state: ready, zoom: 4, view_window.low_hz: 145940000, view_window.high_hz: 146660000}}
+      - {cmd: state, expect: {tuned_hz: 146520000, assistant.state: ready, view.span_hz: 600000, view.lo_hz: 146000000, view.hi_hz: 146600000, view.thumb_lo_hz: 146000000, view.thumb_hi_hz: 146600000, view.edge: null}}
       - {cmd: snapshot, name: range, mask: [spectrum, waterfall, readings, transmissions, log_day, heard, squelch, inspector]}
       - {cmd: press, identifier: sidebar.bookmark.club-repeater}
       - {cmd: wait, seconds: 1}
-      - {cmd: state, expect: {tuned_hz: 146940000, view_window.low_hz: 146580000, view_window.high_hz: 147300000}}
+      - {cmd: state, expect: {tuned_hz: 146940000, view.lo_hz: 146640000, view.hi_hz: 147240000}}
       - {cmd: press, identifier: assistant.input}
       - {cmd: type, text: show me airband}
       - {cmd: key, keys: return}
       - {cmd: wait, seconds: 3}
-      - {cmd: state, expect: {tuned_hz: 146940000, assistant.state: ready, view_window.low_hz: 146580000, view_window.high_hz: 147300000}}
+      - {cmd: state, expect: {tuned_hz: 146940000, assistant.state: ready, view.lo_hz: 146640000, view.hi_hz: 147240000}}
       - {cmd: snapshot, name: airband, mask: [spectrum, waterfall, readings, transmissions, log_day, heard, squelch, inspector]}
       - {cmd: press, identifier: assistant.input}
       - {cmd: type, text: open the library}
@@ -1426,6 +1429,104 @@ scenes:
       - {cmd: ax, name: marine}
       - {cmd: snapshot, name: marine}
 
+  # The band rail on a capture wider than the band (docs/plans/app.md, MC-7): scene_vhf20's
+  # 21 MSPS holds all of 2 m, so the view fits the band and the thumb spans the track while the
+  # capture's underlay runs past both caps. + halves the span around Calling; a drag of the thumb
+  # pans the view inside the capture, held at the band's edge, without moving the radio or the
+  # channel, and the spectrum's edge marker then names the tuned channel off the view's right
+  # edge; pressing it brings the view back and tunes nothing. The zoom steps report their spans
+  # down to the narrowest the 2048 bins allow and up to the whole capture, where the thumb is
+  # the band and the view is wider. The rail's width (708 points at 1440) puts 400 points of
+  # travel past the band's edge.
+  - name: rail-wide
+    covers: [BandRailView.swift, SpectrumView.swift, ViewWindow.swift]
+    fixtures: [{name: scene_vhf20}]
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "off"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: state, expect: {tuned_hz: 146520000, band: 2m, view.lo_hz: 144000000, view.hi_hz: 148000000, view.span_hz: 4000000, view.thumb_lo_hz: 144000000, view.thumb_hi_hz: 148000000, view.edge: null, capture.lo_hz: 142700000, capture.hi_hz: 163700000}}
+      - {cmd: snapshot, name: fitted}
+      - {cmd: hover, identifier: rail.zoom.in, expect: {tooltip: "Zoom in: 4 MHz across now"}}
+      - {cmd: press, identifier: rail.zoom.in}
+      - {cmd: state, expect: {view.span_hz: 2000000, view.lo_hz: 145520000, view.hi_hz: 147520000, view.thumb_lo_hz: 145520000, view.thumb_hi_hz: 147520000}}
+      - {cmd: ax, name: zoomed}
+      - {cmd: drag, identifier: rail.thumb, dx: -400}
+      - {cmd: wait, seconds: 1, expect_log: "!pan capture"}
+      - {cmd: state, expect: {tuned_hz: 146520000, bookmark: Calling, view.lo_hz: 144000000, view.hi_hz: 146000000, view.thumb_lo_hz: 144000000, view.thumb_hi_hz: 146000000, view.edge: "146.520 ▸", capture.lo_hz: 142700000, capture.hi_hz: 163700000}}
+      - {cmd: snapshot, name: dragged}
+      - {cmd: press, identifier: spectrum.edge}
+      - {cmd: wait, seconds: 1, expect_log: "!tune: "}
+      - {cmd: state, expect: {tuned_hz: 146520000, view.lo_hz: 145520000, view.hi_hz: 147520000, view.edge: null}}
+      - {cmd: press, identifier: rail.zoom.in}
+      - {cmd: state, expect: {view.span_hz: 1000000, view.lo_hz: 146020000, view.hi_hz: 147020000}}
+      - {cmd: press, identifier: rail.zoom.in}
+      - {cmd: state, expect: {view.span_hz: 656250, view.lo_hz: 146191875, view.hi_hz: 146848125}}
+      - {cmd: hover, identifier: rail.zoom.out, expect: {tooltip: "Zoom out: 656 kHz across now"}}
+      - {cmd: press, identifier: rail.zoom.out}
+      - {cmd: press, identifier: rail.zoom.out}
+      - {cmd: press, identifier: rail.zoom.out}
+      - {cmd: state, expect: {view.span_hz: 5250000, view.lo_hz: 143895000, view.hi_hz: 149145000, view.thumb_lo_hz: 144000000, view.thumb_hi_hz: 148000000}}
+      - {cmd: press, identifier: rail.zoom.out}
+      - {cmd: press, identifier: rail.zoom.out}
+      - {cmd: state, expect: {tuned_hz: 146520000, view.span_hz: 21000000, view.lo_hz: 142700000, view.hi_hz: 163700000, view.thumb_lo_hz: 144000000, view.thumb_hi_hz: 148000000}}
+      - {cmd: ax, name: whole}
+
+  # The band rail at an RTL-SDR's width (docs/plans/app.md, MC-7): scene_2m's 2.88 MSPS is
+  # narrower than 2 m, so the view is the whole capture. Zoomed to 720 kHz, a short drag of the
+  # thumb pans the view inside the capture with no retune; one past the capture's top hands
+  # over to the capture's pan, which a file radio cannot follow (it tunes only its recorded
+  # centre), so the log names the centre asked for, the view stops at the capture's edge and
+  # the tuned channel stays, named by the edge marker on the left. The marker brings the view
+  # back. The zoom steps stop at 90 kHz, 64 of the 2048 bins. Four bookmarks 10 kHz apart (about
+  # 1.8 points on the 708-point track) draw as a strip, and a click on the third tunes it, the
+  # nearest tick.
+  - name: rail-rtl
+    covers: [BandRailView.swift, SpectrumView.swift, ViewWindow.swift, Bookmarks.swift]
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "off"]
+      - ley: [bookmarks, add, "146.70", --name, Dense A]
+      - ley: [bookmarks, add, "146.71", --name, Dense B]
+      - ley: [bookmarks, add, "146.72", --name, Dense C]
+      - ley: [bookmarks, add, "146.73", --name, Dense D]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: state, expect: {tuned_hz: 146520000, band: 2m, view.lo_hz: 144960000, view.hi_hz: 147840000, view.span_hz: 2880000, view.thumb_lo_hz: 144960000, view.thumb_hi_hz: 147840000, capture.lo_hz: 144960000, capture.hi_hz: 147840000}}
+      - {cmd: snapshot, name: whole}
+      - {cmd: ax, name: whole}
+      - {cmd: stage, stage: {zoom: 720000}}
+      - {cmd: state, expect: {view.span_hz: 720000, view.lo_hz: 146160000, view.hi_hz: 146880000}}
+      - {cmd: drag, identifier: rail.thumb, dx: 30}
+      - {cmd: wait, seconds: 1, expect_log: "!pan capture"}
+      - {cmd: state, expect: {tuned_hz: 146520000, bookmark: Calling, view.span_hz: 720000, view.edge: null}}
+      - {cmd: drag, identifier: rail.thumb, dx: 400}
+      - {cmd: wait, seconds: 1, expect_log: "pan capture 146400000 -> 146400000 Hz \\(asked 14[0-9]{7}\\)"}
+      - {cmd: state, expect: {tuned_hz: 146520000, bookmark: Calling, view.lo_hz: 147120000, view.hi_hz: 147840000, view.edge: "◂ 146.520", capture.lo_hz: 144960000, capture.hi_hz: 147840000}}
+      - {cmd: snapshot, name: pushed}
+      - {cmd: press, identifier: spectrum.edge}
+      - {cmd: state, expect: {tuned_hz: 146520000, view.lo_hz: 146160000, view.hi_hz: 146880000, view.edge: null}}
+      - {cmd: press, identifier: rail.zoom.in}
+      - {cmd: press, identifier: rail.zoom.in}
+      - {cmd: press, identifier: rail.zoom.in}
+      - {cmd: state, expect: {view.span_hz: 90000, view.lo_hz: 146475000, view.hi_hz: 146565000}}
+      - {cmd: hover, identifier: rail.zoom.in, expect: {tooltip: "Zoom in: 90 kHz across now"}}
+      - {cmd: click, identifier: rail.bookmark.dense-c}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146720000, bookmark: Dense C}}
+      - {cmd: snapshot, name: dense}
+
   # A sweep from start to end (docs/plans/app.md, U5 and U7), on scene_vhf20 with each sweep
   # held for 4 s (sweep_dwell). The fixture's channel is stopped first, so the window plays its
   # own. Scan band on the tuned 2 m row stops the audio, keeps the frequency in the field and
@@ -1492,6 +1593,8 @@ scenes:
       - {cmd: state}
       - {cmd: press, identifier: sidebar.band.murs.scan}
       - {cmd: wait, seconds: 1}
+      # The view fits MURS; widened to the whole capture, x 804 is in marine.
+      - {cmd: stage, stage: {zoom: 21000000}}
       - {cmd: click, x: 804, y: 400}
       - {cmd: wait, seconds: 3, expect_log: ["sweep: tune to 15[0-9]+ Hz waits for the sweep to stop", "ended: cancelled", "!DEVICE_SWEEPING"]}
       - {cmd: state, expect: {band: marine, sink: own}}

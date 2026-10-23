@@ -171,8 +171,8 @@ import SwiftUI
                 if stage.scanBand { await scan(row: id, session) }
             }
             if let z = stage.zoom {
-                session.zoom = z
-                note("zoom \(z)")
+                session.setView(spanHz: z, centreHz: nil)
+                note("zoom \(z) Hz across")
             }
             if stage.hideEngineLabel {
                 session.hidesEngineLabel = true

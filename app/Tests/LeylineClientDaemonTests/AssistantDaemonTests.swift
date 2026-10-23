@@ -36,7 +36,7 @@ final class RecordingPerformer: ViewToolPerformer {
             let cap = mirror.state.capture(captureID)
             return AppViewTools.showRange(
                 lowHz: lowHz, highHz: highHz, label: label, centerHz: cap?.centerHz,
-                sampleRate: cap?.sampleRate ?? 0
+                sampleRate: cap?.sampleRate ?? 0, bins: 2048
             ).answer
         case .selectRecording(let id, _):
             return AppViewTools.unknownRecording(id)

@@ -174,11 +174,12 @@ launch), `sizes`, and `app`, the commands in order.
   `stage: {settings: false}`.
 - `hover` (an identifier, or `x` and `y` in points from the window's top-left corner) rests the
   pointer and answers the tooltip, which `state.tooltip` repeats; `click` does a mouse click
-  there (`button: right`) for a chart point or anything `press` cannot reach; `menu` presses a
+  there (`button: right`) for a chart point or anything `press` cannot reach; `drag` presses
+  there, moves `dx` and `dy` points and lets go (the band rail's thumb); `menu` presses a
   menu bar item by its titles (`View>Show Assistant`), or with `read: true` describes it, and
   takes `expect` on its `enabled`, `checked` and `items`; `relaunch` quits the app and starts
   it again on the same daemon and staged defaults, with an optional `stage`.
-- `state` also gives `muted`, `volume`, `sink`, `window`, `filter_caret`, `view_window` and,
+- `state` also gives `muted`, `volume`, `sink`, `window`, `filter_caret`, `view`, `capture` and,
   while the panel shows, `assistant` (its turns, field, focus and buttons); `docs/dev/app.md`,
   "The command file", has every key.
 

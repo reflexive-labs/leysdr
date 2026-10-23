@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The band rail. It shows one band at a time: the band's name, its neighbours named at the end
-// caps, a track from one edge of the band to the other with the bounds numbered beneath the caps, a
-// pill for the slice on screen, the tuned frequency as an accent tick, every bookmark in the band
-// as a `good` one, the last sweep's hits in the band as `sweepTick` ones beside them (the design's
-// "Scan the band") and a short plan's channels as fainter ticks under them
-// (docs/design/channels.md). A click tunes; a drag moves the region inside the band and leaves
-// the station where it is unless the edge pushes it; clicking a neighbour's name switches to that
-// band. The only number the rail reports is the width one spectrum column covers.
+// caps, a track from one edge of the band to the other with the bounds numbered beneath the caps,
+// a faint underlay for what the radio captures (with a mark at an end cap when it runs past the
+// band), the thumb for the view the spectrum and waterfall show, the tuned frequency as an accent
+// tick, every bookmark in the band as a `good` one, the last sweep's hits in the band as
+// `sweepTick` ones beside them (the design's "Scan the band") and a short plan's channels as
+// fainter ticks under them (docs/design/channels.md, "The band rail"). The whole track is one
+// gesture: a press that moves drags the thumb, which pans the view inside the capture and moves
+// the radio only past the capture's edge; a click tunes the nearest tick within a few points,
+// else the frequency under the pointer. Clicking a neighbour's name switches to that band. The
+// zoom pair halves and doubles the view's span, and its help says the span.
 
 import LeylineClient
 import SwiftUI
@@ -16,34 +19,32 @@ struct BandRailView: View {
     @Environment(AppSession.self) private var session
 
     var body: some View {
-        GeometryReader { geo in
-            HStack(spacing: 10) {
-                Text(title).font(Theme.Font.title).foregroundStyle(Theme.ink)
-                    .lineLimit(1).fixedSize()
-                if let rail = railRange {
-                    let neighbours = Bands.neighbours(of: rail, in: session.tunableBands)
-                    NeighbourButton(band: neighbours.below, side: .below, from: rail)
-                    BandRail(range: rail)
-                    NeighbourButton(band: neighbours.above, side: .above, from: rail)
-                } else {
-                    Spacer()
-                }
-                // What a column covers rides on the zoom pair's help rather than the header:
-                // beside the inspector the rail had no room for it, and it is reference
-                // information, not something to monitor.
-                let columns = perColumn(width: geo.size.width)
-                HStack(spacing: 2) {
-                    zoomButton("minus") { session.zoomOut() }.disabled(session.zoom <= 1)
-                        .help(columns.isEmpty ? "Zoom out" : "Zoom out: \(columns) now")
-                        .accessibilityIdentifier("rail.zoom.out")
-                    zoomButton("plus") { session.zoomIn() }.disabled(session.zoom >= 8)
-                        .help(columns.isEmpty ? "Zoom in" : "Zoom in: \(columns) now")
-                        .accessibilityIdentifier("rail.zoom.in")
-                }
+        HStack(spacing: 10) {
+            Text(title).font(Theme.Font.title).foregroundStyle(Theme.ink)
+                .lineLimit(1).fixedSize()
+            if let rail = session.railRange {
+                let neighbours = Bands.neighbours(of: rail, in: session.tunableBands)
+                NeighbourButton(band: neighbours.below, side: .below, from: rail)
+                BandRail(range: rail)
+                NeighbourButton(band: neighbours.above, side: .above, from: rail)
+            } else {
+                Spacer()
             }
-            .padding(.horizontal, 14)
-            .frame(width: geo.size.width, height: geo.size.height)
+            // The span rides on the zoom pair's help rather than the header: beside the
+            // inspector the rail had no room for it, and it is reference information, not
+            // something to monitor.
+            let across = session.viewSpan.map { "\(ViewWindow.spanWords($0)) across now" }
+            HStack(spacing: 2) {
+                zoomButton("minus") { session.zoomOut() }.disabled(!session.canZoomOut)
+                    .help(across.map { "Zoom out: \($0)" } ?? "Zoom out")
+                    .accessibilityIdentifier("rail.zoom.out")
+                zoomButton("plus") { session.zoomIn() }.disabled(!session.canZoomIn)
+                    .help(across.map { "Zoom in: \($0)" } ?? "Zoom in")
+                    .accessibilityIdentifier("rail.zoom.in")
+            }
         }
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.panelHeader)
         .identifiedGroup("rail")
     }
@@ -52,29 +53,6 @@ struct BandRailView: View {
         if let b = session.band { return b.name }
         if let hz = session.displayHz { return Frequency.format(hz) }
         return "No band"
-    }
-
-    /// The band's edges; between bands, the capture's, so the rail still has ends to cross.
-    private var railRange: ClosedRange<UInt64>? {
-        if let b = session.band { return b.minHz...b.maxHz }
-        guard let cap = session.capture, cap.sampleRate > 0 else { return nil }
-        let half = cap.sampleRate / 2
-        return (cap.centerHz > half ? cap.centerHz - half : 0)...(cap.centerHz + half)
-    }
-
-    /// `24 kHz per column`: the spectrum spans the same width as this strip, so a column is the
-    /// visible span over that many points. The zoom pair's help text; no longer drawn.
-    private func perColumn(width: CGFloat) -> String {
-        guard let r = session.visibleRange, width > 0 else { return "" }
-        let hz = Double(r.upperBound - r.lowerBound) / Double(width)
-        let text: String
-        if hz >= 1_000 {
-            let k = hz / 1_000
-            text = k >= 10 ? String(format: "%.0f kHz", k) : String(format: "%.1f kHz", k)
-        } else {
-            text = String(format: "%.0f Hz", hz)
-        }
-        return "\(text) per column"
     }
 
     private func zoomButton(_ symbol: String, action: @escaping () -> Void) -> some View {
@@ -139,85 +117,93 @@ struct NeighbourButton: View {
     }
 }
 
-/// The track itself: end caps with the bounds numbered beneath, the pill for the capture's
-/// span (with the zoomed window inset when there is one), bookmark ticks, the tuned tick, and
-/// the gesture.
+/// The track itself: end caps with the bounds numbered beneath, the capture's underlay, the
+/// view's thumb, the ticks, the tuned tick, and the one gesture over all of them.
 struct BandRail: View {
     @Environment(AppSession.self) private var session
     let range: ClosedRange<UInt64>
-    /// The centre when the drag began, so every event is a whole translation from it rather
-    /// than a step from the last, which drifts.
-    @State private var dragStartCentre: Int64?
-    /// Once the pointer has moved a few points the gesture is a drag of the region, and its end
-    /// is not a click.
-    @State private var panned = false
+    /// The drag in progress: where the view and the capture stood when it began, and the centre
+    /// it has pushed the capture to so far. Every event is a whole translation from the start
+    /// rather than a step from the last, which drifts.
+    @State private var drag: RailDrag?
 
     private static let trackY: CGFloat = 13
     private static let capHeight: CGFloat = 10
     private static let pillHeight: CGFloat = 10
+    /// The underlay is thinner than the thumb, so the thumb reads as the thing to move.
+    private static let underlayHeight: CGFloat = 6
+    /// A press that moves this many points is a drag, and its release is not a click.
+    private static let dragPoints: CGFloat = 3
 
     var body: some View {
+        // Read here, not in the GeometryReader's closure, so the rail redraws when they change
+        // (docs/dev/swift-style.md, section 7).
+        let ticks = railTicks
+        let thumb = session.railThumb
+        let capture = captureRange
+        let tuned = session.displayHz
+        let words = session.visibleRange.map(Self.rangeWords)
+        let hits = session.sweepHits
         GeometryReader { geo in
             let w = geo.size.width
             ZStack(alignment: .topLeading) {
                 // Track and caps.
-                Rectangle().fill(Theme.border).frame(width: w, height: 2).offset(y: Self.trackY - 1)
+                Rectangle().fill(Theme.border).frame(width: w, height: 2).offset(
+                    y: Self.trackY - 1)
                 cap(x: 0)
                 cap(x: w)
-                // The capture's region, at its dragged position during a drag.
-                if let region = captureRange {
-                    pill(region, width: w, fill: Theme.raised, stroke: Theme.borderStrong)
-                    // The zoomed window inside it.
-                    if session.zoom > 1, let vis = session.visibleRange {
-                        pill(vis, width: w, fill: Theme.selected, stroke: Theme.borderFocus)
-                    }
+                // What the radio captures, faintly, at its dragged position during a drag, with
+                // a mark at the cap it runs past.
+                if let capture {
+                    pill(
+                        capture, width: w, height: Self.underlayHeight, fill: Theme.raised,
+                        stroke: Theme.border)
+                    if capture.lowerBound < range.lowerBound { overflow(x: 0, pointing: -1) }
+                    if capture.upperBound > range.upperBound { overflow(x: w, pointing: 1) }
+                }
+                // The view: the window the spectrum and waterfall show, always drawn.
+                if let thumb {
+                    pill(
+                        thumb, width: w, height: Self.pillHeight, fill: Theme.selected,
+                        stroke: Theme.borderFocus
+                    )
+                    .accessibilityElement()
+                    .accessibilityLabel("View")
+                    .accessibilityValue(words ?? "")
+                    .accessibilityIdentifier("rail.thumb")
                 }
                 // The plan's channels inside the part, for a plan of `Plans.tickLimit` or fewer:
-                // fainter than the bookmarks and under them, 1 pt wide with a hit area
-                // either side. A click tunes the channel; the rail keeps showing the part.
-                if let band = session.band {
-                    ForEach(Plans.ticks(for: band).filter { range.contains($0.hz) }) { channel in
-                        Rectangle().fill(Theme.planTick).frame(width: 1, height: 6)
-                            .frame(width: Theme.Layout.planTickHit)
-                            .contentShape(Rectangle())
-                            .offset(
-                                x: x(of: channel.hz, width: w) - Theme.Layout.planTickHit / 2,
-                                y: Self.trackY - 3
-                            )
-                            .help(channel.name)
-                            .onTapGesture { session.tune(to: channel.hz) }
-                            .accessibilityIdentifier(
-                                "rail.channel.\(ViewIdentifier.slug(channel.id))"
-                            )
-                            .pressable { session.tune(to: channel.hz) }
-                    }
-                }
-                // The last sweep's hits inside the rail: a group's hits show on the half the
-                // rail is on. Under the bookmarks, so a bookmarked hit
-                // keeps its `good` tick, with the plan ticks' hit area; a click tunes the hit.
-                ForEach(session.sweepHits.filter { range.contains($0.hz) }) { hit in
-                    Rectangle().fill(Theme.sweepTick).frame(width: 1.5, height: 8)
-                        .frame(width: Theme.Layout.planTickHit)
-                        .contentShape(Rectangle())
-                        .offset(
-                            x: x(of: hit.hz, width: w) - Theme.Layout.planTickHit / 2,
-                            y: Self.trackY - 4
-                        )
-                        .help("\(hit.label) · \(String(format: "%.0f", hit.snrDb)) dB")
-                        .onTapGesture { session.tune(hit: hit) }
+                // fainter than the bookmarks and under them. The rail keeps showing the part.
+                ForEach(ticks.channels) { channel in
+                    tickMark(Theme.planTick, width: 1, height: 6, at: x(of: channel.hz, width: w))
+                        .help(channel.name)
                         .accessibilityIdentifier(
-                            "rail.hit.\(ViewIdentifier.hitSlug(hit, among: session.sweepHits))"
+                            "rail.channel.\(ViewIdentifier.slug(channel.id))"
+                        )
+                        .pressable { session.tune(to: channel.hz) }
+                }
+                strips(ticks.channels.map { x(of: $0.hz, width: w) }, Theme.planTick, height: 6)
+                // The last sweep's hits inside the rail: a group's hits show on the half the
+                // rail is on. Under the bookmarks, so a bookmarked hit keeps its `good` tick.
+                ForEach(ticks.hits) { hit in
+                    tickMark(Theme.sweepTick, width: 1.5, height: 8, at: x(of: hit.hz, width: w))
+                        .help("\(hit.label) · \(String(format: "%.0f", hit.snrDb)) dB")
+                        .accessibilityIdentifier(
+                            "rail.hit.\(ViewIdentifier.hitSlug(hit, among: hits))"
                         )
                         .pressable { session.tune(hit: hit) }
                 }
+                strips(ticks.hits.map { x(of: $0.hz, width: w) }, Theme.sweepTick, height: 8)
                 // Bookmarks in the band.
-                ForEach(session.bookmarks.list.filter { range.contains($0.hz) }) { b in
-                    Rectangle().fill(Theme.good).frame(width: 1.5, height: 8)
-                        .offset(x: x(of: b.hz, width: w) - 0.75, y: Self.trackY - 4)
+                ForEach(ticks.bookmarks) { b in
+                    tickMark(Theme.good, width: 1.5, height: 8, at: x(of: b.hz, width: w))
                         .help(b.name)
+                        .accessibilityIdentifier("rail.bookmark.\(ViewIdentifier.slug(b.name))")
+                        .pressable { session.tune(bookmark: b) }
                 }
+                strips(ticks.bookmarks.map { x(of: $0.hz, width: w) }, Theme.good, height: 8)
                 // The tuned frequency.
-                if let hz = session.displayHz, range.contains(hz) {
+                if let hz = tuned, range.contains(hz) {
                     Rectangle().fill(Theme.accent).frame(width: 2, height: 14)
                         .offset(x: x(of: hz, width: w) - 1, y: Self.trackY - 7)
                 }
@@ -238,9 +224,31 @@ struct BandRail: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { v in moved(v, width: w) }
-                    .onEnded { v in ended(v, width: w) })
+                    .onEnded { v in ended(v, width: w, ticks: ticks) })
         }
         .identifiedGroup("rail.track")
+    }
+
+    /// `145.520 to 147.520 MHz`: the thumb's value to accessibility.
+    private static func rangeWords(_ r: ClosedRange<UInt64>) -> String {
+        let lo = Frequency.fieldParts(r.lowerBound).major
+        let hi = Frequency.fieldParts(r.upperBound).major
+        return "\(lo) to \(hi) MHz"
+    }
+
+    /// The ticks on the rail, read in `body`.
+    private struct Ticks {
+        var channels: [PlanChannel]
+        var hits: [SweepHit]
+        var bookmarks: [Bookmark]
+    }
+
+    private var railTicks: Ticks {
+        Ticks(
+            channels: session.band.map { Plans.ticks(for: $0).filter { range.contains($0.hz) } }
+                ?? [],
+            hits: session.sweepHits.filter { range.contains($0.hz) },
+            bookmarks: session.bookmarks.list.filter { range.contains($0.hz) })
     }
 
     /// The capture's span, from the centre a drag is taking it to when there is one.
@@ -251,19 +259,61 @@ struct BandRail: View {
         return UInt64(max(0, centre - half))...UInt64(max(0, centre + half))
     }
 
-    @ViewBuilder
-    private func pill(_ r: ClosedRange<UInt64>, width w: CGFloat, fill: Color, stroke: Color)
+    /// A tick's mark, centred on `x`. It is not a target of its own: the track's gesture takes
+    /// every press, and its click finds the nearest tick (`RailTicks.nearest`). The frame
+    /// around the mark is what accessibility reports, so a check can click where a tick is.
+    private func tickMark(_ colour: Color, width: CGFloat, height: CGFloat, at x: CGFloat)
         -> some View
     {
+        Rectangle().fill(colour).frame(width: width, height: height)
+            .frame(width: Theme.Layout.planTickHit)
+            .offset(x: x - Theme.Layout.planTickHit / 2, y: Self.trackY - height / 2)
+            // An element of its own with no gesture, so the tap that once made it one is not
+            // what puts it in the tree.
+            .accessibilityElement()
+    }
+
+    /// Ticks too close to tell apart (`RailTicks.denseRuns`), drawn over as one strip of their
+    /// colour.
+    private func strips(_ xs: [CGFloat], _ colour: Color, height: CGFloat) -> some View {
+        let runs = RailTicks.denseRuns(xs.map(Double.init))
+        return ForEach(runs.indices, id: \.self) { i in
+            let lo = CGFloat(runs[i].lowerBound)
+            let hi = CGFloat(runs[i].upperBound)
+            RoundedRectangle(cornerRadius: 1).fill(colour)
+                .frame(width: max(hi - lo, 2), height: height)
+                .offset(x: lo, y: Self.trackY - height / 2)
+                .accessibilityHidden(true)
+        }
+    }
+
+    @ViewBuilder
+    private func pill(
+        _ r: ClosedRange<UInt64>, width w: CGFloat, height: CGFloat, fill: Color, stroke: Color
+    ) -> some View {
         let lo = x(of: max(r.lowerBound, range.lowerBound), width: w)
         let hi = x(of: min(r.upperBound, range.upperBound), width: w)
-        if hi > lo {
-            RoundedRectangle(cornerRadius: Self.pillHeight / 2)
+        if hi >= lo {
+            RoundedRectangle(cornerRadius: height / 2)
                 .fill(fill)
-                .overlay(RoundedRectangle(cornerRadius: Self.pillHeight / 2).stroke(stroke))
-                .frame(width: max(hi - lo, Self.pillHeight), height: Self.pillHeight)
-                .offset(x: lo, y: Self.trackY - Self.pillHeight / 2)
+                .overlay(RoundedRectangle(cornerRadius: height / 2).stroke(stroke))
+                .frame(width: max(hi - lo, height), height: height)
+                .offset(x: min(lo, max(0, w - height)), y: Self.trackY - height / 2)
         }
+    }
+
+    /// The mark at an end cap the capture runs past: a small arrowhead outside the cap,
+    /// `direction` -1 for the lower cap and 1 for the upper.
+    private func overflow(x: CGFloat, pointing direction: CGFloat) -> some View {
+        Path { p in
+            let tip = x + direction * 5
+            let back = x + direction * 2
+            p.move(to: CGPoint(x: back, y: Self.trackY - 3))
+            p.addLine(to: CGPoint(x: tip, y: Self.trackY))
+            p.addLine(to: CGPoint(x: back, y: Self.trackY + 3))
+        }
+        .stroke(Theme.inkFaint, lineWidth: 1)
+        .accessibilityHidden(true)
     }
 
     private func cap(x: CGFloat) -> some View {
@@ -284,32 +334,68 @@ struct BandRail: View {
         return session.band?.snapped(raw) ?? raw
     }
 
-    /// A drag of the region: the centre moves by the pointer's whole translation from where it
-    /// began, never past the band's edges, and the station stays put unless the region's edge
-    /// pushes it (`AppSession.pan`). A drag never changes the band; clicking a neighbour's name
-    /// does.
+    /// A drag of the thumb: the view moves by the pointer's whole translation from where it
+    /// began, inside the band, and the radio stays where it is until the view's edge reaches
+    /// the capture's; from there the capture is pushed (`AppSession.pan`, with its push and
+    /// ask rules). A drag never changes the band; clicking a neighbour's name does.
     private func moved(_ v: DragGesture.Value, width: CGFloat) {
-        guard panned || abs(v.translation.width) >= 3 else { return }
-        if dragStartCentre == nil {
-            guard let cap = session.capture else { return }
-            dragStartCentre = session.panCentre ?? Int64(cap.centerHz)
+        guard drag != nil || abs(v.translation.width) >= Self.dragPoints else { return }
+        if drag == nil {
+            guard let cap = session.capture, let r = session.visibleRange else { return }
+            let centre = session.panCentre ?? Int64(cap.centerHz)
+            drag = RailDrag(
+                viewCentre: Int64(r.lowerBound + (r.upperBound - r.lowerBound) / 2),
+                spanHz: r.upperBound - r.lowerBound, sampleRate: cap.sampleRate,
+                startCapture: centre, pushed: centre)
         }
-        guard let start = dragStartCentre else { return }
-        panned = true
-        session.pan(centreTo: start + translation(v, width: width), ended: false)
+        step(v, width: width, ended: false)
     }
 
-    /// A drag ends where the region is; anything shorter than a drag is a click, which tunes
-    /// to the frequency under the pointer on the band's grid.
-    private func ended(_ v: DragGesture.Value, width: CGFloat) {
-        defer {
-            panned = false
-            dragStartCentre = nil
+    /// A drag ends where the thumb is; anything shorter than a drag is a click, which tunes the
+    /// nearest tick within a few points (a bookmark before a plan channel before a hit, on a
+    /// tie), else the frequency under the pointer on the band's grid.
+    private func ended(_ v: DragGesture.Value, width: CGFloat, ticks: Ticks) {
+        defer { drag = nil }
+        if drag != nil {
+            step(v, width: width, ended: true)
+            return
         }
-        if panned, let start = dragStartCentre {
-            session.pan(centreTo: start + translation(v, width: width), ended: true)
+        var xs: [Double] = []
+        var tunes: [() -> Void] = []
+        for b in ticks.bookmarks {
+            xs.append(Double(x(of: b.hz, width: width)))
+            tunes.append { session.tune(bookmark: b) }
+        }
+        for c in ticks.channels {
+            xs.append(Double(x(of: c.hz, width: width)))
+            tunes.append { session.tune(to: c.hz) }
+        }
+        for h in ticks.hits {
+            xs.append(Double(x(of: h.hz, width: width)))
+            tunes.append { session.tune(hit: h) }
+        }
+        if let i = RailTicks.nearest(to: Double(v.location.x), among: xs) {
+            tunes[i]()
         } else {
             session.tune(to: hz(atX: v.location.x, width: width))
+        }
+    }
+
+    /// One frame of a drag: the view to its new centre, and the capture pushed once the view
+    /// has reached its edge; the push's release is the pan's.
+    private func step(_ v: DragGesture.Value, width: CGFloat, ended: Bool) {
+        guard var d = drag else { return }
+        let moved = ViewWindow.dragged(
+            viewCentreHz: d.viewCentre, byHz: translation(v, width: width), spanHz: d.spanHz,
+            captureCentreHz: d.pushed, sampleRate: d.sampleRate,
+            within: session.band.map { $0.minHz...$0.maxHz })
+        session.moveView(centreTo: moved.viewCentreHz)
+        if moved.captureCentreHz != d.pushed {
+            d.pushed = moved.captureCentreHz
+            drag = d
+        }
+        if d.pushed != d.startCapture {
+            session.pan(centreTo: d.pushed, ended: ended)
         }
     }
 
@@ -319,4 +405,14 @@ struct BandRail: View {
         let span = Double(range.upperBound - range.lowerBound)
         return Int64((Double(v.translation.width) / Double(width) * span).rounded())
     }
+}
+
+/// A rail drag's start: the view's centre and span, the capture's rate and centre, and the
+/// centre the drag has pushed the capture to so far (`ViewWindow.dragged`).
+private struct RailDrag {
+    var viewCentre: Int64
+    var spanHz: UInt64
+    var sampleRate: UInt64
+    var startCapture: Int64
+    var pushed: Int64
 }

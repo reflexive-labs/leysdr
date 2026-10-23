@@ -101,81 +101,21 @@ final class AssistantViewToolsTests: XCTestCase {
             .success(.showPlace(.library)))
     }
 
-    func testTheViewFitsTheBandInsideTheSpan() throws {
-        // A 2.4 MSPS capture on 146 MHz covers 144.8 to 147.2 MHz.
-        let calling = try XCTUnwrap(
-            ViewWindow.fit(
-                lowHz: 146_400_000, highHz: 146_600_000, centerHz: 146_000_000,
-                sampleRate: 2_400_000))
-        XCTAssertEqual(calling.zoom, 8)
-        XCTAssertEqual(calling.focusHz, 146_500_000)
-        XCTAssertEqual(calling.shown, 146_350_000...146_650_000)
-        XCTAssertTrue(calling.whole)
-
-        let wide = try XCTUnwrap(
-            ViewWindow.fit(
-                lowHz: 144_000_000, highHz: 148_000_000, centerHz: 146_000_000,
-                sampleRate: 2_400_000))
-        XCTAssertEqual(wide.zoom, 1)
-        XCTAssertEqual(wide.shown, 144_800_000...147_200_000)
-        XCTAssertFalse(wide.whole)
-
-        XCTAssertNil(
-            ViewWindow.fit(
-                lowHz: 118_000_000, highHz: 137_000_000, centerHz: 146_000_000,
-                sampleRate: 2_400_000))
-        XCTAssertNil(
-            ViewWindow.fit(lowHz: 1, highHz: 2, centerHz: 146_000_000, sampleRate: 0))
-    }
-
-    func testTheZoomedWindowStaysInsideTheSpan() {
-        XCTAssertEqual(
-            ViewWindow.visible(
-                centerHz: 146_000_000, sampleRate: 2_400_000, zoom: 1, focusHz: 0),
-            144_800_000...147_200_000)
-        XCTAssertEqual(
-            ViewWindow.visible(
-                centerHz: 146_000_000, sampleRate: 2_400_000, zoom: 4, focusHz: 147_200_000),
-            146_600_000...147_200_000)
-        XCTAssertEqual(
-            ViewWindow.visible(centerHz: 1_000_000, sampleRate: 2_400_000, zoom: 1, focusHz: 0),
-            0...2_200_000)
-        XCTAssertNil(
-            ViewWindow.visible(centerHz: 1, sampleRate: 0, zoom: 1, focusHz: 0))
-    }
-
-    func testTheSessionKeepsAFocusOnlyWhileTunedThereAndZoomed() {
-        let focus = ViewFocus(hz: 146_500_000, tunedHz: 146_000_000)
-        XCTAssertEqual(ViewFocus.kept(focus, tunedHz: 146_000_000, zoom: 4), focus)
-        // A tune from any client clears it, and coming back does not bring it back.
-        XCTAssertNil(ViewFocus.kept(focus, tunedHz: 146_520_000, zoom: 4))
-        XCTAssertNil(ViewFocus.kept(focus, tunedHz: nil, zoom: 4))
-        // Zoomed back out to the whole span, there is nothing to centre.
-        XCTAssertNil(ViewFocus.kept(focus, tunedHz: 146_000_000, zoom: 1))
-        XCTAssertNil(ViewFocus.kept(nil, tunedHz: 146_000_000, zoom: 4))
-    }
-
-    func testAFocusLastsUntilTheRadioIsTunedElsewhere() {
-        let focus = ViewFocus(hz: 146_500_000, tunedHz: 146_000_000)
-        XCTAssertEqual(focus.centre(tunedHz: 146_000_000), 146_500_000)
-        XCTAssertNil(focus.centre(tunedHz: 146_520_000))
-        XCTAssertNil(focus.centre(tunedHz: nil))
-    }
-
     func testShowRangeAnswersWhatItShowedOrWhyNot() {
         let inside = AppViewTools.showRange(
             lowHz: 146_400_000, highHz: 146_600_000, label: "calling", centerHz: 146_000_000,
-            sampleRate: 2_400_000)
+            sampleRate: 2_400_000, bins: 2048)
         XCTAssertFalse(inside.answer.isError)
-        XCTAssertEqual(inside.answer.text, "The waterfall shows 146.350 MHz to 146.650 MHz.")
+        XCTAssertEqual(inside.answer.text, "The waterfall shows 146.400 MHz to 146.600 MHz.")
         XCTAssertEqual(
             inside.answer.json,
-            #"{"from_hz":146350000,"place":"radio","to_hz":146650000,"whole":true,"zoom":8}"#)
-        XCTAssertEqual(inside.fit?.zoom, 8)
+            #"{"from_hz":146400000,"place":"radio","span_hz":200000,"to_hz":146600000,"whole":true}"#
+        )
+        XCTAssertEqual(inside.fit?.spanHz, 200_000)
 
         let partly = AppViewTools.showRange(
             lowHz: 144_000_000, highHz: 148_000_000, label: "2 m amateur", centerHz: 146_000_000,
-            sampleRate: 2_400_000)
+            sampleRate: 2_400_000, bins: 2048)
         XCTAssertFalse(partly.answer.isError)
         XCTAssertTrue(
             partly.answer.text.contains("all of 2 m amateur (144.000 MHz to 148.000 MHz)"),
@@ -183,14 +123,14 @@ final class AssistantViewToolsTests: XCTestCase {
 
         let outside = AppViewTools.showRange(
             lowHz: 118_000_000, highHz: 137_000_000, label: "airband", centerHz: 146_000_000,
-            sampleRate: 2_400_000)
+            sampleRate: 2_400_000, bins: 2048)
         XCTAssertTrue(outside.answer.isError)
         XCTAssertNil(outside.fit)
         XCTAssertTrue(outside.answer.text.contains("Tune the radio there"), outside.answer.text)
 
         let noRadio = AppViewTools.showRange(
             lowHz: 118_000_000, highHz: 137_000_000, label: "airband", centerHz: nil,
-            sampleRate: 0)
+            sampleRate: 0, bins: 2048)
         XCTAssertTrue(noRadio.answer.isError)
         XCTAssertNil(noRadio.fit)
     }

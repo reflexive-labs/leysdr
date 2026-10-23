@@ -208,7 +208,12 @@ func TestLoadChecksRejects(t *testing.T) {
 	cases := map[string]string{
 		"no fixtures":        "app: [{cmd: state}]",
 		"no commands":        "fixtures: [{name: x}]",
-		"unknown command":    "fixtures: [{name: x}]\n    app: [{cmd: drag}]",
+		"unknown command":    "fixtures: [{name: x}]\n    app: [{cmd: dance}]",
+		"drag nowhere":       "fixtures: [{name: x}]\n    app: [{cmd: drag, dx: 4}]",
+		"drag no distance":   "fixtures: [{name: x}]\n    app: [{cmd: drag, identifier: a, dx: 0}]",
+		"drag button":        "fixtures: [{name: x}]\n    app: [{cmd: drag, identifier: a, dx: 4, button: right}]",
+		"dx on click":        "fixtures: [{name: x}]\n    app: [{cmd: click, identifier: a, dx: 4}]",
+		"zoom a factor":      "fixtures: [{name: x}]\n    stage: {zoom: 4}\n    app: [{cmd: state}]",
 		"quit":               "fixtures: [{name: x}]\n    app: [{cmd: quit}]",
 		"snapshot sans name": "fixtures: [{name: x}]\n    app: [{cmd: snapshot}]",
 		"stray field":        "fixtures: [{name: x}]\n    app: [{cmd: key, keys: return, text: a}]",
@@ -575,6 +580,38 @@ func TestCheckEndToEnd(t *testing.T) {
 		"fail     two 1440x820 press#2              the app: no element press.me",
 		"2 checked: 1 new, 1 fail; ",
 	)
+}
+
+// A drag reaches the app as its point and its distance, and the fake app answers it like any
+// command the runner sends on.
+func TestCheckDragGoesToTheApp(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "scenes.yaml")
+	body := "scenes:\n  - name: s\n    fixtures: [{name: x}]\n    app:\n" +
+		"      - {cmd: drag, identifier: rail.thumb, dx: -40}\n" +
+		"      - {cmd: drag, x: 500, y: 60, dx: 12, dy: 3}\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, err := LoadChecks(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	for i := range f.Scenes[0].App {
+		w, err := f.Scenes[0].App[i].wire(i+1, f.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := json.Marshal(w)
+		lines = append(lines, string(b))
+	}
+	want := []string{
+		`{"id":1,"cmd":"drag","identifier":"rail.thumb","dx":-40}`,
+		`{"id":2,"cmd":"drag","x":500,"y":60,"dx":12,"dy":3}`,
+	}
+	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
+		t.Errorf("the drags' lines:\n%s\nwant\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
+	}
 }
 
 // An app that never writes ready.json is reported with its log, and found and killed.

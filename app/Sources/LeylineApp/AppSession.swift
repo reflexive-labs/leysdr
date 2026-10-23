@@ -118,11 +118,15 @@ final class AppSession {
 
     // View state local to the window: presentation only, never radio state.
     var maxHold = true
-    /// The waterfall's zoom, 1 to 8. Back at 1 the whole span shows, and a view tool's focus has
-    /// nothing left to centre, so it goes.
-    var zoom = 1 {
-        didSet { keepViewFocus() }
-    }
+    /// The view's width as a zoom, a view tool or a stage set it; nil fits the band
+    /// (`ViewWindow.shown`). Picking a band puts it back to nil.
+    private(set) var viewSpanHz: UInt64?
+    /// Where a rail drag, a view tool, the edge marker or a tune outside the view put the view's
+    /// centre; nil centres it on the band it fits, else on the tuned frequency.
+    private(set) var viewCentreHz: UInt64?
+    /// The tuned frequency the view last followed (`keepView`), so only a change of it moves the
+    /// view.
+    private var viewTunedHz: UInt64?
     /// The frequency under the pointer on either chart, so the hairline shows on both; nil when
     /// the pointer is over neither.
     var pointerHz: UInt64?
@@ -204,9 +208,6 @@ final class AppSession {
     /// field's own state, so it outlives the field being made again: once a question card was
     /// answered the field showed the text while its state had lost it, and Return sent nothing.
     var assistantDraft = ""
-    /// Where a view tool centred the zoomed waterfall, while the radio stays tuned where it was
-    /// then (`ViewFocus`); nil centres the window on the tuned frequency, as it always has.
-    private(set) var viewFocus: ViewFocus?
     /// The Library's selected channel row (`RecordingChannel.id`), or nil. While one is selected
     /// and the Library shows, the centre column is that channel's page (`RecordingsPage`), and
     /// the manifests of its recordings are read. Another row, or none, clears the selected part:
@@ -785,15 +786,54 @@ final class AppSession {
     var stepHz: UInt32 { band?.stepHz ?? 12_500 }
     var fineStepHz: UInt32 { band?.fineStepHz ?? 1_000 }
 
-    /// The frequencies the spectrum and waterfall show: the capture's span at zoom 1, a window
-    /// of it when zoomed, centred on where the assistant's `show_band` put it while the radio
-    /// stays tuned there and on the tuned frequency otherwise, clamped inside the capture
-    /// (`ViewWindow.visible`).
+    /// The frequencies the spectrum and waterfall show, which the band rail draws as its thumb:
+    /// the band fitted inside the capture until a zoom, a drag or a view tool chose otherwise,
+    /// always inside the capture (`ViewWindow.shown`).
     var visibleRange: ClosedRange<UInt64>? {
         guard let cap = capture else { return nil }
-        let focus = viewFocus?.centre(tunedHz: tunedHz) ?? tunedHz ?? cap.centerHz
-        return ViewWindow.visible(
-            centerHz: cap.centerHz, sampleRate: cap.sampleRate, zoom: zoom, focusHz: focus)
+        return ViewWindow.shown(
+            centerHz: cap.centerHz, sampleRate: cap.sampleRate, bins: Self.viewBins,
+            band: band.map { $0.minHz...$0.maxHz }, spanHz: viewSpanHz, centreHz: viewCentreHz,
+            tunedHz: tunedHz)
+    }
+
+    /// The spectrum's bins, which set the narrowest view: the count the feed subscribes at and
+    /// the daemon serves (`SpectrumFeed.bins`), read as a constant so the view does not follow
+    /// every row.
+    static let viewBins = Int(SpectrumFeed.bins)
+
+    /// The band rail's ends: the band's; between bands, the capture's, so the rail still has
+    /// ends to cross.
+    var railRange: ClosedRange<UInt64>? {
+        if let b = band { return b.minHz...b.maxHz }
+        guard let cap = capture, cap.sampleRate > 0 else { return nil }
+        return ViewWindow.span(centerHz: cap.centerHz, sampleRate: cap.sampleRate)
+    }
+
+    /// The rail's thumb: the part of the view on the rail.
+    var railThumb: ClosedRange<UInt64>? {
+        railRange.flatMap { ViewWindow.thumb(visibleRange, on: $0) }
+    }
+
+    /// The side of the view the tuned channel lies off, for the spectrum's edge marker; nil while
+    /// the view shows it.
+    var tunedEdge: ViewWindow.Edge? { ViewWindow.edge(of: tunedHz, in: visibleRange) }
+
+    /// The edge marker's words (`146.940 ▸`), or nil while the view shows the tuned channel.
+    var edgeMarkerWords: String? {
+        guard let e = tunedEdge, let hz = tunedHz else { return nil }
+        return ViewWindow.edgeWords(e, hz: hz)
+    }
+
+    /// The span shown, and how far `+` and `−` can go from it.
+    var viewSpan: UInt64? { visibleRange.map { $0.upperBound - $0.lowerBound } }
+    var canZoomIn: Bool {
+        guard let cap = capture, let s = viewSpan else { return false }
+        return s > ViewWindow.narrowest(sampleRate: cap.sampleRate, bins: Self.viewBins)
+    }
+    var canZoomOut: Bool {
+        guard let cap = capture, let s = viewSpan else { return false }
+        return s < cap.sampleRate
     }
 
     /// The empty-state message, worded as in the guide, shown when there is nothing to draw.
@@ -906,7 +946,7 @@ final class AppSession {
             snapshotsSeen = m.snapshots
             follow.connected(atSeq: state.seq)
         }
-        keepViewFocus()
+        keepView()
         // The conversation's event, which the watch may not have delivered yet.
         if let id = assistant?.conversationID,
             let c = state.conversations.first(where: { $0.conversationID == id })
@@ -1262,6 +1302,8 @@ final class AppSession {
         busy = true
         defer { busy = false }
         listeningStopped = false
+        // Picking a band fits the view to it; a channel picked inside the band keeps the view.
+        if hz == nil || band.id != self.band?.id { setView(spanHz: nil, centreHz: nil) }
         selectedBandID = band.id
         closeOpenedRows(tuning: Bands.group(of: band) ?? band)
         if unstaged { UserDefaults.standard.set(band.id, forKey: Self.lastBandKey) }
@@ -1617,7 +1659,9 @@ final class AppSession {
         place(hz, panning: dragging, quiet: dragging)
     }
 
-    /// A drag along the rail moves the capture, not the station, and never out of the band:
+    /// A rail drag that has taken the view past the capture's edge pushes the capture
+    /// (`BandRail`, `ViewWindow.dragged`); short of that it moves only the view. It moves the
+    /// capture, not the station, and never out of the band:
     /// the region stops at the band's edges, and a band the region holds whole does not move
     /// at all. The offset follows the centre so the frequency stays put, until the station
     /// would leave the middle 80 % of the span, when it rides that edge instead (and never
@@ -1665,7 +1709,7 @@ final class AppSession {
         if ended {
             log(
                 "tune",
-                "pan capture \(cap.centerHz) -> \(newCentre) Hz, station at \(held) Hz\(held != station ? ", pushed from \(station)" : "")"
+                "pan capture \(cap.centerHz) -> \(newCentre) Hz\(newCentre != centre ? " (asked \(centre))" : ""), station at \(held) Hz\(held != station ? ", pushed from \(station)" : "")"
             )
             followBand(from: tunedHz, to: UInt64(max(0, held)), channel: ch)
             Task {
@@ -2859,8 +2903,38 @@ final class AppSession {
         tune(to: peak.centerHz)
     }
 
-    func zoomIn() { zoom = min(zoom * 2, 8) }
-    func zoomOut() { zoom = max(zoom / 2, 1) }
+    /// `+` and `−`: half or twice the width shown, centred on the tuned channel while the view
+    /// shows it, else where the view is (`ViewWindow.zoomedIn`).
+    func zoomIn() { stepZoom(ViewWindow.zoomedIn) }
+    func zoomOut() { stepZoom(ViewWindow.zoomedOut) }
+
+    private func stepZoom(_ step: (UInt64, UInt64, Int) -> UInt64) {
+        guard let cap = capture, let r = visibleRange else { return }
+        let span = step(r.upperBound - r.lowerBound, cap.sampleRate, Self.viewBins)
+        let centre =
+            tunedHz.flatMap { r.contains($0) ? $0 : nil } ?? (r.lowerBound + r.upperBound) / 2
+        setView(spanHz: span, centreHz: centre)
+        log("view", "span \(span) Hz around \(centre) Hz")
+    }
+
+    /// The view `spanHz` wide around `centreHz`, as a stage or a view tool sets it; the span is
+    /// held between the narrowest the spectrum allows and the capture when the view is drawn.
+    func setView(spanHz: UInt64?, centreHz: UInt64?) {
+        viewSpanHz = spanHz
+        viewCentreHz = centreHz
+    }
+
+    /// A rail drag's view centre; nothing is retuned (`BandRail`, `ViewWindow.dragged`).
+    func moveView(centreTo hz: Int64) {
+        viewCentreHz = UInt64(max(0, hz))
+    }
+
+    /// The edge marker: the view moves to the tuned channel, and nothing is retuned.
+    func showTuned() {
+        guard let hz = tunedHz else { return }
+        viewCentreHz = hz
+        log("view", "back to the tuned channel at \(hz) Hz")
+    }
 
     func clearMaxHold() {
         spectrum.clearMaxHold()
@@ -4395,11 +4469,24 @@ final class AppSession {
     /// New Conversation: the one shown ends, if it is still going, and the panel empties.
     func newConversation() async { await assistant?.clear() }
 
-    /// Clears `viewFocus` once the radio is tuned elsewhere or the view is zoomed back out
-    /// (`ViewFocus.kept`), after every mirror change and every zoom.
-    private func keepViewFocus() {
-        let kept = ViewFocus.kept(viewFocus, tunedHz: tunedHz, zoom: zoom)
-        if kept != viewFocus { viewFocus = kept }
+    /// After every mirror change: a tune that leaves the view brings the view to the tuned
+    /// channel, and one inside it leaves the view alone (`ViewWindow.followed`). While a rail
+    /// drag moves the capture the station it pushes is not followed, or the thumb would jump
+    /// back under the pointer. A centre a drag left past the capture's edge is pulled in to
+    /// where the view stands once the capture's move has landed.
+    private func keepView() {
+        if tunedHz != viewTunedHz {
+            viewTunedHz = tunedHz
+            if panCentre == nil {
+                let followed = ViewWindow.followed(
+                    centreHz: viewCentreHz, shown: visibleRange, tunedHz: tunedHz)
+                if followed != viewCentreHz { viewCentreHz = followed }
+            }
+        }
+        if panCentre == nil, viewCentreHz != nil, let r = visibleRange {
+            let centre = r.lowerBound + (r.upperBound - r.lowerBound) / 2
+            if centre != viewCentreHz { viewCentreHz = centre }
+        }
     }
 
     private func assistantChanged(_ a: AssistantController) {
@@ -4541,7 +4628,7 @@ enum WindowPlace: String, CaseIterable, Identifiable {
 }
 
 /// The view tools the window declares (`AppViewTools`), performed on the main actor when the
-/// assistant calls one. None of them moves the radio: `show_band` zooms and centres the view
+/// assistant calls one. None of them moves the radio: `show_band` sizes and centres the view
 /// inside the span the radio captures and says to tune when the band is outside it, because
 /// retuning goes through the radio tools and their don't-disturb check.
 extension AppSession: ViewToolPerformer {
@@ -4550,12 +4637,10 @@ extension AppSession: ViewToolPerformer {
         case .showRange(let lowHz, let highHz, let label):
             let (answer, fit) = AppViewTools.showRange(
                 lowHz: lowHz, highHz: highHz, label: label, centerHz: capture?.centerHz,
-                sampleRate: capture?.sampleRate ?? 0)
+                sampleRate: capture?.sampleRate ?? 0, bins: Self.viewBins)
             if let fit {
                 place = .radio
-                // The focus first: zooming to 1 clears it, and a fit at zoom 1 needs none.
-                viewFocus = ViewFocus(hz: fit.focusHz, tunedHz: tunedHz)
-                zoom = fit.zoom
+                setView(spanHz: fit.spanHz, centreHz: fit.focusHz)
                 log("assistant", "view \(fit.shown.lowerBound)-\(fit.shown.upperBound) Hz")
             }
             return answer

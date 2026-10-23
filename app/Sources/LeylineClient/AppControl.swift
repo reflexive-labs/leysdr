@@ -144,6 +144,9 @@ public struct ControlCommand: Sendable, Equatable {
         case hover(PointTarget)
         /// A mouse click there, left or right, for what `press` cannot reach.
         case click(PointTarget, right: Bool)
+        /// The left button pressed there, moved `dx` and `dy` points in steps, and released: a
+        /// drag, for the band rail's thumb and anything else a press that moves reaches.
+        case drag(PointTarget, dx: Double, dy: Double)
         /// A menu bar item by its titles (`View>Show Assistant`): pressed, or with `read` only
         /// described.
         case menu(path: String, read: Bool)
@@ -151,7 +154,7 @@ public struct ControlCommand: Sendable, Equatable {
         case quit
     }
 
-    /// Where a `hover` or a `click` goes: the centre of the element with an identifier, or a
+    /// Where a `hover`, a `click` or a `drag` goes: the centre of the element with an identifier, or a
     /// point in points from the window's top-left corner, toolbar included, as the regions and
     /// the `ax` frames are measured.
     public enum PointTarget: Sendable, Equatable {
@@ -196,6 +199,8 @@ public struct ControlCommand: Sendable, Equatable {
         var button: String?
         var menu: String?
         var read: Bool?
+        var dx: Double?
+        var dy: Double?
     }
 
     private struct LineID: Decodable {
@@ -277,13 +282,25 @@ public struct ControlCommand: Sendable, Equatable {
                 return .failure(Refusal(reason: "pick needs an identifier and the item's text"))
             }
             return .success(.pick(identifier: identifier, item: item))
-        case "hover", "click":
+        case "hover", "click", "drag":
             let target: PointTarget
             switch (line.identifier, line.x, line.y) {
             case (let id?, nil, nil) where !id.isEmpty: target = .identifier(id)
             case (nil, let x?, let y?) where x.isFinite && y.isFinite: target = .point(x: x, y: y)
             default:
                 return .failure(Refusal(reason: "\(cmd) needs an identifier, or x and y"))
+            }
+            if cmd == "drag" {
+                let dx = line.dx ?? 0
+                let dy = line.dy ?? 0
+                guard line.button == nil, dx.isFinite, dy.isFinite, dx != 0 || dy != 0 else {
+                    return .failure(
+                        Refusal(reason: "drag needs dx or dy, a distance in points, and no button"))
+                }
+                return .success(.drag(target, dx: dx, dy: dy))
+            }
+            guard line.dx == nil, line.dy == nil else {
+                return .failure(Refusal(reason: "\(cmd) takes no dx or dy"))
             }
             if cmd == "hover" {
                 guard line.button == nil else {
@@ -421,20 +438,64 @@ public struct ControlAlert: Sendable, Equatable, Codable {
     }
 }
 
-/// `state.view_window`: the frequencies at the spectrum and waterfall's two edges, as the zoom
-/// and the tuned channel put them.
-public struct ControlViewWindow: Sendable, Equatable, Codable {
-    public var lowHz: UInt64
-    public var highHz: UInt64
+/// `state.view`: the frequencies at the spectrum and waterfall's two edges and the width between
+/// them, the part of them the band rail's thumb covers, and the spectrum's edge marker.
+public struct ControlView: Sendable, Equatable, Codable {
+    public var loHz: UInt64
+    public var hiHz: UInt64
+    public var spanHz: UInt64
+    /// The thumb's ends on the rail, nil when the rail does not show the view.
+    public var thumbLoHz: UInt64?
+    public var thumbHiHz: UInt64?
+    /// The edge marker's words as drawn (`146.940 ▸`), nil while the view shows the tuned
+    /// channel.
+    public var edge: String?
 
     enum CodingKeys: String, CodingKey {
-        case lowHz = "low_hz"
-        case highHz = "high_hz"
+        case edge
+        case loHz = "lo_hz"
+        case hiHz = "hi_hz"
+        case spanHz = "span_hz"
+        case thumbLoHz = "thumb_lo_hz"
+        case thumbHiHz = "thumb_hi_hz"
     }
 
-    public init(lowHz: UInt64, highHz: UInt64) {
-        self.lowHz = lowHz
-        self.highHz = highHz
+    public init(
+        loHz: UInt64, hiHz: UInt64, thumbLoHz: UInt64? = nil, thumbHiHz: UInt64? = nil,
+        edge: String? = nil
+    ) {
+        self.loHz = loHz
+        self.hiHz = hiHz
+        self.spanHz = hiHz >= loHz ? hiHz - loHz : 0
+        self.thumbLoHz = thumbLoHz
+        self.thumbHiHz = thumbHiHz
+        self.edge = edge
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(loHz, forKey: .loHz)
+        try c.encode(hiHz, forKey: .hiHz)
+        try c.encode(spanHz, forKey: .spanHz)
+        try c.encode(thumbLoHz, forKey: .thumbLoHz)
+        try c.encode(thumbHiHz, forKey: .thumbHiHz)
+        try c.encode(edge, forKey: .edge)
+    }
+}
+
+/// `state.capture`: the frequencies the radio captures.
+public struct ControlSpan: Sendable, Equatable, Codable {
+    public var loHz: UInt64
+    public var hiHz: UInt64
+
+    enum CodingKeys: String, CodingKey {
+        case loHz = "lo_hz"
+        case hiHz = "hi_hz"
+    }
+
+    public init(loHz: UInt64, hiHz: UInt64) {
+        self.loHz = loHz
+        self.hiHz = hiHz
     }
 }
 
@@ -580,7 +641,6 @@ public struct ControlViewState: Sendable, Equatable, Codable {
     public var filterQuery: String
     public var inspectorShown: Bool
     public var assistantShown: Bool
-    public var zoom: Int
     /// The key window's first responder: its accessibility identifier, else its role and label;
     /// empty when nothing holds the focus.
     public var focused: String
@@ -613,7 +673,8 @@ public struct ControlViewState: Sendable, Equatable, Codable {
     public var filterCaret: Int?
     public var settingsOpen: Bool
     public var alert: ControlAlert?
-    public var viewWindow: ControlViewWindow?
+    public var view: ControlView?
+    public var capture: ControlSpan?
     public var assistant: ControlAssistant?
     /// The tooltip of what the last `hover` rested on, or the charts' pointer readout while the
     /// pointer is over one; nil when neither shows.
@@ -638,7 +699,8 @@ public struct ControlViewState: Sendable, Equatable, Codable {
     public var bookmarkRows: [String]
 
     enum CodingKeys: String, CodingKey {
-        case place, mode, band, bookmark, zoom, focused, notices, popover, heard, hits, transport
+        case place, mode, band, bookmark, focused, notices, popover, heard, hits, transport
+        case view, capture
         case tunedHz = "tuned_hz"
         case bandwidthHz = "bandwidth_hz"
         case channelID = "channel_id"
@@ -652,7 +714,6 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         case muted, volume, sink, window, alert, assistant, tooltip
         case filterCaret = "filter_caret"
         case settingsOpen = "settings_open"
-        case viewWindow = "view_window"
         case entries
         case tunedRows = "tuned_rows"
         case tunedRow = "tuned_row"
@@ -666,13 +727,13 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         place: String, tunedHz: UInt64? = nil, mode: String? = nil, bandwidthHz: UInt32? = nil,
         channelID: String? = nil, captureID: String? = nil, band: String? = nil,
         bookmark: String? = nil, openRows: [String] = [], filterQuery: String = "",
-        inspectorShown: Bool = false, assistantShown: Bool = false, zoom: Int = 1,
+        inspectorShown: Bool = false, assistantShown: Bool = false,
         focused: String = "", notices: [String] = [], popover: String = "",
         selectedRecordingChannel: String? = nil, selectedPart: String? = nil,
         heard: String? = nil, hits: [String] = [], muted: Bool = false, volume: Double? = nil,
         sink: String = "none", window: ControlWindowSize? = nil, filterCaret: Int? = nil,
         settingsOpen: Bool = false, alert: ControlAlert? = nil,
-        viewWindow: ControlViewWindow? = nil, assistant: ControlAssistant? = nil,
+        view: ControlView? = nil, capture: ControlSpan? = nil, assistant: ControlAssistant? = nil,
         tooltip: String? = nil, transport: ControlTransport? = nil, entries: [String] = [],
         tunedRows: Int = 0, tunedRow: String? = nil, onAirEntry: String? = nil,
         logNames: String? = nil, sort: String = "frequency", bookmarkRows: [String] = []
@@ -689,7 +750,6 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         self.filterQuery = filterQuery
         self.inspectorShown = inspectorShown
         self.assistantShown = assistantShown
-        self.zoom = zoom
         self.focused = focused
         self.notices = notices
         self.popover = popover
@@ -704,7 +764,8 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         self.filterCaret = filterCaret
         self.settingsOpen = settingsOpen
         self.alert = alert
-        self.viewWindow = viewWindow
+        self.view = view
+        self.capture = capture
         self.assistant = assistant
         self.tooltip = tooltip
         self.transport = transport
@@ -733,7 +794,6 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         try c.encode(filterQuery, forKey: .filterQuery)
         try c.encode(inspectorShown, forKey: .inspectorShown)
         try c.encode(assistantShown, forKey: .assistantShown)
-        try c.encode(zoom, forKey: .zoom)
         try c.encode(focused, forKey: .focused)
         try c.encode(notices, forKey: .notices)
         try c.encode(popover, forKey: .popover)
@@ -748,7 +808,8 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         try c.encode(filterCaret, forKey: .filterCaret)
         try c.encode(settingsOpen, forKey: .settingsOpen)
         try c.encode(alert, forKey: .alert)
-        try c.encode(viewWindow, forKey: .viewWindow)
+        try c.encode(view, forKey: .view)
+        try c.encode(capture, forKey: .capture)
         try c.encode(assistant, forKey: .assistant)
         try c.encode(tooltip, forKey: .tooltip)
         try c.encode(transport, forKey: .transport)

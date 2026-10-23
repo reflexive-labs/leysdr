@@ -21,6 +21,9 @@ import LeylineClient
         /// After a key, before the answer: a key that moves the focus (⌘G) has SwiftUI give it on
         /// a later pass, and a key sent sooner would reach the view that had it before.
         static let keySettleMilliseconds = 150
+        /// A `drag` moves in this many steps, this far apart.
+        static let dragSteps = 12
+        static let dragStepMilliseconds = 25
 
         let directory: URL
         private let staging: Staging
@@ -279,6 +282,26 @@ import LeylineClient
                         at: p, in: window)
                     try? await Task.sleep(for: .milliseconds(Self.keySettleMilliseconds))
                     return ControlAnswer(id: c.id, ok: true)
+                case .drag(let target, let dx, let dy):
+                    guard let window = staging.window else { return noWindow }
+                    await AccessibilityTree.ready(window)
+                    guard let p = Self.point(target, in: window) else {
+                        return ControlAnswer(id: c.id, ok: false, error: Self.noTarget(target))
+                    }
+                    hoverHelp = nil
+                    post([.leftMouseDown], at: p, in: window)
+                    // In steps a gesture sees as a hand's: each one is delivered before the next.
+                    for i in 1...Self.dragSteps {
+                        try? await Task.sleep(for: .milliseconds(Self.dragStepMilliseconds))
+                        let f = Double(i) / Double(Self.dragSteps)
+                        post(
+                            [.leftMouseDragged], at: CGPoint(x: p.x + dx * f, y: p.y + dy * f),
+                            in: window)
+                    }
+                    try? await Task.sleep(for: .milliseconds(Self.dragStepMilliseconds))
+                    post([.leftMouseUp], at: CGPoint(x: p.x + dx, y: p.y + dy), in: window)
+                    try? await Task.sleep(for: .milliseconds(Self.keySettleMilliseconds))
+                    return ControlAnswer(id: c.id, ok: true)
                 case .menu(let path, let read):
                     switch AppMenus.item(path: path) {
                     case .failure(let why):
@@ -369,7 +392,8 @@ import LeylineClient
                         timestamp: ProcessInfo.processInfo.systemUptime,
                         windowNumber: window.windowNumber, context: nil, eventNumber: 0,
                         clickCount: type == .mouseMoved ? 0 : 1,
-                        pressure: type == .leftMouseDown || type == .rightMouseDown ? 1 : 0)
+                        pressure: type == .leftMouseDown || type == .rightMouseDown
+                            || type == .leftMouseDragged ? 1 : 0)
                 else { continue }
                 NSApp.postEvent(event, atStart: false)
             }
@@ -441,7 +465,7 @@ import LeylineClient
                 captureID: s.capture?.captureID, band: s.band?.id, bookmark: s.tunedBookmark?.name,
                 openRows: s.sidebarRows.filter { s.isExpanded($0) }.map(\.id),
                 filterQuery: s.filterQuery, inspectorShown: s.inspectorShown,
-                assistantShown: s.assistantPanelShown, zoom: s.zoom,
+                assistantShown: s.assistantPanelShown,
                 focused: window.map { main in
                     let w = Self.focusWindow(main)
                     return Self.describeFocus(w.firstResponder, in: w, focusedID)
@@ -459,8 +483,16 @@ import LeylineClient
                 },
                 settingsOpen: Staging.settingsWindow != nil,
                 alert: window.flatMap { Self.alert(over: [$0, Staging.settingsWindow]) },
-                viewWindow: s.visibleRange.map {
-                    ControlViewWindow(lowHz: $0.lowerBound, highHz: $0.upperBound)
+                view: s.visibleRange.map {
+                    ControlView(
+                        loHz: $0.lowerBound, hiHz: $0.upperBound,
+                        thumbLoHz: s.railThumb?.lowerBound, thumbHiHz: s.railThumb?.upperBound,
+                        edge: s.edgeMarkerWords)
+                },
+                capture: s.capture.flatMap { cap in
+                    guard cap.sampleRate > 0 else { return nil }
+                    let r = ViewWindow.span(centerHz: cap.centerHz, sampleRate: cap.sampleRate)
+                    return ControlSpan(loHz: r.lowerBound, hiHz: r.upperBound)
                 },
                 // The charts draw their own readout under the pointer rather than a tooltip.
                 tooltip: hoverHelp
