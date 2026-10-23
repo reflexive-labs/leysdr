@@ -1588,6 +1588,23 @@ Found by the ML-9d scenes' second half (2026-10-22), not fixed on the spot:
 - Batch 1's verify loop: at 900 pt the squelch's short caption fits beside its header only
   because the bar's blocks close up to 12 pt. A three-figure reading (`muted · 100 dB`) would
   still be cut.
+- Batch 2's verify loop (MC-2): the take-over card reads `The assistant wants to tune to
+  146.94.` and does not say it takes the radio from whoever is using it; that is left to the
+  gate's reason under it, the daemon's words, which name `take_over` twice (`assistant-cards`,
+  takeover). Should the sentence say "take the radio from another listener to tune to 146.94",
+  and the reason lose the argument's name?
+- Batch 2's verify loop: an opened `list_presets` step shows 8 rows and `… 179 more` in a box
+  that never needs to scroll; the full rows are only in the JSON view, which does scroll
+  (`assistant-long-result`). Enough, or should the table scroll through every row?
+- Batch 2's verify loop: a disabled band row's labels (`AM broadcast`, `AM`) read `enabled` in
+  the tree on one launch and `disabled` on the next, with the same picture (`chirp-import`,
+  `mc1a-sidebar-actions`, `sidebar-rows`). The comparison now leaves out a label's state word;
+  the row's own button keeps it.
+- Batch 2's verify loop: in one full run at `JOBS=3`, `settings-ai` stepped finely three times
+  (146.520 to 146.535 MHz, 50 ms apart) just after the Remove press in Settings, and its
+  `main-removed` tree differed. The three `tune:` lines match a scroll over the waterfall, which
+  a check run does not send; most likely the pointer of the person using this Mac. It did not
+  happen again. A staged run could ignore scroll events it did not post.
 
 #### Residuals after APP-9 review
 
