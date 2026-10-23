@@ -1783,6 +1783,16 @@ A review of Batch 1 found three defects. The owner settled three questions it ra
   run. Changes to `app/Package.swift` and the façade count. A smoke run that selects no scene is
   an error.
 
+### MC-4 `[ ]` The question card, second pass (2026-10-23)
+
+From the owner's look at Batch 2's pictures (`tmp/batch2/` on the build Mac):
+
+- The card shows the daemon's reason only when it says something the sentence does not, such as
+  why the call asks ("it takes the radio from your window"). The take-over card says so in words
+  and never shows `take_over`.
+- The option is named `Allow in this chat`, so all three fit one row: Decline · Allow in this chat
+  · Allow, with Allow the filled one. The buttons stack only when even that does not fit.
+
 ## Backlog
 
 - **Two frequency affine maps remain separate.** `SquelchTrack` and `GainSlider` share
