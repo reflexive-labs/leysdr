@@ -159,9 +159,12 @@ private func containsRun(_ tokens: [String], _ run: [String]) -> Bool {
 }
 
 /// A delimited list split on comma, space and '-', so "006001-006013" and "006001 006013" both
-/// yield ["006001", "006013"] (docs/design/decoders.md: SAME's FIPS county list).
+/// yield ["006001", "006013"] (docs/design/decoders.md: SAME's FIPS county list). Punctuation at
+/// either edge of a token is dropped for matching, so a speech record's "net control." or
+/// "(control)" still holds the word "control"; punctuation inside a token ("KJ6ABC/M") stays, and
+/// the record's stored text is not changed.
 private func tokenise(_ s: String) -> [String] {
     s.split(whereSeparator: { $0 == "," || $0 == " " || $0 == "-" })
-        .map { normalise(String($0)) }
+        .map { normalise(String($0)).trimmingCharacters(in: .punctuationCharacters) }
         .filter { !$0.isEmpty }
 }

@@ -87,6 +87,7 @@ func TestContainsMatchesWordsInOrder(t *testing.T) {
 	said := &leylinev1.DecodeRecord{Fields: map[string]*leylinev1.FieldValue{
 		"text": {Value: &leylinev1.FieldValue_Text{Text: "This is the Net Control station for tonight"}},
 		"fips": {Value: &leylinev1.FieldValue_Text{Text: "006001-006013"}},
+		"said": {Value: &leylinev1.FieldValue_Text{Text: `This is net control. Go ahead, "KJ6ABC/M"!`}},
 	}}
 	for _, tc := range []struct {
 		field, value string
@@ -100,6 +101,12 @@ func TestContainsMatchesWordsInOrder(t *testing.T) {
 		{"fips", "006013", true},
 		{"fips", "06001", false},
 		{"fips", "006009", false},
+		{"said", "net control", true},
+		{"said", "control.", true},
+		{"said", "go ahead", true},
+		{"said", "kj6abc/m", true},
+		{"said", "kj6abc", false},
+		{"said", "...", false},
 	} {
 		pred := &leylinev1.Predicate{All: []*leylinev1.Clause{{Test: &leylinev1.Clause_Field{Field: &leylinev1.FieldTest{
 			Field: tc.field, Op: leylinev1.PredicateOp_PRED_CONTAINS,

@@ -112,6 +112,20 @@ final class PredicateEvalTests: XCTestCase {
         XCTAssertFalse(matches(said, predicate([fieldClause("text", .predContains, [text("")])])))
     }
 
+    func testContainsIgnoresPunctuationAtWordEdges() {
+        // A speech decoder punctuates its text: "net control." and "(net control)" still hold the
+        // phrase, a query typed with its full stop still matches, and a slash inside a callsign stays.
+        let said = record(fields: ["text": text("This is net control. Go ahead, \"KJ6ABC/M\"!")])
+        XCTAssertTrue(matches(said, predicate([fieldClause("text", .predContains, [text("net control")])])))
+        XCTAssertTrue(matches(said, predicate([fieldClause("text", .predContains, [text("control.")])])))
+        XCTAssertTrue(matches(said, predicate([fieldClause("text", .predContains, [text("go ahead")])])))
+        XCTAssertTrue(matches(said, predicate([fieldClause("text", .predContains, [text("kj6abc/m")])])))
+        XCTAssertFalse(matches(said, predicate([fieldClause("text", .predContains, [text("kj6abc")])])))
+        XCTAssertFalse(matches(said, predicate([fieldClause("text", .predContains, [text("...")])])))
+        let paren = record(fields: ["text": text("(net control) standing by")])
+        XCTAssertTrue(matches(paren, predicate([fieldClause("text", .predContains, [text("net control")])])))
+    }
+
     func testExists() {
         XCTAssertTrue(matches(record(deviceID: "x"), predicate([fieldClause("device_id", .predExists)])))
         XCTAssertFalse(matches(record(), predicate([fieldClause("device_id", .predExists)])))
