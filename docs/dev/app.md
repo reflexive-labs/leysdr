@@ -583,8 +583,8 @@ colour, system font or hex value anywhere else in `LeylineApp`, a shorthand syst
 in a gradient's `colors:` included. `PaletteTests` fails when the
 palette table and `Theme.swift` disagree, and when an ink falls under its WCAG contrast floor on
 `ground`, `chrome`, `panel`, `raised` or `selected`: 4.5:1 for `ink`, `inkSecondary` and
-`inkTertiary`, 3:1 for the three fainter inks. Two pairs are under it and recorded in the test as
-known exceptions: `inkFaintest` on `chrome` (2.98:1) and on `selected` (2.84:1).
+`inkTertiary`, 3:1 for the three fainter inks. `inkFaintest` is the lowest grey that clears 3:1
+on all five; its closest is `selected`, at 3.02:1.
 
 ### Palette
 
@@ -605,7 +605,7 @@ known exceptions: `inkFaintest` on `chrome` (2.98:1) and on `selected` (2.84:1).
 | `inkTertiary` | `#9BA1A6` | a value beside a label, a descriptive clause |
 | `inkMuted` | `#7A8185` | a unit, a subtitle |
 | `inkFaint` | `#6B7276` | a section header |
-| `inkFaintest` | `#5F656A` | a footnote under a control |
+| `inkFaintest` | `#63696E` | a footnote under a control |
 | `inkDisabled` | `#4A5054` | the sub-kHz digits of the tuning field |
 | `accent` | `#E8814A` | the tuned channel, and nothing else |
 | `good` | `#2FB6A3` | squelch open, a connected device, a bookmarked frequency |
