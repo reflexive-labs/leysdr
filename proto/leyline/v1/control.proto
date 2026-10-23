@@ -99,9 +99,16 @@ message Channel {
   // no visible cause.
   bool subaudible_detect = 12;
   reserved 13;  // subaudible_squelch_hz
+  // How squelch_db was chosen, so a client can say "auto" without remembering what it wrote.
+  // AUTO when it was measured from the band's noise floor: by the daemon (a gated recording, a
+  // decoder's segments) or by the client that wrote it as ParamWrite.squelch_auto_db. MANUAL when
+  // a client wrote a level as squelch_db. UNSPECIFIED while the squelch is off. The level is a
+  // snapshot either way: an auto squelch does not follow the floor once it is set.
+  SquelchSource squelch_source = 14;
 }
 
 enum GainMode { GAIN_MODE_UNSPECIFIED = 0; MANUAL = 1; AUTO = 2; }
+enum SquelchSource { SQUELCH_SOURCE_UNSPECIFIED = 0; SQUELCH_MANUAL = 1; SQUELCH_AUTO = 2; }
 enum ChannelState { CHANNEL_STATE_UNSPECIFIED = 0; CHANNEL_ACTIVE = 1; OUT_OF_CAPTURE = 2; }
 
 message Sink {
@@ -156,6 +163,10 @@ message ParamWrite {
     double squelch_db = 8;
     GainWrite gain = 9;          // device gain element, addressed via the capture
     double sink_volume = 10;     // target_id = sink_id
+    // A squelch level the writer measured from the noise floor (`ley tune`'s auto, the app's):
+    // applied as squelch_db is, and the channel says SQUELCH_AUTO. It and squelch_db are one
+    // parameter, so the last of the two in a tick wins. Not NaN: off is squelch_db NaN.
+    double squelch_auto_db = 11;
   }
 }
 // GainWrite lives in common.proto: ScanConfig (jobs.proto) carries one too, and jobs.proto

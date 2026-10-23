@@ -194,6 +194,19 @@ message Turn {
   repeated ToolCall tools = 4;         // in the order the assistant made them; empty on a user turn
   int64 at_ns = 5;                     // CLOCK_REALTIME the turn began
   bool done = 6;                       // the assistant has finished the turn, or it was stopped
+  // Why a done assistant turn ended; UNSPECIFIED while it runs, on a user turn, and on a turn a
+  // daemon kept from before the field. The worker sets it, and the daemon when it closes a turn
+  // itself: a StopTurn the worker did not answer in time, or a restart.
+  StopReason stop_reason = 7;
+}
+enum StopReason {
+  STOP_REASON_UNSPECIFIED = 0;
+  STOP_REASON_COMPLETED = 1;           // the model ended the turn
+  STOP_REASON_STOPPED = 2;             // StopTurn: a client stopped it
+  STOP_REASON_STEP_LIMIT = 3;          // the worker's bound on model calls in one turn
+  STOP_REASON_MAX_TOKENS = 4;          // the response reached the model's output limit
+  STOP_REASON_REFUSAL = 5;             // the model declined to answer
+  STOP_REASON_RESTARTED = 6;           // the daemon restarted during the turn
 }
 enum Role { ROLE_UNSPECIFIED = 0; ROLE_USER = 1; ROLE_ASSISTANT = 2; }
 
