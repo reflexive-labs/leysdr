@@ -189,6 +189,7 @@ final class AssistantModelsTests: XCTestCase {
         XCTAssertEqual(q.callID, "c4")
         XCTAssertEqual(q.question, "The assistant wants to delete a recording.")
         XCTAssertEqual(q.reason, "delete the recording and its files; this cannot be undone")
+        XCTAssertEqual(q.note, "Its files go with it, and this cannot be undone.")
         XCTAssertFalse(q.isViewTool)
         XCTAssertEqual(q.offers, [], "a daemon that sends no offers offers once alone")
         XCTAssertFalse(q.offersConversation)
@@ -270,6 +271,83 @@ final class AssistantModelsTests: XCTestCase {
         p.argumentsJson = #"{"bookmark":"APRS"}"#
         XCTAssertEqual(
             PendingQuestion(p).question, "The assistant wants to remove the APRS bookmark.")
+    }
+
+    func testACardShowsTheReasonOnlyWhereItAddsToTheSentence() {
+        let refusal =
+            "the radio is on 146.520 MHz with 2 channels listening: chan_X (146.520 MHz, "
+            + "app:Leyline), chan_Y (146.550 MHz, cli:ley)"
+        let cases: [(String, String)] = [
+            // The sentence already says it.
+            (#"remove the bookmark "APRS" from your bookmarks"#, ""),
+            (
+                "import every channel in /Users/me/club.csv into your bookmarks (dry_run would list "
+                    + "them first)", ""
+            ),
+            ("", ""),
+            // A take-over says whom it takes the radio from, never take_over.
+            (
+                "another channel or client is using the radio: the assistant did not try without "
+                    + "take_over first, so who is listening is not known; tune with take_over "
+                    + "takes it from them",
+                "It takes the radio from whoever is using it."
+            ),
+            (
+                "another channel or client is using the radio: \(refusal); tune with take_over "
+                    + "takes it from them",
+                "It takes the radio from the window and a ley command."
+            ),
+            (
+                "another channel or client is using the radio: that channel was made by another "
+                    + "client: chan_X (146.520 MHz, app:Leyline); stop with take_over takes it "
+                    + "from them",
+                "It takes the radio from the window."
+            ),
+            // What the sentence leaves out, in words and without an id.
+            (
+                "delete the recording rec_01J and its files; this cannot be undone",
+                "Its files go with it, and this cannot be undone."
+            ),
+            (
+                "cancel job_01J, a job the assistant did not start",
+                "The assistant did not start this job."
+            ),
+            (
+                "start a kept aprs job that runs on after this conversation ends, until it is "
+                    + "cancelled",
+                "It keeps running after this conversation ends, until it is cancelled."
+            ),
+            (
+                "add a webhook notifier: every matching record is sent to https://x",
+                "Every matching record is sent to https://x."
+            ),
+            (
+                #"a third bookmark change this turn: add "Calling" at 146.52"#,
+                "It is the third bookmark change this turn."
+            ),
+            (
+                "start paid transcription, live and unbounded: every over the channel hears is "
+                    + "sent to the speech provider until the job stops",
+                "It is paid transcription: every over the channel hears is sent to the speech "
+                    + "provider until the job stops."
+            ),
+            (
+                "the assistant read text received over the air earlier in this conversation",
+                "The assistant read text received over the air earlier in this conversation."
+            ),
+            // Several rows, one sentence each; a row this table does not know, as written.
+            (
+                "another channel or client is using the radio: x; record with take_over takes it "
+                    + "from them; start a kept record job that runs on after this conversation "
+                    + "ends, until it is cancelled",
+                "It takes the radio from whoever is using it. It keeps running after this "
+                    + "conversation ends, until it is cancelled."
+            ),
+            ("something new the gate asks about", "Something new the gate asks about."),
+        ]
+        for (reason, want) in cases {
+            XCTAssertEqual(AssistantWords.cardReason(reason), want, reason)
+        }
     }
 
     func testAFailedConversationSaysWhy() {

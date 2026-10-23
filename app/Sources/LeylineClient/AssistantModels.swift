@@ -182,6 +182,9 @@ public struct PendingQuestion: Sendable, Equatable {
     public let action: String
     /// Why it asks, the gate's words (`docs/dev/assistant.md`, "The gate").
     public let reason: String
+    /// What the reason says beyond `question`, in words, for the card; empty when it says
+    /// nothing more (`AssistantWords.cardReason`).
+    public let note: String
     /// A call to one of the app's own view tools: answered by the app, never put to the person.
     public let isViewTool: Bool
     /// The scopes the gate accepts for this call, ONCE included; the card shows a button for each.
@@ -194,6 +197,7 @@ public struct PendingQuestion: Sendable, Equatable {
         summary = AssistantWords.summary(argumentsJSON: p.argumentsJson)
         action = AssistantWords.action(tool: p.tool, argumentsJSON: p.argumentsJson)
         reason = p.reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        note = AssistantWords.cardReason(reason)
         isViewTool = p.viewTool
         offers = p.offers
     }
