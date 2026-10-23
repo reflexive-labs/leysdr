@@ -56,7 +56,7 @@ behaviour that contradicts it.
 |---|---|---|
 | [Control plane](design/control-plane.md) | how clients discover, tune, share and arbitrate; gRPC over UDS; the session model | partial: local control is implemented; remote access and watch jobs are not |
 | [Data planes](design/data-planes.md) | telemetry and bulk: the sample timebase, latest-wins and gap-marked delivery, negotiation | partial: gRPC streams are implemented; shared memory and historical positions are not |
-| [Semantic tier](design/semantic-tier.md) | detections, scans, transcripts, jobs and resources; the MCP surface | partial: scans, recordings, monitor and decode jobs are implemented; watch jobs and transcripts are not |
+| [Semantic tier](design/semantic-tier.md) | detections, scans, transcripts, jobs and resources; the MCP surface | partial: scans, recordings, monitor and decode jobs, decoder records (speech among them) and the MCP adapter are implemented; watch jobs and their durable transcripts are not |
 | [Scan](design/scan.md) | the sweep geometry and the detector, with every number measured | implemented |
 | [Signal views](design/signal-views.md) | the waterfall, the channel view and sub-audible tones | implemented except tone squelch and the sonogram |
 | [Scope](design/scope.md) | the audio waveform and the demod tap under it | implemented (`ley scope`) |
@@ -91,11 +91,12 @@ What is being built, in what order, and the record of what each step found.
   [a signed release build](plans/distribution.md) (bundled drivers, the daemon as the app's login
   item, Sparkle, notarization),
   [MCP adapter](plans/mcp.md) (the tools the daemon can back are done; the rest wait on their
-  milestones) and [the Mac app](plans/app.md) (Milestone E: the window, recording and the bands
-  sidebar are done; lifecycle and distribution remain).
-- Being built in lanes: [AI features on the user's own key](plans/ai-features.md) (keys, usage,
-  speech-to-text as a decoder, and an assistant that runs the radio from plain requests). The
-  contract was settled on 2026-10-14; the build items and their lanes carry the status.
+  milestones), [the Mac app](plans/app.md) (Milestone E: the window, recording and the bands
+  sidebar are done; lifecycle and distribution remain) and [the agent's loop on the
+  Mac](plans/mac-loop.md) (`make app-check`, its scenes and tiers, and the batch loop).
+- [AI features on the user's own key](plans/ai-features.md) (keys, usage, speech-to-text as a
+  decoder, and an assistant that runs the radio from plain requests): built in lanes, with AI-0
+  (the speech spike on real receiver audio) and AI-12 (the assistant evals on a key) still open.
 - [`plans/archive/`](plans/archive/): finished plans and review records, among them
   [bands, channels and bookmarks](plans/archive/channels.md), kept because commit messages cite
   their item ids. Nothing in there is a work list any more.
