@@ -1684,6 +1684,35 @@ scene, or extends one.
 - The API key field opts out of AutoFill. Then closing Settings with the field focused is
   checked again.
 
+### MC-2 `[ ]` The assistant column, refined (2026-10-22)
+
+The owner asked for the chat column's text colour, spacing and alignment to be refined, and chose
+the open options. The defects are from the 2026-10-22 pictures of `assistant-conversation` and
+`assistant-cards`.
+
+- **One left edge.** The header, the transcript, the steps and their bodies, a card, the token
+  line and the input field share one inset (a `Theme.Layout` token). Today they sit 2 to 10 pt
+  apart.
+- **Your messages** sit right-aligned on a `raised` bubble, at most about 80 % of the column wide,
+  with a 6 pt radius and `inkSecondary` text. The assistant's reply runs the full width with no
+  bubble.
+- **The reply** is `inkSecondary` at 13 pt, with 3 pt of extra leading, as "Palette and type"
+  already gives it.
+- **Rhythm.** One gap between turns and a smaller one inside a turn (message to steps to reply),
+  both `Theme.Layout` tokens, the same everywhere.
+- **A step row** has one disclosure glyph, then the tool name, then its status at the right. The
+  one-line preview under a closed step goes.
+- **An opened step** shows its arguments as `key value` lines and its result as compact text, a
+  table when the result is rows (`name frequency mode`, with `… 18 more`). It is at most about 12
+  lines tall and scrolls inside, sits on the text inset, and a `JSON` toggle shows the raw JSON.
+- **A question card** says what the tool does in words ("The assistant wants to remove the APRS
+  bookmark.") and never shows a tool id. Its description is `inkSecondary`, not `caution`. Allow is
+  the one filled button; Decline and "Allow for this conversation" are plain text buttons.
+- **The input field's placeholder** is `inkFaint`, as the sidebar's filter now is.
+
+It is checked by `assistant-conversation`, `assistant-cards` and `assistant-view-tools`, with their
+pictures re-recorded once the owner has seen them, plus a scene with a long result opened.
+
 ## Backlog
 
 - **Two frequency affine maps remain separate.** `SquelchTrack` and `GainSlider` share
