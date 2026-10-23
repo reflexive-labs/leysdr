@@ -26,7 +26,7 @@
 //                             as a call a grant covered
 //   view <name> <json>        adds an AWAITING_CLIENT call and waits for ViewToolAnswer, which
 //                             marks it DONE with the answer
-//   end                       marks the turn done
+//   end                       marks the turn done, COMPLETED
 //   fail [CODE] <message>     writes a WorkerFailure, INTERNAL unless the first word is a code
 //                             (capitals and underscores), and nothing else
 //   exit <n>                  exits with status n at once
@@ -41,8 +41,8 @@
 // `{key}` anywhere in a line is replaced with the key, so `fail` can carry it too.
 //
 // The assistant's turn for user turn `tN` is `tN+1`, and call ids count up across the
-// conversation. WorkerStop marks the turn done at once, mid-sleep or mid-wait, and skips the rest
-// of the block. FAKE_WORKER_DUMP names a file the worker writes after its WorkerStart: its pid,
+// conversation. WorkerStop marks the turn done (STOPPED) at once, mid-sleep or mid-wait, and skips
+// the rest of the block. FAKE_WORKER_DUMP names a file the worker writes after its WorkerStart: its pid,
 // the key's last four, its arguments, the WorkerStart (the transcript path and resume included),
 // how many turns it resumed after, and its environment, one `name=value` per line. The key itself
 // is never written anywhere.
@@ -267,6 +267,7 @@ func play(_ lines: [String], userTurnID: String) {
     }
     func stopped() {
         turn.done = true
+        turn.stopReason = .stopped
         send()
     }
     /// Waits for an event `accept` takes; false when a WorkerStop came first.
@@ -371,6 +372,7 @@ func play(_ lines: [String], userTurnID: String) {
             send()
         case "end":
             turn.done = true
+            turn.stopReason = .completed
             send()
         case "turnid":
             turn.turnID = rest

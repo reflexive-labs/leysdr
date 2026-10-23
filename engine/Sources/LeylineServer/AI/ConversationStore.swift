@@ -898,10 +898,25 @@ extension Leyline_V1_Conversation {
     }
 
     /// Ends the stopped turn `turnID`: when it is the newest turn and the assistant's, it is marked
-    /// done, a call still waiting on someone is REFUSED and one still running is DONE as an error,
-    /// "stopped". The conversation is IDLE.
+    /// done and STOPPED (unless the worker already said why it ended), a call still waiting on someone is REFUSED and one still running is DONE
+    /// as an error, "stopped". When the worker had not written it yet and the user's turn is the
+    /// newest, an empty done turn `turnID` answers it, STOPPED, so the stop is on the turn it
+    /// ended as it is when the worker wrote one. The conversation is IDLE.
     mutating func closeStoppedTurn(_ turnID: String) {
-        if let last = turns.indices.last, turns[last].role == .assistant, turns[last].turnID == turnID {
+        if let last = turns.indices.last, turns[last].role == .user,
+           !turns.contains(where: { $0.turnID == turnID })
+        {
+            var turn = Leyline_V1_Turn()
+            turn.turnID = turnID
+            turn.role = .assistant
+            turn.atNs = WallClock.nowNs()
+            turn.done = true
+            turn.stopReason = .stopped
+            turns.append(turn)
+            lastTurnAtNs = turn.atNs
+        } else if let last = turns.indices.last, turns[last].role == .assistant, turns[last].turnID == turnID {
+            // A turn the worker finished just as the stop came keeps the reason it gave.
+            if turns[last].stopReason == .unspecified { turns[last].stopReason = .stopped }
             turns[last].done = true
             for c in turns[last].tools.indices {
                 switch turns[last].tools[c].state {
@@ -932,6 +947,7 @@ extension Leyline_V1_Conversation {
             let id = turns[last].turnID
             closeStoppedTurn(id)
             turns[last].text = turns[last].text.isEmpty ? note : turns[last].text + "\n\n" + note
+            turns[last].stopReason = .restarted
         } else {
             var turn = Leyline_V1_Turn()
             turn.turnID = ConversationStore.nextTurnID(after: turns)
@@ -939,6 +955,7 @@ extension Leyline_V1_Conversation {
             turn.text = note
             turn.atNs = now
             turn.done = true
+            turn.stopReason = .restarted
             turns.append(turn)
         }
         lastTurnAtNs = now

@@ -322,6 +322,7 @@ extension JobStore {
         // own to copy, sends NaN. `ley record --squelch off` sends NaN for a continuous recording,
         // where it means off.
         var want = config.squelchDbfs
+        var measured = false
         if want == 0 || (gated && want.isNaN) {
             // No level asked for. A continuous recording needs none; a gated one needs one or it
             // has nothing to watch, so the daemon measures the channel's own floor and sits above
@@ -329,13 +330,14 @@ extension JobStore {
             // (docs/design/recording.md: "NaN or unset = the channel default (auto), as ley tune").
             guard gated else { return }
             await setDetail(job, "measuring the noise floor")
-            guard let measured = await autoSquelch(lease) else { return }
-            want = measured
+            guard let level = await autoSquelch(lease) else { return }
+            want = level
+            measured = true
         }
         var channelConfig = await lease.engine.config
         channelConfig.squelchDB = want
         try? await lease.engine.update(channelConfig)
-        await store.publishChannel(lease.channelID)
+        await store.publishChannel(lease.channelID, squelchAuto: measured)
     }
 
     /// The noise floor at the channel's width plus 10 dB, from its own meter: the band's floor,

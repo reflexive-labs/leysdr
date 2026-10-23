@@ -297,7 +297,7 @@ extension JobStore {
         } catch {
             return "the squelch could not be set (\((error as? EngineError)?.message ?? "\(error)")); squelch left as it was"
         }
-        await store.publishChannel(lease.channelID)
+        await store.publishChannel(lease.channelID, squelchAuto: true)
         return nil
     }
 

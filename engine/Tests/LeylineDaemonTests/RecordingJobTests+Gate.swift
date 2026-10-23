@@ -191,6 +191,13 @@ extension RecordingJobTests {
             config.durationMs = 0
             config.squelchDbfs = .nan
             let started = try await self.start(c, config)
+            var source = Leyline_V1_SquelchSource.unspecified
+            for _ in 0..<100 where source != .squelchAuto {
+                let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+                source = state.channels.first(where: { $0.squelchDb.isFinite })?.squelchSource ?? .unspecified
+                try await Task.sleep(nanoseconds: 20_000_000)
+            }
+            XCTAssertEqual(source, .squelchAuto, "the channel says the daemon measured its squelch")
             let manifest = try await self.cancelAfter(c, dir, started.jobID, seconds: 2)
             XCTAssertTrue(manifest.squelchDbfs.isFinite, "a gated recording always has a squelch")
             // The fixture's carrier is at -20 dBFS.
