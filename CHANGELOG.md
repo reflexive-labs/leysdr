@@ -53,6 +53,20 @@ plain requests, and speech-to-text for each over on a recording or a live channe
   tone is on the air, and the transmissions log names each over by it. The file keeps every
   entry. A control beside the sidebar's `+` sorts the bookmarks under every band by frequency
   or by name.
+- **The band rail.** The rail's one thumb is the view the spectrum and waterfall show, over a
+  faint underlay for what the radio captures, so a 20 MHz HackRF capture fits the rail. Dragging
+  the thumb pans the view inside the capture with no retune, and only a drag past its edge moves
+  the radio. − and + halve and double the span (`4 MHz across`), a click on the track tunes the
+  nearest tick, and a marker at the spectrum's edge (`146.520 ▸`) brings the view back to the
+  tuned channel.
+- **Recordings that fall behind.** When the engine cannot keep up with the radio, a recording
+  lists each stretch it dropped and claims only the audio it wrote. `ley recordings` gains a
+  DROPPED column, and the Library marks a part with gaps and ticks them on its level graph.
+- **Keys.** A key the keychain will not give the engine is named with the keychain's own words
+  (`cannot read the openai key from the keychain: …`) in Settings' Check and the assistant,
+  rather than "no key is set", and the engine logs every failed read. Settings calls a key for
+  OpenAI's own API `OpenAI`, and a key with an endpoint `OpenAI-compatible`. `text~` in a watch
+  or a search ignores punctuation at a word's edges, so `text~net control` matches "net control.".
 - **Fixes.** A window that opens before the radio, or across a restart of the engine, takes the
   channel once the radio comes. A wide file radio keeps its tuned band in the sidebar. After Stop
   Listening, a band moves the radio another client left rather than asking for a second one. The
