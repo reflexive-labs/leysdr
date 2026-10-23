@@ -196,12 +196,12 @@ scenes:
       - {cmd: wait, seconds: 1}
       - {cmd: ax, name: settings, window: settings}
 
-  # The sidebar's rows (docs/plans/app.md, U4 and U6): the tuned 2 m row open with its range
-  # line, action strip and bookmarks; the bands outside the file radio's capture folded into one
-  # line, which a press opens and the next tune folds again; a folded band dimmed, its press doing
-  # nothing, its chevron opening it without a tune; a bookmark at 462.6625 MHz reading ch5 under
-  # GMRS, one at 500 MHz under Other; and the inspector's tags line, present on a tagged bookmark
-  # and absent on one without. The squelch is off, because the words over the squelch track
+  # The sidebar's rows (docs/plans/app.md, U4, U6 and MC-1a): the tuned 2 m row open with its
+  # range line, action rows and bookmarks; the bands outside the file radio's capture folded into
+  # one line, which a press opens and the next tune folds again; a folded band dimmed and disabled,
+  # its help saying why, its chevron opening it without a tune; a bookmark at 462.6625 MHz reading
+  # ch5 under GMRS, one at 500 MHz under Other; and the inspector's tags line, present on a tagged
+  # bookmark and blank on one without. The squelch is off, because the words over the squelch track
   # follow the noise while it is muted, and no region masks them; the track itself moves with
   # the signal, about 1.2 % of the picture, hence the threshold.
   - name: sidebar-rows
@@ -225,8 +225,7 @@ scenes:
       - {cmd: ax, name: initial}
       - {cmd: state, expect: {tuned_hz: 146520000, open_rows.0: 2m}}
       - {cmd: press, identifier: sidebar.outofrange}
-      - {cmd: press, identifier: sidebar.band.gmrs}
-      - {cmd: wait, seconds: 1}
+      - {cmd: hover, identifier: sidebar.band.gmrs, expect: {tooltip: "GMRS is above what this radio tunes (144.96 – 147.84 MHz)"}}
       - {cmd: state, expect: {tuned_hz: 146520000}}
       - {cmd: press, identifier: sidebar.band.gmrs.chevron}
       - {cmd: wait, seconds: 1}
@@ -250,8 +249,9 @@ scenes:
 
   # The plan picker, Channels… (docs/plans/app.md, U4): it opens beside its action with its
   # field focused; typing narrows the rows; Escape closes it; Return picks the highlighted row
-  # and closes it. Then marine's 110 rows, opened from the out-of-range fold: twelve rows tall,
-  # and 24 narrows them to 24 and 24 coast. The popover is a window of its own, which the
+  # and closes it. Then marine, opened from the out-of-range fold, whose Channels is disabled
+  # with its help saying why (MC-1a); marine's 110 rows are in mc1a-sidebar-actions. The
+  # popover is a window of its own, which the
   # window's picture leaves out, and the focused field is named by its label, because state
   # finds no identifier on it. Up and Down are not sent: keys reach the main window, so the
   # picker's key monitor never sees them in a check run.
@@ -283,15 +283,10 @@ scenes:
       - {cmd: state, expect: {popover: "", tuned_hz: 146520000, bookmark: Calling}}
       - {cmd: press, identifier: sidebar.outofrange}
       - {cmd: press, identifier: sidebar.band.marine.chevron}
-      - {cmd: press, identifier: sidebar.band.marine.channels}
-      - {cmd: wait, seconds: 1}
-      - {cmd: state, expect: {popover: "channels:marine", focused: "AXUnknown \"Filter marine VHF channels\""}}
-      - {cmd: type, text: "24"}
-      - {cmd: ax, name: marine24}
+      - {cmd: hover, identifier: sidebar.band.marine.channels, expect: {tooltip: "marine VHF is above what this radio tunes (144.96 – 147.84 MHz)"}}
       # Keys reach the open popover, so Up moves its highlight from Calling to APRS, which
       # Return picks and this capture refuses; the picture shows the popover over the window
       # and the tree reads it alone.
-      - {cmd: key, keys: escape}
       - {cmd: press, identifier: sidebar.band.2m.channels}
       - {cmd: wait, seconds: 1}
       - {cmd: key, keys: up}
@@ -303,8 +298,7 @@ scenes:
 
   # The bookmark's Tone and Note in the inspector (docs/plans/app.md, U6): on Calling they show
   # its saved values; a step up with →, to a frequency with no bookmark, takes both away, and
-  # naming that frequency with the pencil brings them back with their placeholders. (The arrows
-  # by the frequency are not pressed: they step finely while the person at the Mac holds ⇧.)
+  # naming that frequency with the pencil brings them back with their placeholders.
   # A tone typed and Returned keeps the field's focus; a bad one stays in the field
   # with the reason under it, which a good tone, Escape (putting the saved value back) and a
   # tune to another bookmark each take away.
@@ -367,8 +361,7 @@ scenes:
       # The terminal's side: ley bookmarks reads the tone the field wrote, and loses it when
       # the field is cleared; in the note field Space and ← type rather than mute and tune; and
       # `ley bookmarks add` with a note replaces an idle field's text and not one being edited.
-      # A click on the inspector's header is meant to end the edit (U6), and does not: no tree
-      # is kept of it (docs/plans/app.md, "Found by the Mac checks").
+      # A click on the inspector's header ends the edit (U6, MC-1a).
       - {cmd: ley, args: [bookmarks, --json], expect_stdout: '"name":"Spot"[^}]*"tone":"D023N"'}
       - {cmd: press, identifier: inspector.note}
       - {cmd: key, keys: cmd+a}
@@ -377,6 +370,7 @@ scenes:
       - {cmd: state, expect: {focused: inspector.note, muted: false, tuned_hz: 146940000}}
       - {cmd: click, x: 1300, y: 70}
       - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {focused: ""}}
       - {cmd: file, path: bookmarks.json, contains: "!a b"}
       - {cmd: press, identifier: inspector.tone}
       - {cmd: key, keys: cmd+a}
@@ -1415,3 +1409,142 @@ scenes:
       - {cmd: state, expect: {inspector_shown: true, assistant_shown: true, window.width: 1221}}
       - {cmd: snapshot, name: assistant}
       - {cmd: ax, name: assistant, mask: [spectrum, waterfall, readings, transmissions, log_day, squelch, sidebar, inspector]}
+
+  # The sidebar as the owner decided it (docs/plans/app.md, MC-1a, and the mockup
+  # tmp/sidebar-actions-mock.png): the open 2 m row's Scan band and Channels as list rows at a
+  # bookmark row's height, the glyph under the bookmark dots and the label under their names,
+  # dimmer than a name, with no chrome, Channels ending in ›, and the header, range line, actions
+  # and bookmarks on one raised ground. The range line ends `sq auto` while the channel keeps the
+  # level the window measured, `sq −45` once a terminal sets one, and its squelch is never cut.
+  # Near, 5 kHz up from the calling channel, reads `≈ calling`; Club repeater shows no tone. The
+  # fold reads `N bands out of range` and its help says where; GMRS, out of range, is disabled
+  # (its row and Channels read disabled in the tree) with its help saying why, and its chevron
+  # still opens it. Closing the picker by Escape or by a pick leaves nothing focused, so Space
+  # mutes and → tunes. marine's picker is twelve rows of its 110, and 24 narrows them. An
+  # accessibility press on a step arrow takes the band's step whatever key is held. A hit's row
+  # and its ＋ use the frequency the row names, 146.940 MHz, not the one the sweep measured.
+  - name: mc1a-sidebar-actions
+    fixtures: [{name: scene_vhf20}]
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [stop, "146.52"]
+      - ley: [bookmarks, add, "146.525", --name, Near]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: state, expect: {tuned_hz: 146520000, bookmark: Calling, open_rows.0: 2m, focused: ""}}
+      - {cmd: snapshot, name: open}
+      - {cmd: ax, name: open}
+      - {cmd: hover, identifier: sidebar.band.2m.channels, expect: {tooltip: "The 2 m amateur plan: pick a channel by name"}}
+      - {cmd: hover, identifier: sidebar.outofrange, expect: {tooltip: "Show them; they lie outside what this radio tunes"}}
+      - {cmd: ley, args: [set, squelch, "-45", --channel, "146.52"]}
+      - {cmd: wait, seconds: 1}
+      - {cmd: ax, name: squelch-set}
+      # Out of range: the row and its actions disabled, the reason in their help.
+      - {cmd: press, identifier: sidebar.outofrange}
+      - {cmd: press, identifier: sidebar.band.gmrs.chevron}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146520000, open_rows.0: 2m, open_rows.1: gmrs}}
+      - {cmd: hover, identifier: sidebar.band.gmrs, expect: {tooltip: "GMRS is above what this radio tunes (142.7 – 163.7 MHz)"}}
+      - {cmd: hover, identifier: sidebar.band.gmrs.channels, expect: {tooltip: "GMRS is above what this radio tunes (142.7 – 163.7 MHz)"}}
+      - {cmd: snapshot, name: outofrange}
+      - {cmd: ax, name: outofrange}
+      - {cmd: press, identifier: sidebar.band.gmrs.chevron}
+      # The picker closed by Escape, then by a pick: nothing focused, Space mutes, → tunes.
+      - {cmd: press, identifier: sidebar.band.2m.channels}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "channels:2m"}}
+      - {cmd: key, keys: escape}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "", focused: "", muted: false}}
+      - {cmd: key, keys: space}
+      - {cmd: state, expect: {focused: "", muted: true, filter_query: ""}}
+      - {cmd: key, keys: space}
+      - {cmd: state, expect: {muted: false}}
+      - {cmd: press, identifier: sidebar.band.2m.channels}
+      - {cmd: wait, seconds: 1}
+      - {cmd: type, text: cal}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "", focused: "", tuned_hz: 146520000}}
+      - {cmd: key, keys: right}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {focused: "", filter_query: "", tuned_hz: 146525000, bookmark: Near}}
+      # The step arrows by accessibility: the band's step, never the fine one.
+      - {cmd: press, identifier: tuning.up}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146530000}}
+      - {cmd: press, identifier: tuning.down}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146525000, bookmark: Near}}
+      # marine, tunable on this capture: twelve rows of 110, and 24 narrows them.
+      - {cmd: press, identifier: sidebar.band.marine.chevron}
+      - {cmd: press, identifier: sidebar.band.marine.channels}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "channels:marine", focused: "AXUnknown \"Filter marine VHF channels\""}}
+      - {cmd: ax, name: marine, window: popover}
+      - {cmd: type, text: "24"}
+      - {cmd: ax, name: marine24, window: popover}
+      - {cmd: key, keys: escape}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {popover: "", focused: ""}}
+      # A hit tunes, and is bookmarked at, the frequency its row names.
+      - {cmd: press, identifier: sidebar.bookmark.calling}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: sidebar.band.2m.scan}
+      - {cmd: wait, seconds: 6, expect_log: ["sweep: job_.* ended: [0-9]+ hits?", "sweep: resuming bookmark Calling"]}
+      - {cmd: click, identifier: sidebar.hit.146-940-mhz}
+      - {cmd: wait, seconds: 1, expect_log: "tune: hit 146.940 MHz at 146940000 Hz"}
+      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater}}
+      - {cmd: press, identifier: sidebar.hit.146-940-mhz.add}
+      - {cmd: wait, seconds: 1, expect_log: "bookmark: added 146.940 MHz at 146940000 Hz from a sweep hit"}
+
+  # The inspector as the owner decided it (docs/plans/app.md, MC-1a): the tags line keeps its
+  # place, so the frequency line and the Tone and Note fields sit at the same height on Tagged
+  # and on Plain (compare the two trees' frames); and a click on the inspector's empty header
+  # ends an edit in Tone or Note, putting the saved value back and taking a refused tone's
+  # sentence away.
+  - name: mc1a-inspector
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [set, squelch, "off"]
+      - ley: [bookmarks, add, "146.85", --name, Tagged, --tag, home, --tag, vhf]
+      - ley: [bookmarks, add, "146.7", --name, Plain]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Tagged
+      settle: 3
+    app:
+      - {cmd: state, expect: {tuned_hz: 146850000, bookmark: Tagged}}
+      - {cmd: snapshot, name: tagged}
+      - {cmd: ax, name: tagged}
+      - {cmd: press, identifier: sidebar.bookmark.plain}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146700000, bookmark: Plain}}
+      - {cmd: snapshot, name: plain}
+      - {cmd: ax, name: plain}
+      - {cmd: press, identifier: inspector.note}
+      - {cmd: type, text: "a b"}
+      - {cmd: state, expect: {focused: inspector.note}}
+      - {cmd: click, x: 1300, y: 70}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {focused: ""}}
+      - {cmd: file, path: bookmarks.json, contains: "!a b"}
+      - {cmd: ax, name: note-ended}
+      - {cmd: press, identifier: inspector.tone}
+      - {cmd: type, text: D024N}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {focused: inspector.tone}}
+      - {cmd: ax, name: refused}
+      - {cmd: click, x: 1300, y: 70}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {focused: ""}}
+      - {cmd: ax, name: tone-ended}
+      - {cmd: ley, args: [bookmarks, --json], expect_stdout: '!"name":"Plain"[^}]*"tone"'}
