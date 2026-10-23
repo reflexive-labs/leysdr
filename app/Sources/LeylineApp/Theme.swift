@@ -117,6 +117,9 @@ enum Theme {
         /// SF at the same size and weight.
         static let name = SwiftUI.Font.system(size: 21, weight: .medium)
         static let body = SwiftUI.Font.system(size: 13)
+        /// The assistant's reply and your message in its panel, with `Theme.replyLeading` between
+        /// lines.
+        static let reply = SwiftUI.Font.system(size: 13)
         static let label = SwiftUI.Font.system(size: 12.5)
         /// `label` in mono: a frequency standing where a name would, the Library's title
         /// for a channel with no bookmark.
@@ -174,6 +177,8 @@ enum Theme {
     static let frequencyTracking: CGFloat = 29 * -0.02
     /// `-0.015em` at 21 pt, the channel's name.
     static let nameTracking: CGFloat = 21 * -0.015
+    /// The extra leading between the lines of `Font.reply`.
+    static let replyLeading: CGFloat = 3
 
     // Layout, from the design's window: ratios of a 1360×820 design, fixed where it says so.
     enum Layout {
@@ -201,17 +206,39 @@ enum Theme {
         /// adds its own width to it while it shows.
         static let windowMinWidth: CGFloat = 900
         /// The assistant's panel, fixed beside the inspector; the window works without it. Wide
-        /// enough for a step's `→ tool arguments` line and its state word at `Font.value`; a guess
+        /// enough for a step's tool, its arguments and its state word at `Font.value`; a guess
         /// until the Mac.
         static let assistantPanel: CGFloat = 320
-        /// The space between two turns of the transcript.
+        /// The column's one left edge, and its right: the header, the transcript, a step and its
+        /// opened body, a card, the token line and the field all start this far in.
+        static let assistantInset: CGFloat = 16
+        /// The space between two exchanges: after the assistant's reply, before your next message.
         static let assistantTurnGap: CGFloat = 14
-        /// A user's turn keeps at least this much of the row free on its left, so it reads as
-        /// the other side of the conversation.
-        static let assistantUserInset: CGFloat = 40
-        /// An opened step's body and a closed step's result line sit under the tool's name,
-        /// past the chevron.
-        static let assistantStepIndent: CGFloat = 14
+        /// The space inside an exchange: your message to the steps, a step to the next, the steps
+        /// to the reply.
+        static let assistantInTurnGap: CGFloat = 6
+        /// Your message's bubble at its widest: about 80 % of the 288 pt between the insets.
+        static let assistantBubbleMaxWidth: CGFloat = 230
+        /// The text inside your message's bubble, from its edges.
+        static let assistantBubblePaddingH: CGFloat = 10
+        static let assistantBubblePaddingV: CGFloat = 6
+        /// The corners of your message's bubble, a question card and the field.
+        static let assistantRadius: CGFloat = 6
+        /// Inside the field's box and an opened step's.
+        static let assistantBoxPadding: CGFloat = 8
+        /// The corners of an opened step's box.
+        static let assistantBoxRadius: CGFloat = 4
+        /// An opened step's box at its tallest: twelve lines of `Font.valueSmall` (13 pt each)
+        /// and its padding. A longer body scrolls inside it.
+        static let assistantStepBodyMaxHeight: CGFloat = 172
+        /// Inside a question card.
+        static let assistantCardPadding: CGFloat = 12
+        /// The field's block above and below: the token line, the field and the line under it.
+        static let assistantFooterPadding: CGFloat = 12
+        /// The filled button's text from its edges, and its corners: a card's Allow.
+        static let assistantButtonPaddingH: CGFloat = 10
+        static let assistantButtonPaddingV: CGFloat = 3
+        static let assistantButtonRadius: CGFloat = 5
         /// The inspector's reading rows are four fixed columns (label, meter, word, number), so
         /// no meter or number moves when a word beside it changes. The label column is 62 pt,
         /// narrower than the design's 74, to make room for the number; `Deviation`, the longest

@@ -6,7 +6,8 @@
 // usage lines, so the Linux tests read every string the panel prints. The conversation is daemon
 // state (`docs/design/ai.md`, "The assistant"): the panel renders it and moves it only through the
 // `Assistant` RPCs, as `ley ask` does, and the words follow `ley ask`'s (`go/internal/cli/ask.go`):
-// a step is `→ tool arguments` and its result's first line, a declined call says so, and usage is
+// a step is its tool and arguments (`ley ask`'s `→ tool arguments`, without the arrow, since the
+// panel's row has a chevron), opened to `StepDetail`, a declined call says so, and usage is
 // in the provider's units, never a price (`docs/design/ai.md`, "Usage").
 
 import Foundation
@@ -174,9 +175,10 @@ public struct StepRow: Sendable, Equatable, Identifiable {
         reason = c.reason
     }
 
-    /// `→ tune noaa`: the closed row's line, `ley ask`'s.
+    /// `tune noaa`: the row's tool and arguments, `ley ask`'s line without its arrow, since the
+    /// row's chevron is its one glyph.
     public var line: String {
-        summary.isEmpty ? "\u{2192} \(tool)" : "\u{2192} \(tool) \(summary)"
+        summary.isEmpty ? tool : "\(tool) \(summary)"
     }
 
     /// What became of the call, in one word.

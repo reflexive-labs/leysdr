@@ -168,7 +168,7 @@ final class AssistantDaemonTests: XCTestCase {
         XCTAssertEqual(view.turns.map(\.role), [.user, .assistant])
         XCTAssertEqual(view.turns[0].text, "what's on?")
         XCTAssertTrue(view.turns[1].text.contains("Looking."), view.turns[1].text)
-        XCTAssertEqual(view.turns[1].steps.map(\.line), ["\u{2192} get_state"])
+        XCTAssertEqual(view.turns[1].steps.map(\.line), ["get_state"])
         XCTAssertEqual(view.turns[1].steps.first?.stateWord, "done")
         XCTAssertEqual(view.turns[1].steps.first?.resultFirstLine, "1 capture, 1 channel")
 

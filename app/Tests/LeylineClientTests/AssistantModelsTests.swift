@@ -79,8 +79,8 @@ final class AssistantModelsTests: XCTestCase {
         XCTAssertEqual(
             steps.map(\.stateWord),
             ["running", "done", "failed", "asks", "in the app", "declined", "stopped", "stopped"])
-        XCTAssertEqual(steps[0].line, "\u{2192} tune noaa")
-        XCTAssertEqual(steps[1].line, "\u{2192} get_state")
+        XCTAssertEqual(steps[0].line, "tune noaa")
+        XCTAssertEqual(steps[1].line, "get_state")
         XCTAssertEqual(steps[1].resultFirstLine, "1 capture, 1 channel")
         XCTAssertEqual(steps[1].resultText, "\n1 capture, 1 channel\nthe rest")
         XCTAssertTrue(steps[2].isError)
