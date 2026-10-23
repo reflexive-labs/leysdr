@@ -1437,11 +1437,11 @@ Checked, by list:
   `assistant-cards`, `assistant-view-tools`, `change-note`, and `alert-and-menus` (Show Assistant
   disabled with no key).
 - **The window follows the radio**: `follow-assistant`, `follow-terminal` (a terminal's tune
-  followed and its audio left to it, mute and volume disabled, then the window's own again; a
-  muted window staying muted; the window's own channel a few seconds after Ctrl-C, at its own volume; `ley
+  followed and its audio left to it, mute and volume disabled, then the window's own again; a muted
+  window staying muted; the window's own channel a few seconds after Ctrl-C, at its own volume; `ley
   stop`; a part playing through a follow, and the live audio after it) and
-  `follow-launch-and-daemon` (a launch onto a terminal's channel past a newer recording's, a
-  daemon restart and then `ley ask`, a muted window reconnecting onto a terminal's channel).
+  `follow-launch-and-daemon` (a launch onto a terminal's channel past a newer recording's, a daemon
+  restart and then `ley ask`, a muted window reconnecting onto a terminal's channel).
 
 Not checked by any scene: C needs a person or a real radio, H a harness addition (numbered as in
 `mac-loop.md`, ML-9) or a fixture.
@@ -1540,14 +1540,16 @@ Found by the ML-9d scenes (2026-10-22), not fixed on the spot:
 
 Found by the ML-9d scenes' second half (2026-10-22), not fixed on the spot:
 
-- `follow-terminal`, at the window's minimum size (900 × 612 pt, toolbar included): the inspector
-  does not fit, so its header slides up under the toolbar and the transport bar leaves the
-  window. With a terminal's two lines in the identity the inspector asks 641 pt where 472 pt is
-  left between the toolbar and the transport bar; its fixed parts alone (header, identity of a
-  bookmark with Tone and Note, readings 84, audio 112, one log row, Measurements 33) come to
-  about 560. The minimum height (560 pt of content) covers the canvas, not the inspector: raise
-  it while the inspector shows, or let the inspector scroll? Seen in one run at that size, which
-  the scene no longer takes, as a golden would keep the fault.
+- `follow-terminal`, `transport-sizes`, at the window's minimum size (900 × 612 pt, toolbar
+  included): the inspector does not fit. With a terminal's two lines in the identity it asks 641
+  pt where 472 pt is left between the toolbar and the transport bar, and its fixed parts alone
+  (header, identity of a bookmark with Tone and Note, readings 84, audio 112, one log row,
+  Measurements 33) come to about 560. It pushed the transport bar out of the window; it is now
+  cut at its foot instead (fixed, 71a1698), so at the minimum Measurements and the log's rows go.
+  Raise the minimum height while the inspector shows, or let the inspector scroll?
+- `transport-sizes`: at 900 pt with the inspector the band rail's track shrinks to a few points
+  between its two neighbours' labels (`◂ 148.0000`, `154.5600 ▸`), and the squelch's words are
+  cut to `mut… mark… hear…`.
 - `assistant-conversation` (from the first half's fix 214c9bf): the transcript lost all its rows
   when a step with a long result opened, while it was a `LazyVStack`; it is a `VStack` now, which
   lays out every turn of a long conversation. Why the lazy stack dropped its rows is not known.
@@ -1559,8 +1561,9 @@ Found by the ML-9d scenes' second half (2026-10-22), not fixed on the spot:
   refused tone's sentence away. The note's unsaved `a b` stays in the field (unwritten), and the
   sentence stays, until the focus moves into another field, which puts the saved value back. U6
   said a click elsewhere does both.
-- `sweep-lifecycle`: MURS's hits read `1` and `4`, and a hit tick's hover `1 · 46 dB`: the
-  plan's bare channel numbers, where NOAA's read `WX2`. `MURS 1`?
+- `sweep-lifecycle`, `transport-sizes`: MURS's hits read `1` and `4`, a hit tick's hover `1 · 46
+  dB`, and the volume's caption on MURS 2 `playing 2`: the plan's bare channel numbers, where
+  NOAA's read `WX2`. `MURS 1`?
 - `sweep-lifecycle`: with a recording running, Scan band on a file radio asks "Move the radio?"
   with Sweep anyway, though a file radio's sweep is one step at the recorded centre and moves
   nothing.
