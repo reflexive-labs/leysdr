@@ -517,13 +517,22 @@ conversation stays in the mirror, last seen `ENDED`, until the next `GetState` s
 contract sends no event for the deletion itself. The session copies the controller's state out on
 every change, as it copies the mirror's.
 
-**The rows** (`AssistantModels.swift`). `ConversationView` turns the conversation into turns, a
-user's right-aligned in `inkMuted` and the assistant's text in `inkSecondary`, under its steps
-(`ink`, the brightest, is kept for the field's typing), and each tool call into a step:
-`→ tool arguments` on one line (a single argument is its value alone, several are `name value`
-pairs, cut at 80 characters), a state word (`running`, `done`, `failed`, `asks`, `in the app`,
-`declined`, `stopped`) and the result's first line; opened, the step shows the arguments as indented
-JSON, the whole result and its JSON. While the assistant is on a turn and no step of its newest
+**The rows** (`AssistantModels.swift`, `AssistantStepDetail.swift`). `ConversationView` turns the
+conversation into turns. Your message sits at the right on a `raised` bubble, at most
+`Layout.assistantBubbleMaxWidth` (about 80 % of the column) wide; the assistant's reply runs the
+column's width with no bubble, under its steps. Both are `inkSecondary` in `Font.reply` with
+`replyLeading` between lines (`ink`, the brightest, is kept for the field's typing). The header,
+the transcript, a step and its opened body, a card, the token line and the field share one left
+edge, `Layout.assistantInset`; your message and the turn that answers it are one exchange,
+`assistantInTurnGap` apart inside and `assistantTurnGap` from the next. Each tool call is a step:
+a chevron, the tool and its arguments (a single argument is its value alone, several are
+`name value` pairs, cut at 80 characters; `ley ask`'s line without its arrow) and a state word at
+the right (`running`, `done`, `failed`, `asks`, `in the app`, `declined`, `stopped`). Opened, the
+step lays out its `StepDetail`: the gate's reason when it asked, the arguments as `key value`
+lines, and the result as a table when its JSON is rows (an array of objects, or an object holding
+one: the name, the frequency and the mode, eight rows and `… 179 more`), else as its prose with the
+blank lines folded. The box is at most twelve lines tall and scrolls inside, and `JSON` beside it
+shows the indented JSON instead (`Readable` puts the lines back). While the assistant is on a turn and no step of its newest
 turn is `running` (`ConversationView.isWaitingOnModel`), the model is thinking, and a waiting row
 under the turns says so: a small spinner and `thinking…`, with the seconds from three on
 (`thinking… 4s`), counted from the conversation's `last_turn_at_ns`, so the count starts again
@@ -536,10 +545,16 @@ after any steps it took (`TurnRow.stopped`). The contract has no field for a sto
 read it from the transcript (`assistant.md`, "The loop"): an assistant turn done with no text or
 with a step the stop ended, or a user's message that no reply follows, because a turn stopped
 before the worker wrote its own leaves the message last. A call waiting for approval is a card with the
-question, the gate's reason (`assistant.md`, "The gate") and a button per answer the call offers
-(`PendingQuestion.offers`): Decline, Allow for this conversation when the call can be granted for
-the rest of the conversation (never a delete or a cancel of another client's job), and Allow, none
-on Return. Once one is pressed all three are disabled, and a click meanwhile is dropped, until the
+question, the gate's reason (`assistant.md`, "The gate") in `inkSecondary` and a button per answer
+the call offers (`PendingQuestion.offers`): Decline, Allow for this conversation when the call can
+be granted for the rest of the conversation (never a delete or a cancel of another client's job),
+both plain text, and Allow, the one filled button, none on Return; Allow for this conversation
+goes on a line of its own over the other two when the three do not fit. The question says what
+the call would do in words and never shows a tool's name or an id ("The assistant wants to remove
+the APRS bookmark."): the daemon's question carries the tool, its arguments and the reason, and
+no sentence, and the reason says why it asks rather than what, so `AssistantWords.action` builds
+the words from the tool and its arguments, names an id by its kind (`delete a recording`) and
+reads a tool it does not know as `use the list presets tool`. Once one is pressed all three are disabled, and a click meanwhile is dropped, until the
 daemon replies to that answer, so a second click sends no second answer; a question still pending
 after a failed answer can be answered again. The app starts every conversation in the default mode,
 in which questions are asked; the panel has no switch for the mode that asks nothing. Stop shows
@@ -598,9 +613,9 @@ shown only while the channel and its radio still hold the values it set, so an u
 change since (the daemon's own) never leaves the note naming a stale value, and the line goes as
 soon as this window changes the channel.
 
-On Linux the rows, the view tools' parsing and answers, the view window, the focus rule and the
-attribution fold are tested in `AssistantModelsTests`, `AssistantViewToolsTests` and
-`ChangeNoteTests`; the controller's rules (the watch resuming from its `seq`, a forgotten
+On Linux the rows, an opened step's lines, the card's words, the view tools' parsing and answers,
+the view window, the focus rule and the attribution fold are tested in `AssistantModelsTests`,
+`AssistantStepDetailTests`, `AssistantViewToolsTests` and `ChangeNoteTests`; the controller's rules (the watch resuming from its `seq`, a forgotten
 conversation, a call performed once and its answer sent again, another conversation ignored) in
 `AssistantControllerTests` against a fake `AssistantCalls`; and the conversation against the
 daemon in `AssistantDaemonTests`; the panel, the toggle and the session's
@@ -700,6 +715,7 @@ name is SF, each at the size and tracking the role calls for.
 | the channel's name in the inspector | `name` | SF | 21 medium | `-0.015em` tracking |
 | signal readout | | SF Mono | 21 | tabular |
 | body, control labels | `body`, `label` | SF | 12.5–13 | |
+| the assistant's reply, your message in its panel | `reply` | SF | 13 | 3 pt of extra leading (`replyLeading`) |
 | a value beside a label | `value`, `valueSmall` | SF Mono | 10.5–11.5 | tabular wherever it changes |
 | section header | `section` | SF Mono | 9.5 | uppercase, `0.14em` tracking |
 | a table's column head | `columnHead` | SF Mono | 8.5 | the inspector's log |
@@ -857,8 +873,8 @@ there, so the waterfall's renderer draws one more frame into an offscreen textur
 image is laid over the Metal view for the draw, under what SwiftUI draws over the waterfall.
 Against `screencapture -o -l` of the same window the picture differs at the window's four rounded
 corners, which `screencapture` leaves transparent. A text field's system placeholder is dimmed
-only by vibrancy, which `cacheDisplay` does not apply, so the sidebar filter draws its own
-placeholder in `inkFaint`.
+only by vibrancy, which `cacheDisplay` does not apply, so the sidebar filter and the assistant's
+field draw their own placeholder in `inkFaint`.
 
 `window_number` is the `NSWindow` number that `screencapture -l` takes, and `scale` is the
 window's backing scale, the pixels per point in `window.png`. Each region is a rectangle
@@ -974,7 +990,7 @@ them and nothing else: an identifier changes no layout and no behaviour.
 | `inspector` | the Radio's inspector; its groups `.header`, `.identity`, `.readings`, `.audio`, `.log`, `.measurements`; its controls `.rename`, `.tone`, `.note`, `.revert`, `.save`, `.tuneinside`, `.record`, `.kept.stop` (the Stop of `Still recording …`), `.log.play` (a kept row's ▶ or ■; every row's is the same, and `press` takes the newest), `.measurements.toggle` |
 | `library.` | `sidebar`, `search`, `channel.<hz>`, `page`, `page.record`, `page.tune`, `day.<day>` (an EARLIER day's line) and `day.<day>.play`, `part.<n>` (counted from 0 down the page, as `select_part` counts), `inspector`, `inspector.playall`, `inspector.finder`, `inspector.delete` |
 | `player` | the Library's bar; `.previous`, `.play`, `.next`, `.volume` |
-| `assistant.` | `panel`, `new`, `input`, `stop`, `settings`, `decline`, `allow`, `allow.conversation`, `step.<call id>` (a step's row, which opens and closes it, by the id the daemon gave its tool call: `step.c1`) |
+| `assistant.` | `panel`, `new`, `input`, `stop`, `settings`, `decline`, `allow`, `allow.conversation`, `step.<call id>` (a step's row, which opens and closes it, by the id the daemon gave its tool call: `step.c1`) with `.json` (an opened step's JSON toggle, titled `JSON` or `Readable`) |
 | `settings.ai` | the Settings window's AI pane; `.key.<provider>` with `.check` and `.remove`, `.add` with `.add.provider`, `.add.label`, `.add.key` and `.add.endpoint`, `.feature.<feature>` with `.provider` and `.model`, `.usage.period` with `.day` and `.month`, `.notice.close` |
 
 A region or a row is made an element of its own before it is named (`identifiedGroup`, in
