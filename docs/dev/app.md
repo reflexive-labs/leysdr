@@ -869,8 +869,8 @@ in points from the top-left corner of the window's frame, toolbar included, beca
 `transmissions` (the rows of the inspector's log, which gain one whenever an over ends),
 `log_day` (the day over those rows, blank until the first), `heard` (the tone the channel last
 heard, beside the bookmark's Tone, which shows once one has been measured) and `squelch` (the
-words over the transport's squelch track and the track itself, whose level follows the noise
-between overs). In the Library, `sidebar` and
+transport's squelch block: the words over the track, the track, whose level follows the noise
+between overs, and the words under it, whose marker follows an automatic level). In the Library, `sidebar` and
 `inspector` are the Library's own. A region that is not on screen is left out of the file. Each
 region except `window` and `toolbar` is measured by a `WindowFrameProbe` under its view. The
 toolbar is hosted outside the content's view tree, so its region is the strip above the window's
