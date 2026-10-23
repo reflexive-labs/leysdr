@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/reflexive-labs/leysdr/go/internal/daemonrun"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
 
@@ -53,8 +55,10 @@ func setup(t *testing.T, daemonArgs ...string) (*env, *exec.Cmd) {
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	e := &env{t: t, ley: leyBin, socket: filepath.Join(dir, "d.sock"), fixture: fixture}
 
-	daemon := exec.Command(daemonBin, append([]string{"--socket", e.socket, "--log-level", "debug"}, daemonArgs...)...)
-	var daemonLog bytes.Buffer
+	daemon := exec.Command(daemonBin, hermeticArgs(dir, append([]string{"--socket", e.socket, "--log-level", "debug"}, daemonArgs...))...)
+	daemon.Env = append(slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, "LEYLINE_SECRETS=") }),
+		"LEYLINE_SECRETS=file")
+	var daemonLog syncBuffer
 	daemon.Stderr = &daemonLog
 	daemon.Stdout = &daemonLog
 	if err := daemon.Start(); err != nil {
@@ -81,7 +85,37 @@ func setup(t *testing.T, daemonArgs ...string) (*env, *exec.Cmd) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+	// The line is the daemon's, in its --log-file when the test gave one.
+	log := daemonLog.String()
+	if i := slices.Index(daemonArgs, "--log-file"); i >= 0 && i+1 < len(daemonArgs) {
+		b, _ := os.ReadFile(daemonArgs[i+1])
+		log = string(b)
+	}
+	data := filepath.Join(dir, "data")
+	if i := slices.Index(daemonArgs, "--data"); i >= 0 && i+1 < len(daemonArgs) {
+		data = daemonArgs[i+1]
+	}
+	if err := daemonrun.KeysInData(log, data, "its log"); err != nil {
+		t.Fatal(err)
+	}
 	return e, daemon
+}
+
+// hermeticArgs adds to a test daemon's arguments what keeps it off the person's own: its keys
+// in a file (--secrets file), and, unless the test names its own, a --data, --store and
+// --recordings under dir and --no-hardware, so it never reads or writes the default directories
+// or opens the Mac's radios.
+func hermeticArgs(dir string, args []string) []string {
+	args = append(args, "--secrets", "file")
+	for _, d := range []string{"data", "store", "recordings"} {
+		if !slices.Contains(args, "--"+d) {
+			args = append(args, "--"+d, filepath.Join(dir, d))
+		}
+	}
+	if !slices.Contains(args, "--no-hardware") {
+		args = append(args, "--no-hardware")
+	}
+	return args
 }
 
 // runFor runs a ley verb with a deadline, SIGINT-ing it when the deadline passes, and returns
