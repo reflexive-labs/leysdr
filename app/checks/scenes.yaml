@@ -1166,6 +1166,8 @@ scenes:
   # into another row (MURS); a pick of MURS 4 by Return arrives at 20 kHz, where the band's
   # group is 11.25 kHz, and closes the picker. wx3 typed into the filter and Returned tunes
   # 162.475 MHz and clears and lets go of the field; and marine's rail shows no plan ticks.
+  # A band sets a squelch it measures, which moves by a decibel between runs, so a terminal
+  # sets one before each tree.
   - name: vhf-wide
     fixtures: [{name: scene_vhf20}]
     bookmarks: ../../site/shots/home.csv
@@ -1192,6 +1194,8 @@ scenes:
       - {cmd: key, keys: return}
       - {cmd: wait, seconds: 2}
       - {cmd: state, expect: {popover: "", tuned_hz: 154570000, bandwidth_hz: 20000, band: murs-154}}
+      - {cmd: ley, args: [set, squelch, "-50", --channel, "154.57"]}
+      - {cmd: wait, seconds: 1}
       - {cmd: ax, name: murs}
       - {cmd: key, keys: cmd+g}
       - {cmd: type, text: wx3}
@@ -1201,6 +1205,8 @@ scenes:
       - {cmd: press, identifier: sidebar.band.marine}
       - {cmd: wait, seconds: 2}
       - {cmd: state, expect: {band: marine}}
+      - {cmd: ley, args: [set, squelch, "-50", --channel, "159.0125"]}
+      - {cmd: wait, seconds: 1}
       - {cmd: ax, name: marine}
       - {cmd: snapshot, name: marine}
 
@@ -1360,3 +1366,50 @@ scenes:
       - {cmd: snapshot, name: nofreq}
       - {cmd: file, path: bookmarks.json, contains: ["Digital", "!evening net\"", "!RX MHz"]}
       - {cmd: ley, args: [bookmarks, --tag, sample], expect_stdout: ["(?s)(\\bbm_.*){8}", "!(?s)(\\bbm_.*){9}"]}
+
+  # The transport bar at the window's smaller sizes (docs/plans/app.md, decision 13): the Mode
+  # and Width pop-ups keep their labels on one line at 900 × 612 pt (the minimum), 1000 and
+  # 1100 pt, with and without the inspector, through the longest widths a band or a mode
+  # brings: MURS 151's 11.25 kHz, WFM's 200 kHz, CW's 500 Hz. A terminal sets the mode and width
+  # on the window's channel. At the minimum the inspector is cut at its foot, and the bar stays.
+  - name: transport-sizes
+    sizes: [{width: 900, height: 612}, {width: 1000, height: 820}, {width: 1100, height: 820}]
+    fixtures: [{name: scene_vhf20}]
+    bookmarks: ../../site/shots/home.csv
+    ai: {script: assistant/hello.script}
+    steps:
+      - ley: [stop, "146.52"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: snapshot, name: calling}
+      - {cmd: press, identifier: sidebar.band.murs}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {bandwidth_hz: 11250}}
+      - {cmd: snapshot, name: murs}
+      - {cmd: ax, name: murs, mask: [spectrum, waterfall, readings, transmissions, log_day, squelch, sidebar, inspector]}
+      - {cmd: ley, args: [set, mode, wfm, --channel, "151.88"]}
+      - {cmd: ley, args: [set, bw, 200k, --channel, "151.88"]}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {mode: WFM, bandwidth_hz: 200000}}
+      - {cmd: snapshot, name: wfm}
+      - {cmd: ley, args: [set, bw, "0.5", --channel, "151.88"]}
+      - {cmd: ley, args: [set, mode, cw, --channel, "151.88"]}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {mode: CW, bandwidth_hz: 500}}
+      - {cmd: snapshot, name: cw}
+      - {cmd: press, identifier: toolbar.inspector}
+      - {cmd: ley, args: [set, mode, nfm, --channel, "151.88"]}
+      - {cmd: ley, args: [set, bw, "11.25", --channel, "151.88"]}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {inspector_shown: false, bandwidth_hz: 11250}}
+      - {cmd: snapshot, name: noinspector}
+      - {cmd: press, identifier: toolbar.inspector}
+      - {cmd: press, identifier: toolbar.assistant}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {inspector_shown: true, assistant_shown: true, window.width: 1221}}
+      - {cmd: snapshot, name: assistant}
+      - {cmd: ax, name: assistant, mask: [spectrum, waterfall, readings, transmissions, log_day, squelch, sidebar, inspector]}
