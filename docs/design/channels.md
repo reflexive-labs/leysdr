@@ -237,6 +237,36 @@ import is still every row at once. Lists (user-named sets such as Home or Boat, 
 becoming one, scan lists falling out of them) are the ham story and are deferred, with the file
 shape chosen so they can be added without a migration.
 
+### The band rail
+
+The strip over the spectrum shows the tuned band from one edge to the other, its neighbours named
+past the end caps. It was drawn when the capture, an RTL-SDR's 2.4 MHz, was about the size of the
+view and narrower than the band; a HackRF at 20 MHz holds all of 2 m and more, so the rail
+separates what the radio hears from what the window shows (`../plans/app.md`, MC-7):
+
+- **The thumb is the view.** The rail has one thumb, the spectrum and waterfall's visible window,
+  always drawn on the band's scale. What the radio captures is a faint underlay under it, with
+  an arrowhead at an end cap when the capture runs past the band.
+- **Dragging the thumb pans the view** inside the capture and retunes nothing. Only a drag that
+  takes the view past the capture's edge moves the radio, by pushing the capture, with the
+  push and ask rules a capture move has always had. The tuned channel never moves because the
+  view did: when it is off the view, the spectrum draws an edge marker on the side it lies
+  (`146.940 ▸`), and pressing it brings the view back to the channel. A tune that lands outside
+  the view brings the view to it; one inside the view leaves the view where it is. The
+  assistant's `show_band` sets the same view.
+- **− and + zoom by span**, halving or doubling the width shown. The widest is the capture; the
+  narrowest holds 64 of the spectrum's bins, because a narrower view needs a narrower FFT, which
+  runs in the daemon (invariant 2) and is later work with its `ley` mirror. Picking a band fits
+  the view to the band, or to the whole capture when the capture is narrower. The buttons' help
+  says the span (`2 MHz across now`).
+- **One gesture for the whole track.** No tick is a target of its own. A press that moves drags
+  the thumb; a click that does not move tunes the nearest tick within a few points (a bookmark,
+  a plan channel or a hit), else the frequency under the pointer on the band's grid. Ticks too
+  close to tell apart draw as a strip, and the nearest-tick click still picks one of them.
+
+The view is the window's own state, like max hold: it is not the radio's (invariant 7), another
+client never sees it, and `ley` has no view to mirror, because a terminal's spectrum is its own.
+
 ### Scan the band
 
 The newcomer story is a scan for the services that are always on the air. NOAA is seven plan

@@ -156,7 +156,7 @@ façade" carries the rest of the reasoning.
 whole objects by id on every event (invariant 6).
 
 **Presentation-only state is allowed and lives on the session**, clearly not from the daemon:
-max hold, zoom, the pointer frequency, which sheet is up (`maxHold`, `zoom`, `pointerHz`). A view's own
+max hold, the view, the pointer frequency, which sheet is up (`maxHold`, `viewSpanHz`, `pointerHz`). A view's own
 `@State` is for what is transient to that view alone — hover, an in-progress edit — and is always
 `private`. State that two views share belongs on the session.
 
