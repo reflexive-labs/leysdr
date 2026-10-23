@@ -226,6 +226,13 @@ only app scenes set it).
 | `ways-app.png` | app, 480 × 300 pt crop of the waterfall and inspector | `scene_2m` |
 | `ways-terminal.png` | terminal, split | `ley tune 146.52` beside `ley set squelch -45` |
 | `ways-sync.png` | composite | the app window and the split terminal, side by side, after the squelch change |
+| `app-assistant.png` | app, driven, 1440 × 820 pt window | `scene_wx_on` on WX3 (`site/shots/weather.csv`), the assistant on `assistant/weather.script`: "put on the weather radio", `list_presets`, `tune wx2`, a reply |
+| `app-assistant-ask.png` | app, driven, 320 × 400 pt at the window's bottom right (the column) | `scene_2m`, `assistant/takeover.script`: a tune the radio refuses, then a take-over card |
+| `settings-ai.png` | app, driven, the Settings window | `scene_2m`, a made-up OpenAI key, one `ley ask` for the usage row |
+| `library-speech.png` | app, driven, `parts` crop 700 pt high | `scene_net` recorded gated, then `ley transcribe` with the scripted speech engine (`net-speech.txt`) |
+| `app-follow-terminal.png` | composite, driven | `scene_2m` on Calling, then `ley tune 146.940` typed once the window shows |
+| `ley-ai.png` | terminal | `ley ai` with a made-up OpenAI key |
+| `ley-watch-speech.png` | terminal | `scene_net`, `ley watch speech --freq 147.18 --where 'text~net control'` over the scripted engine |
 | `app-icon-1024.png` | `scripts/render-icon.swift --png 1024` | none |
 
 Some scenes need more than the stage and a tuned channel:
@@ -238,6 +245,12 @@ Some scenes need more than the stage and a tuned channel:
   radio tuned. `ley tune 146.52` in the first pane is then the only channel, the one
   `ley set squelch -45` picks. In `ways-sync` that command is typed before the app starts, so the
   app opens on its channel, and the squelch change is typed once the app shows.
+- The 2 m app scenes run `ley stop 146.52` first (from 2026-10-23): with `ley play`'s channel
+  still there the window follows it, says the audio plays through another terminal and greys its
+  mute. Stopped, the window makes its own channel on the stage's bookmark, with a measured
+  squelch, which logs the transmissions and gives `on_air` a squelch to wait on.
+- `ways-terminal` and `ways-sync` type `ley tune 146.52` 3 s after the pane opens: typed at once
+  it landed between two overs and printed that nothing was above the noise.
 - `library-net` records with `ley record 147.18 --gate squelch --for 75s --detach` and waits
   80 s. In the Linux container a 40 s recording of `scene_net` made 3 parts.
 

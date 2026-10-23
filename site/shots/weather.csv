@@ -1,0 +1,8 @@
+Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPolarity,RxDtcsCode,CrossMode,Mode,TStep,Skip,Power,Comment,URCALL,RPT1CALL,RPT2CALL,DVCODE
+0,WX1,162.550000,,0.000000,,88.5,88.5,023,NN,023,Tone->Tone,NFM,5.00,,5.0W,NOAA weather radio,,,,
+1,WX2,162.400000,,0.000000,,88.5,88.5,023,NN,023,Tone->Tone,NFM,5.00,,5.0W,NOAA weather radio,,,,
+2,WX3,162.475000,,0.000000,,88.5,88.5,023,NN,023,Tone->Tone,NFM,5.00,,5.0W,NOAA weather radio,,,,
+3,WX4,162.425000,,0.000000,,88.5,88.5,023,NN,023,Tone->Tone,NFM,5.00,,5.0W,NOAA weather radio,,,,
+4,WX5,162.450000,,0.000000,,88.5,88.5,023,NN,023,Tone->Tone,NFM,5.00,,5.0W,NOAA weather radio,,,,
+5,WX6,162.500000,,0.000000,,88.5,88.5,023,NN,023,Tone->Tone,NFM,5.00,,5.0W,NOAA weather radio,,,,
+6,WX7,162.525000,,0.000000,,88.5,88.5,023,NN,023,Tone->Tone,NFM,5.00,,5.0W,NOAA weather radio,,,,

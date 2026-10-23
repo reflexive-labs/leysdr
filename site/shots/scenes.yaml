@@ -44,9 +44,12 @@ scenes:
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: home.csv
-    # A squelch, so the transmissions are logged and on_air has a squelch to wait on.
+    # The fixture's own channel goes, so the window makes one of its own on the bookmark and
+    # plays its audio, rather than following ley play's channel, whose sink is the terminal's.
+    # The window's channel measures its squelch, which logs the transmissions and gives on_air a
+    # squelch to wait on.
     steps:
-      - ley: [set, squelch, "-45"]
+      - ley: [stop, "146.52"]
     stage:
       window: {width: 1440, height: 820}
       place: radio
@@ -96,9 +99,12 @@ scenes:
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: home.csv
-    # A squelch, so the transmissions are logged and on_air has a squelch to wait on.
+    # The fixture's own channel goes, so the window makes one of its own on the bookmark and
+    # plays its audio, rather than following ley play's channel, whose sink is the terminal's.
+    # The window's channel measures its squelch, which logs the transmissions and gives on_air a
+    # squelch to wait on.
     steps:
-      - ley: [set, squelch, "-45"]
+      - ley: [stop, "146.52"]
     stage:
       window: {width: 1440, height: 820}
       place: radio
@@ -117,9 +123,12 @@ scenes:
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: home.csv
-    # A squelch, so the transmissions are logged and on_air has a squelch to wait on.
+    # The fixture's own channel goes, so the window makes one of its own on the bookmark and
+    # plays its audio, rather than following ley play's channel, whose sink is the terminal's.
+    # The window's channel measures its squelch, which logs the transmissions and gives on_air a
+    # squelch to wait on.
     steps:
-      - ley: [set, squelch, "-45"]
+      - ley: [stop, "146.52"]
     stage:
       window: {width: 1440, height: 820}
       place: radio
@@ -223,9 +232,12 @@ scenes:
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: home.csv
-    # A squelch, so the transmissions are logged and on_air has a squelch to wait on.
+    # The fixture's own channel goes, so the window makes one of its own on the bookmark and
+    # plays its audio, rather than following ley play's channel, whose sink is the terminal's.
+    # The window's channel measures its squelch, which logs the transmissions and gives on_air a
+    # squelch to wait on.
     steps:
-      - ley: [set, squelch, "-45"]
+      - ley: [stop, "146.52"]
     stage:
       window: {width: 1440, height: 820}
       place: radio
@@ -242,6 +254,7 @@ scenes:
       Two terminal panes: ley tune 146.52 showing the channel's meter, above ley set squelch -45
       changing the squelch on the same channel.
     fixtures: [{name: scene_2m}]
+    clock: "19:42"
     # ley stop leaves the radio tuned with no channel, so ley tune makes the one channel ley set
     # picks.
     steps:
@@ -251,7 +264,10 @@ scenes:
       rows: 34
       split: vertical
       panes:
+        # Three seconds in: typed at once, the tune landed between two overs and said nothing
+        # was above the noise.
         - command: ley tune 146.52
+          delay: 3
         - command: ley set squelch -45
           delay: 4
     settle: 8
@@ -262,6 +278,7 @@ scenes:
       The Leyline window and a terminal side by side on one daemon: the squelch set from ley
       shows in the app's inspector.
     fixtures: [{name: scene_2m}]
+    clock: "19:42"
     # As in ways-terminal, the first pane's ley tune is the one channel. It is typed before the app
     # starts, so the app opens on it, and the squelch change is typed once the app is showing.
     steps:
@@ -278,10 +295,191 @@ scenes:
       rows: 24
       split: vertical
       panes:
+        # Three seconds in: typed at once, the tune landed between two overs and said nothing
+        # was above the noise.
         - command: ley tune 146.52
+          delay: 3
         - command: ley set squelch -45
           delay: 4
     settle: 8
+
+  # The assistant on a scripted model (ai, as the check scenes' is): nothing reaches a provider,
+  # and the key is a made-up one in the scene daemon's own data. The app is driven over its
+  # command file, so the request is typed into the column as a person types it.
+  - asset: app-assistant.png
+    kind: app
+    alt: >-
+      The Leyline window with the assistant beside the inspector: a request to put on the weather
+      radio, the two steps it ran, listing the presets and tuning WX2, and its reply naming the
+      channel, which the window has moved to.
+    fixtures: [{name: scene_wx_on}]
+    clock: "19:42"
+    # The seven NOAA channels as NFM bookmarks, the mode tune chooses there, so the window's
+    # channel matches its bookmark.
+    bookmarks: weather.csv
+    ai: {script: assistant/weather.script, provider: openai}
+    # The fixture's own channel goes, so the window makes one of its own on WX3 and has its audio.
+    steps:
+      - ley: [stop, "162.4"]
+    stage:
+      window: {width: 1440, height: 820}
+      place: radio
+      inspector: true
+      select_bookmark: WX3
+      assistant: true
+      # The waterfall's history.
+      settle: 25
+    app:
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: put on the weather radio}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 5}
+      - {cmd: state, expect: {assistant.state: ready, tuned_hz: 162400000}}
+      - {cmd: snapshot, name: shot, settle: 2}
+    crop: {regions: [window]}
+
+  - asset: app-assistant-ask.png
+    kind: app
+    alt: >-
+      The assistant's column asking before it takes the radio from a ley command: the request, the
+      tune that failed because the radio was in use, and the question with Decline, Allow in this
+      chat and Allow.
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: home.csv
+    ai: {script: assistant/takeover.script, provider: openai}
+    stage:
+      window: {width: 1440, height: 820}
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      assistant: true
+      settle: 3
+    app:
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: type, text: put on the weather radio}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 4}
+      - {cmd: state, expect: {assistant.state: waiting for you}}
+      - {cmd: snapshot, name: shot, settle: 1}
+    # The column is the window's right edge, under the toolbar.
+    crop: {regions: [window], size: {width: 320, height: 400}, anchor: bottom-right}
+
+  # Settings, AI with a made-up OpenAI key; a `ley ask` of the scripted assistant gives the usage
+  # table its one row.
+  - asset: settings-ai.png
+    kind: app
+    alt: >-
+      Leyline's Settings, AI: an OpenAI key, listed as OpenAI-compatible and shown by its last four
+      characters, the models the assistant and speech use with what each sends to api.openai.com,
+      and the requests and tokens the assistant used today.
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: home.csv
+    ai: {script: assistant/usage.script, provider: openai}
+    steps:
+      - ley: [ask, --yes, "what is the radio on"]
+    stage:
+      window: {width: 1440, height: 820}
+      place: radio
+      settle: 3
+      settings: true
+    app:
+      - {cmd: snapshot, name: shot, window: settings, settle: 1}
+    # The pane runs past the window's foot; the crop ends under the usage table's one row, above
+    # the total the window cuts in half.
+    crop: {regions: [window], size: {width: 680, height: 714}}
+
+  # The net recorded gated, then transcribed by the speech decoder, which here is the scripted
+  # engine replaying net-speech.txt (speech): no key, nothing sent anywhere.
+  - asset: library-speech.png
+    kind: app
+    alt: >-
+      The Leyline Library on a net recorded on 147.180 MHz and transcribed: the words of each over
+      under its part, and one part selected.
+    fixtures: [{name: scene_net}]
+    clock: "19:42"
+    bookmarks: home.csv
+    speech: {script: net-speech.txt}
+    steps:
+      - ley: [record, "147.18", --gate, squelch, --for, 170s, --detach]
+      - wait: 175
+      - ley: [transcribe, job_, --yes]
+    stage:
+      window: {width: 1440, height: 820}
+      place: library
+      select_part: 0
+      play_part: true
+      settle: 4
+    app:
+      - {cmd: snapshot, name: shot}
+    crop: {regions: [parts], size: {width: 2000, height: 700}, anchor: top-left}
+
+  # The window follows a terminal: the fixture's channel goes, the window makes its own on
+  # Calling, and `ley tune 146.940` is typed once the window shows.
+  - asset: app-follow-terminal.png
+    kind: composite
+    alt: >-
+      A terminal running ley tune 146.940 beside the Leyline window, which has moved to the club
+      repeater on 146.940 MHz, says another terminal tuned it and that the audio plays there.
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    bookmarks: home.csv
+    steps:
+      - ley: [stop, "146.52"]
+    stage:
+      window: {width: 1100, height: 700}
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      # The waterfall's history before the tune.
+      settle: 20
+    terminal:
+      cols: 80
+      rows: 24
+      panes:
+        - command: ley tune 146.940
+          after_app: true
+    settle: 4
+    app:
+      - {cmd: state, expect: {tuned_hz: 146940000}}
+      - {cmd: snapshot, name: shot}
+    crop: {regions: [window]}
+
+  - asset: ley-ai.png
+    kind: terminal
+    alt: >-
+      ley ai in a terminal: one OpenAI key shown by its last four characters, never used and
+      accepted by the provider, and the provider and model the assistant and speech use.
+    fixtures: [{name: scene_2m}]
+    clock: "19:42"
+    # No ley ask first: LAST USED is dated by the real clock while CHECKED follows --wall-clock,
+    # so a use would print the time the shot was taken.
+    ai: {script: assistant/usage.script, provider: openai}
+    terminal:
+      cols: 100
+      rows: 14
+      panes:
+        - command: ley ai
+    settle: 3
+
+  # ley watch speech on the net, the speech decoder the scripted engine (speech).
+  - asset: ley-watch-speech.png
+    kind: terminal
+    alt: >-
+      ley watch speech in a terminal on a 2 m net: only the overs whose words include "net
+      control", each with its time, part and words.
+    fixtures: [{name: scene_net}]
+    clock: "19:42"
+    speech: {script: net-speech.txt}
+    # The speech decoder has no frequency of its own, so the watch names the net's.
+    terminal:
+      cols: 110
+      rows: 14
+      panes:
+        - command: ley watch speech --freq 147.18 --where 'text~net control'
+    # The whole 163 s net, whose overs the decoder writes up as each ends.
+    settle: 170
 
   - asset: app-icon-1024.png
     kind: icon

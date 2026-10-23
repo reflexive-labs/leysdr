@@ -1,0 +1,2 @@
+{"tool": "get_state", "args": {}}
+{"text": "The radio is on 146.520 MHz, the 2 m calling frequency, in NFM.", "usage": {"input_tokens": 1840, "output_tokens": 42}}

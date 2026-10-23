@@ -1,0 +1,3 @@
+{"tool": "list_presets", "args": {}, "sleep_ms": 800}
+{"tool": "tune", "args": {"frequency": "wx2"}, "sleep_ms": 800}
+{"text": "You're on WX2, 162.400 MHz in NFM, the strongest NOAA weather channel the radio hears here. WX1 on 162.550 MHz is on the air too, weaker; the other five channels are quiet.", "usage": {"input_tokens": 2400, "output_tokens": 60}}
