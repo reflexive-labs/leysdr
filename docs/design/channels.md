@@ -198,8 +198,10 @@ expands to what is inside it; the rest is collapsed.
   `Replace with …` moves the row to the new band, and the row is selected there, so the move is
   visible.
 - **Out-of-range bands collapse to one line.** An RTL-SDR user sees seven HF rows they can
-  never click. They become `7 bands below what this radio tunes`, one dim line at the top, which
-  expands to the rows on click; `outside` when they lie on both sides of what the radio tunes.
+  never click. They become `7 bands out of range`, one dim line at the top, which
+  expands to the rows on click; its help says where they lie, `below what this radio tunes`, or
+  `outside` when they lie on both sides of it. The words stay that short so a count of 17 fits
+  the sidebar's width.
   The line counts bands, not their bookmarks, which the filter still lists as disabled rows.
   The rule and its words already exist (`Bands.outOfRangeWords`).
 - **A filter field at the top** flattens everything. Typing narrows the list to bands,

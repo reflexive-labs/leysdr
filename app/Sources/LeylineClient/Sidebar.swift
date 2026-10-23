@@ -44,19 +44,23 @@ extension Bands {
 
 // MARK: The out-of-range line
 
-/// The rows the radio cannot tune and the one dim line that stands in for them: `7 bands below
-/// what this radio tunes`, `above`, or `outside` when they lie on both sides of its reach or in
-/// a gap between two of its ranges. The line counts bands, not their bookmarks, which the
-/// filter still lists as disabled rows. `Bands.outOfRangeWords` is the same judgement for one
+/// The rows the radio cannot tune and the one dim line that stands in for them, `17 bands out of
+/// range`, short enough for the sidebar's 236 pt at any count; the line's help says where they
+/// lie: `below what this radio tunes`, `above`, or `outside` when they lie on both sides of its
+/// reach or in a gap between two of its ranges. The line counts bands, not their bookmarks, which
+/// the filter still lists as disabled rows. `Bands.outOfRangeWords` is the same judgement for one
 /// band, with the reach spelled out; this one is for the fold and leaves the numbers to the
 /// expanded rows.
 public struct OutOfRangeFold: Sendable, Hashable {
     public var bands: [Band]
     public var words: String
+    /// `below what this radio tunes`, `above …` or `outside …`.
+    public var side: String
 
-    public init(bands: [Band], words: String) {
+    public init(bands: [Band], words: String, side: String = "") {
         self.bands = bands
         self.words = words
+        self.side = side
     }
 
     /// Nil when every row is tunable, so the sidebar draws no line.
@@ -68,7 +72,22 @@ public struct OutOfRangeFold: Sendable, Hashable {
             out.allSatisfy { $0.maxHz < lo }
             ? "below" : out.allSatisfy { $0.minHz > hi } ? "above" : "outside"
         let noun = out.count == 1 ? "band" : "bands"
-        self.init(bands: out, words: "\(out.count) \(noun) \(side) what this radio tunes")
+        self.init(
+            bands: out, words: "\(out.count) \(noun) out of range",
+            side: "\(side) what this radio tunes")
+    }
+}
+
+// MARK: The range line
+
+/// The squelch in an open band row's range line (`144 – 148 MHz · 12.5 kHz · sq −53`), always
+/// one short form: the level to the decibel, `sq auto` while the channel keeps the level the
+/// window measured for it when it tuned, `sq off`.
+public enum SquelchWords {
+    public static func short(_ db: Double, auto: Bool) -> String {
+        guard db.isFinite else { return "sq off" }
+        if auto { return "sq auto" }
+        return "sq \(String(Int(db.rounded())).replacingOccurrences(of: "-", with: "−"))"
     }
 }
 

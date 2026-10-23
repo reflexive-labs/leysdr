@@ -197,6 +197,8 @@ final class AppSession {
     /// Whether the one line standing for the bands this radio cannot tune has been opened to
     /// its rows; the next tune folds it again.
     var outOfRangeExpanded = false
+    /// The level the window's auto squelch last wrote, and the channel it wrote it to.
+    private(set) var autoSquelch: (channelID: String, db: Double)?
     /// The sidebar row whose `Channels…` popover is open, or nil. Opening it empties the query
     /// and puts the highlight on the tuned channel when the plan has it, else the first row.
     var pickerBand: Band? {
@@ -425,6 +427,14 @@ final class AppSession {
     var capture: Leyline_V1_Capture? { heldCapture.current { state.capture($0) } }
     var channel: Leyline_V1_Channel? { heldChannel.current { state.channel($0) } }
     var device: Leyline_V1_DeviceDescriptor? { capture.flatMap { state.device($0.deviceID) } }
+    /// Whether the channel's squelch is still the level `measureSquelch` wrote to it, which the
+    /// sidebar's range line reads as `sq auto` (`SquelchWords.short`).
+    var squelchIsAuto: Bool {
+        guard let a = autoSquelch, let ch = channel, ch.channelID == a.channelID else {
+            return false
+        }
+        return abs(ch.squelchDb - a.db) < 0.05
+    }
     /// The window's own sink on the held channel; nil when it has none there, even while
     /// another client's sink plays the channel (`audioElsewhere`).
     var sink: Leyline_V1_Sink? {
@@ -1517,6 +1527,7 @@ final class AppSession {
             spectrum.latest, sampleRate: sampleRate, bandwidthHz: bandwidthHz)
         guard threshold.isFinite else { return }
         writes.squelchDb(threshold, channel: ch.channelID)
+        autoSquelch = (ch.channelID, threshold)
         log("session", "auto squelch \(threshold) dBFS from floor \(floor)")
     }
 

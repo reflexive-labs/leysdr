@@ -135,7 +135,11 @@ struct SidebarView: View {
         let expanded = session.isExpanded(row)
         BandRow(
             band: row, selected: tuned, expanded: expanded,
-            squelchDb: tuned ? session.channel?.squelchDb : nil, disabled: why != nil
+            squelch: tuned
+                ? session.channel.map {
+                    SquelchWords.short($0.squelchDb, auto: session.squelchIsAuto)
+                } : nil,
+            disabled: why != nil
         ) {
             session.toggleExpanded(row)
         }
@@ -366,7 +370,8 @@ struct BandRow: View {
     let band: Band
     let selected: Bool
     let expanded: Bool
-    let squelchDb: Double?
+    /// `sq −53`, `sq auto` or `sq off` on the tuned row (`SquelchWords.short`), else nil.
+    let squelch: String?
     var disabled = false
     let onChevron: () -> Void
 
@@ -391,8 +396,15 @@ struct BandRow: View {
                 .accessibilityIdentifier("sidebar.band.\(band.id).chevron")
             }
             if expanded {
-                Text(detail).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary)
-                    .lineLimit(1).truncationMode(.tail)
+                // The longest form the sidebar's width holds, so the squelch at its end is
+                // never the part cut (`462.5375 – 467.7375 MHz` alone is 22 characters).
+                let forms = detailForms
+                ViewThatFits(in: .horizontal) {
+                    Text(forms.0).fixedSize()
+                    Text(forms.1).fixedSize()
+                    Text(forms.2).lineLimit(1).truncationMode(.tail)
+                }
+                .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary)
             }
         }
         .padding(.horizontal, 14)
@@ -401,24 +413,24 @@ struct BandRow: View {
     }
 
     /// `87.5 – 108 MHz · 200 kHz · sq −28`, one line: the band's range, never the capture's,
-    /// with trailing zeros dropped.
-    private var detail: String {
-        var parts = [
-            "\(Frequency.mhz(band.minHz)) – \(Frequency.mhz(band.maxHz)) MHz",
-            Frequency.width(band.bandwidthHz),
-        ]
-        if let s = squelchDb {
-            parts.append(
-                s.isNaN
-                    ? "sq off"
-                    : "sq \(String(Int(s.rounded())).replacingOccurrences(of: "-", with: "−"))")
-        }
-        return parts.joined(separator: " · ")
+    /// with trailing zeros dropped. Then the same closed up around the dash, then without the
+    /// width, for the bands whose edges carry four decimals (GMRS, MURS).
+    private var detailForms: (String, String, String) {
+        let lo = Frequency.mhz(band.minHz)
+        let hi = Frequency.mhz(band.maxHz)
+        let tail = squelch.map { " · \($0)" } ?? ""
+        let width = Frequency.width(band.bandwidthHz)
+        return (
+            "\(lo) – \(hi) MHz · \(width)\(tail)",
+            "\(lo)–\(hi) MHz · \(width)\(tail)",
+            "\(lo)–\(hi) MHz\(tail)"
+        )
     }
 }
 
-/// `7 bands below what this radio tunes`, one dim line at the top of the list, with the chevron
-/// showing whether its rows are out. The rows are the disabled band rows themselves.
+/// `17 bands out of range`, one dim line at the top of the list, with the chevron showing
+/// whether its rows are out and the help saying where they lie. The rows are the disabled band
+/// rows themselves.
 struct OutOfRangeLine: View {
     let fold: OutOfRangeFold
     let expanded: Bool
@@ -434,7 +446,7 @@ struct OutOfRangeLine: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 5)
-        .help(expanded ? "Hide them" : "Show them; they cannot be tuned with this radio")
+        .help(expanded ? "Hide them" : "Show them; they lie \(fold.side)")
     }
 }
 
