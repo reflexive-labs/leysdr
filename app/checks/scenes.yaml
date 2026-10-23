@@ -980,6 +980,9 @@ scenes:
       - {cmd: key, keys: return}
       - {cmd: wait, seconds: 4}
       - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater}}
+      # The panel's tune asked for -42 dBFS, a level of the assistant's own, so the note names it
+      # (docs/plans/app.md, MC-1c).
+      - {cmd: state, expect: {notices.0: "The assistant tuned to 146.940 MHz NFM and set the squelch to -42 dBFS."}}
       # The column closes, as its steps carry the run's channel ids.
       - {cmd: stage, stage: {assistant: false}}
       - {cmd: snapshot, name: followed}
@@ -988,6 +991,9 @@ scenes:
       - {cmd: ley, args: [ask, --yes, --continue, now the evening net]}
       - {cmd: wait, seconds: 3}
       - {cmd: state, expect: {tuned_hz: 147180000, bookmark: Evening net}}
+      # This tune left the squelch on auto: the level it measured is not one the assistant
+      # chose, so the note leaves the squelch out.
+      - {cmd: state, expect: {notices.0: "The assistant tuned to 147.180 MHz NFM."}}
       - {cmd: ax, name: terminal}
       - {cmd: ley, args: [state]}
 
@@ -1007,6 +1013,7 @@ scenes:
     app:
       - {cmd: ley, args: [set, squelch, "-45"]}
       - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {notices.0: "Another terminal set the squelch to -45 dBFS."}}
       - {cmd: ax, name: noted}
       - {cmd: key, keys: right}
       - {cmd: wait, seconds: 1}

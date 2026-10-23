@@ -96,9 +96,11 @@ public struct ChangeNote: Sendable, Equatable {
     /// when the newest change was this client's own (`selfClientID`, `ClientIdentity.id`): a
     /// person does not need telling what they just did, and an older change by someone else is no
     /// longer what the channel shows. A channel another client made reads "tuned to" its
-    /// frequency and mode, and keeps saying so when the same client then set something on it, as
-    /// the assistant's tune sets the squelch it measured: "The assistant tuned to 162.400 MHz NFM
-    /// and set the squelch to -42 dBFS."
+    /// frequency and mode, and keeps saying so when the same client then set something on it. The
+    /// squelch a tune sets right after making the channel is named only when the assistant asked
+    /// for that level ("The assistant tuned to 162.400 MHz NFM and set the squelch to -42 dBFS.");
+    /// one measured on auto is left out ("The assistant tuned to 162.400 MHz NFM."), as is any
+    /// other client's, whose call the mirror does not hold.
     public static func latest(
         for channel: Leyline_V1_Channel, in state: MirrorState, selfClientID: String
     ) -> ChangeNote? {
@@ -114,9 +116,16 @@ public struct ChangeNote: Sendable, Equatable {
         else { return nil }
         var what = phrases(newest.object, in: state)
         if let made, made.seq < newest.seq, made.causedBy.clientID == newest.causedBy.clientID,
-            case .channel = newest.object
+            case .channel(let was, _) = newest.object
         {
-            what = phrases(made.object, in: state) + what
+            // The squelch the tune itself set, from off, is named only when the assistant asked
+            // for that level: an auto squelch is a measurement, not a level anyone chose.
+            let tunesSquelch =
+                was.squelchDb.isNaN
+                && !askedSquelchLevel(channelID: channel.channelID, by: newest.causedBy, in: state)
+            what =
+                phrases(made.object, in: state)
+                + phrases(newest.object, in: state, squelch: !tunesSquelch)
         }
         guard !what.isEmpty else { return nil }
         let who = author(newest.causedBy)
@@ -145,7 +154,33 @@ public struct ChangeNote: Sendable, Equatable {
         let what: String
     }
 
-    static func phrases(_ object: AttributedChange.Object, in state: MirrorState) -> [Phrase] {
+    /// Whether the assistant's call that made `channelID` asked for a squelch level of its own
+    /// (`"squelch": "-42"`) rather than auto, read from the mirror's conversations: the first tool
+    /// call whose result names the channel made it. The contract does not say on the channel
+    /// how its squelch was chosen, and only the assistant's calls are in the mirror, so another
+    /// client's tune never asked, as far as the note can tell.
+    static func askedSquelchLevel(
+        channelID: String, by client: Leyline_V1_ClientInfo, in state: MirrorState
+    ) -> Bool {
+        guard author(client) == "the assistant", !channelID.isEmpty else { return false }
+        for c in state.conversations {
+            for t in c.turns where t.role == .assistant {
+                for call in t.tools where call.resultJson.contains(channelID) {
+                    guard let args = AssistantWords.jsonObject(call.argumentsJson),
+                        case .string(let s)? = args["squelch"]
+                    else { return false }
+                    let level = s.trimmingCharacters(in: .whitespaces).lowercased()
+                    return !level.isEmpty && level != "auto" && level != "off"
+                }
+            }
+        }
+        return false
+    }
+
+    /// The phrases for one change; `squelch: false` leaves a squelch change out.
+    static func phrases(
+        _ object: AttributedChange.Object, in state: MirrorState, squelch: Bool = true
+    ) -> [Phrase] {
         switch object {
         case .made(let made):
             // "tuned to 162.400 MHz NFM": the channel as it is now, since the note shows only
@@ -165,7 +200,7 @@ public struct ChangeNote: Sendable, Equatable {
                 out.append(
                     Phrase(verb: "set", what: "the width to \(hzWords(UInt64(now.bandwidthHz)))"))
             }
-            if squelchMoved(was.squelchDb, now.squelchDb) {
+            if squelch, squelchMoved(was.squelchDb, now.squelchDb) {
                 out.append(
                     now.squelchDb.isNaN
                         ? Phrase(verb: "turned", what: "the squelch off")

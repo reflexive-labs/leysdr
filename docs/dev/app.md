@@ -563,9 +563,13 @@ select a recording from outside the Library's views. `show_place` sets the place
 frequency and mode when another client changed the channel or its radio last, from the mirror's
 `changes`: "The assistant set the squelch to -45 dBFS.", "Another terminal set the mode to AM and
 the width to 25.0 kHz." A channel another client made, which the window follows, reads as a tune
-from the mirror's `made`: "The assistant tuned to 162.400 MHz NFM.", and with the squelch the
-same client set right after, "The assistant tuned to 162.400 MHz NFM and set the squelch to -42
-dBFS." The words and the names are `ley`'s change lines (`whoChanged`): the
+from the mirror's `made`: "The assistant tuned to 162.400 MHz NFM.", and with a later change by
+the same client, "… NFM and set the mode to AM." The squelch a tune sets right after making the
+channel (from off) is named only when the assistant set a level itself: its call that made the
+channel, the first in the mirror's conversations whose result names the channel, asked for one
+(`"squelch": "-42"`), "The assistant tuned to 162.400 MHz NFM and set the squelch to -42 dBFS."
+A squelch measured on auto is not a level anyone chose and is left out, as is a terminal's, whose
+call the mirror does not hold. The words and the names are `ley`'s change lines (`whoChanged`): the
 assistant is the MCP client labelled `assistant`, as the worker's tool server dials. A change is
 shown only while the channel and its radio still hold the values it set, so an unattributed
 change since (the daemon's own) never leaves the note naming a stale value, and the line goes as
