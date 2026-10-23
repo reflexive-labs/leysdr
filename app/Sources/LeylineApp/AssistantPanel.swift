@@ -196,19 +196,24 @@ struct WaitingRow: View {
 }
 
 /// A user turn right-aligned in muted ink; an assistant turn's steps, then its text in secondary
-/// ink, the brightest in the column after the field's own typing, which keeps `ink`.
+/// ink, the brightest in the column after the field's own typing, which keeps `ink`. A stopped
+/// turn ends with a faint `Stopped.`, under the user's message when the assistant had written
+/// nothing yet.
 struct TurnView: View {
     let turn: TurnRow
 
     var body: some View {
         switch turn.role {
         case .user:
-            HStack {
-                Spacer(minLength: Theme.Layout.assistantUserInset)
-                Text(turn.text).font(Theme.Font.body).foregroundStyle(Theme.inkMuted)
-                    .multilineTextAlignment(.trailing)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Spacer(minLength: Theme.Layout.assistantUserInset)
+                    Text(turn.text).font(Theme.Font.body).foregroundStyle(Theme.inkMuted)
+                        .multilineTextAlignment(.trailing)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if turn.stopped { StoppedLine() }
             }
         case .assistant:
             VStack(alignment: .leading, spacing: 6) {
@@ -220,8 +225,16 @@ struct TurnView: View {
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                if turn.stopped { StoppedLine() }
             }
         }
+    }
+}
+
+/// `Stopped.`: the turn ended on Stop, here or from a terminal's Ctrl-C.
+struct StoppedLine: View {
+    var body: some View {
+        Text("Stopped.").font(Theme.Font.aside).foregroundStyle(Theme.inkFaint)
     }
 }
 
@@ -392,11 +405,11 @@ struct AssistantNoticeLine: View {
 /// until then the text stays. Stop shows beside the field while the assistant thinks or runs one
 /// of the app's view tools. The text also comes back when the daemon did not take it.
 /// `TuningKeyGuard` hands Space and the arrows to the field, or typing would mute and tune the
-/// radio through the Tune menu's keys.
+/// radio through the Tune menu's keys. The text is the session's `assistantDraft`, so what was
+/// typed while a card waited is still the draft once the card goes, and Return sends it.
 struct AssistantField: View {
     @Environment(AppSession.self) private var session
     let view: ConversationView?
-    @State private var draft = ""
     @FocusState private var focused: Bool
     /// A message has left `send()` and its reply is not back. `assistantSending` says the same
     /// only once the controller's change is copied to the session, and a second Return in that
@@ -413,12 +426,13 @@ struct AssistantField: View {
     }
 
     var body: some View {
+        @Bindable var session = session
         VStack(alignment: .leading, spacing: 6) {
             if let words = session.assistantUsage.words {
                 Text(words).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
             }
             HStack(spacing: 8) {
-                TextField("Ask the assistant", text: $draft, axis: .vertical)
+                TextField("Ask the assistant", text: $session.assistantDraft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(Theme.Font.body).foregroundStyle(Theme.ink)
                     .lineLimit(1...4)
@@ -438,7 +452,9 @@ struct AssistantField: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
                     .strokeBorder(focused ? Theme.borderFocus : Theme.border))
-            if !canSend, !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if !canSend,
+                !session.assistantDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
                 Text(AssistantWords.returnWaits(view)).font(Theme.Font.valueSmall)
                     .foregroundStyle(Theme.inkFaint)
             }
@@ -447,15 +463,19 @@ struct AssistantField: View {
     }
 
     private func send() {
-        let text = draft
+        let text = session.assistantDraft
         guard canSend, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
         }
-        draft = ""
+        session.assistantDraft = ""
         submitting = true
+        let session = session
         Task {
             // What was typed while the message was on its way stays, under the text that failed.
-            if !(await session.send(text)) { draft = draft.isEmpty ? text : text + "\n" + draft }
+            if !(await session.send(text)) {
+                let typed = session.assistantDraft
+                session.assistantDraft = typed.isEmpty ? text : text + "\n" + typed
+            }
             submitting = false
         }
     }

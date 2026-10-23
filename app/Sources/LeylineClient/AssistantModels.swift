@@ -30,7 +30,11 @@ public struct ConversationView: Sendable, Equatable {
         conversationID = c.conversationID
         state = c.state
         model = [c.provider, c.model].filter { !$0.isEmpty }.joined(separator: " ")
-        turns = c.turns.map(TurnRow.init)
+        turns = c.turns.indices.map { i in
+            var row = TurnRow(c.turns[i])
+            row.stopped = Self.stopped(c, at: i)
+            return row
+        }
         lastChangeAt =
             c.lastTurnAtNs > 0
             ? Date(timeIntervalSince1970: Double(c.lastTurnAtNs) / 1_000_000_000) : nil
@@ -74,6 +78,27 @@ public struct ConversationView: Sendable, Equatable {
     /// starts again after each step, as the terminal's does; `now` when the daemon sent no time.
     public func waitingSince(now: Date) -> Date { lastChangeAt ?? now }
 
+    /// Whether the turn at `i` was stopped, which the contract does not say in a field of its own
+    /// (`docs/dev/assistant.md`, "The loop"): an assistant turn that is done with no text, or
+    /// with a step the stop ended (`stopped`); and a user turn no reply follows, because a turn
+    /// stopped before the worker wrote its own leaves the user's message last or before the
+    /// next one.
+    static func stopped(_ c: Leyline_V1_Conversation, at i: Int) -> Bool {
+        let t = c.turns[i]
+        switch t.role {
+        case .assistant:
+            guard t.done else { return false }
+            let text = t.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty || t.tools.contains { StepRow($0).stateWord == "stopped" }
+        case .user:
+            let next = c.turns.indices.contains(i + 1) ? c.turns[i + 1] : nil
+            if let next { return next.role == .user }
+            return c.state == .conversationIdle
+        default:
+            return false
+        }
+    }
+
     /// The state in one word for the panel's header.
     public var stateWord: String {
         switch state {
@@ -99,6 +124,9 @@ public struct TurnRow: Sendable, Equatable, Identifiable {
     public let text: String
     public let done: Bool
     public let steps: [StepRow]
+    /// The turn was stopped: the panel says `Stopped.` under it, after any steps it took
+    /// (`ConversationView.stopped`).
+    public internal(set) var stopped = false
 
     public init(_ t: Leyline_V1_Turn) {
         id = t.turnID

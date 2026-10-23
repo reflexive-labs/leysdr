@@ -65,7 +65,7 @@ final class AISettingsDaemonTests: XCTestCase {
         XCTAssertEqual(stored.lastFour, "0042")
         XCTAssertEqual(
             AISettings.addedWords(stored),
-            "anthropic key \u{2026}0042 added; the provider accepted it.",
+            "Anthropic key \u{2026}0042 added; the provider accepted it.",
             "the scripted worker accepts the key: \(stored.lastCheck.message)")
         // The pane's line after Add is `addedWords`; the key's text is never in it.
         XCTAssertFalse(AISettings.addedWords(stored).contains(Self.canary))
@@ -122,7 +122,7 @@ final class AISettingsDaemonTests: XCTestCase {
         let row = try XCTUnwrap(AISettings.featureRows(mirror.state.ai).first)
         XCTAssertEqual(row.provider, "anthropic")
         XCTAssertEqual(row.model, "claude-sonnet-5-5")
-        XCTAssertEqual(row.missingKey, "No anthropic key is set yet; add one under Keys.")
+        XCTAssertEqual(row.missingKey, "No Anthropic key is set yet; add one under Keys.")
         XCTAssertFalse(
             AISettings.hasAnyAI(mirror.state.ai), "a model chosen without its key enables nothing")
     }

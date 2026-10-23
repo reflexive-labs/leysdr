@@ -154,7 +154,7 @@ launch), `sizes`, and `app`, the commands in order.
 - `stage: {settings: true}` opens Settings; `snapshot` and `ax` take `window: settings`, `press`
   finds Settings' identifiers, and `state.settings_open` says whether it shows.
 - `pick` chooses an item of a pop-up (a SwiftUI `Picker`) or a segmented control by its title
-  (`{cmd: pick, identifier: settings.ai.usage.period, text: By month}`), without opening its
+  (`{cmd: pick, identifier: settings.ai.feature.assistant.model, text: claude-opus-5-5}`), without opening its
   menu. A `press` on a text field focuses it in its own window, so a Settings field is typed
   into there; a `press` on a disabled element fails (`… is disabled`). ⌘W closes nothing in a
   check run (the app is never active, so File ▸ Close has no key window): close Settings with

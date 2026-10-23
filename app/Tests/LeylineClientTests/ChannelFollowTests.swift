@@ -129,7 +129,7 @@ final class ChannelFollowTests: XCTestCase {
         XCTAssertEqual(st?.attachSink, true, "the window was playing; nothing plays the new one")
         XCTAssertEqual(f.followed?.channelID, "chan_wx")
         XCTAssertEqual(f.floor, 4)
-        XCTAssertNil(f.keptWords(in: s))
+        XCTAssertNil(f.keptRecording(in: s))
 
         // Held now: the same channel is not followed twice.
         XCTAssertNil(step(&f, s, held: "chan_wx"))
@@ -193,13 +193,23 @@ final class ChannelFollowTests: XCTestCase {
         XCTAssertEqual(st?.keepFrom, true)
         XCTAssertEqual(st?.detachSink, "sink_own", "the kept channel stops playing")
         XCTAssertEqual(st?.attachSink, true)
+        // The line names the recording by its frequency and its plan channel, or the bookmark
+        // on it, and its Stop ends that job.
+        let kept = f.keptRecording(in: s)
+        XCTAssertEqual(kept?.words, "Still recording 162.550 MHz WX1")
+        XCTAssertEqual(kept?.jobID, "job_rec")
+        XCTAssertEqual(kept?.hz, 162_550_000)
+        let named = Bookmark(id: "bm_1", name: "NOAA Seattle", hz: 162_550_000, mode: .nfm)
+        let elsewhere = Bookmark(id: "bm_2", name: "Calling", hz: 146_520_000, mode: .nfm)
         XCTAssertEqual(
-            f.keptWords(in: s), "Your channel on 162.550 MHz stays open while it records.")
+            f.keptRecording(in: s, bookmarks: [elsewhere, named])?.words,
+            "Still recording 162.550 MHz NOAA Seattle")
         XCTAssertNil(f.keptToEnd(in: s), "still recording")
 
         var done = recording(hz: 162_550_000)
         done.state = .completed
         s.apply(event(8, .job(done), by: app))
+        XCTAssertNil(f.keptRecording(in: s), "the line goes with the recording")
         XCTAssertEqual(f.keptToEnd(in: s), "chan_own")
         XCTAssertNil(f.kept)
         XCTAssertNil(f.keptToEnd(in: s))
@@ -292,29 +302,83 @@ final class ChannelFollowTests: XCTestCase {
         XCTAssertNil(f.lost("chan_t"))
     }
 
+    /// A conversation whose one assistant turn made `chan_wx` with a tune taking `args`.
+    func conversation(tune args: String) -> Leyline_V1_Conversation {
+        var call = Leyline_V1_ToolCall()
+        call.callID = "c1"
+        call.tool = "tune"
+        call.argumentsJson = args
+        call.state = .toolCallDone
+        call.resultJson = #"{"channel":{"channelId":"chan_wx"}}"#
+        var t = Leyline_V1_Turn()
+        t.turnID = "t2"
+        t.role = .assistant
+        t.tools = [call]
+        var c = Leyline_V1_Conversation()
+        c.conversationID = "conv_1"
+        c.state = .conversationIdle
+        c.turns = [t]
+        return c
+    }
+
     func testTheNoteNamesWhoTuned() {
         var s = windowListening()
-        s.apply(
-            event(4, .channel(channel("chan_wx", offset: 400_000, by: assistant)), by: assistant))
+        // A channel is made with its squelch off (`CreateChannel` takes none); a tune sets it
+        // right after.
+        var made = channel("chan_wx", offset: 400_000, by: assistant)
+        made.squelchDb = .nan
+        s.apply(event(4, .channel(made), by: assistant))
         XCTAssertEqual(
             ChangeNote.latest(for: s.channel("chan_wx")!, in: s, selfClientID: "app_self")?.text,
             "The assistant tuned to 162.400 MHz NFM.")
-        // The same client's squelch right after reads as one sentence.
-        var measured = channel("chan_wx", offset: 400_000, by: assistant)
+        // The same client's squelch right after: a measured one (auto) is not a level the
+        // assistant chose, so the note leaves it out.
+        var measured = made
         measured.squelchDb = -42
         s.apply(event(5, .channel(measured), by: assistant))
         XCTAssertEqual(
             ChangeNote.latest(for: s.channel("chan_wx")!, in: s, selfClientID: "app_self")?.text,
+            "The assistant tuned to 162.400 MHz NFM.")
+        s.apply(event(6, .conversation(conversation(tune: #"{"frequency":"wx2"}"#))))
+        XCTAssertEqual(
+            ChangeNote.latest(for: s.channel("chan_wx")!, in: s, selfClientID: "app_self")?.text,
+            "The assistant tuned to 162.400 MHz NFM.")
+        s.apply(
+            event(7, .conversation(conversation(tune: #"{"frequency":"wx2","squelch":"auto"}"#))))
+        XCTAssertEqual(
+            ChangeNote.latest(for: s.channel("chan_wx")!, in: s, selfClientID: "app_self")?.text,
+            "The assistant tuned to 162.400 MHz NFM.")
+        // A level the call asked for is the assistant's own, and reads as one sentence.
+        s.apply(
+            event(8, .conversation(conversation(tune: #"{"frequency":"wx2","squelch":"-42"}"#))))
+        XCTAssertEqual(
+            ChangeNote.latest(for: s.channel("chan_wx")!, in: s, selfClientID: "app_self")?.text,
             "The assistant tuned to 162.400 MHz NFM and set the squelch to -42 dBFS.")
-        // A terminal's.
-        s.apply(event(6, .channel(channel("chan_t", offset: 100_000, by: terminal)), by: terminal))
+        // A level set later, by a call of its own, is always named.
+        var later = measured
+        later.squelchDb = -35
+        s.apply(event(9, .channel(later), by: assistant))
+        s.apply(event(10, .conversation(conversation(tune: #"{"frequency":"wx2"}"#))))
+        XCTAssertEqual(
+            ChangeNote.latest(for: s.channel("chan_wx")!, in: s, selfClientID: "app_self")?.text,
+            "The assistant tuned to 162.400 MHz NFM and set the squelch to -35 dBFS.")
+        // A terminal's, whose squelch the mirror cannot tell from auto.
+        var terminalMade = channel("chan_t", offset: 100_000, by: terminal)
+        terminalMade.squelchDb = .nan
+        s.apply(event(11, .channel(terminalMade), by: terminal))
+        XCTAssertEqual(
+            ChangeNote.latest(for: s.channel("chan_t")!, in: s, selfClientID: "app_self")?.text,
+            "Another terminal tuned to 162.100 MHz NFM.")
+        var terminalSquelch = terminalMade
+        terminalSquelch.squelchDb = -50
+        s.apply(event(12, .channel(terminalSquelch), by: terminal))
         XCTAssertEqual(
             ChangeNote.latest(for: s.channel("chan_t")!, in: s, selfClientID: "app_self")?.text,
             "Another terminal tuned to 162.100 MHz NFM.")
         // The window's own write takes it away.
         var mine = channel("chan_wx", offset: 400_000, by: assistant)
         mine.squelchDb = -50
-        s.apply(event(7, .channel(mine), by: app))
+        s.apply(event(13, .channel(mine), by: app))
         XCTAssertNil(
             ChangeNote.latest(for: s.channel("chan_wx")!, in: s, selfClientID: "app_self"))
     }

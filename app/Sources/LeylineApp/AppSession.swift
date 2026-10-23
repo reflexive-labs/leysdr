@@ -170,6 +170,10 @@ final class AppSession {
             }
         }
     }
+    /// What is typed in the assistant's field and not sent yet. Held here rather than in the
+    /// field's own state, so it outlives the field being made again: once a question card was
+    /// answered the field showed the text while its state had lost it, and Return sent nothing.
+    var assistantDraft = ""
     /// Where a view tool centred the zoomed waterfall, while the radio stays tuned where it was
     /// then (`ViewFocus`); nil centres the window on the tuned frequency, as it always has.
     private(set) var viewFocus: ViewFocus?
@@ -4167,7 +4171,7 @@ final class AppSession {
             settingsNotice = AISettings.addedWords(c)
             return true
         } catch {
-            settingsNotice = aiFailed("add the \(provider) key", error)
+            settingsNotice = aiFailed("add the \(ProviderCatalog.name(provider)) key", error)
             return false
         }
     }
@@ -4185,7 +4189,7 @@ final class AppSession {
             log("ai", "\(AISettings.keyWords(c)) checked: \(KeyOutcome(c.lastCheck).word)")
             settingsNotice = AISettings.checkedWords(c)
         } catch {
-            settingsNotice = aiFailed("check the \(provider) key", error)
+            settingsNotice = aiFailed("check the \(ProviderCatalog.name(provider)) key", error)
         }
     }
 
@@ -4201,9 +4205,10 @@ final class AppSession {
         do {
             _ = try await daemon.credentials.deleteCredential(ref)
             log("ai", "\(provider) key removed")
-            settingsNotice = "\(provider) key removed; anything that was using it has stopped."
+            settingsNotice =
+                "\(ProviderCatalog.name(provider)) key removed; anything that was using it has stopped."
         } catch {
-            settingsNotice = aiFailed("remove the \(provider) key", error)
+            settingsNotice = aiFailed("remove the \(ProviderCatalog.name(provider)) key", error)
         }
     }
 
@@ -4221,8 +4226,7 @@ final class AppSession {
         do {
             let got = try await daemon.credentials.setFeatureModel(fm)
             log("ai", "\(got.feature) now calls \(got.provider) \(got.model)")
-            settingsNotice =
-                "\(AISettings.title(got.feature)) now calls \(got.provider) \(got.model)."
+            settingsNotice = AISettings.nowCallsWords(got)
         } catch {
             let what = "choose the \(AISettings.title(feature).lowercased()) model"
             settingsNotice = aiFailed(what, error)
@@ -4265,8 +4269,18 @@ final class AppSession {
     }
 
     /// The inspector's line while the window follows another client's channel and its own stays
-    /// for a recording (`ChannelFollow.keptWords`).
-    var followKeptWords: String? { follow.keptWords(in: state) }
+    /// for a recording (`ChannelFollow.keptRecording`).
+    var keptRecording: ChannelFollow.KeptRecording? {
+        follow.keptRecording(in: state, bookmarks: bookmarks.list)
+    }
+
+    /// The kept line's Stop: `CancelJob` on the recording that keeps the window's old channel
+    /// open, as the Record switch's off does; once the job ends the window ends that channel
+    /// (`followOtherClients`).
+    func stopKeptRecording() async {
+        guard let k = keptRecording else { return }
+        await stopRecording(k.jobID, frequencyHz: k.hz, mode: k.mode)
+    }
 
     /// The inspector's line under the channel's parameters: the newest change to the tuned
     /// channel when another client made it (`ChangeNote`).

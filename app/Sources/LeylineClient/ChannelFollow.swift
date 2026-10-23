@@ -295,36 +295,63 @@ public struct ChannelFollow: Sendable, Equatable {
         return f
     }
 
-    /// The inspector's line while the window follows another channel and its own records:
-    /// "Your channel on 462.5625 MHz stays open while it records."
-    public func keptWords(in state: MirrorState) -> String? {
-        guard let k = kept, state.channel(k.channelID) != nil else { return nil }
-        return "Your channel on \(BookmarkNaming.frequencyWords(k.hz)) stays open while it records."
+    /// The recording that keeps the window's own channel open while the window follows another:
+    /// the inspector's `Still recording 146.520 MHz Calling · Stop`, whose Stop ends `jobID`.
+    public struct KeptRecording: Sendable, Equatable {
+        public var jobID: String
+        public var hz: UInt64
+        public var mode: Leyline_V1_DemodMode
+        /// "Still recording 146.520 MHz Calling": the frequency, then the bookmark on it, else
+        /// the plan channel it sits on, else nothing more.
+        public var words: String
     }
 
-    /// Whether a recording runs on `channel`: an active record job that borrowed it, or one in
+    /// The kept channel's recording while it runs, named by the bookmark on its frequency (the
+    /// first of `bookmarks`, as the inspector takes the tuned one), else its plan channel; nil
+    /// when no channel is kept or nothing records on it any more.
+    public func keptRecording(in state: MirrorState, bookmarks: [Bookmark] = [])
+        -> KeptRecording?
+    {
+        guard let k = kept, let ch = state.channel(k.channelID),
+            let job = Self.recordingJob(on: ch, tuning: k, captureID: ch.captureID, in: state)
+        else { return nil }
+        let name = bookmarks.first { $0.hz == k.hz }?.name ?? Plans.name(at: k.hz)
+        let words = ["Still recording", BookmarkNaming.frequencyWords(k.hz), name]
+            .compactMap { $0 }.joined(separator: " ")
+        return KeptRecording(jobID: job.jobID, hz: k.hz, mode: k.mode, words: words)
+    }
+
+    /// Whether a recording runs on `channel` (`recordingJob`).
+    static func recording(
+        on channel: Leyline_V1_Channel, tuning: Kept?, captureID: String?, in state: MirrorState
+    ) -> Bool {
+        recordingJob(on: channel, tuning: tuning, captureID: captureID, in: state) != nil
+    }
+
+    /// The recording that runs on `channel`: an active record job that borrowed it, or one in
     /// the frequency form on its frequency and mode (the window's Record switch starts that
     /// form; `Recordings.activeJob`) riding the window's capture or asking for its device. A
     /// job on another radio at the same frequency is not this channel's. `tuning` is the
     /// channel's frequency before a move took it out of the capture.
-    static func recording(
+    static func recordingJob(
         on channel: Leyline_V1_Channel, tuning: Kept?, captureID: String?, in state: MirrorState
-    ) -> Bool {
-        let borrowed = state.jobs.contains {
+    ) -> Leyline_V1_Job? {
+        if let borrowed = state.jobs.first(where: {
             $0.isActive && $0.recordConfig?.channelID == channel.channelID
+        }) {
+            return borrowed
         }
-        if borrowed { return true }
         let hz =
             tuning.flatMap { $0.channelID == channel.channelID ? $0.hz : nil }
             ?? state.frequencyHz(of: channel)
-        guard let hz else { return false }
+        guard let hz else { return nil }
         let capID = captureID ?? channel.captureID
         let device = state.capture(capID)?.deviceID
         let riding = Set(Recordings.jobs(riding: capID, in: state).map(\.jobID))
         let here = state.jobs.filter { j in
             riding.contains(j.jobID) || (device != nil && j.recordConfig?.deviceID == device)
         }
-        return Recordings.activeJob(in: here, frequencyHz: hz, mode: channel.mode) != nil
+        return Recordings.activeJob(in: here, frequencyHz: hz, mode: channel.mode)
     }
 }
 

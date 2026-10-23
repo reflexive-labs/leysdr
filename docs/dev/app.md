@@ -116,8 +116,10 @@ follows), so a channel the window moved away from is not followed again. The win
 ownership. It ends its own channel, unless a recording runs on it (a running record job that
 borrowed the channel, or one on its frequency and mode, the frequency read before the move that took
 it out of the capture): then the channel stays, the window's sink leaves it, the inspector says
-`Your channel on 162.550 MHz stays open while it records.`, and the window ends it when the
-recording stops. A recording counts only when it rides the window's capture or asks for its device;
+`Still recording 162.550 MHz WX1 · Stop` (the bookmark on the frequency, else its plan channel;
+`ChannelFollow.keptRecording`), and the window ends the channel when the recording stops. The
+line's Stop (`inspector.kept.stop`) is `CancelJob` on that recording, as the Record switch's off
+is, so nothing else in the window has to reach a recording it no longer shows. A recording counts only when it rides the window's capture or asks for its device;
 one on another radio at the same frequency does not. The audio moves by sink, not by channel. A
 `Sink` names no owner, so the window holds the id of the sink it attached (`heldSink`, a
 `HeldObject` like the capture and channel), and mute, volume, a sweep's pause and a part's playback
@@ -432,7 +434,12 @@ the window with the same `AppSession` in its environment. `SettingsView` is the 
 pane, one today, AI. It is forced dark with `.preferredColorScheme(.dark)`, as the main window is,
 whatever the system's appearance: `Theme`'s colours are literals drawn for a dark ground, and a
 Settings window that followed a light system would put that ink on a light ground. Giving every
-token a light value is the larger change and waits for a pane that needs it.
+token a light value is the larger change and waits for a pane that needs it. The pane's controls
+take the palette by role rather than the system's blue: a text field is `raised` with a `border`
+edge that is `borderFocus` while it has the focus, and no system focus ring; the usage period is
+two plain buttons drawn as the toolbar's `Radio | Library` switch, because a segmented `Picker`'s
+selected segment is the system's accent; and anything the system still tints takes `inkTertiary`,
+as the volume slider does. The tab above the pane is the system's and stays as macOS draws it.
 
 **The AI pane** (`AISettingsView`) renders the mirror's `ai` and `usage` through the façade's rows
 in `AISettings.swift` and writes through four session calls, each one unary RPC as recordings and
@@ -445,7 +452,11 @@ over the waterfall, where a person in Settings would not see it. The key typed i
 and nowhere else: not in the session, not in a log line. The field clears the moment Add is
 pressed and gets the key back only if the daemon did not store it, so a mistyped key can be
 corrected. It also clears when a window closes, on `NSWindow.willCloseNotification`, because
-`onDisappear` is not reliably sent to a `Settings` scene's content when its window closes.
+`onDisappear` is not reliably sent to a `Settings` scene's content when its window closes. The
+field opts out of AutoFill with a content type of the app's own (`com.leysdr.api-key`), which no
+AutoFill source answers: as a plain secure field it read as a password one, the system opened its
+password list at it (1Password's among them), and closing Settings with the field focused brought
+the window straight back to show the list.
 
 The pane has three groups. **Keys** lists each key with its provider, label, last four characters,
 when it was added, last used and last checked, the check's outcome (`good` accepted, `recording`
@@ -460,6 +471,9 @@ the endpoint's host when the key has one; and "nothing leaves the Mac" for an on
 **Usage** is a table by UTC day since the day 30 days back (`ley ai usage`'s default) or by month
 over the whole ledger, summed over jobs and conversations as `ley ai usage` sums them, its empty
 columns left out, with a total row and the note that the numbers are what the workers reported.
+The pane names a provider as its rows do, in its sentences too (`Anthropic key …0042 added`,
+"Remove the Anthropic key?", "No OpenAI-compatible key is set yet"; `ProviderCatalog.name`);
+`ley ai` keeps the ids (`anthropic`, `openai`), which are what `ley ai add` and `ley ai use` take.
 
 With no key and no on-device engine set, the pane shows what each feature does and would send,
 and the Add form, and nothing else; `AppSession.hasAnyAI` is that flag, and any AI control
@@ -517,7 +531,11 @@ after each step (`cli-style.md`, "A wait says so, and leaves nothing behind"). A
 it is drawn only once the wait has gone on for 300 ms, so an answer that comes straight back does
 not flicker it; unlike a terminal's progress line, it has a spinner, which a window can draw
 without redrawing text. A running step is its own sign, so the row is absent then, and
-nothing of it stays once the turn moves on. A call waiting for approval is a card with the
+nothing of it stays once the turn moves on. A stopped turn ends with `Stopped.` in `inkFaint`,
+after any steps it took (`TurnRow.stopped`). The contract has no field for a stop, so the rows
+read it from the transcript (`assistant.md`, "The loop"): an assistant turn done with no text or
+with a step the stop ended, or a user's message that no reply follows, because a turn stopped
+before the worker wrote its own leaves the message last. A call waiting for approval is a card with the
 question, the gate's reason (`assistant.md`, "The gate") and a button per answer the call offers
 (`PendingQuestion.offers`): Decline, Allow for this conversation when the call can be granted for
 the rest of the conversation (never a delete or a cancel of another client's job), and Allow, none
@@ -534,7 +552,9 @@ or lost (an over or lost one is replaced by a new one), and no message is on its
 Return does nothing and the text stays, and while the field holds text a line under it says what
 Return waits for (`AssistantWords.returnWaits`): `Return sends once the assistant is done.`, or
 `Return sends once you have answered.` while a question card shows. Return does not queue the
-message: once the turn ends, Return sends it. The field also keeps its own flag from Return until
+message: once the turn ends, Return sends it. The text is the session's `assistantDraft`, not the
+field's own state, so it outlives the field being made again: what was typed while a card waited
+is still the draft once the card goes. The field also keeps its own flag from Return until
 the daemon replies, because `assistantSending` reaches the view only once the controller's change
 is copied to the session, and a second Return in that gap would send the message twice. A message
 the daemon did not take goes back into the
@@ -566,9 +586,13 @@ select a recording from outside the Library's views. `show_place` sets the place
 frequency and mode when another client changed the channel or its radio last, from the mirror's
 `changes`: "The assistant set the squelch to -45 dBFS.", "Another terminal set the mode to AM and
 the width to 25.0 kHz." A channel another client made, which the window follows, reads as a tune
-from the mirror's `made`: "The assistant tuned to 162.400 MHz NFM.", and with the squelch the
-same client set right after, "The assistant tuned to 162.400 MHz NFM and set the squelch to -42
-dBFS." The words and the names are `ley`'s change lines (`whoChanged`): the
+from the mirror's `made`: "The assistant tuned to 162.400 MHz NFM.", and with a later change by
+the same client, "… NFM and set the mode to AM." The squelch a tune sets right after making the
+channel (from off) is named only when the assistant set a level itself: its call that made the
+channel, the first in the mirror's conversations whose result names the channel, asked for one
+(`"squelch": "-42"`), "The assistant tuned to 162.400 MHz NFM and set the squelch to -42 dBFS."
+A squelch measured on auto is not a level anyone chose and is left out, as is a terminal's, whose
+call the mirror does not hold. The words and the names are `ley`'s change lines (`whoChanged`): the
 assistant is the MCP client labelled `assistant`, as the worker's tool server dials. A change is
 shown only while the channel and its radio still hold the values it set, so an unattributed
 change since (the daemon's own) never leaves the note naming a stale value, and the line goes as
@@ -886,7 +910,7 @@ and the next line still runs; a line with no `id` has no answer file, so it is o
 |---|---|---|
 | `stage` | `stage`: a stage object as above (`settle` is slept, `window` resizes) | `result.applied`: the steps, as the log lines give them |
 | `snapshot` | `settle`: seconds to wait first, default 0; `window`: `main` (the default) or `settings` | `out/<id>.png`, with the popover and the sheet open over the window drawn in at their places (a menu that is open is not); `result`: `scale`, `width_pt`, `height_pt` and `regions`, as `regions.json` gives them, `{}` for `regions` of the Settings window |
-| `state` | | `result`: `place`, `tuned_hz`, `mode`, `bandwidth_hz`, `channel_id`, `capture_id`, `band`, `bookmark`, `open_rows`, `filter_query`, `inspector_shown`, `assistant_shown`, `zoom`, `focused` (the focused control's identifier, else its role and label), `notices` (every message the window shows), `popover` (`channels:<row>`, `device_menu` or empty), `selected_recording_channel`, `selected_part`, `heard` (the tone the tuned channel last heard, as the inspector writes it: `PL 100.0`), `hits` (the last sweep's hits as its row lists them, strongest first), `muted` (the transport's speaker), `volume` (the window's own sink's, 0 to 1), `sink` (`own`, `other` when another client's sink plays the channel, `none`), `window` (`width`, `height`, `min_width`, `min_height` in points, toolbar included), `filter_caret` (the insertion point in the sidebar's filter while it has the focus), `settings_open`, `alert` (the sheet over the main window or Settings: `title`, `message`, `buttons` in order), `view_window` (`low_hz` and `high_hz`, the frequencies at the charts' two edges), `assistant` (while its panel shows: `turns`, each `role` and `text`; `state`, the header's word; `thinking`; `input`, the field's text; `input_focused`; `stop_shown`; `buttons`, each `id`, `title` and `enabled`), `tooltip` (the help of what the last `hover` rested on, else the frequency under the pointer while it is over a chart), `transport` (the bar's words as drawn: `tuning`, the field's digits; `squelch_caption`, and `squelch_caption_short` when it is the short one; `squelch_words`, the three under the track joined by ` · `, empty once a narrow bar drops them; `null` without a bar); every key is present, `null` when it has no value |
+| `state` | | `result`: `place`, `tuned_hz`, `mode`, `bandwidth_hz`, `channel_id`, `capture_id`, `band`, `bookmark`, `open_rows`, `filter_query`, `inspector_shown`, `assistant_shown`, `zoom`, `focused` (the focused control's identifier, else its role and label), `notices` (every message the window shows), `popover` (`channels:<row>`, `device_menu` or empty), `selected_recording_channel`, `selected_part`, `heard` (the tone the tuned channel last heard, as the inspector writes it: `PL 100.0`), `hits` (the last sweep's hits as its row lists them, strongest first), `muted` (the transport's speaker), `volume` (the window's own sink's, 0 to 1), `sink` (`own`, `other` when another client's sink plays the channel, `none`), `window` (`width`, `height`, `min_width`, `min_height` in points, toolbar included), `filter_caret` (the insertion point in the sidebar's filter while it has the focus), `settings_open`, `alert` (the sheet over the main window or Settings: `title`, `message`, `buttons` in order), `view_window` (`low_hz` and `high_hz`, the frequencies at the charts' two edges), `assistant` (while its panel shows: `turns`, each `role`, `text` and `stopped`; `state`, the header's word; `thinking`; `input`, the field's text; `input_focused`; `stop_shown`; `buttons`, each `id`, `title` and `enabled`), `tooltip` (the help of what the last `hover` rested on, else the frequency under the pointer while it is over a chart), `transport` (the bar's words as drawn: `tuning`, the field's digits; `squelch_caption`, and `squelch_caption_short` when it is the short one; `squelch_words`, the three under the track joined by ` · `, empty once a narrow bar drops them; `null` without a bar); every key is present, `null` when it has no value |
 | `ax` | `window`: `main` (the default; its popovers and sheets are in its tree), `settings` (the Settings window, while it is open: the stage's `settings` or the key `cmd+,` opens it), `popover` (the main window's open popover alone) or `sheet` (the sheet over the main window, else over Settings, alone) | `out/<id>.ax.txt`: the window's accessibility tree, one element per line indented two spaces a level: role, `id=` and the identifier when there is one, the label, `value=` when there is one (quoted, with `\`, `"` and newlines escaped), the frame in points from the window's top-left corner as the regions are measured (a text field's left edge and width only, `(38,– 161×–)`, because the AppKit field's height follows its text, 14 pt empty and 13 with text in the inspector's fields, while the row it sits in keeps its height), `enabled` or `disabled`; `result`: as `snapshot`'s, so a reader can tell which elements lie in which region, and `{}` for the Settings window or a sheet over it; a popover or a sheet alone is framed from its window's corner |
 | `key` | `keys`: `cmd+g`, `shift+cmd+left`, `escape`, `return`, `down`… | a key down and up |
 | `type` | `text` | a key down and up for each character |
@@ -947,11 +971,11 @@ them and nothing else: an identifier changes no layout and no behaviour.
 | `spectrum.` | `maxhold`, `clear` |
 | `tuning.` | `field` (the frequency's digits), `up`, `down` |
 | `transport` | the bar under the Radio; `.mute`, `.mode`, `.width`, `.squelch` with `.squelch.track`, `.volume` |
-| `inspector` | the Radio's inspector; its groups `.header`, `.identity`, `.readings`, `.audio`, `.log`, `.measurements`; its controls `.rename`, `.tone`, `.note`, `.revert`, `.save`, `.tuneinside`, `.record`, `.log.play` (a kept row's ▶ or ■; every row's is the same, and `press` takes the newest), `.measurements.toggle` |
+| `inspector` | the Radio's inspector; its groups `.header`, `.identity`, `.readings`, `.audio`, `.log`, `.measurements`; its controls `.rename`, `.tone`, `.note`, `.revert`, `.save`, `.tuneinside`, `.record`, `.kept.stop` (the Stop of `Still recording …`), `.log.play` (a kept row's ▶ or ■; every row's is the same, and `press` takes the newest), `.measurements.toggle` |
 | `library.` | `sidebar`, `search`, `channel.<hz>`, `page`, `page.record`, `page.tune`, `day.<day>` (an EARLIER day's line) and `day.<day>.play`, `part.<n>` (counted from 0 down the page, as `select_part` counts), `inspector`, `inspector.playall`, `inspector.finder`, `inspector.delete` |
 | `player` | the Library's bar; `.previous`, `.play`, `.next`, `.volume` |
 | `assistant.` | `panel`, `new`, `input`, `stop`, `settings`, `decline`, `allow`, `allow.conversation`, `step.<call id>` (a step's row, which opens and closes it, by the id the daemon gave its tool call: `step.c1`) |
-| `settings.ai` | the Settings window's AI pane; `.key.<provider>` with `.check` and `.remove`, `.add` with `.add.provider`, `.add.label`, `.add.key` and `.add.endpoint`, `.feature.<feature>` with `.provider` and `.model`, `.usage.period`, `.notice.close` |
+| `settings.ai` | the Settings window's AI pane; `.key.<provider>` with `.check` and `.remove`, `.add` with `.add.provider`, `.add.label`, `.add.key` and `.add.endpoint`, `.feature.<feature>` with `.provider` and `.model`, `.usage.period` with `.day` and `.month`, `.notice.close` |
 
 A region or a row is made an element of its own before it is named (`identifiedGroup`, in
 `AccessibilityTree.swift`), because an identifier on a stack that is not an element is given to

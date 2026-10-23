@@ -587,7 +587,7 @@ scenes:
       - {cmd: ax, name: settings, window: settings}
       - {cmd: press, identifier: settings.ai.key.anthropic.remove}
       - {cmd: wait, seconds: 1}
-      - {cmd: state, expect: {alert.title: "Remove the anthropic key?", alert.message: "Every job and conversation using it stops.", alert.buttons.0: Cancel, alert.buttons.1: Remove}}
+      - {cmd: state, expect: {alert.title: "Remove the Anthropic key?", alert.message: "Every job and conversation using it stops.", alert.buttons.0: Cancel, alert.buttons.1: Remove}}
       - {cmd: ax, name: sheet, window: sheet}
       - {cmd: snapshot, name: sheet, window: settings}
       - {cmd: press, identifier: alert.cancel}
@@ -676,7 +676,9 @@ scenes:
       - {cmd: ax, name: typed, window: settings}
       - {cmd: press, identifier: settings.ai.add}
       - {cmd: ax, name: adding, window: settings}
-      - {cmd: wait, seconds: 2}
+      # The pane's words name the provider as its rows do; `ley ai` keeps the ids
+      # (docs/plans/app.md, MC-1c).
+      - {cmd: wait, seconds: 2, expect_log: ["settings: Anthropic key …0042 added", "!settings: anthropic key"]}
       - {cmd: snapshot, name: added, window: settings}
       - {cmd: ax, name: added, window: settings}
       - {cmd: ax, name: main-key}
@@ -686,6 +688,7 @@ scenes:
       # a model is entered, the sentence under the pickers following the provider shown; back
       # to Anthropic, the one the daemon holds, drops the field and rewrites nothing.
       - {cmd: pick, identifier: settings.ai.feature.assistant.model, text: claude-opus-5-5}
+      - {cmd: wait, seconds: 1, expect_log: "settings: Assistant now calls Anthropic claude-opus-5-5\\."}
       - {cmd: ley, args: [ai, --json], expect_stdout: '"provider":"anthropic", "model":"claude-opus-5-5"'}
       - {cmd: pick, identifier: settings.ai.feature.assistant.provider, text: OpenAI-compatible}
       - {cmd: ax, name: typedmodel, window: settings}
@@ -713,17 +716,20 @@ scenes:
       - {cmd: ley, args: [ask, where am i]}
       - {cmd: wait, seconds: 1}
       - {cmd: snapshot, name: usage, window: settings}
-      - {cmd: pick, identifier: settings.ai.usage.period, text: By month}
+      # The period switch is drawn in the palette, as the toolbar's Radio | Library switch is,
+      # not as the system's blue segmented control (docs/plans/app.md, MC-1c).
+      - {cmd: press, identifier: settings.ai.usage.period.month}
+      - {cmd: snapshot, name: bymonth, window: settings}
       # Remove asks; the row, Features and Usage leave, and with them the open column, the
       # toolbar's toggle and the menu item.
       - {cmd: stage, stage: {assistant: true}}
       - {cmd: state, expect: {assistant_shown: true}}
       - {cmd: press, identifier: settings.ai.key.anthropic.remove}
       - {cmd: wait, seconds: 1}
-      - {cmd: state, expect: {alert.title: "Remove the anthropic key?"}}
+      - {cmd: state, expect: {alert.title: "Remove the Anthropic key?"}}
       - {cmd: ax, name: removesheet, window: sheet}
       - {cmd: press, identifier: alert.remove}
-      - {cmd: wait, seconds: 1}
+      - {cmd: wait, seconds: 1, expect_log: "settings: Anthropic key removed"}
       - {cmd: ax, name: removed, window: settings}
       - {cmd: state, expect: {assistant_shown: false, assistant: null}}
       - {cmd: ax, name: main-removed}
@@ -731,11 +737,18 @@ scenes:
       # A closed window clears a typed key, so Add is disabled once it is open again. (⌘W
       # closes no window in a check run: the app is never active, so File ▸ Close has no key
       # window; the stage closes it as its button would.)
+      # The key's field opts out of AutoFill (docs/plans/app.md, MC-1c): focused and holding
+      # text, its tree has no AutoFill list, and Settings closed with the focus still there stays
+      # closed, where the list once brought it straight back.
       - {cmd: press, identifier: settings.ai.add.key}
       - {cmd: type, text: sk-made-up-0043}
-      - {cmd: press, identifier: settings.ai.add.label}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {focused: settings.ai.add.key, settings_open: true}}
+      - {cmd: ax, name: keyfocused, window: settings}
       - {cmd: stage, stage: {settings: false}}
       - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {settings_open: false}}
+      - {cmd: wait, seconds: 2}
       - {cmd: state, expect: {settings_open: false}}
       - {cmd: menu, menu: "Leyline>Settings..."}
       - {cmd: wait, seconds: 1}
@@ -749,7 +762,7 @@ scenes:
       - {cmd: type, text: sk-made-up-0044}
       - {cmd: press, identifier: settings.ai.add.label}
       - {cmd: press, identifier: settings.ai.add}
-      - {cmd: wait, seconds: 2}
+      - {cmd: wait, seconds: 2, expect_log: "settings: Could not add the Anthropic key: the daemon is not running\\."}
       - {cmd: ax, name: refused, window: settings}
       - {cmd: daemon, op: start}
       - {cmd: wait, seconds: 3}
@@ -840,11 +853,13 @@ scenes:
       - {cmd: press, identifier: assistant.stop}
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {assistant.thinking: false, assistant.stop_shown: false, assistant.input: next one}}
+      # The stopped turn says `Stopped.` under the message it answered (docs/plans/app.md, MC-1c).
+      - {cmd: state, expect: {assistant.turns.4.text: "line one\nline two", assistant.turns.5.role: assistant, assistant.turns.5.stopped: true, assistant.turns.3.stopped: false}}
       - {cmd: ax, name: stopped}
       - {cmd: press, identifier: assistant.input}
       - {cmd: key, keys: return}
       - {cmd: wait, seconds: 2}
-      - {cmd: state, expect: {assistant.input: "", assistant.turns.6.text: next one, assistant.turns.7.text: Here is the next one.}}
+      - {cmd: state, expect: {assistant.input: "", assistant.turns.5.stopped: true, assistant.turns.6.text: next one, assistant.turns.7.text: Here is the next one., assistant.turns.7.stopped: false}}
       - {cmd: snapshot, name: later}
       # ⌘2 and ⌘1 keep the transcript and the field's text.
       - {cmd: type, text: draft kept}
@@ -930,8 +945,15 @@ scenes:
       - {cmd: state, expect: {assistant.state: waiting for you, assistant.input: then stop, assistant.buttons.4.title: "→ delete_recording job_none, asks", assistant.buttons.5.id: assistant.decline, assistant.buttons.5.enabled: true, assistant.buttons.6.id: assistant.allow, assistant.buttons.6.enabled: true}}
       - {cmd: press, identifier: assistant.decline}
       - {cmd: wait, seconds: 2}
-      - {cmd: state, expect: {assistant.state: ready}}
+      - {cmd: state, expect: {assistant.state: ready, assistant.input: then stop}}
+      # What was typed while the card waited is still the draft once the card has gone, and
+      # Return sends all of it (docs/plans/app.md, MC-1c).
+      - {cmd: press, identifier: assistant.input}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {assistant.input: "", assistant.turns.6.text: then stop, assistant.turns.7.text: Stopping there.}}
       - {cmd: file, path: ai/record.jsonl, contains: remove the APRS bookmark}
+      - {cmd: file, path: ai/record.jsonl, contains: then stop}
 
   # The app's view tools (docs/plans/app.md, the assistant panel): the column opened in a narrow
   # window widens the window rather than squeezing the canvas, and the window's minimum grows by
@@ -995,7 +1017,9 @@ scenes:
   # With Record transmissions on for it, the window's panel tuning the club repeater moves the
   # readout, the inspector and the log there, says who tuned and with what squelch, and keeps
   # the recording's channel open with a line saying so; then `ley ask --continue` from a
-  # terminal tunes the evening net and the window follows that too.
+  # terminal tunes the evening net and the window follows that too, its note leaving out the
+  # squelch it measured on auto. Last the line's Stop ends the recording, and the window the
+  # old channel.
   - name: follow-assistant
     covers: [InspectorView.swift, InspectorGroups.swift, AssistantPanel.swift, ChannelFollow.swift,
       ChangeNote.swift, AssistantController.swift, Transmissions.swift]
@@ -1020,6 +1044,11 @@ scenes:
       - {cmd: key, keys: return}
       - {cmd: wait, seconds: 4}
       - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater}}
+      # The panel's tune asked for -42 dBFS, a level of the assistant's own, so the note names it
+      # (docs/plans/app.md, MC-1c).
+      - {cmd: state, expect: {notices.0: "The assistant tuned to 146.940 MHz NFM and set the squelch to -42 dBFS."}}
+      # The window's old channel still records, and the inspector says so with a Stop.
+      - {cmd: state, expect: {notices.1: Still recording 146.520 MHz Calling}}
       # The column closes, as its steps carry the run's channel ids.
       - {cmd: stage, stage: {assistant: false}}
       - {cmd: snapshot, name: followed}
@@ -1028,8 +1057,19 @@ scenes:
       - {cmd: ley, args: [ask, --yes, --continue, now the evening net]}
       - {cmd: wait, seconds: 3}
       - {cmd: state, expect: {tuned_hz: 147180000, bookmark: Evening net}}
+      # This tune left the squelch on auto: the level it measured is not one the assistant
+      # chose, so the note leaves the squelch out.
+      - {cmd: state, expect: {notices.0: "The assistant tuned to 147.180 MHz NFM.", notices.1: Still recording 146.520 MHz Calling}}
       - {cmd: ax, name: terminal}
       - {cmd: ley, args: [state]}
+      # The line's Stop ends the recording on the old channel, and the window then lets that
+      # channel go (docs/plans/app.md, MC-1c).
+      - {cmd: ley, args: [jobs], expect_stdout: running}
+      - {cmd: press, identifier: inspector.kept.stop}
+      - {cmd: wait, seconds: 3, expect_log: ["job_\\S+ stopped", "no longer records; ended"]}
+      - {cmd: ley, args: [jobs], expect_stdout: ["!running", cancelled]}
+      - {cmd: state, expect: {tuned_hz: 147180000, notices.0: "The assistant tuned to 147.180 MHz NFM."}}
+      - {cmd: ax, name: stopped}
 
   # Who changed the channel (docs/plans/app.md, the assistant panel's last item): a terminal's
   # `ley set squelch -45` puts a line under the inspector's frequency naming it, and the
@@ -1048,6 +1088,7 @@ scenes:
     app:
       - {cmd: ley, args: [set, squelch, "-45"]}
       - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {notices.0: "Another terminal set the squelch to -45 dBFS."}}
       - {cmd: ax, name: noted}
       - {cmd: key, keys: right}
       - {cmd: wait, seconds: 1}

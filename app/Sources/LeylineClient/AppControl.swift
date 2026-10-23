@@ -481,14 +481,17 @@ public struct ControlTransport: Sendable, Equatable, Codable {
 
 /// `state.assistant`: the assistant's panel while it is shown.
 public struct ControlAssistant: Sendable, Equatable, Codable {
-    /// One turn of the conversation, oldest first: `user` or `assistant`, and its text.
+    /// One turn of the conversation, oldest first: `user` or `assistant`, its text, and whether
+    /// the panel says `Stopped.` under it.
     public struct Turn: Sendable, Equatable, Codable {
         public var role: String
         public var text: String
+        public var stopped: Bool
 
-        public init(role: String, text: String) {
+        public init(role: String, text: String, stopped: Bool = false) {
             self.role = role
             self.text = text
+            self.stopped = stopped
         }
     }
 
@@ -573,7 +576,8 @@ public struct ControlViewState: Sendable, Equatable, Codable {
     /// empty when nothing holds the focus.
     public var focused: String
     /// Every message the window shows: the notice, the error, the empty-state and
-    /// out-of-capture words, the assistant's notice.
+    /// out-of-capture words, the assistant's notice, then the inspector's lines under the channel
+    /// (who changed it last, `Still recording …`).
     public var notices: [String]
     /// The popover open (`channels:<row id>`, `device_menu`), or empty.
     public var popover: String

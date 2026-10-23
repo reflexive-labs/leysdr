@@ -419,6 +419,8 @@ final class ControlChannel {
         if let w = s.emptyWords { notices.append("\(w.headline). \(w.detail)") }
         if let w = s.outOfCaptureWords { notices.append(w) }
         if let n = s.assistantNotice { notices.append(n.text) }
+        if let n = s.changeNote { notices.append(n.text) }
+        if let k = s.keptRecording { notices.append(k.words) }
         var popover = ""
         if let b = s.pickerBand {
             popover = "channels:\(b.id)"
@@ -486,7 +488,9 @@ final class ControlChannel {
         let input = elements.first { $0.identifier == "assistant.input" }
         return ControlAssistant(
             turns: (view?.turns ?? []).map {
-                ControlAssistant.Turn(role: $0.role == .user ? "user" : "assistant", text: $0.text)
+                ControlAssistant.Turn(
+                    role: $0.role == .user ? "user" : "assistant", text: $0.text,
+                    stopped: $0.stopped)
             },
             state: session.assistantLost ? "gone" : view?.stateWord,
             thinking: view?.isWaitingOnModel ?? false,

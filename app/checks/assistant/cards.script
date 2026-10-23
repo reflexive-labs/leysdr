@@ -5,3 +5,4 @@
 {"text": "On the evening net now."}
 {"tool": "delete_recording", "args": {"recording": "job_none"}}
 {"text": "Nothing deleted."}
+{"text": "Stopping there."}

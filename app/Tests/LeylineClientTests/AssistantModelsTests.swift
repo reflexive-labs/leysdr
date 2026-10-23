@@ -92,6 +92,48 @@ final class AssistantModelsTests: XCTestCase {
         XCTAssertEqual(view.model, "anthropic claude-sonnet-5-5")
     }
 
+    func testAStoppedTurnSaysSoAfterItsSteps() {
+        let view = ConversationView(
+            conversation(
+                .conversationIdle,
+                turns: [
+                    turn("t1", .user, "where am i"),
+                    turn("t2", .assistant, "On 146.520 MHz."),
+                    // Stopped while the model thought: the worker's empty turn, closed.
+                    turn("t3", .user, "and the net"),
+                    turn("t4", .assistant, ""),
+                    // Stopped in the middle of a call.
+                    turn("t5", .user, "scan 2 m"),
+                    turn(
+                        "t6", .assistant, "Scanning.",
+                        tools: [
+                            call(
+                                "c1", "scan", state: .toolCallDone, result: "stopped",
+                                isError: true)
+                        ]),
+                    // Stopped before the worker wrote a turn: the next message follows.
+                    turn("t7", .user, "tune the club"),
+                    turn("t8", .user, "the evening net then"),
+                    turn(
+                        "t9", .assistant, "Tuned.",
+                        tools: [call("c2", "tune", state: .toolCallDone)]),
+                    // Still on it: not stopped yet.
+                    turn("t10", .user, "louder"),
+                    turn("t11", .assistant, "", done: false),
+                ]))
+        XCTAssertEqual(
+            view.turns.map(\.stopped),
+            [false, false, false, true, false, true, true, false, false, false, false])
+
+        // A user's message left last once the turn was stopped, and one just sent.
+        let stopped = ConversationView(
+            conversation(.conversationIdle, turns: [turn("t1", .user, "where am i")]))
+        XCTAssertEqual(stopped.turns.map(\.stopped), [true])
+        let thinking = ConversationView(
+            conversation(.conversationThinking, turns: [turn("t1", .user, "where am i")]))
+        XCTAssertEqual(thinking.turns.map(\.stopped), [false])
+    }
+
     func testTheWaitingRowShowsWhileTheModelThinksAndNotWhileAToolRuns() {
         let running = call("c1", "tune", args: #"{"frequency":"noaa"}"#, state: .toolCallRunning)
         let done = call("c2", "get_state", state: .toolCallDone, result: "1 capture")
