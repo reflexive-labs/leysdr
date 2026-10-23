@@ -93,13 +93,14 @@ enum Harness {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: bin)
         // Keys in a file under the daemon's own --data, never the login keychain or the
-        // person's data directory, whatever this process's environment says.
+        // person's data directory, whatever this process's environment says; and --no-audio, so
+        // a system-audio sink a test attaches is accepted and plays nothing through the Mac.
         let data = arguments.firstIndex(of: "--data").map { arguments[$0 + 1] } ?? dir + "/data"
         p.arguments =
             [
                 "--socket", socket, "--no-hardware", "--log-level", "debug",
                 "--pidfile", dir + "/leylined.pid", "--store", dir + "/store", "--recordings",
-                dir + "/recordings", "--secrets", "file",
+                dir + "/recordings", "--secrets", "file", "--no-audio",
             ] + (arguments.contains("--data") ? [] : ["--data", data]) + arguments
         var environment = ProcessInfo.processInfo.environment
         environment["LEYLINE_SECRETS"] = "file"
