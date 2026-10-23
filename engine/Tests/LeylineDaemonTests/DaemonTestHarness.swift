@@ -77,6 +77,14 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
                                recordingsCapBytes: recordingsCapBytes, dataPath: dir + "/data",
                                version: testDaemonVersion)
     config.secretStore = FileSecrets(inData: dir + "/data")
+    // Config's defaults are the person's: the login keychain, ~/Library/Application Support and
+    // the default store and recordings. A test that reached one would write over their keys or
+    // data, so the harness stops rather than run on any of them.
+    precondition((config.secretStore as? FileSecrets)?.path.hasPrefix(dir + "/") == true,
+                 "a test daemon keeps its keys in a file under its own directory, never the keychain")
+    precondition(config.dataPath.hasPrefix(dir + "/") && config.storePath != defaultStorePath()
+                     && config.recordingsPath != defaultRecordingsPath(),
+                 "a test daemon never uses the default data directory, store or recordings")
     // `ley` is whatever the test names and nothing else: never one on the machine's PATH.
     config.leyPath = leyPath
     config.programLocator = ProgramLocator(directories: [], searchPath: [])

@@ -45,8 +45,10 @@ package final class Daemon: Sendable {
         /// The data directory: `ai.json`, and `secrets/credentials.json` where there is no keychain
         /// (docs/dev/engine-internals.md, "Credentials and usage").
         var dataPath: String
-        /// Where provider keys are kept; nil is the platform's (`defaultSecretStore`). A test
-        /// passes a file store in its own directory so it never writes to the Mac's keychain.
+        /// Where provider keys are kept; nil is the platform's (`defaultSecretStore`), the login
+        /// keychain on macOS. A test passes a file store in its own directory so it never writes
+        /// to the Mac's keychain; `DaemonTestHarness` stops a test daemon that would reach the
+        /// keychain or the default data directory, store or recordings.
         var secretStore: (any SecretStore)?
         /// `--secrets`: which store `defaultSecretStore` makes when `secretStore` is nil; nil reads
         /// `LEYLINE_SECRETS`, then takes the platform's.
