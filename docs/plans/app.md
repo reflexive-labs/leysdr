@@ -1569,8 +1569,8 @@ Found by the ML-9d scenes' second half (2026-10-22), not fixed on the spot:
   menu is not drawn in a check run, so whether macOS shows both is for a person to look at.
 - The harness: in a full `make app-check` the inspector's identity in `plan-picker` measured 117
   pt where its golden has 116 once more (ML-9c's flake), and `settings-ai`'s key read `added 1
-  min ago` for `just now`, because its `clock` shifted the daemon's time and not the app's; the
-  scene no longer sets one.
+  min ago` for `just now` (and `settings-sheet`'s `21 min ago`), because their `clock` shifted
+  the daemon's time and not the app's; neither scene sets one now.
 
 #### Residuals after APP-9 review
 

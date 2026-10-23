@@ -535,7 +535,6 @@ scenes:
   # Cancel keeps the key, and the stage closes the window again.
   - name: settings-sheet
     fixtures: [{name: scene_2m}]
-    clock: "19:42"
     bookmarks: ../../site/shots/home.csv
     ai: {script: assistant/hello.script}
     steps:
