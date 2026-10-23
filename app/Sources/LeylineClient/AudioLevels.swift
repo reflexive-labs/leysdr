@@ -119,6 +119,18 @@ public enum LevelScale {
         return min(max((steps(db) - lo) / (hi - lo), 0), 1)
     }
 
+    /// The meter's level for a silent interval: the daemon floors −∞ there, which JSON cannot
+    /// carry (`telemetry.proto`, `audio_dbfs`).
+    public static let silentDB: Double = -200
+
+    /// The number under the rms or peak bar: `−18`, an en dash while the audio is silent, and an
+    /// em dash before the first meter, when nothing was measured.
+    public static func number(_ db: Double) -> String {
+        guard db.isFinite else { return "—" }
+        if db <= silentDB { return "–" }
+        return String(format: "%.0f", db).replacingOccurrences(of: "-", with: "−")
+    }
+
     /// The scale in its own units, one unit a step of the fine part, zero at the knee.
     static func steps(_ db: Double) -> Double {
         db >= kneeDB ? (db - kneeDB) / fineStepDB : (db - kneeDB) / coarseStepDB

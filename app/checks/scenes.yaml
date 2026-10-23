@@ -1473,6 +1473,8 @@ scenes:
   # 1100 pt, with and without the inspector, through the longest widths a band or a mode
   # brings: MURS 151's 11.25 kHz, WFM's 200 kHz, CW's 500 Hz. A terminal sets the mode and width
   # on the window's channel. At the minimum the inspector is cut at its foot, and the bar stays.
+  # With the assistant's column the bar is narrow at every size (MC-1b): the three words under
+  # the squelch track are dropped and the caption is the short one, never cut inside a word.
   - name: transport-sizes
     covers: [TransportBarView.swift, MainWindow.swift, InspectorView.swift, AssistantPanel.swift]
     sizes: [{width: 900, height: 612}, {width: 1000, height: 820}, {width: 1100, height: 820}]
@@ -1515,3 +1517,70 @@ scenes:
       - {cmd: state, expect: {inspector_shown: true, assistant_shown: true, window.width: 1221}}
       - {cmd: snapshot, name: assistant}
       - {cmd: ax, name: assistant, mask: [spectrum, waterfall, readings, transmissions, log_day, squelch, sidebar, inspector]}
+      - {cmd: state, expect: {transport.squelch_words: "", transport.squelch_caption_short: true}}
+
+  # The tuning field (docs/plans/app.md, MC-1b): four decimals, cut and never rounded, while the
+  # radio stays on the exact hertz, which the field's tooltip and the inspector's line give. A
+  # typed 146.940186 tunes to the hertz and reads 146.9401; the fine step keeps the hertz, the
+  # band's step lands on its 5 kHz grid, and a hit's row tunes the channel it names (MC-1a). At
+  # 1440 pt the squelch's three words and its long caption both show.
+  - name: transport-tuning
+    fixtures: [{name: scene_vhf20}]
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [stop, "146.52"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: ley, args: [set, squelch, "off"]}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146520000, transport.tuning: "146.5200", transport.squelch_caption: "open · squelch off", transport.squelch_caption_short: false, transport.squelch_words: "muted below · squelch off · heard above"}}
+      - {cmd: menu, menu: "Tune>Enter Frequency..."}
+      - {cmd: type, text: "146.940186"}
+      - {cmd: state, expect: {transport.tuning: "146.940186"}}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1, expect_log: "tune: typed 146.940186 -> 146940186 Hz"}
+      - {cmd: state, expect: {tuned_hz: 146940186, transport.tuning: "146.9401"}}
+      - {cmd: hover, identifier: tuning.field, expect: {tooltip: "146.940186 MHz"}}
+      - {cmd: ax, name: typed}
+      - {cmd: snapshot, name: typed}
+      - {cmd: menu, menu: "Tune>Fine Tune Up"}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146941186, transport.tuning: "146.9411"}}
+      - {cmd: menu, menu: "Tune>Tune Up"}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146945000, transport.tuning: "146.9450"}}
+      - {cmd: press, identifier: tuning.down}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146940000, transport.tuning: "146.9400"}}
+      - {cmd: press, identifier: sidebar.bookmark.calling}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: sidebar.band.2m.scan}
+      - {cmd: wait, seconds: 6, expect_log: ["sweep: job_.* ended: [0-9]+ hits?", "sweep: resuming bookmark Calling"]}
+      - {cmd: state, expect: {tuned_hz: 146520000}}
+      - {cmd: click, identifier: sidebar.hit.146-940-mhz}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146940000, transport.tuning: "146.9400"}}
+
+  # The transport bar at the window's minimum (MC-1b): too narrow for the squelch's three words
+  # and its long caption, so the words are dropped and the caption is the short one.
+  - name: transport-narrow
+    sizes: [{width: 900, height: 612}]
+    fixtures: [{name: scene_vhf20}]
+    bookmarks: ../../site/shots/home.csv
+    steps:
+      - ley: [stop, "146.52"]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: ley, args: [set, squelch, "off"]}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {transport.squelch_words: "", transport.squelch_caption: "open · off", transport.squelch_caption_short: true, transport.tuning: "146.5200"}}
+      - {cmd: snapshot, name: narrow}
+      - {cmd: ax, name: narrow, mask: [spectrum, waterfall, readings, transmissions, log_day, sidebar, inspector]}

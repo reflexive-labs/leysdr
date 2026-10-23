@@ -85,14 +85,6 @@ final class PaletteTests: XCTestCase {
         ("inkMuted", 3), ("inkFaint", 3), ("inkFaintest", 3),
     ]
 
-    /// Pairs under their floor in today's palette, with the ratio measured when they were
-    /// recorded. They are the owner's call, not the test's; a change to either colour fails here
-    /// so the pair is looked at again.
-    private static let knownExceptions: [String: Double] = [
-        "inkFaintest on chrome": 2.98,
-        "inkFaintest on selected": 2.84,
-    ]
-
     private func luminance(_ hex: UInt32) -> Double {
         func channel(_ shift: UInt32) -> Double {
             let c = Double((hex >> shift) & 0xFF) / 255
@@ -108,26 +100,16 @@ final class PaletteTests: XCTestCase {
 
     func testEveryInkMeetsItsContrastFloorOnEveryGround() throws {
         let code = try themed()
-        var seen: Set<String> = []
         for (ink, floor) in Self.floors {
             let fore = try XCTUnwrap(code[ink], "\(ink) is not in Theme.swift")
             for ground in Self.grounds {
                 let back = try XCTUnwrap(code[ground], "\(ground) is not in Theme.swift")
-                let pair = "\(ink) on \(ground)"
-                let ratio = (contrast(fore, back) * 100).rounded() / 100
-                if let recorded = Self.knownExceptions[pair] {
-                    seen.insert(pair)
-                    XCTAssertEqual(
-                        ratio, recorded,
-                        "\(pair) is \(ratio):1, recorded as \(recorded):1; look at the pair again "
-                            + "and update or remove its exception")
-                } else {
-                    XCTAssertGreaterThanOrEqual(
-                        ratio, floor, "\(pair) is \(ratio):1, under its floor of \(floor):1")
-                }
+                let ratio = contrast(fore, back)
+                XCTAssertGreaterThanOrEqual(
+                    ratio, floor,
+                    "\(ink) on \(ground) is \(String(format: "%.2f", ratio)):1, under its floor of "
+                        + "\(floor):1")
             }
         }
-        XCTAssertEqual(
-            seen, Set(Self.knownExceptions.keys), "an exception names a pair the test never checks")
     }
 }

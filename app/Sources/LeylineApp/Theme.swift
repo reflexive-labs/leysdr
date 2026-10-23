@@ -36,7 +36,7 @@ enum Theme {
     static let inkTertiary = Color(hex: 0x9BA1A6)
     static let inkMuted = Color(hex: 0x7A8185)
     static let inkFaint = Color(hex: 0x6B7276)
-    static let inkFaintest = Color(hex: 0x5F656A)
+    static let inkFaintest = Color(hex: 0x63696E)
     static let inkDisabled = Color(hex: 0x4A5054)
     /// A plan channel's tick on the band rail: fainter than a bookmark's `good` and than the
     /// tuned `accent`, so a plan reads as a grid under the marks and never as marks. No

@@ -245,6 +245,13 @@ clears. The window's own rate change never causes out of capture, because `setSa
 re-places the centre for the tuned frequency at the new width and writes centre and rate in one
 tick.
 
+**The transport bar** (`TransportBarView.swift`). The tuning field shows four decimals of MHz,
+cut from the hertz and never rounded (`FrequencyEntry`): a radio on 146.940186 MHz reads
+`146.9401`, and its tooltip and the inspector's line give `146.940186 MHz`. Two digits more may be
+typed past the fourth, and the radio tunes to the hertz typed. A narrow bar first drops the three
+words under the squelch track, then takes the short caption (`open · 33 dB`, `SquelchCaption`);
+the track keeps its size and no word or pop-up label is cut or wrapped.
+
 **The inspector** (`InspectorView.swift`, `InspectorGroups.swift`). The panel on the window's
 right describes the tuned signal in words, and every word is a presentation of a number the
 daemon measured: signal from `AppSession.overNoiseDB` through `SignalWord`, tuning and deviation
@@ -412,7 +419,9 @@ log, the panel draws the meter `ley levels --watch` draws:
 the demod tap's spectrum at 1024 bins and 20 rows a second, one subscription per channel and only
 while the panel is shown, summed into nine octave bands by the façade's `BandLevels` and moved by
 `LevelBar`'s ballistics on the capture's sample clock. Its rms and peak are the meter's
-`audio_dbfs` and `audio_peak_dbfs`, and a closed squelch leaves every bar unlit, because the
+`audio_dbfs` and `audio_peak_dbfs`, numbered under the pair with an en dash for a silent interval
+(the daemon's −200) and an em dash before the first meter, and a closed squelch leaves every bar
+unlit, because the
 demod tap carries the discriminator's noise between transmissions. The view was written in the
 container and is unverified until it runs on a Mac.
 
@@ -583,8 +592,8 @@ colour, system font or hex value anywhere else in `LeylineApp`, a shorthand syst
 in a gradient's `colors:` included. `PaletteTests` fails when the
 palette table and `Theme.swift` disagree, and when an ink falls under its WCAG contrast floor on
 `ground`, `chrome`, `panel`, `raised` or `selected`: 4.5:1 for `ink`, `inkSecondary` and
-`inkTertiary`, 3:1 for the three fainter inks. Two pairs are under it and recorded in the test as
-known exceptions: `inkFaintest` on `chrome` (2.98:1) and on `selected` (2.84:1).
+`inkTertiary`, 3:1 for the three fainter inks. `inkFaintest` is the lowest grey that clears 3:1
+on all five; its closest is `selected`, at 3.02:1.
 
 ### Palette
 
@@ -605,8 +614,8 @@ known exceptions: `inkFaintest` on `chrome` (2.98:1) and on `selected` (2.84:1).
 | `inkTertiary` | `#9BA1A6` | a value beside a label, a descriptive clause |
 | `inkMuted` | `#7A8185` | a unit, a subtitle |
 | `inkFaint` | `#6B7276` | a section header |
-| `inkFaintest` | `#5F656A` | a footnote under a control |
-| `inkDisabled` | `#4A5054` | the sub-kHz digits of the tuning field |
+| `inkFaintest` | `#63696E` | a footnote under a control |
+| `inkDisabled` | `#4A5054` | the tuning field's digits with nothing tuned |
 | `accent` | `#E8814A` | the tuned channel, and nothing else |
 | `good` | `#2FB6A3` | squelch open, a connected device, a bookmarked frequency |
 | `caution` | `#C9C06A` | off tune, overdeviating, the radio clipping, a channel outside the capture; the ramp's fourth stop |
@@ -877,7 +886,7 @@ and the next line still runs; a line with no `id` has no answer file, so it is o
 |---|---|---|
 | `stage` | `stage`: a stage object as above (`settle` is slept, `window` resizes) | `result.applied`: the steps, as the log lines give them |
 | `snapshot` | `settle`: seconds to wait first, default 0; `window`: `main` (the default) or `settings` | `out/<id>.png`, with the popover and the sheet open over the window drawn in at their places (a menu that is open is not); `result`: `scale`, `width_pt`, `height_pt` and `regions`, as `regions.json` gives them, `{}` for `regions` of the Settings window |
-| `state` | | `result`: `place`, `tuned_hz`, `mode`, `bandwidth_hz`, `channel_id`, `capture_id`, `band`, `bookmark`, `open_rows`, `filter_query`, `inspector_shown`, `assistant_shown`, `zoom`, `focused` (the focused control's identifier, else its role and label), `notices` (every message the window shows), `popover` (`channels:<row>`, `device_menu` or empty), `selected_recording_channel`, `selected_part`, `heard` (the tone the tuned channel last heard, as the inspector writes it: `PL 100.0`), `hits` (the last sweep's hits as its row lists them, strongest first), `muted` (the transport's speaker), `volume` (the window's own sink's, 0 to 1), `sink` (`own`, `other` when another client's sink plays the channel, `none`), `window` (`width`, `height`, `min_width`, `min_height` in points, toolbar included), `filter_caret` (the insertion point in the sidebar's filter while it has the focus), `settings_open`, `alert` (the sheet over the main window or Settings: `title`, `message`, `buttons` in order), `view_window` (`low_hz` and `high_hz`, the frequencies at the charts' two edges), `assistant` (while its panel shows: `turns`, each `role` and `text`; `state`, the header's word; `thinking`; `input`, the field's text; `input_focused`; `stop_shown`; `buttons`, each `id`, `title` and `enabled`), `tooltip` (the help of what the last `hover` rested on, else the frequency under the pointer while it is over a chart); every key is present, `null` when it has no value |
+| `state` | | `result`: `place`, `tuned_hz`, `mode`, `bandwidth_hz`, `channel_id`, `capture_id`, `band`, `bookmark`, `open_rows`, `filter_query`, `inspector_shown`, `assistant_shown`, `zoom`, `focused` (the focused control's identifier, else its role and label), `notices` (every message the window shows), `popover` (`channels:<row>`, `device_menu` or empty), `selected_recording_channel`, `selected_part`, `heard` (the tone the tuned channel last heard, as the inspector writes it: `PL 100.0`), `hits` (the last sweep's hits as its row lists them, strongest first), `muted` (the transport's speaker), `volume` (the window's own sink's, 0 to 1), `sink` (`own`, `other` when another client's sink plays the channel, `none`), `window` (`width`, `height`, `min_width`, `min_height` in points, toolbar included), `filter_caret` (the insertion point in the sidebar's filter while it has the focus), `settings_open`, `alert` (the sheet over the main window or Settings: `title`, `message`, `buttons` in order), `view_window` (`low_hz` and `high_hz`, the frequencies at the charts' two edges), `assistant` (while its panel shows: `turns`, each `role` and `text`; `state`, the header's word; `thinking`; `input`, the field's text; `input_focused`; `stop_shown`; `buttons`, each `id`, `title` and `enabled`), `tooltip` (the help of what the last `hover` rested on, else the frequency under the pointer while it is over a chart), `transport` (the bar's words as drawn: `tuning`, the field's digits; `squelch_caption`, and `squelch_caption_short` when it is the short one; `squelch_words`, the three under the track joined by ` · `, empty once a narrow bar drops them; `null` without a bar); every key is present, `null` when it has no value |
 | `ax` | `window`: `main` (the default; its popovers and sheets are in its tree), `settings` (the Settings window, while it is open: the stage's `settings` or the key `cmd+,` opens it), `popover` (the main window's open popover alone) or `sheet` (the sheet over the main window, else over Settings, alone) | `out/<id>.ax.txt`: the window's accessibility tree, one element per line indented two spaces a level: role, `id=` and the identifier when there is one, the label, `value=` when there is one (quoted, with `\`, `"` and newlines escaped), the frame in points from the window's top-left corner as the regions are measured (a text field's left edge and width only, `(38,– 161×–)`, because the AppKit field's height follows its text, 14 pt empty and 13 with text in the inspector's fields, while the row it sits in keeps its height), `enabled` or `disabled`; `result`: as `snapshot`'s, so a reader can tell which elements lie in which region, and `{}` for the Settings window or a sheet over it; a popover or a sheet alone is framed from its window's corner |
 | `key` | `keys`: `cmd+g`, `shift+cmd+left`, `escape`, `return`, `down`… | a key down and up |
 | `type` | `text` | a key down and up for each character |
