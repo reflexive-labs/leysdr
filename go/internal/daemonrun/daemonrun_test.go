@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -37,6 +38,7 @@ func fakeLeylined() int {
 	for _, name := range []string{"pidfile", "store", "recordings", "log-level", "decoders", "wall-clock"} {
 		fs.String(name, "", "")
 	}
+	secrets := fs.String("secrets", "", "")
 	fs.Bool("no-hardware", false, "")
 	fs.Bool("no-audio", false, "")
 	if err := fs.Parse(os.Args[1:]); err != nil {
@@ -48,6 +50,12 @@ func fakeLeylined() int {
 	}
 	fmt.Fprintln(f, os.Getenv("FAKE_SAYS"), *dwell)
 	_ = f.Close()
+	// As leylined does before it listens; FAKE_KEYCHAIN plays a daemon that ignored --secrets.
+	if *secrets == "file" && os.Getenv("LEYLINE_SECRETS") == "file" && os.Getenv("FAKE_KEYCHAIN") == "" {
+		fmt.Fprintf(os.Stderr, "info leyline.daemon: AI keys in %s\n", filepath.Join(*data, "secrets", "credentials.json"))
+	} else {
+		fmt.Fprintln(os.Stderr, "info leyline.daemon: AI keys in the login keychain")
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := fakedaemon.New(fakedaemon.Options{}).Serve(ctx, *socket); err != nil {
@@ -109,5 +117,30 @@ func TestHaltResume(t *testing.T) {
 	d.Stop()
 	if _, err := os.Stat(data); !os.IsNotExist(err) {
 		t.Errorf("Stop left the data directory: %v", err)
+	}
+}
+
+// A daemon that would keep keys in the login keychain is refused at start, whatever the caller's
+// environment says; the environment it is given always ends LEYLINE_SECRETS=file.
+func TestRefusesADaemonOnTheKeychain(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LEYLINE_SECRETS", "keychain")
+	d, err := Start(ctx, Options{Bin: exe, Dir: t.TempDir(), Env: []string{fakeEnv + "=1", "LEYLINE_SECRETS=keychain"}})
+	if err != nil {
+		t.Fatalf("a daemon on the file store was refused: %v", err)
+	}
+	d.Stop()
+	_, err = Start(ctx, Options{Bin: exe, Dir: t.TempDir(), Env: []string{fakeEnv + "=1", "FAKE_KEYCHAIN=1"}})
+	if err == nil || !strings.Contains(err.Error(), "the login keychain") {
+		t.Errorf("a daemon on the keychain started: %v", err)
+	}
+	env := daemonEnv([]string{"LEYLINE_SECRETS=keychain", "HOME=/h"}, Options{Env: []string{"LEYLINE_SECRETS=keychain"}})
+	if env[len(env)-1] != secretsEnv || slices.Contains(env, "LEYLINE_SECRETS=keychain") {
+		t.Errorf("daemonEnv = %v", env)
 	}
 }

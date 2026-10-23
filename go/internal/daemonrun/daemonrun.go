@@ -110,7 +110,7 @@ func Start(ctx context.Context, o Options) (*Daemon, error) {
 	d.args = []string{
 		"--socket", d.Socket, "--pidfile", filepath.Join(o.Dir, "leylined.pid"),
 		"--store", d.Store, "--recordings", d.Recordings, "--log-level", "info", "--no-hardware",
-		"--data", d.dataDir,
+		"--data", d.dataDir, "--secrets", "file",
 	}
 	if o.Decoders != "" {
 		d.args = append(d.args, "--decoders", o.Decoders)
@@ -152,7 +152,7 @@ func (d *Daemon) launch(ctx context.Context) error {
 	deadline := time.Now().Add(readyTimeout)
 	for {
 		if _, err := c.State(ctx); err == nil {
-			return nil
+			return d.checkKeysInData()
 		}
 		if time.Now().After(deadline) || ctx.Err() != nil {
 			return fmt.Errorf("leylined did not answer on %s within %s; its log is %s", d.Socket, readyTimeout, d.Log)
@@ -215,21 +215,50 @@ func (d *Daemon) Stop() {
 	}
 }
 
+// keysLine starts the line a daemon logs before it listens: where it keeps AI keys.
+const keysLine = "AI keys in "
+
+// checkKeysInData reads the daemon's last keysLine and fails unless it names a file in the
+// daemon's own --data: a hermetic daemon must never keep a key a caller adds in the login
+// keychain, where it would replace the person's own.
+func (d *Daemon) checkKeysInData() error {
+	b, err := os.ReadFile(d.Log)
+	if err != nil {
+		return err
+	}
+	return KeysInData(string(b), d.dataDir, d.Log)
+}
+
+// KeysInData fails unless the last `AI keys in …` line of a daemon's log names a file under
+// data; log is the log's path, for the message.
+func KeysInData(text, data, log string) error {
+	i := strings.LastIndex(text, keysLine)
+	if i < 0 {
+		return fmt.Errorf("leylined never said where it keeps AI keys (%s); a test daemon must say a file in %s", log, data)
+	}
+	where, _, _ := strings.Cut(text[i+len(keysLine):], "\n")
+	if !strings.HasPrefix(where, data+string(filepath.Separator)) {
+		return fmt.Errorf("leylined keeps AI keys in %s, not in its data directory %s: a test daemon must never use the login keychain", where, data)
+	}
+	return nil
+}
+
 // secretsEnv asks the daemon to keep provider keys in a file in its --data directory rather than
 // the macOS login keychain, so a hermetic daemon's keys go when its data directory does. A
 // daemon that does not know the variable ignores it.
 const secretsEnv = "LEYLINE_SECRETS=file"
 
 // daemonEnv is the daemon's environment: this process's without the names o.Unset lists, then
-// secretsEnv and o.Env.
+// o.Env, then secretsEnv; a LEYLINE_SECRETS in either of the first two is dropped, so nothing
+// can point the daemon at the keychain.
 func daemonEnv(environ []string, o Options) []string {
 	out := make([]string, 0, len(environ)+len(o.Env)+1)
 	for _, kv := range environ {
-		name, _, _ := strings.Cut(kv, "=")
-		if !slices.Contains(o.Unset, name) {
+		if name, _, _ := strings.Cut(kv, "="); !slices.Contains(o.Unset, name) {
 			out = append(out, kv)
 		}
 	}
-	out = append(out, secretsEnv)
-	return append(out, o.Env...)
+	out = append(out, o.Env...)
+	out = slices.DeleteFunc(out, func(kv string) bool { return strings.HasPrefix(kv, "LEYLINE_SECRETS=") })
+	return append(out, secretsEnv)
 }
