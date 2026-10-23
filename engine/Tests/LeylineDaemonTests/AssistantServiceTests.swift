@@ -618,7 +618,14 @@ final class AssistantServiceTests: XCTestCase {
             _ = try await self.send(c, steady, "hello")
             let fine = try await self.conversation(c, steady) { $0.state == .conversationIdle && $0.turns.count == 2 }
             XCTAssertEqual(fine.turns.last?.text, "quick")
-            XCTAssertLessThan(ContinuousClock.now - sentAt, .seconds(1),
+            // A conversation that waited out the deaf write would answer only once that write had
+            // given up and failed its own: so the deaf one is still thinking, and the answer came
+            // inside the write deadline. Order rather than a tighter time, which a slow runner
+            // misses (1.9 s on a loaded macOS runner, 0.3 s on an M-series Mac).
+            let meanwhile = try await c.daemon.conversations.get(deaf)
+            XCTAssertEqual(meanwhile.state, .conversationThinking,
+                           "the other conversation did not wait out the deaf worker's write")
+            XCTAssertLessThan(ContinuousClock.now - sentAt, .seconds(AssistantWorker.writeDeadlineSeconds),
                               "the other conversation did not wait out the deaf worker's write")
             let failed = try await self.conversation(c, deaf, within: 10) { $0.state == .conversationFailed }
             XCTAssertEqual(failed.error.code, EngineError.Code.internalError)
