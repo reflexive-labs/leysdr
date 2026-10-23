@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -605,11 +606,55 @@ func checkAskStopTurn(t *testing.T, r *askRig) {
 // running, the one on conversation convID among them, and fails on the key in either.
 func checkWorkersHoldNoKey(t *testing.T, convID string) {
 	t.Helper()
-	procs, _ := filepath.Glob("/proc/[0-9]*/cmdline")
 	found := false
+	for _, p := range workerProcesses(t) {
+		if strings.Contains(p.cmdline, aiCanary) || strings.Contains(p.environ, aiCanary) {
+			t.Errorf("process %s carries the key in its argv or environment", p.pid)
+		}
+		if !strings.Contains(p.environ, "LEYLINE_KEY_ON_STDIN=1") {
+			t.Errorf("process %s lacks LEYLINE_KEY_ON_STDIN=1, so this is not the environment the daemon gave it", p.pid)
+		}
+		if strings.Contains(p.cmdline, convID) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no running ley worker assistant --conversation %s", convID)
+	}
+}
+
+// workerProcess is one running `ley worker assistant`: its arguments and environment, each
+// joined by spaces.
+type workerProcess struct{ pid, cmdline, environ string }
+
+// workerProcesses lists the running `ley worker assistant --conversation` processes: from
+// /proc on Linux, and on macOS from `ps -E`, which prints a process's environment after its
+// arguments, so there both strings are that one line.
+func workerProcesses(t *testing.T) []workerProcess {
+	t.Helper()
+	const marker = "worker assistant --conversation "
+	var out []workerProcess
+	if runtime.GOOS == "darwin" {
+		b, err := exec.Command("ps", "-axww", "-E", "-o", "pid=,command=").Output()
+		if err != nil {
+			t.Fatalf("ps -E: %v", err)
+		}
+		for _, line := range strings.Split(string(b), "\n") {
+			pid, rest, _ := strings.Cut(strings.TrimSpace(line), " ")
+			if strings.Contains(rest, marker) {
+				out = append(out, workerProcess{pid: pid, cmdline: rest, environ: rest})
+			}
+		}
+		return out
+	}
+	procs, _ := filepath.Glob("/proc/[0-9]*/cmdline")
 	for _, p := range procs {
 		cmdline, err := os.ReadFile(p)
-		if err != nil || !bytes.Contains(cmdline, []byte("worker\x00assistant\x00--conversation\x00")) {
+		if err != nil {
+			continue
+		}
+		args := strings.ReplaceAll(string(cmdline), "\x00", " ")
+		if !strings.Contains(args, marker) {
 			continue
 		}
 		environ, err := os.ReadFile(filepath.Join(filepath.Dir(p), "environ"))
@@ -617,19 +662,12 @@ func checkWorkersHoldNoKey(t *testing.T, convID string) {
 			t.Errorf("read the environment of %s: %v", filepath.Dir(p), err)
 			continue
 		}
-		if bytes.Contains(cmdline, []byte(aiCanary)) || bytes.Contains(environ, []byte(aiCanary)) {
-			t.Errorf("%s carries the key in its argv or environment", filepath.Dir(p))
-		}
-		if !bytes.Contains(environ, []byte("LEYLINE_KEY_ON_STDIN=1")) {
-			t.Errorf("%s lacks LEYLINE_KEY_ON_STDIN=1, so this is not the environment the daemon gave it", filepath.Dir(p))
-		}
-		if bytes.Contains(cmdline, []byte(convID)) {
-			found = true
-		}
+		out = append(out, workerProcess{
+			pid: filepath.Base(filepath.Dir(p)), cmdline: args,
+			environ: strings.ReplaceAll(string(environ), "\x00", " "),
+		})
 	}
-	if !found {
-		t.Errorf("no running ley worker assistant --conversation %s", convID)
-	}
+	return out
 }
 
 // The worker on the real Messages client: a provider that refuses the request fails the
