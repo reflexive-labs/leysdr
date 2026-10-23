@@ -547,7 +547,7 @@ struct SquelchTrack: View {
         let power = session.meter?.powerDbfs ?? .nan
         VStack(alignment: .leading, spacing: 7) {
             // The words over the track and the level in it follow the noise between overs, so
-            // a staged run measures them as the `squelch` region a check masks.
+            // a staged run measures the block as the `squelch` region a check masks (below).
             VStack(alignment: .leading, spacing: 7) {
                 HStack {
                     SectionHeader(text: "Squelch")
@@ -607,7 +607,6 @@ struct SquelchTrack: View {
                 .frame(height: 18)
                 .identifiedGroup("transport.squelch.track")
             }
-            .stageRegion(.squelch)
             // The words show only while they and the long caption both fit, so they go before
             // the caption shortens; without them the row keeps its height and the bar its own.
             ViewThatFits(in: .horizontal) {
@@ -627,6 +626,9 @@ struct SquelchTrack: View {
                 .hidden().accessibilityHidden(true)
             }
         }
+        // The marker's level under the track follows the measured noise too while the squelch
+        // is automatic, so the region takes the words as well.
+        .stageRegion(.squelch)
         .disabled(session.channel == nil)
         .identifiedGroup("transport.squelch")
     }
