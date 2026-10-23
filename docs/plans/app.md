@@ -1450,8 +1450,8 @@ Not checked by any scene: C needs a person or a real radio, H a harness addition
   tuned on its 467 MHz half (U4), a band switch over a recording reading `Move anyway` (U5), and
   another client moving the radio without a channel, which leaves the window's channel with the
   out-of-capture caution and Tune inside (follows).
-- C, an RTL-SDR: the fold reading `7 bands below what this radio tunes` (U4); a file radio's
-  reads `outside`.
+- C, an RTL-SDR: the fold reading `7 bands out of range ›`, its help `Show them; they lie below
+  what this radio tunes` (U4, MC-1a); a file radio's help reads `outside`.
 - C, by ear: the audio after Scan band on NOAA, the window's volume, no echo when the window
   follows, the live audio after a part (U5, follows). Each sink is checked.
 - C, the open panel runs outside the app: File ▸ Import CHIRP… offering only `.csv` files, and
