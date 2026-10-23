@@ -430,6 +430,7 @@ scenes:
       - {cmd: state, expect: {bookmark: Evening net, heard: DCS 023}}
       - {cmd: press, identifier: sidebar.bookmark.calling}
       - {cmd: press, identifier: sidebar.bookmark.evening-net}
+      - {cmd: wait, seconds: 0.5}
       - {cmd: state, expect: {bookmark: Evening net, heard: null}}
       - {cmd: press, identifier: sidebar.bookmark.calling}
       - {cmd: wait, seconds: 1}
@@ -1330,7 +1331,8 @@ scenes:
       - {cmd: state, expect: {band: noaa}}
       - {cmd: press, identifier: sidebar.band.noaa.scan}
       - {cmd: wait, seconds: 3, expect_log: "sweep: job_.* ended: nothing on the air"}
-      - {cmd: state, expect: {band: noaa}}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {band: noaa, sink: own}}
       - {cmd: ax, name: quiet}
       - {cmd: snapshot, name: quiet}
 
