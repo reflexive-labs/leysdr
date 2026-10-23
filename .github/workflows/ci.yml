@@ -79,6 +79,8 @@ jobs:
         with:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
+      # swift-test runs the suite optimised, as the daemon people run, then EngineCoreTests in debug
+      # (the Makefile says why); `make swift` is the debug leylined the e2e steps drive.
       - name: build + test without SDR host libraries (portable DSP kernels, optional-loader matrix, fixture round-trips)
         run: make swift swift-test
       - name: cross-language e2e (ley driving the Linux-built leylined)
@@ -100,6 +102,7 @@ jobs:
         with:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
+      # Release for the suite, debug for EngineCoreTests and the e2e daemon, as on Linux.
       - name: build + test without SDR host libraries (Accelerate kernels, optional-loader matrix, fixture round-trips)
         run: make swift swift-test
       # Invariant 4: the sample path does not allocate per block. The count is a difference

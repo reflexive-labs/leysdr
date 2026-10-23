@@ -189,6 +189,56 @@ struct ClipLedger: Sendable {
     mutating func reset() { intervals.removeAll() }
 }
 
+/// Samples the daemon dropped before the recording saw them, on the capture's timeline, for each
+/// part's `gaps` (docs/design/recording.md, "Gaps"). The runner hears a drop when the capture's
+/// gap log or the recorder's own ring reports it, which can be before or after the drain has
+/// written the audio around it, so drops are kept as intervals and matched against a part when it
+/// closes, as `ClipLedger` keeps clipping.
+struct DropLedger: Sendable {
+    /// Drops kept: far more than a part sees between closes on a pipeline that is keeping up at
+    /// all. Past it the oldest go, which only a part open for hours of constant overload misses.
+    static let capacity = 1024
+
+    private(set) var intervals: [ClipLedger.Interval] = []
+
+    /// Keeps `from ..< to`, merged with any drop it overlaps or touches. The two sources (the
+    /// capture's log and the recorder's ring) can report one stretch twice, and in either order.
+    mutating func note(from: UInt64, to: UInt64) {
+        guard to > from else { return }
+        var merged = ClipLedger.Interval(from: from, to: to)
+        var kept: [ClipLedger.Interval] = []
+        kept.reserveCapacity(intervals.count + 1)
+        for i in intervals {
+            if i.to < merged.from || i.from > merged.to {
+                kept.append(i)
+            } else {
+                merged = .init(from: Swift.min(i.from, merged.from), to: Swift.max(i.to, merged.to))
+            }
+        }
+        let at = kept.firstIndex { $0.from > merged.from } ?? kept.endIndex
+        kept.insert(merged, at: at)
+        if kept.count > Self.capacity { kept.removeFirst(kept.count - Self.capacity) }
+        intervals = kept
+    }
+
+    /// The drops inside `from ..< to`, each cut to it, oldest first.
+    func gaps(from: UInt64, to: UInt64) -> [RecordingPartGap] {
+        guard to > from else { return [] }
+        return intervals.compactMap { i in
+            let lo = Swift.max(i.from, from), hi = Swift.min(i.to, to)
+            return hi > lo ? RecordingPartGap(sample: lo, samples: hi - lo) : nil
+        }
+    }
+
+    /// Drops what ended before `sample`, which no later part reaches back to.
+    mutating func forget(before sample: UInt64) {
+        intervals.removeAll { $0.to <= sample }
+    }
+
+    /// A new capture starts a new timeline.
+    mutating func reset() { intervals.removeAll() }
+}
+
 /// Owns one recording's directory: its manifest, and the one part file that is open at a time.
 ///
 /// Parts close when the part timer elapses, when the gate closes, when the capture's centre or
@@ -221,6 +271,8 @@ actor PartWriter {
     private static let keptClosedParts = 64
     /// The capture's clipping, matched against each part as it closes.
     private var clips = ClipLedger()
+    /// Samples dropped ahead of the recording, matched against each part as it closes.
+    private var drops = DropLedger()
     /// The capture rate the ledger's samples are counted at; 0 until the first reading.
     private var clipRate: UInt64 = 0
     /// The capture whose timeline the current part's samples are on.
@@ -252,7 +304,10 @@ actor PartWriter {
     /// The capture the following samples are on, and where it sits. An IQ part is closed by the
     /// caller before this changes, so the next part carries the new centre.
     func retarget(captureID: String, centerHz: UInt64) {
-        if captureID != self.captureID { clips.reset() }
+        if captureID != self.captureID {
+            clips.reset()
+            drops.reset()
+        }
         self.captureID = captureID
         self.centerHz = centerHz
     }
@@ -288,6 +343,13 @@ actor PartWriter {
         guard to > from else { return }
         manifest.coverageGaps.append(RecordingGap(fromSample: from, toSample: to, reason: reason))
         persist()
+    }
+
+    /// Capture samples `from ..< to` were dropped before the recording saw them. Listed in the
+    /// `gaps` of the part they fall in when it closes, and in `coverage_gaps`; a drop while no part
+    /// is open is time the recording was not writing anyway.
+    func noteDropped(from: UInt64, to: UInt64) {
+        drops.note(from: from, to: to)
     }
 
     /// A squelch edge inside the open part, for the sidecar's `squelch_opens` and the manifest's
@@ -461,11 +523,24 @@ actor PartWriter {
         // Kept from this part's start on: a gated part's pre-roll can reach back before the
         // previous part's end, never before its start.
         clips.forget(before: partStartSample)
+        let gaps = drops.gaps(from: partStartSample, to: endSample)
+        drops.forget(before: partStartSample)
+        let writtenMs: Int64? = manifest.sampleRate > 0
+            ? Int64((Double(partSamples) / Double(manifest.sampleRate) * 1000).rounded()) : nil
         let part = RecordingPart(part: partNumber, file: (path as NSString).lastPathComponent,
                                  startSample: partStartSample, endSample: endSample,
                                  samples: partSamples, bytes: partBytes,
                                  peakDbfs: peakDb, meanDbfs: meanDb, squelchOpens: squelchOpens.count,
-                                 clippedMs: clippedMs, squelchOpenMs: squelchOpenMs())
+                                 clippedMs: clippedMs, squelchOpenMs: squelchOpenMs(),
+                                 writtenMs: writtenMs, gaps: gaps.isEmpty ? nil : gaps)
+        if !gaps.isEmpty {
+            let dropped = gaps.reduce(UInt64(0)) { $0 + $1.samples }
+            log.warning("\(directory): part \(partNumber) closed with \(gaps.count) gap\(gaps.count == 1 ? "" : "s"), \(dropped) capture samples dropped; it holds \(partSamples) frames")
+        }
+        for g in gaps {
+            manifest.coverageGaps.append(RecordingGap(fromSample: g.sample, toSample: g.sample + g.samples,
+                                                      reason: RecordingGap.samplesDropped))
+        }
         manifest.parts.append(part)
         manifest.bytes += partBytes
         closedOpens.append((partNumber, squelchOpens))

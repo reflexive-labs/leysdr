@@ -139,6 +139,12 @@ make check GOBIN=/tmp/ley-bin         # the whole gate; GOBIN keeps Linux binari
   only, and both. A checkout shared with a Mac should run the
   gate with a scratch install directory (`make check GOBIN=/tmp/ley-bin`) to keep the Linux
   `ley`/`leyfix` out of `go/bin`; `.tools/` and SwiftPM's build products are already per host.
+- `make swift-test` runs the engine's suite optimised (`swift test -c release -Xswiftc
+  -enable-testing`, in its own scratch path `engine/.build/release-testing`), nearer the daemon
+  people run: a debug daemon on a shared runner fell behind 2.4 MSPS playback and the real-time
+  tests read the dropped samples as a bug. `EngineCoreTests` then run again in debug, which is
+  where `assert` and the unoptimised kernels are compiled. A test that times real-time work states
+  its margin.
 - A bare `swift test` silently skips the fixture round-trips (`FixtureTests`, `ChannelTests`) when
   `fixtures/*.cf32` is missing, and a bare `go test ./...` silently skips the `go/internal/e2e`
   package when `LEYLINED_BIN`/`LEY_BIN` are unset — both report the skip only under `-v`. `make

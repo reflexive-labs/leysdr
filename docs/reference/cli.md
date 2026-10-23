@@ -445,8 +445,11 @@ and the URI for a script.
 `--kind`, `--freq` and `--since` filter on the resource's own metadata, whose keys are frozen
 because `metadata_filter` matches them by exact string: `kind` (`audio`|`iq`), `frequency_hz`,
 `mode`, `bandwidth_hz` (`0` for IQ), `sample_rate`, `format`, `duration_ms`, `parts`,
-`started_at_ns`, `ended_at_ns`, `ended_by`, `device`. `ley recordings show <id>` prints the manifest, with a `CLIP` column in its part table (`0.4 s`)
-only when a part clipped, and `ley recordings path
+`started_at_ns`, `ended_at_ns`, `ended_by`, `device`, `gaps`, `dropped_ms`. The table gains a
+`DROPPED` column (`0.6 s in 2 gaps`) only when a recording lists samples the daemon dropped
+(docs/design/recording.md, "Gaps"). `ley recordings show <id>` prints the manifest, with a `CLIP`
+column in its part table (`0.4 s`) only when a part clipped and a `DROPPED` column only when a
+part has gaps, and `ley recordings path
 <id> [--part N]` the directory or one part's samples file, so `open -R "$(ley recordings path
 job_…)"` reveals it in Finder. Every id argument takes a full job id, an id prefix or a
 `ley://recordings/` URI, `ley play` included: `ley play job_01J…` plays a recording's first part,

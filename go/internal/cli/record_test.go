@@ -710,6 +710,48 @@ func TestRecordThatHearsNothingSaysSo(t *testing.T) {
 	}
 }
 
+// A recording whose daemon fell behind the radio says so: `ley recordings` gains a DROPPED column
+// for it, `show` says how much was dropped and lists the part's gap, and --json carries the
+// resource's gaps keys and the manifest's own gaps (MC-9). A clean store's table has no such column.
+func TestRecordingsShowAPartWithDroppedSamples(t *testing.T) {
+	t.Parallel()
+	var id string
+	sock, _ := harnessSeeded(t, fakedaemon.Options{}, func(d *fakedaemon.Daemon) {
+		var err error
+		id, err = d.SeedRecording(fakedaemon.SeedRecording{
+			Parts:     [][]fakedaemon.SeedOver{{{OpenMs: 0, CloseMs: 3000}}},
+			DroppedMs: 600,
+		})
+		if err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	})
+	list := mustRun(t, sock, "recordings")
+	if !strings.Contains(list, "DROPPED") || !strings.Contains(list, "0.6 s in 1 gap") {
+		t.Errorf("the list names the dropped samples:\n%s", list)
+	}
+	show := mustRun(t, sock, "recordings", "show", id)
+	for _, want := range []string{"0.6 s in 1 gap dropped", "DROPPED", "0.6 s  samples dropped"} {
+		if !strings.Contains(show, want) {
+			t.Errorf("show is missing %q:\n%s", want, show)
+		}
+	}
+	listed := mustRun(t, sock, "recordings", "--json")
+	if !strings.Contains(listed, `"gaps":"1"`) || !strings.Contains(listed, `"dropped_ms":"600"`) {
+		t.Errorf("--json carries the resource's gap keys:\n%s", listed)
+	}
+	manifest := mustRun(t, sock, "recordings", "show", id, "--json")
+	if !strings.Contains(manifest, `"gaps":[{"sample":`) || !strings.Contains(manifest, `"written_ms":3400`) {
+		t.Errorf("the manifest lists the gap and what the file holds:\n%s", manifest)
+	}
+
+	clean, _ := recordHarness(t)
+	mustRun(t, clean, "record", "146.52", "--for", "300ms")
+	if out := mustRun(t, clean, "recordings"); strings.Contains(out, "DROPPED") {
+		t.Errorf("a clean store's table has no DROPPED column:\n%s", out)
+	}
+}
+
 // The part table gains a CLIP column only when a part clipped, with the clipped time from the
 // manifest's clipped_ms.
 func TestRecordingsShowClipsOnlyWhenAPartClipped(t *testing.T) {

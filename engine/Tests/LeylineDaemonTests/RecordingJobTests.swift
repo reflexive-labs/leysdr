@@ -116,6 +116,14 @@ extension Int {
     func clamped(to range: Range<Int>) -> Int { Swift.max(range.lowerBound, Swift.min(range.upperBound - 1, self)) }
 }
 
+extension RecordingPart {
+    /// The seconds the part lists as dropped (`gaps`), at the capture rate `rate`.
+    func droppedSeconds(at rate: Double) -> Double {
+        guard rate > 0 else { return 0 }
+        return Double((gaps ?? []).reduce(UInt64(0)) { $0 + $1.samples }) / rate
+    }
+}
+
 final class RecordingJobTests: XCTestCase {
     /// Attaches `fixture` as a file device and returns it. A test that opens a capture of its own
     /// uses this one: the daemon's device list also holds whatever radio is plugged into the
@@ -193,7 +201,8 @@ final class RecordingJobTests: XCTestCase {
             XCTAssertEqual(manifest.frequencyHz, recordFrequencyHz)
             XCTAssertEqual(manifest.parts.count, 1, "a continuous audio recording is one part")
             XCTAssertNil(manifest.parts[0].clippedMs, "a -20 dBFS tone never reaches a rail")
-            XCTAssertEqual(manifest.coverageGaps.count, 0, "and it covers everything it claims")
+            XCTAssertEqual(manifest.coverageGaps.filter { $0.reason != RecordingGap.samplesDropped }.count, 0,
+                           "and it covers everything it claims, but for samples a slow runner dropped")
             XCTAssertEqual(manifest.anchors.count, 1)
             XCTAssertFalse(manifest.anchors[0].captureID?.isEmpty ?? true, "the anchor dates its own capture")
             // A capture publishes its anchor with its first block, so the one read while allocating
@@ -202,11 +211,14 @@ final class RecordingJobTests: XCTestCase {
             XCTAssertGreaterThan(manifest.anchors[0].hostTimeNs, PartWriter.plausibleEpochNs,
                                  "the placeholder anchor was replaced once samples arrived")
             XCTAssertFalse(manifest.parts[0].file.hasPrefix("1970"), manifest.parts[0].file)
-            // One second at the channel's audio rate, within one capture block of it. The block is
-            // 16384 capture samples: 6.8 ms at 2.4 MSPS, which is 328 audio frames at 48 kHz.
+            // One second at the channel's audio rate, within 5 % (a capture block is 6.8 ms at
+            // 2.4 MSPS, 328 audio frames at 48 kHz). A runner too slow for the radio drops samples
+            // ahead of the recording, and the part lists them as gaps rather than the WAV holding
+            // them (MC-9), so the second is the audio and the gaps together.
             let want = Double(manifest.sampleRate)
-            XCTAssertEqual(Double(manifest.parts[0].samples), want, accuracy: want * 0.05,
-                           "about a second of audio at \(manifest.sampleRate) Hz")
+            let dropped = manifest.parts[0].droppedSeconds(at: Double(manifest.anchors[0].sampleRate)) * want
+            XCTAssertEqual(Double(manifest.parts[0].samples) + dropped, want, accuracy: want * 0.05,
+                           "about a second of audio at \(manifest.sampleRate) Hz, gaps included")
             // The file on disk is the header plus the frames the header declares.
             let file = dir + "/" + started.jobID + "/" + manifest.parts[0].file
             let size = try FileManager.default.attributesOfItem(atPath: file)[.size] as? NSNumber

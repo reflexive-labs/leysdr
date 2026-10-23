@@ -344,12 +344,26 @@ struct PartRowView: View {
                 Text(words.starts).font(Theme.Font.value).foregroundStyle(Theme.ink)
                     .lineLimit(1)
                     .frame(width: Theme.Layout.startsWidth, alignment: .leading)
-                Text(words.length).font(Theme.Font.value).foregroundStyle(Theme.inkSecondary)
-                    .lineLimit(1)
-                    .frame(width: Theme.Layout.lengthWidth, alignment: .leading)
-                LevelBars(levels: session.levelGraphs[row.uri] ?? [], playing: playing)
-                    .frame(height: Theme.Layout.levelGraphHeight)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: Theme.Layout.gapMarkGap) {
+                    Text(words.length).font(Theme.Font.value).foregroundStyle(Theme.inkSecondary)
+                        .lineLimit(1)
+                    // The part's faint mark: the daemon dropped samples inside it.
+                    if row.hasGaps {
+                        Circle().fill(Theme.gapMark)
+                            .frame(
+                                width: Theme.Layout.gapMarkSize, height: Theme.Layout.gapMarkSize
+                            )
+                            .help("Samples were dropped inside this part")
+                            .accessibilityLabel("samples dropped")
+                    }
+                }
+                .frame(width: Theme.Layout.lengthWidth, alignment: .leading)
+                LevelBars(
+                    levels: session.levelGraphs[row.uri] ?? [], playing: playing,
+                    gaps: row.gapFractions
+                )
+                .frame(height: Theme.Layout.levelGraphHeight)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 Text(words.peak).font(Theme.Font.value)
                     .foregroundStyle(row.clipped ? Theme.accentRec : Theme.inkSecondary)
                     .lineLimit(1)
@@ -414,10 +428,12 @@ struct PartRowView: View {
 /// `levelBarPitch`, centred on the row's middle, its height the column's level over the graph's
 /// height with `levelBarMinHeight` for the floor so silence still shows the part's length;
 /// `inkTertiary`, the playing part's `accent`. Empty while the file is read or when it cannot be.
-/// Columns that would cross the space given are left out.
+/// Columns that would cross the space given are left out. Where the daemon dropped samples inside
+/// the part a `gapMark` tick crosses the graph at the gap's place in the written audio.
 struct LevelBars: View {
     let levels: [Float]
     let playing: Bool
+    var gaps: [Double] = []
 
     var body: some View {
         Canvas { ctx, size in
@@ -432,6 +448,16 @@ struct LevelBars: View {
                 ctx.fill(
                     Path(CGRect(x: x, y: (size.height - h) / 2, width: width, height: h)),
                     with: .color(colour))
+            }
+            // The graph is as wide as its columns, so a gap sits where its audio does.
+            let drawn = min(size.width, CGFloat(levels.count) * pitch)
+            guard drawn > 0 else { return }
+            let tick = Theme.Layout.gapTickWidth
+            for f in gaps where f.isFinite {
+                let x = min(max(0, drawn * CGFloat(f) - tick / 2), drawn - tick)
+                ctx.fill(
+                    Path(CGRect(x: x, y: 0, width: tick, height: size.height)),
+                    with: .color(Theme.gapMark))
             }
         }
         .accessibilityHidden(true)

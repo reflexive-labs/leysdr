@@ -102,6 +102,7 @@ final class SyntheticBandDevice: VirtualDevice, @unchecked Sendable {
             var rng = SweepRNG(seed: 0x5EED)
             var index: UInt64 = 0
             var phase = [Double](repeating: 0, count: carriers.count * 2)
+            let started = Date().timeIntervalSinceReferenceDate
             while streaming.value {
                 // Blocks still in the queue carry the previous centre.
                 var emitCentre = centerBox.value
@@ -115,8 +116,16 @@ final class SyntheticBandDevice: VirtualDevice, @unchecked Sendable {
                 fill(&view, centre: emitCentre, rng: &rng, phase: &phase)
                 deliver(view, SampleTime(captureID: captureID, sampleIndex: index))
                 index &+= UInt64(Self.blockSize)
-                var ts = timespec(tv_sec: 0, tv_nsec: 2_000_000)
-                nanosleep(&ts, nil)
+                // Paced to the rate it claims, as a radio is: a step's dwell is counted in samples,
+                // so a device that ran ahead of the clock would end a dwell early in wall time. A
+                // fixed sleep was near real time only while a debug build's fill was slow; an
+                // optimised one ran at three times the rate. Behind the clock it does not sleep.
+                let due = started + Double(index) / Double(Self.rate)
+                let ahead = due - Date().timeIntervalSinceReferenceDate
+                if ahead > 0 {
+                    var ts = timespec(tv_sec: 0, tv_nsec: Int(ahead * 1e9))
+                    nanosleep(&ts, nil)
+                }
             }
             done.signal()
         }

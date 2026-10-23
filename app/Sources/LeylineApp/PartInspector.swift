@@ -41,6 +41,12 @@ struct PartInspector: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 4)
                 }
+                if let sentence = words.droppedSentence {
+                    Text(sentence).font(Theme.Font.footnote).foregroundStyle(Theme.inkFaint)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 4)
+                        .accessibilityIdentifier("library.inspector.dropped")
+                }
             }
             .padding(.horizontal, 16).padding(.vertical, 14)
             Rectangle().fill(Theme.hairline).frame(height: 1)

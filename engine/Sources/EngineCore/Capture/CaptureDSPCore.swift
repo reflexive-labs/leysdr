@@ -40,6 +40,9 @@ package final class CaptureDSPCore: @unchecked Sendable {
     /// device thread as each block arrives and published a quarter second at a time. The clipping
     /// authority; the spectrum is not one.
     package let level = CaptureLevelMeter()
+    /// Where the block ring dropped samples, on the capture's timeline: written on the device
+    /// thread at the drop, read by a recording to list the gaps in what it wrote.
+    package let gaps = CaptureGapLog()
     private let sampleRateBox: Atomic<UInt64>
     private let centerHzBox: Atomic<UInt64>
     private let tableLock = NSLock()
@@ -190,9 +193,13 @@ package final class CaptureDSPCore: @unchecked Sendable {
         var offset = 0
         while offset < total {
             let n = min(Self.blockSize, total - offset)
-            // Full ring: the block is dropped and counted by the ring (signpost included). No
-            // logging here — this is the USB callback thread and stderr I/O could stall it.
-            guard let (slot, index) = ring.acquire() else { return }
+            // Full ring: the block is dropped and counted by the ring (signpost included), and the
+            // rest of this buffer with it, which the gap log records by sample. No logging here —
+            // this is the USB callback thread and stderr I/O could stall it.
+            guard let (slot, index) = ring.acquire() else {
+                gaps.dropped(from: first &+ UInt64(offset), samples: UInt64(total - offset))
+                return
+            }
             let dst = slot.base.assumingMemoryBound(to: Float.self)
             let floats = n * 2
             switch buffer.format {
@@ -211,6 +218,8 @@ package final class CaptureDSPCore: @unchecked Sendable {
                 ring.commit(index: index, count: 0, time: time)
                 return
             }
+            // The gap before this block, if one is open, is published ahead of the block itself.
+            gaps.delivered()
             ring.commit(index: index, count: n, time: SampleTime(captureID: time.captureID, sampleIndex: first &+ UInt64(offset)))
             offset += n
         }

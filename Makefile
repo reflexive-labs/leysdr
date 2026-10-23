@@ -11,7 +11,7 @@
 #   make race       Go tests that exercise goroutines, under the race detector
 #   make swift      build the engine (leylined) — macOS for the real thing, Linux compiles the non-DSP core
 #   make swift-test engine tests and the optional SDR-library matrix; depends on fixtures so the fixture round-trips actually run (set
-#                   LEYLINE_FIXTURES to point the tests elsewhere)
+#                   LEYLINE_FIXTURES to point the tests elsewhere). The suite runs optimised, then EngineCoreTests again in debug
 #   make fixtures   generate IQ fixtures into fixtures/ with leyfix (FIXTURE_DURATION=0.5 for a quick set)
 #   make e2e        cross-language contract test: `ley` driving a locally built leylined over UDS
 #   make eval       the agent evals: an agent on `ley mcp` against fixtures, graded (costs tokens)
@@ -144,8 +144,17 @@ swift:
 swift-release:
 	cd engine && swift build -c release
 
+# The engine's suite runs optimised, as the daemon people run is: its real-time tests play 2.4 MSPS
+# through the whole pipeline, and a debug daemon on a shared runner fell behind the radio and
+# dropped samples the tests then missed (docs/plans/app.md, MC-9). -enable-testing keeps the
+# @testable imports. It has its own scratch path, so it never rebuilds the plain release build
+# `make hot-path` measures, nor that one it. EngineCoreTests then run again in debug, the
+# configuration that compiles `assert` and the unoptimised kernels; they are the fast unit tests
+# (about 40 s), so the second run is cheap.
+SWIFT_TEST_SCRATCH := .build/release-testing
 swift-test: fixtures sdr-loader-test
-	cd engine && swift test
+	cd engine && swift test -c release -Xswiftc -enable-testing --scratch-path $(SWIFT_TEST_SCRATCH)
+	cd engine && swift test --filter '^EngineCoreTests\.'
 
 sdr-loader-test:
 	./scripts/test-optional-sdr-loaders.sh
