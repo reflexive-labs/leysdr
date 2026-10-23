@@ -116,8 +116,10 @@ follows), so a channel the window moved away from is not followed again. The win
 ownership. It ends its own channel, unless a recording runs on it (a running record job that
 borrowed the channel, or one on its frequency and mode, the frequency read before the move that took
 it out of the capture): then the channel stays, the window's sink leaves it, the inspector says
-`Your channel on 162.550 MHz stays open while it records.`, and the window ends it when the
-recording stops. A recording counts only when it rides the window's capture or asks for its device;
+`Still recording 162.550 MHz WX1 · Stop` (the bookmark on the frequency, else its plan channel;
+`ChannelFollow.keptRecording`), and the window ends the channel when the recording stops. The
+line's Stop (`inspector.kept.stop`) is `CancelJob` on that recording, as the Record switch's off
+is, so nothing else in the window has to reach a recording it no longer shows. A recording counts only when it rides the window's capture or asks for its device;
 one on another radio at the same frequency does not. The audio moves by sink, not by channel. A
 `Sink` names no owner, so the window holds the id of the sink it attached (`heldSink`, a
 `HeldObject` like the capture and channel), and mute, volume, a sweep's pause and a part's playback
@@ -948,7 +950,7 @@ them and nothing else: an identifier changes no layout and no behaviour.
 | `spectrum.` | `maxhold`, `clear` |
 | `tuning.` | `field` (the frequency's digits), `up`, `down` |
 | `transport` | the bar under the Radio; `.mute`, `.mode`, `.width`, `.squelch` with `.squelch.track`, `.volume` |
-| `inspector` | the Radio's inspector; its groups `.header`, `.identity`, `.readings`, `.audio`, `.log`, `.measurements`; its controls `.rename`, `.tone`, `.note`, `.revert`, `.save`, `.tuneinside`, `.record`, `.log.play` (a kept row's ▶ or ■; every row's is the same, and `press` takes the newest), `.measurements.toggle` |
+| `inspector` | the Radio's inspector; its groups `.header`, `.identity`, `.readings`, `.audio`, `.log`, `.measurements`; its controls `.rename`, `.tone`, `.note`, `.revert`, `.save`, `.tuneinside`, `.record`, `.kept.stop` (the Stop of `Still recording …`), `.log.play` (a kept row's ▶ or ■; every row's is the same, and `press` takes the newest), `.measurements.toggle` |
 | `library.` | `sidebar`, `search`, `channel.<hz>`, `page`, `page.record`, `page.tune`, `day.<day>` (an EARLIER day's line) and `day.<day>.play`, `part.<n>` (counted from 0 down the page, as `select_part` counts), `inspector`, `inspector.playall`, `inspector.finder`, `inspector.delete` |
 | `player` | the Library's bar; `.previous`, `.play`, `.next`, `.volume` |
 | `assistant.` | `panel`, `new`, `input`, `stop`, `settings`, `decline`, `allow`, `allow.conversation`, `step.<call id>` (a step's row, which opens and closes it, by the id the daemon gave its tool call: `step.c1`) |

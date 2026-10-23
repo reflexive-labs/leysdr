@@ -129,7 +129,7 @@ final class ChannelFollowTests: XCTestCase {
         XCTAssertEqual(st?.attachSink, true, "the window was playing; nothing plays the new one")
         XCTAssertEqual(f.followed?.channelID, "chan_wx")
         XCTAssertEqual(f.floor, 4)
-        XCTAssertNil(f.keptWords(in: s))
+        XCTAssertNil(f.keptRecording(in: s))
 
         // Held now: the same channel is not followed twice.
         XCTAssertNil(step(&f, s, held: "chan_wx"))
@@ -193,13 +193,23 @@ final class ChannelFollowTests: XCTestCase {
         XCTAssertEqual(st?.keepFrom, true)
         XCTAssertEqual(st?.detachSink, "sink_own", "the kept channel stops playing")
         XCTAssertEqual(st?.attachSink, true)
+        // The line names the recording by its frequency and its plan channel, or the bookmark
+        // on it, and its Stop ends that job.
+        let kept = f.keptRecording(in: s)
+        XCTAssertEqual(kept?.words, "Still recording 162.550 MHz WX1")
+        XCTAssertEqual(kept?.jobID, "job_rec")
+        XCTAssertEqual(kept?.hz, 162_550_000)
+        let named = Bookmark(id: "bm_1", name: "NOAA Seattle", hz: 162_550_000, mode: .nfm)
+        let elsewhere = Bookmark(id: "bm_2", name: "Calling", hz: 146_520_000, mode: .nfm)
         XCTAssertEqual(
-            f.keptWords(in: s), "Your channel on 162.550 MHz stays open while it records.")
+            f.keptRecording(in: s, bookmarks: [elsewhere, named])?.words,
+            "Still recording 162.550 MHz NOAA Seattle")
         XCTAssertNil(f.keptToEnd(in: s), "still recording")
 
         var done = recording(hz: 162_550_000)
         done.state = .completed
         s.apply(event(8, .job(done), by: app))
+        XCTAssertNil(f.keptRecording(in: s), "the line goes with the recording")
         XCTAssertEqual(f.keptToEnd(in: s), "chan_own")
         XCTAssertNil(f.kept)
         XCTAssertNil(f.keptToEnd(in: s))

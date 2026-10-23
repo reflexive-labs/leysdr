@@ -162,12 +162,7 @@ struct IdentityView: View {
                 Text(through).font(Theme.Font.aside).foregroundStyle(Theme.inkTertiary)
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
-            if let kept = session.followKeptWords {
-                // The window follows another client's channel while its own records
-                // (`ChannelFollow`). It goes when the recording stops and the window ends it.
-                Text(kept).font(Theme.Font.aside).foregroundStyle(Theme.inkTertiary)
-                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-            }
+            if let kept = session.keptRecording { KeptRecordingLine(kept: kept) }
             if let b = bookmark {
                 // A view of their own for each bookmark, made new when the tuned bookmark
                 // changes. Kept across the change, the fields took the new bookmark's text in
@@ -678,5 +673,26 @@ struct ReadingRow<Meter: View, Word: View>: View {
         }
         .contentShape(Rectangle())
         .help(help)
+    }
+}
+
+/// `Still recording 146.520 MHz Calling · Stop`: the window follows another client's channel
+/// while its own stays open for a recording (`ChannelFollow.keptRecording`). Stop ends that
+/// recording, and the window then ends the channel; the line goes with them.
+struct KeptRecordingLine: View {
+    @Environment(AppSession.self) private var session
+    let kept: ChannelFollow.KeptRecording
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text(kept.words + " \u{00B7}").foregroundStyle(Theme.inkTertiary)
+                .lineLimit(1).truncationMode(.middle)
+            Button("Stop") { Task { await session.stopKeptRecording() } }
+                .buttonStyle(.plain).foregroundStyle(Theme.inkSecondary)
+                .help("Stops this recording, and the window then lets the channel go")
+                .accessibilityIdentifier("inspector.kept.stop")
+        }
+        .font(Theme.Font.aside)
+        .identifiedGroup("inspector.kept")
     }
 }

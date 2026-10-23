@@ -957,7 +957,9 @@ scenes:
   # With Record transmissions on for it, the window's panel tuning the club repeater moves the
   # readout, the inspector and the log there, says who tuned and with what squelch, and keeps
   # the recording's channel open with a line saying so; then `ley ask --continue` from a
-  # terminal tunes the evening net and the window follows that too.
+  # terminal tunes the evening net and the window follows that too, its note leaving out the
+  # squelch it measured on auto. Last the line's Stop ends the recording, and the window the
+  # old channel.
   - name: follow-assistant
     fixtures: [{name: scene_2m}]
     bookmarks: ../../site/shots/home.csv
@@ -983,6 +985,8 @@ scenes:
       # The panel's tune asked for -42 dBFS, a level of the assistant's own, so the note names it
       # (docs/plans/app.md, MC-1c).
       - {cmd: state, expect: {notices.0: "The assistant tuned to 146.940 MHz NFM and set the squelch to -42 dBFS."}}
+      # The window's old channel still records, and the inspector says so with a Stop.
+      - {cmd: state, expect: {notices.1: Still recording 146.520 MHz Calling}}
       # The column closes, as its steps carry the run's channel ids.
       - {cmd: stage, stage: {assistant: false}}
       - {cmd: snapshot, name: followed}
@@ -993,9 +997,17 @@ scenes:
       - {cmd: state, expect: {tuned_hz: 147180000, bookmark: Evening net}}
       # This tune left the squelch on auto: the level it measured is not one the assistant
       # chose, so the note leaves the squelch out.
-      - {cmd: state, expect: {notices.0: "The assistant tuned to 147.180 MHz NFM."}}
+      - {cmd: state, expect: {notices.0: "The assistant tuned to 147.180 MHz NFM.", notices.1: Still recording 146.520 MHz Calling}}
       - {cmd: ax, name: terminal}
       - {cmd: ley, args: [state]}
+      # The line's Stop ends the recording on the old channel, and the window then lets that
+      # channel go (docs/plans/app.md, MC-1c).
+      - {cmd: ley, args: [jobs], expect_stdout: running}
+      - {cmd: press, identifier: inspector.kept.stop}
+      - {cmd: wait, seconds: 3, expect_log: ["job_\\S+ stopped", "no longer records; ended"]}
+      - {cmd: ley, args: [jobs], expect_stdout: ["!running", cancelled]}
+      - {cmd: state, expect: {tuned_hz: 147180000, notices.0: "The assistant tuned to 147.180 MHz NFM."}}
+      - {cmd: ax, name: stopped}
 
   # Who changed the channel (docs/plans/app.md, the assistant panel's last item): a terminal's
   # `ley set squelch -45` puts a line under the inspector's frequency naming it, and the

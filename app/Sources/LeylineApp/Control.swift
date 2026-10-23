@@ -420,6 +420,7 @@ final class ControlChannel {
         if let w = s.outOfCaptureWords { notices.append(w) }
         if let n = s.assistantNotice { notices.append(n.text) }
         if let n = s.changeNote { notices.append(n.text) }
+        if let k = s.keptRecording { notices.append(k.words) }
         var popover = ""
         if let b = s.pickerBand {
             popover = "channels:\(b.id)"

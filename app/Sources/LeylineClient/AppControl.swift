@@ -536,7 +536,7 @@ public struct ControlViewState: Sendable, Equatable, Codable {
     public var focused: String
     /// Every message the window shows: the notice, the error, the empty-state and
     /// out-of-capture words, the assistant's notice, then the inspector's lines under the channel
-    /// (who changed it last).
+    /// (who changed it last, `Still recording …`).
     public var notices: [String]
     /// The popover open (`channels:<row id>`, `device_menu`), or empty.
     public var popover: String

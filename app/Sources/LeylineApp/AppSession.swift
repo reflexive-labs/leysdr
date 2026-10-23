@@ -4257,8 +4257,18 @@ final class AppSession {
     }
 
     /// The inspector's line while the window follows another client's channel and its own stays
-    /// for a recording (`ChannelFollow.keptWords`).
-    var followKeptWords: String? { follow.keptWords(in: state) }
+    /// for a recording (`ChannelFollow.keptRecording`).
+    var keptRecording: ChannelFollow.KeptRecording? {
+        follow.keptRecording(in: state, bookmarks: bookmarks.list)
+    }
+
+    /// The kept line's Stop: `CancelJob` on the recording that keeps the window's old channel
+    /// open, as the Record switch's off does; once the job ends the window ends that channel
+    /// (`followOtherClients`).
+    func stopKeptRecording() async {
+        guard let k = keptRecording else { return }
+        await stopRecording(k.jobID, frequencyHz: k.hz, mode: k.mode)
+    }
 
     /// The inspector's line under the channel's parameters: the newest change to the tuned
     /// channel when another client made it (`ChangeNote`).
