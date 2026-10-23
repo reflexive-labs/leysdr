@@ -1166,3 +1166,108 @@ scenes:
       - {cmd: state, expect: {band: marine}}
       - {cmd: ax, name: marine}
       - {cmd: snapshot, name: marine}
+
+  # A sweep from start to end (docs/plans/app.md, U5 and U7), on scene_vhf20 with each sweep
+  # held for 4 s (sweep_dwell). The fixture's channel is stopped first, so the window plays its
+  # own. Scan band on the tuned 2 m row stops the audio, keeps the frequency in the field and
+  # the row open with its words and Stop; Stop ends the sweep and the audio comes back on
+  # Calling with nothing under the item. A sweep left to run comes back with its hits, and a
+  # click on a hit's row and on a hit's tick tunes it, keeping the hits. A bookmark, a band and
+  # a chart click during a sweep stop it and are done once the radio is back. Scan band on NOAA,
+  # opened by its chevron while marine sweeps, stops marine and sweeps NOAA, whose row keeps its
+  # hits. An AM bookmark comes back at AM after a sweep. With a recording running Scan band
+  # asks first; Cancel leaves the radio alone and Sweep anyway sweeps. After Stop Listening,
+  # Scan band on NOAA sweeps, selects the band and plays it.
+  - name: sweep-lifecycle
+    fixtures: [{name: scene_vhf20}]
+    bookmarks: ../../site/shots/home.csv
+    sweep_dwell: 4
+    steps:
+      - ley: [stop, "146.52"]
+      - ley: [bookmarks, add, "147.3", --name, Wide, --mode, am]
+    stage:
+      place: radio
+      inspector: true
+      select_bookmark: Calling
+      settle: 3
+    app:
+      - {cmd: state, expect: {tuned_hz: 146520000, sink: own}}
+      - {cmd: press, identifier: sidebar.band.2m.scan}
+      - {cmd: wait, seconds: 1.5, expect_log: ["sweep: paused: channel", "sweep: job_.* started: 2 m amateur"]}
+      - {cmd: state, expect: {tuned_hz: null, sink: none, open_rows.0: 2m}}
+      - {cmd: ax, name: sweeping}
+      - {cmd: snapshot, name: sweeping}
+      - {cmd: press, identifier: sidebar.band.2m.scan}
+      - {cmd: wait, seconds: 2, expect_log: ["sweep: stop asked on 2 m amateur", "sweep: resuming bookmark Calling"]}
+      - {cmd: state, expect: {tuned_hz: 146520000, sink: own, bookmark: Calling}}
+      # Left to run, then its hits tuned by their row and their tick.
+      - {cmd: press, identifier: sidebar.band.2m.scan}
+      - {cmd: wait, seconds: 6, expect_log: ["sweep: job_.* ended: [0-9]+ hits?", "sweep: resuming bookmark Calling"]}
+      - {cmd: state, expect: {tuned_hz: 146520000, mode: NFM, bandwidth_hz: 12500, sink: own, hits.0: calling, hits.1: 146.940 MHz}}
+      - {cmd: click, identifier: sidebar.hit.146-940-mhz}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {band: 2m, hits.1: 146.940 MHz}}
+      - {cmd: click, identifier: rail.hit.calling}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: 146520000, hits.0: calling}}
+      # A bookmark, a band and a chart click during a sweep.
+      - {cmd: press, identifier: sidebar.band.2m.scan}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: sidebar.bookmark.club-repeater}
+      - {cmd: wait, seconds: 3, expect_log: ["sweep: tune bookmark Club repeater waits for the sweep to stop", "ended: cancelled", "!DEVICE_SWEEPING"]}
+      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater, sink: own}}
+      - {cmd: press, identifier: sidebar.band.2m.scan}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: sidebar.band.murs}
+      - {cmd: wait, seconds: 3, expect_log: ["sweep: tune row MURS waits for the sweep to stop", "ended: cancelled", "!DEVICE_SWEEPING"]}
+      - {cmd: state, expect: {band: murs-151, sink: own}}
+      # A hit with no bookmark under its tick names itself and its level on hover.
+      - {cmd: press, identifier: sidebar.band.murs.scan}
+      - {cmd: wait, seconds: 6, expect_log: "sweep: job_.* ended: [0-9]+ hits?"}
+      - {cmd: state, expect: {hits.0: "1", hits.1: "4"}}
+      - {cmd: hover, identifier: rail.hit.1}
+      - {cmd: state}
+      - {cmd: press, identifier: sidebar.band.murs.scan}
+      - {cmd: wait, seconds: 1}
+      - {cmd: click, x: 804, y: 400}
+      - {cmd: wait, seconds: 3, expect_log: ["sweep: tune to 15[0-9]+ Hz waits for the sweep to stop", "ended: cancelled", "!DEVICE_SWEEPING"]}
+      - {cmd: state, expect: {band: marine, sink: own}}
+      # Scan band on a second row while the first sweeps.
+      - {cmd: press, identifier: sidebar.band.marine.scan}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: sidebar.band.noaa.chevron}
+      - {cmd: press, identifier: sidebar.band.noaa.scan}
+      - {cmd: wait, seconds: 7, expect_log: ["sweep: scan NOAA weather waits for the sweep to stop", "ended: cancelled", "sweep: job_.* started: NOAA weather", "sweep: job_.* ended: 1 hit"]}
+      - {cmd: state, expect: {band: marine, sink: own, open_rows.0: marine, open_rows.1: noaa, hits.0: WX2}}
+      - {cmd: ax, name: second}
+      # An AM bookmark keeps its mode through a sweep.
+      - {cmd: press, identifier: sidebar.band.2m}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: sidebar.bookmark.wide}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {bookmark: Wide, mode: AM}}
+      - {cmd: press, identifier: sidebar.band.2m.scan}
+      - {cmd: wait, seconds: 6, expect_log: "sweep: resuming bookmark Wide"}
+      - {cmd: state, expect: {bookmark: Wide, mode: AM, tuned_hz: 147300000}}
+      # After Stop Listening, Scan band on NOAA.
+      - {cmd: menu, menu: "Tune>Stop Listening"}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {tuned_hz: null, sink: none}}
+      - {cmd: press, identifier: sidebar.band.noaa.chevron}
+      - {cmd: press, identifier: sidebar.band.noaa.scan}
+      - {cmd: wait, seconds: 6, expect_log: ["sweep: job_.* started: NOAA weather, .* no capture to pause", "sweep: job_.* ended: 1 hit", "selecting NOAA weather after the sweep"]}
+      - {cmd: state, expect: {band: noaa, sink: own, hits.0: WX2, notices.0: "NOAA weather: NFM at 12.5 kHz"}}
+      # A recording on the window's capture: Scan band asks.
+      - {cmd: press, identifier: inspector.record}
+      - {cmd: wait, seconds: 2}
+      - {cmd: press, identifier: sidebar.band.noaa.scan}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {alert.title: "Move the radio?", alert.buttons.0: Sweep anyway, alert.buttons.1: Cancel}}
+      - {cmd: press, identifier: alert.cancel}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {band: noaa, sink: own, alert: null}}
+      - {cmd: press, identifier: sidebar.band.noaa.scan}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: alert.sweep-anyway}
+      - {cmd: wait, seconds: 6, expect_log: ["sweep: job_.* started: NOAA weather", "sweep: job_.* ended: 1 hit"]}
+      - {cmd: state, expect: {band: noaa, sink: own, hits.0: WX2}}
