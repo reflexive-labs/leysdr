@@ -5,6 +5,8 @@ What changed for someone using Leyline, newest first. Each released version has 
 
 ## Unreleased
 
+## 0.2.0 (2026-10-23)
+
 Leyline 0.2 adds AI on your own provider key: an assistant in the app that runs the radio from
 plain requests, and speech-to-text for each over on a recording or a live channel.
 
