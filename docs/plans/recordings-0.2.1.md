@@ -52,11 +52,8 @@ lists the changes to it and the work, with `[ ]` items still open. Written 2026-
   recording.md's "a part is an exchange".
 - [x] R3. The Library lists transmissions: rows, transcript lines, the count of transmissions a
   transcription left without words with Transcribe again, Show in Finder in the context menu.
-  Check scene `library-speech` added and goldens re-recorded and named. Export and transcribing
+  Check scene `library-speech` added; no golden re-recorded. Export and transcribing
   only the missing overs moved to a later release.
-- [ ] R4. `ley record` gates NFM and AM by default; the daemon's start sweep removes recording
-- [ ] R3. The Library lists transmissions: rows, transcript lines, Transcribe missing, Export,
-  Show in Finder in the context menu. Check scenes and goldens re-recorded and named.
 - [x] R4. `ley record` gates NFM and AM by default; the daemon's start sweep removes recording
   directories with no parts whose job is not running.
 - [ ] R5. CHANGELOG, recording.md and the guide pages brought up to date; one full `make
