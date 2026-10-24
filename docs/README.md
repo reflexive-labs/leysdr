@@ -90,6 +90,8 @@ What is being built, in what order, and the record of what each step found.
   [site screenshots](plans/site-shots.md) (`make shots` and the release assets leysdr.com pulls),
   [leysdr.com for 0.2](plans/site-0.2.md) (the site agent's brief: the copy, the privacy facts it
   may state and the images for 0.2.0),
+  [recordings for 0.2.1](plans/recordings-0.2.1.md) (lossless stored transcription, one file per
+  transmission, the Library lists transmissions),
   [a signed release build](plans/distribution.md) (bundled drivers, the daemon as the app's login
   item, Sparkle, notarization),
   [MCP adapter](plans/mcp.md) (the tools the daemon can back are done; the rest wait on their
