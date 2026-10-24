@@ -422,8 +422,9 @@ or, with `--iq`, the capture's raw samples as `.cf32` at the capture rate. A cha
 what somebody is already listening to, with their mode, bandwidth and squelch, and ends
 `COMPLETED` when that channel closes; `--mode`, `--bw` and `--squelch` are refused there rather
 than ignored. `--gate squelch` records only while the squelch is open and writes **one file per
-exchange**: a re-open inside `--hang` (default 5 s) continues the same file, so the pauses between
-overs stay in one part, and `--pre` (default 500 ms) keeps what came just before each key-up.
+transmission**: a file closes `--hang` (default 500 ms) after the key-down, and `--pre` (default
+500 ms) keeps what came just before each key-up. A longer `--hang`, 5s say, keeps the pauses
+between overs in one file, so a file is an exchange.
 `--listen` also plays the channel through the daemon's speakers while it records, so you hear
 what is going into the file without a second command holding a second channel; the sink belongs to
 that terminal and goes when it exits, which is why it is refused with `--detach`, and with `--iq`,

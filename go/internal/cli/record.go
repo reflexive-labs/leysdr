@@ -70,9 +70,10 @@ band unless --mode says otherwise). Given a channel id from 'ley state' it
 records what you are already listening to, with your mode, bandwidth and
 squelch, and stops when you do.
 
---gate squelch records only while the squelch is open, one file per exchange:
-the pauses between overs stay inside one file (--hang) and half a second
-before each key-up is kept (--pre). Silence is never edited out of a file --
+--gate squelch records only while the squelch is open, one file per
+transmission: a file closes half a second after the key-down (--hang), a longer
+one keeps the pauses between overs inside one file, and half a second before
+each key-up is kept (--pre). Silence is never edited out of a file --
 the gaps between files are stated in the manifest instead, so a recording
 played back sounds like the air did.
 
@@ -122,7 +123,7 @@ starts it and exits with the job id; 'ley jobs cancel' stops one.
 	cmd.Flags().StringVar(&forStr, "for", "", "how long to record, e.g. 30s, 5m, 2h (default: until Ctrl-C or ley jobs cancel)")
 	cmd.Flags().StringVar(&gate, "gate", "", "record only while something is on the air: squelch (default: record continuously)")
 	cmd.Flags().StringVar(&preStr, "pre", "", "how much audio to keep from before each key-up, e.g. 500ms (default 500ms; needs --gate)")
-	cmd.Flags().StringVar(&hangStr, "hang", "", "how long a file stays open after a key-down, so the pauses between overs stay in one file, e.g. 5s (default 5s; needs --gate)")
+	cmd.Flags().StringVar(&hangStr, "hang", "", "how long a file stays open after a key-down, default 500ms; a longer one such as 5s keeps the pauses between overs in one file (needs --gate)")
 	cmd.Flags().StringVar(&quietStr, "stop-after-quiet", "", "stop recording after this long with nothing on the air, e.g. 10m (needs --gate)")
 	cmd.Flags().StringVar(&partStr, "part", "", "cut a new file every so often, e.g. 60s (default: audio is one file, IQ is cut every 60s)")
 	cmd.Flags().BoolVar(&o.listen, "listen", false, "also play what is being recorded through the speakers, so you can hear it go in (not with --iq or --detach)")
@@ -635,7 +636,7 @@ func recordBanner(s *verbSession, o recordOptions, m *leyline.RecordingManifest,
 	}
 	if o.gated {
 		gate := fmt.Sprintf("squelch, %s pre-roll, %s hang",
-			recordSpan(o.pre, 500*time.Millisecond), recordSpan(o.hang, 5*time.Second))
+			recordSpan(o.pre, 500*time.Millisecond), recordSpan(o.hang, 500*time.Millisecond))
 		if m != nil && m.Gate != nil {
 			gate = fmt.Sprintf("squelch, %s pre-roll, %s hang",
 				recordSpan(time.Duration(m.Gate.PreRollMs)*time.Millisecond, 0),

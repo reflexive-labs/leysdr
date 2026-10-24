@@ -76,7 +76,7 @@ extension SegmentedDecodeTests {
             try self.checkClips(got, jobID: started.jobID, in: recordings)
             let (manifest, _) = try self.readClips(recordings + "/" + started.jobID)
             XCTAssertEqual(manifest.endedBy, "cancelled")
-            XCTAssertEqual(manifest.gate?.hangMs, 5000, "the recorder's own gate, not the segmenter's")
+            XCTAssertEqual(manifest.gate?.hangMs, 500, "the recorder's own gate, not the segmenter's")
             XCTAssertTrue(manifest.parts.allSatisfy { ($0.squelchOpenMs ?? 0) > 0 }, "every part says how long it was open")
             let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
             XCTAssertTrue(state.channels.isEmpty, "the job's one channel goes back with it")

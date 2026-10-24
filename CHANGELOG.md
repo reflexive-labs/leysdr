@@ -15,6 +15,10 @@ What changed for someone using Leyline, newest first. Each released version has 
   the transmission and its recording. When a transcription leaves some transmissions without
   words, the page says how many, with Transcribe again beside the count. Show in Finder moved to a
   row's context menu.
+- **Changed: a recording is one file per transmission.** A gated recording now closes a file
+  500 ms after the key-down in `ley record`, the MCP `record` tool and a live speech job's clips,
+  as the app's record button already did; it was 5 s, which put an exchange of several overs in
+  one file. `--hang 5s` (MCP `hang_ms`) keeps the old behaviour.
 
 ## 0.2.0 (2026-10-23)
 

@@ -1,8 +1,8 @@
 # Ten seconds of a keyed band, recorded and counted. The fixture states its own keying -- three
 # transmissions with 3 s of floor between -- so the answer key is the generator's, not the air's.
-# At the default 5 s hang the three overs stay in one part, so the number to report is the
-# squelch_opens the manifest carries, not the part count: an agent that reads the parts and says
-# "1" has found the tool's shape rather than the band's.
+# At the default 500 ms hang each over is its own part, so the squelch_opens the manifest carries
+# and the part count both say 3. An agent that sets a 5 s hang_ms gets one part and has to read
+# squelch_opens: the number to report is the band's, not the tool's shape.
 name: record-squelch-opens
 description: Record a keyed band for ten seconds and say how many times the squelch opened.
 fixtures:

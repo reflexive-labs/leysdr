@@ -702,13 +702,13 @@ before anything is written: `ley: the gain asked for could not be set: no gain e
 this radio's are LNA, VGA and AMP [GAIN_ELEMENT_UNKNOWN]`.
 
 Recording a busy channel continuously fills a disk with silence, so `--gate squelch` records only
-while something is on the air, one file per exchange:
+while something is on the air, one file per transmission:
 
 ```console
 $ ley record 146.52 --gate squelch --stop-after-quiet 10m --detach
 Recording 146.520 MHz (NFM, 2 m amateur)
 Writing   audio WAV, 48 kHz mono
-Gate      squelch, 500 ms pre-roll, 5 s hang, below -92 dBFS is silence
+Gate      squelch, 500 ms pre-roll, 500 ms hang, below -92 dBFS is silence
 Until     10 min with nothing on the air
 /Users/you/Library/Application Support/Leyline/recordings/job_01J8XQ2M7V3N9K5R4T6W8Y0ZAB
 Left running; ley jobs cancel 1 stops it
@@ -721,8 +721,9 @@ A gated recording during which the squelch never opened holds nothing, and is no
 `ley record` ends with `Recorded nothing: the squelch never opened.` and no recording is listed.
 Lower `--squelch` if something was on the air.
 
-The pauses *between overs* stay inside one file (`--hang`, 5 s by default) and half a second
-before each key-up is kept (`--pre`), so an exchange plays back whole. Silence is never edited out
+A file closes half a second after the key-down (`--hang`) and starts half a second before each
+key-up (`--pre`). Pass a longer `--hang`, 5s say, to keep the pauses between overs inside one file
+so an exchange plays back whole. Silence is never edited out
 of a file: the gaps between files are stated in the manifest instead, so playback keeps the
 original timing within each file.
 

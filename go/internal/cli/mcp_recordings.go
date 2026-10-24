@@ -34,9 +34,9 @@ type recordArgs struct {
 	Target    string  `json:"target" jsonschema:"what to record: a frequency (a bare number is MHz: 146.52; units are exact: 1010k, 146520000), a preset name such as noaa, or the id of a channel already running (chan_...)"`
 	DurationS float64 `json:"duration_s" jsonschema:"how long to record, in seconds (1 to 3600). Required: what an agent starts must end without it"`
 	IQ        bool    `json:"iq,omitempty" jsonschema:"record the radio's raw samples (.cf32) instead of demodulated audio; about 19 MB a second at 2.4 MSPS (default: false)"`
-	Gate      string  `json:"gate,omitempty" jsonschema:"record only while something is on the air: squelch. Files are one per exchange -- the pauses between overs stay in one file (default: record continuously)"`
+	Gate      string  `json:"gate,omitempty" jsonschema:"record only while something is on the air: squelch. Files are one per transmission (default: record continuously)"`
 	PreRollMs uint32  `json:"pre_roll_ms,omitempty" jsonschema:"audio kept from before each key-up, in milliseconds (default 500; needs gate)"`
-	HangMs    uint32  `json:"hang_ms,omitempty" jsonschema:"how long a file stays open after a key-down, in milliseconds, so the pauses between overs stay in one file (default 5000; needs gate)"`
+	HangMs    uint32  `json:"hang_ms,omitempty" jsonschema:"how long a file stays open after a key-down, in milliseconds (default 500, so a file is one transmission); a longer one such as 5000 keeps the pauses between overs in one file (needs gate)"`
 	Mode      string  `json:"mode,omitempty" jsonschema:"how to decode: nfm, wfm, am, usb, lsb, cw (default: chosen from the band); not with a channel id or with iq"`
 	Bandwidth string  `json:"bandwidth,omitempty" jsonschema:"channel width: a bare number is kHz (12.5), or 200k, 12500 (default: the mode's usual width)"`
 	Squelch   string  `json:"squelch,omitempty" jsonschema:"mute below this level: auto (the default with a gate, measured from the channel's own noise floor), off, or dBFS such as -40"`

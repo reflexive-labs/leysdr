@@ -87,14 +87,36 @@ extension RecordingJobTests {
         }
     }
 
-    func testTheDefaultHangKeepsAnExchangeInOnePart() async throws {
+    /// A request that sets no hang gets 500 ms, so each over of the fixture is its own part.
+    func testTheDefaultHangCutsOnePartPerTransmission() async throws {
         let segments = try keyedSegments()
         let dir = try recordings()
         defer { try? FileManager.default.removeItem(atPath: dir) }
         try await withDaemon(recordingsPath: dir) { c in
             try await self.attach(c, fixture: "nfm_keyed.cf32", loop: false)
-            // The default 5 s hang, which is longer than the fixture's 3 s gaps.
-            var config = self.gatedConfig(hangMs: 0)
+            let started = try await self.start(c, self.gatedConfig(hangMs: 0))
+            let done = try await self.waitForEnd(c, started.jobID, timeoutMs: 30000)
+            XCTAssertNotEqual(done.state, .failed, done.statusDetail)
+
+            let manifest = try self.manifest(dir, started.jobID)
+            XCTAssertEqual(manifest.parts.count, segments.count, "one part per over")
+            for part in manifest.parts {
+                XCTAssertEqual(part.squelchOpens, 1)
+            }
+            XCTAssertEqual(manifest.gate?.hangMs, 500)
+            XCTAssertEqual(JobStore.defaultHangMs, 500)
+            XCTAssertEqual(manifest.gate?.preRollMs, 500)
+        }
+    }
+
+    func testALongHangKeepsAnExchangeInOnePart() async throws {
+        let segments = try keyedSegments()
+        let dir = try recordings()
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        try await withDaemon(recordingsPath: dir) { c in
+            try await self.attach(c, fixture: "nfm_keyed.cf32", loop: false)
+            // A 5 s hang, which is longer than the fixture's 3 s gaps.
+            var config = self.gatedConfig(hangMs: 5000)
             config.durationMs = 11_500
             let started = try await self.start(c, config)
             let done = try await self.waitForEnd(c, started.jobID, timeoutMs: 30000)
@@ -104,7 +126,7 @@ extension RecordingJobTests {
             XCTAssertEqual(manifest.parts.count, 1, "one exchange, one part")
             XCTAssertEqual(manifest.parts[0].squelchOpens, segments.count,
                            "every opening inside the part is counted, so the overs stay countable")
-            XCTAssertEqual(manifest.gate?.hangMs, JobStore.defaultHangMs)
+            XCTAssertEqual(manifest.gate?.hangMs, 5000)
             XCTAssertEqual(manifest.gate?.preRollMs, 500)
 
             // The part sidecar lists the overs themselves, on the capture's timeline.

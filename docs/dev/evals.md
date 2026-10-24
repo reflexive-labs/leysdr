@@ -254,7 +254,7 @@ parameter.
 | `pl-tone-present` | `ht-narrow` (local) | the handheld's 100 Hz PL is reported |
 | `dcs-code-present` | `rf-captures/ht-dcs-754` (local) | the GMRS handheld's DCS 754 is named, normal, with no PL tone invented |
 | `dcs-code-absent` | `ht-narrow` (local) | asked for a tone or a code, the agent names the 100 Hz PL and no DCS code. `pl-tone-absent` already covers a station that sends neither |
-| `record-squelch-opens` | `nfm_keyed` tuned | a gated recording is made and the three transmissions counted. The count comes from the manifest's `squelch_opens`, not from the part count: at the default 5 s hang the fixture's 3 s gaps keep all three overs in one part, so an agent that counts parts answers 1 |
+| `record-squelch-opens` | `nfm_keyed` tuned | a gated recording is made and the three transmissions counted. The count comes from the manifest's `squelch_opens`, and at the default 500 ms hang the part count agrees; an agent that records with a 5 s `hang_ms` gets one part and has to read `squelch_opens` |
 | `channel-set-stop` | `nfm_tone` with a channel listening | `set` changes the agent's own channel and `stop` stops it, and the channel somebody else left on 146.52 survives both |
 | `reference-lookup` | none | a preset's frequency, a band's default mode and the squelch margin come from `list_presets` or `list_bands` and `help`, with nothing tuned |
 | `watch-one-station` | `aprs_afsk` tuned | a filtered, unkept `watch` with a macOS notification is set up for one station, and the shell command asked for beside it is reported as refused |

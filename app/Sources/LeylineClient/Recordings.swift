@@ -762,14 +762,15 @@ public enum Recordings {
             && (aMode == bMode || aMode == .unspecified || bMode == .unspecified)
     }
 
-    /// The window's hang: how long a part stays open after the squelch closes. The daemon's
-    /// default of 5 s (`RecordConfig.hang_ms`) keeps an exchange of several overs in one part,
-    /// and on a real radio one 25 s part held four 4 s log rows, so one ▶ lit three rows and the
-    /// Library showed one part where the log showed four. The switch's line promises `Each
+    /// The window's hang: how long a part stays open after the squelch closes. It was set here
+    /// while the daemon's default (`RecordConfig.hang_ms`) was 5 s, which kept an exchange of
+    /// several overs in one part: on a real radio one 25 s part held four 4 s log rows, so one ▶
+    /// lit three rows and the Library showed one part where the log showed four. The daemon's
+    /// default is now the same 500 ms, and the window still names it. The switch's line promises `Each
     /// transmission becomes a part, cut at dead air.`, so the window asks for the pre-roll's
     /// length: a gap shorter than half a second stays one part, as the log's
     /// quarter-second rule (`TransmissionLog.shortestSeconds`) keeps a kerchunk out of the log.
-    /// `ley record` keeps the daemon's default.
+    /// `ley record` sends none and gets the daemon's default.
     public static let windowHangMs: UInt32 = 500
     /// The window's pre-roll, the daemon's default (`RecordConfig.pre_roll_ms`) sent explicitly,
     /// so the gate the window asks for is stated in one place.

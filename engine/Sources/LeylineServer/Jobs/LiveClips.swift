@@ -6,9 +6,9 @@
 //
 // The recording is a `RecordRunner` driven as a component on the job's own channel, borrowed
 // through a `BorrowedChannelLease` over the decode job's lease: one allocation, one channel, two
-// sinks on it (invariant 9). The recorder keeps its own gate, its own pre-roll and its own 5 s
-// hang, so its parts are exchanges while the segmenter's overs are cut at 500 ms; `over` indexes
-// squelch openings, which the two see identically, so the two cuts agree on it.
+// sinks on it (invariant 9). The recorder keeps its own gate, pre-roll and hang, the same
+// 500 ms as the segmenter's, so a part is one over; `over` indexes squelch openings, which the two
+// see identically, so the two cuts agree on it.
 
 import EngineCore
 import Foundation

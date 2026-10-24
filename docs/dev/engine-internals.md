@@ -1073,7 +1073,7 @@ words `ley://records/<job_id>` holds. The recorder is `RecordRunner` itself, dri
 rather than through a record job: `JobStore.openClips` builds it on a `BorrowedChannelLease` over
 the decode job's own `ChannelLease`, so the job makes one allocation and the channel carries two
 sinks, the decoder's and the recorder's (invariant 9). Its gate is a record job's default, 500 ms
-of pre-roll, a 5 s hang and one part per exchange, with the sidecar's `squelch_opens` and the
+of pre-roll, a 500 ms hang and one part per transmission, with the sidecar's `squelch_opens` and the
 manifest's `squelch_open_ms` as any gated recording has them. The recorder starts before the
 decoder's sink is attached, so its first frame is never later than the segmenter's, and it stops
 before the lease is released. Its status is not the job's: the job's state is the decoder's, and

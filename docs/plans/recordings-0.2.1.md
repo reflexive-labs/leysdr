@@ -48,7 +48,7 @@ lists the changes to it and the work, with `[ ]` items still open. Written 2026-
 - [x] R1. Lossless stored transcription: the daemon tells a SEGMENTED plugin its source is a
   stored recording, the plugin SDK blocks instead of dropping, `status_detail` counts overs not
   transcribed, a test with more than eight overs and a slow scripted engine.
-- [ ] R2. The 500 ms hang everywhere, with the help goldens, the `record-squelch-opens` eval and
+- [x] R2. The 500 ms hang everywhere, with the help goldens, the `record-squelch-opens` eval and
   recording.md's "a part is an exchange".
 - [x] R3. The Library lists transmissions: rows, transcript lines, the count of transmissions a
   transcription left without words with Transcribe again, Show in Finder in the context menu.

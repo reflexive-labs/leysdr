@@ -109,7 +109,7 @@ func (srv *mcpServer) registerTools() {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "record",
 		Description: "Record what the radio hears to files the daemon keeps, and wait for it (Jobs.StartJob(RecordConfig); ley record). " +
-			"duration_s is required, 1 to 3600: what an agent starts must end without it. gate: \"squelch\" records only while something is on the air, one file per exchange, so a quiet band costs no disk. " +
+			"duration_s is required, 1 to 3600: what an agent starts must end without it. gate: \"squelch\" records only while something is on the air, one file per transmission, so a quiet band costs no disk. hang_ms keeps the pauses between overs in one file. " +
 			"Refuses a radio somebody is using unless take_over is true. Returns the finished Job; its resultUris names ley://recordings/<job_id>, which get_recording resolves to files on this machine.",
 		Annotations: mutates,
 		InputSchema: gainSchema[recordArgs]("; default: leave the radio's setting"),

@@ -487,13 +487,13 @@ public nonisolated struct Leyline_V1_RecordConfig: @unchecked Sendable {
     set {_uniqueStorage()._preRollMs = newValue}
   }
 
-  /// how long after the squelch closes a part stays open; default 5000
+  /// how long after the squelch closes a part stays open; default 500, so
   public var hangMs: UInt32 {
     get {_storage._hangMs}
     set {_uniqueStorage()._hangMs = newValue}
   }
 
-  /// end the job after this long with the squelch closed; 0 = never
+  /// a part is one transmission; longer keeps an exchange in one part
   public var stopAfterQuietMs: Int64 {
     get {_storage._stopAfterQuietMs}
     set {_uniqueStorage()._stopAfterQuietMs = newValue}

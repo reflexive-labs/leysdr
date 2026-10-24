@@ -31,8 +31,11 @@ decode job's id names `ley://records/<job_id>`: one job, one recording, `Job.res
 
 **A recording is a sequence of parts, each a file with its own sidecar.** A part is the unit
 `ley play` already understands: samples plus a JSON sidecar giving format, rate, centre and the
-anchor. A continuous recording is one part. A gated recording has one part per exchange: the squelch stays open through the pauses between overs, and every squelch opening
-inside the part is listed, so the overs are countable and an exchange plays back whole. A long
+anchor. A continuous recording is one part. A gated recording has one part per transmission by default: the part closes 500 ms after the
+squelch does, and every squelch opening inside the part is listed. An exchange (several overs
+close together) is the client's grouping, worked out from the gaps between parts; `--hang`
+sets a longer hang, which keeps the pauses between overs inside one part, so a part is an
+exchange and its overs stay countable from the opening list. A long
 recording is cut into parts on a timer. The rules compose: a transmission longer than the
 part length is two parts, contiguous on the sample timebase.
 
@@ -160,7 +163,7 @@ parts, and what `ley recordings show` prints.
   "device": { "driver": "rtlsdr", "model": "Nooelec NESDR SMArt", "serial": "00000001" },
   "gains": [ { "element": "tuner", "value_db": 29.7 } ],
   "squelch_dbfs": -80,
-  "gate": { "kind": "squelch", "pre_roll_ms": 500, "hang_ms": 5000 },
+  "gate": { "kind": "squelch", "pre_roll_ms": 500, "hang_ms": 500 },
   "part_ms": 0,
   "started_at_ns": 1789653802000000000,
   "ended_at_ns": 1789653862000000000,
@@ -284,7 +287,7 @@ message RecordConfig {
 
   RecordGate gate = 11;       // NONE (default) or SQUELCH
   uint32 pre_roll_ms = 12;    // audio kept from before the squelch opened; default 500
-  uint32 hang_ms = 13;        // how long after the squelch closes a part stays open; default 5000
+  uint32 hang_ms = 13;        // how long after the squelch closes a part stays open; default 500
   int64 stop_after_quiet_ms = 14; // end the job after this long with the squelch closed; 0 = never
   int64 part_ms = 15;         // cut parts on this timer; 0 = audio: one part, IQ: 60000
   repeated GainWrite gains = 16; // in order; wins over gain when set
@@ -418,7 +421,7 @@ or the channel leaves the capture, the waiting frames go in with what has been h
 starts before the oldest audio the pre-roll ring holds, so an open less than a pre-roll after the
 last part ended starts where its audio does and its WAV holds the span its entry gives.
 - **hanging**: on a squelch-close transition the part stays open for `hang_ms`. A re-open inside
-  the hang continues the same part (one exchange, several overs), and each open-and-close pair
+  the hang continues the same part (one part, several overs), and each open-and-close pair
   is appended to the part's `squelch_opens`. When the hang elapses the part closes with
   `end_sample` at the close transition plus the hang, and the state is closed again. A close
   transition also silences the squelch tail before it is written, and a re-open is faded in like
@@ -524,7 +527,7 @@ The drain adds none: it is not on the sample path.
 
 ```
 ley record <frequency|preset|channel> [--iq] [--for 5m] [--gate squelch] [--pre 500ms]
-           [--hang 5s] [--stop-after-quiet 10m] [--part 60s] [--detach]
+           [--hang 500ms] [--stop-after-quiet 10m] [--part 60s] [--detach]
            [--mode M] [--bw N] [--squelch L|auto|off] [--gain dB|auto|STAGE=dB,...] [--device SEL] [--take-over]
 ley recordings [--kind audio|iq] [--freq F] [--since 24h] [--limit N]
 ley recordings show <id>
@@ -539,7 +542,7 @@ ley jobs cancel <id>
   agents, and `ley` has both.
 - **`ley record` runs in the foreground by default.** It prints a banner stating the decisions
   the daemon made (`recording NFM 146.520 MHz, audio 48 kHz WAV, gate squelch (pre 500 ms, hang
-  5 s), until cancelled`, then the directory), then one live line on stderr (elapsed, parts,
+  500 ms), until cancelled`, then the directory), then one live line on stderr (elapsed, parts,
   bytes, and for a gated recording whether the squelch is open) until `--for` elapses or Ctrl-C,
   which cancels the job and prints the resource URI. `--detach` starts the job and exits with the
   job id and URI, for a script; `ley jobs cancel` stops it.
@@ -600,14 +603,17 @@ expectations.
   and that WAV carries the fixture's own audio expectation: measured 2026-09-18 at 1001.95 Hz and
   77 dB, against the sidecar's 1 kHz and 30 dB. A recorder that wrote well-formed silence would
   pass every structural test and fail this one.
-- A gated recording of `nfm_keyed` at −40 dBFS with a 1 s hang yields three parts whose
+- A gated recording of `nfm_keyed` at −40 dBFS with a 1 s hang, and at the default 500 ms hang,
+  yields three parts whose
   `start_sample` and `end_sample`, less the pre-roll and hang, land within one capture block of
   the sidecar's segments. Each part's pre-roll is silent up to its open, no part's `peak_dbfs`
   reaches -1 dBFS, the 5 ms after each open stays under the tone that follows it, and the 10 ms
-  after each key-down is silent; the same holds at the default hang (re-opens and tails inside one
-  part) and with a 700 ms part timer cutting the overs, whose parts are contiguous. The same recording at the default hang yields one part, since the
-  fixture's 3 s gaps are inside 5 s, with three `squelch_opens` at the same samples. Both are
-  asserted: the first pins the cut accuracy, the second pins that an exchange keeps its overs.
+  after each key-down is silent; the same holds at a 5 s hang (re-opens and tails inside one
+  part) and with a 700 ms part timer cutting the overs, whose parts are contiguous. The same
+  recording at an explicit 5 s hang yields one part, since the fixture's 3 s gaps are inside 5 s,
+  with three `squelch_opens` at the same samples. Both are asserted: the first pins the cut
+  accuracy and that the default is one part per over, the second pins that a long hang keeps an
+  exchange's overs.
 - A continuous IQ recording yields parts whose `start_sample`s are contiguous and no coverage
   gaps, and a spectrum of `scan_band`'s recorded part 1 still holds its four carriers in the order
   the fixture declares them: measured 2026-09-18 at 70.6, 63.8, 60.1 and 27.4 dB over a -96.7 dB
@@ -626,8 +632,8 @@ manifests.
 device; `ley record --gate squelch --hang 1s --for 12s` on it; `ley recordings show --json` has three
 parts; `ley play ley://recordings/<id> --part 3` and `ley levels` shows the tone. And one MCP
 scenario in `evals/scenarios/`: "record ten seconds of radio-a and tell me how many times the
-squelch opened", graded on the answer's count being 3 (from `squelch_opens`, at the default
-hang, where the parts count is 1), `used_tool: record`, and `no_shell`.
+squelch opened", graded on the answer's count being 3 (at the default hang the parts count and the
+`squelch_opens` count agree), `used_tool: record`, and `no_shell`.
 
 ## Playing a recording back
 
@@ -753,7 +759,7 @@ then passes the local file to the configured player.
 
   **The gate is the compression.** 85.1% of that 100 s repeater recording is exactly-zero samples
   -- the `.audio` tap while the squelch is closed -- so `--gate squelch` does not compress the
-  silence, it never writes it: 6.7x on real traffic, measured, with the per-exchange files and the
+  silence, it never writes it: 6.7x on real traffic, measured, with the per-transmission files and the
   transmission count as well. The first answer to a full disk is the gate, then the IQ format
   above; the audio format is third and small.
 - **A lower audio rate.** NFM voice sits below 3 kHz and the recording runs to 24 kHz, so 16 kHz
@@ -765,11 +771,15 @@ then passes the local file to the configured player.
 
 ## Open questions
 
-- **Pre-roll and hang defaults.** 500 ms and 5 s are chosen, not measured, and ship as such. 500 ms covers the squelch's own attack and a syllable. The hang has to
-  outlast the pause between overs, because a part is an exchange; on a repeater the repeater's
-  own tail holds the carrier up through part of that pause, on simplex nothing does, and 5 s is
-  the guess for both. `--hang` overrides it. Measure against a real-radio capture
-  (not in the repository) for the pre-roll and a day of real use for the hang, and write the numbers here.
+- **Pre-roll and hang defaults.** 500 ms each, chosen, not measured, and shipped as such. 500 ms
+  covers the squelch's own attack and a syllable. The hang is the same 500 ms so that a part is
+  one transmission everywhere (the app's record button, `ley record`, the MCP tool and a live
+  speech job's clips); it was 5 s while a part was an exchange, and a 19-part recording of
+  2026-10-19 showed that a part with a different meaning in each client could not be predicted.
+  On a repeater the repeater's own tail holds the carrier up through part of the pause between
+  overs, on simplex nothing does, so an over can split in two on a long breath. `--hang` sets a
+  longer one. Measure against a real-radio capture (not in the repository) for the pre-roll and a
+  day of real use for the hang, and write the numbers here.
 - **The store cap's number.** A fixed cap in one flag: predictable, and
   the same shape as the kept-records store. 20 GiB is the guess; a fraction of free space and
   separate IQ and audio caps were considered and set aside until a machine shows the fixed

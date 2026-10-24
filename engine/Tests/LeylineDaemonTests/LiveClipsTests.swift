@@ -20,7 +20,7 @@ final class LiveClipsTests: XCTestCase {
         var m = RecordingManifest(
             jobID: id, kind: "audio", frequencyHz: 146_940_000, mode: "NFM", bandwidthHz: 12_500,
             sampleRate: 48_000, format: "wav-s16", device: nil, gains: [], squelchDbfs: -40,
-            gate: RecordingGateInfo(kind: "squelch", preRollMs: 500, hangMs: 5000), partMs: 0,
+            gate: RecordingGateInfo(kind: "squelch", preRollMs: 500, hangMs: 500), partMs: 0,
             startedAtNs: WallClock.nowNs(), createdBy: RecordingClient(clientID: "", kind: "job", label: "decode"),
             anchors: [StoredAnchor(hostTimeNs: WallClock.nowNs(), sampleRate: 480_000, driftPpm: 0, fromSample: 0,
                                    captureID: "cap_test")])

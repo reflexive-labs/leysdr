@@ -10,9 +10,9 @@
 
 import Foundation
 
-/// A gated recording's state machine. One part per exchange: the squelch stays open through the
-/// pauses between overs, every opening inside the part is listed, and the part closes when the
-/// hang elapses.
+/// A gated recording's state machine. One part per transmission at the default 500 ms hang, and per
+/// exchange at a longer one: the part stays open through a pause shorter than the hang, every
+/// opening inside the part is listed, and the part closes when the hang elapses.
 struct RecordGateMachine: Sendable {
     /// What the runner should do. Returned in the order it should happen.
     enum Action: Equatable, Sendable {
@@ -112,7 +112,7 @@ struct RecordGateMachine: Sendable {
                 return [.openPart(startSample: sample >= preRollSamples ? sample - preRollSamples : 0),
                         .fadeIn(openedAt: sample), .squelchOpened(at: sample)]
             case .hanging:
-                // A re-open inside the hang continues the same part: one exchange, several overs.
+                // A re-open inside the hang continues the same part: one part, several overs.
                 state = .open
                 return [.fadeIn(openedAt: sample), .squelchOpened(at: sample)]
             case .open:

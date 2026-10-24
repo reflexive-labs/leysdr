@@ -147,7 +147,7 @@ extension RecordingJobTests {
         }
     }
 
-    /// At the default hang the three transmissions are one exchange: each close inside the part is
+    /// At a 5 s hang the three transmissions are one exchange: each close inside the part is
     /// followed by a re-open, the tails before the closes stay silenced and every re-open is faded
     /// in.
     func testEveryTailInsideAnExchangeIsSilenced() async throws {
@@ -155,7 +155,7 @@ extension RecordingJobTests {
         let dir = try recordings()
         defer { try? FileManager.default.removeItem(atPath: dir) }
         try await withDaemon(recordingsPath: dir) { c in
-            let (manifest, parts) = try await self.recordKeyedParts(c, dir, hangMs: 0)
+            let (manifest, parts) = try await self.recordKeyedParts(c, dir, hangMs: 5000)
             XCTAssertEqual(parts.count, 1, "one exchange, one part")
             XCTAssertEqual(parts.first?.sidecar.recording.squelchOpens.count, segments.count)
             self.assertOpensFadedIn(parts, manifest)

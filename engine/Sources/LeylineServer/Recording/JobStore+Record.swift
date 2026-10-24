@@ -10,11 +10,12 @@ import LeylineProto
 
 extension JobStore {
     /// The gate's defaults, chosen rather than measured (docs/design/recording.md, "Open
-    /// questions"): 500 ms covers the squelch's own attack and a syllable, and 5 s is the guess at
-    /// a pause between overs that the repeater's tail does not cover. `--pre` and `--hang`
-    /// override both.
+    /// questions"): 500 ms covers the squelch's own attack and a syllable, and a hang of the same
+    /// 500 ms closes a part at the end of an over, so a gated recording has one part per
+    /// transmission. `--pre` and `--hang` override both; a client that wants an exchange in one
+    /// part asks for a longer hang.
     static let defaultPreRollMs: UInt32 = 500
-    static let defaultHangMs: UInt32 = 5000
+    static let defaultHangMs: UInt32 = 500
     /// An IQ recording is cut into parts by default because it is large: 19.2 MB/s at 2.4 MSPS.
     /// Audio keeps one part unless asked otherwise.
     static let defaultIQPartMs: Int64 = 60_000
@@ -250,7 +251,7 @@ extension JobStore {
     /// own id (docs/dev/engine-internals.md, "Decoders"). The recorder reads the job's channel
     /// through a borrowed lease, so the job's one allocation serves both and releasing the job's
     /// lease is what hands the radio back. The gate is a record job's default: 500 ms of pre-roll,
-    /// a 5 s hang and one part per exchange. A kept job resumed after a restart carries on the
+    /// a 500 ms hang and one part per transmission. A kept job resumed after a restart carries on the
     /// recording it had, with new parts.
     func openClips(_ id: JobID, lease: any ChannelLease, frequencyHz: UInt64, keep: Bool) async throws -> LiveClips? {
         guard let snapshot = await store.captureEngine(lease.captureID)?.snapshot else { return nil }

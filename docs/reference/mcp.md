@@ -232,7 +232,8 @@ Notes a table cell cannot hold:
   `Job`, so one call completes a bounded recording instead of requiring a start and a
   poll. `duration_s` is required and bounded at an hour — what an agent starts must end without it,
   and a radio that records indefinitely is unavailable to anyone else. `gate: "squelch"` records
-  only while something is on the air and writes one file per exchange, so a quiet band costs no
+  only while something is on the air and writes one file per transmission (`hang_ms`, default 500,
+  keeps the pauses between overs in one file when it is longer), so a quiet band costs no
   disk; the text then says how many times the squelch opened, which is usually what the agent needs.
   The recording outlives the call and the server: it is a file, and `find_recordings` finds it in
   the next session. A gated recording whose squelch never opened is not kept: the job ends
