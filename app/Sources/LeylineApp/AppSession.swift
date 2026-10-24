@@ -514,10 +514,10 @@ final class AppSession {
         guard let hz = tunedHz else { return nil }
         return BookmarkGroup.at(hz, in: bookmarks.list)
     }
-    /// The first bookmark on the tuned frequency, by name when there are several: the name the
-    /// inspector's title, the volume caption and `state`'s `bookmark` give, the settings a click
-    /// on the row tunes and Revert puts back, and what the title's pencil renames when it is
-    /// alone.
+    /// The first bookmark on the tuned frequency, in the file's order when there are several: the
+    /// name the inspector's title, the volume caption and `state`'s `bookmark` give, the settings
+    /// a click on the row tunes and Revert puts back, and what the title's pencil renames when it
+    /// is alone.
     var tunedBookmark: Bookmark? { tunedGroup?.lead }
     /// The entry of the tuned frequency whose tone the open transmission carries
     /// (`BookmarkGroup.speaker`): the one the inspector marks on air. Nil between overs, before

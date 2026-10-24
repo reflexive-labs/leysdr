@@ -538,9 +538,10 @@ scenes:
       - {cmd: ax, name: reimported}
 
   # Bookmarks that share a frequency (docs/plans/app.md, MC-5): club.csv's two memories on
-  # 146.940 MHz, PL 127.3 and PL 100.0, are one sidebar row named after the first by name,
-  # `Club net +1`, which alone reads tuned; the inspector lists both, each with its own fields
-  # under inspector.entry.<name>; the volume caption, in the tree, says `Club net +1`; and over
+  # 146.940 MHz, PL 127.3 and PL 100.0, are one sidebar row named after the file's first,
+  # `Club repeater +1`, which alone reads tuned; the inspector lists both, each with its own
+  # fields under inspector.entry.<name>; the volume caption, in the tree, says `Club repeater
+  # +1`; and over
   # scene_club, whose stations key the two tones in turns (each twice in its 40 s loop), the
   # entry marked on air follows the tone heard and the log names each over by its entry. The
   # log and the heard tone are masked; the log lines and state say what they showed. Then the
@@ -560,16 +561,16 @@ scenes:
       settle: 3
     app:
       - {cmd: state, expect: {notices.0: "Imported 2 from club.csv: 2 added, 0 updated, 0 skipped"}}
-      - {cmd: press, identifier: sidebar.bookmark.club-net}
+      - {cmd: press, identifier: sidebar.bookmark.club-repeater}
       - {cmd: wait, seconds: 1}
-      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club net, entries.0: Club net, entries.1: Club repeater, tuned_rows: 1, tuned_row: Club net +1}}
+      - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater, entries.0: Club repeater, entries.1: Club net, tuned_rows: 1, tuned_row: Club repeater +1}}
       - {cmd: snapshot, name: merged}
       - {cmd: ax, name: merged}
       - {cmd: press, identifier: inspector.entry.club-repeater.tone}
       - {cmd: state, expect: {focused: inspector.entry.club-repeater.tone}}
       - {cmd: key, keys: escape}
       - {cmd: wait, seconds: 42, expect_log: ['on air: Club repeater \(PL 127\.3\)', 'on air: Club net \(PL 100\.0\)']}
-      - {cmd: state, expect: {bookmark: Club net, log_names: Club net · Club repeater}}
+      - {cmd: state, expect: {bookmark: Club repeater, log_names: Club net · Club repeater}}
       # The file still holds both entries.
       - {cmd: ley, args: [bookmarks, --json], expect_stdout: ['"name":"Club net"', '"name":"Club repeater"']}
       # The header's sort control (MC-6): by frequency, then by name, the merged row by its
@@ -577,9 +578,9 @@ scenes:
       - {cmd: ley, args: [bookmarks, add, "146.7", --name, Zulu]}
       - {cmd: ley, args: [bookmarks, add, "147.1", --name, Alpha]}
       - {cmd: wait, seconds: 1.5}
-      - {cmd: state, expect: {sort: frequency, bookmark_rows.0: Zulu, bookmark_rows.1: Club net +1, bookmark_rows.2: Alpha}}
+      - {cmd: state, expect: {sort: frequency, bookmark_rows.0: Zulu, bookmark_rows.1: Club repeater +1, bookmark_rows.2: Alpha}}
       - {cmd: press, identifier: sidebar.sort}
-      - {cmd: state, expect: {sort: name, bookmark_rows.0: Alpha, bookmark_rows.1: Club net +1, bookmark_rows.2: Zulu}, expect_log: 'sidebar: bookmarks sorted by name'}
+      - {cmd: state, expect: {sort: name, bookmark_rows.0: Alpha, bookmark_rows.1: Club repeater +1, bookmark_rows.2: Zulu}, expect_log: 'sidebar: bookmarks sorted by name'}
       - {cmd: snapshot, name: byname}
       - {cmd: ax, name: byname}
       - {cmd: press, identifier: sidebar.sort}

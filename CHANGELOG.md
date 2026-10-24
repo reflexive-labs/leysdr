@@ -49,9 +49,9 @@ plain requests, and speech-to-text for each over on a recording or a live channe
   `ley state`, `ley set` and the event lines.
 - **Bookmarks.** Leaving a Tone or Note field saves it, as Return does; Escape throws the edit
   away. Bookmarks on one frequency (a repeater and its net from a CHIRP export) are one sidebar
-  row, `Club net +1`; the inspector lists each with its own tone and note, marks the one whose
-  tone is on the air, and the transmissions log names each over by it. The file keeps every
-  entry. A control beside the sidebar's `+` sorts the bookmarks under every band by frequency
+  row named after the file's first, `Club repeater +1`; the inspector lists each with its own
+  tone and note, marks the one whose tone is on the air, and the transmissions log names each
+  over by it. The file keeps every entry. A control beside the sidebar's `+` sorts the bookmarks under every band by frequency
   or by name.
 - **The band rail.** The rail's one thumb is the view the spectrum and waterfall show, over a
   faint underlay for what the radio captures, so a 20 MHz HackRF capture fits the rail. Dragging

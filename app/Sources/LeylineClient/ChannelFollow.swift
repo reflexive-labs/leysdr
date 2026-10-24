@@ -307,7 +307,7 @@ public struct ChannelFollow: Sendable, Equatable {
     }
 
     /// The kept channel's recording while it runs, named by the bookmark on its frequency (the
-    /// first of `bookmarks`, as the inspector takes the tuned one), else its plan channel; nil
+    /// group's lead, as the inspector takes the tuned one), else its plan channel; nil
     /// when no channel is kept or nothing records on it any more.
     public func keptRecording(in state: MirrorState, bookmarks: [Bookmark] = [])
         -> KeptRecording?
@@ -315,7 +315,7 @@ public struct ChannelFollow: Sendable, Equatable {
         guard let k = kept, let ch = state.channel(k.channelID),
             let job = Self.recordingJob(on: ch, tuning: k, captureID: ch.captureID, in: state)
         else { return nil }
-        let name = bookmarks.first { $0.hz == k.hz }?.name ?? Plans.name(at: k.hz)
+        let name = BookmarkGroup.at(k.hz, in: bookmarks)?.lead.name ?? Plans.name(at: k.hz)
         let words = ["Still recording", BookmarkNaming.frequencyWords(k.hz), name]
             .compactMap { $0 }.joined(separator: " ")
         return KeptRecording(jobID: job.jobID, hz: k.hz, mode: k.mode, words: words)

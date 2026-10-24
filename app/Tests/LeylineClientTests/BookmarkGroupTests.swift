@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Bookmarks that share a frequency (docs/plans/app.md, MC-5): grouped into one row in the
-// sidebar's order, and the heard tone naming the entry that is talking.
+// file's order, and the heard tone naming the entry that is talking.
 
 import LeylineProto
 import XCTest
@@ -23,8 +23,10 @@ final class BookmarkGroupTests: XCTestCase {
 
     // MARK: Grouping
 
-    func testEntriesOnOneFrequencyAreOneGroupInTheSidebarsOrder() throws {
-        // The store's order, by frequency and then name, is what the sidebar lists.
+    func testEntriesOnOneFrequencyAreOneGroupInTheFilesOrder() throws {
+        // The store lists by frequency and then name; a group's entries keep the order they were
+        // added in (their ids), so the repeater, added first, leads although `Club net` sorts
+        // before it.
         var store = BookmarkStore(
             path: NSTemporaryDirectory() + "ley-groups-\(UUID().uuidString)/bookmarks.json")
         try store.load()
@@ -36,29 +38,53 @@ final class BookmarkGroupTests: XCTestCase {
         XCTAssertEqual(
             groups.map { $0.entries.map(\.name) },
             [
-                ["Calling"], ["Club net", "Club repeater"], ["Evening net"],
+                ["Calling"], ["Club repeater", "Club net"], ["Evening net"],
             ])
         let club = groups[1]
-        XCTAssertEqual(club.lead.name, "Club net", "the first entry leads")
+        XCTAssertEqual(club.lead.name, "Club repeater", "the first entry added leads")
         XCTAssertEqual(club.id, club.lead.id, "the row keeps the first entry's identity")
         XCTAssertEqual(club.hz, 146_940_000)
         XCTAssertEqual(club.others, 1)
         XCTAssertTrue(club.isMerged)
         XCTAssertEqual(club.countWords, "+1")
-        XCTAssertEqual(club.words, "Club net +1")
+        XCTAssertEqual(club.words, "Club repeater +1")
         XCTAssertNil(groups[0].countWords, "a bookmark alone says no count")
         XCTAssertEqual(groups[0].words, "Calling")
         XCTAssertFalse(groups[0].isMerged)
+        XCTAssertEqual(
+            BookmarkGroup.at(146_940_000, in: store.list)?.lead.name, "Club repeater",
+            "the tuned frequency's group leads with the same entry")
     }
 
-    func testGroupingKeepsTheOrderItIsGiven() {
+    /// A CHIRP import adds its rows top to bottom, so the file's first row on a frequency leads:
+    /// `fixtures/chirp/club.csv` lists the repeater before the net.
+    func testACHIRPImportsFirstRowLeads() throws {
+        var store = BookmarkStore(
+            path: NSTemporaryDirectory() + "ley-groups-\(UUID().uuidString)/bookmarks.json")
+        try store.load()
+        let csv = """
+            Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,Mode
+            0,Club repeater,146.940000,-,0.600000,Tone,127.3,127.3,NFM
+            1,Club net,146.940000,-,0.600000,Tone,100.0,100.0,NFM
+            """
+        _ = try CHIRP.apply(try CHIRP.parse(csv).rows, to: &store, tag: "club")
+        let group = try XCTUnwrap(BookmarkGroup.at(146_940_000, in: store.list))
+        XCTAssertEqual(group.entries.map(\.name), ["Club repeater", "Club net"])
+        XCTAssertEqual(group.words, "Club repeater +1")
+    }
+
+    func testGroupingKeepsTheFilesOrderWhateverOrderItIsGiven() {
         let list = [
             bookmark("B", 146_940_000), bookmark("X", 146_520_000), bookmark("A", 146_940_000),
             bookmark("C", 146_940_000),
         ]
         let groups = BookmarkGroup.grouped(list)
-        XCTAssertEqual(groups.map { $0.entries.map(\.name) }, [["B", "A", "C"], ["X"]])
-        XCTAssertEqual(groups[0].words, "B +2")
+        XCTAssertEqual(
+            groups.map { $0.entries.map(\.name) }, [["A", "B", "C"], ["X"]],
+            "each group where its first entry given was, its entries by id")
+        XCTAssertEqual(groups[0].words, "A +2")
+        XCTAssertEqual(
+            BookmarkGroup(entries: [bookmark("Z", 1), bookmark("M", 1)])?.lead.name, "M")
         XCTAssertTrue(BookmarkGroup.grouped([]).isEmpty)
         XCTAssertNil(BookmarkGroup(entries: []))
     }
@@ -67,7 +93,7 @@ final class BookmarkGroupTests: XCTestCase {
     /// frequency are one row, and the lead's mode is the one a click tunes.
     func testDifferentModesOnOneFrequencyAreStillOneGroup() {
         let list = [
-            bookmark("Air", 146_940_000, mode: .am), bookmark("Club", 146_940_000, mode: .nfm),
+            bookmark("Club", 146_940_000, mode: .nfm), bookmark("Air", 146_940_000, mode: .am),
         ]
         let groups = BookmarkGroup.grouped(list)
         XCTAssertEqual(groups.count, 1)

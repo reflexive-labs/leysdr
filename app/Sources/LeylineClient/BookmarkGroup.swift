@@ -7,26 +7,29 @@
 // merge is only how the app draws them: one sidebar row per frequency, the inspector listing
 // each entry, and the tone the daemon decodes naming the entry that is talking. The mode is not
 // part of the key: two entries on one frequency in different modes are still one channel, and
-// the first entry's mode is the one a click tunes. Nothing here holds state.
+// the first entry's mode is the one a click tunes. The entries keep the file's order, so the
+// first is the one added first (a CHIRP import's first row), not the first by name. Nothing here
+// holds state.
 
 import Foundation
 
-/// The bookmarks on one frequency, in the order the sidebar lists them (`BookmarkStore.list`:
-/// by name, then id); the first entry leads, and is the one the row, the title and the volume
-/// caption name.
+/// The bookmarks on one frequency in the file's order: by id, which is the order they were added
+/// in, since an id is a ULID and its time comes first (`bookmarks.json` writes its keys sorted,
+/// and a CHIRP import adds its rows top to bottom). The first entry leads, and is the one the
+/// row, the title, the volume caption and the log's fallback name.
 public struct BookmarkGroup: Sendable, Hashable, Identifiable {
-    /// Never empty.
+    /// Never empty; by id.
     public let entries: [Bookmark]
 
-    /// Nil for an empty list.
+    /// Nil for an empty list. The entries are sorted into the file's order.
     public init?(entries: [Bookmark]) {
         guard !entries.isEmpty else { return nil }
-        self.entries = entries
+        self.entries = entries.sorted { $0.id < $1.id }
     }
 
     public var lead: Bookmark { entries[0] }
     public var hz: UInt64 { lead.hz }
-    /// The lead's id, so the row keeps the identity it had before a second entry joined it.
+    /// The lead's id, so the row keeps the identity it had before a later entry joined it.
     public var id: String { lead.id }
     /// How many entries besides the lead; 0 for a bookmark alone on its frequency.
     public var others: Int { entries.count - 1 }
@@ -35,14 +38,14 @@ public struct BookmarkGroup: Sendable, Hashable, Identifiable {
     /// `+1`, faint after the lead's name; nil when the bookmark is alone.
     public var countWords: String? { isMerged ? "+\(others)" : nil }
 
-    /// `Club net +1`, or the lead's name alone: what names "the bookmark at this frequency"
+    /// `Club repeater +1`, or the lead's name alone: what names "the bookmark at this frequency"
     /// outside the inspector's list.
     public var words: String {
         countWords.map { "\(lead.name) \($0)" } ?? lead.name
     }
 
-    /// The bookmarks grouped by frequency, each group where its first entry was, entries in the
-    /// order given. Bookmarks at one frequency always file under one sidebar row
+    /// The bookmarks grouped by frequency, each group where its first entry in `bookmarks` was,
+    /// entries in the file's order. Bookmarks at one frequency always file under one sidebar row
     /// (`Bands.sidebarRow(for:)`), so grouping a row's list and grouping the whole file agree.
     public static func grouped(_ bookmarks: [Bookmark]) -> [BookmarkGroup] {
         var order: [UInt64] = []

@@ -1614,7 +1614,8 @@ Found by the ML-9d scenes' second half (2026-10-22), not fixed on the spot:
 - Batch 3's verify loop: a merged row takes its first entry by name when the entries share a
   frequency (MC-6's ties by name), so the CHIRP import in `merged-bookmarks` reads `Club net +1`
   where MC-5's example reads `Club repeater +1`. Should the first entry be the file's first, or
-  is the name order the one meant?
+  is the name order the one meant? The owner's answer: the file's first (CHIRP's order); the
+  group's entries are now by id, and the row reads `Club repeater +1`.
 - Batch 3's verify loop: a band fitted to the view puts a channel on the band's edge at the
   chart's edge, half of it off the picture: NOAA weather (162.400 to 162.550 MHz) shows WX2 and
   WX1 cut in half at the two sides (`app-assistant.png`). Pad the fit by half a
@@ -1856,8 +1857,9 @@ A check scene imports a CHIRP file with two entries on 146.940 MHz (PL 127.3 and
 fixture that keys both tones.
 
 Built 2026-10-23 in a batch lane, which launches no app; not ticked until a verify run on the Mac
-has recorded `merged-bookmarks`. The façade groups (`BookmarkGroup.grouped`, the sidebar's order,
-so the first by name leads: `Club net +1`) by frequency alone, whatever the modes, because one
+has recorded `merged-bookmarks`. The façade groups (`BookmarkGroup.grouped`, each group's entries
+in the file's order, by id, so the CHIRP file's first row leads: `Club repeater +1`; the owner's
+call after Batch 3, which had the first by name) by frequency alone, whatever the modes, because one
 frequency is one channel; a click on the row tunes the first entry's mode. `Tone.matches` holds
 a CTCSS tone to the classified standard tone and a DCS code to the wire's code and polarity; an
 inverted code is not matched to its normal alias (D023I is on the air as D047N, and the daemon
@@ -1870,11 +1872,11 @@ fixture is `scene_club` (146.910 MHz at 480 kSPS, 40 s, the two stations on 146.
 and the file `fixtures/chirp/club.csv`.
 
 Verified 2026-10-23 in Batch 3's verify loop on the Mac: `merged-bookmarks` (new) imports
-`fixtures/chirp/club.csv` over `scene_club` and draws one row, `Club net +1   146.9400`, one row
-tuned, and the inspector's two entries with their own pencil and remove, `on air PL 127.3` beside
-the repeater while its tone keys, the log row naming it (`Club repea… · PL 127.3`) and the volume
-`playing Club net +1`. `alert-and-menus` and the other scenes on `home.csv` with Simplex merge
-under `Calling +1`. The log row's name ran into the length (`3.4 sClub repeater`); fixed
+`fixtures/chirp/club.csv` over `scene_club` and draws one row (then `Club net +1   146.9400`,
+now `Club repeater +1`), one row tuned, and the inspector's two entries with their own pencil
+and remove, `on air PL 127.3` beside the repeater while its tone keys, the log row naming it
+(`Club repea… · PL 127.3`) and the volume `playing Club net +1` (now `Club repeater +1`).
+`alert-and-menus` and the other scenes on `home.csv` with Simplex merge under `Calling +1`. The log row's name ran into the length (`3.4 sClub repeater`); fixed
 (1576355). Re-recorded: every scene with a sidebar of bookmarks (listed under MC-7).
 
 ### MC-6 `[x]` Sorting the sidebar's bookmarks (2026-10-23, for 0.2.0)
