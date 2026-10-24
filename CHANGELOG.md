@@ -9,6 +9,12 @@ What changed for someone using Leyline, newest first. Each released version has 
   back with most of them missing and no warning. The engine now waits for the speech decoder
   instead of dropping an over, and a finished job's detail says how many overs have no record
   (`3 of 20 overs have no record`).
+- **The Library lists transmissions, not files.** A row is one transmission with its transcript
+  line under it, and a file that holds several overs (any recording made before this release, or
+  with a long `--hang`) is a row for each, which plays that over alone. The inspector describes
+  the transmission and its recording. When a transcription leaves some transmissions without
+  words, the page says how many, with Transcribe again beside the count. Show in Finder moved to a
+  row's context menu.
 
 ## 0.2.0 (2026-10-23)
 

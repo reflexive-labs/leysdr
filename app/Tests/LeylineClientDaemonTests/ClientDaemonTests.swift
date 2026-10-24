@@ -480,7 +480,8 @@ final class ClientDaemonTests: XCTestCase {
         XCTAssertFalse(inspector.clipped)
         XCTAssertNil(inspector.clippedSentence)
         XCTAssertEqual(inspector.recording.first { $0.label == "Ended" }?.value, "Switched off")
-        XCTAssertEqual(inspector.deleteLine, Recordings.deleteWords(parts: manifest.parts.count))
+        XCTAssertEqual(
+            inspector.deleteLine, Recordings.deleteWords(transmissions: manifest.parts.count))
         // The level graph, read from the part's WAV through the path the daemon resolves.
         var partRef = Leyline_V1_ResourceRef()
         partRef.uri = manifest.uri(of: part)

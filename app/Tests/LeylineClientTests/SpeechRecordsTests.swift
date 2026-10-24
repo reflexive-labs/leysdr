@@ -312,7 +312,8 @@ final class SpeechRecordsTests: XCTestCase {
             record(job: "job_02", id: "r", part: 1, over: 1, at: ms(100), text: "hi")
         ])
         XCTAssertEqual(
-            SpeechRecords.statusLine(job: running, speech: lines), "Transcribing · 1 over so far")
+            SpeechRecords.statusLine(job: running, speech: lines),
+            "Transcribing · 1 transmission so far")
         running.state = .degraded
         running.statusDetail = "the provider's rate limit; retrying in 30 s"
         XCTAssertEqual(SpeechRecords.statusLine(job: running, speech: lines), running.statusDetail)

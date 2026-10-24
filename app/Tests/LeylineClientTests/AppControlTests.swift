@@ -167,6 +167,7 @@ final class AppControlTests: XCTestCase {
                 "alert", "assistant", "assistant_shown", "band", "bandwidth_hz", "bookmark",
                 "bookmark_rows", "capture", "capture_id", "channel_id", "entries",
                 "filter_caret", "filter_query", "focused", "heard", "hits", "inspector_shown",
+                "library_rows",
                 "log_names", "mode", "muted", "notices", "on_air_entry", "open_rows", "place",
                 "popover", "selected_part", "selected_recording_channel", "settings_open", "sink",
                 "sort", "tooltip", "transport", "tuned_hz", "tuned_row", "tuned_rows", "view",

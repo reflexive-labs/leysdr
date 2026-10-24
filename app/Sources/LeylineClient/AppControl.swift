@@ -704,6 +704,10 @@ public struct ControlViewState: Sendable, Equatable, Codable {
     /// the rows under the open band rows as drawn, in that order (`Club net +1`).
     public var sort: String
     public var bookmarkRows: [String]
+    /// The Library page's rows down its recent days, one a transmission: `over 2` for one over
+    /// of a part that holds several, `file` for a whole part, then `: ` and its transcript line
+    /// when it has one.
+    public var libraryRows: [String]
 
     enum CodingKeys: String, CodingKey {
         case place, mode, band, bookmark, focused, notices, popover, heard, hits, transport
@@ -728,6 +732,7 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         case logNames = "log_names"
         case sort
         case bookmarkRows = "bookmark_rows"
+        case libraryRows = "library_rows"
     }
 
     public init(
@@ -743,7 +748,8 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         view: ControlView? = nil, capture: ControlSpan? = nil, assistant: ControlAssistant? = nil,
         tooltip: String? = nil, transport: ControlTransport? = nil, entries: [String] = [],
         tunedRows: Int = 0, tunedRow: String? = nil, onAirEntry: String? = nil,
-        logNames: String? = nil, sort: String = "frequency", bookmarkRows: [String] = []
+        logNames: String? = nil, sort: String = "frequency", bookmarkRows: [String] = [],
+        libraryRows: [String] = []
     ) {
         self.place = place
         self.tunedHz = tunedHz
@@ -783,6 +789,7 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         self.logNames = logNames
         self.sort = sort
         self.bookmarkRows = bookmarkRows
+        self.libraryRows = libraryRows
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -827,6 +834,7 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         try c.encode(logNames, forKey: .logNames)
         try c.encode(sort, forKey: .sort)
         try c.encode(bookmarkRows, forKey: .bookmarkRows)
+        try c.encode(libraryRows, forKey: .libraryRows)
     }
 }
 

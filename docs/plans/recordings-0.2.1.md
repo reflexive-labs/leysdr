@@ -32,12 +32,12 @@ lists the changes to it and the work, with `[ ]` items still open. Written 2026-
   map: a crash repairs one header, `ley play` and Finder read a part as they do now, a live job
   drops its oldest parts, and time is never edited (recording.md).
 - **People see transmissions, not files.** The Library lists a recording's transmissions with
-  their transcript lines; "part" leaves the app's words. Show in Finder moves to a context menu;
-  Export writes one WAV with the silence removed, or a file per transmission.
+  their transcript lines; "part" leaves the app's words. Show in Finder moves to a context menu.
+  Export (one WAV with the silence removed, or a file per transmission) is for a later release.
 - **A stored transcription is lossless.** A plugin reading a stored recording waits for its
   decoder instead of dropping, and the pipe holds the daemon back. Any over still not transcribed
-  (an engine error) is counted in the job's `status_detail`, and the app offers to transcribe the
-  overs that have no record.
+  (an engine error) is counted in the job's `status_detail`, and the app counts the transmissions
+  that have no record and offers Transcribe again; transcribing only those is for a later release.
 - **`ley record` gates by default when it can.** NFM and AM recordings with a squelch set are
   gated; `--gate none` records continuously. WFM, IQ and squelch off stay continuous.
 - **Not in 0.2.1:** writing IQ in the device's native format (recording.md, "Not implemented") is
@@ -50,8 +50,10 @@ lists the changes to it and the work, with `[ ]` items still open. Written 2026-
   transcribed, a test with more than eight overs and a slow scripted engine.
 - [ ] R2. The 500 ms hang everywhere, with the help goldens, the `record-squelch-opens` eval and
   recording.md's "a part is an exchange".
-- [ ] R3. The Library lists transmissions: rows, transcript lines, Transcribe missing, Export,
-  Show in Finder in the context menu. Check scenes and goldens re-recorded and named.
+- [x] R3. The Library lists transmissions: rows, transcript lines, the count of transmissions a
+  transcription left without words with Transcribe again, Show in Finder in the context menu.
+  Check scene `library-speech` added and goldens re-recorded and named. Export and transcribing
+  only the missing overs moved to a later release.
 - [ ] R4. `ley record` gates NFM and AM by default; the daemon's start sweep removes recording
   directories with no parts whose job is not running.
 - [ ] R5. CHANGELOG, recording.md and the guide pages brought up to date; one full `make

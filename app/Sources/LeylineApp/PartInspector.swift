@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// The inspector on a part, which does not repeat the transport: the Library's inspector while a
-// part is selected or playing (`AppSession.inspectedPart`). The part's place in its recording, its
-// time and length, its levels and overs, and when the capture clipped during it one sentence on
-// what to do next; then the recording it belongs to, with Play all, its span, how it ended and what
-// it was recorded with; then the two things that can be done to a recording from here: its file
-// shown in Finder, and the whole recording deleted. No progress bar: the player has it. Every word
-// is the façade's (`Recordings.partInspectorWords`), so the Linux tests hold them.
+// The inspector on a transmission, which does not repeat the transport: the Library's inspector
+// while a transmission is selected or playing (`AppSession.inspectedPart`). Its place among its
+// recording's transmissions, its time and length, its levels, and when the capture clipped during
+// it one sentence on what to do next; then the recording it belongs to, with Play all, its span,
+// how it ended and what it was recorded with, how much of it is transcribed, and its speech
+// actions; then Delete recording…. Show in Finder is in a row's context menu. No progress bar: the
+// player has it. Every word is the façade's (`Recordings.partInspectorWords`), so the Linux tests
+// hold them.
 
 import LeylineClient
 import LeylineProto
@@ -15,15 +16,18 @@ import SwiftUI
 struct PartInspector: View {
     let manifest: RecordingManifest
     let part: RecordingPart
+    /// The over that picks the transmission out of a split part; nil is the part's first.
+    let over: Int?
     let group: RecordingGroup
     @Environment(AppSession.self) private var session
     /// The delete confirmation is this view's alone, and transient.
     @State private var confirmingDelete = false
 
     var body: some View {
-        let uri = manifest.uri(of: part)
+        let t = session.speechTimings
         let words = Recordings.partInspectorWords(
-            part: part, of: manifest, running: group.running)
+            part: part, over: over, of: manifest, running: group.running,
+            preRollMs: t.preRollMs, hangMs: t.hangMs)
         let title = session.selectedChannel?.title ?? Frequency.format(manifest.frequencyHz)
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
@@ -34,7 +38,8 @@ struct PartInspector: View {
                 PartTable(
                     rows: words.levels,
                     ink: { row in
-                        row.label == "Peak" && words.clipped ? Theme.accentRec : Theme.inkSecondary
+                        row.id == words.levels.first?.id && words.clipped
+                            ? Theme.accentRec : Theme.inkSecondary
                     })
                 if let sentence = words.clippedSentence {
                     Text(sentence).font(Theme.Font.footnote).foregroundStyle(Theme.inkFaint)
@@ -65,6 +70,14 @@ struct PartInspector: View {
                 }
                 .padding(.bottom, 4)
                 PartTable(rows: words.recording, ink: { _ in Theme.inkSecondary })
+                if let line = session.transcriptionStatus(for: group.jobID)?.line
+                    ?? session.coverageLine(for: group.jobID)
+                {
+                    Text(line).font(Theme.Font.footnote).foregroundStyle(Theme.inkMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 4)
+                        .accessibilityIdentifier("library.inspector.transcribed")
+                }
                 // Transcribe, Transcribe again… and Export words…, when any applies.
                 HStack(spacing: 8) { SpeechActions(recordingID: group.jobID) }
                     .buttonStyle(.bordered)
@@ -74,11 +87,6 @@ struct PartInspector: View {
             Rectangle().fill(Theme.hairline).frame(height: 1)
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
-                    Button("Show in Finder") {
-                        Task { await session.revealInFinder(uri: uri) }
-                    }
-                    .help("Select this part's file in Finder")
-                    .accessibilityIdentifier("library.inspector.finder")
                     // The tooltip sits on a wrapper: a disabled button shows none of its own.
                     HStack {
                         Button {
@@ -94,7 +102,7 @@ struct PartInspector: View {
                     .help(
                         group.running
                             ? Recordings.deleteRefusalWords(jobID: group.jobID)
-                            : "Delete every part of this recording")
+                            : "Delete this recording and every transmission in it")
                 }
                 .buttonStyle(.bordered)
                 Text(words.deleteLine).font(Theme.Font.footnote).foregroundStyle(Theme.inkFaint)

@@ -3429,17 +3429,27 @@ final class AppSession {
         Recordings.groups(c.recordings, manifests: manifests, jobs: state.jobs)
     }
 
-    /// The part the inspector shows while the Library does: the selected part, else the one
-    /// playing, once its recording's manifest has been read. nil shows the channel's summary.
-    var inspectedPart: (manifest: RecordingManifest, part: RecordingPart, group: RecordingGroup)? {
+    /// The transmission the inspector shows while the Library does: the selected one, else the
+    /// one playing, as its part and the over that picks it out of a split part (nil: the part's
+    /// first), once its recording's manifest has been read. nil shows the channel's summary.
+    var inspectedPart:
+        (manifest: RecordingManifest, part: RecordingPart, over: Int?, group: RecordingGroup)?
+    {
         guard place == .library,
             let uri = selectedPartURI ?? playingURI, let ref = RecordingPartRef(uri: uri),
             let m = manifests[ref.jobID],
             let part = m.parts.first(where: { $0.part == ref.part }),
             let summary = recordings.first(where: { $0.jobID == ref.jobID })
         else { return nil }
+        let over = selectedPartURI != nil ? selectedOver : playingOver
         let running = state.jobs.contains { $0.jobID == ref.jobID && $0.isActive }
-        return (m, part, RecordingGroup(summary: summary, manifest: m, running: running))
+        return (m, part, over, RecordingGroup(summary: summary, manifest: m, running: running))
+    }
+
+    /// The pre-roll and hang the speech decoder cuts overs with, which the Library cuts a
+    /// part's transmissions with too, so a row is one transcript line.
+    var speechTimings: (preRollMs: UInt64, hangMs: UInt64) {
+        SpeechRecords.timings(speechDecoder)
     }
 
     /// The selected channel's manifests, read as the tuned channel's are. Nothing is read for
@@ -3523,10 +3533,40 @@ final class AppSession {
         }
     }
 
-    /// The page's days for `c`: every part of its recordings whose manifests have been read, as
-    /// rows by the day each started (`Recordings.dayRows`).
+    /// The page's days for `c`: every transmission of its recordings whose manifests have been
+    /// read, as rows by the day each started (`Recordings.dayRows`).
     func pageDays(for c: RecordingChannel) -> [DayRows] {
-        Recordings.dayRows(pageGroups(for: c), now: Date())
+        let t = speechTimings
+        return Recordings.dayRows(
+            pageGroups(for: c), now: Date(), preRollMs: t.preRollMs, hangMs: t.hangMs)
+    }
+
+    /// A row's click: an unsplit part's row as `clickRow(_:)`, a split part's transmission as a
+    /// speech line's (`play(part:over:)`), which plays its range and pauses or resumes it.
+    func clickRow(_ row: PartRow) async {
+        if let over = row.playOver {
+            await play(part: row.uri, over: over)
+        } else {
+            await clickRow(row.uri)
+        }
+    }
+
+    /// The line a recording's speech gets once no transcription of it runs and some of its
+    /// transmissions have no words (`SpeechRecords.coverageLine`); nil while its job still
+    /// records, since its newest transmissions are not transcribed yet.
+    func coverageLine(for recordingID: String) -> String? {
+        guard let m = manifests[recordingID],
+            !state.jobs.contains(where: { $0.jobID == recordingID && $0.isActive })
+        else { return nil }
+        if let s = transcriptionStatus(for: recordingID)?.job.state,
+            s == .running || s == .degraded
+        {
+            return nil
+        }
+        let t = speechTimings
+        return SpeechRecords.coverageLine(
+            speech(for: recordingID),
+            rows: Recordings.transmissions(of: m, preRollMs: t.preRollMs, hangMs: t.hangMs))
     }
 
     /// A row's click: the part is selected, so the inspector and the player show it, and plays; a
@@ -3562,7 +3602,8 @@ final class AppSession {
         let uri = row.uri
         guard levelGraphs[uri] == nil, !levelGraphLoads.contains(uri), let daemon else { return }
         levelGraphLoads.insert(uri)
-        let columns = LevelGraph.columnCount(seconds: row.seconds)
+        // The whole part's graph, which a split row shows its share of.
+        let columns = LevelGraph.columnCount(seconds: row.split ? row.partSeconds : row.seconds)
         Task { [weak self] in
             var ref = Leyline_V1_ResourceRef()
             ref.uri = uri
@@ -3654,7 +3695,7 @@ final class AppSession {
         } catch {
             let e = LeylineError(error)
             log("playback", "\(uri) not played: \(e.code) \(e.message)")
-            notice = "Could not play the part: \(e.message.isEmpty ? e.code : e.message)"
+            notice = "Could not play the recording: \(e.message.isEmpty ? e.code : e.message)"
             partPlayback.failed()
             await attachAfterPlayback()
         }
@@ -3840,7 +3881,7 @@ final class AppSession {
             let e = LeylineError(error)
             log("playback", "\(id) not \(paused ? "paused" : "resumed"): \(e.code) \(e.message)")
             notice =
-                "Could not \(paused ? "pause" : "resume") the part: \(e.message.isEmpty ? e.code : e.message)"
+                "Could not \(paused ? "pause" : "resume") playback: \(e.message.isEmpty ? e.code : e.message)"
         }
     }
 
@@ -3880,7 +3921,7 @@ final class AppSession {
         }
     }
 
-    /// A kept row's context menu, the part inspector and the channel summary: the file of a
+    /// A kept row's context menu and a Library row's: the file of a
     /// part, or a recording's directory, selected in Finder, found through `ResolveLocalPath` of
     /// its URI.
     func revealInFinder(uri: String) async {

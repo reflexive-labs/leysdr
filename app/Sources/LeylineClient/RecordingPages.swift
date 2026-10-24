@@ -256,10 +256,9 @@ extension Recordings {
 
     /// The player's words for `part` of `manifest` on the channel titled `channelTitle`
     /// (`PlayerWords`): `GMRS CH3 · Today` from the part's start, else the recording's, through
-    /// `dayWords` with a capital, and no day clause when nothing dates it; `14:03:20 · part 4 of
-    /// 4` counting the manifest's parts in part order. The position is the playback's `position`
-    /// over its rate (`positionFrames` nil while the part is not playing) and never reads past
-    /// the part's length.
+    /// `dayWords` with a capital, and no day clause when nothing dates it; `14:03:20`, the part's
+    /// start, or `—`. The position is the playback's `position` over its rate (`positionFrames`
+    /// nil while the part is not playing) and never reads past the part's length.
     public static func playerWords(
         channelTitle: String, part: RecordingPart, of manifest: RecordingManifest,
         positionFrames: UInt64?, positionRate: UInt32, now: Date, calendar: Calendar = .current
@@ -270,12 +269,7 @@ extension Recordings {
             return w.prefix(1).uppercased() + w.dropFirst()
         }
         let title = [channelTitle, day].compactMap { $0 }.joined(separator: " · ")
-        let ordered = manifest.parts.sorted { $0.part < $1.part }
-        let place = (ordered.firstIndex { $0.part == part.part } ?? 0) + 1
-        let time = [
-            start.map { clock($0, "HH:mm:ss", calendar.timeZone) },
-            "part \(place) of \(ordered.count)",
-        ].compactMap { $0 }.joined(separator: " · ")
+        let time = start.map { clock($0, "HH:mm:ss", calendar.timeZone) } ?? "—"
         let length = manifest.seconds(of: part)
         let rate = positionRate > 0 ? Double(positionRate) : Double(manifest.sampleRate)
         let played = positionFrames.map { rate > 0 ? Double($0) / rate : 0 } ?? 0
@@ -332,10 +326,10 @@ extension Recordings {
         return "\(m.parts.count) \(kind) · \(sizeWords(m.bytes))"
     }
 
-    /// The line under Delete recording…: `Deletes all 4 parts.`, because `DeleteResource` refuses
-    /// one part (docs/design/recording.md, "The wire").
-    public static func deleteWords(parts: Int) -> String {
-        parts == 1 ? "Deletes its one part." : "Deletes all \(parts) parts."
+    /// The line under Delete recording…: `Deletes all 4 transmissions.`, because `DeleteResource`
+    /// refuses one part (docs/design/recording.md, "The wire").
+    public static func deleteWords(transmissions n: Int) -> String {
+        n == 1 ? "Deletes its one transmission." : "Deletes all \(n) transmissions."
     }
 
     /// The confirmation's question, naming the recording by its channel and start:

@@ -531,7 +531,7 @@ public enum SpeechRecords {
         case .running:
             let n = speech?.all.filter { $0.jobID == job.jobID }.count ?? 0
             return n == 0
-                ? "Transcribing" : "Transcribing · \(n == 1 ? "1 over" : "\(n) overs") so far"
+                ? "Transcribing" : "Transcribing · \(Recordings.transmissionsWords(n)) so far"
         case .degraded:
             return job.statusDetail.isEmpty ? "Transcribing, held up" : job.statusDetail
         case .failed:
@@ -540,5 +540,26 @@ public enum SpeechRecords {
         default:
             return nil
         }
+    }
+
+    /// How many of a recording's transmissions (`Recordings.transmissions`) have a shown line:
+    /// a row is transcribed when a line of its part names one of its overs, and a row of a part
+    /// with no openings read takes any line of its part.
+    public static func coverage(_ speech: RecordingSpeech, rows: [PartRow]) -> (
+        transcribed: Int, total: Int
+    ) {
+        let byPart = Dictionary(grouping: speech.shown(), by: \.part)
+        let done = rows.filter { r in (byPart[r.part] ?? []).contains { r.holds(over: $0.over) } }
+        return (done.count, rows.count)
+    }
+
+    /// `12 of 20 transmissions transcribed`: the line a recording's speech gets when a
+    /// transcription has finished and left some transmissions without words (an engine error, or
+    /// transmissions recorded since). nil while it has no words at all, or words for every one.
+    public static func coverageLine(_ speech: RecordingSpeech?, rows: [PartRow]) -> String? {
+        guard let speech, !speech.all.isEmpty else { return nil }
+        let c = coverage(speech, rows: rows)
+        guard c.transcribed < c.total else { return nil }
+        return "\(c.transcribed) of \(Recordings.transmissionsWords(c.total)) transcribed"
     }
 }

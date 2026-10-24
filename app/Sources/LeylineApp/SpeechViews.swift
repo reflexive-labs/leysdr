@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Speech in the Library: under each part row of the channel page, the words of each over as the
+// Speech in the Library: under each transmission's row of the channel page, its words as the
 // speech decoder heard them, with the model and its confidence muted beside them and the callsigns
 // a pattern found as chips; a click on a line plays that over alone (`AppSession.play(part:over:)`,
 // `StartPlayback`'s sample range). The actions on a recording's speech (Transcribe, Transcribe
-// again… with the model picker, Export words…) are one menu, shown in a part row's context menu
-// and the part inspector, and the question Transcribe asks is a confirmation dialog in
+// again… with the model picker, Export words…) are one menu, shown in a row's context menu and
+// the inspector, and the question Transcribe asks is a confirmation dialog in
 // `ley transcribe`'s words. Every word and rule is the façade's (`SpeechRecords`), so the Linux
 // tests hold them; nothing here keeps state beyond the sheet's own field.
 
@@ -15,24 +15,47 @@ import LeylineProto
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// A part's speech lines under its row, and on a recording's first row the line of a
-/// transcription that runs, is held up or failed. Nothing while no speech has been read for the
-/// recording.
+/// A transmission's speech line under its row, and on a recording's first row the line of a
+/// transcription that runs, is held up or failed, or once one finished, how many transmissions
+/// it left without words with Transcribe again… beside it. Nothing while no speech has been read
+/// for the recording.
 struct PartSpeechLines: View {
     let row: PartRow
     @Environment(AppSession.self) private var session
 
     var body: some View {
-        let lines = session.speech(for: row.jobID)?.shown(part: row.part) ?? []
+        let lines =
+            session.speech(for: row.jobID)?.shown(part: row.part).filter {
+                row.holds(over: $0.over)
+            } ?? []
         let first = row.bracket == .none || row.bracket == .first
         let status = first ? session.transcriptionStatus(for: row.jobID) : nil
+        let coverage = first && status == nil ? session.coverageLine(for: row.jobID) : nil
         let cut = first && session.speechTruncated.contains(row.jobID)
-        if !lines.isEmpty || status != nil || cut {
+        if !lines.isEmpty || status != nil || coverage != nil || cut {
             VStack(alignment: .leading, spacing: Theme.Layout.speechLineGap) {
                 if let status {
                     Text(status.line).font(Theme.Font.footnote)
                         .foregroundStyle(statusInk(status.job.state)).lineLimit(2)
                         .padding(.horizontal, Theme.Layout.speechLinePaddingX)
+                }
+                if let coverage {
+                    HStack(spacing: 8) {
+                        Text(coverage).font(Theme.Font.footnote)
+                            .foregroundStyle(Theme.inkMuted).lineLimit(1)
+                        // The whole recording again: the newest line of each over is shown.
+                        if session.canTranscribe, session.isGated(recordingID: row.jobID) {
+                            Button {
+                                session.transcribeAgainFor = row.jobID
+                            } label: {
+                                Text("Transcribe again…").font(Theme.Font.footnote)
+                                    .foregroundStyle(Theme.accent)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Transcribe the whole recording again")
+                        }
+                    }
+                    .padding(.horizontal, Theme.Layout.speechLinePaddingX)
                 }
                 ForEach(lines) { line in
                     SpeechLineView(line: line)
@@ -118,8 +141,10 @@ struct SpeechLineView: View {
     }
 
     private func help(playing: Bool) -> String {
-        if playing { return session.isPaused ? "Resume this over" : "Pause this over" }
-        return "Play over \(line.over) of part \(line.part): what the model heard, to check by ear"
+        if playing {
+            return session.isPaused ? "Resume this transmission" : "Pause this transmission"
+        }
+        return "Play this transmission: what the model heard, to check by ear"
     }
 }
 
@@ -141,8 +166,8 @@ struct CallsignChip: View {
 /// The actions on one recording's speech, as menu items: Transcribe while it has none and none
 /// runs, Transcribe again… once it has some, and Export words… as text or SRT once it has some.
 /// Transcribe is left out entirely while `canTranscribe` is false (no speech decoder, or one that
-/// needs a key and none is set), so no AI control shows without a key. Used in a part row's
-/// context menu and, as buttons, in the part inspector.
+/// needs a key and none is set), so no AI control shows without a key. Used in a row's
+/// context menu and, as buttons, in the inspector.
 struct SpeechActions: View {
     let recordingID: String
     @Environment(AppSession.self) private var session

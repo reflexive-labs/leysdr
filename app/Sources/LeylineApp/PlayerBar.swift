@@ -2,7 +2,7 @@
 
 // The Library's player, in the transport bar's place and at its 88 pt, with the bar's layout
 // rule: ⏮, the 44 pt `accent` circle with ⏸ while a part plays and ▶
-// otherwise, ⏭, the part's two lines (`GMRS CH3 · Today`, `14:03:20 · part 4 of 4`), a progress
+// otherwise, ⏭, the part's two lines (`GMRS CH3 · Today`, `14:03:20`), a progress
 // track, and the volume with its caption. ⏸ is a pause (`Control.SetPlaybackPaused`, the position
 // held), not the first build's stop. The track is display only: there is no seeking in v1. The part
 // is `AppSession.player` (the one playing, else the selected part, else the page's first row); the
@@ -35,7 +35,7 @@ struct PlayerBar: View {
                 PartStepButton(symbol: "backward.end.fill", enabled: session.canStepPart(-1)) {
                     Task { await session.stepPart(-1) }
                 }
-                .help("Previous part")
+                .help("Previous")
                 .accessibilityIdentifier("player.previous")
                 PlayerButton(
                     sounding: sounding,
@@ -45,7 +45,7 @@ struct PlayerBar: View {
                 PartStepButton(symbol: "forward.end.fill", enabled: session.canStepPart(1)) {
                     Task { await session.stepPart(1) }
                 }
-                .help("Next part")
+                .help("Next")
                 .accessibilityIdentifier("player.next")
             }
             .frame(maxHeight: .infinity)
@@ -56,7 +56,7 @@ struct PlayerBar: View {
                     Text(words.time).font(Theme.Font.value).foregroundStyle(Theme.ink)
                         .lineLimit(1)
                 } else {
-                    Text("No part selected. Click a part on the page to play it.")
+                    Text("Nothing selected. Click a transmission on the page to play it.")
                         .font(Theme.Font.label).foregroundStyle(Theme.inkTertiary)
                         .lineLimit(2)
                 }
@@ -71,7 +71,7 @@ struct PlayerBar: View {
                     .foregroundStyle(words == nil ? Theme.inkDisabled : Theme.inkMuted)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .help("How far the part has played; a part plays from its start (no seeking in v1)")
+            .help("How far it has played; playback runs from the start (no seeking in v1)")
             VolumeControl(library: true)
                 .frame(width: 142)
         }

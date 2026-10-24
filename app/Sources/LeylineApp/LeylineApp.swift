@@ -218,10 +218,10 @@ struct LibraryCommands: Commands {
             .disabled(session.place != .library)
             Button("Stop") { Task { await session.stopPlayback() } }
                 .disabled(session.place != .library)
-            Button("Previous Part") { session.pressArrow(-1) }
+            Button("Previous") { session.pressArrow(-1) }
                 .keyboardShortcut(.leftArrow, modifiers: [])
                 .disabled(session.place != .library)
-            Button("Next Part") { session.pressArrow(1) }
+            Button("Next") { session.pressArrow(1) }
                 .keyboardShortcut(.rightArrow, modifiers: [])
                 .disabled(session.place != .library)
         }

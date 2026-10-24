@@ -367,32 +367,33 @@ import SwiftUI
             note("channels of \(row.name) open")
         }
 
-        /// Selects a part of the selected channel's page, counted down the recent days' rows as the
-        /// page draws them. Without `play_part` it does not play: a row's click would play it
-        /// through the speakers.
+        /// Selects a transmission of the selected channel's page, counted down the recent days'
+        /// rows as the page draws them. Without `play_part` it does not play: a row's click would
+        /// play it through the speakers.
         private func select(part index: Int, play: Bool, _ session: AppSession) async {
-            var uri: String?
+            var found: PartRow?
             _ = await until(seconds: Self.librarySeconds) {
                 guard let c = session.selectedChannel else { return false }
                 let rows = session.pageDays(for: c).filter { !$0.earlier }.flatMap(\.rows)
-                uri = index < rows.count ? rows[index].uri : nil
-                return uri != nil
+                found = index < rows.count ? rows[index] : nil
+                return found != nil
             }
-            guard let uri else {
+            guard let row = found else {
                 note(
-                    "the page has no part \(index) within \(Int(Self.librarySeconds)) s; none selected"
+                    "the page has no row \(index) within \(Int(Self.librarySeconds)) s; none selected"
                 )
                 return
             }
-            session.selectedPartURI = uri
-            note("part \(index) selected: \(uri)")
+            session.selectedPartURI = row.uri
+            session.selectedOver = row.playOver
+            note("row \(index) selected: \(row.id)")
             guard play else { return }
             // Played and paused at once, so the row draws as the current one with a fraction of a
             // second of audio; the pause leaves the player where it stopped.
-            await session.clickRow(uri)
+            await session.clickRow(row)
             try? await Task.sleep(for: .seconds(Self.playPartSeconds))
             await session.pausePlayback(true)
-            note("part \(index) played and paused")
+            note("row \(index) played and paused")
         }
 
         /// The regions as `regions.json` gives them: the whole frame as `window`, the strip above the

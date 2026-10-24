@@ -508,7 +508,19 @@ import LeylineClient
                 tunedRows: tunedRows.count, tunedRow: tunedRows.first?.words,
                 onAirEntry: s.tunedGroup?.isMerged == true ? s.onAirEntry?.name : nil,
                 logNames: Self.logNames(s), sort: s.bookmarkSort.rawValue,
-                bookmarkRows: Self.bookmarkRows(s))
+                bookmarkRows: Self.bookmarkRows(s), libraryRows: Self.libraryRows(s))
+        }
+
+        /// The Library page's recent rows as `ControlViewState.libraryRows` writes them, with
+        /// each row's transcript line as `PartSpeechLines` picks it.
+        private static func libraryRows(_ s: AppSession) -> [String] {
+            guard s.place == .library, let c = s.selectedChannel else { return [] }
+            return s.pageDays(for: c).filter { !$0.earlier }.flatMap(\.rows).map { row in
+                let kind = row.split ? "over \(row.over)" : "file"
+                let line = s.speech(for: row.jobID)?.shown(part: row.part)
+                    .first { row.holds(over: $0.over) }
+                return line.map { "\(kind): \($0.text)" } ?? kind
+            }
         }
 
         /// The bookmark rows under the open band rows, as the sidebar draws them

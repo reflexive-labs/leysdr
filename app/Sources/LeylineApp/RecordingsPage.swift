@@ -2,12 +2,15 @@
 
 // The channel page: the Library's centre column. A 56 pt header with the channel's name, what it is
 // and how much is kept, the same Record transmissions switch as the log's (one job state, read from
-// the mirror) and Tune; under it the parts as rows, by the day each started. A day opens with its
-// head (`TODAY  7 parts · 1 m 17 s`, `Play day`) and a 24-hour strip; a recording of several parts
-// is a bracket in the gutter and recordings are separated by a gap; days older than two are
-// EARLIER, one line each, opening in place. A click on a row plays that part through the playback
-// path the log's ▶ uses and selects it for the inspector (`PartInspector`) and the player; a click
-// on the playing row pauses or resumes it. The page keeps no state of its own: the selection, the
+// the mirror) and Tune; under it the transmissions as rows, by the day each started, each with its
+// transcript line under it. A day opens with its head (`TODAY  7 transmissions · 1 m 17 s`, `Play
+// day`) and a 24-hour strip; a recording of several transmissions is a bracket in the gutter and
+// recordings are separated by a gap; days older than two are EARLIER, one line each, opening in
+// place. A click on a row plays that transmission (its part, or the over's range of a part that
+// holds several) through the playback path the log's ▶ uses and selects it for the inspector
+// (`PartInspector`) and the player; a click on the playing row pauses or resumes it. A row's
+// context menu holds the recording's speech actions and Show in Finder for its file. The page
+// keeps no state of its own: the selection, the
 // opened days, the queue and the level graphs are the session's, and every row is built from the
 // listing and the manifests the session read (`Recordings.dayRows`). The first build's notice strip
 // is gone: a refusal is the session's notice, which the Radio shows over its canvas.
@@ -41,13 +44,13 @@ struct RecordingsPage: View {
 
     private func content(_ channel: RecordingChannel) -> some View {
         let groups = session.pageGroups(for: channel)
-        let days = Recordings.dayRows(groups, now: Date())
+        let days = session.pageDays(for: channel)
         let recent = days.filter { !$0.earlier }
         let earlier = days.filter(\.earlier)
-        // Each part's place down the page, recent days first, as a stage's `select_part`
+        // Each transmission's place down the page, recent days first, as a stage's `select_part`
         // counts: the rows' identifiers end in it (`library.part.0`).
         let indices = Dictionary(
-            (recent + earlier).flatMap(\.rows).enumerated().map { ($1.uri, $0) },
+            (recent + earlier).flatMap(\.rows).enumerated().map { ($1.id, $0) },
             uniquingKeysWith: { first, _ in first })
         return VStack(spacing: 0) {
             RecordingsPageHeader(channel: channel, groups: groups)
@@ -172,7 +175,7 @@ struct DaySection: View {
     }
 }
 
-/// `Play day`: the day's parts oldest first, as Play all plays a recording's
+/// `Play day`: the day's files oldest first, as Play all plays a recording's
 /// (`AppSession.playDay`).
 struct PlayDayButton: View {
     let day: DayRows
@@ -239,7 +242,7 @@ struct EarlierDay: View {
             .pressableGroup("library.day.\(ViewIdentifier.slug(day.title))") {
                 session.toggleOpened(day: day.id)
             }
-            .help(opened ? "Fold \(day.title)" : "Show \(day.title)'s parts")
+            .help(opened ? "Fold \(day.title)" : "Show \(day.title)'s transmissions")
             if opened {
                 DayBody(day: day).padding(.top, 4).padding(.bottom, 12)
             }
@@ -296,7 +299,7 @@ struct DayStrip: View {
                     with: .color(m.uri == playingURI ? Theme.accent : Theme.inkSecondary))
             }
         }
-        .accessibilityLabel("\(marks.count) parts through the day")
+        .accessibilityLabel("\(marks.count) transmissions through the day")
     }
 }
 
@@ -320,22 +323,26 @@ struct PartColumnHead: View {
     }
 }
 
-/// One part: the ring, the gutter's bracket, `STARTS`, `LENGTH`, the level graph, `PEAK` and
-/// `SIZE`. The ring is 18 pt with ▶ in `inkSecondary`; the playing row's is a 28 pt `accent` circle
-/// with ⏸, or ▶ while paused, and the row sits on `raised`. The whole row is the button: a click
-/// plays the part, and on the playing row pauses or resumes it (`AppSession.clickRow`). The level
-/// graph is read as the row appears (`AppSession.loadLevelGraph`).
+/// One transmission: the ring, the gutter's bracket, `STARTS`, `LENGTH`, the level graph, `PEAK`
+/// and `SIZE`. The ring is 18 pt with ▶ in `inkSecondary`; the playing row's is a 28 pt `accent`
+/// circle with ⏸, or ▶ while paused, and the row sits on `raised`. The whole row is the button: a
+/// click plays the transmission, and on the playing row pauses or resumes it
+/// (`AppSession.clickRow`). The level graph is read as the row appears
+/// (`AppSession.loadLevelGraph`); a row that shares its file shows its share of the file's graph,
+/// the file's peak and no size.
 struct PartRowView: View {
     let row: PartRow
     @Environment(AppSession.self) private var session
     @Environment(\.partIndices) private var indices
 
     var body: some View {
-        let playing = session.playingURI == row.uri
+        let playing =
+            session.playingURI == row.uri
+            && (row.playOver == nil || session.playingOver == row.playOver)
         let paused = playing && session.isPaused
         let words = row.words()
         Button {
-            Task { await session.clickRow(row.uri) }
+            Task { await session.clickRow(row) }
         } label: {
             HStack(spacing: 0) {
                 ring(playing: playing, paused: paused)
@@ -353,13 +360,13 @@ struct PartRowView: View {
                             .frame(
                                 width: Theme.Layout.gapMarkSize, height: Theme.Layout.gapMarkSize
                             )
-                            .help("Samples were dropped inside this part")
+                            .help("Samples were dropped inside this transmission")
                             .accessibilityLabel("samples dropped")
                     }
                 }
                 .frame(width: Theme.Layout.lengthWidth, alignment: .leading)
                 LevelBars(
-                    levels: session.levelGraphs[row.uri] ?? [], playing: playing,
+                    levels: row.levels(session.levelGraphs[row.uri] ?? []), playing: playing,
                     gaps: row.gapFractions
                 )
                 .frame(height: Theme.Layout.levelGraphHeight)
@@ -382,8 +389,13 @@ struct PartRowView: View {
         }
         .buttonStyle(.plain)
         .help(playing ? (paused ? "Resume" : "Pause") : "Play")
-        .accessibilityIdentifier("library.part.\(indices[row.uri].map(String.init) ?? "_")")
-        .contextMenu { SpeechActions(recordingID: row.jobID) }
+        .accessibilityIdentifier("library.part.\(indices[row.id].map(String.init) ?? "_")")
+        .contextMenu {
+            SpeechActions(recordingID: row.jobID)
+            Divider()
+            // The file that holds the transmission; Finder shows its recording's folder around it.
+            Button("Show in Finder") { Task { await session.revealInFinder(uri: row.uri) } }
+        }
         .onAppear { session.loadLevelGraph(row) }
     }
 

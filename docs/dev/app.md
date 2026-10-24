@@ -400,36 +400,45 @@ one sentence. The first row is selected on arrival and whenever the listing arri
 selected, and a click on a row always selects it, so the centre is never blank. The centre is
 that channel's page (`RecordingsPage`): a header with a Record transmissions switch on the
 page's frequency and mode (one job state with the log's switch, the click in flight keyed by
-frequency and mode) and Tune, which goes to the Radio by the bookmark path; then the parts as
+frequency and mode) and Tune, which goes to the Radio by the bookmark path; then the transmissions as
 rows by the day each started (`Recordings.dayRows`): `today`, `yesterday` and the day before by
 name, each with its head, `Play day` (the day oldest first, through `PlayQueue.start(parts:)`) and
 a 24-hour strip (`DayStrip`, a `Canvas`), then `EARLIER` with one line a day that opens in place
-(`AppSession.openedDays`). A row (`PartRowView`) is the ring, the gutter's bracket for a
-recording of several parts, the start, the length, a level graph (`LevelBars` over
-`LevelGraph.columns`, the part's WAV read once off the main actor through `ResolveLocalPath`
-and cached in `AppSession.levelGraphs`), the peak (`accentRec` when `clipped_ms` > 0) and the
-size (`PartRow.words`). The rows come from each recording's manifest, read through
-`ResolveLocalPath` into the session's `manifests` and read again on each of its job's events; a
-recording with no parts, or no manifest read yet, has no row. A row's click selects the part and
-plays it by the log's playback path, and on the playing row pauses or resumes it
-(`AppSession.clickRow`, `pausePlayback`, `Control.SetPlaybackPaused`; `isPaused` is the mirror's
+(`AppSession.openedDays`). A row is a transmission, not a file (`Recordings.transmissions`): a
+part, or, in a part that holds several overs (one recorded with a long hang, as everything before
+0.2.1 was), one row per segment the speech decoder would cut from its `squelch_opens`
+(`SpeechRecords.segments` with the decoder's pre-roll and hang), so a row, its transcript line and
+what its click plays are the same audio; a part with no openings read (continuous, WFM, IQ) is one
+row. A row (`PartRowView`) is the ring, the gutter's bracket for a recording of several
+transmissions, the start (the over's opening on a split row), the length (what plays), a level
+graph (`LevelBars` over `LevelGraph.columns`, the part's WAV read once off the main actor through
+`ResolveLocalPath` and cached in `AppSession.levelGraphs`; a split row draws its share,
+`PartRow.levels`), the peak (the part's, since levels are measured per file; `accentRec` when
+`clipped_ms` > 0) and the size (`—` on a split row; `PartRow.words`). Its context menu holds the
+recording's speech actions and Show in Finder for the part's file. The rows come from each
+recording's manifest, read through `ResolveLocalPath` into the session's `manifests` and read
+again on each of its job's events; a recording with no parts, or no manifest read yet, has no
+row. A row's click selects the transmission and plays it by the log's playback path (a split
+row's sample range through `AppSession.play(part:over:)`), and on the playing row pauses or
+resumes it (`AppSession.clickRow`, `pausePlayback`, `Control.SetPlaybackPaused`; `isPaused` is the mirror's
 `Playback.paused`); Play all and Play day queue parts and start each on the tombstone of the one
 before (`PlayQueue`), with the live sink held detached until the last ends. The page has no
 notice line of its own: a refusal made there is the session's notice, which the Radio shows. The
-inspector (`LibraryInspector`) is the part selected or playing (`PartInspector`, its words from
-`Recordings.partInspectorWords`: the part's place, time, Peak, Mean, Overs and the clipped
-sentence; the recording's Span, Ended, Radio, Gain, Squelch and Files with `Play all 4`; Show in
-Finder, and Delete recording…, `Resources.DeleteResource` on the whole recording, disabled with
+inspector (`LibraryInspector`) is the transmission selected or playing (`PartInspector`, its
+words from `Recordings.partInspectorWords`: `TRANSMISSION 2 OF 20`, its time and length, Peak and
+Mean, `File peak` and `File mean` on a split row, and the clipped sentence; the recording's Span,
+Ended, Radio, Gain, Squelch and Files with `Play all 20`, its transcription line, its speech
+actions, and Delete recording…, `Resources.DeleteResource` on the whole recording, disabled with
 the daemon's refusal while its job runs), else the channel's lines (`ChannelSummary`: name,
-frequency and mode, recordings and size, Show in Finder for the newest recording). The player
+frequency and mode, recordings and size). The player
 (`PlayerBar`) takes the transport bar's place: ⏮, the circle and ⏭. The circle pauses and
 resumes the window's playback while one exists and otherwise plays `AppSession.player` (the part
 playing, else the selected one, else the page's first row); ⏮ and ⏭ move within that recording
 (`Recordings.neighbourPart`, disabled at the ends; while a part plays the neighbour starts, and a
 Play all walks on from it through `PlayQueue.start(_:at:)`); the two lines (`GMRS CH3 · Today`,
-`14:03:20 · part 4 of 4`) and the track's ends are `Recordings.playerWords`, and the volume
+`14:03:20`) and the track's ends are `Recordings.playerWords`, and the volume
 caption reads `GMRS CH3 · live` between parts and `live radio held while this plays` while one
-plays or is paused. The Library menu puts Play, Pause or Resume on space, Previous/Next Part on ←
+plays or is paused. The Library menu puts Play, Pause or Resume on space, Previous/Next on ←
 and →, and Stop with no key; the Tune menu's bare arrows and space are disabled in the Library,
 both menus act through `pressSpace`/`pressArrow` for the place showing, and a text field being
 typed into gets the key back (`TextFieldKeys`). Unverified until the Mac; the façade's rules are
@@ -448,7 +457,8 @@ lines or its manifest change. `RecordingSpeech`
 folds them onto parts and overs by `clip_uri` and `over`, dated through the manifest's anchors;
 each over shows its newest transcription's line (job ids are ULIDs, so the greatest is the
 newest), and the earlier ones stay (`versions`, `shown(job:)`), because records are immutable and
-transcribing again adds records. Under each part row (`PartSpeechLines`) are its lines
+transcribing again adds records. Under each row (`PartSpeechLines`) is its line, the shown line
+of its part whose over the row holds (`PartRow.holds(over:)`)
 (`SpeechLineView`: the text in `body`, the model and confidence in `footnote` `inkFaint`, the
 callsigns as chips), each a button beside the row's, not inside it; a click plays that over alone
 (`AppSession.play(part:over:)`): `RecordingManifest.read(at:reusing:)` reads, off the main actor,
@@ -457,9 +467,12 @@ and on a re-read only the sidecars of parts it did not have; `SpeechRecords.rang
 segment by the daemon's own `Segmenter` rule with the speech decoder's pre-roll and hang (half a
 second each unless its manifest says otherwise), not the recording's gate pre-roll, so what plays is
 what was transcribed; `StartPlayback` takes it as a sample range, and `PartPlayback.playingOver`
-marks the line playing. A part whose openings were not read plays whole and marks no line. On a recording's first row a running transcription shows `Transcribing · 3 overs
-so far`, a held-up one the daemon's `status_detail` in `caution`, a failed one its reason in
-`accentRec`. A part row's context menu and the part inspector hold Transcribe, Transcribe again…
+marks the line playing. A part whose openings were not read plays whole and marks no line. On a recording's first row, and in the inspector, a running transcription shows `Transcribing · 3
+transmissions so far`, a held-up one the daemon's `status_detail` in `caution`, a failed one its
+reason in `accentRec`; once none runs and the recording no longer records, transmissions without
+a line are counted, `12 of 20 transmissions transcribed` (`SpeechRecords.coverageLine`), with
+Transcribe again… beside it on the page, which runs the whole recording again (the newest line of
+each over wins). A row's context menu and the inspector hold Transcribe, Transcribe again…
 and Export words… (`SpeechActions`). Transcribe asks `ley transcribe`'s question in a confirmation
 dialog (the minutes from `squelch_open_ms`, else the sidecars, and the decoder's hosts), then starts
 the kept decode job with `source_uri`; Transcribe again… first offers the speech model (the one in
@@ -890,8 +903,8 @@ file. It holds JSON that `ShotStage` decodes, and every key is optional:
 | `import_chirp` | an absolute path to a CHIRP CSV, imported through File ▸ Import CHIRP…'s code path, so the notice prints the import's real counts |
 | `expanded_band` | opens this sidebar row (`2m`, the id in `bands.json`), as its chevron does |
 | `place` | `radio` or `library`, as the toolbar's switch sets it |
-| `select_part` | selects this part of the Library's selected channel without playing it, counted from 0 down the page's recent days |
-| `play_part` | with `select_part`, plays that part for 0.4 s and pauses it, as a click and a second click do, because the Library draws only the playing row as current |
+| `select_part` | selects this row (a transmission) of the Library's selected channel without playing it, counted from 0 down the page's recent days |
+| `play_part` | with `select_part`, plays that transmission for 0.4 s and pauses it, as a click and a second click do, because the Library draws only the playing row as current |
 | `assistant` | shows or hides the assistant's panel, as its toolbar button does; the panel draws only while an AI provider is set up |
 | `channels_picker` | opens this sidebar row's Channels… popover |
 | `settings` | `true` opens the Settings window through the app menu's Settings… item, as ⌘, does, and waits up to 5 s for it; `false` closes it |
@@ -1008,7 +1021,7 @@ and the next line still runs; a line with no `id` has no answer file, so it is o
 |---|---|---|
 | `stage` | `stage`: a stage object as above (`settle` is slept, `window` resizes) | `result.applied`: the steps, as the log lines give them |
 | `snapshot` | `settle`: seconds to wait first, default 0; `window`: `main` (the default) or `settings` | `out/<id>.png`, with the popover and the sheet open over the window drawn in at their places (a menu that is open is not); `result`: `scale`, `width_pt`, `height_pt` and `regions`, as `regions.json` gives them, `{}` for `regions` of the Settings window |
-| `state` | | `result`: `place`, `tuned_hz`, `mode`, `bandwidth_hz`, `channel_id`, `capture_id`, `band`, `bookmark`, `open_rows`, `filter_query`, `inspector_shown`, `assistant_shown`, `focused` (the focused control's identifier, else its role and label), `notices` (every message the window shows), `popover` (`channels:<row>`, `device_menu` or empty), `selected_recording_channel`, `selected_part`, `heard` (the tone the tuned channel last heard, as the inspector writes it: `PL 100.0`), `hits` (the last sweep's hits as its row lists them, strongest first), `muted` (the transport's speaker), `volume` (the window's own sink's, 0 to 1), `sink` (`own`, `other` when another client's sink plays the channel, `none`), `window` (`width`, `height`, `min_width`, `min_height` in points, toolbar included), `filter_caret` (the insertion point in the sidebar's filter while it has the focus), `settings_open`, `alert` (the sheet over the main window or Settings: `title`, `message`, `buttons` in order), `view` (`lo_hz` and `hi_hz`, the frequencies at the charts' two edges, `span_hz` between them, `thumb_lo_hz` and `thumb_hi_hz`, the part of them the band rail's thumb covers, and `edge`, the spectrum's edge marker as drawn, `146.520 ▸`, null while the view shows the tuned channel), `capture` (`lo_hz` and `hi_hz`, what the radio captures), `assistant` (while its panel shows: `turns`, each `role`, `text` and `stopped`; `state`, the header's word; `thinking`; `input`, the field's text; `input_focused`; `stop_shown`; `buttons`, each `id`, `title` and `enabled`; `question`, the card's sentence as drawn, and `note`, the line under it), `tooltip` (the help of what the last `hover` rested on, else the frequency under the pointer while it is over a chart), `transport` (the bar's words as drawn: `tuning`, the field's digits; `squelch_caption`, and `squelch_caption_short` when it is the short one; `squelch_words`, the three under the track joined by ` · `, empty once a narrow bar drops them; `null` without a bar), `entries` (the bookmarks on the tuned frequency in the file's order), `tuned_rows` (how many sidebar bookmark rows read tuned) and `tuned_row` (the first as drawn: `Club repeater +1`), `on_air_entry` (the entry the inspector marks on air, on a frequency with several), `log_names` (the names the log's rows are logged under there, each once, sorted, joined by ` · `), `sort` (the sidebar's bookmark order, `frequency` or `name`), `bookmark_rows` (the bookmark rows under the open band rows as drawn, in that order); every key is present, `null` when it has no value |
+| `state` | | `result`: `place`, `tuned_hz`, `mode`, `bandwidth_hz`, `channel_id`, `capture_id`, `band`, `bookmark`, `open_rows`, `filter_query`, `inspector_shown`, `assistant_shown`, `focused` (the focused control's identifier, else its role and label), `notices` (every message the window shows), `popover` (`channels:<row>`, `device_menu` or empty), `selected_recording_channel`, `selected_part`, `heard` (the tone the tuned channel last heard, as the inspector writes it: `PL 100.0`), `hits` (the last sweep's hits as its row lists them, strongest first), `muted` (the transport's speaker), `volume` (the window's own sink's, 0 to 1), `sink` (`own`, `other` when another client's sink plays the channel, `none`), `window` (`width`, `height`, `min_width`, `min_height` in points, toolbar included), `filter_caret` (the insertion point in the sidebar's filter while it has the focus), `settings_open`, `alert` (the sheet over the main window or Settings: `title`, `message`, `buttons` in order), `view` (`lo_hz` and `hi_hz`, the frequencies at the charts' two edges, `span_hz` between them, `thumb_lo_hz` and `thumb_hi_hz`, the part of them the band rail's thumb covers, and `edge`, the spectrum's edge marker as drawn, `146.520 ▸`, null while the view shows the tuned channel), `capture` (`lo_hz` and `hi_hz`, what the radio captures), `assistant` (while its panel shows: `turns`, each `role`, `text` and `stopped`; `state`, the header's word; `thinking`; `input`, the field's text; `input_focused`; `stop_shown`; `buttons`, each `id`, `title` and `enabled`; `question`, the card's sentence as drawn, and `note`, the line under it), `tooltip` (the help of what the last `hover` rested on, else the frequency under the pointer while it is over a chart), `transport` (the bar's words as drawn: `tuning`, the field's digits; `squelch_caption`, and `squelch_caption_short` when it is the short one; `squelch_words`, the three under the track joined by ` · `, empty once a narrow bar drops them; `null` without a bar), `entries` (the bookmarks on the tuned frequency in the file's order), `tuned_rows` (how many sidebar bookmark rows read tuned) and `tuned_row` (the first as drawn: `Club repeater +1`), `on_air_entry` (the entry the inspector marks on air, on a frequency with several), `log_names` (the names the log's rows are logged under there, each once, sorted, joined by ` · `), `sort` (the sidebar's bookmark order, `frequency` or `name`), `bookmark_rows` (the bookmark rows under the open band rows as drawn, in that order), `library_rows` (the Library page's recent rows, one a transmission: `over 2` for one over of a part that holds several, `file` for a whole part, then `: ` and its transcript line when it has one); every key is present, `null` when it has no value |
 | `ax` | `window`: `main` (the default; its popovers and sheets are in its tree), `settings` (the Settings window, while it is open: the stage's `settings` or the key `cmd+,` opens it), `popover` (the main window's open popover alone) or `sheet` (the sheet over the main window, else over Settings, alone) | `out/<id>.ax.txt`: the window's accessibility tree, one element per line indented two spaces a level: role, `id=` and the identifier when there is one, the label, `value=` when there is one (its value description where it gives one, as VoiceOver reads a slider's, the rail's thumb's `144.0 to 148.0 MHz`; quoted, with `\`, `"` and newlines escaped), the frame in points from the window's top-left corner as the regions are measured (a text field's left edge and width only, `(38,– 161×–)`, because the AppKit field's height follows its text, 14 pt empty and 13 with text in the inspector's fields, while the row it sits in keeps its height; a group whose frame is the union of its children's and that holds a field spans what its other children span, top to bottom, for the same reason), `enabled` or `disabled`; `result`: as `snapshot`'s, so a reader can tell which elements lie in which region, and `{}` for the Settings window or a sheet over it; a popover or a sheet alone is framed from its window's corner |
 | `key` | `keys`: `cmd+g`, `shift+cmd+left`, `escape`, `return`, `down`… | a key down and up |
 | `type` | `text` | a key down and up for each character |
@@ -1072,7 +1085,7 @@ them and nothing else: an identifier changes no layout and no behaviour.
 | `tuning.` | `field` (the frequency's digits), `up`, `down` |
 | `transport` | the bar under the Radio; `.mute`, `.mode`, `.width`, `.squelch` with `.squelch.track`, `.volume` |
 | `inspector` | the Radio's inspector; its groups `.header`, `.identity`, `.readings`, `.audio`, `.log`, `.measurements`; its controls `.rename`, `.tone`, `.note`, `.entry.<name>` (one of several bookmarks on the tuned frequency) with `.rename`, `.remove`, `.tone` and `.note` under it, `.revert`, `.save`, `.tuneinside`, `.record`, `.kept.stop` (the Stop of `Still recording …`), `.log.play` (a kept row's ▶ or ■; every row's is the same, and `press` takes the newest), `.measurements.toggle` |
-| `library.` | `sidebar`, `search`, `channel.<hz>`, `page`, `page.record`, `page.tune`, `day.<day>` (an EARLIER day's line) and `day.<day>.play`, `part.<n>` (counted from 0 down the page, as `select_part` counts), `inspector`, `inspector.playall`, `inspector.finder`, `inspector.delete` |
+| `library.` | `sidebar`, `search`, `channel.<hz>`, `page`, `page.record`, `page.tune`, `day.<day>` (an EARLIER day's line) and `day.<day>.play`, `part.<n>` (a transmission's row, counted from 0 down the page, as `select_part` counts), `inspector`, `inspector.playall`, `inspector.transcribed`, `inspector.delete` |
 | `player` | the Library's bar; `.previous`, `.play`, `.next`, `.volume` |
 | `assistant.` | `panel`, `new`, `input`, `stop`, `settings`, `decline`, `allow`, `allow.conversation`, `step.<call id>` (a step's row, which opens and closes it, by the id the daemon gave its tool call: `step.c1`) with `.json` (an opened step's JSON toggle, titled `JSON` or `Readable`) |
 | `settings.ai` | the Settings window's AI pane; `.key.<provider>` with `.check` and `.remove`, `.add` with `.add.provider`, `.add.label`, `.add.key` and `.add.endpoint`, `.feature.<feature>` with `.provider` and `.model`, `.usage.period` with `.day` and `.month`, `.notice.close` |

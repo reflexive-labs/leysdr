@@ -160,8 +160,8 @@ final class RecordingPagesTests: XCTestCase {
     }
 
     func testDeleteWords() throws {
-        XCTAssertEqual(Recordings.deleteWords(parts: 11), "Deletes all 11 parts.")
-        XCTAssertEqual(Recordings.deleteWords(parts: 1), "Deletes its one part.")
+        XCTAssertEqual(Recordings.deleteWords(transmissions: 11), "Deletes all 11 transmissions.")
+        XCTAssertEqual(Recordings.deleteWords(transmissions: 1), "Deletes its one transmission.")
         XCTAssertEqual(
             Recordings.deleteRefusalWords(jobID: "job_a"),
             "job_a is still recording; cancel the job first, then delete it")
@@ -231,7 +231,7 @@ final class RecordingPagesTests: XCTestCase {
             channelTitle: "GMRS CH3", part: m.parts[1], of: m, positionFrames: nil,
             positionRate: 0, now: now, calendar: utc)
         XCTAssertEqual(idle.title, "GMRS CH3 · Tuesday")
-        XCTAssertEqual(idle.time, "16:11:04 · part 2 of 2")
+        XCTAssertEqual(idle.time, "16:11:04")
         XCTAssertEqual(idle.played, "0:00.0")
         XCTAssertEqual(idle.length, "0:10.0")
         XCTAssertEqual(idle.fraction, 0)
@@ -252,7 +252,7 @@ final class RecordingPagesTests: XCTestCase {
             channelTitle: "462.6125", part: undated.parts[0], of: undated, positionFrames: nil,
             positionRate: 0, now: now, calendar: utc)
         XCTAssertEqual(bare.title, "462.6125", "no day clause without a date")
-        XCTAssertEqual(bare.time, "part 1 of 2")
+        XCTAssertEqual(bare.time, "—")
         let today = try manifest("job_t", days: 0, parts: [(seconds(9, 12, 40), 5, 0)])
         XCTAssertEqual(
             Recordings.playerWords(
@@ -351,7 +351,7 @@ final class RecordingPagesTests: XCTestCase {
         XCTAssertEqual(
             today.rows.map(\.gapBefore), [false, false, false, false, true],
             "a gap between recordings, none above the day's first row")
-        XCTAssertEqual(today.headWords, "5 parts · 44 s")
+        XCTAssertEqual(today.headWords, "5 transmissions · 44 s")
         XCTAssertEqual(today.rows.map(\.clipped), [false, false, false, true, false])
         XCTAssertEqual(today.marks.count, 5)
         XCTAssertEqual(today.marks[0].uri, "ley://recordings/job_a/1")
@@ -363,8 +363,8 @@ final class RecordingPagesTests: XCTestCase {
             "Play day plays the day as it was heard, oldest first")
 
         XCTAssertEqual(days[1].rows.map(\.bracket), [.first, .last])
-        XCTAssertEqual(days[1].headWords, "2 parts · 20 s")
-        XCTAssertEqual(days[2].earlierWords, "3 parts · 2 recordings")
+        XCTAssertEqual(days[1].headWords, "2 transmissions · 20 s")
+        XCTAssertEqual(days[2].earlierWords, "3 transmissions · 2 recordings")
         XCTAssertEqual(days[2].rows.map(\.jobID), ["job_e", "job_e", "job_d"])
         XCTAssertEqual(days[2].rows.map(\.gapBefore), [false, false, true])
         XCTAssertEqual(Recordings.dayRows([], now: now, calendar: utc), [])
@@ -386,7 +386,7 @@ final class RecordingPagesTests: XCTestCase {
         XCTAssertEqual(days[0].rows[0].bracket, .none, "one part of it on each day")
         XCTAssertEqual(days[2].earlier, true)
         XCTAssertEqual(days[2].marks, [], "an undated part has no place on a strip")
-        XCTAssertEqual(days[2].rows[0].words(timeZone: utc.timeZone).starts, "part 1")
+        XCTAssertEqual(days[2].rows[0].words(timeZone: utc.timeZone).starts, "—")
         XCTAssertEqual(
             Recordings.dayRows(
                 Recordings.groups([listed(late)], manifests: [:], jobs: []), now: now,
@@ -440,10 +440,10 @@ final class RecordingPagesTests: XCTestCase {
         let m = try XCTUnwrap(a?.manifest)
         let words = Recordings.partInspectorWords(
             part: m.parts[3], of: m, running: false, timeZone: utc.timeZone)
-        XCTAssertEqual(words.heading, "PART 4 OF 4")
+        XCTAssertEqual(words.heading, "TRANSMISSION 4 OF 4")
         XCTAssertEqual(words.time, "09:03:20 · 5.8 s")
-        XCTAssertEqual(words.levels.map(\.label), ["Peak", "Mean", "Overs"])
-        XCTAssertEqual(words.levels.map(\.value), ["0.0 dBFS · clipped", "−18.4 dBFS", "1"])
+        XCTAssertEqual(words.levels.map(\.label), ["Peak", "Mean"])
+        XCTAssertEqual(words.levels.map(\.value), ["0.0 dBFS · clipped", "−18.4 dBFS"])
         XCTAssertTrue(words.clipped)
         XCTAssertEqual(
             words.clippedSentence,
@@ -457,11 +457,11 @@ final class RecordingPagesTests: XCTestCase {
                 "−80 dBFS", "4 WAV · 3.8 MB",
             ])
         XCTAssertEqual(words.playAll, "Play all 4")
-        XCTAssertEqual(words.deleteLine, "Deletes all 4 parts.")
+        XCTAssertEqual(words.deleteLine, "Deletes all 4 transmissions.")
 
         let clean = Recordings.partInspectorWords(
             part: m.parts[0], of: m, running: true, timeZone: utc.timeZone)
-        XCTAssertEqual(clean.heading, "PART 1 OF 4")
+        XCTAssertEqual(clean.heading, "TRANSMISSION 1 OF 4")
         XCTAssertEqual(clean.levels[0].value, "−6.2 dBFS")
         XCTAssertFalse(clean.clipped)
         XCTAssertNil(clean.clippedSentence)
@@ -471,9 +471,9 @@ final class RecordingPagesTests: XCTestCase {
         let one = try manifest("job_one", days: 0, parts: [(seconds(9, 0), 5, 0)], endedBy: "")
         let single = Recordings.partInspectorWords(
             part: one.parts[0], of: one, running: false, timeZone: utc.timeZone)
-        XCTAssertEqual(single.levels.map(\.label), ["Peak", "Mean"], "no overs clause at zero")
+        XCTAssertEqual(single.levels.map(\.label), ["Peak", "Mean"], "a whole file's levels")
         XCTAssertEqual(single.playAll, "Play")
-        XCTAssertEqual(single.deleteLine, "Deletes its one part.")
+        XCTAssertEqual(single.deleteLine, "Deletes its one transmission.")
         var undated = one
         undated.anchors = []
         XCTAssertEqual(
@@ -488,9 +488,129 @@ final class RecordingPagesTests: XCTestCase {
             channelTitle: "GMRS CH3", part: m.parts[3], of: m, positionFrames: 100_800,
             positionRate: 48_000, now: now, calendar: utc)
         XCTAssertEqual(words.title, "GMRS CH3 · Today")
-        XCTAssertEqual(words.time, "09:03:20 · part 4 of 4")
+        XCTAssertEqual(words.time, "09:03:20")
         XCTAssertEqual(words.played, "0:02.1")
         XCTAssertEqual(words.length, "0:05.8")
+    }
+
+    // MARK: Transmissions
+
+    /// Today a recording of two parts at a 1000 Hz capture rate: part 1, 30 s from 09:00:00,
+    /// holds four openings, the third 0.3 s after the second closes (one segment with it under the
+    /// speech decoder's 500 ms hang); part 2, 4 s from 09:01:00, holds one.
+    private func exchange() throws -> RecordingManifest {
+        var m = try manifest(
+            "job_x", days: 0, parts: [(seconds(9, 0), 30, 4), (seconds(9, 1), 4, 1)])
+        let p1 = UInt64(seconds(9, 0) * 1000)
+        m.parts[0].squelchIntervals = [
+            .init(openSample: p1 + 1000, closeSample: p1 + 5000),
+            .init(openSample: p1 + 10_000, closeSample: p1 + 12_000),
+            .init(openSample: p1 + 12_300, closeSample: p1 + 14_000),
+            .init(openSample: p1 + 20_000, closeSample: p1 + 28_000),
+        ]
+        let p2 = UInt64(seconds(9, 1) * 1000)
+        m.parts[1].squelchIntervals = [.init(openSample: p2 + 500, closeSample: p2 + 3500)]
+        return m
+    }
+
+    func testAPartOfSeveralOversIsOneRowPerSegment() throws {
+        let m = try exchange()
+        let rows = Recordings.transmissions(of: m)
+        XCTAssertEqual(rows.map(\.part), [1, 1, 1, 2])
+        XCTAssertEqual(rows.map(\.over), [1, 2, 4, 1])
+        XCTAssertEqual(rows.map(\.lastOver), [1, 3, 4, 1], "0.3 s apart is one transmission")
+        XCTAssertEqual(rows.map(\.split), [true, true, true, false])
+        XCTAssertEqual(rows.map(\.playOver), [1, 2, 4, nil], "the one-over part plays whole")
+        XCTAssertEqual(
+            rows.map(\.id),
+            [
+                "ley://recordings/job_x/1#1", "ley://recordings/job_x/1#2",
+                "ley://recordings/job_x/1#4", "ley://recordings/job_x/2",
+            ])
+        XCTAssertEqual(rows.map(\.seconds), [5, 5, 9, 4], "what plays: pre-roll to hang")
+        XCTAssertEqual(
+            rows.map { $0.words(timeZone: utc.timeZone).starts },
+            ["09:00:01", "09:00:10", "09:00:20", "09:01:00"], "each from its opening")
+        XCTAssertEqual(rows[0].words(timeZone: utc.timeZone).size, "—", "a share is not a file")
+        XCTAssertEqual(rows[3].words(timeZone: utc.timeZone).size, "977 KB")
+        XCTAssertEqual(
+            rows[0].words(timeZone: utc.timeZone).peak, "−6.2 dBFS", "the file's peak")
+        XCTAssertEqual(rows[0].partSeconds, 30)
+        XCTAssertEqual(rows[2].startFraction, 19.5 / 30, accuracy: 1e-9)
+        XCTAssertEqual(rows[2].endFraction, 28.5 / 30, accuracy: 1e-9)
+        XCTAssertTrue(rows[1].holds(over: 3))
+        XCTAssertFalse(rows[1].holds(over: 4))
+        XCTAssertTrue(rows[3].holds(over: 9), "an unsplit row holds every over of its part")
+
+        let graph = (0..<30).map(Float.init)
+        XCTAssertEqual(rows[2].levels(graph), (19..<29).map(Float.init), "its share of the file")
+        XCTAssertEqual(rows[3].levels(graph), graph)
+        XCTAssertEqual(rows[0].levels([]), [])
+    }
+
+    func testAPartWithoutOpeningsReadIsOneRow() throws {
+        var m = try exchange()
+        m.parts[0].squelchIntervals = nil
+        let rows = Recordings.transmissions(of: m.parts[0], in: m)
+        XCTAssertEqual(rows.count, 1, "an old part whose sidecar was not read, or a continuous one")
+        XCTAssertEqual(rows[0].id, "ley://recordings/job_x/1")
+        XCTAssertEqual(rows[0].over, 0)
+        XCTAssertFalse(rows[0].split)
+        XCTAssertEqual(rows[0].seconds, 30)
+        XCTAssertNil(rows[0].playOver)
+    }
+
+    func testADayListsTransmissionsBracketedByRecording() throws {
+        let m = try exchange()
+        let groups = Recordings.groups([listed(m)], manifests: ["job_x": m], jobs: [])
+        let day = try XCTUnwrap(Recordings.dayRows(groups, now: now, calendar: utc).first)
+        XCTAssertEqual(day.rows.count, 4)
+        XCTAssertEqual(day.rows.map(\.bracket), [.first, .middle, .middle, .last])
+        XCTAssertEqual(day.headWords, "4 transmissions · 23 s")
+        XCTAssertEqual(day.marks.count, 4)
+        XCTAssertEqual(
+            day.playOrder, ["ley://recordings/job_x/1", "ley://recordings/job_x/2"],
+            "Play day plays each file once")
+    }
+
+    func testTheInspectorDescribesTheTransmission() throws {
+        let m = try exchange()
+        let words = Recordings.partInspectorWords(
+            part: m.parts[0], over: 3, of: m, running: false, timeZone: utc.timeZone)
+        XCTAssertEqual(words.heading, "TRANSMISSION 2 OF 4", "over 3 is in the second")
+        XCTAssertEqual(words.time, "09:00:10 · 5.0 s")
+        XCTAssertEqual(words.levels.map(\.label), ["File peak", "File mean"])
+        XCTAssertEqual(words.playAll, "Play all 4")
+        XCTAssertEqual(words.deleteLine, "Deletes all 4 transmissions.")
+        let first = Recordings.partInspectorWords(
+            part: m.parts[0], of: m, running: false, timeZone: utc.timeZone)
+        XCTAssertEqual(first.heading, "TRANSMISSION 1 OF 4", "no over: the part's first")
+        let whole = Recordings.partInspectorWords(
+            part: m.parts[1], over: 1, of: m, running: false, timeZone: utc.timeZone)
+        XCTAssertEqual(whole.heading, "TRANSMISSION 4 OF 4")
+        XCTAssertEqual(whole.levels.map(\.label), ["Peak", "Mean"])
+    }
+
+    func testCoverageCountsTransmissionsWithWords() throws {
+        let m = try exchange()
+        let rows = Recordings.transmissions(of: m)
+        func line(_ part: Int, _ over: Int, job: String = "job_t1") -> SpeechLine {
+            SpeechLine(
+                jobID: job, recordID: "\(job)-\(part)-\(over)", recordingID: "job_x", part: part,
+                over: over, text: "words \(part).\(over)")
+        }
+        let some = RecordingSpeech(lines: [line(1, 1), line(1, 2)], manifest: m)
+        XCTAssertEqual(SpeechRecords.coverage(some, rows: rows).transcribed, 2)
+        XCTAssertEqual(SpeechRecords.coverage(some, rows: rows).total, 4)
+        XCTAssertEqual(
+            SpeechRecords.coverageLine(some, rows: rows), "2 of 4 transmissions transcribed")
+        let all = RecordingSpeech(
+            lines: [line(1, 1), line(1, 2), line(1, 4), line(2, 1)], manifest: m)
+        XCTAssertNil(SpeechRecords.coverageLine(all, rows: rows), "every one has words")
+        XCTAssertNil(
+            SpeechRecords.coverageLine(RecordingSpeech(lines: [], manifest: m), rows: rows),
+            "never transcribed: Transcribe is the offer, not a count")
+        XCTAssertNil(SpeechRecords.coverageLine(nil, rows: rows))
     }
 
     // MARK: The level graph

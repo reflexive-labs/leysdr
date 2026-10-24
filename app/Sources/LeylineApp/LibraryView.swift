@@ -140,14 +140,14 @@ struct LibrarySidebar: View {
     }
 }
 
-/// The Library's inspector: the selected or playing part (`PartInspector`), else the selected
-/// channel's lines (`ChannelSummary`), else the panel's ground.
+/// The Library's inspector: the selected or playing transmission (`PartInspector`), else the
+/// selected channel's lines (`ChannelSummary`), else the panel's ground.
 struct LibraryInspector: View {
     @Environment(AppSession.self) private var session
 
     var body: some View {
         if let p = session.inspectedPart {
-            PartInspector(manifest: p.manifest, part: p.part, group: p.group)
+            PartInspector(manifest: p.manifest, part: p.part, over: p.over, group: p.group)
         } else if let c = session.selectedChannel {
             ChannelSummary(channel: c, groups: session.pageGroups(for: c))
         } else {
@@ -156,14 +156,12 @@ struct LibraryInspector: View {
     }
 }
 
-/// With no part selected, the channel's lines: the name in `name`, `462.6125 MHz · NFM 12.5 kHz`
-/// and `4 recordings · 13.1 MB` in `value` `inkMuted` (the page header's words, on two lines),
-/// and a bordered `Show in Finder` for the channel's newest recording, whose directory holds its
-/// parts.
+/// With no transmission selected, the channel's lines: the name in `name`, `462.6125 MHz · NFM
+/// 12.5 kHz` and `4 recordings · 13.1 MB` in `value` `inkMuted` (the page header's words, on two
+/// lines). Show in Finder is in a row's context menu.
 struct ChannelSummary: View {
     let channel: RecordingChannel
     let groups: [RecordingGroup]
-    @Environment(AppSession.self) private var session
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -177,16 +175,6 @@ struct ChannelSummary: View {
                     .font(Theme.Font.value).foregroundStyle(Theme.inkMuted).lineLimit(1)
             }
             .padding(.horizontal, 16).padding(.vertical, 14)
-            Rectangle().fill(Theme.hairline).frame(height: 1)
-            if let newest = channel.recordings.first {
-                Button("Show in Finder") {
-                    Task { await session.revealInFinder(uri: newest.uri) }
-                }
-                .buttonStyle(.bordered)
-                .help("Show the newest recording of \(channel.title) in Finder")
-                .accessibilityIdentifier("library.inspector.finder")
-                .padding(.horizontal, 16).padding(.vertical, 14)
-            }
             Spacer(minLength: 0)
         }
         .frame(maxHeight: .infinity, alignment: .top)
