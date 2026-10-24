@@ -45,7 +45,7 @@ lists the changes to it and the work, with `[ ]` items still open. Written 2026-
 
 ## Work
 
-- [ ] R1. Lossless stored transcription: the daemon tells a SEGMENTED plugin its source is a
+- [x] R1. Lossless stored transcription: the daemon tells a SEGMENTED plugin its source is a
   stored recording, the plugin SDK blocks instead of dropping, `status_detail` counts overs not
   transcribed, a test with more than eight overs and a slow scripted engine.
 - [ ] R2. The 500 ms hang everywhere, with the help goldens, the `record-squelch-opens` eval and

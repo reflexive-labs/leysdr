@@ -5,6 +5,11 @@ What changed for someone using Leyline, newest first. Each released version has 
 
 ## Unreleased
 
+- **Fixed: a transcription of a recording lost overs.** A recording of more than nine overs came
+  back with most of them missing and no warning. The engine now waits for the speech decoder
+  instead of dropping an over, and a finished job's detail says how many overs have no record
+  (`3 of 20 overs have no record`).
+
 ## 0.2.0 (2026-10-23)
 
 Leyline 0.2 adds AI on your own provider key: an assistant in the app that runs the radio from

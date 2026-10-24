@@ -231,9 +231,11 @@ func main() {
 `Segment` is called once per segment with all of its audio, a gap inside it filled with silence,
 and `at` is the START frame's time; the buffer is the decoder's to keep. The SDK reads stdin on one
 goroutine and calls `Segment` on another, in order and one at a time, with up to eight complete
-segments waiting; when a slow engine lets more pile up, the oldest waiting one is dropped with a
-line on stderr (`dropped segment N: the engine is behind`). At the end of input it waits for every
-queued segment and writes its records before it returns. `MainSegmented` reads the key first when `LEYLINE_KEY_ON_STDIN` is `1` or its own manifest
+segments waiting. On a live channel, when a slow engine lets more pile up, the oldest waiting one
+is dropped with a line on stderr (`dropped segment N: the engine is behind`). When the source is a
+stored recording (`StreamDescriptor.stored`, set by the daemon), nothing is dropped: the SDK stops
+reading stdin until the decoder takes a segment, and the pipe holds the daemon back. At the end of
+input it waits for every queued segment and writes its records before it returns. `MainSegmented` reads the key first when `LEYLINE_KEY_ON_STDIN` is `1` or its own manifest
 names a provider (`plugin.ReadCredential` does the read for a decoder that wires stdin itself)
 and passes it to the factory; `key` is nil when no key was sent. `Main` and `MainIQ` read it the
 same way and drop it. A segment longer than `plugin.MaxSegment` (ten minutes), a segment cut
