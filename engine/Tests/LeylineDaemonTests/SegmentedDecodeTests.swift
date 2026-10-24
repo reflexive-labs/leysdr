@@ -259,7 +259,10 @@ final class SegmentedDecodeTests: XCTestCase {
                 XCTAssertEqual(self.integer(rec, "frames"), Int64((samples + 4095) / 4096))
                 XCTAssertEqual(self.integer(rec, "outside"), 0, "nothing is sent between segments")
                 XCTAssertEqual(self.integer(rec, "rate"), Int64(Self.audioRate))
+                XCTAssertEqual(self.integer(rec, "stored"), 1, "the plugin is told its source is a stored recording")
             }
+            XCTAssertEqual(done.statusDetail, "read ley://recordings/\(id): \(Self.syntheticSegments.count) records",
+                           "every over answered, so nothing is said to be missing")
 
             // Kept, so the records are a resource dated by the recording's own anchor.
             var query = Leyline_V1_RecordQuery()
@@ -420,6 +423,24 @@ final class SegmentedDecodeTests: XCTestCase {
             XCTAssertTrue(done.statusDetail.hasPrefix("fake did not exit within"), done.statusDetail)
             let got = try await self.records(c, job: started.jobID, count: Self.syntheticSegments.count, timeoutMs: 2000)
             XCTAssertEqual(got.count, Self.syntheticSegments.count, "what it answered before it hung is kept")
+        }
+    }
+
+    func testAStoredJobSaysHowManyOversGotNoRecord() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        defer {
+            for d in [plugins, recordings] { try? FileManager.default.removeItem(atPath: d) }
+        }
+        try writeSegmentedPlugin(in: plugins, args: ["--skip-segment=2"])
+        let id = try await writeRecording(in: recordings)
+        try await withDaemon(decoderSearchPath: [plugins], recordingsPath: recordings) { c in
+            let started = try await self.startDecode(c, self.sourceConfig(id))
+            let done = try await self.waitForEnd(c, started.jobID)
+            let total = Self.syntheticSegments.count
+            XCTAssertEqual(done.state, .completed, done.statusDetail)
+            XCTAssertEqual(done.statusDetail,
+                           "read ley://recordings/\(id): \(total - 1) records; 1 of \(total) overs have no record")
         }
     }
 

@@ -43,10 +43,13 @@ type SegmentFactory func(audioRateHz uint32, cred *leylinev1.SetCredentialReques
 // would hold minutes of audio in memory for a call no speech engine accepts.
 const MaxSegment = 10 * time.Minute
 
-// segmentQueue is how many complete segments may wait for the decoder. When a
-// slow engine lets more pile up, the oldest waiting one is dropped, because the
-// daemon replaces a plugin that stops reading its stdin and the newest overs
-// are the ones a person is waiting for.
+// segmentQueue is how many complete segments may wait for the decoder. On a
+// live channel, when a slow engine lets more pile up, the oldest waiting one is
+// dropped, because the daemon replaces a plugin that stops reading its stdin
+// and the newest overs are the ones a person is waiting for. When the
+// descriptor says the source is a stored recording (StreamDescriptor.stored)
+// nothing is dropped: the reader waits for room, stops reading stdin, and the
+// pipe holds the daemon back.
 const segmentQueue = 8
 
 // RunSegmented reads a SEGMENTED stream from stdin and writes records to
@@ -69,7 +72,9 @@ func RunSegmented(ctx context.Context, provider string, newDecoder SegmentFactor
 // no START, a START inside a segment, a segment over MaxSegment, a segment cut
 // off by the end of input and a queued segment the decoder fell behind on are
 // each logged on stderr and dropped: a plugin that decoded a half segment would
-// emit a record for words it did not hear whole.
+// emit a record for words it did not hear whole. The last is the exception when
+// the descriptor says the source is stored: the reader then waits for the
+// decoder, and no whole segment is dropped.
 func RunSegmentedStreams(ctx context.Context, r io.Reader, w io.Writer, provider string, newDecoder SegmentFactory) error {
 	in := asByteReader(r)
 	cred, err := readKeyIfSent(in, provider)
@@ -93,7 +98,7 @@ func RunSegmentedStreams(ctx context.Context, r io.Reader, w io.Writer, provider
 			captureRate: float64(desc.GetSpanHz()),
 			maxSamples:  int(MaxSegment.Seconds() * float64(audio.GetSampleRate())),
 		}
-		work = startSegmentWorker(dec, w)
+		work = startSegmentWorker(dec, w, desc.GetStored())
 		a.deliver = work.enqueue
 		return a.frame, nil
 	})
@@ -120,10 +125,12 @@ type queuedSegment struct {
 type segmentWorker struct {
 	queue chan queuedSegment
 	done  chan error
+	// stored makes enqueue wait for room instead of dropping the oldest.
+	stored bool
 }
 
-func startSegmentWorker(dec SegmentDecoder, w io.Writer) *segmentWorker {
-	sw := &segmentWorker{queue: make(chan queuedSegment, segmentQueue), done: make(chan error, 1)}
+func startSegmentWorker(dec SegmentDecoder, w io.Writer, stored bool) *segmentWorker {
+	sw := &segmentWorker{queue: make(chan queuedSegment, segmentQueue), done: make(chan error, 1), stored: stored}
 	go func() {
 		out := bufio.NewWriter(w)
 		var werr error
@@ -146,10 +153,15 @@ func startSegmentWorker(dec SegmentDecoder, w io.Writer) *segmentWorker {
 	return sw
 }
 
-// enqueue hands a segment to the decoder without blocking the reader: when the
-// queue is full the oldest waiting segment makes room. The reader is the only
-// sender, so after one receive the send cannot block.
+// enqueue hands a segment to the decoder. Live, it never blocks the reader:
+// when the queue is full the oldest waiting segment makes room, and the reader
+// is the only sender, so after one receive the send cannot block. Stored, it
+// waits for the decoder to take one, and the stdin pipe backs up behind it.
 func (sw *segmentWorker) enqueue(seg queuedSegment) {
+	if sw.stored {
+		sw.queue <- seg
+		return
+	}
 	select {
 	case sw.queue <- seg:
 		return

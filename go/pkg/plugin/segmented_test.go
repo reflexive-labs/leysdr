@@ -365,6 +365,58 @@ func TestRunSegmentedKeepsReadingWhileTheDecoderWorks(t *testing.T) {
 	}
 }
 
+// slowDecoder takes a moment over each segment, so a reader that is not held back gets well ahead.
+type slowDecoder struct{ seen []uint64 }
+
+func (d *slowDecoder) Segment(_ []float32, at *leylinev1.SampleTime, emit func(*leylinev1.DecodeRecord)) {
+	time.Sleep(5 * time.Millisecond)
+	d.seen = append(d.seen, at.GetSampleIndex())
+	emit(&leylinev1.DecodeRecord{Protocol: "speech", Time: at})
+}
+
+// runSlow sends 30 segments at once, as the daemon does for a recording, to a decoder that is
+// slower than the input, and returns how many records came out.
+func runSlow(t *testing.T, stored bool) int {
+	t.Helper()
+	var in bytes.Buffer
+	d := descriptor(leylinev1.AudioSampleFormat_F32)
+	d.Stored = stored
+	if _, err := protodelim.MarshalTo(&in, d); err != nil {
+		t.Fatal(err)
+	}
+	for n := uint64(1); n <= 30; n++ {
+		for _, f := range []*leylinev1.Frame{
+			segFrame(2*n, n*100, leylinev1.SegmentMark_SEGMENT_START, f32(0.5)),
+			segFrame(2*n+1, n*100+5, leylinev1.SegmentMark_SEGMENT_END, nil),
+		} {
+			if _, err := protodelim.MarshalTo(&in, f); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	var out bytes.Buffer
+	err := plugin.RunSegmentedStreams(t.Context(), &in, &out, "", func(uint32, *leylinev1.SetCredentialRequest) plugin.SegmentDecoder { return &slowDecoder{} })
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(readRecords(t, out.Bytes()))
+}
+
+// A stored recording loses no over to a slow decoder, and a live channel still does.
+func TestRunSegmentedStoredSourceDropsNothing(t *testing.T) {
+	var log bytes.Buffer
+	defer plugin.SetSegmentLog(&log)()
+	if got := runSlow(t, true); got != 30 {
+		t.Errorf("stored source: %d records for 30 segments, want 30", got)
+	}
+	if strings.Contains(log.String(), "dropped segment") {
+		t.Errorf("stored source dropped a segment:\n%s", log.String())
+	}
+	if got := runSlow(t, false); got >= 30 {
+		t.Errorf("live source: %d records for 30 segments, want some dropped", got)
+	}
+}
+
 // A gap on a START frame is audio the daemon could not deliver before the segment, so it adds no
 // silence to the segment.
 func TestRunSegmentedIgnoresAGapBeforeTheStart(t *testing.T) {

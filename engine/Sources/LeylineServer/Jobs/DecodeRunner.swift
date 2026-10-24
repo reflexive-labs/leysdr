@@ -33,6 +33,9 @@ actor DecodeRunner {
     /// The next of the source's items the plugin has not had whole, so a restarted plugin starts
     /// where its predecessor was cut off rather than at the beginning.
     private let sourceCursor = Mutex(0)
+    /// The items a record has come back for, so the end of a stored job can say how many overs
+    /// got none. Segmented sources only: a continuous part is not one record.
+    private let answeredItems = Mutex(Set<Int>())
     private let hub: RecordHub
     private let writer: RecordWriter?
     private let store: SessionStore
@@ -270,7 +273,12 @@ actor DecodeRunner {
             case .all where exit.status == 0:
                 let records = liveness.records
                 await teardown()
-                await onStatus(.completed, "read \(source.uri): \(records) record\(records == 1 ? "" : "s")")
+                var detail = "read \(source.uri): \(records) record\(records == 1 ? "" : "s")"
+                let missing = source.segmented ? source.items.count - answeredItems.withLock { $0.count } : 0
+                if missing > 0 {
+                    detail += "; \(missing) of \(source.items.count) overs have no record"
+                }
+                await onStatus(.completed, detail)
                 return
             default:
                 break
@@ -706,6 +714,7 @@ actor DecodeRunner {
             // plugin answered whether or not the record is delivered.
             let done = source.segmented ? located.item + 1 : located.item
             sourceCursor.withLock { $0 = Swift.max($0, done) }
+            if source.segmented { answeredItems.withLock { _ = $0.insert(located.item) } }
         }
         if rec.time.captureID.isEmpty {
             rec.time.captureID = lease?.captureID.string ?? located?.captureID ?? ""
@@ -862,6 +871,8 @@ actor DecodeRunner {
             d.centerHz = source.manifest.frequencyHz
             d.spanHz = source.captureRate
             d.grpc = true
+            // Stored: the plugin waits for its decoder rather than dropping an over.
+            d.stored = true
             return d
         }
         guard let lease else { return d }

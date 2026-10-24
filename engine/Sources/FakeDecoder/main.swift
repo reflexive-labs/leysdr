@@ -130,6 +130,15 @@ let dieAfter: UInt64 = {
     return 0
 }()
 
+/// `--skip-segment=N` writes no record for the Nth segment of a SEGMENTED run, the way a plugin
+/// whose engine failed on one over does.
+let skipSegment: Int = {
+    for arg in CommandLine.arguments.dropFirst() where arg.hasPrefix("--skip-segment=") {
+        return Int(arg.dropFirst("--skip-segment=".count)) ?? 0
+    }
+    return 0
+}()
+
 /// `--refuse-after=N` exits with status 75 after N frames, its last stderr line a provider's
 /// refusal, the way a speech plugin says its provider turned a request down
 /// (`DecodeRunner.refusedExitStatus`). It refuses once, recorded by a marker file the way
@@ -209,6 +218,11 @@ func runSegmented() -> Never {
             // `--die-after=N`: having answered N segments, die on the next one's END before
             // answering it, the case that loses a segment if the daemon counts it as done.
             if dieAfter > 0, count == Int64(dieAfter) { exit(3) }
+            // `--skip-segment=N`: answers nothing for the Nth segment, as an engine error would.
+            if skipSegment > 0, count + 1 == Int64(skipSegment) {
+                count += 1
+                continue
+            }
             count += 1
             var rec = Leyline_V1_DecodeRecord()
             rec.protocol = "fake"
@@ -218,6 +232,7 @@ func runSegmented() -> Never {
             rec.fields["samples"] = field(done.samples)
             rec.fields["outside"] = field(outside)
             rec.fields["rate"] = field(Int64(descriptor.audio.sampleRate))
+            rec.fields["stored"] = field(descriptor.stored ? 1 : 0)
             var text = Leyline_V1_FieldValue()
             text.text = "segment \(count)"
             rec.fields["text"] = text
