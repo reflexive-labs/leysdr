@@ -1825,7 +1825,7 @@ sentence, and the take-over reads `It takes the radio from whoever is using it.`
 `take_over`. `assistant-cards`'s pictures and trees were re-recorded for it; two full runs at
 `JOBS=3` after were clean.
 
-### MC-5 `[ ]` Bookmarks that share a frequency (2026-10-23, for 0.2.0)
+### MC-5 `[x]` Bookmarks that share a frequency (2026-10-23, for 0.2.0)
 
 Found in the owner's QA after a CHIRP import. Two bookmarks on one frequency with different tones
 both drew as tuned in the sidebar, and the inspector showed only the first, because the tuned
@@ -1865,7 +1865,15 @@ note names no bookmark, so nothing there changed. `state` gains `entries`, `tune
 fixture is `scene_club` (146.910 MHz at 480 kSPS, 40 s, the two stations on 146.940 in turns),
 and the file `fixtures/chirp/club.csv`.
 
-### MC-6 `[ ]` Sorting the sidebar's bookmarks (2026-10-23, for 0.2.0)
+Verified 2026-10-23 in Batch 3's verify loop on the Mac: `merged-bookmarks` (new) imports
+`fixtures/chirp/club.csv` over `scene_club` and draws one row, `Club net +1   146.9400`, one row
+tuned, and the inspector's two entries with their own pencil and remove, `on air PL 127.3` beside
+the repeater while its tone keys, the log row naming it (`Club repea… · PL 127.3`) and the volume
+`playing Club net +1`. `alert-and-menus` and the other scenes on `home.csv` with Simplex merge
+under `Calling +1`. The log row's name ran into the length (`3.4 sClub repeater`); fixed
+(1576355). Re-recorded: every scene with a sidebar of bookmarks (listed under MC-7).
+
+### MC-6 `[x]` Sorting the sidebar's bookmarks (2026-10-23, for 0.2.0)
 
 The owner's choice: the person picks the order. A small sort control in the sidebar's header row,
 beside `+`, switches the bookmarks under every band between **frequency** (low to high, the order
@@ -1883,7 +1891,12 @@ case. The control is one button (`sidebar.sort`, `arrow.up.arrow.down` by freque
 control. Every scene's tree and picture of the sidebar's header gains the button, so their
 goldens are re-recorded once.
 
-### MC-7 `[ ]` The band rail for a capture wider than the band (2026-10-23, for 0.2.0)
+Verified 2026-10-23 in Batch 3's verify loop: the control (`sidebar.sort`, `↑↓` for frequency,
+`Aa` for name) sits beside `+`, and `merged-bookmarks`' `byname` picture lists Alpha, Club net +1,
+Zulu, where frequency order puts Zulu (146.700) first and Alpha (147.100) last. The filter field
+narrows by 20 pt for it, which every sidebar tree records.
+
+### MC-7 `[x]` The band rail for a capture wider than the band (2026-10-23, for 0.2.0)
 
 Found in the owner's QA with a HackRF at 20 MHz. The rail was built when the capture (an RTL-SDR's
 2.4 MHz) was about the size of the view and narrower than the band. The rail draws two pills: the
@@ -1918,7 +1931,22 @@ Checked on `scene_vhf20` (21 MSPS) and on the RTL-width 2 m scenes: the thumb's 
 spectrum's, a drag that leaves `tuned_hz` alone, a drag past the capture's edge that retunes, the
 edge marker, a click on a dense run of ticks tuning the nearest, and the zoom steps' spans.
 
-### MC-8 `[ ]` The person's daemon runs a signed, installed copy (2026-10-23, for 0.2.0)
+Verified 2026-10-23 in Batch 3's verify loop: `rail-wide` (new, `scene_vhf20`) fits the view to
+2 m (`144–148`, the thumb the whole track, the capture's underlay running past both caps), halves
+to 2 MHz around Calling, drags to 144–146 with `tuned_hz` unchanged and `146.520 ▸` on the
+spectrum, which brings the view back without a tune, and steps from 656 kHz to the whole 21 MHz.
+`rail-rtl` (new, `scene_2m`) shows the capture as the view, a drag inside it and one past its
+top that logs the push and leaves `◂ 146.520`, the 90 kHz floor, and a click on the
+four-bookmark strip tuning Dense C. `vhf-wide` and `gmrs-plan` now show the band, not the whole
+capture, which settles the backlog's question of the scrubber's scale against the waterfall's.
+Re-recorded for the thumb, the bookmark ticks as elements and the sort control: radio-2m,
+goto-bookmark, identifiers, plan-picker, bookmark-fields, change-note, chirp-import, heard-tones,
+scan-hits, sidebar-rows, mc1a-inspector, mc1a-sidebar-actions, settings-sheet, settings-ai,
+pointer-and-menus, alert-and-menus, the assistant scenes, the follow scenes, gmrs-plan,
+vhf-wide, the sweeps and the transport scenes. A Signal reading of `−0 dB` in `rail-wide` was
+fixed (d754ae3).
+
+### MC-8 `[x]` The person's daemon runs a signed, installed copy (2026-10-23, for 0.2.0)
 
 Found in the owner's QA: Settings' Check and the assistant both said no openai key was set, while
 `ley ai` showed the key accepted. The owner's LaunchAgent ran `engine/.build/release/leylined` in
@@ -1941,6 +1969,13 @@ owner's call:
   says to run `make reload` and add the key again.
 - **The trap is written down.** `docs/dev/setup.md` and `AGENTS.local.md` say not to run a
   LaunchAgent on a build directory a check rebuilds.
+
+Verified 2026-10-23 in Batch 3's verify loop, as far as a check can: `make release-test` runs
+`scripts/test-reload.sh` (stubs for codesign, security and launchctl, a scratch HOME) green, the
+engine suite's keychain-failure tests pass, and the owner's LaunchAgent already runs
+`~/Library/Application Support/Leyline/bin/leylined`, so the batch's full runs relinked
+`engine/.build` under no running daemon. `make reload` itself and a real keychain refusal were
+not run here: the person's daemon and keychain are out of bounds for a verify agent.
 
 ### MC-9 `[ ]` A recording that falls behind says so (2026-10-23, for 0.2.0)
 
@@ -1966,6 +2001,13 @@ it did not write. The owner's calls:
   kept for the checks that need debug (assertions). Tests that time real-time work state their
   margin.
 
+Batch 3's verify loop, 2026-10-23: the engine side passes on the Mac (the release suite with
+`RecordingJobTests+Gaps` and `CaptureGapLogTests`, `make hot-path`, `make e2e`), and the CI
+change is in. Not ticked: no check scene shows a part with gaps, because a scene's daemon cannot
+be made to drop samples, so the Library's mark and the ticks on a part's level graph have no
+picture yet. A scene needs a way to force a gap (a daemon flag that stalls the DSP thread once,
+say).
+
 ## Backlog
 
 - **Two frequency affine maps remain separate.** `SquelchTrack` and `GainSlider` share
@@ -1973,13 +2015,6 @@ it did not write. The owner's calls:
   frequencies without clamping the forward direction. `BandRail.hz(atX:)` also snaps to the band.
   Folding them into `Scale` would add a clamp and is a behaviour change rather than a mechanical
   rename.
-
-- **The band rail's scrubber at a wide capture** (seen 2026-09-25). When the radio's sample rate
-  spans more than the band (20 MSPS on GMRS, say), the rail draws the band's region over the
-  whole capture and the scrubber's scale no longer matches the waterfall's: GMRS CH2 and CH3 sit
-  closer together on the waterfall than on the scrubber. Which of the two should own the scale
-  when the capture is wider than the band is undecided (`BandRailView.swift`, `select(band:at:)`,
-  the region drag); the owner asked for it to be kept rather than guessed at.
 
 ## Resolved owner inputs
 
