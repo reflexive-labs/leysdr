@@ -474,8 +474,12 @@ enum Measure {
         return abs(v) >= 1_000 ? "\(plus)\(fixed(v / 1_000, 1)) kHz" : "\(plus)\(fixed(v, 0)) Hz"
     }
 
+    /// A value that rounds to zero reads `0`, never `−0` (`-0.3 dB` read `−0 dB`).
     private static func fixed(_ v: Double, _ places: Int) -> String {
-        String(format: "%.\(places)f", v).replacingOccurrences(of: "-", with: "−")
+        let words = String(format: "%.\(places)f", v)
+        let zero = words.allSatisfy { "-0.".contains($0) }
+        return (zero ? String(words.drop { $0 == "-" }) : words)
+            .replacingOccurrences(of: "-", with: "−")
     }
 }
 
