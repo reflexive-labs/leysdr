@@ -234,8 +234,10 @@ takes it.
 
 ## The tag to pin
 
-`shots-YYYY-MM-DD`: left as a placeholder until the owner publishes the 0.2 set with
-`make shots-publish`. The site moves `TAG` in `scripts/fetch-shots.sh` to it (or merges the
+`shots-2026-10-23-2`. Do not pin `shots-2026-10-23`: its `shots.json` lists each image's hash from
+before oxipng compressed it, so the site's check refused it ("screenshot manifest hashes are
+stale"). `leyshots` now writes the published file's hash (`69e1b06`), and every entry in
+`shots-2026-10-23-2` matches GitHub's digest for its asset. The site moves `TAG` in `scripts/fetch-shots.sh` to it (or merges the
 **Update screenshots** pull request), runs `make shots`, and checks each changed image against the
 copy beside it, as the site's README says.
 
