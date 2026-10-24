@@ -267,6 +267,9 @@ enum Theme {
         /// The log's fixed columns; signal fills the rest.
         static let logTimeWidth: CGFloat = 52
         static let logLengthWidth: CGFloat = 40
+        /// The least space between the length and the signal or entry's name, which a long name
+        /// is cut to keep (`3.4 s  Club repeater · PL 127.3`).
+        static let logColumnGap: CGFloat = 8
         /// One log row, fixed so the log can count how many fit in the height it is given.
         static let logRowHeight: CGFloat = 19
         /// The log's trailing column: a kept row's ring, the live row's dot, or nothing.

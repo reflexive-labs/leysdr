@@ -272,6 +272,7 @@ struct LogRow: View {
                 }
                 toneText.fixedSize()
             }.font(Theme.Font.valueSmall)
+                .padding(.leading, Theme.Layout.logColumnGap)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .help(name == nil ? "" : signal)
             trailingColumn.frame(width: Theme.Layout.logPlayWidth, alignment: .trailing)
