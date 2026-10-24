@@ -35,7 +35,7 @@ A launchd daemon (the engine) owning SDR hardware, with the SwiftUI app (`app/`,
   scenes against their goldens: add or extend a scene for the behaviour changed, and name what no
   check covers when handing over (`docs/dev/swift-style.md`, "Working as an agent on this
   repository"; Linux never compiles `LeylineApp`).
-- **Commits carry no agent attribution.** No `Co-Authored-By` trailer and no "Generated with" line in a commit message or a pull request description; the author is the person committing.
+- **Commits carry a sign-off and no agent attribution.** Commit with `git commit -s`: the `Signed-off-by:` line is the Developer Certificate of Origin (`CONTRIBUTING.md`, "Sign-off"), and CI's `dco` job refuses a pull request with an unsigned commit. Agent attribution is a different thing and stays forbidden: no `Co-Authored-By` trailer and no "Generated with" line in a commit message or a pull request description; the author is the person committing.
 - **Lint is always fixed, never left red.** `make lint` (Go) and `make app-lint` (Swift) must pass before work is handed over. A lint failure you did not cause is fixed too, in a commit of its own so it does not hide inside an unrelated diff.
 - `--json` CLI output is the standard proto3 JSON mapping — no custom shapes.
 - Proto changes: additive only within v1; run `protoc` validation in CI. Reserved field numbers stay reserved once a field people depend on has been retired; before the first public release a number a plan parked as a placeholder (`Meter` 7 and 8, the signal-views plan) is taken by that plan's item, not skipped.
