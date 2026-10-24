@@ -76,6 +76,17 @@ Then the two steps no script can take, which `make release` names when it finish
       copies check. Then `curl -I https://leysdr.com/updates/appcast.xml` shows `max-age=0`, and
       the newest enclosure URL in it downloads a disk image whose `spctl` check passes.
 
+## Site screenshots
+
+leysdr.com pins two tags: a `shots-*` release for its images and `v<VERSION>` for the download
+(`docs/plans/site-shots.md`).
+
+- [ ] Run `make shots-publish` once, after the last re-shoot of the batch: each publish is a new
+      `shots-*` tag the site has to be moved to.
+- [ ] The site's build refuses a release whose `shots.json` hashes differ from its files.
+      `make shots-publish` records the hash of each file after `oxipng` compresses it. Releases up
+      to `shots-2026-10-23` carry the hashes from before compression, so the site refuses them.
+
 ## Licence obligations, on every binary release
 
 `docs/decisions/D2-licensing.md` is the decision; these are what it costs per release.
