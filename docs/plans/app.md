@@ -1607,6 +1607,17 @@ Found by the ML-9d scenes' second half (2026-10-22), not fixed on the spot:
   happen again. A staged run could ignore scroll events it did not post. In another full run at
   `JOBS=3` a `click` on the waterfall (804, 400) tuned nothing in both `pointer-and-menus` and
   `sweep-lifecycle`, three minutes apart; both passed alone and in the two full runs after.
+- Batch 3's verify loop (MC-5 to MC-9): the band rail's thumb is an `AXUnknown` in the tree with
+  no value, although the view sets the range it covers as its accessibility value (`rail.thumb
+  "View"` in `rail-wide` and `rail-rtl`). VoiceOver therefore has no words for where the view
+  is. Give the thumb a role that carries a value (an adjustable element whose increments pan)?
+- Batch 3's verify loop: a merged row takes its first entry by name when the entries share a
+  frequency (MC-6's ties by name), so the CHIRP import in `merged-bookmarks` reads `Club net +1`
+  where MC-5's example reads `Club repeater +1`. Should the first entry be the file's first, or
+  is the name order the one meant?
+- Batch 3's verify loop: `settings-ai`'s words now name the provider (`Anthropic key …0042
+  added`, `No OpenAI key is set yet`, `Assistant now calls OpenAI gpt-made-up`), which answers
+  the first half's question above. The white tile and system-blue glyph of the AI tab remain.
 
 #### Residuals after APP-9 review
 

@@ -489,7 +489,10 @@ scenes:
       - {cmd: key, keys: cmd+a}
       - {cmd: type, text: "88.5"}
       - {cmd: key, keys: return}
-      - {cmd: wait, seconds: 10}
+      # The heard tone shows while an over is on the air and goes between overs, so the picture
+      # waits for the next over and its tone rather than a fixed time.
+      - {cmd: stage, stage: {on_air: true}}
+      - {cmd: wait, seconds: 1.5, expect_log: "telemetry: PL 100.0"}
       - {cmd: state, expect: {bookmark: Calling, heard: PL 100.0}}
       - {cmd: snapshot, name: differs, mask: [spectrum, waterfall, readings, transmissions, log_day, squelch]}
       - {cmd: ax, name: differs, mask: [spectrum, waterfall, readings, transmissions, log_day, squelch]}
@@ -740,8 +743,9 @@ scenes:
       # a secure field opens now and then, and which a tree would otherwise read.
       - {cmd: press, identifier: settings.ai.add.label}
       - {cmd: ax, name: typed, window: settings}
+      # No tree here: the add and its check race the read, so it showed `not checked` in one
+      # run and the accepted key in the next. The `added` tree below is the settled one.
       - {cmd: press, identifier: settings.ai.add}
-      - {cmd: ax, name: adding, window: settings}
       # The pane's words name the provider as its rows do; `ley ai` keeps the ids
       # (docs/plans/app.md, MC-1c).
       - {cmd: wait, seconds: 2, expect_log: ["settings: Anthropic key …0042 added", "!settings: anthropic key"]}
