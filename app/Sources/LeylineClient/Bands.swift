@@ -165,6 +165,19 @@ public struct Band: Sendable, Hashable, Codable, Identifiable {
         Leyline_V1_DemodMode.named(channel.mode) ?? mode(at: channel.hz)
     }
 
+    /// A channel's width, for fitting the view to the band (docs/plans/app.md, MC-7): the plan's
+    /// spacing, the smallest gap between neighbouring channels of a plan of three or more, else
+    /// the step. A plan of one or two named frequencies (airband's guard, 2 m's APRS and calling
+    /// frequencies) has no spacing. A fitted view shows half of it past each edge, so a channel
+    /// on the band's edge (NOAA's WX2 at 162.400 MHz) shows whole.
+    public func channelWidthHz(in bands: [Band] = Bands.builtIn) -> UInt64 {
+        let hz = Set(plan(in: bands).map(\.hz)).sorted()
+        if hz.count >= 3, let gap = zip(hz, hz.dropFirst()).map({ $1 - $0 }).min(), gap > 0 {
+            return gap
+        }
+        return UInt64(stepHz)
+    }
+
     /// The channel's width: its own where the plan sets one (MURS 4 and 5 are 20 kHz where the
     /// group is 11.25 kHz), else the band's.
     public func bandwidth(of channel: PlanChannel) -> UInt32 {

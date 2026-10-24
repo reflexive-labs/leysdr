@@ -54,9 +54,10 @@ public enum AppViewTools {
 
     /// A view tool call, parsed.
     public enum Request: Sendable, Equatable {
-        /// Show `lowHz` to `highHz` on the waterfall; `label` names it in the answer
-        /// ("2 m", "145.000 MHz to 146.000 MHz").
-        case showRange(lowHz: UInt64, highHz: UInt64, label: String)
+        /// Show `lowHz` to `highHz` on the waterfall, `padHz` past each end (half a named band's
+        /// channel width, so its edge channels show whole; 0 for a range); `label` names it in
+        /// the answer ("2 m", "145.000 MHz to 146.000 MHz").
+        case showRange(lowHz: UInt64, highHz: UInt64, label: String, padHz: UInt64 = 0)
         /// Open the Library on the recording with this job id, at this part when one is given.
         case selectRecording(id: String, part: Int?)
         case showPlace(ViewPlace)
@@ -127,7 +128,10 @@ public enum AppViewTools {
                 return .failure(
                     ViewToolError("no band is named \(name); list_bands gives the names"))
             }
-            return .success(.showRange(lowHz: band.minHz, highHz: band.maxHz, label: band.name))
+            return .success(
+                .showRange(
+                    lowHz: band.minHz, highHz: band.maxHz, label: band.name,
+                    padHz: band.channelWidthHz() / 2))
         }
         guard args["band"] == nil else { return .failure(ViewToolError("band must be a string")) }
         guard let low = hz(args["from_hz"]), let high = hz(args["to_hz"]) else {
@@ -186,8 +190,8 @@ public enum AppViewTools {
     /// `sampleRate` are the capture's, nil with no radio open; `bins` the spectrum's, which set
     /// the narrowest view.
     public static func showRange(
-        lowHz: UInt64, highHz: UInt64, label: String, centerHz: UInt64?, sampleRate: UInt64,
-        bins: Int
+        lowHz: UInt64, highHz: UInt64, label: String, padHz: UInt64 = 0, centerHz: UInt64?,
+        sampleRate: UInt64, bins: Int
     ) -> (answer: ViewToolAnswer, fit: ViewWindow.Fit?) {
         let asked = "\(label) (\(rangeWords(lowHz...highHz)))"
         let named = label.contains(" to ") ? label : asked
@@ -201,8 +205,8 @@ public enum AppViewTools {
         let span = ViewWindow.span(centerHz: centerHz, sampleRate: sampleRate)
         guard
             let fit = ViewWindow.fit(
-                lowHz: lowHz, highHz: highHz, centerHz: centerHz, sampleRate: sampleRate,
-                bins: bins)
+                lowHz: lowHz, highHz: highHz, padHz: padHz, centerHz: centerHz,
+                sampleRate: sampleRate, bins: bins)
         else {
             return (
                 .error(

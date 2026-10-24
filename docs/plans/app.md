@@ -1619,7 +1619,8 @@ Found by the ML-9d scenes' second half (2026-10-22), not fixed on the spot:
 - Batch 3's verify loop: a band fitted to the view puts a channel on the band's edge at the
   chart's edge, half of it off the picture: NOAA weather (162.400 to 162.550 MHz) shows WX2 and
   WX1 cut in half at the two sides (`app-assistant.png`). Pad the fit by half a
-  channel width?
+  channel width? The owner's answer: yes, from the plan's spacing, else the step, inside the
+  capture; picking a band and `show_band` by name both pad (`Band.channelWidthHz`).
 - Batch 3's verify loop: `settings-ai`'s words now name the provider (`Anthropic key …0042
   added`, `No OpenAI key is set yet`, `Assistant now calls OpenAI gpt-made-up`), which answers
   the first half's question above. The white tile and system-blue glyph of the AI tab remain.
@@ -1924,7 +1925,9 @@ owner's calls:
 - **R-3. + and − zoom by span.** Each step halves or doubles the width shown. The widest is the
   capture. The narrowest is set by the spectrum's resolution (at least about 64 bins across).
   Picking a band fits the view to the band, or to the whole capture when the capture is narrower.
-  The help says the span (`2 MHz across`). The stage key `zoom` takes a span.
+  The fit pads half the band's channel width past each edge (its plan's spacing, else its step),
+  inside the capture, so the edge channels show whole (the owner's call after Batch 3). The help
+  says the span (`2 MHz across`). The stage key `zoom` takes a span.
 - **R-4. One gesture for the whole track.** No tick is its own tap target. A press that moves
   drags the thumb. A click that does not move tunes the nearest tick within a few points (a
   bookmark, a plan channel or a hit), else the frequency under the pointer on the band's grid.

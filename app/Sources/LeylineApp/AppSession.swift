@@ -793,8 +793,8 @@ final class AppSession {
         guard let cap = capture else { return nil }
         return ViewWindow.shown(
             centerHz: cap.centerHz, sampleRate: cap.sampleRate, bins: Self.viewBins,
-            band: band.map { $0.minHz...$0.maxHz }, spanHz: viewSpanHz, centreHz: viewCentreHz,
-            tunedHz: tunedHz)
+            band: band.map { $0.minHz...$0.maxHz }, bandPadHz: (band?.channelWidthHz() ?? 0) / 2,
+            spanHz: viewSpanHz, centreHz: viewCentreHz, tunedHz: tunedHz)
     }
 
     /// The spectrum's bins, which set the narrowest view: the count the feed subscribes at and
@@ -4634,9 +4634,10 @@ enum WindowPlace: String, CaseIterable, Identifiable {
 extension AppSession: ViewToolPerformer {
     func perform(_ request: AppViewTools.Request) async -> ViewToolAnswer {
         switch request {
-        case .showRange(let lowHz, let highHz, let label):
+        case .showRange(let lowHz, let highHz, let label, let padHz):
             let (answer, fit) = AppViewTools.showRange(
-                lowHz: lowHz, highHz: highHz, label: label, centerHz: capture?.centerHz,
+                lowHz: lowHz, highHz: highHz, label: label, padHz: padHz,
+                centerHz: capture?.centerHz,
                 sampleRate: capture?.sampleRate ?? 0, bins: Self.viewBins)
             if let fit {
                 place = .radio

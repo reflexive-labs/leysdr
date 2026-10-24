@@ -32,10 +32,10 @@ final class RecordingPerformer: ViewToolPerformer {
     func perform(_ request: AppViewTools.Request) async -> ViewToolAnswer {
         requests.append(request)
         switch request {
-        case .showRange(let lowHz, let highHz, let label):
+        case .showRange(let lowHz, let highHz, let label, let padHz):
             let cap = mirror.state.capture(captureID)
             return AppViewTools.showRange(
-                lowHz: lowHz, highHz: highHz, label: label, centerHz: cap?.centerHz,
+                lowHz: lowHz, highHz: highHz, label: label, padHz: padHz, centerHz: cap?.centerHz,
                 sampleRate: cap?.sampleRate ?? 0, bins: 2048
             ).answer
         case .selectRecording(let id, _):
@@ -199,7 +199,10 @@ final class AssistantDaemonTests: XCTestCase {
         }
         XCTAssertEqual(
             performer.requests,
-            [.showRange(lowHz: 144_000_000, highHz: 148_000_000, label: "2 m amateur")])
+            [
+                .showRange(
+                    lowHz: 144_000_000, highHz: 148_000_000, label: "2 m amateur", padHz: 2_500)
+            ])
         view = ConversationView(try XCTUnwrap(assistant.conversation))
         let step = try XCTUnwrap(view.turns[5].steps.first)
         XCTAssertEqual(step.tool, "show_band")

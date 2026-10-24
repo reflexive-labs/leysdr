@@ -56,9 +56,10 @@ plain requests, and speech-to-text for each over on a recording or a live channe
 - **The band rail.** The rail's one thumb is the view the spectrum and waterfall show, over a
   faint underlay for what the radio captures, so a 20 MHz HackRF capture fits the rail. Dragging
   the thumb pans the view inside the capture with no retune, and only a drag past its edge moves
-  the radio. − and + halve and double the span (`4 MHz across`), a click on the track tunes the
-  nearest tick, and a marker at the spectrum's edge (`146.520 ▸`) brings the view back to the
-  tuned channel.
+  the radio. Picking a band fits the view to it with half a channel past each edge, so the
+  channels on its edges show whole. − and + halve and double the span (`4 MHz across`), a
+  click on the track tunes the nearest tick, and a marker at the spectrum's edge (`146.520 ▸`)
+  brings the view back to the tuned channel.
 - **Recordings that fall behind.** When the engine cannot keep up with the radio, a recording
   lists each stretch it dropped and claims only the audio it wrote. `ley recordings` gains a
   DROPPED column, and the Library marks a part with gaps and ticks them on its level graph.

@@ -1435,8 +1435,8 @@ scenes:
       - {cmd: snapshot, name: marine}
 
   # The band rail on a capture wider than the band (docs/plans/app.md, MC-7): scene_vhf20's
-  # 21 MSPS holds all of 2 m, so the view fits the band and the thumb spans the track while the
-  # capture's underlay runs past both caps. + halves the span around Calling; a drag of the thumb
+  # 21 MSPS holds all of 2 m, so the view fits the band, half a 5 kHz step past each edge, and
+  # the thumb spans the track while the capture's underlay runs past both caps. + halves the span around Calling; a drag of the thumb
   # pans the view inside the capture, held at the band's edge, without moving the radio or the
   # channel, and the spectrum's edge marker then names the tuned channel off the view's right
   # edge; pressing it brings the view back and tunes nothing. The zoom steps report their spans
@@ -1455,21 +1455,21 @@ scenes:
       select_bookmark: Calling
       settle: 3
     app:
-      - {cmd: state, expect: {tuned_hz: 146520000, band: 2m, view.lo_hz: 144000000, view.hi_hz: 148000000, view.span_hz: 4000000, view.thumb_lo_hz: 144000000, view.thumb_hi_hz: 148000000, view.edge: null, capture.lo_hz: 142700000, capture.hi_hz: 163700000}}
+      - {cmd: state, expect: {tuned_hz: 146520000, band: 2m, view.lo_hz: 143997500, view.hi_hz: 148002500, view.span_hz: 4005000, view.thumb_lo_hz: 144000000, view.thumb_hi_hz: 148000000, view.edge: null, capture.lo_hz: 142700000, capture.hi_hz: 163700000}}
       - {cmd: snapshot, name: fitted}
       - {cmd: hover, identifier: rail.zoom.in, expect: {tooltip: "Zoom in: 4 MHz across now"}}
       - {cmd: press, identifier: rail.zoom.in}
-      - {cmd: state, expect: {view.span_hz: 2000000, view.lo_hz: 145520000, view.hi_hz: 147520000, view.thumb_lo_hz: 145520000, view.thumb_hi_hz: 147520000}}
+      - {cmd: state, expect: {view.span_hz: 2002500, view.lo_hz: 145518750, view.hi_hz: 147521250, view.thumb_lo_hz: 145518750, view.thumb_hi_hz: 147521250}}
       - {cmd: ax, name: zoomed}
       - {cmd: drag, identifier: rail.thumb, dx: -400}
       - {cmd: wait, seconds: 1, expect_log: "!pan capture"}
-      - {cmd: state, expect: {tuned_hz: 146520000, bookmark: Calling, view.lo_hz: 144000000, view.hi_hz: 146000000, view.thumb_lo_hz: 144000000, view.thumb_hi_hz: 146000000, view.edge: "146.520 ▸", capture.lo_hz: 142700000, capture.hi_hz: 163700000}}
+      - {cmd: state, expect: {tuned_hz: 146520000, bookmark: Calling, view.lo_hz: 144000000, view.hi_hz: 146002500, view.thumb_lo_hz: 144000000, view.thumb_hi_hz: 146002500, view.edge: "146.520 ▸", capture.lo_hz: 142700000, capture.hi_hz: 163700000}}
       - {cmd: snapshot, name: dragged}
       - {cmd: press, identifier: spectrum.edge}
       - {cmd: wait, seconds: 1, expect_log: "!tune: "}
-      - {cmd: state, expect: {tuned_hz: 146520000, view.lo_hz: 145520000, view.hi_hz: 147520000, view.edge: null}}
+      - {cmd: state, expect: {tuned_hz: 146520000, view.lo_hz: 145518750, view.hi_hz: 147521250, view.edge: null}}
       - {cmd: press, identifier: rail.zoom.in}
-      - {cmd: state, expect: {view.span_hz: 1000000, view.lo_hz: 146020000, view.hi_hz: 147020000}}
+      - {cmd: state, expect: {view.span_hz: 1001250, view.lo_hz: 146019375, view.hi_hz: 147020625}}
       - {cmd: press, identifier: rail.zoom.in}
       - {cmd: state, expect: {view.span_hz: 656250, view.lo_hz: 146191875, view.hi_hz: 146848125}}
       - {cmd: hover, identifier: rail.zoom.out, expect: {tooltip: "Zoom out: 656 kHz across now"}}

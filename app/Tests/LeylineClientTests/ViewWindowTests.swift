@@ -63,6 +63,41 @@ final class ViewWindowTests: XCTestCase {
         XCTAssertEqual(shown, twoMetres)
     }
 
+    /// A fitted band shows half its channel width past each edge, so NOAA's WX2 (162.400) and
+    /// WX1 (162.550) at the band's two ends show whole, but never past the capture.
+    func testAFittedBandIsPaddedByHalfAChannelInsideTheCapture() throws {
+        let noaa = try XCTUnwrap(Bands.resolve("wx"))
+        XCTAssertEqual(noaa.channelWidthHz(), 25_000, "the plan's spacing")
+        XCTAssertEqual(
+            ViewWindow.shown(
+                centerHz: 162_000_000, sampleRate: 2_400_000, bins: 2048,
+                band: noaa.minHz...noaa.maxHz, bandPadHz: noaa.channelWidthHz() / 2,
+                spanHz: nil, centreHz: nil, tunedHz: 162_550_000),
+            162_387_500...162_562_500)
+        // 2 m's plan is two named frequencies, no spacing: its step, 5 kHz.
+        let twoM = try XCTUnwrap(Bands.resolve("2m"))
+        XCTAssertEqual(twoM.channelWidthHz(), 5_000)
+        XCTAssertEqual(
+            ViewWindow.shown(
+                centerHz: wideCentre, sampleRate: wideRate, bins: 2048, band: twoMetres,
+                bandPadHz: 2_500, spanHz: nil, centreHz: nil, tunedHz: 146_520_000),
+            143_997_500...148_002_500)
+        // A GMRS half answers with its group's plan, 12.5 kHz apart.
+        XCTAssertEqual(try XCTUnwrap(Bands.resolve("gmrs-462")).channelWidthHz(), 12_500)
+        // A capture that ends inside the band (160.5 to 162.5 MHz): the padding stops there.
+        let edge = try XCTUnwrap(
+            ViewWindow.fit(
+                lowHz: 162_400_000, highHz: 162_550_000, padHz: 12_500, centerHz: 161_500_000,
+                sampleRate: 2_000_000, bins: 2048))
+        XCTAssertEqual(edge.shown, 162_387_500...162_500_000)
+        XCTAssertFalse(edge.whole)
+        // Padding never makes a range the capture misses into one it shows.
+        XCTAssertNil(
+            ViewWindow.fit(
+                lowHz: 162_500_000, highHz: 162_550_000, padHz: 12_500, centerHz: 161_500_000,
+                sampleRate: 2_000_000, bins: 2048))
+    }
+
     func testACaptureNarrowerThanTheBandShowsWhole() {
         let shown = ViewWindow.shown(
             centerHz: rtlCentre, sampleRate: rtlRate, bins: 2048, band: twoMetres, spanHz: nil,

@@ -252,7 +252,9 @@ tick.
 is the window's own presentation state and never the radio's (`../design/channels.md`, "The band
 rail"). `ViewWindow.shown` derives it from the capture, the band, and the two values the session
 keeps, `viewSpanHz` and `viewCentreHz`: with neither the view fits the band inside the capture
-(the whole capture when the capture is narrower, or between bands), and a span without a centre
+(the whole capture when the capture is narrower, or between bands), padded by half the band's
+channel width past each edge (`Band.channelWidthHz`: its plan's spacing, else its step) so a
+channel on the band's edge shows whole, NOAA's WX2 and WX1 included, and a span without a centre
 centres on the tuned frequency. The span lies between the capture and 64 of the spectrum's 2048
 bins (`ViewWindow.narrowest`: 656 kHz at 21 MSPS, 90 kHz at 2.88), because a narrower view would
 need a narrower FFT, which is the daemon's (invariant 2). − and + double and halve it, centred on
@@ -649,7 +651,8 @@ goes back with `AnswerViewTool`, prose and JSON. An answer that does not reach t
 and sent again after the watch's backoff, without performing the call again; a
 `FAILED_PRECONDITION` means the conversation moved on and ends it. None of them moves the radio. `show_band` fits the
 view to the part of the range inside the span the radio captures, as wide as that part and no
-narrower than the spectrum's bins allow, centred on it (`ViewWindow.fit`), and its JSON gives the
+narrower than the spectrum's bins allow, centred on it (`ViewWindow.fit`; a band by name gets
+the same half-channel padding as picking it), and its JSON gives the
 `span_hz` shown. It sets the same view the band rail's thumb, zoom pair and edge marker set
 ("The view" below), so a later tune outside the view, from any client, brings the view to the
 tuned frequency, and one inside it leaves the view where `show_band` put it; a

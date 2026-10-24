@@ -257,7 +257,8 @@ separates what the radio hears from what the window shows (`../plans/app.md`, MC
 - **− and + zoom by span**, halving or doubling the width shown. The widest is the capture; the
   narrowest holds 64 of the spectrum's bins, because a narrower view needs a narrower FFT, which
   runs in the daemon (invariant 2) and is later work with its `ley` mirror. Picking a band fits
-  the view to the band, or to the whole capture when the capture is narrower. The buttons' help
+  the view to the band and half a channel past each edge, so the channels on its edges show
+  whole, or to the whole capture when the capture is narrower. The buttons' help
   says the span (`2 MHz across now`).
 - **One gesture for the whole track.** No tick is a target of its own. A press that moves drags
   the thumb; a click that does not move tunes the nearest tick within a few points (a bookmark,

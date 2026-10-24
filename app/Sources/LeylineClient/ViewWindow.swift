@@ -75,17 +75,21 @@ public enum ViewWindow {
         public let whole: Bool
     }
 
-    /// The closest view of `lowHz` to `highHz`: the part of it inside the capture, as wide as
-    /// that part (within the narrowest and widest spans), centred on it. Nil when the capture
-    /// holds none of it. A band's default view and `show_band` are both this.
+    /// The closest view of `lowHz` to `highHz`, `padHz` wider at each end: the part of it inside
+    /// the capture, as wide as that part (within the narrowest and widest spans), centred on it.
+    /// Nil when the capture holds none of the range itself. A band's default view and
+    /// `show_band` are both this, padded by half the band's channel width
+    /// (`Band.channelWidthHz`) so a channel on the band's edge shows whole; `whole` is about the
+    /// range, not the padding.
     public static func fit(
-        lowHz: UInt64, highHz: UInt64, centerHz: UInt64, sampleRate: UInt64, bins: Int
+        lowHz: UInt64, highHz: UInt64, padHz: UInt64 = 0, centerHz: UInt64, sampleRate: UInt64,
+        bins: Int
     ) -> Fit? {
         guard sampleRate > 0, lowHz < highHz else { return nil }
         let full = span(centerHz: centerHz, sampleRate: sampleRate)
-        let lo = max(lowHz, full.lowerBound)
-        let hi = min(highHz, full.upperBound)
-        guard lo < hi else { return nil }
+        guard max(lowHz, full.lowerBound) < min(highHz, full.upperBound) else { return nil }
+        let lo = max(lowHz > padHz ? lowHz - padHz : 0, full.lowerBound)
+        let hi = min(highHz + padHz, full.upperBound)
         let width = clampedSpan(hi - lo, sampleRate: sampleRate, bins: bins)
         let focus = lo + (hi - lo) / 2
         guard
@@ -99,19 +103,20 @@ public enum ViewWindow {
 
     /// What the spectrum and waterfall show. `spanHz` and `centreHz` are the window's own
     /// choices, nil until a zoom, a drag, a view tool or a tune outside the view sets them. With
-    /// no span the view fits the band (`fit`), or shows the whole capture without one; with no
-    /// centre it centres on the band it fits, else on the tuned frequency, else on the capture.
+    /// no span the view fits the band, `bandPadHz` past each edge (`fit`), or shows the whole
+    /// capture without one; with no centre it centres on the band it fits, else on the tuned
+    /// frequency, else on the capture.
     public static func shown(
         centerHz: UInt64, sampleRate: UInt64, bins: Int, band: ClosedRange<UInt64>?,
-        spanHz: UInt64?, centreHz: UInt64?, tunedHz: UInt64?
+        bandPadHz: UInt64 = 0, spanHz: UInt64?, centreHz: UInt64?, tunedHz: UInt64?
     ) -> ClosedRange<UInt64>? {
         guard sampleRate > 0 else { return nil }
         let fitted =
             spanHz == nil
             ? band.flatMap {
                 fit(
-                    lowHz: $0.lowerBound, highHz: $0.upperBound, centerHz: centerHz,
-                    sampleRate: sampleRate, bins: bins)
+                    lowHz: $0.lowerBound, highHz: $0.upperBound, padHz: bandPadHz,
+                    centerHz: centerHz, sampleRate: sampleRate, bins: bins)
             } : nil
         let width = clampedSpan(
             spanHz ?? fitted?.spanHz ?? sampleRate, sampleRate: sampleRate, bins: bins)

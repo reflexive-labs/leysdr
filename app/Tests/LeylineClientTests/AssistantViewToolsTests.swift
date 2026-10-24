@@ -31,10 +31,21 @@ final class AssistantViewToolsTests: XCTestCase {
     func testShowBandTakesABandOrARange() {
         XCTAssertEqual(
             AppViewTools.parse(tool: "show_band", argumentsJSON: #"{"band":"2m"}"#),
-            .success(.showRange(lowHz: 144_000_000, highHz: 148_000_000, label: "2 m amateur")))
+            .success(
+                .showRange(
+                    lowHz: 144_000_000, highHz: 148_000_000, label: "2 m amateur", padHz: 2_500)))
         XCTAssertEqual(
             AppViewTools.parse(tool: "show_band", argumentsJSON: #"{"band":"Airband"}"#),
-            .success(.showRange(lowHz: 118_000_000, highHz: 137_000_000, label: "airband")))
+            .success(
+                .showRange(
+                    lowHz: 118_000_000, highHz: 137_000_000, label: "airband", padHz: 12_500)))
+        // A band's padding is half its plan's spacing: NOAA's channels are 25 kHz apart.
+        XCTAssertEqual(
+            AppViewTools.parse(tool: "show_band", argumentsJSON: #"{"band":"wx"}"#),
+            .success(
+                .showRange(
+                    lowHz: 162_400_000, highHz: 162_550_000, label: "NOAA weather",
+                    padHz: 12_500)))
         XCTAssertEqual(
             AppViewTools.parse(
                 tool: "show_band", argumentsJSON: #"{"from_hz":145000000,"to_hz":146000000}"#),
@@ -133,6 +144,16 @@ final class AssistantViewToolsTests: XCTestCase {
             sampleRate: 0, bins: 2048)
         XCTAssertTrue(noRadio.answer.isError)
         XCTAssertNil(noRadio.fit)
+
+        // NOAA's band fitted with half a channel past each edge, so WX2 and WX1 show whole;
+        // `whole` is about the band.
+        let weather = AppViewTools.showRange(
+            lowHz: 162_400_000, highHz: 162_550_000, label: "NOAA weather", padHz: 12_500,
+            centerHz: 162_000_000, sampleRate: 2_400_000, bins: 2048)
+        XCTAssertEqual(weather.fit?.shown, 162_387_500...162_562_500)
+        XCTAssertEqual(weather.fit?.whole, true)
+        XCTAssertEqual(
+            weather.answer.text, "The waterfall shows 162.3875 MHz to 162.5625 MHz.")
     }
 
     func testTheLibraryAnswersNameWhatTheyShow() {
