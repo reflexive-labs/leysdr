@@ -95,7 +95,7 @@ scenes:
     kind: app
     alt: >-
       The Leyline inspector on the 146.940 MHz repeater output: the heard CTCSS tone, 127.3 Hz,
-      beside the bookmark's offset of -0.6 MHz and its tone.
+      beside the bookmark's tone, and each transmission in the log with its tone.
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: home.csv
@@ -227,8 +227,8 @@ scenes:
   - asset: ways-app.png
     kind: app
     alt: >-
-      Part of the Leyline window: the waterfall of a voice transmission on 146.520 MHz among the
-      stations either side of it, beside the inspector's squelch and level.
+      Part of the Leyline window: the waterfall of the stations just above 146.520 MHz, beside the
+      inspector on the Calling channel with its heard PL 100.0, signal and audio levels.
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: home.csv
