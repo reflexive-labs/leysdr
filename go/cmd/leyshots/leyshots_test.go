@@ -264,6 +264,12 @@ func TestManifestMergeAndValidate(t *testing.T) {
 	writeTestPNG(t, filepath.Join(dir, "a.png"), 10, 10)
 	writeTestPNG(t, filepath.Join(dir, "b.png"), 10, 10)
 	writeTestPNG(t, filepath.Join(dir, "c.png"), 30, 30)
+	if err := m.validate(dir); err == nil || !strings.Contains(err.Error(), "a.png has sha256") {
+		t.Errorf("validate should name the asset whose png_sha256 is wrong: %v", err)
+	}
+	if err := m.stamp(dir, nil); err != nil {
+		t.Fatal(err)
+	}
 	if err := m.validate(dir); err != nil {
 		t.Errorf("a matching release: %v", err)
 	}
@@ -278,7 +284,7 @@ func TestManifestMergeAndValidate(t *testing.T) {
 	if err != nil && strings.Contains(err.Error(), "c.png's alt text") {
 		t.Errorf("a shot without fixtures was held to the simulated-signals sentence: %v", err)
 	}
-	for _, want := range []string{"b.png is 12×10", "stray.png", "a.png's alt text"} {
+	for _, want := range []string{"b.png is 12×10", "b.png has sha256", "stray.png", "a.png's alt text"} {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("validate should report %q: %v", want, err)
 		}

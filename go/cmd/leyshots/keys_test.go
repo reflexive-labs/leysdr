@@ -3,6 +3,9 @@
 package main
 
 import (
+	"context"
+	"encoding/binary"
+	"hash/crc32"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -237,14 +240,95 @@ func TestRefreshSet(t *testing.T) {
 	}
 }
 
-// The released manifest keeps the source PNG's hash from the run, whatever oxipng makes of it.
+// The released manifest keeps the run's hash as source_sha256, whatever oxipng makes of the bytes,
+// and moves a carried-forward entry's old png_sha256 (the run's hash, before source_sha256) there.
 func TestMergeKeepsSourceHash(t *testing.T) {
+	prev := &Manifest{Shots: []Shot{
+		{Asset: "old.png", PNGSHA256: "oldsrc"},
+		{Asset: "new.png", PNGSHA256: "published", SourceSHA256: "newsrc"},
+	}}
 	cur := &Manifest{Shots: []Shot{{Asset: "a.png", PNGSHA256: "src"}}}
-	m, err := merge(&Manifest{}, cur, []string{"a.png"}, "shots-2026-10-04")
+	m, err := merge(prev, cur, []string{"a.png"}, "shots-2026-10-04")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s, _ := m.get("a.png"); s.PNGSHA256 != "src" || s.Tag != "shots-2026-10-04" {
+	if s, _ := m.get("a.png"); s.SourceSHA256 != "src" || s.Tag != "shots-2026-10-04" {
 		t.Errorf("merged %+v", s)
+	}
+	if s, _ := m.get("old.png"); s.SourceSHA256 != "oldsrc" {
+		t.Errorf("an entry from before source_sha256 carried forward as %+v", s)
+	}
+	if s, _ := m.get("new.png"); s.SourceSHA256 != "newsrc" {
+		t.Errorf("an entry with source_sha256 carried forward as %+v", s)
+	}
+	// The next run takes the same images: nothing changed, though the release's bytes differ.
+	run := &Manifest{Shots: []Shot{{Asset: "a.png", PNGSHA256: "src"}, {Asset: "old.png", PNGSHA256: "oldsrc"}, {Asset: "new.png", PNGSHA256: "newsrc"}}}
+	m.Shots[0].PNGSHA256 = "compressed"
+	if got := refreshSet(run, m, func(string) bool { return true }); len(got) != 0 {
+		t.Errorf("an unchanged run against a compressed release refreshes %v", got)
+	}
+}
+
+// After oxipng rewrites the staged bytes, every entry's png_sha256 is its staged file's: the
+// refreshed ones, and a carried-forward one whose previous manifest had a stale hash.
+func TestStampAfterCompress(t *testing.T) {
+	out, dir, bin := t.TempDir(), t.TempDir(), t.TempDir()
+	writeTestPNG(t, filepath.Join(out, "a.png"), 10, 10)
+	writeTestPNG(t, filepath.Join(dir, "b.png"), 12, 12) // carried forward, as downloaded
+	src, err := fileSHA256(filepath.Join(out, "a.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// What the fake oxipng writes: the same pixels with a tEXt chunk after IHDR, so new bytes.
+	b, err := os.ReadFile(filepath.Join(out, "a.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunk := []byte("tEXtk\x00v")
+	var text []byte
+	text = binary.BigEndian.AppendUint32(text, uint32(len(chunk)-4))
+	text = append(text, chunk...)
+	text = binary.BigEndian.AppendUint32(text, crc32.ChecksumIEEE(chunk))
+	rewritten := filepath.Join(bin, "a-rewritten.png")
+	if err := os.WriteFile(rewritten, slices.Concat(b[:33], text, b[33:]), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oxipng := filepath.Join(bin, "oxipng")
+	script := "#!/bin/sh\nfor f; do :; done\ncp " + rewritten + " \"$f\"\n"
+	if err := os.WriteFile(oxipng, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	prev := &Manifest{Shots: []Shot{{Asset: "b.png", Width: 12, Height: 12, Scale: 2, PNGSHA256: "stale"}}}
+	cur := &Manifest{Shots: []Shot{{Asset: "a.png", Width: 10, Height: 10, Scale: 2, PNGSHA256: src}}}
+	m, err := merge(prev, cur, []string{"a.png"}, "shots-2026-10-23")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := copyFile(filepath.Join(out, "a.png"), filepath.Join(dir, "a.png")); err != nil {
+		t.Fatal(err)
+	}
+	if err := compress(context.Background(), oxipng, dir, []string{"a.png"}, t.Logf); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.validate(dir); err == nil || !strings.Contains(err.Error(), "a.png has sha256") || !strings.Contains(err.Error(), "b.png has sha256") {
+		t.Errorf("before stamping, validate should name both stale hashes: %v", err)
+	}
+	if err := m.stamp(dir, []string{"a.png"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.validate(dir); err != nil {
+		t.Errorf("after stamping: %v", err)
+	}
+	for _, s := range m.Shots {
+		h, _ := fileSHA256(filepath.Join(dir, s.Asset))
+		if s.PNGSHA256 != h {
+			t.Errorf("%s: png_sha256 %s, staged file %s", s.Asset, s.PNGSHA256, h)
+		}
+	}
+	if a, _ := m.get("a.png"); a.PNGSHA256 == src || a.SourceSHA256 != src || a.Width != 10 {
+		t.Errorf("a.png: the fake oxipng did not change the bytes, or the source hash was lost: %+v", a)
+	}
+	if b, _ := m.get("b.png"); b.SourceSHA256 != "stale" {
+		t.Errorf("b.png keeps its old hash as the source hash: %+v", b)
 	}
 }

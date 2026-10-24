@@ -65,8 +65,8 @@ kind shares (`ley` and the other Go clients, the engine, the app for app and com
 `scripts/render-icon.swift`), and its recipe is `leyshots run --only <asset>`. A scene that leaves
 no PNG, such as an app scene on Linux, is taken again on the next run. `make shots ONLY=app-radio-2m,inspector-tone` takes those scenes whether or not they
 are stale. `make shots-release` runs the stale scenes, then publishes every image whose
-`png_sha256` in `tmp/shots/shots.json` differs from the latest `shots-*` release's, or that the
-release does not have; when none differs it prints that the latest release is up to date and
+`png_sha256` in `tmp/shots/shots.json` differs from the latest `shots-*` release's
+`source_sha256`, or that the release does not have; when none differs it prints that the latest release is up to date and
 creates nothing.
 
 `make shots-publish ONLY=…` takes the reviewed images from `tmp/shots/`, merges them with the
@@ -260,8 +260,12 @@ Each entry has the asset name, pixel width and height, scale (2), alt text, the 
 fixtures' generator records, the `ley --version` output and the commit that produced it, the
 `shots-*` tag where the current image was first published, and `png_sha256`, the sha256 of the
 PNG `leyshots run` wrote. `leyshots run` writes the entries with no tag, and `leyshots publish`
-sets it on the images it refreshes. A release keeps the `png_sha256` of the image as it was taken,
-not of the `oxipng` output, so the next `make shots-release` can compare a new image with it.
+sets it on the images it refreshes. In a release, `png_sha256` is the sha256 of the published
+file, after `oxipng`, which the site build checks its downloads against; publish sets it on every
+entry, carried forward or refreshed, from the file it uploads, and refuses a release where a file
+and its entry differ. `source_sha256` keeps the image's hash as `leyshots run` took it, so the next
+`make shots-release` can compare a new image with it. Releases before `source_sha256` existed
+carried that hash in `png_sha256`, so a publish reads it from there when `source_sha256` is absent.
 Without `ONLY`, `make shots-publish` refreshes the same set `make shots-release` does.
 
 `make shots-publish SHOTS_ARGS=--dry-run` builds the release in `tmp/shots/publish/<tag>/`,

@@ -197,16 +197,8 @@ func publish(ctx context.Context, o publishOptions) error {
 	if err := compress(ctx, o.oxipng, dir, refresh, o.logf); err != nil {
 		return err
 	}
-	// oxipng changes the bytes and never the pixels, so the sizes still match; validate reads
-	// them back from the files rather than trusting that.
-	for _, a := range refresh {
-		s, _ := merged.get(a)
-		w, h, err := pngSize(filepath.Join(dir, a))
-		if err != nil {
-			return err
-		}
-		s.Width, s.Height = w, h
-		merged.put(s)
+	if err := merged.stamp(dir, refresh); err != nil {
+		return err
 	}
 	if err := merged.write(filepath.Join(dir, "shots.json")); err != nil {
 		return err

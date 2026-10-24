@@ -33,9 +33,21 @@ type Shot struct {
 	Commit     string `json:"commit,omitempty"`
 	// Tag is the shots-* release the image was first published in; empty until it is.
 	Tag string `json:"tag,omitempty"`
-	// PNGSHA256 is the sha256 of the PNG `leyshots run` wrote, before oxipng. A release keeps
-	// it, so the next publish can tell which images changed (refreshSet).
+	// PNGSHA256 is the sha256 of the PNG beside the manifest: in tmp/shots the one `leyshots run`
+	// wrote, in a release the published bytes after oxipng, which the site checks downloads against.
 	PNGSHA256 string `json:"png_sha256,omitempty"`
+	// SourceSHA256 is, in a release, the png_sha256 the run recorded before oxipng rewrote the
+	// bytes, so the next publish can tell which images changed (refreshSet).
+	SourceSHA256 string `json:"source_sha256,omitempty"`
+}
+
+// sourceHash is the hash of the image as `leyshots run` wrote it. A release made before
+// source_sha256 existed carried that hash in png_sha256.
+func (s Shot) sourceHash() string {
+	if s.SourceSHA256 != "" {
+		return s.SourceSHA256
+	}
+	return s.PNGSHA256
 }
 
 // simulatedSuffix ends the alt text of every shot with fixtures: their signals are generated.
@@ -118,15 +130,20 @@ func (m *Manifest) get(asset string) (Shot, bool) {
 
 // merge is the release a publish makes: every entry of prev, with the refreshed entries of cur
 // in place of theirs and tagged with tag. An entry of cur not named in refresh is left as prev
-// has it, so a run of every scene publishes only what was reviewed.
+// has it, so a run of every scene publishes only what was reviewed. Every entry's source_sha256
+// is the run's hash; stamp then gives png_sha256 the published file's.
 func merge(prev, cur *Manifest, refresh []string, tag string) (*Manifest, error) {
 	out := &Manifest{Shots: slices.Clone(prev.Shots)}
+	for i := range out.Shots {
+		out.Shots[i].SourceSHA256 = out.Shots[i].sourceHash()
+	}
 	for _, asset := range refresh {
 		s, ok := cur.get(asset)
 		if !ok {
 			return nil, fmt.Errorf("%s is not in this run's shots.json; take it with: make shots ONLY=%s", asset, strings.TrimSuffix(asset, ".png"))
 		}
 		s.Tag = tag
+		s.SourceSHA256 = s.PNGSHA256
 		out.put(s)
 	}
 	out.sort()
@@ -134,14 +151,16 @@ func merge(prev, cur *Manifest, refresh []string, tag string) (*Manifest, error)
 }
 
 // refreshSet is what a publish without --only refreshes: every shot of cur whose PNG exists
-// and whose png_sha256 or alt text differs from prev's entry for it, or that prev does not have.
+// and whose png_sha256 differs from prev's source hash for it (prev's png_sha256 is of the
+// compressed bytes, which never match a fresh run's), whose alt text differs, or that prev does
+// not have.
 func refreshSet(cur, prev *Manifest, exists func(asset string) bool) []string {
 	var out []string
 	for _, s := range cur.Shots {
 		if !exists(s.Asset) {
 			continue
 		}
-		if p, ok := prev.get(s.Asset); ok && p.PNGSHA256 != "" && p.PNGSHA256 == s.PNGSHA256 && p.Alt == s.Alt {
+		if p, ok := prev.get(s.Asset); ok && p.sourceHash() != "" && p.sourceHash() == s.PNGSHA256 && p.Alt == s.Alt {
 			continue
 		}
 		out = append(out, s.Asset)
@@ -158,10 +177,30 @@ func fileSHA256(path string) (string, error) {
 	return sum(b), nil
 }
 
+// stamp reads a release directory's files back into the manifest after oxipng: every entry's
+// png_sha256 becomes its file's, and each refreshed entry takes its file's size. oxipng changes
+// the bytes and never the pixels, so the sizes should not move; validate checks them anyway.
+func (m *Manifest) stamp(dir string, refresh []string) error {
+	for i := range m.Shots {
+		s := &m.Shots[i]
+		path := filepath.Join(dir, s.Asset)
+		h, err := fileSHA256(path)
+		if err != nil {
+			return err
+		}
+		s.PNGSHA256 = h
+		if slices.Contains(refresh, s.Asset) {
+			if s.Width, s.Height, err = pngSize(path); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // validate checks a release directory against its manifest: every entry has its PNG at the
-// stated size and scale, an alt text ending in the simulated-signals sentence when the shot has
-// fixtures, and every PNG
-// in the directory has an entry.
+// stated size, sha256 and scale, an alt text ending in the simulated-signals sentence when the
+// shot has fixtures, and every PNG in the directory has an entry.
 func (m *Manifest) validate(dir string) error {
 	var errs []error
 	listed := map[string]bool{}
@@ -174,6 +213,11 @@ func (m *Manifest) validate(dir string) error {
 		}
 		if w != s.Width || h != s.Height {
 			errs = append(errs, fmt.Errorf("%s is %d×%d and shots.json says %d×%d", s.Asset, w, h, s.Width, s.Height))
+		}
+		if h, err := fileSHA256(filepath.Join(dir, s.Asset)); err != nil {
+			errs = append(errs, err)
+		} else if h != s.PNGSHA256 {
+			errs = append(errs, fmt.Errorf("%s has sha256 %s and shots.json says png_sha256 %q", s.Asset, h, s.PNGSHA256))
 		}
 		if s.Scale != 2 {
 			errs = append(errs, fmt.Errorf("%s has scale %d; every shot is 2×", s.Asset, s.Scale))

@@ -310,7 +310,8 @@ shots-publish: go
 	$(GOBIN)/leyshots publish $(if $(ONLY),--only $(ONLY)) $(SHOTS_ARGS)
 
 # The stale images first, then a release of those whose png_sha256 differs from the latest shots-*
-# release's; with none, leyshots says the latest release is up to date and creates nothing.
+# release's source_sha256; with none, leyshots says the latest release is up to date and creates
+# nothing.
 shots-release: $(SHOTS_ASSETS) | go
 	$(GOBIN)/leyshots publish $(SHOTS_ARGS)
 

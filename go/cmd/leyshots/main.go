@@ -277,7 +277,7 @@ func cmdCheck(ctx context.Context, args []string, stdout io.Writer) error {
 
 func cmdPublish(ctx context.Context, args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("publish", flag.ContinueOnError)
-	only := fs.String("only", "", "comma-separated assets to refresh in the release, e.g. app-radio-2m (default: every image in shots.json whose png_sha256 differs from the latest release's)")
+	only := fs.String("only", "", "comma-separated assets to refresh in the release, e.g. app-radio-2m (default: every image in shots.json whose png_sha256 differs from the latest release's source_sha256)")
 	out := fs.String("out", "", "the run's output directory (default: tmp/shots in the checkout)")
 	dryRun := fs.Bool("dry-run", false, "merge, compress and check the release in <out>/publish/<tag>, and create nothing")
 	if err := fs.Parse(args); err != nil {
