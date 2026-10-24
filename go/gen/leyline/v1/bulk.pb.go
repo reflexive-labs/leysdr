@@ -896,7 +896,13 @@ type StreamDescriptor struct {
 	//
 	//	*StreamDescriptor_Grpc
 	//	*StreamDescriptor_Shm
-	Transport     isStreamDescriptor_Transport `protobuf_oneof:"transport"`
+	Transport isStreamDescriptor_Transport `protobuf_oneof:"transport"`
+	// Set on a decoder plugin's stdin descriptor when its source is a stored recording rather than a
+	// live channel: nothing is lost by waiting, so a SEGMENTED plugin queues every over and lets its
+	// stdin pipe hold the daemon back instead of dropping the oldest. Never set on a client stream,
+	// and not a lossless stream (invariant 3): the pipe is local, between the daemon and a child it
+	// started, and the daemon writes to it from the job's own task, not from a capture's thread.
+	Stored        bool `protobuf:"varint,12,opt,name=stored,proto3" json:"stored,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1032,6 +1038,13 @@ func (x *StreamDescriptor) GetShm() *ShmRing {
 		}
 	}
 	return nil
+}
+
+func (x *StreamDescriptor) GetStored() bool {
+	if x != nil {
+		return x.Stored
+	}
+	return false
 }
 
 type isStreamDescriptor_Params interface {
@@ -1321,7 +1334,7 @@ const file_leyline_v1_bulk_proto_rawDesc = "" +
 	"\bfloor_db\x18\x03 \x01(\x01R\afloorDb\x12\x19\n" +
 	"\brange_db\x18\x04 \x01(\x01R\arangeDb\x12*\n" +
 	"\x11half_life_seconds\x18\x05 \x01(\x01R\x0fhalfLifeSeconds\x12&\n" +
-	"\x0frows_per_second\x18\x06 \x01(\x01R\rrowsPerSecond\"\xe2\x03\n" +
+	"\x0frows_per_second\x18\x06 \x01(\x01R\rrowsPerSecond\"\xfa\x03\n" +
 	"\x10StreamDescriptor\x12\x1b\n" +
 	"\tstream_id\x18\x01 \x01(\tR\bstreamId\x12*\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x16.leyline.v1.StreamKindR\x04kind\x122\n" +
@@ -1334,7 +1347,8 @@ const file_leyline_v1_bulk_proto_rawDesc = "" +
 	"\aspan_hz\x18\b \x01(\x04R\x06spanHz\x12\x14\n" +
 	"\x04grpc\x18\t \x01(\bH\x01R\x04grpc\x12'\n" +
 	"\x03shm\x18\n" +
-	" \x01(\v2\x13.leyline.v1.ShmRingH\x01R\x03shmB\b\n" +
+	" \x01(\v2\x13.leyline.v1.ShmRingH\x01R\x03shm\x12\x16\n" +
+	"\x06stored\x18\f \x01(\bR\x06storedB\b\n" +
 	"\x06paramsB\v\n" +
 	"\ttransport\"Y\n" +
 	"\aShmRing\x12\x12\n" +

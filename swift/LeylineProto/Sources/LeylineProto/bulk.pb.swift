@@ -596,6 +596,13 @@ public nonisolated struct Leyline_V1_StreamDescriptor: Sendable {
     set {transport = .shm(newValue)}
   }
 
+  /// Set on a decoder plugin's stdin descriptor when its source is a stored recording rather than a
+  /// live channel: nothing is lost by waiting, so a SEGMENTED plugin queues every over and lets its
+  /// stdin pipe hold the daemon back instead of dropping the oldest. Never set on a client stream,
+  /// and not a lossless stream (invariant 3): the pipe is local, between the daemon and a child it
+  /// started, and the daemon writes to it from the job's own task, not from a capture's thread.
+  public var stored: Bool = false
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Params: Equatable, Sendable {
@@ -1062,7 +1069,7 @@ nonisolated extension Leyline_V1_PersistenceParams: SwiftProtobuf.Message, Swift
 
 nonisolated extension Leyline_V1_StreamDescriptor: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".StreamDescriptor"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}stream_id\0\u{1}kind\0\u{1}policy\0\u{1}iq\0\u{1}fft\0\u{1}audio\0\u{3}center_hz\0\u{3}span_hz\0\u{1}grpc\0\u{1}shm\0\u{1}persistence\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}stream_id\0\u{1}kind\0\u{1}policy\0\u{1}iq\0\u{1}fft\0\u{1}audio\0\u{3}center_hz\0\u{3}span_hz\0\u{1}grpc\0\u{1}shm\0\u{1}persistence\0\u{1}stored\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1148,6 +1155,7 @@ nonisolated extension Leyline_V1_StreamDescriptor: SwiftProtobuf.Message, SwiftP
           self.params = .persistence(v)
         }
       }()
+      case 12: try { try decoder.decodeSingularBoolField(value: &self.stored) }()
       default: break
       }
     }
@@ -1202,6 +1210,9 @@ nonisolated extension Leyline_V1_StreamDescriptor: SwiftProtobuf.Message, SwiftP
     try { if case .persistence(let v)? = self.params {
       try visitor.visitSingularMessageField(value: v, fieldNumber: 11)
     } }()
+    if self.stored != false {
+      try visitor.visitSingularBoolField(value: self.stored, fieldNumber: 12)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1213,6 +1224,7 @@ nonisolated extension Leyline_V1_StreamDescriptor: SwiftProtobuf.Message, SwiftP
     if lhs.centerHz != rhs.centerHz {return false}
     if lhs.spanHz != rhs.spanHz {return false}
     if lhs.transport != rhs.transport {return false}
+    if lhs.stored != rhs.stored {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
