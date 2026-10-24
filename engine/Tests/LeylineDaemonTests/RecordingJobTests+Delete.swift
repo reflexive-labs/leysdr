@@ -97,6 +97,7 @@ extension RecordingJobTests {
             config.frequencyHz = recordFrequencyHz
             config.mode = .nfm
             config.squelchDbfs = -80
+            config.gate = .none
             let started = try await self.start(c, config)
             let uri = "ley://recordings/\(started.jobID)"
             // The manifest is written when the runner has its capture.

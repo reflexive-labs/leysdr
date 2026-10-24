@@ -126,8 +126,8 @@ Run each with the release binaries (`make go swift-release`, `export PATH=$PWD/g
 - [ ] Record-then-play: `ley record <the same repeater> --iq --for 20s`, then
       `ley play "$(ley recordings path <id> --part 1)"` — the station is audible again from the
       file. `ley recordings show <id>` shows the radio and the gain it was made at.
-- [ ] Gated recording on a live repeater: `ley record <repeater> --gate squelch --for 5m`, key up
-      twice with a pause between. One part per transmission, and
+- [ ] Gated recording on a live repeater: `ley record <repeater> --for 5m` (the daemon gates NFM), key up
+      twice with a pause between. One part per transmission, the banner says `Gate squelch`, and
       `ley recordings show` reports how many times the squelch opened. Note the pre-roll and hang that
       felt right against `docs/design/recording.md`'s open question, which is where the numbers get
       measured.

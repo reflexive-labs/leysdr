@@ -24,20 +24,16 @@ extension JobStore {
     /// never evict the user's other recordings.
     static let clipsShareOfStoreCap: UInt64 = 10
 
-    func startRecord(config: Leyline_V1_RecordConfig, by client: ClientContext) async throws -> Leyline_V1_Job {
-        if config.startAtNs != 0 {
+    func startRecord(config requested: Leyline_V1_RecordConfig, by client: ClientContext) async throws -> Leyline_V1_Job {
+        if requested.startAtNs != 0 {
             throw EngineError.unimplemented("a recording scheduled for later")
         }
+        var config = requested
         let iq = config.mode == .rawIq
-        let gated = config.gate == .squelch
-        if gated, iq {
+        if config.gate == .squelch, iq {
             throw EngineError.invalidArgument(
                 "a squelch gate needs a channel's squelch, and an IQ recording has no channel; record audio, or record IQ continuously",
                 target: "")
-        }
-        if config.stopAfterQuietMs != 0, !gated {
-            throw EngineError.invalidArgument(
-                "stop-after-quiet needs a squelch gate: without one nothing is watching the squelch", target: "")
         }
         if config.durationMs < 0 {
             throw EngineError.invalidArgument("a recording's duration cannot be negative; 0 records until cancelled", target: "")
@@ -51,13 +47,32 @@ extension JobStore {
             }
             let captureID = await store.channelCapture(id)
             guard let captureID else { throw EngineError.channelNotFound(config.channelID) }
-            if gated, await engine.config.squelchDB.isNaN {
+            let channelConfig = await engine.config
+            if config.gate == .unspecified {
+                config.gate = Self.defaultGate(mode: channelConfig.mode, squelchOn: !channelConfig.squelchDB.isNaN)
+            }
+            if config.gate == .squelch, channelConfig.squelchDB.isNaN {
                 throw EngineError.failedPrecondition(
                     "squelch is off on \(config.channelID); set one with ley set squelch", target: config.channelID)
             }
             borrowed = (id, engine, captureID)
         } else if config.frequencyHz == 0 {
             throw EngineError.invalidArgument("a recording needs a frequency, a preset or a channel to record", target: "")
+        }
+        if config.gate == .unspecified {
+            // A new channel: NaN is how a request says the squelch is off, and an unset or numeric
+            // squelch is on (unset is the daemon's auto level).
+            let mode = iq ? nil : ProtoMapping.demodMode(config.mode == .unspecified ? .nfm : config.mode)
+            config.gate = Self.defaultGate(mode: mode, squelchOn: !config.squelchDbfs.isNaN)
+        }
+        if requested.gate == .unspecified, config.gate != .squelch, requested.preRollMs != 0 || requested.hangMs != 0 {
+            throw EngineError.invalidArgument(
+                "pre-roll and hang need a squelch gate, and this recording is continuous (it is not NFM or AM with a squelch); ask for gate SQUELCH to gate it",
+                target: "")
+        }
+        if config.stopAfterQuietMs != 0, config.gate != .squelch {
+            throw EngineError.invalidArgument(
+                "stop-after-quiet needs a squelch gate: without one nothing is watching the squelch", target: "")
         }
         if !config.deviceID.isEmpty, DeviceID(string: config.deviceID) == nil {
             throw EngineError.deviceNotFound(config.deviceID)
@@ -85,6 +100,14 @@ extension JobStore {
         setRecordEntry(id, job: job, task: task, client: client)
         await store.publishJob(job)
         return job
+    }
+
+    /// The gate a request that names none gets: a squelch for NFM and AM when the channel's
+    /// squelch is on, and a continuous recording for everything else, where a closed squelch is
+    /// not what the zeros of an idle channel mean (WFM, SSB, a channel with its squelch off).
+    static func defaultGate(mode: DemodMode?, squelchOn: Bool) -> Leyline_V1_RecordGate {
+        guard squelchOn, mode == .nfm || mode == .am else { return .none }
+        return .squelch
     }
 
     // MARK: Running

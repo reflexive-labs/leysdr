@@ -34,12 +34,12 @@ type recordArgs struct {
 	Target    string  `json:"target" jsonschema:"what to record: a frequency (a bare number is MHz: 146.52; units are exact: 1010k, 146520000), a preset name such as noaa, or the id of a channel already running (chan_...)"`
 	DurationS float64 `json:"duration_s" jsonschema:"how long to record, in seconds (1 to 3600). Required: what an agent starts must end without it"`
 	IQ        bool    `json:"iq,omitempty" jsonschema:"record the radio's raw samples (.cf32) instead of demodulated audio; about 19 MB a second at 2.4 MSPS (default: false)"`
-	Gate      string  `json:"gate,omitempty" jsonschema:"record only while something is on the air: squelch. Files are one per transmission (default: record continuously)"`
-	PreRollMs uint32  `json:"pre_roll_ms,omitempty" jsonschema:"audio kept from before each key-up, in milliseconds (default 500; needs gate)"`
-	HangMs    uint32  `json:"hang_ms,omitempty" jsonschema:"how long a file stays open after a key-down, in milliseconds (default 500, so a file is one transmission); a longer one such as 5000 keeps the pauses between overs in one file (needs gate)"`
+	Gate      string  `json:"gate,omitempty" jsonschema:"squelch records only while something is on the air, one file per transmission; none records continuously (default: squelch for nfm and am with a squelch set, none otherwise; the result says which)"`
+	PreRollMs uint32  `json:"pre_roll_ms,omitempty" jsonschema:"audio kept from before each key-up, in milliseconds (default 500; needs a squelch gate)"`
+	HangMs    uint32  `json:"hang_ms,omitempty" jsonschema:"how long a file stays open after a key-down, in milliseconds (default 500, so a file is one transmission); a longer one such as 5000 keeps the pauses between overs in one file (needs a squelch gate)"`
 	Mode      string  `json:"mode,omitempty" jsonschema:"how to decode: nfm, wfm, am, usb, lsb, cw (default: chosen from the band); not with a channel id or with iq"`
 	Bandwidth string  `json:"bandwidth,omitempty" jsonschema:"channel width: a bare number is kHz (12.5), or 200k, 12500 (default: the mode's usual width)"`
-	Squelch   string  `json:"squelch,omitempty" jsonschema:"mute below this level: auto (the default with a gate, measured from the channel's own noise floor), off, or dBFS such as -40"`
+	Squelch   string  `json:"squelch,omitempty" jsonschema:"mute below this level: auto (the default with a squelch gate, measured from the channel's own noise floor), off, or dBFS such as -40"`
 	Gain      string  `json:"gain,omitempty"`
 	Device    string  `json:"device,omitempty" jsonschema:"which radio: an id (dev_...), id prefix or row number from list_devices (default: the first real radio)"`
 	TakeOver  bool    `json:"take_over,omitempty" jsonschema:"record even when somebody is using the radio (default: false, refuse and say who is using it). Send it only after a refusal named who"`
@@ -61,8 +61,8 @@ func (srv *mcpServer) record(ctx context.Context, _ *mcp.CallToolRequest, in rec
 	}
 	// parse reads the gate flags off strings; the tool takes them as numbers, so they are put
 	// back after it and checked the same way.
-	if !o.gated && (in.PreRollMs != 0 || in.HangMs != 0) {
-		return nil, nil, fmt.Errorf("pre_roll_ms and hang_ms need gate: squelch; without a gate nothing is watching the squelch")
+	if o.noSquelchGate() && (in.PreRollMs != 0 || in.HangMs != 0) {
+		return nil, nil, fmt.Errorf("pre_roll_ms and hang_ms need a squelch gate (gate: squelch); without a gate nothing is watching the squelch")
 	}
 	o.pre = time.Duration(in.PreRollMs) * time.Millisecond
 	o.hang = time.Duration(in.HangMs) * time.Millisecond
@@ -90,6 +90,8 @@ func (srv *mcpServer) record(ctx context.Context, _ *mcp.CallToolRequest, in rec
 		return nil, nil, toolError(recordToolFailure(err))
 	}
 	uri := recordURI(job)
+	// With no gate asked for the daemon chose one; the summary and the nothing-heard line state it.
+	o.gated = job.GetRecord().GetGate() == leylinev1.RecordGate_SQUELCH
 	var b strings.Builder
 	// Wait it out: polling would cost the agent extra calls to learn what one call can return.
 	// The duration is the bound, with a little slack for the daemon's own teardown.
@@ -303,6 +305,8 @@ func recordingSummary(m *leyline.RecordingManifest) string {
 		words.Count(len(m.Parts), "part"), recordingSize(m.Bytes))
 	if m.Gate != nil {
 		fmt.Fprintf(&b, "; the squelch opened %s", words.Count(m.SquelchOpens(), "time"))
+	} else if m.Kind == "audio" {
+		b.WriteString("; recorded continuously, no gate")
 	}
 	if len(m.Gaps) > 0 {
 		fmt.Fprintf(&b, "; %s where nothing was recorded", words.Count(len(m.Gaps), "gap"))

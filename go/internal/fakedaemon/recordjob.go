@@ -56,6 +56,13 @@ func (d *Daemon) startRecord(ctx context.Context, cfg *leylinev1.RecordConfig) (
 		return nil, fail(ctx, errorf(leyline.CodeUnimplemented, "", "a recording scheduled for later is not implemented in v0"))
 	}
 	iq := cfg.GetMode() == leylinev1.DemodMode_RAW_IQ
+	// A request that names no gate gets the one the daemon picks: a squelch for NFM and AM with the
+	// squelch on, continuous for the rest. The job's config says which, as the daemon's does.
+	picked := cfg.GetGate() == leylinev1.RecordGate_RECORD_GATE_UNSPECIFIED
+	if picked {
+		cfg = proto.Clone(cfg).(*leylinev1.RecordConfig)
+		cfg.Gate = d.defaultGate(cfg)
+	}
 	gated := cfg.GetGate() == leylinev1.RecordGate_SQUELCH
 	if gated && iq {
 		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "",
@@ -64,6 +71,10 @@ func (d *Daemon) startRecord(ctx context.Context, cfg *leylinev1.RecordConfig) (
 	if cfg.GetStopAfterQuietMs() != 0 && !gated {
 		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "",
 			"stop-after-quiet needs a squelch gate: without one nothing is watching the squelch"))
+	}
+	if picked && !gated && (cfg.GetPreRollMs() != 0 || cfg.GetHangMs() != 0) {
+		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, "",
+			"pre-roll and hang need a squelch gate, and this recording is continuous (it is not NFM or AM with a squelch); ask for gate SQUELCH to gate it"))
 	}
 	ci := clientFrom(ctx)
 	d.touchUnary(ci)
@@ -157,6 +168,26 @@ func (d *Daemon) startRecord(ctx context.Context, cfg *leylinev1.RecordConfig) (
 
 	go d.runRecord(job.JobId)
 	return reply, nil
+}
+
+// defaultGate is the daemon's choice for a record request that leaves the gate unspecified
+// (jobs.proto, RecordConfig.gate). A named channel is judged by its own mode and squelch; a
+// frequency by the request's, where NaN says the squelch is off and 0 is the daemon's auto.
+func (d *Daemon) defaultGate(cfg *leylinev1.RecordConfig) leylinev1.RecordGate {
+	mode, squelch := cfg.GetMode(), cfg.GetSquelchDbfs()
+	if chID := cfg.GetChannelId(); chID != "" {
+		d.mu.Lock()
+		if ch := d.channels[chID]; ch != nil {
+			mode, squelch = ch.GetMode(), ch.GetSquelchDb()
+		}
+		d.mu.Unlock()
+	} else if mode == leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED {
+		mode = leylinev1.DemodMode_NFM
+	}
+	if (mode == leylinev1.DemodMode_NFM || mode == leylinev1.DemodMode_AM) && !math.IsNaN(squelch) {
+		return leylinev1.RecordGate_SQUELCH
+	}
+	return leylinev1.RecordGate_NONE
 }
 
 // recordBandwidth is the channel width the recording asks for, or the mode's own.

@@ -320,7 +320,7 @@ func TestTranscribeRefusals(t *testing.T) {
 		}
 	}
 	// A recording with no gate lists no squelch openings and has nothing to transcribe.
-	ungated := mustRun(t, sock, "--json", "record", "146.52", "--for", "300ms")
+	ungated := mustRun(t, sock, "--json", "record", "146.52", "--for", "300ms", "--gate", "none")
 	var job struct {
 		JobID string `json:"jobId"`
 	}

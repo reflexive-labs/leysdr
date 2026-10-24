@@ -87,7 +87,8 @@ func (JobState) EnumDescriptor() ([]byte, []int) {
 }
 
 // What opens and closes a recording's parts. A gated recording writes no file while the squelch is
-// closed, and its manifest says where the gaps were: time is never edited (invariant 5).
+// closed, and its manifest says where the gaps were: time is never edited (invariant 5). A request
+// that leaves the gate UNSPECIFIED gets the one the daemon picks (`RecordConfig.gate`).
 type RecordGate int32
 
 const (
@@ -642,9 +643,12 @@ type RecordConfig struct {
 	BandwidthHz uint32     `protobuf:"varint,8,opt,name=bandwidth_hz,json=bandwidthHz,proto3" json:"bandwidth_hz,omitempty"`  // 0 = the mode's default, as CreateChannel
 	SquelchDbfs float64    `protobuf:"fixed64,9,opt,name=squelch_dbfs,json=squelchDbfs,proto3" json:"squelch_dbfs,omitempty"` // NaN or unset = the channel default (auto), as ley tune
 	Gain        *GainWrite `protobuf:"bytes,10,opt,name=gain,proto3" json:"gain,omitempty"`                                   // absent = leave the radio's gain alone
-	Gate        RecordGate `protobuf:"varint,11,opt,name=gate,proto3,enum=leyline.v1.RecordGate" json:"gate,omitempty"`       // NONE (default) or SQUELCH
-	PreRollMs   uint32     `protobuf:"varint,12,opt,name=pre_roll_ms,json=preRollMs,proto3" json:"pre_roll_ms,omitempty"`     // audio kept from before the squelch opened; default 500
-	HangMs      uint32     `protobuf:"varint,13,opt,name=hang_ms,json=hangMs,proto3" json:"hang_ms,omitempty"`                // how long after the squelch closes a part stays open; default 500, so
+	// UNSPECIFIED: the daemon picks. NFM and AM with a squelch on (not NaN) are gated by SQUELCH;
+	// WFM, the other modes, RAW_IQ and a squelch that is off record continuously (NONE). The job's
+	// config, as the daemon returns it, holds the gate it chose. NONE and SQUELCH are always honoured.
+	Gate      RecordGate `protobuf:"varint,11,opt,name=gate,proto3,enum=leyline.v1.RecordGate" json:"gate,omitempty"`
+	PreRollMs uint32     `protobuf:"varint,12,opt,name=pre_roll_ms,json=preRollMs,proto3" json:"pre_roll_ms,omitempty"` // audio kept from before the squelch opened; default 500
+	HangMs    uint32     `protobuf:"varint,13,opt,name=hang_ms,json=hangMs,proto3" json:"hang_ms,omitempty"`            // how long after the squelch closes a part stays open; default 500, so
 	// a part is one transmission; longer keeps an exchange in one part
 	StopAfterQuietMs int64 `protobuf:"varint,14,opt,name=stop_after_quiet_ms,json=stopAfterQuietMs,proto3" json:"stop_after_quiet_ms,omitempty"` // end the job after this long with the squelch closed; 0 = never
 	PartMs           int64 `protobuf:"varint,15,opt,name=part_ms,json=partMs,proto3" json:"part_ms,omitempty"`                                   // cut parts on this timer; 0 = audio: one part, IQ: 60000

@@ -166,6 +166,45 @@ func TestRecordGateWritesOnePartPerExchange(t *testing.T) {
 	}
 }
 
+// With no --gate the daemon picks: a squelch for NFM and AM with a squelch on, continuous for
+// the rest. The banner states the gate it chose, and --gate none overrides it.
+func TestRecordWithoutAGateStatesTheOneTheDaemonPicked(t *testing.T) {
+	t.Parallel()
+	sock, dir := recordHarness(t)
+	for _, tc := range []struct {
+		args    []string
+		gate    string // the manifest's gate kind, "" for none
+		banners string
+	}{
+		{[]string{"146.52"}, "squelch", "squelch, 500 ms pre-roll, 500 ms hang"},
+		{[]string{"146.52", "--gate", "none"}, "", "none, recording continuously"},
+		{[]string{"146.52", "--squelch", "off"}, "", "none, recording continuously"},
+		{[]string{"88.5"}, "", "none, recording continuously"},
+		{[]string{"88.5", "--gate", "squelch"}, "squelch", "squelch, 500 ms pre-roll, 500 ms hang"},
+	} {
+		args := append([]string{"record"}, tc.args...)
+		args = append(args, "--for", "300ms")
+		out, errOut, err := run(t, t.Context(), sock, args...)
+		if err != nil {
+			t.Fatalf("ley %v: %v\n%s", args, err, errOut)
+		}
+		if !strings.Contains(errOut, tc.banners) {
+			t.Errorf("ley %v: the banner does not say %q:\n%s", args, tc.banners, errOut)
+		}
+		jobID, _, _ := leyline.ParseRecordingURI(strings.TrimSpace(out))
+		m, merr := leyline.ReadRecordingManifest(filepath.Join(dir, jobID))
+		if merr != nil {
+			t.Fatalf("ley %v: %v", args, merr)
+		}
+		if (m.Gate == nil) != (tc.gate == "") || (m.Gate != nil && m.Gate.Kind != tc.gate) {
+			t.Errorf("ley %v: gate %+v, want %q", args, m.Gate, tc.gate)
+		}
+		if m.Gate != nil && m.Gate.HangMs != 500 {
+			t.Errorf("ley %v: the default hang is %d ms, want 500", args, m.Gate.HangMs)
+		}
+	}
+}
+
 // --detach hands a script the job id and the URI and leaves the job running.
 func TestRecordDetachLeavesTheJobRunning(t *testing.T) {
 	t.Parallel()

@@ -1263,8 +1263,8 @@ func TestMCPRecordGateReportsTheOvers(t *testing.T) {
 		t.Errorf("and state the gap:\n%s", text)
 	}
 	// The gate flags need a gate.
-	if r := h.call(t, "record", map[string]any{"target": "146.52", "duration_s": 1, "hang_ms": 1000}); !r.IsError ||
-		!strings.Contains(resultText(r), "need gate") {
+	if r := h.call(t, "record", map[string]any{"target": "146.52", "duration_s": 1, "gate": "none", "hang_ms": 1000}); !r.IsError ||
+		!strings.Contains(resultText(r), "need a squelch gate") {
 		t.Errorf("hang_ms without a gate: %s", resultText(r))
 	}
 }

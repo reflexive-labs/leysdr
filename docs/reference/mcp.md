@@ -231,10 +231,12 @@ Notes a table cell cannot hold:
 - **`record`** is the one tool that waits: it starts the job, waits for it and returns the finished
   `Job`, so one call completes a bounded recording instead of requiring a start and a
   poll. `duration_s` is required and bounded at an hour — what an agent starts must end without it,
-  and a radio that records indefinitely is unavailable to anyone else. `gate: "squelch"` records
-  only while something is on the air and writes one file per transmission (`hang_ms`, default 500,
-  keeps the pauses between overs in one file when it is longer), so a quiet band costs no
-  disk; the text then says how many times the squelch opened, which is usually what the agent needs.
+  and a radio that records indefinitely is unavailable to anyone else. Without `gate` the
+  daemon gates NFM and AM that have a squelch and records everything else continuously; `gate:
+  "squelch"` records only while something is on the air and writes one file per transmission, so
+  a quiet band costs no disk, and `gate: "none"` records continuously. `hang_ms` (default 500)
+  keeps the pauses between overs in one file when it is longer. For a gated recording the text
+  says how many times the squelch opened, which is usually what the agent needs.
   The recording outlives the call and the server: it is a file, and `find_recordings` finds it in
   the next session. A gated recording whose squelch never opened is not kept: the job ends
   `COMPLETED` with `status_detail` `nothing was heard`, and the text reads `Recorded nothing: the

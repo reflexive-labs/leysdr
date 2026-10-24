@@ -39,8 +39,18 @@ extension RecordingJobTests {
             var quietWithoutGate = Leyline_V1_RecordConfig()
             quietWithoutGate.frequencyHz = recordFrequencyHz
             quietWithoutGate.mode = .nfm
+            quietWithoutGate.gate = .none
             quietWithoutGate.stopAfterQuietMs = 10_000
             got = await refusal(quietWithoutGate)
+            e = try XCTUnwrap(got)
+            XCTAssertEqual(e.code, .invalidArgument)
+            XCTAssertTrue(e.message.contains("squelch gate"), e.message)
+
+            // A request that names no gate gets a continuous one on WFM, so the same refusal.
+            var quietOnWFM = quietWithoutGate
+            quietOnWFM.gate = .unspecified
+            quietOnWFM.mode = .wfm
+            got = await refusal(quietOnWFM)
             e = try XCTUnwrap(got)
             XCTAssertEqual(e.code, .invalidArgument)
             XCTAssertTrue(e.message.contains("squelch gate"), e.message)

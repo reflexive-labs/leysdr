@@ -27,12 +27,15 @@ type recordOptions struct {
 	channelID string
 	iq        bool
 	forDur    time.Duration
-	gated     bool
-	pre       time.Duration
-	hang      time.Duration
-	quiet     time.Duration
-	part      time.Duration
-	detach    bool
+	// gated is a squelch gate, asked for with --gate squelch or, once the job has started, the one
+	// the daemon chose; gateNone is --gate none. With neither the daemon picks (RecordConfig.gate).
+	gated    bool
+	gateNone bool
+	pre      time.Duration
+	hang     time.Duration
+	quiet    time.Duration
+	part     time.Duration
+	detach   bool
 	// listen plays the channel through the daemon's speakers while it records, so you hear what
 	// is going into the file without a second command holding a second channel.
 	listen    bool
@@ -70,12 +73,16 @@ band unless --mode says otherwise). Given a channel id from 'ley state' it
 records what you are already listening to, with your mode, bandwidth and
 squelch, and stops when you do.
 
---gate squelch records only while the squelch is open, one file per
-transmission: a file closes half a second after the key-down (--hang), a longer
-one keeps the pauses between overs inside one file, and half a second before
-each key-up is kept (--pre). Silence is never edited out of a file --
-the gaps between files are stated in the manifest instead, so a recording
-played back sounds like the air did.
+A gated recording writes only while the squelch is open, one file per
+transmission: half a second before each key-up is kept (--pre) and a file
+closes half a second after the key-down (--hang). A longer --hang keeps the
+pauses between overs inside one file, so a file is an exchange. Silence is
+never edited out of a file -- the gaps between files are stated in the
+manifest instead, so a recording played back sounds like the air did.
+
+Without --gate the daemon decides: NFM and AM with a squelch set are gated
+(--gate squelch), and WFM, other modes, IQ and --squelch off record
+continuously (--gate none). The first lines say which it chose.
 
 record runs in the foreground and prints what it is doing until --for elapses
 or Ctrl-C, which stops the job and leaves the recording complete. --detach
@@ -83,10 +90,11 @@ starts it and exits with the job id; 'ley jobs cancel' stops one.
 
 --json prints the Job as each state change arrives, one object per line.`,
 		Example: `  ley record 146.52 --for 5m             # five minutes of audio
-  ley record noaa --gate squelch         # only while something is on the air
+  ley record noaa                        # NFM: only while something is on the air
+  ley record 146.52 --gate none --for 5m # everything, silence included
   ley record chan_01J... --for 10m       # what this channel is hearing
   ley record 146.52 --iq --for 30s       # raw samples, for another tool
-  ley record 462.6 --gate squelch --stop-after-quiet 10m --detach
+  ley record 462.6 --stop-after-quiet 10m --detach
   ley play "$(ley record 146.52 --iq --for 10s --json | tail -1 | jq -r .resultUris[0])"`,
 		GroupID: GroupListening,
 		Args:    recordPositional,
@@ -121,10 +129,10 @@ starts it and exits with the job id; 'ley jobs cancel' stops one.
 	}
 	cmd.Flags().BoolVar(&o.iq, "iq", false, "record the radio's raw samples (.cf32) instead of demodulated audio: about 19 MB a second at 2.4 MSPS against 96 KB a second for audio, so it is cut into parts (see --part)")
 	cmd.Flags().StringVar(&forStr, "for", "", "how long to record, e.g. 30s, 5m, 2h (default: until Ctrl-C or ley jobs cancel)")
-	cmd.Flags().StringVar(&gate, "gate", "", "record only while something is on the air: squelch (default: record continuously)")
-	cmd.Flags().StringVar(&preStr, "pre", "", "how much audio to keep from before each key-up, e.g. 500ms (default 500ms; needs --gate)")
-	cmd.Flags().StringVar(&hangStr, "hang", "", "how long a file stays open after a key-down, default 500ms; a longer one such as 5s keeps the pauses between overs in one file (needs --gate)")
-	cmd.Flags().StringVar(&quietStr, "stop-after-quiet", "", "stop recording after this long with nothing on the air, e.g. 10m (needs --gate)")
+	cmd.Flags().StringVar(&gate, "gate", "", "squelch records only while something is on the air, none records continuously (default: squelch for NFM and AM with a squelch set, none otherwise)")
+	cmd.Flags().StringVar(&preStr, "pre", "", "how much audio to keep from before each key-up, e.g. 500ms (default 500ms; needs a squelch gate)")
+	cmd.Flags().StringVar(&hangStr, "hang", "", "how long a file stays open after a key-down, e.g. 500ms (default); a longer one keeps the pauses between overs in one file, e.g. 5s (needs a squelch gate)")
+	cmd.Flags().StringVar(&quietStr, "stop-after-quiet", "", "stop recording after this long with nothing on the air, e.g. 10m (needs a squelch gate)")
 	cmd.Flags().StringVar(&partStr, "part", "", "cut a new file every so often, e.g. 60s (default: audio is one file, IQ is cut every 60s)")
 	cmd.Flags().BoolVar(&o.listen, "listen", false, "also play what is being recorded through the speakers, so you can hear it go in (not with --iq or --detach)")
 	// Audio is what record writes unless --iq says otherwise, so this asks for the default. It is
@@ -139,7 +147,7 @@ starts it and exits with the job id; 'ley jobs cancel' stops one.
 	// spelling docs/design/recording.md uses, kept working but hidden so help shows one spelling.
 	cmd.Flags().StringVar(&bw, "bandwidth", "", "another spelling of --bw")
 	_ = cmd.Flags().MarkHidden("bandwidth")
-	cmd.Flags().StringVar(&squelch, "squelch", "", "mute below this level: auto (default with --gate), off, or a level like -40 (dBFS)")
+	cmd.Flags().StringVar(&squelch, "squelch", "", "mute below this level: auto (default with a squelch gate), off, or a level like -40 (dBFS)")
 	cmd.Flags().StringVar(&o.gain, "gain", "", gainHelp+"; default: leave the radio's setting")
 	cmd.Flags().StringVar(&o.device, "device", "", "which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)")
 	cmd.Flags().BoolVar(&o.takeOver, "take-over", false, "record even when somebody is using the radio; it is theirs again afterwards")
@@ -182,14 +190,50 @@ func quoteWords(words []string) string {
 // parse turns the raw flags into the config, refusing the combinations the CLI can judge on its
 // own. The daemon refuses the rest, with its own sentence.
 func (o *recordOptions) parse(arg, gate, forStr, mode, bw, squelch, pre, hang, quiet, part string) error {
+	if err := o.parseFlags(arg, gate, forStr, mode, bw, squelch, pre, hang, quiet, part); err != nil {
+		return err
+	}
+	// The gate flags need a gate: without one nothing is watching the squelch, and a recording
+	// that silently ignored --hang would be the wrong length with no way to tell.
+	if o.noSquelchGate() {
+		for _, f := range []struct{ name, value string }{
+			{"--pre", pre}, {"--hang", hang}, {"--stop-after-quiet", quiet},
+		} {
+			if f.value != "" {
+				return usageErrorf("%s needs --gate squelch: without a gate nothing is watching the squelch", f.name)
+			}
+		}
+	}
+	return nil
+}
+
+// noSquelchGate reports whether the recording will certainly not be gated. With no --gate the
+// daemon decides from the mode and the squelch, which the CLI knows for a frequency or a preset
+// and does not for a channel id: that case answers false and the daemon refuses a gate flag it
+// cannot use.
+func (o *recordOptions) noSquelchGate() bool {
+	switch {
+	case o.gated:
+		return false
+	case o.gateNone, o.iq:
+		return true
+	case o.channelID != "":
+		return false
+	}
+	return (o.mode != leylinev1.DemodMode_NFM && o.mode != leylinev1.DemodMode_AM) || math.IsNaN(o.squelchDB)
+}
+
+func (o *recordOptions) parseFlags(arg, gate, forStr, mode, bw, squelch, pre, hang, quiet, part string) error {
 	o.input = arg
 	o.squelchDB = 0
 	switch gate {
 	case "":
 	case "squelch":
 		o.gated = true
+	case "none":
+		o.gateNone = true
 	default:
-		return usageErrorf("--gate %q is not a gate; squelch is the one there is", gate)
+		return usageErrorf("--gate %q is not a gate; squelch and none are the two there are", gate)
 	}
 	for _, f := range []struct {
 		name, value string
@@ -209,17 +253,6 @@ func (o *recordOptions) parse(arg, gate, forStr, mode, bw, squelch, pre, hang, q
 			return usageErrorf("%s %v", f.name, err)
 		}
 		*f.dst = d
-	}
-	// The gate flags need a gate: without one nothing is watching the squelch, and a recording
-	// that silently ignored --hang would be the wrong length with no way to tell.
-	if !o.gated {
-		for _, f := range []struct{ name, value string }{
-			{"--pre", pre}, {"--hang", hang}, {"--stop-after-quiet", quiet},
-		} {
-			if f.value != "" {
-				return usageErrorf("%s needs --gate squelch: without a gate nothing is watching the squelch", f.name)
-			}
-		}
 	}
 	if o.iq && o.gated {
 		return usageErrorf("--iq and --gate squelch do not go together: a gate needs a channel's squelch, and an IQ recording has no channel. Record audio, or record IQ continuously")
@@ -339,10 +372,12 @@ func (o *recordOptions) config() *leylinev1.RecordConfig {
 		HangMs:           uint32(o.hang.Milliseconds()),
 		StopAfterQuietMs: o.quiet.Milliseconds(),
 		PartMs:           o.part.Milliseconds(),
-		Gate:             leylinev1.RecordGate_NONE,
 	}
-	if o.gated {
+	switch {
+	case o.gated:
 		cfg.Gate = leylinev1.RecordGate_SQUELCH
+	case o.gateNone:
+		cfg.Gate = leylinev1.RecordGate_NONE
 	}
 	cfg.Gains = gainWrites(o.gain)
 	return cfg
@@ -354,6 +389,8 @@ func runRecord(ctx context.Context, s *verbSession, o recordOptions) error {
 	if err != nil {
 		return recordFailure(s, o, err)
 	}
+	// With no --gate the daemon chose one, and everything printed from here states its choice.
+	o.gated = job.GetRecord().GetGate() == leylinev1.RecordGate_SQUELCH
 	uri := recordURI(job)
 	// The speakers are this terminal's, attached to the channel the daemon is recording, so what
 	// you hear is what is going into the file rather than a second demodulator's output.
@@ -646,6 +683,8 @@ func recordBanner(s *verbSession, o recordOptions, m *leyline.RecordingManifest,
 			gate += fmt.Sprintf(", below %.0f dBFS is silence", *m.SquelchDBFS)
 		}
 		lines = append(lines, leadLabel(st, "Gate     ", gate))
+	} else if !o.iq {
+		lines = append(lines, leadLabel(st, "Gate     ", "none, recording continuously"))
 	}
 	if radio := recordRadio(m, manifestGainElements(s.State.GetDevices(), m)); radio != "" {
 		lines = append(lines, leadLabel(st, "Radio    ", radio))

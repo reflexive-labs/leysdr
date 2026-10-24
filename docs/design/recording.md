@@ -250,7 +250,8 @@ reason, and its empty directory goes the same way. The job still names
 `ley://recordings/<job_id>` in `result_uris`, because clients read the URI from there while the
 job runs; after the discard it resolves to `JOB_NOT_FOUND`, like a recording deleted in Finder.
 `ley record` prints `Recorded nothing: the squelch never opened.` and exits 0 with nothing on
-stdout, and the MCP `record` tool returns the job with the same sentence.
+stdout, and the MCP `record` tool returns the job with the same sentence. Directories with no
+part whose job is not running predate this rule, and the daemon removes them at start.
 
 ### Retention
 
@@ -258,7 +259,8 @@ stdout, and the MCP `record` tool returns the job with the same sentence.
 The defaults are a guess to be tuned by use; the cap is set so a full IQ recording at 2.4 MSPS
 fits about 18 minutes and audio about 62 hours. Retention runs when a job ends and at daemon
 start, age first then oldest-first by manifest time until under the cap, and it never removes a
-recording whose job is running. A recording a person deletes in Finder is gone: the index
+recording whose job is running. The daemon also removes, at start, a recording with no part
+whose job is not running: it predates the "Nothing heard" discard. A recording a person deletes in Finder is gone: the index
 is a scan of the manifests, as the kept-records index is a scan of its sidecars, so nothing else
 needs updating. A job that cannot write because the disk is full ends `FAILED` with what it
 managed to keep, and the detail states the free space and the flag.
@@ -285,7 +287,7 @@ message RecordConfig {
   double squelch_dbfs = 9;    // NaN or unset = the channel default (auto), as ley tune
   GainWrite gain = 10;        // absent = leave the radio's gain alone
 
-  RecordGate gate = 11;       // NONE (default) or SQUELCH
+  RecordGate gate = 11;       // UNSPECIFIED: the daemon picks; NONE and SQUELCH are honoured
   uint32 pre_roll_ms = 12;    // audio kept from before the squelch opened; default 500
   uint32 hang_ms = 13;        // how long after the squelch closes a part stays open; default 500
   int64 stop_after_quiet_ms = 14; // end the job after this long with the squelch closed; 0 = never
@@ -300,8 +302,14 @@ Rules the daemon enforces, each with its code:
 
 - `gate = SQUELCH` with `mode = RAW_IQ` is `INVALID_ARGUMENT`: a gate needs a channel's squelch,
   and an IQ recording has no channel. Record audio, or record IQ continuously.
+- A request that leaves `gate` unspecified gets the gate the daemon picks: `SQUELCH` when the
+  resolved mode is NFM or AM and the channel's squelch is on (not NaN), `NONE` for WFM, the other
+  modes, `RAW_IQ` and a squelch that is off. For a new channel NaN in `squelch_dbfs` says the
+  squelch is off and unset says auto, which is on; a borrowed channel is judged by its own mode and
+  squelch. The `Job`'s `config` holds the gate chosen, so a client states what was decided.
 - `stop_after_quiet_ms` without a gate is `INVALID_ARGUMENT`, since nothing is watching the
-  squelch.
+  squelch; so are `pre_roll_ms` and `hang_ms` when the gate was left unspecified and the daemon
+  picked `NONE`. Both are accepted when the daemon picks `SQUELCH`.
 - `channel_id` naming a channel that is not there is `CHANNEL_NOT_FOUND`; a channel whose
   squelch is off (NaN) with `gate = SQUELCH` is `FAILED_PRECONDITION`, "squelch is off on
   chan_…; set one with ley set squelch".
@@ -526,7 +534,7 @@ The drain adds none: it is not on the sample path.
 ## The CLI
 
 ```
-ley record <frequency|preset|channel> [--iq] [--for 5m] [--gate squelch] [--pre 500ms]
+ley record <frequency|preset|channel> [--iq] [--for 5m] [--gate squelch|none] [--pre 500ms]
            [--hang 500ms] [--stop-after-quiet 10m] [--part 60s] [--detach]
            [--mode M] [--bw N] [--squelch L|auto|off] [--gain dB|auto|STAGE=dB,...] [--device SEL] [--take-over]
 ley recordings [--kind audio|iq] [--freq F] [--since 24h] [--limit N]
@@ -542,7 +550,7 @@ ley jobs cancel <id>
   agents, and `ley` has both.
 - **`ley record` runs in the foreground by default.** It prints a banner stating the decisions
   the daemon made (`recording NFM 146.520 MHz, audio 48 kHz WAV, gate squelch (pre 500 ms, hang
-  500 ms), until cancelled`, then the directory), then one live line on stderr (elapsed, parts,
+  500 ms), until cancelled`; the gate is the one the daemon chose when `--gate` is absent, then the directory), then one live line on stderr (elapsed, parts,
   bytes, and for a gated recording whether the squelch is open) until `--for` elapses or Ctrl-C,
   which cancels the job and prints the resource URI. `--detach` starts the job and exits with the
   job id and URI, for a script; `ley jobs cancel` stops it.
@@ -550,9 +558,12 @@ ley jobs cancel <id>
   channel `ley state` lists (the selector `ley scope` takes), so the recording has the mode,
   bandwidth and squelch you are listening with, and ends when your `ley tune` does. With `--iq` it
   records that channel's capture.
-- **`--gate squelch` is the only gate**, and `--pre`, `--hang` and `--stop-after-quiet` need it;
-  without it they are a usage error naming the flag. `--iq --gate` is refused with the daemon's
-  error message.
+- **`--gate` is `squelch` or `none`; without it the daemon picks** (NFM and AM with a squelch
+  set are gated, everything else is continuous), so a recording of a repeater writes no dead air
+  unless `--gate none` asks for it. `--pre`, `--hang` and `--stop-after-quiet` need a squelch gate;
+  when the CLI can tell there will be none (`--gate none`, `--iq`, WFM or another mode,
+  `--squelch off`) they are a usage error naming the flag, and for a channel id the daemon
+  refuses them. `--iq --gate squelch` is refused with the daemon's error message.
 - **`--json`** prints the `Job` as each state change arrives, one object per line, as
   `ley decode --json` does; `ley recordings --json` prints `ListResourcesResponse`;
   `ley recordings show --json` prints the manifest; `ley recordings path` prints the path alone
@@ -571,7 +582,7 @@ Four tools and one resource, each with the `ley` mirror above and the same proto
 
 | Tool | Maps to | Notes |
 |---|---|---|
-| `record` | `Jobs.StartJob(RecordConfig)` | `duration_s` is required (1 to 3600): what an agent starts must end without it. `gate`, `pre_roll_ms`, `hang_ms`, `take_over` as the config. Returns the `Job` and the URI, and refuses an active capture the way `tune` does |
+| `record` | `Jobs.StartJob(RecordConfig)` | `duration_s` is required (1 to 3600): what an agent starts must end without it. `gate` (`squelch` or `none`; absent lets the daemon pick, as above), `pre_roll_ms`, `hang_ms`, `take_over` as the config. Returns the `Job` and the URI, and refuses an active capture the way `tune` does |
 | `find_recordings` | `Resources.ListResources(RECORDING)` | the filters are the frozen metadata keys; the summary is the `ley recordings` table |
 | `get_recording` | `Resources.GetResource` + `ResolveLocalPath` | the manifest with each part's local path, so an agent hands a file to another tool by path |
 | `delete_recording` | `Resources.DeleteResource` | returns the `DeletedResource`; refused while the job runs, with `cancel_job` named |

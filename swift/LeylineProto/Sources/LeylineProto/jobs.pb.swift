@@ -80,7 +80,8 @@ public nonisolated enum Leyline_V1_JobState: SwiftProtobuf.Enum, Swift.CaseItera
 }
 
 /// What opens and closes a recording's parts. A gated recording writes no file while the squelch is
-/// closed, and its manifest says where the gaps were: time is never edited (invariant 5).
+/// closed, and its manifest says where the gaps were: time is never edited (invariant 5). A request
+/// that leaves the gate UNSPECIFIED gets the one the daemon picks (`RecordConfig.gate`).
 public nonisolated enum Leyline_V1_RecordGate: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case unspecified // = 0
@@ -475,7 +476,9 @@ public nonisolated struct Leyline_V1_RecordConfig: @unchecked Sendable {
   /// Clears the value of `gain`. Subsequent reads from it will return its default value.
   public mutating func clearGain() {_uniqueStorage()._gain = nil}
 
-  /// NONE (default) or SQUELCH
+  /// UNSPECIFIED: the daemon picks. NFM and AM with a squelch on (not NaN) are gated by SQUELCH;
+  /// WFM, the other modes, RAW_IQ and a squelch that is off record continuously (NONE). The job's
+  /// config, as the daemon returns it, holds the gate it chose. NONE and SQUELCH are always honoured.
   public var gate: Leyline_V1_RecordGate {
     get {_storage._gate}
     set {_uniqueStorage()._gate = newValue}

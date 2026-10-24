@@ -19,6 +19,11 @@ What changed for someone using Leyline, newest first. Each released version has 
   500 ms after the key-down in `ley record`, the MCP `record` tool and a live speech job's clips,
   as the app's record button already did; it was 5 s, which put an exchange of several overs in
   one file. `--hang 5s` (MCP `hang_ms`) keeps the old behaviour.
+- **Changed: `ley record` skips the dead air.** With no `--gate`, an NFM or AM recording with a
+  squelch set is gated, so a repeater is recorded only while it is keyed; WFM, IQ and `--squelch
+  off` still record continuously, and `--gate none` asks for that on any channel. The banner
+  names the gate the daemon chose. The daemon also removes, at start, recordings that hold no
+  file and were left from before an empty recording was discarded.
 
 ## 0.2.0 (2026-10-23)
 

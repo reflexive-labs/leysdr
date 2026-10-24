@@ -91,7 +91,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # reads a CHIRP CSV export in, tagged with the file's name
 ├── mcp                              # the MCP server for an agent, on stdin and stdout: every tool a verb seen from
 │                                    # an agent, returning the verb's --json shape (docs/reference/mcp.md); refuses --json
-├── record <freq|preset|chan_ID> [--iq] [--for D] [--gate squelch] [--pre D] [--hang D] [--stop-after-quiet D] [--part D] [--listen] [--detach] [--mode M] [--bw N] [--squelch L|auto|off] [--gain dB|auto|STAGE=dB,...] [--device SEL] [--take-over]
+├── record <freq|preset|chan_ID> [--iq] [--for D] [--gate squelch|none] [--pre D] [--hang D] [--stop-after-quiet D] [--part D] [--listen] [--detach] [--mode M] [--bw N] [--squelch L|auto|off] [--gain dB|auto|STAGE=dB,...] [--device SEL] [--take-over]
 │                                    # Jobs.StartJob(RecordConfig): the daemon finds or makes the capture and
 │                                    # writes WAV (or .cf32 with --iq) into its store; the job's id is the
 │                                    # recording's, and ley://recordings/<job_id> is on stdout when it ends
@@ -421,10 +421,13 @@ outlives its client and produces a resource. The job's id **is** the recording's
 or, with `--iq`, the capture's raw samples as `.cf32` at the capture rate. A channel id records
 what somebody is already listening to, with their mode, bandwidth and squelch, and ends
 `COMPLETED` when that channel closes; `--mode`, `--bw` and `--squelch` are refused there rather
-than ignored. `--gate squelch` records only while the squelch is open and writes **one file per
+than ignored. A gated recording writes only while the squelch is open and **one file per
 transmission**: a file closes `--hang` (default 500 ms) after the key-down, and `--pre` (default
-500 ms) keeps what came just before each key-up. A longer `--hang`, 5s say, keeps the pauses
-between overs in one file, so a file is an exchange.
+500 ms) keeps what came just before each key-up. A longer `--hang`, 5s say, keeps the pauses between
+overs in one file, so a file is an exchange. Without `--gate` **the daemon picks**: `--gate squelch`
+for NFM and AM with a squelch set, `--gate none` (continuous) for WFM, the other modes, `--iq` and
+`--squelch off`; the banner's `Gate` line says which. `--gate none` records continuously
+whatever the mode, and a quiet repeater then writes mostly zeros.
 `--listen` also plays the channel through the daemon's speakers while it records, so you hear
 what is going into the file without a second command holding a second channel; the sink belongs to
 that terminal and goes when it exits, which is why it is refused with `--detach`, and with `--iq`,
@@ -433,7 +436,7 @@ says otherwise; `--audio` is accepted as the explicit spelling of that default, 
 story names the pair, and asking for both is refused. `--stop-after-quiet D` ends the job after that long with nothing on the air. `--part D` cuts a new
 file on a timer (the default for `--iq` is 60 s, because 2.4 MSPS is 19.2 MB a second); audio is
 one file unless asked otherwise. `--gate squelch` with `--iq` is refused, and so are `--pre`,
-`--hang` and `--stop-after-quiet` without a gate. Silence is never edited out of a file: each part
+`--hang` and `--stop-after-quiet` when there will be no squelch gate. Silence is never edited out of a file: each part
 says where on the capture's timeline it starts, and the times nothing was recorded are listed in
 the manifest as `coverage_gaps` (AGENTS.md invariant 5). The verb runs in the foreground and prints, on stderr, a banner of the decisions **the daemon**
 made rather than the ones asked for — it waits up to two seconds for the manifest so the rate,
@@ -685,7 +688,7 @@ and the statement says so. When the daemon refuses the job, `ley` puts the previ
 or clears it (`SetFeatureModel` with an empty provider and model) when there was none. It is a
 usage error with a decoder that calls no provider. A decoder whose manifest names a provider with
 no key set is refused by the daemon with `CREDENTIAL_MISSING`, whose message names `ley ai add`. A
-recording that lists no squelch openings (one recorded without `--gate squelch`) and an IQ
+recording that lists no squelch openings (one recorded without a squelch gate, such as `--gate none`) and an IQ
 recording are refused before anything is asked, each with the `ley record` command that makes one
 that can be transcribed. Two speech decoders ship, one program with two manifests: `speech` sends
 each over to OpenAI's transcription API on the `openai` key (`ley ai add openai`; an endpoint on

@@ -10,12 +10,16 @@ band unless --mode says otherwise). Given a channel id from 'ley state' it
 records what you are already listening to, with your mode, bandwidth and
 squelch, and stops when you do.
 
---gate squelch records only while the squelch is open, one file per
-transmission: a file closes half a second after the key-down (--hang), a longer
-one keeps the pauses between overs inside one file, and half a second before
-each key-up is kept (--pre). Silence is never edited out of a file --
-the gaps between files are stated in the manifest instead, so a recording
-played back sounds like the air did.
+A gated recording writes only while the squelch is open, one file per
+transmission: half a second before each key-up is kept (--pre) and a file
+closes half a second after the key-down (--hang). A longer --hang keeps the
+pauses between overs inside one file, so a file is an exchange. Silence is
+never edited out of a file -- the gaps between files are stated in the
+manifest instead, so a recording played back sounds like the air did.
+
+Without --gate the daemon decides: NFM and AM with a squelch set are gated
+(--gate squelch), and WFM, other modes, IQ and --squelch off record
+continuously (--gate none). The first lines say which it chose.
 
 record runs in the foreground and prints what it is doing until --for elapses
 or Ctrl-C, which stops the job and leaves the recording complete. --detach
@@ -28,10 +32,11 @@ Usage:
 
 Examples:
   ley record 146.52 --for 5m             # five minutes of audio
-  ley record noaa --gate squelch         # only while something is on the air
+  ley record noaa                        # NFM: only while something is on the air
+  ley record 146.52 --gate none --for 5m # everything, silence included
   ley record chan_01J... --for 10m       # what this channel is hearing
   ley record 146.52 --iq --for 30s       # raw samples, for another tool
-  ley record 462.6 --gate squelch --stop-after-quiet 10m --detach
+  ley record 462.6 --stop-after-quiet 10m --detach
   ley play "$(ley record 146.52 --iq --for 10s --json | tail -1 | jq -r .resultUris[0])"
 
 Flags:
@@ -40,16 +45,16 @@ Flags:
       --device string             which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)
       --for string                how long to record, e.g. 30s, 5m, 2h (default: until Ctrl-C or ley jobs cancel)
       --gain string               receiver gain: auto, dB such as 30 for the first stage, or stages such as LNA=0,VGA=20 (ley help gain); default: leave the radio's setting
-      --gate string               record only while something is on the air: squelch (default: record continuously)
-      --hang string               how long a file stays open after a key-down, default 500ms; a longer one such as 5s keeps the pauses between overs in one file (needs --gate)
+      --gate string               squelch records only while something is on the air, none records continuously (default: squelch for NFM and AM with a squelch set, none otherwise)
+      --hang string               how long a file stays open after a key-down, e.g. 500ms (default); a longer one keeps the pauses between overs in one file, e.g. 5s (needs a squelch gate)
   -h, --help                      help for record
       --iq                        record the radio's raw samples (.cf32) instead of demodulated audio: about 19 MB a second at 2.4 MSPS against 96 KB a second for audio, so it is cut into parts (see --part)
       --listen                    also play what is being recorded through the speakers, so you can hear it go in (not with --iq or --detach)
       --mode string               how to decode: nfm, wfm, am, usb, lsb, cw (default: by band; ley help modes)
       --part string               cut a new file every so often, e.g. 60s (default: audio is one file, IQ is cut every 60s)
-      --pre string                how much audio to keep from before each key-up, e.g. 500ms (default 500ms; needs --gate)
-      --squelch string            mute below this level: auto (default with --gate), off, or a level like -40 (dBFS)
-      --stop-after-quiet string   stop recording after this long with nothing on the air, e.g. 10m (needs --gate)
+      --pre string                how much audio to keep from before each key-up, e.g. 500ms (default 500ms; needs a squelch gate)
+      --squelch string            mute below this level: auto (default with a squelch gate), off, or a level like -40 (dBFS)
+      --stop-after-quiet string   stop recording after this long with nothing on the air, e.g. 10m (needs a squelch gate)
       --take-over                 record even when somebody is using the radio; it is theirs again afterwards
 
 Global Flags:

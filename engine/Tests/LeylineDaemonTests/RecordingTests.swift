@@ -445,6 +445,43 @@ final class RecordingTests: XCTestCase {
         XCTAssertTrue(again.isEmpty)
     }
 
+    /// A request that names no gate is gated for NFM and AM with the squelch on, and continuous
+    /// for everything else.
+    func testTheDefaultGateIsASquelchOnlyForNFMAndAMWithASquelch() {
+        XCTAssertEqual(JobStore.defaultGate(mode: .nfm, squelchOn: true), .squelch)
+        XCTAssertEqual(JobStore.defaultGate(mode: .am, squelchOn: true), .squelch)
+        XCTAssertEqual(JobStore.defaultGate(mode: .nfm, squelchOn: false), .none)
+        XCTAssertEqual(JobStore.defaultGate(mode: .wfm, squelchOn: true), .none)
+        XCTAssertEqual(JobStore.defaultGate(mode: .usb, squelchOn: true), .none)
+        XCTAssertEqual(JobStore.defaultGate(mode: nil, squelchOn: true), .none, "raw IQ has no channel")
+    }
+
+    /// A recording with no part whose job is not running predates the "Nothing heard" discard and
+    /// is listed by nothing; the start sweep removes it and leaves one that holds a part, and one
+    /// whose job is running.
+    func testTheStartSweepRemovesRecordingsWithNoPart() async throws {
+        let dir = try tempDir("recordings-sweep")
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let store = RecordingStore(directory: dir, capBytes: 1 << 30, ageDays: 0)
+        let empty = JobID(), running = JobID(), heard = JobID()
+        for id in [empty, running, heard] {
+            let writer = try await store.open(job: id, manifest: manifest(jobID: id.string),
+                                              captureID: "cap_x", centerHz: 146_520_000)
+            if id == heard {
+                await writer.openPart(at: 0)
+                await writer.append(audio: [Float](repeating: 0.25, count: 4800))
+                await writer.closePart(endSample: 480_000)
+            }
+            await writer.finish(endedBy: "cancelled", endSample: 480_000)
+        }
+        let swept = await store.sweepEmpty(keeping: [running.string])
+        XCTAssertEqual(swept, [empty.string])
+        let fm = FileManager.default
+        XCTAssertFalse(fm.fileExists(atPath: dir + "/" + empty.string))
+        XCTAssertTrue(fm.fileExists(atPath: dir + "/" + running.string), "a running job's recording stays")
+        XCTAssertTrue(fm.fileExists(atPath: dir + "/" + heard.string), "a recording with a part stays")
+    }
+
     /// A gated recording the last daemon left before its squelch ever opened holds no part; the
     /// repair discards it, as a job ending under a running daemon would.
     func testARecordingLeftOpenThatHeardNothingIsDiscardedAtRepair() async throws {

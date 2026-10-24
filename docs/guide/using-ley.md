@@ -701,11 +701,13 @@ gain that did not apply shows before the file does. A stage the radio does not h
 before anything is written: `ley: the gain asked for could not be set: no gain element named IF;
 this radio's are LNA, VGA and AMP [GAIN_ELEMENT_UNKNOWN]`.
 
-Recording a busy channel continuously fills a disk with silence, so `--gate squelch` records only
-while something is on the air, one file per transmission:
+Recording a busy channel continuously fills a disk with silence, so `ley record` of an NFM or AM
+channel with a squelch records only while something is on the air, one file per transmission
+(`--gate squelch`, which the daemon picks when you name no gate). WFM, IQ and `--squelch off`
+record continuously, and `--gate none` asks for that on any channel. The `Gate` line says which:
 
 ```console
-$ ley record 146.52 --gate squelch --stop-after-quiet 10m --detach
+$ ley record 146.52 --stop-after-quiet 10m --detach
 Recording 146.520 MHz (NFM, 2 m amateur)
 Writing   audio WAV, 48 kHz mono
 Gate      squelch, 500 ms pre-roll, 500 ms hang, below -92 dBFS is silence
@@ -791,7 +793,7 @@ directory in Finder does the same as `delete`, and the daemon does not need to b
 `ley records --protocol speech` reads back later. The daemon reads the stored parts faster than
 real time and sends a speech decoder only the audio around each over, so before it starts,
 `transcribe` states how many minutes of squelch-open audio that is and where it goes, and asks.
-`--yes` skips the question. A recording made without `--gate squelch` lists no overs and has
+`--yes` skips the question. A recording made without a squelch gate (`--gate none`, or WFM) lists no overs and has
 nothing to transcribe. This was recorded against the fake daemon, with its words seeded:
 
 ```console

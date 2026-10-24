@@ -421,11 +421,15 @@ actor JobStore {
     }
 
     /// Repairs whatever the last daemon left half-written, at boot (docs/design/recording.md,
-    /// "Retune, detach and restart"), and brings the store back inside its cap.
+    /// "Retune, detach and restart"), removes recordings with no part, and brings the store back inside its cap.
     func repairRecordings() async {
         let closed = await recordings.repairUnfinished()
         if !closed.isEmpty {
             log.info("closed \(closed.count) recording(s) the last daemon was still writing: ended by a daemon restart")
+        }
+        let empty = await recordings.sweepEmpty()
+        if !empty.isEmpty {
+            log.info("removed \(empty.count) recording(s) with no part")
         }
         await recordings.retain()
     }

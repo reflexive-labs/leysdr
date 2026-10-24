@@ -190,6 +190,20 @@ actor RecordingStore {
         return repaired
     }
 
+    /// Removes the recordings that hold no part and whose job is not running: the directories made
+    /// before a job that heard nothing was discarded (docs/design/recording.md, "Nothing heard"),
+    /// which nothing lists and nothing else removes. Runs at daemon start; returns the job ids.
+    @discardableResult
+    func sweepEmpty(keeping running: Set<String> = []) -> [String] {
+        var swept: [String] = []
+        for entry in entries() where entry.manifest.parts.isEmpty && !running.contains(entry.manifest.jobID) {
+            log.info("dropping \(entry.path): a recording with no part, left from before empty recordings were discarded")
+            try? FileManager.default.removeItem(atPath: entry.path)
+            swept.append(entry.manifest.jobID)
+        }
+        return swept
+    }
+
     // MARK: The directory
 
     private struct Entry {

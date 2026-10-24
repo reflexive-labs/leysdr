@@ -395,8 +395,10 @@ func TestExitCodesUsage(t *testing.T) {
 		{[]string{"spectrum", "146,52"}, "is not a frequency"},
 		// record is a real verb now (C.12): its positional and flags are parsed here.
 		{[]string{"record"}, "record needs a frequency or preset"},
-		{[]string{"record", "146.52", "--gate", "sideways"}, "is not a gate; squelch is the one there is"},
-		{[]string{"record", "146.52", "--hang", "5s"}, "--hang needs --gate squelch"},
+		{[]string{"record", "146.52", "--gate", "sideways"}, "is not a gate; squelch and none are the two there are"},
+		{[]string{"record", "146.52", "--gate", "none", "--hang", "5s"}, "--hang needs --gate squelch"},
+		{[]string{"record", "88.5", "--hang", "5s"}, "--hang needs --gate squelch"},
+		{[]string{"record", "146.52", "--squelch", "off", "--stop-after-quiet", "5m"}, "--stop-after-quiet needs --gate squelch"},
 		{[]string{"record", "146.52", "--iq", "--gate", "squelch"}, "--iq and --gate squelch do not go together"},
 		{[]string{"record", "146.52", "--iq", "--mode", "nfm"}, "--mode has nothing to decode"},
 		{[]string{"recordings", "--kind", "video"}, "is not a kind of recording"},
