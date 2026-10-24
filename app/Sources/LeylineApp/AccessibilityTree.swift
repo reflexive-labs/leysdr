@@ -123,6 +123,14 @@ extension View {
             return AXWalk.press(identifier, TreeTarget(window))
         }
 
+        /// Increments (`up`) or decrements the first adjustable element whose identifier is
+        /// `identifier`, as VoiceOver's do. Answers why not.
+        static func adjust(_ identifier: String, up: Bool, in window: NSWindow) -> PressRefusal? {
+            AXWalk.press(
+                identifier, TreeTarget(window), action: up ? kAXIncrementAction : kAXDecrementAction
+            )
+        }
+
         /// Chooses `item` by its title in the pop-up or segmented control with that identifier, as
         /// a person's choice from its menu would, without opening the menu (whose tracking loop
         /// would hold the command file until it closed). Answers why not.
@@ -200,8 +208,15 @@ extension View {
     extension TreeNode {
         func string(_ name: String) -> String? { attribute(name) as? String }
         func bool(_ name: String) -> Bool? { (attribute(name) as? NSNumber)?.boolValue }
+        /// The value as VoiceOver reads it: a slider's description of its value where it gives one
+        /// (the band rail's thumb, `144.0 to 148.0 MHz`), else the value itself.
         var value: String? {
-            switch attribute(kAXValueAttribute) {
+            if string(kAXRoleAttribute) == kAXSliderRole,
+                let words = string(kAXValueDescriptionAttribute), !words.isEmpty
+            {
+                return words
+            }
+            return switch attribute(kAXValueAttribute) {
             case let s as String: s
             case let a as NSAttributedString: a.string
             case let n as NSNumber: n.stringValue
@@ -287,6 +302,7 @@ extension View {
             case kAXDescriptionAttribute: return o.accessibilityLabel?() ?? nil
             case kAXTitleAttribute: return o.accessibilityTitle?() ?? nil
             case kAXValueAttribute: return o.accessibilityValue?() ?? nil
+            case kAXValueDescriptionAttribute: return o.accessibilityValueDescription?() ?? nil
             case kAXHelpAttribute: return o.accessibilityHelp?() ?? nil
             case kAXEnabledAttribute:
                 // The API gives an enabled state only for the roles that have one; the others read
@@ -370,6 +386,13 @@ extension View {
         var size: CGSize? { screenFrame?.size }
 
         func perform(_ action: String) -> Bool {
+            // An adjustable element's increment and decrement, answered as a press is.
+            if action == kAXIncrementAction {
+                return object.accessibilityPerformIncrement?() != nil
+            }
+            if action == kAXDecrementAction {
+                return object.accessibilityPerformDecrement?() != nil
+            }
             // A text field has no press (its focus stands for one); anything else that answers the
             // message has been pressed, whatever it answers: an AppKit button answers false.
             guard action == kAXPressAction,
@@ -507,15 +530,19 @@ extension View {
             return lines.joined(separator: "\n") + "\n"
         }
 
-        static func press(_ identifier: String, _ target: TreeTarget) -> PressRefusal? {
+        static func press(
+            _ identifier: String, _ target: TreeTarget, action: String = kAXPressAction
+        ) -> PressRefusal? {
             do {
-                return try withRoot(target) { root in press(identifier, root) }
+                return try withRoot(target) { root in press(identifier, root, action: action) }
             } catch {
                 return PressRefusal("\(error)")
             }
         }
 
-        private static func press<N: TreeNode>(_ identifier: String, _ root: N) -> PressRefusal? {
+        private static func press<N: TreeNode>(_ identifier: String, _ root: N, action: String)
+            -> PressRefusal?
+        {
             // `alert.<title>` is a button of the sheet over the window, by its title slugged: an
             // alert's buttons carry no identifier of the app's.
             var start = root
@@ -558,6 +585,11 @@ extension View {
             // A disabled element answers a press as if it took it, through either reading, so a
             // check that presses a dead button is told so rather than passing.
             if found.bool(kAXEnabledAttribute) == false { return .disabled(identifier) }
+            // An increment or a decrement is that action or nothing.
+            if action != kAXPressAction {
+                return found.perform(action)
+                    ? nil : PressRefusal("\(identifier) refused the \(action)")
+            }
             // A text field is focused rather than pressed, through either reading: the API may
             // answer a press on one as done without focusing it.
             let field = [kAXTextFieldRole, kAXTextAreaRole].contains(found.string(kAXRoleAttribute))

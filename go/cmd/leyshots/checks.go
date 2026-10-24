@@ -336,7 +336,7 @@ func (c *AppCommand) validate(path func(string) string) error {
 		need = []string{"keys"}
 	case "type":
 		need = []string{"text"}
-	case "press":
+	case "press", "increment", "decrement":
 		need = []string{"identifier"}
 	case "pick":
 		need = []string{"identifier", "text"}

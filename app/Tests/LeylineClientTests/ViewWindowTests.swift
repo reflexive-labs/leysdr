@@ -239,6 +239,40 @@ final class ViewWindowTests: XCTestCase {
             ViewWindow.fit(lowHz: 1, highHz: 2, centerHz: 146_000_000, sampleRate: 0, bins: 2048))
     }
 
+    /// The thumb's increment and decrement move the view a tenth of its span by the drag's
+    /// rules: held in the band, and the capture pushed only past its edge.
+    func testAStepOfTheThumbIsATenthOfTheSpanAsADrag() {
+        let up = ViewWindow.stepped(
+            viewCentreHz: 146_520_000, up: true, spanHz: 2_002_500,
+            captureCentreHz: Int64(wideCentre), sampleRate: wideRate, within: twoMetres)
+        XCTAssertEqual(up.viewCentreHz, 146_720_250)
+        XCTAssertEqual(up.captureCentreHz, Int64(wideCentre), "no retune inside the capture")
+        let down = ViewWindow.stepped(
+            viewCentreHz: 146_720_250, up: false, spanHz: 2_002_500,
+            captureCentreHz: Int64(wideCentre), sampleRate: wideRate, within: twoMetres)
+        XCTAssertEqual(down.viewCentreHz, 146_520_000)
+        // Held at the band's edge, as a drag is.
+        let held = ViewWindow.stepped(
+            viewCentreHz: 147_000_000, up: true, spanHz: 2_000_000,
+            captureCentreHz: Int64(wideCentre), sampleRate: wideRate, within: twoMetres)
+        XCTAssertEqual(held.viewCentreHz, 147_000_000)
+        // An RTL capture the view fills: a step up pushes the capture with the view, which stops
+        // at the band's top (146.56 MHz, half of 2.88 below 148).
+        let pushed = ViewWindow.stepped(
+            viewCentreHz: Int64(rtlCentre), up: true, spanHz: rtlRate,
+            captureCentreHz: Int64(rtlCentre), sampleRate: rtlRate, within: twoMetres)
+        XCTAssertEqual(pushed.viewCentreHz, 146_560_000)
+        XCTAssertEqual(pushed.captureCentreHz, 146_560_000)
+    }
+
+    func testTheThumbsValueIsTheViewInWords() {
+        XCTAssertEqual(ViewWindow.valueWords(143_997_500...148_002_500), "144.0 to 148.0 MHz")
+        XCTAssertEqual(ViewWindow.valueWords(145_719_000...147_721_500), "145.7 to 147.7 MHz")
+        XCTAssertEqual(ViewWindow.valueWords(146_191_875...146_848_125), "146.19 to 146.85 MHz")
+        XCTAssertEqual(ViewWindow.valueWords(146_475_000...146_565_000), "146.475 to 146.565 MHz")
+        XCTAssertEqual(ViewWindow.valueWords(146_520_000...146_530_000), "146.5200 to 146.5300 MHz")
+    }
+
     func testTheSpanIsWordedForTheZoomHelp() {
         XCTAssertEqual(ViewWindow.spanWords(2_000_000), "2 MHz")
         XCTAssertEqual(ViewWindow.spanWords(2_880_000), "2.88 MHz")

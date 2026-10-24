@@ -249,6 +249,12 @@ import LeylineClient
                         if why == nil || why?.disabled == true { break }
                     }
                     return ControlAnswer(id: c.id, ok: why == nil, error: why?.description ?? "")
+                case .adjust(let identifier, let up):
+                    guard let window = staging.window else { return noWindow }
+                    await AccessibilityTree.ready(window)
+                    let why = AccessibilityTree.adjust(identifier, up: up, in: window)
+                    try? await Task.sleep(for: .milliseconds(Self.keySettleMilliseconds))
+                    return ControlAnswer(id: c.id, ok: why == nil, error: why?.description ?? "")
                 case .pick(let identifier, let item):
                     guard let window = staging.window else { return noWindow }
                     var why: String?

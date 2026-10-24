@@ -142,7 +142,7 @@ struct BandRail: View {
         let thumb = session.railThumb
         let capture = captureRange
         let tuned = session.displayHz
-        let words = session.visibleRange.map(Self.rangeWords)
+        let words = session.visibleRange.map(ViewWindow.valueWords)
         let hits = session.sweepHits
         GeometryReader { geo in
             let w = geo.size.width
@@ -167,9 +167,21 @@ struct BandRail: View {
                         thumb, width: w, height: Self.pillHeight, fill: Theme.selected,
                         stroke: Theme.borderFocus
                     )
-                    .accessibilityElement()
-                    .accessibilityLabel("View")
-                    .accessibilityValue(words ?? "")
+                    // A slider to accessibility: VoiceOver reads the view (`144.0 to 148.0 MHz`)
+                    // and its increment and decrement pan it a tenth of its span, as a drag would.
+                    // A shape alone is an AXUnknown whose value nothing reads.
+                    .accessibilityRepresentation {
+                        Slider(value: .constant(0.5), in: 0...1)
+                            .accessibilityLabel("View")
+                            .accessibilityValue(words ?? "")
+                            .accessibilityAdjustableAction { direction in
+                                switch direction {
+                                case .increment: adjust(up: true)
+                                case .decrement: adjust(up: false)
+                                @unknown default: break
+                                }
+                            }
+                    }
                     .accessibilityIdentifier("rail.thumb")
                 }
                 // The plan's channels inside the part, for a plan of `Plans.tickLimit` or fewer:
@@ -227,13 +239,6 @@ struct BandRail: View {
                     .onEnded { v in ended(v, width: w, ticks: ticks) })
         }
         .identifiedGroup("rail.track")
-    }
-
-    /// `145.520 to 147.520 MHz`: the thumb's value to accessibility.
-    private static func rangeWords(_ r: ClosedRange<UInt64>) -> String {
-        let lo = Frequency.fieldParts(r.lowerBound).major
-        let hi = Frequency.fieldParts(r.upperBound).major
-        return "\(lo) to \(hi) MHz"
     }
 
     /// The ticks on the rail, read in `body`.
@@ -396,6 +401,23 @@ struct BandRail: View {
         }
         if d.pushed != d.startCapture {
             session.pan(centreTo: d.pushed, ended: ended)
+        }
+    }
+
+    /// The thumb's increment or decrement: the view a tenth of its span up or down
+    /// (`ViewWindow.stepped`), and past the capture's edge the capture pushed and released at
+    /// once, as a drag that ends there.
+    private func adjust(up: Bool) {
+        guard let cap = session.capture, let r = session.visibleRange else { return }
+        let capture = session.panCentre ?? Int64(cap.centerHz)
+        let moved = ViewWindow.stepped(
+            viewCentreHz: Int64(r.lowerBound + (r.upperBound - r.lowerBound) / 2), up: up,
+            spanHz: r.upperBound - r.lowerBound, captureCentreHz: capture,
+            sampleRate: cap.sampleRate, within: session.band.map { $0.minHz...$0.maxHz })
+        session.moveView(centreTo: moved.viewCentreHz)
+        log("rail", "view stepped \(up ? "up" : "down") to centre \(moved.viewCentreHz) Hz")
+        if moved.captureCentreHz != capture {
+            session.pan(centreTo: moved.captureCentreHz, ended: true)
         }
     }
 

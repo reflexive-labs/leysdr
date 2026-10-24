@@ -194,6 +194,39 @@ public enum ViewWindow {
         return Drag(viewCentreHz: d, captureCentreHz: c)
     }
 
+    /// A step of the thumb from accessibility (VoiceOver's increment and decrement): the view
+    /// moves a tenth of its span up (`up`) or down, by the same rules as a drag (`dragged`), so
+    /// it retunes nothing until it would pass the capture's edge.
+    public static func stepped(
+        viewCentreHz: Int64, up: Bool, spanHz: UInt64, captureCentreHz: Int64,
+        sampleRate: UInt64, within band: ClosedRange<UInt64>? = nil
+    ) -> Drag {
+        let tenth = Int64(min(spanHz, sampleRate) / 10)
+        return dragged(
+            viewCentreHz: viewCentreHz, byHz: up ? tenth : -tenth, spanHz: spanHz,
+            captureCentreHz: captureCentreHz, sampleRate: sampleRate, within: band)
+    }
+
+    /// The thumb's value to accessibility, the view as a person says it: `144.0 to 148.0 MHz`.
+    /// Each end is rounded to the fewest decimals (one to four) whose last digit is no more than
+    /// a twentieth of the span, so a fitted 2 m reads `144.0 to 148.0 MHz` although the fit's
+    /// padding puts its ends at 143.9975 and 148.0025, and the narrowest view keeps the digits
+    /// that tell it from its neighbour (`146.475 to 146.565 MHz`).
+    public static func valueWords(_ r: ClosedRange<UInt64>) -> String {
+        let span = r.upperBound - r.lowerBound
+        var places = 1
+        while places < 4, unitHz(places) * 20 > span { places += 1 }
+        let f = { (hz: UInt64) in String(format: "%.\(places)f", Double(hz) / 1e6) }
+        return "\(f(r.lowerBound)) to \(f(r.upperBound)) MHz"
+    }
+
+    /// The last digit's worth at `places` decimals of a megahertz, in hertz.
+    private static func unitHz(_ places: Int) -> UInt64 {
+        var u: UInt64 = 1_000_000
+        for _ in 0..<places { u /= 10 }
+        return u
+    }
+
     /// The span in words for the zoom buttons' help: `2 MHz`, `2.88 MHz`, `720 kHz`, `90 kHz`.
     public static func spanWords(_ hz: UInt64) -> String {
         if hz >= 1_000_000 { return trimmed(Double(hz) / 1_000_000, places: 2) + " MHz" }

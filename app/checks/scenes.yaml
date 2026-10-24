@@ -1441,7 +1441,8 @@ scenes:
   # channel, and the spectrum's edge marker then names the tuned channel off the view's right
   # edge; pressing it brings the view back and tunes nothing. The zoom steps report their spans
   # down to the narrowest the 2048 bins allow and up to the whole capture, where the thumb is
-  # the band and the view is wider. The rail's width (708 points at 1440) puts 400 points of
+  # the band and the view is wider. The thumb's increment and decrement, VoiceOver's, pan the
+  # view a tenth of its span each. The rail's width (708 points at 1440) puts 400 points of
   # travel past the band's edge.
   - name: rail-wide
     covers: [BandRailView.swift, SpectrumView.swift, ViewWindow.swift]
@@ -1461,6 +1462,13 @@ scenes:
       - {cmd: press, identifier: rail.zoom.in}
       - {cmd: state, expect: {view.span_hz: 2002500, view.lo_hz: 145518750, view.hi_hz: 147521250, view.thumb_lo_hz: 145518750, view.thumb_hi_hz: 147521250}}
       - {cmd: ax, name: zoomed}
+      # The thumb is adjustable: VoiceOver's increment pans the view a tenth of its span up,
+      # and its decrement back, with no retune.
+      - {cmd: increment, identifier: rail.thumb}
+      - {cmd: state, expect: {tuned_hz: 146520000, view.lo_hz: 145719000, view.hi_hz: 147721500, capture.lo_hz: 142700000}, expect_log: ['view stepped up to centre 146720250 Hz', '!pan capture']}
+      - {cmd: ax, name: stepped}
+      - {cmd: decrement, identifier: rail.thumb}
+      - {cmd: state, expect: {tuned_hz: 146520000, view.lo_hz: 145518750, view.hi_hz: 147521250}, expect_log: 'view stepped down'}
       - {cmd: drag, identifier: rail.thumb, dx: -400}
       - {cmd: wait, seconds: 1, expect_log: "!pan capture"}
       - {cmd: state, expect: {tuned_hz: 146520000, bookmark: Calling, view.lo_hz: 144000000, view.hi_hz: 146002500, view.thumb_lo_hz: 144000000, view.thumb_hi_hz: 146002500, view.edge: "146.520 ▸", capture.lo_hz: 142700000, capture.hi_hz: 163700000}}

@@ -1611,6 +1611,11 @@ Found by the ML-9d scenes' second half (2026-10-22), not fixed on the spot:
   no value, although the view sets the range it covers as its accessibility value (`rail.thumb
   "View"` in `rail-wide` and `rail-rtl`). VoiceOver therefore has no words for where the view
   is. Give the thumb a role that carries a value (an adjustable element whose increments pan)?
+  The owner's answer: yes. The thumb is now an `AXSlider` labelled `View` whose value reads the
+  view (`144.0 to 148.0 MHz`, `ViewWindow.valueWords`), and its increment and decrement pan the
+  view a tenth of its span by a drag's rules (`ViewWindow.stepped`); `rail-wide` steps it with
+  the command file's new `increment` and `decrement`. The tree reads a slider's value
+  description where it has one, as VoiceOver does.
 - Batch 3's verify loop: a merged row takes its first entry by name when the entries share a
   frequency (MC-6's ties by name), so the CHIRP import in `merged-bookmarks` reads `Club net +1`
   where MC-5's example reads `Club repeater +1`. Should the first entry be the file's first, or

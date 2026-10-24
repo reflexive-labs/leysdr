@@ -71,6 +71,15 @@ final class AppControlTests: XCTestCase {
             parse(#"{"id":7,"cmd":"press","identifier":"transport.play"}"#),
             .command(.init(id: 7, action: .press(identifier: "transport.play"))))
         XCTAssertEqual(
+            parse(#"{"id":25,"cmd":"increment","identifier":"rail.thumb"}"#),
+            .command(.init(id: 25, action: .adjust(identifier: "rail.thumb", up: true))))
+        XCTAssertEqual(
+            parse(#"{"id":26,"cmd":"decrement","identifier":"rail.thumb"}"#),
+            .command(.init(id: 26, action: .adjust(identifier: "rail.thumb", up: false))))
+        XCTAssertEqual(
+            parse(#"{"id":27,"cmd":"increment"}"#),
+            .refused(id: 27, reason: "increment needs an identifier"))
+        XCTAssertEqual(
             parse(
                 #"{"id":24,"cmd":"pick","identifier":"settings.ai.usage.period","text":"By month"}"#
             ),

@@ -138,6 +138,8 @@ public struct ControlCommand: Sendable, Equatable {
         case key(KeyChord)
         case type(String)
         case press(identifier: String)
+        /// An adjustable element's increment (`up`) or decrement, as VoiceOver's are.
+        case adjust(identifier: String, up: Bool)
         /// Chooses an item of a pop-up or segmented control by its title.
         case pick(identifier: String, item: String)
         /// Rests the pointer on an element or a point; `state.tooltip` then says what shows.
@@ -275,6 +277,11 @@ public struct ControlCommand: Sendable, Equatable {
                 return .failure(Refusal(reason: "press needs an identifier"))
             }
             return .success(.press(identifier: identifier))
+        case "increment", "decrement":
+            guard let identifier = line.identifier, !identifier.isEmpty else {
+                return .failure(Refusal(reason: "\(cmd) needs an identifier"))
+            }
+            return .success(.adjust(identifier: identifier, up: cmd == "increment"))
         case "pick":
             guard let identifier = line.identifier, !identifier.isEmpty, let item = line.text,
                 !item.isEmpty
