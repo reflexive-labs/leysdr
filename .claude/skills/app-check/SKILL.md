@@ -25,7 +25,7 @@ app-check`'s build.
 |---|---|---|
 | smoke | `make app-check-smoke` | the scenes marked `smoke: true`: radio-2m, identifiers, goto-bookmark (about 35 s) |
 | targeted | `make app-check-affected` (`BASE=<ref>`) | the scenes whose `covers:` match a file changed under `app/Sources` or `app/checks`, or `app/Package.swift`, since the merge base with main, uncommitted and untracked files included; a shared file (`Theme.swift`, `AppSession.swift`, `Staging.swift`, the control code, `Package.swift`, the file's `shared:` list) brings in the smoke scenes as well. `make app-check ONLY=a,b` still vets one feature by name |
-| full | `make app-check` | every scene (about 12 minutes on 2026-10-22); `JOBS=N` runs N side by side, the `serial: true` scenes (vhf-wide, the sweeps) alone. Leave it at 1 until runs at 3 show no flakes |
+| full | `make app-check JOBS=3` | every scene, three side by side and the `serial: true` scenes (vhf-wide, the sweeps) alone: about 6 minutes, against about 13 at the default one job (two clean runs in a row at 3 on 2026-10-23) |
 
 The targeted tier prints, before its lines, `since <commit>: …`, one `affected <scene>: <files>`
 line per scene and `uncovered: <file>` for a changed file no scene covers. It never passes

@@ -355,7 +355,7 @@ would replace the person's own.
 |---|---|---|
 | smoke | `make app-check-smoke` | the scenes marked `smoke: true`: radio-2m, identifiers, goto-bookmark (about 35 s) |
 | targeted | `make app-check-affected` (`BASE=<ref>`) | the scenes whose hand-written `covers:` globs match a file changed since the merge base with main, uncommitted ones included, and the commit before when that base is HEAD and nothing has changed since; a shared file (`Theme.swift`, `AppSession.swift`, `Staging.swift`, the control code, `app/Package.swift`) brings in the smoke scenes plus the scenes that list it. A changed file no scene covers prints `uncovered: <file>` and fails the run, and a selection of no scene is an error. `make app-check ONLY=a,b` still vets one feature by name |
-| full | `make app-check` | everything (about 12 minutes on 2026-10-22); with `JOBS=N` (1 until runs at 3 show no flakes) scenes run side by side, except those marked `serial: true` (vhf-wide, the sweeps) |
+| full | `make app-check JOBS=3` | everything, three scenes side by side except those marked `serial: true` (vhf-wide, the sweeps): about 6 minutes, against about 13 at the default one job (two clean runs in a row at 3 on 2026-10-23) |
 
 Each run is under `caffeinate -i`, every scene prints its time, and the summary line gives the
 total and the three slowest. A test fails when a file under `app/Sources`, the façade's
