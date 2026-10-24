@@ -334,9 +334,8 @@ recording is kept, and nothing offers to play what is not on disk. The log's hea
 Record transmissions switch. On starts `Jobs.StartJob` in the frequency form of `RecordConfig`,
 gated by squelch, with the tuned channel's frequency, mode, width and squelch copied
 (`Recordings.config`) and a hang and pre-roll of 500 ms each (`windowHangMs`, `windowPreRollMs`),
-so each transmission is its own part: the daemon's default 5 s hang folded a simplex exchange of
-four overs into one part on a real radio, and `ley record` keeps that
-default; off is `CancelJob`; the job owns its channel and outlives the window. The
+so each transmission is its own part, as `ley record`'s default hang now makes each
+one too; off is `CancelJob`; the job owns its channel and outlives the window. The
 switch shows `Recordings.activeJob`, the running or degraded record job on the tuned channel's
 frequency and mode in the mirror's `jobs`, whoever started it, and keeps only a click until that
 job's event arrives (`recordSwitchOn`); File ▸ Record Transmissions (⌘R) is the same switch.

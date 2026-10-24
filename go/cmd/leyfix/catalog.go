@@ -159,10 +159,10 @@ var defaultFixtures = []fixture{
 	{
 		// Three transmissions with silence between them: the fixture a gated
 		// recording is graded against (docs/design/recording.md, "Testing
-		// without hardware"). The gaps are 3.0 s, which is inside the default
-		// 5 s hang and outside a 1 s one, so the same file proves both rules --
-		// an exchange keeps its overs in one part, and a short hang cuts one
-		// part per transmission.
+		// without hardware"). The gaps are 3.0 s, which is outside the default
+		// 500 ms hang and inside a 5 s one, so the same file proves both rules --
+		// the default cuts one part per transmission, and a long hang keeps an
+		// exchange's overs in one part.
 		name: "nfm_keyed", centerHz: 146_520_000,
 		description:    "NFM 1 kHz tone at +100 kHz keyed for 1.0 s, 0.5 s and 2.0 s with 3.0 s of floor between",
 		metadata:       map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},

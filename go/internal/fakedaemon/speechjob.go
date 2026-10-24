@@ -259,7 +259,7 @@ func speechSegments(dir string, m *leyline.RecordingManifest, in *leylinev1.Deco
 }
 
 // openClipsLocked starts the gated recording a live speech job writes under its own id: the
-// record job's own files and manifest, with the recorder's 500 ms pre-roll and 5 s hang, listed by
+// record job's own files and manifest, with the recorder's 500 ms pre-roll and 500 ms hang, listed by
 // `ley recordings` while the job runs. Caller holds the lock.
 func (d *Daemon) openClipsLocked(j *fakeJob, hz uint64, mode leylinev1.DemodMode) error {
 	rec, err := d.openRecordingLocked(j, &leylinev1.RecordConfig{Mode: mode, Gate: leylinev1.RecordGate_SQUELCH}, hz, false, true)

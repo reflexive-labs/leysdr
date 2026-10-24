@@ -204,7 +204,7 @@ func scene2mCarriers() []sceneCarrier {
 }
 
 // The scene_net schedule: eight overs of 4 to 30 s with 6 to 8 s between them, so a gated
-// recording with the default 5 s hang cuts one part per over. The 3 s before the first and 4 s
+// recording with the default 500 ms hang cuts one part per over. The 3 s before the first and 4 s
 // after the last make the gap at the loop's join 7 s as well.
 var sceneNetOvers = []keySegment{
 	{3, 15}, {22, 26}, {32, 54}, {62, 70}, {76.5, 106.5}, {114, 120}, {126, 142}, {149, 159},

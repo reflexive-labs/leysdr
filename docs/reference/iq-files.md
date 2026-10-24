@@ -96,7 +96,7 @@ and the channelizer's NCO are exercised.
 | `nfm_dcs` | NFM voice plus DCS 023 normal at 550 Hz deviation, no CTCSS | detect DCS 023, not inverted |
 | `nfm_dcs_inverted` | NFM voice plus DCS 023 sent inverted | detect DCS 047, not inverted: the same bit stream |
 | `nfm_dcs_754` | NFM voice plus DCS 754 normal | detect DCS 754, not 076 or 203 |
-| `nfm_keyed` | the `nfm_tone` carrier keyed for 1.0 s, 0.5 s and 2.0 s with 3.0 s of floor between and 1.0 s before the first | a gated recording: `record.segments` states the three transmissions. Always generated at its own length (10.5 s) whatever `--duration` says, because the timing is what the fixture tests: the 3 s gaps are inside the recorder's default 5 s hang and outside a 1 s one, so one file tests both rules |
+| `nfm_keyed` | the `nfm_tone` carrier keyed for 1.0 s, 0.5 s and 2.0 s with 3.0 s of floor between and 1.0 s before the first | a gated recording: `record.segments` states the three transmissions. Always generated at its own length (10.5 s) whatever `--duration` says, because the timing is what the fixture tests: the 3 s gaps are outside the recorder's default 500 ms hang and inside a 5 s one, so one file tests both rules |
 
 ### The sub-audible set
 
