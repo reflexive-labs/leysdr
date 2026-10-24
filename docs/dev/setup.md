@@ -72,6 +72,26 @@ install`) refuses before it stops anything; switch Leyline off in System Setting
 Login Items & Extensions and run it again. To go back to the app's daemon, run `ley daemon
 uninstall` and open the app.
 
+### Test and check daemons
+
+A test, a check scene or an eval runs on a Mac where a person may be using their own app, daemon,
+keys and radio, so these rules hold for people and agents alike:
+
+- **Every test or check daemon is hermetic.** It runs `--no-hardware --secrets file --data <tmp>`
+  (in-process, the same settings) on a socket of its own. `go/internal/daemonrun`,
+  `app/Tests/LeylineClientDaemonTests/DaemonHarness.swift` and
+  `engine/Tests/LeylineDaemonTests/DaemonTestHarness.swift` start daemons that way; `daemonrun`
+  refuses one that names the keychain, and the engine's harness also one on the default
+  directories.
+- **Nothing touches the person's setup.** No test uses the default socket, `launchctl`, the login
+  keychain or a real radio.
+- **Tests run in the foreground.** An agent that waits on a test it started in the background can
+  stall until it is interrupted.
+- **Stop only the processes you started, by pid.** Never `pkill` or `killall` the app or the daemon
+  by name: that stops the person's own.
+- **Give each daemon its own socket path.** A daemon removes its socket file when it stops, even
+  when another daemon has since bound that path, which leaves the second one unreachable.
+
 Something not working on the Mac (no radio listed, a busy dongle, no audio)?
 [Troubleshooting](../guide/troubleshooting.md).
 
