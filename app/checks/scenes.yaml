@@ -617,7 +617,7 @@ scenes:
       - {cmd: state, expect: {tuned_hz: 146520000, mode: NFM, bandwidth_hz: 12500, bookmark: Calling, hits.0: calling, hits.1: 146.940 MHz, hits.4: 145.230 MHz}}
       - {cmd: snapshot, name: hits, mask: [spectrum, waterfall, readings, transmissions, log_day, heard, sidebar]}
       - {cmd: press, identifier: sidebar.hit.146-940-mhz.add}
-      - {cmd: wait, seconds: 1}
+      - {cmd: wait, seconds: 3}
       - {cmd: state, expect: {tuned_hz: 146520000, focused: "AXUnknown \"Name\""}}
 
   # The assistant with no AI provider set up (docs/plans/app.md, the assistant panel, K1): the
