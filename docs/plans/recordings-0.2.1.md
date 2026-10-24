@@ -56,5 +56,5 @@ lists the changes to it and the work, with `[ ]` items still open. Written 2026-
   only the missing overs moved to a later release.
 - [x] R4. `ley record` gates NFM and AM by default; the daemon's start sweep removes recording
   directories with no parts whose job is not running.
-- [ ] R5. CHANGELOG, recording.md and the guide pages brought up to date; one full `make
+- [x] R5. CHANGELOG, recording.md and the guide pages brought up to date; one full `make
   app-check JOBS=3`.
