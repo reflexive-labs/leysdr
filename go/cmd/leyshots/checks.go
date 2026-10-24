@@ -53,6 +53,9 @@ type CheckScene struct {
 	Threshold *float64 `yaml:"threshold"`
 	// AI puts the assistant on a scripted model, with a made-up key (ai.go).
 	AI *AISetup `yaml:"ai"`
+	// Speech makes the scene's speech decoder the scripted engine, as a site scene's speech
+	// does (speech.go).
+	Speech *SpeechSetup `yaml:"speech"`
 	// SweepDwell is the dwell in seconds of a scan on the scene's file radio when it asks for less
 	// (leylined --file-scan-dwell): its one step lasts about that long, so a sweep in progress can
 	// be seen and stopped. 0 leaves the scan's own.
@@ -279,6 +282,11 @@ func (s *CheckScene) validate(path func(string) string) error {
 	}
 	if s.AI != nil {
 		if err := s.AI.validate(path); err != nil {
+			return err
+		}
+	}
+	if s.Speech != nil {
+		if err := s.Speech.validate(path); err != nil {
 			return err
 		}
 	}

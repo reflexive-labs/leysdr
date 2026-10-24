@@ -263,6 +263,12 @@ func cmdCheck(ctx context.Context, args []string, stdout io.Writer) error {
 				return nil, err
 			}
 		}
+		if s.Speech != nil {
+			var err error
+			if in.speech, err = s.Speech.stub(f.Path); err != nil {
+				return nil, err
+			}
+		}
 		sr, err := startScene(ctx, o.runOptions, in, run)
 		if err != nil {
 			return nil, err

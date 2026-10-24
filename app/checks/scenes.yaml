@@ -81,6 +81,10 @@
 # key is added for P (default anthropic) and M chosen (default the provider's); key: false adds
 # none. Nothing reaches a provider, and the key lives in the scene daemon's own data directory.
 #
+# speech: {script: ../../site/shots/net-speech.txt} makes the daemon's speech decoder the scripted
+# engine replaying the file, one line an over, as a site scene's speech does: `ley transcribe`
+# gives its words with no key and nothing sent anywhere.
+#
 # sweep_dwell: S makes a scan on the scene's file radio dwell S seconds (leylined
 # --file-scan-dwell): a file radio sweeps in one step, which otherwise ends in a quarter of a
 # second, too soon to see the sweep or stop it.
@@ -1696,6 +1700,34 @@ scenes:
     app:
       - {cmd: state, expect: {place: library}}
       - {cmd: snapshot, name: part}
+
+  # The Library lists transmissions, not files (docs/plans/recordings-0.2.1.md, R3): scene_net
+  # recorded gated with a 10 s hang, so its first three overs, 6 to 8 s apart, land in one part,
+  # then transcribed by the scripted engine (speech). The page has a row for each over of that
+  # part, bracketed as one recording, each with its own line, and the first is selected, so the
+  # inspector describes a transmission that shares its file. No tree is kept, for library-part's
+  # reason.
+  - name: library-speech
+    covers: [RecordingsPage.swift, SpeechViews.swift, PartInspector.swift, LibraryRows.swift,
+      SpeechRecords.swift, AppControl.swift]
+    threshold: 1.5
+    fixtures: [{name: scene_net}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    speech: {script: ../../site/shots/net-speech.txt}
+    steps:
+      - ley: [record, "147.18", --gate, squelch, --hang, 10s, --for, 50s, --detach]
+      - wait: 53
+      - ley: [transcribe, job_, --yes]
+    stage:
+      place: library
+      select_part: 0
+      # The scripted engine's `scripted · 100%` would claim a model ran.
+      hide_engine_label: true
+      settle: 3
+    app:
+      - {cmd: state, expect: {place: library, library_rows.0: "over 1: Good evening, this is N0CALL, net control for the Thursday net. Check-ins, call now.", library_rows.1: "over 2: N0CALL-2, checking in from the north side, no traffic.", library_rows.2: "over 3: N0CALL-3 checking in, mobile, one item for the net."}}
+      - {cmd: snapshot, name: page}
 
   # The menus and the CHIRP import's words (docs/plans/app.md, U7 and the assistant panel's
   # K1): File ▸ Import CHIRP… after Show Recordings in Finder, View ▸ Show Assistant disabled

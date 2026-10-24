@@ -138,7 +138,8 @@ func (f *CheckFile) affected(root string, changed []string, edited map[string]bo
 }
 
 // inputs are the absolute paths of the files the scene reads from beside scenes.yaml or
-// elsewhere in the checkout: its bookmarks, its assistant's script and each CHIRP import.
+// elsewhere in the checkout: its bookmarks, its assistant's and speech engine's scripts and each
+// CHIRP import.
 func (s *CheckScene) inputs(resolve func(string) string) []string {
 	var out []string
 	add := func(p string) {
@@ -152,6 +153,9 @@ func (s *CheckScene) inputs(resolve func(string) string) []string {
 	add(s.Bookmarks)
 	if s.AI != nil {
 		add(s.AI.Script)
+	}
+	if s.Speech != nil {
+		add(s.Speech.Script)
 	}
 	if s.Stage != nil {
 		add(s.Stage.ImportChirp)
