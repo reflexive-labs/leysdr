@@ -1615,6 +1615,10 @@ Found by the ML-9d scenes' second half (2026-10-22), not fixed on the spot:
   frequency (MC-6's ties by name), so the CHIRP import in `merged-bookmarks` reads `Club net +1`
   where MC-5's example reads `Club repeater +1`. Should the first entry be the file's first, or
   is the name order the one meant?
+- Batch 3's verify loop: a band fitted to the view puts a channel on the band's edge at the
+  chart's edge, half of it off the picture: NOAA weather (162.400 to 162.550 MHz) shows WX2 and
+  WX1 cut in half at the two sides (`app-assistant.png`). Pad the fit by half a
+  channel width?
 - Batch 3's verify loop: `settings-ai`'s words now name the provider (`Anthropic key …0042
   added`, `No OpenAI key is set yet`, `Assistant now calls OpenAI gpt-made-up`), which answers
   the first half's question above. The white tile and system-blue glyph of the AI tab remain.
