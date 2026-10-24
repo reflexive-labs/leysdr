@@ -48,6 +48,22 @@ A launchd daemon (the engine) owning SDR hardware, with the SwiftUI app (`app/`,
 
 `FilePlaybackDevice` is the test harness: the entire pipeline runs headless from IQ fixtures. `fixtures/` contains generated signals (NFM tone, AM, USB, CW, noise-floor calibration) with expected demod outputs. Every DSP change must pass fixture round-trips. Hardware-in-the-loop tests are a separate, manually-run suite.
 
+Test and check daemons share a Mac with the person's own app, daemon, keys and radio: follow
+`docs/dev/setup.md`, "Test and check daemons" (hermetic flags, own socket, foreground, stop by pid).
+
+## Working on the Mac
+
+- **Check in tiers:** `make app-check-smoke`, then `make app-check-affected`, then the full
+  `make app-check JOBS=3` (about 6 minutes).
+- **Batch loop:** implementers work in parallel worktrees and never run the app; one verify run at
+  a time owns the staged app and runs the full check.
+- **Never re-record a golden to make a check pass**; name each intended re-recording in the
+  handover.
+
+`docs/dev/swift-style.md`, section 12, `docs/plans/mac-loop.md` (ML-11) and
+`.claude/skills/app-check/SKILL.md` have the detail. Run your own daemon from `make reload`'s
+signed copy (`docs/dev/setup.md`, "The edit-build-try loop").
+
 ## Agent evals
 
 `evals/scenarios/*.yaml` grade how an agent uses `ley mcp` against a daemon playing recordings
