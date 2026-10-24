@@ -114,8 +114,8 @@ package actor DefaultDeviceRegistry: DeviceRegistry {
     /// - Parameters:
     ///   - persistPath: JSON file that keeps the identity → id map across daemon restarts. nil = memory only.
     ///   - pollIntervalMs: hot-plug enumeration period (docs: 1 s while idle).
-    ///   - enumerateHardware: false never runs the enumeration loop; the machine's dongles stay
-    ///     invisible to this daemon.
+    ///   - enumerateHardware: false never runs the enumeration loop and makes `poll` skip the USB
+    ///     pass; the machine's radios stay invisible to this daemon and are never opened.
     package init(persistPath: String? = nil, pollIntervalMs: Int = 1000, enumerateHardware: Bool = true) {
         self.persistPath = persistPath
         self.pollIntervalMs = max(10, pollIntervalMs)
@@ -329,7 +329,13 @@ package actor DefaultDeviceRegistry: DeviceRegistry {
     /// successfully: known dongles keep their cached probe, so idle dongles are not re-initialised
     /// every second and the poll never contends with a capture's own open. A dongle whose probe
     /// open fails (another program holds it) is reported `.inUse` and re-probed with backoff.
+    /// With hardware enumeration off the pass only reconnects remotes: a `--no-hardware` daemon,
+    /// or a test that drives `poll` itself, never lists or opens the machine's radios.
     package func poll() async {
+        guard enumerateHardware else {
+            reconnectDisconnectedRemotes()
+            return
+        }
         if !reportedMissingBackends {
             reportedMissingBackends = true
             if !RTLSDRDevice.backendAvailable {

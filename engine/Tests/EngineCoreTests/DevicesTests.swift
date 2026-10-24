@@ -378,7 +378,7 @@ final class DevicesRegistryTests: XCTestCase {
     func testAttachDetachEventsToTwoSubscribers() async throws {
         let dir = try DeviceFixtures.scratchDir()
         let path = try DeviceFixtures.writeRamp(dir: dir, name: "reg", samples: 100)
-        let reg = DefaultDeviceRegistry()
+        let reg = DefaultDeviceRegistry(enumerateHardware: false)
         var a = reg.events().makeAsyncIterator()
         var b = reg.events().makeAsyncIterator()
 
@@ -426,7 +426,7 @@ final class DevicesRegistryTests: XCTestCase {
     func testEOFPublishesDisconnected() async throws {
         let dir = try DeviceFixtures.scratchDir()
         let path = try DeviceFixtures.writeRamp(dir: dir, name: "eof", samples: 100)
-        let reg = DefaultDeviceRegistry()
+        let reg = DefaultDeviceRegistry(enumerateHardware: false)
         var it = reg.events().makeAsyncIterator()
         let desc = try await reg.attachFileDevice(path: path, loop: false, realtime: false)
         _ = try await next(&it)
@@ -445,16 +445,16 @@ final class DevicesRegistryTests: XCTestCase {
         let dir = try DeviceFixtures.scratchDir()
         let path = try DeviceFixtures.writeRamp(dir: dir, name: "persist", samples: 100)
         let mapPath = dir + "/ids/devices.json"
-        let first = try await DefaultDeviceRegistry(persistPath: mapPath).attachFileDevice(path: path, loop: false)
+        let first = try await DefaultDeviceRegistry(persistPath: mapPath, enumerateHardware: false).attachFileDevice(path: path, loop: false)
         XCTAssertTrue(FileManager.default.fileExists(atPath: mapPath))
-        let second = try await DefaultDeviceRegistry(persistPath: mapPath).attachFileDevice(path: path, loop: true)
+        let second = try await DefaultDeviceRegistry(persistPath: mapPath, enumerateHardware: false).attachFileDevice(path: path, loop: true)
         XCTAssertEqual(first.id, second.id)
-        let other = try await DefaultDeviceRegistry().attachFileDevice(path: path, loop: false)
+        let other = try await DefaultDeviceRegistry(enumerateHardware: false).attachFileDevice(path: path, loop: false)
         XCTAssertNotEqual(first.id, other.id, "without persistence a fresh registry mints a fresh id")
     }
 
     func testSubscriberRemovedOnTermination() async throws {
-        let reg = DefaultDeviceRegistry()
+        let reg = DefaultDeviceRegistry(enumerateHardware: false)
         do {
             var it = reg.events().makeAsyncIterator()
             let t = Task { await it.next() }
@@ -469,7 +469,7 @@ final class DevicesRegistryTests: XCTestCase {
     /// Attaching a second instance of an already-hosted identity keeps the first and closes the
     /// newcomer: the caller opened it, so nothing else is left holding its link.
     func testDuplicateVirtualDeviceIsClosed() async throws {
-        let reg = DefaultDeviceRegistry()
+        let reg = DefaultDeviceRegistry(enumerateHardware: false)
         let first = ClosableVirtualDevice(serial: "vd-1")
         let second = ClosableVirtualDevice(serial: "vd-1")
         let a = try await reg.attachVirtualDevice(first).descriptor
@@ -487,7 +487,7 @@ final class DevicesRegistryTests: XCTestCase {
     /// `stop()` is the registry's shutdown: every `events()` subscription finishes, so a consumer
     /// may wait for the end of its stream instead of relying on its own task being cancelled.
     func testStopFinishesEventSubscriptions() async throws {
-        let reg = DefaultDeviceRegistry()
+        let reg = DefaultDeviceRegistry(enumerateHardware: false)
         var it = reg.events().makeAsyncIterator()
         let dir = try DeviceFixtures.scratchDir()
         let path = try DeviceFixtures.writeRamp(dir: dir, name: "fin", samples: 10)
@@ -537,15 +537,21 @@ final class DevicesRTLSDRTests: XCTestCase {
 
     func testEnumerateWithoutHardware() async throws {
         try skipIfDongleAttached()
-        // The stub librtlsdr reports zero devices; enumeration and a poll must be no-ops.
+        // The stub librtlsdr reports zero devices.
         XCTAssertEqual(RTLSDRDevice.enumerate(), [])
-        let reg = DefaultDeviceRegistry(pollIntervalMs: 20)
+    }
+
+    /// A registry with hardware enumeration off (`--no-hardware`, every test's) never lists or
+    /// opens the machine's radios, from its loop or from a `poll` driven by hand, whatever is
+    /// plugged in: this test runs with a HackRF or an RTL-SDR attached too.
+    func testNoHardwareRegistryNeverEnumerates() async throws {
+        let reg = DefaultDeviceRegistry(pollIntervalMs: 20, enumerateHardware: false)
         await reg.start()
         await reg.poll()
         try await Task.sleep(nanoseconds: 60_000_000)
         await reg.stop()
         let devices = await reg.devices
-        XCTAssertTrue(devices.isEmpty)
+        XCTAssertTrue(devices.isEmpty, "listed \(devices.map(\.driver))")
     }
 
     /// A pulled dongle makes librtlsdr cancel read_async itself, so it returns 0 without our asking.

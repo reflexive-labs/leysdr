@@ -20,7 +20,7 @@ final class RegistryProbeTests: XCTestCase {
     /// re-probed on a doubling backoff (2 s, 4 s, ...) instead of every poll, and goes back to
     /// AVAILABLE with the real tuner data once an open succeeds.
     func testHeldDongleReportsInUseAndBacksOff() async throws {
-        let reg = DefaultDeviceRegistry(pollIntervalMs: 1000)
+        let reg = DefaultDeviceRegistry(pollIntervalMs: 1000, enumerateHardware: false)
         var events = reg.events().makeAsyncIterator()
         let busy = probe(tuner: "unknown", gains: [], openError: -3)
 
@@ -66,7 +66,7 @@ final class RegistryProbeTests: XCTestCase {
     /// Our own capture opening the dongle proves the hold is over: `markInUse` clears the flag and
     /// the schedule even though the state stays IN_USE.
     func testOwnCaptureClearsExternalHold() async throws {
-        let reg = DefaultDeviceRegistry(pollIntervalMs: 1000)
+        let reg = DefaultDeviceRegistry(pollIntervalMs: 1000, enumerateHardware: false)
         var events = reg.events().makeAsyncIterator()
         _ = await reg.advanceTickAndProbeGate()
         await reg.applyProbes([probe(tuner: "unknown", gains: [], openError: -6)])
@@ -89,7 +89,7 @@ final class RegistryProbeTests: XCTestCase {
     /// A capture's own failed claim (rtlsdr_open ACCESS/BUSY after the dongle was probed fine, e.g.
     /// rtl_tcp restarted and grabbed it) marks the dongle held exactly like a failed probe.
     func testCaptureClaimFailureMarksHeld() async throws {
-        let reg = DefaultDeviceRegistry(pollIntervalMs: 1000)
+        let reg = DefaultDeviceRegistry(pollIntervalMs: 1000, enumerateHardware: false)
         var events = reg.events().makeAsyncIterator()
         _ = await reg.advanceTickAndProbeGate()
         await reg.applyProbes([probe(tuner: "R820T", gains: [0, 0.9, 49.6])])
@@ -127,7 +127,7 @@ final class RegistryProbeTests: XCTestCase {
 
     /// Unplugging a held dongle removes it like any other; a re-arrival starts a fresh schedule.
     func testRemovalClearsHoldSchedule() async throws {
-        let reg = DefaultDeviceRegistry(pollIntervalMs: 1000)
+        let reg = DefaultDeviceRegistry(pollIntervalMs: 1000, enumerateHardware: false)
         var events = reg.events().makeAsyncIterator()
         let busy = probe(tuner: "unknown", gains: [], openError: -3)
         _ = await reg.advanceTickAndProbeGate()
@@ -148,7 +148,7 @@ final class RegistryProbeTests: XCTestCase {
     }
 
     func testDegradedProbeIsRefreshedThenCached() async throws {
-        let reg = DefaultDeviceRegistry(pollIntervalMs: 1000)
+        let reg = DefaultDeviceRegistry(pollIntervalMs: 1000, enumerateHardware: false)
         var events = reg.events().makeAsyncIterator()
 
         await reg.applyProbes([probe(tuner: "unknown", gains: [])])
@@ -178,7 +178,7 @@ final class RegistryProbeTests: XCTestCase {
     /// their own state: after its backoff the probe may open index 1 while index 0 stays closed,
     /// and a successful probe frees index 1 without touching our capture on index 0.
     func testSerialCollisionPairGatesPerIndex() async throws {
-        let reg = DefaultDeviceRegistry(pollIntervalMs: 1000)
+        let reg = DefaultDeviceRegistry(pollIntervalMs: 1000, enumerateHardware: false)
         var events = reg.events().makeAsyncIterator()
         let good0 = probe(tuner: "R820T", gains: [0, 0.9, 49.6], index: 0)
         let busy1 = probe(tuner: "unknown", gains: [], openError: -3, index: 1)
@@ -235,7 +235,7 @@ final class RegistryProbeTests: XCTestCase {
     /// entry follows the new index, so the probe gate still knows the dongle is ours and never
     /// aims an `rtlsdr_open` at a device we hold.
     func testOwnCaptureFollowsIndexShift() async throws {
-        let reg = DefaultDeviceRegistry(pollIntervalMs: 1000)
+        let reg = DefaultDeviceRegistry(pollIntervalMs: 1000, enumerateHardware: false)
         var events = reg.events().makeAsyncIterator()
         let at1 = probe(tuner: "R820T", gains: [0, 0.9, 49.6], index: 1)
         let at0 = probe(tuner: "R820T", gains: [0, 0.9, 49.6], index: 0)

@@ -321,7 +321,7 @@ final class RTLTCPDeviceTests: XCTestCase {
     func testRegistryReconnectsDisconnectedRemoteOnPoll() async throws {
         var server = try FakeRTLTCPServer()
         let port = server.port
-        let registry = DefaultDeviceRegistry()
+        let registry = DefaultDeviceRegistry(enumerateHardware: false)
         let events = registry.events()
         var iter = events.makeAsyncIterator()
         let dev = RTLTCPDevice(host: "127.0.0.1", port: port)
@@ -336,14 +336,13 @@ final class RTLTCPDeviceTests: XCTestCase {
         for _ in 0..<1600 where await !registry.reconnectingIDs.isEmpty { try await Task.sleep(nanoseconds: 5_000_000) }
         let pending = await registry.reconnectingIDs
         XCTAssertTrue(pending.isEmpty, "failed attempt settles")
-        // A real dongle on the developer's machine is enumerated by the poll too; look only at ours.
-        var devices = await registry.devices.filter { $0.driver != "rtlsdr" }
+        var devices = await registry.devices
         XCTAssertEqual(devices.map(\.state), [.disconnected])
         // Server back: the next poll reconnects, marks available and re-announces the same id.
         server = try FakeRTLTCPServer(port: port)
         defer { server.stop() }
         await registry.poll()
-        // The same poll also announces any real dongle on the developer's machine; wait for ours.
+        // Wait for ours among the poll's events.
         var reannounced: DeviceDescriptor?
         for _ in 0..<8 {
             guard let ev = await iter.next() else { break }
@@ -351,7 +350,7 @@ final class RTLTCPDeviceTests: XCTestCase {
         }
         let back = try XCTUnwrap(reannounced, "expected arrived for the rtl_tcp device")
         XCTAssertEqual(back.state, .available)
-        devices = await registry.devices.filter { $0.driver != "rtlsdr" }
+        devices = await registry.devices
         XCTAssertEqual(devices.map(\.state), [.available])
         XCTAssertTrue(dev.isConnected)
         XCTAssertEqual(dev.descriptor.state, .available)
@@ -365,7 +364,7 @@ final class RTLTCPDeviceTests: XCTestCase {
     /// registry must not announce a device that is already gone again.
     func testReconnectFinishedPublishesNothingWhenDeviceDiedBeforeHop() async throws {
         let server = try FakeRTLTCPServer()
-        let registry = DefaultDeviceRegistry()
+        let registry = DefaultDeviceRegistry(enumerateHardware: false)
         let events = registry.events()
         var iter = events.makeAsyncIterator()
         let dev = RTLTCPDevice(host: "127.0.0.1", port: server.port)
@@ -382,13 +381,13 @@ final class RTLTCPDeviceTests: XCTestCase {
         await registry.reconnectFinished(id: d.id, device: dev, ok: true)
         let pending = await registry.reconnectingIDs
         XCTAssertTrue(pending.isEmpty)
-        var devices = await registry.devices.filter { $0.driver != "rtlsdr" }
+        var devices = await registry.devices
         XCTAssertEqual(devices.map(\.state), [.disconnected], "entry stays disconnected for the next poll")
         // Nothing was published: the next event on the stream is our own detach, not an `arrived`.
         try await registry.detachVirtualDevice(id: d.id)
         guard case .removed(let removed)? = await iter.next() else { return XCTFail("expected removed, got arrived") }
         XCTAssertEqual(removed, d.id)
-        devices = await registry.devices.filter { $0.driver != "rtlsdr" }
+        devices = await registry.devices
         XCTAssertTrue(devices.isEmpty)
         await dev.close()
     }
@@ -404,7 +403,7 @@ final class RTLTCPDeviceTests: XCTestCase {
     func testRegistryAttachDetachRoundTrip() async throws {
         let server = try FakeRTLTCPServer()
         defer { server.stop() }
-        let registry = DefaultDeviceRegistry()
+        let registry = DefaultDeviceRegistry(enumerateHardware: false)
         let events = registry.events()
         var iter = events.makeAsyncIterator()
         let dev = RTLTCPDevice(host: "127.0.0.1", port: server.port)
@@ -445,7 +444,7 @@ final class RTLTCPDeviceTests: XCTestCase {
     func testRegistryHostsOneDevicePerEndpointAcrossFirstOpen() async throws {
         let server = try FakeRTLTCPServer()
         defer { server.stop() }
-        let registry = DefaultDeviceRegistry()
+        let registry = DefaultDeviceRegistry(enumerateHardware: false)
         let unreached = RTLTCPDevice(host: "127.0.0.1", port: server.port)
         let waiting = try await registry.attachVirtualDevice(unreached, origin: .operatorFlag).descriptor
         XCTAssertTrue(waiting.model.hasSuffix("(unknown)"), waiting.model)

@@ -69,8 +69,11 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
     // A test never looks at the host's own plugin directory or writes to its store: both
     // default to somewhere inside the temp directory the daemon is running in.
     // Keys go to a file in the test's own data directory, never the Mac's keychain.
+    // `enumerateHardware: false` is `--no-hardware`: the machine's radios (an RTL-SDR, a HackRF, a
+    // remote the person attached) are never listed or opened, so a test cannot take one from the
+    // person's own daemon, and a kept job coming back after a restart cannot land on one.
     var config = Daemon.Config(socketPath: socket, pidfile: dir + "/leylined.pid", pollMs: 100_000,
-                               presenceGraceNs: presenceGraceNs, rtltcp: rtltcp,
+                               enumerateHardware: false, presenceGraceNs: presenceGraceNs, rtltcp: rtltcp,
                                decoderSearchPath: decoderSearchPath ?? [dir + "/decoders"],
                                storePath: storePath ?? (dir + "/store"),
                                recordingsPath: recordingsPath ?? (dir + "/recordings"),
@@ -82,6 +85,7 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
     // data, so the harness stops rather than run on any of them.
     precondition((config.secretStore as? FileSecrets)?.path.hasPrefix(dir + "/") == true,
                  "a test daemon keeps its keys in a file under its own directory, never the keychain")
+    precondition(!config.enumerateHardware, "a test daemon never enumerates the machine's radios")
     precondition(config.dataPath.hasPrefix(dir + "/") && config.storePath != defaultStorePath()
                      && config.recordingsPath != defaultRecordingsPath(),
                  "a test daemon never uses the default data directory, store or recordings")
@@ -196,14 +200,27 @@ func errorCode(_ error: any Error) -> (code: String, trailer: Leyline_V1_ErrorDe
     return (code, detail)
 }
 
-/// The devices a test created. A developer's Mac may have a real dongle plugged in while the suite
-/// runs; every registry poll enumerates it, so assertions about "the" device list must ignore it.
-func testDevices(_ devices: [Leyline_V1_DeviceDescriptor]) -> [Leyline_V1_DeviceDescriptor] {
-    devices.filter { $0.driver != "rtlsdr" }
+/// The drivers a test daemon may list: the radios a test attaches itself. A local radio (an
+/// RTL-SDR, a HackRF) in the list means the daemon enumerated the machine's hardware, which
+/// `withDaemon` never allows, so it fails the test rather than being filtered out.
+let testDeviceDrivers: Set<String> = ["file", "rtltcp", "synthetic", "test", "test-virtual"]
+
+/// The devices a test created, failing on any local radio among them.
+func testDevices(_ devices: [Leyline_V1_DeviceDescriptor],
+                 file: StaticString = #filePath, line: UInt = #line) -> [Leyline_V1_DeviceDescriptor] {
+    for d in devices where !testDeviceDrivers.contains(d.driver) {
+        XCTFail("a test daemon listed a \(d.driver) radio (\(d.model)); it must never enumerate hardware",
+                file: file, line: line)
+    }
+    return devices
 }
 
-func testDevices(_ devices: [DeviceDescriptor]) -> [DeviceDescriptor] {
-    devices.filter { $0.driver != "rtlsdr" }
+func testDevices(_ devices: [DeviceDescriptor], file: StaticString = #filePath, line: UInt = #line) -> [DeviceDescriptor] {
+    for d in devices where !testDeviceDrivers.contains(d.driver) {
+        XCTFail("a test daemon listed a \(d.driver) radio (\(d.model)); it must never enumerate hardware",
+                file: file, line: line)
+    }
+    return devices
 }
 
 // MARK: Decoders
