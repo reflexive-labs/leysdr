@@ -87,9 +87,7 @@ func cprLocal(latCPR, lonCPR uint32, odd bool, refLat, refLon float64) (lat, lon
 	dlon := 360 / math.Max(float64(nl(lat))-i, 1)
 	m := math.Floor(refLon/dlon) + math.Floor(0.5+mod(refLon, dlon)/dlon-x)
 	lon = dlon * (m + x)
-	if lon >= 180 {
-		lon -= 360
-	}
+	lon = mod(lon+180, 360) - 180
 	return lat, lon
 }
 

@@ -211,9 +211,9 @@ func (m *Message) parseVelocity() error {
 	return nil
 }
 
-// callsignChars is the 6-bit character set of an identification message; '#' marks a code with
-// no character.
-const callsignChars = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ##### ###############0123456789######"
+// callsignChars is the 6-bit character set of an identification message; '?' marks a code with
+// no character, so a callsign with one reads as partly unknown.
+const callsignChars = "?ABCDEFGHIJKLMNOPQRSTUVWXYZ????? ???????????????0123456789??????"
 
 func callsign(r []byte) string {
 	var b strings.Builder

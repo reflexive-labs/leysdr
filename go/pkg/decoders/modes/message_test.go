@@ -206,3 +206,32 @@ func TestCPRRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// A local decode near the antimeridian lands in [-180, 180) whichever side the reference is on.
+func TestCPRLocalAntimeridian(t *testing.T) {
+	cases := []struct{ refLon, lon float64 }{
+		{-179.99, 179.995}, // reference west of the line, aircraft east of it
+		{179.99, -179.995}, // reference east of the line, aircraft west of it
+	}
+	for _, c := range cases {
+		for _, odd := range []bool{false, true} {
+			latCPR, lonCPR := cprEncode(50.01, c.lon, odd)
+			lat, lon := cprLocal(latCPR, lonCPR, odd, 50, c.refLon)
+			if lon < -180 || lon >= 180 || distanceKm(lat, lon, 50.01, c.lon) > 0.01 {
+				t.Errorf("ref lon %v, odd=%v: %v, %v; want 50.01, %v", c.refLon, odd, lat, lon, c.lon)
+			}
+		}
+	}
+}
+
+// A 6-bit code with no character reads as '?', so the callsign shows it as unknown.
+func TestCallsignInvalidCode(t *testing.T) {
+	msg := EncodeIdentification(0xACEB61, "N123AB", 0)
+	putME(msg, 9+6*1, 6, 0)  // code 0: no character
+	putME(msg, 9+6*3, 6, 27) // code 27: no character
+	SetParity(msg, 0)
+	m, err := Parse(msg, 0)
+	if err != nil || m.Callsign != "N?2?AB" {
+		t.Errorf("callsign %q, err %v; want N?2?AB", m.Callsign, err)
+	}
+}
