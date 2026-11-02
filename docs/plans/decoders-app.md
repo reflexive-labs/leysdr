@@ -185,6 +185,28 @@ the stored captures.
   counts as "you" in the placement's words, as its own does. Stage keys `decoder`,
   `decoder_tab` and `select_transmitter`, the `decoders` region and state, and `leyshots` gives
   a scene its own `LEYLINE_LABELS`.
+  Verified 2026-11-02 by a full `make app-check JOBS=3` (1051 checked, all ok) with three new
+  scenes (`decoders-aprs`, `decoders-adsb`, `decoders-take-over` on a new `scene_adsb_off`) and
+  31 scenes re-recorded for the toolbar's third place only. Table rows and map markers sort by
+  name, so a live table does not reorder every second.
+
+### Batch 2 follow-ups (found on the Mac pictures and in the check run)
+
+- [ ] **DA-13 An IQ decoder on a capture it cannot decode is DEGRADED, not RUNNING.** In
+  `decoders-take-over` the file radio cannot retune, so after the take-over `leydec-adsb` logs
+  that the capture is too far from 1090 MHz while the job reads "Running · no records yet". The
+  allocator should decline a dedicated job it cannot centre, and a plugin needs a way to report
+  "cannot decode this input" that the job shows.
+- [ ] **DA-14 The table's numbers use the template's precision.** `columns` gains an optional
+  `:N` (`ground_speed_kn:0`), so the table reads 190 where the summary says 190 kn, not 189.7.
+  The LAST column becomes LATEST, which no longer reads as a twin of LAST HEARD.
+- [ ] **DA-15 Units agree.** The inspector shows altitude in the decoder's unit (`altitude_ft`)
+  beside the promoted metres, not metres alone; frequencies in one sentence use one unit (the
+  take-over question mixes 1.090 GHz and 1090.600 MHz).
+- [ ] **DA-16 Test decoders stay out of a person's list.** `speech-scripted` shows as a second
+  "Speech": a manifest flag (`test_only`) hides it unless the daemon runs with `--no-hardware`.
+- [ ] **DA-17 Small layout:** the job header repeats the detail line; the log's kind column is
+  wider than its longest kind; long field names crowd their value in the inspector.
 
 ### Batch 3: the rest
 
