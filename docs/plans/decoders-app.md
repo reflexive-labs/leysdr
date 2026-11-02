@@ -115,7 +115,7 @@ the stored captures.
   block rather than drop as a stored SEGMENTED source does (R1 of `recordings-0.2.1.md`). This is
   "decode a recording" for ADS-B, and lets e2e drive `leydec-adsb` through the daemon with no
   radio. An IQ decoder on an audio recording, and the reverse, are refused with the reason.
-- [ ] **DA-5 The ADS-B decoder (Go lane, DEC-13).** `go/pkg/decoders/modes` and
+- [x] **DA-5 The ADS-B decoder (Go lane, DEC-13).** `go/pkg/decoders/modes` and
   `go/cmd/leydec-adsb` on the SDK's `RunIQ`, `decoders/adsb/manifest.json`:
   name `adsb`, alias `aircraft`, recipe 1090 MHz at 2.4 MSPS, `SIGNAL_IQ`, `CONTINUOUS`,
   `needs_dedicated_capture`, `SHAPE_RECORDS` + `SHAPE_ENTITIES`, `entity_silence_s` 60, field
@@ -142,6 +142,14 @@ the stored captures.
     records from `ACEB61` (skipped when it does not). No `display` block: DA-1 owns that field and
     the manifest gains it at merge.
   - `make go`, `make install-decoders` and the e2e decoder list include it.
+  - Done 2026-11-02. The antenna capture gives 27 records from `ACEB61`, 9 with a position near
+    37.69N 122.38W; the demodulator runs at 40 MSPS (`BenchmarkDemod`, three aircraft over noise)
+    to 64 MSPS (the capture) on one core of an M4 Max. Bits are decided by the half-bit integrals
+    and, when the parity fails, by a two-state Viterbi search, because at 2.4 MSPS a sample
+    straddles two half-bits; synthetic replies decode 42 of 42 at 15 dB, 34 at 12 dB, 13 at 10 dB.
+    One addition to the item: a corrected bit and a DF11 with a non-zero interrogator code are
+    taken only from an aircraft already heard in the clear, so noise cannot add an address. The
+    e2e plays a new default fixture, `adsb_burst` (1 s, two aircraft).
 
 ### Batch 2: the Decoders place (one Opus lane, then one full check)
 

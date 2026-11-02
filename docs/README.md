@@ -62,7 +62,7 @@ behaviour that contradicts it.
 | [Scope](design/scope.md) | the audio waveform and the demod tap under it | implemented (`ley scope`) |
 | [Audio meters](design/audio-meters.md) | `ley levels` and `ley waveform` as instruments | implemented |
 | [Band watching](design/band-watching.md) | persistence (`ley phosphor`), burst capture, occupancy | partial: persistence and `ley monitor` implemented; occupancy and burst capture not |
-| [Decoders](design/decoders.md) | turning demodulated signal into typed records: the plugin contract, the record envelope and store, the state boundary, the surfaces | implemented for APRS, SAME and AIS; more decoders planned |
+| [Decoders](design/decoders.md) | turning demodulated signal into typed records: the plugin contract, the record envelope and store, the state boundary, the surfaces | implemented for APRS, SAME, AIS and ADS-B; more decoders planned |
 | [Recording](design/recording.md) | recording as a job whose output is a resource: parts, the squelch gate, the manifest, the store, the `Resources` service | implemented |
 | [Brand](design/brand/README.md) | the mark and the splash, drawn in code; how the icon is made | implemented |
 | [Bands, channels and bookmarks](design/channels.md) | the three kinds of frequency; plan channels as data in the band table; bands as the sidebar's spine; Scan band over the scan job; tone, note and tags; CHIRP import; the engine and CLI pass | implemented |
@@ -86,7 +86,7 @@ What is being built, in what order, and the record of what each step found.
 - Live plans, with `[ ]` items still open: [v1 release](plans/v1-release.md) (the gap analysis and
   work list for the first shared release), [signal views](plans/signal-views.md) (the sonogram
   remains), [band watching](plans/band-watching.md) (occupancy and burst capture remain),
-  [decoders](plans/decoders.md) (APRS, SAME and AIS are done; more decoders follow),
+  [decoders](plans/decoders.md) (APRS, SAME, AIS and ADS-B are done; more decoders follow),
   [site screenshots](plans/site-shots.md) (`make shots` and the release assets leysdr.com pulls),
   [leysdr.com for 0.2](plans/site-0.2.md) (the site agent's brief: the copy, the privacy facts it
   may state and the images for 0.2.0),

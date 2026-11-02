@@ -34,7 +34,7 @@ the hardware.
   a modulation, and `ley monitor`, which logs each transmission on a band.
 - **Recording.** Audio or IQ to files through a job the daemon runs, and playback of what was
   recorded.
-- **Decoding.** APRS, SAME weather alerts and marine AIS, with `ley watch` to notify on matching
+- **Decoding.** APRS, SAME weather alerts, marine AIS and ADS-B aircraft, with `ley watch` to notify on matching
   records.
 - **Bands and bookmarks.** Channel plans for common bands, bookmarks, and CHIRP CSV import.
 - **Scripts and agents.** `--json` on every verb, and `ley mcp`, which serves the same verbs as MCP
@@ -60,7 +60,7 @@ brew install librtlsdr                 # for a local RTL-SDR
 brew install hackrf                    # for a local HackRF; install either or both drivers
 git clone https://github.com/reflexive-labs/leysdr.git && cd leysdr
 make go swift-release fixtures       # go/bin/ley + leyfix, engine/.build/release/leylined, IQ fixtures
-make install-decoders                # the APRS, SAME and AIS decoders
+make install-decoders                # the APRS, SAME, AIS and ADS-B decoders
 export PATH=$PWD/go/bin:$PATH
 ley daemon start --bin $PWD/engine/.build/release/leylined
 ```
@@ -146,7 +146,7 @@ the same pipeline as a radio, and you should hear a 1 kHz tone. The whole test s
 | `app/` | SwiftPM package: the Mac app and its client façade (`docs/dev/app.md`) |
 | `swift/LeylineProto` | SwiftPM package: the generated Swift contract (`make proto`), shared by the engine and the app |
 | `go/` | Go module: the `pkg/leyline` client library, `ley`, the decoders' binaries, `leyfix` (fixture generator), `leyeval` (agent evals), the fake daemon the `ley` tests run against, and the end-to-end tests |
-| `decoders/` | decoder manifests (APRS, SAME, AIS, and the `iqstat` test decoder); `make install-decoders` installs them |
+| `decoders/` | decoder manifests (APRS, SAME, AIS, ADS-B, and the `iqstat` test decoder); `make install-decoders` installs them |
 | `evals/` | scenarios that grade an agent's use of `ley mcp` (`docs/dev/evals.md`) |
 | `scripts/` | setup, code generation, licence checks, bundling the app |
 | `third_party/` | licence texts of the dependencies (`third_party/licenses/MANIFEST.txt`) |
@@ -171,7 +171,7 @@ detail is [`docs/plans/build-order.md`](docs/plans/build-order.md).
 | Two channels on one radio, several clients | works | |
 | Recording and playback | works | audio (WAV) or IQ; a squelch-gated recording writes one file per transmission |
 | Bands, channel plans, bookmarks, CHIRP import | works | in `ley` and the app |
-| Decoders: APRS, SAME, AIS | works | more are planned (`docs/plans/decoders.md`) |
+| Decoders: APRS, SAME, AIS, ADS-B | works | more are planned (`docs/plans/decoders.md`) |
 | `ley watch` notifications | works | webhook, shell command or macOS notification |
 | Speech-to-text | works | the `speech` decoder sends each over to OpenAI or an OpenAI-compatible server on your key, for gated recordings (`ley transcribe`, the Library) and live channels; no on-device engine yet |
 | The assistant | works | in the app, on your Anthropic, OpenAI or OpenAI-compatible key; runs the radio with `ley mcp`'s tools, and asks first before paid work or taking the radio from another listener |

@@ -964,12 +964,14 @@ headless. Stop it with `ley jobs cancel`.
 A SAME record carries a validity window, the span the alert is in effect, so `ley records
 --in-effect` lists only alerts that have not expired.
 
-Three decoders are built: APRS, SAME, and AIS (marine vessels -- `ley decode ais`, `ley track
-ais`, or `ley track vessels` -- a decoder can carry friendly aliases, which `ley decoders` shows in
+Four decoders are built: APRS, SAME, AIS (marine vessels -- `ley decode ais`, `ley track ais`,
+or `ley track vessels`) and ADS-B (aircraft on 1090 MHz -- `ley track aircraft`). ADS-B reads the
+radio's raw samples centred on 1090 MHz at 2.4 MSPS, so it needs a radio tuned there. A decoder can
+carry friendly aliases, which `ley decoders` shows in
 parentheses beside its name and which `ley decode`, `ley track` and `ley watch` all accept. The
 contract every decoder speaks is in
 `docs/design/decoders.md` and [writing a decoder](../reference/writing-a-decoder.md); the plan for
-the others (ADS-B aircraft, 433 MHz sensors, FT8) is `docs/plans/decoders.md`, and `ley help
+the others (433 MHz sensors, FT8) is `docs/plans/decoders.md`, and `ley help
 roadmap` names what is next.
 
 ### Listening with words

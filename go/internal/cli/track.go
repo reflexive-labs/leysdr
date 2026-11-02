@@ -94,7 +94,7 @@ On a terminal the table is redrawn in place; piped, one table is printed per
 tick. --json prints one {"entities": [...]} object per tick as NDJSON -- a
 client-side shape with no proto message, documented in docs/reference/cli.md.`,
 		Example: `  ley track aprs               # start decoding and show who is out there
-  ley track aircraft           # (once an ADS-B decoder is installed)
+  ley track aircraft           # ADS-B: aircraft by callsign, altitude and speed
   ley track aprs --since 1h    # seed from what was kept, then follow
   ley track aprs --attach      # only fold a decoder someone already started
   ley track aprs --json --count 1 | jq '.entities | length'`,

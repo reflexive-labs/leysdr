@@ -189,3 +189,4 @@ expectations that `leyfix check` verifies.
 | `scene_scan` | 146.000 MHz, 5 MSPS | five carriers between 144 and 148 MHz, one pulsed so a scan sees it in few looks |
 | `scene_aprs` | 144.390 MHz | AFSK packets from seven stations with positions |
 | `scene_ais` | 162.000 MHz | position reports from five vessels on AIS 1 |
+| `scene_adsb` | 1090 MHz, 2.4 MSPS | Mode S replies and ADS-B squitters from five aircraft on straight tracks, 30 s |

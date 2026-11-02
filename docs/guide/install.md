@@ -101,7 +101,7 @@ brew install librtlsdr                 # local RTL-SDR support
 brew install hackrf                    # local HackRF support; either driver is optional
 git clone https://github.com/reflexive-labs/leysdr.git && cd leysdr
 make go swift-release fixtures       # go/bin/ley + leyfix, engine/.build/release/leylined, IQ fixtures
-make install-decoders                # the APRS, SAME and AIS decoders ("Decoders" below)
+make install-decoders                # the APRS, SAME, AIS and ADS-B decoders ("Decoders" below)
 export PATH=$PWD/go/bin:$PATH
 ley daemon start --bin $PWD/engine/.build/release/leylined
 ```
@@ -213,11 +213,11 @@ an IQ recording of your own (`ley play <file>`).
 ## Decoders
 
 `ley decode`, `ley records` and `ley watch` need decoder plugins installed where the daemon looks
-for them. Four ship in `decoders/`: APRS, SAME weather alerts, marine AIS, and `iqstat`, a test
+for them. Five ship in `decoders/`: APRS, SAME weather alerts, marine AIS, ADS-B aircraft, and `iqstat`, a test
 decoder that reports the block power of a capture's IQ and is used to check the IQ input path.
-The app carries all four (manifests in `Leyline.app/Contents/Resources/decoders/`, programs in
+The app carries all five (manifests in `Leyline.app/Contents/Resources/decoders/`, programs in
 `Contents/Helpers`), and its daemon finds them there with nothing to install; a decoder of the same name in the decoders directory below takes
-precedence over the bundled one. In a build from source, `make reload` installs all four as part
+precedence over the bundled one. In a build from source, `make reload` installs all five as part
 of the rebuild; to install them without a full reload:
 
 ```sh
