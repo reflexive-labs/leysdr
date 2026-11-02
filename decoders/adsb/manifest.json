@@ -12,7 +12,8 @@
     ],
     "sampleRate": "2400000",
     "mode": "AM",
-    "gain": "GAIN_LEAVE"
+    "gain": "GAIN_FIXED",
+    "gainDb": 40
   },
   "input": {
     "mode": "CONTINUOUS",

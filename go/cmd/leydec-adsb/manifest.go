@@ -23,8 +23,12 @@ func manifest() *leylinev1.DecoderManifest {
 			// The mode is ignored on the IQ path; AM is the nearest to what the decoder does
 			// with the samples, which is take their magnitude.
 			Mode: leylinev1.DemodMode_AM,
-			// A capture the job borrows keeps its owner's gain.
-			Gain: leylinev1.GainPolicy_GAIN_LEAVE,
+			// 40 dB on a capture the job creates or retunes; one it borrows keeps its owner's
+			// gain. On 2026-11-02 the owner's R820T at gain 30 decoded nothing on 1090 MHz and
+			// at 40 decoded 19 frames: Mode S replies arrive weak, and the radio's usual level
+			// for VHF voice leaves them under the noise.
+			Gain:   leylinev1.GainPolicy_GAIN_FIXED,
+			GainDb: 40,
 		},
 		Input: &leylinev1.DecoderInput{
 			Mode:   leylinev1.InputMode_CONTINUOUS,
