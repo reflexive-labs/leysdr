@@ -276,7 +276,7 @@ things stand" and `docs/plans/build-order.md` gain D.17; `CHANGELOG.md`; `ley he
   per record. Silence stays RUNNING (DEC-16), and the detail now shows it. The fake mirrors it
   ("decoding aprs on 144.390 MHz: 12 records, last just now"), `ley jobs` shows it in DETAIL and
   the MCP `get_job` in its text.
-- DEC-13 `[ ]` An ADS-B plugin (driver A, a `dump1090` adapter with CPR pairing plugin-side), on
+- DEC-13 `[ ]` An ADS-B plugin (driver A, now native Go as DA-5 of `decoders-app.md`, with CPR pairing plugin-side), on
   the IQ input DEC-18 built.
 - DEC-14 `[ ]` The MCP families and `ley identify`.
 - DEC-15 `[ ]` A SQLite index under `QueryRecords`, when a query is measured slow.
