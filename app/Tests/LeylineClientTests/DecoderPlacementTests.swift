@@ -257,6 +257,42 @@ final class DecoderPlacementTests: XCTestCase {
             .needsRadio(captureID: "cap_1", reason: "you are listening on 1090.000 MHz"))
     }
 
+    func testADedicatedIQDecoderNeverTakesAFileRadioRecordedElsewhere() {
+        var s = MirrorState()
+        var d = dongle(model: "NESDR SMArt v5")
+        d.driver = "file"
+        d.tuningRanges[0].minHz = 1_090_600_000
+        d.tuningRanges[0].maxHz = 1_090_600_000
+        d.sampleRates = [2_400_000]
+        s.devices = [d]
+        let m = iq(1_090_000_000, dedicated: true)
+        let why = "NESDR SMArt v5 cannot tune to 1090.000 MHz (a file radio plays what it recorded)"
+        // Idle: the span covers 1090 MHz, but the radio cannot be centred on it.
+        XCTAssertEqual(predict(m, 1_090_000_000, s), .unreachable(why))
+        // In use: no take-over, because taking it would not move it.
+        s.captures = [capture(centre: 1_090_600_000)]
+        s.channels = [channel(on: "cap_1", offset: 0, owner: me)]
+        let p = predict(m, 1_090_000_000, s)
+        XCTAssertEqual(p, .unreachable(why))
+        XCTAssertEqual(p.words, why + ".")
+        XCTAssertFalse(p.needsTakeOver)
+        XCTAssertFalse(p.canStart)
+        // A decoder that is not dedicated still reads the off-centre span.
+        XCTAssertEqual(
+            predict(iq(1_090_000_000), 1_090_000_000, s),
+            .alongside(captureID: "cap_1", listening: true))
+    }
+
+    func testADedicatedIQDecoderNeedsATunerThatReachesTheFrequencyItself() {
+        var s = MirrorState()
+        var d = dongle()
+        d.tuningRanges[0].maxHz = 1_089_500_000
+        s.devices = [d]
+        XCTAssertEqual(
+            predict(iq(1_090_000_000, dedicated: true), 1_090_000_000, s),
+            .unreachable("RTL-SDR cannot tune to 1090.000 MHz"))
+    }
+
     func testAnIQDecoderTakesAnIdleRadioOrRetunesAFreeCapture() {
         var s = MirrorState()
         s.devices = [dongle()]

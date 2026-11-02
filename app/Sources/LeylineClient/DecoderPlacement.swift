@@ -85,7 +85,9 @@ public enum DecoderPlacement: Sendable, Equatable {
 
     /// Predicts where `manifest` lands at `frequencyHz`, by the allocator's order: a capture that
     /// already hears it, else a radio with nothing on it, else a capture nobody is using (the
-    /// don't-disturb test), else the reason it is somebody's, else that nothing can hear it.
+    /// don't-disturb test), else the reason it is somebody's, else that nothing can hear it. A
+    /// decoder that `needs_dedicated_capture` takes only a radio that tunes to the frequency
+    /// itself, so a file radio recorded elsewhere is unreachable, never somebody's to take.
     /// `swept` holds the devices a sweep holds, whose captures no decoder can join; `selfID` is
     /// the window's client id and `windowChannel` the channel it plays, which may be another
     /// client's it followed, so either reads "you are listening".
@@ -127,23 +129,33 @@ public enum DecoderPlacement: Sendable, Equatable {
 
         // 2. A radio with nothing on it that can tune the frequency.
         var lastReason = "no radio here can hear \(mhz(hz))"
+        let dedicated = iq && manifest.needsDedicatedCapture
         for d in devices where !state.captures.contains(where: { $0.deviceID == d.deviceID }) {
             let rate = iq ? iqRate(manifest.recipe.sampleRate, device: d) : defaultRate(d)
-            if canTune(d, hz: hz, bandwidthHz: bw, rate: rate, iq: iq) {
-                return .idleRadio(deviceID: d.deviceID, model: model(d), retune: false)
+            guard canTune(d, hz: hz, bandwidthHz: bw, rate: rate, iq: iq) else {
+                lastReason = "\(model(d)) cannot tune \(mhz(hz))"
+                continue
             }
-            lastReason = "\(model(d)) cannot tune \(mhz(hz))"
+            if dedicated, !canCentre(d, on: hz) {
+                lastReason = cannotCentre(d, on: hz)
+                continue
+            }
+            return .idleRadio(deviceID: d.deviceID, model: model(d), retune: false)
         }
 
         // 3. A capture nobody is using, retuned; else the first reason one is somebody's.
         var busy: (captureID: String, reason: String)?
         for cap in captures {
             guard let d = devices.first(where: { $0.deviceID == cap.deviceID }) else { continue }
-            let rate =
-                iq && manifest.needsDedicatedCapture
-                ? iqRate(manifest.recipe.sampleRate, device: d) : cap.sampleRate
+            let rate = dedicated ? iqRate(manifest.recipe.sampleRate, device: d) : cap.sampleRate
             guard canTune(d, hz: hz, bandwidthHz: bw, rate: rate, iq: iq) else {
                 lastReason = "\(model(d)) cannot tune \(mhz(hz))"
+                continue
+            }
+            // A radio that cannot be centred there is no candidate, whoever is using it: taking
+            // it over would only move it to where the decoder still cannot read.
+            if dedicated, !canCentre(d, on: hz) {
+                lastReason = cannotCentre(d, on: hz)
                 continue
             }
             if let why = inUse(cap, state: state, yours: yours, now: now) {
@@ -235,6 +247,22 @@ public enum DecoderPlacement: Sendable, Equatable {
         return iq
             ? spanCovers(centerHz: centre, rate: rate, frequencyHz: hz)
             : fits(offsetHz: Int64(hz) - Int64(centre), bandwidthHz: bandwidthHz, sampleRate: rate)
+    }
+
+    /// Whether a device tunes to within `centredWithinHz` of the frequency itself, as a dedicated
+    /// IQ decoder needs: not just the nearest point it tunes, since a file radio's only point is
+    /// where its recording was made.
+    static func canCentre(_ d: Leyline_V1_DeviceDescriptor, on hz: UInt64) -> Bool {
+        guard let centre = nearestTunable(hz, device: d) else { return false }
+        let off = centre > hz ? centre - hz : hz - centre
+        return off <= centredWithinHz
+    }
+
+    /// Why a device is no capture for a dedicated decoder on the frequency, in the daemon's words
+    /// (`SessionCaptureAllocator.cannotCentre`).
+    static func cannotCentre(_ d: Leyline_V1_DeviceDescriptor, on hz: UInt64) -> String {
+        let why = d.driver == "file" ? " (a file radio plays what it recorded)" : ""
+        return "\(model(d)) cannot tune to \(mhz(hz))\(why)"
     }
 
     static func nearestTunable(_ hz: UInt64, device: Leyline_V1_DeviceDescriptor) -> UInt64? {

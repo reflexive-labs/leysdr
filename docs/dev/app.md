@@ -493,7 +493,10 @@ true`, so it runs until Stop, after the window closes and across a daemon restar
 frequency `DecoderPlacement` picks, explicitly; the line under the title is the placement's words
 before it starts (`Runs alongside what you are listening to.`, `Takes the idle radio, the NESDR
 SMArt v5.`, `Needs the radio from you: a terminal is listening on 146.520 MHz.`, `No radio here can
-hear 1090.000 MHz.`), and once a job runs it is the job's state and frequency (`Running · 1090.000
+hear 1090.000 MHz.`; a decoder that needs its own capture takes only a radio that tunes to the
+frequency itself, so a file radio recorded elsewhere reads the daemon's decline, `NESDR SMArt v5
+cannot tune to 1090.000 MHz (a file radio plays what it recorded).`, and is never offered for
+take-over), and once a job runs it is the job's state and frequency (`Running · 1090.000
 MHz`), in `caution` while degraded, because the prediction is advice and the job is the truth; its
 `status_detail` is the sidebar's job line and this line's tooltip, not said twice. A sentence of
 the place writes every frequency in MHz (`DecoderPages.frequencyWords`), 1090 MHz too, so one that

@@ -1857,13 +1857,15 @@ scenes:
       - {cmd: key, keys: cmd+3}
       - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tab: table}}
 
-  # The take-over question (docs/plans/decoders-app.md, DA-8) on scene_adsb_off, a capture that
-  # hears 1090 MHz 600 kHz off its centre, with the window's channel on it. ADS-B needs its own
-  # capture centred on 1090, so the radio is the window's and Start asks first: Cancel leaves
-  # the channel, and Take the radio sends take_over. The question writes both frequencies in MHz
-  # (DA-15). The file radio plays what it recorded and cannot be centred on 1090 MHz, so the
-  # daemon declines the job (DA-13) and leaves the radio where it was: the page says Failed with
-  # the reason, shows no running header (DA-17), and Start is back.
+  # The take-over question's other side (docs/plans/decoders-app.md, DA-8, DA-13) on
+  # scene_adsb_off, a capture that hears 1090 MHz 600 kHz off its centre, with the window's
+  # channel on it. ADS-B needs its own capture centred on 1090 MHz, and the file radio plays
+  # what it recorded and cannot be centred there, so nothing here can run it: the page says why
+  # in the daemon's words and Start is off, with no take-over question, because taking the radio
+  # would not move it. No file fixture can retune, so the question itself is checked only by
+  # DecoderPlacementTests. A terminal's `ley decode --job --take-over` insists, and the daemon
+  # declines it with the same reason (DA-13), which the page shows as Failed while the radio stays
+  # where it was. The sentence writes the frequency in MHz (DA-15).
   - name: decoders-take-over
     covers: [DecodersView.swift, DecoderSession.swift, DecoderPlacement.swift, DecoderPages.swift]
     fixtures: [{name: scene_adsb_off}]
@@ -1874,23 +1876,14 @@ scenes:
       decoder: adsb
       settle: 2
     app:
-      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tabs.0: log, decoders.record_count: 0, decoders.start_enabled: true, decoders.placement: "Needs the radio from you: you are listening on 1090.600 MHz."}}
+      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tabs.0: log, decoders.record_count: 0, decoders.start_enabled: false, decoders.placement: "NESDR SMArt v5 cannot tune to 1090.000 MHz (a file radio plays what it recorded)."}}
       - {cmd: snapshot, name: placement}
       - {cmd: ax, name: placement}
-      - {cmd: press, identifier: decoders.page.start}
-      - {cmd: wait, seconds: 1}
-      - {cmd: state, expect: {alert.title: "Take the radio?", alert.message: "Aircraft needs the radio at 1090.000 MHz, and you are listening on 1090.600 MHz. The radio goes back when the decoder stops.", alert.buttons.0: Take the radio, alert.buttons.1: Cancel}}
-      - {cmd: snapshot, name: question}
-      - {cmd: ax, name: question, window: sheet}
-      - {cmd: press, identifier: alert.cancel}
-      - {cmd: wait, seconds: 1}
-      - {cmd: state, expect: {alert: null, decoders.start_shown: true, tuned_hz: 1090600000}}
-      - {cmd: ley, args: [jobs], expect_stdout: "!job_"}
-      - {cmd: press, identifier: decoders.page.start}
-      - {cmd: wait, seconds: 1}
-      - {cmd: press, identifier: alert.take-the-radio}
-      - {cmd: wait, seconds: 3, expect_log: "started: adsb at 1090000000 Hz, kept"}
-      - {cmd: state, expect: {alert: null, decoders.state: Failed, decoders.detail: "NESDR SMArt v5 cannot tune to 1090.000 MHz (a file radio plays what it recorded)", decoders.header: null, decoders.start_shown: true, decoders.record_count: 0, tuned_hz: 1090600000}}
+      - {cmd: ley_bg, id: insist, args: [decode, adsb, --job, --take-over]}
+      - {cmd: wait, seconds: 2}
+      - {cmd: kill, id: insist}
+      - {cmd: ley, args: [jobs], expect_stdout: [failed, "cannot tune to 1090.000 MHz .a file radio plays what it recorded."]}
+      - {cmd: state, expect: {alert: null, decoders.state: Failed, decoders.detail: "NESDR SMArt v5 cannot tune to 1090.000 MHz (a file radio plays what it recorded)", decoders.header: null, decoders.start_shown: true, decoders.start_enabled: false, decoders.record_count: 0, tuned_hz: 1090600000}}
       - {cmd: snapshot, name: declined}
       - {cmd: ax, name: declined}
 
