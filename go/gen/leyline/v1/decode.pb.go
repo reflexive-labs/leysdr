@@ -408,7 +408,11 @@ type DecoderManifest struct {
 	ContactsHosts []string `protobuf:"bytes,18,rep,name=contacts_hosts,json=contactsHosts,proto3" json:"contacts_hosts,omitempty"`
 	// How a client shows this decoder and its records. Optional: a client given no display prints
 	// its own line per record and names a transmitter by its device_id.
-	Display       *DecoderDisplay `protobuf:"bytes,19,opt,name=display,proto3" json:"display,omitempty"`
+	Display *DecoderDisplay `protobuf:"bytes,19,opt,name=display,proto3" json:"display,omitempty"`
+	// A decoder that exists for tests and check scenes, such as one that replays a script instead
+	// of decoding. The daemon lists it only when it runs with --no-hardware, which is how tests,
+	// evals and check scenes run it, so it stays out of a person's list.
+	TestOnly      bool `protobuf:"varint,20,opt,name=test_only,json=testOnly,proto3" json:"test_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -576,6 +580,13 @@ func (x *DecoderManifest) GetDisplay() *DecoderDisplay {
 	return nil
 }
 
+func (x *DecoderManifest) GetTestOnly() bool {
+	if x != nil {
+		return x.TestOnly
+	}
+	return false
+}
+
 // How clients present a decoder: the app's pages, and `ley decode`, `ley track` and `ley
 // decoders`. Every client renders the same templates by the same rules, so a new decoder needs
 // only its manifest to be shown (docs/reference/writing-a-decoder.md, "Display").
@@ -605,7 +616,10 @@ type DecoderDisplay struct {
 	// Template for a transmitter's name, rendered over the newest value of every field it has sent;
 	// empty or unresolved means the device_id.
 	EntityName string `protobuf:"bytes,4,opt,name=entity_name,json=entityName,proto3" json:"entity_name,omitempty"`
-	// Fields shown as the transmitter table's columns, in order.
+	// Fields shown as the transmitter table's columns, in order. An entry is a name as a template
+	// writes it, `name` or `name:N` with N from 0 to 6, and prints as `{name}` or `{name:N}` would:
+	// `ground_speed_kn:0` prints 190 where `ground_speed_kn` prints 189.7. A column is headed by its
+	// name without the precision; an entry with a precision outside 0 to 6 never resolves.
 	Columns       []string `protobuf:"bytes,5,rep,name=columns,proto3" json:"columns,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2356,7 +2370,7 @@ var File_leyline_v1_decode_proto protoreflect.FileDescriptor
 const file_leyline_v1_decode_proto_rawDesc = "" +
 	"\n" +
 	"\x17leyline/v1/decode.proto\x12\n" +
-	"leyline.v1\x1a\x17leyline/v1/common.proto\x1a\x13leyline/v1/ai.proto\"\x9a\x06\n" +
+	"leyline.v1\x1a\x17leyline/v1/common.proto\x1a\x13leyline/v1/ai.proto\"\xb7\x06\n" +
 	"\x0fDecoderManifest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x18\n" +
@@ -2379,7 +2393,8 @@ const file_leyline_v1_decode_proto_rawDesc = "" +
 	"\x04args\x18\x0f \x03(\tR\x04args\x12/\n" +
 	"\x13credential_provider\x18\x11 \x01(\tR\x12credentialProvider\x12%\n" +
 	"\x0econtacts_hosts\x18\x12 \x03(\tR\rcontactsHosts\x124\n" +
-	"\adisplay\x18\x13 \x01(\v2\x1a.leyline.v1.DecoderDisplayR\adisplay\"\x80\x02\n" +
+	"\adisplay\x18\x13 \x01(\v2\x1a.leyline.v1.DecoderDisplayR\adisplay\x12\x1b\n" +
+	"\ttest_only\x18\x14 \x01(\bR\btestOnly\"\x80\x02\n" +
 	"\x0eDecoderDisplay\x12\x14\n" +
 	"\x05title\x18\x01 \x01(\tR\x05title\x12\x16\n" +
 	"\x06symbol\x18\x02 \x01(\tR\x06symbol\x12G\n" +

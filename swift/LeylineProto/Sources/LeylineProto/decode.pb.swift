@@ -462,6 +462,14 @@ public nonisolated struct Leyline_V1_DecoderManifest: @unchecked Sendable {
   /// Clears the value of `display`. Subsequent reads from it will return its default value.
   public mutating func clearDisplay() {_uniqueStorage()._display = nil}
 
+  /// A decoder that exists for tests and check scenes, such as one that replays a script instead
+  /// of decoding. The daemon lists it only when it runs with --no-hardware, which is how tests,
+  /// evals and check scenes run it, so it stays out of a person's list.
+  public var testOnly: Bool {
+    get {_storage._testOnly}
+    set {_uniqueStorage()._testOnly = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -507,7 +515,10 @@ public nonisolated struct Leyline_V1_DecoderDisplay: Sendable {
   /// empty or unresolved means the device_id.
   public var entityName: String = String()
 
-  /// Fields shown as the transmitter table's columns, in order.
+  /// Fields shown as the transmitter table's columns, in order. An entry is a name as a template
+  /// writes it, `name` or `name:N` with N from 0 to 6, and prints as `{name}` or `{name:N}` would:
+  /// `ground_speed_kn:0` prints 190 where `ground_speed_kn` prints 189.7. A column is headed by its
+  /// name without the precision; an entry with a precision outside 0 to 6 never resolves.
   public var columns: [String] = []
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -1285,7 +1296,7 @@ nonisolated extension Leyline_V1_PredicateOp: SwiftProtobuf._ProtoNameProviding 
 
 nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DecoderManifest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}version\0\u{1}description\0\u{1}attribution\0\u{1}license\0\u{1}recipe\0\u{1}input\0\u{1}outputs\0\u{3}entity_silence_s\0\u{1}fields\0\u{3}supports_multi_channel\0\u{3}needs_dedicated_capture\0\u{3}stateful_predicates_available\0\u{1}executable\0\u{1}args\0\u{1}aliases\0\u{3}credential_provider\0\u{3}contacts_hosts\0\u{1}display\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}version\0\u{1}description\0\u{1}attribution\0\u{1}license\0\u{1}recipe\0\u{1}input\0\u{1}outputs\0\u{3}entity_silence_s\0\u{1}fields\0\u{3}supports_multi_channel\0\u{3}needs_dedicated_capture\0\u{3}stateful_predicates_available\0\u{1}executable\0\u{1}args\0\u{1}aliases\0\u{3}credential_provider\0\u{3}contacts_hosts\0\u{1}display\0\u{3}test_only\0")
 
   fileprivate class _StorageClass {
     var _name: String = String()
@@ -1307,6 +1318,7 @@ nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftPr
     var _credentialProvider: String = String()
     var _contactsHosts: [String] = []
     var _display: Leyline_V1_DecoderDisplay? = nil
+    var _testOnly: Bool = false
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -1336,6 +1348,7 @@ nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftPr
       _credentialProvider = source._credentialProvider
       _contactsHosts = source._contactsHosts
       _display = source._display
+      _testOnly = source._testOnly
     }
   }
 
@@ -1373,6 +1386,7 @@ nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftPr
         case 17: try { try decoder.decodeSingularStringField(value: &_storage._credentialProvider) }()
         case 18: try { try decoder.decodeRepeatedStringField(value: &_storage._contactsHosts) }()
         case 19: try { try decoder.decodeSingularMessageField(value: &_storage._display) }()
+        case 20: try { try decoder.decodeSingularBoolField(value: &_storage._testOnly) }()
         default: break
         }
       }
@@ -1442,6 +1456,9 @@ nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftPr
       try { if let v = _storage._display {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 19)
       } }()
+      if _storage._testOnly != false {
+        try visitor.visitSingularBoolField(value: _storage._testOnly, fieldNumber: 20)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -1470,6 +1487,7 @@ nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftPr
         if _storage._credentialProvider != rhs_storage._credentialProvider {return false}
         if _storage._contactsHosts != rhs_storage._contactsHosts {return false}
         if _storage._display != rhs_storage._display {return false}
+        if _storage._testOnly != rhs_storage._testOnly {return false}
         return true
       }
       if !storagesAreEqual {return false}
