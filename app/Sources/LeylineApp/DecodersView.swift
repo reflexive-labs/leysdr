@@ -1,0 +1,565 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// Decoders, the window's third place (docs/plans/decoders-app.md, DA-8): what the daemon's
+// decoders hear, drawn from each decoder's manifest so a decoder added later shows with no app
+// change. The same three columns as the Library: a sidebar of the installed decoders with their
+// running jobs, the selected decoder's page, and the inspector on a transmitter or a record
+// (`DecoderInspector.swift`). The page's header starts and stops the decoder as a kept job, with
+// the line `DecoderPlacement` predicts before it starts and the job's own state and detail once it
+// runs; under it the tabs the decoder's output shapes call for: the log always, with the alerts in
+// effect above it, the transmitter table for a decoder that declares entities, and the map once a
+// record carries a position (`DecoderMap.swift`). The radio keeps running underneath, as it does
+// in the Library. Every word on a record is the manifest's display template, as `ley decode`
+// prints it.
+
+import LeylineClient
+import LeylineProto
+import SwiftUI
+
+struct DecodersBody: View {
+    @Environment(AppSession.self) private var session
+
+    var body: some View {
+        HStack(spacing: 0) {
+            DecodersSidebar()
+                .frame(width: Theme.Layout.sidebarWidth)
+                .stageRegion(.sidebar)
+                .identifiedGroup("decoders.sidebar")
+            Rectangle().fill(Theme.border).frame(width: 1)
+            DecoderPage()
+                .identifiedGroup("decoders.page")
+            if session.inspectorShown {
+                Rectangle().fill(Theme.hairline).frame(width: 1)
+                DecoderInspector()
+                    .frame(width: Theme.Layout.inspectorWidth)
+                    .stageRegion(.inspector)
+                    .identifiedGroup("decoders.inspector")
+            }
+        }
+        .modifier(TakeOverQuestion())
+    }
+}
+
+/// Start's question when the decoder needs a radio somebody is using: the daemon's own reason,
+/// and Take the radio, which starts the job with `take_over`. The binding's setter does nothing,
+/// as the retune question's does, so the buttons alone answer it.
+struct TakeOverQuestion: ViewModifier {
+    @Environment(AppSession.self) private var session
+
+    func body(content: Content) -> some View {
+        let d = session.decoders
+        content.alert(
+            "Take the radio?",
+            isPresented: Binding(get: { d.takeOverAsk != nil }, set: { _ in }),
+            presenting: d.takeOverAsk
+        ) { _ in
+            Button("Cancel", role: .cancel) { Task { await d.answerTakeOver(false) } }
+            Button("Take the radio") { Task { await d.answerTakeOver(true) } }
+        } message: { ask in
+            let title = d.manifest(named: ask.decoder).map(DecoderPages.title) ?? ask.decoder
+            Text(
+                "\(title) needs the radio at \(Frequency.format(ask.frequencyHz)), and \(ask.reason). The radio goes back when the decoder stops."
+            )
+        }
+    }
+}
+
+// MARK: The sidebar
+
+/// `DECODERS`, then one row per installed decoder: its symbol, its title, and what it is doing,
+/// with a line under it for each running job (its frequency and liveness). A click shows its page.
+struct DecodersSidebar: View {
+    @Environment(AppSession.self) private var session
+
+    var body: some View {
+        let d = session.decoders
+        VStack(alignment: .leading, spacing: 0) {
+            SectionHeader(text: "Decoders")
+                .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 8)
+            if d.manifests == nil {
+                note(
+                    d.listError.map { "The decoders could not be listed: \($0.message)" }
+                        ?? (session.isLive ? "Reading the decoders…" : "The daemon is not running.")
+                )
+            } else if d.listed.isEmpty {
+                note("No decoders are installed. ley decoders says where the daemon looks.")
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(d.listed, id: \.name) { m in
+                        let running = DecoderPages.running(of: m, in: session.state.jobs)
+                        DecoderRow(
+                            manifest: m, running: running, selected: d.selectedName == m.name
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture { d.select(m.name) }
+                        .pressableGroup("decoders.decoder.\(ViewIdentifier.slug(m.name))") {
+                            d.select(m.name)
+                        }
+                        ForEach(Array(running.enumerated()), id: \.element.jobID) { i, j in
+                            DecoderJobLine(job: j)
+                                .identifiedGroup(
+                                    "decoders.decoder.\(ViewIdentifier.slug(m.name)).job.\(i)")
+                        }
+                    }
+                    Spacer(minLength: 12)
+                }
+            }
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Theme.panel)
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text).font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 14).padding(.vertical, 6)
+    }
+}
+
+/// A decoder's row: its symbol, its title in `label`, and under it `Running` in `good`,
+/// `Degraded` in `caution`, or its name and first frequency in `inkFaint`; `raised` when selected.
+struct DecoderRow: View {
+    let manifest: Leyline_V1_DecoderManifest
+    let running: [Leyline_V1_Job]
+    let selected: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: DecoderPages.symbol(manifest))
+                .font(Theme.Font.decoderGlyph)
+                .foregroundStyle(running.isEmpty ? Theme.inkTertiary : Theme.good)
+                .frame(width: Theme.Layout.decoderSymbolWidth)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(DecoderPages.title(manifest)).font(Theme.Font.label)
+                    .foregroundStyle(selected ? Theme.ink : Theme.inkSecondary).lineLimit(1)
+                Text(subtitle).font(Theme.Font.footnote).foregroundStyle(subtitleInk)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 6)
+        .background(selected ? Theme.raised : Color.clear)
+        .help(manifest.description_p)
+    }
+
+    private var subtitle: String {
+        if running.contains(where: { $0.state == .degraded }) { return "Degraded" }
+        if running.count > 1 { return "\(running.count) running" }
+        if !running.isEmpty { return "Running" }
+        let hz = manifest.recipe.frequenciesHz.first.map { " · \(Frequency.format($0))" } ?? ""
+        return manifest.name + hz
+    }
+
+    private var subtitleInk: Color {
+        if running.contains(where: { $0.state == .degraded }) { return Theme.caution }
+        return running.isEmpty ? Theme.inkFaint : Theme.good
+    }
+}
+
+/// A running job under its decoder: `144.390 MHz · 12 records, last 3 s ago`, in `caution` while
+/// it is degraded.
+struct DecoderJobLine: View {
+    let job: Leyline_V1_Job
+
+    var body: some View {
+        let hz = DecoderPages.frequencyHz(job)
+        let detail = DecoderPages.detail(job)
+        let words = [hz > 0 ? Frequency.format(hz) : "", detail].filter { !$0.isEmpty }
+            .joined(separator: " · ")
+        Text(words.isEmpty ? DecoderPages.stateWord(job) : words)
+            .font(Theme.Font.footnote)
+            .foregroundStyle(job.state == .degraded ? Theme.caution : Theme.inkFaint)
+            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+            .padding(.leading, 14 + Theme.Layout.decoderJobIndent).padding(.trailing, 14)
+            .padding(.bottom, 6)
+            .help("\(job.jobID): \(DecoderPages.stateWord(job))")
+    }
+}
+
+// MARK: The page
+
+struct DecoderPage: View {
+    @Environment(AppSession.self) private var session
+
+    var body: some View {
+        let d = session.decoders
+        ZStack {
+            Theme.ground
+            if let m = d.selected {
+                content(m, d)
+            } else if d.manifests != nil, !d.listed.isEmpty {
+                Text("Pick a decoder.").font(Theme.Font.label).foregroundStyle(Theme.inkTertiary)
+            }
+        }
+    }
+
+    private func content(_ m: Leyline_V1_DecoderManifest, _ d: DecoderSession) -> some View {
+        VStack(spacing: 0) {
+            DecoderPageHeader(manifest: m)
+                .frame(minHeight: Theme.Layout.pageHeaderHeight)
+            Rectangle().fill(Theme.border).frame(height: 1)
+            HStack(spacing: 12) {
+                if d.tabs.count > 1 { DecoderTabSwitch() }
+                Spacer(minLength: 8)
+                Text(countWords(d)).font(Theme.Font.footnote).foregroundStyle(Theme.inkFaint)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, Theme.Layout.pageInset)
+            .frame(height: Theme.Layout.decoderTabBarHeight)
+            if let n = d.notice {
+                Text(n).font(Theme.Font.label).foregroundStyle(Theme.accentRec)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Theme.Layout.pageInset).padding(.bottom, 8)
+                    .accessibilityIdentifier("decoders.page.notice")
+            }
+            Rectangle().fill(Theme.hairline).frame(height: 1)
+            switch d.shownTab {
+            case .log: DecoderLog()
+            case .table: DecoderTable(manifest: m)
+            case .map: DecoderMapTab()
+            }
+        }
+    }
+
+    /// `7 records · 7 transmitters`, `(more not loaded)` when the history was cut.
+    private func countWords(_ d: DecoderSession) -> String {
+        let n = d.records.entries.count
+        let t = d.table.entities.count
+        var words = n == 1 ? "1 record" : "\(n) records"
+        if t > 0 { words += t == 1 ? " · 1 transmitter" : " · \(t) transmitters" }
+        if d.historyTruncated { words += " (older not loaded)" }
+        if !d.historyLoaded, n == 0 { words = "" }
+        return words
+    }
+}
+
+/// The decoder's symbol and title over what it is doing, and Start or Stop. While a job runs the
+/// line is its state, frequency and `status_detail` (`Running · 144.390 MHz · 12 records, last 3 s
+/// ago`; `caution` while degraded); otherwise it is where Start would put it
+/// (`DecoderPlacement.words`), and under it the newest job's failure when it failed.
+struct DecoderPageHeader: View {
+    let manifest: Leyline_V1_DecoderManifest
+    @Environment(AppSession.self) private var session
+
+    var body: some View {
+        let d = session.decoders
+        let jobs = DecoderPages.jobs(of: manifest, in: session.state.jobs)
+        let running = jobs.filter(DecoderPages.isLive)
+        let placement = session.decoderPlacement(manifest)
+        HStack(spacing: 12) {
+            Image(systemName: DecoderPages.symbol(manifest))
+                .font(Theme.Font.decoderTitleGlyph)
+                .foregroundStyle(running.isEmpty ? Theme.inkTertiary : Theme.good)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(DecoderPages.title(manifest))
+                    .font(Theme.Font.name).tracking(Theme.nameTracking)
+                    .foregroundStyle(Theme.ink).lineLimit(1)
+                if let j = running.first {
+                    Text(liveWords(j)).font(Theme.Font.value)
+                        .foregroundStyle(j.state == .degraded ? Theme.caution : Theme.inkMuted)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("decoders.page.state")
+                } else {
+                    Text(placement.words).font(Theme.Font.value)
+                        .foregroundStyle(placementInk(placement)).lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("decoders.page.placement")
+                    if let j = jobs.first, j.state == .failed {
+                        Text("Failed: \(DecoderPages.detail(j))").font(Theme.Font.footnote)
+                            .foregroundStyle(Theme.accentRec).lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("decoders.page.failed")
+                    }
+                }
+            }
+            Spacer(minLength: 12)
+            if running.isEmpty {
+                let starting = d.starting == manifest.name
+                Button(starting ? "Starting…" : "Start") {
+                    guard let hz = session.decoderFrequency(manifest) else { return }
+                    Task { await d.start(manifest, frequencyHz: hz, placement: placement) }
+                }
+                .buttonStyle(.bordered)
+                .disabled(!session.isLive || !placement.canStart || starting)
+                .help(startHelp(placement))
+                .accessibilityIdentifier("decoders.page.start")
+            } else {
+                Button("Stop") { Task { await d.stop(running) } }
+                    .buttonStyle(.bordered)
+                    .help(
+                        "Stop \(running.map(\.jobID).joined(separator: ", ")); what it decoded stays"
+                    )
+                    .accessibilityIdentifier("decoders.page.stop")
+            }
+        }
+        .padding(.horizontal, Theme.Layout.pageInset).padding(.vertical, 10)
+    }
+
+    private func liveWords(_ j: Leyline_V1_Job) -> String {
+        let hz = DecoderPages.frequencyHz(j)
+        return [
+            DecoderPages.stateWord(j), hz > 0 ? Frequency.format(hz) : "", DecoderPages.detail(j),
+        ]
+        .filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    private func placementInk(_ p: DecoderPlacement) -> Color {
+        switch p {
+        case .needsRadio: Theme.caution
+        case .unreachable, .needsFrequency: Theme.inkFaint
+        default: Theme.inkMuted
+        }
+    }
+
+    private func startHelp(_ p: DecoderPlacement) -> String {
+        guard let hz = session.decoderFrequency(manifest) else { return p.words }
+        let ask = p.needsTakeOver ? " Asks first, because the radio is in use." : ""
+        return
+            "Decode \(Frequency.format(hz)) as a kept job: it runs until Stop, after the window closes too.\(ask)"
+    }
+}
+
+/// `Log | Table | Map`, the place switch's look: the tab showing raised on `border` in `ink`, the
+/// others on none in `inkTertiary`.
+struct DecoderTabSwitch: View {
+    @Environment(AppSession.self) private var session
+
+    var body: some View {
+        let d = session.decoders
+        let outer = Theme.Layout.placeSwitchRadius
+        let inset = Theme.Layout.placeSwitchInset
+        HStack(spacing: 0) {
+            ForEach(d.tabs) { t in
+                let shown = d.shownTab == t
+                Button {
+                    d.tab = t
+                } label: {
+                    Text(t.title).font(Theme.Font.label)
+                        .foregroundStyle(shown ? Theme.ink : Theme.inkTertiary)
+                        .padding(.horizontal, 12).padding(.vertical, 3)
+                        .background(
+                            shown ? Theme.border : Color.clear,
+                            in: RoundedRectangle(cornerRadius: outer - inset)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(shown ? .isSelected : [])
+                .accessibilityIdentifier("decoders.tab.\(t.rawValue)")
+            }
+        }
+        .padding(inset)
+        .background(Theme.chrome, in: RoundedRectangle(cornerRadius: outer))
+        .overlay(RoundedRectangle(cornerRadius: outer).strokeBorder(Theme.border, lineWidth: 1))
+    }
+}
+
+// MARK: The log
+
+/// The alerts in effect, then every record newest first: its time, its transmitter, its kind and
+/// its line. A click shows the record in the inspector.
+struct DecoderLog: View {
+    @Environment(AppSession.self) private var session
+
+    var body: some View {
+        let d = session.decoders
+        let entries = d.records.entries
+        VStack(spacing: 0) {
+            let alerts = d.alerts
+            if !alerts.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(alerts.enumerated()), id: \.element.id) { i, e in
+                        DecoderAlertLine(entry: e)
+                            .identifiedGroup("decoders.alert.\(i)")
+                    }
+                }
+                .padding(.horizontal, Theme.Layout.pageInset).padding(.vertical, 10)
+                Rectangle().fill(Theme.hairline).frame(height: 1)
+            }
+            if entries.isEmpty {
+                Text(
+                    d.historyLoaded
+                        ? "Nothing heard in the last day. Start the decoder to listen."
+                        : "Reading the last day's records…"
+                )
+                .font(Theme.Font.label).foregroundStyle(Theme.inkTertiary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(entries.enumerated()), id: \.element.id) { i, e in
+                            DecoderLogRow(
+                                entry: e, name: d.name(of: e.record.deviceID),
+                                summary: d.summary(e.record),
+                                selected: d.selectedRecord == e.id
+                            )
+                            .contentShape(Rectangle())
+                            .onTapGesture { d.selectedRecord = e.id }
+                            .pressableGroup("decoders.record.\(i)") { d.selectedRecord = e.id }
+                        }
+                    }
+                    .padding(.vertical, 6)
+                }
+            }
+        }
+    }
+}
+
+/// One record: `19:42:31  N0CALL-3  position  37.8717N 122.2633W # fill-in digipeater`. The time
+/// is `inkFaint` when no anchor dated it and it is when the record reached the window.
+struct DecoderLogRow: View {
+    let entry: RecordEntry
+    let name: String
+    let summary: String
+    let selected: Bool
+
+    var body: some View {
+        HStack(spacing: Theme.Layout.logColumnGap) {
+            Text(DecoderPages.clock(entry.at)).font(Theme.Font.value)
+                .foregroundStyle(entry.dated ? Theme.inkMuted : Theme.inkFaint)
+                .frame(width: Theme.Layout.decoderTimeWidth, alignment: .leading)
+            Text(name.isEmpty ? "—" : name).font(Theme.Font.label)
+                .foregroundStyle(Theme.inkSecondary).lineLimit(1)
+                .frame(width: Theme.Layout.decoderNameWidth, alignment: .leading)
+            Text(entry.record.kind).font(Theme.Font.footnote).foregroundStyle(Theme.inkFaint)
+                .lineLimit(1)
+                .frame(width: Theme.Layout.decoderKindWidth, alignment: .leading)
+            Text(summary).font(Theme.Font.label).foregroundStyle(Theme.ink).lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Theme.Layout.pageInset)
+        .frame(height: Theme.Layout.decoderRowHeight)
+        .background(selected ? Theme.raised : Color.clear)
+        .help(
+            entry.dated ? "" : "No anchor dates this record: the time is when it reached the window"
+        )
+    }
+}
+
+/// An alert in effect: its line in `ink` on `alertGround`, with who sent it and until when.
+struct DecoderAlertLine: View {
+    let entry: RecordEntry
+    @Environment(AppSession.self) private var session
+
+    var body: some View {
+        let d = session.decoders
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill").font(Theme.Font.rowGlyph)
+                .foregroundStyle(Theme.caution)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(d.summary(entry.record)).font(Theme.Font.label).foregroundStyle(Theme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(
+                    [
+                        d.name(of: entry.record.deviceID),
+                        DecoderPages.untilWords(entry.record) ?? "",
+                    ]
+                    .filter { !$0.isEmpty }.joined(separator: " · ")
+                )
+                .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaint)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Theme.Layout.decoderAlertPadding)
+        .background(
+            Theme.alertGround, in: RoundedRectangle(cornerRadius: Theme.Layout.decoderAlertRadius)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture { d.selectedRecord = entry.id }
+    }
+}
+
+// MARK: The table
+
+/// The transmitters, newest first, as `ley track` lists them: the name (the person's label, else
+/// the display's entity name, else the id), the display's columns headed as `ley track` heads
+/// them, how many records, when last heard and the last line. A click shows it in the inspector.
+struct DecoderTable: View {
+    let manifest: Leyline_V1_DecoderManifest
+    @Environment(AppSession.self) private var session
+
+    var body: some View {
+        let d = session.decoders
+        let columns = d.table.display?.columns ?? []
+        let rows = d.table.rows
+        VStack(spacing: 0) {
+            HStack(spacing: Theme.Layout.logColumnGap) {
+                head("Transmitter", width: Theme.Layout.decoderTableNameWidth)
+                ForEach(columns, id: \.self) { c in
+                    head(
+                        DecoderPages.columnHead(c, manifest: manifest),
+                        width: Theme.Layout.decoderTableColumnWidth,
+                        trailing: DecoderPages.columnIsNumeric(c, manifest: manifest))
+                }
+                head("Seen", width: Theme.Layout.decoderTableCountWidth, trailing: true)
+                head("Last heard", width: Theme.Layout.decoderTableTimeWidth)
+                head("Last", width: nil)
+            }
+            .padding(.horizontal, Theme.Layout.pageInset).padding(.vertical, 8)
+            Rectangle().fill(Theme.hairline).frame(height: 1)
+            if rows.isEmpty {
+                Text("No transmitter heard yet.").font(Theme.Font.label)
+                    .foregroundStyle(Theme.inkTertiary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(rows) { e in
+                            row(e, columns: columns, d: d)
+                                .contentShape(Rectangle())
+                                .onTapGesture { d.selectedTransmitter = e.deviceID }
+                                .pressableGroup(
+                                    "decoders.transmitter.\(ViewIdentifier.slug(e.deviceID))"
+                                ) { d.selectedTransmitter = e.deviceID }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+    }
+
+    private func head(_ text: String, width: CGFloat?, trailing: Bool = false) -> some View {
+        Text(text.uppercased()).font(Theme.Font.columnHead).tracking(Theme.sectionTracking)
+            .foregroundStyle(Theme.inkFaint).lineLimit(1)
+            .frame(width: width, alignment: trailing ? .trailing : .leading)
+            .frame(maxWidth: width == nil ? .infinity : nil, alignment: .leading)
+    }
+
+    private func row(_ e: DecoderEntity, columns: [String], d: DecoderSession) -> some View {
+        let label = d.labels.name(of: e.deviceID) ?? ""
+        let name = d.name(of: e.deviceID)
+        let selected = d.selectedTransmitter == e.deviceID
+        return HStack(spacing: Theme.Layout.logColumnGap) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name).font(Theme.Font.label).foregroundStyle(Theme.ink).lineLimit(1)
+                if name != e.deviceID {
+                    Text(e.deviceID).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
+                        .lineLimit(1)
+                }
+            }
+            .frame(width: Theme.Layout.decoderTableNameWidth, alignment: .leading)
+            ForEach(columns, id: \.self) { c in
+                Text(d.table.column(c, of: e, label: label) ?? "—").font(Theme.Font.value)
+                    .foregroundStyle(Theme.inkSecondary).lineLimit(1)
+                    .frame(
+                        width: Theme.Layout.decoderTableColumnWidth,
+                        alignment: DecoderPages.columnIsNumeric(c, manifest: manifest)
+                            ? .trailing : .leading)
+            }
+            Text("\(e.count)").font(Theme.Font.value).foregroundStyle(Theme.inkSecondary)
+                .frame(width: Theme.Layout.decoderTableCountWidth, alignment: .trailing)
+            Text(DecoderPages.clock(e.lastHeard)).font(Theme.Font.value)
+                .foregroundStyle(Theme.inkMuted)
+                .frame(width: Theme.Layout.decoderTableTimeWidth, alignment: .leading)
+                .help("Heard \(DecoderPages.agoWords(Date().timeIntervalSince(e.lastHeard)))")
+            Text(e.summary).font(Theme.Font.label).foregroundStyle(Theme.inkTertiary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, Theme.Layout.pageInset)
+        .padding(.vertical, 4)
+        .background(selected ? Theme.raised : Color.clear)
+    }
+}

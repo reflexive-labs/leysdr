@@ -97,6 +97,10 @@ final class AppSession {
     private var bookmarkWatch: DispatchSourceFileSystemObject?
     private var bookmarkWatchFD: Int32 = -1
 
+    /// The Decoders place (`DecoderSession.swift`): the installed decoders, the page's records and
+    /// transmitters, and the labels file.
+    let decoders = DecoderSession()
+
     // Feeds.
     let spectrum = SpectrumFeed()
     let telemetry = ChannelTelemetryFeed()
@@ -174,7 +178,7 @@ final class AppSession {
     func bookmarkRows(_ bookmarks: [Bookmark]) -> [BookmarkGroup] {
         bookmarkSort.sorted(BookmarkGroup.grouped(bookmarks))
     }
-    /// Which of the window's two places shows, the toolbar's `Radio | Library`. The live radio keeps running in the Library: its channel, sink and
+    /// Which of the window's three places shows, the toolbar's `Radio | Library | Decoders`. The live radio keeps running in the Library: its channel, sink and
     /// subscriptions are the session's, not the Radio body's. Remembered in the defaults under
     /// `placeKey`, the way `inspectorShown` is. Arriving in the Library selects its first channel
     /// when none is selected, so the centre is never blank.
@@ -187,6 +191,7 @@ final class AppSession {
             guard place != oldValue else { return }
             log("session", "place: \(place.rawValue)")
             if place == .library { selectFirstChannel() }
+            decoders.setShown(place == .decoders)
             followPage()
             // The audio ladder is drawn only by the Radio's inspector.
             followAudioLevels()
@@ -395,9 +400,14 @@ final class AppSession {
     @ObservationIgnored private var speechCache: [String: RecordingSpeech] = [:]
     /// The transcription jobs as last seen, so a change to one reads its recording's speech again.
     @ObservationIgnored private var transcriptionsSeen: [Leyline_V1_Job] = []
-    /// The speech decoder as `ListDecoders` lists it, nil until read or when none is installed.
-    private(set) var speechDecoder: Leyline_V1_DecoderManifest?
-    @ObservationIgnored private var speechDecoderRead = false
+    /// The speech decoder as `ListDecoders` lists it, nil until read or when none is installed:
+    /// read from the Decoders place's list, so the list is fetched once.
+    var speechDecoder: Leyline_V1_DecoderManifest? {
+        decoders.manifests?.first {
+            $0.name == SpeechRecords.protocolName
+                || $0.aliases.contains(SpeechRecords.protocolName)
+        }
+    }
     /// The over the search or a speech line's click selected in `selectedPartURI`, for the page
     /// to scroll to and mark. Presentation only.
     var selectedOver: Int?
@@ -913,6 +923,8 @@ final class AppSession {
             let daemon = try DaemonConnection(identity: .fresh(kind: "app", label: "Leyline"))
             self.daemon = daemon
             socketPath = daemon.socketPath
+            decoders.connect(daemon)
+            decoders.setShown(place == .decoders)
             let mirror = DaemonMirror(connection: daemon)
             mirror.onChange = { [weak self] m in self?.mirrorChanged(m) }
             self.mirror = mirror
@@ -962,6 +974,7 @@ final class AppSession {
             // Once on adoption: the store as it is, and the manifests read afresh.
             if isLive {
                 staleManifests.formUnion(manifests.keys)
+                decoders.becameLive()
                 reloadRecordings()
                 followUpdate()
             }
@@ -1048,6 +1061,7 @@ final class AppSession {
             if sinkCopy != heldSink { heldSink = sinkCopy }
         }
         followOtherClients()
+        decoders.mirrorChanged(state)
         spectrum.follow(capture, connection: daemon)
         telemetry.follow(
             channelID, offsetHz: channel?.offsetHz, centerHz: capture?.centerHz,
@@ -3459,7 +3473,7 @@ final class AppSession {
         for r in c.recordings { readManifestIfNeeded(r.jobID) }
         // One read for the channel's recordings whose speech has not been read.
         loadSpeech(of: c.recordings.map(\.jobID).filter { speechLines[$0] == nil })
-        readSpeechDecoderIfNeeded()
+        decoders.readManifests()
     }
 
     /// `ResolveLocalPath(ley://recordings/<id>)`, then `recording.json` from that directory:
@@ -3890,6 +3904,11 @@ final class AppSession {
     /// place, and because a Commands body is not guaranteed to re-evaluate when `place`
     /// changes, whichever item fires does what the place showing means (`LeylineApp.swift`).
     func pressSpace() {
+        if place == .decoders {
+            // Decoders has no transport: the key is a text field's, or nothing.
+            _ = TextFieldKeys.forward(.space)
+            return
+        }
         if place == .library {
             if TextFieldKeys.forward(.space) { return }
             Task { await togglePlayer() }
@@ -3901,6 +3920,10 @@ final class AppSession {
     /// ← and → from the menu bar: the previous and next part in the Library, the band's step in
     /// the Radio (see `pressSpace`).
     func pressArrow(_ direction: Int) {
+        if place == .decoders {
+            _ = TextFieldKeys.forward(direction < 0 ? .leftArrow : .rightArrow)
+            return
+        }
         if place == .library {
             if TextFieldKeys.forward(direction < 0 ? .leftArrow : .rightArrow) { return }
             Task { await stepPart(direction) }
@@ -4106,31 +4129,6 @@ final class AppSession {
             let line = SpeechRecords.statusLine(job: job, speech: speech(for: recordingID))
         else { return nil }
         return (job, line)
-    }
-
-    /// `ListDecoders` once, for the speech decoder's manifest: whether Transcribe is offered,
-    /// whether it needs a key, and which hosts the question names.
-    private func readSpeechDecoderIfNeeded() {
-        guard !speechDecoderRead, let daemon else { return }
-        speechDecoderRead = true
-        Task { [weak self] in
-            do {
-                let listed = try await daemon.decoders.listDecoders(
-                    Leyline_V1_ListDecodersRequest())
-                let found = listed.decoders.first {
-                    $0.name == SpeechRecords.protocolName
-                        || $0.aliases.contains(SpeechRecords.protocolName)
-                }
-                self?.speechDecoder = found
-                log(
-                    "speech",
-                    found.map { "speech decoder \($0.name) \($0.version)" }
-                        ?? "no speech decoder installed")
-            } catch {
-                self?.speechDecoderRead = false
-                log("speech", "decoders not listed: \(LeylineError(error))")
-            }
-        }
     }
 
     /// Whether a recording's manifest lists squelch openings: speech is cut at the squelch, so only
@@ -4656,16 +4654,29 @@ extension LeylineError {
     static let notDialled = LeylineError(code: "UNAVAILABLE", message: "The daemon is not dialled")
 }
 
-/// The window's two places: Radio is the live window, the Library what has
-/// been kept. Presentation only; the radio runs the same in both.
+/// The window's three places: Radio is the live window, the Library what has
+/// been kept, Decoders what the decoders hear. Presentation only; the radio runs the same in all.
 enum WindowPlace: String, CaseIterable, Identifiable {
     case radio
     case library
+    case decoders
 
     var id: String { rawValue }
-    var title: String { self == .radio ? "Radio" : "Library" }
-    /// ⌘1 and ⌘2, the View menu's items and the switch's tooltip.
-    var shortcut: Character { self == .radio ? "1" : "2" }
+    var title: String {
+        switch self {
+        case .radio: "Radio"
+        case .library: "Library"
+        case .decoders: "Decoders"
+        }
+    }
+    /// ⌘1, ⌘2 and ⌘3, the View menu's items and the switch's tooltip.
+    var shortcut: Character {
+        switch self {
+        case .radio: "1"
+        case .library: "2"
+        case .decoders: "3"
+        }
+    }
 }
 
 /// The view tools the window declares (`AppViewTools`), performed on the main actor when the
@@ -4695,7 +4706,11 @@ extension AppSession: ViewToolPerformer {
             }
             return AppViewTools.selected(recording: id, part: part, title: title)
         case .showPlace(let p):
-            place = p == .library ? .library : .radio
+            switch p {
+            case .radio: place = .radio
+            case .library: place = .library
+            case .decoders: place = .decoders
+            }
             return AppViewTools.shown(p)
         }
     }

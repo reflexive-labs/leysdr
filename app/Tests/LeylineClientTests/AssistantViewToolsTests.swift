@@ -110,6 +110,10 @@ final class AssistantViewToolsTests: XCTestCase {
         XCTAssertEqual(
             AppViewTools.parse(tool: "show_place", argumentsJSON: #"{"place":"Library"}"#),
             .success(.showPlace(.library)))
+        XCTAssertEqual(
+            AppViewTools.parse(tool: "show_place", argumentsJSON: #"{"place":"decoders"}"#),
+            .success(.showPlace(.decoders)))
+        XCTAssertEqual(AppViewTools.shown(.decoders).text, "The window shows Decoders.")
     }
 
     func testShowRangeAnswersWhatItShowedOrWhyNot() {

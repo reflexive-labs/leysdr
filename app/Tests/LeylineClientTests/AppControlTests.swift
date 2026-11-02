@@ -165,7 +165,7 @@ final class AppControlTests: XCTestCase {
             back.keys.sorted(),
             [
                 "alert", "assistant", "assistant_shown", "band", "bandwidth_hz", "bookmark",
-                "bookmark_rows", "capture", "capture_id", "channel_id", "entries",
+                "bookmark_rows", "capture", "capture_id", "channel_id", "decoders", "entries",
                 "filter_caret", "filter_query", "focused", "heard", "hits", "inspector_shown",
                 "library_rows",
                 "log_names", "mode", "muted", "notices", "on_air_entry", "open_rows", "place",
@@ -175,10 +175,30 @@ final class AppControlTests: XCTestCase {
             ])
         for key in [
             "alert", "assistant", "capture", "filter_caret", "tooltip", "transport", "view",
-            "volume", "window", "tuned_row", "on_air_entry", "log_names",
+            "volume", "window", "tuned_row", "on_air_entry", "log_names", "decoders",
         ] {
             XCTAssertTrue(back[key] is NSNull, key)
         }
+    }
+
+    func testTheDecodersPageWritesEveryKey() throws {
+        let state = ControlViewState(
+            place: "decoders",
+            decoders: ControlDecoders(
+                decoder: "aprs", listed: ["aprs", "ais"], tab: "table", tabs: ["log", "table"],
+                state: "Stopped", startShown: true, startEnabled: true, recordCount: 7))
+        let back = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: AppControl.encoded(state)) as? [String: Any])
+        let d = try XCTUnwrap(back["decoders"] as? [String: Any])
+        XCTAssertEqual(
+            d.keys.sorted(),
+            [
+                "alerts", "decoder", "detail", "listed", "notice", "placement", "record_count",
+                "rows", "selected_transmitter", "start_enabled", "start_shown", "state", "tab",
+                "tabs", "transmitters",
+            ])
+        XCTAssertEqual(d["record_count"] as? Int, 7)
+        XCTAssertTrue(d["placement"] is NSNull)
     }
 
     func testStateNestsItsObjectsInSnakeCase() throws {

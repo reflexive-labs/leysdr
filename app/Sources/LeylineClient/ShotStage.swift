@@ -23,6 +23,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
     public enum Place: String, Sendable, Equatable, Codable {
         case radio
         case library
+        case decoders
     }
 
     /// The window's frame in points, toolbar included: the size of the image `screencapture -l`
@@ -76,6 +77,12 @@ public struct ShotStage: Sendable, Equatable, Codable {
     /// Leaves out the model and confidence after each over's words in the Library, so a shot
     /// made with the scripted speech engine does not show a model that never ran.
     public var hideEngineLabel: Bool
+    /// The Decoders place's decoder, by name or alias, as a click on its sidebar row selects it.
+    public var decoder: String?
+    /// The decoder page's tab: `log`, `table` or `map`, as its switch picks it.
+    public var decoderTab: DecoderTab?
+    /// The transmitter the Decoders inspector shows, by `device_id`, as a click on its row does.
+    public var selectTransmitter: String?
 
     enum CodingKeys: String, CodingKey {
         case window, place, inspector, settle, zoom
@@ -91,6 +98,9 @@ public struct ShotStage: Sendable, Equatable, Codable {
         case channelsPicker = "channels_picker"
         case settings
         case hideEngineLabel = "hide_engine_label"
+        case decoder
+        case decoderTab = "decoder_tab"
+        case selectTransmitter = "select_transmitter"
     }
 
     public init(
@@ -99,8 +109,12 @@ public struct ShotStage: Sendable, Equatable, Codable {
         importCHIRP: String? = nil, settle: Double = 0, onAir: Bool = false,
         zoom: UInt64? = nil, scanBand: Bool = false, playPart: Bool = false,
         assistant: Bool? = nil, focusFilter: Bool = false, channelsPicker: String? = nil,
-        settings: Bool? = nil, hideEngineLabel: Bool = false
+        settings: Bool? = nil, hideEngineLabel: Bool = false, decoder: String? = nil,
+        decoderTab: DecoderTab? = nil, selectTransmitter: String? = nil
     ) {
+        self.decoder = decoder
+        self.decoderTab = decoderTab
+        self.selectTransmitter = selectTransmitter
         self.window = window
         self.place = place
         self.inspector = inspector
@@ -139,6 +153,9 @@ public struct ShotStage: Sendable, Equatable, Codable {
         channelsPicker = try c.decodeIfPresent(String.self, forKey: .channelsPicker)
         settings = try c.decodeIfPresent(Bool.self, forKey: .settings)
         hideEngineLabel = try c.decodeIfPresent(Bool.self, forKey: .hideEngineLabel) ?? false
+        self.decoder = try c.decodeIfPresent(String.self, forKey: .decoder)
+        decoderTab = try c.decodeIfPresent(DecoderTab.self, forKey: .decoderTab)
+        selectTransmitter = try c.decodeIfPresent(String.self, forKey: .selectTransmitter)
     }
 
     /// The stage file's path from the environment, or nil when the run is not staged.
@@ -208,6 +225,8 @@ public enum ShotRegion: String, Sendable, CaseIterable, Codable {
     case notice
     /// The Library's page of the selected channel: its day strip and its parts.
     case parts
+    /// The Decoders place's whole body.
+    case decoders
     /// The inspector's live readings: the Signal, Tuning, Deviation and On air rows and the audio
     /// ladder, which change from one frame to the next while the radio plays. A check masks it.
     case readings

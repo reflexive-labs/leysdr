@@ -629,6 +629,89 @@ public struct ControlAssistant: Sendable, Equatable, Codable {
     }
 }
 
+/// `state`'s `decoders`: the Decoders place's page as drawn, while the place shows. Every key is
+/// written, null when absent.
+public struct ControlDecoders: Sendable, Equatable, Codable {
+    /// The decoder selected, by manifest name, and the decoders the sidebar lists.
+    public var decoder: String?
+    public var listed: [String]
+    /// The tab drawn and the tabs offered.
+    public var tab: String
+    public var tabs: [String]
+    /// The newest job's state word (`Running`, `Stopped`…) and detail, null with none.
+    public var state: String?
+    public var detail: String?
+    /// The placement line under Start while no job runs, null while one does.
+    public var placement: String?
+    /// Whether Start shows (no job runs) and whether it is enabled.
+    public var startShown: Bool
+    public var startEnabled: Bool
+    /// How many records the page holds, and the log's first rows as `N0CALL-3 position:
+    /// <summary>`, newest first, at most twenty.
+    public var recordCount: Int
+    public var rows: [String]
+    /// The transmitters as the table orders them, by the name each shows, and the selected one
+    /// by `device_id`.
+    public var transmitters: [String]
+    public var selectedTransmitter: String?
+    /// The alerts in effect as their lines read.
+    public var alerts: [String]
+    /// The page's notice: the last start or stop the daemon refused.
+    public var notice: String?
+
+    enum CodingKeys: String, CodingKey {
+        case decoder, listed, tab, tabs, state, detail, placement, rows, transmitters, alerts
+        case notice
+        case startShown = "start_shown"
+        case startEnabled = "start_enabled"
+        case recordCount = "record_count"
+        case selectedTransmitter = "selected_transmitter"
+    }
+
+    public init(
+        decoder: String? = nil, listed: [String] = [], tab: String = "log", tabs: [String] = [],
+        state: String? = nil, detail: String? = nil, placement: String? = nil,
+        startShown: Bool = false, startEnabled: Bool = false, recordCount: Int = 0,
+        rows: [String] = [], transmitters: [String] = [], selectedTransmitter: String? = nil,
+        alerts: [String] = [], notice: String? = nil
+    ) {
+        self.decoder = decoder
+        self.listed = listed
+        self.tab = tab
+        self.tabs = tabs
+        self.state = state
+        self.detail = detail
+        self.placement = placement
+        self.startShown = startShown
+        self.startEnabled = startEnabled
+        self.recordCount = recordCount
+        self.rows = rows
+        self.transmitters = transmitters
+        self.selectedTransmitter = selectedTransmitter
+        self.alerts = alerts
+        self.notice = notice
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(decoder, forKey: .decoder)
+        try c.encode(listed, forKey: .listed)
+        try c.encode(tab, forKey: .tab)
+        try c.encode(tabs, forKey: .tabs)
+        try c.encode(state, forKey: .state)
+        try c.encode(detail, forKey: .detail)
+        try c.encode(placement, forKey: .placement)
+        try c.encode(startShown, forKey: .startShown)
+        try c.encode(startEnabled, forKey: .startEnabled)
+        try c.encode(recordCount, forKey: .recordCount)
+        try c.encode(rows, forKey: .rows)
+        try c.encode(transmitters, forKey: .transmitters)
+        try c.encode(selectedTransmitter, forKey: .selectedTransmitter)
+        try c.encode(alerts, forKey: .alerts)
+        try c.encode(notice, forKey: .notice)
+    }
+}
+
 /// `state`'s result: the window's view state as `AppSession` holds it. Every key is written,
 /// null when absent, so a check can tell "no channel" from a key it misspelled.
 public struct ControlViewState: Sendable, Equatable, Codable {
@@ -708,6 +791,8 @@ public struct ControlViewState: Sendable, Equatable, Codable {
     /// of a part that holds several, `file` for a whole part, then `: ` and its transcript line
     /// when it has one.
     public var libraryRows: [String]
+    /// The Decoders place's page while it shows, else null.
+    public var decoders: ControlDecoders?
 
     enum CodingKeys: String, CodingKey {
         case place, mode, band, bookmark, focused, notices, popover, heard, hits, transport
@@ -733,6 +818,7 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         case sort
         case bookmarkRows = "bookmark_rows"
         case libraryRows = "library_rows"
+        case decoders
     }
 
     public init(
@@ -749,8 +835,9 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         tooltip: String? = nil, transport: ControlTransport? = nil, entries: [String] = [],
         tunedRows: Int = 0, tunedRow: String? = nil, onAirEntry: String? = nil,
         logNames: String? = nil, sort: String = "frequency", bookmarkRows: [String] = [],
-        libraryRows: [String] = []
+        libraryRows: [String] = [], decoders: ControlDecoders? = nil
     ) {
+        self.decoders = decoders
         self.place = place
         self.tunedHz = tunedHz
         self.mode = mode
@@ -835,6 +922,7 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         try c.encode(sort, forKey: .sort)
         try c.encode(bookmarkRows, forKey: .bookmarkRows)
         try c.encode(libraryRows, forKey: .libraryRows)
+        try c.encode(decoders, forKey: .decoders)
     }
 }
 

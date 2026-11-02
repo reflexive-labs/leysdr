@@ -3,9 +3,10 @@
 // The window's regions: chrome above and below a body of two panels, and a third on the right,
 // the inspector, with the assistant's column beside the whole body when it is open
 // (`AssistantPanel`). The sidebar, the inspector and the transport bar are fixed; the waterfall
-// takes what is left. The inspector can be closed, and the window works without it. Two places
-// share the toolbar: the Radio is that window, and the Library replaces the
-// whole body under the toolbar with what has been kept (`LibraryView.swift`) while the radio keeps
+// takes what is left. The inspector can be closed, and the window works without it. Three places
+// share the toolbar: the Radio is that window, the Library replaces the
+// whole body under the toolbar with what has been kept (`LibraryView.swift`), and Decoders with
+// what the decoders hear (`DecodersView.swift`), while the radio keeps
 // running, because the capture, the channel and the feeds are the session's, not the body's. The
 // first window opens under a splash (`SplashView.swift`) that clears into it, its mark
 // landing on the toolbar's.
@@ -40,12 +41,13 @@ struct MainWindow: View {
         VStack(spacing: 0) {
             if session.engineUpdatePending { EngineUpdateStrip() }
             // The assistant's column is beside both places rather than inside each body, so a
-            // switch of place (⌘1, ⌘2, or the assistant's own `show_place`) leaves the
+            // switch of place (⌘1, ⌘2, ⌘3, or the assistant's own `show_place`) leaves the
             // conversation, its scroll and its field where they are.
             HStack(spacing: 0) {
                 switch session.place {
                 case .radio: RadioBody()
                 case .library: LibraryBody().stageRegion(.library)
+                case .decoders: DecodersBody().stageRegion(.decoders)
                 }
                 AssistantColumn()
             }
@@ -275,12 +277,12 @@ struct RadioBody: View {
     }
 }
 
-/// The toolbar's `Radio | Library` switch, a segmented control beside the traffic lights at the
+/// The toolbar's `Radio | Library | Decoders` switch, a segmented control beside the traffic lights at the
 /// toolbar's `navigation` placement: two segments in
 /// `label` on the toolbar's own dark ground (`chrome`) inside a 1 pt `border` stroke with 6 pt
 /// corners. The place showing is raised on a `border` ground `placeSwitchInset` inside the stroke,
 /// in `ink`; the other has no ground and `inkTertiary` text, because a control all on `border`
-/// makes the unselected segment as light as the selected one. ⌘1 and ⌘2 are the View menu's. Two plain buttons
+/// makes the unselected segment as light as the selected one. ⌘1, ⌘2 and ⌘3 are the View menu's. Plain buttons
 /// rather than a segmented `Picker`, because the system draws a segmented control's selected
 /// segment and its text in its own colours, which `Theme`'s inks cannot set.
 struct PlaceSwitch: View {

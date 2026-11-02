@@ -241,7 +241,7 @@ final class AssistantControllerTests: XCTestCase {
         controller.absorb(c)
         await assertSoon("the error was never answered") { fake.answers.count == 1 }
         XCTAssertTrue(fake.answers[0].isError)
-        XCTAssertEqual(fake.answers[0].resultText, "place must be radio or library")
+        XCTAssertEqual(fake.answers[0].resultText, "place must be radio, library or decoders")
         XCTAssertTrue(performer.requests.isEmpty)
     }
 }

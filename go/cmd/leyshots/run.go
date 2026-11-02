@@ -388,6 +388,9 @@ func startScene(ctx context.Context, o runOptions, in sceneSetup, run string) (*
 		daemon: d, fixtures: files, stepsLog: steps,
 		env: []string{
 			"LEYLINE_SOCKET=" + d.Socket, "LEYLINE_BOOKMARKS=" + filepath.Join(run, "bookmarks.json"),
+			// The names given to transmitters, beside the bookmarks, so a scene that names one
+			// never writes the person's own labels.json.
+			"LEYLINE_LABELS=" + filepath.Join(run, "labels.json"),
 			pathEnv, "COLORTERM=truecolor", "LANG=en_US.UTF-8",
 		},
 	}

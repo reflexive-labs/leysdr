@@ -13,7 +13,7 @@ One SwiftPM package at `app/`, beside the engine's and never inside it:
 | target | what | builds on |
 |---|---|---|
 | `LeylineClient` | the client façade: identity, the connection, the state mirror, the write coalescer, the stream decoders, errors; the session's state machines, which hold no I/O so the Linux tests reach them (`HeldObject.swift`: the window's capture and channel until the mirror carries them; `RetuneQueue.swift`: one centre move at a time; `PartPlayback.swift`: the window's playback of a recorded part and Play all's queue); the bands seed file and the bookmarks store (`Bands.swift`, `Bookmarks.swift`); the folds over rows that `ley` already applies (`SpectrumFold.swift`: median floor, the peak rule, the auto squelch, max hold); the named failure states and the hold on them (`FailureState.swift`), and which waterfall rows were captured while the radio clipped and which a recording's parts hold (`ClippedRows.swift`); the transmissions log, one per frequency for the session, and the sample clock (`Transmissions.swift`, `SampleClock.swift`); the audio ladder's bands, scale and ballistics (`AudioLevels.swift`); the view the charts show and the band rail's thumb, zoom steps, drag and nearest tick (`ViewWindow.swift`); recordings: the manifest reader, the part-to-transmission match, the window's `RecordConfig`, the switch's job and status line, the question before a move off a recording, a listing's summary, the Library's channel rows and search, the store footer's words and the day words (`Recordings.swift`); the channel page's cards, day groups and chips, the inspector's words for a part, the player's words and its previous and next part, the delete words and Play all's queue (`RecordingPages.swift`); a staged run's stage file and regions file (`ShotStage.swift`); the daemon's launch agent as the app owns it, which holds the decisions without ServiceManagement: what to do per `SMAppService` status, the Login Items words, and whether the daemon runs the bundle's build after an update (`DaemonAgent.swift`); the CLI link's path checks and restricted install command (`CommandLineTool.swift`); when the updater starts (`AppUpdates.swift`); Settings, AI as words: the key rows, the feature rows with what each choice sends to which host, the usage fold by UTC day and month, whether any AI feature can run, and the providers the pane offers (`AISettings.swift`); speech records folded onto a recording's parts and overs, one over's sample range, the search by words, the text and SRT exports and the transcription job (`SpeechRecords.swift`); the assistant panel's rows, usage line and failure words (`AssistantModels.swift`), its view tools and their parsing (`AssistantViewTools.swift`), its side of one conversation and the view tool executor's protocol (`AssistantController.swift`), and who changed the tuned channel last (`ChangeNote.swift`); the rule that has the window follow a channel another client makes on its capture (`ChannelFollow.swift`); decoders: the display template renderer and the client's own line for a record (`DisplayTemplate.swift`), the entity fold with its trails (`EntityTable.swift`), where a decoder will land (`DecoderPlacement.swift`), the Decoders place's tabs, jobs, record log, alerts and inspector words (`DecoderPages.swift`) and the labels file (`Labels.swift`) | macOS and Linux |
-| `LeylineApp` | the SwiftUI app: `AppSession` (the composition root: the mirror copied, the selection, the façade's state machines it owns, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones; `CaptureLevelFeed`, the radio's clipping count; `AudioLevelsFeed`, the tuned channel's audio spectrum in octave bands), the views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the inspector (`InspectorView.swift`, `InspectorGroups.swift`, `AudioLevelsView.swift`), recording from the window (the log's Record transmissions switch and kept rows, the bookmark dot, the waterfall's time gutter and kept bars, the volume caption, the retune question, the File items), the window's two places (`MainWindow.swift`: the toolbar's `Radio \| Library` switch and the two bodies; the Library in `LibraryView.swift`, its sidebar, store footer and inspector, with the channel page in `RecordingsPage.swift`, the inspector on a part in `PartInspector.swift`, the player in `PlayerBar.swift` and the speech lines and their actions in `SpeechViews.swift`), a staged run (`Staging.swift`, "Staged runs" below), the calls behind `DaemonAgent`'s decisions (`EngineAgent.swift`: `SMAppService` registration and status, opening Login Items, `launchctl kickstart -k`), the CLI link's administrator request and result dialogs (`CommandLineInstaller.swift`), Sparkle's updater and the Check for Updates… menu item (`Updater.swift`), the Settings window and its AI pane (`SettingsView.swift`, `AISettingsView.swift`; "Settings" below), the assistant's panel (`AssistantPanel.swift`; "The assistant panel" below), `Theme.swift` | macOS only; the manifest declares it, and its Sparkle dependency, under `#if os(macOS)` |
+| `LeylineApp` | the SwiftUI app: `AppSession` (the composition root: the mirror copied, the selection, the façade's state machines it owns, every action), the feeds (`SpectrumFeed`; `ChannelTelemetryFeed`, the tuned channel's meter, squelch edges and tones; `CaptureLevelFeed`, the radio's clipping count; `AudioLevelsFeed`, the tuned channel's audio spectrum in octave bands), the views (sidebar, band rail, spectrum, the Metal waterfall with its shader as source, the mouse both charts share in `ChartMouse.swift`, transport bar, device menu), the inspector (`InspectorView.swift`, `InspectorGroups.swift`, `AudioLevelsView.swift`), recording from the window (the log's Record transmissions switch and kept rows, the bookmark dot, the waterfall's time gutter and kept bars, the volume caption, the retune question, the File items), the window's three places (`MainWindow.swift`: the toolbar's `Radio \| Library \| Decoders` switch and the three bodies; the Library in `LibraryView.swift`, its sidebar, store footer and inspector, with the channel page in `RecordingsPage.swift`, the inspector on a part in `PartInspector.swift`, the player in `PlayerBar.swift` and the speech lines and their actions in `SpeechViews.swift`; Decoders in `DecodersView.swift`, its state in `DecoderSession.swift`, the inspector in `DecoderInspector.swift` and the map in `DecoderMap.swift`), a staged run (`Staging.swift`, "Staged runs" below), the calls behind `DaemonAgent`'s decisions (`EngineAgent.swift`: `SMAppService` registration and status, opening Login Items, `launchctl kickstart -k`), the CLI link's administrator request and result dialogs (`CommandLineInstaller.swift`), Sparkle's updater and the Check for Updates… menu item (`Updater.swift`), the Settings window and its AI pane (`SettingsView.swift`, `AISettingsView.swift`; "Settings" below), the assistant's panel (`AssistantPanel.swift`; "The assistant panel" below), `Theme.swift` | macOS only; the manifest declares it, and its Sparkle dependency, under `#if os(macOS)` |
 | `LeylineClientTests` | the façade's rules without a daemon: the fold, the coalescer and its write order, the session's state machines, the decoders, the bands and bookmarks files, the spectrum folds, the transmissions log and the clock, the audio bands and their ballistics, a hand-written recording manifest, the part match, the switch's job and status line and the retune question, the channel page's cards and day groups, a part's words and table, and Play all's order; the AI pane's rows, privacy sentences and usage fold | both |
 | `LeylineClientDaemonTests` | the façade against a real `leylined --no-hardware` playing a fixture | both; skips itself without `LEYLINED_BIN` |
 
@@ -407,14 +407,16 @@ and no other channel rides on it. The window was written in the container and is
 it runs on a Mac; the façade's rules are tested in `RecordingsTests` and
 `ClippedRowsTests`, and against the daemon's own manifest by the daemon-backed suite.
 
-**Two places: the Radio and the Library** (`MainWindow.swift`, `LibraryView.swift`,
-`PlayerBar.swift`). The toolbar's leading edge has a `Radio | Library`
-switch (`PlaceSwitch`, two plain buttons on the toolbar's `chrome` inside a 1 pt `border`
+**Three places: the Radio, the Library and Decoders** (`MainWindow.swift`, `LibraryView.swift`,
+`PlayerBar.swift`, `DecodersView.swift`). The toolbar's leading edge has a `Radio | Library |
+Decoders` switch (`PlaceSwitch`, plain buttons on the toolbar's `chrome` inside a 1 pt `border`
 stroke, styled as a segmented control: the place showing raised on a `border` ground 2 pt inside
-the stroke in `ink`, the other on none in `inkTertiary`; View ▸ Radio ⌘1 and Library ⌘2), which
+the stroke in `ink`, the others on none in `inkTertiary`; View ▸ Radio ⌘1, Library ⌘2 and
+Decoders ⌘3), which
 sets `AppSession.place`, remembered in the defaults. `MainWindow` switches its whole body under
 the toolbar on it: `RadioBody` is the window above, with the sidebar holding only bands and
-bookmarks, and `LibraryBody` is what has been kept. The radio runs the same in both, because the
+bookmarks, `LibraryBody` is what has been kept, and `DecodersBody` what the decoders hear ("The
+Decoders place" below). The radio runs the same in all three, because the
 capture, the channel, the sink and the feeds are the session's; the Radio's Metal view is made again
 on the way back and draws the feed's rows, and the audio ladder unsubscribes while the Library
 shows. The Library's sidebar (`LibrarySidebar`, 236 pt) is a search field, one row per frequency
@@ -472,6 +474,63 @@ both menus act through `pressSpace`/`pressArrow` for the place showing, and a te
 typed into gets the key back (`TextFieldKeys`). Unverified until the Mac; the façade's rules are
 tested in `RecordingPagesTests` and against the
 daemon's manifest in the daemon-backed suite.
+
+**The Decoders place** (`DecodersView.swift`, `DecoderSession.swift`, `DecoderInspector.swift`,
+`DecoderMap.swift`; the façade's `DecoderPages.swift`, `DecoderPlacement.swift`,
+`DisplayTemplate.swift`, `EntityTable.swift` and `Labels.swift`; `../plans/decoders-app.md`,
+DA-8). Every decoder the daemon has installed, drawn from its manifest and never from its name,
+so a decoder added later needs no app change. `DecoderSession`, an `@Observable` the session owns
+beside the feeds, holds the `ListDecoders` list (read once per live connection; the Library's
+speech decoder is read from it too), the decoder selected, its tab, the transmitter or record the
+inspector shows, the page's records and transmitters, and `LabelStore`; it copies none of the
+mirror, so a view reads the jobs and captures from `AppSession` as the other places do. The
+sidebar (`DecodersSidebar`, 236 pt) lists each decoder once by name: its SF Symbol and title from
+the manifest's `display`, under it `Running` in `good`, `Degraded` in `caution`, or its name and
+first frequency, and under a running decoder one line per job, its frequency and `status_detail`
+(`12 records, last 3 s ago`). The first decoder is selected on arrival. The page's header has the
+symbol and title, and Start or Stop. Start is `Jobs.StartJob` with a kept `DecodeConfig` (`keep:
+true`, so it runs until Stop, after the window closes and across a daemon restart) on the
+frequency `DecoderPlacement` picks, explicitly; the line under the title is the placement's words
+before it starts (`Runs alongside what you are listening to.`, `Takes the idle radio, the NESDR
+SMArt v5.`, `Needs the radio from you: a terminal is listening on 146.520 MHz.`, `No radio here can
+hear 1090.000 MHz.`), and once a job runs it is the job's state, frequency and `status_detail`, in
+`caution` while degraded, because the prediction is advice and the job is the truth. A placement
+that needs the radio makes Start ask (`Take the radio?`, the reason, Cancel and Take the radio),
+and Take the radio sends `take_over`. Stop is `CancelJob` on every running job of the decoder.
+After a failed job the header says `Failed:` and the daemon's reason; a refused start is the
+page's own notice. The click on Start is held as `Starting…` until the job's event, or 5 s. Under
+the header, the tabs the output shapes call for (`DecoderTab.available`): Log always, Table for a
+decoder that declares `SHAPE_ENTITIES`, Map once a record on the page carries a position; a tab
+the decoder lacks shows the log. The page's records are `QueryRecords` for the protocol over the
+last day (1000 at most, `(older not loaded)` when the daemon cut them), dated through the page's
+anchors, and then `SubscribeRecords` for the protocol, opened first so nothing falls between, each
+record once by `record_id` (`RecordLog`), a live one dated through its capture's anchor in the
+mirror and otherwise by its arrival, in `inkFaint`. They fold into `EntityTable` oldest first; a
+transmitter ages out by the manifest's `entity_silence_s` only while a job of the decoder runs,
+because silence is news only while something listens, so a stopped decoder's page keeps what it
+last heard. The log is the alerts in effect (records whose `validity` holds now, once per
+transmitter and line, in `caution` on `alertGround` with `until 14:30`), then every record newest
+first: its time, its transmitter (the person's label, else the display's `entity_name`, else
+`device_id`), its kind and its line through the display's template, as `ley decode` prints it. The
+table is `ley track`'s: the name, the display's `columns` headed as `ley track` heads them (`SOG
+(kn)`), how many records, the clock time it was last heard (its age in the tooltip) and its last
+line. The map (`DecoderMap`) is MapKit, north up and never rotated, framing the transmitters on
+arrival and when another decoder shows; each is a marker turned to its `track_deg`, `course_deg`,
+`cog_deg` or `heading_deg` when it sent one, else a dot, with its name and its trail of the last 50
+positions as a line, the selected one in `accent`. It asks for no location and draws no user
+annotation, so macOS asks for no permission. A staged run (`stagedLaunch`) draws the same markers,
+names and trails on a plain equirectangular canvas with a 0.1° graticule, because Apple's tiles
+would make two pictures differ; the real map is checked by hand. A click on a row, a marker or an
+alert selects it. The inspector (`DecoderInspector`) on a transmitter or a record: its name, id and
+protocol, a Name field whose Return writes `labels.json` through `LabelStore` (an empty name
+removes the label), how often and when it was heard, its position, altitude and heading; then the
+record's line, time, the signal the daemon measured and its job, every field with the hint's unit
+and description (hinted fields in the manifest's order, then the rest by name; a number to six
+decimals), and the raw payload as hex, sixteen bytes a line. With nothing selected it describes
+the decoder. Space and the arrows do nothing in Decoders but type into a field. The assistant's
+`show_place` takes `decoders`. Unverified until the Mac; the façade's rules are tested in
+`DecoderVectorsTests`, `DecoderPlacementTests` and `DecoderPagesTests`, and the check scenes
+`decoders-aprs` and `decoders-adsb` drive the page.
 
 **The Library's speech** (`SpeechViews.swift`, the façade's `SpeechRecords.swift`). The speech
 decoder's records (protocol `speech`, one per over) are read with `Decoders.QueryRecords`, one
@@ -689,7 +748,7 @@ in the field.
 worker's rule (1 to 64 letters, digits, `_` or `-`, no radio tool's name; `assistant.md`, "The
 tools"): `show_band` (`{band}` by name or alias, or `{from_hz, to_hz}`), `select_recording`
 (`{recording, part?}`, an id or a `ley://recordings/` URI) and `show_place` (`{place: radio |
-library}`). The daemon routes each call to the app as a call awaiting the client; the controller
+library | decoders}`). The daemon routes each call to the app as a call awaiting the client; the controller
 performs each call id once: the input is parsed, and a bad one is an error answer the model reads,
 never a crash; the session performs the rest on the main actor (`ViewToolPerformer`) and the answer
 goes back with `AnswerViewTool`, prose and JSON. An answer that does not reach the daemon is kept
@@ -930,7 +989,10 @@ file. It holds JSON that `ShotStage` decodes, and every key is optional:
 | `select_bookmark` | tunes the first bookmark with this name, as a click on its sidebar row does |
 | `import_chirp` | an absolute path to a CHIRP CSV, imported through File ▸ Import CHIRP…'s code path, so the notice prints the import's real counts |
 | `expanded_band` | opens this sidebar row (`2m`, the id in `bands.json`), as its chevron does |
-| `place` | `radio` or `library`, as the toolbar's switch sets it |
+| `place` | `radio`, `library` or `decoders`, as the toolbar's switch sets it |
+| `decoder` | in Decoders, selects this decoder by name or alias as a click on its sidebar row does, once `ListDecoders` has answered, and waits up to 10 s for its last day's records |
+| `decoder_tab` | the decoder page's tab: `log`, `table` or `map`, as its switch picks it; a tab the decoder lacks shows the log |
+| `select_transmitter` | shows this transmitter, by `device_id`, in the Decoders inspector as a click on its row does, once a record of it has landed (10 s at most) |
 | `select_part` | selects this row (a transmission) of the Library's selected channel without playing it, counted from 0 down the page's recent days |
 | `play_part` | with `select_part`, plays that transmission for 0.4 s and pauses it, as a click and a second click do, because the Library draws only the playing row as current |
 | `assistant` | shows or hides the assistant's panel, as its toolbar button does; the panel draws only while an AI provider is set up |
@@ -1003,7 +1065,7 @@ field draw their own placeholder in `inkFaint`.
 window's backing scale, the pixels per point in `window.png`. Each region is a rectangle
 in points from the top-left corner of the window's frame, toolbar included, because
 `screencapture -l` captures that whole frame. The regions are `window`, `toolbar`, `sidebar`,
-`inspector`, `spectrum`, `waterfall`, `notice` (the one-line notice over the bottom of the waterfall, while one shows), `library` (the Library's whole body), `parts` (the Library's page of the selected channel),
+`inspector`, `spectrum`, `waterfall`, `notice` (the one-line notice over the bottom of the waterfall, while one shows), `library` (the Library's whole body), `parts` (the Library's page of the selected channel), `decoders` (the Decoders place's whole body),
 `readings` (the inspector's Signal, Tuning, Deviation and On air rows and its audio ladder),
 `transmissions` (the rows of the inspector's log, which gain one whenever an over ends),
 `log_day` (the day over those rows, blank until the first), `heard` (the tone the channel last
@@ -1049,7 +1111,7 @@ and the next line still runs; a line with no `id` has no answer file, so it is o
 |---|---|---|
 | `stage` | `stage`: a stage object as above (`settle` is slept, `window` resizes) | `result.applied`: the steps, as the log lines give them |
 | `snapshot` | `settle`: seconds to wait first, default 0; `window`: `main` (the default) or `settings` | `out/<id>.png`, with the popover and the sheet open over the window drawn in at their places (a menu that is open is not); `result`: `scale`, `width_pt`, `height_pt` and `regions`, as `regions.json` gives them, `{}` for `regions` of the Settings window |
-| `state` | | `result`: `place`, `tuned_hz`, `mode`, `bandwidth_hz`, `channel_id`, `capture_id`, `band`, `bookmark`, `open_rows`, `filter_query`, `inspector_shown`, `assistant_shown`, `focused` (the focused control's identifier, else its role and label), `notices` (every message the window shows), `popover` (`channels:<row>`, `device_menu` or empty), `selected_recording_channel`, `selected_part`, `heard` (the tone the tuned channel last heard, as the inspector writes it: `PL 100.0`), `hits` (the last sweep's hits as its row lists them, strongest first), `muted` (the transport's speaker), `volume` (the window's own sink's, 0 to 1), `sink` (`own`, `other` when another client's sink plays the channel, `none`), `window` (`width`, `height`, `min_width`, `min_height` in points, toolbar included), `filter_caret` (the insertion point in the sidebar's filter while it has the focus), `settings_open`, `alert` (the sheet over the main window or Settings: `title`, `message`, `buttons` in order), `view` (`lo_hz` and `hi_hz`, the frequencies at the charts' two edges, `span_hz` between them, `thumb_lo_hz` and `thumb_hi_hz`, the part of them the band rail's thumb covers, and `edge`, the spectrum's edge marker as drawn, `146.520 ▸`, null while the view shows the tuned channel), `capture` (`lo_hz` and `hi_hz`, what the radio captures), `assistant` (while its panel shows: `turns`, each `role`, `text` and `stopped`; `state`, the header's word; `thinking`; `input`, the field's text; `input_focused`; `stop_shown`; `buttons`, each `id`, `title` and `enabled`; `question`, the card's sentence as drawn, and `note`, the line under it), `tooltip` (the help of what the last `hover` rested on, else the frequency under the pointer while it is over a chart), `transport` (the bar's words as drawn: `tuning`, the field's digits; `squelch_caption`, and `squelch_caption_short` when it is the short one; `squelch_words`, the three under the track joined by ` · `, empty once a narrow bar drops them; `null` without a bar), `entries` (the bookmarks on the tuned frequency in the file's order), `tuned_rows` (how many sidebar bookmark rows read tuned) and `tuned_row` (the first as drawn: `Club repeater +1`), `on_air_entry` (the entry the inspector marks on air, on a frequency with several), `log_names` (the names the log's rows are logged under there, each once, sorted, joined by ` · `), `sort` (the sidebar's bookmark order, `frequency` or `name`), `bookmark_rows` (the bookmark rows under the open band rows as drawn, in that order), `library_rows` (the Library page's recent rows, one a transmission: `over 2` for one over of a part that holds several, `file` for a whole part, then `: ` and its transcript line when it has one); every key is present, `null` when it has no value |
+| `state` | | `result`: `place`, `tuned_hz`, `mode`, `bandwidth_hz`, `channel_id`, `capture_id`, `band`, `bookmark`, `open_rows`, `filter_query`, `inspector_shown`, `assistant_shown`, `focused` (the focused control's identifier, else its role and label), `notices` (every message the window shows), `popover` (`channels:<row>`, `device_menu` or empty), `selected_recording_channel`, `selected_part`, `heard` (the tone the tuned channel last heard, as the inspector writes it: `PL 100.0`), `hits` (the last sweep's hits as its row lists them, strongest first), `muted` (the transport's speaker), `volume` (the window's own sink's, 0 to 1), `sink` (`own`, `other` when another client's sink plays the channel, `none`), `window` (`width`, `height`, `min_width`, `min_height` in points, toolbar included), `filter_caret` (the insertion point in the sidebar's filter while it has the focus), `settings_open`, `alert` (the sheet over the main window or Settings: `title`, `message`, `buttons` in order), `view` (`lo_hz` and `hi_hz`, the frequencies at the charts' two edges, `span_hz` between them, `thumb_lo_hz` and `thumb_hi_hz`, the part of them the band rail's thumb covers, and `edge`, the spectrum's edge marker as drawn, `146.520 ▸`, null while the view shows the tuned channel), `capture` (`lo_hz` and `hi_hz`, what the radio captures), `assistant` (while its panel shows: `turns`, each `role`, `text` and `stopped`; `state`, the header's word; `thinking`; `input`, the field's text; `input_focused`; `stop_shown`; `buttons`, each `id`, `title` and `enabled`; `question`, the card's sentence as drawn, and `note`, the line under it), `tooltip` (the help of what the last `hover` rested on, else the frequency under the pointer while it is over a chart), `transport` (the bar's words as drawn: `tuning`, the field's digits; `squelch_caption`, and `squelch_caption_short` when it is the short one; `squelch_words`, the three under the track joined by ` · `, empty once a narrow bar drops them; `null` without a bar), `entries` (the bookmarks on the tuned frequency in the file's order), `tuned_rows` (how many sidebar bookmark rows read tuned) and `tuned_row` (the first as drawn: `Club repeater +1`), `on_air_entry` (the entry the inspector marks on air, on a frequency with several), `log_names` (the names the log's rows are logged under there, each once, sorted, joined by ` · `), `sort` (the sidebar's bookmark order, `frequency` or `name`), `bookmark_rows` (the bookmark rows under the open band rows as drawn, in that order), `library_rows` (the Library page's recent rows, one a transmission: `over 2` for one over of a part that holds several, `file` for a whole part, then `: ` and its transcript line when it has one), `decoders` (while Decoders shows: `decoder`, the selected manifest's name; `listed`; `tab` drawn and `tabs` offered; `state` and `detail`, the newest job's word and `status_detail`; `placement`, the line under Start while no job runs; `start_shown` and `start_enabled`; `record_count`; `rows`, the log's first twenty as `N0CALL-3 position: <line>`; `transmitters`, the table's names in order; `selected_transmitter`; `alerts`; `notice`); every key is present, `null` when it has no value |
 | `ax` | `window`: `main` (the default; its popovers and sheets are in its tree), `settings` (the Settings window, while it is open: the stage's `settings` or the key `cmd+,` opens it), `popover` (the main window's open popover alone) or `sheet` (the sheet over the main window, else over Settings, alone) | `out/<id>.ax.txt`: the window's accessibility tree, one element per line indented two spaces a level: role, `id=` and the identifier when there is one, the label, `value=` when there is one (its value description where it gives one, as VoiceOver reads a slider's, the rail's thumb's `144.0 to 148.0 MHz`; quoted, with `\`, `"` and newlines escaped), the frame in points from the window's top-left corner as the regions are measured (a text field's left edge and width only, `(38,– 161×–)`, because the AppKit field's height follows its text, 14 pt empty and 13 with text in the inspector's fields, while the row it sits in keeps its height; a group whose frame is the union of its children's and that holds a field spans what its other children span, top to bottom, for the same reason), `enabled` or `disabled`; `result`: as `snapshot`'s, so a reader can tell which elements lie in which region, and `{}` for the Settings window or a sheet over it; a popover or a sheet alone is framed from its window's corner |
 | `key` | `keys`: `cmd+g`, `shift+cmd+left`, `escape`, `return`, `down`… | a key down and up |
 | `type` | `text` | a key down and up for each character |
@@ -1104,7 +1166,7 @@ them and nothing else: an identifier changes no layout and no behaviour.
 
 | prefix | views |
 |---|---|
-| `toolbar.` | `place.radio`, `place.library`, `device` (the chip), `inspector`, `assistant` |
+| `toolbar.` | `place.radio`, `place.library`, `place.decoders`, `device` (the chip), `inspector`, `assistant` |
 | `sidebar` | the Radio's sidebar; `.filter`, `.sort` (the bookmarks' order, frequency or name), `.add` (＋), `.list`, `.outofrange`, `.band.<id>` (a band row by its id in `bands.json`) with `.chevron`, `.scan` and `.channels` under it, `.bookmark.<name>`, `.hit.<label>` (a sweep's hit, by the name or frequency it shows, because the frequency it measured moves from run to run; a label two hits share is `-2`, `-3` on the second and later by frequency) with `.add` (its ＋), `.match.<id>` (a row of the filtered list) |
 | `planpicker` | the Channels… popover; `.filter`, `.row.<channel>` |
 | `devicemenu` | the device chip's popover; `.rate`, `.gain.<stage>` and `.gain.<stage>.auto`, `.device.<id>` |
@@ -1114,6 +1176,7 @@ them and nothing else: an identifier changes no layout and no behaviour.
 | `transport` | the bar under the Radio; `.mute`, `.mode`, `.width`, `.squelch` with `.squelch.track`, `.volume` |
 | `inspector` | the Radio's inspector; its groups `.header`, `.identity`, `.readings`, `.audio`, `.log`, `.measurements`; its controls `.rename`, `.tone`, `.note`, `.entry.<name>` (one of several bookmarks on the tuned frequency) with `.rename`, `.remove`, `.tone` and `.note` under it, `.revert`, `.save`, `.tuneinside`, `.record`, `.kept.stop` (the Stop of `Still recording …`), `.log.play` (a kept row's ▶ or ■; every row's is the same, and `press` takes the newest), `.measurements.toggle` |
 | `library.` | `sidebar`, `search`, `channel.<hz>`, `page`, `page.record`, `page.tune`, `day.<day>` (an EARLIER day's line) and `day.<day>.play`, `part.<n>` (a transmission's row, counted from 0 down the page, as `select_part` counts), `inspector`, `inspector.playall`, `inspector.transcribed`, `inspector.delete` |
+| `decoders.` | `sidebar`, `decoder.<name>` (a decoder's row, by its manifest name slugged) with `.job.<n>` (its running jobs' lines, from 0), `page`, `page.start`, `page.stop`, `page.state`, `page.placement`, `page.failed`, `page.notice`, `tab.log`, `tab.table`, `tab.map`, `alert.<n>`, `record.<n>` (a log row, from 0 down the page), `transmitter.<device_id>` (a table row, slugged), `map` with `map.<device_id>` (a marker, slugged; an accessibility button whose press selects it), `inspector`, `inspector.name`, `inspector.raw`, `inspector.field.<name>` |
 | `player` | the Library's bar; `.previous`, `.play`, `.next`, `.volume` |
 | `assistant.` | `panel`, `new`, `input`, `stop`, `settings`, `decline`, `allow`, `allow.conversation`, `step.<call id>` (a step's row, which opens and closes it, by the id the daemon gave its tool call: `step.c1`) with `.json` (an opened step's JSON toggle, titled `JSON` or `Readable`) |
 | `settings.ai` | the Settings window's AI pane; `.key.<provider>` with `.check` and `.remove`, `.add` with `.add.provider`, `.add.label`, `.add.key` and `.add.endpoint`, `.feature.<feature>` with `.provider` and `.model`, `.usage.period` with `.day` and `.month`, `.notice.close` |
@@ -1145,7 +1208,9 @@ subscription, its end or failure and a row count every thirty seconds, whether t
 compiled, the inspector shown or hidden, the entry on air on a frequency with several bookmarks (`on air: Club net (PL 100.0)`, `on air: none`), every bookmark added, renamed or removed, every
 recording started, stopped or refused, each manifest read with its part count, the store's
 listing when its count changes, and every retune question asked and answered (`record`), every clip played, stopped or ended and the live sink detached and attached around it
-(`playback`), and Stop Listening with whether the radio was freed. The line goes to the file, to stderr and to the unified log under `com.leysdr.app`.
+(`playback`), Stop Listening with whether the radio was freed, and in Decoders the list read,
+the decoder and tab chosen, the history read, every decode job's change, each start, stop,
+refusal and take-over question, and each label saved (`decoders`). The line goes to the file, to stderr and to the unified log under `com.leysdr.app`.
 `LEYLINE_APP_LOG` names the file; the default is `~/Library/Logs/Leyline/app.log`, rotated once
 to `.1` at launch past 5 MB. `make app-run` points it at `tmp/leyline-app.log` in the checkout,
 which the Moat container's bind mount sees, so the log of a run on the Mac can be read from the

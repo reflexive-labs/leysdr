@@ -117,6 +117,12 @@ type Stage struct {
 	// HideEngineLabel leaves out the model and confidence after each over's words in the
 	// Library, which in a shot would name the scripted speech engine.
 	HideEngineLabel bool `yaml:"hide_engine_label" json:"hide_engine_label,omitempty"`
+	// Decoder selects a decoder in the Decoders place, by name or alias, as a click on its row.
+	Decoder string `yaml:"decoder" json:"decoder,omitempty"`
+	// DecoderTab is the decoder page's tab: log, table or map.
+	DecoderTab string `yaml:"decoder_tab" json:"decoder_tab,omitempty"`
+	// SelectTransmitter shows this device_id in the Decoders inspector, as a click on its row.
+	SelectTransmitter string `yaml:"select_transmitter" json:"select_transmitter,omitempty"`
 }
 
 // Crop says which part of the window an app shot keeps: the union of Regions, or a box of Size
@@ -159,7 +165,7 @@ type Table struct {
 var regionNames = map[string]bool{
 	"window": true, "toolbar": true, "sidebar": true, "inspector": true, "waterfall": true, "library": true, "notice": true, "parts": true,
 	"spectrum": true, "readings": true, "transmissions": true, "heard": true, "log_day": true,
-	"squelch": true,
+	"squelch": true, "decoders": true,
 }
 
 // Load reads and validates a scenes file.
@@ -356,8 +362,11 @@ const leastZoomHz = 1000
 
 // validate checks a stage's place and zoom, and that its CHIRP import exists, resolved by path.
 func (st *Stage) validate(path func(string) string) error {
-	if p := st.Place; p != "" && p != "radio" && p != "library" {
-		return fmt.Errorf("place is radio or library, not %q", p)
+	if p := st.Place; p != "" && p != "radio" && p != "library" && p != "decoders" {
+		return fmt.Errorf("place is radio, library or decoders, not %q", p)
+	}
+	if t := st.DecoderTab; t != "" && t != "log" && t != "table" && t != "map" {
+		return fmt.Errorf("decoder_tab is log, table or map, not %q", t)
 	}
 	// The factor zoom once took, 1 to 8, would read as a span of a few hertz.
 	if st.Zoom != 0 && st.Zoom < leastZoomHz {

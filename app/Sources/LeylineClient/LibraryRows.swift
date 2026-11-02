@@ -178,6 +178,11 @@ public struct PartTableRow: Sendable, Equatable, Identifiable {
     public var value: String
 
     public var id: String { label }
+
+    public init(label: String, value: String) {
+        self.label = label
+        self.value = value
+    }
 }
 
 extension Recordings {

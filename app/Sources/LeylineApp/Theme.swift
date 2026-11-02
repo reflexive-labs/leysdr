@@ -486,3 +486,56 @@ extension Theme.Layout {
     /// until the Mac.
     static let splashSweepEdge: CGFloat = 0.2
 }
+
+extension Theme.Layout {
+    /// The Decoders place (`DecodersView.swift`). A sidebar row's symbol column, and a running
+    /// job's line indented under it.
+    static let decoderSymbolWidth: CGFloat = 18
+    static let decoderJobIndent: CGFloat = 26
+    /// The log's rows: the time, the transmitter and the kind columns before the summary.
+    static let decoderRowHeight: CGFloat = 22
+    static let decoderTimeWidth: CGFloat = 64
+    static let decoderNameWidth: CGFloat = 132
+    static let decoderKindWidth: CGFloat = 96
+    /// The transmitter table's columns: the name, one per display column, how often and when.
+    static let decoderTableNameWidth: CGFloat = 150
+    static let decoderTableColumnWidth: CGFloat = 96
+    static let decoderTableCountWidth: CGFloat = 52
+    static let decoderTableTimeWidth: CGFloat = 70
+    /// The inspector's field names, in a column wide enough for `vertical_rate_fpm`.
+    static let decoderFieldLabelWidth: CGFloat = 116
+    /// An alert in effect above the log: its padding and corners.
+    static let decoderAlertPadding: CGFloat = 10
+    static let decoderAlertRadius: CGFloat = 6
+    /// The tab switch's row under the page's header.
+    static let decoderTabBarHeight: CGFloat = 40
+    /// The map: a transmitter's marker, the selected one's ring, a trail's width, the gap from the
+    /// marker to its name, and the staged canvas's margin round the transmitters it frames.
+    /// Guesses until the Mac.
+    static let mapMarkerSize: CGFloat = 14
+    static let mapSelectedRing: CGFloat = 22
+    static let mapTrailWidth: CGFloat = 1.5
+    static let mapLabelGap: CGFloat = 4
+    static let mapCanvasInset: CGFloat = 48
+    /// The staged map's graticule: a line every this many degrees.
+    static let mapGraticuleDegrees: Double = 0.1
+}
+
+extension Theme {
+    /// The Decoders place's map: a transmitter's marker, the selected one's, a trail, and the
+    /// staged canvas's graticule; an alert in effect is `caution` on `alertGround`.
+    static let mapMarker = inkSecondary
+    static let mapSelected = accent
+    static let mapTrail = inkFaint.opacity(0.7)
+    static let mapGraticule = hairline
+    static let alertGround = caution.opacity(0.12)
+}
+
+extension Theme.Font {
+    /// The map's transmitter names, and its marker glyph.
+    static let mapLabel = SwiftUI.Font.system(size: 10.5, weight: .medium)
+    static let mapGlyph = SwiftUI.Font.system(size: 12, weight: .semibold)
+    /// A decoder's symbol in the sidebar, and in the page's header.
+    static let decoderGlyph = SwiftUI.Font.system(size: 13)
+    static let decoderTitleGlyph = SwiftUI.Font.system(size: 18)
+}

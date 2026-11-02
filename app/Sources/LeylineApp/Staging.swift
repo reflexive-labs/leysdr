@@ -182,6 +182,12 @@ import SwiftUI
                 session.place = place
                 note("place \(p.rawValue)")
             }
+            if let name = stage.decoder { await select(decoder: name, session) }
+            if let tab = stage.decoderTab {
+                session.decoders.tab = tab
+                note("decoder tab \(tab.rawValue)")
+            }
+            if let id = stage.selectTransmitter { await select(transmitter: id, session) }
             if let index = stage.selectPart {
                 await select(part: index, play: stage.playPart, session)
             }
@@ -222,6 +228,39 @@ import SwiftUI
         private func note(_ step: String) {
             applied.append(step)
             log("stage", step)
+        }
+
+        /// Selects a decoder as a click on its sidebar row does, once `ListDecoders` has answered,
+        /// and waits for its last day's records to land.
+        private func select(decoder name: String, _ session: AppSession) async {
+            let d = session.decoders
+            guard await until(seconds: Self.librarySeconds, { d.manifests != nil }) else {
+                note("the decoders were not listed within \(Int(Self.librarySeconds)) s")
+                return
+            }
+            guard let m = d.manifest(named: name) else {
+                note("no decoder named \(name); none selected")
+                return
+            }
+            d.select(m.name)
+            let read = await until(seconds: Self.librarySeconds) { d.historyLoaded }
+            note(
+                read
+                    ? "decoder \(m.name), \(d.records.entries.count) records"
+                    : "decoder \(m.name); its records were not read within \(Int(Self.librarySeconds)) s"
+            )
+        }
+
+        /// Shows a transmitter in the Decoders inspector as a click on its row does, once a record
+        /// of it has landed.
+        private func select(transmitter id: String, _ session: AppSession) async {
+            let d = session.decoders
+            guard await until(seconds: Self.librarySeconds, { d.table.entities[id] != nil }) else {
+                note("no transmitter \(id) within \(Int(Self.librarySeconds)) s; none selected")
+                return
+            }
+            d.selectedTransmitter = id
+            note("transmitter \(id)")
         }
 
         /// Presses the row's Scan band as its click does and waits for the sweep to end.

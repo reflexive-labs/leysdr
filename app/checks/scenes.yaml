@@ -95,8 +95,9 @@
 #
 # Fixtures made for checks (go/cmd/leyfix/scenes.go): scene_gmrs (GMRS 462 MHz, channels 1, 5 and
 # 21), scene_vhf20 (2 m, MURS, marine and NOAA WX2 in one capture, 142.7 to 163.7 MHz),
-# scene_wx (the NOAA channels with nothing on the air), scene_wx_on (WX2 and WX1 on the air) and
-# scene_club (146.940 MHz keyed in turns under PL 127.3 and PL 100.0);
+# scene_wx (the NOAA channels with nothing on the air), scene_wx_on (WX2 and WX1 on the air),
+# scene_club (146.940 MHz keyed in turns under PL 127.3 and PL 100.0), scene_aprs (seven APRS
+# stations on 144.390 MHz) and scene_adsb (five aircraft at 1090 MHz);
 # ../../fixtures/chirp/nofreq.csv is a CSV the CHIRP import refuses. `make app-check` runs a
 # release leylined whatever SWIFT_CONFIG says: a debug one plays scene_vhf20 at about half of real
 # time, so its timings would be wrong.
@@ -1763,6 +1764,86 @@ scenes:
       - {cmd: snapshot, name: nofreq}
       - {cmd: file, path: bookmarks.json, contains: ["Digital", "!evening net\"", "!RX MHz"]}
       - {cmd: ley, args: [bookmarks, --tag, sample], expect_stdout: ["(?s)(\\bbm_.*){8}", "!(?s)(\\bbm_.*){9}"]}
+
+  # The Decoders place (docs/plans/decoders-app.md, DA-8) on scene_aprs: `ley decode --job`
+  # keeps an APRS job until the seven stations are heard, and `ley jobs cancel` ends it before
+  # the app starts, so the page shows a stopped decoder over the same seven records every run
+  # (their times move by a second, hence the threshold). The table has a row per station, its
+  # inspector names one into the scene's labels.json, which `ley label` reads back; the log and
+  # the staged map follow; then Start runs a kept job beside the window's channel and Stop ends it.
+  - name: decoders-aprs
+    covers: [DecodersView.swift, DecoderInspector.swift, DecoderSession.swift, DecoderMap.swift,
+      DisplayTemplate.swift, EntityTable.swift, DecoderPages.swift, DecoderPlacement.swift,
+      Labels.swift, AssistantViewTools.swift, LibraryRows.swift]
+    threshold: 1.5
+    fixtures: [{name: scene_aprs}]
+    clock: "19:42"
+    steps:
+      - ley: [decode, aprs, --job, --count, "7"]
+      - ley: [jobs, cancel, job_]
+    stage:
+      place: decoders
+      inspector: true
+      decoder: aprs
+      decoder_tab: table
+      settle: 2
+    app:
+      - {cmd: state, expect: {place: decoders, decoders.decoder: aprs, decoders.tab: table, decoders.tabs.0: log, decoders.tabs.1: table, decoders.tabs.2: map, decoders.state: Stopped, decoders.record_count: 7, decoders.start_shown: true, decoders.start_enabled: true, decoders.placement: "Runs alongside what you are listening to."}}
+      - {cmd: snapshot, name: table}
+      - {cmd: ax, name: table}
+      - {cmd: press, identifier: decoders.transmitter.n0call-3}
+      - {cmd: state, expect: {decoders.selected_transmitter: N0CALL-3}}
+      - {cmd: snapshot, name: transmitter}
+      - {cmd: press, identifier: decoders.inspector.name}
+      - {cmd: type, text: Fill-in digi}
+      - {cmd: key, keys: return}
+      - {cmd: wait, seconds: 1, expect_log: "N0CALL-3 labelled Fill-in digi"}
+      - {cmd: file, path: labels.json, contains: ["N0CALL-3", "Fill-in digi"]}
+      - {cmd: ley, args: [label, N0CALL-3], expect_stdout: "Fill-in digi"}
+      - {cmd: press, identifier: decoders.tab.log}
+      - {cmd: state, expect: {decoders.tab: log}}
+      - {cmd: snapshot, name: log}
+      - {cmd: press, identifier: decoders.tab.map}
+      - {cmd: state, expect: {decoders.tab: map}}
+      - {cmd: snapshot, name: map}
+      - {cmd: ax, name: map}
+      - {cmd: press, identifier: decoders.page.start}
+      - {cmd: wait, seconds: 2, expect_log: "started: aprs at 144390000 Hz, kept"}
+      - {cmd: state, expect: {decoders.state: Running, decoders.start_shown: false}}
+      - {cmd: press, identifier: decoders.page.stop}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {decoders.state: Stopped, decoders.start_shown: true}}
+
+  # ADS-B on scene_adsb, an IQ decoder: forty records from the five aircraft, the job cancelled
+  # before the app starts as decoders-aprs's is. The table names each aircraft by its callsign
+  # (the manifest's entity_name) with its altitude, speed, track and squawk; the staged map turns
+  # each marker to its track and draws its trail; the inspector shows LEY303's fields with their
+  # units and its raw bytes. ⌘3 comes back to the place from the Radio.
+  - name: decoders-adsb
+    covers: [DecoderMap.swift, DecoderInspector.swift, DecodersView.swift, EntityTable.swift,
+      DecoderPlacement.swift]
+    threshold: 1.5
+    fixtures: [{name: scene_adsb}]
+    clock: "19:42"
+    steps:
+      - ley: [decode, adsb, --job, --count, "40"]
+      - ley: [jobs, cancel, job_]
+    stage:
+      place: decoders
+      inspector: true
+      decoder: aircraft
+      decoder_tab: map
+      select_transmitter: A1F003
+      settle: 2
+    app:
+      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tab: map, decoders.tabs.1: table, decoders.tabs.2: map, decoders.selected_transmitter: A1F003, decoders.record_count: 40, decoders.state: Stopped}}
+      - {cmd: snapshot, name: map}
+      - {cmd: ax, name: map}
+      - {cmd: press, identifier: decoders.tab.table}
+      - {cmd: snapshot, name: table}
+      - {cmd: press, identifier: toolbar.place.radio}
+      - {cmd: key, keys: cmd+3}
+      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tab: table}}
 
   # The transport bar at the window's smaller sizes (docs/plans/app.md, decision 13): the Mode
   # and Width pop-ups keep their labels on one line at 900 × 612 pt (the minimum), 1000 and

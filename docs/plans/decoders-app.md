@@ -170,7 +170,7 @@ the stored captures.
   the port of `records.Summary`, so a fallback reads as `ley`'s does), `EntityTable.swift`,
   `DecoderPlacement.swift`, `DecoderPages.swift` (tabs, jobs, the record log, alerts, the
   inspector's words) and `Labels.swift`; every vector passes.
-- [ ] **DA-8 The Decoders place.** `WindowPlace.decoders` (⌘3), its sidebar (installed decoders
+- [x] **DA-8 The Decoders place.** `WindowPlace.decoders` (⌘3), its sidebar (installed decoders
   with symbol, title and state; running jobs under each with the liveness detail), the page
   (Start/Stop with the placement line and the take-over confirmation; Log, Table and Map tabs
   shown by output shape and by whether any record has a position; alerts in effect above the log
@@ -178,6 +178,13 @@ the stored captures.
   bytes, time, signal, and naming the transmitter through `LabelStore`). Stage keys and two
   check scenes: `decoders-aprs` (scene_aprs) and `decoders-adsb` (scene_adsb), with the staged
   map. The ADS-B manifest gains its `display` here if batch 1 merged without it.
+  Done 2026-11-02, unverified until the Mac (`../dev/app.md`, "The Decoders place"). Three calls
+  the plan left open: a transmitter ages out only while a job of the decoder runs, so a stopped
+  decoder's page keeps what it last heard; a decoder with no frequency of its own (speech) starts
+  on the tuned frequency and says so when nothing is tuned; and the window's followed channel
+  counts as "you" in the placement's words, as its own does. Stage keys `decoder`,
+  `decoder_tab` and `select_transmitter`, the `decoders` region and state, and `leyshots` gives
+  a scene its own `LEYLINE_LABELS`.
 
 ### Batch 3: the rest
 

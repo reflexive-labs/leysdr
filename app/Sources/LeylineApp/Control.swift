@@ -508,7 +508,39 @@ import LeylineClient
                 tunedRows: tunedRows.count, tunedRow: tunedRows.first?.words,
                 onAirEntry: s.tunedGroup?.isMerged == true ? s.onAirEntry?.name : nil,
                 logNames: Self.logNames(s), sort: s.bookmarkSort.rawValue,
-                bookmarkRows: Self.bookmarkRows(s), libraryRows: Self.libraryRows(s))
+                bookmarkRows: Self.bookmarkRows(s), libraryRows: Self.libraryRows(s),
+                decoders: Self.decodersState(s))
+        }
+
+        /// The Decoders page as `ControlDecoders` writes it, while the place shows.
+        private static func decodersState(_ s: AppSession) -> ControlDecoders? {
+            guard s.place == .decoders else { return nil }
+            let d = s.decoders
+            var out = ControlDecoders(
+                decoder: d.selectedName, listed: d.listed.map(\.name), tab: d.shownTab.rawValue,
+                tabs: d.tabs.map(\.rawValue), recordCount: d.records.entries.count,
+                selectedTransmitter: d.selectedTransmitter, notice: d.notice)
+            guard let m = d.selected else { return out }
+            let jobs = DecoderPages.jobs(of: m, in: s.state.jobs)
+            let running = jobs.filter(DecoderPages.isLive)
+            if let j = running.first ?? jobs.first {
+                out.state = DecoderPages.stateWord(j)
+                out.detail = DecoderPages.detail(j)
+            }
+            if running.isEmpty {
+                let p = s.decoderPlacement(m)
+                out.placement = p.words
+                out.startShown = true
+                out.startEnabled = s.isLive && p.canStart && d.starting != m.name
+            }
+            out.rows = d.records.entries.prefix(20).map { e in
+                let who = d.name(of: e.record.deviceID)
+                let head = [who, e.record.kind].filter { !$0.isEmpty }.joined(separator: " ")
+                return "\(head): \(d.summary(e.record))"
+            }
+            out.transmitters = d.table.rows.map { d.name(of: $0.deviceID) }
+            out.alerts = d.alerts.map { d.summary($0.record) }
+            return out
         }
 
         /// The Library page's recent rows as `ControlViewState.libraryRows` writes them, with

@@ -203,7 +203,8 @@ protocol method AppKit calls off the actor is `nonisolated` and hops back
 (`WaterfallRenderer.draw(in:)`).
 
 **`MainActor.assumeIsolated` is the bridge from a callback already on the main thread**, and it
-appears exactly five times: a `DispatchSource` on `.main`, the three `NSEvent` monitors (the
+appears exactly six times: two `DispatchSource`s on `.main` (the bookmarks' directory and the
+labels' directory), the three `NSEvent` monitors (the
 transport field's, the inspector's name field's, and `TuningKeyGuard`'s, shared by the
 sidebar's filter and the plan picker's field), and `MTKViewDelegate.draw(in:)`.
 Use it only where the callback is guaranteed to run on the main

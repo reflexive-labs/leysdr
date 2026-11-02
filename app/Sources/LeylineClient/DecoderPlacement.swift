@@ -87,11 +87,15 @@ public enum DecoderPlacement: Sendable, Equatable {
     /// already hears it, else a radio with nothing on it, else a capture nobody is using (the
     /// don't-disturb test), else the reason it is somebody's, else that nothing can hear it.
     /// `swept` holds the devices a sweep holds, whose captures no decoder can join; `selfID` is
-    /// the window's client id, so its own channel reads "you are listening".
+    /// the window's client id and `windowChannel` the channel it plays, which may be another
+    /// client's it followed, so either reads "you are listening".
     public static func predict(
         _ manifest: Leyline_V1_DecoderManifest, frequencyHz: UInt64?, state: MirrorState,
-        swept: Set<String> = [], selfID: String, now: Date = Date()
+        swept: Set<String> = [], selfID: String, windowChannel: String? = nil, now: Date = Date()
     ) -> DecoderPlacement {
+        let yours = { (ch: Leyline_V1_Channel) in
+            ch.owner.clientID == selfID || ch.channelID == windowChannel
+        }
         guard let hz = frequencyHz else { return .needsFrequency }
         let iq = manifest.input.signal == .signalIq
         let captures = state.captures.filter {
@@ -115,7 +119,7 @@ public enum DecoderPlacement: Sendable, Equatable {
             }
             if covers {
                 let listening = state.channels.contains {
-                    $0.captureID == cap.captureID && $0.owner.clientID == selfID
+                    $0.captureID == cap.captureID && yours($0)
                 }
                 return .alongside(captureID: cap.captureID, listening: listening)
             }
@@ -142,7 +146,7 @@ public enum DecoderPlacement: Sendable, Equatable {
                 lastReason = "\(model(d)) cannot tune \(mhz(hz))"
                 continue
             }
-            if let why = inUse(cap, state: state, selfID: selfID, now: now) {
+            if let why = inUse(cap, state: state, yours: yours, now: now) {
                 if busy == nil { busy = (cap.captureID, why) }
                 continue
             }
@@ -154,14 +158,15 @@ public enum DecoderPlacement: Sendable, Equatable {
 
     /// The don't-disturb test, as the daemon's `inUse`: a reason when the capture is somebody's,
     /// nil when it is free. A channel on it, audio playing from it, or a write that tuned it
-    /// under a minute ago.
+    /// under a minute ago. `yours` says which channels are the window's, named "you".
     public static func inUse(
-        _ cap: Leyline_V1_Capture, state: MirrorState, selfID: String, now: Date
+        _ cap: Leyline_V1_Capture, state: MirrorState, yours: (Leyline_V1_Channel) -> Bool,
+        now: Date
     ) -> String? {
         if let ch = state.channels.first(where: { $0.captureID == cap.captureID }) {
             let hz = UInt64(clamping: max(0, Int64(cap.centerHz) + ch.offsetHz))
             let at = mhz(hz > 0 ? hz : cap.centerHz)
-            if ch.owner.clientID == selfID { return "you are listening on \(at)" }
+            if yours(ch) { return "you are listening on \(at)" }
             return "\(who(ch.owner)) is listening on \(at)"
         }
         if cap.activity.liveAudioSinks > 0 { return "audio is playing from this radio" }

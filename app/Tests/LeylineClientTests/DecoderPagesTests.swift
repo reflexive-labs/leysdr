@@ -181,6 +181,14 @@ final class DecoderPagesTests: XCTestCase {
         XCTAssertFalse(DecoderPages.columnIsNumeric("name", manifest: manifest()))
     }
 
+    func testAgesAreCoarsenedAsAPersonSaysThem() {
+        XCTAssertEqual(DecoderPages.agoWords(0.5), "just now")
+        XCTAssertEqual(DecoderPages.agoWords(12), "12 s ago")
+        XCTAssertEqual(DecoderPages.agoWords(250), "4 min ago")
+        XCTAssertEqual(DecoderPages.agoWords(3 * 3600 + 5), "3 h ago")
+        XCTAssertEqual(DecoderPages.agoWords(-5), "just now")
+    }
+
     func testRawBytesAreHexSixteenALine() {
         let d = Data((0..<18).map { UInt8($0 * 15) })
         XCTAssertEqual(

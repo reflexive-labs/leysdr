@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The view tools the app declares when it starts a conversation: moving the waterfall's view to a
-// band, opening the Library on a recording, and showing one of the window's two places. The
+// band, opening the Library on a recording, and showing one of the window's three places. The
 // assistant calls them like its other tools, the daemon routes each call to this client as a call
 // awaiting the client, and the app performs it and answers (`docs/design/ai.md`, "The assistant").
 // View state stays in the client, and a view tool never moves the radio: the waterfall's view
@@ -41,9 +41,9 @@ public struct ViewToolAnswer: Sendable, Equatable {
     }
 }
 
-/// The window's two places, as `show_place` names them.
+/// The window's three places, as `show_place` names them.
 public enum ViewPlace: String, Sendable, CaseIterable {
-    case radio, library
+    case radio, library, decoders
 }
 
 /// The app's view tools: their declarations and their input.
@@ -77,8 +77,8 @@ public enum AppViewTools {
         ),
         tool(
             showPlace,
-            "Shows one of the app window's two places: radio (the live waterfall) or library (what has been recorded).",
-            #"{"type":"object","properties":{"place":{"type":"string","enum":["radio","library"]}},"required":["place"],"additionalProperties":false}"#
+            "Shows one of the app window's three places: radio (the live waterfall), library (what has been recorded) or decoders (what the decoders have heard: a log, a table of transmitters and a map).",
+            #"{"type":"object","properties":{"place":{"type":"string","enum":["radio","library","decoders"]}},"required":["place"],"additionalProperties":false}"#
         ),
     ]
 
@@ -111,7 +111,7 @@ public enum AppViewTools {
         case showPlace:
             guard case .string(let s)? = args["place"],
                 let place = ViewPlace(rawValue: s.lowercased())
-            else { return .failure(ViewToolError("place must be radio or library")) }
+            else { return .failure(ViewToolError("place must be radio, library or decoders")) }
             return .success(.showPlace(place))
         default:
             return .failure(ViewToolError("the app has no view tool named \(tool)"))
@@ -250,7 +250,13 @@ public enum AppViewTools {
 
     public static func shown(_ place: ViewPlace) -> ViewToolAnswer {
         ViewToolAnswer(
-            text: place == .radio ? "The window shows the radio." : "The window shows the Library.",
+            text: {
+                switch place {
+                case .radio: "The window shows the radio."
+                case .library: "The window shows the Library."
+                case .decoders: "The window shows Decoders."
+                }
+            }(),
             json: ViewToolAnswer.json(["place": .string(place.rawValue)]))
     }
 

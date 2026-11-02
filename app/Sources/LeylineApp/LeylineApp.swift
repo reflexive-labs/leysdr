@@ -115,10 +115,10 @@ struct TuneCommands: Commands {
         CommandMenu("Tune") {
             Button("Tune Up") { session.pressArrow(1) }
                 .keyboardShortcut(.rightArrow, modifiers: [])
-                .disabled(session.place == .library)
+                .disabled(session.place != .radio)
             Button("Tune Down") { session.pressArrow(-1) }
                 .keyboardShortcut(.leftArrow, modifiers: [])
-                .disabled(session.place == .library)
+                .disabled(session.place != .radio)
             Button("Fine Tune Up") { session.step(1, fine: true) }
                 .keyboardShortcut(.rightArrow, modifiers: [.shift])
             Button("Fine Tune Down") { session.step(-1, fine: true) }
@@ -150,13 +150,13 @@ struct TuneCommands: Commands {
                 .keyboardShortcut("d", modifiers: [.command])
             Button(session.isMuted ? "Unmute" : "Mute") { session.pressSpace() }
                 .keyboardShortcut(.space, modifiers: [])
-                .disabled(session.place == .library)
+                .disabled(session.place != .radio)
             // `ley stop`'s act: the channel removed, the capture this window made destroyed.
             Button("Stop Listening") { Task { await session.stopListening() } }
                 .keyboardShortcut(".", modifiers: [.command])
         }
         CommandGroup(before: .sidebar) {
-            // The toolbar's `Radio | Library` switch; checked by the place showing, which the
+            // The toolbar's `Radio | Library | Decoders` switch; checked by the place showing, which the
             // switch shows live if the menu's check lags.
             ForEach(WindowPlace.allCases) { p in
                 Toggle(

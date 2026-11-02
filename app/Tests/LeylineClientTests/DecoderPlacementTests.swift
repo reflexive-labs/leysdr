@@ -92,6 +92,22 @@ final class DecoderPlacementTests: XCTestCase {
         XCTAssertFalse(p.needsTakeOver)
     }
 
+    func testAChannelTheWindowFollowedIsYoursToo() {
+        var s = MirrorState()
+        s.devices = [dongle()]
+        s.captures = [capture(centre: 162_000_000)]
+        s.channels = [channel(on: "cap_1", offset: 400_000, owner: "cli_x", kind: "cli")]
+        let followed = DecoderPlacement.predict(
+            audio([144_390_000]), frequencyHz: 144_390_000, state: s, selfID: me,
+            windowChannel: "chan_cli_x", now: now)
+        XCTAssertEqual(
+            followed, .needsRadio(captureID: "cap_1", reason: "you are listening on 162.400 MHz"))
+        let alongside = DecoderPlacement.predict(
+            audio([162_400_000]), frequencyHz: 162_400_000, state: s, selfID: me,
+            windowChannel: "chan_cli_x", now: now)
+        XCTAssertEqual(alongside, .alongside(captureID: "cap_1", listening: true))
+    }
+
     func testAChannelAtTheSpansEdgeDoesNotFit() {
         var s = MirrorState()
         s.devices = [dongle()]

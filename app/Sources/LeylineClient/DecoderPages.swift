@@ -164,6 +164,12 @@ public enum DecoderPages {
         return "\(s / 86_400) d"
     }
 
+    /// `ageWords` as a sentence ends it: `12 s ago`, or `just now`.
+    public static func agoWords(_ seconds: TimeInterval) -> String {
+        let age = ageWords(seconds)
+        return age == "now" ? "just now" : age + " ago"
+    }
+
     /// A raw payload as hex, sixteen bytes a line in pairs: `8d 48 40 d6 20 2c …`.
     public static func hexLines(_ d: Data) -> [String] {
         let bytes = Array(d)
