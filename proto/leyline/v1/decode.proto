@@ -102,12 +102,21 @@ message DecoderRecipe {
   uint32 bandwidth_hz = 3;     // 0 = the mode's default
   DemodMode mode = 4;
   GainPolicy gain = 5;
+  // GAIN_FIXED only: the level for the radio's first gain stage, in dB, snapped to the radio's
+  // step as any gain write is. ADS-B's is 40: at 30 an R820T on 1090 MHz decoded nothing.
+  double gain_db = 6;
 }
 
+// What a decode job does to the radio's gain. The job sets a gain only on a capture it creates or
+// retunes (step 2 or 3 of the allocator, docs/design/decoders.md, "Decisions"), and puts a retuned
+// capture's gain back when it ends. A capture it shares is somebody's, and keeps its owner's gain
+// whatever the recipe says; the job's status detail then says the gain it was left at.
+// DecodeConfig.gains, when sent, wins over the recipe.
 enum GainPolicy {
   GAIN_POLICY_UNSPECIFIED = 0;
   GAIN_LEAVE = 1;  // whatever the radio is set to; a capture the job borrows keeps its owner's gain
   GAIN_AUTO = 2;   // ask for AGC on a capture the job creates
+  GAIN_FIXED = 3;  // DecoderRecipe.gain_db on the first stage of a capture the job creates or retunes
 }
 
 message DecoderInput {
@@ -251,6 +260,15 @@ message DecodeConfig {
   // its parts in order as fast as the plugin accepts them, with no capture, channel or lease, so
   // frequency_hz, device_id and take_over do not apply. Empty = tune a radio as above.
   string source_uri = 8;
+  // The gain to set on a capture the job creates or retunes, overriding the recipe's
+  // (`ley decode --gain`), read as RecordConfig.gain is: an empty element is the device's first
+  // stage, a name matches ignoring case, and a refusal fails the job with the device's code and
+  // message. A capture the job shares keeps its owner's gain, whichever is sent. Absent = the
+  // recipe's GainPolicy.
+  GainWrite gain = 9;
+  // Gains to set, one stage at a time in order, each read as `gain` is. When `gains` is non-empty
+  // `gain` is ignored, as in RecordConfig and ScanConfig.
+  repeated GainWrite gains = 10;
 }
 
 // A stateless record filter. `all` clauses must match (AND); an empty predicate matches every

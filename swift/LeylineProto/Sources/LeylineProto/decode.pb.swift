@@ -33,6 +33,11 @@ fileprivate nonisolated struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobu
   typealias Version = _2
 }
 
+/// What a decode job does to the radio's gain. The job sets a gain only on a capture it creates or
+/// retunes (step 2 or 3 of the allocator, docs/design/decoders.md, "Decisions"), and puts a retuned
+/// capture's gain back when it ends. A capture it shares is somebody's, and keeps its owner's gain
+/// whatever the recipe says; the job's status detail then says the gain it was left at.
+/// DecodeConfig.gains, when sent, wins over the recipe.
 public nonisolated enum Leyline_V1_GainPolicy: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case unspecified // = 0
@@ -42,6 +47,9 @@ public nonisolated enum Leyline_V1_GainPolicy: SwiftProtobuf.Enum, Swift.CaseIte
 
   /// ask for AGC on a capture the job creates
   case gainAuto // = 2
+
+  /// DecoderRecipe.gain_db on the first stage of a capture the job creates or retunes
+  case gainFixed // = 3
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -53,6 +61,7 @@ public nonisolated enum Leyline_V1_GainPolicy: SwiftProtobuf.Enum, Swift.CaseIte
     case 0: self = .unspecified
     case 1: self = .gainLeave
     case 2: self = .gainAuto
+    case 3: self = .gainFixed
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -62,6 +71,7 @@ public nonisolated enum Leyline_V1_GainPolicy: SwiftProtobuf.Enum, Swift.CaseIte
     case .unspecified: return 0
     case .gainLeave: return 1
     case .gainAuto: return 2
+    case .gainFixed: return 3
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -71,6 +81,7 @@ public nonisolated enum Leyline_V1_GainPolicy: SwiftProtobuf.Enum, Swift.CaseIte
     .unspecified,
     .gainLeave,
     .gainAuto,
+    .gainFixed,
   ]
 
 }
@@ -546,6 +557,10 @@ public nonisolated struct Leyline_V1_DecoderRecipe: Sendable {
 
   public var gain: Leyline_V1_GainPolicy = .unspecified
 
+  /// GAIN_FIXED only: the level for the radio's first gain stage, in dB, snapped to the radio's
+  /// step as any gain write is. ADS-B's is 40: at 30 an R820T on 1090 MHz decoded nothing.
+  public var gainDb: Double = 0
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -905,12 +920,31 @@ public nonisolated struct Leyline_V1_DecodeConfig: Sendable {
   /// frequency_hz, device_id and take_over do not apply. Empty = tune a radio as above.
   public var sourceUri: String = String()
 
+  /// The gain to set on a capture the job creates or retunes, overriding the recipe's
+  /// (`ley decode --gain`), read as RecordConfig.gain is: an empty element is the device's first
+  /// stage, a name matches ignoring case, and a refusal fails the job with the device's code and
+  /// message. A capture the job shares keeps its owner's gain, whichever is sent. Absent = the
+  /// recipe's GainPolicy.
+  public var gain: Leyline_V1_GainWrite {
+    get {_gain ?? Leyline_V1_GainWrite()}
+    set {_gain = newValue}
+  }
+  /// Returns true if `gain` has been explicitly set.
+  public var hasGain: Bool {self._gain != nil}
+  /// Clears the value of `gain`. Subsequent reads from it will return its default value.
+  public mutating func clearGain() {self._gain = nil}
+
+  /// Gains to set, one stage at a time in order, each read as `gain` is. When `gains` is non-empty
+  /// `gain` is ignored, as in RecordConfig and ScanConfig.
+  public var gains: [Leyline_V1_GainWrite] = []
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _predicate: Leyline_V1_Predicate? = nil
   fileprivate var _notify: Leyline_V1_NotifyTarget? = nil
+  fileprivate var _gain: Leyline_V1_GainWrite? = nil
 }
 
 /// A stateless record filter. `all` clauses must match (AND); an empty predicate matches every
@@ -1271,7 +1305,7 @@ public nonisolated struct Leyline_V1_RecordAnchor: Sendable {
 fileprivate nonisolated let _protobuf_package = "leyline.v1"
 
 nonisolated extension Leyline_V1_GainPolicy: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0GAIN_POLICY_UNSPECIFIED\0\u{1}GAIN_LEAVE\0\u{1}GAIN_AUTO\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0GAIN_POLICY_UNSPECIFIED\0\u{1}GAIN_LEAVE\0\u{1}GAIN_AUTO\0\u{1}GAIN_FIXED\0")
 }
 
 nonisolated extension Leyline_V1_DecoderSignal: SwiftProtobuf._ProtoNameProviding {
@@ -1549,7 +1583,7 @@ nonisolated extension Leyline_V1_DecoderDisplay: SwiftProtobuf.Message, SwiftPro
 
 nonisolated extension Leyline_V1_DecoderRecipe: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DecoderRecipe"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}frequencies_hz\0\u{3}sample_rate\0\u{3}bandwidth_hz\0\u{1}mode\0\u{1}gain\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}frequencies_hz\0\u{3}sample_rate\0\u{3}bandwidth_hz\0\u{1}mode\0\u{1}gain\0\u{3}gain_db\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1562,6 +1596,7 @@ nonisolated extension Leyline_V1_DecoderRecipe: SwiftProtobuf.Message, SwiftProt
       case 3: try { try decoder.decodeSingularUInt32Field(value: &self.bandwidthHz) }()
       case 4: try { try decoder.decodeSingularEnumField(value: &self.mode) }()
       case 5: try { try decoder.decodeSingularEnumField(value: &self.gain) }()
+      case 6: try { try decoder.decodeSingularDoubleField(value: &self.gainDb) }()
       default: break
       }
     }
@@ -1583,6 +1618,9 @@ nonisolated extension Leyline_V1_DecoderRecipe: SwiftProtobuf.Message, SwiftProt
     if self.gain != .unspecified {
       try visitor.visitSingularEnumField(value: self.gain, fieldNumber: 5)
     }
+    if self.gainDb.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.gainDb, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1592,6 +1630,7 @@ nonisolated extension Leyline_V1_DecoderRecipe: SwiftProtobuf.Message, SwiftProt
     if lhs.bandwidthHz != rhs.bandwidthHz {return false}
     if lhs.mode != rhs.mode {return false}
     if lhs.gain != rhs.gain {return false}
+    if lhs.gainDb != rhs.gainDb {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2058,7 +2097,7 @@ nonisolated extension Leyline_V1_FieldValue: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension Leyline_V1_DecodeConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DecodeConfig"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}decoder\0\u{3}frequency_hz\0\u{3}device_id\0\u{3}take_over\0\u{1}keep\0\u{1}predicate\0\u{1}notify\0\u{3}source_uri\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}decoder\0\u{3}frequency_hz\0\u{3}device_id\0\u{3}take_over\0\u{1}keep\0\u{1}predicate\0\u{1}notify\0\u{3}source_uri\0\u{1}gain\0\u{1}gains\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2074,6 +2113,8 @@ nonisolated extension Leyline_V1_DecodeConfig: SwiftProtobuf.Message, SwiftProto
       case 6: try { try decoder.decodeSingularMessageField(value: &self._predicate) }()
       case 7: try { try decoder.decodeSingularMessageField(value: &self._notify) }()
       case 8: try { try decoder.decodeSingularStringField(value: &self.sourceUri) }()
+      case 9: try { try decoder.decodeSingularMessageField(value: &self._gain) }()
+      case 10: try { try decoder.decodeRepeatedMessageField(value: &self.gains) }()
       default: break
       }
     }
@@ -2108,6 +2149,12 @@ nonisolated extension Leyline_V1_DecodeConfig: SwiftProtobuf.Message, SwiftProto
     if !self.sourceUri.isEmpty {
       try visitor.visitSingularStringField(value: self.sourceUri, fieldNumber: 8)
     }
+    try { if let v = self._gain {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
+    } }()
+    if !self.gains.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.gains, fieldNumber: 10)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2120,6 +2167,8 @@ nonisolated extension Leyline_V1_DecodeConfig: SwiftProtobuf.Message, SwiftProto
     if lhs._predicate != rhs._predicate {return false}
     if lhs._notify != rhs._notify {return false}
     if lhs.sourceUri != rhs.sourceUri {return false}
+    if lhs._gain != rhs._gain {return false}
+    if lhs.gains != rhs.gains {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

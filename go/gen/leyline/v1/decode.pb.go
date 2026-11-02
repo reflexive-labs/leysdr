@@ -29,12 +29,18 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// What a decode job does to the radio's gain. The job sets a gain only on a capture it creates or
+// retunes (step 2 or 3 of the allocator, docs/design/decoders.md, "Decisions"), and puts a retuned
+// capture's gain back when it ends. A capture it shares is somebody's, and keeps its owner's gain
+// whatever the recipe says; the job's status detail then says the gain it was left at.
+// DecodeConfig.gains, when sent, wins over the recipe.
 type GainPolicy int32
 
 const (
 	GainPolicy_GAIN_POLICY_UNSPECIFIED GainPolicy = 0
 	GainPolicy_GAIN_LEAVE              GainPolicy = 1 // whatever the radio is set to; a capture the job borrows keeps its owner's gain
 	GainPolicy_GAIN_AUTO               GainPolicy = 2 // ask for AGC on a capture the job creates
+	GainPolicy_GAIN_FIXED              GainPolicy = 3 // DecoderRecipe.gain_db on the first stage of a capture the job creates or retunes
 )
 
 // Enum value maps for GainPolicy.
@@ -43,11 +49,13 @@ var (
 		0: "GAIN_POLICY_UNSPECIFIED",
 		1: "GAIN_LEAVE",
 		2: "GAIN_AUTO",
+		3: "GAIN_FIXED",
 	}
 	GainPolicy_value = map[string]int32{
 		"GAIN_POLICY_UNSPECIFIED": 0,
 		"GAIN_LEAVE":              1,
 		"GAIN_AUTO":               2,
+		"GAIN_FIXED":              3,
 	}
 )
 
@@ -700,6 +708,9 @@ type DecoderRecipe struct {
 	BandwidthHz   uint32     `protobuf:"varint,3,opt,name=bandwidth_hz,json=bandwidthHz,proto3" json:"bandwidth_hz,omitempty"` // 0 = the mode's default
 	Mode          DemodMode  `protobuf:"varint,4,opt,name=mode,proto3,enum=leyline.v1.DemodMode" json:"mode,omitempty"`
 	Gain          GainPolicy `protobuf:"varint,5,opt,name=gain,proto3,enum=leyline.v1.GainPolicy" json:"gain,omitempty"`
+	// GAIN_FIXED only: the level for the radio's first gain stage, in dB, snapped to the radio's
+	// step as any gain write is. ADS-B's is 40: at 30 an R820T on 1090 MHz decoded nothing.
+	GainDb        float64 `protobuf:"fixed64,6,opt,name=gain_db,json=gainDb,proto3" json:"gain_db,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -767,6 +778,13 @@ func (x *DecoderRecipe) GetGain() GainPolicy {
 		return x.Gain
 	}
 	return GainPolicy_GAIN_POLICY_UNSPECIFIED
+}
+
+func (x *DecoderRecipe) GetGainDb() float64 {
+	if x != nil {
+		return x.GainDb
+	}
+	return 0
 }
 
 type DecoderInput struct {
@@ -1406,7 +1424,16 @@ type DecodeConfig struct {
 	// Decode a stored audio recording instead of a radio: ley://recordings/<id>. The daemon reads
 	// its parts in order as fast as the plugin accepts them, with no capture, channel or lease, so
 	// frequency_hz, device_id and take_over do not apply. Empty = tune a radio as above.
-	SourceUri     string `protobuf:"bytes,8,opt,name=source_uri,json=sourceUri,proto3" json:"source_uri,omitempty"`
+	SourceUri string `protobuf:"bytes,8,opt,name=source_uri,json=sourceUri,proto3" json:"source_uri,omitempty"`
+	// The gain to set on a capture the job creates or retunes, overriding the recipe's
+	// (`ley decode --gain`), read as RecordConfig.gain is: an empty element is the device's first
+	// stage, a name matches ignoring case, and a refusal fails the job with the device's code and
+	// message. A capture the job shares keeps its owner's gain, whichever is sent. Absent = the
+	// recipe's GainPolicy.
+	Gain *GainWrite `protobuf:"bytes,9,opt,name=gain,proto3" json:"gain,omitempty"`
+	// Gains to set, one stage at a time in order, each read as `gain` is. When `gains` is non-empty
+	// `gain` is ignored, as in RecordConfig and ScanConfig.
+	Gains         []*GainWrite `protobuf:"bytes,10,rep,name=gains,proto3" json:"gains,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1495,6 +1522,20 @@ func (x *DecodeConfig) GetSourceUri() string {
 		return x.SourceUri
 	}
 	return ""
+}
+
+func (x *DecodeConfig) GetGain() *GainWrite {
+	if x != nil {
+		return x.Gain
+	}
+	return nil
+}
+
+func (x *DecodeConfig) GetGains() []*GainWrite {
+	if x != nil {
+		return x.Gains
+	}
+	return nil
 }
 
 // A stateless record filter. `all` clauses must match (AND); an empty predicate matches every
@@ -2404,14 +2445,15 @@ const file_leyline_v1_decode_proto_rawDesc = "" +
 	"\acolumns\x18\x05 \x03(\tR\acolumns\x1a<\n" +
 	"\x0eSummariesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd1\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xea\x01\n" +
 	"\rDecoderRecipe\x12%\n" +
 	"\x0efrequencies_hz\x18\x01 \x03(\x04R\rfrequenciesHz\x12\x1f\n" +
 	"\vsample_rate\x18\x02 \x01(\x04R\n" +
 	"sampleRate\x12!\n" +
 	"\fbandwidth_hz\x18\x03 \x01(\rR\vbandwidthHz\x12)\n" +
 	"\x04mode\x18\x04 \x01(\x0e2\x15.leyline.v1.DemodModeR\x04mode\x12*\n" +
-	"\x04gain\x18\x05 \x01(\x0e2\x16.leyline.v1.GainPolicyR\x04gain\"\x8e\x02\n" +
+	"\x04gain\x18\x05 \x01(\x0e2\x16.leyline.v1.GainPolicyR\x04gain\x12\x17\n" +
+	"\again_db\x18\x06 \x01(\x01R\x06gainDb\"\x8e\x02\n" +
 	"\fDecoderInput\x12)\n" +
 	"\x04mode\x18\x01 \x01(\x0e2\x15.leyline.v1.InputModeR\x04mode\x12\x17\n" +
 	"\aslot_ms\x18\x02 \x01(\rR\x06slotMs\x12&\n" +
@@ -2464,7 +2506,7 @@ const file_leyline_v1_decode_proto_rawDesc = "" +
 	"\x06number\x18\x03 \x01(\x01H\x00R\x06number\x12\x14\n" +
 	"\x04flag\x18\x04 \x01(\bH\x00R\x04flag\x12\x14\n" +
 	"\x04data\x18\x05 \x01(\fH\x00R\x04dataB\a\n" +
-	"\x05value\"\x9f\x02\n" +
+	"\x05value\"\xf7\x02\n" +
 	"\fDecodeConfig\x12\x18\n" +
 	"\adecoder\x18\x01 \x01(\tR\adecoder\x12!\n" +
 	"\ffrequency_hz\x18\x02 \x01(\x04R\vfrequencyHz\x12\x1b\n" +
@@ -2474,7 +2516,10 @@ const file_leyline_v1_decode_proto_rawDesc = "" +
 	"\tpredicate\x18\x06 \x01(\v2\x15.leyline.v1.PredicateR\tpredicate\x120\n" +
 	"\x06notify\x18\a \x01(\v2\x18.leyline.v1.NotifyTargetR\x06notify\x12\x1d\n" +
 	"\n" +
-	"source_uri\x18\b \x01(\tR\tsourceUri\"1\n" +
+	"source_uri\x18\b \x01(\tR\tsourceUri\x12)\n" +
+	"\x04gain\x18\t \x01(\v2\x15.leyline.v1.GainWriteR\x04gain\x12+\n" +
+	"\x05gains\x18\n" +
+	" \x03(\v2\x15.leyline.v1.GainWriteR\x05gains\"1\n" +
 	"\tPredicate\x12$\n" +
 	"\x03all\x18\x01 \x03(\v2\x12.leyline.v1.ClauseR\x03all\"h\n" +
 	"\x06Clause\x12-\n" +
@@ -2535,13 +2580,15 @@ const file_leyline_v1_decode_proto_rawDesc = "" +
 	"\fRecordAnchor\x121\n" +
 	"\x06anchor\x18\x01 \x01(\v2\x19.leyline.v1.CaptureAnchorR\x06anchor\x12\x1f\n" +
 	"\vfrom_sample\x18\x02 \x01(\x04R\n" +
-	"fromSample*H\n" +
+	"fromSample*X\n" +
 	"\n" +
 	"GainPolicy\x12\x1b\n" +
 	"\x17GAIN_POLICY_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
 	"GAIN_LEAVE\x10\x01\x12\r\n" +
-	"\tGAIN_AUTO\x10\x02*P\n" +
+	"\tGAIN_AUTO\x10\x02\x12\x0e\n" +
+	"\n" +
+	"GAIN_FIXED\x10\x03*P\n" +
 	"\rDecoderSignal\x12\x1e\n" +
 	"\x1aDECODER_SIGNAL_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fSIGNAL_AUDIO\x10\x01\x12\r\n" +
@@ -2632,7 +2679,8 @@ var file_leyline_v1_decode_proto_goTypes = []any{
 	(AudioTap)(0),                // 31: leyline.v1.AudioTap
 	(*SampleTime)(nil),           // 32: leyline.v1.SampleTime
 	(*UsageReport)(nil),          // 33: leyline.v1.UsageReport
-	(*CaptureAnchor)(nil),        // 34: leyline.v1.CaptureAnchor
+	(*GainWrite)(nil),            // 34: leyline.v1.GainWrite
+	(*CaptureAnchor)(nil),        // 35: leyline.v1.CaptureAnchor
 }
 var file_leyline_v1_decode_proto_depIdxs = []int32{
 	8,  // 0: leyline.v1.DecoderManifest.recipe:type_name -> leyline.v1.DecoderRecipe
@@ -2654,31 +2702,33 @@ var file_leyline_v1_decode_proto_depIdxs = []int32{
 	33, // 16: leyline.v1.DecodeRecord.usage:type_name -> leyline.v1.UsageReport
 	16, // 17: leyline.v1.DecodeConfig.predicate:type_name -> leyline.v1.Predicate
 	20, // 18: leyline.v1.DecodeConfig.notify:type_name -> leyline.v1.NotifyTarget
-	17, // 19: leyline.v1.Predicate.all:type_name -> leyline.v1.Clause
-	18, // 20: leyline.v1.Clause.field:type_name -> leyline.v1.FieldTest
-	19, // 21: leyline.v1.Clause.geo:type_name -> leyline.v1.GeoTest
-	5,  // 22: leyline.v1.FieldTest.op:type_name -> leyline.v1.PredicateOp
-	14, // 23: leyline.v1.FieldTest.values:type_name -> leyline.v1.FieldValue
-	12, // 24: leyline.v1.GeoTest.center:type_name -> leyline.v1.Position
-	6,  // 25: leyline.v1.ListDecodersResponse.decoders:type_name -> leyline.v1.DecoderManifest
-	12, // 26: leyline.v1.RecordQuery.near:type_name -> leyline.v1.Position
-	25, // 27: leyline.v1.RecordQuery.fields:type_name -> leyline.v1.FieldMatch
-	14, // 28: leyline.v1.FieldMatch.equals:type_name -> leyline.v1.FieldValue
-	11, // 29: leyline.v1.RecordPage.records:type_name -> leyline.v1.DecodeRecord
-	27, // 30: leyline.v1.RecordPage.anchors:type_name -> leyline.v1.RecordAnchor
-	34, // 31: leyline.v1.RecordAnchor.anchor:type_name -> leyline.v1.CaptureAnchor
-	14, // 32: leyline.v1.DecodeRecord.FieldsEntry.value:type_name -> leyline.v1.FieldValue
-	21, // 33: leyline.v1.Decoders.ListDecoders:input_type -> leyline.v1.ListDecodersRequest
-	23, // 34: leyline.v1.Decoders.SubscribeRecords:input_type -> leyline.v1.RecordSubscription
-	24, // 35: leyline.v1.Decoders.QueryRecords:input_type -> leyline.v1.RecordQuery
-	22, // 36: leyline.v1.Decoders.ListDecoders:output_type -> leyline.v1.ListDecodersResponse
-	11, // 37: leyline.v1.Decoders.SubscribeRecords:output_type -> leyline.v1.DecodeRecord
-	26, // 38: leyline.v1.Decoders.QueryRecords:output_type -> leyline.v1.RecordPage
-	36, // [36:39] is the sub-list for method output_type
-	33, // [33:36] is the sub-list for method input_type
-	33, // [33:33] is the sub-list for extension type_name
-	33, // [33:33] is the sub-list for extension extendee
-	0,  // [0:33] is the sub-list for field type_name
+	34, // 19: leyline.v1.DecodeConfig.gain:type_name -> leyline.v1.GainWrite
+	34, // 20: leyline.v1.DecodeConfig.gains:type_name -> leyline.v1.GainWrite
+	17, // 21: leyline.v1.Predicate.all:type_name -> leyline.v1.Clause
+	18, // 22: leyline.v1.Clause.field:type_name -> leyline.v1.FieldTest
+	19, // 23: leyline.v1.Clause.geo:type_name -> leyline.v1.GeoTest
+	5,  // 24: leyline.v1.FieldTest.op:type_name -> leyline.v1.PredicateOp
+	14, // 25: leyline.v1.FieldTest.values:type_name -> leyline.v1.FieldValue
+	12, // 26: leyline.v1.GeoTest.center:type_name -> leyline.v1.Position
+	6,  // 27: leyline.v1.ListDecodersResponse.decoders:type_name -> leyline.v1.DecoderManifest
+	12, // 28: leyline.v1.RecordQuery.near:type_name -> leyline.v1.Position
+	25, // 29: leyline.v1.RecordQuery.fields:type_name -> leyline.v1.FieldMatch
+	14, // 30: leyline.v1.FieldMatch.equals:type_name -> leyline.v1.FieldValue
+	11, // 31: leyline.v1.RecordPage.records:type_name -> leyline.v1.DecodeRecord
+	27, // 32: leyline.v1.RecordPage.anchors:type_name -> leyline.v1.RecordAnchor
+	35, // 33: leyline.v1.RecordAnchor.anchor:type_name -> leyline.v1.CaptureAnchor
+	14, // 34: leyline.v1.DecodeRecord.FieldsEntry.value:type_name -> leyline.v1.FieldValue
+	21, // 35: leyline.v1.Decoders.ListDecoders:input_type -> leyline.v1.ListDecodersRequest
+	23, // 36: leyline.v1.Decoders.SubscribeRecords:input_type -> leyline.v1.RecordSubscription
+	24, // 37: leyline.v1.Decoders.QueryRecords:input_type -> leyline.v1.RecordQuery
+	22, // 38: leyline.v1.Decoders.ListDecoders:output_type -> leyline.v1.ListDecodersResponse
+	11, // 39: leyline.v1.Decoders.SubscribeRecords:output_type -> leyline.v1.DecodeRecord
+	26, // 40: leyline.v1.Decoders.QueryRecords:output_type -> leyline.v1.RecordPage
+	38, // [38:41] is the sub-list for method output_type
+	35, // [35:38] is the sub-list for method input_type
+	35, // [35:35] is the sub-list for extension type_name
+	35, // [35:35] is the sub-list for extension extendee
+	0,  // [0:35] is the sub-list for field type_name
 }
 
 func init() { file_leyline_v1_decode_proto_init() }
