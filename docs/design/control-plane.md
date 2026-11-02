@@ -64,6 +64,8 @@ Decided approach — three simple mechanisms:
 
 **Agents observe a don't-disturb default.** Captures expose an activity signal (live audio sink, recent interactive writes). Agent clients refuse to retune an active capture by default — they use an idle device, work within the current capture, or report why they can't proceed. Explicit override available when the user tells the agent to take over.
 
+Proposed 2026-11-02: `claims.md` makes these primitives one ledger of what each consumer needs from a capture, with one placement function every client can ask before acting. It keeps the three rules above.
+
 Gated for later: true multi-operator arbitration (club-station scenario). If it ever matters, leases can be layered on without schema changes — attribution and the activity signal are the primitives a lease would need anyway.
 
 ## Parameter writes

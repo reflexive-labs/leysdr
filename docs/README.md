@@ -57,6 +57,7 @@ behaviour that contradicts it.
 | [Control plane](design/control-plane.md) | how clients discover, tune, share and arbitrate; gRPC over UDS; the session model | partial: local control is implemented; remote access and watch jobs are not |
 | [Data planes](design/data-planes.md) | telemetry and bulk: the sample timebase, latest-wins and gap-marked delivery, negotiation | partial: gRPC streams are implemented; shared memory and historical positions are not |
 | [Semantic tier](design/semantic-tier.md) | detections, scans, transcripts, jobs and resources; the MCP surface | partial: scans, recordings, monitor and decode jobs, decoder records (speech among them) and the MCP adapter are implemented; watch jobs and their durable transcripts are not |
+| [Capture claims](design/claims.md) | one ledger of what each consumer needs from a capture's tuning, one placement function, uniform displacement | proposed: not implemented (`plans/claims.md`) |
 | [Scan](design/scan.md) | the sweep geometry and the detector, with every number measured | implemented |
 | [Signal views](design/signal-views.md) | the waterfall, the channel view and sub-audible tones | implemented except tone squelch and the sonogram |
 | [Scope](design/scope.md) | the audio waveform and the demod tap under it | implemented (`ley scope`) |

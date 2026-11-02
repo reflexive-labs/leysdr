@@ -53,7 +53,7 @@ the stored captures.
   pure `DecoderPlacement` in `LeylineClient` mirrors `SessionCaptureAllocator` and says one of:
   runs alongside what you are listening to, takes the idle radio, needs the radio from you (Start
   asks, then sends `take_over`), or no radio can hear it. The prediction is advice; the job's
-  state and detail are the truth and the page shows them. For a multi-frequency recipe the app
+  state and detail are the truth and the page shows them. This copy of the allocator is temporary: `claims.md` (CL-2) replaces it with the daemon's own `Control.Plan`. For a multi-frequency recipe the app
   picks the first recipe frequency inside the current span, else the first.
 - **A decoder started from the app is a kept job.** `keep: true`: it runs until Stop, survives the
   app quitting and a daemon restart (DEC-11), and its records are a resource the page, `ley
