@@ -310,4 +310,169 @@ final class IQDecodeJobTests: XCTestCase {
             try await self.cancel(c, centred.jobID)
         }
     }
+
+    // MARK: A stored IQ recording (DA-6)
+
+    /// Writes a finished IQ recording through `PartWriter`, the way the daemon writes one: a part
+    /// of `samples` cf32 samples (each `level` + 0j) at each of `starts` (capture samples), so a
+    /// start past the previous part's end is a hole the recording does not hold. Returns its id.
+    private func writeIQRecording(in dir: String, rate: UInt64, starts: [UInt64], samples: Int,
+                                  level: Float = 0.1) async throws -> String
+    {
+        let id = JobID().string
+        let manifest = RecordingManifest(
+            jobID: id, kind: "iq", frequencyHz: iqFrequencyHz, mode: "", bandwidthHz: 0,
+            sampleRate: rate, format: "cf32", device: nil, gains: [], squelchDbfs: .nan, gate: nil,
+            partMs: 0, startedAtNs: WallClock.nowNs(),
+            createdBy: RecordingClient(clientID: "", kind: "cli", label: "test"), anchors: [])
+        let captureID = CaptureID().string
+        let writer = try PartWriter(directory: dir + "/" + id, manifest: manifest, captureID: captureID,
+                                    centerHz: iqFrequencyHz)
+        await writer.noteAnchor(CaptureAnchor(hostTimeNsAtSampleZero: WallClock.nowNs(), sampleRate: rate),
+                                captureID: captureID, fromSample: 0)
+        let payload = [Float](repeating: 0, count: samples * 2).enumerated().map { $0.offset % 2 == 0 ? level : 0 }
+        for start in starts {
+            await writer.openPart(at: start)
+            await writer.append(iq: payload.withUnsafeBytes { Data($0) })
+            await writer.closePart(endSample: start + UInt64(samples))
+        }
+        await writer.finish(endedBy: "duration", endSample: (starts.last ?? 0) + UInt64(samples))
+        return id
+    }
+
+    private func startSource(_ c: DaemonClients, decoder: String, recording: String,
+                             keep: Bool = false) async throws -> Leyline_V1_Job
+    {
+        var config = Leyline_V1_DecodeConfig()
+        config.decoder = decoder
+        config.sourceUri = "ley://recordings/\(recording)"
+        config.keep = keep
+        var request = Leyline_V1_StartJobRequest()
+        request.decode = config
+        return try await c.jobs.startJob(request, metadata: testMetadata)
+    }
+
+    private func waitForEnd(_ c: DaemonClients, _ id: String) async throws -> Leyline_V1_Job? {
+        try await waitForJob(c, id, timeoutMs: 20000) { $0.state != .running && $0.state != .degraded }
+    }
+
+    private func query(_ c: DaemonClients, job: String) async throws -> [Leyline_V1_DecodeRecord] {
+        var query = Leyline_V1_RecordQuery()
+        query.jobID = job
+        return try await c.decoders.queryRecords(query, metadata: testMetadata).records.sorted { $0.seq < $1.seq }
+    }
+
+    func testAnIQDecoderReadsAStoredIQRecordingFrameByFrameWithItsGaps() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        let store = try makeTempDir("store")
+        defer { for d in [plugins, recordings, store] { try? FileManager.default.removeItem(atPath: d) } }
+        try writeFakePlugin(in: plugins, name: "fakeiq", signal: .signalIq)
+        // Two parts of 40,000 samples with 60,000 samples between them that nobody recorded.
+        let block = CaptureDSPCore.blockSize
+        let id = try await writeIQRecording(in: recordings, rate: 2_400_000, starts: [0, 100_000], samples: 40000)
+        try await withDaemon(decoderSearchPath: [plugins], storePath: store, recordingsPath: recordings) { c in
+            let started = try await self.startSource(c, decoder: "fakeiq", recording: id, keep: true)
+            let done = try await self.waitForEnd(c, started.jobID)
+            XCTAssertEqual(done?.state, .completed, done?.statusDetail ?? "")
+            let got = try await self.query(c, job: started.jobID)
+            // A capture block a frame, as the live IQ path frames it: 16384 + 16384 + 7232 a part.
+            let perPart = (40000 + block - 1) / block
+            XCTAssertEqual(got.count, 2 * perPart, "every frame of both parts, once")
+            guard got.count == 2 * perPart else { return }
+            XCTAssertEqual(got.map { self.integer($0, "bytes") ?? 0 }.prefix(perPart),
+                           [Int64(block * 8), Int64(block * 8), Int64((40000 - 2 * block) * 8)])
+            XCTAssertEqual(got.map(\.time.sampleIndex),
+                           [0, UInt64(block), UInt64(2 * block), 100_000, 100_000 + UInt64(block), 100_000 + UInt64(2 * block)])
+            for rec in got {
+                XCTAssertEqual(self.integer(rec, "iq"), 1, "the plugin is told IQ")
+                XCTAssertEqual(self.integer(rec, "stored"), 1, "and that it reads a stored recording")
+                XCTAssertEqual(self.integer(rec, "center_hz"), Int64(self.iqFrequencyHz))
+            }
+            let gapped = got.filter { self.integer($0, "gap_from") != nil }
+            XCTAssertEqual(gapped.count, 1, "one hole, marked once")
+            XCTAssertEqual(self.integer(gapped.first, "gap_from"), 40000)
+            XCTAssertEqual(self.integer(gapped.first, "gap_to"), 100_000)
+            XCTAssertEqual(Set(got.prefix(perPart).map(\.clipUri)), ["ley://recordings/\(id)/1"])
+            XCTAssertEqual(Set(got.suffix(perPart).map(\.clipUri)), ["ley://recordings/\(id)/2"])
+        }
+    }
+
+    /// iqstat, the repository's IQ test decoder, over a recording of known power: `make go` puts it
+    /// in go/bin, and the test skips without it.
+    func testIQStatReadsTheLevelOfAStoredIQRecording() async throws {
+        let binary = URL(fileURLWithPath: fixturePath("")).deletingLastPathComponent()
+            .appendingPathComponent("go/bin/leydec-iqstat").path
+        guard FileManager.default.isExecutableFile(atPath: binary) else {
+            throw XCTSkip("\(binary) is not built; run make go")
+        }
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        defer { for d in [plugins, recordings] { try? FileManager.default.removeItem(atPath: d) } }
+        try writeFakePlugin(in: plugins, name: "iqstat", json: """
+        {
+          "name": "iqstat",
+          "version": "0.1.0",
+          "recipe": {"frequenciesHz": ["100000000"]},
+          "input": {"mode": "CONTINUOUS", "signal": "SIGNAL_IQ"},
+          "outputs": ["SHAPE_RECORDS"],
+          "executable": "\(binary)"
+        }
+        """)
+        // At 48 kHz iqstat reports every 24,000 samples: two records a part, each 0.1 + 0j, -20 dBFS.
+        let id = try await writeIQRecording(in: recordings, rate: 48000, starts: [0, 96000], samples: 48000)
+        try await withDaemon(decoderSearchPath: [plugins], recordingsPath: recordings) { c in
+            let started = try await self.startSource(c, decoder: "iqstat", recording: id)
+            let got = try await self.records(c, job: started.jobID, count: 4)
+            let done = try await self.waitForEnd(c, started.jobID)
+            XCTAssertEqual(done?.state, .completed, done?.statusDetail ?? "")
+            XCTAssertEqual(got.count, 4)
+            for rec in got {
+                XCTAssertEqual(rec.protocol, "iqstat")
+                XCTAssertEqual(rec.fields["power_dbfs"]?.number ?? 0, -20, accuracy: 0.01)
+                XCTAssertEqual(rec.fields["sample_rate"]?.integer, 48000)
+                XCTAssertEqual(rec.fields["center_hz"]?.integer, Int64(self.iqFrequencyHz))
+            }
+            XCTAssertEqual(got.map(\.time.sampleIndex), [24000, 48000, 96000 + 24000, 96000 + 48000])
+        }
+    }
+
+    func testAStoredRecordingOfTheWrongKindIsRefusedWithTheReason() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        defer { for d in [plugins, recordings] { try? FileManager.default.removeItem(atPath: d) } }
+        try writeFakePlugin(in: plugins, name: "fakeiq", signal: .signalIq)
+        try writeFakePlugin(in: plugins, name: "fakeaudio")
+        let iq = try await writeIQRecording(in: recordings, rate: 48000, starts: [0], samples: 1000)
+        // An audio recording: the same writer with one WAV part.
+        let audio = JobID().string
+        let manifest = RecordingManifest(
+            jobID: audio, kind: "audio", frequencyHz: iqFrequencyHz, mode: "NFM", bandwidthHz: 12500,
+            sampleRate: 48000, format: "wav-s16", device: nil, gains: [], squelchDbfs: .nan, gate: nil,
+            partMs: 0, startedAtNs: WallClock.nowNs(),
+            createdBy: RecordingClient(clientID: "", kind: "cli", label: "test"), anchors: [])
+        let writer = try PartWriter(directory: recordings + "/" + audio, manifest: manifest,
+                                    captureID: CaptureID().string, centerHz: iqFrequencyHz)
+        await writer.openPart(at: 0)
+        await writer.append(audio: [Float](repeating: 0.1, count: 4800))
+        await writer.closePart(endSample: 48000)
+        await writer.finish(endedBy: "duration", endSample: 48000)
+        try await withDaemon(decoderSearchPath: [plugins], recordingsPath: recordings) { c in
+            func refusal(_ decoder: String, _ recording: String) async -> (code: String, message: String) {
+                do {
+                    _ = try await self.startSource(c, decoder: decoder, recording: recording)
+                    return ("started", "")
+                } catch {
+                    let e = errorCode(error)
+                    return (e.code, e.trailer?.message ?? "\(error)")
+                }
+            }
+            let iqOnAudio = await refusal("fakeiq", audio)
+            XCTAssertEqual(iqOnAudio.code, EngineError.Code.invalidArgument)
+            XCTAssertTrue(iqOnAudio.message.contains("holds demodulated audio, and fakeiq reads raw IQ"), iqOnAudio.message)
+            let audioOnIQ = await refusal("fakeaudio", iq)
+            XCTAssertEqual(audioOnIQ.code, EngineError.Code.unimplemented)
+            XCTAssertTrue(audioOnIQ.message.contains("fakeaudio reads demodulated audio"), audioOnIQ.message)
+        }
+    }
 }

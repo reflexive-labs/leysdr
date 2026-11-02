@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// A stored audio recording as a decode job's input (decode.proto, `DecodeConfig.source_uri`;
+// A stored recording as a decode job's input (decode.proto, `DecodeConfig.source_uri`;
 // docs/dev/engine-internals.md, "Decoders"). The job reads the recording's parts in order and feeds
 // the plugin as fast as it reads, with no capture, channel or lease: a recording needs no radio.
+// An audio decoder reads an audio recording and an IQ decoder (SIGNAL_IQ) an IQ one, whose cf32
+// parts go out a capture block per frame, as the live IQ path frames them.
 //
 // Under SEGMENTED input each part is cut by `Segmenter.cut` from its sidecar's `squelch_opens`,
 // with the pre-roll and hang the live job uses, so a recording decoded later yields the segments a
@@ -44,17 +46,25 @@ struct RecordingSource: Sendable {
     let parts: [Part]
     let items: [Item]
     let segmented: Bool
+    /// An IQ recording: cf32 parts at the capture rate, for an IQ decoder.
+    var iq = false
 
     var uri: String { "ley://recordings/\(recordingID)" }
     var audioRate: UInt32 { UInt32(truncatingIfNeeded: manifest.sampleRate) }
     /// The capture rate the recording was made at, for the descriptor's span.
     var captureRate: UInt64 { UInt64(parts.first?.captureRate ?? 0) }
+    /// Samples per frame written to the plugin: one capture block of IQ, as `IQFrameTap` frames the
+    /// live stream, or `frameSamples` of audio.
+    var samplesPerFrame: Int { iq ? CaptureDSPCore.blockSize : Self.frameSamples }
 
-    /// Reads the recording `uri` names and plans what the plugin will get. The refusals are the
-    /// caller's to see: a URI that is not a recording, a recording that does not exist
-    /// (JOB_NOT_FOUND, as ResolveLocalPath says it), and an IQ recording, which needs an offline
-    /// demodulator first (UNIMPLEMENTED).
-    static func open(uri: String, store: RecordingStore, input: Leyline_V1_DecoderInput) async throws -> RecordingSource {
+    /// Reads the recording `uri` names and plans what `decoder`, whose manifest asks for `input`,
+    /// will get. The refusals are the caller's to see: a URI that is not a recording, a recording
+    /// that does not exist (JOB_NOT_FOUND, as ResolveLocalPath says it), an IQ recording for an
+    /// audio decoder, which needs an offline demodulator first (UNIMPLEMENTED), and an audio
+    /// recording for an IQ decoder, which can never be one (INVALID_ARGUMENT).
+    static func open(uri: String, store: RecordingStore, decoder: String,
+                     input: Leyline_V1_DecoderInput) async throws -> RecordingSource
+    {
         guard case .recording(let id, let part) = ResourceURI(uri) else {
             throw EngineError.invalidArgument("\(uri) is not a recording; a decoder reads ley://recordings/<id>", target: uri)
         }
@@ -63,7 +73,19 @@ struct RecordingSource: Sendable {
                                               target: uri)
         }
         guard let manifest = await store.manifest(jobID: id) else { throw EngineError.jobNotFound(id) }
-        guard manifest.kind == "audio" else { throw EngineError.unimplemented("decoding an IQ recording") }
+        let iq = manifest.kind == "iq"
+        let wantsIQ = input.signal == .signalIq
+        if iq, !wantsIQ {
+            throw EngineError(
+                code: EngineError.Code.unimplemented,
+                message: "\(decoder) reads demodulated audio and \(uri) holds raw IQ, which the daemon cannot "
+                    + "demodulate from a recording yet; record audio for it",
+                target: uri)
+        }
+        if !iq, wantsIQ {
+            throw EngineError.invalidArgument(
+                "\(uri) holds demodulated audio, and \(decoder) reads raw IQ; record with --iq for it", target: uri)
+        }
         // A recording still being made has parts yet to close; it is read once it has ended.
         guard !manifest.endedBy.isEmpty else {
             throw EngineError.failedPrecondition(
@@ -98,7 +120,7 @@ struct RecordingSource: Sendable {
                                   span: Segmenter.Span(start: entry.startSample, end: entry.endSample, over: 0)))
             }
         }
-        return RecordingSource(recordingID: id, manifest: manifest, parts: parts, items: items, segmented: segmented)
+        return RecordingSource(recordingID: id, manifest: manifest, parts: parts, items: items, segmented: segmented, iq: iq)
     }
 
     private static func sidecar(of part: RecordingPart, in directory: String) -> PartSidecar? {
@@ -162,12 +184,13 @@ struct RecordingSource: Sendable {
         try FrameReader(source: self, item: item, gapFrom: gapFrom)
     }
 
-    /// Reads one item's audio a frame at a time, so a long part is never held in memory whole.
+    /// Reads one item a frame at a time, so a long part is never held in memory whole: f32 audio
+    /// from a WAV part, or cf32 as it lies in an IQ part.
     struct FrameReader {
         private let source: RecordingSource
         private let item: Item
         private let part: Part
-        private let reader: WAVReader
+        private let reader: PartReader
         private var at: UInt64
         private let end: UInt64
         private var gapFrom: UInt64?
@@ -178,7 +201,7 @@ struct RecordingSource: Sendable {
             self.source = source
             self.item = item
             part = source.parts[item.part]
-            reader = try WAVReader(path: part.path)
+            reader = source.iq ? .cf32(try CF32Reader(path: part.path)) : .wav(try WAVReader(path: part.path))
             at = source.frame(at: item.span.start, in: part)
             end = Swift.min(source.frame(at: item.span.end, in: part), reader.frames)
             self.gapFrom = gapFrom
@@ -188,21 +211,21 @@ struct RecordingSource: Sendable {
         /// The next frame, nil after the last. Closes the file when it is done.
         mutating func next() -> Leyline_V1_Frame? {
             if at < end {
-                let floats = reader.read(frames: Int(Swift.min(UInt64(RecordingSource.frameSamples), end - at)))
-                if !floats.isEmpty {
+                let (payload, count) = reader.read(frames: Int(Swift.min(UInt64(source.samplesPerFrame), end - at)))
+                if count > 0 {
                     var frame = Leyline_V1_Frame()
                     frame.time.captureID = part.captureID
                     // The START is dated by the segment's own first sample, exactly, so a record
                     // the plugin stamps from it lands where the cut was made.
                     frame.time.sampleIndex = first ? item.span.start : source.sample(at: at, in: part)
-                    frame.payload = floats.withUnsafeBytes { Data($0) }
+                    frame.payload = payload
                     if first, source.segmented { frame.segment = .segmentStart }
                     if first, let from = gapFrom, from < frame.time.sampleIndex {
                         frame.gap.fromSample = from
                         frame.gap.toSample = frame.time.sampleIndex
                     }
                     first = false
-                    at += UInt64(floats.count)
+                    at += UInt64(count)
                     return frame
                 }
                 at = end
@@ -216,5 +239,73 @@ struct RecordingSource: Sendable {
             frame.segment = .segmentEnd
             return frame
         }
+    }
+
+    /// One part's samples file, whichever kind the recording holds.
+    enum PartReader {
+        case wav(WAVReader)
+        case cf32(CF32Reader)
+
+        var frames: UInt64 {
+            switch self {
+            case .wav(let r): r.frames
+            case .cf32(let r): r.frames
+            }
+        }
+
+        func seek(toFrame frame: UInt64) {
+            switch self {
+            case .wav(let r): r.seek(toFrame: frame)
+            case .cf32(let r): r.seek(toFrame: frame)
+            }
+        }
+
+        /// Up to `frames` frames as the plugin's payload (f32 audio, or cf32), and how many there were.
+        func read(frames: Int) -> (Data, Int) {
+            switch self {
+            case .wav(let r):
+                let floats = r.read(frames: frames)
+                return (floats.withUnsafeBytes { Data($0) }, floats.count)
+            case .cf32(let r):
+                let data = r.read(frames: frames)
+                return (data, data.count / 8)
+            }
+        }
+
+        func close() {
+            switch self {
+            case .wav(let r): r.close()
+            case .cf32(let r): r.close()
+            }
+        }
+    }
+
+    /// An IQ part: interleaved little-endian f32 I and Q with no header, as `PartWriter` appends
+    /// it. A trailing partial sample, left by a daemon that died mid-write, is not read.
+    struct CF32Reader {
+        static let bytesPerFrame: UInt64 = 8
+        let frames: UInt64
+        private let handle: FileHandle
+
+        init(path: String) throws {
+            guard let h = FileHandle(forReadingAtPath: path) else {
+                throw EngineError.invalidArgument("cannot open \(path)", target: path)
+            }
+            handle = h
+            frames = try h.seekToEnd() / Self.bytesPerFrame
+            try h.seek(toOffset: 0)
+        }
+
+        /// Up to `frames` whole samples, empty at the end of the file.
+        func read(frames wanted: Int) -> Data {
+            guard let data = try? handle.read(upToCount: wanted * Int(Self.bytesPerFrame)) else { return Data() }
+            return data.prefix(data.count - data.count % Int(Self.bytesPerFrame))
+        }
+
+        func seek(toFrame frame: UInt64) {
+            try? handle.seek(toOffset: Swift.min(frame, frames) * Self.bytesPerFrame)
+        }
+
+        func close() { try? handle.close() }
     }
 }

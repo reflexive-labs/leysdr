@@ -97,17 +97,15 @@ extension JobStore {
     // MARK: A stored recording
 
     /// A decode job over a stored recording (`DecodeConfig.source_uri`). The recording is read and
-    /// cut here, so a missing one, a part URI or an IQ recording is refused to the caller. No
-    /// allocation, channel or lease: the job needs no radio, so a daemon without hardware runs it.
+    /// cut here, so a missing one, a part URI or a recording of the wrong kind for the decoder (IQ
+    /// for an audio decoder, audio for an IQ one) is refused to the caller. No allocation, channel
+    /// or lease: the job needs no radio, so a daemon without hardware runs it.
     private func startSourceDecode(config: Leyline_V1_DecodeConfig, installed: DecoderRegistry.Installed,
                                    by client: ClientContext,
                                    resuming: (id: JobID, createdAtNs: Int64)?) async throws -> Leyline_V1_Job
     {
-        if installed.manifest.input.signal == .signalIq {
-            throw EngineError.unimplemented("an IQ decoder on a stored recording")
-        }
         let source = try await RecordingSource.open(uri: config.sourceUri, store: recordings,
-                                                    input: installed.manifest.input)
+                                                    decoder: installed.manifest.name, input: installed.manifest.input)
         return await addDecodeJob(config: config, installed: installed, by: client, resuming: resuming) { [weak self] id in
             await self?.runSourceDecode(id, config: config, installed: installed, source: source)
         }

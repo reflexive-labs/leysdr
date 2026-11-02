@@ -23,6 +23,11 @@ Ctrl-C stops the job and hands the radio back. With --job the job stays
 running after ley exits and its records become a resource 'ley records'
 reads; 'ley jobs cancel' is how to stop one.
 
+--recording decodes a stored recording instead of the radio, faster than real
+time, and stops when it has read every part: an IQ decoder reads an IQ
+recording (ley record --iq) and any other decoder an audio one. Its records
+are kept, so 'ley records --job-id <job>' reads them again.
+
 --json prints one DecodeRecord per line (NDJSON) and nothing else on stdout.
 
 Usage:
@@ -34,15 +39,17 @@ Examples:
   ley decode aprs --freq 144.8            # the European allocation
   ley decode aprs --job                   # keep decoding after ley exits
   ley decode speech --freq 146.94 --job   # transcribe a repeater all day
+  ley decode iqstat --recording job_01J...  # an IQ decoder over an IQ recording
   ley decode aprs --json | jq -r .deviceId
 
 Flags:
-      --count int       stop after this many records, e.g. 5 (default: until Ctrl-C)
-      --device string   which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)
-      --freq string     decode somewhere other than the recipe's frequency, e.g. 144.8 (a bare number is MHz)
-  -h, --help            help for decode
-      --job             keep the job and its records after ley exits ('ley jobs cancel' stops it)
-      --take-over       decode even when somebody is using the radio; it is theirs again afterwards
+      --count int          stop after this many records, e.g. 5 (default: until Ctrl-C)
+      --device string      which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)
+      --freq string        decode somewhere other than the recipe's frequency, e.g. 144.8 (a bare number is MHz)
+  -h, --help               help for decode
+      --job                keep the job and its records after ley exits ('ley jobs cancel' stops it)
+      --recording string   decode a stored recording instead of the radio: a job id, id prefix or ley://recordings/ URI
+      --take-over          decode even when somebody is using the radio; it is theirs again afterwards
 
 Global Flags:
       --ascii           draw with ASCII only (no box, bar or tree glyphs)

@@ -26,6 +26,8 @@ type decodeOptions struct {
 	takeOver bool
 	keep     bool
 	count    int
+	// recording is --recording: a stored recording to decode instead of a radio.
+	recording string
 }
 
 func newDecodeCommand(app *App) *cobra.Command {
@@ -61,12 +63,18 @@ Ctrl-C stops the job and hands the radio back. With --job the job stays
 running after ley exits and its records become a resource 'ley records'
 reads; 'ley jobs cancel' is how to stop one.
 
+--recording decodes a stored recording instead of the radio, faster than real
+time, and stops when it has read every part: an IQ decoder reads an IQ
+recording (ley record --iq) and any other decoder an audio one. Its records
+are kept, so 'ley records --job-id <job>' reads them again.
+
 --json prints one DecodeRecord per line (NDJSON) and nothing else on stdout.`,
 		Example: `  ley decode aprs                         # what is on 144.390 MHz?
   ley decode aprs --count 5               # five packets, then stop
   ley decode aprs --freq 144.8            # the European allocation
   ley decode aprs --job                   # keep decoding after ley exits
   ley decode speech --freq 146.94 --job   # transcribe a repeater all day
+  ley decode iqstat --recording job_01J...  # an IQ decoder over an IQ recording
   ley decode aprs --json | jq -r .deviceId`,
 		GroupID: GroupLooking,
 		Args:    cobra.ExactArgs(1),
@@ -78,6 +86,9 @@ reads; 'ley jobs cancel' is how to stop one.
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.decoder = args[0]
+			if o.recording != "" && (freq != "" || o.device != "" || o.takeOver || o.keep) {
+				return usageErrorf("--recording decodes a stored recording, so --freq, --device, --take-over and --job do not apply; its records are kept anyway")
+			}
 			if freq != "" {
 				hz, err := units.ParseFrequency(freq)
 				if err != nil {
@@ -107,6 +118,7 @@ reads; 'ley jobs cancel' is how to stop one.
 	cmd.Flags().BoolVar(&o.takeOver, "take-over", false, "decode even when somebody is using the radio; it is theirs again afterwards")
 	cmd.Flags().BoolVar(&o.keep, "job", false, "keep the job and its records after ley exits ('ley jobs cancel' stops it)")
 	cmd.Flags().IntVar(&o.count, "count", 0, "stop after this many records, e.g. 5 (default: until Ctrl-C)")
+	cmd.Flags().StringVar(&o.recording, "recording", "", "decode a stored recording instead of the radio: a job id, id prefix or ley://recordings/ URI")
 	return cmd
 }
 
@@ -117,6 +129,9 @@ func runDecode(ctx context.Context, s *verbSession, o decodeOptions) error {
 	// job, the records and the banner all use the canonical name.
 	if name, _, err := s.Client.ResolveDecoder(ctx, o.decoder); err == nil {
 		o.decoder = name
+	}
+	if o.recording != "" {
+		return runDecodeRecording(ctx, s, o)
 	}
 	if err := requireFrequency(ctx, s, o.decoder, o.freqHz); err != nil {
 		return err

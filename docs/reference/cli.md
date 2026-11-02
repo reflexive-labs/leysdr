@@ -51,13 +51,15 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # time-ordered transmission log; Jobs.StartJob(MonitorConfig), detections on telemetry
 ├── decoders                         # the installed decoder plugins: name, recipe, output shapes, version,
 │                                    # and for one that calls a provider the key it needs and the hosts it sends to
-├── decode <decoder> [--freq F] [--device SEL] [--take-over] [--job] [--count N]
+├── decode <decoder> [--freq F] [--device SEL] [--take-over] [--job] [--count N] [--recording R]
 │                                    # Jobs.StartJob(DecodeConfig): the daemon finds or makes the capture,
 │                                    # adds the channel the job owns and spawns the plugin; records arrive
 │                                    # on Decoders.SubscribeRecords, one line each; --job keeps them as
 │                                    # the resource ley://records/<job_id>; a decoder with no frequency
 │                                    # of its own (speech) needs --freq; speech also records its overs
-│                                    # as ley://recordings/<job_id>, kept only with --job
+│                                    # as ley://recordings/<job_id>, kept only with --job; --recording
+│                                    # reads a stored recording instead (DecodeConfig.source_uri, kept):
+│                                    # IQ for an IQ decoder, audio for any other; it ends on its own
 ├── records [--protocol P] [--job-id ID] [--device-id ID] [--kind K] [--since 1h] [--near LAT,LON --radius 10km] [--in-effect] [--limit N]
 │                                    # Decoders.QueryRecords over what kept jobs wrote, newest first;
 │                                    # an OVER column (<part>/<over>) when a record names a clip

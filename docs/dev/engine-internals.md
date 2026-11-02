@@ -1139,7 +1139,9 @@ recording whose job is still running cannot be decoded (`FAILED_PRECONDITION`) o
 **A stored recording.** `DecodeConfig.source_uri = ley://recordings/<id>` decodes an audio
 recording instead of a radio (`Jobs/RecordingSource.swift`). `startDecode` reads the manifest and
 plans the job there, so a missing recording is `JOB_NOT_FOUND` as `ResolveLocalPath` gives it, an
-IQ recording or an IQ decoder is `UNIMPLEMENTED`, a recording whose job is still running (no
+IQ recording for an audio decoder is `UNIMPLEMENTED` (there is no offline demodulator), an audio
+recording for an IQ decoder is `INVALID_ARGUMENT`, both naming the decoder and what the recording
+holds, a recording whose job is still running (no
 `ended_by` yet) is `FAILED_PRECONDITION`, and a part URI or any URI that is not
 `ley://recordings/<id>` is `INVALID_ARGUMENT`. The branch comes before the frequency check, since
 a speech manifest names no frequency. It makes no
@@ -1167,7 +1169,12 @@ unlike a live job's: a fourth exit in a row with the cursor where the previous s
 `DECODER_FAILED` with "<decoder> exited 4 times without decoding ley://recordings/<id>; last status
 <s>: <last stderr line>", the line with the key replaced. A part that cannot be read
 fails the job. The descriptor is
-`AUDIO`, `F32` mono at the recording's rate, centred on its frequency. Records carry `clip_uri`
+`AUDIO`, `F32` mono at the recording's rate, centred on its frequency, with `stored` set. An IQ
+recording read by an IQ decoder goes the same way, with an `IQ`, `CF32` descriptor at the
+recording's rate and centre (`stored` set) and one capture block of cf32 a frame, as the live IQ
+path frames it; its parts go whole, with a `Gap` for the samples between two parts, and are
+written as patiently. `ley decode <decoder> --recording <id>` runs either kind, kept, and ends
+when the job does. Records carry `clip_uri`
 (`ley://recordings/<id>/<part>`) and `over` (the index in that part's `squelch_opens` of the
 segment's first opening, 0 when not segmented), found by the record's `time` with the same 1 ms
 tolerance as the live path; `channel_id` is empty and the levels are NaN. A kept

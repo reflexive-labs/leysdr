@@ -112,12 +112,17 @@ the stored captures.
   Done 2026-11-02: the wire cannot change a descriptor mid-stream, so a recentre that still
   covers the frequency is treated as moved away ("the capture moved from … to …"), and so are a
   rate change and a detach. Tests in `IQDecodeJobTests` on a retunable virtual radio.
-- [ ] **DA-6 IQ decoders on stored IQ recordings (Swift engine lane, after DA-4).**
+- [x] **DA-6 IQ decoders on stored IQ recordings (Swift engine lane, after DA-4).**
   `startSourceDecode` refuses an IQ decoder today (`EngineError.unimplemented`). Read the
   recording's cf32 parts, frame them as the live IQ path does, mark the gaps between parts, and
   block rather than drop as a stored SEGMENTED source does (R1 of `recordings-0.2.1.md`). This is
   "decode a recording" for ADS-B, and lets e2e drive `leydec-adsb` through the daemon with no
   radio. An IQ decoder on an audio recording, and the reverse, are refused with the reason.
+  Done 2026-11-02: `RecordingSource` reads cf32 parts and `DecodeRunner` runs them on the stored
+  path. An audio recording for an IQ decoder is `INVALID_ARGUMENT`; an IQ one for an audio decoder
+  stays `UNIMPLEMENTED` (no offline demodulator). `ley decode <decoder> --recording <id>` is the
+  `ley` side (kept, like `ley transcribe`), and `TestIQDecoderOnAStoredIQRecording` drives iqstat
+  through it in e2e.
 - [x] **DA-5 The ADS-B decoder (Go lane, DEC-13).** `go/pkg/decoders/modes` and
   `go/cmd/leydec-adsb` on the SDK's `RunIQ`, `decoders/adsb/manifest.json`:
   name `adsb`, alias `aircraft`, recipe 1090 MHz at 2.4 MSPS, `SIGNAL_IQ`, `CONTINUOUS`,

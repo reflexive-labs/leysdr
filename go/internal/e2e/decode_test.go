@@ -5,6 +5,7 @@ package e2e
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -346,5 +347,52 @@ func TestIQDecoderAgainstRealDaemon(t *testing.T) {
 	}
 	if v, ok := pw["number"].(float64); !ok || math.Abs(v+20) > 3 {
 		t.Errorf("power_dbfs %v is not near the fixture's -20 dBFS", pw["number"])
+	}
+}
+
+// An IQ decoder over a stored IQ recording, with nothing tuned: ley decode --recording runs the
+// job, which ends on its own once every part has gone. The recording is of the -20 dBFS nfm_tone
+// fixture, so iqstat must read near -20 again; an audio decoder on the same recording is refused
+// with the reason.
+func TestIQDecoderOnAStoredIQRecording(t *testing.T) {
+	decoders := os.Getenv("LEYLINE_DECODERS")
+	if decoders == "" {
+		t.Skip("set LEYLINE_DECODERS to the repository's decoders/ directory (make e2e does)")
+	}
+	fixture, err := filepath.Abs("../../../fixtures/nfm_tone.cf32")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(fixture); err != nil {
+		t.Skipf("fixture missing (%v)", err)
+	}
+	e, _ := setup(t, "--store", filepath.Join(t.TempDir(), "store"),
+		"--recordings", filepath.Join(t.TempDir(), "recordings"), "--decoders", decoders)
+	attachFixture(e, fixture)
+	uri := strings.TrimSpace(e.mustRun("record", "146.52", "--iq", "--part", "300ms", "--for", "1s"))
+	e.mustRun("stop", "all")
+
+	out, err := e.run("decode", "iqstat", "--recording", uri, "--json")
+	if err != nil {
+		t.Fatalf("ley decode iqstat --recording: %v\nstdout: %s", err, out)
+	}
+	recs := ndjson(t, out)
+	if len(recs) == 0 {
+		t.Fatalf("iqstat read nothing off %s", uri)
+	}
+	for _, r := range recs {
+		if r["protocol"] != "iqstat" || !strings.HasPrefix(fmt.Sprint(r["clipUri"]), uri+"/") {
+			t.Errorf("not an iqstat record from a part of %s: %v", uri, r)
+		}
+		fields, _ := r["fields"].(map[string]any)
+		pw, _ := fields["power_dbfs"].(map[string]any)
+		if v, ok := pw["number"].(float64); !ok || math.Abs(v+20) > 3 {
+			t.Errorf("power_dbfs %v is not near the fixture's -20 dBFS", pw["number"])
+		}
+	}
+
+	_, err = e.run("decode", "aprs", "--recording", uri)
+	if err == nil || !strings.Contains(err.Error(), "holds raw IQ") {
+		t.Errorf("an audio decoder on an IQ recording must be refused with the reason, got %v", err)
 	}
 }

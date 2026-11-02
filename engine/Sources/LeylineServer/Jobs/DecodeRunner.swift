@@ -858,6 +858,20 @@ actor DecodeRunner {
         d.policy = .gapMarked
         var audio = Leyline_V1_AudioParams()
         audio.format = .f32
+        if let source, source.iq {
+            // An IQ recording for an IQ decoder: the band the capture recorded, as the live IQ
+            // path's descriptor names it.
+            d.kind = .iq
+            var iq = Leyline_V1_IqParams()
+            iq.sampleRate = source.manifest.sampleRate
+            iq.format = .cf32
+            d.iq = iq
+            d.centerHz = source.manifest.frequencyHz
+            d.spanHz = source.manifest.sampleRate
+            d.grpc = true
+            d.stored = true
+            return d
+        }
         if let source {
             // What the recording holds: the audio a listener heard, at the recording's rate, from
             // the channel at the recording's frequency.
