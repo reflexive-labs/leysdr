@@ -281,6 +281,17 @@ while let bytes = readDelimited() {
     rec.position.longitude = 2.0
     rec.time = frame.time
     rec.raw = frame.payload.prefix(4)
+    // What the plugin was told and given, for the tests of the stream itself: the descriptor's
+    // centre, kind and `stored`, the frame's payload size, and the gap it carried, if any.
+    func integer(_ v: Int64) -> Leyline_V1_FieldValue { var f = Leyline_V1_FieldValue(); f.integer = v; return f }
+    rec.fields["center_hz"] = integer(Int64(descriptor.centerHz))
+    rec.fields["iq"] = integer(descriptor.kind == .iq ? 1 : 0)
+    rec.fields["stored"] = integer(descriptor.stored ? 1 : 0)
+    rec.fields["bytes"] = integer(Int64(frame.payload.count))
+    if frame.hasGap {
+        rec.fields["gap_from"] = integer(Int64(frame.gap.fromSample))
+        rec.fields["gap_to"] = integer(Int64(frame.gap.toSample))
+    }
     if let usagePerRecord { rec.usage = usagePerRecord }
     if let keyLastFour { rec.fields["key_last_four"] = keyLastFour }
     if let modelField { rec.fields["model"] = modelField }

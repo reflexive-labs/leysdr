@@ -101,7 +101,7 @@ the stored captures.
   record, expected line) and `testdata/decoders/fold-*.json` (a record log and the entity rows it
   folds to through `records.Table`, including expiry by `entity_silence_s`). `make proto-check`,
   the help goldens and `docs/reference/writing-a-decoder.md` updated.
-- [ ] **DA-4 IQ decoders follow their capture, and claim a centred one (Swift engine lane).**
+- [x] **DA-4 IQ decoders follow their capture, and claim a centred one (Swift engine lane).**
   `IQDecodeRunner` gains what `DecodeRunner.followChannel` does: when the capture no longer covers
   the frequency (someone retuned it), the job goes DEGRADED with "the capture moved away from
   1090.000 MHz; waiting for it to come back", stops feeding the plugin and marks the gap, and
@@ -109,6 +109,9 @@ the stored captures.
   plugin a new `StreamDescriptor` centre (or, if the wire cannot say that mid-stream, treats it as
   moved away). `needs_dedicated_capture` in `allocateCaptureIQ` as the decisions say. Tests in
   `DecodeJobTests`/allocator tests with the file device.
+  Done 2026-11-02: the wire cannot change a descriptor mid-stream, so a recentre that still
+  covers the frequency is treated as moved away ("the capture moved from … to …"), and so are a
+  rate change and a detach. Tests in `IQDecodeJobTests` on a retunable virtual radio.
 - [ ] **DA-6 IQ decoders on stored IQ recordings (Swift engine lane, after DA-4).**
   `startSourceDecode` refuses an IQ decoder today (`EngineError.unimplemented`). Read the
   recording's cf32 parts, frame them as the live IQ path does, mark the gaps between parts, and

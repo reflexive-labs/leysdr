@@ -1044,6 +1044,22 @@ capture, and only then: records still arrive after the move, so the record count
 plugin restart keep the job `DEGRADED` while the channel is away. `keep` jobs are not cancelled when their client goes; cancel stops the plugin, closes the
 writer and releases the lease.
 
+**IQ input.** A manifest with `input.signal = SIGNAL_IQ` asks for `AllocationRequest.captureIQ`
+instead: a capture whose span covers the frequency on any device, else a device with no capture
+(a capture created centred on the frequency, at the recipe's `sample_rate` or the device's
+default), else a free capture retuned onto it, else the decline. With `needs_dedicated_capture`
+the first step takes only a capture centred within 1 kHz of where the job would put one
+(`SessionCaptureAllocator.centredToleranceHz`) at that rate, and the third step also sets the
+rate. `IQDecodeRunner` taps the whole capture (`IQFrameTap` into a `FrameRing`), one capture
+block of cf32 per frame. The descriptor names the capture's centre and rate as they were when
+the job started, and the wire cannot change them mid-stream, so the runner reads the capture
+every 100 ms and treats any departure from that tuning as the capture moving away: off the
+frequency ("the capture moved away from 1090.000 MHz; waiting for it to come back"), recentred
+where it still covers it ("the capture moved from … to …"), at another rate, or detached. The job
+is `DEGRADED` with that detail, its frames are withheld, and the first frame the plugin gets after
+the capture is back carries the `Gap`. Respawning the plugin on the new tuning would lose its
+decode state and, for a dedicated decoder, decode the off-centre band it said it cannot.
+
 **Segmented input.** A manifest with `input.mode = SEGMENTED` (audio only; an IQ one is
 `UNIMPLEMENTED`) is fed one over at a time. A segment starts `pre_roll_ms` before the squelch
 opened and ends `hang_ms` after it closed, 500 ms each when the manifest leaves them 0, and a

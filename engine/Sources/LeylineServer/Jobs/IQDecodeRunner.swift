@@ -8,6 +8,16 @@
 // Nothing here runs on the DSP thread (invariant 4). The only hot-path code is the IQFrameTap the
 // capture already owns; the drain task pops what it left in the ring and writes it to the plugin,
 // and the reader task stamps what comes back.
+//
+// The job follows its capture the way DecodeRunner follows its channel. The plugin's descriptor
+// names one centre and one rate for the life of the stream, and the wire cannot change them: a
+// plugin reads one StreamDescriptor and then only Frames (bulk.proto). So the job holds the plugin
+// to the tuning it started on. A capture that leaves it -- retuned off the frequency, recentred
+// somewhere that still covers it, set to another rate, or detached -- is treated as moved away: the
+// job goes DEGRADED, its IQ is withheld and the next frame the plugin gets carries the gap. Feeding
+// a recentred band under the old descriptor would put every signal at the wrong offset, and
+// respawning the plugin with a new descriptor would drop its decode state and, for a decoder that
+// asked for a centred capture (`needs_dedicated_capture`), decode a band it said it cannot.
 
 import EngineCore
 import Foundation
@@ -34,6 +44,9 @@ extension DecodeRunner: DecodeRunning {}
 actor IQDecodeRunner: DecodeRunning {
     /// Slots in the IQ frame ring: the bulk .iq stream's depth, one capture block (cf32) per slot.
     static let iqSlots = 8
+    /// How often the job reads where its capture is. A frame captured within this of a retune can
+    /// be fed or withheld on the wrong side of it, as a retune's in-flight samples are anyway.
+    static let followInterval: Duration = .milliseconds(100)
 
     private let jobID: JobID
     private let installed: DecoderRegistry.Installed
@@ -41,6 +54,8 @@ actor IQDecodeRunner: DecodeRunning {
     private let hub: RecordHub
     private let writer: RecordWriter?
     private let store: SessionStore
+    /// The frequency the job was started for, which the capture's span must cover.
+    private let frequencyHz: UInt64
     /// The daemon-side record filter and where a passing record fires (docs/design/decoders.md,
     /// "Predicates and delivery"). An empty predicate matches everything; notify nil is delivery
     /// with no side channel.
@@ -62,6 +77,14 @@ actor IQDecodeRunner: DecodeRunning {
     private var seq: UInt64
     /// Record count and last-record time, for the detail it publishes while RUNNING.
     private var liveness = DecodeLiveness()
+    /// Where the capture was when the job started: the centre and rate every descriptor the plugin
+    /// gets names, restarts included. Read once, before the plugin is spawned.
+    private var tuning: (centerHz: UInt64, rate: UInt64) = (0, 0)
+    /// The DEGRADED detail while the capture is away from `tuning`, nil while it is there. Every
+    /// RUNNING the runner would publish goes through `publishRunning`, which reads this.
+    private var awayDetail: String?
+    /// The same fact for the drain, which withholds frames while it is set.
+    private let withheld = Mutex(false)
     private var task: Task<Void, Never>?
     /// The plugin the drain is feeding. Held outside the actor because the drain runs as its own
     /// task: a pipe write must never park the actor that is also stamping records.
@@ -69,7 +92,7 @@ actor IQDecodeRunner: DecodeRunning {
     private var stopped = false
 
     init(jobID: JobID, installed: DecoderRegistry.Installed, lease: any CaptureIQLease, hub: RecordHub,
-         writer: RecordWriter?, store: SessionStore,
+         writer: RecordWriter?, store: SessionStore, frequencyHz: UInt64,
          predicate: Leyline_V1_Predicate, notify: Leyline_V1_NotifyTarget?,
          credentials: CredentialStore? = nil,
          onStatus: @escaping @Sendable (Leyline_V1_JobState, String) async -> Void,
@@ -82,6 +105,7 @@ actor IQDecodeRunner: DecodeRunning {
         self.hub = hub
         self.writer = writer
         self.store = store
+        self.frequencyHz = frequencyHz
         self.predicate = predicate
         self.notify = notify
         self.onStatus = onStatus
@@ -114,6 +138,8 @@ actor IQDecodeRunner: DecodeRunning {
     // MARK: The loop
 
     private func loop() async {
+        let snapshot = await lease.capture.snapshot
+        tuning = (snapshot.centerHz, snapshot.sampleRate)
         // The tap fans the capture's full-rate cf32 stream into the ring (invariant 4: it copies and
         // never blocks). One tap for the life of the job, not one per plugin.
         let tap = IQFrameTap(id: tapID, ring: ring)
@@ -123,6 +149,7 @@ actor IQDecodeRunner: DecodeRunning {
         // written while no plugin is up are dropped, and the gap is held open until one lands.
         let drain = Task { [weak self] in await self?.drain() }
         let counting = Task { [weak self] in await self?.followRecords() }
+        let following = Task { [weak self] in await self?.followCapture() }
         var wait = DecodeRunner.firstRestartSeconds
         var restarts = 0
         while !Task.isCancelled {
@@ -135,14 +162,12 @@ actor IQDecodeRunner: DecodeRunning {
             try? await Task.sleep(nanoseconds: UInt64(wait * 1e9))
             wait = Swift.min(wait * 2, DecodeRunner.maxRestartSeconds)
             if Task.isCancelled || stopped { break }
-            await onStatus(.running, liveness.detail(decoder: installed.manifest.name))
+            await publishRunning(liveness.detail(decoder: installed.manifest.name))
         }
         drain.cancel()
         counting.cancel()
+        following.cancel()
         ring.wake()
-        // A capture that goes away simply stops the tap delivering: this enabler keeps it simple and
-        // does not degrade the job on detach (there is no channel to follow); that is a follow-up
-        // (docs/design/decoders.md, "Multiplexing").
         await lease.capture.removeTap(id: tapID)
         ring.finish()
     }
@@ -161,7 +186,7 @@ actor IQDecodeRunner: DecodeRunning {
             return -1
         }
         currentPlugin.withLock { $0 = process }
-        await onStatus(.running, liveness.detail(decoder: installed.manifest.name))
+        await publishRunning(liveness.detail(decoder: installed.manifest.name))
         let status = await withTaskGroup(of: Int32?.self) { group in
             group.addTask { [weak self] in
                 for await record in process.records {
@@ -205,6 +230,12 @@ actor IQDecodeRunner: DecodeRunning {
                 if p.droppedSamples > 0, lostFrom == nil { lostFrom = lastEnd }
                 let end = p.sampleStart + p.sampleCount
                 defer { lastEnd = end }
+                if withheld.withLock({ $0 }) {
+                    // The capture is away from the tuning the plugin was told: the frame is not
+                    // the band the descriptor names, so it is lost and the gap stays open.
+                    if lostFrom == nil { lostFrom = p.sampleStart }
+                    continue
+                }
                 guard let process = currentPlugin.withLock({ $0 }) else {
                     // No plugin up (a restart is in flight): the frame is lost and the gap stays open.
                     if lostFrom == nil { lostFrom = p.sampleStart }
@@ -268,8 +299,8 @@ actor IQDecodeRunner: DecodeRunning {
         await hub.publish(rec)
         await writer?.settleAnchor(of: lease.captureID, in: store)
         await writer?.append(rec)
-        if liveness.noteRecord() {
-            await onStatus(.running, liveness.publish(decoder: installed.manifest.name))
+        if liveness.noteRecord(), awayDetail == nil {
+            await publishRunning(liveness.publish(decoder: installed.manifest.name))
         }
         // Off the hot path and fire-and-forget: a slow webhook or shell hook must never stall the
         // reader, so the notifier runs in its own task with the record it saw.
@@ -285,30 +316,82 @@ actor IQDecodeRunner: DecodeRunning {
         while !Task.isCancelled {
             try? await Task.sleep(for: DecodeLiveness.interval)
             if Task.isCancelled || stopped { return }
-            if liveness.moved {
-                await onStatus(.running, liveness.publish(decoder: installed.manifest.name))
+            if liveness.moved, awayDetail == nil {
+                await publishRunning(liveness.publish(decoder: installed.manifest.name))
             }
         }
     }
+
+    // MARK: Following the capture
+
+    /// Reads where the capture is every `followInterval` and moves the job between RUNNING and
+    /// DEGRADED as it leaves and regains the tuning the plugin was told. The state is read from the
+    /// capture engine, which holds it, rather than from the event stream, which only reports it.
+    private func followCapture() async {
+        while !Task.isCancelled, !stopped {
+            let why = awayReason(await lease.capture.snapshot)
+            if why != awayDetail {
+                awayDetail = why
+                withheld.withLock { $0 = why != nil }
+                if let why {
+                    await onStatus(.degraded, why)
+                } else {
+                    await publishRunning(liveness.detail(decoder: installed.manifest.name))
+                }
+            }
+            try? await Task.sleep(for: Self.followInterval)
+        }
+    }
+
+    /// Why the capture is not the band the plugin's descriptor names, or nil when it is.
+    private func awayReason(_ snapshot: CaptureSnapshot) -> String? {
+        let waiting = "waiting for it to come back"
+        if snapshot.detached { return "the radio went away; \(waiting)" }
+        let half = snapshot.sampleRate / 2
+        let covers = frequencyHz + half >= snapshot.centerHz && frequencyHz <= snapshot.centerHz + half
+        if !covers { return "the capture moved away from \(fmtMHz(frequencyHz)); \(waiting)" }
+        if snapshot.centerHz != tuning.centerHz {
+            return "the capture moved from \(fmtMHz(tuning.centerHz)) to \(fmtMHz(snapshot.centerHz)); \(waiting)"
+        }
+        if snapshot.sampleRate != tuning.rate {
+            return String(format: "the capture's rate changed from %.3f to %.3f MSPS; ",
+                          Double(tuning.rate) / 1e6, Double(snapshot.sampleRate) / 1e6) + waiting
+        }
+        return nil
+    }
+
+    /// RUNNING with `detail`, or DEGRADED with the away detail while the capture is away. A plugin
+    /// restart replaced the away detail with its own, so the restart's RUNNING puts it back rather
+    /// than claiming the job is decoding.
+    private func publishRunning(_ detail: String) async {
+        if let awayDetail {
+            await onStatus(.degraded, awayDetail)
+        } else {
+            await onStatus(.running, detail)
+        }
+    }
+
+    private nonisolated func fmtMHz(_ hz: UInt64) -> String { String(format: "%.3f MHz", Double(hz) / 1e6) }
 
     // MARK: The descriptor
 
     /// Named once, for the life of the runner: the plugin sees one stream, restarts included.
     private nonisolated let streamID = "plug_" + ULID().string
 
-    private func descriptor() async -> Leyline_V1_StreamDescriptor {
+    private func descriptor() -> Leyline_V1_StreamDescriptor {
         var d = Leyline_V1_StreamDescriptor()
         d.streamID = streamID
         d.kind = .iq
         // GAP_MARKED, so the decoder is told what was lost (invariant 3).
         d.policy = .gapMarked
         var iq = Leyline_V1_IqParams()
-        iq.sampleRate = lease.sampleRateHz
+        iq.sampleRate = tuning.rate
         iq.format = .cf32
         d.iq = iq
-        // The whole band the decoder is reading: where the capture sits and how wide it is.
-        d.centerHz = await lease.centerHz
-        d.spanHz = lease.sampleRateHz
+        // The whole band the decoder is reading: where the capture sat when the job started and
+        // how wide it is. The job holds the plugin to it (`followCapture`).
+        d.centerHz = tuning.centerHz
+        d.spanHz = tuning.rate
         d.grpc = true
         return d
     }

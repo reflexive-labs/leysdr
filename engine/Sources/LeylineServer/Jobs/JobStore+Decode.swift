@@ -245,9 +245,11 @@ extension JobStore {
                              frequencyHz: UInt64, deviceID: DeviceID?) async
     {
         // The recipe's sample rate when it names one, else the device's default (allocator's choice).
+        // A manifest that needs a dedicated capture shares only one centred on the frequency.
         let allocation = await allocator.allocate(
             .captureIQ(frequencyHz: frequencyHz, sampleRateHz: installed.manifest.recipe.sampleRate,
-                       deviceID: deviceID, takeOver: config.takeOver), for: id)
+                       deviceID: deviceID, takeOver: config.takeOver,
+                       dedicated: installed.manifest.needsDedicatedCapture), for: id)
         guard case .captureIQ(let lease) = allocation else {
             await declineDecode(id, allocation)
             return
@@ -269,6 +271,7 @@ extension JobStore {
         }
         let runner = IQDecodeRunner(
             jobID: id, installed: installed, lease: lease, hub: hub, writer: writer, store: store,
+            frequencyHz: frequencyHz,
             predicate: config.predicate, notify: config.hasNotify ? config.notify : nil,
             credentials: credentials,
             onStatus: { [weak self] state, detail in

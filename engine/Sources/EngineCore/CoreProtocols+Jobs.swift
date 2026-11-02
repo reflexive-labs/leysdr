@@ -87,8 +87,9 @@ package enum AllocationRequest: Sendable {
     /// Unlike `.channel`, the decoder receives the entire span, so "covers the frequency" is the
     /// capture-span test and the created capture is centred on the frequency. `sampleRateHz` 0 means
     /// the device's default; `deviceID` nil lets the allocator pick; `takeOver` retunes a capture
-    /// somebody is using.
-    case captureIQ(frequencyHz: UInt64, sampleRateHz: UInt64, deviceID: DeviceID?, takeOver: Bool)
+    /// somebody is using. `dedicated` is the manifest's `needs_dedicated_capture`: only a capture
+    /// centred on the frequency at that rate is shared, and any other is retuned or passed over.
+    case captureIQ(frequencyHz: UInt64, sampleRateHz: UInt64, deviceID: DeviceID?, takeOver: Bool, dedicated: Bool = false)
     /// A whole radio, retunable, for the duration of the lease. `takeOver` skips the don't-disturb
     /// checks (a capture with channels, a live audio sink, a recent interactive write) but never
     /// the exclusivity one: two sweeps do not share a radio.

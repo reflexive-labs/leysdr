@@ -47,9 +47,9 @@ actor SessionCaptureAllocator: CaptureAllocator {
         case .channel(let frequencyHz, let bandwidthHz, let mode, let deviceID, let takeOver):
             return await allocateChannel(frequencyHz: frequencyHz, bandwidthHz: bandwidthHz, mode: mode,
                                          deviceID: deviceID, takeOver: takeOver, job: job)
-        case .captureIQ(let frequencyHz, let sampleRateHz, let deviceID, let takeOver):
+        case .captureIQ(let frequencyHz, let sampleRateHz, let deviceID, let takeOver, let dedicated):
             return await allocateCaptureIQ(frequencyHz: frequencyHz, sampleRateHz: sampleRateHz,
-                                           deviceID: deviceID, takeOver: takeOver, job: job)
+                                           deviceID: deviceID, takeOver: takeOver, dedicated: dedicated, job: job)
         case .exclusiveCapture(let range, let deviceID, let takeOver, let gains):
             return await allocateCapture(range: range, deviceID: deviceID, takeOver: takeOver, gains: gains, job: job)
         }
@@ -151,19 +151,32 @@ actor SessionCaptureAllocator: CaptureAllocator {
     /// don't-disturb `inUse` check, the `take_over` semantics and the NO_DEVICE / DEVICE_BUSY
     /// declines are unchanged. IQ captures are shareable in principle, so a reused one is never
     /// added to the exclusive `leased` set; a sweep's capture (which is) is still left alone.
+    ///
+    /// `dedicated` (the manifest's `needs_dedicated_capture`) narrows step 1 to a capture centred on
+    /// the frequency, within `centredToleranceHz`, at the rate the job would create one at; any
+    /// other capture on the device is retuned (and set to that rate) by step 3 under the same
+    /// don't-disturb and `take_over` rules, or the job is declined with the reason. A decoder that
+    /// reads a wide signal (a 2 MHz Mode S frame) is clipped by an off-centre span.
     private func allocateCaptureIQ(frequencyHz: UInt64, sampleRateHz wantedRate: UInt64,
-                                   deviceID wanted: DeviceID?, takeOver: Bool, job: JobID) async -> AllocationResult
+                                   deviceID wanted: DeviceID?, takeOver: Bool, dedicated: Bool,
+                                   job: JobID) async -> AllocationResult
     {
         let state = await store.snapshot(scope: .daemon)
         var sawDevice = false
         var lastReason = "no radio here can hear \(fmt(frequencyHz))"
 
-        // 1. A capture whose span already covers the frequency. This disturbs nobody: the decoder
-        //    reads a band somebody is already listening to.
+        // 1. A capture whose span already covers the frequency (centred on it, for a dedicated
+        //    decoder). This disturbs nobody: the decoder reads a band somebody is already
+        //    listening to.
         for cap in state.captures {
             if let want = wanted, cap.deviceID != want.string { continue }
             guard let id = CaptureID(string: cap.captureID), !leased.contains(id) else { continue }
             sawDevice = true
+            if dedicated {
+                guard let device = state.devices.first(where: { $0.deviceID == cap.deviceID }),
+                      isCentred(cap, on: frequencyHz, rate: iqRate(wantedRate, device: device), device: device)
+                else { continue }
+            }
             guard spanCovers(centerHz: cap.centerHz, rate: cap.sampleRate, frequencyHz: frequencyHz),
                   let engine = await store.captureEngine(id) else { continue }
             return .captureIQ(SessionCaptureIQLease(captureID: id, capture: engine, sampleRateHz: cap.sampleRate,
@@ -205,20 +218,40 @@ actor SessionCaptureAllocator: CaptureAllocator {
                 lastReason = why
                 continue
             }
-            guard let device = state.devices.first(where: { $0.deviceID == cap.deviceID }),
-                  let centre = iqCentre(frequencyHz: frequencyHz, device: device, rate: cap.sampleRate),
+            guard let device = state.devices.first(where: { $0.deviceID == cap.deviceID }) else { continue }
+            // A dedicated decoder also needs its rate; any other takes the capture's.
+            let rate = dedicated ? iqRate(wantedRate, device: device) : cap.sampleRate
+            guard let centre = iqCentre(frequencyHz: frequencyHz, device: device, rate: rate),
                   let engine = await store.captureEngine(id) else { continue }
             do {
+                if rate != cap.sampleRate { try await engine.setSampleRate(rate) }
                 try await engine.retune(centerHz: centre)
             } catch {
                 lastReason = (error as? EngineError)?.message ?? "\(error)"
                 continue
             }
             await store.publishCapture(id)
-            return .captureIQ(SessionCaptureIQLease(captureID: id, capture: engine, sampleRateHz: cap.sampleRate,
+            return .captureIQ(SessionCaptureIQLease(captureID: id, capture: engine, sampleRateHz: rate,
                                                     createdCapture: false, store: store))
         }
         return .declined(code: sawDevice ? EngineError.Code.deviceBusy : EngineError.Code.noDevice, reason: lastReason)
+    }
+
+    /// How far a capture's centre may sit from where a dedicated IQ decoder would put it and still
+    /// count as centred: a tuner's own step, not a fraction of the span.
+    static let centredToleranceHz: UInt64 = 1_000
+
+    /// Whether `cap` is the capture a dedicated IQ decoder would have made: at `rate`, centred
+    /// within `centredToleranceHz` of where `iqCentre` points (on the frequency, or the nearest
+    /// point the device tunes, which for a file device is where its recording was made).
+    private func isCentred(_ cap: Leyline_V1_Capture, on frequencyHz: UInt64, rate: UInt64,
+                           device: Leyline_V1_DeviceDescriptor) -> Bool
+    {
+        guard cap.sampleRate == rate, let centre = iqCentre(frequencyHz: frequencyHz, device: device, rate: rate) else {
+            return false
+        }
+        let off = cap.centerHz > centre ? cap.centerHz - centre : centre - cap.centerHz
+        return off <= Self.centredToleranceHz
     }
 
     /// Whether a capture centred at `centerHz` running at `rate` covers `frequencyHz` at all: the
