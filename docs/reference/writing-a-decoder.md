@@ -59,7 +59,7 @@ The manifest for the bundled APRS decoder, trimmed to the fields that carry mean
     "symbol": "antenna.radiowaves.left.and.right",
     "summaries": {
       "status": "{comment}",
-      "weather": "[{temp_c} °C][ wind {wind_kmh} km/h][ @ {wind_dir_deg}°]"
+      "weather": "[{temp_c:1} °C][ wind {wind_kmh:0} km/h][ @ {wind_dir_deg:0}°]"
     },
     "columns": ["symbol", "path"]
   },
@@ -80,11 +80,14 @@ The manifest for the bundled APRS decoder, trimmed to the fields that carry mean
   the squelch opened and after it closed, 500 ms each when left 0. `SLOT_ALIGNED` (for slot-timed
   protocols like FT8) is declared here but not yet delivered by the daemon.
 - **`credentialProvider`** names the provider whose key your decoder calls with (`deepgram`,
-  `openai`), and **`contactsHosts`** the hosts it sends to, so a person sees where the audio goes
-  before running it. The daemon refuses to start the job until the user has added that key with
-  `ley ai add <provider>`, and hands it to you on stdin (below). When the user has chosen a speech
-  model on that provider (`ley ai use speech <provider> <model>`), the daemon adds
-  `--model <model>` after your `args`. Leave both out when your decoder calls nobody.
+  `openai`), and **`contactsHosts`** lists the hosts it sends data to. With a provider named, the
+  daemon refuses to start the job until a key is set (`CREDENTIAL_MISSING`, whose message names
+  `ley ai add <provider>`) and hands the key to your program when it starts it (below, "The key").
+  When the user has chosen a speech model on that provider (`ley ai use speech <provider>
+  <model>`), the daemon adds `--model <model>` after your `args`. `contactsHosts` is advisory and
+  nothing enforces it; `ley transcribe` states it before it sends anything, so a person can see
+  where the audio goes, and `ley decoders --json` carries it. Leave both empty when your decoder
+  calls nobody.
 - **`outputs`** declares what shapes you produce. Every decoder produces `SHAPE_RECORDS`;
   `SHAPE_ENTITIES` says a client can fold your records into a per-transmitter table (`ley track`),
   and `entitySilenceS` is how long a station stays in that table after its last record.
@@ -94,13 +97,6 @@ The manifest for the bundled APRS decoder, trimmed to the fields that carry mean
 - **`display`** says how clients show your decoder and its records: the next section.
 - **`executable`** is the program, resolved against the manifest's own directory first and `PATH`
   second, with `args` passed to it.
-- **`credentialProvider`** names the provider whose key your decoder calls with (`deepgram`,
-  `openai`), and **`contactsHosts`** lists the hosts it sends data to. With a provider named, the
-  daemon refuses to start the job until a key is set (`CREDENTIAL_MISSING`, whose message names
-  `ley ai add <provider>`) and hands the key to your program when it starts it (below, "The key").
-  `contactsHosts` is advisory and nothing enforces it; `ley transcribe` states it before it sends
-  anything, so a person can see where the audio goes, and `ley decoders --json` carries it. Leave both empty when your decoder calls
-  nobody.
 
 ## Display
 
@@ -128,23 +124,32 @@ A template is text with names in braces:
 - `{name}` is one of the promoted names `device_id`, `kind`, `position`, `altitude_m`, `rssi_dbfs`,
   `snr_db` and `label` (the user's own name for the transmitter), or else a field of the record. A
   promoted name wins over a field of the same name.
+- `{name:N}`, N from 0 to 6, prints a number with up to N decimals: `{altitude_m:0}` prints
+  `124`, `{a1:3}` keeps `0.001`. Without it a number keeps up to two.
 - `[ ... ]` is an optional group, printed only when every name inside it resolved. Groups do not
   nest.
-- `{{`, `}}`, `[[` and `]]` print one brace or bracket. The template is read left to right, so
-  `{{{msg_id}}}` prints the id in braces.
+- A backslash escapes `{`, `}`, `[`, `]` and itself: `[ \{{msg_id}\}]` prints the id in braces.
+  In `manifest.json` the backslash is itself escaped, so that template is written
+  `"[ \\{{msg_id}\\}]"`. A backslash before any other character makes the template
+  malformed.
 
-A value prints by its type: TEXT as sent, INTEGER in decimal, NUMBER with at most two decimals and
-no trailing zeros (`21`, `21.5`, `21.46`), FLAG as the field's own name when true, DATA as
-lower-case hex, and `position` as `37.7600N 122.4200W`. The unit is not appended, so the template
-writes it: `[{temp_c} °C]`. A name is unresolved when the record lacks it, its text is empty, its
-number is NaN (a level the daemon did not measure) or its flag is false.
+A value prints by its type. TEXT prints as sent, with every control character (a newline, a tab,
+any C0 or C1 control) replaced by one space so a value cannot break the line. INTEGER prints in
+decimal. NUMBER prints as `printf("%.Nf")` would, then drops trailing zeros and a bare point, and
+never prints `-0`: `21`, `21.5`, `21.46`. FLAG prints the field's own name when true, DATA prints
+as lower-case hex, and `position` prints as `37.7600N 122.4200W`, where a coordinate that rounds to
+zero takes N or E. The unit is not appended, so the template writes it: `[{temp_c:1} °C]`. A name is
+unresolved when the record lacks it, its text is empty, its number is NaN or infinite (a level the
+daemon did not measure, or either coordinate of a position) or its flag is false.
 
-The finished line is trimmed of leading and trailing spaces. The client prints its own line instead
-of the template's when a name outside a group is unresolved, when the line is empty, or when the
-template is malformed (an unclosed brace or group, a nested group, a lone `}` or `]`). So
-`{position}[ {speed_kmh} km/h]` on a record with no position falls back rather than printing half a
-line. The cases in `testdata/decoders/summary-cases.json` are the full specification: every client
-that renders templates passes them.
+The finished line is trimmed of leading and trailing whitespace, a no-break space included. The
+client prints its own line instead of the template's when a name outside a group is unresolved,
+when the line is empty, or when the template is malformed (an unclosed brace or group, a nested
+group, a lone `}` or `]`, a precision outside 0 to 6, a stray backslash). So
+`{position}[ {speed_kmh:0} km/h]` on a record with no position falls back rather than printing half
+a line. A test in `go/pkg/records` parses every template under `decoders/`, so a malformed one in a
+bundled manifest fails CI. The cases in `testdata/decoders/summary-cases.json` are the full
+specification: every client that renders templates passes them.
 
 ## The wire
 

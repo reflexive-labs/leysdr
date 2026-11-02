@@ -9,6 +9,7 @@ package records
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -71,14 +72,17 @@ func FormatPosition(p *leylinev1.Position) string {
 	if p == nil {
 		return ""
 	}
-	ns, ew := "N", "E"
-	if p.GetLatitude() < 0 {
-		ns = "S"
+	return coordinate(p.GetLatitude(), "N", "S") + " " + coordinate(p.GetLongitude(), "E", "W")
+}
+
+// coordinate prints one axis to four decimals with its hemisphere letter. A value that rounds to
+// zero takes the positive letter, so -0.00001 is 0.0000N and never 0.0000S.
+func coordinate(v float64, pos, neg string) string {
+	s := strconv.FormatFloat(math.Abs(v), 'f', 4, 64)
+	if v < 0 && s != "0.0000" {
+		return s + neg
 	}
-	if p.GetLongitude() < 0 {
-		ew = "W"
-	}
-	return fmt.Sprintf("%.4f%s %.4f%s", math.Abs(p.GetLatitude()), ns, math.Abs(p.GetLongitude()), ew)
+	return s + pos
 }
 
 // weatherSummary reports the measurements the station sent, in the order a person reads a

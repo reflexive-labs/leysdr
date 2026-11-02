@@ -582,14 +582,20 @@ func (x *DecoderManifest) GetDisplay() *DecoderDisplay {
 //
 // A template is text with names in braces. `{name}` is one of the promoted names device_id, kind,
 // position, altitude_m, rssi_dbfs, snr_db and label (the person's own name for the transmitter),
-// or else a field of the record. `[ ... ]` is an optional group, printed only when every name in
-// it resolved; groups do not nest. `{{`, `}}`, `[[` and `]]` print one brace or bracket. A TEXT
-// field prints as sent, INTEGER in decimal, NUMBER with at most two decimals and no trailing
-// zeros, FLAG as the field's name when true, DATA as lower-case hex; position prints as
-// "52.2572N 3.9194E". A name is unresolved when the record lacks it, its text is empty, its number
-// is NaN or its flag is false. A template with an unresolved name outside a group, or one that
-// renders only spaces, is not used, and the client prints its own line instead. The line is
-// trimmed of leading and trailing spaces.
+// or else a field of the record; a promoted name wins over a field of the same name. `{name:N}`,
+// N from 0 to 6, prints a number with up to N decimals. `[ ... ]` is an optional group, printed
+// only when every name in it resolved; groups do not nest. A backslash escapes `{`, `}`, `[`, `]`
+// and itself, and before any other character makes the template malformed.
+//
+// A TEXT field prints as sent with every control character (C0 and C1, newline and tab among
+// them) replaced by one space; INTEGER prints in decimal; NUMBER as printf's `%.Nf` (N = 2
+// unless given) with trailing zeros and a bare point dropped and never as -0; FLAG as the field's
+// name when true; DATA as lower-case hex; position as "52.2572N 3.9194E", where a value that rounds
+// to zero takes N or E. A name is unresolved when the record lacks it, its text is empty, its
+// number is NaN or infinite (for position, either coordinate) or its flag is false. The line is
+// trimmed of leading and trailing Unicode whitespace. A template that is malformed, has an
+// unresolved name outside a group or renders an empty line is not used: the client prints its own
+// line instead. testdata/decoders/summary-cases.json is the full specification.
 type DecoderDisplay struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Title  string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`   // "APRS", "Aircraft", "Vessels", "Weather alerts"

@@ -5,15 +5,15 @@
     "title": "APRS",
     "symbol": "antenna.radiowaves.left.and.right",
     "summaries": {
-      "position": "{position}[ {altitude_m} m][ {object_name}][ {symbol}][ {speed_kmh} km/h][ @ {course_deg}°][ {comment}]",
-      "object": "{position}[ {altitude_m} m][ {object_name}][ {symbol}][ {speed_kmh} km/h][ @ {course_deg}°][ {comment}]",
-      "item": "{position}[ {altitude_m} m][ {object_name}][ {symbol}][ {speed_kmh} km/h][ @ {course_deg}°][ {comment}]",
-      "weather": "[{temp_c} °C][ wind {wind_kmh} km/h][ @ {wind_dir_deg}°][ gust {gust_kmh} km/h][ rain {rain_mm_1h} mm/h][ humidity {humidity_pct}%][ {pressure_hpa} hPa]",
-      "message": "→ {addressee}[: {text}][ {{{msg_id}}}]",
+      "position": "{position}[ {altitude_m:0} m][ {object_name}][ {symbol}][ {speed_kmh:0} km/h @ {course_deg:0}°][ {comment}]",
+      "object": "{position}[ {altitude_m:0} m][ {object_name}][ {symbol}][ {speed_kmh:0} km/h @ {course_deg:0}°][ {comment}]",
+      "item": "{position}[ {altitude_m:0} m][ {object_name}][ {symbol}][ {speed_kmh:0} km/h @ {course_deg:0}°][ {comment}]",
+      "weather": "[{temp_c:1} °C][ wind {wind_kmh:0} km/h][ @ {wind_dir_deg:0}°][ gust {gust_kmh:0} km/h][ rain {rain_mm_1h:1} mm/h][ humidity {humidity_pct:0}%][ {pressure_hpa:1} hPa]",
+      "message": "→ {addressee}[: {text}][ \\{{msg_id}\\}]",
       "ack": "→ {addressee}: ack {msg_id}",
       "reject": "→ {addressee}: rej {msg_id}",
       "status": "{comment}",
-      "telemetry": "T#{seq}[ {a1}][ {a2}][ {a3}][ {a4}][ {a5}][ {digital}]",
+      "telemetry": "T#{seq}[ {a1:3}][ {a2:3}][ {a3:3}][ {a4:3}][ {a5:3}][ {digital}]",
       "other": "{comment}"
     },
     "columns": ["symbol", "path"]

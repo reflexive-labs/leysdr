@@ -14,9 +14,9 @@ func display() *leylinev1.DecoderDisplay {
 		Symbol: "airplane",
 		Summaries: map[string]string{
 			"identification": "{callsign}[ category {category}]",
-			"position":       "[{position}][ {altitude_ft} ft]",
-			"velocity":       "[{ground_speed_kn} kn][ @ {track_deg}°][ {airspeed_kn} kn airspeed][ heading {heading_deg}°][ {vertical_rate_fpm} ft/min]",
-			"surveillance":   "DF{df}[ {altitude_ft} ft][ squawk {squawk}]",
+			"position":       "[{position}][ {altitude_ft:0} ft]",
+			"velocity":       "[{ground_speed_kn:0} kn][ @ {track_deg:0}°][ {airspeed_kn:0} kn airspeed][ heading {heading_deg:0}°][ {vertical_rate_fpm:0} ft/min]",
+			"surveillance":   "DF{df}[ {altitude_ft:0} ft][ squawk {squawk}]",
 		},
 		EntityName: "[{callsign}]",
 		Columns:    []string{"callsign", "altitude_ft", "ground_speed_kn", "track_deg", "squawk"},

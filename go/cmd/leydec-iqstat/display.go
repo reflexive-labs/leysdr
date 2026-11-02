@@ -9,6 +9,6 @@ func display() *leylinev1.DecoderDisplay {
 	return &leylinev1.DecoderDisplay{
 		Title:     "IQ power",
 		Symbol:    "waveform",
-		Summaries: map[string]string{"power": "{power_dbfs} dBFS[ over {samples} samples]"},
+		Summaries: map[string]string{"power": "{power_dbfs:1} dBFS[ over {samples} samples]"},
 	}
 }

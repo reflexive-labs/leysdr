@@ -5,9 +5,11 @@ package records
 import (
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
+	"unicode"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
@@ -16,10 +18,17 @@ import (
 // proto/leyline/v1/decode.proto above DecoderDisplay, and testdata/decoders/summary-cases.json
 // pins them for every client that implements them.
 
+// defaultDecimals is how many decimals a NUMBER keeps when its name carries no precision.
+const defaultDecimals = 2
+
+// maxDecimals is the largest precision `{name:N}` accepts.
+const maxDecimals = 6
+
 // SummaryFor is the line for one record under a decoder's display: the template for the record's
 // kind, else the "" template, else Summary. A template that does not render (an unresolved name
-// outside a group, or nothing but spaces) gives way to Summary too, so a manifest can only add to
-// what a client prints. label is the person's name for the transmitter, "" when there is none.
+// outside a group, nothing but whitespace, or a malformed template) gives way to Summary too, so
+// a manifest can only add to what a client prints. label is the person's name for the
+// transmitter, "" when there is none.
 func SummaryFor(d *leylinev1.DecoderDisplay, rec *leylinev1.DecodeRecord, label string) string {
 	tmpl, ok := d.GetSummaries()[rec.GetKind()]
 	if !ok {
@@ -47,7 +56,7 @@ func EntityName(d *leylinev1.DecoderDisplay, e *Entity, label string) string {
 // Column is one cell of a transmitter table's display.columns: the named value as a template
 // would print it, and false when the transmitter has not sent it.
 func Column(e *Entity, name, label string) (string, bool) {
-	return resolve(e.Record(), label, name)
+	return resolve(e.Record(), label, name, defaultDecimals)
 }
 
 // Record is the entity as one record, for rendering a template over it: its device_id, its last
@@ -58,6 +67,22 @@ func (e *Entity) Record() *leylinev1.DecodeRecord {
 		Protocol: e.Protocol, DeviceId: e.DeviceID, Kind: e.Kind, Position: e.Position,
 		Fields: e.Fields, RssiDbfs: math.NaN(), SnrDb: math.NaN(),
 	}
+}
+
+// ValidateDisplay reports the first template in a display that does not parse, so a manifest
+// with a broken template fails a test instead of falling back on every record.
+func ValidateDisplay(d *leylinev1.DecoderDisplay) error {
+	for kind, t := range d.GetSummaries() {
+		if _, err := parseTemplate(t); err != nil {
+			return fmt.Errorf("summaries[%q]: %w", kind, err)
+		}
+	}
+	if t := d.GetEntityName(); t != "" {
+		if _, err := parseTemplate(t); err != nil {
+			return fmt.Errorf("entity_name: %w", err)
+		}
+	}
+	return nil
 }
 
 // Render renders one template over one record. It returns false when the template is malformed,
@@ -82,7 +107,7 @@ func Render(tmpl string, rec *leylinev1.DecodeRecord, label string) (string, boo
 		case segText, segName:
 			text := s.text
 			if s.kind == segName {
-				v, ok := resolve(rec, label, s.text)
+				v, ok := resolve(rec, label, s.text, s.decimals)
 				if !ok {
 					if !inGroup {
 						return "", false
@@ -112,14 +137,16 @@ const (
 )
 
 type segment struct {
-	kind segKind
-	text string
+	kind     segKind
+	text     string
+	decimals int
 }
 
+// errTemplate is every way a template can be malformed.
 var errTemplate = errors.New("malformed display template")
 
-// parseTemplate splits a template into literal text, names and group marks, reading left to
-// right so "{{{x}}}" is a brace, the name x, and a brace.
+// parseTemplate splits a template into literal text, names and group marks. A backslash escapes
+// the next {, }, [, ] or \; any other character after a backslash is an error.
 func parseTemplate(t string) ([]segment, error) {
 	var segs []segment
 	var lit strings.Builder
@@ -131,52 +158,37 @@ func parseTemplate(t string) ([]segment, error) {
 	}
 	inGroup := false
 	for i := 0; i < len(t); i++ {
-		c := t[i]
-		doubled := i+1 < len(t) && t[i+1] == c
-		switch c {
+		switch c := t[i]; c {
+		case '\\':
+			if i+1 >= len(t) || !strings.ContainsRune(`{}[]\`, rune(t[i+1])) {
+				return nil, fmt.Errorf("%w: a backslash escapes only { } [ ] and \\", errTemplate)
+			}
+			lit.WriteByte(t[i+1])
+			i++
 		case '{':
-			if doubled {
-				lit.WriteByte(c)
-				i++
-				continue
-			}
 			end := strings.IndexByte(t[i+1:], '}')
-			if end <= 0 {
-				return nil, errTemplate
+			if end < 0 {
+				return nil, fmt.Errorf("%w: an unclosed {", errTemplate)
 			}
-			name := t[i+1 : i+1+end]
-			if strings.ContainsAny(name, "{[]") {
-				return nil, errTemplate
+			name, decimals, err := parseName(t[i+1 : i+1+end])
+			if err != nil {
+				return nil, err
 			}
 			flush()
-			segs = append(segs, segment{kind: segName, text: name})
+			segs = append(segs, segment{kind: segName, text: name, decimals: decimals})
 			i += end + 1
 		case '}':
-			if !doubled {
-				return nil, errTemplate
-			}
-			lit.WriteByte(c)
-			i++
+			return nil, fmt.Errorf("%w: a } with no {", errTemplate)
 		case '[':
-			if doubled {
-				lit.WriteByte(c)
-				i++
-				continue
-			}
 			if inGroup {
-				return nil, errTemplate
+				return nil, fmt.Errorf("%w: groups do not nest", errTemplate)
 			}
 			flush()
 			segs = append(segs, segment{kind: segOpen})
 			inGroup = true
 		case ']':
-			if doubled {
-				lit.WriteByte(c)
-				i++
-				continue
-			}
 			if !inGroup {
-				return nil, errTemplate
+				return nil, fmt.Errorf("%w: a ] with no [", errTemplate)
 			}
 			flush()
 			segs = append(segs, segment{kind: segClose})
@@ -186,50 +198,72 @@ func parseTemplate(t string) ([]segment, error) {
 		}
 	}
 	if inGroup {
-		return nil, errTemplate
+		return nil, fmt.Errorf("%w: an unclosed [", errTemplate)
 	}
 	flush()
 	return segs, nil
 }
 
-// resolve is one name's text: a promoted name first, then a field.
-func resolve(rec *leylinev1.DecodeRecord, label, name string) (string, bool) {
+// parseName reads "name" or "name:N", N a precision from 0 to maxDecimals.
+func parseName(s string) (string, int, error) {
+	name, spec, hasSpec := strings.Cut(s, ":")
+	if name == "" || strings.ContainsAny(name, `{[]\`) {
+		return "", 0, fmt.Errorf("%w: a bad name {%s}", errTemplate, s)
+	}
+	if !hasSpec {
+		return name, defaultDecimals, nil
+	}
+	if len(spec) != 1 || spec[0] < '0' || spec[0] > '0'+maxDecimals {
+		return "", 0, fmt.Errorf("%w: the precision in {%s} is not 0 to %d", errTemplate, s, maxDecimals)
+	}
+	return name, int(spec[0] - '0'), nil
+}
+
+// resolve is one name's text: a promoted name first, then a field. decimals is the precision a
+// number prints with.
+func resolve(rec *leylinev1.DecodeRecord, label, name string, decimals int) (string, bool) {
 	switch name {
 	case "device_id":
-		return rec.GetDeviceId(), rec.GetDeviceId() != ""
+		return nonEmpty(sanitize(rec.GetDeviceId()))
 	case "kind":
-		return rec.GetKind(), rec.GetKind() != ""
+		return nonEmpty(sanitize(rec.GetKind()))
 	case "label":
-		return label, label != ""
+		return nonEmpty(sanitize(label))
 	case "position":
-		if p := rec.GetPosition(); p != nil {
-			return FormatPosition(p), true
+		p := rec.GetPosition()
+		if p == nil || !finite(p.GetLatitude()) || !finite(p.GetLongitude()) {
+			return "", false
 		}
-		return "", false
+		return FormatPosition(p), true
 	case "altitude_m":
 		if p := rec.GetPosition(); p != nil && p.AltitudeM != nil {
-			return formatNumber(p.GetAltitudeM())
+			return formatNumber(p.GetAltitudeM(), decimals)
 		}
 		return "", false
 	case "rssi_dbfs":
-		return formatNumber(rec.GetRssiDbfs())
+		return formatNumber(rec.GetRssiDbfs(), decimals)
 	case "snr_db":
-		return formatNumber(rec.GetSnrDb())
+		return formatNumber(rec.GetSnrDb(), decimals)
 	}
-	return FormatField(name, rec.GetFields()[name])
+	return formatField(name, rec.GetFields()[name], decimals)
 }
 
-// FormatField is a field's value as a template prints it: TEXT as sent, INTEGER in decimal,
-// NUMBER with at most two decimals, FLAG as the field's name when true, DATA as hex. It returns
-// false for an absent field, empty text, a NaN or infinite number and a false flag.
+// FormatField is a field's value as a template prints it with no precision given: TEXT as sent
+// with control characters as spaces, INTEGER in decimal, NUMBER with at most two decimals, FLAG
+// as the field's name when true, DATA as hex. It returns false for an absent field, empty text, a
+// NaN or infinite number and a false flag.
 func FormatField(name string, v *leylinev1.FieldValue) (string, bool) {
+	return formatField(name, v, defaultDecimals)
+}
+
+func formatField(name string, v *leylinev1.FieldValue, decimals int) (string, bool) {
 	switch x := v.GetValue().(type) {
 	case *leylinev1.FieldValue_Text:
-		return x.Text, x.Text != ""
+		return nonEmpty(sanitize(x.Text))
 	case *leylinev1.FieldValue_Integer:
 		return strconv.FormatInt(x.Integer, 10), true
 	case *leylinev1.FieldValue_Number:
-		return formatNumber(x.Number)
+		return formatNumber(x.Number, decimals)
 	case *leylinev1.FieldValue_Flag:
 		if x.Flag {
 			return name, true
@@ -240,14 +274,34 @@ func FormatField(name string, v *leylinev1.FieldValue) (string, bool) {
 	return "", false
 }
 
-// formatNumber prints a number with the decimals it needs, at most two: 21, 21.5, 21.46.
-func formatNumber(v float64) (string, bool) {
-	if math.IsNaN(v) || math.IsInf(v, 0) {
+// sanitize turns every control character (C0, DEL and C1, newline and tab among them) into one
+// space, so a value cannot break the line it is printed in.
+func sanitize(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, s)
+}
+
+func nonEmpty(s string) (string, bool) { return s, s != "" }
+
+func finite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
+
+// formatNumber prints a number with up to decimals decimals, trailing zeros and a bare point
+// dropped: 21, 21.5, 21.46. It is printf's %.Nf, so it never scales the value and a client in
+// another language gets the same digits from the same double.
+func formatNumber(v float64, decimals int) (string, bool) {
+	if !finite(v) {
 		return "", false
 	}
-	r := math.Round(v*100) / 100
-	if r == 0 {
-		r = 0 // no "-0" for a small negative value
+	s := strconv.FormatFloat(v, 'f', decimals, 64)
+	if strings.ContainsRune(s, '.') {
+		s = strings.TrimRight(strings.TrimRight(s, "0"), ".")
 	}
-	return strconv.FormatFloat(r, 'f', -1, 64), true
+	if s == "-0" {
+		s = "0"
+	}
+	return s, true
 }

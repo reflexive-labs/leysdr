@@ -11,7 +11,7 @@ func display() *leylinev1.DecoderDisplay {
 		Title:  "Vessels",
 		Symbol: "ferry",
 		Summaries: map[string]string{
-			"position": "{position}[ {sog_kn} kn][ @ {cog_deg}°]",
+			"position": "{position}[ {sog_kn:1} kn][ @ {cog_deg:0}°]",
 			"static":   "[{name}][ {callsign}][ → {destination}]",
 			"other":    "message type {msg_type}",
 		},

@@ -45,7 +45,7 @@
     "title": "IQ power",
     "symbol": "waveform",
     "summaries": {
-      "power": "{power_dbfs} dBFS[ over {samples} samples]"
+      "power": "{power_dbfs:1} dBFS[ over {samples} samples]"
     }
   },
   "executable": "leydec-iqstat"

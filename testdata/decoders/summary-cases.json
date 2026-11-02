@@ -4,15 +4,15 @@
       "title": "APRS",
       "symbol": "antenna.radiowaves.left.and.right",
       "summaries": {
-        "position": "{position}[ {altitude_m} m][ {object_name}][ {symbol}][ {speed_kmh} km/h][ @ {course_deg}°][ {comment}]",
-        "object": "{position}[ {altitude_m} m][ {object_name}][ {symbol}][ {speed_kmh} km/h][ @ {course_deg}°][ {comment}]",
-        "item": "{position}[ {altitude_m} m][ {object_name}][ {symbol}][ {speed_kmh} km/h][ @ {course_deg}°][ {comment}]",
-        "weather": "[{temp_c} °C][ wind {wind_kmh} km/h][ @ {wind_dir_deg}°][ gust {gust_kmh} km/h][ rain {rain_mm_1h} mm/h][ humidity {humidity_pct}%][ {pressure_hpa} hPa]",
-        "message": "→ {addressee}[: {text}][ {{{msg_id}}}]",
+        "position": "{position}[ {altitude_m:0} m][ {object_name}][ {symbol}][ {speed_kmh:0} km/h @ {course_deg:0}°][ {comment}]",
+        "object": "{position}[ {altitude_m:0} m][ {object_name}][ {symbol}][ {speed_kmh:0} km/h @ {course_deg:0}°][ {comment}]",
+        "item": "{position}[ {altitude_m:0} m][ {object_name}][ {symbol}][ {speed_kmh:0} km/h @ {course_deg:0}°][ {comment}]",
+        "weather": "[{temp_c:1} °C][ wind {wind_kmh:0} km/h][ @ {wind_dir_deg:0}°][ gust {gust_kmh:0} km/h][ rain {rain_mm_1h:1} mm/h][ humidity {humidity_pct:0}%][ {pressure_hpa:1} hPa]",
+        "message": "→ {addressee}[: {text}][ \\{{msg_id}\\}]",
         "ack": "→ {addressee}: ack {msg_id}",
         "reject": "→ {addressee}: rej {msg_id}",
         "status": "{comment}",
-        "telemetry": "T#{seq}[ {a1}][ {a2}][ {a3}][ {a4}][ {a5}][ {digital}]",
+        "telemetry": "T#{seq}[ {a1:3}][ {a2:3}][ {a3:3}][ {a4:3}][ {a5:3}][ {digital}]",
         "other": "{comment}"
       },
       "columns": ["symbol", "path"]
@@ -21,7 +21,7 @@
       "title": "Vessels",
       "symbol": "ferry",
       "summaries": {
-        "position": "{position}[ {sog_kn} kn][ @ {cog_deg}°]",
+        "position": "{position}[ {sog_kn:1} kn][ @ {cog_deg:0}°]",
         "static": "[{name}][ {callsign}][ → {destination}]",
         "other": "message type {msg_type}"
       },
@@ -33,9 +33,9 @@
       "symbol": "airplane",
       "summaries": {
         "identification": "{callsign}[ category {category}]",
-        "position": "[{position}][ {altitude_ft} ft]",
-        "velocity": "[{ground_speed_kn} kn][ @ {track_deg}°][ {airspeed_kn} kn airspeed][ heading {heading_deg}°][ {vertical_rate_fpm} ft/min]",
-        "surveillance": "DF{df}[ {altitude_ft} ft][ squawk {squawk}]"
+        "position": "[{position}][ {altitude_ft:0} ft]",
+        "velocity": "[{ground_speed_kn:0} kn][ @ {track_deg:0}°][ {airspeed_kn:0} kn airspeed][ heading {heading_deg:0}°][ {vertical_rate_fpm:0} ft/min]",
+        "surveillance": "DF{df}[ {altitude_ft:0} ft][ squawk {squawk}]"
       },
       "entity_name": "[{callsign}]",
       "columns": ["callsign", "altitude_ft", "ground_speed_kn", "track_deg", "squawk"]
@@ -51,7 +51,7 @@
       "title": "IQ power",
       "symbol": "waveform",
       "summaries": {
-        "power": "{power_dbfs} dBFS[ over {samples} samples]"
+        "power": "{power_dbfs:1} dBFS[ over {samples} samples]"
       }
     },
     "speech": {
@@ -63,10 +63,21 @@
     },
     "rules": {
       "summaries": {
-        "literal": "{{braces}} and [[brackets]] {{{t}}}",
+        "literal": "\\{braces\\} and \\[brackets\\] \\{{t}\\} and \\\\",
+        "group-then-bracket": "[{t}]\\]",
+        "unknown-escape": "\\q{t}",
+        "trailing-backslash": "{t}\\",
         "group": "a[ b={b}][ c={c}] d",
         "required": "{missing} x",
         "number": "{n1} {n2} {n3} {n4} {n5} {n6}",
+        "rounding": "{a} {b} {c} {d}",
+        "precision": "{p:0} {p:3} {p:6} {q:0} {i:0} {big:6}",
+        "precision-too-large": "{p:7}",
+        "precision-not-a-digit": "{p:x}",
+        "precision-empty": "{p:}",
+        "integer-limits": "{max} {min}",
+        "whitespace": "{t}",
+        "position-only": "[{position} ]ok",
         "integer": "{i}",
         "flag": "[{alive}][{killed}]",
         "data": "{bytes}",
@@ -96,13 +107,13 @@
       "display": "aprs",
       "record": {
         "protocol": "aprs", "kind": "position", "device_id": "N0CALL-9",
-        "position": {"latitude": 37.76, "longitude": -122.42, "altitude_m": 120.5},
+        "position": {"latitude": 37.76, "longitude": -122.42, "altitude_m": 123.6},
         "fields": {
           "symbol": {"text": "/>"}, "speed_kmh": {"number": 24.076}, "course_deg": {"number": 90},
           "comment": {"text": "on the road"}
         }
       },
-      "summary": "37.7600N 122.4200W 120.5 m /> 24.08 km/h @ 90° on the road"
+      "summary": "37.7600N 122.4200W 124 m /> 24 km/h @ 90° on the road"
     },
     {
       "name": "aprs object",
@@ -134,7 +145,7 @@
           "gust_kmh": {"number": 16.09}, "humidity_pct": {"number": 64}, "pressure_hpa": {"number": 1013.2}
         }
       },
-      "summary": "21.11 °C wind 12.07 km/h @ 270° gust 16.09 km/h humidity 64% 1013.2 hPa"
+      "summary": "21.1 °C wind 12 km/h @ 270° gust 16 km/h humidity 64% 1013.2 hPa"
     },
     {
       "name": "aprs weather with nothing measured falls back to the raw text",
@@ -179,11 +190,11 @@
       "record": {
         "protocol": "aprs", "kind": "telemetry", "device_id": "N0CALL-11",
         "fields": {
-          "seq": {"text": "005"}, "a1": {"number": 199}, "a2": {"number": 0.5}, "a5": {"number": 3},
+          "seq": {"text": "005"}, "a1": {"number": 199}, "a2": {"number": 0.5}, "a3": {"number": 0.001}, "a5": {"number": 3},
           "digital": {"text": "10101010"}
         }
       },
-      "summary": "T#005 199 0.5 3 10101010"
+      "summary": "T#005 199 0.5 0.001 3 10101010"
     },
     {
       "name": "aprs status",
@@ -212,7 +223,7 @@
         "position": {"latitude": 52.2572, "longitude": 3.91937},
         "fields": {"mmsi": {"number": 244660000}, "msg_type": {"number": 1}, "sog_kn": {"number": 12.3}, "cog_deg": {"number": 45.6}}
       },
-      "summary": "52.2572N 3.9194E 12.3 kn @ 45.6°"
+      "summary": "52.2572N 3.9194E 12.3 kn @ 46°"
     },
     {
       "name": "ais static report",
@@ -267,7 +278,7 @@
           "samples": {"integer": 4800}, "center_hz": {"integer": 100000000}
         }
       },
-      "summary": "-23.46 dBFS over 4800 samples"
+      "summary": "-23.5 dBFS over 4800 samples"
     },
     {
       "name": "speech uses the default template",
@@ -293,7 +304,7 @@
       "name": "doubled braces and brackets are literal",
       "display": "rules",
       "record": {"kind": "literal", "fields": {"t": {"text": "x"}}},
-      "summary": "{braces} and [brackets] {x}"
+      "summary": "{braces} and [brackets] {x} and \\"
     },
     {
       "name": "a group with an unresolved name is left out",
@@ -350,7 +361,7 @@
       "record": {
         "kind": "promoted", "device_id": "N0CALL-9",
         "position": {"latitude": 1.5, "longitude": -2.25, "altitude_m": 10},
-        "rssi_dbfs": -42.125, "snr_db": 18
+        "rssi_dbfs": -42.126, "snr_db": 18
       },
       "label": "Home",
       "summary": "N0CALL-9 promoted 1.5000N 2.2500W 10 -42.13 18 Home"
@@ -430,7 +441,7 @@
       "name": "adsb velocity",
       "display": "adsb",
       "record": {"protocol": "adsb", "kind": "velocity", "device_id": "485020", "fields": {"ground_speed_kn": {"number": 159.2}, "track_deg": {"number": 182.9}, "vertical_rate_fpm": {"number": -832}, "df": {"number": 17}, "tc": {"number": 19}}},
-      "summary": "159.2 kn @ 182.9° -832 ft/min"
+      "summary": "159 kn @ 183° -832 ft/min"
     },
     {
       "name": "adsb surveillance squawk",
@@ -470,6 +481,132 @@
       "display": "default",
       "record": {"kind": "own"},
       "summary": "own template"
+    },
+    {
+      "name": "aprs position with a speed and no course prints neither, as the client's own line does",
+      "display": "aprs",
+      "record": {
+        "protocol": "aprs", "kind": "position", "device_id": "N0CALL-9",
+        "position": {"latitude": 37.76, "longitude": -122.42},
+        "fields": {"symbol": {"text": "/>"}, "speed_kmh": {"number": 92.6}}
+      },
+      "summary": "37.7600N 122.4200W />"
+    },
+    {
+      "name": "aprs telemetry whose sequence is not a number",
+      "display": "aprs",
+      "record": {
+        "protocol": "aprs", "kind": "telemetry", "device_id": "N0CALL-11",
+        "fields": {"seq": {"text": "MIC"}, "a1": {"number": 12}}
+      },
+      "summary": "T#MIC 12"
+    },
+    {
+      "name": "a ] after a group is escaped",
+      "display": "rules",
+      "record": {"kind": "group-then-bracket", "fields": {"t": {"text": "x"}}},
+      "summary": "x]"
+    },
+    {
+      "name": "a backslash before any other character falls back",
+      "display": "rules",
+      "record": {"kind": "unknown-escape", "fields": {"t": {"text": "x"}, "comment": {"text": "fallback"}}},
+      "summary": "fallback",
+      "fallback": true
+    },
+    {
+      "name": "a trailing backslash falls back",
+      "display": "rules",
+      "record": {"kind": "trailing-backslash", "fields": {"t": {"text": "x"}, "comment": {"text": "fallback"}}},
+      "summary": "fallback",
+      "fallback": true
+    },
+    {
+      "name": "numbers round the double they hold, as printf does",
+      "display": "rules",
+      "record": {
+        "kind": "rounding",
+        "fields": {"a": {"number": 1.005}, "b": {"number": 2.675}, "c": {"number": 1e15}, "d": {"number": 1e21}}
+      },
+      "summary": "1 2.67 1000000000000000 1000000000000000000000"
+    },
+    {
+      "name": "a precision sets the decimals, trailing zeros trimmed",
+      "display": "rules",
+      "record": {
+        "kind": "precision",
+        "fields": {
+          "p": {"number": 3.14159265}, "q": {"number": -0.4}, "i": {"integer": 12345},
+          "big": {"number": 2.5}
+        }
+      },
+      "summary": "3 3.142 3.141593 0 12345 2.5"
+    },
+    {
+      "name": "a precision above 6 falls back",
+      "display": "rules",
+      "record": {"kind": "precision-too-large", "fields": {"p": {"number": 1}, "comment": {"text": "fallback"}}},
+      "summary": "fallback",
+      "fallback": true
+    },
+    {
+      "name": "a precision that is not a digit falls back",
+      "display": "rules",
+      "record": {"kind": "precision-not-a-digit", "fields": {"p": {"number": 1}, "comment": {"text": "fallback"}}},
+      "summary": "fallback",
+      "fallback": true
+    },
+    {
+      "name": "an empty precision falls back",
+      "display": "rules",
+      "record": {"kind": "precision-empty", "fields": {"p": {"number": 1}, "comment": {"text": "fallback"}}},
+      "summary": "fallback",
+      "fallback": true
+    },
+    {
+      "name": "the largest and smallest integers",
+      "display": "rules",
+      "record": {
+        "kind": "integer-limits",
+        "fields": {"max": {"integer": 9223372036854775807}, "min": {"integer": -9223372036854775808}}
+      },
+      "summary": "9223372036854775807 -9223372036854775808"
+    },
+    {
+      "name": "a newline in a text value becomes a space",
+      "display": "rules",
+      "record": {"kind": "whitespace", "fields": {"t": {"text": "line one\nline two"}}},
+      "summary": "line one line two"
+    },
+    {
+      "name": "a tab and a C1 control in a text value become spaces",
+      "display": "rules",
+      "record": {"kind": "whitespace", "fields": {"t": {"text": "a\tb\u0085c"}}},
+      "summary": "a b c"
+    },
+    {
+      "name": "the line is trimmed of Unicode whitespace, NBSP included",
+      "display": "rules",
+      "record": {"kind": "whitespace", "fields": {"t": {"text": " padded  \n"}}},
+      "summary": "padded"
+    },
+    {
+      "name": "a position that rounds to zero takes N and E",
+      "display": "rules",
+      "record": {"kind": "position-only", "position": {"latitude": -0.00001, "longitude": -0.00001}},
+      "summary": "0.0000N 0.0000E ok"
+    },
+    {
+      "name": "a NaN latitude leaves the position unresolved",
+      "display": "rules",
+      "record": {"kind": "position-only", "position": {"latitude": "NaN", "longitude": 3}},
+      "summary": "ok"
+    },
+    {
+      "name": "an infinite longitude leaves the position unresolved",
+      "display": "rules",
+      "record": {"kind": "position-only", "position": {"latitude": 1, "longitude": "-Infinity"}},
+      "summary": "ok"
     },
     {
       "name": "a kind with no template and no default falls back",

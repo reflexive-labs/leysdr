@@ -379,7 +379,7 @@ func renderTrack(app *App, table *records.Table, m *leylinev1.DecoderManifest, w
 	s := tableStyle(app)
 	display := m.GetDisplay()
 	cols := []column{
-		{head: "DEVICE", min: 8},
+		{head: "DEVICE", min: 9}, // a nine-digit MMSI
 		{head: "NAME", min: 8, drop: 4, hideEmpty: true},
 		{head: "LAST HEARD"},
 		{head: "SEEN", right: true},

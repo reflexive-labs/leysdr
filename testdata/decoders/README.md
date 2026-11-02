@@ -14,13 +14,20 @@ fails when they drift.
 ## Shared shapes
 
 - **display**: `{title, symbol, summaries, entity_name, columns}`. `summaries` is an object from
-  record kind to template; `columns` is an array of field names. All optional.
+  record kind to template; `columns` is an array of field names. All optional. The vectors spell
+  the key `entity_name` in snake_case; a `manifest.json` spells it `entityName`, the proto3 JSON
+  name. A template's backslashes are doubled in the JSON, as in any JSON string.
 - **record**: `{protocol, kind, device_id, position, rssi_dbfs, snr_db, fields, raw}`, all optional.
   `position` is `{latitude, longitude, altitude_m}` with `altitude_m` optional. An absent
   `rssi_dbfs` or `snr_db` means NaN, a level the daemon did not measure. `raw` is the payload as a
   UTF-8 string.
-- **field value**: an object with exactly one key: `text` (string), `integer` (a JSON integer
-  that fits in 64 bits), `number` (a JSON number), `flag` (boolean) or `data` (a hex string).
+- **field value**: an object with exactly one key, which the Go test checks: `text` (string),
+  `integer` (a JSON integer that fits in 64 bits), `number` (a JSON number), `flag` (boolean) or
+  `data` (a hex string).
+- **non-finite numbers**: a `number`, a coordinate or a level that is NaN or infinite is written as
+  the string `"NaN"`, `"Infinity"` or `"-Infinity"`. A Swift `JSONDecoder` reads them with
+  `nonConformingFloatDecodingStrategy = .convertFromString(positiveInfinity: "Infinity",
+  negativeInfinity: "-Infinity", nan: "NaN")`.
 
 ## `summary-cases.json`
 
@@ -31,8 +38,18 @@ transmitter, empty when absent) and expect `summary`. `fallback` (optional, fals
 marks a case no template renders: `summary` is then the client's own line, `records.Summary` in
 Go, and a client that does not port that line checks only that its template did not render.
 
-Numbers in `summary` are plain decimals with no exponent and no trailing `.0`: `1000000`, not
-`1e+06` or `1000000.0`.
+The rules the cases pin, beside the proto comment on `DecoderDisplay`:
+
+- A NUMBER is `String(format: "%.Nf", value)` (Go: `strconv.FormatFloat(v, 'f', N, 64)`) with
+  trailing zeros and a bare point dropped and `-0` printed as `0`. N is 2, or the `{name:N}`
+  precision. Both round the double itself, so 2.675 prints `2.67`, and neither ever prints an
+  exponent: 1e21 is `1000000000000000000000`.
+- A TEXT value has every control character (C0, DEL and C1, `\n` and `\t` among them) replaced by
+  one space before it is substituted.
+- The finished line is trimmed of Unicode whitespace: Go's `strings.TrimSpace`, Swift's
+  `trimmingCharacters(in: .whitespacesAndNewlines)`. A no-break space counts.
+- A position whose latitude or longitude is NaN or infinite is unresolved, and a coordinate that
+  rounds to zero at four decimals takes N or E.
 
 ## `fold-*.json`
 

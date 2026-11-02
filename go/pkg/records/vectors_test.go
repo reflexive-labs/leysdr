@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -38,46 +39,86 @@ func (d vecDisplay) proto() *leylinev1.DecoderDisplay {
 	}
 }
 
+// vecFloat is a JSON number, or one of the strings "NaN", "Infinity" and "-Infinity" for the
+// values JSON has no number for (Swift: JSONDecoder.NonConformingFloatDecodingStrategy
+// .convertFromString with those three strings).
+type vecFloat float64
+
+func (f *vecFloat) UnmarshalJSON(b []byte) error {
+	var s string
+	if json.Unmarshal(b, &s) == nil {
+		switch s {
+		case "NaN":
+			*f = vecFloat(math.NaN())
+		case "Infinity":
+			*f = vecFloat(math.Inf(1))
+		case "-Infinity":
+			*f = vecFloat(math.Inf(-1))
+		default:
+			return fmt.Errorf("%q is not a number", s)
+		}
+		return nil
+	}
+	var v float64
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	*f = vecFloat(v)
+	return nil
+}
+
 type vecValue struct {
-	Text    *string  `json:"text"`
-	Integer *int64   `json:"integer"`
-	Number  *float64 `json:"number"`
-	Flag    *bool    `json:"flag"`
-	Data    *string  `json:"data"`
+	Text    *string   `json:"text"`
+	Integer *int64    `json:"integer"`
+	Number  *vecFloat `json:"number"`
+	Flag    *bool     `json:"flag"`
+	Data    *string   `json:"data"`
 }
 
 func (v vecValue) proto(t *testing.T) *leylinev1.FieldValue {
+	t.Helper()
+	keys := 0
+	for _, set := range []bool{v.Text != nil, v.Integer != nil, v.Number != nil, v.Flag != nil, v.Data != nil} {
+		if set {
+			keys++
+		}
+	}
+	if keys != 1 {
+		t.Fatalf("a field value carries exactly one key, and this one has %d", keys)
+	}
 	switch {
 	case v.Text != nil:
 		return &leylinev1.FieldValue{Value: &leylinev1.FieldValue_Text{Text: *v.Text}}
 	case v.Integer != nil:
 		return &leylinev1.FieldValue{Value: &leylinev1.FieldValue_Integer{Integer: *v.Integer}}
 	case v.Number != nil:
-		return &leylinev1.FieldValue{Value: &leylinev1.FieldValue_Number{Number: *v.Number}}
+		return &leylinev1.FieldValue{Value: &leylinev1.FieldValue_Number{Number: float64(*v.Number)}}
 	case v.Flag != nil:
 		return &leylinev1.FieldValue{Value: &leylinev1.FieldValue_Flag{Flag: *v.Flag}}
-	case v.Data != nil:
-		b, err := hex.DecodeString(*v.Data)
-		if err != nil {
-			t.Fatalf("data %q is not hex: %v", *v.Data, err)
-		}
-		return &leylinev1.FieldValue{Value: &leylinev1.FieldValue_Data{Data: b}}
 	}
-	t.Fatal("a field value with no type")
-	return nil
+	b, err := hex.DecodeString(*v.Data)
+	if err != nil {
+		t.Fatalf("data %q is not hex: %v", *v.Data, err)
+	}
+	return &leylinev1.FieldValue{Value: &leylinev1.FieldValue_Data{Data: b}}
 }
 
 type vecPosition struct {
-	Latitude  float64  `json:"latitude"`
-	Longitude float64  `json:"longitude"`
-	AltitudeM *float64 `json:"altitude_m"`
+	Latitude  vecFloat  `json:"latitude"`
+	Longitude vecFloat  `json:"longitude"`
+	AltitudeM *vecFloat `json:"altitude_m"`
 }
 
 func (p *vecPosition) proto() *leylinev1.Position {
 	if p == nil {
 		return nil
 	}
-	return &leylinev1.Position{Latitude: p.Latitude, Longitude: p.Longitude, AltitudeM: p.AltitudeM}
+	pos := &leylinev1.Position{Latitude: float64(p.Latitude), Longitude: float64(p.Longitude)}
+	if p.AltitudeM != nil {
+		alt := float64(*p.AltitudeM)
+		pos.AltitudeM = &alt
+	}
+	return pos
 }
 
 type vecRecord struct {
@@ -85,8 +126,8 @@ type vecRecord struct {
 	Kind     string              `json:"kind"`
 	DeviceID string              `json:"device_id"`
 	Position *vecPosition        `json:"position"`
-	RssiDbfs *float64            `json:"rssi_dbfs"`
-	SnrDb    *float64            `json:"snr_db"`
+	RssiDbfs *vecFloat           `json:"rssi_dbfs"`
+	SnrDb    *vecFloat           `json:"snr_db"`
 	Fields   map[string]vecValue `json:"fields"`
 	Raw      string              `json:"raw"`
 }
@@ -97,10 +138,10 @@ func (r vecRecord) proto(t *testing.T) *leylinev1.DecodeRecord {
 		RssiDbfs: math.NaN(), SnrDb: math.NaN(), Fields: fieldsProto(t, r.Fields), Raw: []byte(r.Raw),
 	}
 	if r.RssiDbfs != nil {
-		rec.RssiDbfs = *r.RssiDbfs
+		rec.RssiDbfs = float64(*r.RssiDbfs)
 	}
 	if r.SnrDb != nil {
-		rec.SnrDb = *r.SnrDb
+		rec.SnrDb = float64(*r.SnrDb)
 	}
 	return rec
 }

@@ -1240,7 +1240,7 @@ func (srv *mcpServer) queryRecords(ctx context.Context, _ *mcp.CallToolRequest, 
 		return nil, nil, toolError(srv.app.notRunning(err))
 	}
 	app, out, errb := srv.toolApp()
-	printRecordTable(app, page, nil)
+	printRecordTable(app, page, decoderDisplays(ctx, srv.client))
 	text := out.String() + errb.String()
 	if len(page.GetRecords()) == 0 {
 		text += srv.emptyPageReason(ctx, q) + "\n"
@@ -1354,7 +1354,9 @@ func (srv *mcpServer) listEntities(ctx context.Context, _ *mcp.CallToolRequest, 
 			_, _ = c.Jobs.CancelJob(cctx, &leylinev1.JobRef{JobId: job.GetJobId()})
 		}()
 	}
+	manifest := trackManifest(ctx, c, protocol)
 	table := records.NewTable()
+	table.Display = manifest.GetDisplay()
 	if in.SinceS > 0 {
 		if err := seedTrack(ctx, c, table, trackOptions{protocol: protocol, since: time.Duration(in.SinceS * float64(time.Second))}); err != nil {
 			return nil, nil, toolError(err)
@@ -1403,7 +1405,7 @@ fold:
 		how += fmt.Sprintf(" from the decode job %s already running", job.GetJobId())
 	}
 	fmt.Fprintln(app.Stdout, how)
-	fmt.Fprint(app.Stdout, renderTrack(app, table, nil, window))
+	fmt.Fprint(app.Stdout, renderTrack(app, table, manifest, window))
 	raw, err := json.Marshal(entitySnapshot(table, window))
 	if err != nil {
 		return nil, nil, err

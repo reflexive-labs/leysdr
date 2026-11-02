@@ -98,9 +98,9 @@
     "symbol": "airplane",
     "summaries": {
       "identification": "{callsign}[ category {category}]",
-      "position": "[{position}][ {altitude_ft} ft]",
-      "surveillance": "DF{df}[ {altitude_ft} ft][ squawk {squawk}]",
-      "velocity": "[{ground_speed_kn} kn][ @ {track_deg}°][ {airspeed_kn} kn airspeed][ heading {heading_deg}°][ {vertical_rate_fpm} ft/min]"
+      "position": "[{position}][ {altitude_ft:0} ft]",
+      "surveillance": "DF{df}[ {altitude_ft:0} ft][ squawk {squawk}]",
+      "velocity": "[{ground_speed_kn:0} kn][ @ {track_deg:0}°][ {airspeed_kn:0} kn airspeed][ heading {heading_deg:0}°][ {vertical_rate_fpm:0} ft/min]"
     },
     "entityName": "[{callsign}]",
     "columns": [
