@@ -26,6 +26,7 @@ var leyfixSourceDirs = []string{
 	"go/pkg/decoders/afsk",
 	"go/pkg/decoders/ais",
 	"go/pkg/decoders/ax25",
+	"go/pkg/decoders/modes",
 	"go/pkg/decoders/same",
 	"go/pkg/iqfile",
 }

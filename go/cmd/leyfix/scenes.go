@@ -506,6 +506,17 @@ var sceneFixtures = []fixture{
 		},
 	},
 	{
+		name: "scene_adsb", centerHz: 1_090_000_000, set: sceneSet, format: iqfile.FormatCU8,
+		fixedRate: sceneADSBRate, fixedDurationS: sceneADSBDurationS, noiseDBFS: sceneNoiseDBFS,
+		label:       sceneRadio,
+		description: "ADS-B on 1090 MHz: five aircraft with made-up addresses on straight tracks around San Francisco Bay, climbing, descending and at cruise, each sending positions, velocities, identifications and surveillance replies",
+		metadata:    adsbMetadata(),
+		build:       func(rate float64) []source { return []source{sceneADSBSource(rate)} },
+		expect: func(rate float64) []iqfile.Expect {
+			return []iqfile.Expect{sceneADSBSource(rate).expect()}
+		},
+	},
+	{
 		name: "scene_gmrs", centerHz: sceneGMRSCenterHz, set: sceneSet, format: iqfile.FormatCU8,
 		fixedRate: sceneGMRSRate, fixedDurationS: sceneGMRSDurationS, noiseDBFS: sceneNoiseDBFS,
 		label:       sceneRadio,

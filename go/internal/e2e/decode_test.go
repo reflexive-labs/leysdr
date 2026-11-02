@@ -251,6 +251,57 @@ func TestDecodeAISAgainstRealDaemon(t *testing.T) {
 	}
 }
 
+// The ADS-B decoder end to end: the daemon plays the 1090 MHz fixture, leydec-adsb reads the
+// capture's IQ, and `ley decode adsb` prints records from both aircraft, keyed by address, with
+// a position once an aircraft's even and odd frames have both arrived.
+func TestDecodeADSBAgainstRealDaemon(t *testing.T) {
+	decoders := os.Getenv("LEYLINE_DECODERS")
+	if decoders == "" {
+		t.Skip("set LEYLINE_DECODERS to the repository's decoders/ directory (make e2e does)")
+	}
+	fixture, err := filepath.Abs("../../../fixtures/adsb_burst.cf32")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(fixture); err != nil {
+		t.Skipf("fixture missing (%v); run `go run ./cmd/leyfix generate --out ../../../fixtures`", err)
+	}
+	e, _ := setup(t, "--store", filepath.Join(t.TempDir(), "store"), "--decoders", decoders)
+	stopPlay, _ := e.startLive("play", fixture, "--no-audio", "--loop", "--json")
+	defer func() { _ = stopPlay() }()
+	e.waitChannels(1)
+
+	// One loop of the fixture is ten replies, two positions from each aircraft among them.
+	out, err := e.run("decode", "adsb", "--json", "--count", "12")
+	if err != nil {
+		t.Fatalf("ley decode adsb: %v\nstdout: %s", err, out)
+	}
+	recs := ndjson(t, out)
+	if len(recs) != 12 {
+		t.Fatalf("want 12 records, got %d: %s", len(recs), out)
+	}
+	seen := map[string]bool{}
+	var positions int
+	for _, r := range recs {
+		if r["protocol"] != "adsb" {
+			t.Errorf("not an ADS-B record: %v", r)
+		}
+		id, _ := r["deviceId"].(string)
+		seen[id] = true
+		if pos, _ := r["position"].(map[string]any); pos != nil && pos["latitude"] != nil && pos["longitude"] != nil {
+			positions++
+		}
+	}
+	for _, id := range []string{"A0B1C2", "A3D4E5"} {
+		if !seen[id] {
+			t.Errorf("no record from %s: %v", id, seen)
+		}
+	}
+	if positions == 0 {
+		t.Errorf("no record carries a position: %s", out)
+	}
+}
+
 // The IQ input path end to end: a decoder whose manifest declares signal IQ receives the capture's
 // raw baseband. leydec-iqstat reports the block power, which on the -20 dBFS nfm_tone fixture must
 // read near -20; the record carries no channel and NaN rssi/snr, as an IQ record does.

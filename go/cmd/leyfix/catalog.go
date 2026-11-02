@@ -435,6 +435,22 @@ var defaultFixtures = []fixture{
 		minDurationS: 1,
 	},
 	{
+		// The ADS-B decoder fixture. Two aircraft's replies at 1090 MHz, the capture's centre, at
+		// the 2.4 MSPS the decoder's recipe asks for, so `ley decode adsb` with no arguments finds
+		// the capture `ley play` makes for it. The schedule is one second long, so a longer file
+		// is silent after it.
+		name: "adsb_burst", centerHz: 1_090_000_000, fixedRate: sceneADSBRate,
+		description: "two aircraft's Mode S replies and ADS-B squitters at 1090 MHz for one second: positions, velocities, identifications, all-call and surveillance replies, -20 dBFS",
+		metadata:    adsbMetadata(),
+		build: func(rate float64) []source {
+			return []source{adsbBurstSource(rate)}
+		},
+		expect: func(rate float64) []iqfile.Expect {
+			return []iqfile.Expect{adsbBurstSource(rate).expect()}
+		},
+		minDurationS: 1,
+	},
+	{
 		name: "noise_floor", centerHz: 146_520_000,
 		description: "complex white noise only, -60 dBFS",
 		metadata:    map[string]string{"mode": "NFM", "frequency_hz": hz(146_620_000)},
