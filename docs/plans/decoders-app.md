@@ -161,12 +161,15 @@ the stored captures.
 
 ### Batch 2: the Decoders place (one Opus lane, then one full check)
 
-- [ ] **DA-7 Client logic in `LeylineClient` (pure, tested on Linux).** The template renderer
+- [x] **DA-7 Client logic in `LeylineClient` (pure, tested on Linux).** The template renderer
   and the entity fold in Swift, both passing `testdata/decoders/`; `DecoderPlacement` with tests
   per allocator rule; `DaemonConnection.records(scope:sinceSeq:)` over `SubscribeRecords` with
   the `pump` pattern; a `LabelStore` over `labels.json` (`LEYLINE_LABELS`, the path
   `go/pkg/labels` uses) on the `BookmarkStore` pattern; per-transmitter position trails (the last
-  50 positions, client-side).
+  50 positions, client-side). Done 2026-11-02: `DisplayTemplate.swift` (with `RecordSummary`,
+  the port of `records.Summary`, so a fallback reads as `ley`'s does), `EntityTable.swift`,
+  `DecoderPlacement.swift`, `DecoderPages.swift` (tabs, jobs, the record log, alerts, the
+  inspector's words) and `Labels.swift`; every vector passes.
 - [ ] **DA-8 The Decoders place.** `WindowPlace.decoders` (⌘3), its sidebar (installed decoders
   with symbol, title and state; running jobs under each with the liveness detail), the page
   (Start/Stop with the placement line and the take-over confirmation; Log, Table and Map tabs

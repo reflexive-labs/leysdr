@@ -140,6 +140,37 @@ public final class DaemonConnection: Sendable {
         }
     }
 
+    /// What `records(scope:sinceSeq:)` follows: every decoder's records, one job's, or one
+    /// protocol's.
+    public enum RecordScope: Sendable, Equatable {
+        case all
+        case job(String)
+        case `protocol`(String)
+    }
+
+    /// `Decoders.SubscribeRecords` as a stream: each record as the daemon writes it. `sinceSeq`
+    /// replays a job's retained records after that `seq` first, and is honoured for a job scope
+    /// only (`RecordSubscription.since_seq`); without it the stream is live only. Unbounded, as
+    /// `events` is, because a record dropped here is a line missing from the page; the daemon's
+    /// own delivery is gap-marked by `seq`.
+    public func records(scope: RecordScope, sinceSeq: UInt64? = nil) -> AsyncThrowingStream<
+        Leyline_V1_DecodeRecord, any Error
+    > {
+        var sub = Leyline_V1_RecordSubscription()
+        switch scope {
+        case .all: sub.all = true
+        case .job(let id): sub.jobID = id
+        case .protocol(let name): sub.protocol = name
+        }
+        if let sinceSeq { sub.sinceSeq = sinceSeq }
+        let request = sub
+        return pump(bufferingPolicy: .unbounded) { deliver in
+            try await self.decoders.subscribeRecords(request) { response in
+                for try await r in response.messages { await deliver(r) }
+            }
+        }
+    }
+
     /// Runs a server-streaming RPC in a task of its own and hands its messages out as an
     /// `AsyncThrowingStream`. Ending the consumer cancels the RPC; the RPC ending (or failing)
     /// ends the consumer, with the error mapped to `LeylineError`.
