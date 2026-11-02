@@ -1036,7 +1036,11 @@ restart, because `AudioFrameSource.poke` has one iterator and a second one would
 nothing. Exit status 75 (`EX_TEMPFAIL`, `DecodeRunner.refusedExitStatus`) is the plugin saying its
 provider refused a request, with the provider's words as its last stderr line: a kept job waits it
 out on the same backoff with `status_detail` "the provider refused: …", and any other job ends
-`FAILED` with `PROVIDER_REFUSED`. A record carrying `usage` goes to the ledger before the predicate
+`FAILED` with `PROVIDER_REFUSED`. Exit status 3 (`DecodeRunner.inputRefusedExitStatus`, the Go
+SDK's `plugin.RefuseInput`) is the plugin saying it cannot decode the input its descriptor names,
+with why as its last stderr line: a restart would read the same descriptor, so the job, kept or
+not, live, IQ or stored, ends `FAILED` with `FAILED_PRECONDITION` and that line as its
+`status_detail`, and the plugin is not spawned again. A record carrying `usage` goes to the ledger before the predicate
 judges it, since a call the filter discards was still paid for, under feature `speech`, the job's
 id, and the manifest's `credential_provider` when the plugin left the provider empty.
 A channel that goes `OUT_OF_CAPTURE` degrades the job and comes back to `RUNNING` with the
@@ -1048,10 +1052,16 @@ writer and releases the lease.
 instead: a capture whose span covers the frequency on any device, else a device with no capture
 (a capture created centred on the frequency, at the recipe's `sample_rate` or the device's
 default), else a free capture retuned onto it, else the decline. With `needs_dedicated_capture`
-the first step takes only a capture centred within 1 kHz of where the job would put one
-(`SessionCaptureAllocator.centredToleranceHz`) at that rate, and the third step also sets the
-rate; a rate that lands under a retune that fails is set back, with the centre, before the step
-moves on. Every `captureIQ` lease (an IQ decode job, an IQ recording) counts its job among the
+the first step takes only a capture centred within 1 kHz of the frequency
+(`SessionCaptureAllocator.centredToleranceHz`) at exactly the rate the job would open one at, and
+the third step also sets the rate; a rate that lands under a retune that fails is set back, with
+the centre, before the step moves on. A device that cannot be centred there is no candidate for
+the second or third step, `take_over` or not: a file radio, whose only tuning is where its
+recording was made, and a tuner whose range stops short of the frequency. After a created capture
+opens and after a retune, the allocator reads where the capture actually is, and one that did not
+land within 1 kHz at that rate is destroyed or put back as it was. Either way the decline is
+"<model> cannot tune to 1090.000 MHz", with "(a file radio plays what it recorded)" for a file
+device, as `NO_DEVICE` when that is the last reason and `DEVICE_BUSY` otherwise. Every `captureIQ` lease (an IQ decode job, an IQ recording) counts its job among the
 capture's IQ readers until it is released, and `inUse` refuses a capture with one ("another job
 is reading this radio (decode iqstat)", or "(record)"), so a dedicated decoder retunes a capture
 another job reads only under `take_over`. `IQDecodeRunner` taps the whole capture (`IQFrameTap` into a `FrameRing`), one capture

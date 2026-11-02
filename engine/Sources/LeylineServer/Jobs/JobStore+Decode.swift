@@ -275,6 +275,9 @@ extension JobStore {
             onStatus: { [weak self] state, detail in
                 await self?.setDecodeStatus(id, state: state, detail: detail)
             },
+            onFailure: { [weak self] error in
+                await self?.finish(id, state: .failed, detail: error.message, code: error.code)
+            },
             seqStart: await writer?.recordCount ?? 0)
         entries[id]?.decode = runner
         await runner.start()

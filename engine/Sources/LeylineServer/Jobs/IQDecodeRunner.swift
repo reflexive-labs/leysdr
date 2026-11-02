@@ -65,6 +65,9 @@ actor IQDecodeRunner: DecodeRunning {
     /// The user's keys, for a plugin whose manifest names a provider.
     private let credentials: CredentialStore?
     private let onStatus: @Sendable (Leyline_V1_JobState, String) async -> Void
+    /// Ends the job with a code of its own, where `onStatus(.failed, …)` would say the decoder
+    /// failed. Nil falls back to that.
+    private let onFailure: (@Sendable (EngineError) async -> Void)?
     private let log: Logger
 
     /// The capture-IQ tap and its ring, held for the life of the runner: one stream the plugin
@@ -102,6 +105,7 @@ actor IQDecodeRunner: DecodeRunning {
          predicate: Leyline_V1_Predicate, notify: Leyline_V1_NotifyTarget?,
          credentials: CredentialStore? = nil,
          onStatus: @escaping @Sendable (Leyline_V1_JobState, String) async -> Void,
+         onFailure: (@Sendable (EngineError) async -> Void)? = nil,
          seqStart: UInt64 = 0)
     {
         self.credentials = credentials
@@ -115,6 +119,7 @@ actor IQDecodeRunner: DecodeRunning {
         self.predicate = predicate
         self.notify = notify
         self.onStatus = onStatus
+        self.onFailure = onFailure
         seq = seqStart
         log = Logger(label: "leyline.jobs.decode.iq")
     }
@@ -160,8 +165,16 @@ actor IQDecodeRunner: DecodeRunning {
         var wait = DecodeRunner.firstRestartSeconds
         var restarts = 0
         while !Task.isCancelled {
-            let status = await runPlugin()
+            let (status, said) = await runPlugin()
             if Task.isCancelled || stopped { break }
+            if status == DecodeRunner.inputRefusedExitStatus {
+                // The plugin cannot decode this capture, and a restart reads the same descriptor.
+                // The capture goes back before the job says FAILED, so nobody sees one without the other.
+                let error = DecodeRunner.inputRefused(installed.manifest.name, said: await redacted(said ?? ""))
+                await teardown()
+                if let onFailure { await onFailure(error) } else { await onStatus(.failed, error.message) }
+                break
+            }
             restarts += 1
             // A coverage gap the job reports. A transcript's own Gap list arrives with the watch
             // job, which is not built yet (docs/plans/build-order.md).
@@ -179,8 +192,16 @@ actor IQDecodeRunner: DecodeRunning {
         ring.finish()
     }
 
-    /// Spawns the plugin and pumps it until it exits or the job is cancelled. Returns its status.
-    private func runPlugin() async -> Int32 {
+    /// The plugin's words with its key taken out, before they reach `status_detail`.
+    private func redacted(_ text: String) async -> String {
+        let provider = installed.manifest.credentialProvider
+        guard !provider.isEmpty, let secret = try? await credentials?.secret(provider: provider) else { return text }
+        return WorkerProcess.redacting(secret, in: text)
+    }
+
+    /// Spawns the plugin and pumps it until it exits or the job is cancelled. Returns its status,
+    /// and for a refused input the last line it wrote on stderr, which says why.
+    private func runPlugin() async -> (status: Int32, said: String?) {
         let process = PluginProcess(name: installed.manifest.name, executable: installed.executablePath,
                                     args: await pluginArguments(for: installed.manifest, from: credentials),
                                     directory: installed.directory)
@@ -190,7 +211,7 @@ actor IQDecodeRunner: DecodeRunning {
         } catch {
             await onStatus(.failed, (error as? EngineError)?.message ?? "\(error)")
             await teardown()
-            return -1
+            return (-1, nil)
         }
         currentPlugin.withLock { $0 = process }
         await publishRunning(liveness.detail(decoder: installed.manifest.name))
@@ -215,9 +236,10 @@ actor IQDecodeRunner: DecodeRunning {
             group.cancelAll()
             return out
         }
+        let said = status == DecodeRunner.inputRefusedExitStatus ? await process.lastErrorLine() : nil
         await process.stop()
         currentPlugin.withLock { $0 = nil }
-        return status
+        return (status, said)
     }
 
     /// Capture IQ out of the ring and into whichever plugin is up, one frame at a time. Nonisolated:

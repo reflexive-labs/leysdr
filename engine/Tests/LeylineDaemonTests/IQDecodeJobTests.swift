@@ -354,6 +354,63 @@ final class IQDecodeJobTests: XCTestCase {
         }
     }
 
+    /// A file radio plays what it recorded, so it cannot be centred on a frequency its recording
+    /// only covers: a dedicated decoder is declined with the reason, with no capture of its own
+    /// and on a capture somebody has open, take_over or not, and the capture stays where it was.
+    func testADedicatedDecoderIsDeclinedAFileRadioRecordedOffItsFrequency() async throws {
+        let plugins = try makeTempDir("decoders")
+        defer { try? FileManager.default.removeItem(atPath: plugins) }
+        try writeDedicatedPlugin(in: plugins)
+        try await withDaemon(decoderSearchPath: [plugins]) { c in
+            // nfm_tone is centred on 146.520 MHz; 146.620 MHz is inside its span, not on it.
+            try await self.attachFixture(c)
+            let reason = "cannot tune to 146.620 MHz (a file radio plays what it recorded)"
+            let alone = try await self.startIQ(c, decoder: "fakewide", frequencyHz: self.iqFrequencyHz)
+            let declined = try await self.waitForJob(c, alone.jobID) { $0.state == .failed }
+            XCTAssertEqual(declined?.error.code, EngineError.Code.noDevice, declined?.statusDetail ?? "")
+            XCTAssertTrue(declined?.statusDetail.hasSuffix(reason) == true, declined?.statusDetail ?? "")
+            let none = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata).captures
+            XCTAssertTrue(none.isEmpty, "a declined job opens no capture")
+
+            let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            var create = Leyline_V1_CreateCaptureRequest()
+            create.deviceID = try XCTUnwrap(state.devices.first?.deviceID)
+            create.centerHz = 146_520_000
+            _ = try await c.control.createCapture(create, metadata: testMetadata)
+            let taking = try await self.startIQ(c, decoder: "fakewide", frequencyHz: self.iqFrequencyHz, takeOver: true)
+            let refused = try await self.waitForJob(c, taking.jobID) { $0.state == .failed }
+            XCTAssertEqual(refused?.error.code, EngineError.Code.noDevice, refused?.statusDetail ?? "")
+            XCTAssertTrue(refused?.statusDetail.hasSuffix(reason) == true, refused?.statusDetail ?? "")
+            let untouched = try await self.onlyCapture(c)
+            XCTAssertEqual(untouched.centerHz, 146_520_000, "the file radio's capture stays where it was")
+
+            // On its recording's own centre it is the dedicated decoder's.
+            let centred = try await self.startIQ(c, decoder: "fakewide", frequencyHz: 146_520_000)
+            let rec = try await self.records(c, job: centred.jobID, count: 1)
+            XCTAssertEqual(self.integer(rec.first, "center_hz"), 146_520_000)
+            try await self.cancel(c, centred.jobID)
+        }
+    }
+
+    /// An IQ plugin that exits 3 ends its job FAILED_PRECONDITION with its words, as an audio one does.
+    func testAnIQPluginThatRefusesItsInputFailsTheJob() async throws {
+        let plugins = try makeTempDir("decoders")
+        defer { try? FileManager.default.removeItem(atPath: plugins) }
+        try writeFakePlugin(in: plugins, name: "fakeiq", signal: .signalIq, args: ["--refuse-input"])
+        try await withDaemon(decoderSearchPath: [plugins]) { c in
+            try await self.attachFixture(c)
+            let started = try await self.startIQDecode(c)
+            let failed = try await self.waitForJob(c, started.jobID) { $0.state == .failed }
+            XCTAssertEqual(failed?.error.code, EngineError.Code.failedPrecondition, failed?.statusDetail ?? "")
+            XCTAssertEqual(failed?.statusDetail, "the capture is centred on 146520000 Hz, which this fake cannot decode")
+            try await Task.sleep(for: .seconds(DecodeRunner.firstRestartSeconds + 1))
+            let starts = try String(contentsOfFile: plugins + "/fakeiq/.refused-input", encoding: .utf8)
+            XCTAssertEqual(starts, "start\n", "the plugin is not started again")
+            let none = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata).captures
+            XCTAssertTrue(none.isEmpty, "the job's own capture goes with it")
+        }
+    }
+
     /// A rate change that lands and a retune that does not leave the capture as it was found.
     func testAFailedRetuneLeavesTheCaptureAtItsOldRate() async throws {
         let plugins = try makeTempDir("decoders")

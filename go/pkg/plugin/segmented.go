@@ -187,10 +187,7 @@ func (sw *segmentWorker) finish() error {
 // segments.
 func MainSegmented(manifest *leylinev1.DecoderManifest, newDecoder SegmentFactory) {
 	handleManifestFlag(manifest)
-	if err := RunSegmented(context.Background(), manifest.GetCredentialProvider(), newDecoder); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	exitOnError(RunSegmented(context.Background(), manifest.GetCredentialProvider(), newDecoder))
 }
 
 // ReadCredential reads the one varint-delimited SetCredentialRequest the

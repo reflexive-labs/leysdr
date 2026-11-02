@@ -486,7 +486,7 @@ final class SegmentedDecodeTests: XCTestCase {
             XCTAssertEqual(done.error.code, EngineError.Code.decoderFailed)
             XCTAssertEqual(done.statusDetail,
                            "fake exited 4 times without decoding ley://recordings/\(id); "
-                               + "last status 3: fake decoder giving up at start 4")
+                               + "last status 70: fake decoder giving up at start 4")
             // 1 + 2 + 4 s of backoff between the four starts.
             XCTAssertLessThan(took, .seconds(12), "the job gave up after its fourth exit: \(took)")
         }

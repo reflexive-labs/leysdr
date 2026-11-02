@@ -72,6 +72,52 @@ type IQDecoder interface {
 // serves IQ unchanged).
 type IQFactory func(sampleRateHz uint32) IQDecoder
 
+// InputRefusedExit is the exit status that tells the daemon a plugin cannot
+// decode the input its descriptor names: a capture centred too far from its
+// band, or a rate too slow for its signal. The daemon ends the job FAILED with
+// the plugin's last stderr line as the reason and does not start it again,
+// since a restart reads the same descriptor (docs/reference/writing-a-decoder.md,
+// "The wire").
+const InputRefusedExit = 3
+
+// InputRefusedError is what Run and its siblings return when the decoder
+// called RefuseInput. Main, MainIQ and MainSegmented write Reason as the last
+// line on stderr and exit InputRefusedExit.
+type InputRefusedError struct {
+	Reason string
+}
+
+func (e *InputRefusedError) Error() string { return e.Reason }
+
+// refusal carries a RefuseInput call up to runFramed, which turns it into an
+// *InputRefusedError.
+type refusal struct{ err *InputRefusedError }
+
+// RefuseInput says the decoder cannot decode what the descriptor names, in a
+// sentence the job shows as its reason: "the capture is centred on 1090.600
+// MHz, too far from 1090.000 MHz for a reply to fit in it". Call it from the
+// factory, from Start, or from Feed or FeedIQ; it does not return. The run
+// ends with an *InputRefusedError, and Main exits InputRefusedExit with the
+// sentence as its last line on stderr. A SegmentDecoder's Segment runs on
+// another goroutine and must not call it.
+func RefuseInput(format string, args ...any) {
+	panic(refusal{&InputRefusedError{Reason: fmt.Sprintf(format, args...)}})
+}
+
+// exitOnError ends a Main: nothing on a clean end of input, InputRefusedExit
+// with the reason for a refused input, and 1 with the error for anything else.
+func exitOnError(err error) {
+	if err == nil {
+		return
+	}
+	fmt.Fprintln(os.Stderr, err)
+	var refused *InputRefusedError
+	if errors.As(err, &refused) {
+		os.Exit(InputRefusedExit)
+	}
+	os.Exit(1)
+}
+
 // Run reads the descriptor and frames from stdin and writes records to stdout.
 // When the daemon says a key comes first (KeyOnStdinEnv), it is read and
 // dropped: a Decoder has no use for it, and the descriptor follows it.
@@ -165,7 +211,18 @@ func runIQStreams(ctx context.Context, r io.Reader, w io.Writer, provider string
 // framing, the emit sink and the clean-EOF rule are written once.
 func runFramed(ctx context.Context, r io.Reader, w io.Writer,
 	setup func(desc *leylinev1.StreamDescriptor, emit func(*leylinev1.DecodeRecord)) (func(*leylinev1.Frame) error, error),
-) error {
+) (err error) {
+	// A RefuseInput from the factory, Start or a Feed ends the run with its
+	// reason; any other panic is the decoder's own and goes on up.
+	defer func() {
+		if p := recover(); p != nil {
+			ref, ok := p.(refusal)
+			if !ok {
+				panic(p)
+			}
+			err = ref.err
+		}
+	}()
 	in := bufio.NewReaderSize(r, 1<<16)
 	out := bufio.NewWriterSize(w, 1<<16)
 
@@ -283,20 +340,14 @@ func SampleTimeAt(frameTime *leylinev1.SampleTime, offsetSamples int, audioRate,
 // comes (KeyOnStdinEnv) or the manifest names a credential_provider.
 func Main(manifest *leylinev1.DecoderManifest, newDecoder Factory) {
 	handleManifestFlag(manifest)
-	if err := runStreams(context.Background(), os.Stdin, os.Stdout, manifest.GetCredentialProvider(), newDecoder); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	exitOnError(runStreams(context.Background(), os.Stdin, os.Stdout, manifest.GetCredentialProvider(), newDecoder))
 }
 
 // MainIQ is Main for an IQ plugin: same --manifest behavior, but it runs an
 // IQDecoder over stdin and stdout (decode.proto, SIGNAL_IQ).
 func MainIQ(manifest *leylinev1.DecoderManifest, newDecoder IQFactory) {
 	handleManifestFlag(manifest)
-	if err := runIQStreams(context.Background(), os.Stdin, os.Stdout, manifest.GetCredentialProvider(), newDecoder); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	exitOnError(runIQStreams(context.Background(), os.Stdin, os.Stdout, manifest.GetCredentialProvider(), newDecoder))
 }
 
 // handleManifestFlag prints the manifest as proto3 JSON and exits 0 when

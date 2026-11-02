@@ -23,6 +23,18 @@ actor DecodeRunner {
     /// from `sysexits.h`, "try again later". A kept job waits and retries on the restart backoff;
     /// any other job ends with `PROVIDER_REFUSED`, since nobody asked it to outlast the refusal.
     static let refusedExitStatus: Int32 = 75
+    /// The exit status a plugin uses to say it cannot decode the input its descriptor names (a
+    /// capture centred too far from its band, a rate too slow for its signal), with why as its last
+    /// line on stderr. Nothing a restart changes, so the job ends `FAILED_PRECONDITION` with that
+    /// line as its detail, kept or not (`plugin.RefuseInput` in the Go SDK).
+    static let inputRefusedExitStatus: Int32 = 3
+
+    /// The failure for a plugin that exited `inputRefusedExitStatus`, from its last stderr line.
+    static func inputRefused(_ decoder: String, said: String?) -> EngineError {
+        let line = said?.trimmingCharacters(in: .whitespaces) ?? ""
+        return EngineError.failedPrecondition(line.isEmpty ? "\(decoder) cannot decode this input, and gave no reason" : line,
+                                              target: decoder)
+    }
 
     private let jobID: JobID
     private let installed: DecoderRegistry.Installed
@@ -213,6 +225,12 @@ actor DecodeRunner {
     /// the job says what happened, waits `wait` seconds and goes back to RUNNING for the restart.
     /// False when the job is over.
     private func recover(from exit: (status: Int32, lastErrorLine: String?), restarts: Int, wait: Double) async -> Bool {
+        if exit.status == Self.inputRefusedExitStatus {
+            let said = await redacted(exit.lastErrorLine ?? "")
+            await fail(Self.inputRefused(installed.manifest.name, said: said))
+            await teardown()
+            return false
+        }
         if exit.status == Self.refusedExitStatus {
             let said = await redacted(exit.lastErrorLine ?? "no reason given")
             guard keep else {
@@ -286,7 +304,7 @@ actor DecodeRunner {
             default:
                 break
             }
-            if exit.status != Self.refusedExitStatus {
+            if exit.status != Self.refusedExitStatus, exit.status != Self.inputRefusedExitStatus {
                 fruitless = sourceCursor.withLock { $0 } == cursorBefore ? fruitless + 1 : 0
                 if fruitless > Self.maxFruitlessSourceExits {
                     let said = await redacted(exit.lastErrorLine ?? "nothing on stderr")
@@ -494,7 +512,8 @@ actor DecodeRunner {
             group.cancelAll()
             return out
         }
-        let said = status == Self.refusedExitStatus ? await process.lastErrorLine() : nil
+        let said = status == Self.refusedExitStatus || status == Self.inputRefusedExitStatus
+            ? await process.lastErrorLine() : nil
         await process.stop()
         currentPlugin.withLock { $0 = nil }
         return (status, said)

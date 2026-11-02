@@ -185,9 +185,18 @@ logging — the daemon captures it under `leyline.decoder.<name>`.
    for the provider's own reason, such as a rate or spend limit, writes the provider's message as
    its last line on stderr and exits with status 75 (`EX_TEMPFAIL`). A kept job waits and starts
    the decoder again on the restart backoff; any other job ends with `PROVIDER_REFUSED` and that
-   message. Any other exit while stdin is open is a crash, and the daemon restarts the decoder.
-   On a stored recording it gives up after the fourth exit in a row that answered nothing new
-   (see "Reading a stored recording").
+   message.
+6. **Exit 3 when you cannot decode your input.** A decoder that reads in the descriptor that it
+   cannot work on what it is given (a capture centred too far from its band, a rate too slow for
+   its signal) writes why as its last line on stderr, in a sentence a person reads ("the capture is
+   centred on 1090.600 MHz, too far from 1090.000 MHz for a reply to fit in it"), and exits with
+   status 3. The job ends `FAILED` with `FAILED_PRECONDITION` and that sentence as its detail, kept
+   or not, and the decoder is not started again: a restart would read the same descriptor. Do not
+   read on and decode nothing; a job that says RUNNING and never answers looks like a quiet band.
+
+Any other exit while stdin is open is a crash, and the daemon restarts the decoder. On a stored
+recording it gives up after the fourth exit in a row that answered nothing new (see "Reading a
+stored recording").
 
 ### The key
 
@@ -278,6 +287,22 @@ func main() {
 
 `plugin.Main` handles `--manifest` (it prints the manifest and exits, which is how a build checks the
 file matches the code) and otherwise runs the read-decode-emit loop over stdin and stdout.
+
+A decoder that cannot decode what the descriptor names calls `plugin.RefuseInput` with the
+sentence, from its factory, from `Start`, or from `Feed` or `FeedIQ`:
+
+```go
+func (d *decoder) Start(desc *leylinev1.StreamDescriptor) {
+    if off := int64(desc.GetCenterHz()) - 1_090_000_000; off > 200_000 || off < -200_000 {
+        plugin.RefuseInput("the capture is centred on %.3f MHz, too far from 1090.000 MHz", float64(desc.GetCenterHz())/1e6)
+    }
+}
+```
+
+It does not return. `RunStreams` and its siblings return a `*plugin.InputRefusedError` carrying the
+sentence, which is what a test checks, and `Main`, `MainIQ` and `MainSegmented` write it as the last
+line on stderr and exit `plugin.InputRefusedExit` (3). A `SegmentDecoder`'s `Segment` runs on
+another goroutine and must not call it. `leydec-adsb` is the worked example.
 
 A decoder with `SEGMENTED` input implements `SegmentDecoder` instead and calls `plugin.MainSegmented`:
 

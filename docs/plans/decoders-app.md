@@ -192,11 +192,22 @@ the stored captures.
 
 ### Batch 2 follow-ups (found on the Mac pictures and in the check run)
 
-- [ ] **DA-13 An IQ decoder on a capture it cannot decode is DEGRADED, not RUNNING.** In
+- [x] **DA-13 An IQ decoder on a capture it cannot decode is DEGRADED, not RUNNING.** In
   `decoders-take-over` the file radio cannot retune, so after the take-over `leydec-adsb` logs
   that the capture is too far from 1090 MHz while the job reads "Running · no records yet". The
   allocator should decline a dedicated job it cannot centre, and a plugin needs a way to report
   "cannot decode this input" that the job shows.
+  Done 2026-11-02, the scene unverified until the Mac. No retune was involved: `iqCentre` clamps
+  to the nearest point a device tunes, a file radio's only point is its recording's centre, and
+  `isCentred` compared the capture with that clamped point, so step 1 took the 1090.6 MHz capture
+  as centred. A dedicated claim now needs the capture within 1 kHz of the frequency itself at
+  exactly its rate; a device that cannot get there is no candidate (the decline is "NESDR SMArt
+  v5 cannot tune to 1090.000 MHz (a file radio plays what it recorded)", `NO_DEVICE`), and a
+  created or retuned capture is read back and put back when it did not land. The second line: a
+  plugin that exits 3 (`plugin.RefuseInput`) ends its job `FAILED_PRECONDITION` with its last
+  stderr line, unrestarted; `leydec-adsb` refuses an off-centre or slow capture with it. So the
+  job is FAILED, not DEGRADED: nothing will change under it. The fake decoder's crash status moved
+  from 3 to 70.
 - [ ] **DA-14 The table's numbers use the template's precision.** `columns` gains an optional
   `:N` (`ground_speed_kn:0`), so the table reads 190 where the summary says 190 kn, not 189.7.
   The LAST column becomes LATEST, which no longer reads as a twin of LAST HEARD.

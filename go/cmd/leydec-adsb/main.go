@@ -8,8 +8,7 @@
 package main
 
 import (
-	"fmt"
-	"os"
+	"strconv"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/pkg/decoders/modes"
@@ -33,24 +32,28 @@ type decoder struct {
 	started bool
 }
 
+// newDecoder refuses a capture slower than minRate (plugin.RefuseInput): nothing in it would
+// decode, and the job should say so rather than run.
 func newDecoder(rate uint32) *decoder {
-	d := &decoder{rate: rate}
 	if rate < minRate {
-		fmt.Fprintf(os.Stderr, "leydec-adsb: the capture runs at %d S/s; a Mode S reply needs at least %d, so nothing will decode\n", rate, minRate)
-		return d
+		plugin.RefuseInput("the capture runs at %s; a Mode S reply needs at least %s", msps(rate), msps(minRate))
 	}
-	d.dec = modes.NewDecoder(float64(rate))
-	return d
+	return &decoder{rate: rate, dec: modes.NewDecoder(float64(rate))}
 }
 
-// Start warns when the capture is not centred near 1090 MHz: a reply off the centre by more than
-// the band allows is clipped.
+// Start refuses a capture not centred near 1090 MHz: a reply off the centre by more than the band
+// allows is clipped, so nothing would decode.
 func (d *decoder) Start(desc *leylinev1.StreamDescriptor) {
 	const hz = 1_090_000_000
 	c := int64(desc.GetCenterHz())
 	if half := int64(d.rate)/2 - 1_000_000; c != 0 && (c-hz > half || hz-c > half) {
-		fmt.Fprintf(os.Stderr, "leydec-adsb: the capture is centred on %d Hz, too far from 1090 MHz for a reply to fit in it\n", c)
+		plugin.RefuseInput("the capture is centred on %.3f MHz, too far from 1090.000 MHz for a reply to fit in it", float64(c)/1e6)
 	}
+}
+
+// msps writes a sample rate the way a person reads one: 2.4 MSPS.
+func msps(rate uint32) string {
+	return strconv.FormatFloat(float64(rate)/1e6, 'f', -1, 64) + " MSPS"
 }
 
 func (d *decoder) FeedIQ(iq []complex64, at *leylinev1.SampleTime, gap *leylinev1.Gap, emit func(*leylinev1.DecodeRecord)) {

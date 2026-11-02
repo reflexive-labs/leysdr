@@ -4,7 +4,7 @@
 //
 // It keeps the contract of docs/design/decoders.md, "Decisions" ("Transport: stdio") and nothing
 // else: read the varint-delimited StreamDescriptor, then one DecodeRecord per Frame. A frame with
-// an empty payload makes it exit(3), which is how the restart path is tested; FAKE_DECODER_SLEEP_MS
+// an empty payload makes it exit(70), which is how the restart path is tested; FAKE_DECODER_SLEEP_MS
 // delays its start, which is how a slow plugin is tested; FAKE_DECODER_USAGE stamps each record
 // with the usage a paid decoder would report; LEYLINE_KEY_ON_STDIN (or FAKE_DECODER_EXPECT_KEY)
 // reads the credential handshake; FAKE_DECODER_SEGMENTS answers SEGMENTED input once per segment.
@@ -99,7 +99,23 @@ guard let head = readDelimited(), let descriptor = try? Leyline_V1_StreamDescrip
     exit(1)
 }
 FileHandle.standardError.write(Data("fake decoder up on \(descriptor.streamID)\n".utf8))
-/// `--exit-at-start=N` exits with status 3 straight after its descriptor, before answering
+
+/// The status the fake crashes with (`EX_SOFTWARE`): not 3, which says the input was refused
+/// (`DecodeRunner.inputRefusedExitStatus`), nor 75, which says a provider refused.
+let crashStatus: Int32 = 70
+
+/// `--refuse-input` says it cannot decode what its descriptor names and exits with status 3 straight
+/// after reading it, the way `plugin.RefuseInput` does. Each start appends a line to
+/// `.refused-input` in the working directory (the plugin's own directory, per test), so a test can
+/// count how often it was spawned.
+if CommandLine.arguments.dropFirst().contains("--refuse-input") {
+    let counter = FileManager.default.currentDirectoryPath + "/.refused-input"
+    let before = (try? String(contentsOfFile: counter, encoding: .utf8)) ?? ""
+    try? (before + "start\n").write(toFile: counter, atomically: true, encoding: .utf8)
+    FileHandle.standardError.write(Data("the capture is centred on \(descriptor.centerHz) Hz, which this fake cannot decode\n".utf8))
+    exit(3)
+}
+/// `--exit-at-start=N` exits with status 70 straight after its descriptor, before answering
 /// anything, the first N times it is started, counted by a file in the working directory (the
 /// plugin's own directory, per test): the plugin that cannot get going, which a source job must
 /// give up on rather than restart for ever.
@@ -110,7 +126,7 @@ for arg in CommandLine.arguments.dropFirst() where arg.hasPrefix("--exit-at-star
     if before < limit {
         try? String(before + 1).write(toFile: counter, atomically: true, encoding: .utf8)
         FileHandle.standardError.write(Data("fake decoder giving up at start \(before + 1)\n".utf8))
-        exit(3)
+        exit(crashStatus)
     }
 }
 
@@ -217,7 +233,7 @@ func runSegmented() -> Never {
             open = nil
             // `--die-after=N`: having answered N segments, die on the next one's END before
             // answering it, the case that loses a segment if the daemon counts it as done.
-            if dieAfter > 0, count == Int64(dieAfter) { exit(3) }
+            if dieAfter > 0, count == Int64(dieAfter) { exit(crashStatus) }
             // `--skip-segment=N`: answers nothing for the Nth segment, as an engine error would.
             if skipSegment > 0, count + 1 == Int64(skipSegment) {
                 count += 1
@@ -267,7 +283,7 @@ var seq: UInt64 = 0
 while let bytes = readDelimited() {
     guard let frame = try? Leyline_V1_Frame(serializedBytes: bytes) else { exit(2) }
     // The restart path: a frame with nothing in it is the test's way of killing the plugin.
-    if frame.payload.isEmpty { exit(3) }
+    if frame.payload.isEmpty { exit(crashStatus) }
     seq += 1
     if deafAfter > 0, seq >= deafAfter {
         // Answer this last frame, then never read again: sit forever while the daemon's pipe fills.
@@ -296,7 +312,7 @@ while let bytes = readDelimited() {
     if let keyLastFour { rec.fields["key_last_four"] = keyLastFour }
     if let modelField { rec.fields["model"] = modelField }
     writeDelimited(rec)
-    if dieAfter > 0, seq >= dieAfter { exit(3) }
+    if dieAfter > 0, seq >= dieAfter { exit(crashStatus) }
     if refuseAfter > 0, seq >= refuseAfter {
         // FAKE_DECODER_REFUSAL replaces the words, so a test can make a plugin echo its key.
         let words = ProcessInfo.processInfo.environment["FAKE_DECODER_REFUSAL"]

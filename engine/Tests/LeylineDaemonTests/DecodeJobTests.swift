@@ -205,7 +205,7 @@ final class DecodeJobTests: XCTestCase {
             let degraded = try await self.waitForJob(c, started.jobID) { $0.statusDetail.contains("restarting") }
             XCTAssertNotNil(degraded, "the job says the decoder exited and is being restarted")
             XCTAssertEqual(degraded?.state, .degraded)
-            XCTAssertTrue(degraded?.statusDetail.contains("status 3") == true, degraded?.statusDetail ?? "")
+            XCTAssertTrue(degraded?.statusDetail.contains("status 70") == true, degraded?.statusDetail ?? "")
 
             let running = try await self.waitForJob(c, started.jobID, timeoutMs: 15000) { $0.state == .running }
             XCTAssertNotNil(running, "the plugin is spawned again")
@@ -215,6 +215,29 @@ final class DecodeJobTests: XCTestCase {
             var ref = Leyline_V1_JobRef()
             ref.jobID = started.jobID
             _ = try await c.jobs.cancelJob(ref, metadata: testMetadata)
+        }
+    }
+
+    /// A plugin that exits 3 cannot decode what it was given, and a restart would give it the same:
+    /// the job ends FAILED_PRECONDITION with the plugin's last stderr line, and is not respawned.
+    func testAPluginThatRefusesItsInputFailsTheJobWithItsWords() async throws {
+        let plugins = try makeTempDir("decoders")
+        defer { try? FileManager.default.removeItem(atPath: plugins) }
+        try writeFakePlugin(in: plugins, args: ["--refuse-input"])
+        try await withDaemon(decoderSearchPath: [plugins]) { c in
+            try await self.attachFixture(c)
+            let started = try await self.startDecode(c)
+            let failed = try await self.waitForJob(c, started.jobID) { $0.state == .failed }
+            XCTAssertEqual(failed?.error.code, EngineError.Code.failedPrecondition, failed?.statusDetail ?? "")
+            let detail = failed?.statusDetail ?? ""
+            XCTAssertTrue(detail.hasPrefix("the capture is centred on ") && detail.hasSuffix(" Hz, which this fake cannot decode"),
+                          "the detail is the plugin's last stderr line: \(detail)")
+            // Past the first restart's wait: a respawn would have added a second start.
+            try await Task.sleep(for: .seconds(DecodeRunner.firstRestartSeconds + 1))
+            let starts = try String(contentsOfFile: plugins + "/fake/.refused-input", encoding: .utf8)
+            XCTAssertEqual(starts, "start\n", "the plugin is not started again")
+            let later = try await self.job(c, started.jobID)
+            XCTAssertEqual(later.state, .failed)
         }
     }
 

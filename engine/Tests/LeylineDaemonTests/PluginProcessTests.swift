@@ -64,7 +64,7 @@ final class PluginProcessTests: XCTestCase {
         try plugin.write(frame(2, payload: Data()))
         var status: Int32?
         for await code in plugin.exits { status = code }
-        XCTAssertEqual(status, 3)
+        XCTAssertEqual(status, 70, "the fake crashes with EX_SOFTWARE, not the refused-input 3")
         await plugin.stop()
     }
 

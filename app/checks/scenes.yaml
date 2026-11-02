@@ -1860,10 +1860,10 @@ scenes:
   # The take-over question (docs/plans/decoders-app.md, DA-8) on scene_adsb_off, a capture that
   # hears 1090 MHz 600 kHz off its centre, with the window's channel on it. ADS-B needs its own
   # capture centred on 1090, so the radio is the window's and Start asks first: Cancel leaves
-  # the channel, and Take the radio sends take_over and runs the job, which Stop ends. The file
-  # radio tunes only its own centre, so the job hears nothing: the page says it is listening
-  # over an empty log. The question writes both frequencies in MHz (DA-15), and the running
-  # header names the state and frequency, leaving the detail to the sidebar's job line (DA-17).
+  # the channel, and Take the radio sends take_over. The question writes both frequencies in MHz
+  # (DA-15). The file radio plays what it recorded and cannot be centred on 1090 MHz, so the
+  # daemon declines the job (DA-13) and leaves the radio where it was: the page says Failed with
+  # the reason, shows no running header (DA-17), and Start is back.
   - name: decoders-take-over
     covers: [DecodersView.swift, DecoderSession.swift, DecoderPlacement.swift, DecoderPages.swift]
     fixtures: [{name: scene_adsb_off}]
@@ -1890,12 +1890,9 @@ scenes:
       - {cmd: wait, seconds: 1}
       - {cmd: press, identifier: alert.take-the-radio}
       - {cmd: wait, seconds: 3, expect_log: "started: adsb at 1090000000 Hz, kept"}
-      - {cmd: state, expect: {alert: null, decoders.state: Running, decoders.start_shown: false, decoders.header: "Running · 1090.000 MHz"}}
-      - {cmd: snapshot, name: taken}
-      - {cmd: ax, name: taken}
-      - {cmd: press, identifier: decoders.page.stop}
-      - {cmd: wait, seconds: 2}
-      - {cmd: state, expect: {decoders.start_shown: true}}
+      - {cmd: state, expect: {alert: null, decoders.state: Failed, decoders.detail: "NESDR SMArt v5 cannot tune to 1090.000 MHz (a file radio plays what it recorded)", decoders.header: null, decoders.start_shown: true, decoders.record_count: 0, tuned_hz: 1090600000}}
+      - {cmd: snapshot, name: declined}
+      - {cmd: ax, name: declined}
 
   # The transport bar at the window's smaller sizes (docs/plans/app.md, decision 13): the Mode
   # and Width pop-ups keep their labels on one line at 900 × 612 pt (the minimum), 1000 and
