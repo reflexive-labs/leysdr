@@ -204,6 +204,7 @@ struct DecoderPage: View {
                 Spacer(minLength: 8)
                 Text(countWords(d)).font(Theme.Font.footnote).foregroundStyle(Theme.inkFaint)
                     .lineLimit(1)
+                    .stageRegion(.counts)
             }
             .padding(.horizontal, Theme.Layout.pageInset)
             .frame(height: Theme.Layout.decoderTabBarHeight)
@@ -261,7 +262,8 @@ struct DecoderPageHeader: View {
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("decoders.page.state")
                 } else {
-                    Text(placement.words).font(Theme.Font.value)
+                    // A sentence, so in `label` and not the numbers' `value`.
+                    Text(placement.words).font(Theme.Font.label)
                         .foregroundStyle(placementInk(placement)).lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("decoders.page.placement")
@@ -378,10 +380,16 @@ struct DecoderLog: View {
                 Rectangle().fill(Theme.hairline).frame(height: 1)
             }
             if entries.isEmpty {
+                // While a job runs, Start is not there to press: the page says it is listening.
+                let listening =
+                    d.selected.map { !DecoderPages.running(of: $0, in: session.state.jobs).isEmpty }
+                    ?? false
                 Text(
-                    d.historyLoaded
-                        ? "Nothing heard in the last day. Start the decoder to listen."
-                        : "Reading the last day's records…"
+                    !d.historyLoaded
+                        ? "Reading the last day's records…"
+                        : listening
+                            ? "Listening. Nothing decoded yet."
+                            : "Nothing heard in the last day. Start the decoder to listen."
                 )
                 .font(Theme.Font.label).foregroundStyle(Theme.inkTertiary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -472,29 +480,34 @@ struct DecoderAlertLine: View {
 
 // MARK: The table
 
-/// The transmitters, newest first, as `ley track` lists them: the name (the person's label, else
-/// the display's entity name, else the id), the display's columns headed as `ley track` heads
-/// them, how many records, when last heard and the last line. A click shows it in the inspector.
+/// The transmitters by name (`DecoderPages.byName`), in `ley track`'s columns: the name (the
+/// person's label, else the display's entity name, else the id), the display's columns headed
+/// as `ley track` heads them, how many records, when last heard and the last line. A click shows
+/// it in the inspector.
 struct DecoderTable: View {
     let manifest: Leyline_V1_DecoderManifest
     @Environment(AppSession.self) private var session
 
     var body: some View {
         let d = session.decoders
-        let columns = d.table.display?.columns ?? []
-        let rows = d.table.rows
+        let columns = DecoderPages.tableColumns(d.table.display)
+        let rows = d.listedTransmitters
         VStack(spacing: 0) {
-            HStack(spacing: Theme.Layout.logColumnGap) {
-                head("Transmitter", width: Theme.Layout.decoderTableNameWidth)
-                ForEach(columns, id: \.self) { c in
+            // Bottom-aligned, so a head that takes two lines (`GROUND SPEED (kn)`) keeps the
+            // row's foot.
+            HStack(alignment: .bottom, spacing: Theme.Layout.logColumnGap) {
+                head("TRANSMITTER", width: Theme.Layout.decoderTableNameWidth)
+                ForEach(Array(columns.enumerated()), id: \.element) { i, c in
                     head(
                         DecoderPages.columnHead(c, manifest: manifest),
                         width: Theme.Layout.decoderTableColumnWidth,
                         trailing: DecoderPages.columnIsNumeric(c, manifest: manifest))
+                    .padding(.leading, gap(before: i, columns))
                 }
-                head("Seen", width: Theme.Layout.decoderTableCountWidth, trailing: true)
-                head("Last heard", width: Theme.Layout.decoderTableTimeWidth)
-                head("Last", width: nil)
+                head("SEEN", width: Theme.Layout.decoderTableCountWidth, trailing: true)
+                head("LAST HEARD", width: Theme.Layout.decoderTableTimeWidth)
+                    .padding(.leading, Theme.Layout.decoderTableTimeGap)
+                head("LAST", width: nil)
             }
             .padding(.horizontal, Theme.Layout.pageInset).padding(.vertical, 8)
             Rectangle().fill(Theme.hairline).frame(height: 1)
@@ -520,9 +533,22 @@ struct DecoderTable: View {
         }
     }
 
+    /// The extra gap before a flush-left column that follows a flush-right one, so `TRACK`'s
+    /// `135` does not run into `SQUAWK`'s `2761`.
+    private func gap(before i: Int, _ columns: [String]) -> CGFloat {
+        guard i > 0, DecoderPages.columnIsNumeric(columns[i - 1], manifest: manifest),
+            !DecoderPages.columnIsNumeric(columns[i], manifest: manifest)
+        else { return 0 }
+        return Theme.Layout.decoderTableTimeGap
+    }
+
+    /// A column's head as given: `columnHead` writes a field's in capitals with its unit as
+    /// `ley track` does (`ALTITUDE (ft)`), so it is not upper-cased again. Two lines at most.
     private func head(_ text: String, width: CGFloat?, trailing: Bool = false) -> some View {
-        Text(text.uppercased()).font(Theme.Font.columnHead).tracking(Theme.sectionTracking)
-            .foregroundStyle(Theme.inkFaint).lineLimit(1)
+        Text(text).font(Theme.Font.columnHead).tracking(Theme.sectionTracking)
+            .foregroundStyle(Theme.inkFaint).lineLimit(2)
+            .multilineTextAlignment(trailing ? .trailing : .leading)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(width: width, alignment: trailing ? .trailing : .leading)
             .frame(maxWidth: width == nil ? .infinity : nil, alignment: .leading)
     }
@@ -540,23 +566,26 @@ struct DecoderTable: View {
                 }
             }
             .frame(width: Theme.Layout.decoderTableNameWidth, alignment: .leading)
-            ForEach(columns, id: \.self) { c in
+            ForEach(Array(columns.enumerated()), id: \.element) { i, c in
                 Text(d.table.column(c, of: e, label: label) ?? "—").font(Theme.Font.value)
                     .foregroundStyle(Theme.inkSecondary).lineLimit(1)
                     .frame(
                         width: Theme.Layout.decoderTableColumnWidth,
                         alignment: DecoderPages.columnIsNumeric(c, manifest: manifest)
                             ? .trailing : .leading)
+                    .padding(.leading, gap(before: i, columns))
             }
             Text("\(e.count)").font(Theme.Font.value).foregroundStyle(Theme.inkSecondary)
                 .frame(width: Theme.Layout.decoderTableCountWidth, alignment: .trailing)
             Text(DecoderPages.clock(e.lastHeard)).font(Theme.Font.value)
                 .foregroundStyle(Theme.inkMuted)
                 .frame(width: Theme.Layout.decoderTableTimeWidth, alignment: .leading)
+                .padding(.leading, Theme.Layout.decoderTableTimeGap)
                 .help("Heard \(DecoderPages.agoWords(Date().timeIntervalSince(e.lastHeard)))")
             Text(e.summary).font(Theme.Font.label).foregroundStyle(Theme.inkTertiary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .help(e.summary)
         }
         .padding(.horizontal, Theme.Layout.pageInset)
         .padding(.vertical, 4)

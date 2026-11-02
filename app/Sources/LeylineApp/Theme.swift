@@ -502,6 +502,9 @@ extension Theme.Layout {
     static let decoderTableColumnWidth: CGFloat = 96
     static let decoderTableCountWidth: CGFloat = 52
     static let decoderTableTimeWidth: CGFloat = 70
+    /// More than the column gap before a flush-left column after a flush-right one (the clock
+    /// after `SEEN`'s count), so the two do not run together.
+    static let decoderTableTimeGap: CGFloat = 12
     /// The inspector's field names, in a column wide enough for `vertical_rate_fpm`.
     static let decoderFieldLabelWidth: CGFloat = 116
     /// An alert in effect above the log: its padding and corners.
@@ -517,6 +520,8 @@ extension Theme.Layout {
     static let mapTrailWidth: CGFloat = 1.5
     static let mapLabelGap: CGFloat = 4
     static let mapCanvasInset: CGFloat = 48
+    /// Room on the canvas's right for a name drawn beside the rightmost marker.
+    static let mapLabelRoom: CGFloat = 72
     /// The staged map's graticule: a line every this many degrees.
     static let mapGraticuleDegrees: Double = 0.1
 }

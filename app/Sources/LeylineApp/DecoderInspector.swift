@@ -38,6 +38,10 @@ struct DecoderInspector: View {
                 }
             }
         }
+        // A scroll view whose top meets the toolbar's comes out white over the whole column in
+        // the window's picture (macOS 26's scroll edge under the toolbar); one point of the
+        // panel above it keeps the two apart.
+        .padding(.top, 1)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.panel)
     }
@@ -63,9 +67,13 @@ struct TransmitterSection: View {
             HStack(spacing: 0) {
                 Text("Name").font(Theme.Font.label).foregroundStyle(Theme.inkMuted)
                     .frame(width: Theme.Layout.partTableLabelWidth, alignment: .leading)
-                TextField("Name it", text: $draft)
+                // The placeholder in `inkFaint`, as the sidebar filter's is: the field's own
+                // takes the ink and reads as a name already given.
+                TextField("", text: $draft)
                     .textFieldStyle(.plain).font(Theme.Font.label).foregroundStyle(Theme.ink)
                     .frame(height: Theme.Layout.labelFieldHeight)
+                    .accessibilityLabel("Name it")
+                    .fieldPlaceholder("Name it", font: Theme.Font.label, shown: draft.isEmpty)
                     .onSubmit { d.setLabel(deviceID, name: draft) }
                     .accessibilityIdentifier("decoders.inspector.name")
                     .help(

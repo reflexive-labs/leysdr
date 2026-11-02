@@ -538,7 +538,7 @@ import LeylineClient
                 let head = [who, e.record.kind].filter { !$0.isEmpty }.joined(separator: " ")
                 return "\(head): \(d.summary(e.record))"
             }
-            out.transmitters = d.table.rows.map { d.name(of: $0.deviceID) }
+            out.transmitters = d.listedTransmitters.map { d.name(of: $0.deviceID) }
             out.alerts = d.alerts.map { d.summary($0.record) }
             return out
         }

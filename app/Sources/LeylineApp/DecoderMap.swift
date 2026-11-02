@@ -34,15 +34,16 @@ struct DecoderMapTab: View {
 
     var body: some View {
         let d = session.decoders
-        let points: [MapPoint] = d.table.rows.compactMap { e in
+        let points: [MapPoint] = d.listedTransmitters.compactMap { e in
             guard let p = e.position, p.latitude.isFinite, p.longitude.isFinite else { return nil }
             return MapPoint(
                 id: e.deviceID, name: d.name(of: e.deviceID), latitude: p.latitude,
                 longitude: p.longitude, heading: e.heading, trail: e.trail,
                 selected: d.selectedTransmitter == e.deviceID)
         }
-        // The newest first in the table; drawn oldest first, so the newest is on top.
-        let drawn = Array(points.reversed())
+        // In the table's order, which does not change as records arrive, so neither do the
+        // markers' order nor VoiceOver's; the selected one last, so it is drawn on top.
+        let drawn = points.filter { !$0.selected } + points.filter(\.selected)
         let select: (String) -> Void = { d.selectedTransmitter = $0 }
         Group {
             if points.isEmpty {
@@ -55,6 +56,7 @@ struct DecoderMapTab: View {
                 LiveMap(points: drawn, decoder: d.selectedName ?? "", select: select)
             }
         }
+        .stageRegion(.map)
         .identifiedGroup("decoders.map")
     }
 }
@@ -190,12 +192,14 @@ struct StagedMap: View {
             midLon = (lon0 + lon1) / 2
             kx = max(0.01, cos(midLat * .pi / 180))
             let inset = Theme.Layout.mapCanvasInset
-            let w = max(1, Double(size.width - 2 * inset))
+            // The names are drawn to the right of their markers, so the right keeps room for one.
+            let room = Theme.Layout.mapLabelRoom
+            let w = max(1, Double(size.width - 2 * inset - room))
             let h = max(1, Double(size.height - 2 * inset))
             let spanLon = max(least, lon1 - lon0) * kx
             let spanLat = max(least, lat1 - lat0)
             scale = min(w / spanLon, h / spanLat)
-            centre = CGPoint(x: size.width / 2, y: size.height / 2)
+            centre = CGPoint(x: (size.width - room) / 2, y: size.height / 2)
         }
 
         func point(_ lat: Double, _ lon: Double) -> CGPoint {

@@ -1770,7 +1770,8 @@ scenes:
   # the app starts, so the page shows a stopped decoder over the same seven records every run
   # (their times move by a second, hence the threshold). The table has a row per station, its
   # inspector names one into the scene's labels.json, which `ley label` reads back; the log and
-  # the staged map follow; then Start runs a kept job beside the window's channel and Stop ends it.
+  # the staged map follow (its tree without the inspector, whose job id is new each run); then
+  # Start runs a kept job beside the window's channel and Stop ends it.
   - name: decoders-aprs
     covers: [DecodersView.swift, DecoderInspector.swift, DecoderSession.swift, DecoderMap.swift,
       DisplayTemplate.swift, EntityTable.swift, DecoderPages.swift, DecoderPlacement.swift,
@@ -1806,7 +1807,7 @@ scenes:
       - {cmd: press, identifier: decoders.tab.map}
       - {cmd: state, expect: {decoders.tab: map}}
       - {cmd: snapshot, name: map}
-      - {cmd: ax, name: map}
+      - {cmd: ax, name: map, mask: [inspector]}
       - {cmd: press, identifier: decoders.page.start}
       - {cmd: wait, seconds: 2, expect_log: "started: aprs at 144390000 Hz, kept"}
       - {cmd: state, expect: {decoders.state: Running, decoders.start_shown: false}}
@@ -1814,8 +1815,11 @@ scenes:
       - {cmd: wait, seconds: 2}
       - {cmd: state, expect: {decoders.state: Stopped, decoders.start_shown: true}}
 
-  # ADS-B on scene_adsb, an IQ decoder: forty records from the five aircraft, the job cancelled
-  # before the app starts as decoders-aprs's is. The table names each aircraft by its callsign
+  # ADS-B on scene_adsb, an IQ decoder: forty records or a few more from the five aircraft (the
+  # fixture sends faster than `ley jobs cancel` lands, so the counts vary and the tree masks
+  # them; the inspector's job id and its counts too), the job cancelled before the app starts
+  # as decoders-aprs's is. The map's tree checks the five markers by id and name; where they
+  # are moves with the aircraft, so the picture's threshold covers it. The table names each aircraft by its callsign
   # (the manifest's entity_name) with its altitude, speed, track and squawk; the staged map turns
   # each marker to its track and draws its trail; the inspector shows LEY303's fields with their
   # units and its raw bytes. ⌘3 comes back to the place from the Radio.
@@ -1836,9 +1840,9 @@ scenes:
       select_transmitter: A1F003
       settle: 2
     app:
-      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tab: map, decoders.tabs.1: table, decoders.tabs.2: map, decoders.selected_transmitter: A1F003, decoders.record_count: 40, decoders.state: Stopped}}
+      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tab: map, decoders.tabs.1: table, decoders.tabs.2: map, decoders.selected_transmitter: A1F003, decoders.state: Stopped}}
       - {cmd: snapshot, name: map}
-      - {cmd: ax, name: map}
+      - {cmd: ax, name: map, mask: [counts, inspector, map]}
       - {cmd: press, identifier: decoders.tab.table}
       - {cmd: snapshot, name: table}
       - {cmd: press, identifier: toolbar.place.radio}

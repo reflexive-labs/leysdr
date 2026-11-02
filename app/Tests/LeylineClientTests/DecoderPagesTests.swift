@@ -189,11 +189,37 @@ final class DecoderPagesTests: XCTestCase {
         XCTAssertEqual(DecoderPages.agoWords(-5), "just now")
     }
 
-    func testRawBytesAreHexSixteenALine() {
+    func testRawBytesAreHexEightALine() {
         let d = Data((0..<18).map { UInt8($0 * 15) })
         XCTAssertEqual(
             DecoderPages.hexLines(d),
-            ["00 0f 1e 2d 3c 4b 5a 69 78 87 96 a5 b4 c3 d2 e1", "f0 ff"])
+            ["00 0f 1e 2d 3c 4b 5a 69", "78 87 96 a5 b4 c3 d2 e1", "f0 ff"])
+    }
+
+    func testTransmittersAreListedByTheirNameThenID() {
+        var table = EntityTable()
+        let t = Date(timeIntervalSince1970: 1_800_000_000)
+        for (i, id) in ["A1F002", "A1F010", "A1F001", "A1F003"].enumerated() {
+            table.apply(record("rec_\(i)", device: id, kind: "position"), at: t + Double(i))
+        }
+        let names = ["A1F001": "LEY101", "A1F002": "LEY20", "A1F010": "LEY3", "A1F003": "LEY3"]
+        let rows = DecoderPages.byName(table.rows) { names[$0.deviceID] ?? $0.deviceID }
+        // Numbers in a name sort as a person reads them: LEY3 before LEY20, before LEY101.
+        XCTAssertEqual(rows.map(\.deviceID), ["A1F003", "A1F010", "A1F002", "A1F001"])
+    }
+
+    func testTheTableLeavesOutTheColumnTheNameShows() {
+        var d = Leyline_V1_DecoderDisplay()
+        d.columns = ["callsign", "altitude_ft", "squawk"]
+        d.entityName = "[{callsign}]"
+        XCTAssertEqual(DecoderPages.tableColumns(d), ["altitude_ft", "squawk"])
+        d.entityName = "{callsign} {squawk}"
+        XCTAssertEqual(DecoderPages.tableColumns(d), ["callsign", "altitude_ft", "squawk"])
+        d.entityName = "[{name}]"
+        XCTAssertEqual(DecoderPages.tableColumns(d), ["callsign", "altitude_ft", "squawk"])
+        d.entityName = ""
+        XCTAssertEqual(DecoderPages.tableColumns(d), ["callsign", "altitude_ft", "squawk"])
+        XCTAssertEqual(DecoderPages.tableColumns(nil), [])
     }
 
     func testSignalWordsNameWhatWasMeasured() {

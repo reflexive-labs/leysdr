@@ -227,6 +227,12 @@ public enum ShotRegion: String, Sendable, CaseIterable, Codable {
     case parts
     /// The Decoders place's whole body.
     case decoders
+    /// The Decoders page's counts beside its tabs (`40 records · 5 transmitters`), which vary by
+    /// the records that land before a terminal's `ley jobs cancel` does. A check may mask it.
+    case counts
+    /// The Decoders page's map, whose markers move with the aircraft between one run and the
+    /// next. A check may mask it: the tree keeps each marker's id and name.
+    case map
     /// The inspector's live readings: the Signal, Tuning, Deviation and On air rows and the audio
     /// ladder, which change from one frame to the next while the radio plays. A check masks it.
     case readings

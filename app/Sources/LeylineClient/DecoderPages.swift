@@ -170,13 +170,52 @@ public enum DecoderPages {
         return age == "now" ? "just now" : age + " ago"
     }
 
-    /// A raw payload as hex, sixteen bytes a line in pairs: `8d 48 40 d6 20 2c …`.
+    /// A raw payload as hex, eight bytes a line in pairs: `8d 48 40 d6 20 2c 5e 76`. Sixteen do
+    /// not fit the inspector's width in its type, and a line that wraps splits a byte's row.
     public static func hexLines(_ d: Data) -> [String] {
         let bytes = Array(d)
-        return stride(from: 0, to: bytes.count, by: 16).map { start in
-            bytes[start..<min(start + 16, bytes.count)]
+        return stride(from: 0, to: bytes.count, by: 8).map { start in
+            bytes[start..<min(start + 8, bytes.count)]
                 .map { DisplayTemplate.hex(Data([$0])) }.joined(separator: " ")
         }
+    }
+
+    /// The transmitters in the order the table and the map list them: by the name shown, then by
+    /// id. `ley track` prints the newest first, which suits one listing; on a live page the
+    /// rows of a decoder heard many times a second (ADS-B) would change places every second,
+    /// and VoiceOver's order through the map's markers with them. The Last heard column and
+    /// the log still say who spoke last.
+    public static func byName(
+        _ rows: [DecoderEntity], name: (DecoderEntity) -> String
+    ) -> [DecoderEntity] {
+        rows.map { (name($0), $0) }.sorted { a, b in
+            switch a.0.localizedStandardCompare(b.0) {
+            case .orderedAscending: return true
+            case .orderedDescending: return false
+            case .orderedSame: return a.1.deviceID < b.1.deviceID
+            }
+        }.map(\.1)
+    }
+
+    /// The display's columns as the app's table shows them: a column the name column already
+    /// shows is left out, when the display names a transmitter by that one field
+    /// (`entity_name` `[{callsign}]` and a `callsign` column), so the page's width goes to the
+    /// columns that say something new. `ley track` keeps it, beside its DEVICE.
+    public static func tableColumns(_ display: Leyline_V1_DecoderDisplay?) -> [String] {
+        let columns = display?.columns ?? []
+        guard let t = display?.entityName, let segments = DisplayTemplate.parse(t) else {
+            return columns
+        }
+        var names: [String] = []
+        for s in segments {
+            switch s {
+            case .name(let n, _): names.append(n)
+            case .open, .close: continue
+            case .text(let x): if !x.trimmingCharacters(in: .whitespaces).isEmpty { return columns }
+            }
+        }
+        guard names.count == 1 else { return columns }
+        return columns.filter { $0 != names[0] }
     }
 
     /// A display column's header as `ley track` writes it: a field with a unit is named with the

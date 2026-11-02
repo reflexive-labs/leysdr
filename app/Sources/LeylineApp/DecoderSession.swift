@@ -239,6 +239,11 @@ final class DecoderSession {
 
     /// A transmitter's name on the page: the person's label, else the display's entity name,
     /// else its `device_id`.
+    /// The transmitters as the table and the map list them (`DecoderPages.byName`).
+    var listedTransmitters: [DecoderEntity] {
+        DecoderPages.byName(table.rows) { name(of: $0.deviceID) }
+    }
+
     func name(of deviceID: String) -> String {
         if let l = labels.name(of: deviceID) { return l }
         if let e = table.entities[deviceID] { return table.name(of: e) }
