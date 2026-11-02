@@ -81,7 +81,11 @@ package enum AllocationRequest: Sendable {
     /// One demod chain at a frequency, inside any capture that covers it. A decode job (and, once
     /// it is built, a watch job) asks for this: it needs one demodulated channel from any radio.
     /// `deviceID` nil means the allocator picks; `takeOver` retunes a capture somebody is using.
-    case channel(frequencyHz: UInt64, bandwidthHz: UInt32, mode: DemodMode, deviceID: DeviceID?, takeOver: Bool)
+    /// `gains` is set, one stage at a time in order, on a capture the allocator creates or
+    /// retunes for the job, and put back when the job releases a capture it retuned; a capture
+    /// that already covers the frequency is somebody's and keeps its gain (`ChannelLease.gainOutcome`).
+    case channel(frequencyHz: UInt64, bandwidthHz: UInt32, mode: DemodMode, deviceID: DeviceID?, takeOver: Bool,
+                 gains: [GainRequest] = [])
     /// The whole capture band around a frequency, as cf32, for an IQ decoder that needs the signal
     /// before it is demodulated (docs/design/decoders.md, "Multiplexing"; DecoderSignal SIGNAL_IQ).
     /// Unlike `.channel`, the decoder receives the entire span, so "covers the frequency" is the
@@ -89,7 +93,9 @@ package enum AllocationRequest: Sendable {
     /// the device's default; `deviceID` nil lets the allocator pick; `takeOver` retunes a capture
     /// somebody is using. `dedicated` is the manifest's `needs_dedicated_capture`: only a capture
     /// centred on the frequency at that rate is shared, and any other is retuned or passed over.
-    case captureIQ(frequencyHz: UInt64, sampleRateHz: UInt64, deviceID: DeviceID?, takeOver: Bool, dedicated: Bool = false)
+    /// `gains` is read as `.channel`'s is.
+    case captureIQ(frequencyHz: UInt64, sampleRateHz: UInt64, deviceID: DeviceID?, takeOver: Bool, dedicated: Bool = false,
+                   gains: [GainRequest] = [])
     /// A whole radio, retunable, for the duration of the lease. `takeOver` skips the don't-disturb
     /// checks (a capture with channels, a live audio sink, a recent interactive write) but never
     /// the exclusivity one: two sweeps do not share a radio.
@@ -116,7 +122,30 @@ package protocol ChannelLease: AnyObject, Sendable {
     var channelID: ChannelID { get }
     var captureID: CaptureID { get }
     var engine: any ChannelEngine { get }
+    /// What became of the gains the job asked the allocator for.
+    var gainOutcome: LeaseGainOutcome { get }
     func release() async
+}
+
+/// What became of the gains a decode job asked for (`AllocationRequest.channel`, `.captureIQ`).
+package enum LeaseGainOutcome: Sendable {
+    /// None was asked for, or the lease was not the allocator's.
+    case notAsked
+    /// Set on the capture the allocator created or retuned.
+    case applied
+    /// Not set: the capture already covered the frequency, so its gain is its owner's. Carries the
+    /// gains it was left at, for the job to say so.
+    case leftAsFound([GainState])
+    /// The radio refused one; the stages before it stay set until the lease is released.
+    case refused(EngineError)
+}
+
+extension ChannelLease {
+    package var gainOutcome: LeaseGainOutcome { .notAsked }
+}
+
+extension CaptureIQLease {
+    package var gainOutcome: LeaseGainOutcome { .notAsked }
 }
 
 /// A job's hold on one capture read as raw IQ, for an IQ decoder (docs/design/decoders.md,
@@ -128,6 +157,8 @@ package protocol CaptureIQLease: AnyObject, Sendable {
     var sampleRateHz: UInt64 { get }
     var centerHz: UInt64 { get async }
     var capture: any CaptureEngine { get }
+    /// What became of the gains the job asked the allocator for.
+    var gainOutcome: LeaseGainOutcome { get }
     func release() async
 }
 

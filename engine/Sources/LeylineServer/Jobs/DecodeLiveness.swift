@@ -20,6 +20,11 @@ struct DecodeLiveness: Sendable {
     private(set) var records: UInt64 = 0
     private var lastRecord: ContinuousClock.Instant?
     private var published: UInt64 = 0
+    /// What stays true for the whole job and goes after the count: the gain a shared capture was
+    /// left at, when the job would have set one ("gain left at the radio's 30 dB").
+    let note: String?
+
+    init(note: String? = nil) { self.note = note }
 
     /// Notes one delivered record. Returns true when this is the first, which is published at once.
     mutating func noteRecord() -> Bool {
@@ -39,12 +44,13 @@ struct DecodeLiveness: Sendable {
 
     /// The running job's status detail: the decoder, the record count and the last record's age.
     func detail(decoder: String) -> String {
+        let tail = note.map { "; \($0)" } ?? ""
         guard records > 0, let last = lastRecord else {
-            return "decoding with \(decoder): no records yet"
+            return "decoding with \(decoder): no records yet\(tail)"
         }
         let ago = Int((ContinuousClock.now - last).components.seconds)
         let noun = records == 1 ? "record" : "records"
         let when = ago < 2 ? "just now" : "\(ago) s ago"
-        return "decoding with \(decoder): \(records) \(noun), last \(when)"
+        return "decoding with \(decoder): \(records) \(noun), last \(when)\(tail)"
     }
 }

@@ -71,7 +71,12 @@ The manifest for the bundled APRS decoder, trimmed to the fields that carry mean
   arguments. `frequenciesHz` lists the protocol's frequencies; the first is the default and
   `ley decode <name> --freq` picks another or overrides it. `mode`, `bandwidthHz` and `gain`
   (`GAIN_LEAVE` keeps whatever a borrowed capture is set to; `GAIN_AUTO` asks for AGC on one the job
-  creates) describe the channel. The daemon chooses the sample rate; leave it 0.
+  creates; `GAIN_FIXED` sets `gainDb` on the radio's first stage) describe the channel. A fixed
+  gain goes only on a capture the job creates or retunes, and a retuned one gets its own gain back
+  when the job ends; a capture the job shares keeps its owner's gain, and the job's status says the
+  gain it was left at. `ley decode --gain` overrides the recipe. Fix the gain when the protocol
+  needs one the radio's default does not give: ADS-B's recipe is 40 dB because at 30 an RTL-SDR
+  heard nothing on 1090 MHz. The daemon chooses the sample rate; leave it 0.
 - **`input.tap`** is which stage of the channel you read. `TAP_AUDIO` is what a listener hears, after
   de-emphasis and the limiter; `TAP_DEMOD` is the discriminator before any of that, which a data
   decoder usually wants because de-emphasis tilts the tones a modem keys on. `input.mode` is

@@ -77,7 +77,7 @@ actor DecodeRunner {
     /// store already holds when the job is resumed after a restart.
     private var seq: UInt64
     /// Record count and last-record time, for the detail it publishes while RUNNING.
-    private var liveness = DecodeLiveness()
+    private var liveness: DecodeLiveness
     /// The DEGRADED detail while the channel is out of its capture, nil while it is in. Every
     /// RUNNING the runner would publish goes through `publishRunning`, which reads this, because
     /// the record count moving is not the channel coming back: records still arrive after the
@@ -108,7 +108,7 @@ actor DecodeRunner {
          writer: RecordWriter?, store: SessionStore, frequencyHz: UInt64, captureRateHz: UInt64,
          tap: AudioTap, predicate: Leyline_V1_Predicate, notify: Leyline_V1_NotifyTarget?,
          usage: UsageRecorder? = nil, credentials: CredentialStore? = nil, keep: Bool = false,
-         standingDegradation: String? = nil, clips: LiveClips? = nil,
+         standingDegradation: String? = nil, clips: LiveClips? = nil, gainNote: String? = nil,
          onStatus: @escaping @Sendable (Leyline_V1_JobState, String) async -> Void,
          onFailure: (@Sendable (EngineError) async -> Void)? = nil,
          seqStart: UInt64 = 0)
@@ -130,6 +130,7 @@ actor DecodeRunner {
         self.keep = keep
         self.standingDegradation = standingDegradation
         self.clips = clips
+        liveness = DecodeLiveness(note: gainNote)
         self.onStatus = onStatus
         self.onFailure = onFailure
         seq = seqStart

@@ -179,9 +179,10 @@ extension JobStore {
                                 frequencyHz: UInt64, deviceID: DeviceID?) async
     {
         let mode = ProtoMapping.demodMode(installed.manifest.recipe.mode == .unspecified ? .nfm : installed.manifest.recipe.mode) ?? .nfm
+        let gain = Self.decodeGains(config, installed.manifest.recipe)
         let allocation = await allocator.allocate(
             .channel(frequencyHz: frequencyHz, bandwidthHz: installed.manifest.recipe.bandwidthHz,
-                     mode: mode, deviceID: deviceID, takeOver: config.takeOver), for: id)
+                     mode: mode, deviceID: deviceID, takeOver: config.takeOver, gains: gain.requests), for: id)
         guard case .channel(let lease) = allocation else {
             await declineDecode(id, allocation)
             return
@@ -192,6 +193,12 @@ extension JobStore {
             await lease.release()
             return
         }
+        if gain.sent, case .refused(let failure) = lease.gainOutcome {
+            await lease.release()
+            await failDecodeGain(id, failure)
+            return
+        }
+        let gainNote = await gainNote(lease.gainOutcome, capture: lease.captureID)
         // A squelch that could not be measured or set leaves a segmented job with no edges to cut
         // at; it runs, DEGRADED with the reason, rather than looking healthy.
         var squelchProblem: String?
@@ -227,7 +234,7 @@ extension JobStore {
             tap: installed.manifest.input.tap == .tapDemod ? .demod : .audio,
             predicate: config.predicate, notify: config.hasNotify ? config.notify : nil,
             usage: usage, credentials: credentials, keep: config.keep, standingDegradation: squelchProblem,
-            clips: clips,
+            clips: clips, gainNote: gainNote,
             onStatus: { [weak self] state, detail in
                 await self?.setDecodeStatus(id, state: state, detail: detail)
             },
@@ -244,10 +251,11 @@ extension JobStore {
     {
         // The recipe's sample rate when it names one, else the device's default (allocator's choice).
         // A manifest that needs a dedicated capture shares only one centred on the frequency.
+        let gain = Self.decodeGains(config, installed.manifest.recipe)
         let allocation = await allocator.allocate(
             .captureIQ(frequencyHz: frequencyHz, sampleRateHz: installed.manifest.recipe.sampleRate,
                        deviceID: deviceID, takeOver: config.takeOver,
-                       dedicated: installed.manifest.needsDedicatedCapture), for: id)
+                       dedicated: installed.manifest.needsDedicatedCapture, gains: gain.requests), for: id)
         guard case .captureIQ(let lease) = allocation else {
             await declineDecode(id, allocation)
             return
@@ -256,6 +264,12 @@ extension JobStore {
             await lease.release()
             return
         }
+        if gain.sent, case .refused(let failure) = lease.gainOutcome {
+            await lease.release()
+            await failDecodeGain(id, failure)
+            return
+        }
+        let gainNote = await gainNote(lease.gainOutcome, capture: lease.captureID)
         let snapshot = await store.captureEngine(lease.captureID)?.snapshot
         let writer: RecordWriter?
         do {
@@ -271,7 +285,7 @@ extension JobStore {
             jobID: id, installed: installed, lease: lease, hub: hub, writer: writer, store: store,
             frequencyHz: frequencyHz,
             predicate: config.predicate, notify: config.hasNotify ? config.notify : nil,
-            credentials: credentials,
+            credentials: credentials, gainNote: gainNote,
             onStatus: { [weak self] state, detail in
                 await self?.setDecodeStatus(id, state: state, detail: detail)
             },
@@ -281,6 +295,65 @@ extension JobStore {
             seqStart: await writer?.recordCount ?? 0)
         entries[id]?.decode = runner
         await runner.start()
+    }
+
+    // MARK: The gain
+
+    /// The gains a decode job asks the allocator for: the config's when it sends any (`gains` wins
+    /// over `gain`, as in RecordConfig), else the recipe's GAIN_FIXED level on the first stage,
+    /// else none. `sent` is whether they came from the config, whose refusal fails the job.
+    static func decodeGains(_ config: Leyline_V1_DecodeConfig,
+                            _ recipe: Leyline_V1_DecoderRecipe) -> (requests: [GainRequest], sent: Bool)
+    {
+        let writes = config.gains.isEmpty ? (config.hasGain ? [config.gain] : []) : config.gains
+        let sent: [GainRequest] = writes.compactMap { write in
+            switch write.value {
+            case .db(let db): return GainRequest(element: write.element, value: .db(db))
+            case .auto(true): return GainRequest(element: write.element, value: .auto)
+            default: return nil
+            }
+        }
+        if !sent.isEmpty { return (sent, true) }
+        if recipe.gain == .gainFixed { return ([GainRequest(element: "", value: .db(recipe.gainDb))], false) }
+        return ([], false)
+    }
+
+    /// A decode at a gain other than the one asked for is not what was asked for, so it does not
+    /// start; the job fails with the radio's own reason, as a recording's does.
+    private func failDecodeGain(_ id: JobID, _ failure: EngineError) async {
+        await finish(id, state: .failed, detail: "the gain asked for could not be set: \(failure.message)",
+                     code: failure.code)
+    }
+
+    /// What the job's detail says about the gain, after the count: nothing when the gain was set or
+    /// none was asked for, "gain left at the radio's 30 dB" on a capture the job shares, whose gain
+    /// is its owner's. A recipe's gain the radio refused is said too, since the decoder runs
+    /// anyway, except on a radio with no gain stages at all (a file radio), which has no gain to set.
+    private func gainNote(_ outcome: LeaseGainOutcome, capture: CaptureID) async -> String? {
+        let elements = await store.deviceDescriptor(for: capture)?.gainElements ?? []
+        switch outcome {
+        case .notAsked, .applied:
+            return nil
+        case .leftAsFound(let gains):
+            return gains.isEmpty ? nil : "gain left at the radio's \(Self.gainWords(gains, elements))"
+        case .refused(let failure):
+            return elements.isEmpty ? nil : "the recipe's gain could not be set: \(failure.message)"
+        }
+    }
+
+    /// A radio's gains as a status line says them: "30 dB" or "auto" for a radio with one stage,
+    /// every stage by name for one with several ("LNA 16 dB, VGA 20 dB").
+    static func gainWords(_ gains: [GainState], _ elements: [GainElement]) -> String {
+        func level(_ value: GainValue) -> String {
+            switch value {
+            case .auto: return "auto"
+            case .db(let db):
+                let tenths = (db * 10).rounded() / 10
+                return tenths == tenths.rounded() ? "\(Int(tenths)) dB" : String(format: "%.1f dB", tenths)
+            }
+        }
+        if gains.count == 1, elements.count <= 1 { return level(gains[0].value) }
+        return gains.map { "\($0.element) \(level($0.value))" }.joined(separator: ", ")
     }
 
     /// SEGMENTED input cuts at the squelch's edges, and a channel with the squelch off has none:

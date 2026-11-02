@@ -1026,6 +1026,19 @@ declines with the reason a sweep would give unless `take_over`. The channel is p
 `required_hz` set and is owned by the job, not by the client. Releasing the `ChannelLease` destroys
 the channel, and the capture too when the lease created it and nothing else is listening on it.
 
+A decode job's gain (`JobStore.decodeGains`) is `DecodeConfig.gains` (or `gain`) when it sends one,
+else the recipe's `GAIN_FIXED` `gain_db` on the first stage, else none; `GAIN_AUTO` sets nothing
+yet. It rides in the allocation request (`.channel` and `.captureIQ` both take `gains`), and the
+allocator sets it only on a capture of step 2 or 3, the one it created or retuned, never on a
+capture that already covered the frequency: that gain is its owner's. A retuned capture's gains
+are read before they are set and put back on release, with the centre for a channel lease and,
+for an IQ lease, only when no other IQ job still reads the capture. The lease's `gainOutcome` tells
+the job what happened: `leftAsFound` puts "gain left at the radio's 27 dB" after the count in the
+running `status_detail` (`DecodeLiveness.note`); a refusal of a gain the config sent fails the job
+with the device's code and "the gain asked for could not be set: …", as a recording's does; a
+refusal of the recipe's is said in the detail, except on a radio with no gain stages (a file
+radio), where there was nothing to set.
+
 `DecodeRunner` then holds one drain task (ring to plugin, with a `Gap` on every frame that follows a
 drop), one reader task (plugin to `RecordHub` and the store writer), a meter subscription and a
 channel-state watch. The daemon stamps `record_id` (`rec_<ulid>`), `job_id`, `seq` (1-based and

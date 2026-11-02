@@ -79,7 +79,7 @@ actor IQDecodeRunner: DecodeRunning {
     /// store already holds when the job is resumed after a restart.
     private var seq: UInt64
     /// Record count and last-record time, for the detail it publishes while RUNNING.
-    private var liveness = DecodeLiveness()
+    private var liveness: DecodeLiveness
     /// Where the capture was when the job started: the centre and rate every descriptor the plugin
     /// gets names, restarts included. Read once, before the plugin is spawned.
     private var tuning: (centerHz: UInt64, rate: UInt64) = (0, 0)
@@ -103,7 +103,7 @@ actor IQDecodeRunner: DecodeRunning {
     init(jobID: JobID, installed: DecoderRegistry.Installed, lease: any CaptureIQLease, hub: RecordHub,
          writer: RecordWriter?, store: SessionStore, frequencyHz: UInt64,
          predicate: Leyline_V1_Predicate, notify: Leyline_V1_NotifyTarget?,
-         credentials: CredentialStore? = nil,
+         credentials: CredentialStore? = nil, gainNote: String? = nil,
          onStatus: @escaping @Sendable (Leyline_V1_JobState, String) async -> Void,
          onFailure: (@Sendable (EngineError) async -> Void)? = nil,
          seqStart: UInt64 = 0)
@@ -118,6 +118,7 @@ actor IQDecodeRunner: DecodeRunning {
         self.frequencyHz = frequencyHz
         self.predicate = predicate
         self.notify = notify
+        liveness = DecodeLiveness(note: gainNote)
         self.onStatus = onStatus
         self.onFailure = onFailure
         seq = seqStart
