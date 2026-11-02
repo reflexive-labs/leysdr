@@ -190,3 +190,4 @@ expectations that `leyfix check` verifies.
 | `scene_aprs` | 144.390 MHz | AFSK packets from seven stations with positions |
 | `scene_ais` | 162.000 MHz | position reports from five vessels on AIS 1 |
 | `scene_adsb` | 1090 MHz, 2.4 MSPS | Mode S replies and ADS-B squitters from five aircraft on straight tracks, 30 s |
+| `scene_adsb_off` | 1090.600 MHz, 2.4 MSPS | the floor alone, 4 s: a capture that hears 1090 MHz off its centre, for the app's take-over question |

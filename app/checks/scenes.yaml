@@ -1849,6 +1849,45 @@ scenes:
       - {cmd: key, keys: cmd+3}
       - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tab: table}}
 
+  # The take-over question (docs/plans/decoders-app.md, DA-8) on scene_adsb_off, a capture that
+  # hears 1090 MHz 600 kHz off its centre, with the window's channel on it. ADS-B needs its own
+  # capture centred on 1090, so the radio is the window's and Start asks first: Cancel leaves
+  # the channel, and Take the radio sends take_over and runs the job, which Stop ends. The file
+  # radio tunes only its own centre, so the job hears nothing: the page says it is listening
+  # over an empty log.
+  - name: decoders-take-over
+    covers: [DecodersView.swift, DecoderSession.swift, DecoderPlacement.swift, DecoderPages.swift]
+    fixtures: [{name: scene_adsb_off}]
+    clock: "19:42"
+    stage:
+      place: decoders
+      inspector: true
+      decoder: adsb
+      settle: 2
+    app:
+      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tabs.0: log, decoders.record_count: 0, decoders.start_enabled: true, decoders.placement: "Needs the radio from you: you are listening on 1090.600 MHz."}}
+      - {cmd: snapshot, name: placement}
+      - {cmd: ax, name: placement}
+      - {cmd: press, identifier: decoders.page.start}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {alert.title: "Take the radio?", alert.buttons.0: Take the radio, alert.buttons.1: Cancel}}
+      - {cmd: snapshot, name: question}
+      - {cmd: ax, name: question, window: sheet}
+      - {cmd: press, identifier: alert.cancel}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {alert: null, decoders.start_shown: true, tuned_hz: 1090600000}}
+      - {cmd: ley, args: [jobs], expect_stdout: "!job_"}
+      - {cmd: press, identifier: decoders.page.start}
+      - {cmd: wait, seconds: 1}
+      - {cmd: press, identifier: alert.take-the-radio}
+      - {cmd: wait, seconds: 3, expect_log: "started: adsb at 1090000000 Hz, kept"}
+      - {cmd: state, expect: {alert: null, decoders.state: Running, decoders.start_shown: false}}
+      - {cmd: snapshot, name: taken}
+      - {cmd: ax, name: taken}
+      - {cmd: press, identifier: decoders.page.stop}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {decoders.start_shown: true}}
+
   # The transport bar at the window's smaller sizes (docs/plans/app.md, decision 13): the Mode
   # and Width pop-ups keep their labels on one line at 900 × 612 pt (the minimum), 1000 and
   # 1100 pt, with and without the inspector, through the longest widths a band or a mode

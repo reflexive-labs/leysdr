@@ -289,6 +289,13 @@ func sceneVHF20Carriers() []sceneCarrier {
 	}
 }
 
+// scene_adsb_off is centred 600 kHz above 1090 MHz, inside its 2.4 MSPS span but not on it. Four
+// seconds is 19 MB.
+const (
+	sceneADSBOffCenterHz  = 1_090_600_000
+	sceneADSBOffDurationS = 4
+)
+
 // The scene_wx captures, around 162.475 MHz (NOAA WX3) at 480 kSPS: every NOAA channel, 162.400 to
 // 162.550, lies inside it. scene_wx is the floor alone, a weather band swept with the antenna off;
 // scene_wx_on has WX2 and WX1 broadcasting, outside a sweep's 24 kHz DC guard. Twenty seconds is
@@ -514,6 +521,20 @@ var sceneFixtures = []fixture{
 		build:       func(rate float64) []source { return []source{sceneADSBSource(rate)} },
 		expect: func(rate float64) []iqfile.Expect {
 			return []iqfile.Expect{sceneADSBSource(rate).expect()}
+		},
+	},
+	{
+		// The app's take-over question (app/checks/scenes.yaml, decoders-take-over): a capture
+		// that hears 1090 MHz but is not centred on it, so ADS-B, which needs its own capture
+		// there, needs the radio from whoever listens.
+		name: "scene_adsb_off", centerHz: sceneADSBOffCenterHz, set: sceneSet, format: iqfile.FormatCU8,
+		fixedRate: sceneADSBRate, fixedDurationS: sceneADSBOffDurationS, noiseDBFS: sceneNoiseDBFS,
+		label:       sceneRadio,
+		description: "the 1090 MHz floor in a capture centred 600 kHz above it, nothing on the air",
+		metadata:    sceneMetadata(sceneADSBOffCenterHz),
+		build:       func(float64) []source { return nil },
+		expect: func(rate float64) []iqfile.Expect {
+			return []iqfile.Expect{sceneQuietExpect(0, rate)}
 		},
 	},
 	{

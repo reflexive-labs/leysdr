@@ -27,7 +27,7 @@ const maxSceneBytes = 300_000_000
 // sceneSetNames is the scenes set in catalog order.
 var sceneSetNames = []string{
 	"scene_2m", "scene_net", "scene_scan", "scene_aprs", "scene_ais", "scene_adsb",
-	"scene_gmrs", "scene_vhf20", "scene_wx", "scene_wx_on", "scene_club",
+	"scene_adsb_off", "scene_gmrs", "scene_vhf20", "scene_wx", "scene_wx_on", "scene_club",
 }
 
 // The check scenes' fixtures put their stations where the app's band table has them: GMRS
