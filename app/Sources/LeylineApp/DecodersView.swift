@@ -41,7 +41,7 @@ struct DecodersBody: View {
 }
 
 /// Start's question when the decoder needs a radio somebody is using: the daemon's own reason,
-/// and Take the radio, which starts the job with `take_over`. The binding's setter does nothing,
+/// both frequencies in MHz (`DecoderPages.frequencyWords`), and Take the radio, which starts the job with `take_over`. The binding's setter does nothing,
 /// as the retune question's does, so the buttons alone answer it.
 struct TakeOverQuestion: ViewModifier {
     @Environment(AppSession.self) private var session
@@ -58,7 +58,7 @@ struct TakeOverQuestion: ViewModifier {
         } message: { ask in
             let title = d.manifest(named: ask.decoder).map(DecoderPages.title) ?? ask.decoder
             Text(
-                "\(title) needs the radio at \(Frequency.format(ask.frequencyHz)), and \(ask.reason). The radio goes back when the decoder stops."
+                "\(title) needs the radio at \(DecoderPages.frequencyWords(ask.frequencyHz)), and \(ask.reason). The radio goes back when the decoder stops."
             )
         }
     }
@@ -236,8 +236,8 @@ struct DecoderPage: View {
 }
 
 /// The decoder's symbol and title over what it is doing, and Start or Stop. While a job runs the
-/// line is its state, frequency and `status_detail` (`Running · 144.390 MHz · 12 records, last 3 s
-/// ago`; `caution` while degraded); otherwise it is where Start would put it
+/// line is its state and frequency (`Running · 144.390 MHz`; `caution` while degraded), its
+/// `status_detail` being the sidebar's job line and this line's tooltip; otherwise it is where Start would put it
 /// (`DecoderPlacement.words`), and under it the newest job's failure when it failed.
 struct DecoderPageHeader: View {
     let manifest: Leyline_V1_DecoderManifest
@@ -257,9 +257,12 @@ struct DecoderPageHeader: View {
                     .font(Theme.Font.name).tracking(Theme.nameTracking)
                     .foregroundStyle(Theme.ink).lineLimit(1)
                 if let j = running.first {
-                    Text(liveWords(j)).font(Theme.Font.value)
+                    // The state and frequency only: the detail is the sidebar's line under the
+                    // decoder, so the page does not say it twice; the tooltip carries it.
+                    Text(DecoderPages.headerWords(j)).font(Theme.Font.value)
                         .foregroundStyle(j.state == .degraded ? Theme.caution : Theme.inkMuted)
-                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(1)
+                        .help(DecoderPages.detail(j))
                         .accessibilityIdentifier("decoders.page.state")
                 } else {
                     // A sentence, so in `label` and not the numbers' `value`.
@@ -298,14 +301,6 @@ struct DecoderPageHeader: View {
         .padding(.horizontal, Theme.Layout.pageInset).padding(.vertical, 10)
     }
 
-    private func liveWords(_ j: Leyline_V1_Job) -> String {
-        let hz = DecoderPages.frequencyHz(j)
-        return [
-            DecoderPages.stateWord(j), hz > 0 ? Frequency.format(hz) : "", DecoderPages.detail(j),
-        ]
-        .filter { !$0.isEmpty }.joined(separator: " · ")
-    }
-
     private func placementInk(_ p: DecoderPlacement) -> Color {
         switch p {
         case .needsRadio: Theme.caution
@@ -318,7 +313,7 @@ struct DecoderPageHeader: View {
         guard let hz = session.decoderFrequency(manifest) else { return p.words }
         let ask = p.needsTakeOver ? " Asks first, because the radio is in use." : ""
         return
-            "Decode \(Frequency.format(hz)) as a kept job: it runs until Stop, after the window closes too.\(ask)"
+            "Decode \(DecoderPages.frequencyWords(hz)) as a kept job: it runs until Stop, after the window closes too.\(ask)"
     }
 }
 
@@ -360,13 +355,15 @@ struct DecoderTabSwitch: View {
 // MARK: The log
 
 /// The alerts in effect, then every record newest first: its time, its transmitter, its kind and
-/// its line. A click shows the record in the inspector.
+/// its line. The kind column is as wide as the longest kind in the log
+/// (`Theme.Layout.decoderKindColumn`). A click shows the record in the inspector.
 struct DecoderLog: View {
     @Environment(AppSession.self) private var session
 
     var body: some View {
         let d = session.decoders
         let entries = d.records.entries
+        let kindWidth = Theme.Layout.decoderKindColumn(Set(entries.map(\.record.kind))).width
         VStack(spacing: 0) {
             let alerts = d.alerts
             if !alerts.isEmpty {
@@ -399,7 +396,7 @@ struct DecoderLog: View {
                         ForEach(Array(entries.enumerated()), id: \.element.id) { i, e in
                             DecoderLogRow(
                                 entry: e, name: d.name(of: e.record.deviceID),
-                                summary: d.summary(e.record),
+                                summary: d.summary(e.record), kindWidth: kindWidth,
                                 selected: d.selectedRecord == e.id
                             )
                             .contentShape(Rectangle())
@@ -420,6 +417,8 @@ struct DecoderLogRow: View {
     let entry: RecordEntry
     let name: String
     let summary: String
+    /// The kind column's width, the longest kind's in the log.
+    let kindWidth: CGFloat
     let selected: Bool
 
     var body: some View {
@@ -432,7 +431,7 @@ struct DecoderLogRow: View {
                 .frame(width: Theme.Layout.decoderNameWidth, alignment: .leading)
             Text(entry.record.kind).font(Theme.Font.footnote).foregroundStyle(Theme.inkFaint)
                 .lineLimit(1)
-                .frame(width: Theme.Layout.decoderKindWidth, alignment: .leading)
+                .frame(width: kindWidth, alignment: .leading)
             Text(summary).font(Theme.Font.label).foregroundStyle(Theme.ink).lineLimit(1)
             Spacer(minLength: 0)
         }
@@ -482,7 +481,8 @@ struct DecoderAlertLine: View {
 
 /// The transmitters by name (`DecoderPages.byName`), in `ley track`'s columns: the name (the
 /// person's label, else the display's entity name, else the id), the display's columns headed
-/// as `ley track` heads them, how many records, when last heard and the last line. A click shows
+/// as `ley track` heads them and printed at their precision, how many records, when last heard and
+/// the latest line. A click shows
 /// it in the inspector.
 struct DecoderTable: View {
     let manifest: Leyline_V1_DecoderManifest
@@ -496,7 +496,7 @@ struct DecoderTable: View {
             // Bottom-aligned, so a head that takes two lines (`GROUND SPEED (kn)`) keeps the
             // row's foot.
             HStack(alignment: .bottom, spacing: Theme.Layout.logColumnGap) {
-                head("TRANSMITTER", width: Theme.Layout.decoderTableNameWidth)
+                head(DecoderPages.tableNameHead, width: Theme.Layout.decoderTableNameWidth)
                 ForEach(Array(columns.enumerated()), id: \.element) { i, c in
                     head(
                         DecoderPages.columnHead(c, manifest: manifest),
@@ -505,10 +505,12 @@ struct DecoderTable: View {
                     )
                     .padding(.leading, gap(before: i, columns))
                 }
-                head("SEEN", width: Theme.Layout.decoderTableCountWidth, trailing: true)
-                head("LAST HEARD", width: Theme.Layout.decoderTableTimeWidth)
+                head(
+                    DecoderPages.tableSeenHead, width: Theme.Layout.decoderTableCountWidth,
+                    trailing: true)
+                head(DecoderPages.tableHeardHead, width: Theme.Layout.decoderTableTimeWidth)
                     .padding(.leading, Theme.Layout.decoderTableTimeGap)
-                head("LAST", width: nil)
+                head(DecoderPages.tableLatestHead, width: nil)
             }
             .padding(.horizontal, Theme.Layout.pageInset).padding(.vertical, 8)
             Rectangle().fill(Theme.hairline).frame(height: 1)

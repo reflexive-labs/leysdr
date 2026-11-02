@@ -270,7 +270,8 @@ public enum DecoderPlacement: Sendable, Equatable {
         d.model.isEmpty ? "radio" : d.model
     }
 
-    static func mhz(_ hz: UInt64) -> String { String(format: "%.3f MHz", Double(hz) / 1e6) }
+    /// In MHz, as every sentence of the Decoders place writes a frequency.
+    static func mhz(_ hz: UInt64) -> String { DecoderPages.frequencyWords(hz) }
 
     /// A clause as a sentence: capitalised and stopped.
     static func sentence(_ s: String) -> String {

@@ -105,9 +105,9 @@
     "entityName": "[{callsign}]",
     "columns": [
       "callsign",
-      "altitude_ft",
-      "ground_speed_kn",
-      "track_deg",
+      "altitude_ft:0",
+      "ground_speed_kn:0",
+      "track_deg:0",
       "squawk"
     ]
   }

@@ -19,6 +19,6 @@ func display() *leylinev1.DecoderDisplay {
 			"surveillance":   "DF{df}[ {altitude_ft:0} ft][ squawk {squawk}]",
 		},
 		EntityName: "[{callsign}]",
-		Columns:    []string{"callsign", "altitude_ft", "ground_speed_kn", "track_deg", "squawk"},
+		Columns:    []string{"callsign", "altitude_ft:0", "ground_speed_kn:0", "track_deg:0", "squawk"},
 	}
 }

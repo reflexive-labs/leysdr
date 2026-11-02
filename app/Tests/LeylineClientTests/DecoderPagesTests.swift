@@ -181,6 +181,58 @@ final class DecoderPagesTests: XCTestCase {
         XCTAssertFalse(DecoderPages.columnIsNumeric("name", manifest: manifest()))
     }
 
+    /// A column's precision is not part of its head, its numeric test or the name column's.
+    func testAColumnsPrecisionIsNotPartOfItsHead() {
+        XCTAssertEqual(DecoderPages.columnHead("sog_kn:1", manifest: manifest()), "SOG (kn)")
+        XCTAssertTrue(DecoderPages.columnIsNumeric("cog_deg:0", manifest: manifest()))
+        var d = Leyline_V1_DecoderDisplay()
+        d.columns = ["callsign:0", "altitude_ft:0"]
+        d.entityName = "[{callsign}]"
+        XCTAssertEqual(DecoderPages.tableColumns(d), ["altitude_ft:0"])
+        XCTAssertEqual(
+            DecoderPages.tableHeads(["sog_kn:1"], manifest: manifest()),
+            ["TRANSMITTER", "SOG (kn)", "SEEN", "LAST HEARD", "LATEST"])
+    }
+
+    /// The altitude reads in the decoder's own unit when it sends `altitude_<unit>`, else in the
+    /// promoted metres.
+    func testAltitudeIsInTheDecodersOwnUnit() {
+        var m = manifest()
+        var ft = Leyline_V1_FieldHint()
+        ft.name = "altitude_ft"
+        ft.type = .number
+        ft.unit = "ft"
+        m.fields.append(ft)
+        let f = ["altitude_ft": Leyline_V1_FieldValue.with { $0.number = 36000 }]
+        XCTAssertEqual(
+            DecoderPages.altitudeWords(metres: 10972.8, fields: f, manifest: m), "36000 ft")
+        // No hint: the unit is the name's suffix.
+        XCTAssertEqual(
+            DecoderPages.altitudeWords(metres: 10972.8, fields: f, manifest: manifest()),
+            "36000 ft")
+        XCTAssertEqual(
+            DecoderPages.altitudeWords(metres: 124.4, fields: [:], manifest: m), "124 m")
+        let metres = ["altitude_m": Leyline_V1_FieldValue.with { $0.number = 99 }]
+        XCTAssertEqual(
+            DecoderPages.altitudeWords(metres: 124.4, fields: metres, manifest: m), "124 m")
+    }
+
+    /// The Decoders place writes a frequency in a sentence in MHz, at 1090 MHz too, and the
+    /// header names the job's state and frequency without its detail.
+    func testFrequenciesInTheDecodersPlaceAreInMHz() {
+        XCTAssertEqual(DecoderPages.frequencyWords(1_090_000_000), "1090.000 MHz")
+        XCTAssertEqual(DecoderPages.frequencyWords(462_612_500), "462.6125 MHz")
+        XCTAssertEqual(DecoderPages.frequencyWords(144_390_000), "144.390 MHz")
+        XCTAssertEqual(DecoderPlacement.mhz(1_090_600_000), "1090.600 MHz")
+        var j = job("job_1", decoder: "adsb", state: .running)
+        if case .decode(var d)? = j.config {
+            d.frequencyHz = 1_090_000_000
+            j.config = .decode(d)
+        }
+        j.statusDetail = "decoding with adsb: no records yet"
+        XCTAssertEqual(DecoderPages.headerWords(j), "Running · 1090.000 MHz")
+    }
+
     func testAgesAreCoarsenedAsAPersonSaysThem() {
         XCTAssertEqual(DecoderPages.agoWords(0.5), "just now")
         XCTAssertEqual(DecoderPages.agoWords(12), "12 s ago")

@@ -53,10 +53,22 @@ func EntityName(d *leylinev1.DecoderDisplay, e *Entity, label string) string {
 	return e.DeviceID
 }
 
-// Column is one cell of a transmitter table's display.columns: the named value as a template
-// would print it, and false when the transmitter has not sent it.
-func Column(e *Entity, name, label string) (string, bool) {
-	return resolve(e.Record(), label, name, defaultDecimals)
+// Column is one cell of a transmitter table's display.columns: the entry, "name" or "name:N", as
+// a template would print {name} or {name:N}, and false when the transmitter has not sent it or the
+// entry is malformed.
+func Column(e *Entity, entry, label string) (string, bool) {
+	name, decimals, err := parseName(entry)
+	if err != nil {
+		return "", false
+	}
+	return resolve(e.Record(), label, name, decimals)
+}
+
+// ColumnName is the field a display.columns entry names, its precision dropped: the name a
+// column is headed by.
+func ColumnName(entry string) string {
+	name, _, _ := strings.Cut(entry, ":")
+	return name
 }
 
 // Record is the entity as one record, for rendering a template over it: its device_id, its last
@@ -80,6 +92,11 @@ func ValidateDisplay(d *leylinev1.DecoderDisplay) error {
 	if t := d.GetEntityName(); t != "" {
 		if _, err := parseTemplate(t); err != nil {
 			return fmt.Errorf("entity_name: %w", err)
+		}
+	}
+	for _, c := range d.GetColumns() {
+		if _, _, err := parseName(c); err != nil {
+			return fmt.Errorf("columns[%q]: %w", c, err)
 		}
 	}
 	return nil

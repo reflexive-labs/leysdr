@@ -88,6 +88,10 @@ The manifest for the bundled APRS decoder, trimmed to the fields that carry mean
   nothing enforces it; `ley transcribe` states it before it sends anything, so a person can see
   where the audio goes, and `ley decoders --json` carries it. Leave both empty when your decoder
   calls nobody.
+- **`testOnly`** marks a decoder that exists for tests, such as `speech-scripted`, which replays a
+  script, or `iqstat`, which checks the IQ path. The daemon leaves it out of `ListDecoders` (so out
+  of `ley decoders` and the app) unless it runs with `--no-hardware`, as tests, evals and check
+  scenes do; a job can still name it.
 - **`outputs`** declares what shapes you produce. Every decoder produces `SHAPE_RECORDS`;
   `SHAPE_ENTITIES` says a client can fold your records into a per-transmitter table (`ley track`),
   and `entitySilenceS` is how long a station stays in that table after its last record.
@@ -117,7 +121,9 @@ its own line per record and names each transmitter by its `device_id`.
   the name, as an APRS callsign is.
 - **`columns`** lists fields shown as columns of the transmitter table (`ley track`), in order of
   importance: a narrow terminal drops the last first. A field with a unit in `fields` is headed with
-  it, and the unit suffix of its name is dropped, so `sog_kn` in `kn` is `SOG (kn)`.
+  it, and the unit suffix of its name is dropped, so `sog_kn` in `kn` is `SOG (kn)`. An entry may
+  carry a precision as a template name does, `ground_speed_kn:0`, so the table prints whole knots
+  as the summary does; the header drops it. `testdata/decoders/column-cases.json` pins the rule.
 
 A template is text with names in braces:
 

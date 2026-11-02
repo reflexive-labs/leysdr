@@ -102,8 +102,13 @@ struct TransmitterSection: View {
         ]
         if let p = e.position, p.latitude.isFinite, p.longitude.isFinite {
             out.append(PartTableRow(label: "Position", value: DisplayTemplate.formatPosition(p)))
-            if p.hasAltitudeM, let alt = DisplayTemplate.formatNumber(p.altitudeM, decimals: 0) {
-                out.append(PartTableRow(label: "Altitude", value: "\(alt) m"))
+            // In the decoder's own unit when it sends one (`altitude_ft`), as the table and the
+            // summary write it; else the promoted metres.
+            if p.hasAltitudeM,
+                let alt = DecoderPages.altitudeWords(
+                    metres: p.altitudeM, fields: e.fields, manifest: manifest)
+            {
+                out.append(PartTableRow(label: "Altitude", value: alt))
             }
         }
         if let h = e.heading, let deg = DisplayTemplate.formatNumber(h, decimals: 0) {
@@ -140,11 +145,21 @@ struct RecordSection: View {
                     ForEach(fields) { f in
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(alignment: .firstTextBaseline, spacing: 0) {
+                                // A name longer than its column is cut in the middle, so
+                                // both ends still read, with a gap before the value and the
+                                // whole name in the tooltip.
                                 Text(f.name).font(Theme.Font.label)
                                     .foregroundStyle(Theme.inkMuted).lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .padding(.trailing, Theme.Layout.decoderFieldNameGap)
                                     .frame(
                                         width: Theme.Layout.decoderFieldLabelWidth,
-                                        alignment: .leading)
+                                        alignment: .leading
+                                    )
+                                    .help(f.name)
+                                    .accessibilityIdentifier(
+                                        "decoders.inspector.field.\(ViewIdentifier.slug(f.name)).name"
+                                    )
                                 Text(f.value).font(Theme.Font.value)
                                     .foregroundStyle(Theme.inkSecondary)
                                     .fixedSize(horizontal: false, vertical: true)

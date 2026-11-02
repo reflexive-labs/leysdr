@@ -26,7 +26,7 @@
         "other": "message type {msg_type}"
       },
       "entity_name": "{name}",
-      "columns": ["callsign", "sog_kn", "cog_deg", "destination"]
+      "columns": ["callsign", "sog_kn:1", "cog_deg:0", "destination"]
     },
     "adsb": {
       "title": "Aircraft",
@@ -38,7 +38,7 @@
         "surveillance": "DF{df}[ {altitude_ft:0} ft][ squawk {squawk}]"
       },
       "entity_name": "[{callsign}]",
-      "columns": ["callsign", "altitude_ft", "ground_speed_kn", "track_deg", "squawk"]
+      "columns": ["callsign", "altitude_ft:0", "ground_speed_kn:0", "track_deg:0", "squawk"]
     },
     "same": {
       "title": "Weather alerts",

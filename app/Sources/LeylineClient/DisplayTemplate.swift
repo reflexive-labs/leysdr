@@ -88,13 +88,23 @@ public enum DisplayTemplate {
         return record.deviceID
     }
 
-    /// One name's text as a template prints it with the default precision: a column of the
-    /// transmitter table. Nil when the record has not sent it.
+    /// One `columns` entry, `name` or `name:N`, as a template prints `{name}` or `{name:N}`: a
+    /// cell of the transmitter table. Nil when the record has not sent it or the entry is
+    /// malformed.
     public static func column(
-        _ name: String, record: Leyline_V1_DecodeRecord, label: String = ""
+        _ entry: String, record: Leyline_V1_DecodeRecord, label: String = ""
     ) -> String? {
-        resolve(record, label: label, name: name, decimals: defaultDecimals)
+        guard let (name, decimals) = parseName(entry) else { return nil }
+        return resolve(record, label: label, name: name, decimals: decimals)
     }
+
+    /// The field a `columns` entry names, its precision dropped: what the column is headed by.
+    public static func columnName(_ entry: String) -> String {
+        String(entry.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)[0])
+    }
+
+    /// Whether a `columns` entry parses: a name, then optionally a colon and a precision 0 to 6.
+    public static func isValidColumn(_ entry: String) -> Bool { parseName(entry) != nil }
 
     // MARK: Parsing
 

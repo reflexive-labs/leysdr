@@ -10,7 +10,7 @@
       "other": "message type {msg_type}"
     },
     "entity_name": "{name}",
-    "columns": ["callsign", "sog_kn", "cog_deg", "destination"]
+    "columns": ["callsign", "sog_kn:1", "cog_deg:0", "destination"]
   },
   "entity_silence_s": 600,
   "steps": [
@@ -54,7 +54,7 @@
       "last_heard_s": 20,
       "position": {"latitude": 37.8, "longitude": -122.4},
       "fields": {"mmsi": {"number": 367000001}, "msg_type": {"number": 18}, "sog_kn": {"number": 0}},
-      "columns": {"sog_kn": "0"}
+      "columns": {"sog_kn:1": "0"}
     },
     {
       "device_id": "244660000",
@@ -71,7 +71,7 @@
         "callsign": {"text": "H3RC"}, "destination": {"text": "ROTTERDAM"},
         "sog_kn": {"number": 12.3}, "cog_deg": {"number": 45.6}
       },
-      "columns": {"callsign": "H3RC", "sog_kn": "12.3", "cog_deg": "45.6", "destination": "ROTTERDAM"}
+      "columns": {"callsign": "H3RC", "sog_kn:1": "12.3", "cog_deg:0": "46", "destination": "ROTTERDAM"}
     }
   ]
 }

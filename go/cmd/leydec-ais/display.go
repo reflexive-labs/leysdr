@@ -16,6 +16,6 @@ func display() *leylinev1.DecoderDisplay {
 			"other":    "message type {msg_type}",
 		},
 		EntityName: "{name}",
-		Columns:    []string{"callsign", "sog_kn", "cog_deg", "destination"},
+		Columns:    []string{"callsign", "sog_kn:1", "cog_deg:0", "destination"},
 	}
 }

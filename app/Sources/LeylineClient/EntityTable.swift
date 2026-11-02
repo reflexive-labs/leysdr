@@ -147,9 +147,9 @@ public struct EntityTable: Sendable, Equatable {
         DisplayTemplate.entityName(display, record: e.record, label: label)
     }
 
-    /// One of the display's columns for a row, as a template prints it; nil when the row has not
-    /// sent it.
-    public func column(_ name: String, of e: DecoderEntity, label: String = "") -> String? {
-        DisplayTemplate.column(name, record: e.record, label: label)
+    /// One of the display's columns for a row, `name` or `name:N`, as a template prints it; nil
+    /// when the row has not sent it.
+    public func column(_ entry: String, of e: DecoderEntity, label: String = "") -> String? {
+        DisplayTemplate.column(entry, record: e.record, label: label)
     }
 }

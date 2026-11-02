@@ -51,6 +51,16 @@ The rules the cases pin, beside the proto comment on `DecoderDisplay`:
 - A position whose latitude or longitude is NaN or infinite is unresolved, and a coordinate that
   rounds to zero at four decimals takes N or E.
 
+## `column-cases.json`
+
+`{cases}`, each `{name, column, record, value, valid}`: fold `record` into an empty table and print
+`column`, one entry of a display's `columns`, for its row. An entry is `name` or `name:N` and prints
+as the template `{name}` or `{name:N}` would. `value` is the printed cell, or `null` when the row
+has not sent the name or the entry is malformed. `valid` is whether the entry parses (a name, then
+optionally one colon and a precision from 0 to 6); a client's display check rejects an invalid
+entry, and its cell never resolves. A column is headed by the entry's name with the precision
+dropped.
+
 ## `fold-*.json`
 
 `{name, decoder, display, entity_silence_s, steps, rows}`. `decoder` names the manifest the display
@@ -70,5 +80,5 @@ columns}`:
   arrived.
 - `position` is the newest position (or `null`), and `fields` the newest value of every field the
   transmitter has sent.
-- `columns` maps each of the display's `columns` that resolves for the row to its printed value; a
-  column the row has not sent is absent.
+- `columns` maps each of the display's `columns` entries, as written (`sog_kn:1`), that resolves
+  for the row to its printed value; a column the row has not sent is absent.

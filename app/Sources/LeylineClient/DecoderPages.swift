@@ -109,6 +109,14 @@ public enum DecoderPages {
         return 0
     }
 
+    /// The page header's line while a job runs: its state and frequency, `Running · 1090.000
+    /// MHz`. Not its detail, which the sidebar's line under the decoder already shows.
+    public static func headerWords(_ j: Leyline_V1_Job) -> String {
+        let hz = frequencyHz(j)
+        return [stateWord(j), hz > 0 ? frequencyWords(hz) : ""].filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
+
     /// Whether a record's `validity` window holds `now`: a start of 0 is from receipt, an end of
     /// 0 has no end.
     public static func inEffect(_ r: Leyline_V1_DecodeRecord, now: Date) -> Bool {
@@ -197,6 +205,22 @@ public enum DecoderPages {
         }.map(\.1)
     }
 
+    /// The table's heads around the display's columns: the name first, then how often, when and
+    /// the newest line. LATEST, not LAST, which beside LAST HEARD read as a second time.
+    public static let tableNameHead = "TRANSMITTER"
+    public static let tableSeenHead = "SEEN"
+    public static let tableHeardHead = "LAST HEARD"
+    public static let tableLatestHead = "LATEST"
+
+    /// Every head of the table, left to right, as drawn: `tableNameHead`, each column's
+    /// `columnHead`, then the seen, heard and latest heads.
+    public static func tableHeads(_ columns: [String], manifest: Leyline_V1_DecoderManifest)
+        -> [String]
+    {
+        [tableNameHead] + columns.map { columnHead($0, manifest: manifest) }
+            + [tableSeenHead, tableHeardHead, tableLatestHead]
+    }
+
     /// The display's columns as the app's table shows them: a column the name column already
     /// shows is left out, when the display names a transmitter by that one field
     /// (`entity_name` `[{callsign}]` and a `callsign` column), so the page's width goes to the
@@ -215,13 +239,15 @@ public enum DecoderPages {
             }
         }
         guard names.count == 1 else { return columns }
-        return columns.filter { $0 != names[0] }
+        return columns.filter { DisplayTemplate.columnName($0) != names[0] }
     }
 
     /// A display column's header as `ley track` writes it: a field with a unit is named with the
     /// unit in brackets and the unit suffix its name carries dropped (`sog_kn` in kn is `SOG
-    /// (kn)`); otherwise the name, upper case, words split at underscores.
-    public static func columnHead(_ name: String, manifest: Leyline_V1_DecoderManifest) -> String {
+    /// (kn)`); otherwise the name, upper case, words split at underscores. An entry's precision
+    /// (`ground_speed_kn:0`) is not part of the head.
+    public static func columnHead(_ entry: String, manifest: Leyline_V1_DecoderManifest) -> String {
+        let name = DisplayTemplate.columnName(entry)
         let word = { (s: String) in s.replacingOccurrences(of: "_", with: " ").uppercased() }
         guard let hint = manifest.fields.first(where: { $0.name == name }), !hint.unit.isEmpty
         else { return word(name) }
@@ -231,9 +257,10 @@ public enum DecoderPages {
     }
 
     /// Whether a column holds numbers, so it is set flush right.
-    public static func columnIsNumeric(_ name: String, manifest: Leyline_V1_DecoderManifest)
+    public static func columnIsNumeric(_ entry: String, manifest: Leyline_V1_DecoderManifest)
         -> Bool
     {
+        let name = DisplayTemplate.columnName(entry)
         guard let hint = manifest.fields.first(where: { $0.name == name }) else { return false }
         return hint.type == .number || hint.type == .integer
     }
@@ -282,6 +309,36 @@ public enum DecoderPages {
             }
             return FieldRow(name: name, value: value, description: hint?.description_p ?? "")
         }
+    }
+
+    /// A transmitter's altitude in the inspector, given the promoted metres: in the decoder's own
+    /// unit when it also sends a field named `altitude_<unit>` (ADS-B's `altitude_ft`, `36000 ft`),
+    /// so it reads as the table and the summary do; else the metres (`124 m`). A field the
+    /// manifest hints comes first, then by name; the unit is the hint's, else the name's suffix.
+    public static func altitudeWords(
+        metres: Double, fields: [String: Leyline_V1_FieldValue],
+        manifest: Leyline_V1_DecoderManifest
+    ) -> String? {
+        let own = { (n: String) in n.hasPrefix("altitude_") && n != "altitude_m" }
+        let hinted = manifest.fields.map(\.name).filter(own)
+        let names = hinted + fields.keys.filter { own($0) && !hinted.contains($0) }.sorted()
+        for name in names {
+            guard let v = DisplayTemplate.formatField(name, fields[name], decimals: 0) else {
+                continue
+            }
+            let hint = manifest.fields.first { $0.name == name }?.unit ?? ""
+            let unit = hint.isEmpty ? String(name.dropFirst("altitude_".count)) : unitWords(hint)
+            return "\(v) \(unit)"
+        }
+        return DisplayTemplate.formatNumber(metres, decimals: 0).map { "\($0) m" }
+    }
+
+    /// A frequency in a sentence of the Decoders place, always in MHz (`1090.000 MHz`,
+    /// `462.6125 MHz`), so a sentence that names two frequencies names them in one unit; the
+    /// placement's reason is written the same way. Below 1 MHz, the bookmark spelling.
+    public static func frequencyWords(_ hz: UInt64) -> String {
+        guard hz >= 1_000_000 else { return BookmarkNaming.frequencyWords(hz) }
+        return String(format: hz % 1_000 == 500 ? "%.4f MHz" : "%.3f MHz", Double(hz) / 1e6)
     }
 
     /// The signal line under a record: `-42.1 dBFS · 18.0 dB SNR`, the parts the daemon

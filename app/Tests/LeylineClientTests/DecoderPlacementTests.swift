@@ -152,9 +152,10 @@ final class DecoderPlacementTests: XCTestCase {
         s.channels = [channel(on: "cap_1", offset: 562_500, owner: "cli_x", kind: "cli")]
         let p = predict(audio([144_390_000]), 144_390_000, s)
         XCTAssertEqual(
-            p, .needsRadio(captureID: "cap_1", reason: "a terminal is listening on 462.562 MHz"))
+            p, .needsRadio(captureID: "cap_1", reason: "a terminal is listening on 462.5625 MHz"))
         XCTAssertTrue(p.needsTakeOver)
-        XCTAssertEqual(p.words, "Needs the radio from you: a terminal is listening on 462.562 MHz.")
+        XCTAssertEqual(
+            p.words, "Needs the radio from you: a terminal is listening on 462.5625 MHz.")
     }
 
     func testLiveAudioNeedsTheRadio() {

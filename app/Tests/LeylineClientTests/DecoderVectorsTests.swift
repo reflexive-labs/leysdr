@@ -188,6 +188,9 @@ final class DecoderVectorsTests: XCTestCase {
             if !m.display.entityName.isEmpty {
                 XCTAssertTrue(DisplayTemplate.isValid(m.display.entityName), "\(name) entity")
             }
+            for c in m.display.columns {
+                XCTAssertTrue(DisplayTemplate.isValidColumn(c), "\(name) columns[\(c)]")
+            }
             if let v = file.displays[name] {
                 XCTAssertEqual(m.display, v.proto, name)
                 checked += 1
@@ -275,6 +278,33 @@ final class DecoderVectorsTests: XCTestCase {
                 }
                 XCTAssertEqual(columns, want.columns, at)
             }
+        }
+    }
+
+    // MARK: Columns
+
+    struct ColumnFile: Decodable {
+        struct Case: Decodable {
+            var name: String
+            var column: String
+            var record: VRecord
+            var value: String?
+            var valid: Bool
+        }
+        var cases: [Case]
+    }
+
+    /// A `columns` entry, `name` or `name:N`, prints as the template `{name}` or `{name:N}`
+    /// would, and one with a bad precision never resolves.
+    func testEveryColumnCase() throws {
+        let file = try Self.read("column-cases.json", as: ColumnFile.self)
+        XCTAssertGreaterThanOrEqual(file.cases.count, 10)
+        for c in file.cases {
+            var table = EntityTable()
+            table.apply(try c.record.proto(), at: Date(timeIntervalSince1970: 1_700_000_000))
+            let row = try XCTUnwrap(table.rows.first, c.name)
+            XCTAssertEqual(table.column(c.column, of: row), c.value, c.name)
+            XCTAssertEqual(DisplayTemplate.isValidColumn(c.column), c.valid, c.name)
         }
     }
 }

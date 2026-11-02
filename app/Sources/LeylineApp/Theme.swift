@@ -6,6 +6,7 @@
 // level ramp") and nothing else: this one runs from near-black to cream and assumes the app's own
 // dark ground.
 
+import AppKit
 import Metal
 import SwiftUI
 
@@ -143,7 +144,9 @@ enum Theme {
         /// A table's column head over mono rows: the inspector's log.
         static let columnHead = SwiftUI.Font.system(
             size: 8.5, weight: .medium, design: .monospaced)
-        static let footnote = SwiftUI.Font.system(size: 10.5)
+        static let footnote = SwiftUI.Font.system(size: footnoteSize)
+        /// `footnote`'s size, for measuring a column of it (`Layout.decoderKindColumn`).
+        static let footnoteSize: CGFloat = 10.5
         /// A clause under a sentence, or a condition line under the identity's frequency.
         static let aside = SwiftUI.Font.system(size: 11.5)
         /// The play and stop glyphs in a kept row's ring, the player's ⏮ and ⏭, and a disclosure
@@ -496,7 +499,21 @@ extension Theme.Layout {
     static let decoderRowHeight: CGFloat = 22
     static let decoderTimeWidth: CGFloat = 64
     static let decoderNameWidth: CGFloat = 132
+    /// The kind column's widest: a kind longer than this is cut.
     static let decoderKindWidth: CGFloat = 96
+
+    /// The kind among `kinds` that is widest in `Font.footnote`, and the kind column's width:
+    /// that kind's, so the summary starts where the longest kind ends, up to `decoderKindWidth`.
+    static func decoderKindColumn(_ kinds: Set<String>) -> (widest: String?, width: CGFloat) {
+        let font = NSFont.systemFont(ofSize: Theme.Font.footnoteSize)
+        let measured = kinds.map { k in
+            (k, (k as NSString).size(withAttributes: [.font: font]).width)
+        }
+        guard let widest = measured.max(by: { $0.1 != $1.1 ? $0.1 < $1.1 : $0.0 > $1.0 }) else {
+            return (nil, 0)
+        }
+        return (widest.0, min(decoderKindWidth, widest.1.rounded(.up) + 1))
+    }
     /// The transmitter table's columns: the name, one per display column, how often and when.
     static let decoderTableNameWidth: CGFloat = 150
     static let decoderTableColumnWidth: CGFloat = 96
@@ -505,8 +522,10 @@ extension Theme.Layout {
     /// More than the column gap before a flush-left column after a flush-right one (the clock
     /// after `SEEN`'s count), so the two do not run together.
     static let decoderTableTimeGap: CGFloat = 12
-    /// The inspector's field names, in a column wide enough for `vertical_rate_fpm`.
-    static let decoderFieldLabelWidth: CGFloat = 116
+    /// The inspector's field names, in a column wide enough for `vertical_rate_fpm`, and the
+    /// least gap between a name and its value: a longer name is cut short of it.
+    static let decoderFieldLabelWidth: CGFloat = 124
+    static let decoderFieldNameGap: CGFloat = 8
     /// An alert in effect above the log: its padding and corners.
     static let decoderAlertPadding: CGFloat = 10
     static let decoderAlertRadius: CGFloat = 6

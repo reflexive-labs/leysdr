@@ -373,7 +373,8 @@ func heardCell(st ui.Style, counts []int) string {
 //
 // A decoder whose manifest has a display block adds to it: NAME, from the display's entity_name,
 // beside the device, and one column per display.columns entry between HEARD and POSITION, each
-// headed by the field's name with its unit (sog_kn in knots is "SOG (kn)"). The table's Display
+// headed by the field's name with its unit (sog_kn in knots is "SOG (kn)") and printed with the
+// entry's precision (ground_speed_kn:0 prints whole knots). The table's Display
 // writes LAST. m is the decoder's manifest, nil when ley has none.
 func renderTrack(app *App, table *records.Table, m *leylinev1.DecoderManifest, window time.Duration) string {
 	s := tableStyle(app)
@@ -391,7 +392,7 @@ func renderTrack(app *App, table *records.Table, m *leylinev1.DecoderManifest, w
 	fields := display.GetColumns()
 	// The manifest lists its columns most important first, so the last is the first to go.
 	for i, name := range fields {
-		head, numeric := fieldColumnHead(m, name)
+		head, numeric := fieldColumnHead(m, records.ColumnName(name))
 		cols = append(cols, column{head: head, right: numeric, drop: 5 + i, hideEmpty: true})
 	}
 	cols = append(cols,

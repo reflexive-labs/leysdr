@@ -658,10 +658,21 @@ public struct ControlDecoders: Sendable, Equatable, Codable {
     public var alerts: [String]
     /// The page's notice: the last start or stop the daemon refused.
     public var notice: String?
+    /// The header's line while a job runs (`Running · 1090.000 MHz`), null while none does.
+    public var header: String?
+    /// The table's heads as drawn, left to right, and its rows in order, each the transmitter's
+    /// name and its display columns as printed: `LEY303: 36000 · 470 · 135 · 2761`.
+    public var tableHeads: [String]
+    public var tableRows: [String]
+    /// The kind the log's kind column is sized to, its widest; null with no records.
+    public var kindColumn: String?
 
     enum CodingKeys: String, CodingKey {
         case decoder, listed, tab, tabs, state, detail, placement, rows, transmitters, alerts
-        case notice
+        case notice, header
+        case tableHeads = "table_heads"
+        case tableRows = "table_rows"
+        case kindColumn = "kind_column"
         case startShown = "start_shown"
         case startEnabled = "start_enabled"
         case recordCount = "record_count"
@@ -673,7 +684,8 @@ public struct ControlDecoders: Sendable, Equatable, Codable {
         state: String? = nil, detail: String? = nil, placement: String? = nil,
         startShown: Bool = false, startEnabled: Bool = false, recordCount: Int = 0,
         rows: [String] = [], transmitters: [String] = [], selectedTransmitter: String? = nil,
-        alerts: [String] = [], notice: String? = nil
+        alerts: [String] = [], notice: String? = nil, header: String? = nil,
+        tableHeads: [String] = [], tableRows: [String] = [], kindColumn: String? = nil
     ) {
         self.decoder = decoder
         self.listed = listed
@@ -690,6 +702,10 @@ public struct ControlDecoders: Sendable, Equatable, Codable {
         self.selectedTransmitter = selectedTransmitter
         self.alerts = alerts
         self.notice = notice
+        self.header = header
+        self.tableHeads = tableHeads
+        self.tableRows = tableRows
+        self.kindColumn = kindColumn
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -709,6 +725,10 @@ public struct ControlDecoders: Sendable, Equatable, Codable {
         try c.encode(selectedTransmitter, forKey: .selectedTransmitter)
         try c.encode(alerts, forKey: .alerts)
         try c.encode(notice, forKey: .notice)
+        try c.encode(header, forKey: .header)
+        try c.encode(tableHeads, forKey: .tableHeads)
+        try c.encode(tableRows, forKey: .tableRows)
+        try c.encode(kindColumn, forKey: .kindColumn)
     }
 }
 

@@ -527,6 +527,7 @@ import LeylineClient
                 out.state = DecoderPages.stateWord(j)
                 out.detail = DecoderPages.detail(j)
             }
+            out.header = running.first.map(DecoderPages.headerWords)
             if running.isEmpty {
                 let p = s.decoderPlacement(m)
                 out.placement = p.words
@@ -539,6 +540,17 @@ import LeylineClient
                 return "\(head): \(d.summary(e.record))"
             }
             out.transmitters = d.listedTransmitters.map { d.name(of: $0.deviceID) }
+            let columns = DecoderPages.tableColumns(d.table.display)
+            out.tableHeads = DecoderPages.tableHeads(columns, manifest: m)
+            out.tableRows = d.listedTransmitters.map { e in
+                let label = d.labels.name(of: e.deviceID) ?? ""
+                let cells = columns.map { d.table.column($0, of: e, label: label) ?? "—" }
+                return "\(d.name(of: e.deviceID)): " + cells.joined(separator: " · ")
+            }
+            out.kindColumn =
+                Theme.Layout.decoderKindColumn(
+                    Set(d.records.entries.map(\.record.kind))
+                ).widest
             out.alerts = d.alerts.map { d.summary($0.record) }
             return out
         }

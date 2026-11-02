@@ -230,7 +230,8 @@ func TestTrackAgesOutASilentStation(t *testing.T) {
 }
 
 // A manifest's display adds a NAME column from entity_name and a column per display.columns
-// entry, headed with the field's unit, and writes LAST with its templates.
+// entry, headed with the field's unit and printed with the entry's precision, and writes LAST
+// with its templates.
 func TestTrackShowsTheDisplaysColumns(t *testing.T) {
 	m := &leylinev1.DecoderManifest{
 		Name: "ais",
@@ -241,7 +242,7 @@ func TestTrackShowsTheDisplaysColumns(t *testing.T) {
 		Display: &leylinev1.DecoderDisplay{
 			Summaries:  map[string]string{"position": "{position}[ {sog_kn} kn]"},
 			EntityName: "{name}",
-			Columns:    []string{"callsign", "sog_kn"},
+			Columns:    []string{"callsign", "sog_kn:0"},
 		},
 	}
 	text := func(s string) *leylinev1.FieldValue {
@@ -256,11 +257,11 @@ func TestTrackShowsTheDisplaysColumns(t *testing.T) {
 	table.Apply(&leylinev1.DecodeRecord{
 		Protocol: "ais", DeviceId: "244660000", Kind: "position",
 		Position: &leylinev1.Position{Latitude: 52.2572, Longitude: 3.91937},
-		Fields:   map[string]*leylinev1.FieldValue{"sog_kn": {Value: &leylinev1.FieldValue_Number{Number: 12.3}}},
+		Fields:   map[string]*leylinev1.FieldValue{"sog_kn": {Value: &leylinev1.FieldValue_Number{Number: 12.6}}},
 	})
 	app := &App{IsTTY: func() bool { return false }}
 	out := renderTrack(app, table, m, trackDefaultWindow)
-	for _, want := range []string{"NAME", "CALLSIGN", "SOG (kn)", "EVER GIVEN", "H3RC", "12.3", "52.2572N 3.9194E 12.3 kn"} {
+	for _, want := range []string{"NAME", "CALLSIGN", "SOG (kn)", "EVER GIVEN", "H3RC", " 13 ", "52.2572N 3.9194E 12.6 kn"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the table lacks %q:\n%s", want, out)
 		}

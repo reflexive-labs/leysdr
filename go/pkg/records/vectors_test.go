@@ -341,3 +341,40 @@ func TestFoldVectors(t *testing.T) {
 		})
 	}
 }
+
+func TestColumnVectors(t *testing.T) {
+	var file struct {
+		Cases []struct {
+			Name   string    `json:"name"`
+			Column string    `json:"column"`
+			Record vecRecord `json:"record"`
+			Value  *string   `json:"value"`
+			Valid  bool      `json:"valid"`
+		} `json:"cases"`
+	}
+	readVector(t, "column-cases.json", &file)
+	if len(file.Cases) < 10 {
+		t.Fatalf("%d column cases", len(file.Cases))
+	}
+	for _, c := range file.Cases {
+		t.Run(c.Name, func(t *testing.T) {
+			table := NewTable()
+			table.Apply(c.Record.proto(t))
+			rows := table.Rows()
+			if len(rows) != 1 {
+				t.Fatalf("%d rows, want 1", len(rows))
+			}
+			got, ok := Column(rows[0], c.Column, "")
+			switch {
+			case c.Value == nil && ok:
+				t.Errorf("Column(%q) = %q, want absent", c.Column, got)
+			case c.Value != nil && (!ok || got != *c.Value):
+				t.Errorf("Column(%q) = %q, %v, want %q", c.Column, got, ok, *c.Value)
+			}
+			valid := ValidateDisplay(&leylinev1.DecoderDisplay{Columns: []string{c.Column}}) == nil
+			if valid != c.Valid {
+				t.Errorf("ValidateDisplay(columns %q) valid = %v, want %v", c.Column, valid, c.Valid)
+			}
+		})
+	}
+}
