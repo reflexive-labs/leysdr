@@ -48,5 +48,6 @@
       "power": "{power_dbfs:1} dBFS[ over {samples} samples]"
     }
   },
-  "executable": "leydec-iqstat"
+  "executable": "leydec-iqstat",
+  "testOnly": true
 }

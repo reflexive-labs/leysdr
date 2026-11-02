@@ -180,7 +180,7 @@ package final class Daemon: Sendable {
                 TelemetryService(store: store, jobs: jobs),
                 BulkService(store: store, registry: streams),
                 JobsService(jobs: jobs, store: store),
-                DecodersService(jobs: jobs, store: store),
+                DecodersService(jobs: jobs, store: store, listsTestOnly: !config.enumerateHardware),
                 ResourcesService(jobs: jobs, store: store),
                 CredentialsService(credentials: credentials, worker: worker, store: store, jobs: jobs),
                 UsageService(recorder: usage, store: store),

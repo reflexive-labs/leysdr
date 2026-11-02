@@ -94,6 +94,7 @@ func scriptedAsSpeech(b []byte) ([]byte, error) {
 	}
 	m["name"] = "speech"
 	m["aliases"] = []string{"transcribe"}
+	delete(m, "testOnly") // it stands in for speech, which a person's list shows
 	return json.MarshalIndent(m, "", "  ")
 }
 

@@ -45,6 +45,9 @@ func scriptedManifest() *leylinev1.DecoderManifest {
 	m.Description = "Speech to text for tests: replays the lines of the file LEYDEC_SPEECH_SCRIPT names, " +
 		"one per over, and sends nothing anywhere"
 	m.Args = []string{"--engine", "scripted"}
+	// A fixture, not a transcriber: the daemon lists it only under --no-hardware, so a person
+	// sees one Speech.
+	m.TestOnly = true
 	return m
 }
 

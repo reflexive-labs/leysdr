@@ -52,5 +52,6 @@
   "args": [
     "--engine",
     "scripted"
-  ]
+  ],
+  "testOnly": true
 }

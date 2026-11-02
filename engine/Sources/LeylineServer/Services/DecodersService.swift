@@ -14,12 +14,22 @@ struct DecodersService: Leyline_V1_Decoders.SimpleServiceProtocol {
     /// Presence, like every other stream: a client subscribed to records is here, and a client
     /// that only calls ListDecoders is touched so the store does not reap it mid-job.
     let store: SessionStore
+    /// Whether ListDecoders includes the manifests marked `test_only`: true only for a daemon
+    /// started with `--no-hardware`, which is how tests, evals and check scenes run it, so a
+    /// fixture decoder (`speech-scripted`, `iqstat`) stays out of a person's list. A job may still
+    /// name one either way; only the listing hides it.
+    let listsTestOnly: Bool
+
+    /// The manifests ListDecoders answers with: all of them, or those not marked `test_only`.
+    static func listed(_ manifests: [Leyline_V1_DecoderManifest], testOnly: Bool) -> [Leyline_V1_DecoderManifest] {
+        testOnly ? manifests : manifests.filter { !$0.testOnly }
+    }
 
     func listDecoders(request _: Leyline_V1_ListDecodersRequest, context _: ServerContext) async throws -> Leyline_V1_ListDecodersResponse {
         await store.touchUnary(ClientContext.current)
         let registry = await jobs.decoders
         var out = Leyline_V1_ListDecodersResponse()
-        out.decoders = registry.scan().map(\.manifest)
+        out.decoders = Self.listed(registry.scan().map(\.manifest), testOnly: listsTestOnly)
         out.searchPath = registry.searchPath
         let stats = await jobs.records.stats
         out.storePath = stats.path

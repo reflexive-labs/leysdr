@@ -36,6 +36,10 @@ type Options struct {
 	MeterInterval time.Duration
 	// NoDevice suppresses the built-in fake RTL-SDR device.
 	NoDevice bool
+	// Hardware answers as a daemon started without --no-hardware: ListDecoders leaves out the
+	// manifests marked test_only (speech-scripted). The default is the --no-hardware daemon
+	// every test, eval and check scene runs, which lists them.
+	Hardware bool
 	// ExtraDevices are additional descriptors attached at construction (see
 	// HeldRTLSDR); they are served as-is alongside the built-in device.
 	ExtraDevices []*leylinev1.DeviceDescriptor

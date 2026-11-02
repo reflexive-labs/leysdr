@@ -37,6 +37,27 @@ func TestListDecoders(t *testing.T) {
 	}
 }
 
+// A daemon with hardware leaves the test_only manifests out of its list, as the Swift daemon does
+// unless it runs with --no-hardware: a person sees one Speech, not speech-scripted beside it.
+func TestListDecodersHidesTestOnlyWithHardware(t *testing.T) {
+	t.Parallel()
+	c, _ := harness(t, fakedaemon.Options{Hardware: true})
+	resp, err := c.ListDecoders(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, m := range resp.GetDecoders() {
+		names = append(names, m.GetName())
+	}
+	if strings.Join(names, " ") != "aprs speech" {
+		t.Fatalf("decoders %v, want aprs speech", names)
+	}
+	if !fakedaemon.ScriptedSpeechManifest().GetTestOnly() {
+		t.Error("speech-scripted must be test_only")
+	}
+}
+
 // A decoder nobody installed is DECODER_NOT_FOUND, the stable code `ley decode` turns into the
 // line telling the reader to run `ley decoders`.
 func TestStartDecodeUnknownDecoder(t *testing.T) {

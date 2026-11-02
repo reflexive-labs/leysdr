@@ -35,6 +35,45 @@ final class DecodersServiceTests: XCTestCase {
         }
     }
 
+    /// A `test_only` manifest is listed only by a `--no-hardware` daemon: a person's daemon hides
+    /// the fixture decoders, and a test's, an eval's or a check scene's lists them.
+    func testListedHidesTestOnlyManifestsUnlessAsked() {
+        var real = Leyline_V1_DecoderManifest()
+        real.name = "speech"
+        var fixture = Leyline_V1_DecoderManifest()
+        fixture.name = "speech-scripted"
+        fixture.testOnly = true
+        XCTAssertEqual(DecodersService.listed([real, fixture], testOnly: false).map(\.name), ["speech"])
+        XCTAssertEqual(DecodersService.listed([real, fixture], testOnly: true).map(\.name), ["speech", "speech-scripted"])
+    }
+
+    /// The harness's daemon is `--no-hardware`, so it lists a `test_only` decoder beside the rest.
+    func testANoHardwareDaemonListsTestOnlyDecoders() async throws {
+        let plugins = try makeTempDir("decoders")
+        let storeDir = try makeTempDir("store")
+        defer {
+            try? FileManager.default.removeItem(atPath: plugins)
+            try? FileManager.default.removeItem(atPath: storeDir)
+        }
+        try writeFakePlugin(in: plugins)
+        try writeFakePlugin(in: plugins, name: "fixture", json: """
+        {
+          "name": "fixture",
+          "version": "0.1.0",
+          "recipe": {"frequenciesHz": ["146000000"], "mode": "NFM"},
+          "input": {"mode": "CONTINUOUS", "tap": "TAP_AUDIO"},
+          "outputs": ["SHAPE_RECORDS"],
+          "testOnly": true,
+          "executable": "\(fakeDecoderPath())"
+        }
+        """)
+        try await withDaemon(decoderSearchPath: [plugins], storePath: storeDir) { c in
+            let out = try await c.decoders.listDecoders(Leyline_V1_ListDecodersRequest(), metadata: testMetadata)
+            XCTAssertEqual(out.decoders.map(\.name).sorted(), ["fake", "fixture"])
+            XCTAssertEqual(out.decoders.first { $0.name == "fixture" }?.testOnly, true)
+        }
+    }
+
     func testSubscribeRecordsByProtocolAndQueryAnEmptyStore() async throws {
         let plugins = try makeTempDir("decoders")
         let storeDir = try makeTempDir("store")

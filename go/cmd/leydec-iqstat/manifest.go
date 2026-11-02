@@ -37,6 +37,9 @@ func manifest() *leylinev1.DecoderManifest {
 		Display:    display(),
 		Executable: "leydec-iqstat",
 		Args:       []string{},
+		// A test device for the IQ input path, not a decoder a person runs: the daemon lists it
+		// only under --no-hardware.
+		TestOnly: true,
 	}
 }
 

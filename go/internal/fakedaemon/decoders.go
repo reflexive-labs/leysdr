@@ -5,6 +5,7 @@ package fakedaemon
 import (
 	"context"
 	"math"
+	"slices"
 	"sort"
 	"time"
 
@@ -114,6 +115,7 @@ func ScriptedSpeechManifest() *leylinev1.DecoderManifest {
 	m.Description = "Speech to text for tests: replays the lines of the file LEYDEC_SPEECH_SCRIPT names, " +
 		"one per over, and sends nothing anywhere"
 	m.Args = []string{"--engine", "scripted"}
+	m.TestOnly = true
 	return m
 }
 
@@ -159,11 +161,16 @@ const (
 	FakeStorePath   = "/fake/store"
 )
 
-// ListDecoders implements Decoders.
+// ListDecoders implements Decoders. As the Swift daemon's, it leaves out a test_only manifest
+// unless the daemon runs as --no-hardware (Options.Hardware false, the default).
 func (d *Daemon) ListDecoders(ctx context.Context, _ *leylinev1.ListDecodersRequest) (*leylinev1.ListDecodersResponse, error) {
 	d.touchUnary(clientFrom(ctx))
+	listed := d.installedDecoders()
+	if d.opts.Hardware {
+		listed = slices.DeleteFunc(listed, (*leylinev1.DecoderManifest).GetTestOnly)
+	}
 	return &leylinev1.ListDecodersResponse{
-		Decoders:      d.installedDecoders(),
+		Decoders:      listed,
 		SearchPath:    []string{FakeDecoderPath},
 		StorePath:     FakeStorePath,
 		StoreCapBytes: FakeStoreCapBytes,

@@ -214,7 +214,8 @@ an IQ recording of your own (`ley play <file>`).
 
 `ley decode`, `ley records` and `ley watch` need decoder plugins installed where the daemon looks
 for them. Five ship in `decoders/`: APRS, SAME weather alerts, marine AIS, ADS-B aircraft, and `iqstat`, a test
-decoder that reports the block power of a capture's IQ and is used to check the IQ input path.
+decoder that reports the block power of a capture's IQ and is used to check the IQ input path
+(a test decoder, which `ley decoders` and the app list only from a daemon run with `--no-hardware`).
 The app carries all five (manifests in `Leyline.app/Contents/Resources/decoders/`, programs in
 `Contents/Helpers`), and its daemon finds them there with nothing to install; a decoder of the same name in the decoders directory below takes
 precedence over the bundled one. In a build from source, `make reload` installs all five as part

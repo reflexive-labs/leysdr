@@ -822,7 +822,8 @@ your own network; it chooses no model, since the server names its own, so choose
 vocabulary hint that helps the model spell callsigns: the phonetic alphabet and a few net phrases.
 Where passing on what you received is restricted, keep speech off or transcribe on a server of
 your own. A decoder named `speech-scripted` is installed beside it: it replays a file of lines,
-sends nothing anywhere, and is what the tests transcribe with.
+sends nothing anywhere, and is what the tests transcribe with. It is a test decoder, so `ley
+decoders` lists it only from a daemon started with `--no-hardware`.
 
 ## 12. Decode what is being said
 
@@ -835,10 +836,8 @@ $ ley decoders
 NAME                 FREQUENCY         MODE        OUTPUTS            VERSION  NEEDS       SENDS TO
 ais (vessels)        161.975 MHz (+1)  NFM 25 kHz  records, entities  0.1.0    -           -
 aprs                 144.390 MHz (+1)  NFM 15 kHz  records, entities  0.1.0    -           -
-iqstat               100.000 MHz       NFM         records            0.1.0    -           -
 same                 162.400 MHz (+6)  NFM 15 kHz  records            0.1.0    -           -
 speech (transcribe)  -                 NFM         records            0.2.0    openai key  api.openai.com
-speech-scripted      -                 NFM         records            0.2.0    -           -
 looked in /Users/you/Library/Application Support/Leyline/decoders
 kept records in /Users/you/Library/Application Support/Leyline/store, 2 GiB or 90 days, whichever comes first
 ```
