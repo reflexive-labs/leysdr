@@ -451,11 +451,62 @@ public nonisolated struct Leyline_V1_DecoderManifest: @unchecked Sendable {
     set {_uniqueStorage()._contactsHosts = newValue}
   }
 
+  /// How a client shows this decoder and its records. Optional: a client given no display prints
+  /// its own line per record and names a transmitter by its device_id.
+  public var display: Leyline_V1_DecoderDisplay {
+    get {_storage._display ?? Leyline_V1_DecoderDisplay()}
+    set {_uniqueStorage()._display = newValue}
+  }
+  /// Returns true if `display` has been explicitly set.
+  public var hasDisplay: Bool {_storage._display != nil}
+  /// Clears the value of `display`. Subsequent reads from it will return its default value.
+  public mutating func clearDisplay() {_uniqueStorage()._display = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+/// How clients present a decoder: the app's pages, and `ley decode`, `ley track` and `ley
+/// decoders`. Every client renders the same templates by the same rules, so a new decoder needs
+/// only its manifest to be shown (docs/reference/writing-a-decoder.md, "Display").
+///
+/// A template is text with names in braces. `{name}` is one of the promoted names device_id, kind,
+/// position, altitude_m, rssi_dbfs, snr_db and label (the person's own name for the transmitter),
+/// or else a field of the record. `[ ... ]` is an optional group, printed only when every name in
+/// it resolved; groups do not nest. `{{`, `}}`, `[[` and `]]` print one brace or bracket. A TEXT
+/// field prints as sent, INTEGER in decimal, NUMBER with at most two decimals and no trailing
+/// zeros, FLAG as the field's name when true, DATA as lower-case hex; position prints as
+/// "52.2572N 3.9194E". A name is unresolved when the record lacks it, its text is empty, its number
+/// is NaN or its flag is false. A template with an unresolved name outside a group, or one that
+/// renders only spaces, is not used, and the client prints its own line instead. The line is
+/// trimmed of leading and trailing spaces.
+public nonisolated struct Leyline_V1_DecoderDisplay: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// "APRS", "Aircraft", "Vessels", "Weather alerts"
+  public var title: String = String()
+
+  /// SF Symbol name: "airplane", "ferry", "exclamationmark.triangle"
+  public var symbol: String = String()
+
+  /// Record kind -> one-line summary template. The key "" applies to every kind without its own.
+  public var summaries: Dictionary<String,String> = [:]
+
+  /// Template for a transmitter's name, rendered over the newest value of every field it has sent;
+  /// empty or unresolved means the device_id.
+  public var entityName: String = String()
+
+  /// Fields shown as the transmitter table's columns, in order.
+  public var columns: [String] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
 }
 
 public nonisolated struct Leyline_V1_DecoderRecipe: Sendable {
@@ -1228,7 +1279,7 @@ nonisolated extension Leyline_V1_PredicateOp: SwiftProtobuf._ProtoNameProviding 
 
 nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DecoderManifest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}version\0\u{1}description\0\u{1}attribution\0\u{1}license\0\u{1}recipe\0\u{1}input\0\u{1}outputs\0\u{3}entity_silence_s\0\u{1}fields\0\u{3}supports_multi_channel\0\u{3}needs_dedicated_capture\0\u{3}stateful_predicates_available\0\u{1}executable\0\u{1}args\0\u{1}aliases\0\u{3}credential_provider\0\u{3}contacts_hosts\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}version\0\u{1}description\0\u{1}attribution\0\u{1}license\0\u{1}recipe\0\u{1}input\0\u{1}outputs\0\u{3}entity_silence_s\0\u{1}fields\0\u{3}supports_multi_channel\0\u{3}needs_dedicated_capture\0\u{3}stateful_predicates_available\0\u{1}executable\0\u{1}args\0\u{1}aliases\0\u{3}credential_provider\0\u{3}contacts_hosts\0\u{1}display\0")
 
   fileprivate class _StorageClass {
     var _name: String = String()
@@ -1249,6 +1300,7 @@ nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftPr
     var _args: [String] = []
     var _credentialProvider: String = String()
     var _contactsHosts: [String] = []
+    var _display: Leyline_V1_DecoderDisplay? = nil
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -1277,6 +1329,7 @@ nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftPr
       _args = source._args
       _credentialProvider = source._credentialProvider
       _contactsHosts = source._contactsHosts
+      _display = source._display
     }
   }
 
@@ -1313,6 +1366,7 @@ nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftPr
         case 16: try { try decoder.decodeRepeatedStringField(value: &_storage._aliases) }()
         case 17: try { try decoder.decodeSingularStringField(value: &_storage._credentialProvider) }()
         case 18: try { try decoder.decodeRepeatedStringField(value: &_storage._contactsHosts) }()
+        case 19: try { try decoder.decodeSingularMessageField(value: &_storage._display) }()
         default: break
         }
       }
@@ -1379,6 +1433,9 @@ nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftPr
       if !_storage._contactsHosts.isEmpty {
         try visitor.visitRepeatedStringField(value: _storage._contactsHosts, fieldNumber: 18)
       }
+      try { if let v = _storage._display {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 19)
+      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -1406,10 +1463,61 @@ nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftPr
         if _storage._args != rhs_storage._args {return false}
         if _storage._credentialProvider != rhs_storage._credentialProvider {return false}
         if _storage._contactsHosts != rhs_storage._contactsHosts {return false}
+        if _storage._display != rhs_storage._display {return false}
         return true
       }
       if !storagesAreEqual {return false}
     }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_DecoderDisplay: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".DecoderDisplay"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}title\0\u{1}symbol\0\u{1}summaries\0\u{3}entity_name\0\u{1}columns\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.title) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.symbol) }()
+      case 3: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &self.summaries) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.entityName) }()
+      case 5: try { try decoder.decodeRepeatedStringField(value: &self.columns) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.title.isEmpty {
+      try visitor.visitSingularStringField(value: self.title, fieldNumber: 1)
+    }
+    if !self.symbol.isEmpty {
+      try visitor.visitSingularStringField(value: self.symbol, fieldNumber: 2)
+    }
+    if !self.summaries.isEmpty {
+      try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: self.summaries, fieldNumber: 3)
+    }
+    if !self.entityName.isEmpty {
+      try visitor.visitSingularStringField(value: self.entityName, fieldNumber: 4)
+    }
+    if !self.columns.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.columns, fieldNumber: 5)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_DecoderDisplay, rhs: Leyline_V1_DecoderDisplay) -> Bool {
+    if lhs.title != rhs.title {return false}
+    if lhs.symbol != rhs.symbol {return false}
+    if lhs.summaries != rhs.summaries {return false}
+    if lhs.entityName != rhs.entityName {return false}
+    if lhs.columns != rhs.columns {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

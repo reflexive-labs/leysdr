@@ -49,6 +49,35 @@ message DecoderManifest {
   // The hosts the plugin contacts, so a person can see where the audio goes before running it.
   // Advisory: nothing enforces it.
   repeated string contacts_hosts = 18;
+  // How a client shows this decoder and its records. Optional: a client given no display prints
+  // its own line per record and names a transmitter by its device_id.
+  DecoderDisplay display = 19;
+}
+
+// How clients present a decoder: the app's pages, and `ley decode`, `ley track` and `ley
+// decoders`. Every client renders the same templates by the same rules, so a new decoder needs
+// only its manifest to be shown (docs/reference/writing-a-decoder.md, "Display").
+//
+// A template is text with names in braces. `{name}` is one of the promoted names device_id, kind,
+// position, altitude_m, rssi_dbfs, snr_db and label (the person's own name for the transmitter),
+// or else a field of the record. `[ ... ]` is an optional group, printed only when every name in
+// it resolved; groups do not nest. `{{`, `}}`, `[[` and `]]` print one brace or bracket. A TEXT
+// field prints as sent, INTEGER in decimal, NUMBER with at most two decimals and no trailing
+// zeros, FLAG as the field's name when true, DATA as lower-case hex; position prints as
+// "52.2572N 3.9194E". A name is unresolved when the record lacks it, its text is empty, its number
+// is NaN or its flag is false. A template with an unresolved name outside a group, or one that
+// renders only spaces, is not used, and the client prints its own line instead. The line is
+// trimmed of leading and trailing spaces.
+message DecoderDisplay {
+  string title = 1;                  // "APRS", "Aircraft", "Vessels", "Weather alerts"
+  string symbol = 2;                 // SF Symbol name: "airplane", "ferry", "exclamationmark.triangle"
+  // Record kind -> one-line summary template. The key "" applies to every kind without its own.
+  map<string, string> summaries = 3;
+  // Template for a transmitter's name, rendered over the newest value of every field it has sent;
+  // empty or unresolved means the device_id.
+  string entity_name = 4;
+  // Fields shown as the transmitter table's columns, in order.
+  repeated string columns = 5;
 }
 
 message DecoderRecipe {

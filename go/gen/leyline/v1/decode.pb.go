@@ -406,6 +406,9 @@ type DecoderManifest struct {
 	// The hosts the plugin contacts, so a person can see where the audio goes before running it.
 	// Advisory: nothing enforces it.
 	ContactsHosts []string `protobuf:"bytes,18,rep,name=contacts_hosts,json=contactsHosts,proto3" json:"contacts_hosts,omitempty"`
+	// How a client shows this decoder and its records. Optional: a client given no display prints
+	// its own line per record and names a transmitter by its device_id.
+	Display       *DecoderDisplay `protobuf:"bytes,19,opt,name=display,proto3" json:"display,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -566,6 +569,107 @@ func (x *DecoderManifest) GetContactsHosts() []string {
 	return nil
 }
 
+func (x *DecoderManifest) GetDisplay() *DecoderDisplay {
+	if x != nil {
+		return x.Display
+	}
+	return nil
+}
+
+// How clients present a decoder: the app's pages, and `ley decode`, `ley track` and `ley
+// decoders`. Every client renders the same templates by the same rules, so a new decoder needs
+// only its manifest to be shown (docs/reference/writing-a-decoder.md, "Display").
+//
+// A template is text with names in braces. `{name}` is one of the promoted names device_id, kind,
+// position, altitude_m, rssi_dbfs, snr_db and label (the person's own name for the transmitter),
+// or else a field of the record. `[ ... ]` is an optional group, printed only when every name in
+// it resolved; groups do not nest. `{{`, `}}`, `[[` and `]]` print one brace or bracket. A TEXT
+// field prints as sent, INTEGER in decimal, NUMBER with at most two decimals and no trailing
+// zeros, FLAG as the field's name when true, DATA as lower-case hex; position prints as
+// "52.2572N 3.9194E". A name is unresolved when the record lacks it, its text is empty, its number
+// is NaN or its flag is false. A template with an unresolved name outside a group, or one that
+// renders only spaces, is not used, and the client prints its own line instead. The line is
+// trimmed of leading and trailing spaces.
+type DecoderDisplay struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Title  string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`   // "APRS", "Aircraft", "Vessels", "Weather alerts"
+	Symbol string                 `protobuf:"bytes,2,opt,name=symbol,proto3" json:"symbol,omitempty"` // SF Symbol name: "airplane", "ferry", "exclamationmark.triangle"
+	// Record kind -> one-line summary template. The key "" applies to every kind without its own.
+	Summaries map[string]string `protobuf:"bytes,3,rep,name=summaries,proto3" json:"summaries,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Template for a transmitter's name, rendered over the newest value of every field it has sent;
+	// empty or unresolved means the device_id.
+	EntityName string `protobuf:"bytes,4,opt,name=entity_name,json=entityName,proto3" json:"entity_name,omitempty"`
+	// Fields shown as the transmitter table's columns, in order.
+	Columns       []string `protobuf:"bytes,5,rep,name=columns,proto3" json:"columns,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DecoderDisplay) Reset() {
+	*x = DecoderDisplay{}
+	mi := &file_leyline_v1_decode_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DecoderDisplay) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DecoderDisplay) ProtoMessage() {}
+
+func (x *DecoderDisplay) ProtoReflect() protoreflect.Message {
+	mi := &file_leyline_v1_decode_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DecoderDisplay.ProtoReflect.Descriptor instead.
+func (*DecoderDisplay) Descriptor() ([]byte, []int) {
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *DecoderDisplay) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *DecoderDisplay) GetSymbol() string {
+	if x != nil {
+		return x.Symbol
+	}
+	return ""
+}
+
+func (x *DecoderDisplay) GetSummaries() map[string]string {
+	if x != nil {
+		return x.Summaries
+	}
+	return nil
+}
+
+func (x *DecoderDisplay) GetEntityName() string {
+	if x != nil {
+		return x.EntityName
+	}
+	return ""
+}
+
+func (x *DecoderDisplay) GetColumns() []string {
+	if x != nil {
+		return x.Columns
+	}
+	return nil
+}
+
 type DecoderRecipe struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Where the protocol lives. One entry for most; several for a protocol with regional
@@ -582,7 +686,7 @@ type DecoderRecipe struct {
 
 func (x *DecoderRecipe) Reset() {
 	*x = DecoderRecipe{}
-	mi := &file_leyline_v1_decode_proto_msgTypes[1]
+	mi := &file_leyline_v1_decode_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -594,7 +698,7 @@ func (x *DecoderRecipe) String() string {
 func (*DecoderRecipe) ProtoMessage() {}
 
 func (x *DecoderRecipe) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_decode_proto_msgTypes[1]
+	mi := &file_leyline_v1_decode_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -607,7 +711,7 @@ func (x *DecoderRecipe) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DecoderRecipe.ProtoReflect.Descriptor instead.
 func (*DecoderRecipe) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{1}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *DecoderRecipe) GetFrequenciesHz() []uint64 {
@@ -675,7 +779,7 @@ type DecoderInput struct {
 
 func (x *DecoderInput) Reset() {
 	*x = DecoderInput{}
-	mi := &file_leyline_v1_decode_proto_msgTypes[2]
+	mi := &file_leyline_v1_decode_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -687,7 +791,7 @@ func (x *DecoderInput) String() string {
 func (*DecoderInput) ProtoMessage() {}
 
 func (x *DecoderInput) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_decode_proto_msgTypes[2]
+	mi := &file_leyline_v1_decode_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -700,7 +804,7 @@ func (x *DecoderInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DecoderInput.ProtoReflect.Descriptor instead.
 func (*DecoderInput) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{2}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *DecoderInput) GetMode() InputMode {
@@ -764,7 +868,7 @@ type FieldHint struct {
 
 func (x *FieldHint) Reset() {
 	*x = FieldHint{}
-	mi := &file_leyline_v1_decode_proto_msgTypes[3]
+	mi := &file_leyline_v1_decode_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -776,7 +880,7 @@ func (x *FieldHint) String() string {
 func (*FieldHint) ProtoMessage() {}
 
 func (x *FieldHint) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_decode_proto_msgTypes[3]
+	mi := &file_leyline_v1_decode_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -789,7 +893,7 @@ func (x *FieldHint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FieldHint.ProtoReflect.Descriptor instead.
 func (*FieldHint) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{3}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *FieldHint) GetName() string {
@@ -868,7 +972,7 @@ type DecodeRecord struct {
 
 func (x *DecodeRecord) Reset() {
 	*x = DecodeRecord{}
-	mi := &file_leyline_v1_decode_proto_msgTypes[4]
+	mi := &file_leyline_v1_decode_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -880,7 +984,7 @@ func (x *DecodeRecord) String() string {
 func (*DecodeRecord) ProtoMessage() {}
 
 func (x *DecodeRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_decode_proto_msgTypes[4]
+	mi := &file_leyline_v1_decode_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -893,7 +997,7 @@ func (x *DecodeRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DecodeRecord.ProtoReflect.Descriptor instead.
 func (*DecodeRecord) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{4}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *DecodeRecord) GetRecordId() string {
@@ -1026,7 +1130,7 @@ type Position struct {
 
 func (x *Position) Reset() {
 	*x = Position{}
-	mi := &file_leyline_v1_decode_proto_msgTypes[5]
+	mi := &file_leyline_v1_decode_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1038,7 +1142,7 @@ func (x *Position) String() string {
 func (*Position) ProtoMessage() {}
 
 func (x *Position) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_decode_proto_msgTypes[5]
+	mi := &file_leyline_v1_decode_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1051,7 +1155,7 @@ func (x *Position) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Position.ProtoReflect.Descriptor instead.
 func (*Position) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{5}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Position) GetLatitude() float64 {
@@ -1087,7 +1191,7 @@ type Validity struct {
 
 func (x *Validity) Reset() {
 	*x = Validity{}
-	mi := &file_leyline_v1_decode_proto_msgTypes[6]
+	mi := &file_leyline_v1_decode_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1099,7 +1203,7 @@ func (x *Validity) String() string {
 func (*Validity) ProtoMessage() {}
 
 func (x *Validity) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_decode_proto_msgTypes[6]
+	mi := &file_leyline_v1_decode_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1112,7 +1216,7 @@ func (x *Validity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Validity.ProtoReflect.Descriptor instead.
 func (*Validity) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{6}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Validity) GetStartNs() int64 {
@@ -1145,7 +1249,7 @@ type FieldValue struct {
 
 func (x *FieldValue) Reset() {
 	*x = FieldValue{}
-	mi := &file_leyline_v1_decode_proto_msgTypes[7]
+	mi := &file_leyline_v1_decode_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1157,7 +1261,7 @@ func (x *FieldValue) String() string {
 func (*FieldValue) ProtoMessage() {}
 
 func (x *FieldValue) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_decode_proto_msgTypes[7]
+	mi := &file_leyline_v1_decode_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1170,7 +1274,7 @@ func (x *FieldValue) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FieldValue.ProtoReflect.Descriptor instead.
 func (*FieldValue) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{7}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *FieldValue) GetValue() isFieldValue_Value {
@@ -1289,7 +1393,7 @@ type DecodeConfig struct {
 
 func (x *DecodeConfig) Reset() {
 	*x = DecodeConfig{}
-	mi := &file_leyline_v1_decode_proto_msgTypes[8]
+	mi := &file_leyline_v1_decode_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1301,7 +1405,7 @@ func (x *DecodeConfig) String() string {
 func (*DecodeConfig) ProtoMessage() {}
 
 func (x *DecodeConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_decode_proto_msgTypes[8]
+	mi := &file_leyline_v1_decode_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1314,7 +1418,7 @@ func (x *DecodeConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DecodeConfig.ProtoReflect.Descriptor instead.
 func (*DecodeConfig) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{8}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *DecodeConfig) GetDecoder() string {
@@ -1385,7 +1489,7 @@ type Predicate struct {
 
 func (x *Predicate) Reset() {
 	*x = Predicate{}
-	mi := &file_leyline_v1_decode_proto_msgTypes[9]
+	mi := &file_leyline_v1_decode_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1397,7 +1501,7 @@ func (x *Predicate) String() string {
 func (*Predicate) ProtoMessage() {}
 
 func (x *Predicate) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_decode_proto_msgTypes[9]
+	mi := &file_leyline_v1_decode_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1410,7 +1514,7 @@ func (x *Predicate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Predicate.ProtoReflect.Descriptor instead.
 func (*Predicate) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{9}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Predicate) GetAll() []*Clause {
@@ -1433,7 +1537,7 @@ type Clause struct {
 
 func (x *Clause) Reset() {
 	*x = Clause{}
-	mi := &file_leyline_v1_decode_proto_msgTypes[10]
+	mi := &file_leyline_v1_decode_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1445,7 +1549,7 @@ func (x *Clause) String() string {
 func (*Clause) ProtoMessage() {}
 
 func (x *Clause) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_decode_proto_msgTypes[10]
+	mi := &file_leyline_v1_decode_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1458,7 +1562,7 @@ func (x *Clause) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Clause.ProtoReflect.Descriptor instead.
 func (*Clause) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{10}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Clause) GetTest() isClause_Test {
@@ -1516,7 +1620,7 @@ type FieldTest struct {
 
 func (x *FieldTest) Reset() {
 	*x = FieldTest{}
-	mi := &file_leyline_v1_decode_proto_msgTypes[11]
+	mi := &file_leyline_v1_decode_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1528,7 +1632,7 @@ func (x *FieldTest) String() string {
 func (*FieldTest) ProtoMessage() {}
 
 func (x *FieldTest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_decode_proto_msgTypes[11]
+	mi := &file_leyline_v1_decode_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1541,7 +1645,7 @@ func (x *FieldTest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FieldTest.ProtoReflect.Descriptor instead.
 func (*FieldTest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{11}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *FieldTest) GetField() string {
@@ -1577,7 +1681,7 @@ type GeoTest struct {
 
 func (x *GeoTest) Reset() {
 	*x = GeoTest{}
-	mi := &file_leyline_v1_decode_proto_msgTypes[12]
+	mi := &file_leyline_v1_decode_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1589,7 +1693,7 @@ func (x *GeoTest) String() string {
 func (*GeoTest) ProtoMessage() {}
 
 func (x *GeoTest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_decode_proto_msgTypes[12]
+	mi := &file_leyline_v1_decode_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1602,7 +1706,7 @@ func (x *GeoTest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GeoTest.ProtoReflect.Descriptor instead.
 func (*GeoTest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{12}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GeoTest) GetCenter() *Position {
@@ -1635,7 +1739,7 @@ type NotifyTarget struct {
 
 func (x *NotifyTarget) Reset() {
 	*x = NotifyTarget{}
-	mi := &file_leyline_v1_decode_proto_msgTypes[13]
+	mi := &file_leyline_v1_decode_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1647,7 +1751,7 @@ func (x *NotifyTarget) String() string {
 func (*NotifyTarget) ProtoMessage() {}
 
 func (x *NotifyTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_decode_proto_msgTypes[13]
+	mi := &file_leyline_v1_decode_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1660,7 +1764,7 @@ func (x *NotifyTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotifyTarget.ProtoReflect.Descriptor instead.
 func (*NotifyTarget) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{13}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *NotifyTarget) GetTarget() isNotifyTarget_Target {
@@ -1733,7 +1837,7 @@ type ListDecodersRequest struct {
 
 func (x *ListDecodersRequest) Reset() {
 	*x = ListDecodersRequest{}
-	mi := &file_leyline_v1_decode_proto_msgTypes[14]
+	mi := &file_leyline_v1_decode_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1745,7 +1849,7 @@ func (x *ListDecodersRequest) String() string {
 func (*ListDecodersRequest) ProtoMessage() {}
 
 func (x *ListDecodersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_decode_proto_msgTypes[14]
+	mi := &file_leyline_v1_decode_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1758,7 +1862,7 @@ func (x *ListDecodersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDecodersRequest.ProtoReflect.Descriptor instead.
 func (*ListDecodersRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{14}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{15}
 }
 
 type ListDecodersResponse struct {
@@ -1775,7 +1879,7 @@ type ListDecodersResponse struct {
 
 func (x *ListDecodersResponse) Reset() {
 	*x = ListDecodersResponse{}
-	mi := &file_leyline_v1_decode_proto_msgTypes[15]
+	mi := &file_leyline_v1_decode_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1787,7 +1891,7 @@ func (x *ListDecodersResponse) String() string {
 func (*ListDecodersResponse) ProtoMessage() {}
 
 func (x *ListDecodersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_decode_proto_msgTypes[15]
+	mi := &file_leyline_v1_decode_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1800,7 +1904,7 @@ func (x *ListDecodersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDecodersResponse.ProtoReflect.Descriptor instead.
 func (*ListDecodersResponse) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{15}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListDecodersResponse) GetDecoders() []*DecoderManifest {
@@ -1855,7 +1959,7 @@ type RecordSubscription struct {
 
 func (x *RecordSubscription) Reset() {
 	*x = RecordSubscription{}
-	mi := &file_leyline_v1_decode_proto_msgTypes[16]
+	mi := &file_leyline_v1_decode_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1867,7 +1971,7 @@ func (x *RecordSubscription) String() string {
 func (*RecordSubscription) ProtoMessage() {}
 
 func (x *RecordSubscription) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_decode_proto_msgTypes[16]
+	mi := &file_leyline_v1_decode_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1880,7 +1984,7 @@ func (x *RecordSubscription) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordSubscription.ProtoReflect.Descriptor instead.
 func (*RecordSubscription) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{16}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *RecordSubscription) GetScope() isRecordSubscription_Scope {
@@ -1969,7 +2073,7 @@ type RecordQuery struct {
 
 func (x *RecordQuery) Reset() {
 	*x = RecordQuery{}
-	mi := &file_leyline_v1_decode_proto_msgTypes[17]
+	mi := &file_leyline_v1_decode_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1981,7 +2085,7 @@ func (x *RecordQuery) String() string {
 func (*RecordQuery) ProtoMessage() {}
 
 func (x *RecordQuery) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_decode_proto_msgTypes[17]
+	mi := &file_leyline_v1_decode_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1994,7 +2098,7 @@ func (x *RecordQuery) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordQuery.ProtoReflect.Descriptor instead.
 func (*RecordQuery) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{17}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *RecordQuery) GetProtocol() string {
@@ -2084,7 +2188,7 @@ type FieldMatch struct {
 
 func (x *FieldMatch) Reset() {
 	*x = FieldMatch{}
-	mi := &file_leyline_v1_decode_proto_msgTypes[18]
+	mi := &file_leyline_v1_decode_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2096,7 +2200,7 @@ func (x *FieldMatch) String() string {
 func (*FieldMatch) ProtoMessage() {}
 
 func (x *FieldMatch) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_decode_proto_msgTypes[18]
+	mi := &file_leyline_v1_decode_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2109,7 +2213,7 @@ func (x *FieldMatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FieldMatch.ProtoReflect.Descriptor instead.
 func (*FieldMatch) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{18}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *FieldMatch) GetName() string {
@@ -2140,7 +2244,7 @@ type RecordPage struct {
 
 func (x *RecordPage) Reset() {
 	*x = RecordPage{}
-	mi := &file_leyline_v1_decode_proto_msgTypes[19]
+	mi := &file_leyline_v1_decode_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2152,7 +2256,7 @@ func (x *RecordPage) String() string {
 func (*RecordPage) ProtoMessage() {}
 
 func (x *RecordPage) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_decode_proto_msgTypes[19]
+	mi := &file_leyline_v1_decode_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2165,7 +2269,7 @@ func (x *RecordPage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordPage.ProtoReflect.Descriptor instead.
 func (*RecordPage) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{19}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *RecordPage) GetRecords() []*DecodeRecord {
@@ -2199,7 +2303,7 @@ type RecordAnchor struct {
 
 func (x *RecordAnchor) Reset() {
 	*x = RecordAnchor{}
-	mi := &file_leyline_v1_decode_proto_msgTypes[20]
+	mi := &file_leyline_v1_decode_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2211,7 +2315,7 @@ func (x *RecordAnchor) String() string {
 func (*RecordAnchor) ProtoMessage() {}
 
 func (x *RecordAnchor) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_decode_proto_msgTypes[20]
+	mi := &file_leyline_v1_decode_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2224,7 +2328,7 @@ func (x *RecordAnchor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecordAnchor.ProtoReflect.Descriptor instead.
 func (*RecordAnchor) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{20}
+	return file_leyline_v1_decode_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *RecordAnchor) GetAnchor() *CaptureAnchor {
@@ -2246,7 +2350,7 @@ var File_leyline_v1_decode_proto protoreflect.FileDescriptor
 const file_leyline_v1_decode_proto_rawDesc = "" +
 	"\n" +
 	"\x17leyline/v1/decode.proto\x12\n" +
-	"leyline.v1\x1a\x17leyline/v1/common.proto\x1a\x13leyline/v1/ai.proto\"\xe4\x05\n" +
+	"leyline.v1\x1a\x17leyline/v1/common.proto\x1a\x13leyline/v1/ai.proto\"\x9a\x06\n" +
 	"\x0fDecoderManifest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x18\n" +
@@ -2268,7 +2372,18 @@ const file_leyline_v1_decode_proto_rawDesc = "" +
 	"executable\x12\x12\n" +
 	"\x04args\x18\x0f \x03(\tR\x04args\x12/\n" +
 	"\x13credential_provider\x18\x11 \x01(\tR\x12credentialProvider\x12%\n" +
-	"\x0econtacts_hosts\x18\x12 \x03(\tR\rcontactsHosts\"\xd1\x01\n" +
+	"\x0econtacts_hosts\x18\x12 \x03(\tR\rcontactsHosts\x124\n" +
+	"\adisplay\x18\x13 \x01(\v2\x1a.leyline.v1.DecoderDisplayR\adisplay\"\x80\x02\n" +
+	"\x0eDecoderDisplay\x12\x14\n" +
+	"\x05title\x18\x01 \x01(\tR\x05title\x12\x16\n" +
+	"\x06symbol\x18\x02 \x01(\tR\x06symbol\x12G\n" +
+	"\tsummaries\x18\x03 \x03(\v2).leyline.v1.DecoderDisplay.SummariesEntryR\tsummaries\x12\x1f\n" +
+	"\ventity_name\x18\x04 \x01(\tR\n" +
+	"entityName\x12\x18\n" +
+	"\acolumns\x18\x05 \x03(\tR\acolumns\x1a<\n" +
+	"\x0eSummariesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd1\x01\n" +
 	"\rDecoderRecipe\x12%\n" +
 	"\x0efrequencies_hz\x18\x01 \x03(\x04R\rfrequenciesHz\x12\x1f\n" +
 	"\vsample_rate\x18\x02 \x01(\x04R\n" +
@@ -2460,7 +2575,7 @@ func file_leyline_v1_decode_proto_rawDescGZIP() []byte {
 }
 
 var file_leyline_v1_decode_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_leyline_v1_decode_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_leyline_v1_decode_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_leyline_v1_decode_proto_goTypes = []any{
 	(GainPolicy)(0),              // 0: leyline.v1.GainPolicy
 	(DecoderSignal)(0),           // 1: leyline.v1.DecoderSignal
@@ -2469,76 +2584,80 @@ var file_leyline_v1_decode_proto_goTypes = []any{
 	(FieldType)(0),               // 4: leyline.v1.FieldType
 	(PredicateOp)(0),             // 5: leyline.v1.PredicateOp
 	(*DecoderManifest)(nil),      // 6: leyline.v1.DecoderManifest
-	(*DecoderRecipe)(nil),        // 7: leyline.v1.DecoderRecipe
-	(*DecoderInput)(nil),         // 8: leyline.v1.DecoderInput
-	(*FieldHint)(nil),            // 9: leyline.v1.FieldHint
-	(*DecodeRecord)(nil),         // 10: leyline.v1.DecodeRecord
-	(*Position)(nil),             // 11: leyline.v1.Position
-	(*Validity)(nil),             // 12: leyline.v1.Validity
-	(*FieldValue)(nil),           // 13: leyline.v1.FieldValue
-	(*DecodeConfig)(nil),         // 14: leyline.v1.DecodeConfig
-	(*Predicate)(nil),            // 15: leyline.v1.Predicate
-	(*Clause)(nil),               // 16: leyline.v1.Clause
-	(*FieldTest)(nil),            // 17: leyline.v1.FieldTest
-	(*GeoTest)(nil),              // 18: leyline.v1.GeoTest
-	(*NotifyTarget)(nil),         // 19: leyline.v1.NotifyTarget
-	(*ListDecodersRequest)(nil),  // 20: leyline.v1.ListDecodersRequest
-	(*ListDecodersResponse)(nil), // 21: leyline.v1.ListDecodersResponse
-	(*RecordSubscription)(nil),   // 22: leyline.v1.RecordSubscription
-	(*RecordQuery)(nil),          // 23: leyline.v1.RecordQuery
-	(*FieldMatch)(nil),           // 24: leyline.v1.FieldMatch
-	(*RecordPage)(nil),           // 25: leyline.v1.RecordPage
-	(*RecordAnchor)(nil),         // 26: leyline.v1.RecordAnchor
-	nil,                          // 27: leyline.v1.DecodeRecord.FieldsEntry
-	(DemodMode)(0),               // 28: leyline.v1.DemodMode
-	(AudioTap)(0),                // 29: leyline.v1.AudioTap
-	(*SampleTime)(nil),           // 30: leyline.v1.SampleTime
-	(*UsageReport)(nil),          // 31: leyline.v1.UsageReport
-	(*CaptureAnchor)(nil),        // 32: leyline.v1.CaptureAnchor
+	(*DecoderDisplay)(nil),       // 7: leyline.v1.DecoderDisplay
+	(*DecoderRecipe)(nil),        // 8: leyline.v1.DecoderRecipe
+	(*DecoderInput)(nil),         // 9: leyline.v1.DecoderInput
+	(*FieldHint)(nil),            // 10: leyline.v1.FieldHint
+	(*DecodeRecord)(nil),         // 11: leyline.v1.DecodeRecord
+	(*Position)(nil),             // 12: leyline.v1.Position
+	(*Validity)(nil),             // 13: leyline.v1.Validity
+	(*FieldValue)(nil),           // 14: leyline.v1.FieldValue
+	(*DecodeConfig)(nil),         // 15: leyline.v1.DecodeConfig
+	(*Predicate)(nil),            // 16: leyline.v1.Predicate
+	(*Clause)(nil),               // 17: leyline.v1.Clause
+	(*FieldTest)(nil),            // 18: leyline.v1.FieldTest
+	(*GeoTest)(nil),              // 19: leyline.v1.GeoTest
+	(*NotifyTarget)(nil),         // 20: leyline.v1.NotifyTarget
+	(*ListDecodersRequest)(nil),  // 21: leyline.v1.ListDecodersRequest
+	(*ListDecodersResponse)(nil), // 22: leyline.v1.ListDecodersResponse
+	(*RecordSubscription)(nil),   // 23: leyline.v1.RecordSubscription
+	(*RecordQuery)(nil),          // 24: leyline.v1.RecordQuery
+	(*FieldMatch)(nil),           // 25: leyline.v1.FieldMatch
+	(*RecordPage)(nil),           // 26: leyline.v1.RecordPage
+	(*RecordAnchor)(nil),         // 27: leyline.v1.RecordAnchor
+	nil,                          // 28: leyline.v1.DecoderDisplay.SummariesEntry
+	nil,                          // 29: leyline.v1.DecodeRecord.FieldsEntry
+	(DemodMode)(0),               // 30: leyline.v1.DemodMode
+	(AudioTap)(0),                // 31: leyline.v1.AudioTap
+	(*SampleTime)(nil),           // 32: leyline.v1.SampleTime
+	(*UsageReport)(nil),          // 33: leyline.v1.UsageReport
+	(*CaptureAnchor)(nil),        // 34: leyline.v1.CaptureAnchor
 }
 var file_leyline_v1_decode_proto_depIdxs = []int32{
-	7,  // 0: leyline.v1.DecoderManifest.recipe:type_name -> leyline.v1.DecoderRecipe
-	8,  // 1: leyline.v1.DecoderManifest.input:type_name -> leyline.v1.DecoderInput
+	8,  // 0: leyline.v1.DecoderManifest.recipe:type_name -> leyline.v1.DecoderRecipe
+	9,  // 1: leyline.v1.DecoderManifest.input:type_name -> leyline.v1.DecoderInput
 	3,  // 2: leyline.v1.DecoderManifest.outputs:type_name -> leyline.v1.OutputShape
-	9,  // 3: leyline.v1.DecoderManifest.fields:type_name -> leyline.v1.FieldHint
-	28, // 4: leyline.v1.DecoderRecipe.mode:type_name -> leyline.v1.DemodMode
-	0,  // 5: leyline.v1.DecoderRecipe.gain:type_name -> leyline.v1.GainPolicy
-	2,  // 6: leyline.v1.DecoderInput.mode:type_name -> leyline.v1.InputMode
-	29, // 7: leyline.v1.DecoderInput.tap:type_name -> leyline.v1.AudioTap
-	1,  // 8: leyline.v1.DecoderInput.signal:type_name -> leyline.v1.DecoderSignal
-	4,  // 9: leyline.v1.FieldHint.type:type_name -> leyline.v1.FieldType
-	30, // 10: leyline.v1.DecodeRecord.time:type_name -> leyline.v1.SampleTime
-	11, // 11: leyline.v1.DecodeRecord.position:type_name -> leyline.v1.Position
-	12, // 12: leyline.v1.DecodeRecord.validity:type_name -> leyline.v1.Validity
-	27, // 13: leyline.v1.DecodeRecord.fields:type_name -> leyline.v1.DecodeRecord.FieldsEntry
-	31, // 14: leyline.v1.DecodeRecord.usage:type_name -> leyline.v1.UsageReport
-	15, // 15: leyline.v1.DecodeConfig.predicate:type_name -> leyline.v1.Predicate
-	19, // 16: leyline.v1.DecodeConfig.notify:type_name -> leyline.v1.NotifyTarget
-	16, // 17: leyline.v1.Predicate.all:type_name -> leyline.v1.Clause
-	17, // 18: leyline.v1.Clause.field:type_name -> leyline.v1.FieldTest
-	18, // 19: leyline.v1.Clause.geo:type_name -> leyline.v1.GeoTest
-	5,  // 20: leyline.v1.FieldTest.op:type_name -> leyline.v1.PredicateOp
-	13, // 21: leyline.v1.FieldTest.values:type_name -> leyline.v1.FieldValue
-	11, // 22: leyline.v1.GeoTest.center:type_name -> leyline.v1.Position
-	6,  // 23: leyline.v1.ListDecodersResponse.decoders:type_name -> leyline.v1.DecoderManifest
-	11, // 24: leyline.v1.RecordQuery.near:type_name -> leyline.v1.Position
-	24, // 25: leyline.v1.RecordQuery.fields:type_name -> leyline.v1.FieldMatch
-	13, // 26: leyline.v1.FieldMatch.equals:type_name -> leyline.v1.FieldValue
-	10, // 27: leyline.v1.RecordPage.records:type_name -> leyline.v1.DecodeRecord
-	26, // 28: leyline.v1.RecordPage.anchors:type_name -> leyline.v1.RecordAnchor
-	32, // 29: leyline.v1.RecordAnchor.anchor:type_name -> leyline.v1.CaptureAnchor
-	13, // 30: leyline.v1.DecodeRecord.FieldsEntry.value:type_name -> leyline.v1.FieldValue
-	20, // 31: leyline.v1.Decoders.ListDecoders:input_type -> leyline.v1.ListDecodersRequest
-	22, // 32: leyline.v1.Decoders.SubscribeRecords:input_type -> leyline.v1.RecordSubscription
-	23, // 33: leyline.v1.Decoders.QueryRecords:input_type -> leyline.v1.RecordQuery
-	21, // 34: leyline.v1.Decoders.ListDecoders:output_type -> leyline.v1.ListDecodersResponse
-	10, // 35: leyline.v1.Decoders.SubscribeRecords:output_type -> leyline.v1.DecodeRecord
-	25, // 36: leyline.v1.Decoders.QueryRecords:output_type -> leyline.v1.RecordPage
-	34, // [34:37] is the sub-list for method output_type
-	31, // [31:34] is the sub-list for method input_type
-	31, // [31:31] is the sub-list for extension type_name
-	31, // [31:31] is the sub-list for extension extendee
-	0,  // [0:31] is the sub-list for field type_name
+	10, // 3: leyline.v1.DecoderManifest.fields:type_name -> leyline.v1.FieldHint
+	7,  // 4: leyline.v1.DecoderManifest.display:type_name -> leyline.v1.DecoderDisplay
+	28, // 5: leyline.v1.DecoderDisplay.summaries:type_name -> leyline.v1.DecoderDisplay.SummariesEntry
+	30, // 6: leyline.v1.DecoderRecipe.mode:type_name -> leyline.v1.DemodMode
+	0,  // 7: leyline.v1.DecoderRecipe.gain:type_name -> leyline.v1.GainPolicy
+	2,  // 8: leyline.v1.DecoderInput.mode:type_name -> leyline.v1.InputMode
+	31, // 9: leyline.v1.DecoderInput.tap:type_name -> leyline.v1.AudioTap
+	1,  // 10: leyline.v1.DecoderInput.signal:type_name -> leyline.v1.DecoderSignal
+	4,  // 11: leyline.v1.FieldHint.type:type_name -> leyline.v1.FieldType
+	32, // 12: leyline.v1.DecodeRecord.time:type_name -> leyline.v1.SampleTime
+	12, // 13: leyline.v1.DecodeRecord.position:type_name -> leyline.v1.Position
+	13, // 14: leyline.v1.DecodeRecord.validity:type_name -> leyline.v1.Validity
+	29, // 15: leyline.v1.DecodeRecord.fields:type_name -> leyline.v1.DecodeRecord.FieldsEntry
+	33, // 16: leyline.v1.DecodeRecord.usage:type_name -> leyline.v1.UsageReport
+	16, // 17: leyline.v1.DecodeConfig.predicate:type_name -> leyline.v1.Predicate
+	20, // 18: leyline.v1.DecodeConfig.notify:type_name -> leyline.v1.NotifyTarget
+	17, // 19: leyline.v1.Predicate.all:type_name -> leyline.v1.Clause
+	18, // 20: leyline.v1.Clause.field:type_name -> leyline.v1.FieldTest
+	19, // 21: leyline.v1.Clause.geo:type_name -> leyline.v1.GeoTest
+	5,  // 22: leyline.v1.FieldTest.op:type_name -> leyline.v1.PredicateOp
+	14, // 23: leyline.v1.FieldTest.values:type_name -> leyline.v1.FieldValue
+	12, // 24: leyline.v1.GeoTest.center:type_name -> leyline.v1.Position
+	6,  // 25: leyline.v1.ListDecodersResponse.decoders:type_name -> leyline.v1.DecoderManifest
+	12, // 26: leyline.v1.RecordQuery.near:type_name -> leyline.v1.Position
+	25, // 27: leyline.v1.RecordQuery.fields:type_name -> leyline.v1.FieldMatch
+	14, // 28: leyline.v1.FieldMatch.equals:type_name -> leyline.v1.FieldValue
+	11, // 29: leyline.v1.RecordPage.records:type_name -> leyline.v1.DecodeRecord
+	27, // 30: leyline.v1.RecordPage.anchors:type_name -> leyline.v1.RecordAnchor
+	34, // 31: leyline.v1.RecordAnchor.anchor:type_name -> leyline.v1.CaptureAnchor
+	14, // 32: leyline.v1.DecodeRecord.FieldsEntry.value:type_name -> leyline.v1.FieldValue
+	21, // 33: leyline.v1.Decoders.ListDecoders:input_type -> leyline.v1.ListDecodersRequest
+	23, // 34: leyline.v1.Decoders.SubscribeRecords:input_type -> leyline.v1.RecordSubscription
+	24, // 35: leyline.v1.Decoders.QueryRecords:input_type -> leyline.v1.RecordQuery
+	22, // 36: leyline.v1.Decoders.ListDecoders:output_type -> leyline.v1.ListDecodersResponse
+	11, // 37: leyline.v1.Decoders.SubscribeRecords:output_type -> leyline.v1.DecodeRecord
+	26, // 38: leyline.v1.Decoders.QueryRecords:output_type -> leyline.v1.RecordPage
+	36, // [36:39] is the sub-list for method output_type
+	33, // [33:36] is the sub-list for method input_type
+	33, // [33:33] is the sub-list for extension type_name
+	33, // [33:33] is the sub-list for extension extendee
+	0,  // [0:33] is the sub-list for field type_name
 }
 
 func init() { file_leyline_v1_decode_proto_init() }
@@ -2548,24 +2667,24 @@ func file_leyline_v1_decode_proto_init() {
 	}
 	file_leyline_v1_common_proto_init()
 	file_leyline_v1_ai_proto_init()
-	file_leyline_v1_decode_proto_msgTypes[5].OneofWrappers = []any{}
-	file_leyline_v1_decode_proto_msgTypes[7].OneofWrappers = []any{
+	file_leyline_v1_decode_proto_msgTypes[6].OneofWrappers = []any{}
+	file_leyline_v1_decode_proto_msgTypes[8].OneofWrappers = []any{
 		(*FieldValue_Text)(nil),
 		(*FieldValue_Integer)(nil),
 		(*FieldValue_Number)(nil),
 		(*FieldValue_Flag)(nil),
 		(*FieldValue_Data)(nil),
 	}
-	file_leyline_v1_decode_proto_msgTypes[10].OneofWrappers = []any{
+	file_leyline_v1_decode_proto_msgTypes[11].OneofWrappers = []any{
 		(*Clause_Field)(nil),
 		(*Clause_Geo)(nil),
 	}
-	file_leyline_v1_decode_proto_msgTypes[13].OneofWrappers = []any{
+	file_leyline_v1_decode_proto_msgTypes[14].OneofWrappers = []any{
 		(*NotifyTarget_Webhook)(nil),
 		(*NotifyTarget_Shell)(nil),
 		(*NotifyTarget_MacosNotification)(nil),
 	}
-	file_leyline_v1_decode_proto_msgTypes[16].OneofWrappers = []any{
+	file_leyline_v1_decode_proto_msgTypes[17].OneofWrappers = []any{
 		(*RecordSubscription_All)(nil),
 		(*RecordSubscription_JobId)(nil),
 		(*RecordSubscription_Protocol)(nil),
@@ -2576,7 +2695,7 @@ func file_leyline_v1_decode_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_leyline_v1_decode_proto_rawDesc), len(file_leyline_v1_decode_proto_rawDesc)),
 			NumEnums:      6,
-			NumMessages:   22,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
