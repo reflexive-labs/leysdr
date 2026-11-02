@@ -501,7 +501,8 @@ struct DecoderTable: View {
                     head(
                         DecoderPages.columnHead(c, manifest: manifest),
                         width: Theme.Layout.decoderTableColumnWidth,
-                        trailing: DecoderPages.columnIsNumeric(c, manifest: manifest))
+                        trailing: DecoderPages.columnIsNumeric(c, manifest: manifest)
+                    )
                     .padding(.leading, gap(before: i, columns))
                 }
                 head("SEEN", width: Theme.Layout.decoderTableCountWidth, trailing: true)
@@ -572,7 +573,8 @@ struct DecoderTable: View {
                     .frame(
                         width: Theme.Layout.decoderTableColumnWidth,
                         alignment: DecoderPages.columnIsNumeric(c, manifest: manifest)
-                            ? .trailing : .leading)
+                            ? .trailing : .leading
+                    )
                     .padding(.leading, gap(before: i, columns))
             }
             Text("\(e.count)").font(Theme.Font.value).foregroundStyle(Theme.inkSecondary)

@@ -697,7 +697,7 @@ scenes:
       - {cmd: click, x: 804, y: 400}
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {tuned_hz: 146939345, bookmark: null, tooltip: null}}
-      - {cmd: menu, menu: "View>Show Assistant", read: true, expect: {title: Show Assistant, enabled: true, checked: false, items.8: Hide Inspector}}
+      - {cmd: menu, menu: "View>Show Assistant", read: true, expect: {title: Show Assistant, enabled: true, checked: false, items.9: Hide Inspector}}
       - {cmd: menu, menu: "View>Show Assistant"}
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {assistant_shown: true, window.min_width: 1221, assistant.input: "", assistant.state: null}}
@@ -1815,14 +1815,16 @@ scenes:
       - {cmd: wait, seconds: 2}
       - {cmd: state, expect: {decoders.state: Stopped, decoders.start_shown: true}}
 
-  # ADS-B on scene_adsb, an IQ decoder: forty records or a few more from the five aircraft (the
-  # fixture sends faster than `ley jobs cancel` lands, so the counts vary and the tree masks
-  # them; the inspector's job id and its counts too), the job cancelled before the app starts
-  # as decoders-aprs's is. The map's tree checks the five markers by id and name; where they
-  # are moves with the aircraft, so the picture's threshold covers it. The table names each aircraft by its callsign
-  # (the manifest's entity_name) with its altitude, speed, track and squawk; the staged map turns
-  # each marker to its track and draws its trail; the inspector shows LEY303's fields with their
-  # units and its raw bytes. ⌘3 comes back to the place from the Radio.
+  # ADS-B on scene_adsb, an IQ decoder: 150 records or a few more from the five aircraft, about
+  # seven seconds of their traffic, so each has sent the identification that names it (one in
+  # five seconds) wherever in the loop the job began. The fixture sends faster than `ley jobs
+  # cancel` lands, so the counts vary, and so does which record is LEY303's newest, which the
+  # inspector shows: the pictures mask the counts and the inspector, and are read by eye. The
+  # state names the five aircraft in the table's order; decoders-aprs's map tree checks the
+  # markers' accessibility. The table names each aircraft by its callsign (the manifest's
+  # entity_name) with its altitude, speed, track and squawk; the staged map turns each marker to
+  # its track and draws its trail; the inspector shows LEY303's fields with their units and its
+  # raw bytes. ⌘3 comes back to the place from the Radio.
   - name: decoders-adsb
     covers: [DecoderMap.swift, DecoderInspector.swift, DecodersView.swift, EntityTable.swift,
       DecoderPlacement.swift]
@@ -1830,7 +1832,7 @@ scenes:
     fixtures: [{name: scene_adsb}]
     clock: "19:42"
     steps:
-      - ley: [decode, adsb, --job, --count, "40"]
+      - ley: [decode, adsb, --job, --count, "150"]
       - ley: [jobs, cancel, job_]
     stage:
       place: decoders
@@ -1840,11 +1842,10 @@ scenes:
       select_transmitter: A1F003
       settle: 2
     app:
-      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tab: map, decoders.tabs.1: table, decoders.tabs.2: map, decoders.selected_transmitter: A1F003, decoders.state: Stopped}}
-      - {cmd: snapshot, name: map}
-      - {cmd: ax, name: map, mask: [counts, inspector, map]}
+      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tab: map, decoders.tabs.1: table, decoders.tabs.2: map, decoders.selected_transmitter: A1F003, decoders.state: Stopped, decoders.transmitters.0: LEY101, decoders.transmitters.1: LEY202, decoders.transmitters.2: LEY303, decoders.transmitters.3: LEY404, decoders.transmitters.4: N0CALL}}
+      - {cmd: snapshot, name: map, mask: [counts, inspector]}
       - {cmd: press, identifier: decoders.tab.table}
-      - {cmd: snapshot, name: table}
+      - {cmd: snapshot, name: table, mask: [counts, inspector]}
       - {cmd: press, identifier: toolbar.place.radio}
       - {cmd: key, keys: cmd+3}
       - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tab: table}}
