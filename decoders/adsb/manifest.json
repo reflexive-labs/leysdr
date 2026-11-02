@@ -1,0 +1,96 @@
+{
+  "name": "adsb",
+  "version": "0.1.0",
+  "aliases": [
+    "aircraft"
+  ],
+  "description": "ADS-B and Mode S aircraft on 1090 MHz: identification, position, velocity, altitude and squawk",
+  "license": "Apache-2.0",
+  "recipe": {
+    "frequenciesHz": [
+      "1090000000"
+    ],
+    "sampleRate": "2400000",
+    "mode": "AM",
+    "gain": "GAIN_LEAVE"
+  },
+  "input": {
+    "mode": "CONTINUOUS",
+    "signal": "SIGNAL_IQ"
+  },
+  "outputs": [
+    "SHAPE_RECORDS",
+    "SHAPE_ENTITIES"
+  ],
+  "entitySilenceS": 60,
+  "fields": [
+    {
+      "name": "icao",
+      "type": "TEXT",
+      "description": "the aircraft's 24-bit address, six hex digits"
+    },
+    {
+      "name": "callsign",
+      "type": "TEXT",
+      "description": "the flight's callsign or the aircraft's registration, as it sends it"
+    },
+    {
+      "name": "category",
+      "type": "TEXT",
+      "description": "emitter category: set and code, A1 light to A5 heavy, A7 rotorcraft"
+    },
+    {
+      "name": "altitude_ft",
+      "type": "NUMBER",
+      "unit": "ft",
+      "description": "pressure altitude, or GNSS height for type codes 20 to 22"
+    },
+    {
+      "name": "ground_speed_kn",
+      "type": "NUMBER",
+      "unit": "kn",
+      "description": "ground speed"
+    },
+    {
+      "name": "track_deg",
+      "type": "NUMBER",
+      "unit": "deg",
+      "description": "track over ground, degrees true"
+    },
+    {
+      "name": "airspeed_kn",
+      "type": "NUMBER",
+      "unit": "kn",
+      "description": "indicated or true airspeed, sent when ground speed is not"
+    },
+    {
+      "name": "heading_deg",
+      "type": "NUMBER",
+      "unit": "deg",
+      "description": "magnetic heading, sent with airspeed"
+    },
+    {
+      "name": "vertical_rate_fpm",
+      "type": "NUMBER",
+      "unit": "ft/min",
+      "description": "vertical rate, negative descending"
+    },
+    {
+      "name": "squawk",
+      "type": "TEXT",
+      "description": "the transponder's identity code, four octal digits"
+    },
+    {
+      "name": "df",
+      "type": "NUMBER",
+      "description": "Mode S downlink format: 17 ADS-B, 18 non-transponder ADS-B, 11 all-call reply, 4, 5, 20, 21 surveillance replies"
+    },
+    {
+      "name": "tc",
+      "type": "NUMBER",
+      "description": "ADS-B type code: 1-4 identification, 5-8 surface position, 9-18 and 20-22 airborne position, 19 velocity"
+    }
+  ],
+  "needsDedicatedCapture": true,
+  "executable": "leydec-adsb"
+}
