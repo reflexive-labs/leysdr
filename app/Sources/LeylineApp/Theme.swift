@@ -308,6 +308,9 @@ enum Theme {
         /// The kept bars at the gutter's left edge, and the tick spacing down it.
         static let keptBarWidth: CGFloat = 3
         static let gutterTickSeconds = 10
+        /// A waterfall tag (DA-9): the dot on its frequency and the name's height.
+        static let waterfallTagDot: CGFloat = 4
+        static let waterfallTagHeight: CGFloat = 14
         /// The store footer's bar at the sidebar's foot.
         static let storeBarHeight: CGFloat = 3
         /// The Library's channel page: its header is 56 pt, as the design specifies; the page's

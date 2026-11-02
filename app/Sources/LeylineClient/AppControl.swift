@@ -732,6 +732,31 @@ public struct ControlDecoders: Sendable, Equatable, Codable {
     }
 }
 
+/// `state`'s `decoding_rows`: one of the Radio sidebar's rows of a running decoder, as drawn.
+public struct ControlDecodingRow: Sendable, Equatable, Codable {
+    /// The decoder by manifest name, its title, and the count beside it (`12 records`).
+    public var decoder: String
+    public var title: String
+    public var count: String
+
+    public init(decoder: String, title: String, count: String) {
+        self.decoder = decoder
+        self.title = title
+        self.count = count
+    }
+}
+
+/// `state`'s `waterfall_tags`: one tag the waterfall draws, its name and frequency.
+public struct ControlWaterfallTag: Sendable, Equatable, Codable {
+    public var name: String
+    public var hz: UInt64
+
+    public init(name: String, hz: UInt64) {
+        self.name = name
+        self.hz = hz
+    }
+}
+
 /// `state`'s result: the window's view state as `AppSession` holds it. Every key is written,
 /// null when absent, so a check can tell "no channel" from a key it misspelled.
 public struct ControlViewState: Sendable, Equatable, Codable {
@@ -813,6 +838,12 @@ public struct ControlViewState: Sendable, Equatable, Codable {
     public var libraryRows: [String]
     /// The Decoders place's page while it shows, else null.
     public var decoders: ControlDecoders?
+    /// The Radio sidebar's rows of the running decoders, in its order; null when none runs and
+    /// the sidebar has none.
+    public var decodingRows: [ControlDecodingRow]?
+    /// The tags the waterfall draws, newest first, while the Radio shows and View ▸ Show Decoded
+    /// Names is on; null otherwise.
+    public var waterfallTags: [ControlWaterfallTag]?
 
     enum CodingKeys: String, CodingKey {
         case place, mode, band, bookmark, focused, notices, popover, heard, hits, transport
@@ -839,6 +870,8 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         case bookmarkRows = "bookmark_rows"
         case libraryRows = "library_rows"
         case decoders
+        case decodingRows = "decoding_rows"
+        case waterfallTags = "waterfall_tags"
     }
 
     public init(
@@ -855,9 +888,12 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         tooltip: String? = nil, transport: ControlTransport? = nil, entries: [String] = [],
         tunedRows: Int = 0, tunedRow: String? = nil, onAirEntry: String? = nil,
         logNames: String? = nil, sort: String = "frequency", bookmarkRows: [String] = [],
-        libraryRows: [String] = [], decoders: ControlDecoders? = nil
+        libraryRows: [String] = [], decoders: ControlDecoders? = nil,
+        decodingRows: [ControlDecodingRow]? = nil, waterfallTags: [ControlWaterfallTag]? = nil
     ) {
         self.decoders = decoders
+        self.decodingRows = decodingRows
+        self.waterfallTags = waterfallTags
         self.place = place
         self.tunedHz = tunedHz
         self.mode = mode
@@ -943,6 +979,8 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         try c.encode(bookmarkRows, forKey: .bookmarkRows)
         try c.encode(libraryRows, forKey: .libraryRows)
         try c.encode(decoders, forKey: .decoders)
+        try c.encode(decodingRows, forKey: .decodingRows)
+        try c.encode(waterfallTags, forKey: .waterfallTags)
     }
 }
 

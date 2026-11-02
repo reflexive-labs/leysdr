@@ -1887,6 +1887,32 @@ scenes:
       - {cmd: snapshot, name: declined}
       - {cmd: ax, name: declined}
 
+  # Decoding seen from the radio (docs/plans/decoders-app.md, DA-9) on scene_aprs. With no
+  # decoder running the Radio sidebar has no decoder row. A terminal starts APRS as a kept job
+  # on the window's capture and waits for two packets: the sidebar's top gets APRS's row, and
+  # each station heard since puts its callsign on the waterfall at 144.390 MHz. The waterfall is
+  # masked in pictures, so the tags are read from the state, and each is logged. Which station
+  # is heard first depends on where in the loop the job began, so the state checks a tag's
+  # frequency, not its name. View ▸ Show Decoded Names is on, and off it takes the tags away; the
+  # row's click opens APRS's page in Decoders, still running.
+  - name: radio-decoding
+    covers: [DecodedNames.swift, WaterfallTags.swift, SidebarView.swift, WaterfallView.swift]
+    fixtures: [{name: scene_aprs}]
+    clock: "19:42"
+    stage: {place: radio, settle: 3}
+    app:
+      - {cmd: state, expect: {place: radio, decoding_rows: null}}
+      - {cmd: snapshot, name: idle}
+      - {cmd: ley, args: [decode, aprs, --job, --count, "2"]}
+      - {cmd: wait, seconds: 4, expect_log: "tag N0CALL-[1-7] at 144390000 Hz"}
+      - {cmd: state, expect: {decoding_rows.0.decoder: aprs, decoding_rows.0.title: APRS, waterfall_tags.0.hz: 144390000}}
+      - {cmd: snapshot, name: decoding}
+      - {cmd: menu, menu: "View>Show Decoded Names", read: true, expect: {checked: true}}
+      - {cmd: menu, menu: "View>Show Decoded Names"}
+      - {cmd: state, expect: {waterfall_tags: null, decoding_rows.0.decoder: aprs}, expect_log: "decoded names hidden"}
+      - {cmd: press, identifier: sidebar.decoder.aprs}
+      - {cmd: state, expect: {place: decoders, decoders.decoder: aprs, decoders.state: Running}}
+
   # The transport bar at the window's smaller sizes (docs/plans/app.md, decision 13): the Mode
   # and Width pop-ups keep their labels on one line at 900 × 612 pt (the minimum), 1000 and
   # 1100 pt, with and without the inspector, through the longest widths a band or a mode

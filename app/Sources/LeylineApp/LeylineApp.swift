@@ -183,6 +183,12 @@ struct TuneCommands: Commands {
             }
             .keyboardShortcut("a", modifiers: [.command, .shift])
             .disabled(!session.hasAnyAI)
+            // The waterfall's tags of what the decoders hear (DA-9); after the two panels, so
+            // the items above keep their places.
+            Toggle(
+                "Show Decoded Names",
+                isOn: Binding(
+                    get: { session.showsDecodedNames }, set: { session.showsDecodedNames = $0 }))
         }
         CommandGroup(after: .toolbar) {
             Button("Zoom In") { session.zoomIn() }.keyboardShortcut("=", modifiers: [.command])

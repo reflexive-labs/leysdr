@@ -509,7 +509,22 @@ import LeylineClient
                 onAirEntry: s.tunedGroup?.isMerged == true ? s.onAirEntry?.name : nil,
                 logNames: Self.logNames(s), sort: s.bookmarkSort.rawValue,
                 bookmarkRows: Self.bookmarkRows(s), libraryRows: Self.libraryRows(s),
-                decoders: Self.decodersState(s))
+                decoders: Self.decodersState(s),
+                decodingRows: Self.decodingRows(s),
+                waterfallTags: s.place == .radio && s.showsDecodedNames
+                    ? s.shownWaterfallTags.map {
+                        ControlWaterfallTag(name: $0.name, hz: $0.frequencyHz)
+                    }
+                    : nil)
+        }
+
+        /// The Radio sidebar's decoder rows, nil when it has none.
+        private static func decodingRows(_ s: AppSession) -> [ControlDecodingRow]? {
+            let rows = s.decodingRows
+            guard !rows.isEmpty else { return nil }
+            return rows.map {
+                ControlDecodingRow(decoder: $0.decoder, title: $0.title, count: $0.count)
+            }
         }
 
         /// The Decoders page as `ControlDecoders` writes it, while the place shows.

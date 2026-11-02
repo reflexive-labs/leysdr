@@ -22,6 +22,8 @@ final class AppSession {
     private(set) var writes: WriteCoalescer?
     private(set) var startupError: LeylineError?
     private var daemon: DaemonConnection?
+    /// The connection, for the feeds kept outside this file.
+    var daemonConnection: DaemonConnection? { daemon }
     private var mirror: DaemonMirror?
     private var running: Task<Void, Never>?
 
@@ -106,6 +108,8 @@ final class AppSession {
     let telemetry = ChannelTelemetryFeed()
     let captureLevel = CaptureLevelFeed()
     let audioLevels = AudioLevelsFeed()
+    /// The decoders' records, for the waterfall's tags (`DecodedNames.swift`).
+    let decodedNames = DecodedNamesFeed()
 
     /// A staged run for the site's screenshots (`Staging.swift`), or nil. While set, the
     /// session writes nothing to UserDefaults and does not reopen the remembered band, so a shot
@@ -192,11 +196,30 @@ final class AppSession {
             log("session", "place: \(place.rawValue)")
             if place == .library { selectFirstChannel() }
             decoders.setShown(place == .decoders)
+            followDecodedNames()
             followPage()
             // The audio ladder is drawn only by the Radio's inspector.
             followAudioLevels()
         }
     }
+    /// View ▸ Show Decoded Names: the waterfall tags each transmitter a decoder hears with its
+    /// name (`DecodedNames.swift`). Remembered in the defaults under `showsDecodedNamesKey`, as
+    /// `inspectorShown` is; on until someone turns it off.
+    var showsDecodedNames =
+        UserDefaults.standard.object(forKey: AppSession.showsDecodedNamesKey) as? Bool ?? true
+    {
+        didSet {
+            if unstaged {
+                UserDefaults.standard.set(showsDecodedNames, forKey: Self.showsDecodedNamesKey)
+            }
+            guard showsDecodedNames != oldValue else { return }
+            log("waterfall", "decoded names \(showsDecodedNames ? "shown" : "hidden")")
+            followDecodedNames()
+        }
+    }
+    /// How many rows the waterfall shows, its height in device pixels, as its view last measured
+    /// it; 0 before it has. The tags' horizon (`waterfallTagHorizon`).
+    @ObservationIgnored var waterfallRowsShown = 0
     /// Whether the assistant's panel is on the window's right, beside the inspector. Remembered
     /// in the defaults under `assistantShownKey`, as `inspectorShown` is; hidden until someone
     /// opens it, and drawn only while `hasAnyAI` holds (`assistantPanelShown`).
@@ -465,6 +488,7 @@ final class AppSession {
     private static let bookmarkSortKey = "bookmarkSort"
     private static let placeKey = "place"
     private static let assistantShownKey = "assistantShown"
+    private static let showsDecodedNamesKey = "showsDecodedNames"
 
     // MARK: Derived
 
@@ -1063,6 +1087,7 @@ final class AppSession {
         followOtherClients()
         decoders.mirrorChanged(state)
         spectrum.follow(capture, connection: daemon)
+        followDecodedNames()
         telemetry.follow(
             channelID, offsetHz: channel?.offsetHz, centerHz: capture?.centerHz,
             mode: channel?.mode, captureRate: capture?.sampleRate ?? 0, connection: daemon)

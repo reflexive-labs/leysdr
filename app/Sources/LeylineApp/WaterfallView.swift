@@ -2,7 +2,7 @@
 
 // The waterfall. The Metal view draws rows from the feed's ring, newest at the top, one row per
 // display pixel at 30 rows a second; SwiftUI draws what sits over it: the tuned channel, the
-// pointer's hairline and badge. Every gesture is handled by the Metal view (it handles the mouse,
+// decoders' tags (`DecodedNames.swift`), the pointer's hairline and badge. Every gesture is handled by the Metal view (it handles the mouse,
 // through `ChartMouse` like the spectrum) and lands in `AppSession.tune(to:)`. Beside it, not over
 // it, the time gutter: seconds down a `panel` column and the tuned channel's kept bars
 // (`WaterfallGutter`). `MainWindow` lays the gutter out, because the spectrum above narrows by the
@@ -15,6 +15,7 @@ import SwiftUI
 
 struct WaterfallView: View {
     @Environment(AppSession.self) private var session
+    @Environment(\.displayScale) private var displayScale
     @State private var pointer: CGPoint?
     @State private var problem: String?
 
@@ -55,6 +56,12 @@ struct WaterfallView: View {
         }
         .background(Theme.ground)
         .clipped()
+        // The rows shown, one a device pixel: the decoders' tags go with their row past it.
+        .onGeometryChange(for: Int.self) { geo in
+            Int((geo.size.height * max(displayScale, 1)).rounded(.up))
+        } action: { rows in
+            session.waterfallRowsShown = rows
+        }
     }
 
     private func columns(width: CGFloat) -> Columns? {
@@ -83,6 +90,8 @@ struct WaterfallView: View {
                 x0: columns.x(of: hz - UInt64(ch.bandwidthHz) / 2),
                 x1: columns.x(of: hz + UInt64(ch.bandwidthHz) / 2), height: size.height)
         }
+        // The decoders' names (DA-9), under the pointer's badge.
+        if session.showsDecodedNames { WaterfallTagsOverlay(columns: columns, size: size) }
         PointerOverlay(columns: columns, size: size, point: pointer)
     }
 }

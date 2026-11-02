@@ -8,8 +8,9 @@
 // then the sweep's words or hits and its bookmarks (the design's "Scan the band"), all on one
 // raised ground; `Channels` opens the plan picker (`PlanPickerView.swift`). The bands the radio
 // cannot tune fold to one dim line at the top, a bookmark in no band goes under `Other`, and the
-// filter field flattens everything into one list. Every rule here is `LeylineClient`'s (`Sidebar.swift`) and the
-// session's; the views read them.
+// filter field flattens everything into one list. Above the filter, a row per running decoder
+// (`DecodingRowsView`, in `DecodedNames.swift`). Every rule here is `LeylineClient`'s
+// (`Sidebar.swift`) and the session's; the views read them.
 
 import AppKit
 import LeylineClient
@@ -24,6 +25,8 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // A row per running decoder (DA-9), above the filter; nothing while none runs.
+            DecodingRowsView()
             filter.padding(.bottom, 10)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {

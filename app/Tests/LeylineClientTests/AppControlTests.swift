@@ -165,20 +165,35 @@ final class AppControlTests: XCTestCase {
             back.keys.sorted(),
             [
                 "alert", "assistant", "assistant_shown", "band", "bandwidth_hz", "bookmark",
-                "bookmark_rows", "capture", "capture_id", "channel_id", "decoders", "entries",
+                "bookmark_rows", "capture", "capture_id", "channel_id", "decoders",
+                "decoding_rows", "entries",
                 "filter_caret", "filter_query", "focused", "heard", "hits", "inspector_shown",
                 "library_rows",
                 "log_names", "mode", "muted", "notices", "on_air_entry", "open_rows", "place",
                 "popover", "selected_part", "selected_recording_channel", "settings_open", "sink",
                 "sort", "tooltip", "transport", "tuned_hz", "tuned_row", "tuned_rows", "view",
-                "volume", "window",
+                "volume", "waterfall_tags", "window",
             ])
         for key in [
             "alert", "assistant", "capture", "filter_caret", "tooltip", "transport", "view",
             "volume", "window", "tuned_row", "on_air_entry", "log_names", "decoders",
+            "waterfall_tags", "decoding_rows",
         ] {
             XCTAssertTrue(back[key] is NSNull, key)
         }
+    }
+
+    func testTheRadiosDecodingRowsAndTagsWriteTheirKeys() throws {
+        let state = ControlViewState(
+            place: "radio",
+            decodingRows: [ControlDecodingRow(decoder: "aprs", title: "APRS", count: "3 records")],
+            waterfallTags: [ControlWaterfallTag(name: "N0CALL-3", hz: 144_390_000)])
+        let back = try object(AppControl.encoded(state))
+        let row = try XCTUnwrap((back["decoding_rows"] as? [[String: Any]])?.first)
+        XCTAssertEqual(row.keys.sorted(), ["count", "decoder", "title"])
+        let tag = try XCTUnwrap((back["waterfall_tags"] as? [[String: Any]])?.first)
+        XCTAssertEqual(tag.keys.sorted(), ["hz", "name"])
+        XCTAssertEqual(tag["hz"] as? Int, 144_390_000)
     }
 
     func testTheDecodersPageWritesEveryKey() throws {
