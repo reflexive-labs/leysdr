@@ -103,6 +103,33 @@ public enum DecoderPages {
         return ""
     }
 
+    /// The header's red line under the placement sentence while no job runs: `Failed: <reason>`
+    /// for the newest job when it failed, or nil when there is none or its reason is the
+    /// placement sentence again, as when the daemon declined a job for the reason the page
+    /// already gives. The two compare without a trailing full stop, which the sentence has.
+    public static func failedLine(newest: Leyline_V1_Job?, placement: String) -> String? {
+        guard let j = newest, j.state == .failed else { return nil }
+        let reason = detail(j)
+        func bare(_ s: String) -> Substring {
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.hasSuffix(".") ? t.dropLast() : Substring(t)
+        }
+        if reason.isEmpty || bare(reason) == bare(placement) { return nil }
+        return "Failed: \(reason)"
+    }
+
+    /// The log's words with no record in it: reading the history, listening while a job runs,
+    /// else nothing heard, with the prompt to start only when Start can be pressed.
+    public static func emptyLogWords(historyLoaded: Bool, listening: Bool, canStart: Bool)
+        -> String
+    {
+        if !historyLoaded { return "Reading the last day's records…" }
+        if listening { return "Listening. Nothing decoded yet." }
+        return canStart
+            ? "Nothing heard in the last day. Start the decoder to listen."
+            : "Nothing heard in the last day."
+    }
+
     /// The frequency a decode job listens on, from its config; 0 when it names none.
     public static func frequencyHz(_ j: Leyline_V1_Job) -> UInt64 {
         if case .decode(let d)? = j.config { return d.frequencyHz }

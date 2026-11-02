@@ -238,7 +238,8 @@ struct DecoderPage: View {
 /// The decoder's symbol and title over what it is doing, and Start or Stop. While a job runs the
 /// line is its state and frequency (`Running · 144.390 MHz`; `caution` while degraded), its
 /// `status_detail` being the sidebar's job line and this line's tooltip; otherwise it is where Start would put it
-/// (`DecoderPlacement.words`), and under it the newest job's failure when it failed.
+/// (`DecoderPlacement.words`), and under it the newest job's failure when it failed for another
+/// reason (`DecoderPages.failedLine`).
 struct DecoderPageHeader: View {
     let manifest: Leyline_V1_DecoderManifest
     @Environment(AppSession.self) private var session
@@ -270,8 +271,10 @@ struct DecoderPageHeader: View {
                         .foregroundStyle(placementInk(placement)).lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("decoders.page.placement")
-                    if let j = jobs.first, j.state == .failed {
-                        Text("Failed: \(DecoderPages.detail(j))").font(Theme.Font.footnote)
+                    if let failed = DecoderPages.failedLine(
+                        newest: jobs.first, placement: placement.words)
+                    {
+                        Text(failed).font(Theme.Font.footnote)
                             .foregroundStyle(Theme.accentRec).lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
                             .accessibilityIdentifier("decoders.page.failed")
@@ -378,15 +381,18 @@ struct DecoderLog: View {
             }
             if entries.isEmpty {
                 // While a job runs, Start is not there to press: the page says it is listening.
+                // While Start is off, the page does not ask for it.
                 let listening =
                     d.selected.map { !DecoderPages.running(of: $0, in: session.state.jobs).isEmpty }
                     ?? false
+                let canStart =
+                    d.selected.map {
+                        session.isLive && session.decoderPlacement($0).canStart
+                            && d.starting != $0.name
+                    } ?? false
                 Text(
-                    !d.historyLoaded
-                        ? "Reading the last day's records…"
-                        : listening
-                            ? "Listening. Nothing decoded yet."
-                            : "Nothing heard in the last day. Start the decoder to listen."
+                    DecoderPages.emptyLogWords(
+                        historyLoaded: d.historyLoaded, listening: listening, canStart: canStart)
                 )
                 .font(Theme.Font.label).foregroundStyle(Theme.inkTertiary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

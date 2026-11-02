@@ -91,6 +91,41 @@ final class DecoderPagesTests: XCTestCase {
         XCTAssertEqual(DecoderPages.detail(j), "no radio here can hear 161.975 MHz")
     }
 
+    /// The red line shows only a reason the placement sentence does not already give: a job
+    /// declined for the placement's own reason adds nothing, one that failed otherwise shows.
+    func testTheFailedLineShowsOnlyAReasonThePlacementDoesNotGive() {
+        let reason =
+            "NESDR SMArt v5 cannot tune to 1090.000 MHz (a file radio plays what it recorded)"
+        let placement = reason + "."
+        var j = Leyline_V1_Job()
+        j.state = .failed
+        j.statusDetail = reason
+        XCTAssertNil(DecoderPages.failedLine(newest: j, placement: placement))
+        j.statusDetail = "the plugin exited with status 70"
+        XCTAssertEqual(
+            DecoderPages.failedLine(newest: j, placement: placement),
+            "Failed: the plugin exited with status 70")
+        j.state = .cancelled
+        XCTAssertNil(DecoderPages.failedLine(newest: j, placement: placement))
+        XCTAssertNil(DecoderPages.failedLine(newest: nil, placement: placement))
+    }
+
+    /// The empty log asks for Start only when Start can be pressed.
+    func testTheEmptyLogAsksForStartOnlyWhenItCanBePressed() {
+        XCTAssertEqual(
+            DecoderPages.emptyLogWords(historyLoaded: true, listening: false, canStart: true),
+            "Nothing heard in the last day. Start the decoder to listen.")
+        XCTAssertEqual(
+            DecoderPages.emptyLogWords(historyLoaded: true, listening: false, canStart: false),
+            "Nothing heard in the last day.")
+        XCTAssertEqual(
+            DecoderPages.emptyLogWords(historyLoaded: true, listening: true, canStart: false),
+            "Listening. Nothing decoded yet.")
+        XCTAssertEqual(
+            DecoderPages.emptyLogWords(historyLoaded: false, listening: false, canStart: true),
+            "Reading the last day's records…")
+    }
+
     func testTheLogKeepsEachRecordOnceNewestFirst() {
         var log = RecordLog(limit: 3)
         let t = Date(timeIntervalSince1970: 1_800_000_000)
