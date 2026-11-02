@@ -208,16 +208,27 @@ the stored captures.
   stderr line, unrestarted; `leydec-adsb` refuses an off-centre or slow capture with it. So the
   job is FAILED, not DEGRADED: nothing will change under it. The fake decoder's crash status moved
   from 3 to 70.
-- [ ] **DA-14 The table's numbers use the template's precision.** `columns` gains an optional
+  Verified 2026-11-02 by a full `make app-check JOBS=3` (1054 checked, all ok); the app's placement now
+  mirrors the rule (b0db399), so `decoders-take-over` shows the decline before Start, with Start
+  off and no question, and a terminal's `--take-over` is declined with the same words.
+- [x] **DA-14 The table's numbers use the template's precision.** `columns` gains an optional
   `:N` (`ground_speed_kn:0`), so the table reads 190 where the summary says 190 kn, not 189.7.
   The LAST column becomes LATEST, which no longer reads as a twin of LAST HEARD.
-- [ ] **DA-15 Units agree.** The inspector shows altitude in the decoder's unit (`altitude_ft`)
+  Verified 2026-11-02 by a full `make app-check JOBS=3` (1054 checked, all ok); `decoders-adsb`'s
+  table reads whole numbers under LATEST.
+- [x] **DA-15 Units agree.** The inspector shows altitude in the decoder's unit (`altitude_ft`)
   beside the promoted metres, not metres alone; frequencies in one sentence use one unit (the
   take-over question mixes 1.090 GHz and 1090.600 MHz).
-- [ ] **DA-16 Test decoders stay out of a person's list.** `speech-scripted` shows as a second
+  Verified 2026-11-02 by a full `make app-check JOBS=3` (1054 checked, all ok); LEY303 reads 36000 ft
+  in the inspector and the decline's sentence writes 1090.000 MHz.
+- [x] **DA-16 Test decoders stay out of a person's list.** `speech-scripted` shows as a second
   "Speech": a manifest flag (`test_only`) hides it unless the daemon runs with `--no-hardware`.
-- [ ] **DA-17 Small layout:** the job header repeats the detail line; the log's kind column is
+  Verified 2026-11-02 by a full `make app-check JOBS=3` (1054 checked, all ok); the check scenes'
+  `--no-hardware` daemons still list `speech-scripted` and `iqstat`.
+- [x] **DA-17 Small layout:** the job header repeats the detail line; the log's kind column is
   wider than its longest kind; long field names crowd their value in the inspector.
+  Verified 2026-11-02 by a full `make app-check JOBS=3` (1054 checked, all ok); `decoders-aprs`
+  checks the kind column at `weather` and a field name's tooltip.
 
 ### Batch 3: the rest
 
