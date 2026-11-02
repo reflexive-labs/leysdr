@@ -92,5 +92,23 @@
     }
   ],
   "needsDedicatedCapture": true,
-  "executable": "leydec-adsb"
+  "executable": "leydec-adsb",
+  "display": {
+    "title": "Aircraft",
+    "symbol": "airplane",
+    "summaries": {
+      "identification": "{callsign}[ category {category}]",
+      "position": "[{position}][ {altitude_ft} ft]",
+      "surveillance": "DF{df}[ {altitude_ft} ft][ squawk {squawk}]",
+      "velocity": "[{ground_speed_kn} kn][ @ {track_deg}°][ {airspeed_kn} kn airspeed][ heading {heading_deg}°][ {vertical_rate_fpm} ft/min]"
+    },
+    "entityName": "[{callsign}]",
+    "columns": [
+      "callsign",
+      "altitude_ft",
+      "ground_speed_kn",
+      "track_deg",
+      "squawk"
+    ]
+  }
 }

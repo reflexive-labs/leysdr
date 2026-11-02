@@ -39,6 +39,7 @@ func manifest() *leylinev1.DecoderManifest {
 		EntitySilenceS:        60,
 		NeedsDedicatedCapture: true,
 		Fields:                fieldHints(),
+		Display:               display(),
 		Executable:            "leydec-adsb",
 		Args:                  []string{},
 	}

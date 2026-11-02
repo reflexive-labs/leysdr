@@ -28,6 +28,18 @@
       "entity_name": "{name}",
       "columns": ["callsign", "sog_kn", "cog_deg", "destination"]
     },
+    "adsb": {
+      "title": "Aircraft",
+      "symbol": "airplane",
+      "summaries": {
+        "identification": "{callsign}[ category {category}]",
+        "position": "[{position}][ {altitude_ft} ft]",
+        "velocity": "[{ground_speed_kn} kn][ @ {track_deg}°][ {airspeed_kn} kn airspeed][ heading {heading_deg}°][ {vertical_rate_fpm} ft/min]",
+        "surveillance": "DF{df}[ {altitude_ft} ft][ squawk {squawk}]"
+      },
+      "entity_name": "[{callsign}]",
+      "columns": ["callsign", "altitude_ft", "ground_speed_kn", "track_deg", "squawk"]
+    },
     "same": {
       "title": "Weather alerts",
       "symbol": "exclamationmark.triangle",
@@ -395,6 +407,36 @@
       "record": {"kind": "stray-brace", "fields": {"comment": {"text": "fallback"}}},
       "summary": "fallback",
       "fallback": true
+    },
+    {
+      "name": "adsb identification",
+      "display": "adsb",
+      "record": {"protocol": "adsb", "kind": "identification", "device_id": "4840D6", "fields": {"icao": {"text": "4840D6"}, "callsign": {"text": "KLM1023"}, "df": {"number": 17}, "tc": {"number": 4}}},
+      "summary": "KLM1023"
+    },
+    {
+      "name": "adsb position with a fix",
+      "display": "adsb",
+      "record": {"protocol": "adsb", "kind": "position", "device_id": "40621D", "position": {"latitude": 52.2572, "longitude": 3.91937, "altitude_m": 11582.4}, "fields": {"altitude_ft": {"number": 38000}, "df": {"number": 17}, "tc": {"number": 11}}},
+      "summary": "52.2572N 3.9194E 38000 ft"
+    },
+    {
+      "name": "adsb position frame not yet paired prints its altitude",
+      "display": "adsb",
+      "record": {"protocol": "adsb", "kind": "position", "device_id": "40621D", "fields": {"altitude_ft": {"number": 38000}, "df": {"number": 17}, "tc": {"number": 11}}},
+      "summary": "38000 ft"
+    },
+    {
+      "name": "adsb velocity",
+      "display": "adsb",
+      "record": {"protocol": "adsb", "kind": "velocity", "device_id": "485020", "fields": {"ground_speed_kn": {"number": 159.2}, "track_deg": {"number": 182.9}, "vertical_rate_fpm": {"number": -832}, "df": {"number": 17}, "tc": {"number": 19}}},
+      "summary": "159.2 kn @ 182.9° -832 ft/min"
+    },
+    {
+      "name": "adsb surveillance squawk",
+      "display": "adsb",
+      "record": {"protocol": "adsb", "kind": "surveillance", "device_id": "ACEB61", "fields": {"squawk": {"text": "1200"}, "df": {"number": 5}}},
+      "summary": "DF5 squawk 1200"
     },
     {
       "name": "an empty name falls back",
