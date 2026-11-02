@@ -31,6 +31,7 @@ type EntitySnapshot struct {
 // the row was last heard, and last_sample_index where on the capture's timeline that was.
 type EntityRow struct {
 	DeviceID        string       `json:"device_id"`
+	Name            string       `json:"name,omitempty"` // from the display's entity_name; absent when it is the device id
 	Protocol        string       `json:"protocol"`
 	Kind            string       `json:"kind"`
 	Summary         string       `json:"summary"`
@@ -72,7 +73,9 @@ func newTrackCommand(app *App) *cobra.Command {
 		Short: "A live table of the transmitters a protocol is hearing",
 		Long: `track folds a protocol's records into one row per transmitter and redraws
 the table as packets arrive: who is out there, how long ago each one was
-heard, how many times, where it said it was, and what it last said.
+heard, how many times, where it said it was, and what it last said. A
+decoder's manifest can add a NAME and columns of its own: AIS adds each
+vessel's name, callsign, speed, course and destination.
 
 track runs the decoder itself: it starts one for the protocol (the same job
 'ley decode' would, ended when track exits) unless one is already running for
@@ -168,7 +171,9 @@ func runTrack(ctx context.Context, app *App, o trackOptions) error {
 			}()
 		}
 	}
+	manifest := trackManifest(ctx, c, o.protocol)
 	table := records.NewTable()
+	table.Display = manifest.GetDisplay()
 	if err := seedTrack(ctx, c, table, o); err != nil {
 		return err
 	}
@@ -216,7 +221,7 @@ func runTrack(ctx context.Context, app *App, o trackOptions) error {
 				}
 				w.row()
 			} else {
-				w.frame(renderTrack(app, table, window), "")
+				w.frame(renderTrack(app, table, manifest, window), "")
 			}
 			out.Flush()
 			draws++
@@ -365,25 +370,52 @@ func heardCell(st ui.Style, counts []int) string {
 
 // renderTrack draws the entity table: who, how long ago, how often, when across the window,
 // where, and what they said.
-func renderTrack(app *App, table *records.Table, window time.Duration) string {
+//
+// A decoder whose manifest has a display block adds to it: NAME, from the display's entity_name,
+// beside the device, and one column per display.columns entry between HEARD and POSITION, each
+// headed by the field's name with its unit (sog_kn in knots is "SOG (kn)"). The table's Display
+// writes LAST. m is the decoder's manifest, nil when ley has none.
+func renderTrack(app *App, table *records.Table, m *leylinev1.DecoderManifest, window time.Duration) string {
 	s := tableStyle(app)
+	display := m.GetDisplay()
 	cols := []column{
 		{head: "DEVICE", min: 8},
+		{head: "NAME", min: 8, drop: 4, hideEmpty: true},
 		{head: "LAST HEARD"},
 		{head: "SEEN", right: true},
 		// HEARD is SEEN spread across the window, an eighth per cell, so a station that
 		// beacons every minute and one that spoke once read differently at a glance. The
 		// header carries the window so a piped table still says what a cell covers.
 		{head: "HEARD (" + ageWord(window) + ")", drop: 3},
-		{head: "POSITION", min: 10, drop: 2, hideEmpty: true},
-		{head: "LAST", min: 16, drop: 1},
 	}
+	fields := display.GetColumns()
+	// The manifest lists its columns most important first, so the last is the first to go.
+	for i, name := range fields {
+		head, numeric := fieldColumnHead(m, name)
+		cols = append(cols, column{head: head, right: numeric, drop: 5 + i, hideEmpty: true})
+	}
+	cols = append(cols,
+		column{head: "POSITION", min: 10, drop: 2, hideEmpty: true},
+		column{head: "LAST", min: 16, drop: 1})
 	now := tableNow(table)
 	rows := table.Rows()
 	for _, e := range rows {
-		add(cols, e.DeviceID, ageWord(now.Sub(e.LastHeard)), fmt.Sprint(e.Count),
+		name := ""
+		if display.GetEntityName() != "" {
+			if n := records.EntityName(display, e, ""); n != e.DeviceID {
+				name = n
+			}
+		}
+		cells := []string{
+			e.DeviceID, absentIfEmpty(s, name), ageWord(now.Sub(e.LastHeard)), fmt.Sprint(e.Count),
 			heardCell(s, heardSlices(e, now, window)),
-			absentIfEmpty(s, records.FormatPosition(e.Position)), absentIfEmpty(s, e.Summary))
+		}
+		for _, f := range fields {
+			v, _ := records.Column(e, f, "")
+			cells = append(cells, absentIfEmpty(s, v))
+		}
+		add(cols, append(cells,
+			absentIfEmpty(s, records.FormatPosition(e.Position)), absentIfEmpty(s, e.Summary))...)
 	}
 	var b strings.Builder
 	_, _ = printColumns(&b, s, cols, nil)
@@ -391,6 +423,47 @@ func renderTrack(app *App, table *records.Table, window time.Duration) string {
 		b.WriteString(s.Muted("(nothing heard yet)\n"))
 	}
 	return b.String()
+}
+
+// fieldColumnHead is a display column's header and whether it holds numbers. A field with a unit
+// in its hint is named with the unit in brackets, and the unit suffix the field's name carries by
+// convention is dropped: sog_kn in "kn" is "SOG (kn)", speed_kmh in "km/h" is "SPEED (km/h)".
+func fieldColumnHead(m *leylinev1.DecoderManifest, name string) (string, bool) {
+	for _, h := range m.GetFields() {
+		if h.GetName() != name {
+			continue
+		}
+		numeric := h.GetType() == leylinev1.FieldType_NUMBER || h.GetType() == leylinev1.FieldType_INTEGER
+		if unit := h.GetUnit(); unit != "" {
+			base := name
+			if i := strings.LastIndexByte(name, '_'); i > 0 {
+				base = name[:i]
+			}
+			return columnWord(base) + " (" + unit + ")", numeric
+		}
+		return columnWord(name), numeric
+	}
+	return columnWord(name), false
+}
+
+// columnWord is a field name as a header: upper case, words split at underscores.
+func columnWord(name string) string {
+	return strings.ToUpper(strings.ReplaceAll(name, "_", " "))
+}
+
+// trackManifest is the decoder's manifest, which carries its display block and field hints, or
+// nil when the daemon has none by that name.
+func trackManifest(ctx context.Context, c *leyline.Client, protocol string) *leylinev1.DecoderManifest {
+	resp, err := c.ListDecoders(ctx)
+	if err != nil {
+		return nil
+	}
+	for _, m := range resp.GetDecoders() {
+		if m.GetName() == protocol {
+			return m
+		}
+	}
+	return nil
 }
 
 // ageWord is how long ago, coarsened the way a person says it.
@@ -423,6 +496,9 @@ func entitySnapshot(table *records.Table, window time.Duration) EntitySnapshot {
 			Seen: e.Count, AgeS: now.Sub(e.LastHeard).Seconds(),
 			LastSampleIndex: e.LastSeen.GetSampleIndex(),
 			HeardSlices:     heardSlices(e, now, window),
+		}
+		if n := records.EntityName(table.Display, e, ""); n != e.DeviceID {
+			row.Name = n
 		}
 		if e.Position != nil {
 			row.Position = &EntityPoint{Latitude: e.Position.GetLatitude(), Longitude: e.Position.GetLongitude()}

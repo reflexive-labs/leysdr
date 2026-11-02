@@ -243,8 +243,11 @@ band table from `app/Sources/LeylineClient/Resources/bands.json`, the checked-in
 **Decoders.** `ley decoders --json` prints a `ListDecodersResponse`: the manifests the daemon
 found, the directories it looked in, and the store's path, cap and age. The table adds `NEEDS` (the
 manifest's `credential_provider` as `<provider> key`) and `SENDS TO` (its `contacts_hosts`) when
-any decoder names a provider; they are the first columns dropped at a narrow width, `SENDS TO`
-before `NEEDS`. `ley decode <name> --json` prints one `DecodeRecord` per line (NDJSON) and nothing
+any decoder names a provider, and `TITLE` (the manifest's `display.title`) when any decoder has
+one. At a narrow width `TITLE` is dropped first, then `SENDS TO`, then `NEEDS`. A record's summary
+in `ley decode`, `ley watch`, `ley records` and `ley track` is the template its decoder's
+`display.summaries` gives for the record's kind, or the client's own line when there is none
+(`docs/reference/writing-a-decoder.md`, "Display"). `ley decode <name> --json` prints one `DecodeRecord` per line (NDJSON) and nothing
 else on stdout; the banner naming the
 decoder, the frequency and the channel it got is stderr prose, as is the line a `--job` run ends
 with. A decoder whose manifest names no frequency (`speech`) needs `--freq`, and `decode` and
@@ -268,8 +271,9 @@ derived from the anchor whose `from_sample` is not past the record's (`docs/desi
 "Decisions"). `ley track --json` is the fourth documented exception to the proto3 rule, beside the
 bulk rows: the entity table is a client-side fold with no proto message, so it prints one
 `{"entities": [...]}` object per redraw as NDJSON, each entity
-`{device_id, protocol, kind, summary, seen, age_s, last_sample_index, position, heard_slices}`
-(snake_case, `position` an object of `{latitude, longitude}` or `null`, `age_s` seconds since that
+`{device_id, name, protocol, kind, summary, seen, age_s, last_sample_index, position, heard_slices}`
+(snake_case, `name` the transmitter's name from the decoder's `display.entity_name` and absent
+when that is empty or is the device id, `position` an object of `{latitude, longitude}` or `null`, `age_s` seconds since that
 row was last heard, `heard_slices` eight integers counting the station's records in each eighth of
 the table's window oldest first -- the window is the decoder's silence timeout, or ten minutes when
 it declares none -- which is the HEARD column as numbers). A decode job that names a decoder nobody installed is refused with `DECODER_NOT_FOUND`; a

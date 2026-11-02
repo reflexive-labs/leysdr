@@ -41,5 +41,12 @@
       "description": "the capture's center frequency"
     }
   ],
+  "display": {
+    "title": "IQ power",
+    "symbol": "waveform",
+    "summaries": {
+      "power": "{power_dbfs} dBFS[ over {samples} samples]"
+    }
+  },
   "executable": "leydec-iqstat"
 }

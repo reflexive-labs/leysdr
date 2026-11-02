@@ -41,6 +41,7 @@ func manifest() *leylinev1.DecoderManifest {
 		// so a vessel is not gone until it has been quiet for a while.
 		EntitySilenceS: 600,
 		Fields:         fieldHints(),
+		Display:        display(),
 		Executable:     "leydec-ais",
 		Args:           []string{},
 	}

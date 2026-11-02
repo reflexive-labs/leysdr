@@ -1,0 +1,440 @@
+{
+  "displays": {
+    "aprs": {
+      "title": "APRS",
+      "symbol": "antenna.radiowaves.left.and.right",
+      "summaries": {
+        "position": "{position}[ {altitude_m} m][ {object_name}][ {symbol}][ {speed_kmh} km/h][ @ {course_deg}°][ {comment}]",
+        "object": "{position}[ {altitude_m} m][ {object_name}][ {symbol}][ {speed_kmh} km/h][ @ {course_deg}°][ {comment}]",
+        "item": "{position}[ {altitude_m} m][ {object_name}][ {symbol}][ {speed_kmh} km/h][ @ {course_deg}°][ {comment}]",
+        "weather": "[{temp_c} °C][ wind {wind_kmh} km/h][ @ {wind_dir_deg}°][ gust {gust_kmh} km/h][ rain {rain_mm_1h} mm/h][ humidity {humidity_pct}%][ {pressure_hpa} hPa]",
+        "message": "→ {addressee}[: {text}][ {{{msg_id}}}]",
+        "ack": "→ {addressee}: ack {msg_id}",
+        "reject": "→ {addressee}: rej {msg_id}",
+        "status": "{comment}",
+        "telemetry": "T#{seq}[ {a1}][ {a2}][ {a3}][ {a4}][ {a5}][ {digital}]",
+        "other": "{comment}"
+      },
+      "columns": ["symbol", "path"]
+    },
+    "ais": {
+      "title": "Vessels",
+      "symbol": "ferry",
+      "summaries": {
+        "position": "{position}[ {sog_kn} kn][ @ {cog_deg}°]",
+        "static": "[{name}][ {callsign}][ → {destination}]",
+        "other": "message type {msg_type}"
+      },
+      "entity_name": "{name}",
+      "columns": ["callsign", "sog_kn", "cog_deg", "destination"]
+    },
+    "same": {
+      "title": "Weather alerts",
+      "symbol": "exclamationmark.triangle",
+      "summaries": {
+        "alert": "{org} {event_name} ({event})[ for {fips}]"
+      }
+    },
+    "iqstat": {
+      "title": "IQ power",
+      "symbol": "waveform",
+      "summaries": {
+        "power": "{power_dbfs} dBFS[ over {samples} samples]"
+      }
+    },
+    "speech": {
+      "title": "Speech",
+      "symbol": "text.bubble",
+      "summaries": {
+        "": "{text}"
+      }
+    },
+    "rules": {
+      "summaries": {
+        "literal": "{{braces}} and [[brackets]] {{{t}}}",
+        "group": "a[ b={b}][ c={c}] d",
+        "required": "{missing} x",
+        "number": "{n1} {n2} {n3} {n4} {n5} {n6}",
+        "integer": "{i}",
+        "flag": "[{alive}][{killed}]",
+        "data": "{bytes}",
+        "empty-text": "[{empty} ]{t}",
+        "promoted": "{device_id} {kind} {position} {altitude_m} {rssi_dbfs} {snr_db} {label}",
+        "promoted-wins": "{kind}",
+        "signal": "[{rssi_dbfs} dBFS ]ok",
+        "spaces": "  [{missing}]  ",
+        "unclosed-name": "{t",
+        "nested-group": "[a[{t}]]x",
+        "stray-close": "x]",
+        "stray-brace": "x}",
+        "empty-name": "{}",
+        "label": "{label}[ ({device_id})]"
+      }
+    },
+    "default": {
+      "summaries": {
+        "": "[{device_id}: ]{kind}",
+        "own": "own template"
+      }
+    }
+  },
+  "cases": [
+    {
+      "name": "aprs position with every optional part",
+      "display": "aprs",
+      "record": {
+        "protocol": "aprs", "kind": "position", "device_id": "N0CALL-9",
+        "position": {"latitude": 37.76, "longitude": -122.42, "altitude_m": 120.5},
+        "fields": {
+          "symbol": {"text": "/>"}, "speed_kmh": {"number": 24.076}, "course_deg": {"number": 90},
+          "comment": {"text": "on the road"}
+        }
+      },
+      "summary": "37.7600N 122.4200W 120.5 m /> 24.08 km/h @ 90° on the road"
+    },
+    {
+      "name": "aprs object",
+      "display": "aprs",
+      "record": {
+        "protocol": "aprs", "kind": "object", "device_id": "N0CALL",
+        "position": {"latitude": -33.8688, "longitude": 151.2093},
+        "fields": {"object_name": {"text": "FIELDDAY"}, "symbol": {"text": "/E"}, "alive": {"flag": true}, "comment": {"text": "until 18:00"}}
+      },
+      "summary": "33.8688S 151.2093E FIELDDAY /E until 18:00"
+    },
+    {
+      "name": "aprs position without a position falls back",
+      "display": "aprs",
+      "record": {
+        "protocol": "aprs", "kind": "position", "device_id": "N0CALL",
+        "fields": {"symbol": {"text": "/>"}, "comment": {"text": "no fix"}}
+      },
+      "summary": "/> no fix",
+      "fallback": true
+    },
+    {
+      "name": "aprs weather",
+      "display": "aprs",
+      "record": {
+        "protocol": "aprs", "kind": "weather", "device_id": "N0CALL-13",
+        "fields": {
+          "temp_c": {"number": 21.1111}, "wind_kmh": {"number": 12.07}, "wind_dir_deg": {"number": 270},
+          "gust_kmh": {"number": 16.09}, "humidity_pct": {"number": 64}, "pressure_hpa": {"number": 1013.2}
+        }
+      },
+      "summary": "21.11 °C wind 12.07 km/h @ 270° gust 16.09 km/h humidity 64% 1013.2 hPa"
+    },
+    {
+      "name": "aprs weather with nothing measured falls back to the raw text",
+      "display": "aprs",
+      "record": {
+        "protocol": "aprs", "kind": "weather", "device_id": "N0CALL-13",
+        "raw": "N0CALL-13>APRS:_"
+      },
+      "summary": "N0CALL-13>APRS:_",
+      "fallback": true
+    },
+    {
+      "name": "aprs message with an id",
+      "display": "aprs",
+      "record": {
+        "protocol": "aprs", "kind": "message", "device_id": "N0CALL-9",
+        "fields": {"addressee": {"text": "N0CALL-1"}, "text": {"text": "hello there"}, "msg_id": {"text": "42"}}
+      },
+      "summary": "→ N0CALL-1: hello there {42}"
+    },
+    {
+      "name": "aprs message with only an addressee",
+      "display": "aprs",
+      "record": {
+        "protocol": "aprs", "kind": "message", "device_id": "N0CALL-9",
+        "fields": {"addressee": {"text": "N0CALL-1"}}
+      },
+      "summary": "→ N0CALL-1"
+    },
+    {
+      "name": "aprs ack",
+      "display": "aprs",
+      "record": {
+        "protocol": "aprs", "kind": "ack", "device_id": "N0CALL-1",
+        "fields": {"addressee": {"text": "N0CALL-9"}, "msg_id": {"text": "42"}}
+      },
+      "summary": "→ N0CALL-9: ack 42"
+    },
+    {
+      "name": "aprs telemetry with channels missing",
+      "display": "aprs",
+      "record": {
+        "protocol": "aprs", "kind": "telemetry", "device_id": "N0CALL-11",
+        "fields": {
+          "seq": {"text": "005"}, "a1": {"number": 199}, "a2": {"number": 0.5}, "a5": {"number": 3},
+          "digital": {"text": "10101010"}
+        }
+      },
+      "summary": "T#005 199 0.5 3 10101010"
+    },
+    {
+      "name": "aprs status",
+      "display": "aprs",
+      "record": {
+        "protocol": "aprs", "kind": "status", "device_id": "N0CALL",
+        "fields": {"comment": {"text": "QRV on 146.520"}}
+      },
+      "summary": "QRV on 146.520"
+    },
+    {
+      "name": "aprs status carrying text and no comment falls back",
+      "display": "aprs",
+      "record": {
+        "protocol": "aprs", "kind": "status", "device_id": "N0CALL",
+        "fields": {"text": {"text": "monitoring"}}
+      },
+      "summary": "monitoring",
+      "fallback": true
+    },
+    {
+      "name": "ais position",
+      "display": "ais",
+      "record": {
+        "protocol": "ais", "kind": "position", "device_id": "244660000",
+        "position": {"latitude": 52.2572, "longitude": 3.91937},
+        "fields": {"mmsi": {"number": 244660000}, "msg_type": {"number": 1}, "sog_kn": {"number": 12.3}, "cog_deg": {"number": 45.6}}
+      },
+      "summary": "52.2572N 3.9194E 12.3 kn @ 45.6°"
+    },
+    {
+      "name": "ais static report",
+      "display": "ais",
+      "record": {
+        "protocol": "ais", "kind": "static", "device_id": "244660000",
+        "fields": {
+          "mmsi": {"number": 244660000}, "msg_type": {"number": 5}, "name": {"text": "EVER GIVEN"},
+          "callsign": {"text": "H3RC"}, "destination": {"text": "ROTTERDAM"}
+        }
+      },
+      "summary": "EVER GIVEN H3RC → ROTTERDAM"
+    },
+    {
+      "name": "ais static report with only a callsign is trimmed",
+      "display": "ais",
+      "record": {
+        "protocol": "ais", "kind": "static", "device_id": "244660000",
+        "fields": {"mmsi": {"number": 244660000}, "msg_type": {"number": 24}, "callsign": {"text": "H3RC"}}
+      },
+      "summary": "H3RC"
+    },
+    {
+      "name": "ais other",
+      "display": "ais",
+      "record": {
+        "protocol": "ais", "kind": "other", "device_id": "2442000",
+        "fields": {"mmsi": {"number": 2442000}, "msg_type": {"number": 21}}
+      },
+      "summary": "message type 21"
+    },
+    {
+      "name": "same alert",
+      "display": "same",
+      "record": {
+        "protocol": "same", "kind": "alert", "device_id": "KOKX/NWS",
+        "fields": {
+          "org": {"text": "WXR"}, "event": {"text": "RWT"}, "event_name": {"text": "Required Weekly Test"},
+          "fips": {"text": "36061,36047"}, "callsign": {"text": "KOKX/NWS"}, "purge": {"text": "0030"}
+        },
+        "raw": "ZCZC-WXR-RWT-036061-036047+0030-3061200-KOKX/NWS-"
+      },
+      "summary": "WXR Required Weekly Test (RWT) for 36061,36047"
+    },
+    {
+      "name": "iqstat power",
+      "display": "iqstat",
+      "record": {
+        "protocol": "iqstat", "kind": "power",
+        "fields": {
+          "power_dbfs": {"number": -23.456}, "sample_rate": {"integer": 2400000},
+          "samples": {"integer": 4800}, "center_hz": {"integer": 100000000}
+        }
+      },
+      "summary": "-23.46 dBFS over 4800 samples"
+    },
+    {
+      "name": "speech uses the default template",
+      "display": "speech",
+      "record": {
+        "protocol": "speech",
+        "fields": {"text": {"text": "this is a test"}, "language": {"text": "en"}}
+      },
+      "summary": "this is a test"
+    },
+    {
+      "name": "speech with no words falls back to the raw text",
+      "display": "speech",
+      "record": {
+        "protocol": "speech",
+        "fields": {"text": {"text": ""}},
+        "raw": "{}"
+      },
+      "summary": "{}",
+      "fallback": true
+    },
+    {
+      "name": "doubled braces and brackets are literal",
+      "display": "rules",
+      "record": {"kind": "literal", "fields": {"t": {"text": "x"}}},
+      "summary": "{braces} and [brackets] {x}"
+    },
+    {
+      "name": "a group with an unresolved name is left out",
+      "display": "rules",
+      "record": {"kind": "group", "fields": {"b": {"integer": 1}}},
+      "summary": "a b=1 d"
+    },
+    {
+      "name": "an unresolved name outside a group falls back",
+      "display": "rules",
+      "record": {"kind": "required", "fields": {"text": {"text": "the client's own line"}}},
+      "summary": "the client's own line",
+      "fallback": true
+    },
+    {
+      "name": "numbers print at most two decimals and no trailing zeros",
+      "display": "rules",
+      "record": {
+        "kind": "number",
+        "fields": {
+          "n1": {"number": 21}, "n2": {"number": 21.5}, "n3": {"number": 21.456}, "n4": {"number": -0.001},
+          "n5": {"number": 1000000}, "n6": {"integer": 7}
+        }
+      },
+      "summary": "21 21.5 21.46 0 1000000 7"
+    },
+    {
+      "name": "integers print in decimal",
+      "display": "rules",
+      "record": {"kind": "integer", "fields": {"i": {"integer": -42}}},
+      "summary": "-42"
+    },
+    {
+      "name": "a true flag prints its name and a false one is unresolved",
+      "display": "rules",
+      "record": {"kind": "flag", "fields": {"alive": {"flag": true}, "killed": {"flag": false}}},
+      "summary": "alive"
+    },
+    {
+      "name": "data prints as lower-case hex",
+      "display": "rules",
+      "record": {"kind": "data", "fields": {"bytes": {"data": "DEADBEEF"}}},
+      "summary": "deadbeef"
+    },
+    {
+      "name": "empty text is unresolved",
+      "display": "rules",
+      "record": {"kind": "empty-text", "fields": {"empty": {"text": ""}, "t": {"text": "kept"}}},
+      "summary": "kept"
+    },
+    {
+      "name": "the promoted names",
+      "display": "rules",
+      "record": {
+        "kind": "promoted", "device_id": "N0CALL-9",
+        "position": {"latitude": 1.5, "longitude": -2.25, "altitude_m": 10},
+        "rssi_dbfs": -42.125, "snr_db": 18
+      },
+      "label": "Home",
+      "summary": "N0CALL-9 promoted 1.5000N 2.2500W 10 -42.13 18 Home"
+    },
+    {
+      "name": "a promoted name wins over a field of the same name",
+      "display": "rules",
+      "record": {"kind": "promoted-wins", "fields": {"kind": {"text": "field"}}},
+      "summary": "promoted-wins"
+    },
+    {
+      "name": "an unmeasured level is unresolved",
+      "display": "rules",
+      "record": {"kind": "signal"},
+      "summary": "ok"
+    },
+    {
+      "name": "a measured level resolves",
+      "display": "rules",
+      "record": {"kind": "signal", "rssi_dbfs": -30},
+      "summary": "-30 dBFS ok"
+    },
+    {
+      "name": "a line of only spaces falls back",
+      "display": "rules",
+      "record": {"kind": "spaces", "fields": {"comment": {"text": "the client's own line"}}},
+      "summary": "the client's own line",
+      "fallback": true
+    },
+    {
+      "name": "an unclosed name falls back",
+      "display": "rules",
+      "record": {"kind": "unclosed-name", "fields": {"t": {"text": "x"}, "comment": {"text": "fallback"}}},
+      "summary": "fallback",
+      "fallback": true
+    },
+    {
+      "name": "a nested group falls back",
+      "display": "rules",
+      "record": {"kind": "nested-group", "fields": {"t": {"text": "x"}, "comment": {"text": "fallback"}}},
+      "summary": "fallback",
+      "fallback": true
+    },
+    {
+      "name": "a stray closing bracket falls back",
+      "display": "rules",
+      "record": {"kind": "stray-close", "fields": {"comment": {"text": "fallback"}}},
+      "summary": "fallback",
+      "fallback": true
+    },
+    {
+      "name": "a stray closing brace falls back",
+      "display": "rules",
+      "record": {"kind": "stray-brace", "fields": {"comment": {"text": "fallback"}}},
+      "summary": "fallback",
+      "fallback": true
+    },
+    {
+      "name": "an empty name falls back",
+      "display": "rules",
+      "record": {"kind": "empty-name", "fields": {"comment": {"text": "fallback"}}},
+      "summary": "fallback",
+      "fallback": true
+    },
+    {
+      "name": "the label",
+      "display": "rules",
+      "record": {"kind": "label", "device_id": "N0CALL"},
+      "label": "Home",
+      "summary": "Home (N0CALL)"
+    },
+    {
+      "name": "no label falls back",
+      "display": "rules",
+      "record": {"kind": "label", "device_id": "N0CALL", "fields": {"comment": {"text": "fallback"}}},
+      "summary": "fallback",
+      "fallback": true
+    },
+    {
+      "name": "a kind without a template takes the default",
+      "display": "default",
+      "record": {"kind": "beacon", "device_id": "N0CALL"},
+      "summary": "N0CALL: beacon"
+    },
+    {
+      "name": "a kind with its own template does not take the default",
+      "display": "default",
+      "record": {"kind": "own"},
+      "summary": "own template"
+    },
+    {
+      "name": "a kind with no template and no default falls back",
+      "display": "rules",
+      "record": {"kind": "unknown", "fields": {"text": {"text": "fallback"}}},
+      "summary": "fallback",
+      "fallback": true
+    }
+  ]
+}

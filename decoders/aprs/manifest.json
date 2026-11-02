@@ -47,6 +47,26 @@
   "supportsMultiChannel": false,
   "needsDedicatedCapture": false,
   "statefulPredicatesAvailable": false,
+  "display": {
+    "title": "APRS",
+    "symbol": "antenna.radiowaves.left.and.right",
+    "summaries": {
+      "position": "{position}[ {altitude_m} m][ {object_name}][ {symbol}][ {speed_kmh} km/h][ @ {course_deg}°][ {comment}]",
+      "object": "{position}[ {altitude_m} m][ {object_name}][ {symbol}][ {speed_kmh} km/h][ @ {course_deg}°][ {comment}]",
+      "item": "{position}[ {altitude_m} m][ {object_name}][ {symbol}][ {speed_kmh} km/h][ @ {course_deg}°][ {comment}]",
+      "weather": "[{temp_c} °C][ wind {wind_kmh} km/h][ @ {wind_dir_deg}°][ gust {gust_kmh} km/h][ rain {rain_mm_1h} mm/h][ humidity {humidity_pct}%][ {pressure_hpa} hPa]",
+      "message": "→ {addressee}[: {text}][ {{{msg_id}}}]",
+      "ack": "→ {addressee}: ack {msg_id}",
+      "reject": "→ {addressee}: rej {msg_id}",
+      "status": "{comment}",
+      "telemetry": "T#{seq}[ {a1}][ {a2}][ {a3}][ {a4}][ {a5}][ {digital}]",
+      "other": "{comment}"
+    },
+    "columns": [
+      "symbol",
+      "path"
+    ]
+  },
   "executable": "leydec-aprs",
   "args": []
 }

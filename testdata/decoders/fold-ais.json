@@ -1,0 +1,77 @@
+{
+  "name": "a vessel named by its static report keeps the name through its position reports",
+  "decoder": "ais",
+  "display": {
+    "title": "Vessels",
+    "symbol": "ferry",
+    "summaries": {
+      "position": "{position}[ {sog_kn} kn][ @ {cog_deg}°]",
+      "static": "[{name}][ {callsign}][ → {destination}]",
+      "other": "message type {msg_type}"
+    },
+    "entity_name": "{name}",
+    "columns": ["callsign", "sog_kn", "cog_deg", "destination"]
+  },
+  "entity_silence_s": 600,
+  "steps": [
+    {
+      "at_s": 0,
+      "record": {
+        "protocol": "ais", "kind": "static", "device_id": "244660000",
+        "fields": {
+          "mmsi": {"number": 244660000}, "msg_type": {"number": 5}, "name": {"text": "EVER GIVEN"},
+          "callsign": {"text": "H3RC"}, "destination": {"text": "ROTTERDAM"}
+        }
+      }
+    },
+    {
+      "at_s": 10,
+      "record": {
+        "protocol": "ais", "kind": "position", "device_id": "244660000",
+        "position": {"latitude": 52.2572, "longitude": 3.91937},
+        "fields": {"mmsi": {"number": 244660000}, "msg_type": {"number": 1}, "sog_kn": {"number": 12.3}, "cog_deg": {"number": 45.6}}
+      }
+    },
+    {
+      "at_s": 20,
+      "record": {
+        "protocol": "ais", "kind": "position", "device_id": "367000001",
+        "position": {"latitude": 37.8, "longitude": -122.4},
+        "fields": {"mmsi": {"number": 367000001}, "msg_type": {"number": 18}, "sog_kn": {"number": 0}}
+      }
+    },
+    {"at_s": 30, "expire": true}
+  ],
+  "rows": [
+    {
+      "device_id": "367000001",
+      "protocol": "ais",
+      "name": "367000001",
+      "kind": "position",
+      "summary": "37.8000N 122.4000W 0 kn",
+      "count": 1,
+      "first_heard_s": 20,
+      "last_heard_s": 20,
+      "position": {"latitude": 37.8, "longitude": -122.4},
+      "fields": {"mmsi": {"number": 367000001}, "msg_type": {"number": 18}, "sog_kn": {"number": 0}},
+      "columns": {"sog_kn": "0"}
+    },
+    {
+      "device_id": "244660000",
+      "protocol": "ais",
+      "name": "EVER GIVEN",
+      "kind": "position",
+      "summary": "52.2572N 3.9194E 12.3 kn @ 45.6°",
+      "count": 2,
+      "first_heard_s": 0,
+      "last_heard_s": 10,
+      "position": {"latitude": 52.2572, "longitude": 3.91937},
+      "fields": {
+        "mmsi": {"number": 244660000}, "msg_type": {"number": 1}, "name": {"text": "EVER GIVEN"},
+        "callsign": {"text": "H3RC"}, "destination": {"text": "ROTTERDAM"},
+        "sog_kn": {"number": 12.3}, "cog_deg": {"number": 45.6}
+      },
+      "columns": {"callsign": "H3RC", "sog_kn": "12.3", "cog_deg": "45.6", "destination": "ROTTERDAM"}
+    }
+  ]
+}

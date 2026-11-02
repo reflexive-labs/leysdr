@@ -50,7 +50,10 @@ const heardCap = 1024
 // use; the verb that owns it applies records and reads rows on one goroutine.
 type Table struct {
 	// Now is the clock Apply and Expire read, so a test can hold time still. nil means time.Now.
-	Now      func() time.Time
+	Now func() time.Time
+	// Display is the decoder's display, whose templates write each row's summary; nil keeps
+	// Summary's own line.
+	Display  *leylinev1.DecoderDisplay
 	entities map[string]*Entity
 	anchors  map[string]*leylinev1.CaptureAnchor
 }
@@ -104,7 +107,7 @@ func (t *Table) Apply(rec *leylinev1.DecodeRecord) *Entity {
 	if p := rec.GetPosition(); p != nil {
 		e.Position = proto.Clone(p).(*leylinev1.Position)
 	}
-	e.Kind, e.Summary = rec.GetKind(), Summary(rec)
+	e.Kind, e.Summary = rec.GetKind(), SummaryFor(t.Display, rec, "")
 	e.LastSeen = cloneTime(rec.GetTime())
 	if w, ok := t.wall(rec); ok {
 		e.LastWall = w

@@ -184,6 +184,7 @@ func runWatch(ctx context.Context, s *verbSession, o watchOptions) error {
 	if err := requireFrequency(ctx, s, o.decoder, o.freqHz); err != nil {
 		return err
 	}
+	s.displays = decoderDisplays(ctx, s.Client)
 	job, err := s.Client.StartDecode(ctx, o.config())
 	if err != nil {
 		return decodeFailure(s, decodeOptions{decoder: o.decoder}, err)

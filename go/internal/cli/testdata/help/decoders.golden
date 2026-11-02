@@ -2,7 +2,7 @@ decoders lists the plugins the daemon found, with what each one tunes and
 what it produces. A decoder is a program the daemon spawns: it reads the
 audio of a channel and writes records back, so 'ley decode aprs' needs no
 frequency, mode or bandwidth -- the decoder's recipe says where its protocol
-lives and how to demodulate it.
+lives and how to demodulate it. TITLE is what the Mac app calls the decoder.
 
 A decoder that calls a model provider says so: NEEDS names the key it runs
 on ('ley ai add <provider>' adds it), and SENDS TO the hosts its manifest

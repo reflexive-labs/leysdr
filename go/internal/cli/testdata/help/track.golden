@@ -1,6 +1,8 @@
 track folds a protocol's records into one row per transmitter and redraws
 the table as packets arrive: who is out there, how long ago each one was
-heard, how many times, where it said it was, and what it last said.
+heard, how many times, where it said it was, and what it last said. A
+decoder's manifest can add a NAME and columns of its own: AIS adds each
+vessel's name, callsign, speed, course and destination.
 
 track runs the decoder itself: it starts one for the protocol (the same job
 'ley decode' would, ended when track exits) unless one is already running for

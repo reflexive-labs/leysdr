@@ -67,6 +67,7 @@ func baseManifest() *leylinev1.DecoderManifest {
 		},
 		Outputs:    []leylinev1.OutputShape{leylinev1.OutputShape_SHAPE_RECORDS},
 		Fields:     fieldHints(),
+		Display:    display(),
 		Executable: "leydec-speech",
 	}
 }

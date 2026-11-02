@@ -41,6 +41,7 @@ func manifest() *leylinev1.DecoderManifest {
 		// station is not gone until it has missed several.
 		EntitySilenceS: 1800,
 		Fields:         fieldHints(),
+		Display:        display(),
 		Executable:     "leydec-aprs",
 		Args:           []string{},
 	}

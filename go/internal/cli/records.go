@@ -120,12 +120,12 @@ func runRecords(ctx context.Context, app *App, o recordsOptions) error {
 	if app.JSON {
 		return app.printJSON(page)
 	}
-	printRecordTable(app, page)
+	printRecordTable(app, page, decoderDisplays(ctx, c))
 	return nil
 }
 
 // printRecordTable renders `ley records`: newest first, with what was said last on the right.
-func printRecordTable(app *App, page *leylinev1.RecordPage) {
+func printRecordTable(app *App, page *leylinev1.RecordPage, displays map[string]*leylinev1.DecoderDisplay) {
 	s := tableStyle(app)
 	cols := []column{
 		{head: "TIME"},
@@ -150,7 +150,7 @@ func printRecordTable(app *App, page *leylinev1.RecordPage) {
 		if clips {
 			cells = append(cells, absentIfEmpty(s, clipCell(rec)))
 		}
-		add(cols, append(cells, absentIfEmpty(s, records.Summary(rec)))...)
+		add(cols, append(cells, absentIfEmpty(s, records.SummaryFor(displays[rec.GetProtocol()], rec, "")))...)
 	}
 	_, _ = printColumns(app.Stdout, s, cols, nil)
 	if len(page.GetRecords()) == 0 {

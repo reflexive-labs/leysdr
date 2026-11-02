@@ -66,5 +66,12 @@
       "description": "issue time as day-of-year and UTC time, JJJHHMM"
     }
   ],
+  "display": {
+    "title": "Weather alerts",
+    "symbol": "exclamationmark.triangle",
+    "summaries": {
+      "alert": "{org} {event_name} ({event})[ for {fips}]"
+    }
+  },
   "executable": "leydec-same"
 }

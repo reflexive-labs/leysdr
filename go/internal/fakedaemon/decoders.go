@@ -65,7 +65,30 @@ func AprsManifest() *leylinev1.DecoderManifest {
 			{Name: "wind_kmh", Type: leylinev1.FieldType_NUMBER, Unit: "km/h"},
 			{Name: "wind_dir_deg", Type: leylinev1.FieldType_NUMBER, Unit: "deg"},
 		},
+		Display:    aprsDisplay(),
 		Executable: "leydec-aprs",
+	}
+}
+
+// aprsDisplay is the display block of decoders/aprs/manifest.json.
+func aprsDisplay() *leylinev1.DecoderDisplay {
+	const located = "{position}[ {altitude_m} m][ {object_name}][ {symbol}][ {speed_kmh} km/h][ @ {course_deg}°][ {comment}]"
+	return &leylinev1.DecoderDisplay{
+		Title:  "APRS",
+		Symbol: "antenna.radiowaves.left.and.right",
+		Summaries: map[string]string{
+			"position":  located,
+			"object":    located,
+			"item":      located,
+			"weather":   "[{temp_c} °C][ wind {wind_kmh} km/h][ @ {wind_dir_deg}°][ gust {gust_kmh} km/h][ rain {rain_mm_1h} mm/h][ humidity {humidity_pct}%][ {pressure_hpa} hPa]",
+			"message":   "→ {addressee}[: {text}][ {{{msg_id}}}]",
+			"ack":       "→ {addressee}: ack {msg_id}",
+			"reject":    "→ {addressee}: rej {msg_id}",
+			"status":    "{comment}",
+			"telemetry": "T#{seq}[ {a1}][ {a2}][ {a3}][ {a4}][ {a5}][ {digital}]",
+			"other":     "{comment}",
+		},
+		Columns: []string{"symbol", "path"},
 	}
 }
 
@@ -108,6 +131,11 @@ func speechBase() *leylinev1.DecoderManifest {
 			{Name: "model", Type: leylinev1.FieldType_TEXT, Description: "the model that produced the text"},
 			{Name: "confidence", Type: leylinev1.FieldType_NUMBER, Description: "the engine's own confidence in the text, 0 to 1, when it reports one"},
 			{Name: "callsigns", Type: leylinev1.FieldType_TEXT, Description: "callsigns in the text, comma-separated: a pattern match over the normalised text (prefix, one digit, 1 to 3 letters; a 4-letter suffix such as N0CALL is not matched), not a decoded identity"},
+		},
+		Display: &leylinev1.DecoderDisplay{
+			Title:     "Speech",
+			Symbol:    "text.bubble",
+			Summaries: map[string]string{"": "{text}"},
 		},
 		Executable: "leydec-speech",
 	}

@@ -1,0 +1,86 @@
+{
+  "name": "a station silent for longer than entity_silence_s leaves the table and comes back as a new row",
+  "decoder": "aprs",
+  "display": {
+    "title": "APRS",
+    "symbol": "antenna.radiowaves.left.and.right",
+    "summaries": {
+      "position": "{position}[ {altitude_m} m][ {object_name}][ {symbol}][ {speed_kmh} km/h][ @ {course_deg}°][ {comment}]",
+      "object": "{position}[ {altitude_m} m][ {object_name}][ {symbol}][ {speed_kmh} km/h][ @ {course_deg}°][ {comment}]",
+      "item": "{position}[ {altitude_m} m][ {object_name}][ {symbol}][ {speed_kmh} km/h][ @ {course_deg}°][ {comment}]",
+      "weather": "[{temp_c} °C][ wind {wind_kmh} km/h][ @ {wind_dir_deg}°][ gust {gust_kmh} km/h][ rain {rain_mm_1h} mm/h][ humidity {humidity_pct}%][ {pressure_hpa} hPa]",
+      "message": "→ {addressee}[: {text}][ {{{msg_id}}}]",
+      "ack": "→ {addressee}: ack {msg_id}",
+      "reject": "→ {addressee}: rej {msg_id}",
+      "status": "{comment}",
+      "telemetry": "T#{seq}[ {a1}][ {a2}][ {a3}][ {a4}][ {a5}][ {digital}]",
+      "other": "{comment}"
+    },
+    "columns": ["symbol", "path"]
+  },
+  "entity_silence_s": 1800,
+  "steps": [
+    {
+      "at_s": 0,
+      "record": {
+        "protocol": "aprs", "kind": "position", "device_id": "N0CALL-9",
+        "position": {"latitude": 37.76, "longitude": -122.42},
+        "fields": {"symbol": {"text": "/>"}, "comment": {"text": "mobile"}}
+      }
+    },
+    {
+      "at_s": 60,
+      "record": {
+        "protocol": "aprs", "kind": "weather", "device_id": "N0CALL-13",
+        "fields": {"temp_c": {"number": 20}, "path": {"text": "WIDE1-1"}}
+      }
+    },
+    {
+      "at_s": 100,
+      "record": {"protocol": "aprs", "kind": "other", "fields": {"comment": {"text": "no sender, so no row"}}}
+    },
+    {
+      "at_s": 1000,
+      "record": {
+        "protocol": "aprs", "kind": "status", "device_id": "N0CALL-13",
+        "fields": {"comment": {"text": "QRV"}, "path": {"text": "WIDE1-1*"}}
+      }
+    },
+    {"at_s": 1900, "expire": true},
+    {
+      "at_s": 1950,
+      "record": {
+        "protocol": "aprs", "kind": "status", "device_id": "N0CALL-9",
+        "fields": {"comment": {"text": "back"}}
+      }
+    }
+  ],
+  "rows": [
+    {
+      "device_id": "N0CALL-9",
+      "protocol": "aprs",
+      "name": "N0CALL-9",
+      "kind": "status",
+      "summary": "back",
+      "count": 1,
+      "first_heard_s": 1950,
+      "last_heard_s": 1950,
+      "position": null,
+      "fields": {"comment": {"text": "back"}},
+      "columns": {}
+    },
+    {
+      "device_id": "N0CALL-13",
+      "protocol": "aprs",
+      "name": "N0CALL-13",
+      "kind": "status",
+      "summary": "QRV",
+      "count": 2,
+      "first_heard_s": 60,
+      "last_heard_s": 1000,
+      "position": null,
+      "fields": {"temp_c": {"number": 20}, "comment": {"text": "QRV"}, "path": {"text": "WIDE1-1*"}},
+      "columns": {"path": "WIDE1-1*"}
+    }
+  ]
+}

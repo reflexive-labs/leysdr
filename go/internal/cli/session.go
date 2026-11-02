@@ -92,6 +92,9 @@ type verbSession struct {
 	// means the verb's own ("Add --retune ..."); the MCP adapter names the
 	// argument an agent has instead of a flag.
 	takeOverHint string
+	// displays is each installed decoder's display block by protocol, which writes the
+	// summary printRecord shows; nil prints records.Summary's line.
+	displays map[string]*leylinev1.DecoderDisplay
 }
 
 // noDeviceChecklist is what to try when the daemon lists no radios.

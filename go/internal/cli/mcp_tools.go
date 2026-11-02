@@ -1240,7 +1240,7 @@ func (srv *mcpServer) queryRecords(ctx context.Context, _ *mcp.CallToolRequest, 
 		return nil, nil, toolError(srv.app.notRunning(err))
 	}
 	app, out, errb := srv.toolApp()
-	printRecordTable(app, page)
+	printRecordTable(app, page, nil)
 	text := out.String() + errb.String()
 	if len(page.GetRecords()) == 0 {
 		text += srv.emptyPageReason(ctx, q) + "\n"
@@ -1403,7 +1403,7 @@ fold:
 		how += fmt.Sprintf(" from the decode job %s already running", job.GetJobId())
 	}
 	fmt.Fprintln(app.Stdout, how)
-	fmt.Fprint(app.Stdout, renderTrack(app, table, window))
+	fmt.Fprint(app.Stdout, renderTrack(app, table, nil, window))
 	raw, err := json.Marshal(entitySnapshot(table, window))
 	if err != nil {
 		return nil, nil, err

@@ -54,6 +54,15 @@ The manifest for the bundled APRS decoder, trimmed to the fields that carry mean
     {"name": "comment", "type": "TEXT", "description": "the free text the station sent"},
     {"name": "temp_c", "type": "NUMBER", "unit": "degC", "description": "air temperature"}
   ],
+  "display": {
+    "title": "APRS",
+    "symbol": "antenna.radiowaves.left.and.right",
+    "summaries": {
+      "status": "{comment}",
+      "weather": "[{temp_c} °C][ wind {wind_kmh} km/h][ @ {wind_dir_deg}°]"
+    },
+    "columns": ["symbol", "path"]
+  },
   "executable": "leydec-aprs"
 }
 ```
@@ -82,6 +91,7 @@ The manifest for the bundled APRS decoder, trimmed to the fields that carry mean
 - **`fields`** are advisory hints — a name, a type, a unit — that let `ley` and an agent display and
   query your open fields sensibly. They are hints only: a field you emit that is not listed still
   passes through untouched.
+- **`display`** says how clients show your decoder and its records: the next section.
 - **`executable`** is the program, resolved against the manifest's own directory first and `PATH`
   second, with `args` passed to it.
 - **`credentialProvider`** names the provider whose key your decoder calls with (`deepgram`,
@@ -91,6 +101,50 @@ The manifest for the bundled APRS decoder, trimmed to the fields that carry mean
   `contactsHosts` is advisory and nothing enforces it; `ley transcribe` states it before it sends
   anything, so a person can see where the audio goes, and `ley decoders --json` carries it. Leave both empty when your decoder calls
   nobody.
+
+## Display
+
+The manifest's `display` block is how `ley` and the Mac app show your decoder, so a new decoder
+needs no client change to be shown. Every part is optional, and a client given no display prints
+its own line per record and names each transmitter by its `device_id`.
+
+- **`title`** is the decoder's name in the app and in the TITLE column of `ley decoders`:
+  "Vessels" rather than `ais`.
+- **`symbol`** is an [SF Symbol](https://developer.apple.com/sf-symbols/) name the app draws beside
+  the title, such as `airplane` or `ferry`.
+- **`summaries`** maps a record `kind` to the template for its one-line summary, which `ley decode`,
+  `ley records`, `ley track`'s LAST column and the app all print. The key `""` applies to every kind
+  without a template of its own.
+- **`entityName`** is a template for a transmitter's name, rendered over the newest value of every
+  field it has sent: AIS uses `{name}`, so a vessel keeps the name from its static report while its
+  position reports arrive. `ley track` shows it in a NAME column. Leave it empty when `device_id` is
+  the name, as an APRS callsign is.
+- **`columns`** lists fields shown as columns of the transmitter table (`ley track`), in order of
+  importance: a narrow terminal drops the last first. A field with a unit in `fields` is headed with
+  it, and the unit suffix of its name is dropped, so `sog_kn` in `kn` is `SOG (kn)`.
+
+A template is text with names in braces:
+
+- `{name}` is one of the promoted names `device_id`, `kind`, `position`, `altitude_m`, `rssi_dbfs`,
+  `snr_db` and `label` (the user's own name for the transmitter), or else a field of the record. A
+  promoted name wins over a field of the same name.
+- `[ ... ]` is an optional group, printed only when every name inside it resolved. Groups do not
+  nest.
+- `{{`, `}}`, `[[` and `]]` print one brace or bracket. The template is read left to right, so
+  `{{{msg_id}}}` prints the id in braces.
+
+A value prints by its type: TEXT as sent, INTEGER in decimal, NUMBER with at most two decimals and
+no trailing zeros (`21`, `21.5`, `21.46`), FLAG as the field's own name when true, DATA as
+lower-case hex, and `position` as `37.7600N 122.4200W`. The unit is not appended, so the template
+writes it: `[{temp_c} °C]`. A name is unresolved when the record lacks it, its text is empty, its
+number is NaN (a level the daemon did not measure) or its flag is false.
+
+The finished line is trimmed of leading and trailing spaces. The client prints its own line instead
+of the template's when a name outside a group is unresolved, when the line is empty, or when the
+template is malformed (an unclosed brace or group, a nested group, a lone `}` or `]`). So
+`{position}[ {speed_kmh} km/h]` on a record with no position falls back rather than printing half a
+line. The cases in `testdata/decoders/summary-cases.json` are the full specification: every client
+that renders templates passes them.
 
 ## The wire
 

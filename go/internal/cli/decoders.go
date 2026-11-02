@@ -23,7 +23,7 @@ func newDecodersCommand(app *App) *cobra.Command {
 what it produces. A decoder is a program the daemon spawns: it reads the
 audio of a channel and writes records back, so 'ley decode aprs' needs no
 frequency, mode or bandwidth -- the decoder's recipe says where its protocol
-lives and how to demodulate it.
+lives and how to demodulate it. TITLE is what the Mac app calls the decoder.
 
 A decoder that calls a model provider says so: NEEDS names the key it runs
 on ('ley ai add <provider>' adds it), and SENDS TO the hosts its manifest
@@ -69,6 +69,8 @@ func printDecoderTable(app *App, resp *leylinev1.ListDecodersResponse) {
 	s := tableStyle(app)
 	cols := []column{
 		{head: "NAME"},
+		// TITLE is what the app calls the decoder, from the manifest's display block.
+		{head: "TITLE", drop: 5, hideEmpty: true},
 		{head: "FREQUENCY", min: 10},
 		{head: "MODE"},
 		{head: "OUTPUTS", min: 7, drop: 2},
@@ -89,7 +91,7 @@ func printDecoderTable(app *App, resp *leylinev1.ListDecodersResponse) {
 		if p := m.GetCredentialProvider(); p != "" {
 			needs = p + " key"
 		}
-		add(cols, name, decoderFrequencies(m), decoderMode(m),
+		add(cols, name, absentIfEmpty(s, m.GetDisplay().GetTitle()), decoderFrequencies(m), decoderMode(m),
 			absentIfEmpty(s, decoderOutputs(m)), absentIfEmpty(s, m.GetVersion()),
 			absentIfEmpty(s, needs), absentIfEmpty(s, strings.Join(m.GetContactsHosts(), ", ")))
 	}
@@ -160,6 +162,23 @@ func formatBytes(n uint64) string {
 	default:
 		return fmt.Sprintf("%d bytes", n)
 	}
+}
+
+// decoderDisplays is every installed decoder's display block by protocol, so a record is
+// summarised by its own decoder's templates. Best effort: when the daemon cannot list its
+// decoders, records print records.Summary's line.
+func decoderDisplays(ctx context.Context, c *leyline.Client) map[string]*leylinev1.DecoderDisplay {
+	resp, err := c.ListDecoders(ctx)
+	if err != nil {
+		return nil
+	}
+	out := map[string]*leylinev1.DecoderDisplay{}
+	for _, m := range resp.GetDecoders() {
+		if d := m.GetDisplay(); d != nil {
+			out[m.GetName()] = d
+		}
+	}
+	return out
 }
 
 // completeDecoders offers the names the daemon has installed for a <decoder> argument, the way

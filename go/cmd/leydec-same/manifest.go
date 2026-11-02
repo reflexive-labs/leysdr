@@ -36,6 +36,7 @@ func manifest() *leylinev1.DecoderManifest {
 		// nothing to aggregate into an entity (docs/design/decoders.md, §5).
 		Outputs:    []leylinev1.OutputShape{leylinev1.OutputShape_SHAPE_RECORDS},
 		Fields:     fieldHints(),
+		Display:    display(),
 		Executable: "leydec-same",
 		Args:       []string{},
 	}

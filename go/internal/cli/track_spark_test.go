@@ -52,7 +52,7 @@ func TestTrackHeardColumn(t *testing.T) {
 	render := func(st ui.Style) string {
 		var out bytes.Buffer
 		app := &App{Stdout: &out, Style: st, ErrStyle: st, IsTTY: func() bool { return true }}
-		return renderTrack(app, table, window)
+		return renderTrack(app, table, nil, window)
 	}
 	for _, width := range []int{40, 80, 160} {
 		plain := render(ui.Style{Unicode: true, Width: width})

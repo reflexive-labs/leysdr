@@ -121,6 +121,7 @@ func runDecode(ctx context.Context, s *verbSession, o decodeOptions) error {
 	if err := requireFrequency(ctx, s, o.decoder, o.freqHz); err != nil {
 		return err
 	}
+	s.displays = decoderDisplays(ctx, s.Client)
 	cfg := &leylinev1.DecodeConfig{
 		Decoder:     o.decoder,
 		FrequencyHz: o.freqHz,
@@ -308,7 +309,7 @@ func printRecord(s *verbSession, rec *leylinev1.DecodeRecord) error {
 		st.Muted(when),
 		st.Pad(st.Truncate(rec.GetDeviceId(), 12), 12),
 		st.Pad(st.Truncate(rec.GetKind(), 9), 9),
-		records.Summary(rec))
+		records.SummaryFor(s.displays[rec.GetProtocol()], rec, ""))
 	_, err := fmt.Fprintln(s.app.Stdout, strings.TrimRight(line, " "))
 	return err
 }
