@@ -232,14 +232,31 @@ the stored captures.
 
 ### Batch 3: the rest
 
-- [ ] **DA-9** A "decoding" line in the radio window, and decoded callsigns marked at their
-  frequency on the waterfall (user stories, the line on decoded traffic).
-- [ ] **DA-10** Watches from the app: "notify me when" on a decoder's page, a predicate and the
-  macOS notifier the daemon already has; SAME by county first.
-- [ ] **DA-11** Decode a recording from the Library with any decoder whose input matches it, on
-  the path transcription uses.
-- [ ] **DA-12** A recipe gain in dB. At gain 30 the owner's 1090 MHz air decoded nothing and at
-  40 it decoded 19 frames; `GainPolicy` can only leave or ask for AGC.
+The calls for this batch, taken 2026-11-02:
+
+- [ ] **DA-9 Decoding, seen from the radio.** A compact row per running decoder at the top of the
+  Radio sidebar (symbol, title, the liveness count) that opens its page in Decoders. On the
+  waterfall, a record from an audio decoder whose channel is inside the visible capture draws a
+  small tag at the job's frequency on the row it arrived in: the transmitter's name from the
+  display's `entity_name`, else `device_id`. Tags scroll away with the rows, at most one per
+  transmitter per ten seconds, and View has "Show Decoded Names" (on by default). IQ decoders
+  draw no tags: their records have no frequency of their own inside the capture.
+- [ ] **DA-10 Watches from the app.** "Notify Me…" on a decoder's page opens a sheet that builds a
+  `DecodeConfig.predicate` from the manifest's field hints (a field and a value for TEXT and
+  INTEGER fields; a place and a radius when the decoder's records carry positions) and a macOS
+  notification as `notify`, then starts it as a kept job. Nothing is special-cased by decoder:
+  SAME's county is its `fips` field. A watch is listed under its decoder in the sidebar with its
+  condition in words, and Stop ends it. The daemon notifies with the app closed.
+- [ ] **DA-11 Decode a recording.** The Library's context menu gains "Decode With" listing the
+  installed decoders whose input matches the recording (audio decoders on an audio recording, IQ
+  decoders on an IQ one; speech stays under Transcribe). It starts a kept job with `source_uri`,
+  as transcription does; the records appear on that decoder's page, and the recording's
+  inspector says how many records each decoder found, with a link to the page.
+- [ ] **DA-12 A recipe gain in dB.** `GainPolicy` gains `GAIN_FIXED` and `DecoderRecipe.gain_db`
+  (additive), applied when the job creates or retunes the capture, never on a capture it borrows
+  (that gain is its owner's). `DecodeConfig` gains the `GainWrite` that `ScanConfig` has, so `ley
+  decode --gain` overrides the recipe. ADS-B's recipe is 40 dB: at gain 30 the owner's 1090 MHz
+  air decoded nothing and at 40 it decoded 19 frames (2026-11-02).
 
 ## After this
 
