@@ -11,7 +11,8 @@
 // live job would have sent. Under any other input every part is sent whole, and the time between
 // two parts is a gap. Times stay on the capture's timeline: a part's `start_sample` is a capture
 // sample, and its WAV holds audio at the recording's rate, so a capture sample is placed in the file
-// by the two rates the sidecar gives.
+// by the two rates the sidecar gives. An IQ part holds the capture's own samples, one for one, and
+// a part at another centre or rate than the recording's is skipped.
 
 import EngineCore
 import Foundation
@@ -48,6 +49,9 @@ struct RecordingSource: Sendable {
     let segmented: Bool
     /// An IQ recording: cf32 parts at the capture rate, for an IQ decoder.
     var iq = false
+    /// IQ parts recorded at a centre or rate other than the recording's, which the plugin is not
+    /// given (`open`).
+    var skippedParts = 0
 
     var uri: String { "ley://recordings/\(recordingID)" }
     var audioRate: UInt32 { UInt32(truncatingIfNeeded: manifest.sampleRate) }
@@ -96,6 +100,7 @@ struct RecordingSource: Sendable {
         let (preRollMs, hangMs) = Segmenter.timings(input)
         var parts: [Part] = []
         var items: [Item] = []
+        var skipped = 0
         for entry in manifest.parts {
             let sidecar = Self.sidecar(of: entry, in: directory)
             let anchor = manifest.anchors.last { ($0.captureID ?? "") == sidecar?.anchor.captureID } ?? manifest.anchors.last
@@ -109,6 +114,15 @@ struct RecordingSource: Sendable {
                             endSample: entry.endSample, frames: entry.samples,
                             captureID: sidecar?.anchor.captureID ?? anchor?.captureID ?? "", captureRate: captureRate)
             parts.append(part)
+            if iq, let sidecar, sidecar.centerHz != manifest.frequencyHz
+                || (sidecar.anchor.sampleRate != 0 && sidecar.anchor.sampleRate != manifest.sampleRate)
+            {
+                // The plugin is told one centre and rate, the recording's, and the wire cannot
+                // change them mid-stream; a part at another tuning would put every signal in it at
+                // the wrong offset. It is skipped, and the time it covers is a gap.
+                skipped += 1
+                continue
+            }
             if segmented {
                 let perMs = captureRate / 1000
                 let spans = Segmenter.cut(sidecar?.recording.squelchOpens ?? [], partStart: entry.startSample,
@@ -120,7 +134,8 @@ struct RecordingSource: Sendable {
                                   span: Segmenter.Span(start: entry.startSample, end: entry.endSample, over: 0)))
             }
         }
-        return RecordingSource(recordingID: id, manifest: manifest, parts: parts, items: items, segmented: segmented, iq: iq)
+        return RecordingSource(recordingID: id, manifest: manifest, parts: parts, items: items, segmented: segmented, iq: iq,
+                               skippedParts: skipped)
     }
 
     private static func sidecar(of part: RecordingPart, in directory: String) -> PartSidecar? {
@@ -129,17 +144,29 @@ struct RecordingSource: Sendable {
         return try? JSONDecoder().decode(PartSidecar.self, from: data)
     }
 
-    /// Where capture sample `sample` falls in `part`'s WAV, clamped to the file.
+    /// Where capture sample `sample` falls in `part`'s file, clamped to the file. An IQ part holds
+    /// the capture's own samples, one for one; a WAV holds audio at the recording's rate.
     func frame(at sample: UInt64, in part: Part) -> UInt64 {
-        guard part.captureRate > 0, sample > part.startSample else { return 0 }
+        guard sample > part.startSample else { return 0 }
+        if iq { return Swift.min(part.frames, sample - part.startSample) }
+        guard part.captureRate > 0 else { return 0 }
         let f = (Double(sample - part.startSample) * Double(manifest.sampleRate) / part.captureRate).rounded()
         return Swift.min(part.frames, UInt64(f))
     }
 
-    /// The capture sample WAV frame `frame` of `part` sits at.
+    /// The capture sample frame `frame` of `part`'s file sits at.
     func sample(at frame: UInt64, in part: Part) -> UInt64 {
+        if iq { return part.startSample + frame }
         guard manifest.sampleRate > 0 else { return part.startSample }
         return part.startSample + UInt64((Double(frame) * part.captureRate / Double(manifest.sampleRate)).rounded())
+    }
+
+    /// The capture sample after the last one `item` can send, from what its file holds: the gap
+    /// before the next part starts there, not where the manifest says the part ended.
+    func readEnd(of item: Item) -> UInt64 {
+        guard let reader = try? FrameReader(source: self, item: item, gapFrom: nil) else { return item.span.end }
+        defer { reader.close() }
+        return reader.endSample
     }
 
     /// The part and over a record stamped at `time` came from: the item that holds it on its
@@ -192,7 +219,10 @@ struct RecordingSource: Sendable {
         private let part: Part
         private let reader: PartReader
         private var at: UInt64
-        private let end: UInt64
+        /// Where the item ends in the file by the manifest, and where it can end: earlier when the
+        /// file holds fewer samples than the manifest says, or a read comes back short.
+        private let wanted: UInt64
+        private var end: UInt64
         private var gapFrom: UInt64?
         private var first = true
         private var ended = false
@@ -203,10 +233,17 @@ struct RecordingSource: Sendable {
             part = source.parts[item.part]
             reader = source.iq ? .cf32(try CF32Reader(path: part.path)) : .wav(try WAVReader(path: part.path))
             at = source.frame(at: item.span.start, in: part)
-            end = Swift.min(source.frame(at: item.span.end, in: part), reader.frames)
+            wanted = source.frame(at: item.span.end, in: part)
+            end = Swift.min(wanted, reader.frames)
             self.gapFrom = gapFrom
             reader.seek(toFrame: at)
         }
+
+        /// The capture sample after the last one this item sends: the span's end, or the sample
+        /// where the file ran out. The gap before the next part starts here.
+        var endSample: UInt64 { end < wanted ? source.sample(at: end, in: part) : item.span.end }
+
+        func close() { reader.close() }
 
         /// The next frame, nil after the last. Closes the file when it is done.
         mutating func next() -> Leyline_V1_Frame? {
@@ -228,7 +265,8 @@ struct RecordingSource: Sendable {
                     at += UInt64(count)
                     return frame
                 }
-                at = end
+                // The file ended before its header or size said it would.
+                end = at
             }
             reader.close()
             guard source.segmented, !first, !ended else { return nil }

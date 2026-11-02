@@ -147,8 +147,7 @@ final class IQDecodeJobTests: XCTestCase {
 
     /// A radio that can be pointed anywhere from 0 to 1 GHz, so a capture can be walked away from
     /// the job and back. A file device's range is the single point its recording was made at.
-    private func attachRetunable(_ c: DaemonClients) async throws -> String {
-        let device = RebindableDevice()
+    private func attachRetunable(_ c: DaemonClients, _ device: RebindableDevice = RebindableDevice()) async throws -> String {
         let id = try await c.daemon.registry.attachVirtualDevice(device).descriptor.id.string
         for _ in 0..<150 {
             let s = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
@@ -311,6 +310,124 @@ final class IQDecodeJobTests: XCTestCase {
         }
     }
 
+    /// A non-dedicated IQ job reads an off-centre capture; a dedicated decoder must not retune it
+    /// from under that job, nor from under an IQ recording, unless it is told to take over.
+    func testADedicatedDecoderLeavesACaptureAnotherJobReads() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        defer { for d in [plugins, recordings] { try? FileManager.default.removeItem(atPath: d) } }
+        try writeFakePlugin(in: plugins, name: "fakeiq", signal: .signalIq)
+        try writeDedicatedPlugin(in: plugins)
+        try await withDaemon(decoderSearchPath: [plugins], recordingsPath: recordings) { c in
+            let device = try await self.attachRetunable(c)
+            var create = Leyline_V1_CreateCaptureRequest()
+            create.deviceID = device
+            create.centerHz = 100_500_000
+            _ = try await c.control.createCapture(create, metadata: testMetadata)
+
+            let reader = try await self.startIQ(c, decoder: "fakeiq", frequencyHz: 100_100_000)
+            _ = try await self.records(c, job: reader.jobID, count: 1)
+            let refused = try await self.startIQ(c, decoder: "fakewide", frequencyHz: 100_100_000)
+            let failed = try await self.waitForJob(c, refused.jobID) { $0.state == .failed }
+            XCTAssertEqual(failed?.error.code, EngineError.Code.deviceBusy, failed?.statusDetail ?? "")
+            XCTAssertEqual(failed?.statusDetail, "another job is reading this radio (decode fakeiq)")
+            let untouched = try await self.onlyCapture(c)
+            XCTAssertEqual(untouched.centerHz, 100_500_000, "the reading job's capture stays where it was")
+            let still = try await self.job(c, reader.jobID)
+            XCTAssertEqual(still.state, .running, still.statusDetail)
+            try await self.cancel(c, reader.jobID)
+
+            // An IQ recording is a reader too.
+            var config = Leyline_V1_RecordConfig()
+            config.frequencyHz = 100_100_000
+            config.mode = .rawIq
+            var request = Leyline_V1_StartJobRequest()
+            request.record = config
+            let recording = try await c.jobs.startJob(request, metadata: testMetadata)
+            XCTAssertEqual(recording.state, .running, recording.statusDetail)
+            let refusedAgain = try await self.startIQ(c, decoder: "fakewide", frequencyHz: 100_100_000)
+            let failedAgain = try await self.waitForJob(c, refusedAgain.jobID) { $0.state == .failed }
+            XCTAssertEqual(failedAgain?.statusDetail, "another job is reading this radio (record)")
+            let stillThere = try await self.onlyCapture(c)
+            XCTAssertEqual(stillThere.centerHz, 100_500_000)
+            try await self.cancel(c, recording.jobID)
+        }
+    }
+
+    /// A rate change that lands and a retune that does not leave the capture as it was found.
+    func testAFailedRetuneLeavesTheCaptureAtItsOldRate() async throws {
+        let plugins = try makeTempDir("decoders")
+        defer { try? FileManager.default.removeItem(atPath: plugins) }
+        try writeDedicatedPlugin(in: plugins)
+        try await withDaemon(decoderSearchPath: [plugins]) { c in
+            let radio = RebindableDevice()
+            radio.refusedTuneHz.value = 100_100_000
+            let device = try await self.attachRetunable(c, radio)
+            var create = Leyline_V1_CreateCaptureRequest()
+            create.deviceID = device
+            create.centerHz = 100_500_000
+            create.sampleRate = 1_024_000
+            _ = try await c.control.createCapture(create, metadata: testMetadata)
+
+            let taking = try await self.startIQ(c, decoder: "fakewide", frequencyHz: 100_100_000, takeOver: true)
+            let failed = try await self.waitForJob(c, taking.jobID) { $0.state == .failed }
+            XCTAssertNotNil(failed, "a radio that will not tune there is no capture for the job")
+            let after = try await self.onlyCapture(c)
+            XCTAssertEqual(after.sampleRate, 1_024_000, "the rate is put back")
+            XCTAssertEqual(after.centerHz, 100_500_000, "and so is the centre")
+        }
+    }
+
+    /// The first record from now on whose frame carried a gap, or nil after `timeoutMs`.
+    private func nextGap(_ c: DaemonClients, job: String, timeoutMs: Int) async throws -> Leyline_V1_DecodeRecord? {
+        var subscription = Leyline_V1_RecordSubscription()
+        subscription.jobID = job
+        let s = subscription
+        return try await withThrowingTaskGroup(of: Leyline_V1_DecodeRecord?.self) { group in
+            group.addTask {
+                try await c.decoders.subscribeRecords(s, metadata: testMetadata) { response in
+                    for try await rec in response.messages where rec.fields["gap_from"] != nil { return rec }
+                    return nil
+                }
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(timeoutMs) * 1_000_000)
+                return nil
+            }
+            let first = try await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+    }
+
+    /// A retune away and back between two looks at the capture still breaks the plugin's stream:
+    /// the samples from the other tuning reached it, so the next frame says there was a gap.
+    func testARoundTripRetuneInsideOnePollIsStillAGap() async throws {
+        let plugins = try makeTempDir("decoders")
+        defer { try? FileManager.default.removeItem(atPath: plugins) }
+        try writeFakePlugin(in: plugins, name: "fakeiq", signal: .signalIq)
+        try await withDaemon(decoderSearchPath: [plugins]) { c in
+            _ = try await self.attachRetunable(c)
+            let started = try await self.startIQ(c, decoder: "fakeiq", frequencyHz: 100_100_000)
+            _ = try await self.records(c, job: started.jobID, count: 1)
+            let capture = try await self.onlyCapture(c)
+            let quiet = try await self.nextGap(c, job: started.jobID, timeoutMs: 700)
+            XCTAssertNil(quiet, "an undisturbed capture marks no gap")
+            let captureID = try XCTUnwrap(CaptureID(string: capture.captureID))
+            let maybeEngine = await c.daemon.store.captureEngine(captureID)
+            let engine = try XCTUnwrap(maybeEngine)
+            let gap = Task { try await self.nextGap(c, job: started.jobID, timeoutMs: 3000) }
+            try await Task.sleep(nanoseconds: 200_000_000)
+            try await engine.retune(centerHz: 103_000_000)
+            try await engine.retune(centerHz: 100_100_000)
+            let marked = try await gap.value
+            XCTAssertNotNil(marked, "the round trip is marked as a gap")
+            let now = try await self.job(c, started.jobID)
+            XCTAssertEqual(now.state, .running, now.statusDetail)
+            try await self.cancel(c, started.jobID)
+        }
+    }
+
     // MARK: A stored IQ recording (DA-6)
 
     /// Writes a finished IQ recording through `PartWriter`, the way the daemon writes one: a part
@@ -434,6 +551,90 @@ final class IQDecodeJobTests: XCTestCase {
                 XCTAssertEqual(rec.fields["center_hz"]?.integer, Int64(self.iqFrequencyHz))
             }
             XCTAssertEqual(got.map(\.time.sampleIndex), [24000, 48000, 96000 + 24000, 96000 + 48000])
+        }
+    }
+
+    /// Four parts on one capture: the first and last at the recording's own tuning, the second at
+    /// another rate and the third at another centre, as a capture retuned under the recorder or a
+    /// recording carried on after a restart leaves them. 40,000 samples each, 10,000 apart.
+    private func writeMixedIQRecording(in dir: String) async throws -> String {
+        let id = JobID().string
+        let rate: UInt64 = 2_400_000
+        let manifest = RecordingManifest(
+            jobID: id, kind: "iq", frequencyHz: iqFrequencyHz, mode: "", bandwidthHz: 0,
+            sampleRate: rate, format: "cf32", device: nil, gains: [], squelchDbfs: .nan, gate: nil,
+            partMs: 0, startedAtNs: WallClock.nowNs(),
+            createdBy: RecordingClient(clientID: "", kind: "cli", label: "test"), anchors: [])
+        let captureID = CaptureID().string
+        let writer = try PartWriter(directory: dir + "/" + id, manifest: manifest, captureID: captureID,
+                                    centerHz: iqFrequencyHz)
+        let host = WallClock.nowNs()
+        let payload = [Float](repeating: 0, count: 80000).enumerated().map { $0.offset % 2 == 0 ? Float(0.1) : 0 }
+        func part(at start: UInt64, rate partRate: UInt64, centre: UInt64) async {
+            await writer.noteAnchor(CaptureAnchor(hostTimeNsAtSampleZero: host, sampleRate: partRate),
+                                    captureID: captureID, fromSample: start)
+            await writer.retarget(captureID: captureID, centerHz: centre)
+            await writer.openPart(at: start)
+            await writer.append(iq: payload.withUnsafeBytes { Data($0) })
+            await writer.closePart(endSample: start + 40000)
+        }
+        await part(at: 0, rate: rate, centre: iqFrequencyHz)
+        await part(at: 50000, rate: 1_024_000, centre: iqFrequencyHz)
+        await part(at: 100_000, rate: rate, centre: iqFrequencyHz + 500_000)
+        await part(at: 150_000, rate: rate, centre: iqFrequencyHz)
+        await writer.finish(endedBy: "duration", endSample: 190_000)
+        return id
+    }
+
+    func testPartsAtAnotherTuningAreSkippedAndCounted() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        let store = try makeTempDir("store")
+        defer { for d in [plugins, recordings, store] { try? FileManager.default.removeItem(atPath: d) } }
+        try writeFakePlugin(in: plugins, name: "fakeiq", signal: .signalIq)
+        let id = try await writeMixedIQRecording(in: recordings)
+        try await withDaemon(decoderSearchPath: [plugins], storePath: store, recordingsPath: recordings) { c in
+            let started = try await self.startSource(c, decoder: "fakeiq", recording: id, keep: true)
+            let done = try await self.waitForEnd(c, started.jobID)
+            XCTAssertEqual(done?.state, .completed, done?.statusDetail ?? "")
+            XCTAssertTrue(done?.statusDetail.hasSuffix("; 2 parts at another tuning skipped") == true, done?.statusDetail ?? "")
+            let got = try await self.query(c, job: started.jobID)
+            XCTAssertEqual(Set(got.map(\.clipUri)), ["ley://recordings/\(id)/1", "ley://recordings/\(id)/4"],
+                           "only the parts at the recording's own tuning reach the plugin")
+            let block = UInt64(CaptureDSPCore.blockSize)
+            XCTAssertEqual(got.map(\.time.sampleIndex), [0, block, 2 * block, 150_000, 150_000 + block, 150_000 + 2 * block],
+                           "a file sample is a capture sample")
+            let gapped = got.filter { self.integer($0, "gap_from") != nil }
+            XCTAssertEqual(gapped.count, 1)
+            XCTAssertEqual(self.integer(gapped.first, "gap_from"), 40000)
+            XCTAssertEqual(self.integer(gapped.first, "gap_to"), 150_000)
+        }
+    }
+
+    /// A part whose file holds less than the manifest says: the gap before the next part starts
+    /// where the samples ran out, not where the manifest said they would.
+    func testTheGapAfterAShortPartStartsWhereItsSamplesEnd() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        let store = try makeTempDir("store")
+        defer { for d in [plugins, recordings, store] { try? FileManager.default.removeItem(atPath: d) } }
+        try writeFakePlugin(in: plugins, name: "fakeiq", signal: .signalIq)
+        let id = try await writeIQRecording(in: recordings, rate: 2_400_000, starts: [0, 100_000], samples: 40000)
+        let dir = recordings + "/" + id
+        let first = try XCTUnwrap(try FileManager.default.contentsOfDirectory(atPath: dir)
+            .filter { $0.hasSuffix(".cf32") }.sorted().first)
+        let handle = try XCTUnwrap(FileHandle(forWritingAtPath: dir + "/" + first))
+        try handle.truncate(atOffset: 20000 * 8)
+        try handle.close()
+        try await withDaemon(decoderSearchPath: [plugins], storePath: store, recordingsPath: recordings) { c in
+            let started = try await self.startSource(c, decoder: "fakeiq", recording: id, keep: true)
+            let done = try await self.waitForEnd(c, started.jobID)
+            XCTAssertEqual(done?.state, .completed, done?.statusDetail ?? "")
+            let got = try await self.query(c, job: started.jobID)
+            let gapped = got.filter { self.integer($0, "gap_from") != nil }
+            XCTAssertEqual(gapped.count, 1)
+            XCTAssertEqual(self.integer(gapped.first, "gap_from"), 20000)
+            XCTAssertEqual(self.integer(gapped.first, "gap_to"), 100_000)
         }
     }
 

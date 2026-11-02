@@ -85,6 +85,12 @@ actor IQDecodeRunner: DecodeRunning {
     private var awayDetail: String?
     /// The same fact for the drain, which withholds frames while it is set.
     private let withheld = Mutex(false)
+    /// The capture's `tuningGeneration` at the follower's last look. A change while the centre and
+    /// rate still match is a retune away and back between two looks.
+    private var seenGeneration: UInt64 = 0
+    /// Set by the follower when that happened; the drain withholds the next frame, so the one after
+    /// it carries a gap, and clears it.
+    private let regap = Mutex(false)
     private var task: Task<Void, Never>?
     /// The plugin the drain is feeding. Held outside the actor because the drain runs as its own
     /// task: a pipe write must never park the actor that is also stamping records.
@@ -140,6 +146,7 @@ actor IQDecodeRunner: DecodeRunning {
     private func loop() async {
         let snapshot = await lease.capture.snapshot
         tuning = (snapshot.centerHz, snapshot.sampleRate)
+        seenGeneration = snapshot.tuningGeneration
         // The tap fans the capture's full-rate cf32 stream into the ring (invariant 4: it copies and
         // never blocks). One tap for the life of the job, not one per plugin.
         let tap = IQFrameTap(id: tapID, ring: ring)
@@ -236,6 +243,13 @@ actor IQDecodeRunner: DecodeRunning {
                     if lostFrom == nil { lostFrom = p.sampleStart }
                     continue
                 }
+                if regap.withLock({ let owed = $0; $0 = false; return owed }) {
+                    // The capture was retuned away and back since the follower last looked, so
+                    // the plugin has had samples of another band. This frame is withheld and the
+                    // next one carries the gap, which tells the plugin its stream broke.
+                    if lostFrom == nil { lostFrom = p.sampleStart }
+                    continue
+                }
                 guard let process = currentPlugin.withLock({ $0 }) else {
                     // No plugin up (a restart is in flight): the frame is lost and the gap stays open.
                     if lostFrom == nil { lostFrom = p.sampleStart }
@@ -329,7 +343,14 @@ actor IQDecodeRunner: DecodeRunning {
     /// capture engine, which holds it, rather than from the event stream, which only reports it.
     private func followCapture() async {
         while !Task.isCancelled, !stopped {
-            let why = awayReason(await lease.capture.snapshot)
+            let snapshot = await lease.capture.snapshot
+            let why = awayReason(snapshot)
+            if why == nil, awayDetail == nil, snapshot.tuningGeneration != seenGeneration {
+                // Home at both looks, but retuned in between (away and back, or set again where it
+                // was): treated as moved, for as long as one frame.
+                regap.withLock { $0 = true }
+            }
+            seenGeneration = snapshot.tuningGeneration
             if why != awayDetail {
                 awayDetail = why
                 withheld.withLock { $0 = why != nil }

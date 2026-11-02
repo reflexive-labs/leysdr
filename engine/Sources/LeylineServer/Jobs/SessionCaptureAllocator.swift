@@ -39,6 +39,9 @@ actor SessionCaptureAllocator: CaptureAllocator {
     private let log = Logger(label: "leyline.jobs.allocator")
     /// Captures currently leased, so two sweeps never share a radio.
     private var leased: Set<CaptureID> = []
+    /// The jobs reading each capture as raw IQ (an IQ decode job, an IQ recording), in the order
+    /// they took it. Such a capture is in use: retuning it moves the band under every one of them.
+    private var iqReaders: [CaptureID: [JobID]] = [:]
 
     init(store: SessionStore) { self.store = store }
 
@@ -179,8 +182,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
             }
             guard spanCovers(centerHz: cap.centerHz, rate: cap.sampleRate, frequencyHz: frequencyHz),
                   let engine = await store.captureEngine(id) else { continue }
-            return .captureIQ(SessionCaptureIQLease(captureID: id, capture: engine, sampleRateHz: cap.sampleRate,
-                                                    createdCapture: false, store: store))
+            return .captureIQ(iqLease(id, engine: engine, rate: cap.sampleRate, created: false, job: job))
         }
 
         // 2. A radio with nothing on it. The capture is centred on the frequency (clamped to a
@@ -201,8 +203,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
                     await store.destroyCapture(id: id, by: .daemon)
                     continue
                 }
-                return .captureIQ(SessionCaptureIQLease(captureID: id, capture: engine, sampleRateHz: rate,
-                                                        createdCapture: true, store: store))
+                return .captureIQ(iqLease(id, engine: engine, rate: rate, created: true, job: job))
             } catch {
                 lastReason = (error as? EngineError)?.message ?? "\(error)"
                 log.debug("iq decode job could not open \(device.deviceID): \(lastReason)")
@@ -228,13 +229,34 @@ actor SessionCaptureAllocator: CaptureAllocator {
                 try await engine.retune(centerHz: centre)
             } catch {
                 lastReason = (error as? EngineError)?.message ?? "\(error)"
+                // The rate can land and the retune fail: the capture goes back to the rate and
+                // centre it had, as a declined job must leave it.
+                let now = await engine.snapshot
+                if now.sampleRate != cap.sampleRate { try? await engine.setSampleRate(cap.sampleRate) }
+                if now.centerHz != cap.centerHz { try? await engine.retune(centerHz: cap.centerHz) }
+                await store.publishCapture(id)
                 continue
             }
             await store.publishCapture(id)
-            return .captureIQ(SessionCaptureIQLease(captureID: id, capture: engine, sampleRateHz: rate,
-                                                    createdCapture: false, store: store))
+            return .captureIQ(iqLease(id, engine: engine, rate: rate, created: false, job: job))
         }
         return .declined(code: sawDevice ? EngineError.Code.deviceBusy : EngineError.Code.noDevice, reason: lastReason)
+    }
+
+    /// A lease on `id` for `job`, counted among the capture's IQ readers until it is released.
+    private func iqLease(_ id: CaptureID, engine: any CaptureEngine, rate: UInt64, created: Bool,
+                         job: JobID) -> SessionCaptureIQLease
+    {
+        iqReaders[id, default: []].append(job)
+        return SessionCaptureIQLease(captureID: id, capture: engine, sampleRateHz: rate, createdCapture: created,
+                                     store: store) { [weak self] in
+            await self?.releaseIQReader(id, job: job)
+        }
+    }
+
+    private func releaseIQReader(_ id: CaptureID, job: JobID) {
+        iqReaders[id]?.removeAll { $0 == job }
+        if iqReaders[id]?.isEmpty == true { iqReaders[id] = nil }
     }
 
     /// How far a capture's centre may sit from where a dedicated IQ decoder would put it and still
@@ -414,6 +436,16 @@ actor SessionCaptureAllocator: CaptureAllocator {
             return "\(who(ch.owner)) is listening on \(fmt(absolute(ch, cap)))"
         }
         if cap.activity.liveAudioSinks > 0 { return "audio is playing from this radio" }
+        if let id = CaptureID(string: cap.captureID), let reader = iqReaders[id]?.first {
+            // An IQ decode job or an IQ recording has no channel to show it is there, and a
+            // retune moves the whole band it reads.
+            let job = state.jobs.first { $0.jobID == reader.string }
+            switch job?.config {
+            case .decode(let d)?: return "another job is reading this radio (decode \(d.decoder))"
+            case .record?: return "another job is reading this radio (record)"
+            default: return "another job is reading this radio"
+            }
+        }
         let now = UInt64(WallClock.realNowNs())
         let last = UInt64(max(0, cap.activity.lastInteractiveWriteNs))
         if last > 0, now > last, now - last < dontDisturbNs {
@@ -674,16 +706,19 @@ actor SessionCaptureIQLease: CaptureIQLease {
 
     private let store: SessionStore
     private let createdCapture: Bool
+    /// Takes the job off the allocator's readers of the capture.
+    private let onRelease: @Sendable () async -> Void
     private var released = false
 
     init(captureID: CaptureID, capture: any CaptureEngine, sampleRateHz: UInt64,
-         createdCapture: Bool, store: SessionStore)
+         createdCapture: Bool, store: SessionStore, onRelease: @escaping @Sendable () async -> Void = {})
     {
         self.captureID = captureID
         self.capture = capture
         self.sampleRateHz = sampleRateHz
         self.createdCapture = createdCapture
         self.store = store
+        self.onRelease = onRelease
     }
 
     var centerHz: UInt64 { get async { await capture.snapshot.centerHz } }
@@ -691,6 +726,7 @@ actor SessionCaptureIQLease: CaptureIQLease {
     func release() async {
         guard !released else { return }
         released = true
+        await onRelease()
         // A capture this lease created is destroyed; one it reused is left for its owner. Running two
         // IQ decoders that would share one created capture is not yet safe -- it needs capture
         // refcounting -- and is a follow-up (docs/design/decoders.md, "Multiplexing"); today the

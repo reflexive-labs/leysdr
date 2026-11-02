@@ -28,6 +28,8 @@ final class RebindableDevice: VirtualDevice, @unchecked Sendable {
     let streamStarts = LockedValue(0)
     let streamStops = LockedValue(0)
     let blocksDelivered = LockedValue(0)
+    /// A centre `tune` refuses, 0 for none: a radio that cannot reach one frequency.
+    let refusedTuneHz = LockedValue<UInt64>(0)
 
     var descriptor: DeviceDescriptor { lock.lock(); defer { lock.unlock() }; return _descriptor }
     var gains: [GainState] { [] }
@@ -47,7 +49,11 @@ final class RebindableDevice: VirtualDevice, @unchecked Sendable {
 
     func open() async throws { opens.value += 1 }
     func close() async { closes.value += 1 }
-    func tune(centerHz: UInt64) async throws {}
+    func tune(centerHz: UInt64) async throws {
+        if centerHz != 0, centerHz == refusedTuneHz.value {
+            throw EngineError.invalidArgument("the rebindable radio will not tune \(centerHz)")
+        }
+    }
     func setSampleRate(_ hz: UInt64) async throws {}
     func setGain(element: String, value: GainValue) async throws { throw EngineError.gainElementUnknown(element, target: "") }
 

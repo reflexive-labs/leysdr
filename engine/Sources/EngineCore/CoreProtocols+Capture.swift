@@ -45,13 +45,20 @@ package struct CaptureSnapshot: Hashable, Sendable {
     package var detached: Bool
     package var anchor: CaptureAnchor
     package var gains: [GainState]
+    /// Counts the changes that can alter the band the capture delivers: a retune, a rate change,
+    /// the device going and coming back. A reader that compares centre and rate between two looks
+    /// misses a retune away and back in between; this number has still moved.
+    package var tuningGeneration: UInt64
 
-    package init(centerHz: UInt64, sampleRate: UInt64, detached: Bool, anchor: CaptureAnchor, gains: [GainState]) {
+    package init(centerHz: UInt64, sampleRate: UInt64, detached: Bool, anchor: CaptureAnchor, gains: [GainState],
+                 tuningGeneration: UInt64 = 0)
+    {
         self.centerHz = centerHz
         self.sampleRate = sampleRate
         self.detached = detached
         self.anchor = anchor
         self.gains = gains
+        self.tuningGeneration = tuningGeneration
     }
 }
 

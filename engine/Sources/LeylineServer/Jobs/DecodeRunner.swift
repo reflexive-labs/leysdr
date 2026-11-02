@@ -278,6 +278,9 @@ actor DecodeRunner {
                 if missing > 0 {
                     detail += "; \(missing) of \(source.items.count) overs have no record"
                 }
+                if source.skippedParts > 0 {
+                    detail += "; \(source.skippedParts) part\(source.skippedParts == 1 ? "" : "s") at another tuning skipped"
+                }
                 await onStatus(.completed, detail)
                 return
             default:
@@ -391,11 +394,15 @@ actor DecodeRunner {
         while !Task.isCancelled {
             guard index < source.items.count else { return .all }
             let item = source.items[index]
-            // Under continuous input the time between two parts is not in the recording: a gap.
+            // Under continuous input the time between two parts is not in the recording: a gap,
+            // from the last sample the part before actually held, which a short file puts earlier
+            // than its manifest entry says.
             var gapFrom: UInt64?
             if !source.segmented, index > 0, source.items[index - 1].part != item.part {
-                let before = source.parts[source.items[index - 1].part]
-                if before.captureID == source.parts[item.part].captureID { gapFrom = before.endSample }
+                let before = source.items[index - 1]
+                if source.parts[before.part].captureID == source.parts[item.part].captureID {
+                    gapFrom = source.readEnd(of: before)
+                }
             }
             var frames: RecordingSource.FrameReader
             do {

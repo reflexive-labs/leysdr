@@ -18,6 +18,8 @@ package actor DefaultCaptureEngine: CaptureEngine {
     private var centerHz: UInt64
     private var sampleRate: UInt64
     private var detached = false
+    /// `CaptureSnapshot.tuningGeneration`: bumped by every retune, rate change, loss and rebind.
+    private var tuningGeneration: UInt64 = 0
     private var started = false
     private var streaming = false
     private var channelTable: [ChannelID: DefaultChannelEngine] = [:]
@@ -42,7 +44,8 @@ package actor DefaultCaptureEngine: CaptureEngine {
     package nonisolated var stats: CaptureStats { core.stats }
 
     package var snapshot: CaptureSnapshot {
-        CaptureSnapshot(centerHz: centerHz, sampleRate: sampleRate, detached: detached, anchor: core.anchor, gains: device.gains)
+        CaptureSnapshot(centerHz: centerHz, sampleRate: sampleRate, detached: detached, anchor: core.anchor, gains: device.gains,
+                        tuningGeneration: tuningGeneration)
     }
 
     // MARK: Lifecycle
@@ -140,6 +143,7 @@ package actor DefaultCaptureEngine: CaptureEngine {
         guard !detached else { throw EngineError.deviceDetached(deviceID.description) }
         try await device.tune(centerHz: centerHz)
         self.centerHz = centerHz
+        tuningGeneration &+= 1
         core.centerHz = centerHz
         for id in channelOrder {
             await channelTable[id]?.captureMoved(newCenterHz: centerHz)
@@ -167,6 +171,7 @@ package actor DefaultCaptureEngine: CaptureEngine {
             throw error
         }
         sampleRate = hz
+        tuningGeneration &+= 1
         core.sampleRate = hz
         for id in channelOrder {
             await channelTable[id]?.captureRateChanged(hz)
@@ -243,6 +248,7 @@ package actor DefaultCaptureEngine: CaptureEngine {
     /// The device vanished: mark detached and stop the (dead) stream. Channels and index are kept.
     package func deviceLost() async {
         detached = true
+        tuningGeneration &+= 1
         if streaming {
             await device.stopStreaming()
             streaming = false
@@ -266,6 +272,7 @@ package actor DefaultCaptureEngine: CaptureEngine {
         started = true
         try await beginStreaming()
         detached = false
+        tuningGeneration &+= 1
     }
 }
 

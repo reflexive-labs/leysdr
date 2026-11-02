@@ -967,8 +967,8 @@ tears the subscription down; a subscription with no `Stream` reader for 10 s is 
 `CaptureLease` or a declined result with a reason. Allocation prefers a device with no capture at all
 over borrowing one that has one, because creating and destroying a capture affects no other
 client. Borrowing an existing
-capture is refused by the don't-disturb check (`inUse`: an owning channel, a live audio sink, or an
-interactive write in the last 60 s) unless the caller passed `take_over`; a leased capture is marked
+capture is refused by the don't-disturb check (`inUse`: an owning channel, a live audio sink, a
+job reading it as raw IQ, or an interactive write in the last 60 s) unless the caller passed `take_over`; a leased capture is marked
 *swept* in `SessionStore`, and `refuseIfSwept` rejects interactive `WriteParams`/`CreateChannel` calls
 on it for as long as the lease holds. `SweepPlan.edgeFraction` widens a device's tuning range slightly
 when deciding whether it can cover a request, which is how a `FilePlaybackDevice` — whose "range" is
@@ -1050,14 +1050,21 @@ instead: a capture whose span covers the frequency on any device, else a device 
 default), else a free capture retuned onto it, else the decline. With `needs_dedicated_capture`
 the first step takes only a capture centred within 1 kHz of where the job would put one
 (`SessionCaptureAllocator.centredToleranceHz`) at that rate, and the third step also sets the
-rate. `IQDecodeRunner` taps the whole capture (`IQFrameTap` into a `FrameRing`), one capture
+rate; a rate that lands under a retune that fails is set back, with the centre, before the step
+moves on. Every `captureIQ` lease (an IQ decode job, an IQ recording) counts its job among the
+capture's IQ readers until it is released, and `inUse` refuses a capture with one ("another job
+is reading this radio (decode iqstat)", or "(record)"), so a dedicated decoder retunes a capture
+another job reads only under `take_over`. `IQDecodeRunner` taps the whole capture (`IQFrameTap` into a `FrameRing`), one capture
 block of cf32 per frame. The descriptor names the capture's centre and rate as they were when
 the job started, and the wire cannot change them mid-stream, so the runner reads the capture
 every 100 ms and treats any departure from that tuning as the capture moving away: off the
 frequency ("the capture moved away from 1090.000 MHz; waiting for it to come back"), recentred
 where it still covers it ("the capture moved from … to …"), at another rate, or detached. The job
 is `DEGRADED` with that detail, its frames are withheld, and the first frame the plugin gets after
-the capture is back carries the `Gap`. Respawning the plugin on the new tuning would lose its
+the capture is back carries the `Gap`. A retune away and back between two reads leaves centre and
+rate as they were, so the runner also compares `CaptureSnapshot.tuningGeneration`, which every
+retune, rate change, loss and rebind bumps: a change while the tuning still matches withholds the
+next frame, and the one after it carries the `Gap`; the job stays `RUNNING`. Respawning the plugin on the new tuning would lose its
 decode state and, for a dedicated decoder, decode the off-centre band it said it cannot.
 
 **Segmented input.** A manifest with `input.mode = SEGMENTED` (audio only; an IQ one is
@@ -1172,9 +1179,14 @@ fails the job. The descriptor is
 `AUDIO`, `F32` mono at the recording's rate, centred on its frequency, with `stored` set. An IQ
 recording read by an IQ decoder goes the same way, with an `IQ`, `CF32` descriptor at the
 recording's rate and centre (`stored` set) and one capture block of cf32 a frame, as the live IQ
-path frames it; its parts go whole, with a `Gap` for the samples between two parts, and are
-written as patiently. `ley decode <decoder> --recording <id>` runs either kind, kept, and ends
-when the job does. Records carry `clip_uri`
+path frames it; its parts go whole, a file sample to a capture sample, with a `Gap` for the
+samples between two parts, starting where the part before actually ended when its file holds less
+than its manifest entry says, and are written as patiently. A part whose sidecar gives another
+centre or rate than the manifest's is skipped, its time inside the gap, and the job's final detail
+counts them ("2 parts at another tuning skipped"): the descriptor names one tuning for the stream.
+`ley decode <decoder> --recording <id>` runs either kind, kept, and ends when the job does: it
+follows the job's end on the event stream, reads the store back a page at a time (`until_ns`,
+since the store has no cursor), and exits non-zero when a cancel fails. Records carry `clip_uri`
 (`ley://recordings/<id>/<part>`) and `over` (the index in that part's `squelch_opens` of the
 segment's first opening, 0 when not segmented), found by the record's `time` with the same 1 ms
 tolerance as the live path; `channel_id` is empty and the levels are NaN. A kept

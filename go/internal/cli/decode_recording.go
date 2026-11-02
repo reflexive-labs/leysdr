@@ -48,11 +48,26 @@ func runDecodeRecording(ctx context.Context, s *verbSession, o decodeOptions) er
 		}
 		return o.count > 0 && len(printed) >= o.count, nil
 	}
-	poll := time.NewTicker(time.Second)
-	defer poll.Stop()
+	// The job's end arrives on the event stream the session already holds; a GetJob poll takes
+	// over only if that stream ends.
+	events := s.Events()
+	var poll <-chan time.Time
 	final := job
 	for isLiveJob(final) {
 		select {
+		case ev, ok := <-events:
+			if !ok {
+				events = nil
+				ticker := time.NewTicker(time.Second)
+				defer ticker.Stop()
+				poll = ticker.C
+				continue
+			}
+			if b, isJob := ev.Body.(*leylinev1.Event_Job); isJob && b.Job.GetJobId() == job.GetJobId() {
+				final = b.Job
+				continue
+			}
+			s.Apply(ev)
 		case <-ctx.Done():
 			return decodeRecordingStopped(ctx, s, job, len(printed))
 		case rec, ok := <-recs:
@@ -72,20 +87,23 @@ func runDecodeRecording(ctx context.Context, s *verbSession, o decodeOptions) er
 				return err
 			}
 			errs = nil
-		case <-poll.C:
-			if j, err := s.Client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.GetJobId()}); err == nil {
-				final = j
+		case <-poll:
+			j, err := s.Client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: job.GetJobId()})
+			if err != nil {
+				if ctx.Err() != nil {
+					return decodeRecordingStopped(ctx, s, job, len(printed))
+				}
+				return err
 			}
+			final = j
 		}
 	}
 	stop()
 	// The live stream may have dropped or not yet delivered the last records; the store has them all.
-	page, err := s.Client.QueryRecords(ctx, &leylinev1.RecordQuery{JobId: job.GetJobId()})
+	rest, err := jobRecords(ctx, s.Client.QueryRecords, job.GetJobId())
 	if err != nil {
 		return err
 	}
-	rest := page.GetRecords()
-	sort.Slice(rest, func(i, j int) bool { return rest[i].GetSeq() < rest[j].GetSeq() })
 	for _, rec := range rest {
 		if done, err := show(rec); err != nil || done {
 			return err
@@ -104,15 +122,62 @@ func runDecodeRecording(ctx context.Context, s *verbSession, o decodeOptions) er
 }
 
 // decodeRecordingStopped cancels a recording's decode that Ctrl-C or --count ended early: the
-// job would otherwise read the rest of the recording for nobody.
+// job would otherwise read the rest of the recording for nobody. A cancel that fails is an error,
+// with the command that stops the job.
 func decodeRecordingStopped(ctx context.Context, s *verbSession, job *leylinev1.Job, n int) error {
 	cctx, cancel := session.CleanupContext(ctx, confirmTimeout)
 	defer cancel()
 	st := s.app.ErrStyle
 	if _, err := s.Client.Jobs.CancelJob(cctx, &leylinev1.JobRef{JobId: job.GetJobId()}); err != nil {
-		s.say("the job is still running: %s stops it\n", st.Cmd("ley jobs cancel "+job.GetJobId()))
-		return nil
+		return &ExitError{Code: 1, Err: err, Message: fmt.Sprintf("could not stop the decode (%s), so it may still be running; %s stops it",
+			leylineMessage(err, err.Error()), "ley jobs cancel "+job.GetJobId())}
 	}
 	s.say("Stopped; %s kept: %s\n", words.Count(n, "record"), st.Cmd("ley records --job-id "+job.GetJobId()))
 	return nil
+}
+
+// recordPageSize is how many records each QueryRecords asks for while reading a job's back.
+const recordPageSize = 1000
+
+// jobRecords reads every record a kept job has in the store, oldest first. The store answers
+// newest first and cuts at the limit, with no cursor, so each further page asks for the records no
+// newer than the oldest so far, plus a millisecond for the two sides' rounding of the anchor
+// (until_ns is inclusive), and drops the seqs already read. A page with nothing new, which only
+// many records at one instant can cause, asks again for twice as many.
+func jobRecords(ctx context.Context, query func(context.Context, *leylinev1.RecordQuery) (*leylinev1.RecordPage, error), jobID string) ([]*leylinev1.DecodeRecord, error) {
+	q := &leylinev1.RecordQuery{JobId: jobID, Limit: recordPageSize}
+	seen := map[uint64]bool{}
+	var out []*leylinev1.DecodeRecord
+	for {
+		page, err := query(ctx, q)
+		if err != nil {
+			return nil, err
+		}
+		fresh := 0
+		var oldest time.Time
+		for _, rec := range page.GetRecords() {
+			if at, ok := leyline.RecordWallTime(rec, page.GetAnchors()); ok && (oldest.IsZero() || at.Before(oldest)) {
+				oldest = at
+			}
+			if seen[rec.GetSeq()] {
+				continue
+			}
+			seen[rec.GetSeq()] = true
+			out = append(out, rec)
+			fresh++
+		}
+		if !page.GetTruncated() {
+			break
+		}
+		switch {
+		case fresh > 0 && !oldest.IsZero():
+			q.UntilNs = oldest.Add(time.Millisecond).UnixNano()
+		case q.GetLimit() < 1<<30:
+			q.Limit *= 2
+		default:
+			return nil, fmt.Errorf("the store keeps answering %d records for job %s without the rest", q.GetLimit(), jobID)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].GetSeq() < out[j].GetSeq() })
+	return out, nil
 }
