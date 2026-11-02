@@ -157,11 +157,14 @@ func runTrack(ctx context.Context, app *App, o trackOptions) error {
 	// already running for the protocol is rendered rather than duplicated: two viewers do not mean
 	// two demods on the radio (docs/design/decoders.md, the state boundary -- the fold is still
 	// ours; only the decode job is shared).
+	// started is the decode job track started, if it did: track ends when that job does.
+	var started string
 	if !o.attach {
 		id, serr := ensureDecoder(ctx, app, c, o)
 		if serr != nil {
 			return serr
 		}
+		started = id
 		if id != "" {
 			// Free the radio as soon as track exits rather than waiting out the presence grace.
 			defer func() {
@@ -198,11 +201,26 @@ func runTrack(ctx context.Context, app *App, o trackOptions) error {
 	defer w.finish()
 	tick := time.NewTicker(time.Duration(float64(time.Second) / o.rate))
 	defer tick.Stop()
+	// The daemon can decline the job track started after StartJob answered (a radio that cannot
+	// tune to the frequency), and a running one can fail; track has no event stream, so it reads
+	// the job back once a second and ends with the reason.
+	var jobPoll <-chan time.Time
+	if started != "" {
+		p := time.NewTicker(time.Second)
+		defer p.Stop()
+		jobPoll = p.C
+	}
 	draws := 0
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-jobPoll:
+			j, jerr := c.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: started})
+			if jerr == nil && !isLiveJob(j) {
+				return decodeJobEnded(app.ErrStyle, j, func(err error) error { return trackDecodeFailure(app, o, err) },
+					"ley track "+o.protocol)
+			}
 		case err := <-errs:
 			if err != nil && ctx.Err() == nil {
 				return err
@@ -281,6 +299,9 @@ func trackDecodeFailure(app *App, o trackOptions, err error) error {
 	case leyline.CodeDecoderFailed:
 		msg := leylineMessage(err, "the decoder would not start")
 		return &friendlyError{msg: msg + ". " + st.Cmd("ley daemon logs") + " carries what the plugin wrote", cause: err}
+	case leyline.CodeNoDevice, leyline.CodeFreqOutOfRange:
+		msg := leylineMessage(err, "no radio here can hear that")
+		return &friendlyError{msg: msg + ". " + st.Cmd("ley devices") + " lists what is here and what it can tune", cause: err}
 	}
 	return err
 }

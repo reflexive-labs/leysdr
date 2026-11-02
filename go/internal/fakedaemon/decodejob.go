@@ -86,8 +86,35 @@ func (d *Daemon) startDecode(ctx context.Context, cfg *leylinev1.DecodeConfig) (
 	spawned := d.withSpeechModel(man)
 	d.mu.Unlock()
 
+	if d.opts.DeclineDecode != nil {
+		if why := d.opts.DeclineDecode(cfg); why != nil {
+			go d.declineDecode(job.JobId, why)
+			return reply, nil
+		}
+	}
 	go d.runDecode(job.JobId, spawned)
 	return reply, nil
+}
+
+// declineDelay is how long after StartJob answers the fake declines a job Options.DeclineDecode
+// refused: long enough that the client has the job, as the daemon's allocator runs after the reply.
+const declineDelay = 100 * time.Millisecond
+
+// declineDecode ends a job Options.DeclineDecode refused, FAILED with the reason; one cancelled
+// first ends as a cancelled decode does.
+func (d *Daemon) declineDecode(jobID string, why *leyline.Error) {
+	time.Sleep(declineDelay)
+	d.mu.Lock()
+	j := d.jobs[jobID]
+	if j != nil && j.cancelled {
+		d.mu.Unlock()
+		d.finishDecode(jobID)
+		return
+	}
+	defer d.mu.Unlock()
+	if j != nil && j.proto.GetState() == leylinev1.JobState_RUNNING {
+		d.failDecodeLocked(j, &leylinev1.ErrorDetail{Code: why.Code, Message: why.Message, Target: why.Target})
+	}
 }
 
 func quoted(s string) string { return "\"" + s + "\"" }

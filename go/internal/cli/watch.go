@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -202,18 +203,46 @@ func runWatch(ctx context.Context, s *verbSession, o watchOptions) error {
 	if err != nil {
 		return err
 	}
+	// A job the daemon declines after StartJob answered, or one that fails, ends the watch with
+	// the reason, as it ends decode.
+	ended := func(j *leylinev1.Job) error {
+		return decodeJobEnded(s.app.ErrStyle, j, func(err error) error {
+			return decodeFailure(s, decodeOptions{decoder: o.decoder}, err)
+		}, "ley watch "+o.decoder)
+	}
+	events := s.Events()
+	poll := time.NewTicker(time.Second)
+	defer poll.Stop()
 	n := 0
 	for {
 		select {
 		case <-ctx.Done():
 			return watchStopped(ctx, s, job)
+		case ev, ok := <-events:
+			if !ok {
+				events = nil
+				continue
+			}
+			if j := s.jobEvent(ev, job.GetJobId()); j != nil && !isLiveJob(j) {
+				return ended(j)
+			}
+		case <-poll.C:
+			if j := s.endedJob(ctx, job.GetJobId()); j != nil {
+				return ended(j)
+			}
 		case err := <-errs:
 			if err != nil && ctx.Err() == nil {
 				return err
 			}
+			if j := s.endedJob(ctx, job.GetJobId()); j != nil {
+				return ended(j)
+			}
 			return watchStopped(ctx, s, job)
 		case rec, ok := <-recs:
 			if !ok {
+				if j := s.endedJob(ctx, job.GetJobId()); j != nil {
+					return ended(j)
+				}
 				return watchStopped(ctx, s, job)
 			}
 			if err := printRecord(s, rec); err != nil {

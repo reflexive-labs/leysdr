@@ -13,6 +13,7 @@ import (
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/internal/session"
+	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 	"github.com/reflexive-labs/leysdr/go/pkg/records"
 	"github.com/reflexive-labs/leysdr/go/pkg/units"
@@ -158,18 +159,45 @@ func runDecode(ctx context.Context, s *verbSession, o decodeOptions) error {
 		return err
 	}
 	s.say("%s\n", decodeBanner(ctx, s, job, o))
+	// The daemon can still decline the job after StartJob answered (a radio that cannot tune to
+	// the frequency), and a running job can fail. Its end arrives on the event stream, with a
+	// GetJob poll behind it, and ends the run with the reason.
+	ended := func(j *leylinev1.Job) error {
+		return decodeJobEnded(s.app.ErrStyle, j, func(err error) error { return decodeFailure(s, o, err) }, "ley decode "+o.decoder)
+	}
+	events := s.Events()
+	poll := time.NewTicker(time.Second)
+	defer poll.Stop()
 	n := 0
 	for {
 		select {
 		case <-ctx.Done():
 			return decodeStopped(ctx, s, job, o)
+		case ev, ok := <-events:
+			if !ok {
+				events = nil
+				continue
+			}
+			if j := s.jobEvent(ev, job.GetJobId()); j != nil && !isLiveJob(j) {
+				return ended(j)
+			}
+		case <-poll.C:
+			if j := s.endedJob(ctx, job.GetJobId()); j != nil {
+				return ended(j)
+			}
 		case err := <-errs:
 			if err != nil && ctx.Err() == nil {
 				return err
 			}
+			if j := s.endedJob(ctx, job.GetJobId()); j != nil {
+				return ended(j)
+			}
 			return decodeStopped(ctx, s, job, o)
 		case rec, ok := <-recs:
 			if !ok {
+				if j := s.endedJob(ctx, job.GetJobId()); j != nil {
+					return ended(j)
+				}
 				return decodeStopped(ctx, s, job, o)
 			}
 			if err := printRecord(s, rec); err != nil {
@@ -214,8 +242,68 @@ func decodeFailure(s *verbSession, o decodeOptions, err error) error {
 	case leyline.CodeDecoderFailed:
 		msg := leylineMessage(err, "the decoder would not start")
 		return &friendlyError{msg: msg + ". " + st.Cmd("ley daemon logs") + " carries what the plugin wrote", cause: err}
+	case leyline.CodeNoDevice, leyline.CodeFreqOutOfRange:
+		msg := leylineMessage(err, "no radio here can hear that")
+		return &friendlyError{msg: msg + ". " + st.Cmd("ley devices") + " lists what is here and what it can tune", cause: err}
 	}
 	return err
+}
+
+// decodeJobEnded is the error for a decode job that ended while ley was following it: declined
+// after StartJob answered, failed while it ran, or cancelled by another client. failure turns
+// the job's reason into the verb's own sentence (a friendlyError), as it does a refusal from
+// StartJob; a reason it leaves alone gets the daemon's log as the next step, unless it names a
+// command already. A job that completed is no error.
+func decodeJobEnded(st ui.Style, job *leylinev1.Job, failure func(error) error, again string) error {
+	switch job.GetState() {
+	case leylinev1.JobState_FAILED:
+		e := job.GetError()
+		msg := job.GetStatusDetail()
+		if msg == "" {
+			msg = e.GetMessage()
+		}
+		if msg == "" {
+			msg = "the decoder stopped"
+		}
+		cause := &leyline.Error{Code: e.GetCode(), Message: msg, Target: e.GetTarget()}
+		var fe *friendlyError
+		if err := failure(cause); errors.As(err, &fe) {
+			return err
+		}
+		if !strings.Contains(msg, "ley ") {
+			msg += ". " + st.Cmd("ley daemon logs") + " carries what the daemon wrote"
+		}
+		if cause.Code == "" {
+			return &ExitError{Code: 1, Message: msg}
+		}
+		return &friendlyError{msg: msg, cause: cause}
+	case leylinev1.JobState_CANCELLED:
+		return &ExitError{Code: 1, Message: fmt.Sprintf("another client cancelled the decode (%s); %s starts another",
+			job.GetStatusDetail(), st.Cmd(again))}
+	}
+	return nil
+}
+
+// jobEvent applies ev to the session and returns the job it carries when it is a Job event for
+// jobID, else nil.
+func (s *verbSession) jobEvent(ev *leylinev1.Event, jobID string) *leylinev1.Job {
+	s.Apply(ev)
+	if b, ok := ev.Body.(*leylinev1.Event_Job); ok && b.Job.GetJobId() == jobID {
+		return b.Job
+	}
+	return nil
+}
+
+// endedJob reads the job back and returns it when it has ended, else nil: a read that fails says
+// nothing about the job, so the caller carries on.
+func (s *verbSession) endedJob(ctx context.Context, jobID string) *leylinev1.Job {
+	ctx, cancel := session.CleanupContext(ctx, confirmTimeout)
+	defer cancel()
+	j, err := s.Client.Jobs.GetJob(ctx, &leylinev1.JobRef{JobId: jobID})
+	if err != nil || isLiveJob(j) {
+		return nil
+	}
+	return j
 }
 
 // leylineMessage is the daemon's own sentence, or fallback when the error carries none. The

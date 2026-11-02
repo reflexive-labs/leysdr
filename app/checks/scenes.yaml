@@ -1864,8 +1864,9 @@ scenes:
   # in the daemon's words and Start is off, with no take-over question, because taking the radio
   # would not move it. No file fixture can retune, so the question itself is checked only by
   # DecoderPlacementTests. A terminal's `ley decode --job --take-over` insists, and the daemon
-  # declines it with the same reason (DA-13), which the page shows as Failed while the radio stays
-  # where it was. The sentence writes the frequency in MHz (DA-15).
+  # declines it with the same reason (DA-13): ley prints it with the next command and exits 1,
+  # and the page shows the job as Failed while the radio stays where it was. The sentence writes
+  # the frequency in MHz (DA-15).
   - name: decoders-take-over
     covers: [DecodersView.swift, DecoderSession.swift, DecoderPlacement.swift, DecoderPages.swift]
     fixtures: [{name: scene_adsb_off}]
@@ -1879,9 +1880,8 @@ scenes:
       - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tabs.0: log, decoders.record_count: 0, decoders.start_enabled: false, decoders.placement: "NESDR SMArt v5 cannot tune to 1090.000 MHz (a file radio plays what it recorded)."}}
       - {cmd: snapshot, name: placement}
       - {cmd: ax, name: placement}
-      - {cmd: ley_bg, id: insist, args: [decode, adsb, --job, --take-over]}
-      - {cmd: wait, seconds: 2}
-      - {cmd: kill, id: insist}
+      - {cmd: ley, args: [decode, adsb, --job, --take-over], expect_exit: 1, expect_stdout: '^$'}
+      - {cmd: file, path: steps.log, contains: ["cannot tune to 1090.000 MHz .a file radio plays what it recorded.. ley devices lists what is here and what it can tune .NO_DEVICE."]}
       - {cmd: ley, args: [jobs], expect_stdout: [failed, "cannot tune to 1090.000 MHz .a file radio plays what it recorded."]}
       - {cmd: state, expect: {alert: null, decoders.state: Failed, decoders.detail: "NESDR SMArt v5 cannot tune to 1090.000 MHz (a file radio plays what it recorded)", decoders.header: null, decoders.start_shown: true, decoders.start_enabled: false, decoders.record_count: 0, tuned_hz: 1090600000}}
       - {cmd: snapshot, name: declined}

@@ -14,6 +14,7 @@ import (
 	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
 	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
+	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 	"github.com/reflexive-labs/leysdr/go/pkg/records"
 )
 
@@ -211,5 +212,78 @@ func TestDecodeScreensSurviveColourOff(t *testing.T) {
 	}
 	if !strings.Contains(plain, "LEYTST-1") || !strings.Contains(plain, "aprs") {
 		t.Errorf("the screens rendered nothing to compare:\n%s", plain)
+	}
+}
+
+// declineEverything is a fake daemon whose allocator declines every decode job after StartJob has
+// answered, the way leylined declines a file radio that cannot tune to the decoder's frequency.
+var declineEverything = fakedaemon.Options{DeclineDecode: func(*leylinev1.DecodeConfig) *leyline.Error {
+	return &leyline.Error{Code: leyline.CodeNoDevice, Message: "Fake RTL-SDR cannot tune to 144.390 MHz (a file radio plays what it recorded)"}
+}}
+
+// A job the daemon declines after StartJob answered ends decode, watch and track with the
+// daemon's reason, the command to run next and exit 1, rather than leaving them waiting for
+// records that will never come.
+func TestDecodeVerbsEndWhenTheJobIsDeclined(t *testing.T) {
+	t.Parallel()
+	for _, args := range [][]string{
+		{"decode", "aprs"},
+		{"decode", "aprs", "--job"},
+		{"watch", "aprs"},
+		{"track", "aprs"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Parallel()
+			sock, _ := harness(t, declineEverything)
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			_, _, err := run(t, ctx, sock, args...)
+			if ctx.Err() != nil {
+				t.Fatalf("ley %s was still running after 10 s", strings.Join(args, " "))
+			}
+			if exitCode(err) != 1 {
+				t.Fatalf("exit %d (%v), want 1", exitCode(err), err)
+			}
+			msg := err.Error()
+			for _, want := range []string{"cannot tune to 144.390 MHz", "ley devices", "[NO_DEVICE]"} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("the error line lacks %q: %q", want, msg)
+				}
+			}
+		})
+	}
+}
+
+// A decode job another client cancels ends the run with exit 1 and the command that starts
+// another, so a script does not read a stopped decode as success.
+func TestDecodeEndsWhenAnotherClientCancels(t *testing.T) {
+	t.Parallel()
+	sock, c := harness(t, fakedaemon.Options{})
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := run(t, ctx, sock, "decode", "aprs", "--job")
+		done <- err
+	}()
+	var jobID string
+	for jobID == "" && ctx.Err() == nil {
+		if jobs, err := c.ListJobs(ctx); err == nil && len(jobs) == 1 {
+			jobID = jobs[0].GetJobId()
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if _, err := c.Jobs.CancelJob(ctx, &leylinev1.JobRef{JobId: jobID}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if exitCode(err) != 1 || !strings.Contains(err.Error(), "another client cancelled the decode") ||
+			!strings.Contains(err.Error(), "ley decode aprs") {
+			t.Errorf("exit %d: %v", exitCode(err), err)
+		}
+	case <-ctx.Done():
+		t.Fatal("ley decode --job was still running after its job was cancelled")
 	}
 }

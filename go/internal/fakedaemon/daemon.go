@@ -109,6 +109,11 @@ type Options struct {
 	// AssistantStepDelay is the pause before each step of a scripted turn, so a client sees the
 	// turn's intermediate states arrive one at a time. Default 0.
 	AssistantStepDelay time.Duration
+	// DeclineDecode, when set, is consulted for every decode job on a radio: a non-nil error
+	// lets StartJob answer with the job RUNNING and then ends it FAILED with that code and
+	// message a moment later, as the daemon's allocator declines a radio that cannot tune to
+	// the frequency after StartJob has answered.
+	DeclineDecode func(cfg *leylinev1.DecodeConfig) *leyline.Error
 }
 
 // DCSCode is a DCS code the fake sends on a carrier (Options.DCS).
