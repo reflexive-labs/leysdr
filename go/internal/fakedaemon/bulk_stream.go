@@ -110,7 +110,7 @@ func (d *Daemon) produce(ctx context.Context, s *stream, interval time.Duration,
 			d.mu.Lock()
 			c := d.captures[s.captureID]
 			var payload []byte
-			var idx uint64
+			var idx, centre, span, generation uint64
 			if c != nil && c.State == leylinev1.CaptureState_CAPTURE_ACTIVE && c.atEOF(now) {
 				// The file ran out (no loop): the device is gone from the
 				// capture's point of view, exactly as the daemon reports it.
@@ -123,6 +123,10 @@ func (d *Daemon) produce(ctx context.Context, s *stream, interval time.Duration,
 			if c != nil {
 				idx = c.sampleIndex(now)
 				payload = d.renderLocked(s, c, now)
+				// A capture's own frames say where it was tuned; a channel's say nothing.
+				if s.channelID == "" {
+					centre, span, generation = c.CenterHz, c.SampleRate, c.TuningGeneration
+				}
 			}
 			d.mu.Unlock()
 			if c == nil {
@@ -132,8 +136,9 @@ func (d *Daemon) produce(ctx context.Context, s *stream, interval time.Duration,
 			of := outFrame{
 				frame: &leylinev1.Frame{
 					StreamId: s.id, Seq: seq,
-					Time:    &leylinev1.SampleTime{CaptureId: c.CaptureId, SampleIndex: prevIdx},
-					Payload: payload,
+					Time:     &leylinev1.SampleTime{CaptureId: c.CaptureId, SampleIndex: prevIdx},
+					Payload:  payload,
+					CenterHz: centre, SpanHz: span, TuningGeneration: generation,
 				},
 				end: idx,
 			}

@@ -45,6 +45,7 @@ package final class CaptureDSPCore: @unchecked Sendable {
     package let gaps = CaptureGapLog()
     private let sampleRateBox: Atomic<UInt64>
     private let centerHzBox: Atomic<UInt64>
+    private let tuningGenerationBox = Atomic<UInt64>(0)
     private let tableLock = NSLock()
     private var channelSlots: [ChannelSlot] = []
     private var taps: [any CaptureTap] = []
@@ -90,6 +91,13 @@ package final class CaptureDSPCore: @unchecked Sendable {
     package var centerHz: UInt64 {
         get { centerHzBox.load(ordering: .relaxed) }
         set { centerHzBox.store(newValue, ordering: .relaxed) }
+    }
+
+    /// The engine's `tuningGeneration`, for the taps and spectrum sinks that stamp it on each
+    /// frame (`Frame.tuning_generation`). Set by the engine after the centre or rate it counts.
+    package var tuningGeneration: UInt64 {
+        get { tuningGenerationBox.load(ordering: .relaxed) }
+        set { tuningGenerationBox.store(newValue, ordering: .relaxed) }
     }
 
     /// Latest published anchor (zero host time until the first block).

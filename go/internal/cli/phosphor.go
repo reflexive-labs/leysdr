@@ -231,9 +231,10 @@ func phosphorRows(ctx context.Context, app *App, desc *leylinev1.StreamDescripto
 			if bins <= 0 || levels <= 0 || len(fr.Payload) < bins*levels*2 {
 				continue
 			}
+			centerHz, spanHz := leyline.RowTuning(fr, desc)
 			row := PersistenceRow{
 				Seq: fr.Seq, SampleIndex: fr.Time.GetSampleIndex(),
-				CenterHz: desc.CenterHz, SpanHz: desc.SpanHz,
+				CenterHz: centerHz, SpanHz: spanHz,
 				Bins: p.GetBins(), Levels: p.GetLevels(),
 				FloorDb: p.GetFloorDb(), RangeDb: p.GetRangeDb(),
 				Counts: fr.Payload[:bins*levels*2],

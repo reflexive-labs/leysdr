@@ -173,7 +173,7 @@ actor StreamRegistry {
             rows = min(rows, DefaultSpectrumLadder.maxRowsPerSecond)
             let bins = DefaultSpectrumLadder.roundBins(want.bins == 0 ? 1024 : Int(want.bins))
             let ring = FrameRing(slots: Self.fftSlots, slotBytes: bins * 4)
-            let sink = FFTFrameSink(ring: ring, bins: bins, u8: format == .dbU8)
+            let sink = FFTFrameSink(ring: ring, bins: bins, u8: format == .dbU8, core: capture.core)
             let accumulation: SpectrumAccumulation
             switch want.accumulation {
             case .unspecified, .rowSnapshot: accumulation = .snapshot
@@ -222,7 +222,7 @@ actor StreamRegistry {
             let ring = FrameRing(slots: Self.fftSlots, slotBytes: pbins * levels * 2)
             let rowSamples = Swift.max(1.0, Double(snap.sampleRate) / emitRows)
             let emitInterval = UInt64(Swift.min(rowSamples, Double(UInt64.max / 2)))
-            let sink = PersistenceFrameSink(ring: ring, accumulator: acc, emitInterval: emitInterval)
+            let sink = PersistenceFrameSink(ring: ring, accumulator: acc, emitInterval: emitInterval, core: capture.core)
             let sub = await capture.spectrum.subscribe(bins: pbins, rowsPerSecond: ladderRows,
                                                        accumulation: .snapshot, policy: enginePolicy, sink: sink)
             var p = Leyline_V1_PersistenceParams()
@@ -286,7 +286,7 @@ actor StreamRegistry {
                     target: captureID.string)
             }
             let ring = FrameRing(slots: Self.iqSlots, slotBytes: CaptureDSPCore.blockSize * 8)
-            let tap = IQFrameTap(id: id, ring: ring)
+            let tap = IQFrameTap(id: id, ring: ring, core: capture.core)
             await capture.addTap(tap)
             var p = Leyline_V1_IqParams()
             p.sampleRate = snap.sampleRate
@@ -473,7 +473,8 @@ actor StreamRegistry {
         let gapMarked = sub.descriptor.policy == .gapMarked
         /// `seq` nil: reader-counted (audio); otherwise the ring's writer-side sequence, so evicted
         /// frames leave a visible gap.
-        func frame(payload: Data, start: UInt64, count: UInt64, dropped: UInt64, seq ringSeq: UInt64? = nil) -> Leyline_V1_Frame {
+        func frame(payload: Data, start: UInt64, count: UInt64, dropped: UInt64, seq ringSeq: UInt64? = nil,
+                   tuning: FrameTuning = FrameTuning()) -> Leyline_V1_Frame {
             seq = ringSeq ?? (seq + 1)
             var f = Leyline_V1_Frame()
             f.streamID = sub.id.string
@@ -481,6 +482,9 @@ actor StreamRegistry {
             f.time.captureID = sub.captureID.string
             f.time.sampleIndex = start
             f.payload = payload
+            f.centerHz = tuning.centerHz
+            f.spanHz = tuning.spanHz
+            f.tuningGeneration = tuning.generation
             if gapMarked, dropped > 0 {
                 f.gap.fromSample = lastEnd
                 f.gap.toSample = start
@@ -493,12 +497,14 @@ actor StreamRegistry {
              .audioSpectrum(let ring, _, _):
             for await _ in ring.poke {
                 while let p = ring.pop() {
-                    try await write(frame(payload: p.payload, start: p.sampleStart, count: p.sampleCount, dropped: p.droppedSamples, seq: p.seq))
+                    try await write(frame(payload: p.payload, start: p.sampleStart, count: p.sampleCount, dropped: p.droppedSamples,
+                                          seq: p.seq, tuning: p.tuning))
                 }
                 if sub.isClosed || sub.isReaderCancelled { return }
             }
             while let p = ring.pop() {
-                try await write(frame(payload: p.payload, start: p.sampleStart, count: p.sampleCount, dropped: p.droppedSamples, seq: p.seq))
+                try await write(frame(payload: p.payload, start: p.sampleStart, count: p.sampleCount, dropped: p.droppedSamples,
+                                      seq: p.seq, tuning: p.tuning))
             }
         case .audio(let audio, _):
             let s16 = sub.descriptor.audio.format != .f32

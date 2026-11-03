@@ -10,6 +10,19 @@ import (
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 )
 
+// A capture's frames carry the tuning they were made at, and a row is labelled
+// by it rather than by the descriptor, which says where the stream began.
+func TestRowTuningPrefersTheFrame(t *testing.T) {
+	desc := &leylinev1.StreamDescriptor{CenterHz: 100_500_000, SpanHz: 2_400_000}
+	retuned := &leylinev1.Frame{CenterHz: 101_000_000, SpanHz: 2_048_000, TuningGeneration: 3}
+	if c, s := RowTuning(retuned, desc); c != 101_000_000 || s != 2_048_000 {
+		t.Errorf("a stamped frame: got %d, %d", c, s)
+	}
+	if c, s := RowTuning(&leylinev1.Frame{}, desc); c != 100_500_000 || s != 2_400_000 {
+		t.Errorf("a frame with no tuning reads at the descriptor's: got %d, %d", c, s)
+	}
+}
+
 // encodeU8 is the daemon's DB_U8 quantisation (StreamSources.swift), written out
 // here so the decoder is checked against the encoder rather than against itself.
 func encodeU8(db []float64) []byte {

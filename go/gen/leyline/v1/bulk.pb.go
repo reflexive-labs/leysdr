@@ -1167,9 +1167,18 @@ type Frame struct {
 	Payload  []byte                 `protobuf:"bytes,5,opt,name=payload,proto3" json:"payload,omitempty"` // format per StreamDescriptor
 	// Set only on a decoder's SEGMENTED input (decode.proto, InputMode): the first frame of an over
 	// is SEGMENT_START and an END frame with an empty payload closes it. Unset on every other frame.
-	Segment       SegmentMark `protobuf:"varint,6,opt,name=segment,proto3,enum=leyline.v1.SegmentMark" json:"segment,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Segment SegmentMark `protobuf:"varint,6,opt,name=segment,proto3,enum=leyline.v1.SegmentMark" json:"segment,omitempty"`
+	// Where the capture was tuned when this frame was made, on a capture's FFT,
+	// persistence and IQ frames (unset on a channel's audio and audio spectrum).
+	// The descriptor's center_hz and span_hz are the tuning at subscribe time; a
+	// retune or a rate change does not end the stream, so a reader labels each row
+	// from these. tuning_generation is the capture's (control.proto, Capture): a
+	// change between two frames is a retune even when the centre came back.
+	CenterHz         uint64 `protobuf:"varint,7,opt,name=center_hz,json=centerHz,proto3" json:"center_hz,omitempty"`
+	SpanHz           uint64 `protobuf:"varint,8,opt,name=span_hz,json=spanHz,proto3" json:"span_hz,omitempty"`
+	TuningGeneration uint64 `protobuf:"varint,9,opt,name=tuning_generation,json=tuningGeneration,proto3" json:"tuning_generation,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Frame) Reset() {
@@ -1242,6 +1251,27 @@ func (x *Frame) GetSegment() SegmentMark {
 		return x.Segment
 	}
 	return SegmentMark_SEGMENT_MARK_UNSPECIFIED
+}
+
+func (x *Frame) GetCenterHz() uint64 {
+	if x != nil {
+		return x.CenterHz
+	}
+	return 0
+}
+
+func (x *Frame) GetSpanHz() uint64 {
+	if x != nil {
+		return x.SpanHz
+	}
+	return 0
+}
+
+func (x *Frame) GetTuningGeneration() uint64 {
+	if x != nil {
+		return x.TuningGeneration
+	}
+	return 0
 }
 
 type StreamRef struct {
@@ -1355,14 +1385,17 @@ const file_leyline_v1_bulk_proto_rawDesc = "" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1b\n" +
 	"\tslot_size\x18\x02 \x01(\rR\bslotSize\x12\x1d\n" +
 	"\n" +
-	"slot_count\x18\x03 \x01(\rR\tslotCount\"\xd2\x01\n" +
+	"slot_count\x18\x03 \x01(\rR\tslotCount\"\xb5\x02\n" +
 	"\x05Frame\x12\x1b\n" +
 	"\tstream_id\x18\x01 \x01(\tR\bstreamId\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x04R\x03seq\x12*\n" +
 	"\x04time\x18\x03 \x01(\v2\x16.leyline.v1.SampleTimeR\x04time\x12!\n" +
 	"\x03gap\x18\x04 \x01(\v2\x0f.leyline.v1.GapR\x03gap\x12\x18\n" +
 	"\apayload\x18\x05 \x01(\fR\apayload\x121\n" +
-	"\asegment\x18\x06 \x01(\x0e2\x17.leyline.v1.SegmentMarkR\asegment\"(\n" +
+	"\asegment\x18\x06 \x01(\x0e2\x17.leyline.v1.SegmentMarkR\asegment\x12\x1b\n" +
+	"\tcenter_hz\x18\a \x01(\x04R\bcenterHz\x12\x17\n" +
+	"\aspan_hz\x18\b \x01(\x04R\x06spanHz\x12+\n" +
+	"\x11tuning_generation\x18\t \x01(\x04R\x10tuningGeneration\"(\n" +
 	"\tStreamRef\x12\x1b\n" +
 	"\tstream_id\x18\x01 \x01(\tR\bstreamId*c\n" +
 	"\n" +

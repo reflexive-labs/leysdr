@@ -133,6 +133,14 @@ func runWaterfall(ctx context.Context, app *App, o waterfallOptions) error {
 				continue
 			}
 			bins := leyline.DecodeFFTBins(fr.Payload, binFormat)
+			// A retune does not end the stream: the rows after it carry the new
+			// tuning, and the axis is drawn again so they are labelled where
+			// they were taken.
+			retuned := false
+			if c, s := leyline.RowTuning(fr, desc); c != view.centerHz || s != view.spanHz {
+				view.centerHz, view.spanHz = c, s
+				retuned = n > 0
+			}
 			// The header waits for the scale, so it can state the floor the
 			// shades are measured from rather than a number chosen later.
 			if n == 0 {
@@ -157,7 +165,7 @@ func runWaterfall(ctx context.Context, app *App, o waterfallOptions) error {
 				fmt.Fprintln(out, view.gapRow(fr.Seq-lastSeq-1))
 			}
 			lastSeq = fr.Seq
-			if view.due() {
+			if retuned || view.due() {
 				for _, l := range view.axis(cols) {
 					fmt.Fprintln(out, l)
 				}
@@ -209,9 +217,10 @@ func waterfallRows(ctx context.Context, out *bufio.Writer, desc *leylinev1.Strea
 				continue
 			}
 			bins := leyline.DecodeFFTBins(fr.Payload, binFormat)
+			centerHz, spanHz := leyline.RowTuning(fr, desc)
 			row := WaterfallRow{FFTRow{
 				Seq: fr.Seq, SampleIndex: fr.Time.GetSampleIndex(),
-				CenterHz: desc.CenterHz, SpanHz: desc.SpanHz,
+				CenterHz: centerHz, SpanHz: spanHz,
 				Bins: bins, FloorDb: floorOf(bins),
 			}, looks}
 			b, err := json.Marshal(row)

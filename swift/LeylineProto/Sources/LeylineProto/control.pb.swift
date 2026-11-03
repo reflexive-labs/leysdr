@@ -631,72 +631,100 @@ public nonisolated struct Leyline_V1_FeatureValue: Sendable {
   public init() {}
 }
 
-public nonisolated struct Leyline_V1_Capture: Sendable {
+public nonisolated struct Leyline_V1_Capture: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var captureID: String = String()
+  public var captureID: String {
+    get {_storage._captureID}
+    set {_uniqueStorage()._captureID = newValue}
+  }
 
   /// exactly one device per capture (composite devices absorb multi-SDR)
-  public var deviceID: String = String()
+  public var deviceID: String {
+    get {_storage._deviceID}
+    set {_uniqueStorage()._deviceID = newValue}
+  }
 
-  public var centerHz: UInt64 = 0
+  public var centerHz: UInt64 {
+    get {_storage._centerHz}
+    set {_uniqueStorage()._centerHz = newValue}
+  }
 
-  public var sampleRate: UInt64 = 0
+  public var sampleRate: UInt64 {
+    get {_storage._sampleRate}
+    set {_uniqueStorage()._sampleRate = newValue}
+  }
 
   /// The tombstone convention, which Channel and Sink follow too: a destroyed
   /// object is emitted one last time with its state field unset, and that is the
   /// only signal it is gone -- drop it from your mirror. CAPTURE_DETACHED means
   /// something else: the radio is unplugged and the capture rebinds if it comes
   /// back, so a destroy and a yanked dongle must not look alike on the wire.
-  public var state: Leyline_V1_CaptureState = .unspecified
+  public var state: Leyline_V1_CaptureState {
+    get {_storage._state}
+    set {_uniqueStorage()._state = newValue}
+  }
 
   public var anchor: Leyline_V1_CaptureAnchor {
-    get {_anchor ?? Leyline_V1_CaptureAnchor()}
-    set {_anchor = newValue}
+    get {_storage._anchor ?? Leyline_V1_CaptureAnchor()}
+    set {_uniqueStorage()._anchor = newValue}
   }
   /// Returns true if `anchor` has been explicitly set.
-  public var hasAnchor: Bool {self._anchor != nil}
+  public var hasAnchor: Bool {_storage._anchor != nil}
   /// Clears the value of `anchor`. Subsequent reads from it will return its default value.
-  public mutating func clearAnchor() {self._anchor = nil}
+  public mutating func clearAnchor() {_uniqueStorage()._anchor = nil}
 
   /// the don't-disturb signal
   public var activity: Leyline_V1_CaptureActivity {
-    get {_activity ?? Leyline_V1_CaptureActivity()}
-    set {_activity = newValue}
+    get {_storage._activity ?? Leyline_V1_CaptureActivity()}
+    set {_uniqueStorage()._activity = newValue}
   }
   /// Returns true if `activity` has been explicitly set.
-  public var hasActivity: Bool {self._activity != nil}
+  public var hasActivity: Bool {_storage._activity != nil}
   /// Clears the value of `activity`. Subsequent reads from it will return its default value.
-  public mutating func clearActivity() {self._activity = nil}
+  public mutating func clearActivity() {_uniqueStorage()._activity = nil}
 
   public var createdBy: Leyline_V1_ClientInfo {
-    get {_createdBy ?? Leyline_V1_ClientInfo()}
-    set {_createdBy = newValue}
+    get {_storage._createdBy ?? Leyline_V1_ClientInfo()}
+    set {_uniqueStorage()._createdBy = newValue}
   }
   /// Returns true if `createdBy` has been explicitly set.
-  public var hasCreatedBy: Bool {self._createdBy != nil}
+  public var hasCreatedBy: Bool {_storage._createdBy != nil}
   /// Clears the value of `createdBy`. Subsequent reads from it will return its default value.
-  public mutating func clearCreatedBy() {self._createdBy = nil}
+  public mutating func clearCreatedBy() {_uniqueStorage()._createdBy = nil}
 
   /// current setting of every GainElement, in descriptor order
-  public var gains: [Leyline_V1_GainState] = []
+  public var gains: [Leyline_V1_GainState] {
+    get {_storage._gains}
+    set {_uniqueStorage()._gains = newValue}
+  }
 
   /// What every consumer of this capture needs from its tuning, oldest first
   /// (docs/design/claims.md). Clients never make a claim: creating a channel,
   /// starting a job, opening a capture's FFT, persistence or IQ stream, starting
   /// a sweep, attaching a live audio sink or writing to the capture makes one,
   /// and ending that thing releases it. A claim change is a capture event.
-  public var claims: [Leyline_V1_Claim] = []
+  public var claims: [Leyline_V1_Claim] {
+    get {_storage._claims}
+    set {_uniqueStorage()._claims = newValue}
+  }
+
+  /// Counts every change to the band the capture delivers: a retune, a rate
+  /// change, the radio going away and coming back. A client comparing centre and
+  /// rate between two looks misses a retune away and back in between; this
+  /// number has still moved. Bulk frames of a capture carry it too.
+  public var tuningGeneration: UInt64 {
+    get {_storage._tuningGeneration}
+    set {_uniqueStorage()._tuningGeneration = newValue}
+  }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
-  fileprivate var _anchor: Leyline_V1_CaptureAnchor? = nil
-  fileprivate var _activity: Leyline_V1_CaptureActivity? = nil
-  fileprivate var _createdBy: Leyline_V1_ClientInfo? = nil
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 /// One consumer's statement of what it needs from a capture's tuning. A claim is
@@ -751,7 +779,9 @@ public nonisolated struct Leyline_V1_Claim: Sendable {
 
   public var state: Leyline_V1_ClaimState = .unspecified
 
-  /// who moved the capture, while DISPLACED; not yet set
+  /// While DISPLACED: who last moved the capture away from what the claim needs
+  /// (a client, a job, or the daemon), and since when. Cleared when the claim is
+  /// satisfied again.
   public var displacedBy: Leyline_V1_ClientInfo {
     get {_displacedBy ?? Leyline_V1_ClientInfo()}
     set {_displacedBy = newValue}
@@ -761,7 +791,6 @@ public nonisolated struct Leyline_V1_Claim: Sendable {
   /// Clears the value of `displacedBy`. Subsequent reads from it will return its default value.
   public mutating func clearDisplacedBy() {self._displacedBy = nil}
 
-  /// not yet set
   public var displacedSinceNs: Int64 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -2358,78 +2387,139 @@ nonisolated extension Leyline_V1_FeatureValue: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension Leyline_V1_Capture: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Capture"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}capture_id\0\u{3}device_id\0\u{3}center_hz\0\u{3}sample_rate\0\u{1}state\0\u{1}anchor\0\u{1}activity\0\u{3}created_by\0\u{1}gains\0\u{1}claims\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}capture_id\0\u{3}device_id\0\u{3}center_hz\0\u{3}sample_rate\0\u{1}state\0\u{1}anchor\0\u{1}activity\0\u{3}created_by\0\u{1}gains\0\u{1}claims\0\u{3}tuning_generation\0")
+
+  fileprivate class _StorageClass {
+    var _captureID: String = String()
+    var _deviceID: String = String()
+    var _centerHz: UInt64 = 0
+    var _sampleRate: UInt64 = 0
+    var _state: Leyline_V1_CaptureState = .unspecified
+    var _anchor: Leyline_V1_CaptureAnchor? = nil
+    var _activity: Leyline_V1_CaptureActivity? = nil
+    var _createdBy: Leyline_V1_ClientInfo? = nil
+    var _gains: [Leyline_V1_GainState] = []
+    var _claims: [Leyline_V1_Claim] = []
+    var _tuningGeneration: UInt64 = 0
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _captureID = source._captureID
+      _deviceID = source._deviceID
+      _centerHz = source._centerHz
+      _sampleRate = source._sampleRate
+      _state = source._state
+      _anchor = source._anchor
+      _activity = source._activity
+      _createdBy = source._createdBy
+      _gains = source._gains
+      _claims = source._claims
+      _tuningGeneration = source._tuningGeneration
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.captureID) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.deviceID) }()
-      case 3: try { try decoder.decodeSingularUInt64Field(value: &self.centerHz) }()
-      case 4: try { try decoder.decodeSingularUInt64Field(value: &self.sampleRate) }()
-      case 5: try { try decoder.decodeSingularEnumField(value: &self.state) }()
-      case 6: try { try decoder.decodeSingularMessageField(value: &self._anchor) }()
-      case 7: try { try decoder.decodeSingularMessageField(value: &self._activity) }()
-      case 8: try { try decoder.decodeSingularMessageField(value: &self._createdBy) }()
-      case 9: try { try decoder.decodeRepeatedMessageField(value: &self.gains) }()
-      case 10: try { try decoder.decodeRepeatedMessageField(value: &self.claims) }()
-      default: break
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularStringField(value: &_storage._captureID) }()
+        case 2: try { try decoder.decodeSingularStringField(value: &_storage._deviceID) }()
+        case 3: try { try decoder.decodeSingularUInt64Field(value: &_storage._centerHz) }()
+        case 4: try { try decoder.decodeSingularUInt64Field(value: &_storage._sampleRate) }()
+        case 5: try { try decoder.decodeSingularEnumField(value: &_storage._state) }()
+        case 6: try { try decoder.decodeSingularMessageField(value: &_storage._anchor) }()
+        case 7: try { try decoder.decodeSingularMessageField(value: &_storage._activity) }()
+        case 8: try { try decoder.decodeSingularMessageField(value: &_storage._createdBy) }()
+        case 9: try { try decoder.decodeRepeatedMessageField(value: &_storage._gains) }()
+        case 10: try { try decoder.decodeRepeatedMessageField(value: &_storage._claims) }()
+        case 11: try { try decoder.decodeSingularUInt64Field(value: &_storage._tuningGeneration) }()
+        default: break
+        }
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    // The use of inline closures is to circumvent an issue where the compiler
-    // allocates stack space for every if/case branch local when no optimizations
-    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-    // https://github.com/apple/swift-protobuf/issues/1182
-    if !self.captureID.isEmpty {
-      try visitor.visitSingularStringField(value: self.captureID, fieldNumber: 1)
-    }
-    if !self.deviceID.isEmpty {
-      try visitor.visitSingularStringField(value: self.deviceID, fieldNumber: 2)
-    }
-    if self.centerHz != 0 {
-      try visitor.visitSingularUInt64Field(value: self.centerHz, fieldNumber: 3)
-    }
-    if self.sampleRate != 0 {
-      try visitor.visitSingularUInt64Field(value: self.sampleRate, fieldNumber: 4)
-    }
-    if self.state != .unspecified {
-      try visitor.visitSingularEnumField(value: self.state, fieldNumber: 5)
-    }
-    try { if let v = self._anchor {
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
-    } }()
-    try { if let v = self._activity {
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
-    } }()
-    try { if let v = self._createdBy {
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
-    } }()
-    if !self.gains.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.gains, fieldNumber: 9)
-    }
-    if !self.claims.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.claims, fieldNumber: 10)
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if !_storage._captureID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._captureID, fieldNumber: 1)
+      }
+      if !_storage._deviceID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._deviceID, fieldNumber: 2)
+      }
+      if _storage._centerHz != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._centerHz, fieldNumber: 3)
+      }
+      if _storage._sampleRate != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._sampleRate, fieldNumber: 4)
+      }
+      if _storage._state != .unspecified {
+        try visitor.visitSingularEnumField(value: _storage._state, fieldNumber: 5)
+      }
+      try { if let v = _storage._anchor {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+      } }()
+      try { if let v = _storage._activity {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
+      } }()
+      try { if let v = _storage._createdBy {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
+      } }()
+      if !_storage._gains.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._gains, fieldNumber: 9)
+      }
+      if !_storage._claims.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._claims, fieldNumber: 10)
+      }
+      if _storage._tuningGeneration != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._tuningGeneration, fieldNumber: 11)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Leyline_V1_Capture, rhs: Leyline_V1_Capture) -> Bool {
-    if lhs.captureID != rhs.captureID {return false}
-    if lhs.deviceID != rhs.deviceID {return false}
-    if lhs.centerHz != rhs.centerHz {return false}
-    if lhs.sampleRate != rhs.sampleRate {return false}
-    if lhs.state != rhs.state {return false}
-    if lhs._anchor != rhs._anchor {return false}
-    if lhs._activity != rhs._activity {return false}
-    if lhs._createdBy != rhs._createdBy {return false}
-    if lhs.gains != rhs.gains {return false}
-    if lhs.claims != rhs.claims {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._captureID != rhs_storage._captureID {return false}
+        if _storage._deviceID != rhs_storage._deviceID {return false}
+        if _storage._centerHz != rhs_storage._centerHz {return false}
+        if _storage._sampleRate != rhs_storage._sampleRate {return false}
+        if _storage._state != rhs_storage._state {return false}
+        if _storage._anchor != rhs_storage._anchor {return false}
+        if _storage._activity != rhs_storage._activity {return false}
+        if _storage._createdBy != rhs_storage._createdBy {return false}
+        if _storage._gains != rhs_storage._gains {return false}
+        if _storage._claims != rhs_storage._claims {return false}
+        if _storage._tuningGeneration != rhs_storage._tuningGeneration {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

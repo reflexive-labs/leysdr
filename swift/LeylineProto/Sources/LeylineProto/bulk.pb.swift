@@ -680,6 +680,18 @@ public nonisolated struct Leyline_V1_Frame: Sendable {
   /// is SEGMENT_START and an END frame with an empty payload closes it. Unset on every other frame.
   public var segment: Leyline_V1_SegmentMark = .unspecified
 
+  /// Where the capture was tuned when this frame was made, on a capture's FFT,
+  /// persistence and IQ frames (unset on a channel's audio and audio spectrum).
+  /// The descriptor's center_hz and span_hz are the tuning at subscribe time; a
+  /// retune or a rate change does not end the stream, so a reader labels each row
+  /// from these. tuning_generation is the capture's (control.proto, Capture): a
+  /// change between two frames is a retune even when the centre came back.
+  public var centerHz: UInt64 = 0
+
+  public var spanHz: UInt64 = 0
+
+  public var tuningGeneration: UInt64 = 0
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -1272,7 +1284,7 @@ nonisolated extension Leyline_V1_ShmRing: SwiftProtobuf.Message, SwiftProtobuf._
 
 nonisolated extension Leyline_V1_Frame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Frame"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}stream_id\0\u{1}seq\0\u{1}time\0\u{1}gap\0\u{1}payload\0\u{1}segment\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}stream_id\0\u{1}seq\0\u{1}time\0\u{1}gap\0\u{1}payload\0\u{1}segment\0\u{3}center_hz\0\u{3}span_hz\0\u{3}tuning_generation\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1286,6 +1298,9 @@ nonisolated extension Leyline_V1_Frame: SwiftProtobuf.Message, SwiftProtobuf._Me
       case 4: try { try decoder.decodeSingularMessageField(value: &self._gap) }()
       case 5: try { try decoder.decodeSingularBytesField(value: &self.payload) }()
       case 6: try { try decoder.decodeSingularEnumField(value: &self.segment) }()
+      case 7: try { try decoder.decodeSingularUInt64Field(value: &self.centerHz) }()
+      case 8: try { try decoder.decodeSingularUInt64Field(value: &self.spanHz) }()
+      case 9: try { try decoder.decodeSingularUInt64Field(value: &self.tuningGeneration) }()
       default: break
       }
     }
@@ -1314,6 +1329,15 @@ nonisolated extension Leyline_V1_Frame: SwiftProtobuf.Message, SwiftProtobuf._Me
     if self.segment != .unspecified {
       try visitor.visitSingularEnumField(value: self.segment, fieldNumber: 6)
     }
+    if self.centerHz != 0 {
+      try visitor.visitSingularUInt64Field(value: self.centerHz, fieldNumber: 7)
+    }
+    if self.spanHz != 0 {
+      try visitor.visitSingularUInt64Field(value: self.spanHz, fieldNumber: 8)
+    }
+    if self.tuningGeneration != 0 {
+      try visitor.visitSingularUInt64Field(value: self.tuningGeneration, fieldNumber: 9)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1324,6 +1348,9 @@ nonisolated extension Leyline_V1_Frame: SwiftProtobuf.Message, SwiftProtobuf._Me
     if lhs._gap != rhs._gap {return false}
     if lhs.payload != rhs.payload {return false}
     if lhs.segment != rhs.segment {return false}
+    if lhs.centerHz != rhs.centerHz {return false}
+    if lhs.spanHz != rhs.spanHz {return false}
+    if lhs.tuningGeneration != rhs.tuningGeneration {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

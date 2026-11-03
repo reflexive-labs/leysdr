@@ -1128,11 +1128,12 @@ func oneRow(ctx context.Context, s *verbSession, bins uint32) (*SpectrumRow, err
 			}
 			vals := leyline.DecodeFFTBins(fr.Payload, desc.GetFft().GetBinFormat())
 			floor := medianDb(vals)
+			centerHz, spanHz := leyline.RowTuning(fr, desc)
 			return &SpectrumRow{FFTRow: FFTRow{
 				Seq: fr.Seq, SampleIndex: fr.Time.GetSampleIndex(),
-				CenterHz: desc.CenterHz, SpanHz: desc.SpanHz,
+				CenterHz: centerHz, SpanHz: spanHz,
 				Bins: vals, FloorDb: floorOf(vals),
-			}, Peaks: loudestBins(vals, desc.CenterHz, desc.SpanHz, spectrumPeaks, floor+peakAboveFloorDb)}, nil
+			}, Peaks: loudestBins(vals, centerHz, spanHz, spectrumPeaks, floor+peakAboveFloorDb)}, nil
 		}
 	}
 }

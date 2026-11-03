@@ -987,9 +987,14 @@ type Capture struct {
 	// starting a job, opening a capture's FFT, persistence or IQ stream, starting
 	// a sweep, attaching a live audio sink or writing to the capture makes one,
 	// and ending that thing releases it. A claim change is a capture event.
-	Claims        []*Claim `protobuf:"bytes,10,rep,name=claims,proto3" json:"claims,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Claims []*Claim `protobuf:"bytes,10,rep,name=claims,proto3" json:"claims,omitempty"`
+	// Counts every change to the band the capture delivers: a retune, a rate
+	// change, the radio going away and coming back. A client comparing centre and
+	// rate between two looks misses a retune away and back in between; this
+	// number has still moved. Bulk frames of a capture carry it too.
+	TuningGeneration uint64 `protobuf:"varint,11,opt,name=tuning_generation,json=tuningGeneration,proto3" json:"tuning_generation,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Capture) Reset() {
@@ -1092,6 +1097,13 @@ func (x *Capture) GetClaims() []*Claim {
 	return nil
 }
 
+func (x *Capture) GetTuningGeneration() uint64 {
+	if x != nil {
+		return x.TuningGeneration
+	}
+	return 0
+}
+
 // One consumer's statement of what it needs from a capture's tuning. A claim is
 // not a lock: a person is never blocked by a job.
 type Claim struct {
@@ -1106,12 +1118,15 @@ type Claim struct {
 	//
 	//	*Claim_Covers
 	//	*Claim_Centred
-	Need             isClaim_Need  `protobuf_oneof:"need"`
-	SampleRateHz     uint64        `protobuf:"varint,6,opt,name=sample_rate_hz,json=sampleRateHz,proto3" json:"sample_rate_hz,omitempty"` // 0 = any rate
-	Priority         ClaimPriority `protobuf:"varint,7,opt,name=priority,proto3,enum=leyline.v1.ClaimPriority" json:"priority,omitempty"` // from what the holder is, never from the holder's say
-	State            ClaimState    `protobuf:"varint,8,opt,name=state,proto3,enum=leyline.v1.ClaimState" json:"state,omitempty"`
-	DisplacedBy      *ClientInfo   `protobuf:"bytes,9,opt,name=displaced_by,json=displacedBy,proto3" json:"displaced_by,omitempty"`                    // who moved the capture, while DISPLACED; not yet set
-	DisplacedSinceNs int64         `protobuf:"varint,10,opt,name=displaced_since_ns,json=displacedSinceNs,proto3" json:"displaced_since_ns,omitempty"` // not yet set
+	Need         isClaim_Need  `protobuf_oneof:"need"`
+	SampleRateHz uint64        `protobuf:"varint,6,opt,name=sample_rate_hz,json=sampleRateHz,proto3" json:"sample_rate_hz,omitempty"` // 0 = any rate
+	Priority     ClaimPriority `protobuf:"varint,7,opt,name=priority,proto3,enum=leyline.v1.ClaimPriority" json:"priority,omitempty"` // from what the holder is, never from the holder's say
+	State        ClaimState    `protobuf:"varint,8,opt,name=state,proto3,enum=leyline.v1.ClaimState" json:"state,omitempty"`
+	// While DISPLACED: who last moved the capture away from what the claim needs
+	// (a client, a job, or the daemon), and since when. Cleared when the claim is
+	// satisfied again.
+	DisplacedBy      *ClientInfo `protobuf:"bytes,9,opt,name=displaced_by,json=displacedBy,proto3" json:"displaced_by,omitempty"`
+	DisplacedSinceNs int64       `protobuf:"varint,10,opt,name=displaced_since_ns,json=displacedSinceNs,proto3" json:"displaced_since_ns,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -4492,7 +4507,7 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"\ainteger\x18\x02 \x01(\x03H\x00R\ainteger\x12\x18\n" +
 	"\x06number\x18\x03 \x01(\x01H\x00R\x06number\x12\x14\n" +
 	"\x04text\x18\x04 \x01(\tH\x00R\x04textB\a\n" +
-	"\x05value\"\xae\x03\n" +
+	"\x05value\"\xdb\x03\n" +
 	"\aCapture\x12\x1d\n" +
 	"\n" +
 	"capture_id\x18\x01 \x01(\tR\tcaptureId\x12\x1b\n" +
@@ -4507,7 +4522,8 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"created_by\x18\b \x01(\v2\x16.leyline.v1.ClientInfoR\tcreatedBy\x12+\n" +
 	"\x05gains\x18\t \x03(\v2\x15.leyline.v1.GainStateR\x05gains\x12)\n" +
 	"\x06claims\x18\n" +
-	" \x03(\v2\x11.leyline.v1.ClaimR\x06claims\"\xd5\x03\n" +
+	" \x03(\v2\x11.leyline.v1.ClaimR\x06claims\x12+\n" +
+	"\x11tuning_generation\x18\v \x01(\x04R\x10tuningGeneration\"\xd5\x03\n" +
 	"\x05Claim\x12\x19\n" +
 	"\bclaim_id\x18\x01 \x01(\tR\aclaimId\x12.\n" +
 	"\x06holder\x18\x02 \x01(\v2\x16.leyline.v1.ClientInfoR\x06holder\x12)\n" +

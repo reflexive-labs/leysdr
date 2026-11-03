@@ -143,8 +143,8 @@ package actor DefaultCaptureEngine: CaptureEngine {
         guard !detached else { throw EngineError.deviceDetached(deviceID.description) }
         try await device.tune(centerHz: centerHz)
         self.centerHz = centerHz
-        tuningGeneration &+= 1
         core.centerHz = centerHz
+        bumpGeneration()
         for id in channelOrder {
             await channelTable[id]?.captureMoved(newCenterHz: centerHz)
         }
@@ -171,8 +171,8 @@ package actor DefaultCaptureEngine: CaptureEngine {
             throw error
         }
         sampleRate = hz
-        tuningGeneration &+= 1
         core.sampleRate = hz
+        bumpGeneration()
         for id in channelOrder {
             await channelTable[id]?.captureRateChanged(hz)
         }
@@ -248,7 +248,7 @@ package actor DefaultCaptureEngine: CaptureEngine {
     /// The device vanished: mark detached and stop the (dead) stream. Channels and index are kept.
     package func deviceLost() async {
         detached = true
-        tuningGeneration &+= 1
+        bumpGeneration()
         if streaming {
             await device.stopStreaming()
             streaming = false
@@ -272,7 +272,14 @@ package actor DefaultCaptureEngine: CaptureEngine {
         started = true
         try await beginStreaming()
         detached = false
+        bumpGeneration()
+    }
+
+    /// One more change to the band the capture delivers, on the snapshot and on the core, where
+    /// every frame made from now on is stamped with it.
+    private func bumpGeneration() {
         tuningGeneration &+= 1
+        core.tuningGeneration = tuningGeneration
     }
 }
 

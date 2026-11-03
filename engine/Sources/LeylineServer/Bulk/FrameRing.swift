@@ -8,6 +8,20 @@ import Synchronization
 import EngineCore
 import Foundation
 
+/// Where the capture was tuned when a frame was made (`Frame.center_hz`, `span_hz`,
+/// `tuning_generation`). All zero on a frame that is not a capture's: a channel's audio spectrum.
+struct FrameTuning: Sendable, Equatable {
+    var centerHz: UInt64 = 0
+    var spanHz: UInt64 = 0
+    var generation: UInt64 = 0
+
+    /// The capture's tuning now, read off its DSP core: three relaxed loads, safe on the hot path.
+    @inline(__always)
+    static func of(_ core: CaptureDSPCore) -> FrameTuning {
+        FrameTuning(centerHz: core.centerHz, spanHz: core.sampleRate, generation: core.tuningGeneration)
+    }
+}
+
 /// Fixed number of fixed-size payload slots plus per-slot sample bookkeeping. When the ring is full
 /// the writer evicts the *oldest* frame (latest-wins: a slow reader resyncs to live rather than
 /// replaying a backlog) and counts the dropped samples so GAP_MARKED streams can report them.
@@ -25,6 +39,7 @@ final class FrameRing: @unchecked Sendable {
     private let starts: UnsafeMutablePointer<UInt64>
     private let counts: UnsafeMutablePointer<UInt64>
     private let seqs: UnsafeMutablePointer<UInt64>
+    private let tunings: UnsafeMutablePointer<FrameTuning>
     private var writeSeq: UInt64 = 0
     private let head = Atomic<Int>(0)
     private let tail = Atomic<Int>(0)
@@ -46,6 +61,8 @@ final class FrameRing: @unchecked Sendable {
         counts.initialize(repeating: 0, count: slots)
         seqs = .allocate(capacity: slots)
         seqs.initialize(repeating: 0, count: slots)
+        tunings = .allocate(capacity: slots)
+        tunings.initialize(repeating: FrameTuning(), count: slots)
         var cont: AsyncStream<Void>.Continuation!
         poke = AsyncStream(bufferingPolicy: .bufferingNewest(1)) { cont = $0 }
         pokeContinuation = cont
@@ -57,14 +74,17 @@ final class FrameRing: @unchecked Sendable {
         starts.deallocate()
         counts.deallocate()
         seqs.deallocate()
+        tunings.deallocate()
     }
 
     var available: Int { tail.load(ordering: .acquiring) - head.load(ordering: .acquiring) }
     var dropped: Int { droppedFrames.load(ordering: .relaxed) }
 
     /// Writer side. `fill` receives the slot memory and returns the bytes it wrote (≤ slotBytes).
-    /// `sampleStart`/`sampleCount` are in capture samples for gap accounting.
-    func write(sampleStart: UInt64, sampleCount: UInt64, _ fill: (UnsafeMutableRawPointer) -> Int) {
+    /// `sampleStart`/`sampleCount` are in capture samples for gap accounting; `tuning` is where the
+    /// capture was when the frame was made.
+    func write(sampleStart: UInt64, sampleCount: UInt64, tuning: FrameTuning = FrameTuning(),
+               _ fill: (UnsafeMutableRawPointer) -> Int) {
         let sp = Signpost.begin(.frameRingWrite)
         defer { Signpost.end(.frameRingWrite, sp) }
         let t = tail.load(ordering: .relaxed)
@@ -85,6 +105,7 @@ final class FrameRing: @unchecked Sendable {
         lengths[slot] = min(n, slotBytes)
         starts[slot] = sampleStart
         counts[slot] = sampleCount
+        tunings[slot] = tuning
         writeSeq += 1
         seqs[slot] = writeSeq
         tail.store(t + 1, ordering: .releasing)
@@ -101,6 +122,7 @@ final class FrameRing: @unchecked Sendable {
         var droppedSamples: UInt64
         /// Writer-side sequence (1-based, monotonic); gaps mean evicted frames.
         var seq: UInt64
+        var tuning = FrameTuning()
     }
 
     /// Reader side (not hot): copies the oldest frame out.
@@ -112,7 +134,7 @@ final class FrameRing: @unchecked Sendable {
             let slot = h % slots
             let payload = Data(bytes: storage + slot * slotBytes, count: min(lengths[slot], slotBytes))
             let out = Popped(payload: payload, sampleStart: starts[slot], sampleCount: counts[slot],
-                             droppedSamples: 0, seq: seqs[slot])
+                             droppedSamples: 0, seq: seqs[slot], tuning: tunings[slot])
             let (won, current) = head.compareExchange(expected: h, desired: h + 1, ordering: .acquiringAndReleasing)
             if won {
                 var claimed = out

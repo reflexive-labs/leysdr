@@ -74,6 +74,11 @@ message Capture {
   // a sweep, attaching a live audio sink or writing to the capture makes one,
   // and ending that thing releases it. A claim change is a capture event.
   repeated Claim claims = 10;
+  // Counts every change to the band the capture delivers: a retune, a rate
+  // change, the radio going away and coming back. A client comparing centre and
+  // rate between two looks misses a retune away and back in between; this
+  // number has still moved. Bulk frames of a capture carry it too.
+  uint64 tuning_generation = 11;
 }
 
 // One consumer's statement of what it needs from a capture's tuning. A claim is
@@ -91,8 +96,11 @@ message Claim {
   uint64 sample_rate_hz = 6;     // 0 = any rate
   ClaimPriority priority = 7;    // from what the holder is, never from the holder's say
   ClaimState state = 8;
-  ClientInfo displaced_by = 9;   // who moved the capture, while DISPLACED; not yet set
-  int64 displaced_since_ns = 10; // not yet set
+  // While DISPLACED: who last moved the capture away from what the claim needs
+  // (a client, a job, or the daemon), and since when. Cleared when the claim is
+  // satisfied again.
+  ClientInfo displaced_by = 9;
+  int64 displaced_since_ns = 10;
 }
 
 message Span {

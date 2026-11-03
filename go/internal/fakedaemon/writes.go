@@ -181,12 +181,15 @@ func (d *Daemon) applyLocked(ci *leylinev1.ClientInfo, w *leylinev1.ParamWrite) 
 				return d.rejectLocked(ci, w.Tag, errorf(leyline.CodeFreqOutOfRange, w.TargetId, fmt.Sprintf("%d Hz is outside the device tuning range", p.CenterHz)))
 			}
 			c.CenterHz = p.CenterHz
+			// Every centre or rate change, as the daemon counts them (Capture.tuning_generation).
+			c.TuningGeneration++
 		case *leylinev1.ParamWrite_CaptureSampleRate:
 			if dev == nil || !rateOK(dev, p.CaptureSampleRate) {
 				return d.rejectLocked(ci, w.Tag, errorf(leyline.CodeRateUnsupported, w.TargetId, fmt.Sprintf("%d sps is not a supported sample rate", p.CaptureSampleRate)))
 			}
 			c.SampleRate = p.CaptureSampleRate
 			c.Anchor.SampleRate = p.CaptureSampleRate
+			c.TuningGeneration++
 		case *leylinev1.ParamWrite_Gain:
 			if e := d.applyGainLocked(c, dev, p.Gain, w.TargetId); e != nil {
 				return d.rejectLocked(ci, w.Tag, e)

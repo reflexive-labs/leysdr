@@ -16,22 +16,29 @@ func dbToU8(_ db: Float) -> UInt8 {
     return UInt8(v)
 }
 
-/// Copies FFT rows into the ring as DB_F32 (little-endian f32) or DB_U8.
+/// Copies FFT rows into the ring as DB_F32 (little-endian f32) or DB_U8. A capture's rows carry
+/// the centre and span the ladder made them at and the capture's tuning generation, so a waterfall
+/// drawn across a retune labels each row where it was; a channel's audio spectrum has no `core`
+/// and carries none.
 final class FFTFrameSink: SpectrumSink, Sendable {
     let ring: FrameRing
     let u8: Bool
     let bins: Int
+    let core: CaptureDSPCore?
 
-    init(ring: FrameRing, bins: Int, u8: Bool) {
+    init(ring: FrameRing, bins: Int, u8: Bool, core: CaptureDSPCore? = nil) {
         self.ring = ring
         self.bins = bins
         self.u8 = u8
+        self.core = core
     }
 
     func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz: UInt64, spanHz: UInt64, looks _: Int) {
         let n = min(row.count, bins)
         guard let src = row.baseAddress else { return }
-        ring.write(sampleStart: time.sampleIndex, sampleCount: UInt64(n)) { dst in
+        var tuning = FrameTuning()
+        if let core { tuning = FrameTuning(centerHz: centerHz, spanHz: spanHz, generation: core.tuningGeneration) }
+        ring.write(sampleStart: time.sampleIndex, sampleCount: UInt64(n), tuning: tuning) { dst in
             if u8 {
                 let out = dst.assumingMemoryBound(to: UInt8.self)
                 for i in 0..<n { out[i] = dbToU8(src[i]) }
@@ -142,14 +149,18 @@ final class AudioFrameSource: @unchecked Sendable {
     func finish() { pokeContinuation.finish() }
 }
 
-/// IQ path: one capture block (cf32) per frame.
+/// IQ path: one capture block (cf32) per frame, stamped with where the capture was tuned when
+/// the block went through (`core`), so a reader (an IQ recording, a bulk IQ client) sees a retune
+/// on the frame it lands on.
 final class IQFrameTap: CaptureTap, Sendable {
     let id: StreamID
     let ring: FrameRing
+    let core: CaptureDSPCore?
 
-    init(id: StreamID, ring: FrameRing) {
+    init(id: StreamID, ring: FrameRing, core: CaptureDSPCore? = nil) {
         self.id = id
         self.ring = ring
+        self.core = core
     }
 
     func write(iq: SampleBuffer, at time: SampleTime) {
@@ -158,7 +169,9 @@ final class IQFrameTap: CaptureTap, Sendable {
         // reporting the block's full count would credit the client samples it never received and
         // shift its sample-index arithmetic off the timeline.
         let bytes = min(iq.byteCount, ring.slotBytes)
-        ring.write(sampleStart: time.sampleIndex, sampleCount: UInt64(bytes / 8)) { dst in
+        var tuning = FrameTuning()
+        if let core { tuning = FrameTuning.of(core) }
+        ring.write(sampleStart: time.sampleIndex, sampleCount: UInt64(bytes / 8), tuning: tuning) { dst in
             dst.copyMemory(from: UnsafeRawPointer(iq.base), byteCount: bytes)
             return bytes
         }
@@ -182,13 +195,17 @@ final class PersistenceFrameSink: SpectrumSink, @unchecked Sendable {
     private var nextEmit: UInt64 = 0
     private var started = false
 
-    init(ring: FrameRing, accumulator: PersistenceAccumulator, emitInterval: UInt64) {
+    /// The capture the rows come from, for each frame's tuning generation.
+    let core: CaptureDSPCore?
+
+    init(ring: FrameRing, accumulator: PersistenceAccumulator, emitInterval: UInt64, core: CaptureDSPCore? = nil) {
         self.ring = ring
         self.accumulator = accumulator
         self.emitInterval = max(1, emitInterval)
+        self.core = core
     }
 
-    func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz _: UInt64, spanHz _: UInt64, looks _: Int) {
+    func write(row: UnsafeBufferPointer<Float>, at time: SampleTime, centerHz: UInt64, spanHz: UInt64, looks _: Int) {
         accumulator.add(row: row)
         let now = time.sampleIndex
         if !started {
@@ -205,7 +222,11 @@ final class PersistenceFrameSink: SpectrumSink, @unchecked Sendable {
         let scheduled = nextEmit &+ emitInterval
         nextEmit = scheduled > now ? scheduled : now &+ emitInterval
         let bytes = accumulator.bins * accumulator.levels * 2
-        ring.write(sampleStart: now, sampleCount: accumulator.rows) { dst in
+        // The histogram holds rows from before a retune as well as after it; the frame is labelled
+        // with the tuning of its newest row, and the generation says a retune happened.
+        var tuning = FrameTuning()
+        if let core { tuning = FrameTuning(centerHz: centerHz, spanHz: spanHz, generation: core.tuningGeneration) }
+        ring.write(sampleStart: now, sampleCount: accumulator.rows, tuning: tuning) { dst in
             accumulator.snapshot(into: UnsafeMutableRawBufferPointer(start: dst, count: bytes))
         }
     }

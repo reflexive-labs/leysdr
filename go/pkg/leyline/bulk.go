@@ -27,6 +27,18 @@ const (
 // against a DB_F32 row of the same signal should allow at least half of it.
 const DBU8Step = 1 / dbU8Scale
 
+// RowTuning is where the capture was tuned when fr was made: the centre and span
+// the daemon stamps on a capture's FFT, persistence and IQ frames, so a row drawn
+// after a retune is labelled where it was rather than where the stream began.
+// A frame that carries none (a channel's audio spectrum, an older daemon) is
+// read at the descriptor's.
+func RowTuning(fr *leylinev1.Frame, desc *leylinev1.StreamDescriptor) (centerHz, spanHz uint64) {
+	if fr.GetCenterHz() != 0 && fr.GetSpanHz() != 0 {
+		return fr.GetCenterHz(), fr.GetSpanHz()
+	}
+	return desc.GetCenterHz(), desc.GetSpanHz()
+}
+
 // DecodeFFTBins turns an FFT frame's payload into dBFS levels, one per bin.
 // Pass the format from the descriptor the daemon answered with: the daemon may
 // serve a different format from the one requested, and DB_U8 misread as DB_F32

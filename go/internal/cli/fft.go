@@ -183,9 +183,10 @@ func runFFT(ctx context.Context, s *verbSession, o fftOptions) error {
 			}
 		} else {
 			bins := leyline.DecodeFFTBins(fr.Payload, binFormat)
+			centerHz, spanHz := leyline.RowTuning(fr, desc)
 			row := FFTRow{
 				Seq: fr.Seq, SampleIndex: fr.Time.GetSampleIndex(),
-				CenterHz: desc.CenterHz, SpanHz: desc.SpanHz,
+				CenterHz: centerHz, SpanHz: spanHz,
 				Bins: bins, FloorDb: floorOf(bins),
 			}
 			b, err := json.Marshal(row)

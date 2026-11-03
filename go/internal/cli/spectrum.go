@@ -164,11 +164,12 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 			}
 			bins := leyline.DecodeFFTBins(fr.Payload, binFormat)
 			floor := medianDb(bins)
-			peaks := loudestBins(bins, desc.CenterHz, desc.SpanHz, spectrumPeaks, floor+peakAboveFloorDb)
+			centerHz, spanHz := leyline.RowTuning(fr, desc)
+			peaks := loudestBins(bins, centerHz, spanHz, spectrumPeaks, floor+peakAboveFloorDb)
 			if app.JSON {
 				row := SpectrumRow{FFTRow: FFTRow{
 					Seq: fr.Seq, SampleIndex: fr.Time.GetSampleIndex(),
-					CenterHz: desc.CenterHz, SpanHz: desc.SpanHz,
+					CenterHz: centerHz, SpanHz: spanHz,
 					Bins: bins, FloorDb: floorOf(bins),
 				}, Peaks: peaks}
 				b, err := json.Marshal(row)
@@ -179,7 +180,7 @@ func runSpectrum(ctx context.Context, app *App, o spectrumOptions) error {
 				out.WriteByte('\n')
 				w.row()
 			} else {
-				text := view.render(bins, peaks, floor, desc.CenterHz, desc.SpanHz)
+				text := view.render(bins, peaks, floor, centerHz, spanHz)
 				w.frame(text, view.note())
 				if !o.watch {
 					w.footer(view.nextStep(peaks))

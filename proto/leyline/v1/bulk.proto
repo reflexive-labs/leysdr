@@ -179,6 +179,15 @@ message Frame {
   // Set only on a decoder's SEGMENTED input (decode.proto, InputMode): the first frame of an over
   // is SEGMENT_START and an END frame with an empty payload closes it. Unset on every other frame.
   SegmentMark segment = 6;
+  // Where the capture was tuned when this frame was made, on a capture's FFT,
+  // persistence and IQ frames (unset on a channel's audio and audio spectrum).
+  // The descriptor's center_hz and span_hz are the tuning at subscribe time; a
+  // retune or a rate change does not end the stream, so a reader labels each row
+  // from these. tuning_generation is the capture's (control.proto, Capture): a
+  // change between two frames is a retune even when the centre came back.
+  uint64 center_hz = 7;
+  uint64 span_hz = 8;
+  uint64 tuning_generation = 9;
 }
 
 enum SegmentMark { SEGMENT_MARK_UNSPECIFIED = 0; SEGMENT_START = 1; SEGMENT_END = 2; }
