@@ -15,12 +15,14 @@ import XCTest
 final class CaptureReturnTests: XCTestCase {
     // MARK: Harness
 
-    private func state(_ c: DaemonClients) async throws -> Leyline_V1_GetStateResponse {
+    func state(_ c: DaemonClients) async throws -> Leyline_V1_GetStateResponse {
         try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
     }
 
-    private func attachRetunable(_ c: DaemonClients) async throws -> String {
-        let id = try await c.daemon.registry.attachVirtualDevice(RebindableDevice(blockIntervalNs: 2_000_000)).descriptor.id.string
+    func attachRetunable(_ c: DaemonClients,
+                         _ radio: RebindableDevice = RebindableDevice(blockIntervalNs: 2_000_000)) async throws -> String
+    {
+        let id = try await c.daemon.registry.attachVirtualDevice(radio).descriptor.id.string
         for _ in 0..<150 {
             if try await state(c).devices.contains(where: { $0.deviceID == id }) { break }
             try await Task.sleep(nanoseconds: 20_000_000)
@@ -29,7 +31,7 @@ final class CaptureReturnTests: XCTestCase {
     }
 
     /// A person's capture at `hz` with their channel on its centre.
-    private func personsChannel(_ c: DaemonClients, on device: String, at hz: UInt64,
+    func personsChannel(_ c: DaemonClients, on device: String, at hz: UInt64,
                                 rate: UInt64 = 0) async throws -> (capture: String, channel: String)
     {
         let cap = try await c.control.createCapture(.with {
@@ -45,18 +47,18 @@ final class CaptureReturnTests: XCTestCase {
         return (cap.captureID, ch.channelID)
     }
 
-    private func capture(_ c: DaemonClients, _ id: String) async throws -> Leyline_V1_Capture? {
+    func capture(_ c: DaemonClients, _ id: String) async throws -> Leyline_V1_Capture? {
         try await state(c).captures.first { $0.captureID == id }
     }
 
     /// The person's channel claim on the capture.
-    private func personsClaim(_ c: DaemonClients, _ captureID: String) async throws -> Leyline_V1_Claim? {
+    func personsClaim(_ c: DaemonClients, _ captureID: String) async throws -> Leyline_V1_Claim? {
         try await capture(c, captureID)?.claims.first { $0.kind == .claimChannel && $0.holder.clientID == testClientID }
     }
 
     /// Polls the capture until `pred` holds; fails with what it last saw.
     @discardableResult
-    private func waitForCapture(_ c: DaemonClients, _ id: String, _ why: String, file: StaticString = #filePath,
+    func waitForCapture(_ c: DaemonClients, _ id: String, _ why: String, file: StaticString = #filePath,
                                 line: UInt = #line, _ pred: (Leyline_V1_Capture) -> Bool) async throws -> Leyline_V1_Capture?
     {
         var last: Leyline_V1_Capture?
@@ -69,7 +71,7 @@ final class CaptureReturnTests: XCTestCase {
         return last
     }
 
-    private func retune(_ c: DaemonClients, _ captureID: String, tag: UInt64, to hz: UInt64) async throws {
+    func retune(_ c: DaemonClients, _ captureID: String, tag: UInt64, to hz: UInt64) async throws {
         var w = Leyline_V1_ParamWrite()
         w.tag = tag
         w.targetID = captureID
@@ -78,12 +80,12 @@ final class CaptureReturnTests: XCTestCase {
         _ = try await c.control.writeParams(metadata: testMetadata) { writer in try await writer.write(message) }
     }
 
-    private func job(_ c: DaemonClients, _ id: String) async throws -> Leyline_V1_Job {
+    func job(_ c: DaemonClients, _ id: String) async throws -> Leyline_V1_Job {
         try await c.jobs.getJob(.with { $0.jobID = id }, metadata: testMetadata)
     }
 
     @discardableResult
-    private func waitForJob(_ c: DaemonClients, _ id: String, _ why: String, file: StaticString = #filePath,
+    func waitForJob(_ c: DaemonClients, _ id: String, _ why: String, file: StaticString = #filePath,
                             line: UInt = #line, _ pred: (Leyline_V1_Job) -> Bool) async throws -> Leyline_V1_Job
     {
         var j = try await job(c, id)
@@ -95,11 +97,11 @@ final class CaptureReturnTests: XCTestCase {
         return j
     }
 
-    private func cancel(_ c: DaemonClients, _ id: String) async throws {
+    func cancel(_ c: DaemonClients, _ id: String) async throws {
         _ = try await c.jobs.cancelJob(.with { $0.jobID = id }, metadata: testMetadata)
     }
 
-    private func decode(_ c: DaemonClients, _ decoder: String, at hz: UInt64, takeOver: Bool = false) async throws -> Leyline_V1_Job {
+    func decode(_ c: DaemonClients, _ decoder: String, at hz: UInt64, takeOver: Bool = false) async throws -> Leyline_V1_Job {
         var config = Leyline_V1_DecodeConfig()
         config.decoder = decoder
         config.frequencyHz = hz
@@ -111,7 +113,7 @@ final class CaptureReturnTests: XCTestCase {
     }
 
     /// The next record the job's live stream delivers, or nil after 10 s.
-    private func nextRecord(_ c: DaemonClients, job: String) async throws -> Leyline_V1_DecodeRecord? {
+    func nextRecord(_ c: DaemonClients, job: String) async throws -> Leyline_V1_DecodeRecord? {
         var subscription = Leyline_V1_RecordSubscription()
         subscription.jobID = job
         let s = subscription
@@ -133,7 +135,7 @@ final class CaptureReturnTests: XCTestCase {
     }
 
     /// A dedicated IQ decoder on 100.1 MHz, at the radio's default rate.
-    private func writeDedicatedPlugin(in dir: String) throws {
+    func writeDedicatedPlugin(in dir: String) throws {
         try writeFakePlugin(in: dir, name: "fakewide", json: """
         {
           "name": "fakewide",
@@ -147,7 +149,7 @@ final class CaptureReturnTests: XCTestCase {
         """)
     }
 
-    private func plugins(_ body: (String) throws -> Void) throws -> String {
+    func plugins(_ body: (String) throws -> Void) throws -> String {
         let dir = try makeTempDir("decoders")
         try body(dir)
         return dir

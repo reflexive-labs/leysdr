@@ -40,6 +40,10 @@ extension SessionStore {
     /// store minted instead of parsing one back out of the message.
     func createCapture(deviceID: DeviceID, centerHz: UInt64, sampleRate: UInt64,
                        by: ClientContext) async throws -> (id: CaptureID, proto: Leyline_V1_Capture) {
+        // A capture on the device that is closing is as good as gone: wait for it.
+        while let closing = captures.first(where: { $0.value.deviceID == deviceID && $0.value.closing })?.key {
+            await awaitCapture(closing) { $0.closing }
+        }
         guard let desc = devices[deviceID], let device = await registry.device(id: deviceID) else {
             throw EngineError.deviceNotFound(deviceID.string)
         }
@@ -158,8 +162,17 @@ extension SessionStore {
         emit(.anchor(ProtoMapping.anchor(anchor, captureID: id)), captureID: id, by: .daemon)
     }
 
+    /// Destroys the capture. It is marked closing first, for the awaits below: no claim or channel
+    /// joins it, the planner no longer sees it, and a new capture on its device waits until it has
+    /// gone. A second destroy waits for the first.
     func destroyCapture(id: CaptureID, by: ClientContext) async {
         guard let entry = captures[id] else { return }
+        if entry.closing {
+            await awaitCapture(id) { $0.closing }
+            return
+        }
+        captures[id]?.closing = true
+        closings += 1
         for (chanID, ch) in channels where ch.captureID == id {
             await destroyChannel(id: chanID, by: by, engineAlreadyClosed: true)
         }
@@ -169,6 +182,7 @@ extension SessionStore {
         let snap = await entry.engine.snapshot
         captures[id]?.presences.values.forEach { $0.lapse?.cancel() }
         captures[id]?.viewFlush?.cancel()
+        wakeCaptureWaiters(id)
         captures[id] = nil
         var proto = ProtoMapping.capture(id: id, deviceID: entry.deviceID, snapshot: snap, meta: entry.meta)
         // Terminal event: state unset is the tombstone Channel and Sink use, and it is the only
@@ -186,6 +200,29 @@ extension SessionStore {
                 devices[entry.deviceID] = nil
             }
         }
+    }
+
+    /// Parks the caller while `busy` holds for the capture (a return under way, a close), and
+    /// returns at once when it does not or the capture is gone.
+    func awaitCapture(_ id: CaptureID, while busy: @escaping @Sendable (CaptureEntry) -> Bool) async {
+        while let entry = captures[id], busy(entry) {
+            await withCheckedContinuation { (waiter: CheckedContinuation<Void, Never>) in
+                Task { await self.park(waiter, on: id, while: busy) }
+            }
+        }
+    }
+
+    private func park(_ waiter: CheckedContinuation<Void, Never>, on id: CaptureID,
+                      while busy: @Sendable (CaptureEntry) -> Bool) {
+        guard let entry = captures[id], busy(entry) else { return waiter.resume() }
+        captures[id]?.waiters.append(waiter)
+    }
+
+    /// Lets everyone `awaitCapture` parked on the capture look again.
+    func wakeCaptureWaiters(_ id: CaptureID) {
+        let waiters = captures[id]?.waiters ?? []
+        captures[id]?.waiters = []
+        for w in waiters { w.resume() }
     }
 
     func destroyCaptureChecked(id: CaptureID, by: ClientContext) async throws {

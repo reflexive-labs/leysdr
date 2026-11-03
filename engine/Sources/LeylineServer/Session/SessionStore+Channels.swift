@@ -56,7 +56,8 @@ extension SessionStore {
 
     func createChannel(captureID: CaptureID, offsetHz: Int64, bandwidthHz: UInt32, mode: Leyline_V1_DemodMode,
                        persistent: Bool, requiredHz: UInt64, by: ClientContext) async throws -> Leyline_V1_Channel {
-        guard let cap = captures[captureID] else { throw EngineError.captureNotFound(captureID.string) }
+        // A closing capture is as good as gone: a channel on it would outlive its engine.
+        guard let cap = captures[captureID], !cap.closing else { throw EngineError.captureNotFound(captureID.string) }
         try refuseIfSwept(captureID)
         // DEMOD_MODE_UNSPECIFIED defaults to NFM (contract parity with the Go reference daemon).
         guard let m = ProtoMapping.demodMode(mode == .unspecified ? .nfm : mode) else {
@@ -75,6 +76,10 @@ extension SessionStore {
                                    requiredHz: requiredHz == 0 ? nil : requiredHz,
                                    subAudibleDetect: m == .nfm)
         let engine = try await cap.engine.addChannel(config)
+        guard captures[captureID]?.closing == false else {
+            await cap.engine.removeChannel(engine.id)
+            throw EngineError.captureNotFound(captureID.string)
+        }
         channels[engine.id] = ChannelEntry(engine: engine, captureID: captureID, owner: by)
         // The channel's claim goes out on the capture event below, beside the writer's presence.
         captures[captureID]?.claims.append(ClaimEntry(holder: by, kind: .claimChannel,

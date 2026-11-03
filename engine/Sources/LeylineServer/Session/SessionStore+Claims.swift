@@ -59,12 +59,12 @@ extension SessionStore {
 
     /// Adds a claim to the capture's ledger and publishes the capture, attributed to the holder.
     /// A view's claim is not an event of its own: it rides the next one (`noteViewChange`). nil
-    /// when the capture is gone.
+    /// when the capture is gone or closing.
     @discardableResult
     func addClaim(on id: CaptureID, holder: ClientContext, kind: Leyline_V1_ClaimKind,
                   priority: Leyline_V1_ClaimPriority, need: ClaimNeed = .none, sampleRateHz: UInt64 = 0) async -> ClaimID?
     {
-        guard captures[id] != nil else { return nil }
+        guard let entry = captures[id], !entry.closing else { return nil }
         let claim = ClaimEntry(holder: holder, kind: kind, priority: priority, need: need, sampleRateHz: sampleRateHz)
         captures[id]?.claims.append(claim)
         if priority == .priorityView {
@@ -127,7 +127,7 @@ extension SessionStore {
     /// one tuner cannot both pass (the allocator's old `leased` set did this before the ledger).
     /// The need is the range the sweep walks.
     func claimSweep(on id: CaptureID, job: JobID, range: ClosedRange<UInt64>) async -> SweepClaim {
-        guard captures[id] != nil else { return .gone }
+        guard let entry = captures[id], !entry.closing else { return .gone }
         guard !isSwept(id) else { return .taken }
         let width = range.upperBound - range.lowerBound
         let claim = ClaimEntry(holder: .job(job), kind: .claimSweep, priority: .priorityJob,
@@ -147,7 +147,7 @@ extension SessionStore {
     /// starts the window again; nil is a sink attached, which holds the claim by itself. Only a
     /// person has a presence: a job's sink or write makes none.
     func notePresence(_ id: CaptureID, client: ClientContext, wroteAtNs: Int64?) {
-        guard client.isInteractive, captures[id] != nil else { return }
+        guard client.isInteractive, let entry = captures[id], !entry.closing else { return }
         var window: PresenceWindow
         if let held = captures[id]?.presences[client.id] {
             window = held
@@ -279,7 +279,9 @@ extension SessionStore {
     /// state from whether the capture at `centerHz` and `sampleRate` gives the claim what it needs.
     /// A claim that is newly unsatisfied goes DISPLACED by the capture's last mover, from now; one
     /// still unsatisfied after another move names that mover; a satisfied one is cleared.
-    func claimProtos(_ id: CaptureID, _ claims: [ClaimEntry], centerHz: UInt64, sampleRate: UInt64) async -> [Leyline_V1_Claim] {
+    /// `note: false` reads the states without keeping any of that, for a look mid-move.
+    func claimProtos(_ id: CaptureID, _ claims: [ClaimEntry], centerHz: UInt64, sampleRate: UInt64,
+                     note: Bool = true) async -> [Leyline_V1_Claim] {
         var out: [Leyline_V1_Claim] = []
         for c in claims {
             var p = Leyline_V1_Claim()
@@ -311,7 +313,7 @@ extension SessionStore {
                 satisfied = await engine.state != .outOfCapture
             }
             p.state = satisfied ? .claimSatisfied : .claimDisplaced
-            let (by, since) = noteDisplacement(id, claim: c.id, satisfied: satisfied)
+            let (by, since) = note ? noteDisplacement(id, claim: c.id, satisfied: satisfied) : (nil, 0)
             if let by {
                 p.displacedBy = by.proto
                 p.displacedSinceNs = since

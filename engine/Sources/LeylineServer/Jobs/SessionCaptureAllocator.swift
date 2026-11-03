@@ -48,7 +48,17 @@ actor SessionCaptureAllocator: CaptureAllocator {
 
     init(store: SessionStore) { self.store = store }
 
+    /// Carries out the planner's walk for `request`. A walk that met a capture that began closing
+    /// after the snapshot it was planned from is walked once more, from a snapshot without it, so
+    /// the job gets a fresh capture rather than a refusal.
     func allocate(_ request: AllocationRequest, for job: JobID) async -> AllocationResult {
+        let closings = await store.closings
+        let result = await walk(request, for: job)
+        guard case .declined = result, await store.closings != closings else { return result }
+        return await walk(request, for: job)
+    }
+
+    private func walk(_ request: AllocationRequest, for job: JobID) async -> AllocationResult {
         switch request {
         case .channel(let frequencyHz, let bandwidthHz, let mode, let deviceID, let takeOver, let gains):
             return await allocateChannel(frequencyHz: frequencyHz, bandwidthHz: bandwidthHz, mode: mode,
@@ -141,7 +151,11 @@ actor SessionCaptureAllocator: CaptureAllocator {
                 guard let id = CaptureID(string: captureID), await !store.isSwept(id),
                       let cap = state.captures.first(where: { $0.captureID == captureID }),
                       let engine = await store.captureEngine(id) else { continue }
-                let before = cap.centerHz
+                // Where the job finds it, read after the count of people's moves: one that lands from
+                // here on drops the return point (`noteReturnPoint`).
+                let personMoves = await store.personMoves(id)
+                let found = await engine.snapshot
+                let before = found.centerHz
                 await store.willMove(id, by: owner)
                 do {
                     try await engine.retune(centerHz: centre)
@@ -157,9 +171,9 @@ actor SessionCaptureAllocator: CaptureAllocator {
                                           mode: mode, frequencyHz: frequencyHz, owner: owner, gainOutcome: outcome) {
                     // Where the job found the capture, for the return when it lets go (CL-4).
                     if let claim = await store.channelClaim(lease.channelID, on: id) {
-                        await store.noteReturnPoint(.init(claim: claim, mover: owner, centerHz: before, sampleRate: cap.sampleRate,
+                        await store.noteReturnPoint(.init(claim: claim, mover: owner, centerHz: before, sampleRate: found.sampleRate,
                                                           gains: gains.isEmpty ? [] : entryGains,
-                                                          gainsLeft: await engine.snapshot.gains), on: id)
+                                                          gainsLeft: await engine.snapshot.gains, personMoves: personMoves), on: id)
                     }
                     return .channel(lease)
                 }
@@ -202,9 +216,11 @@ actor SessionCaptureAllocator: CaptureAllocator {
                 guard let id = CaptureID(string: captureID), await !store.isSwept(id),
                       let cap = state.captures.first(where: { $0.captureID == captureID }),
                       let engine = await store.captureEngine(id) else { continue }
-                return .captureIQ(await iqLease(id, engine: engine, rate: cap.sampleRate, job: job,
+                // A capture that started closing since the walk takes no claim: walk on.
+                guard let lease = await iqLease(id, engine: engine, rate: cap.sampleRate, job: job,
                                                 need: need(centre: cap.centerHz),
-                                                gainOutcome: await leftAsFound(id, gains)))
+                                                gainOutcome: await leftAsFound(id, gains)) else { continue }
+                return .captureIQ(lease)
             case .create(let device, let centre, let rate):
                 guard let deviceID = DeviceID(string: device),
                       let descriptor = state.devices.first(where: { $0.deviceID == device }) else { continue }
@@ -226,8 +242,12 @@ actor SessionCaptureAllocator: CaptureAllocator {
                     }
                     let outcome = await setGains(gains, on: id)
                     let made = await engine.snapshot
-                    return .captureIQ(await iqLease(id, engine: engine, rate: rate, job: job,
-                                                    need: need(centre: made.centerHz), gainOutcome: outcome))
+                    guard let lease = await iqLease(id, engine: engine, rate: rate, job: job,
+                                                    need: need(centre: made.centerHz), gainOutcome: outcome) else {
+                        await store.destroyCapture(id: id, by: .daemon)
+                        continue
+                    }
+                    return .captureIQ(lease)
                 } catch {
                     progress.failed((error as? EngineError)?.message ?? "\(error)", code: EngineError.Code.deviceBusy)
                     log.debug("iq decode job could not open \(device): \(progress.reason)")
@@ -237,6 +257,8 @@ actor SessionCaptureAllocator: CaptureAllocator {
                       let cap = state.captures.first(where: { $0.captureID == captureID }),
                       let descriptor = state.devices.first(where: { $0.deviceID == cap.deviceID }),
                       let engine = await store.captureEngine(id) else { continue }
+                let personMoves = await store.personMoves(id)
+                let was = await engine.snapshot
                 await store.willMove(id, by: .job(job))
                 do {
                     if rate != cap.sampleRate { try await engine.setSampleRate(rate) }
@@ -261,11 +283,15 @@ actor SessionCaptureAllocator: CaptureAllocator {
                 let entryGains = landed.gains
                 let outcome = await setGains(gains, on: id)
                 await store.publishCapture(id, by: .job(job))
-                let found = SessionStore.ReturnPoint(claim: ClaimID(), mover: .job(job), centerHz: cap.centerHz,
-                                                     sampleRate: cap.sampleRate, gains: gains.isEmpty ? [] : entryGains,
-                                                     gainsLeft: await engine.snapshot.gains)
-                return .captureIQ(await iqLease(id, engine: engine, rate: rate, job: job,
-                                                need: need(centre: landed.centerHz), gainOutcome: outcome, found: found))
+                let found = SessionStore.ReturnPoint(claim: ClaimID(), mover: .job(job), centerHz: was.centerHz,
+                                                     sampleRate: was.sampleRate, gains: gains.isEmpty ? [] : entryGains,
+                                                     gainsLeft: await engine.snapshot.gains, personMoves: personMoves)
+                guard let lease = await iqLease(id, engine: engine, rate: rate, job: job,
+                                                need: need(centre: landed.centerHz), gainOutcome: outcome, found: found) else {
+                    await restore(engine, to: cap, id: id, job: job)
+                    continue
+                }
+                return .captureIQ(lease)
             case .decline:
                 continue
             }
@@ -286,22 +312,22 @@ actor SessionCaptureAllocator: CaptureAllocator {
     /// A lease on `id` for `job`, with the job's IQ claim on the capture until it is released:
     /// such a capture is in use, since retuning it moves the band under every job reading it.
     /// `found` is where a job that moved the capture found it, which the capture returns to when
-    /// the claim goes (CL-4).
+    /// the claim goes (CL-4). nil when the capture takes no claim: it is gone or closing, and an IQ
+    /// lease must not keep its stopped engine.
     private func iqLease(_ id: CaptureID, engine: any CaptureEngine, rate: UInt64,
                          job: JobID, need: SessionStore.ClaimNeed,
                          gainOutcome: LeaseGainOutcome = .notAsked,
-                         found: SessionStore.ReturnPoint? = nil) async -> SessionCaptureIQLease
+                         found: SessionStore.ReturnPoint? = nil) async -> SessionCaptureIQLease?
     {
         // Every IQ reader reads at the rate it was handed: a decoder's descriptor and a
         // recording's manifest both name it.
-        let claim = await store.addClaim(on: id, holder: .job(job), kind: .claimIq, priority: .priorityJob,
-                                         need: need, sampleRateHz: rate)
-        if let claim, var point = found {
+        guard let claim = await store.addClaim(on: id, holder: .job(job), kind: .claimIq, priority: .priorityJob,
+                                               need: need, sampleRateHz: rate) else { return nil }
+        if var point = found {
             point.claim = claim
             await store.noteReturnPoint(point, on: id)
         }
         return SessionCaptureIQLease(captureID: id, capture: engine, sampleRateHz: rate, gainOutcome: gainOutcome) { [store] in
-            guard let claim else { return }
             await store.releaseClaim(claim, on: id)
         }
     }
@@ -458,7 +484,8 @@ actor SessionCaptureAllocator: CaptureAllocator {
         }
         await lease.pinGain(device: device, requested: gains)
         await store.noteReturnPoint(.init(claim: claim, mover: .job(job), centerHz: snap.centerHz, sampleRate: snap.sampleRate,
-                                          gains: snap.gains, gainsLeft: await lease.pinnedGains), on: id)
+                                          gains: snap.gains, gainsLeft: await lease.pinnedGains,
+                                          personMoves: await store.personMoves(id)), on: id)
         return lease
     }
 }

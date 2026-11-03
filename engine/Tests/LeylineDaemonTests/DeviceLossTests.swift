@@ -30,15 +30,37 @@ final class RebindableDevice: VirtualDevice, @unchecked Sendable {
     let blocksDelivered = LockedValue(0)
     /// A centre `tune` refuses, 0 for none: a radio that cannot reach one frequency.
     let refusedTuneHz = LockedValue<UInt64>(0)
+    /// A centre `tune` and a rate `setSampleRate` hold at until cleared, 0 for none, and whether
+    /// `setGain` and `close` hold: a radio slow to answer, for a test that has to land something
+    /// in the middle of a move or a close. `held` counts the calls that reached a hold.
+    let heldTuneHz = LockedValue<UInt64>(0)
+    let heldRateHz = LockedValue<UInt64>(0)
+    let holdGain = LockedValue(false)
+    let holdClose = LockedValue(false)
+    let held = LockedValue(0)
     /// The pause between two 4096-sample blocks. The default 1 ms is faster than any real radio,
     /// which is what most tests want; a test that needs a lossy consumer never to fall behind
     /// slows it down.
     private let blockIntervalNs: Int
 
-    init(blockIntervalNs: Int = 1_000_000) { self.blockIntervalNs = blockIntervalNs }
+    private var _gain = GainState(element: "TUNER", value: .db(20))
+    private let hasGain: Bool
+
+    /// `gain` gives the radio one stage, TUNER, at 20 dB.
+    init(blockIntervalNs: Int = 1_000_000, gain: Bool = false) {
+        self.blockIntervalNs = blockIntervalNs
+        hasGain = gain
+        if gain { _descriptor.gainElements = [GainElement(name: "TUNER", minDB: 0, maxDB: 49.6, stepDB: 0, supportsAuto: false)] }
+    }
 
     var descriptor: DeviceDescriptor { lock.lock(); defer { lock.unlock() }; return _descriptor }
-    var gains: [GainState] { [] }
+    var gains: [GainState] { lock.lock(); defer { lock.unlock() }; return hasGain ? [_gain] : [] }
+
+    private func hold(while held: () -> Bool) async {
+        guard held() else { return }
+        self.held.value += 1
+        while held() { try? await Task.sleep(nanoseconds: 5_000_000) }
+    }
 
     func assignID(_ id: DeviceID) { lock.lock(); _descriptor.id = id; lock.unlock() }
     func setState(_ state: DeviceState) {
@@ -54,14 +76,22 @@ final class RebindableDevice: VirtualDevice, @unchecked Sendable {
     }
 
     func open() async throws { opens.value += 1 }
-    func close() async { closes.value += 1 }
+    func close() async {
+        closes.value += 1
+        await hold { holdClose.value }
+    }
     func tune(centerHz: UInt64) async throws {
+        await hold { centerHz == heldTuneHz.value }
         if centerHz != 0, centerHz == refusedTuneHz.value {
             throw EngineError.invalidArgument("the rebindable radio will not tune \(centerHz)")
         }
     }
-    func setSampleRate(_ hz: UInt64) async throws {}
-    func setGain(element: String, value: GainValue) async throws { throw EngineError.gainElementUnknown(element, target: "") }
+    func setSampleRate(_ hz: UInt64) async throws { await hold { hz == heldRateHz.value } }
+    func setGain(element: String, value: GainValue) async throws {
+        guard hasGain, element == "TUNER" else { throw EngineError.gainElementUnknown(element, target: "") }
+        await hold { holdGain.value }
+        lock.withLock { _gain = GainState(element: element, value: value) }
+    }
 
     func startStreaming(captureID: CaptureID, deliver: @escaping @Sendable (SampleBuffer, SampleTime) -> Void) async throws {
         streamStarts.value += 1

@@ -120,6 +120,14 @@ actor SessionStore {
         /// The tuning generation a return left the capture at, so the next return can tell the
         /// last move was a return and not somebody else's.
         var returnedGeneration: UInt64?
+        /// How many times a person has moved the capture, so a job's return point noted after a
+        /// person's move is dropped (`noteReturnPoint`).
+        var personMoves = 0
+        /// `destroyCapture` is under way: the capture takes no new claim or channel, the planner
+        /// does not see it, and a new capture on its device waits for it to go.
+        var closing = false
+        /// Callers parked until a return or a close on this capture is over (`awaitCapture`).
+        var waiters: [CheckedContinuation<Void, Never>] = []
     }
 
     /// Where a capture was tuned on its last event.
@@ -186,6 +194,8 @@ actor SessionStore {
     var captures: [CaptureID: CaptureEntry] = [:]
     /// Devices whose capture is still starting (see createCapture).
     var startingDevices: Set<DeviceID> = []
+    /// How many captures have started closing, so an allocation that met one can walk again.
+    var closings = 0
     /// rtl_tcp endpoints (`host:port`) with an attach in flight: the connect takes seconds, and a
     /// second attach of the same endpoint joins the first rather than opening a second socket.
     var attachingRemotes: [String: Task<DeviceDescriptor, any Error>] = [:]

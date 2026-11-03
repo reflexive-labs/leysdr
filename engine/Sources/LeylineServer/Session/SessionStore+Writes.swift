@@ -13,6 +13,14 @@ extension SessionStore {
     /// Applies one coalesced parameter write. Returns the rejection (nil = applied). Success emits
     /// the full state of every object the write touched.
     func applyWrite(_ w: Leyline_V1_ParamWrite, by: ClientContext) async -> EngineError? {
+        // A write to the tuning or gain lands after a return under way, never in the middle of it,
+        // where the return's next step would overwrite it.
+        switch w.param {
+        case .centerHz?, .captureSampleRate?, .gain?:
+            if let id = CaptureID(string: w.targetID) { await awaitReturn(id) }
+        default:
+            break
+        }
         do {
             switch w.param {
             case .centerHz(let hz)?:

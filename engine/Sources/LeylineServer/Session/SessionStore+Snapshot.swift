@@ -19,10 +19,14 @@ extension SessionStore {
         out.daemon = info.proto
         let capFilter: CaptureID? = { if case .capture(let c) = scope { return c } else { return nil } }()
         out.devices = listDevices().map(ProtoMapping.descriptor)
+        // A closing capture is as good as gone: its tombstone follows, and a plan made from this
+        // snapshot makes a new one on its device rather than joining it.
         for id in captures.keys.sorted(by: { $0.string < $1.string }) where capFilter == nil || capFilter == id {
+            if captures[id]?.closing == true { continue }
             if let p = await captureProto(id) { out.captures.append(p) }
         }
         for id in channels.keys.sorted(by: { $0.string < $1.string }) where capFilter == nil || channels[id]?.captureID == capFilter {
+            if let capID = channels[id]?.captureID, captures[capID]?.closing == true { continue }
             if let p = await channelProto(id) { out.channels.append(p) }
         }
         for id in sinks.keys.sorted(by: { $0.string < $1.string }) {

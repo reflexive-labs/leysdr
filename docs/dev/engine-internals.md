@@ -649,12 +649,31 @@ to its tuning, rate first, then centre, then the gains if they are still the one
 
 A point that cannot return yet stays and is tried again at the next release on the capture, so a
 capture another job joined goes back when that job lets go too; one that returns takes every
-newer point with it. Each "stays" is logged with the claims in the way. The return is published
-as a write is, attributed to the job that moved the capture: displaced claims come back SATISFIED
-with `displaced_by` cleared, a channel is back in capture, a job leaves DEGRADED and an IQ
-recording opens a new part. A sweep's claim stays on the ledger until its return is done, so no
-write lands in between. This replaces the channel lease's `restoreCenterHz`, the sweep lease's
-restore and the decode job's gain restore (DA-12).
+newer point with it. Each "stays" is logged with the claims in the way. A point is noted only if
+no person moved the capture between the job reading where it found it and noting it (the
+capture's `personMoves` count), so a person's move during a job's allocation leaves no return.
+The return is published as a write is, attributed to the job that moved the capture: displaced
+claims come back SATISFIED with `displaced_by` cleared, a channel is back in capture, a job
+leaves DEGRADED and an IQ recording opens a new part. A sweep's claim stays on the ledger until
+its return is done, so no write lands in between. This replaces the channel lease's
+`restoreCenterHz`, the sweep lease's restore and the decode job's gain restore (DA-12).
+
+A return is carried out under the capture's `settling` flag, and a person's tuning or gain write
+waits for it (`awaitReturn`) and lands after it, so no step of a return overwrites a person's
+move. Before each step (rate, then centre) the ledger is read again: a claim made since the
+return was decided that the return would displace stops it. A stopped return, and one the radio
+refuses (an unplugged device, a tuning error), puts the capture back where the return found it as
+far as the radio lets it, logs why, and keeps its points for the next release; the capture is
+never left half way. Gains unwind newest point first while each job's are still the ones it left,
+so two stacked jobs that each set a gain give back the gain the first found in either order, and
+a gain somebody else wrote since stays; when a newer job that set a gain still holds its claim,
+it keeps its gain, and the unwound gains wait for its release in a point of its own.
+
+A destroyed capture is marked `closing` for the awaits of its teardown: it takes no claim
+(`addClaim`, `claimSweep`) or channel, a snapshot leaves it out so the planner makes a new capture
+on its device, `createCapture` waits for it to go, and an IQ lease is handed over only with its
+claim made, so no lease keeps a stopped engine. An allocation whose walk met a capture that began
+closing after its snapshot walks once more.
 
 ### Control service
 
