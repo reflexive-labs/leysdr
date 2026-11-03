@@ -509,6 +509,12 @@ import LeylineClient
                 onAirEntry: s.tunedGroup?.isMerged == true ? s.onAirEntry?.name : nil,
                 logNames: Self.logNames(s), sort: s.bookmarkSort.rawValue,
                 bookmarkRows: Self.bookmarkRows(s), libraryRows: Self.libraryRows(s),
+                decodeWith: Self.selectedRecording(s).map {
+                    s.decodersOffered(for: $0).map(DecoderPages.title)
+                } ?? [],
+                decoded: Self.selectedRecording(s).map {
+                    s.recordingDecodes(for: $0).map(\.line)
+                } ?? [],
                 decoders: Self.decodersState(s),
                 decodingRows: Self.decodingRows(s),
                 waterfallTags: s.place == .radio && s.showsDecodedNames
@@ -525,6 +531,12 @@ import LeylineClient
             return rows.map {
                 ControlDecodingRow(decoder: $0.decoder, title: $0.title, count: $0.count)
             }
+        }
+
+        /// The recording of the Library part selected, while the Library shows.
+        private static func selectedRecording(_ s: AppSession) -> String? {
+            guard s.place == .library, let uri = s.selectedPartURI else { return nil }
+            return RecordingPartRef(uri: uri)?.jobID
         }
 
         /// The Decoders page as `ControlDecoders` writes it, while the place shows.
@@ -567,6 +579,7 @@ import LeylineClient
                     Set(d.records.entries.map(\.record.kind))
                 ).widest
             out.alerts = d.alerts.map { d.summary($0.record) }
+            out.watches = Watches.watches(of: m, in: s.state.jobs).map(Watches.words)
             return out
         }
 
@@ -579,7 +592,6 @@ import LeylineClient
                 let line = s.speech(for: row.jobID)?.shown(part: row.part)
                     .first { row.holds(over: $0.over) }
                 return line.map { "\(kind): \($0.text)" } ?? kind
-            out.watches = Watches.watches(of: m, in: s.state.jobs).map(Watches.words)
             }
         }
 

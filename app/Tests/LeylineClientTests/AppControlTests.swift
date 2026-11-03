@@ -165,8 +165,8 @@ final class AppControlTests: XCTestCase {
             back.keys.sorted(),
             [
                 "alert", "assistant", "assistant_shown", "band", "bandwidth_hz", "bookmark",
-                "bookmark_rows", "capture", "capture_id", "channel_id", "decoders",
-                "decoding_rows", "entries",
+                "bookmark_rows", "capture", "capture_id", "channel_id", "decode_with", "decoded",
+                "decoders", "decoding_rows", "entries",
                 "filter_caret", "filter_query", "focused", "heard", "hits", "inspector_shown",
                 "library_rows",
                 "log_names", "mode", "muted", "notices", "on_air_entry", "open_rows", "place",

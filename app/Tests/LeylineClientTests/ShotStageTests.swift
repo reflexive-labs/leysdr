@@ -53,6 +53,10 @@ final class ShotStageTests: XCTestCase {
                 place: .decoders, decoder: "aircraft", decoderTab: .map,
                 selectTransmitter: "A1F003"))
         XCTAssertThrowsError(try ShotStage.read(at: try stageFile(#"{"decoder_tab":"chart"}"#)))
+        XCTAssertEqual(
+            try ShotStage.read(
+                at: try stageFile(#"{"place":"library","select_part":0,"decode_with":"aprs"}"#)),
+            ShotStage(place: .library, selectPart: 0, decodeWith: "aprs"))
     }
 
     func testAbsentKeysLeaveTheWindowAsLaunched() throws {

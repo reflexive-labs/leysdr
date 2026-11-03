@@ -842,6 +842,10 @@ public struct ControlViewState: Sendable, Equatable, Codable {
     /// of a part that holds several, `file` for a whole part, then `: ` and its transcript line
     /// when it has one.
     public var libraryRows: [String]
+    /// The selected Library part's recording, while the Library shows: Decode With's items by
+    /// title, and the inspector's line for each decoder that ran over it (`APRS: 7 records`).
+    public var decodeWith: [String]
+    public var decoded: [String]
     /// The Decoders place's page while it shows, else null.
     public var decoders: ControlDecoders?
     /// The Radio sidebar's rows of the running decoders, in its order; null when none runs and
@@ -875,6 +879,8 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         case sort
         case bookmarkRows = "bookmark_rows"
         case libraryRows = "library_rows"
+        case decodeWith = "decode_with"
+        case decoded
         case decoders
         case decodingRows = "decoding_rows"
         case waterfallTags = "waterfall_tags"
@@ -894,9 +900,12 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         tooltip: String? = nil, transport: ControlTransport? = nil, entries: [String] = [],
         tunedRows: Int = 0, tunedRow: String? = nil, onAirEntry: String? = nil,
         logNames: String? = nil, sort: String = "frequency", bookmarkRows: [String] = [],
-        libraryRows: [String] = [], decoders: ControlDecoders? = nil,
+        libraryRows: [String] = [], decodeWith: [String] = [], decoded: [String] = [],
+        decoders: ControlDecoders? = nil,
         decodingRows: [ControlDecodingRow]? = nil, waterfallTags: [ControlWaterfallTag]? = nil
     ) {
+        self.decodeWith = decodeWith
+        self.decoded = decoded
         self.decoders = decoders
         self.decodingRows = decodingRows
         self.waterfallTags = waterfallTags
@@ -984,6 +993,8 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         try c.encode(sort, forKey: .sort)
         try c.encode(bookmarkRows, forKey: .bookmarkRows)
         try c.encode(libraryRows, forKey: .libraryRows)
+        try c.encode(decodeWith, forKey: .decodeWith)
+        try c.encode(decoded, forKey: .decoded)
         try c.encode(decoders, forKey: .decoders)
         try c.encode(decodingRows, forKey: .decodingRows)
         try c.encode(waterfallTags, forKey: .waterfallTags)

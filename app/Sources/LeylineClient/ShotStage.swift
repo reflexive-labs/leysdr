@@ -83,6 +83,9 @@ public struct ShotStage: Sendable, Equatable, Codable {
     public var decoderTab: DecoderTab?
     /// The transmitter the Decoders inspector shows, by `device_id`, as a click on its row does.
     public var selectTransmitter: String?
+    /// A decoder, by name or alias, run over the selected Library part's recording as its Decode
+    /// With item runs it.
+    public var decodeWith: String?
 
     enum CodingKeys: String, CodingKey {
         case window, place, inspector, settle, zoom
@@ -101,6 +104,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
         case decoder
         case decoderTab = "decoder_tab"
         case selectTransmitter = "select_transmitter"
+        case decodeWith = "decode_with"
     }
 
     public init(
@@ -110,8 +114,9 @@ public struct ShotStage: Sendable, Equatable, Codable {
         zoom: UInt64? = nil, scanBand: Bool = false, playPart: Bool = false,
         assistant: Bool? = nil, focusFilter: Bool = false, channelsPicker: String? = nil,
         settings: Bool? = nil, hideEngineLabel: Bool = false, decoder: String? = nil,
-        decoderTab: DecoderTab? = nil, selectTransmitter: String? = nil
+        decoderTab: DecoderTab? = nil, selectTransmitter: String? = nil, decodeWith: String? = nil
     ) {
+        self.decodeWith = decodeWith
         self.decoder = decoder
         self.decoderTab = decoderTab
         self.selectTransmitter = selectTransmitter
@@ -156,6 +161,7 @@ public struct ShotStage: Sendable, Equatable, Codable {
         self.decoder = try c.decodeIfPresent(String.self, forKey: .decoder)
         decoderTab = try c.decodeIfPresent(DecoderTab.self, forKey: .decoderTab)
         selectTransmitter = try c.decodeIfPresent(String.self, forKey: .selectTransmitter)
+        decodeWith = try c.decodeIfPresent(String.self, forKey: .decodeWith)
     }
 
     /// The stage file's path from the environment, or nil when the run is not staged.

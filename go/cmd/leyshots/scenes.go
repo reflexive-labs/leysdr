@@ -123,6 +123,9 @@ type Stage struct {
 	DecoderTab string `yaml:"decoder_tab" json:"decoder_tab,omitempty"`
 	// SelectTransmitter shows this device_id in the Decoders inspector, as a click on its row.
 	SelectTransmitter string `yaml:"select_transmitter" json:"select_transmitter,omitempty"`
+	// DecodeWith runs this decoder, by name or alias, over the selected Library part's
+	// recording, as its Decode With item does.
+	DecodeWith string `yaml:"decode_with" json:"decode_with,omitempty"`
 }
 
 // Crop says which part of the window an app shot keeps: the union of Regions, or a box of Size

@@ -392,6 +392,7 @@ struct PartRowView: View {
         .accessibilityIdentifier("library.part.\(indices[row.id].map(String.init) ?? "_")")
         .contextMenu {
             SpeechActions(recordingID: row.jobID)
+            DecodeWithMenu(recordingID: row.jobID)
             Divider()
             // The file that holds the transmission; Finder shows its recording's folder around it.
             Button("Show in Finder") { Task { await session.revealInFinder(uri: row.uri) } }

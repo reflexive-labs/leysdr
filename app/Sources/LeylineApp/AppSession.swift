@@ -423,6 +423,11 @@ final class AppSession {
     @ObservationIgnored private var speechCache: [String: RecordingSpeech] = [:]
     /// The transcription jobs as last seen, so a change to one reads its recording's speech again.
     @ObservationIgnored private var transcriptionsSeen: [Leyline_V1_Job] = []
+    /// The other decoders' jobs over stored recordings (Decode With) as last seen, so a change to
+    /// one counts its records again.
+    @ObservationIgnored private var recordingDecodesSeen: [Leyline_V1_Job] = []
+    /// How many records each Decode With job found, by job id, from `QueryRecords`.
+    private(set) var decodeCounts: [String: RecordingDecodes.Count] = [:]
     /// The speech decoder as `ListDecoders` lists it, nil until read or when none is installed:
     /// read from the Decoders place's list, so the list is fetched once.
     var speechDecoder: Leyline_V1_DecoderManifest? {
@@ -4124,8 +4129,11 @@ final class AppSession {
     /// A transcription job (a decode job reading a recording) changed: its recording's speech is
     /// read again, so lines appear as the job writes them, and a failure is the session's notice.
     private func followTranscriptions() {
+        followRecordingDecodes()
         let jobs = state.jobs.filter {
-            if case .decode(let d)? = $0.config { return !d.sourceUri.isEmpty }
+            if case .decode(let d)? = $0.config {
+                return !d.sourceUri.isEmpty && d.decoder == transcriber
+            }
             return false
         }
         guard jobs != transcriptionsSeen else { return }
@@ -4150,10 +4158,94 @@ final class AppSession {
     func transcriptionStatus(for recordingID: String) -> (job: Leyline_V1_Job, line: String)? {
         guard
             let job = SpeechRecords.transcription(
-                of: "ley://recordings/\(recordingID)", in: state.jobs),
+                of: "ley://recordings/\(recordingID)", in: state.jobs, decoder: transcriber),
             let line = SpeechRecords.statusLine(job: job, speech: speech(for: recordingID))
         else { return nil }
         return (job, line)
+    }
+
+    /// The decoder Transcribe runs, by the name its jobs carry: the speech decoder's.
+    private var transcriber: String { speechDecoder?.name ?? SpeechRecords.protocolName }
+
+    // MARK: Decode With
+
+    /// A Decode With job changed (another decoder's job over a stored recording): its records
+    /// are counted again, so the inspector's count moves as the job writes them, and a failure
+    /// is the session's notice, as a transcription's is.
+    private func followRecordingDecodes() {
+        let jobs = RecordingDecodes.all(in: state.jobs, transcriber: transcriber)
+        guard jobs != recordingDecodesSeen else { return }
+        let changed = jobs.filter { !recordingDecodesSeen.contains($0) }
+        recordingDecodesSeen = jobs
+        for j in changed {
+            countRecords(of: j.jobID)
+            guard j.state == .failed, case .decode(let d)? = j.config else { continue }
+            let title = decoders.manifest(named: d.decoder).map(DecoderPages.title) ?? d.decoder
+            let why = DecoderPages.detail(j)
+            notice =
+                "Could not decode \(RecordingPartRef.recordingID(of: d.sourceUri) ?? d.sourceUri) with \(title): \(why.isEmpty ? j.error.code : why)"
+        }
+    }
+
+    /// `QueryRecords` for one job's kept records, for the inspector's count.
+    private func countRecords(of jobID: String) {
+        guard let daemon else { return }
+        var q = Leyline_V1_RecordQuery()
+        q.jobID = jobID
+        q.limit = UInt32(DecoderPages.logLimit)
+        Task { [weak self] in
+            do {
+                let page = try await daemon.decoders.queryRecords(q)
+                let count = RecordingDecodes.Count(
+                    records: page.records.count, truncated: page.truncated)
+                guard let self, self.decodeCounts[jobID] != count else { return }
+                self.decodeCounts[jobID] = count
+                log("decoders", "\(jobID) found \(RecordingDecodes.recordsWords(count))")
+            } catch {
+                log("decoders", "records of \(jobID) not counted: \(LeylineError(error))")
+            }
+        }
+    }
+
+    /// The decoders Decode With lists for a recording, empty until its manifest is read.
+    func decodersOffered(for recordingID: String) -> [Leyline_V1_DecoderManifest] {
+        guard let m = manifests[recordingID], let all = decoders.manifests else { return [] }
+        return RecordingDecodes.offered(all, recordingKind: m.kind, transcriber: transcriber)
+    }
+
+    /// The inspector's lines for a recording: each decoder's newest job over it, with its title
+    /// and manifest name, and `APRS: 3 records`.
+    func recordingDecodes(for recordingID: String) -> [(decoder: String, line: String)] {
+        RecordingDecodes.jobs(
+            of: "ley://recordings/\(recordingID)", in: state.jobs, transcriber: transcriber
+        ).compactMap { j in
+            guard case .decode(let d)? = j.config else { return nil }
+            let m = decoders.manifest(named: d.decoder)
+            let title = m.map(DecoderPages.title) ?? d.decoder
+            return (
+                m?.name ?? d.decoder,
+                RecordingDecodes.line(title: title, job: j, count: decodeCounts[j.jobID])
+            )
+        }
+    }
+
+    /// Decode With: the kept job over the stored recording (`StartJob` with `source_uri`), as
+    /// `ley decode --recording` starts one. Its records reach the decoder's page and the count
+    /// follows its job (`followRecordingDecodes`); a refusal is the session's notice.
+    func decodeWith(recordingID: String, decoder name: String) async {
+        guard let daemon else { return }
+        let title = decoders.manifest(named: name).map(DecoderPages.title) ?? name
+        var req = Leyline_V1_StartJobRequest()
+        req.decode = RecordingDecodes.config(
+            decoder: name, recordingURI: "ley://recordings/\(recordingID)")
+        do {
+            let job = try await daemon.jobs.startJob(req)
+            log("decoders", "\(job.jobID) decoding \(recordingID) with \(name)")
+        } catch {
+            let e = LeylineError(error)
+            log("decoders", "\(recordingID) not decoded with \(name): \(e.code) \(e.message)")
+            notice = "Could not decode with \(title): \(e.message.isEmpty ? e.code : e.message)"
+        }
     }
 
     /// Whether a recording's manifest lists squelch openings: speech is cut at the squelch, so only

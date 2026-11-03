@@ -78,10 +78,27 @@ struct PartInspector: View {
                         .padding(.top, 4)
                         .accessibilityIdentifier("library.inspector.transcribed")
                 }
-                // Transcribe, Transcribe again… and Export words…, when any applies.
-                HStack(spacing: 8) { SpeechActions(recordingID: group.jobID) }
-                    .buttonStyle(.bordered)
-                    .padding(.top, 4)
+                // What each decoder found on the recording, each a link to its page.
+                ForEach(session.recordingDecodes(for: group.jobID), id: \.decoder) { found in
+                    Button {
+                        session.openDecoder(found.decoder)
+                    } label: {
+                        Text(found.line).font(Theme.Font.footnote).foregroundStyle(Theme.accent)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Show these records in Decoders")
+                    .accessibilityIdentifier(
+                        "library.inspector.decoded.\(ViewIdentifier.slug(found.decoder))")
+                }
+                // Transcribe, Transcribe again…, Export words… and Decode With, when any applies.
+                HStack(spacing: 8) {
+                    SpeechActions(recordingID: group.jobID)
+                    DecodeWithMenu(recordingID: group.jobID)
+                }
+                .buttonStyle(.bordered)
+                .padding(.top, 4)
             }
             .padding(.horizontal, 16).padding(.vertical, 14)
             Rectangle().fill(Theme.hairline).frame(height: 1)
@@ -123,6 +140,38 @@ struct PartInspector: View {
             }
         } message: {
             Text(words.deleteLine)
+        }
+    }
+}
+
+/// Decode With: the installed decoders whose input is the recording's kind, Transcribe's speech
+/// decoder aside (`RecordingDecodes.offered`); a choice starts the kept job over the recording.
+/// Nothing while none is offered. A recording still being made is decoded once it has ended, as
+/// the daemon says, so its items are off until then. Used in a row's context menu, where it is a
+/// submenu, and in the inspector.
+struct DecodeWithMenu: View {
+    let recordingID: String
+    @Environment(AppSession.self) private var session
+
+    var body: some View {
+        let offered = session.decodersOffered(for: recordingID)
+        let recording = session.manifests[recordingID]?.endedBy.isEmpty ?? true
+        if !offered.isEmpty {
+            Menu("Decode With") {
+                ForEach(offered, id: \.name) { m in
+                    Button(DecoderPages.title(m)) {
+                        Task { await session.decodeWith(recordingID: recordingID, decoder: m.name) }
+                    }
+                    .disabled(recording)
+                }
+            }
+            .fixedSize()
+            .help(
+                recording
+                    ? "Decode this recording once it has ended"
+                    : "Run a decoder over this recording; its records show on the decoder's page"
+            )
+            .accessibilityIdentifier("library.decode_with")
         }
     }
 }

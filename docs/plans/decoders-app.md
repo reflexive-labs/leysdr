@@ -258,11 +258,18 @@ The calls for this batch, taken 2026-11-02:
   says so; the sidebar's words are read back from any watch's predicate, `ley watch`'s too; and
   the Radio sidebar's decoding rows (DA-9) count plain runs only, since `DecoderPages.running`
   now leaves watches out.
-- [ ] **DA-11 Decode a recording.** The Library's context menu gains "Decode With" listing the
+- [x] **DA-11 Decode a recording.** The Library's context menu gains "Decode With" listing the
   installed decoders whose input matches the recording (audio decoders on an audio recording, IQ
   decoders on an IQ one; speech stays under Transcribe). It starts a kept job with `source_uri`,
   as transcription does; the records appear on that decoder's page, and the recording's
   inspector says how many records each decoder found, with a link to the page.
+  Done 2026-11-02, unverified until the Mac (`library-decode-with`). Decode With is in the row's
+  context menu and beside Transcribe in the part inspector, its items off while the recording is
+  still being made (the daemon refuses one then). The inspector's line is each decoder's newest
+  job over the recording, counted by `QueryRecords` on its `job_id` whenever the job changes
+  (1000 at most, `1000+ records` past it). A transcription is now the speech decoder's job over a
+  recording only, so another decoder's job there is not read as one. The stage key `decode_with`
+  runs an item's code path, since a check cannot open a context menu.
 - [ ] **DA-12 A recipe gain in dB.** `GainPolicy` gains `GAIN_FIXED` and `DecoderRecipe.gain_db`
   (additive), applied when the job creates or retunes the capture, never on a capture it borrows
   (that gain is its owner's). `DecodeConfig` gains the `GainWrite` that `ScanConfig` has, so `ley

@@ -191,6 +191,7 @@ import SwiftUI
             if let index = stage.selectPart {
                 await select(part: index, play: stage.playPart, session)
             }
+            if let name = stage.decodeWith { await decode(with: name, session) }
             if let shown = stage.assistant {
                 session.assistantShown = shown
                 note(shown ? "assistant shown" : "assistant hidden")
@@ -433,6 +434,28 @@ import SwiftUI
             try? await Task.sleep(for: .seconds(Self.playPartSeconds))
             await session.pausePlayback(true)
             note("row \(index) played and paused")
+        }
+
+        /// Runs a decoder over the selected part's recording as its Decode With item does, once the
+        /// decoders are listed and the item is offered.
+        private func decode(with name: String, _ session: AppSession) async {
+            var target: (recording: String, decoder: String)?
+            _ = await until(seconds: Self.librarySeconds) {
+                guard let uri = session.selectedPartURI, let ref = RecordingPartRef(uri: uri),
+                    let m = session.decoders.manifest(named: name),
+                    session.decodersOffered(for: ref.jobID).contains(where: { $0.name == m.name })
+                else { return false }
+                target = (ref.jobID, m.name)
+                return true
+            }
+            guard let target else {
+                note(
+                    "\(name) is not offered for the selected part within \(Int(Self.librarySeconds)) s"
+                )
+                return
+            }
+            await session.decodeWith(recordingID: target.recording, decoder: target.decoder)
+            note("decode \(target.recording) with \(target.decoder)")
         }
 
         /// The regions as `regions.json` gives them: the whole frame as `window`, the strip above the

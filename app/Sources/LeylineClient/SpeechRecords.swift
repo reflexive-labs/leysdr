@@ -511,12 +511,16 @@ public enum SpeechRecords {
         return "\(hz) Hz"
     }
 
-    /// The newest transcription job of `recordingURI` in `jobs`, running or not, or nil.
-    public static func transcription(of recordingURI: String, in jobs: [Leyline_V1_Job])
-        -> Leyline_V1_Job?
-    {
+    /// The newest transcription job of `recordingURI` in `jobs`, running or not, or nil: a job of
+    /// `decoder`, the speech decoder, over it. Another decoder's job over the recording (Decode
+    /// With, `RecordingDecodes`) is not a transcription.
+    public static func transcription(
+        of recordingURI: String, in jobs: [Leyline_V1_Job], decoder: String = protocolName
+    ) -> Leyline_V1_Job? {
         jobs.filter { j in
-            if case .decode(let d)? = j.config { return d.sourceUri == recordingURI }
+            if case .decode(let d)? = j.config {
+                return d.sourceUri == recordingURI && d.decoder == decoder
+            }
             return false
         }.max { $0.jobID < $1.jobID }
     }

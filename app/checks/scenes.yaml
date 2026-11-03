@@ -1730,6 +1730,35 @@ scenes:
       - {cmd: state, expect: {place: library, library_rows.0: "over 1: Good evening, this is N0CALL, net control for the Thursday net. Check-ins, call now.", library_rows.1: "over 2: N0CALL-2, checking in from the north side, no traffic.", library_rows.2: "over 3: N0CALL-3 checking in, mobile, one item for the net."}}
       - {cmd: snapshot, name: page}
 
+  # Decode With (docs/plans/decoders-app.md, DA-11) on a recording of scene_aprs: `ley record`
+  # keeps 22 s of 144.390 MHz audio, one pass of the seven stations and a second at most of the
+  # loop again. Decode With offers the audio decoders in the daemon's order, without Transcribe's
+  # speech decoder or a test_only one; the stage runs its APRS item's code path (a context menu
+  # is out of the command file's reach). The kept job over the recording counts its records into
+  # the inspector, and its line opens the Decoders place on APRS, where those records are.
+  - name: library-decode-with
+    covers: [PartInspector.swift, RecordingsPage.swift, RecordingDecodes.swift,
+      SpeechRecords.swift, SpeechViews.swift]
+    threshold: 1.5
+    fixtures: [{name: scene_aprs}]
+    clock: "19:42"
+    steps:
+      - ley: [record, "144.39", --gate, none, --for, 22s, --detach]
+      - wait: 25
+    stage:
+      place: library
+      inspector: true
+      select_part: 0
+      settle: 2
+    app:
+      - {cmd: state, expect: {place: library, decode_with.0: Vessels, decode_with.1: APRS, decode_with.2: Weather alerts}}
+      - {cmd: stage, stage: {decode_with: aprs}}
+      - {cmd: wait, seconds: 5, expect_log: ["job_\\w+ decoding job_\\w+ with aprs", "job_\\w+ found [78] records"]}
+      - {cmd: ley, args: [--json, jobs], expect_stdout: ['"decoder":\s*"aprs"', '"sourceUri":\s*"ley://recordings/job_']}
+      - {cmd: snapshot, name: decoded}
+      - {cmd: press, identifier: library.inspector.decoded.aprs}
+      - {cmd: state, expect: {place: decoders, decoders.decoder: aprs}}
+
   # The menus and the CHIRP import's words (docs/plans/app.md, U7 and the assistant panel's
   # K1): File ▸ Import CHIRP… after Show Recordings in Finder, View ▸ Show Assistant disabled
   # with no AI provider, the app menu's Settings… and Tune ▸ Stop Listening enabled. The import
