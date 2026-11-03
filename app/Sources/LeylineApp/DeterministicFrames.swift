@@ -32,6 +32,12 @@ import ObjectiveC
             ])
             NSAnimationContext.current.duration = 0
             NSAnimationContext.current.allowsImplicitAnimation = false
+            // The inspector's groups remember whether they are open with `@AppStorage`, which
+            // writes the staged bundle's own domain, so a press in one run would open the group
+            // the next run starts with. Every staged launch, a relaunch too, starts them shut.
+            for key in DisclosureSection.openKeys {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
         }
 
         /// The getters a window's key and active appearance is read from.

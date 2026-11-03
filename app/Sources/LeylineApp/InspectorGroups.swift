@@ -354,8 +354,10 @@ struct LogRow: View {
 /// Collapsed by default and remembered, per group, in the defaults.
 struct DisclosureSection: View {
     @Environment(AppSession.self) private var session
-    @AppStorage("inspector.measurementsOpen") private var measurementsOpen = false
-    @AppStorage("inspector.claimsOpen") private var claimsOpen = false
+    /// The defaults keys the groups' open state is kept under.
+    static let openKeys = ["inspector.measurementsOpen", "inspector.claimsOpen"]
+    @AppStorage(openKeys[0]) private var measurementsOpen = false
+    @AppStorage(openKeys[1]) private var claimsOpen = false
 
     // One group, not the design's three: the demodulator's values are the transport bar's and
     // the device and gain are the header's chip, and showing either twice means two places to
