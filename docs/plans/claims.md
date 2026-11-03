@@ -71,7 +71,23 @@ where the step says so.
   it did not before. A capture the allocator made goes with its last CHANNEL, IQ or SWEEP claim,
   a person's channel included; views and presences do not hold it. The Go fake keeps a capture
   made for a job while any job's channel is on it.
-- [ ] **CL-5 One confirmation in the clients.** `ley tune --retune` and the app's retune and
+- [x] **CL-5 One confirmation in the clients.** `ley tune --retune` and the app's retune and
   Start confirmations read `Control.Plan`'s displaced list; the app asks about any job, not only
   recordings; MCP's 3 s own-write waiver is replaced by the same rule.
+  Done 2026-11-02 in `ley`, `ley mcp` and the app, with no engine change. Every `ley` verb that
+  moves an existing capture asks the plan and refuses with its list, views and its own claims
+  never among them: "retuning to 150.000 MHz would pause the aprs decoder on 144.390 MHz; --retune
+  moves it anyway" (`refuseDisplacing`); the channel counting and `refuseRetuneOverRecording`
+  are gone, and a decoder now stops a retune too. The MCP tools refuse through the same code
+  with "Call again with take_over: true"; a job the daemon would decline only for this server's
+  own claims (compared by holder with its client id) goes ahead without `take_over` and says so.
+  The app asks "This pauses the APRS decoder on 144.390 MHz." before any person's move that
+  pauses a JOB claim, clicks and typed frequencies included; whether to ask is read from the
+  capture's job claims and the words from the plan (`RetuneAsk`), and a drag asks once and
+  keeps the answer for the drag (`RetuneDrag`). The Claims group says "paused by the app at
+  14:05". The Go fake's plan now names a job's channel claim by the job. Not covered: a file
+  radio tunes only its own centre, so no eval and no check scene can reach a retune refusal; the
+  `retune-asks` scene checks Scan band's question, `RetuneAskTests` the click and drag rules,
+  and `dont-disturb` and `tune-over-decoder` grade the agent's path rather than the refusal's
+  words.
 - [ ] **CL-6 Later:** a displaced kept job asks `plan` for another radio.
