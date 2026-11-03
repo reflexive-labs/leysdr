@@ -36,6 +36,10 @@ where the step says so.
   its own (it rides the next one, or one coalesced per second), so a client opening and closing
   waterfall streams cannot push real events out of the 256-event replay window; and a sink
   attached by a job never makes a PERSON presence (`notePresence` checks `isInteractive`).
+  From CL-2, the three places today's behaviour kept differs from the design, now changed here:
+  a retune that leaves a claim satisfied does not count it as displaced, so it does not decline a
+  job; a radio held by a sweep declines with DEVICE_BUSY naming the sweep, not a silent NO_DEVICE;
+  and "cannot reach this frequency" is NO_DEVICE however it arises, "in use" is DEVICE_BUSY.
 - [ ] **CL-4 Return and sharing.** Automatic return after a job's or sweep's displacement, rate
   included, replacing `restoreCenterHz` and the sweep restore; a capture lives while any claim
   holds it (DEC-19).
