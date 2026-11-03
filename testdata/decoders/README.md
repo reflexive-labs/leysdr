@@ -1,6 +1,6 @@
 # Shared decoder display vectors
 
-These files pin two pieces of client-side logic that `ley` (Go) and the Mac app (Swift) both
+These files pin the client-side logic that `ley` (Go) and the Mac app (Swift) both
 implement: the display template language of a manifest's `DecoderDisplay`
 (`docs/reference/writing-a-decoder.md`, "Display") and the entity fold that `ley track` and the
 app's transmitter table build from records. `go/pkg/records/vectors_test.go` reads them; a Swift
@@ -82,3 +82,14 @@ columns}`:
   transmitter has sent.
 - `columns` maps each of the display's `columns` entries, as written (`sog_kn:1`), that resolves
   for the row to its printed value; a column the row has not sent is absent.
+
+## `watch-cases.json`
+
+`{cases}`, each `{name, where, county, near, radius, predicate, error}`, every key but `name`
+optional: the filter flags of `ley watch` (`--where` and `--county` repeated, `--near` and
+`--radius` as typed) and the `Predicate` they make, in the proto3 JSON mapping, or `null` for no
+filter; `error: true` marks input both clients refuse, whatever the words. `buildPredicate` in
+`go/internal/cli/watch.go` and `Watches.predicate` in the app read the same file
+(`watch_vectors_test.go`, `WatchesTests`), so a watch made in the app's Notify Me… sheet filters as
+one made with `ley watch`. Pick radii whose metres are exact in binary (`2mi`, not `3mi`), since
+the predicates are compared exactly.

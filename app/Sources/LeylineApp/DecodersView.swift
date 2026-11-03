@@ -37,6 +37,16 @@ struct DecodersBody: View {
             }
         }
         .modifier(TakeOverQuestion())
+        .sheet(
+            isPresented: Binding(
+                get: { session.decoders.watchFor != nil },
+                set: { if !$0 { session.decoders.watchFor = nil } })
+        ) {
+            if let name = session.decoders.watchFor, let m = session.decoders.manifest(named: name)
+            {
+                DecoderWatchSheet(manifest: m).environment(session)
+            }
+        }
     }
 }
 
@@ -100,6 +110,14 @@ struct DecodersSidebar: View {
                             DecoderJobLine(job: j)
                                 .identifiedGroup(
                                     "decoders.decoder.\(ViewIdentifier.slug(m.name)).job.\(i)")
+                        }
+                        let watches = Watches.watches(of: m, in: session.state.jobs)
+                        ForEach(Array(watches.enumerated()), id: \.element.jobID) { i, j in
+                            DecoderWatchLine(
+                                job: j,
+                                identifier:
+                                    "decoders.decoder.\(ViewIdentifier.slug(m.name)).watch.\(i)"
+                            ) { Task { await d.stop([j]) } }
                         }
                     }
                     Spacer(minLength: 12)
@@ -282,6 +300,13 @@ struct DecoderPageHeader: View {
                 }
             }
             Spacer(minLength: 12)
+            Button("Notify Me…") { d.watchFor = manifest.name }
+                .buttonStyle(.bordered)
+                .disabled(!session.isLive)
+                .help(
+                    "Watch for a record that matches and get a notification, with the app closed too"
+                )
+                .accessibilityIdentifier("decoders.page.notify")
             if running.isEmpty {
                 let starting = d.starting == manifest.name
                 Button(starting ? "Starting…" : "Start") {

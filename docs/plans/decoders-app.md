@@ -241,12 +241,23 @@ The calls for this batch, taken 2026-11-02:
   display's `entity_name`, else `device_id`. Tags scroll away with the rows, at most one per
   transmitter per ten seconds, and View has "Show Decoded Names" (on by default). IQ decoders
   draw no tags: their records have no frequency of their own inside the capture.
-- [ ] **DA-10 Watches from the app.** "Notify Me…" on a decoder's page opens a sheet that builds a
+- [x] **DA-10 Watches from the app.** "Notify Me…" on a decoder's page opens a sheet that builds a
   `DecodeConfig.predicate` from the manifest's field hints (a field and a value for TEXT and
   INTEGER fields; a place and a radius when the decoder's records carry positions) and a macOS
   notification as `notify`, then starts it as a kept job. Nothing is special-cased by decoder:
   SAME's county is its `fips` field. A watch is listed under its decoder in the sidebar with its
   condition in words, and Stop ends it. The daemon notifies with the app closed.
+  Done 2026-11-02, unverified until the Mac (`decoders-watch`). `Watches.predicate` ports `ley
+  watch`'s `buildPredicate` and `testdata/decoders/watch-cases.json` pins both; the sheet writes
+  its choice as a `--where` token (`is` is `=`, `contains` is `~`, `is over` and `is under` are
+  `>` and `<`, the last two for INTEGER only), so SAME's county is `fips contains 06009`, as
+  `--county` builds it. Calls the plan left open: `device_id` is offered before the hints, as
+  every decoder that names transmitters fills it; NUMBER fields are not offered (a value suits
+  them less than a threshold); the place shows once a record on the page has a position, as the
+  Map tab does; a watch whose radio is somebody's is not started (no `take_over`), and the sheet
+  says so; the sidebar's words are read back from any watch's predicate, `ley watch`'s too; and
+  the Radio sidebar's decoding rows (DA-9) count plain runs only, since `DecoderPages.running`
+  now leaves watches out.
 - [ ] **DA-11 Decode a recording.** The Library's context menu gains "Decode With" listing the
   installed decoders whose input matches the recording (audio decoders on an audio recording, IQ
   decoders on an IQ one; speech stays under Transcribe). It starts a kept job with `source_uri`,

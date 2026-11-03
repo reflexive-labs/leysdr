@@ -666,10 +666,13 @@ public struct ControlDecoders: Sendable, Equatable, Codable {
     public var tableRows: [String]
     /// The kind the log's kind column is sized to, its widest; null with no records.
     public var kindColumn: String?
+    /// The selected decoder's live watches as the sidebar words them, newest first: `fips
+    /// contains 06009`.
+    public var watches: [String]
 
     enum CodingKeys: String, CodingKey {
         case decoder, listed, tab, tabs, state, detail, placement, rows, transmitters, alerts
-        case notice, header
+        case notice, header, watches
         case tableHeads = "table_heads"
         case tableRows = "table_rows"
         case kindColumn = "kind_column"
@@ -685,8 +688,10 @@ public struct ControlDecoders: Sendable, Equatable, Codable {
         startShown: Bool = false, startEnabled: Bool = false, recordCount: Int = 0,
         rows: [String] = [], transmitters: [String] = [], selectedTransmitter: String? = nil,
         alerts: [String] = [], notice: String? = nil, header: String? = nil,
-        tableHeads: [String] = [], tableRows: [String] = [], kindColumn: String? = nil
+        tableHeads: [String] = [], tableRows: [String] = [], kindColumn: String? = nil,
+        watches: [String] = []
     ) {
+        self.watches = watches
         self.decoder = decoder
         self.listed = listed
         self.tab = tab
@@ -729,6 +734,7 @@ public struct ControlDecoders: Sendable, Equatable, Codable {
         try c.encode(tableHeads, forKey: .tableHeads)
         try c.encode(tableRows, forKey: .tableRows)
         try c.encode(kindColumn, forKey: .kindColumn)
+        try c.encode(watches, forKey: .watches)
     }
 }
 

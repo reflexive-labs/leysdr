@@ -60,13 +60,17 @@ public enum DecoderPages {
         m.display.symbol.isEmpty ? "dot.radiowaves.left.and.right" : m.display.symbol
     }
 
-    /// The decode jobs of a decoder that read a radio, newest first: by its name or one of its
-    /// aliases, and not a transcription of a recording (`source_uri` set), which the Library shows.
+    /// The plain runs of a decoder, newest first: its decode jobs that read a radio, by its name
+    /// or one of its aliases, not a decode of a recording (`source_uri` set), which the Library
+    /// shows, and not a watch (a predicate set, `Watches.watches`), which the sidebar lists on its
+    /// own. Start and Stop concern these.
     public static func jobs(of m: Leyline_V1_DecoderManifest, in jobs: [Leyline_V1_Job])
         -> [Leyline_V1_Job]
     {
         jobs.filter { j in
-            guard case .decode(let d)? = j.config, d.sourceUri.isEmpty else { return false }
+            guard case .decode(let d)? = j.config, d.sourceUri.isEmpty, !d.hasPredicate else {
+                return false
+            }
             return d.decoder == m.name || m.aliases.contains(d.decoder)
         }
         .sorted { $0.jobID > $1.jobID }

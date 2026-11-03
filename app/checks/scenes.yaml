@@ -1913,6 +1913,48 @@ scenes:
       - {cmd: press, identifier: sidebar.decoder.aprs}
       - {cmd: state, expect: {place: decoders, decoders.decoder: aprs, decoders.state: Running}}
 
+  # Watches from the app (docs/plans/decoders-app.md, DA-10) on scene_aprs, over the seven
+  # stations decoders-aprs reads. Notify Me… opens a sheet whose fields are the manifest's TEXT
+  # and INTEGER hints after device_id, and whose place and radius show because the records carry
+  # positions; it builds the predicate `ley watch --where device_id=N0CALL-3` sends and starts it
+  # as a kept job with a macOS notification. The watch is listed under APRS in the sidebar with
+  # its condition in words and Stop, apart from the plain run, so Start still shows; a terminal's
+  # `ley --json jobs` shows the predicate and the notifier. Its Stop ends that job alone.
+  - name: decoders-watch
+    covers: [DecoderWatchSheet.swift, Watches.swift, DecodersView.swift, DecoderSession.swift,
+      DecoderPages.swift]
+    threshold: 1.5
+    fixtures: [{name: scene_aprs}]
+    clock: "19:42"
+    steps:
+      - ley: [decode, aprs, --job, --count, "7"]
+      - ley: [jobs, cancel, job_]
+    stage:
+      place: decoders
+      inspector: true
+      decoder: aprs
+      settle: 2
+    app:
+      - {cmd: press, identifier: decoders.page.notify}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {alert.title: Notify me}}
+      - {cmd: pick, identifier: decoders.watch.field, text: device_id}
+      - {cmd: pick, identifier: decoders.watch.test, text: is}
+      - {cmd: press, identifier: decoders.watch.value}
+      - {cmd: type, text: N0CALL-3}
+      - {cmd: snapshot, name: sheet}
+      - {cmd: ax, name: sheet, window: sheet}
+      - {cmd: press, identifier: decoders.watch.start}
+      - {cmd: wait, seconds: 2, expect_log: "job_\\w+ watching: aprs at 144390000 Hz for device_id is N0CALL-3"}
+      - {cmd: state, expect: {alert: null, decoders.watches.0: "device_id is N0CALL-3", decoders.start_shown: true, decoders.header: null, decoders.notice: null}}
+      - {cmd: snapshot, name: watching}
+      - {cmd: ax, name: watching}
+      - {cmd: ley, args: [--json, jobs], expect_stdout: ['"predicate":\s*\{"all":\s*\[\{"field":\s*\{"field":\s*"device_id",\s*"op":\s*"PRED_EQ",\s*"values":\s*\[\{"text":\s*"N0CALL-3"\}\]', '"macosNotification":\s*true', '"keep":\s*true']}
+      - {cmd: press, identifier: decoders.decoder.aprs.watch.0.stop}
+      - {cmd: wait, seconds: 2, expect_log: "job_\\w+ stopped"}
+      - {cmd: state, expect: {decoders.start_shown: true, decoders.notice: null}}
+      - {cmd: snapshot, name: stopped}
+
   # The transport bar at the window's smaller sizes (docs/plans/app.md, decision 13): the Mode
   # and Width pop-ups keep their labels on one line at 900 × 612 pt (the minimum), 1000 and
   # 1100 pt, with and without the inspector, through the longest widths a band or a mode

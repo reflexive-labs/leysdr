@@ -115,9 +115,13 @@ extension View {
             // A text field takes the focus as a click gives it, its window's first responder: the
             // API's focus is answered as set without the field editor moving in, and the keys that
             // follow would reach no field.
-            if let field = AXWalk.textField(identifier, ObjectNode(object: window)) {
+            // A field in the sheet over the window is focused in the sheet, which takes the keys.
+            for w in [window.attachedSheet, window].compactMap({ $0 }) {
+                guard let field = AXWalk.textField(identifier, ObjectNode(object: w)) else {
+                    continue
+                }
                 guard field.isEnabled else { return .disabled(identifier) }
-                return window.makeFirstResponder(field)
+                return w.makeFirstResponder(field)
                     ? nil : PressRefusal("\(identifier) refused the focus")
             }
             return AXWalk.press(identifier, TreeTarget(window))
@@ -135,7 +139,12 @@ extension View {
         /// a person's choice from its menu would, without opening the menu (whose tracking loop
         /// would hold the command file until it closed). Answers why not.
         static func pick(_ identifier: String, item: String, in window: NSWindow) -> String? {
-            AXWalk.pick(identifier, item: item, ObjectNode(object: window))
+            // The sheet over the window first, whose controls a walk of the window may not reach.
+            if let sheet = window.attachedSheet {
+                let why = AXWalk.pick(identifier, item: item, ObjectNode(object: sheet))
+                if why?.hasPrefix("no element has") != true { return why }
+            }
+            return AXWalk.pick(identifier, item: item, ObjectNode(object: window))
         }
 
         /// Every element under `window` whose identifier starts with `prefix`, in tree order.

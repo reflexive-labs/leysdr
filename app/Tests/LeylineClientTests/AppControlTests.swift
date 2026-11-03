@@ -211,7 +211,7 @@ final class AppControlTests: XCTestCase {
                 "alerts", "decoder", "detail", "header", "kind_column", "listed", "notice",
                 "placement", "record_count", "rows", "selected_transmitter", "start_enabled",
                 "start_shown", "state", "tab", "table_heads", "table_rows", "tabs",
-                "transmitters",
+                "transmitters", "watches",
             ])
         XCTAssertEqual(d["record_count"] as? Int, 7)
         XCTAssertTrue(d["placement"] is NSNull)

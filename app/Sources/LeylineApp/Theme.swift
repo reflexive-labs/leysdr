@@ -376,6 +376,9 @@ enum Theme {
         static let chipRadius: CGFloat = 3
         /// The Transcribe again sheet's width.
         static let transcribeSheetWidth: CGFloat = 380
+        /// The Notify Me… sheet's width, and its radius field's beside the place.
+        static let watchSheetWidth: CGFloat = 420
+        static let watchRadiusWidth: CGFloat = 90
         /// The player's progress track, and the inspector's tables' label column at the reading
         /// rows' 62 pt so the two panels line up.
         static let partProgressHeight: CGFloat = 3

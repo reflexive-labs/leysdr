@@ -579,6 +579,7 @@ import LeylineClient
                 let line = s.speech(for: row.jobID)?.shown(part: row.part)
                     .first { row.holds(over: $0.over) }
                 return line.map { "\(kind): \($0.text)" } ?? kind
+            out.watches = Watches.watches(of: m, in: s.state.jobs).map(Watches.words)
             }
         }
 

@@ -56,6 +56,8 @@ final class DecoderSession {
     private(set) var notice: String? {
         didSet { if let n = notice, n != oldValue { log("shown", "decoders: \(n)") } }
     }
+    /// The decoder whose Notify Me… sheet is up, by manifest name, or nil. Presentation only.
+    var watchFor: String?
     /// The clock the alerts and the expiry read, moved every `tickSeconds` while a page shows.
     private(set) var now = Date()
 
@@ -124,6 +126,13 @@ final class DecoderSession {
                 "decoders",
                 "job \(j.jobID) \(d.decoder) \(DecoderPages.stateWord(j).lowercased())"
                     + (DecoderPages.detail(j).isEmpty ? "" : ": \(DecoderPages.detail(j))"))
+            if d.hasPredicate {
+                // A watch is not Start's: its end is the page's notice, in its own words.
+                if j.state == .failed {
+                    notice = "The watch for \(Watches.words(j)) stopped: \(DecoderPages.detail(j))"
+                }
+                continue
+            }
             if let s = starting,
                 d.decoder == s || manifest(named: s)?.aliases.contains(d.decoder) == true
             {
@@ -424,6 +433,32 @@ final class DecoderSession {
                 log("decoders", "\(j.jobID) not stopped: \(e.code) \(e.message)")
                 notice = "Could not stop \(j.jobID): \(e.message.isEmpty ? e.code : e.message)"
             }
+        }
+    }
+
+    // MARK: Watches
+
+    /// Notify Me…'s start: the kept job `Watches.config` builds, on the frequency Start would
+    /// use, with the predicate and a macOS notification, never taking a radio. True when the
+    /// daemon took it; a refusal is the page's notice.
+    func startWatch(
+        _ m: Leyline_V1_DecoderManifest, frequencyHz: UInt64, predicate: Leyline_V1_Predicate
+    ) async -> Bool {
+        guard let daemon else { return false }
+        var req = Leyline_V1_StartJobRequest()
+        req.decode = Watches.config(
+            decoder: m.name, frequencyHz: frequencyHz, predicate: predicate)
+        let words = Watches.words(predicate)
+        notice = nil
+        do {
+            let job = try await daemon.jobs.startJob(req)
+            log("decoders", "\(job.jobID) watching: \(m.name) at \(frequencyHz) Hz for \(words)")
+            return true
+        } catch {
+            let e = LeylineError(error)
+            log("decoders", "watch on \(m.name) refused: \(e.code) \(e.message)")
+            notice = "Could not start the watch: \(e.message.isEmpty ? e.code : e.message)"
+            return false
         }
     }
 

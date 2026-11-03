@@ -1,0 +1,99 @@
+{
+  "cases": [
+    {
+      "name": "no filter matches everything",
+      "predicate": null
+    },
+    {
+      "name": "one station",
+      "where": ["device_id=LEYTST-1"],
+      "predicate": {"all": [{"field": {"field": "device_id", "op": "PRED_EQ", "values": [{"text": "LEYTST-1"}]}}]}
+    },
+    {
+      "name": "an integer field compared as ley watch sends it, as text",
+      "where": ["center_hz=144390000"],
+      "predicate": {"all": [{"field": {"field": "center_hz", "op": "PRED_EQ", "values": [{"text": "144390000"}]}}]}
+    },
+    {
+      "name": "not equal",
+      "where": ["kind!=weather"],
+      "predicate": {"all": [{"field": {"field": "kind", "op": "PRED_NE", "values": [{"text": "weather"}]}}]}
+    },
+    {
+      "name": "contains words in order",
+      "where": ["text~net control"],
+      "predicate": {"all": [{"field": {"field": "text", "op": "PRED_CONTAINS", "values": [{"text": "net control"}]}}]}
+    },
+    {
+      "name": "only when it is warm",
+      "where": ["temp_c>25"],
+      "predicate": {"all": [{"field": {"field": "temp_c", "op": "PRED_GT", "values": [{"number": 25}]}}]}
+    },
+    {
+      "name": "the numeric operators, longest first",
+      "where": ["a>=1.5", "b<=2", "c<-3"],
+      "predicate": {"all": [
+        {"field": {"field": "a", "op": "PRED_GTE", "values": [{"number": 1.5}]}},
+        {"field": {"field": "b", "op": "PRED_LTE", "values": [{"number": 2}]}},
+        {"field": {"field": "c", "op": "PRED_LT", "values": [{"number": -3}]}}
+      ]}
+    },
+    {
+      "name": "a value holding an operator keeps it",
+      "where": ["comment=a=b"],
+      "predicate": {"all": [{"field": {"field": "comment", "op": "PRED_EQ", "values": [{"text": "a=b"}]}}]}
+    },
+    {
+      "name": "a county as its SAME code is its FIPS code",
+      "county": ["006001"],
+      "predicate": {"all": [{"field": {"field": "fips", "op": "PRED_CONTAINS", "values": [{"text": "06001"}]}}]}
+    },
+    {
+      "name": "several counties are one clause",
+      "county": ["06009", "006001"],
+      "predicate": {"all": [{"field": {"field": "fips", "op": "PRED_CONTAINS", "values": [{"text": "06009"}, {"text": "06001"}]}}]}
+    },
+    {
+      "name": "a place and a radius",
+      "near": "37.76,-122.42",
+      "radius": "10km",
+      "predicate": {"all": [{"geo": {"center": {"latitude": 37.76, "longitude": -122.42}, "radiusM": 10000}}]}
+    },
+    {
+      "name": "nautical miles, spaces and capitals",
+      "near": " 52.25 , -3.9 ",
+      "radius": "5NM",
+      "predicate": {"all": [{"geo": {"center": {"latitude": 52.25, "longitude": -3.9}, "radiusM": 9260}}]}
+    },
+    {
+      "name": "metres and miles",
+      "near": "0,0",
+      "radius": "2mi",
+      "predicate": {"all": [{"geo": {"center": {}, "radiusM": 3218.688}}]}
+    },
+    {
+      "name": "every kind of clause, in the order ley watch puts them",
+      "where": ["device_id=N0CALL-3"],
+      "county": ["06009"],
+      "near": "37.76,-122.42",
+      "radius": "500m",
+      "predicate": {"all": [
+        {"field": {"field": "device_id", "op": "PRED_EQ", "values": [{"text": "N0CALL-3"}]}},
+        {"field": {"field": "fips", "op": "PRED_CONTAINS", "values": [{"text": "06009"}]}},
+        {"geo": {"center": {"latitude": 37.76, "longitude": -122.42}, "radiusM": 500}}
+      ]}
+    },
+    {"name": "no operator", "where": ["device_id"], "error": true},
+    {"name": "no field", "where": ["=LEYTST-1"], "error": true},
+    {"name": "no value", "where": ["device_id="], "error": true},
+    {"name": "a number operator with text", "where": ["temp_c>warm"], "error": true},
+    {"name": "a county of four digits", "county": ["6009"], "error": true},
+    {"name": "a county with a letter", "county": ["06OO9"], "error": true},
+    {"name": "a place without a radius", "near": "37.76,-122.42", "error": true},
+    {"name": "a radius without a place", "radius": "10km", "error": true},
+    {"name": "a place off the globe", "near": "91,0", "radius": "10km", "error": true},
+    {"name": "a place that is one number", "near": "37.76", "radius": "10km", "error": true},
+    {"name": "a radius with no unit", "near": "37.76,-122.42", "radius": "10", "error": true},
+    {"name": "a radius of nothing", "near": "37.76,-122.42", "radius": "0km", "error": true}
+  ]
+}
