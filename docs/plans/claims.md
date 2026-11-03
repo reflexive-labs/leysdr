@@ -56,9 +56,21 @@ where the step says so.
   rides the next capture event or one a second later: 50 streams opened and closed in 0.1 s made
   one capture event. Not done: the app's inspector showing `displaced_by` (app work), and the
   design's priority rule beyond these three changes (CL-4, CL-5).
-- [ ] **CL-4 Return and sharing.** Automatic return after a job's or sweep's displacement, rate
+- [x] **CL-4 Return and sharing.** Automatic return after a job's or sweep's displacement, rate
   included, replacing `restoreCenterHz` and the sweep restore; a capture lives while any claim
   holds it (DEC-19).
+  Done 2026-11-02 in the engine and the Go fake (`CaptureReturnTests`; engine-internals.md,
+  "Claims", "Returning and sharing"). A job's move notes where it found the capture (centre,
+  rate, and the gains when it set its own); when the job lets go the capture goes back there,
+  unless a person has moved it since (nothing returns), a claim made since on the new tuning
+  would be displaced, or, when somebody else moved it since, any claim would be left
+  unsatisfied. A return that cannot happen yet waits for the next release on the capture, so a
+  capture another job joined goes back when that one ends too. The target is the tuning the job
+  found rather than one chosen for the highest-priority displaced claim: it is where every claim
+  the job displaced was satisfied. A take_over IQ decoder now puts the centre and rate back, which
+  it did not before. A capture the allocator made goes with its last CHANNEL, IQ or SWEEP claim,
+  a person's channel included; views and presences do not hold it. The Go fake keeps a capture
+  made for a job while any job's channel is on it.
 - [ ] **CL-5 One confirmation in the clients.** `ley tune --retune` and the app's retune and
   Start confirmations read `Control.Plan`'s displaced list; the app asks about any job, not only
   recordings; MCP's 3 s own-write waiver is replaced by the same rule.

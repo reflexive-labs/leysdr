@@ -244,9 +244,11 @@ things stand" and `docs/plans/build-order.md` gain D.17; `CHANGELOG.md`; `ley he
   end to end (it read -20 dBFS off the -20 dBFS `nfm_tone` fixture). This is the enabler the
   wideband drivers need. Correct for one decoder per capture; sharing a daemon-created capture
   across IQ decoders needs capture refcounting -- DEC-19.
-- DEC-19 `[ ]` Capture refcounting so several IQ decoders share one daemon-created wide capture
-  (the multiplexing story: twenty rtl_433 decoders on one 433 MHz capture). Today the IQ lease's
-  creator destroys the capture on release, which is wrong if another decoder still taps it.
+- DEC-19 `[x]` Capture refcounting so several IQ decoders share one daemon-created wide capture
+  (the multiplexing story: twenty rtl_433 decoders on one 433 MHz capture). Done 2026-11-02 as
+  CL-4 of `claims.md`: a capture the allocator made lives while any channel, IQ or sweep claim
+  holds it, whoever made the claim, so cancelling the decoder that made it leaves the others
+  reading (`CaptureReturnTests`).
 - DEC-20 `[x]` AIS, a marine vessel decoder (`leydec-ais`): 9600-baud GMSK on 161.975/162.025 MHz
   decoded from the NFM discriminator (no IQ input needed), parsing the Class A/B position and static
   messages into records keyed by MMSI, checked against the gpsd reference vectors. It is not one of
