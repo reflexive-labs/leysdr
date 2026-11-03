@@ -1290,7 +1290,8 @@ scenes:
   # radio"). Before the app starts, the fixture's channel is stopped, a terminal's `ley tune
   # 146.94 --persistent` plays and a recording tunes 147.18 after it: the window takes the
   # terminal's channel, the newest that is not a recording's, with no sink of its own, says the
-  # audio plays through another terminal and disables its mute and volume. The daemon is then
+  # audio plays through another terminal and disables its mute and volume; `ley state` names the
+  # app for its spectrum view alone, no capture, channel or person's claim. The daemon is then
   # stopped and started again, which plays the fixture anew, and `ley ask` tunes the club
   # repeater: the window still follows. Muted, the window is disconnected once more, and a
   # terminal tunes the evening net with no audio as the daemon comes back: the window reconnects
@@ -1312,7 +1313,7 @@ scenes:
       settle: 3
     app:
       - {cmd: state, expect: {tuned_hz: 146940000, bookmark: Club repeater, sink: other, muted: false}}
-      - {cmd: ley, args: [state], expect_stdout: ["!by app:Leyline", "147.180 MHz"]}
+      - {cmd: ley, args: [state], expect_stdout: ["!(?m)^[ │├└─]*(capture .*|channel .*|claim person .*)?by app:Leyline$", "147.180 MHz"]}
       - {cmd: snapshot, name: launched}
       - {cmd: ax, name: launched}
       - {cmd: daemon, op: stop}
@@ -1333,7 +1334,7 @@ scenes:
       - {cmd: ley, args: [tune, "147.18", --persistent, --no-audio]}
       - {cmd: wait, seconds: 6}
       - {cmd: state, expect: {tuned_hz: 147180000, bookmark: Evening net, muted: true, sink: none}}
-      - {cmd: ley, args: [state], expect_stdout: "!by app:Leyline"}
+      - {cmd: ley, args: [state], expect_stdout: "!(?m)^[ │├└─]*(capture .*|channel .*|claim person .*)?by app:Leyline$"}
 
   # GMRS's plan (docs/plans/app.md, U4) on scene_gmrs, which the fixture's play tunes to ch5:
   # GMRS is one row, the tuned one; the rail shows the 462 MHz half's channels only; the inspector
