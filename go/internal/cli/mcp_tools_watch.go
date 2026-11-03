@@ -103,6 +103,12 @@ func (srv *mcpServer) watch(ctx context.Context, _ *mcp.CallToolRequest, in watc
 	if err != nil {
 		return nil, nil, toolError(decodeToolFailure(o.decoder, err))
 	}
+	// A watch the daemon declines after StartJob answered fires nothing, so the agent hears the
+	// reason rather than a banner; ley watch --detach waits the same way.
+	job = s.settledJob(ctx, job)
+	if err := decodeToolEnded(o.decoder, job); err != nil {
+		return nil, nil, toolError(err)
+	}
 	fmt.Fprintf(out, "%s\njob %s", watchWhat(ctx, s, job, o), job.GetJobId())
 	if in.Keep {
 		fmt.Fprint(out, ", kept: it runs on after this server exits and keeps firing; cancel_job stops it.\n")

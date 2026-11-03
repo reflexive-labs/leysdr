@@ -227,6 +227,13 @@ Notes a table cell cannot hold:
   `list_entities` only; with `keep` the job runs on, its records are stored, and `query_records`
   (or the resource below) reads them. An alias a manifest lists (`vessels` for `ais`) resolves to
   the canonical decoder before the job starts, as `ley decode vessels` does.
+- **`start_decode_job`** and **`watch`** wait up to 3 s for the daemon to take the job, because
+  the daemon answers `StartJob` before it has placed the job on a radio, as `ley watch --detach`
+  waits. A job the daemon declines in that time is a tool error with the daemon's reason and code
+  and the tool to call next: `Fake RTL-SDR cannot tune to 144.390 MHz (a file radio plays what it
+  recorded). list_devices lists the radios here and what each can tune; device or frequency picks
+  another [NO_DEVICE]` (from the contract's fake daemon). A job that is still running after the
+  wait is returned as before.
 
 - **`record`** is the one tool that waits: it starts the job, waits for it and returns the finished
   `Job`, so one call completes a bounded recording instead of requiring a start and a

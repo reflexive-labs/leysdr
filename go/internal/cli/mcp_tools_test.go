@@ -343,6 +343,26 @@ func TestMCPWatchBusyRadioAndWebhook(t *testing.T) {
 	h.must(t, "cancel_job", map[string]any{"job": job.GetJobId()})
 }
 
+// start_decode_job and watch wait for the daemon to take the job, so one it declines after
+// StartJob answered is a tool error with the daemon's reason, its code and the tool to call
+// next, rather than a job reported as running.
+func TestMCPDecodeToolsReportADecline(t *testing.T) {
+	t.Parallel()
+	h := newMCPHarnessWith(t, declineEverything)
+	for _, tool := range []string{"start_decode_job", "watch"} {
+		r := h.call(t, tool, map[string]any{"decoder": "aprs", "keep": true})
+		text := resultText(r)
+		if !r.IsError {
+			t.Fatalf("%s: a declined job must be a tool error:\n%s", tool, text)
+		}
+		for _, want := range []string{"cannot tune to 144.390 MHz", "[NO_DEVICE]", "list_devices"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s: the error lacks %q:\n%s", tool, want, text)
+			}
+		}
+	}
+}
+
 // attach_device adds an rtl_tcp radio as ley devices attach does, and a recording as a file
 // device as ley play does before it tunes.
 func TestMCPAttachDevice(t *testing.T) {

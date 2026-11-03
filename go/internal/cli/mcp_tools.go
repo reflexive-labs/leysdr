@@ -1441,24 +1441,33 @@ func (srv *mcpServer) startDecodeJob(ctx context.Context, _ *mcp.CallToolRequest
 		}
 		cfg.FrequencyHz = hz
 	}
-	st, err := c.State(ctx)
+	// A session of its own, as the watch tool has, so the wait below follows the job's events.
+	app, _, _ := srv.toolApp()
+	s, err := openSession(ctx, app)
 	if err != nil {
-		return nil, nil, toolError(srv.app.notRunning(err))
+		return nil, nil, toolError(err)
 	}
+	defer s.Close()
 	if in.Device != "" {
-		d, err := pickDevice(st, in.Device)
+		d, err := pickDevice(s.State, in.Device)
 		if err != nil {
 			return nil, nil, toolError(err)
 		}
 		cfg.DeviceId = d.GetDeviceId()
 	}
 	var note string
-	if !cfg.TakeOver && srv.ownGrace(st, cfg.DeviceId) {
+	if !cfg.TakeOver && srv.ownGrace(s.State, cfg.DeviceId) {
 		cfg.TakeOver, note = true, ownGraceNote
 	}
-	job, err := c.StartDecode(ctx, cfg)
+	job, err := s.Client.StartDecode(ctx, cfg)
 	if err != nil {
 		return nil, nil, toolError(decodeToolFailure(cfg.Decoder, err))
+	}
+	// The daemon answers StartJob before it has placed the job on a radio, so a job no radio can
+	// take would otherwise read as started. ley watch --detach waits the same way.
+	job = s.settledJob(ctx, job)
+	if err := decodeToolEnded(cfg.Decoder, job); err != nil {
+		return nil, nil, toolError(err)
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s: job %s", job.GetStatusDetail(), job.GetJobId())
@@ -1481,8 +1490,35 @@ func decodeToolFailure(decoder string, err error) error {
 		return fmt.Errorf("%s. take_over: true decodes anyway, and hands the radio back afterwards", leylineMessage(err, "the radio is busy"))
 	case leyline.CodeDecoderFailed:
 		return fmt.Errorf("%s. 'ley daemon logs' carries what the plugin wrote", leylineMessage(err, "the decoder would not start"))
+	case leyline.CodeNoDevice, leyline.CodeFreqOutOfRange:
+		// Wrapped, so the tool error keeps the code in brackets.
+		return fmt.Errorf("%w. list_devices lists the radios here and what each can tune; device or frequency picks another", err)
 	}
 	return err
+}
+
+// decodeToolEnded is the tool error for a decode job that ended within the tool's wait: the
+// daemon declined it after StartJob answered (no radio can place it), it failed, or another
+// client cancelled it. nil when the job has not ended.
+func decodeToolEnded(decoder string, job *leylinev1.Job) error {
+	msg := job.GetStatusDetail()
+	switch job.GetState() {
+	case leylinev1.JobState_FAILED:
+		e := job.GetError()
+		if msg == "" {
+			msg = e.GetMessage()
+		}
+		if msg == "" {
+			msg = "the decoder stopped"
+		}
+		if e.GetCode() == "" {
+			return fmt.Errorf("%s. daemon_logs carries what the daemon wrote", msg)
+		}
+		return decodeToolFailure(decoder, &leyline.Error{Code: e.GetCode(), Message: msg, Target: e.GetTarget()})
+	case leylinev1.JobState_CANCELLED:
+		return fmt.Errorf("another client cancelled the decode job %s (%s)", job.GetJobId(), msg)
+	}
+	return nil
 }
 
 // ---------- jobs ----------
