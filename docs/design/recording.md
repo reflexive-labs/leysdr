@@ -352,8 +352,10 @@ message naming the free space; a code a client can branch on is added when a cli
 subscription. While `RUNNING`, `status_detail` carries liveness the way a decode job's does, on
 the same two-second cadence: "recording audio: 1 m 12 s, 3 parts, 6.9 MB", or for a gated
 recording that is waiting, "recording audio: 4 m 02 s, 3 parts, squelch closed 38 s". The
-recording's capture retuned away is `DEGRADED` with "out of capture since 14:05:10, will resume
-when 146.520 MHz is back"; `CancelJob` finalises the files and ends `CANCELLED`, and that is the
+recording's capture retuned away is `DEGRADED` with who moved it and where once the move is
+published ("paused since 14:05:10: the app tuned NESDR SMArt v5 to 162.400 MHz; resumes when
+146.520 MHz is back in the capture"), and "out of capture since 14:05:10, will resume when
+146.520 MHz is back" until then or when the radio went away; `CancelJob` finalises the files and ends `CANCELLED`, and that is the
 normal way an open-ended recording stops, so a cancelled recording is complete, not damaged.
 
 ## The daemon
@@ -378,7 +380,8 @@ unchanged); IQ arrives through a `CaptureTap` writing into a slot ring the same 
 and patches them on close, or appends cf32; it writes the part sidecar on close; it appends the
 part to the manifest and rewrites the manifest atomically. It closes a part when the part timer
 elapses, when the gate closes (below), when the capture's centre or rate changes under an IQ
-recording (the next part carries the new centre, and a gap is recorded), and when the job ends.
+recording (the next part carries the new centre; a capture that no longer covers the frequency
+at the recording's rate pauses it, and the span is a gap), and when the job ends.
 Peak and mean dBFS are accumulated per part from the samples as they pass, off the hot path.
 
 **The gate reads the squelch's own transitions, not the audio.** The `.audio` tap is zeros while

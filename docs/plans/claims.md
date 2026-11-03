@@ -32,7 +32,7 @@ where the step says so.
   not yet run. The app's `DecoderPlacement` was replaced by a call to `Control.Plan` on
   2026-11-02 (`DecoderPlacementTests` words each plan kind; docs/dev/app.md, "The Decoders
   place"); its copy of the allocator and those tests are gone.
-- [ ] **CL-3 Uniform displacement.** `tuning_generation` on `Capture` and bulk frames; IQ
+- [x] **CL-3 Uniform displacement.** `tuning_generation` on `Capture` and bulk frames; IQ
   recordings start a new part when displaced and resumed; views carry the centre per row; the
   DEGRADED detail names who moved the radio; displaced claims on capture events.
   From the CL-1 review: a VIEW claim's arrival or release does not publish a capture event on
@@ -43,6 +43,19 @@ where the step says so.
   a retune that leaves a claim satisfied does not count it as displaced, so it does not decline a
   job; a radio held by a sweep declines with DEVICE_BUSY naming the sweep, not a silent NO_DEVICE;
   and "cannot reach this frequency" is NO_DEVICE however it arises, "in use" is DEVICE_BUSY.
+  Done 2026-11-02 in the engine, `ley` and the Go fake (`DisplacementTests`,
+  `RecordingJobTests+Retune`, `CapturePlannerTests`; engine-internals.md, "Claims" and "Bulk
+  service"). `Capture.tuning_generation` and `Frame.center_hz`, `span_hz` and `tuning_generation`
+  are new; `ley spectrum`, `waterfall`, `phosphor`, `fft` and MCP's spectrum label each row from
+  its frame. The first event that sees a move records the mover (named before the engine is
+  touched, so the allocator's and a sweep's moves name the job), and a job's DEGRADED detail says
+  it once published: "paused: the app tuned NESDR SMArt v5 to 146.520 MHz; resumes when …". An IQ
+  decoder's claim is now the centre it was handed, exactly, at its rate, because its runner holds
+  the plugin to that tuning; an IQ recording's is its frequency in span at its rate, so a dedicated
+  decoder may centre a capture under a recording, which goes on in a new part. A view's claim
+  rides the next capture event or one a second later: 50 streams opened and closed in 0.1 s made
+  one capture event. Not done: the app's inspector showing `displaced_by` (app work), and the
+  design's priority rule beyond these three changes (CL-4, CL-5).
 - [ ] **CL-4 Return and sharing.** Automatic return after a job's or sweep's displacement, rate
   included, replacing `restoreCenterHz` and the sweep restore; a capture lives while any claim
   holds it (DEC-19).

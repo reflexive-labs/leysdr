@@ -1,7 +1,7 @@
 # Design: Capture claims
 
-Status: proposed 2026-11-02; CL-1 (the ledger) and CL-2 (`plan`, `Control.Plan`) implemented
-2026-11-02, the rest not yet. The work is `../plans/claims.md`. Companion to `control-plane.md` ("Arbitration"), whose rules this
+Status: proposed 2026-11-02; CL-1 (the ledger), CL-2 (`plan`, `Control.Plan`) and CL-3 (uniform
+displacement) implemented 2026-11-02, the rest not yet. The work is `../plans/claims.md`. Companion to `control-plane.md` ("Arbitration"), whose rules this
 keeps, and to `scan.md`, `recording.md` and `decoders.md`, whose don't-disturb sections it
 replaces with one rule.
 
