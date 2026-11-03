@@ -464,6 +464,25 @@ func TestWithCode(t *testing.T) {
 	}
 }
 
+// A relative --socket is resolved against the working directory before ley dials it: gRPC reads
+// "unix://" and a relative path as an authority and a path, so a live daemon's socket named
+// relatively was reported stale.
+func TestRelativeSocketReachesTheDaemon(t *testing.T) {
+	t.Parallel()
+	sock, _ := harness(t, fakedaemon.Options{})
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel, err := filepath.Rel(wd, sock)
+	if err != nil || filepath.IsAbs(rel) {
+		t.Fatalf("no relative path from %s to %s: %v", wd, sock, err)
+	}
+	if out := mustRun(t, rel, "devices"); !strings.Contains(out, "AVAILABLE") {
+		t.Errorf("ley --socket %s devices:\n%s", rel, out)
+	}
+}
+
 func TestExitCodeNotRunning(t *testing.T) {
 	dead := testutil.SocketPath(t, "nobody.sock")
 	for _, args := range [][]string{{"state"}, {"devices"}, {"spectrum", "101.1"}, {"fft", "--freq", "101.1M"}, {"daemon", "status"}} {

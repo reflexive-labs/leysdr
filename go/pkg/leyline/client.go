@@ -104,6 +104,12 @@ func Dial(_ context.Context, socketPath string, opts ...Option) (*Client, error)
 	if socketPath == "" {
 		socketPath = DefaultSocketPath()
 	}
+	// gRPC reads "unix://" followed by a relative path as an authority and a path ("unix://run/
+	// leyline.sock" dials /leyline.sock), so a relative path is made absolute against the
+	// working directory first.
+	if abs, err := filepath.Abs(socketPath); err == nil {
+		socketPath = abs
+	}
 	c := &Client{
 		path:  socketPath,
 		id:    ProcessClientID(),

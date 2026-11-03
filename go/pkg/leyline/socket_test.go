@@ -48,3 +48,20 @@ func TestPidAndLogPathsFollowSocketName(t *testing.T) {
 		t.Errorf("override: %q %q %q", sock, PidPathFor(sock), LogPathFor(sock))
 	}
 }
+
+// Dial makes a relative socket path absolute against the working directory, because gRPC reads
+// "unix://run/leyline.sock" as the authority "run" and the path "/leyline.sock".
+func TestDialResolvesARelativeSocket(t *testing.T) {
+	c, err := Dial(t.Context(), filepath.Join("run", "leyline.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(wd, "run", "leyline.sock"); c.path != want {
+		t.Errorf("dialled %q, want %q", c.path, want)
+	}
+}

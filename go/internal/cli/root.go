@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -381,12 +382,17 @@ func fileMissing(path, hint string) error {
 	return fmt.Errorf("there is no file at %s; %s", path, hint)
 }
 
-// socketPath resolves the effective socket path.
+// socketPath resolves the effective socket path, a relative one against the working directory,
+// so the path ley dials, stats, prints and hands a daemon it starts is the same file.
 func (a *App) socketPath() string {
-	if a.Socket != "" {
-		return a.Socket
+	p := a.Socket
+	if p == "" {
+		p = leyline.DefaultSocketPath()
 	}
-	return leyline.DefaultSocketPath()
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return p
 }
 
 // dial connects to the daemon with the CLI identity (or the one clientKind
