@@ -13,13 +13,7 @@ extension JobStore {
     // MARK: Starting a scan
 
     func startScan(config: Leyline_V1_ScanConfig, by client: ClientContext) async throws -> Leyline_V1_Job {
-        if case .recurring = config.schedule {
-            throw EngineError.invalidArgument("a recurring scan needs a job store that survives a restart, which does not exist yet; use once",
-                                              target: "")
-        }
-        guard config.hasRange, config.range.maxHz > config.range.minHz else {
-            throw EngineError.invalidArgument("a scan needs a frequency range with max above min", target: "")
-        }
+        try Self.checkScan(config)
         let id = JobID()
         let scanID = ScanID()
         var job = Leyline_V1_Job()
@@ -48,6 +42,17 @@ extension JobStore {
         trim()
         await store.publishJob(job)
         return job
+    }
+
+    /// The refusals a scan request meets before it is a job.
+    static func checkScan(_ config: Leyline_V1_ScanConfig) throws {
+        if case .recurring = config.schedule {
+            throw EngineError.invalidArgument("a recurring scan needs a job store that survives a restart, which does not exist yet; use once",
+                                              target: "")
+        }
+        guard config.hasRange, config.range.maxHz > config.range.minHz else {
+            throw EngineError.invalidArgument("a scan needs a frequency range with max above min", target: "")
+        }
     }
 
     private func run(_ id: JobID, config: Leyline_V1_ScanConfig) async {

@@ -41,6 +41,7 @@ const (
 	Control_DetachDevice_FullMethodName      = "/leyline.v1.Control/DetachDevice"
 	Control_AttachFileDevice_FullMethodName  = "/leyline.v1.Control/AttachFileDevice"
 	Control_DetachFileDevice_FullMethodName  = "/leyline.v1.Control/DetachFileDevice"
+	Control_Plan_FullMethodName              = "/leyline.v1.Control/Plan"
 )
 
 // ControlClient is the client API for Control service.
@@ -74,6 +75,15 @@ type ControlClient interface {
 	DetachDevice(ctx context.Context, in *DetachDeviceRequest, opts ...grpc.CallOption) (*Empty, error)
 	AttachFileDevice(ctx context.Context, in *AttachFileDeviceRequest, opts ...grpc.CallOption) (*DeviceDescriptor, error)
 	DetachFileDevice(ctx context.Context, in *DetachFileDeviceRequest, opts ...grpc.CallOption) (*Empty, error)
+	// What a request would do, without doing it (docs/design/claims.md, "One decision: plan"):
+	// where a decode, a recording, a scan or a monitor would be placed, or what a retune would
+	// move, with the claims it would displace or that stop it. The daemon's own placement makes
+	// the same decision, so a plan is what StartJob or WriteParams would do as things stand now;
+	// nothing is reserved, and a later change of state can change the answer. Read-only. The
+	// request is checked as StartJob checks it, so a decoder that is not installed or a recording
+	// with no frequency is the same RPC error here; a decode of a stored recording needs no radio
+	// and is INVALID_ARGUMENT.
+	Plan(ctx context.Context, in *PlanRequest, opts ...grpc.CallOption) (*CapturePlan, error)
 }
 
 type controlClient struct {
@@ -266,6 +276,16 @@ func (c *controlClient) DetachFileDevice(ctx context.Context, in *DetachFileDevi
 	return out, nil
 }
 
+func (c *controlClient) Plan(ctx context.Context, in *PlanRequest, opts ...grpc.CallOption) (*CapturePlan, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CapturePlan)
+	err := c.cc.Invoke(ctx, Control_Plan_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ControlServer is the server API for Control service.
 // All implementations must embed UnimplementedControlServer
 // for forward compatibility.
@@ -297,6 +317,15 @@ type ControlServer interface {
 	DetachDevice(context.Context, *DetachDeviceRequest) (*Empty, error)
 	AttachFileDevice(context.Context, *AttachFileDeviceRequest) (*DeviceDescriptor, error)
 	DetachFileDevice(context.Context, *DetachFileDeviceRequest) (*Empty, error)
+	// What a request would do, without doing it (docs/design/claims.md, "One decision: plan"):
+	// where a decode, a recording, a scan or a monitor would be placed, or what a retune would
+	// move, with the claims it would displace or that stop it. The daemon's own placement makes
+	// the same decision, so a plan is what StartJob or WriteParams would do as things stand now;
+	// nothing is reserved, and a later change of state can change the answer. Read-only. The
+	// request is checked as StartJob checks it, so a decoder that is not installed or a recording
+	// with no frequency is the same RPC error here; a decode of a stored recording needs no radio
+	// and is INVALID_ARGUMENT.
+	Plan(context.Context, *PlanRequest) (*CapturePlan, error)
 	mustEmbedUnimplementedControlServer()
 }
 
@@ -357,6 +386,9 @@ func (UnimplementedControlServer) AttachFileDevice(context.Context, *AttachFileD
 }
 func (UnimplementedControlServer) DetachFileDevice(context.Context, *DetachFileDeviceRequest) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method DetachFileDevice not implemented")
+}
+func (UnimplementedControlServer) Plan(context.Context, *PlanRequest) (*CapturePlan, error) {
+	return nil, status.Error(codes.Unimplemented, "method Plan not implemented")
 }
 func (UnimplementedControlServer) mustEmbedUnimplementedControlServer() {}
 func (UnimplementedControlServer) testEmbeddedByValue()                 {}
@@ -667,6 +699,24 @@ func _Control_DetachFileDevice_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Control_Plan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PlanRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControlServer).Plan(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Control_Plan_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControlServer).Plan(ctx, req.(*PlanRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Control_ServiceDesc is the grpc.ServiceDesc for Control service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -733,6 +783,10 @@ var Control_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DetachFileDevice",
 			Handler:    _Control_DetachFileDevice_Handler,
+		},
+		{
+			MethodName: "Plan",
+			Handler:    _Control_Plan_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

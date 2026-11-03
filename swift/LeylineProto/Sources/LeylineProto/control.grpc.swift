@@ -246,6 +246,19 @@ public enum Leyline_V1_Control: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "Plan" metadata.
+        public enum Plan: Sendable {
+            /// Request type for "Plan".
+            public typealias Input = Leyline_V1_PlanRequest
+            /// Response type for "Plan".
+            public typealias Output = Leyline_V1_CapturePlan
+            /// Descriptor for "Plan".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "leyline.v1.Control"),
+                method: "Plan",
+                type: .unary
+            )
+        }
         /// Descriptors for all methods in the "leyline.v1.Control" service.
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
             ListDevices.descriptor,
@@ -264,7 +277,8 @@ public enum Leyline_V1_Control: Sendable {
             AttachDevice.descriptor,
             DetachDevice.descriptor,
             AttachFileDevice.descriptor,
-            DetachFileDevice.descriptor
+            DetachFileDevice.descriptor,
+            Plan.descriptor
         ]
     }
 }
@@ -551,6 +565,31 @@ extension Leyline_V1_Control {
             request: GRPCCore.StreamingServerRequest<Leyline_V1_DetachFileDeviceRequest>,
             context: GRPCCore.ServerContext
         ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Empty>
+
+        /// Handle the "Plan" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > What a request would do, without doing it (docs/design/claims.md, "One decision: plan"):
+        /// > where a decode, a recording, a scan or a monitor would be placed, or what a retune would
+        /// > move, with the claims it would displace or that stop it. The daemon's own placement makes
+        /// > the same decision, so a plan is what StartJob or WriteParams would do as things stand now;
+        /// > nothing is reserved, and a later change of state can change the answer. Read-only. The
+        /// > request is checked as StartJob checks it, so a decoder that is not installed or a recording
+        /// > with no frequency is the same RPC error here; a decode of a stored recording needs no radio
+        /// > and is INVALID_ARGUMENT.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Leyline_V1_PlanRequest` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Leyline_V1_CapturePlan` messages.
+        func plan(
+            request: GRPCCore.StreamingServerRequest<Leyline_V1_PlanRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_CapturePlan>
     }
 
     /// Service protocol for the "leyline.v1.Control" service.
@@ -821,6 +860,31 @@ extension Leyline_V1_Control {
             request: GRPCCore.ServerRequest<Leyline_V1_DetachFileDeviceRequest>,
             context: GRPCCore.ServerContext
         ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Empty>
+
+        /// Handle the "Plan" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > What a request would do, without doing it (docs/design/claims.md, "One decision: plan"):
+        /// > where a decode, a recording, a scan or a monitor would be placed, or what a retune would
+        /// > move, with the claims it would displace or that stop it. The daemon's own placement makes
+        /// > the same decision, so a plan is what StartJob or WriteParams would do as things stand now;
+        /// > nothing is reserved, and a later change of state can change the answer. Read-only. The
+        /// > request is checked as StartJob checks it, so a decoder that is not installed or a recording
+        /// > with no frequency is the same RPC error here; a decode of a stored recording needs no radio
+        /// > and is INVALID_ARGUMENT.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_PlanRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Leyline_V1_CapturePlan` message.
+        func plan(
+            request: GRPCCore.ServerRequest<Leyline_V1_PlanRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Leyline_V1_CapturePlan>
     }
 
     /// Simple service protocol for the "leyline.v1.Control" service.
@@ -1090,6 +1154,31 @@ extension Leyline_V1_Control {
             request: Leyline_V1_DetachFileDeviceRequest,
             context: GRPCCore.ServerContext
         ) async throws -> Leyline_V1_Empty
+
+        /// Handle the "Plan" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > What a request would do, without doing it (docs/design/claims.md, "One decision: plan"):
+        /// > where a decode, a recording, a scan or a monitor would be placed, or what a retune would
+        /// > move, with the claims it would displace or that stop it. The daemon's own placement makes
+        /// > the same decision, so a plan is what StartJob or WriteParams would do as things stand now;
+        /// > nothing is reserved, and a later change of state can change the answer. Read-only. The
+        /// > request is checked as StartJob checks it, so a decoder that is not installed or a recording
+        /// > with no frequency is the same RPC error here; a decode of a stored recording needs no radio
+        /// > and is INVALID_ARGUMENT.
+        ///
+        /// - Parameters:
+        ///   - request: A `Leyline_V1_PlanRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Leyline_V1_CapturePlan` to respond with.
+        func plan(
+            request: Leyline_V1_PlanRequest,
+            context: GRPCCore.ServerContext
+        ) async throws -> Leyline_V1_CapturePlan
     }
 }
 
@@ -1284,6 +1373,17 @@ extension Leyline_V1_Control.StreamingServiceProtocol {
                 )
             }
         )
+        router.registerHandler(
+            forMethod: Leyline_V1_Control.Method.Plan.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_PlanRequest>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_CapturePlan>(),
+            handler: { request, context in
+                try await self.plan(
+                    request: request,
+                    context: context
+                )
+            }
+        )
     }
 }
 
@@ -1471,6 +1571,17 @@ extension Leyline_V1_Control.ServiceProtocol {
         context: GRPCCore.ServerContext
     ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_Empty> {
         let response = try await self.detachFileDevice(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
+
+    public func plan(
+        request: GRPCCore.StreamingServerRequest<Leyline_V1_PlanRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Leyline_V1_CapturePlan> {
+        let response = try await self.plan(
             request: GRPCCore.ServerRequest(stream: request),
             context: context
         )
@@ -1699,6 +1810,19 @@ extension Leyline_V1_Control.SimpleServiceProtocol {
     ) async throws -> GRPCCore.ServerResponse<Leyline_V1_Empty> {
         return GRPCCore.ServerResponse<Leyline_V1_Empty>(
             message: try await self.detachFileDevice(
+                request: request.message,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+
+    public func plan(
+        request: GRPCCore.ServerRequest<Leyline_V1_PlanRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Leyline_V1_CapturePlan> {
+        return GRPCCore.ServerResponse<Leyline_V1_CapturePlan>(
+            message: try await self.plan(
                 request: request.message,
                 context: context
             ),
@@ -2060,6 +2184,36 @@ extension Leyline_V1_Control {
             deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_Empty>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_Empty>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "Plan" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > What a request would do, without doing it (docs/design/claims.md, "One decision: plan"):
+        /// > where a decode, a recording, a scan or a monitor would be placed, or what a retune would
+        /// > move, with the claims it would displace or that stop it. The daemon's own placement makes
+        /// > the same decision, so a plan is what StartJob or WriteParams would do as things stand now;
+        /// > nothing is reserved, and a later change of state can change the answer. Read-only. The
+        /// > request is checked as StartJob checks it, so a decoder that is not installed or a recording
+        /// > with no frequency is the same RPC error here; a decode of a stored recording needs no radio
+        /// > and is INVALID_ARGUMENT.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_PlanRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_PlanRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_CapturePlan` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        func plan<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_PlanRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_PlanRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_CapturePlan>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_CapturePlan>) async throws -> Result
         ) async throws -> Result where Result: Sendable
     }
 
@@ -2609,6 +2763,47 @@ extension Leyline_V1_Control {
                 onResponse: handleResponse
             )
         }
+
+        /// Call the "Plan" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > What a request would do, without doing it (docs/design/claims.md, "One decision: plan"):
+        /// > where a decode, a recording, a scan or a monitor would be placed, or what a retune would
+        /// > move, with the claims it would displace or that stop it. The daemon's own placement makes
+        /// > the same decision, so a plan is what StartJob or WriteParams would do as things stand now;
+        /// > nothing is reserved, and a later change of state can change the answer. Read-only. The
+        /// > request is checked as StartJob checks it, so a decoder that is not installed or a recording
+        /// > with no frequency is the same RPC error here; a decode of a stored recording needs no radio
+        /// > and is INVALID_ARGUMENT.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Leyline_V1_PlanRequest` message.
+        ///   - serializer: A serializer for `Leyline_V1_PlanRequest` messages.
+        ///   - deserializer: A deserializer for `Leyline_V1_CapturePlan` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response and returns its result to
+        ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+        ///       already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func plan<Result>(
+            request: GRPCCore.ClientRequest<Leyline_V1_PlanRequest>,
+            serializer: some GRPCCore.MessageSerializer<Leyline_V1_PlanRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Leyline_V1_CapturePlan>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_CapturePlan>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Leyline_V1_Control.Method.Plan.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
     }
 }
 
@@ -3056,6 +3251,42 @@ extension Leyline_V1_Control.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_DetachFileDeviceRequest>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_Empty>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "Plan" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > What a request would do, without doing it (docs/design/claims.md, "One decision: plan"):
+    /// > where a decode, a recording, a scan or a monitor would be placed, or what a retune would
+    /// > move, with the claims it would displace or that stop it. The daemon's own placement makes
+    /// > the same decision, so a plan is what StartJob or WriteParams would do as things stand now;
+    /// > nothing is reserved, and a later change of state can change the answer. Read-only. The
+    /// > request is checked as StartJob checks it, so a decoder that is not installed or a recording
+    /// > with no frequency is the same RPC error here; a decode of a stored recording needs no radio
+    /// > and is INVALID_ARGUMENT.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Leyline_V1_PlanRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func plan<Result>(
+        request: GRPCCore.ClientRequest<Leyline_V1_PlanRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_CapturePlan>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.plan(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Leyline_V1_PlanRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Leyline_V1_CapturePlan>(),
             options: options,
             onResponse: handleResponse
         )
@@ -3574,6 +3805,46 @@ extension Leyline_V1_Control.ClientProtocol {
             metadata: metadata
         )
         return try await self.detachFileDevice(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "Plan" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > What a request would do, without doing it (docs/design/claims.md, "One decision: plan"):
+    /// > where a decode, a recording, a scan or a monitor would be placed, or what a retune would
+    /// > move, with the claims it would displace or that stop it. The daemon's own placement makes
+    /// > the same decision, so a plan is what StartJob or WriteParams would do as things stand now;
+    /// > nothing is reserved, and a later change of state can change the answer. Read-only. The
+    /// > request is checked as StartJob checks it, so a decoder that is not installed or a recording
+    /// > with no frequency is the same RPC error here; a decode of a stored recording needs no radio
+    /// > and is INVALID_ARGUMENT.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response and returns its result to
+    ///       the caller. Returning from the closure will cancel the RPC if it hasn't
+    ///       already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func plan<Result>(
+        _ message: Leyline_V1_PlanRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Leyline_V1_CapturePlan>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Leyline_V1_PlanRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.plan(
             request: request,
             options: options,
             onResponse: handleResponse

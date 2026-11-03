@@ -25,6 +25,51 @@ extension JobStore {
     static let clipsShareOfStoreCap: UInt64 = 10
 
     func startRecord(config requested: Leyline_V1_RecordConfig, by client: ClientContext) async throws -> Leyline_V1_Job {
+        let (config, borrowed) = try await checkedRecord(requested)
+        let id = JobID()
+        var job = Leyline_V1_Job()
+        job.jobID = id.string
+        job.state = .running
+        job.createdAtNs = WallClock.nowNs()
+        job.createdBy = client.proto
+        job.config = .record(config)
+        job.statusDetail = "starting"
+        // A recording is a resource from the moment it exists (invariant 8): the job's id is the
+        // recording's id, so the URI is known before a sample is written.
+        job.resultUris = ["ley://recordings/\(id.string)"]
+
+        // The task goes in before the first suspension, the same actor-reentrancy care a scan
+        // takes: a cancel arriving while `publishJob` runs must find something to cancel.
+        let borrowedChannel = borrowed
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.runRecord(id, config: config, borrowed: borrowedChannel)
+        }
+        setRecordEntry(id, job: job, task: task, client: client)
+        await store.publishJob(job)
+        return job
+    }
+
+    /// What a recording would ask the allocator for (`Control.Plan`), checked as `startRecord`
+    /// checks it: a request, or the capture of the channel a recording of a channel would share.
+    func recordPlanRequest(_ requested: Leyline_V1_RecordConfig) async throws -> (request: PlanRequest?, borrowed: CaptureID?) {
+        let (config, borrowed) = try await checkedRecord(requested)
+        if let borrowed { return (nil, borrowed.captureID) }
+        let deviceID = config.deviceID.isEmpty ? nil : config.deviceID
+        if config.mode == .rawIq {
+            return (.iq(frequencyHz: config.frequencyHz, sampleRateHz: 0, deviceID: deviceID, takeOver: config.takeOver,
+                        dedicated: false), nil)
+        }
+        let mode = ProtoMapping.demodMode(config.mode == .unspecified ? .nfm : config.mode) ?? .nfm
+        return (.channel(frequencyHz: config.frequencyHz, bandwidthHz: config.bandwidthHz, mode: mode,
+                         deviceID: deviceID, takeOver: config.takeOver), nil)
+    }
+
+    /// The refusals a record request meets before it is a job, and the config with its gate
+    /// decided. `borrowed` is the channel of the channel form.
+    private func checkedRecord(_ requested: Leyline_V1_RecordConfig) async throws
+        -> (config: Leyline_V1_RecordConfig, borrowed: (id: ChannelID, engine: any ChannelEngine, captureID: CaptureID)?)
+    {
         if requested.startAtNs != 0 {
             throw EngineError.unimplemented("a recording scheduled for later")
         }
@@ -77,29 +122,7 @@ extension JobStore {
         if !config.deviceID.isEmpty, DeviceID(string: config.deviceID) == nil {
             throw EngineError.deviceNotFound(config.deviceID)
         }
-
-        let id = JobID()
-        var job = Leyline_V1_Job()
-        job.jobID = id.string
-        job.state = .running
-        job.createdAtNs = WallClock.nowNs()
-        job.createdBy = client.proto
-        job.config = .record(config)
-        job.statusDetail = "starting"
-        // A recording is a resource from the moment it exists (invariant 8): the job's id is the
-        // recording's id, so the URI is known before a sample is written.
-        job.resultUris = ["ley://recordings/\(id.string)"]
-
-        // The task goes in before the first suspension, the same actor-reentrancy care a scan
-        // takes: a cancel arriving while `publishJob` runs must find something to cancel.
-        let borrowedChannel = borrowed
-        let task = Task { [weak self] in
-            guard let self else { return }
-            await self.runRecord(id, config: config, borrowed: borrowedChannel)
-        }
-        setRecordEntry(id, job: job, task: task, client: client)
-        await store.publishJob(job)
-        return job
+        return (config, borrowed)
     }
 
     /// The gate a request that names none gets: a squelch for NFM and AM when the channel's

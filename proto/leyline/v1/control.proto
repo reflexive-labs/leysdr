@@ -8,6 +8,7 @@ package leyline.v1;
 option go_package = "github.com/reflexive-labs/leysdr/go/gen/leyline/v1;leylinev1";
 import "leyline/v1/common.proto";
 import "leyline/v1/jobs.proto";
+import "leyline/v1/decode.proto";
 import "leyline/v1/ai.proto";
 
 // ---------- Capability model ----------
@@ -314,6 +315,82 @@ service Control {
   rpc DetachDevice(DetachDeviceRequest) returns (Empty);
   rpc AttachFileDevice(AttachFileDeviceRequest) returns (DeviceDescriptor);
   rpc DetachFileDevice(DetachFileDeviceRequest) returns (Empty);
+
+  // What a request would do, without doing it (docs/design/claims.md, "One decision: plan"):
+  // where a decode, a recording, a scan or a monitor would be placed, or what a retune would
+  // move, with the claims it would displace or that stop it. The daemon's own placement makes
+  // the same decision, so a plan is what StartJob or WriteParams would do as things stand now;
+  // nothing is reserved, and a later change of state can change the answer. Read-only. The
+  // request is checked as StartJob checks it, so a decoder that is not installed or a recording
+  // with no frequency is the same RPC error here; a decode of a stored recording needs no radio
+  // and is INVALID_ARGUMENT.
+  rpc Plan(PlanRequest) returns (CapturePlan);
+}
+
+message PlanRequest {
+  oneof request {
+    DecodeConfig decode = 1;
+    RecordConfig record = 2;
+    ScanConfig scan = 3;
+    MonitorConfig monitor = 4;
+    RetunePlan retune = 5;
+  }
+}
+
+// A retune of a capture as the calling client would write it, centre and rate. A person's
+// retune is never declined but by a sweep (DEVICE_SWEEPING), a centre outside the radio's tuning
+// range (FREQ_OUT_OF_RANGE) or a rate it does not offer (RATE_UNSUPPORTED); the plan says what
+// it would displace. The caller's own claims are never counted as displaced.
+message RetunePlan {
+  string capture_id = 1;
+  uint64 center_hz = 2;
+  uint64 sample_rate_hz = 3;     // 0 = keep the capture's rate
+}
+
+// The answer: share a capture as it is, create one on an idle radio, retune one, or decline.
+message CapturePlan {
+  oneof outcome {
+    PlanShare share = 1;
+    PlanCreate create = 2;
+    PlanRetune retune = 3;
+    PlanDecline decline = 4;
+  }
+}
+
+// Satisfied by a capture as it is: nothing moves.
+message PlanShare {
+  string capture_id = 1;
+  string device_id = 2;
+  uint64 center_hz = 3;
+  uint64 sample_rate_hz = 4;
+}
+
+// A new capture on a radio nothing is using.
+message PlanCreate {
+  string device_id = 1;
+  uint64 center_hz = 2;
+  uint64 sample_rate_hz = 3;
+}
+
+// A capture moved. `displaced` are the claims the new tuning would leave unsatisfied, each with
+// its holder so a client can name it; a view and a person's presence are never among them. A
+// sweep's centre is where it starts: it walks the whole range, so every claim that needs the
+// tuning is displaced.
+message PlanRetune {
+  string capture_id = 1;
+  string device_id = 2;
+  uint64 center_hz = 3;
+  uint64 sample_rate_hz = 4;
+  repeated Claim displaced = 5;
+}
+
+// Nowhere. `code` is the machine code StartJob's job would fail with (DEVICE_BUSY, NO_DEVICE, ...)
+// and `reason` its words; `blocking` are the claims that stopped it, every claim but a view on
+// the capture it could not take.
+message PlanDecline {
+  string code = 1;
+  string reason = 2;
+  repeated Claim blocking = 3;
 }
 
 // Empty lives in common.proto: ai.proto's services return it, and control.proto imports ai.proto.

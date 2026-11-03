@@ -645,6 +645,14 @@ unless it takes over.
   opens an `RTLTCPDevice` with the 5 s connect timeout and hosts it. `AttachFileDevice` and
   `DetachFileDevice` stay as sugar; `DetachFileDevice` only matches file devices, so any other
   device is `DEVICE_NOT_FOUND` there.
+- `Plan`: `JobStore.plan` checks the request as `StartJob` checks it (an unknown decoder, a
+  recording with no frequency and a malformed device id are the same RPC errors; a decode of a
+  stored recording needs no radio and is `INVALID_ARGUMENT`), turns it into the `PlanRequest` the
+  job would give the allocator, and returns `CapturePlanner.plan` against a fresh snapshot
+  ("Claims" above). A recording of a channel is SHARE of that channel's capture. A `retune` is the
+  caller's: PERSON for an interactive client, so it is declined only by a sweep, a centre outside
+  the radio's range or a rate it lacks. Nothing is created, claimed or retuned, and the call is
+  not an interactive write.
 - `DetachDevice`: any device a client attached, file or remote radio, closed with its captures. A
   dongle plugged into this machine is `INVALID_ARGUMENT` ("unplug it"), rejected before anything is
   touched (`DeviceRegistry.isDetachableVirtualDevice`).

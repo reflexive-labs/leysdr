@@ -11,6 +11,8 @@ struct ControlService: Leyline_V1_Control.SimpleServiceProtocol {
     let store: SessionStore
     /// Where a `ley://recordings/` uri resolves to a file, for `StartPlayback`.
     let recordings: RecordingStore
+    /// Checks a job request for `Plan` as `StartJob` would.
+    let jobs: JobStore
 
     private var client: ClientContext { ClientContext.current }
 
@@ -45,6 +47,12 @@ struct ControlService: Leyline_V1_Control.SimpleServiceProtocol {
         } onCancelRPC: {
             drain.cancel()
         }
+    }
+
+    /// Read-only: never touches a capture, so it is not an interactive write either.
+    func plan(request: Leyline_V1_PlanRequest, context: ServerContext) async throws -> Leyline_V1_CapturePlan {
+        await store.touchUnary(client)
+        return try await mapErrors { try await jobs.plan(request, by: client) }
     }
 
     func getState(request: Leyline_V1_GetStateRequest, context: ServerContext) async throws -> Leyline_V1_GetStateResponse {

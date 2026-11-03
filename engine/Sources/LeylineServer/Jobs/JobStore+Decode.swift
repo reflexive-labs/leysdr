@@ -19,6 +19,52 @@ extension JobStore {
     func startDecode(config: Leyline_V1_DecodeConfig, by client: ClientContext,
                      resuming: (id: JobID, createdAtNs: Int64)? = nil) async throws -> Leyline_V1_Job
     {
+        let installed = try await checkedDecoder(config)
+        if !config.sourceUri.isEmpty {
+            return try await startSourceDecode(config: config, installed: installed, by: client, resuming: resuming)
+        }
+        let (frequencyHz, deviceID) = try Self.decodeTarget(config, installed)
+        return await addDecodeJob(config: config, installed: installed, by: client, resuming: resuming) { [weak self] id in
+            await self?.runDecode(id, config: config, installed: installed, frequencyHz: frequencyHz, deviceID: deviceID)
+        }
+    }
+
+    /// What a decode would ask the allocator for (`Control.Plan`), checked as `startDecode`
+    /// checks it. A decode of a stored recording needs no radio, so it has no plan.
+    func decodePlanRequest(_ config: Leyline_V1_DecodeConfig) async throws -> PlanRequest {
+        let installed = try await checkedDecoder(config)
+        if !config.sourceUri.isEmpty {
+            throw EngineError.invalidArgument("a decode of a stored recording needs no radio, so it has no plan",
+                                              target: config.sourceUri)
+        }
+        let (frequencyHz, deviceID) = try Self.decodeTarget(config, installed)
+        let manifest = installed.manifest
+        if manifest.input.signal == .signalIq {
+            return .iq(frequencyHz: frequencyHz, sampleRateHz: manifest.recipe.sampleRate, deviceID: deviceID?.string,
+                       takeOver: config.takeOver, dedicated: manifest.needsDedicatedCapture)
+        }
+        let mode = ProtoMapping.demodMode(manifest.recipe.mode == .unspecified ? .nfm : manifest.recipe.mode) ?? .nfm
+        return .channel(frequencyHz: frequencyHz, bandwidthHz: manifest.recipe.bandwidthHz, mode: mode,
+                        deviceID: deviceID?.string, takeOver: config.takeOver)
+    }
+
+    /// The frequency and radio a live decode asks for: the request's, else the recipe's first.
+    private static func decodeTarget(_ config: Leyline_V1_DecodeConfig,
+                                     _ installed: DecoderRegistry.Installed) throws -> (UInt64, DeviceID?)
+    {
+        let frequencyHz = config.frequencyHz != 0 ? config.frequencyHz : (installed.manifest.recipe.frequenciesHz.first ?? 0)
+        guard frequencyHz > 0 else {
+            throw EngineError.invalidArgument("\(config.decoder) names no frequency of its own; say which with --freq", target: config.decoder)
+        }
+        let deviceID = config.deviceID.isEmpty ? nil : DeviceID(string: config.deviceID)
+        if !config.deviceID.isEmpty, deviceID == nil {
+            throw EngineError.deviceNotFound(config.deviceID)
+        }
+        return (frequencyHz, deviceID)
+    }
+
+    /// The decoder a request names, with the refusals it meets before it is a job.
+    private func checkedDecoder(_ config: Leyline_V1_DecodeConfig) async throws -> DecoderRegistry.Installed {
         guard let installed = decoders.find(config.decoder) else {
             throw EngineError.decoderNotFound(config.decoder)
         }
@@ -42,21 +88,7 @@ extension JobStore {
                 throw EngineError.credentialRejected(provider, providerMessage: key.lastCheck.message)
             }
         }
-        if !config.sourceUri.isEmpty {
-            return try await startSourceDecode(config: config, installed: installed, by: client, resuming: resuming)
-        }
-        let frequencyHz = config.frequencyHz != 0 ? config.frequencyHz : (installed.manifest.recipe.frequenciesHz.first ?? 0)
-        guard frequencyHz > 0 else {
-            throw EngineError.invalidArgument("\(config.decoder) names no frequency of its own; say which with --freq", target: config.decoder)
-        }
-        let deviceID = config.deviceID.isEmpty ? nil : DeviceID(string: config.deviceID)
-        if !config.deviceID.isEmpty, deviceID == nil {
-            throw EngineError.deviceNotFound(config.deviceID)
-        }
-
-        return await addDecodeJob(config: config, installed: installed, by: client, resuming: resuming) { [weak self] id in
-            await self?.runDecode(id, config: config, installed: installed, frequencyHz: frequencyHz, deviceID: deviceID)
-        }
+        return installed
     }
 
     /// Enters a decode job in the table and starts `run` for it. The task goes in before the first

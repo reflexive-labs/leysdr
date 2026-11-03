@@ -176,7 +176,7 @@ package final class Daemon: Sendable {
         server = GRPCServer(
             transport: .http2NIOPosix(address: .unixDomainSocket(path: config.socketPath), transportSecurity: .plaintext, config: transport),
             services: [
-                ControlService(store: store, recordings: recordings),
+                ControlService(store: store, recordings: recordings, jobs: jobs),
                 TelemetryService(store: store, jobs: jobs),
                 BulkService(store: store, registry: streams),
                 JobsService(jobs: jobs, store: store),

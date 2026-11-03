@@ -18,12 +18,7 @@ extension JobStore {
     /// A monitor is ephemeral like a scan -- it dies with its client, on cancel, or at its duration
     /// (invariant 8: nobody watching a band interactively has declared an intent to keep anything).
     func startMonitor(config: Leyline_V1_MonitorConfig, by client: ClientContext) async throws -> Leyline_V1_Job {
-        guard config.hasRange, config.range.maxHz > config.range.minHz else {
-            throw EngineError.invalidArgument("a monitor needs a frequency range with max above min", target: "")
-        }
-        guard config.durationMs >= 0 else {
-            throw EngineError.invalidArgument("a monitor's duration cannot be negative; 0 watches until cancelled", target: "")
-        }
+        try Self.checkMonitor(config)
         let id = JobID()
         var job = Leyline_V1_Job()
         job.jobID = id.string
@@ -45,6 +40,16 @@ extension JobStore {
         trim()
         await store.publishJob(job)
         return job
+    }
+
+    /// The refusals a monitor request meets before it is a job.
+    static func checkMonitor(_ config: Leyline_V1_MonitorConfig) throws {
+        guard config.hasRange, config.range.maxHz > config.range.minHz else {
+            throw EngineError.invalidArgument("a monitor needs a frequency range with max above min", target: "")
+        }
+        guard config.durationMs >= 0 else {
+            throw EngineError.invalidArgument("a monitor's duration cannot be negative; 0 watches until cancelled", target: "")
+        }
     }
 
     private func runMonitor(_ id: JobID, config: Leyline_V1_MonitorConfig) async {
