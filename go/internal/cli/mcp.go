@@ -194,7 +194,7 @@ const mcpInstructions = `Leyline is a software-defined radio: one daemon owns th
 
 A daemon restart shows in get_state: DaemonInfo.pid and startedAtNs change and the event sequence starts over; daemon_logs says why. A job started before a restart is gone with it, except a decode job started with keep, which comes back as the same job.
 
-Only one thing can use the radio at a time. tune, set (a freq that moves the radio), stop (another client's channel), scan, snapshot, start_decode_job, watch and record refuse to disturb somebody else's listening and say who; take_over: true insists.
+Only one thing can use the radio at a time. tune, set (a freq that moves the radio), stop (another client's channel), scan, snapshot, start_decode_job, watch and record refuse to disturb somebody else's listening and say who; take_over: true insists. dry_run: true on scan, start_decode_job, watch and record says where the job would go and whom it would pause, and starts nothing.
 
 help returns the ley help topics, and list_bands and list_presets the names a frequency argument accepts. The bookmarks (list_bookmarks, add_bookmark, remove_bookmark, import_chirp) are the user's own file, shared with the Mac app. Ask the user before a call that writes something they did not spell out: a watch with keep or a webhook notifier, several bookmarks at once (import_chirp has dry_run to show them first), and a remove_bookmark. watch has no shell notifier; that is for a person to set up. A channel tune makes, or a decode job started without keep, ends when this server exits; a recording does not -- it is written to disk and stays there.
 

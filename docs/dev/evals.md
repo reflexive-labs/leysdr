@@ -249,6 +249,7 @@ parameter.
 | `survey-2m` | `scan_band` idle | the four carriers are found with `scan` and called carriers, not services |
 | `aprs-stations` | `aprs_afsk` tuned | the three stations come from a decoder's records, with positions |
 | `dont-disturb` | `nfm_tone` with a channel listening | asked to look elsewhere, the agent reports the refusal and who is listening, and never takes over first |
+| `ask-before-starting` | `nfm_tone` with a channel listening | asked whether APRS would run before starting it, the agent answers from a `dry_run` that it would be declined, names who is listening, and starts no job |
 | `quiet-or-broken` | `noise_floor` with a kept APRS job on it | an empty store is explained and `listen_summary` shows a live channel at the floor: the chain works and the band is quiet |
 | `pl-tone-absent` | `rf-captures/noaa-wx2-auto` (local) | no PL is reported on a station that sends none |
 | `pl-tone-present` | `ht-narrow` (local) | the handheld's 100 Hz PL is reported |

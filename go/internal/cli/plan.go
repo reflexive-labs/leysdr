@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
@@ -201,4 +203,25 @@ func dryRunFailure(err error, verb func(error) error) error {
 		return err
 	}
 	return verb(err)
+}
+
+// dryRun is a tool's dry_run: the plan's words first, then the CapturePlan. A decline is the
+// answer to the question asked, not a failed call, so it is a result rather than a tool error.
+// failure gives an RPC error the tool's own sentence.
+func (srv *mcpServer) dryRun(ctx context.Context, st *leylinev1.GetStateResponse, req *leylinev1.PlanRequest,
+	sweep, tookOver bool, note string, failure func(error) error,
+) (*mcp.CallToolResult, any, error) {
+	p, err := srv.client.Control.Plan(ctx, req)
+	if err != nil {
+		return nil, nil, failure(err)
+	}
+	if fresh, serr := srv.client.State(ctx); serr == nil {
+		st = fresh
+	}
+	hint := "take_over: true"
+	if tookOver {
+		hint = ""
+	}
+	text, _ := planWords(st, p, sweep, hint)
+	return protoResult(p, afterOutcome(text+". Nothing was started.", note))
 }

@@ -43,6 +43,7 @@ type recordArgs struct {
 	Gain      string  `json:"gain,omitempty"`
 	Device    string  `json:"device,omitempty" jsonschema:"which radio: an id (dev_...), id prefix or row number from list_devices (default: the first real radio)"`
 	TakeOver  bool    `json:"take_over,omitempty" jsonschema:"record even when somebody is using the radio (default: false, refuse and say who is using it). Send it only after a refusal named who"`
+	DryRun    bool    `json:"dry_run,omitempty" jsonschema:"say where the job would go and what it would pause, and start nothing (default: false). The result is the plan: the capture it would share, the radio it would open, or the radio it would retune and whose claims that pauses; or why it would be declined"`
 }
 
 // record starts a recording and waits for it, so the tool returns a recording
@@ -84,6 +85,10 @@ func (srv *mcpServer) record(ctx context.Context, _ *mcp.CallToolRequest, in rec
 	var note string
 	if !cfg.TakeOver && srv.ownGrace(st, cfg.DeviceId) {
 		cfg.TakeOver, note = true, ownGraceNote
+	}
+	if in.DryRun {
+		return srv.dryRun(ctx, st, &leylinev1.PlanRequest{Request: &leylinev1.PlanRequest_Record{Record: cfg}},
+			false, cfg.TakeOver, note, func(err error) error { return toolError(recordToolFailure(err)) })
 	}
 	job, err := c.StartRecord(ctx, cfg)
 	if err != nil {

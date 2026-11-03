@@ -107,15 +107,15 @@ are optional in the schema; the defaults are the mirror verb's.
 | `set` | `ley set` | `WriteParams`, confirmed by its event | `param` (`freq`, `mode`, `bw`, `squelch`, `gain`, `volume`), `value`; `channel`, `take_over` | the confirming `Event` |
 | `stop` | `ley stop`, `ley stop all` | `Control.DestroyChannel`, `DestroyCapture` | none (this server's channels), `channel`, or `all` with `device`; `take_over` | `Empty` |
 | `attach_device` | `ley devices attach`, `ley play` | `Control.AttachDevice` | `kind` (`rtltcp` or `file`); `endpoint` (host:port) or `path` and `loop` | `DeviceDescriptor` |
-| `scan` | `ley scan` | `Jobs.StartJob(ScanConfig{once})`, `Jobs.GetScan` | `range` (`144M..148M` or a band name); `dwell_ms`, `min_snr`, `gain`, `device`, `take_over` | `Scan` |
+| `scan` | `ley scan` | `Jobs.StartJob(ScanConfig{once})`, `Jobs.GetScan` | `range` (`144M..148M` or a band name); `dwell_ms`, `min_snr`, `gain`, `device`, `take_over`, `dry_run` | `Scan`, or with `dry_run` a `CapturePlan` |
 | `listen_summary` | `ley tune`, `ley listen` | `Telemetry.Subscribe`, bounded | `target` (frequency, preset or `chan_…`); `duration_s` (default 10, at most 300), `mode`, `bandwidth`, `squelch`, `gain`, `device`, `take_over` | `{channel, transcript, meter, tone}` |
 | `snapshot` | `ley spectrum --json` | `Bulk.Subscribe(FFT)`, one row | `frequency` or `band`; `span`, `bins` (default 1024), `device`, `take_over`, `no_image`, `include_bins` | the spectrum row (`bins` null unless `include_bins`), plus a PNG |
 | `list_decoders` | `ley decoders` | `Decoders.ListDecoders` | none | `ListDecodersResponse` |
 | `query_records` | `ley records` | `Decoders.QueryRecords` | `protocol`, `job_id`, `device_id`, `kind`, `since_s`, `near` + `radius`, `in_effect`, `limit` | `RecordPage` |
 | `list_entities` | `ley track --json` | `Decoders.SubscribeRecords` + the `records.Table` fold | `protocol`; `duration_s` (default 5, at most 300), `since_s`, `device`, `take_over` | `{entities: […]}` |
-| `start_decode_job` | `ley decode`, `ley decode --job` | `Jobs.StartJob(DecodeConfig)` | `decoder`; `frequency`, `gain`, `device`, `take_over`, `keep` | `Job` |
-| `watch` | `ley watch`, `ley watch --detach` | `Jobs.StartJob(DecodeConfig)` with a predicate and a notifier | `decoder`; `where` (a list), `county` (a list), `near` + `radius`, `notify` (`macos` or `webhook:URL`), `frequency`, `gain`, `device`, `take_over`, `keep` | `Job` |
-| `record` | `ley record` | `Jobs.StartJob(RecordConfig)` | `target` (frequency, preset or `chan_…`), `duration_s` (**required**, 1 to 3600); `iq`, `gate`, `pre_roll_ms`, `hang_ms`, `mode`, `bandwidth`, `squelch`, `gain`, `device`, `take_over` | the finished `Job` |
+| `start_decode_job` | `ley decode`, `ley decode --job` | `Jobs.StartJob(DecodeConfig)` | `decoder`; `frequency`, `gain`, `device`, `take_over`, `keep`, `dry_run` | `Job`, or with `dry_run` a `CapturePlan` |
+| `watch` | `ley watch`, `ley watch --detach` | `Jobs.StartJob(DecodeConfig)` with a predicate and a notifier | `decoder`; `where` (a list), `county` (a list), `near` + `radius`, `notify` (`macos` or `webhook:URL`), `frequency`, `gain`, `device`, `take_over`, `keep`, `dry_run` | `Job`, or with `dry_run` a `CapturePlan` |
+| `record` | `ley record` | `Jobs.StartJob(RecordConfig)` | `target` (frequency, preset or `chan_…`), `duration_s` (**required**, 1 to 3600); `iq`, `gate`, `pre_roll_ms`, `hang_ms`, `mode`, `bandwidth`, `squelch`, `gain`, `device`, `take_over`, `dry_run` | the finished `Job`, or with `dry_run` a `CapturePlan` |
 | `find_recordings` | `ley recordings` | `Resources.ListResources(RECORDING)` | `kind`, `frequency`, `mode`, `since_s`, `limit` | `ListResourcesResponse` |
 | `get_recording` | `ley recordings show`, `ley recordings path` | `Resources.GetResource` + `ResolveLocalPath` | `id` (job id or `ley://recordings/` uri) | `{manifest, directory, parts: [{part, path, samples}]}` |
 | `delete_recording` | `ley recordings delete` | `Resources.DeleteResource` | `recording` (whole job id or `ley://recordings/` uri) | `DeletedResource` |
@@ -227,6 +227,14 @@ Notes a table cell cannot hold:
   `list_entities` only; with `keep` the job runs on, its records are stored, and `query_records`
   (or the resource below) reads them. An alias a manifest lists (`vessels` for `ais`) resolves to
   the canonical decoder before the job starts, as `ley decode vessels` does.
+- **`dry_run: true`** on `scan`, `start_decode_job`, `watch` and `record` asks `Control.Plan`
+  where the job would go and starts nothing, as `--dry-run` does on the `ley` verbs. The text is
+  the plan's sentence with "Nothing was started." after it ("would retune radio-a to 1089.700 MHz,
+  pausing: the app's channel on 146.520 MHz"), and the JSON is the `CapturePlan`, its displaced
+  and blocking claims each with its holder. A plan that would be declined is a result, not a tool
+  error: it is the answer to the question asked, and says "would not start: <the daemon's reason>;
+  take_over: true insists" when somebody's claim is in the way. The other arguments are checked as
+  the real call checks them, `duration_s` included.
 - **`start_decode_job`** and **`watch`** wait up to 3 s for the daemon to take the job, because
   the daemon answers `StartJob` before it has placed the job on a radio, as `ley watch --detach`
   waits. A job the daemon declines in that time is a tool error with the daemon's reason and code

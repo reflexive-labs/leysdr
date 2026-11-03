@@ -420,3 +420,42 @@ func jsonEqual(t *testing.T, a, b []byte) bool {
 	ya, _ := json.Marshal(y)
 	return bytes.Equal(xa, ya)
 }
+
+// dry_run on the four tools that start a job answers with the plan and starts nothing; a decline
+// is the answer, not a failed call.
+func TestMCPDryRunSaysThePlan(t *testing.T) {
+	t.Parallel()
+	h := newMCPHarness(t)
+	for _, call := range []struct {
+		tool string
+		args map[string]any
+		want string
+	}{
+		{"start_decode_job", map[string]any{"decoder": "aprs", "dry_run": true}, "would open "},
+		{"watch", map[string]any{"decoder": "aprs", "dry_run": true}, "would open "},
+		{"record", map[string]any{"target": "146.52", "duration_s": 5, "dry_run": true}, "would open "},
+		{"scan", map[string]any{"range": "145M..147M", "dry_run": true}, "would sweep with "},
+	} {
+		res := h.must(t, call.tool, call.args)
+		if text := resultText(res); !strings.HasPrefix(text, call.want) || !strings.Contains(text, "Nothing was started.") {
+			t.Errorf("%s dry_run: %q", call.tool, text)
+		}
+		var p leylinev1.CapturePlan
+		structured(t, res, &p)
+		if p.GetCreate().GetDeviceId() == "" {
+			t.Errorf("%s dry_run returns the CapturePlan: %v", call.tool, &p)
+		}
+	}
+	listening(t, h.client)
+	res := h.must(t, "scan", map[string]any{"range": "145M..147M", "dry_run": true})
+	if text := resultText(res); !strings.HasPrefix(text, "would not start: ") || !strings.Contains(text, "take_over: true") {
+		t.Errorf("a decline names the reason and the tool's way through: %q", text)
+	}
+	res = h.must(t, "scan", map[string]any{"range": "145M..147M", "dry_run": true, "take_over": true})
+	if text := resultText(res); !strings.Contains(text, "pausing: ") {
+		t.Errorf("a take-over names what it pauses: %q", text)
+	}
+	if jobs, _ := h.client.ListJobs(t.Context()); len(jobs) != 0 {
+		t.Errorf("a dry run starts nothing: %v", jobs)
+	}
+}

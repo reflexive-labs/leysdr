@@ -1,0 +1,39 @@
+# Asked whether a decoder would disturb anyone before starting it. The radio is tuned to 146.52
+# with a channel on it, so APRS on 144.390 MHz would be declined; the agent must find that out
+# with a dry run (Control.Plan) and start no job.
+name: ask-before-starting
+description: Asked first whether a decoder would disturb anyone, the agent answers from a dry run and starts nothing.
+fixtures:
+  - file: nfm_tone.cf32
+    as: radio-c
+setup:
+  - ley: ["tune", "146.52", "--persistent", "--no-audio"]
+task: |
+  Before you start anything: if I started the APRS decoder now, would it run, and would it pause
+  or be stopped by anybody? Find out without starting a job, and tell me who or what decides it.
+answer_schema: |
+  {"would_start": <true or false>, "reason": "<one sentence>"}
+truth:
+  would_start: false
+checks:
+  - type: answered
+  - type: json_equals
+    path: would_start
+    truth: would_start
+    why: a channel is listening on the only radio, so the decoder would be declined
+  - type: require_words
+    words: ["listening"]
+    why: the answer names who has the radio, as the plan's decline does
+  - type: used_one_of
+    values: [start_decode_job, watch]
+    why: dry_run on the tool that would start the job is how to ask
+  - type: no_write
+    kind: job
+    where:
+      created_by.label: "assistant|ley mcp"
+    why: a dry run starts nothing
+  - type: take_over_after_refusal
+    why: take_over is an override, never a first move
+  - type: max_tool_calls
+    n: 4
+  - type: no_shell

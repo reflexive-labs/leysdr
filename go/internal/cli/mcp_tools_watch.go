@@ -47,6 +47,7 @@ type watchArgs struct {
 	TakeOver  bool     `json:"take_over,omitempty" jsonschema:"watch even when somebody is using the radio; it is theirs again afterwards (default: false)"`
 	Keep      bool     `json:"keep,omitempty" jsonschema:"keep the job running after this server exits, so the notifier fires with nothing connected (default: false). The user's to confirm first"`
 	Gain      string   `json:"gain,omitempty"`
+	DryRun    bool     `json:"dry_run,omitempty" jsonschema:"say where the job would go and what it would pause, and start nothing (default: false). The result is the plan: the capture it would share, the radio it would open, or the radio it would retune and whose claims that pauses; or why it would be declined"`
 }
 
 // shellNotifyRefusal is the sentence a shell notifier is refused with.
@@ -98,6 +99,10 @@ func (srv *mcpServer) watch(ctx context.Context, _ *mcp.CallToolRequest, in watc
 	}
 	if name, _, rerr := s.Client.ResolveDecoder(ctx, o.decoder); rerr == nil {
 		o.decoder = name
+	}
+	if in.DryRun {
+		return srv.dryRun(ctx, s.State, &leylinev1.PlanRequest{Request: &leylinev1.PlanRequest_Decode{Decode: o.config()}},
+			false, o.takeOver, note, func(err error) error { return toolError(decodeToolFailure(o.decoder, err)) })
 	}
 	job, err := s.Client.StartDecode(ctx, o.config())
 	if err != nil {

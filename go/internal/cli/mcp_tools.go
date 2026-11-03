@@ -482,6 +482,7 @@ type scanArgs struct {
 	Device   string  `json:"device,omitempty" jsonschema:"which radio: an id, id prefix or row number from list_devices (default: the daemon picks an idle one)"`
 	TakeOver bool    `json:"take_over,omitempty" jsonschema:"sweep even when somebody is using the radio; it is theirs again afterwards (default: false). Send it only after a refusal named who is using it"`
 	Gain     string  `json:"gain,omitempty"`
+	DryRun   bool    `json:"dry_run,omitempty" jsonschema:"say where the job would go and what it would pause, and start nothing (default: false). The result is the plan: the capture it would share, the radio it would open, or the radio it would retune and whose claims that pauses; or why it would be declined"`
 }
 
 func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanArgs) (*mcp.CallToolResult, any, error) {
@@ -518,6 +519,10 @@ func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanA
 	var note string
 	if !o.takeOver && srv.ownGrace(s.State, o.deviceID) {
 		o.takeOver, note = true, ownGraceNote
+	}
+	if in.DryRun {
+		return srv.dryRun(ctx, s.State, &leylinev1.PlanRequest{Request: &leylinev1.PlanRequest_Scan{Scan: o.config()}},
+			true, o.takeOver, note, toolError)
 	}
 	scan, _, err := s.sweep(ctx, o)
 	if err != nil {
@@ -1421,6 +1426,7 @@ type startDecodeJobArgs struct {
 	TakeOver  bool   `json:"take_over,omitempty" jsonschema:"decode even when somebody is using the radio; it is theirs again afterwards (default: false)"`
 	Keep      bool   `json:"keep,omitempty" jsonschema:"keep the job and its records after this server exits; kept records are what query_records reads (default: false)"`
 	Gain      string `json:"gain,omitempty"`
+	DryRun    bool   `json:"dry_run,omitempty" jsonschema:"say where the job would go and what it would pause, and start nothing (default: false). The result is the plan: the capture it would share, the radio it would open, or the radio it would retune and whose claims that pauses; or why it would be declined"`
 }
 
 func (srv *mcpServer) startDecodeJob(ctx context.Context, _ *mcp.CallToolRequest, in startDecodeJobArgs) (*mcp.CallToolResult, any, error) {
@@ -1458,6 +1464,10 @@ func (srv *mcpServer) startDecodeJob(ctx context.Context, _ *mcp.CallToolRequest
 	var note string
 	if !cfg.TakeOver && srv.ownGrace(s.State, cfg.DeviceId) {
 		cfg.TakeOver, note = true, ownGraceNote
+	}
+	if in.DryRun {
+		return srv.dryRun(ctx, s.State, &leylinev1.PlanRequest{Request: &leylinev1.PlanRequest_Decode{Decode: cfg}},
+			false, cfg.TakeOver, note, func(err error) error { return toolError(decodeToolFailure(cfg.Decoder, err)) })
 	}
 	job, err := s.Client.StartDecode(ctx, cfg)
 	if err != nil {
