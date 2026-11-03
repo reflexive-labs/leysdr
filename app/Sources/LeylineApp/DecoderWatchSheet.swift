@@ -84,12 +84,9 @@ struct DecoderWatchSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("decoders.watch.condition")
             if !placeable {
-                Text(
-                    placement.needsTakeOver
-                        ? "\(placement.words) A watch does not take it." : placement.words
-                )
-                .font(Theme.Font.footnote).foregroundStyle(Theme.caution)
-                .fixedSize(horizontal: false, vertical: true)
+                Text(watchWords(placement))
+                    .font(Theme.Font.footnote).foregroundStyle(Theme.caution)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             HStack {
                 Spacer()
@@ -145,6 +142,14 @@ struct DecoderWatchSheet: View {
         case .success(let p): "Notifies when \(Watches.words(p, manifest: manifest))."
         case .failure(let e): (e as? Watches.Refusal)?.message ?? "\(e)"
         }
+    }
+
+    /// Why the watch cannot start here: the plan's line, or, where Start would ask to take the
+    /// radio, that a watch does not, and the daemon's reason or what taking it would pause.
+    private func watchWords(_ p: DecoderPlacement) -> String {
+        guard let takes = p.takeOver else { return p.words }
+        let why = p.declineReason.map(DecoderPlacement.unstopped) ?? "starting it \(takes.clause)"
+        return "A watch does not take the radio: \(why)."
     }
 }
 

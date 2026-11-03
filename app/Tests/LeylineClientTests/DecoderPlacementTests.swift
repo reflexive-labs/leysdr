@@ -6,328 +6,232 @@ import XCTest
 
 @testable import LeylineClient
 
-/// One test per rule of the daemon's allocator (`SessionCaptureAllocator`), as the app reads them
-/// back before a decoder starts.
+/// The Decoders page's words for each kind of plan `Control.Plan` answers, from hand-built
+/// `CapturePlan` values: the daemon decides where a decoder goes, the app only says it.
 final class DecoderPlacementTests: XCTestCase {
     let me = "app_me"
-    let now = Date(timeIntervalSince1970: 1_800_000_000)
 
-    func dongle(_ id: String = "dev_a", model: String = "RTL-SDR") -> Leyline_V1_DeviceDescriptor {
+    func state() -> MirrorState {
+        var s = MirrorState()
         var d = Leyline_V1_DeviceDescriptor()
-        d.deviceID = id
-        d.driver = "rtlsdr"
-        d.model = model
-        d.state = .available
-        var r = Leyline_V1_FrequencyRange()
-        r.minHz = 24_000_000
-        r.maxHz = 1_766_000_000
-        d.tuningRanges = [r]
-        d.sampleRates = [1_024_000, 2_048_000, 2_400_000, 3_200_000]
-        return d
-    }
-
-    func capture(
-        _ id: String = "cap_1", device: String = "dev_a", centre: UInt64, rate: UInt64 = 2_400_000
-    ) -> Leyline_V1_Capture {
+        d.deviceID = "dev_a"
+        d.model = "RTL-SDR"
+        s.devices = [d]
         var c = Leyline_V1_Capture()
-        c.captureID = id
-        c.deviceID = device
-        c.centerHz = centre
-        c.sampleRate = rate
+        c.captureID = "cap_1"
+        c.deviceID = "dev_a"
+        c.centerHz = 146_000_000
+        c.sampleRate = 2_400_000
         c.state = .captureActive
-        return c
+        s.captures = [c]
+        var j = Leyline_V1_Job()
+        j.jobID = "job_rec"
+        j.record = Leyline_V1_RecordConfig()
+        s.jobs = [j]
+        return s
     }
 
-    func channel(on cap: String, offset: Int64, owner: String, kind: String = "app")
-        -> Leyline_V1_Channel
-    {
+    func channel(owner: String, id: String = "chan_1") -> Leyline_V1_Channel {
         var ch = Leyline_V1_Channel()
-        ch.channelID = "chan_\(owner)"
-        ch.captureID = cap
-        ch.offsetHz = offset
+        ch.channelID = id
+        ch.captureID = "cap_1"
         ch.state = .channelActive
         ch.owner.clientID = owner
-        ch.owner.kind = kind
         return ch
     }
 
-    func audio(_ hz: [UInt64], bw: UInt32 = 15_000) -> Leyline_V1_DecoderManifest {
-        var m = Leyline_V1_DecoderManifest()
-        m.name = "aprs"
-        m.recipe.frequenciesHz = hz
-        m.recipe.bandwidthHz = bw
-        m.recipe.mode = .nfm
-        m.input.signal = .signalAudio
-        return m
+    func claim(
+        _ holder: String, kind: String, _ k: Leyline_V1_ClaimKind = .claimChannel, at hz: UInt64,
+        priority: Leyline_V1_ClaimPriority = .priorityPerson
+    ) -> Leyline_V1_Claim {
+        var c = Leyline_V1_Claim()
+        c.holder.clientID = holder
+        c.holder.kind = kind
+        c.kind = k
+        c.covers.frequencyHz = hz
+        c.priority = priority
+        return c
     }
 
-    func iq(_ hz: UInt64, rate: UInt64 = 2_400_000, dedicated: Bool = false)
-        -> Leyline_V1_DecoderManifest
+    func share() -> Leyline_V1_CapturePlan {
+        var p = Leyline_V1_CapturePlan()
+        p.share.captureID = "cap_1"
+        p.share.deviceID = "dev_a"
+        p.share.centerHz = 146_000_000
+        p.share.sampleRateHz = 2_400_000
+        return p
+    }
+
+    func retune(_ displaced: [Leyline_V1_Claim], rate: UInt64 = 2_400_000)
+        -> Leyline_V1_CapturePlan
     {
-        var m = Leyline_V1_DecoderManifest()
-        m.name = "adsb"
-        m.recipe.frequenciesHz = [hz]
-        m.recipe.sampleRate = rate
-        m.input.signal = .signalIq
-        m.needsDedicatedCapture = dedicated
-        return m
+        var p = Leyline_V1_CapturePlan()
+        p.retune.captureID = "cap_1"
+        p.retune.deviceID = "dev_a"
+        p.retune.centerHz = 144_390_000
+        p.retune.sampleRateHz = rate
+        p.retune.displaced = displaced
+        return p
     }
 
-    func predict(
-        _ m: Leyline_V1_DecoderManifest, _ hz: UInt64, _ s: MirrorState, swept: Set<String> = []
+    func decline(_ code: String, _ reason: String) -> Leyline_V1_CapturePlan {
+        var p = Leyline_V1_CapturePlan()
+        p.decline.code = code
+        p.decline.reason = reason
+        return p
+    }
+
+    func words(
+        _ p: Leyline_V1_CapturePlan, insisting: Leyline_V1_CapturePlan? = nil,
+        _ s: MirrorState? = nil, window: String? = nil
     ) -> DecoderPlacement {
-        DecoderPlacement.predict(m, frequencyHz: hz, state: s, swept: swept, selfID: me, now: now)
+        DecoderPlacement.from(
+            p, insisting: insisting, state: s ?? state(), selfID: me, windowChannel: window,
+            titles: ["aprs": "APRS"])
     }
 
-    // MARK: Audio decoders
+    // MARK: Share
 
-    func testACaptureWhoseSpanFitsTheChannelRunsAlongside() {
-        var s = MirrorState()
-        s.devices = [dongle()]
-        s.captures = [capture(centre: 144_000_000)]
-        s.channels = [channel(on: "cap_1", offset: 520_000, owner: me)]
-        let p = predict(audio([144_390_000]), 144_390_000, s)
-        XCTAssertEqual(p, .alongside(captureID: "cap_1", listening: true))
+    func testAShareOfTheWindowsCaptureRunsAlongside() {
+        var s = state()
+        s.channels = [channel(owner: me)]
+        let p = words(share(), s)
         XCTAssertEqual(p.words, "Runs alongside what you are listening to.")
+        XCTAssertTrue(p.canStart)
+        XCTAssertFalse(p.needsTakeOver)
+        // A channel the window followed is the window's too.
+        s.channels = [channel(owner: "cli_x", id: "chan_f")]
+        XCTAssertEqual(
+            words(share(), s, window: "chan_f").words,
+            "Runs alongside what you are listening to.")
+    }
+
+    func testAShareOfAnotherCaptureNamesItsRadio() {
+        let p = words(share())
+        XCTAssertEqual(p.words, "Shares the RTL-SDR's capture at 146.000 MHz; nothing is retuned.")
+        XCTAssertTrue(p.canStart)
+    }
+
+    // MARK: Open
+
+    func testAnIdleRadioIsOpenedAtTheCentreAndRate() {
+        var plan = Leyline_V1_CapturePlan()
+        plan.create.deviceID = "dev_a"
+        plan.create.centerHz = 1_090_000_000
+        plan.create.sampleRateHz = 2_000_000
+        let p = words(plan)
+        XCTAssertEqual(
+            p.words, "Opens the RTL-SDR at 1090.000 MHz, 2 MSPS; nothing else is using it.")
+        XCTAssertTrue(p.canStart)
         XCTAssertFalse(p.needsTakeOver)
     }
 
-    func testAChannelTheWindowFollowedIsYoursToo() {
-        var s = MirrorState()
-        s.devices = [dongle()]
-        s.captures = [capture(centre: 162_000_000)]
-        s.channels = [channel(on: "cap_1", offset: 400_000, owner: "cli_x", kind: "cli")]
-        let followed = DecoderPlacement.predict(
-            audio([144_390_000]), frequencyHz: 144_390_000, state: s, selfID: me,
-            windowChannel: "chan_cli_x", now: now)
+    // MARK: Retune
+
+    func testARetuneThatPausesNothingStartsWithoutAsking() {
+        let p = words(retune([]))
+        XCTAssertEqual(p.words, "Retunes the RTL-SDR to 144.390 MHz; nothing on it has to move.")
+        XCTAssertTrue(p.canStart)
+        XCTAssertFalse(p.needsTakeOver)
         XCTAssertEqual(
-            followed, .needsRadio(captureID: "cap_1", reason: "you are listening on 162.400 MHz"))
-        let alongside = DecoderPlacement.predict(
-            audio([162_400_000]), frequencyHz: 162_400_000, state: s, selfID: me,
-            windowChannel: "chan_cli_x", now: now)
-        XCTAssertEqual(alongside, .alongside(captureID: "cap_1", listening: true))
+            words(retune([], rate: 2_048_000)).words,
+            "Retunes the RTL-SDR to 144.390 MHz at 2.048 MSPS; nothing on it has to move.")
     }
 
-    func testAChannelAtTheSpansEdgeDoesNotFit() {
-        var s = MirrorState()
-        s.devices = [dongle()]
-        // 144.390 sits 1.195 MHz above a 143.195 centre: the channel's upper half is out.
-        s.captures = [capture(centre: 143_195_000)]
-        s.channels = [channel(on: "cap_1", offset: 0, owner: me)]
+    func testARetuneNamesWhatItPausesAndAsksOnlyForAPerson() {
+        var jobs = state()
+        var j = Leyline_V1_Job()
+        j.jobID = "job_aprs"
+        j.decode.decoder = "aprs"
+        jobs.jobs.append(j)
+        let byJobs = words(
+            retune([
+                claim("job_aprs", kind: "job", at: 144_390_000, priority: .priorityJob),
+                claim("job_rec", kind: "job", at: 146_520_000, priority: .priorityJob),
+            ]), jobs)
         XCTAssertEqual(
-            predict(audio([144_390_000]), 144_390_000, s),
-            .needsRadio(captureID: "cap_1", reason: "you are listening on 143.195 MHz"))
+            byJobs.words,
+            "Retunes the RTL-SDR to 144.390 MHz, pausing: the APRS decoder on 144.390 MHz and the recording on 146.520 MHz."
+        )
+        XCTAssertFalse(byJobs.needsTakeOver, "a job's claim is not a person's")
+
+        let byPeople = words(
+            retune([
+                claim(me, kind: "app", at: 146_520_000),
+                claim("cli_x", kind: "cli", at: 146_940_000),
+                claim("mcp_x", kind: "mcp", .claimIq, at: 146_000_000),
+            ]))
+        XCTAssertEqual(
+            byPeople.words,
+            "Retunes the RTL-SDR to 144.390 MHz, pausing: your channel on 146.520 MHz, a terminal's channel on 146.940 MHz and an agent's IQ reader on 146.000 MHz."
+        )
+        XCTAssertTrue(byPeople.needsTakeOver)
+        XCTAssertTrue(byPeople.canStart)
+        XCTAssertNil(byPeople.declineReason)
     }
 
-    func testASweptCaptureIsSkipped() {
-        var s = MirrorState()
-        s.devices = [dongle()]
-        s.captures = [capture(centre: 144_000_000)]
-        XCTAssertEqual(
-            predict(audio([144_390_000]), 144_390_000, s, swept: ["dev_a"]),
-            .unreachable("no radio here can hear 144.390 MHz"))
-    }
+    // MARK: Decline
 
-    func testADeviceWithNoCaptureIsTaken() {
-        var s = MirrorState()
-        s.devices = [dongle(model: "NESDR SMArt v5")]
-        let p = predict(audio([144_390_000]), 144_390_000, s)
-        XCTAssertEqual(p, .idleRadio(deviceID: "dev_a", model: "NESDR SMArt v5", retune: false))
-        XCTAssertEqual(p.words, "Takes the idle radio, the NESDR SMArt v5.")
-    }
-
-    func testACaptureNobodyUsesIsRetuned() {
-        var s = MirrorState()
-        s.devices = [dongle()]
-        s.captures = [capture(centre: 462_000_000)]
+    func testADeclineTakeOverWouldRetuneAsksToTakeTheRadio() {
+        let reason = "a terminal is listening on 146.520 MHz"
+        let p = words(
+            decline("DEVICE_BUSY", reason),
+            insisting: retune([claim("cli_x", kind: "cli", at: 146_520_000)]))
         XCTAssertEqual(
-            predict(audio([144_390_000]), 144_390_000, s),
-            .idleRadio(deviceID: "dev_a", model: "RTL-SDR", retune: true))
-    }
-
-    func testAChannelOnTheCaptureNeedsTheRadio() {
-        var s = MirrorState()
-        s.devices = [dongle()]
-        s.captures = [capture(centre: 462_000_000)]
-        s.channels = [channel(on: "cap_1", offset: 562_500, owner: "cli_x", kind: "cli")]
-        let p = predict(audio([144_390_000]), 144_390_000, s)
-        XCTAssertEqual(
-            p, .needsRadio(captureID: "cap_1", reason: "a terminal is listening on 462.5625 MHz"))
+            p.words,
+            "Would not start: a terminal is listening on 146.520 MHz; Start asks to take the radio."
+        )
+        XCTAssertTrue(p.canStart)
         XCTAssertTrue(p.needsTakeOver)
+        XCTAssertEqual(p.declineReason, reason)
         XCTAssertEqual(
-            p.words, "Needs the radio from you: a terminal is listening on 462.5625 MHz.")
+            p.takeOver?.clause,
+            "retunes the RTL-SDR to 144.390 MHz, pausing: a terminal's channel on 146.520 MHz")
     }
 
-    func testLiveAudioNeedsTheRadio() {
-        var s = MirrorState()
-        s.devices = [dongle()]
-        var c = capture(centre: 462_000_000)
-        c.activity.liveAudioSinks = 1
-        s.captures = [c]
+    func testADeclineTakeOverCannotChangeIsNoStart() {
+        let reason = "RTL-SDR cannot tune to 1090.000 MHz (a file radio plays what it recorded)"
+        let p = words(decline("NO_DEVICE", reason), insisting: decline("NO_DEVICE", reason))
         XCTAssertEqual(
-            predict(audio([144_390_000]), 144_390_000, s),
-            .needsRadio(captureID: "cap_1", reason: "audio is playing from this radio"))
-    }
-
-    func testAWriteUnderAMinuteAgoNeedsTheRadioAndAnOlderOneDoesNot() {
-        var s = MirrorState()
-        s.devices = [dongle()]
-        var c = capture(centre: 462_000_000)
-        c.activity.lastInteractiveWriteNs = Int64((now.timeIntervalSince1970 - 12) * 1e9)
-        s.captures = [c]
-        XCTAssertEqual(
-            predict(audio([144_390_000]), 144_390_000, s),
-            .needsRadio(captureID: "cap_1", reason: "somebody was tuning this radio 12 s ago"))
-        c.activity.lastInteractiveWriteNs = Int64((now.timeIntervalSince1970 - 61) * 1e9)
-        s.captures = [c]
-        XCTAssertEqual(
-            predict(audio([144_390_000]), 144_390_000, s),
-            .idleRadio(deviceID: "dev_a", model: "RTL-SDR", retune: true))
-    }
-
-    func testNoDeviceThatCanTuneItIsUnreachable() {
-        var s = MirrorState()
-        var d = dongle()
-        d.tuningRanges[0].minHz = 400_000_000
-        s.devices = [d]
-        let p = predict(audio([144_390_000]), 144_390_000, s)
-        XCTAssertEqual(p, .unreachable("RTL-SDR cannot tune 144.390 MHz"))
-        XCTAssertEqual(p.words, "RTL-SDR cannot tune 144.390 MHz.")
+            p.words,
+            "Would not start: RTL-SDR cannot tune to 1090.000 MHz (a file radio plays what it recorded)."
+        )
         XCTAssertFalse(p.canStart)
-        XCTAssertEqual(
-            predict(audio([144_390_000]), 144_390_000, MirrorState()),
-            .unreachable("no radio here can hear 144.390 MHz"))
-    }
-
-    func testABusyRadioThatCannotTuneItIsUnreachableNotBusy() {
-        var s = MirrorState()
-        var d = dongle()
-        d.tuningRanges[0].minHz = 400_000_000
-        s.devices = [d]
-        s.captures = [capture(centre: 462_000_000)]
-        s.channels = [channel(on: "cap_1", offset: 0, owner: me)]
-        XCTAssertEqual(
-            predict(audio([144_390_000]), 144_390_000, s),
-            .unreachable("RTL-SDR cannot tune 144.390 MHz"))
-    }
-
-    func testAFileDeviceTunesOnlyItsOwnPoint() {
-        var s = MirrorState()
-        var d = dongle()
-        d.driver = "file"
-        d.tuningRanges[0].minHz = 144_390_000
-        d.tuningRanges[0].maxHz = 144_390_000
-        d.sampleRates = [960_000]
-        s.devices = [d]
-        XCTAssertEqual(
-            predict(audio([144_390_000]), 144_390_000, s),
-            .idleRadio(deviceID: "dev_a", model: "RTL-SDR", retune: false))
-        XCTAssertEqual(
-            predict(audio([162_400_000]), 162_400_000, s),
-            .unreachable("RTL-SDR cannot tune 162.400 MHz"))
-    }
-
-    // MARK: IQ decoders
-
-    func testAnIQDecoderReusesAnyCaptureWhoseSpanCoversIt() {
-        var s = MirrorState()
-        s.devices = [dongle()]
-        s.captures = [capture(centre: 1_089_500_000)]
-        s.channels = [channel(on: "cap_1", offset: 0, owner: me)]
-        XCTAssertEqual(
-            predict(iq(1_090_000_000), 1_090_000_000, s),
-            .alongside(captureID: "cap_1", listening: true))
-    }
-
-    func testADedicatedIQDecoderReusesOnlyACentredCaptureAtItsRate() {
-        var s = MirrorState()
-        s.devices = [dongle()]
-        s.captures = [capture(centre: 1_089_500_000)]
-        s.channels = [channel(on: "cap_1", offset: 0, owner: me)]
-        let m = iq(1_090_000_000, dedicated: true)
-        XCTAssertEqual(
-            predict(m, 1_090_000_000, s),
-            .needsRadio(captureID: "cap_1", reason: "you are listening on 1089.500 MHz"))
-        s.captures = [capture(centre: 1_090_000_500)]
-        XCTAssertEqual(
-            predict(m, 1_090_000_000, s), .alongside(captureID: "cap_1", listening: true))
-        s.captures = [capture(centre: 1_090_000_000, rate: 2_048_000)]
-        XCTAssertEqual(
-            predict(m, 1_090_000_000, s),
-            .needsRadio(captureID: "cap_1", reason: "you are listening on 1090.000 MHz"))
-    }
-
-    func testADedicatedIQDecoderNeverTakesAFileRadioRecordedElsewhere() {
-        var s = MirrorState()
-        var d = dongle(model: "NESDR SMArt v5")
-        d.driver = "file"
-        d.tuningRanges[0].minHz = 1_090_600_000
-        d.tuningRanges[0].maxHz = 1_090_600_000
-        d.sampleRates = [2_400_000]
-        s.devices = [d]
-        let m = iq(1_090_000_000, dedicated: true)
-        let why = "NESDR SMArt v5 cannot tune to 1090.000 MHz (a file radio plays what it recorded)"
-        // Idle: the span covers 1090 MHz, but the radio cannot be centred on it.
-        XCTAssertEqual(predict(m, 1_090_000_000, s), .unreachable(why))
-        // In use: no take-over, because taking it would not move it.
-        s.captures = [capture(centre: 1_090_600_000)]
-        s.channels = [channel(on: "cap_1", offset: 0, owner: me)]
-        let p = predict(m, 1_090_000_000, s)
-        XCTAssertEqual(p, .unreachable(why))
-        XCTAssertEqual(p.words, why + ".")
         XCTAssertFalse(p.needsTakeOver)
-        XCTAssertFalse(p.canStart)
-        // A decoder that is not dedicated still reads the off-centre span.
-        XCTAssertEqual(
-            predict(iq(1_090_000_000), 1_090_000_000, s),
-            .alongside(captureID: "cap_1", listening: true))
+        // A failed job with the daemon's same reason adds no line under it.
+        var j = Leyline_V1_Job()
+        j.state = .failed
+        j.statusDetail = reason
+        XCTAssertNil(DecoderPages.failedLine(newest: j, placement: p.declineReason ?? p.words))
     }
 
-    func testADedicatedIQDecoderNeedsATunerThatReachesTheFrequencyItself() {
-        var s = MirrorState()
-        var d = dongle()
-        d.tuningRanges[0].maxHz = 1_089_500_000
-        s.devices = [d]
+    func testNoAnswerYetAndNoFrequencyAreNoStart() {
+        XCTAssertFalse(DecoderPlacement.asking.canStart)
+        XCTAssertEqual(DecoderPlacement.asking.words, "Asking the daemon where it would run.")
+        XCTAssertFalse(DecoderPlacement.needsFrequency.canStart)
         XCTAssertEqual(
-            predict(iq(1_090_000_000, dedicated: true), 1_090_000_000, s),
-            .unreachable("RTL-SDR cannot tune to 1090.000 MHz"))
-    }
-
-    func testAnIQDecoderTakesAnIdleRadioOrRetunesAFreeCapture() {
-        var s = MirrorState()
-        s.devices = [dongle()]
-        XCTAssertEqual(
-            predict(iq(1_090_000_000), 1_090_000_000, s),
-            .idleRadio(deviceID: "dev_a", model: "RTL-SDR", retune: false))
-        s.captures = [capture(centre: 144_000_000)]
-        XCTAssertEqual(
-            predict(iq(1_090_000_000), 1_090_000_000, s),
-            .idleRadio(deviceID: "dev_a", model: "RTL-SDR", retune: true))
+            DecoderPlacement.needsFrequency.words,
+            "Has no frequency of its own: tune a channel first.")
     }
 
     // MARK: The frequency
 
     func testTheFrequencyIsTheFirstRecipeFrequencyInsideTheSpanElseTheFirst() {
-        let m = audio([144_390_000, 144_800_000])
-        XCTAssertEqual(
-            DecoderPlacement.frequency(
-                for: m, capture: capture(centre: 145_900_000), tunedHz: nil),
-            144_800_000)
-        XCTAssertEqual(
-            DecoderPlacement.frequency(
-                for: m, capture: capture(centre: 162_000_000), tunedHz: nil),
-            144_390_000)
+        var m = Leyline_V1_DecoderManifest()
+        m.recipe.frequenciesHz = [144_390_000, 144_800_000]
+        var c = Leyline_V1_Capture()
+        c.sampleRate = 2_400_000
+        c.centerHz = 145_900_000
+        XCTAssertEqual(DecoderPlacement.frequency(for: m, capture: c, tunedHz: nil), 144_800_000)
+        c.centerHz = 162_000_000
+        XCTAssertEqual(DecoderPlacement.frequency(for: m, capture: c, tunedHz: nil), 144_390_000)
         XCTAssertEqual(DecoderPlacement.frequency(for: m, capture: nil, tunedHz: nil), 144_390_000)
     }
 
     func testADecoderWithNoFrequencyTakesTheTunedOne() {
-        let m = audio([])
+        let m = Leyline_V1_DecoderManifest()
         XCTAssertEqual(
             DecoderPlacement.frequency(for: m, capture: nil, tunedHz: 146_940_000), 146_940_000)
         XCTAssertNil(DecoderPlacement.frequency(for: m, capture: nil, tunedHz: nil))
-        let p = DecoderPlacement.predict(
-            m, frequencyHz: nil, state: MirrorState(), selfID: me, now: now)
-        XCTAssertEqual(p, .needsFrequency)
-        XCTAssertFalse(p.canStart)
     }
 }

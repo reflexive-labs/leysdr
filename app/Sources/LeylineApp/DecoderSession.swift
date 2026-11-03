@@ -60,6 +60,9 @@ final class DecoderSession {
     var watchFor: String?
     /// The clock the alerts and the expiry read, moved every `tickSeconds` while a page shows.
     private(set) var now = Date()
+    /// The daemon's plan for the selected decoder (`Control.Plan`), worded, with the request it
+    /// answers; `placement(for:)` reads it.
+    private(set) var plan: PlanAnswer?
 
     @ObservationIgnored private var daemon: DaemonConnection?
     @ObservationIgnored private var listing = false
@@ -73,6 +76,12 @@ final class DecoderSession {
     @ObservationIgnored private var captures: [Leyline_V1_Capture] = []
     /// Whether a job of the selected decoder runs, which is when silence ages a transmitter out.
     @ObservationIgnored private var listening = false
+    /// The frequency Start would use for a decoder, the window's tuned channel and the mirror,
+    /// which the session gives; the plan is asked for with them.
+    @ObservationIgnored var planInputs:
+        ((Leyline_V1_DecoderManifest) -> (hz: UInt64?, windowChannel: String?))?
+    @ObservationIgnored private var mirror = MirrorState()
+    @ObservationIgnored private var planning: Task<Void, Never>?
     /// Whether the window shows the place, so the feed and the clock run only then.
     @ObservationIgnored private var shown = false
 
@@ -82,11 +91,25 @@ final class DecoderSession {
     static let tickSeconds: Double = 5
     /// After the record stream fails, this long before it is opened again.
     static let retrySeconds: Double = 2
+    /// How long a plan waits after the change that asked for it, so a burst of state events is
+    /// one `Control.Plan`.
+    static let planDebounceSeconds: Double = 0.2
+
+    /// A plan and the decoder and frequency it was asked for.
+    struct PlanAnswer: Equatable {
+        var decoder: String
+        var frequencyHz: UInt64
+        var placement: DecoderPlacement
+    }
 
     struct TakeOverAsk: Identifiable, Equatable {
         var decoder: String
         var frequencyHz: UInt64
-        var reason: String
+        /// The daemon's reason it would not start without the radio, nil when the plan was a
+        /// retune that moves a person's channel.
+        var reason: String?
+        /// What taking the radio does.
+        var takes: DecoderPlacement.Retune
         var id: String { decoder }
     }
 
@@ -106,12 +129,16 @@ final class DecoderSession {
         listing = false
         readManifests()
         if shown { openFeed() }
+        replan()
     }
 
     /// The mirror changed: the captures are kept for dating, and a change to a decode job is
     /// logged and lets Start's hold go.
     func mirrorChanged(_ state: MirrorState) {
         captures = state.captures
+        mirror = state
+        // State events are what move a plan: a capture retuned, a channel or a job come or gone.
+        replan()
         let jobs = state.jobs.filter { if case .decode? = $0.config { true } else { false } }
         if let m = selected {
             let live = !DecoderPages.running(of: m, in: jobs).isEmpty
@@ -156,6 +183,7 @@ final class DecoderSession {
             // `select` opened it when it chose a decoder.
             if feed == nil { openFeed() }
             startTicker()
+            replan()
         } else {
             feed?.cancel()
             feed = nil
@@ -195,6 +223,7 @@ final class DecoderSession {
     private func landManifests(_ list: [Leyline_V1_DecoderManifest]) {
         listError = nil
         if manifests != list { manifests = list }
+        replan()
         log("decoders", "\(list.count) decoders: \(list.map(\.name).joined(separator: ", "))")
         if let name = selectedName, let m = manifest(named: name) {
             table.display = m.hasDisplay ? m.display : nil
@@ -221,6 +250,7 @@ final class DecoderSession {
         listening = m.map { !DecoderPages.running(of: $0, in: jobsSeen).isEmpty } ?? false
         log("decoders", "selected \(canonical)")
         if shown { openFeed() }
+        replan()
     }
 
     /// The tabs the page shows for the selected decoder.
@@ -368,20 +398,88 @@ final class DecoderSession {
                 guard let self, !Task.isCancelled else { return }
                 self.now = Date()
                 self.expire()
+                // A person's claim ends a minute after their last write with no event of its
+                // own, so the plan is asked for again on the clock too.
+                self.replan()
             }
         }
+    }
+
+    // MARK: The plan
+
+    /// Where Start would put the decoder: the daemon's answer for it at `frequencyHz`, `asking`
+    /// until one arrives, and `needsFrequency` with no frequency to ask about.
+    func placement(for m: Leyline_V1_DecoderManifest, frequencyHz: UInt64?) -> DecoderPlacement {
+        guard let hz = frequencyHz else { return .needsFrequency }
+        guard let p = plan, p.decoder == m.name, p.frequencyHz == hz else { return .asking }
+        return p.placement
+    }
+
+    /// Asks `Control.Plan` for the selected decoder, `planDebounceSeconds` after the last call,
+    /// while the place shows. A decline is asked again with `take_over`, which says whether
+    /// Start can take the radio. The answer before stays on the page until the new one lands.
+    func replan() {
+        guard shown, daemon != nil, let m = selected else { return }
+        planning?.cancel()
+        planning = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.planDebounceSeconds))
+            guard let self, !Task.isCancelled else { return }
+            await self.askPlan(m)
+        }
+    }
+
+    private func askPlan(_ m: Leyline_V1_DecoderManifest) async {
+        guard let daemon, let inputs = planInputs?(m), let hz = inputs.hz else { return }
+        var cfg = Leyline_V1_DecodeConfig()
+        cfg.decoder = m.name
+        cfg.frequencyHz = hz
+        cfg.keep = true
+        var req = Leyline_V1_PlanRequest()
+        req.decode = cfg
+        let placement: DecoderPlacement
+        do {
+            let p = try await daemon.control.plan(req)
+            var insisting: Leyline_V1_CapturePlan?
+            if case .decline? = p.outcome {
+                cfg.takeOver = true
+                req.decode = cfg
+                insisting = try await daemon.control.plan(req)
+            }
+            guard !Task.isCancelled else { return }
+            placement = DecoderPlacement.from(
+                p, insisting: insisting, state: mirror, selfID: clientID,
+                windowChannel: inputs.windowChannel, titles: titles)
+        } catch {
+            guard !Task.isCancelled else { return }
+            let e = LeylineError(error)
+            placement = .decline(
+                code: e.code, reason: e.message.isEmpty ? e.code : e.message, insist: nil)
+        }
+        let answer = PlanAnswer(decoder: m.name, frequencyHz: hz, placement: placement)
+        guard answer != plan else { return }
+        plan = answer
+        log("decoders", "plan for \(m.name) at \(hz) Hz: \(placement.words)")
+    }
+
+    /// Each decoder's title by its manifest name, for naming a decode job a plan would pause.
+    private var titles: [String: String] {
+        Dictionary(
+            (manifests ?? []).map { ($0.name, DecoderPages.title($0)) },
+            uniquingKeysWith: { a, _ in a })
     }
 
     // MARK: Start and stop
 
     /// Start: the kept decode job on the frequency the placement chose, after asking when the
-    /// radio is somebody's (`takeOverAsk`, answered by `answerTakeOver`).
+    /// plan takes the radio from somebody (`takeOverAsk`, answered by `answerTakeOver`).
     func start(
         _ m: Leyline_V1_DecoderManifest, frequencyHz: UInt64, placement: DecoderPlacement
     ) async {
-        if case .needsRadio(_, let reason) = placement {
-            takeOverAsk = TakeOverAsk(decoder: m.name, frequencyHz: frequencyHz, reason: reason)
-            log("decoders", "asked to take the radio for \(m.name): \(reason)")
+        if let takes = placement.takeOver {
+            takeOverAsk = TakeOverAsk(
+                decoder: m.name, frequencyHz: frequencyHz, reason: placement.declineReason,
+                takes: takes)
+            log("decoders", "asked to take the radio for \(m.name): \(placement.words)")
             return
         }
         await startJob(m.name, frequencyHz: frequencyHz, takeOver: false)
@@ -481,7 +579,7 @@ final class DecoderSession {
         log("decoders", "start of \(s) let go: \(why)")
     }
 
-    /// The window's client id, so the placement calls its own channel "you".
+    /// The window's client id, so the plan calls its own channel "you".
     var clientID: String { daemon?.identity.id ?? "" }
 
     // MARK: Labels
@@ -534,21 +632,9 @@ extension AppSession {
         DecoderPlacement.frequency(for: m, capture: capture, tunedHz: tunedHz)
     }
 
-    /// Where Start would put a decoder now, read from the mirror: the line under Start.
+    /// Where Start would put a decoder now, as the daemon's last plan says: the line under
+    /// Start.
     func decoderPlacement(_ m: Leyline_V1_DecoderManifest) -> DecoderPlacement {
-        DecoderPlacement.predict(
-            m, frequencyHz: decoderFrequency(m), state: state, swept: sweptDevices,
-            selfID: decoders.clientID, windowChannel: channelID)
-    }
-
-    /// The devices a running sweep names, whose captures no decoder joins. A sweep that names
-    /// none is left out: which radio it took is not in the mirror, and the prediction is advice.
-    private var sweptDevices: Set<String> {
-        Set(
-            state.jobs.compactMap { j in
-                guard case .scan(let s)? = j.config, DecoderPages.isLive(j), !s.deviceID.isEmpty
-                else { return nil }
-                return s.deviceID
-            })
+        decoders.placement(for: m, frequencyHz: decoderFrequency(m))
     }
 }

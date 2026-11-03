@@ -953,6 +953,9 @@ final class AppSession {
             self.daemon = daemon
             socketPath = daemon.socketPath
             decoders.connect(daemon)
+            decoders.planInputs = { [weak self] m in
+                (self?.decoderFrequency(m), self?.channelID)
+            }
             decoders.setShown(place == .decoders)
             let mirror = DaemonMirror(connection: daemon)
             mirror.onChange = { [weak self] m in self?.mirrorChanged(m) }

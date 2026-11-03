@@ -28,7 +28,9 @@ where the step says so.
   as it was rather than the design's priority rule; the three places they differ are listed in
   engine-internals.md, "Claims", for CL-3 and CL-5. A recording of somebody's channel now holds a
   JOB claim of its own. The `dry_run` tool argument has the `ask-before-starting` eval scenario,
-  not yet run. Not done: the app's `DecoderPlacement`, left for the next app batch.
+  not yet run. The app's `DecoderPlacement` was replaced by a call to `Control.Plan` on
+  2026-11-02 (`DecoderPlacementTests` words each plan kind; docs/dev/app.md, "The Decoders
+  place"); its copy of the allocator and those tests are gone.
 - [ ] **CL-3 Uniform displacement.** `tuning_generation` on `Capture` and bulk frames; IQ
   recordings start a new part when displaced and resumed; views carry the centre per row; the
   DEGRADED detail names who moved the radio; displaced claims on capture events.

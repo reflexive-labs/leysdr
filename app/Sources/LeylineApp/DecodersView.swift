@@ -5,8 +5,8 @@
 // change. The same three columns as the Library: a sidebar of the installed decoders with their
 // running jobs, the selected decoder's page, and the inspector on a transmitter or a record
 // (`DecoderInspector.swift`). The page's header starts and stops the decoder as a kept job, with
-// the line `DecoderPlacement` predicts before it starts and the job's own state and detail once it
-// runs; under it the tabs the decoder's output shapes call for: the log always, with the alerts in
+// the daemon's plan in `DecoderPlacement`'s words before it starts and the job's own state and
+// detail once it runs; under it the tabs the decoder's output shapes call for: the log always, with the alerts in
 // effect above it, the transmitter table for a decoder that declares entities, and the map once a
 // record carries a position (`DecoderMap.swift`). The radio keeps running underneath, as it does
 // in the Library. Every word on a record is the manifest's display template, as `ley decode`
@@ -50,9 +50,10 @@ struct DecodersBody: View {
     }
 }
 
-/// Start's question when the decoder needs a radio somebody is using: the daemon's own reason,
-/// both frequencies in MHz (`DecoderPages.frequencyWords`), and Take the radio, which starts the job with `take_over`. The binding's setter does nothing,
-/// as the retune question's does, so the buttons alone answer it.
+/// Start's question when the plan takes a radio from somebody: the daemon's own reason, what
+/// `take_over` would retune and pause as its plan says, every frequency in MHz
+/// (`DecoderPages.frequencyWords`), and Take the radio, which starts the job with `take_over`. The
+/// binding's setter does nothing, as the retune question's does, so the buttons alone answer it.
 struct TakeOverQuestion: ViewModifier {
     @Environment(AppSession.self) private var session
 
@@ -67,8 +68,9 @@ struct TakeOverQuestion: ViewModifier {
             Button("Take the radio") { Task { await d.answerTakeOver(true) } }
         } message: { ask in
             let title = d.manifest(named: ask.decoder).map(DecoderPages.title) ?? ask.decoder
+            let why = ask.reason.map { ", and \(DecoderPlacement.unstopped($0))" } ?? ""
             Text(
-                "\(title) needs the radio at \(DecoderPages.frequencyWords(ask.frequencyHz)), and \(ask.reason). The radio goes back when the decoder stops."
+                "\(title) needs the radio at \(DecoderPages.frequencyWords(ask.frequencyHz))\(why). Taking it \(ask.takes.clause). The radio goes back when the decoder stops."
             )
         }
     }
@@ -255,9 +257,9 @@ struct DecoderPage: View {
 
 /// The decoder's symbol and title over what it is doing, and Start or Stop. While a job runs the
 /// line is its state and frequency (`Running · 144.390 MHz`; `caution` while degraded), its
-/// `status_detail` being the sidebar's job line and this line's tooltip; otherwise it is where Start would put it
-/// (`DecoderPlacement.words`), and under it the newest job's failure when it failed for another
-/// reason (`DecoderPages.failedLine`).
+/// `status_detail` being the sidebar's job line and this line's tooltip; otherwise it is where
+/// Start would put it (`DecoderPlacement.words`, the daemon's plan), and under it the newest job's
+/// failure when it failed for another reason (`DecoderPages.failedLine`).
 struct DecoderPageHeader: View {
     let manifest: Leyline_V1_DecoderManifest
     @Environment(AppSession.self) private var session
@@ -290,7 +292,8 @@ struct DecoderPageHeader: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("decoders.page.placement")
                     if let failed = DecoderPages.failedLine(
-                        newest: jobs.first, placement: placement.words)
+                        newest: jobs.first,
+                        placement: placement.declineReason ?? placement.words)
                     {
                         Text(failed).font(Theme.Font.footnote)
                             .foregroundStyle(Theme.accentRec).lineLimit(2)
@@ -331,10 +334,10 @@ struct DecoderPageHeader: View {
     }
 
     private func placementInk(_ p: DecoderPlacement) -> Color {
+        if p.needsTakeOver { return Theme.caution }
         switch p {
-        case .needsRadio: Theme.caution
-        case .unreachable, .needsFrequency: Theme.inkFaint
-        default: Theme.inkMuted
+        case .asking, .needsFrequency, .decline: return Theme.inkFaint
+        default: return Theme.inkMuted
         }
     }
 

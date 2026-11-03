@@ -1892,12 +1892,13 @@ scenes:
   # scene_adsb_off, a capture that hears 1090 MHz 600 kHz off its centre, with the window's
   # channel on it. ADS-B needs its own capture centred on 1090 MHz, and the file radio plays
   # what it recorded and cannot be centred there, so nothing here can run it: the page says why
-  # in the daemon's words and Start is off, with no take-over question, because taking the radio
-  # would not move it. No file fixture can retune, so the question itself is checked only by
-  # DecoderPlacementTests. A terminal's `ley decode --job --take-over` insists, and the daemon
-  # declines it with the same reason (DA-13): ley prints it with the next command and exits 1,
-  # and the page shows the job as Failed while the radio stays where it was. The sentence writes
-  # the frequency in MHz (DA-15).
+  # in the words of the daemon's plan (`Control.Plan`, CL-2) and Start is off, with no take-over
+  # question, because the plan with take_over declines too. No file fixture can retune, so the
+  # question itself is checked only by DecoderPlacementTests. A terminal's `ley decode --job
+  # --take-over` insists, and the daemon declines it with the same reason (DA-13): ley prints it
+  # with the next command and exits 1, and the page shows the job as Failed while the radio stays
+  # where it was, with no red line under the plan's, which already gives the reason. The
+  # sentence writes the frequency in MHz (DA-15).
   - name: decoders-take-over
     covers: [DecodersView.swift, DecoderSession.swift, DecoderPlacement.swift, DecoderPages.swift]
     fixtures: [{name: scene_adsb_off}]
@@ -1908,7 +1909,7 @@ scenes:
       decoder: adsb
       settle: 2
     app:
-      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tabs.0: log, decoders.record_count: 0, decoders.start_enabled: false, decoders.placement: "NESDR SMArt v5 cannot tune to 1090.000 MHz (a file radio plays what it recorded)."}}
+      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tabs.0: log, decoders.record_count: 0, decoders.start_enabled: false, decoders.placement: "Would not start: NESDR SMArt v5 cannot tune to 1090.000 MHz (a file radio plays what it recorded)."}}
       - {cmd: snapshot, name: placement}
       - {cmd: ax, name: placement}
       - {cmd: ley, args: [decode, adsb, --job, --take-over], expect_exit: 1, expect_stdout: '^$'}
