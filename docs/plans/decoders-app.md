@@ -328,10 +328,15 @@ The calls for this batch, taken 2026-11-02:
   Verified 2026-11-02 by `TestDialResolvesARelativeSocket` and `TestRelativeSocketReachesTheDaemon`
   (Go only).
 
-- [ ] **DA-24 Leftovers from the last verify run.** The decoder inspector's FIELDS values start at
+- [x] **DA-24 Leftovers from the last verify run.** The decoder inspector's FIELDS values start at
   another x than the grid above them; the watch sheet's operator pop-up is wider than its words;
   `pointer-and-menus` once retuned to the view's edge (147.84 MHz, OFFSET_OUT_OF_CAPTURE) right
   after its click, and did not again in three runs: cause not found.
+  Done 2026-11-03: one 124 pt label column for the inspector's grids; the operator pop-up was
+  already sized to `contains` (99 pt for `is` and `contains`, as its golden), so it is unchanged;
+  the edge retune did not recur in 10 runs, but a click mapping to the edge of a file radio's
+  capture reproduces it, so such a click now stops inside the edge and charts map a click
+  against their width at the event (cause of the stray edge mapping unconfirmed).
 
 ## After this
 
