@@ -55,12 +55,12 @@ func TestMCPSetMirrorsLeySet(t *testing.T) {
 	if !refused.IsError {
 		t.Fatalf("set freq moved a radio another channel listens on:\n%s", resultText(refused))
 	}
-	for _, want := range []string{"1 channel listening", "take_over: true"} {
+	for _, want := range []string{"would pause a terminal's channel on 146.520 MHz", "take_over: true"} {
 		if !strings.Contains(resultText(refused), want) {
 			t.Errorf("the refusal lacks %q:\n%s", want, resultText(refused))
 		}
 	}
-	if strings.Contains(resultText(refused), mine.GetChannelId()) {
+	if strings.Contains(resultText(refused), "146.550 MHz") {
 		t.Errorf("the channel being moved is not one that falls silent:\n%s", resultText(refused))
 	}
 	if after, _ := h.client.State(t.Context()); after.EventSeq != before.EventSeq {

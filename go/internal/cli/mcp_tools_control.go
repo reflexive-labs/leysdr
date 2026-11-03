@@ -43,7 +43,7 @@ type setArgs struct {
 	Param    string `json:"param" jsonschema:"which setting: freq (or frequency), mode, bw (or filter), squelch, gain, volume"`
 	Value    string `json:"value"`
 	Channel  string `json:"channel,omitempty" jsonschema:"which channel: an id (chan_...), id prefix, row number from get_state or frequency (default: the only active one, else the only one an agent made)"`
-	TakeOver bool   `json:"take_over,omitempty" jsonschema:"change another client's channel, set a gain under another client's channel, or move the radio for a freq when other channels listen on it or a recording runs on it (the recording logs the gap) (default: false, refuse and say what would be disturbed). Send it only after such a refusal"`
+	TakeOver bool   `json:"take_over,omitempty" jsonschema:"change another client's channel, set a gain under another client's channel, or move the radio for a freq when that pauses a decoder, a recording or another client's channel (default: false, refuse and say what would be disturbed). Send it only after such a refusal"`
 }
 
 // setSchema describes value with ley set's own parameter table, so the forms the tool accepts
@@ -88,11 +88,6 @@ func (srv *mcpServer) set(ctx context.Context, _ *mcp.CallToolRequest, in setArg
 		if err := srv.refuseSetOthers(s.State, p.name, ch, capture); err != nil {
 			return nil, nil, err
 		}
-		if p.name == "freq" {
-			if err := refuseSetRetune(s, ch, capture, in.Value); err != nil {
-				return nil, nil, err
-			}
-		}
 	}
 	res, err := applySet(ctx, s, p.name, in.Value, ch, capture, in.TakeOver)
 	if err != nil {
@@ -102,26 +97,7 @@ func (srv *mcpServer) set(ctx context.Context, _ *mcp.CallToolRequest, in setArg
 		return nil, nil, toolError(fmt.Errorf("rejected: %w", s.friendly(rejectedError(res.rejected), in.Value, res.hz)))
 	}
 	fmt.Fprintln(out, confirmLine(ui.Style{}, s.State, p.name, res.stages, res.event, ch, capture))
-	srv.touched(capture.GetCaptureId())
 	return protoResult(res.event, out.String()+errb.String())
-}
-
-// refuseSetRetune is tune's don't-disturb refusal for a set freq: a frequency the capture does
-// not cover moves the radio, and every other channel listening on it falls silent. The channel
-// being set moves with the radio, so it is not one of them. A value that does not parse is left
-// to applySet, whose error names the forms.
-func refuseSetRetune(s *verbSession, ch *leylinev1.Channel, capture *leylinev1.Capture, value string) error {
-	if capture == nil {
-		return nil
-	}
-	hz, err := setFreqHz(value)
-	if err != nil {
-		return nil
-	}
-	if ch != nil && covers(capture, hz, ch.GetBandwidthHz()) {
-		return nil
-	}
-	return retuneRefusal(s.State, capture, hz, ch.GetChannelId())
 }
 
 // refuseSetOthers refuses a set that would change what another client's channel is doing: any

@@ -83,8 +83,8 @@ func (srv *mcpServer) record(ctx context.Context, _ *mcp.CallToolRequest, in rec
 	}
 	cfg := o.config()
 	var note string
-	if !cfg.TakeOver && srv.ownGrace(st, cfg.DeviceId) {
-		cfg.TakeOver, note = true, ownGraceNote
+	if !cfg.TakeOver && srv.onlyOurs(ctx, &leylinev1.PlanRequest{Request: &leylinev1.PlanRequest_Record{Record: cfg}}) {
+		cfg.TakeOver, note = true, onlyOursNote
 	}
 	if in.DryRun {
 		return srv.dryRun(ctx, st, &leylinev1.PlanRequest{Request: &leylinev1.PlanRequest_Record{Record: cfg}},

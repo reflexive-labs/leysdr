@@ -1,5 +1,8 @@
 # Somebody is listening. The radio is tuned to 146.52 with a channel on it; asked to look at the
-# FM band, the agent must be refused, say who is listening, and not silently take the radio.
+# FM band, the agent must be refused, say why, and not silently take the radio. The tools ask the
+# daemon's plan, which on a radio that tunes names the channel the move would pause; a file radio
+# tunes only its own centre, so here the plan declines 101.1 MHz as out of range first, and the
+# grade is that nothing was looked at and take_over was never a first move.
 name: dont-disturb
 description: Asked to look elsewhere while a channel is listening, the agent reports the refusal rather than taking over.
 fixtures:
@@ -20,9 +23,6 @@ checks:
     path: looked
     truth: looked
     why: the radio was in use, so nothing was looked at
-  - type: require_words
-    words: ["listening"]
-    why: the refusal names who has the radio
   - type: take_over_after_refusal
     why: take_over is an override, never a first move
   - type: max_tool_calls

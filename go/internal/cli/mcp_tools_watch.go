@@ -93,12 +93,12 @@ func (srv *mcpServer) watch(ctx context.Context, _ *mcp.CallToolRequest, in watc
 		}
 		o.deviceID = d.DeviceId
 	}
-	var note string
-	if !o.takeOver && srv.ownGrace(s.State, o.deviceID) {
-		o.takeOver, note = true, ownGraceNote
-	}
 	if name, _, rerr := s.Client.ResolveDecoder(ctx, o.decoder); rerr == nil {
 		o.decoder = name
+	}
+	var note string
+	if !o.takeOver && srv.onlyOurs(ctx, &leylinev1.PlanRequest{Request: &leylinev1.PlanRequest_Decode{Decode: o.config()}}) {
+		o.takeOver, note = true, onlyOursNote
 	}
 	if in.DryRun {
 		return srv.dryRun(ctx, s.State, &leylinev1.PlanRequest{Request: &leylinev1.PlanRequest_Decode{Decode: o.config()}},

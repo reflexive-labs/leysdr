@@ -313,7 +313,7 @@ func TestMCPTuneRefusesAnActiveCaptureAndNamesWhy(t *testing.T) {
 		t.Fatalf("tune moved a radio somebody was listening on:\n%s", resultText(res))
 	}
 	text := resultText(res)
-	for _, want := range []string{"the radio is on 146.520 MHz with 1 channel listening", before.Channels[0].ChannelId, "take_over: true"} {
+	for _, want := range []string{"retuning to 150.000 MHz would pause a terminal's channel on 146.520 MHz", "take_over: true"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("refusal lacks %q:\n%s", want, text)
 		}
@@ -793,44 +793,31 @@ func TestListenSummaryFold(t *testing.T) {
 	}
 }
 
-// The daemon's grace after an interactive write refuses a job for a minute and says "somebody
-// was tuning"; when the write was this server's own and nobody is listening, the job may go
-// ahead. Somebody else's write, a channel listening, or audio playing keeps the refusal.
-func TestOwnGraceIsOnlyOurOwnQuietCapture(t *testing.T) {
-	now := time.Now()
-	srv := &mcpServer{}
-	srv.touched("cap_mine")
-	state := func(last time.Time, sinks uint32, chState leylinev1.ChannelState) *leylinev1.GetStateResponse {
-		st := &leylinev1.GetStateResponse{Captures: []*leylinev1.Capture{{
-			CaptureId: "cap_mine", DeviceId: "dev_a",
-			Activity: &leylinev1.CaptureActivity{LastInteractiveWriteNs: last.UnixNano(), LiveAudioSinks: sinks},
-		}}}
-		if chState != leylinev1.ChannelState_CHANNEL_STATE_UNSPECIFIED {
-			st.Channels = []*leylinev1.Channel{{ChannelId: "chan_x", CaptureId: "cap_mine", State: chState}}
-		}
-		return st
+// A job the daemon would decline only because of this server's own claims goes ahead without
+// take_over and says why: the agent's own channel is not somebody else's. Another client's
+// channel in the way keeps the refusal, and the job is not started.
+func TestMCPJobGoesAheadOverOnlyItsOwnClaims(t *testing.T) {
+	t.Parallel()
+	h := newMCPHarness(t)
+	h.must(t, "tune", map[string]any{"frequency": "146.52"})
+	res := h.must(t, "start_decode_job", map[string]any{"decoder": "aprs"})
+	if !strings.Contains(resultText(res), "only this server's own channel or recent tune was in the way") {
+		t.Errorf("the job must say it went ahead over the agent's own channel:\n%s", resultText(res))
 	}
-	none := leylinev1.ChannelState_CHANNEL_STATE_UNSPECIFIED
-	if !srv.ownGrace(state(now, 0, none), "dev_a") {
-		t.Error("our own write a moment ago, nobody listening: the grace is ours to skip")
+	var job leylinev1.Job
+	structured(t, res, &job)
+	if !job.GetDecode().GetTakeOver() {
+		t.Errorf("the job went ahead without taking the radio: %v", &job)
 	}
-	if !srv.ownGrace(state(now, 0, none), "") {
-		t.Error("with no device named, any capture of ours counts")
+
+	other := newMCPHarness(t)
+	listening(t, other.client)
+	refused := other.call(t, "start_decode_job", map[string]any{"decoder": "aprs"})
+	if !refused.IsError || strings.Contains(resultText(refused), "own channel") {
+		t.Fatalf("another client's channel must keep the refusal:\n%s", resultText(refused))
 	}
-	if srv.ownGrace(state(now, 0, none), "dev_b") {
-		t.Error("another device's capture is not ours")
-	}
-	if srv.ownGrace(state(now.Add(-20*time.Second), 0, none), "dev_a") {
-		t.Error("a write 20 s from ours is somebody else's")
-	}
-	if srv.ownGrace(state(now, 1, none), "dev_a") {
-		t.Error("audio playing keeps the refusal")
-	}
-	if srv.ownGrace(state(now, 0, leylinev1.ChannelState_CHANNEL_ACTIVE), "dev_a") {
-		t.Error("a channel listening keeps the refusal")
-	}
-	if (&mcpServer{}).ownGrace(state(now, 0, none), "dev_a") {
-		t.Error("a server that never wrote has no grace of its own")
+	if jobs, _ := other.client.ListJobs(t.Context()); len(jobs) != 0 {
+		t.Errorf("a refused job was started: %v", jobs)
 	}
 }
 

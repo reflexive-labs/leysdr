@@ -11,7 +11,7 @@ import (
 // The gate, row by row: what runs, what asks, and the words it asks with.
 func TestPolicyRows(t *testing.T) {
 	t.Parallel()
-	refusal := "the radio is on 146.520 MHz with 1 channel listening: chan_X (146.520 MHz, ley tune). Retuning to 150.000 MHz would silence it. Call again with take_over: true to move it anyway, or stop what is listening first"
+	refusal := "retuning to 150.000 MHz would pause a terminal's channel on 146.520 MHz. Call again with take_over: true to move it anyway"
 	cases := []struct {
 		name     string
 		tool     string
@@ -38,7 +38,7 @@ func TestPolicyRows(t *testing.T) {
 		{
 			name: "take_over asks and names who", tool: "tune", args: map[string]any{"frequency": "150", "take_over": true}, isWrite: true,
 			prepare: func(p *Policy) { p.Ran("tune", nil, Result{Text: refusal, IsError: true}) },
-			wantAsk: true, wantSays: []string{"another channel or client is using the radio: the radio is on 146.520 MHz with 1 channel listening: chan_X (146.520 MHz, ley tune)", "tune with take_over"},
+			wantAsk: true, wantSays: []string{"another channel or client is using the radio: retuning to 150.000 MHz would pause a terminal's channel on 146.520 MHz", "tune with take_over"},
 		},
 		{
 			name: "take_over with no refusal before asks too", tool: "scan", args: map[string]any{"range": "2m", "take_over": true}, isWrite: true,

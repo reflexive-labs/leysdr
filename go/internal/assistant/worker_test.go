@@ -80,7 +80,7 @@ func TestPolicyRowsAskTheUser(t *testing.T) {
 				w.listening()
 				return []string{toolLine("tune", map[string]any{"frequency": "150"}), toolLine("tune", map[string]any{"frequency": "150", "take_over": true})}
 			},
-			wantReason: "another channel or client is using the radio: the radio is on 146.520 MHz with 1 channel listening: chan_",
+			wantReason: "another channel or client is using the radio: retuning to 150.000 MHz would pause a terminal's channel on 146.520 MHz",
 			changed:    func(w *worker) bool { return w.state().GetCaptures()[0].GetCenterHz() == 150_000_000 },
 		},
 		{

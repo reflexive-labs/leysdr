@@ -40,10 +40,13 @@ anything that can start `ley mcp` could run `ley`. There is no network transport
 requires an authenticated TCP control plane first (`docs/design/control-plane.md`, "Auth for TCP
 remote access").
 
-Two guards carry over from the designs. The don't-disturb default is enforced twice: the adapter
-refuses to move a radio somebody is listening on and names who, before anything is written, and the
-daemon refuses again with its own state if the adapter's view was stale; `take_over: true` is the
-only way past either. And nothing here transmits: there is no TX in the contract, and when there is,
+Two guards carry over from the designs. The don't-disturb default is the daemon's plan
+(`docs/design/claims.md`, "In the clients"): before a tool moves a radio it asks `Control.Plan`
+what the retune would pause and refuses, naming each claim, before anything is written; a job the
+daemon would decline is declined with the daemon's sentence. `take_over: true` is the only way
+past either. This server's own claims (its channels, its presence after its own write) are never
+somebody else's: the plan leaves them out of a retune's list, and a job the daemon would decline
+only because of them goes ahead without `take_over`, saying so. And nothing here transmits: there is no TX in the contract, and when there is,
 an emission lease gates it, never a tool (AGENTS.md, invariant 11).
 
 Whatever an agent starts without `keep` ends with its conversation. The server holds one event
@@ -153,10 +156,12 @@ Notes a table cell cannot hold:
   the band unless `mode` is given, the squelch measured from the noise floor for NFM and AM unless
   `squelch` is given (`off` opts out), the gain left alone unless `gain` is given. It plays no
   audio unless `audio: true`, which attaches a system-audio sink on the machine the daemon runs on.
-  It refuses to move a radio other channels are listening on: the text names the channels, their
-  frequencies and their owners, and ends with the remedy (`take_over: true`, or stop what is
-  listening). The refusal is made before any RPC that writes, so a refused call leaves the daemon
-  as it found it.
+  It refuses to move a radio when the daemon's plan says the retune would pause somebody: "retuning
+  to 150.000 MHz would pause the aprs decoder on 144.390 MHz and a terminal's channel on 146.520
+  MHz. Call again with take_over: true to move it anyway", the same list `ley tune` names. A
+  decoder, a recording, a scan and another client's channel are named; a spectrum view and this
+  server's own channels never are. The refusal is made before any RPC that writes, so a refused
+  call leaves the daemon as it found it.
 - **`scan`** takes an exclusive radio lease for the duration of the sweep and declines a radio
   somebody is using with the daemon's sentence and the remedy (`take_over: true`). A detection is a
   carrier that rose above the measured noise floor, with the looks that saw it
@@ -166,10 +171,10 @@ Notes a table cell cannot hold:
   `min_snr` trims the returned `Scan`'s detections the way `ley scan --min-snr` trims its rows,
   because a 20 MHz sweep is hundreds of detections and more JSON than a result budget holds; the
   whole sweep stays readable as `ley://scans/<id>` (below), and the text says how many it left out.
-  A radio with no gain stage (a file device) is refused a `gain` in a sentence that names it. The
-  daemon's minute of grace after an interactive write ("somebody was tuning this radio 39 s ago") is
-  skipped when the write was this server's own earlier tune, listen or snapshot and nobody is
-  listening on the capture: the sweep goes ahead, and the text says so, since it silences nobody.
+  A radio with no gain stage (a file device) is refused a `gain` in a sentence that names it. When
+  the daemon's plan declines the sweep only for this server's own claims (its own channel, or the
+  minute of presence after its own tune, listen or snapshot), the sweep goes ahead without
+  `take_over` and the text says so; `start_decode_job`, `watch` and `record` do the same.
   `gain` is where the sweep pins the tuner (`auto` is where the radio's AGC settles, then held);
   without it the sweep pins whatever gain the radio was left at, which is what made two sweeps of
   one band differ by 6 dB of floor in the survey, and `Scan.gains` records every stage either way.
@@ -200,8 +205,8 @@ Notes a table cell cannot hold:
   marked under the axis. Columns take the level ramp of `docs/dev/cli-style.md` section 3a, the same
   five stops the terminal chart uses, so a level is the same colour in both. `peaks` are local
   maxima at least 15 dB over the row's median, presentation only; `scan` is the detector. Like `ley
-  spectrum` it reuses a capture that covers the frequency, refuses to move one others are listening
-  on, and removes a capture it made. `no_image: true` returns the numbers alone, and `bins` is
+  spectrum` it reuses a capture that covers the frequency, refuses to move one when the plan says that
+  would pause somebody, and removes a capture it made. `no_image: true` returns the numbers alone, and `bins` is
   `null` unless `include_bins: true`: a row of 1024 numbers is a page of JSON an agent rarely reads
   (a 2048-bin survey was 39 KB), and the floor, the peaks and the text show what stood out. Given a
   frequency, the text also reports the row's level there (the loudest bin within a voice channel of
@@ -274,9 +279,9 @@ Notes a table cell cannot hold:
   retune). Three writes are refused before anything is written, naming what they would
   disturb, until `take_over: true`: any setting of a channel another client made; a `gain` while
   another client's channel is on the radio, since the gain belongs to the radio and moves every
-  channel on it; and a `freq` outside what the radio is tuned to while other channels listen on
-  it, as `tune` refuses, or while a recording runs on it, which `ley set` overrides with
-  `--retune` (the recording logs the gap).
+  channel on it; and a `freq` outside what the radio is tuned to when the plan says the retune would pause
+  a decoder, a recording or another client's channel, as `tune` refuses and `ley set freq` does
+  without `--retune`. The channel being set moves with the radio and is not counted.
 - **`stop`** with no arguments stops every channel this server made and nothing else. `channel`
   is `ley stop <channel>` and `all` is `ley stop all`, which also removes the capture so the radio
   is free. A channel another client made (the app's, a `ley tune --persistent`, an earlier

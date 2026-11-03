@@ -11,7 +11,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
@@ -115,64 +114,31 @@ type mcpServer struct {
 	server *mcp.Server
 	// presenceDone closes when the presence loop has stopped.
 	presenceDone chan struct{}
-	// recent is when this server last wrote to each capture (a tune, a listen, a snapshot),
-	// by capture id. The daemon's don't-disturb grace refuses a sweep or a decode for a minute
-	// after an interactive write and says "somebody was tuning"; when that somebody was this
-	// server's own earlier call, the refusal protects no one and the tools skip it.
-	recentMu sync.Mutex
-	recent   map[string]time.Time
 }
 
-// touched records an interactive write of this server's own on a capture.
-func (srv *mcpServer) touched(captureID string) {
-	if captureID == "" {
-		return
+// onlyOurs reports whether the only claims standing in the way of a job are this server's own
+// (docs/design/claims.md, "In the clients"): the daemon's plan for req declines it as busy, and
+// every claim that blocks it is held by this server's client, a channel an earlier tune made or
+// the minute of presence after its own write. Those are not somebody else's, so the job may take
+// the radio without take_over. A plan that cannot be had, or that names nobody, is not ours.
+func (srv *mcpServer) onlyOurs(ctx context.Context, req *leylinev1.PlanRequest) bool {
+	if srv.client == nil {
+		return false
 	}
-	srv.recentMu.Lock()
-	defer srv.recentMu.Unlock()
-	if srv.recent == nil {
-		srv.recent = map[string]time.Time{}
+	p, err := srv.client.Control.Plan(ctx, req)
+	if err != nil {
+		return false
 	}
-	srv.recent[captureID] = time.Now()
-}
-
-// ownGraceSlack is how far apart this server's own write and the daemon's last-write stamp may
-// be and still be the same write.
-const ownGraceSlack = 3 * time.Second
-
-// ownGrace reports whether the only thing in the way of a job on the device (any device, when
-// deviceID is empty) is the daemon's grace after a write this server made itself: no channel is
-// listening on the capture, no audio plays from it, and its last interactive write is one of
-// ours to within ownGraceSlack. A job may then take the radio over without silencing anyone.
-func (srv *mcpServer) ownGrace(state *leylinev1.GetStateResponse, deviceID string) bool {
-	srv.recentMu.Lock()
-	defer srv.recentMu.Unlock()
-	for _, capture := range state.GetCaptures() {
-		if deviceID != "" && capture.GetDeviceId() != deviceID {
-			continue
-		}
-		last := capture.GetActivity().GetLastInteractiveWriteNs()
-		if last == 0 || capture.GetActivity().GetLiveAudioSinks() > 0 {
-			continue
-		}
-		listening := false
-		for _, ch := range state.GetChannels() {
-			if ch.GetCaptureId() == capture.GetCaptureId() && ch.GetState() == leylinev1.ChannelState_CHANNEL_ACTIVE {
-				listening = true
-			}
-		}
-		if listening {
-			continue
-		}
-		mine, ok := srv.recent[capture.GetCaptureId()]
-		if !ok {
-			continue
-		}
-		if d := mine.Sub(time.Unix(0, last)); d < ownGraceSlack && d > -ownGraceSlack {
-			return true
+	d := p.GetDecline()
+	if d.GetCode() != leyline.CodeDeviceBusy || len(d.GetBlocking()) == 0 {
+		return false
+	}
+	for _, c := range d.GetBlocking() {
+		if c.GetHolder().GetClientId() != srv.client.ClientID() {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 // afterOutcome puts a note on the line after a result's text, which ends without a newline: the
@@ -184,9 +150,9 @@ func afterOutcome(text, note string) string {
 	return text + "\n" + note
 }
 
-// ownGraceNote is what the text says when a job went ahead over this server's own grace. It
+// onlyOursNote is what the text says when a job went ahead over this server's own claims. It
 // follows the outcome, never leads it.
-const ownGraceNote = "the radio's grace after a tune was this server's own earlier call, so this went ahead without take_over.\n"
+const onlyOursNote = "only this server's own channel or recent tune was in the way, so this went ahead without take_over.\n"
 
 // mcpInstructions is what the agent reads about the server before its first
 // call: the shape of the answers, what is not here yet, and the honesty rule.
@@ -194,7 +160,7 @@ const mcpInstructions = `Leyline is a software-defined radio: one daemon owns th
 
 A daemon restart shows in get_state: DaemonInfo.pid and startedAtNs change and the event sequence starts over; daemon_logs says why. A job started before a restart is gone with it, except a decode job started with keep, which comes back as the same job.
 
-Only one thing can use the radio at a time. tune, set (a freq that moves the radio), stop (another client's channel), scan, snapshot, start_decode_job, watch and record refuse to disturb somebody else's listening and say who; take_over: true insists. dry_run: true on scan, start_decode_job, watch and record says where the job would go and whom it would pause, and starts nothing.
+Only one thing can use the radio at a time. tune, set (a freq that moves the radio), stop (another client's channel), scan, snapshot, start_decode_job, watch and record refuse to pause somebody else's channel, a decoder or a recording and say what they would pause; take_over: true insists. Your own channels never count. dry_run: true on scan, start_decode_job, watch and record says where the job would go and whom it would pause, and starts nothing.
 
 help returns the ley help topics, and list_bands and list_presets the names a frequency argument accepts. The bookmarks (list_bookmarks, add_bookmark, remove_bookmark, import_chirp) are the user's own file, shared with the Mac app. Ask the user before a call that writes something they did not spell out: a watch with keep or a webhook notifier, several bookmarks at once (import_chirp has dry_run to show them first), and a remove_bookmark. watch has no shell notifier; that is for a person to set up. A channel tune makes, or a decode job started without keep, ends when this server exits; a recording does not -- it is written to disk and stays there.
 

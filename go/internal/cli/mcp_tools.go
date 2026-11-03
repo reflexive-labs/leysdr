@@ -355,7 +355,7 @@ type tuneArgs struct {
 	Device    string `json:"device,omitempty" jsonschema:"which radio: an id (dev_...), id prefix or row number from list_devices (default: the first real radio)"`
 	Audio     bool   `json:"audio,omitempty" jsonschema:"also play the channel through the speakers of the machine the daemon runs on (default: false)"`
 	Keep      bool   `json:"keep,omitempty" jsonschema:"leave the channel running after this server exits (default: false; the channel ends with the agent's session)"`
-	TakeOver  bool   `json:"take_over,omitempty" jsonschema:"move the radio even when other channels are listening on it; they fall silent (default: false, refuse and say who is listening). Send it only after a refusal named who is listening and taking the radio from them is the intent"`
+	TakeOver  bool   `json:"take_over,omitempty" jsonschema:"move the radio even when that pauses a decoder, a recording or another client's channel (default: false, refuse and name what it would pause; this agent's own channels never count). Send it only after a refusal named them and pausing them is the intent"`
 }
 
 func (srv *mcpServer) tune(ctx context.Context, _ *mcp.CallToolRequest, in tuneArgs) (*mcp.CallToolResult, any, error) {
@@ -384,9 +384,6 @@ func (srv *mcpServer) tune(ctx context.Context, _ *mcp.CallToolRequest, in tuneA
 	s.takeOverHint = takeOverHint
 	if s.device, err = pickDevice(s.State, o.device); err != nil {
 		return nil, nil, toolError(err)
-	}
-	if err := refuseRetune(s, o.freq, o.bw, o.retune); err != nil {
-		return nil, nil, err
 	}
 	if err := s.bringUp(ctx, o); err != nil {
 		return nil, nil, toolError(err)
@@ -417,7 +414,6 @@ func (srv *mcpServer) tune(ctx context.Context, _ *mcp.CallToolRequest, in tuneA
 	if err != nil {
 		return nil, nil, err
 	}
-	srv.touched(s.Capture.GetCaptureId())
 	// The tuned line leads and what the session said on the way (the band's default mode, a
 	// retune, how the squelch was measured) follows: a result's first line is what a client shows
 	// under the call.
@@ -434,44 +430,10 @@ func sinkOrNil(sink *leylinev1.Sink) any {
 }
 
 // takeOverHint is the remedy the tools' retune refusal ends with, in place of
-// the `--retune` flag `ley tune` names: an agent has arguments, not flags.
-const takeOverHint = "Call again with take_over: true to move it anyway, or stop what is listening first"
-
-// refuseRetune is the don't-disturb refusal made adapter-side, as
-// docs/design/semantic-tier.md asks, on top of the daemon's own: when the radio
-// is tuned somewhere the frequency does not fit and channels are listening
-// on it, refuse and name them before anything is written. ensureCapture
-// refuses again with the daemon's picture if this one is stale.
-func refuseRetune(s *verbSession, freq uint64, bw uint32, takeOver bool) error {
-	if takeOver || s.device == nil {
-		return nil
-	}
-	capture := leyline.FindCapture(s.State, s.device.DeviceId)
-	if capture == nil || covers(capture, freq, bw) {
-		return nil
-	}
-	return retuneRefusal(s.State, capture, freq, "")
-}
-
-// retuneRefusal names the channels listening on a capture that moving it to freq would
-// silence, leaving out the one channel (except, when set) the move is for: set moves its own
-// channel with the radio. nil when nobody else is listening.
-func retuneRefusal(st *leylinev1.GetStateResponse, capture *leylinev1.Capture, freq uint64, except string) error {
-	var who []string
-	for _, ch := range st.GetChannels() {
-		if ch.GetCaptureId() != capture.GetCaptureId() || ch.GetState() != leylinev1.ChannelState_CHANNEL_ACTIVE || ch.GetChannelId() == except {
-			continue
-		}
-		hz := uint64(int64(capture.GetCenterHz()) + ch.GetOffsetHz())
-		who = append(who, fmt.Sprintf("%s (%s, %s)", ch.GetChannelId(), units.FormatFrequency(hz), clientLabel(ch.GetOwner())))
-	}
-	if len(who) == 0 {
-		return nil
-	}
-	return fmt.Errorf("the radio is on %s with %s listening: %s. Retuning to %s would silence %s. %s",
-		units.FormatFrequency(capture.GetCenterHz()), words.Count(len(who), "channel"), strings.Join(who, ", "),
-		units.FormatFrequency(freq), words.Pick(len(who), "it", "them"), takeOverHint)
-}
+// the `--retune` flag `ley tune` names: an agent has arguments, not flags. The
+// refusal itself is ensureCapture's (refuseDisplacing), from the daemon's plan,
+// so a tool and `ley` name the same claims.
+const takeOverHint = "Call again with take_over: true to move it anyway"
 
 // ---------- observe ----------
 
@@ -517,8 +479,8 @@ func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanA
 		return nil, nil, err
 	}
 	var note string
-	if !o.takeOver && srv.ownGrace(s.State, o.deviceID) {
-		o.takeOver, note = true, ownGraceNote
+	if !o.takeOver && srv.onlyOurs(ctx, &leylinev1.PlanRequest{Request: &leylinev1.PlanRequest_Scan{Scan: o.config()}}) {
+		o.takeOver, note = true, onlyOursNote
 	}
 	if in.DryRun {
 		return srv.dryRun(ctx, s.State, &leylinev1.PlanRequest{Request: &leylinev1.PlanRequest_Scan{Scan: o.config()}},
@@ -623,7 +585,7 @@ type listenSummaryArgs struct {
 	Squelch   string  `json:"squelch,omitempty" jsonschema:"auto (the default for nfm and am: a transmission is a squelch-open interval, so a squelch is what makes one countable), off, or dBFS such as -40; not with a channel id"`
 	Gain      string  `json:"gain,omitempty"`
 	Device    string  `json:"device,omitempty" jsonschema:"which radio: an id, id prefix or row number from list_devices (default: the first real radio)"`
-	TakeOver  bool    `json:"take_over,omitempty" jsonschema:"move the radio even when other channels are listening on it (default: false, refuse and say who). Send it only after a refusal named who is listening; a channel this tool made itself is gone when it returns and needs no taking over"`
+	TakeOver  bool    `json:"take_over,omitempty" jsonschema:"move the radio even when that pauses a decoder, a recording or another client's channel (default: false, refuse and name what it would pause). Send it only after a refusal named them; a channel this tool made itself is gone when it returns and needs no taking over"`
 }
 
 // listenMaxSeconds bounds a listen_summary, because a tool call that runs for
@@ -709,9 +671,6 @@ func (srv *mcpServer) listenSummary(ctx context.Context, _ *mcp.CallToolRequest,
 		if s.device, err = pickDevice(s.State, o.device); err != nil {
 			return nil, nil, toolError(err)
 		}
-		if err := refuseRetune(s, o.freq, o.bw, o.retune); err != nil {
-			return nil, nil, err
-		}
 	}
 	stop, err := s.openChannel(ctx, o, channelID)
 	if err != nil {
@@ -728,7 +687,6 @@ func (srv *mcpServer) listenSummary(ctx context.Context, _ *mcp.CallToolRequest,
 	if err != nil {
 		return nil, nil, err
 	}
-	srv.touched(s.Capture.GetCaptureId())
 	// The count leads and a retune note follows, as tune's line does.
 	return jsonResult(sum.text(s, dur)+errb.String(), raw), nil, nil
 }
@@ -993,7 +951,7 @@ type snapshotArgs struct {
 	Span      string `json:"span,omitempty" jsonschema:"width of the band to show, e.g. 2.4M or 250k; this is the capture's sample rate, snapped to one the radio supports (default: the radio's default, or the width it is already capturing)"`
 	Bins      uint32 `json:"bins,omitempty" jsonschema:"number of bins across the band (default 1024; the daemon may round it)"`
 	Device    string `json:"device,omitempty" jsonschema:"which radio: an id, id prefix or row number from list_devices (default: the first real radio)"`
-	TakeOver  bool   `json:"take_over,omitempty" jsonschema:"move the radio even when other channels are listening on it (default: false, refuse and say who). Send it only after a refusal named who is listening"`
+	TakeOver  bool   `json:"take_over,omitempty" jsonschema:"move the radio even when that pauses a decoder, a recording or another client's channel (default: false, refuse and name what it would pause). Send it only after a refusal named them"`
 	NoImage   bool   `json:"no_image,omitempty" jsonschema:"return the numbers only, no PNG (default: false)"`
 	// IncludeBins puts the row's bins in the JSON. Off by default: 1024 numbers are
 	// a page of JSON an agent rarely reads, and 2048 were 39 KB in one survey. The text and the
@@ -1045,11 +1003,6 @@ func (srv *mcpServer) snapshot(ctx context.Context, _ *mcp.CallToolRequest, in s
 	if s.device, err = pickDevice(s.State, bo.device); err != nil {
 		return nil, nil, toolError(err)
 	}
-	if bo.freq != 0 {
-		if err := refuseRetune(s, bo.freq, 0, bo.retune); err != nil {
-			return nil, nil, err
-		}
-	}
 	if err := s.openBand(ctx, app, bo); err != nil {
 		return nil, nil, toolError(err)
 	}
@@ -1092,7 +1045,6 @@ func (srv *mcpServer) snapshot(ctx context.Context, _ *mcp.CallToolRequest, in s
 		}
 		res.Content = append(res.Content, &mcp.ImageContent{Data: png, MIMEType: "image/png"})
 	}
-	srv.touched(s.Capture.GetCaptureId())
 	return res, nil, nil
 }
 
@@ -1463,8 +1415,8 @@ func (srv *mcpServer) startDecodeJob(ctx context.Context, _ *mcp.CallToolRequest
 		cfg.DeviceId = d.GetDeviceId()
 	}
 	var note string
-	if !cfg.TakeOver && srv.ownGrace(s.State, cfg.DeviceId) {
-		cfg.TakeOver, note = true, ownGraceNote
+	if !cfg.TakeOver && srv.onlyOurs(ctx, &leylinev1.PlanRequest{Request: &leylinev1.PlanRequest_Decode{Decode: cfg}}) {
+		cfg.TakeOver, note = true, onlyOursNote
 	}
 	if in.DryRun {
 		return srv.dryRun(ctx, s.State, &leylinev1.PlanRequest{Request: &leylinev1.PlanRequest_Decode{Decode: cfg}},
