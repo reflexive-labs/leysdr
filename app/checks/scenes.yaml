@@ -1735,7 +1735,8 @@ scenes:
   # loop again. Decode With offers the audio decoders in the daemon's order, without Transcribe's
   # speech decoder or a test_only one; the stage runs its APRS item's code path (a context menu
   # is out of the command file's reach). The kept job over the recording counts its records into
-  # the inspector, and its line opens the Decoders place on APRS, where those records are.
+  # the inspector's grid, a Decoded row under Files (`APRS · 7 records`, DA-20), and the row's
+  # link opens the Decoders place on APRS, where those records are.
   - name: library-decode-with
     covers: [PartInspector.swift, RecordingsPage.swift, RecordingDecodes.swift,
       SpeechRecords.swift, SpeechViews.swift]
@@ -1755,6 +1756,7 @@ scenes:
       - {cmd: stage, stage: {decode_with: aprs}}
       - {cmd: wait, seconds: 5, expect_log: ["job_\\w+ decoding job_\\w+ with aprs", "job_\\w+ found [78] records"]}
       - {cmd: ley, args: [--json, jobs], expect_stdout: ['"decoder":\s*"aprs"', '"sourceUri":\s*"ley://recordings/job_']}
+      - {cmd: state, expect: {decoded.0.label: Decoded, decoded.0.decoder: aprs}}
       - {cmd: snapshot, name: decoded}
       - {cmd: press, identifier: library.inspector.decoded.aprs}
       - {cmd: state, expect: {place: decoders, decoders.decoder: aprs}}

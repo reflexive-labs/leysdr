@@ -69,7 +69,19 @@ struct PartInspector: View {
                     .accessibilityIdentifier("library.inspector.playall")
                 }
                 .padding(.bottom, 4)
-                PartTable(rows: words.recording, ink: { _ in Theme.inkSecondary })
+                // The recording's grid, then a Decoded row per decoder that ran over it, each a
+                // link to the decoder's page.
+                VStack(alignment: .leading, spacing: 8) {
+                    PartTable(rows: words.recording, ink: { _ in Theme.inkSecondary })
+                    let decodes = session.recordingDecodes(for: group.jobID)
+                    ForEach(Array(decodes.enumerated()), id: \.element.decoder) { i, found in
+                        DecodedRow(
+                            label: RecordingDecodes.label(at: i), value: found.line,
+                            identifier:
+                                "library.inspector.decoded.\(ViewIdentifier.slug(found.decoder))"
+                        ) { session.openDecoder(found.decoder) }
+                    }
+                }
                 if let line = session.transcriptionStatus(for: group.jobID)?.line
                     ?? session.coverageLine(for: group.jobID)
                 {
@@ -77,20 +89,6 @@ struct PartInspector: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 4)
                         .accessibilityIdentifier("library.inspector.transcribed")
-                }
-                // What each decoder found on the recording, each a link to its page.
-                ForEach(session.recordingDecodes(for: group.jobID), id: \.decoder) { found in
-                    Button {
-                        session.openDecoder(found.decoder)
-                    } label: {
-                        Text(found.line).font(Theme.Font.footnote).foregroundStyle(Theme.accent)
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Show these records in Decoders")
-                    .accessibilityIdentifier(
-                        "library.inspector.decoded.\(ViewIdentifier.slug(found.decoder))")
                 }
                 // Transcribe, Transcribe again…, Export words… and Decode With, when any applies.
                 HStack(spacing: 8) {
@@ -184,6 +182,32 @@ struct ColumnHeadText: View {
     var body: some View {
         Text(text.uppercased()).font(Theme.Font.columnHead).tracking(Theme.sectionTracking)
             .foregroundStyle(Theme.inkFaint).lineLimit(1)
+    }
+}
+
+/// One decoder's row under the recording's table, in its columns: `Decoded` (the first row's
+/// label alone) and `APRS · 7 records` in `value` and `accent`, a link to the decoder's page.
+struct DecodedRow: View {
+    let label: String
+    let value: String
+    /// The link's identifier: `library.inspector.decoded.<decoder>`.
+    let identifier: String
+    let open: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text(label).font(Theme.Font.label).foregroundStyle(Theme.inkMuted)
+                .frame(width: Theme.Layout.partTableLabelWidth, alignment: .leading)
+            Button(action: open) {
+                Text(value).font(Theme.Font.value).foregroundStyle(Theme.accent)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .buttonStyle(.plain)
+            .help("Show these records in Decoders")
+            .accessibilityIdentifier(identifier)
+            Spacer(minLength: 0)
+        }
     }
 }
 

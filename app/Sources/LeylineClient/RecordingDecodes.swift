@@ -69,21 +69,28 @@ public enum RecordingDecodes {
         }
     }
 
-    /// The inspector's line for a decoder's newest job over the recording: `APRS: 3 records`
-    /// once it has ended, `APRS: decoding · 3 records so far` while it runs, `APRS: could not
+    /// The label of the recording inspector's first decoder row, in its label and value grid
+    /// beside Span, Ended and Files; the rows after it, one a decoder, have none.
+    public static let rowLabel = "Decoded"
+
+    /// The label of the inspector's decoder row at `index`: `Decoded` on the first, else empty.
+    public static func label(at index: Int) -> String { index == 0 ? rowLabel : "" }
+
+    /// The inspector's value for a decoder's newest job over the recording: `APRS · 3 records`
+    /// once it has ended, `APRS · decoding · 3 records so far` while it runs, `APRS · could not
     /// decode: …` once it failed. A count not read yet is left out.
     public static func line(title: String, job: Leyline_V1_Job, count: Count?) -> String {
         let n = count.map(recordsWords)
         switch job.state {
         case .running, .degraded:
-            return "\(title): decoding" + (n.map { " · \($0) so far" } ?? "")
+            return "\(title) · decoding" + (n.map { " · \($0) so far" } ?? "")
         case .failed:
             let why = job.error.message.isEmpty ? job.statusDetail : job.error.message
-            return "\(title): could not decode: \(why.isEmpty ? job.error.code : why)"
+            return "\(title) · could not decode: \(why.isEmpty ? job.error.code : why)"
         case .cancelled:
-            return "\(title): stopped" + (n.map { " · \($0)" } ?? "")
+            return "\(title) · stopped" + (n.map { " · \($0)" } ?? "")
         default:
-            return "\(title): " + (n ?? "counting the records…")
+            return "\(title) · " + (n ?? "counting the records…")
         }
     }
 

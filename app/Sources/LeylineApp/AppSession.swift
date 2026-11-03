@@ -4214,7 +4214,7 @@ final class AppSession {
     }
 
     /// The inspector's lines for a recording: each decoder's newest job over it, with its title
-    /// and manifest name, and `APRS: 3 records`.
+    /// and manifest name, and `APRS · 3 records`.
     func recordingDecodes(for recordingID: String) -> [(decoder: String, line: String)] {
         RecordingDecodes.jobs(
             of: "ley://recordings/\(recordingID)", in: state.jobs, transcriber: transcriber

@@ -513,7 +513,11 @@ import LeylineClient
                     s.decodersOffered(for: $0).map(DecoderPages.title)
                 } ?? [],
                 decoded: Self.selectedRecording(s).map {
-                    s.recordingDecodes(for: $0).map(\.line)
+                    s.recordingDecodes(for: $0).enumerated().map { i, d in
+                        ControlDecodedRow(
+                            label: RecordingDecodes.label(at: i), decoder: d.decoder,
+                            value: d.line)
+                    }
                 } ?? [],
                 decoders: Self.decodersState(s),
                 decodingRows: Self.decodingRows(s),

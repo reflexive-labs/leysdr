@@ -83,31 +83,40 @@ final class RecordingDecodesTests: XCTestCase {
         XCTAssertEqual(
             RecordingDecodes.line(
                 title: "APRS", job: job("j", decoder: "aprs", source: uri), count: three),
-            "APRS: 3 records")
+            "APRS · 3 records")
         XCTAssertEqual(
             RecordingDecodes.line(
                 title: "APRS", job: job("j", decoder: "aprs", source: uri),
-                count: .init(records: 1, truncated: false)), "APRS: 1 record")
+                count: .init(records: 1, truncated: false)), "APRS · 1 record")
         XCTAssertEqual(
             RecordingDecodes.line(
                 title: "APRS", job: job("j", decoder: "aprs", source: uri),
-                count: .init(records: 1000, truncated: true)), "APRS: 1000+ records")
+                count: .init(records: 1000, truncated: true)), "APRS · 1000+ records")
         XCTAssertEqual(
             RecordingDecodes.line(
                 title: "APRS", job: job("j", decoder: "aprs", source: uri, state: .running),
-                count: three), "APRS: decoding · 3 records so far")
+                count: three), "APRS · decoding · 3 records so far")
         XCTAssertEqual(
             RecordingDecodes.line(
                 title: "APRS", job: job("j", decoder: "aprs", source: uri, state: .running),
-                count: nil), "APRS: decoding")
+                count: nil), "APRS · decoding")
         var failed = job("j", decoder: "aprs", source: uri, state: .failed)
         failed.error.message = "the plugin exited"
         XCTAssertEqual(
             RecordingDecodes.line(title: "APRS", job: failed, count: nil),
-            "APRS: could not decode: the plugin exited")
+            "APRS · could not decode: the plugin exited")
         XCTAssertEqual(
             RecordingDecodes.line(
                 title: "APRS", job: job("j", decoder: "aprs", source: uri), count: nil),
-            "APRS: counting the records…")
+            "APRS · counting the records…")
+        XCTAssertEqual(
+            RecordingDecodes.line(
+                title: "APRS", job: job("j", decoder: "aprs", source: uri, state: .cancelled),
+                count: three),
+            "APRS · stopped · 3 records")
+    }
+
+    func testTheFirstDecoderRowIsLabelledDecoded() {
+        XCTAssertEqual((0..<3).map(RecordingDecodes.label(at:)), ["Decoded", "", ""])
     }
 }

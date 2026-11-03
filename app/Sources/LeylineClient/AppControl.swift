@@ -752,6 +752,21 @@ public struct ControlDecodingRow: Sendable, Equatable, Codable {
     }
 }
 
+/// `state`'s `decoded`: one decoder's row in a recording's inspector as drawn, its label
+/// (`Decoded` on the first, else empty), the decoder by manifest name, and its value
+/// (`APRS · 7 records`).
+public struct ControlDecodedRow: Sendable, Equatable, Codable {
+    public var label: String
+    public var decoder: String
+    public var value: String
+
+    public init(label: String, decoder: String, value: String) {
+        self.label = label
+        self.decoder = decoder
+        self.value = value
+    }
+}
+
 /// `state`'s `waterfall_tags`: one tag the waterfall draws, its name and frequency.
 public struct ControlWaterfallTag: Sendable, Equatable, Codable {
     public var name: String
@@ -843,9 +858,9 @@ public struct ControlViewState: Sendable, Equatable, Codable {
     /// when it has one.
     public var libraryRows: [String]
     /// The selected Library part's recording, while the Library shows: Decode With's items by
-    /// title, and the inspector's line for each decoder that ran over it (`APRS: 7 records`).
+    /// title, and the inspector's Decoded row for each decoder that ran over it.
     public var decodeWith: [String]
-    public var decoded: [String]
+    public var decoded: [ControlDecodedRow]
     /// The Decoders place's page while it shows, else null.
     public var decoders: ControlDecoders?
     /// The Radio sidebar's rows of the running decoders, in its order; null when none runs and
@@ -900,7 +915,7 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         tooltip: String? = nil, transport: ControlTransport? = nil, entries: [String] = [],
         tunedRows: Int = 0, tunedRow: String? = nil, onAirEntry: String? = nil,
         logNames: String? = nil, sort: String = "frequency", bookmarkRows: [String] = [],
-        libraryRows: [String] = [], decodeWith: [String] = [], decoded: [String] = [],
+        libraryRows: [String] = [], decodeWith: [String] = [], decoded: [ControlDecodedRow] = [],
         decoders: ControlDecoders? = nil,
         decodingRows: [ControlDecodingRow]? = nil, waterfallTags: [ControlWaterfallTag]? = nil
     ) {
