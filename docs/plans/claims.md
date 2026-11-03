@@ -91,3 +91,16 @@ where the step says so.
   and `dont-disturb` and `tune-over-decoder` grade the agent's path rather than the refusal's
   words.
 - [ ] **CL-6 Later:** a displaced kept job asks `plan` for another radio.
+
+## Verification
+
+On the Mac, 2026-11-03, after CL-5 (`d73bfc0` and the scene fix after it): `make app-check
+JOBS=3` 1145 checked, 1145 ok; `make app-test` and `make app-lint` clean. The one failure on the
+way was the assistant-conversation scene reading its last tree before the app had reconnected
+to the restarted daemon (Claims 2 or 3 by timing); it now waits and expects the settled three.
+
+- [x] CL-1: the Claims group's count and rows match in every scene that shows the inspector.
+- [x] CL-2: the Decoders place's placement words from `Control.Plan` match in the decoder scenes.
+- [x] CL-3: no picture or tree changed; the sweep and record scenes pass.
+- [x] CL-4: the sweep-lifecycle and transport scenes pass with the engine's return.
+- [x] CL-5: retune-asks, the "Move the radio?" question and the Claims group's wording pass.
