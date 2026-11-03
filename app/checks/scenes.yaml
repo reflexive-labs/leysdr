@@ -1962,8 +1962,10 @@ scenes:
 
   # One question before a person's move pauses a job (docs/plans/claims.md, CL-5): with a
   # terminal's `ley decode aprs --job` on the window's radio, Scan band on 2 m asks first and
-  # names the decoder from the daemon's plan, and Cancel leaves the tuning where it was with
-  # nothing swept and the decoder running. A file radio tunes only its own centre, so a click, a
+  # names the decoder from the daemon's plan. A second press while it is open is ignored, and a
+  # recording a terminal starts while it is open is asked about on Sweep anyway, the plan read
+  # again, rather than paused unnamed. Cancel leaves the tuning where it was with nothing swept
+  # and the decoder running. A file radio tunes only its own centre, so a click, a
   # drag or a narrower width cannot move it and Scan band is the move a scene can reach;
   # RetuneAskTests holds the rules for those (one question a drag, from the plan's list).
   - name: retune-asks
@@ -1979,6 +1981,14 @@ scenes:
       - {cmd: wait, seconds: 1, expect_log: "asked before scan .*: This pauses the APRS decoder on 144.390 MHz."}
       - {cmd: state, expect: {alert.title: "Move the radio?", alert.message: "This pauses the APRS decoder on 144.390 MHz.", alert.buttons.0: Sweep anyway, alert.buttons.1: Cancel}}
       - {cmd: snapshot, name: asked}
+      # A second press while the question is open asks nothing more.
+      - {cmd: press, identifier: sidebar.band.2m.scan}
+      - {cmd: wait, seconds: 1, expect_log: "scan .* ignored: the question about moving the radio is open"}
+      # A job that starts while it is open is asked about on Sweep anyway, not paused unnamed.
+      - {cmd: ley, args: [record, "144.39", --detach, --for, 60s]}
+      - {cmd: press, identifier: alert.sweep-anyway}
+      - {cmd: wait, seconds: 1, expect_log: ["the plan for scan .* pauses more than was asked about", "asked before scan .*: This pauses the APRS decoder on 144.390 MHz and the recording", "!sweep: job_.* started"]}
+      - {cmd: state, expect: {alert.title: "Move the radio?", alert.buttons.0: Sweep anyway}}
       - {cmd: press, identifier: alert.cancel}
       - {cmd: wait, seconds: 1, expect_log: ["move cancelled; the radio stays", "!sweep: job_.* started"]}
       - {cmd: state, expect: {alert: null, tuned_hz: 144390000, decoding_rows.0.decoder: aprs}}

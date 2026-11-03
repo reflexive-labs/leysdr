@@ -344,14 +344,18 @@ struct BandRail: View {
     /// the capture's; from there the capture is pushed (`AppSession.pan`, with its push and
     /// ask rules). A drag never changes the band; clicking a neighbour's name does.
     private func moved(_ v: DragGesture.Value, width: CGFloat) {
+        // A drag whose end never arrived (an alert opened under it) is over when the next begins.
+        if let d = drag, d.startLocation != v.startLocation { drag = nil }
         guard drag != nil || abs(v.translation.width) >= Self.dragPoints else { return }
         if drag == nil {
             guard let cap = session.capture, let r = session.visibleRange else { return }
             let centre = session.panCentre ?? Int64(cap.centerHz)
+            // A new drag asks again, whatever the last one was answered.
+            session.endRetuneDrag()
             drag = RailDrag(
                 viewCentre: Int64(r.lowerBound + (r.upperBound - r.lowerBound) / 2),
                 spanHz: r.upperBound - r.lowerBound, sampleRate: cap.sampleRate,
-                startCapture: centre, pushed: centre)
+                startCapture: centre, pushed: centre, startLocation: v.startLocation)
         }
         step(v, width: width, ended: false)
     }
@@ -441,4 +445,6 @@ private struct RailDrag {
     var sampleRate: UInt64
     var startCapture: Int64
     var pushed: Int64
+    /// Where the pointer went down, which tells this drag from the next.
+    var startLocation: CGPoint
 }

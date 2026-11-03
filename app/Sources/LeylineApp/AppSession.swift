@@ -1671,9 +1671,11 @@ final class AppSession {
     // MARK: Tuning
 
     /// A drag across the spectrum or the waterfall: the end of a drag is still a drag, so there
-    /// is no centre jump on release.
-    func chartDrag(to hz: UInt64, ended: Bool) {
-        if sweepFromHz == nil {
+    /// is no centre jump on release. Its first frame starts it afresh even when the last drag's
+    /// release never arrived (an alert that opened under the pointer takes it).
+    func chartDrag(to hz: UInt64, phase: ChartMouse.Phase) {
+        let ended = phase == .ended
+        if sweepFromHz == nil || phase == .began {
             endRetuneDrag()
             sweepFromHz = hz
             log("tune", "drag from \(hz) Hz")
@@ -1742,9 +1744,14 @@ final class AppSession {
                 : Int64(cap.centerHz)
         }
         if !askedFirst {
-            newCentre = dragStep(to: newCentre, capture: cap) { wanted in
+            let step = dragStep(to: newCentre, capture: cap) { wanted in
                 self.pan(centreTo: wanted, ended: true, askedFirst: true)
             }
+            guard let step else {
+                if ended { endRetuneDrag() }
+                return
+            }
+            newCentre = step
         }
         if ended { endRetuneDrag() }
         let bound = max(0, min(span * 4 / 10, span / 2 - Int64(ch.bandwidthHz)))
@@ -1804,14 +1811,14 @@ final class AppSession {
                     // asks once for the drag (`dragStep`); Move anyway after the drag has ended
                     // moves there as a click would.
                     let stay = target
-                    let newCentre = dragStep(
+                    let step = dragStep(
                         to: clampCentre(
                             target < lo ? centre - span / 8 : centre + span / 8, span: span),
                         capture: cap
                     ) { wanted in
                         self.moveCentre(to: wanted, for: stay)
                     }
-                    if newCentre != centre {
+                    if let newCentre = step, newCentre != centre {
                         request(UInt64(max(0, target)))
                         log("tune", "pan \(centre) -> \(newCentre) Hz under a drag at \(target) Hz")
                         let move = RetuneQueue.Move(
@@ -2169,16 +2176,10 @@ final class AppSession {
         if let cap = capture, !RetuneAsk.jobClaims(on: cap, selfID: selfID).isEmpty {
             var req = Leyline_V1_PlanRequest()
             req.scan = Sweep.config(for: row, in: Bands.builtIn, deviceID: cap.deviceID)
-            Task {
-                let what = "scan \(row.name)"
-                guard let words = await pauseWords(req, capture: cap.captureID, before: what) else {
-                    await startSweep(row: row)
-                    return
-                }
-                ask(words, before: what, proceedLabel: "Sweep anyway") {
-                    Task { await self.startSweep(row: row) }
-                }
-            }
+            askFirst(
+                req, capture: cap.captureID, before: "scan \(row.name)",
+                proceedLabel: "Sweep anyway",
+                proceed: { Task { await self.startSweep(row: row) } })
             return
         }
         Task { await startSweep(row: row) }
@@ -4436,8 +4437,15 @@ final class AppSession {
     /// `--retune`. A view and the window's own claims are never asked about.
     struct RetuneQuestion: Identifiable {
         let id = UUID()
-        /// `RetuneAsk.words`: what the move pauses, from the daemon's plan.
+        /// What the daemon's plan pauses (`RetuneAsk.asked`).
+        let asked: [Leyline_V1_Claim]
+        /// `RetuneAsk.words` for `asked`.
         let words: String
+        /// The plan asked for, read again on Move anyway (`answerRetune`).
+        let request: Leyline_V1_PlanRequest
+        let captureID: String
+        /// What the move is, for the log.
+        let what: String
         /// The button that goes ahead: `Move anyway` before a move, `Sweep anyway` before Find
         /// active, which hops the radio across the band.
         let proceedLabel: String
@@ -4450,17 +4458,14 @@ final class AppSession {
     /// The window's client id, whose claims are its own and never asked about.
     private var selfID: String { daemon?.identity.id ?? "" }
 
-    /// The drag in progress or last ended (`RetuneDrag`): its question is asked once, and its
-    /// answer holds for the rest of the drag. `retuneDragOpen` is whether it is still going, and
-    /// `retuneDragID` tells an answer to this drag from one to a drag before it.
-    private var retuneDrag: RetuneDrag?
-    private var retuneDragOpen = false
-    private var retuneDragID = UUID()
+    /// One question at a time, and each drag's answer for that drag only (`RetuneGate`).
+    private var retuneGate = RetuneGate()
 
     /// Before moving `cap` to `centre` at `rate`: false when the move pauses no job on it, and
     /// the caller moves now. Otherwise the daemon's plan names what it pauses, and the question
     /// asks in those words: `proceed` runs on Move anyway, or at once when the plan pauses no job
-    /// after all; `cancel` on Cancel.
+    /// after all; `cancel` on Cancel. While another question is open the move is ignored, and
+    /// this returns true too.
     private func asksBeforeMoving(
         _ cap: Leyline_V1_Capture, centre: Int64, rate: UInt64, before what: String,
         proceedLabel: String = "Move anyway", proceed: @escaping @MainActor () -> Void,
@@ -4475,113 +4480,138 @@ final class AppSession {
             $0.centerHz = UInt64(max(0, centre))
             $0.sampleRateHz = rate
         }
-        Task {
-            if let words = await self.pauseWords(req, capture: cap.captureID, before: what) {
-                self.ask(
-                    words, before: what, proceedLabel: proceedLabel, proceed: proceed,
-                    cancel: cancel)
-            } else {
-                proceed()
-            }
-        }
+        askFirst(
+            req, capture: cap.captureID, before: what, proceedLabel: proceedLabel,
+            proceed: proceed, cancel: cancel)
         return true
     }
 
-    /// The question's words for `req` (`RetuneAsk.words`): the jobs the daemon's plan pauses, or,
-    /// when the plan cannot be had, every job's claim on the capture. Nil when it pauses none.
-    private func pauseWords(
-        _ req: Leyline_V1_PlanRequest, capture captureID: String, before what: String
-    ) async -> String? {
-        let me = selfID
-        var asked: [Leyline_V1_Claim] = []
-        if let daemon {
-            do {
-                asked = RetuneAsk.asked(try await daemon.control.plan(req), selfID: me)
-            } catch {
-                log(
-                    "record",
-                    "no plan before \(what): \(LeylineError(error)); asking about every job")
-                asked =
-                    state.capture(captureID).map { RetuneAsk.jobClaims(on: $0, selfID: me) } ?? []
+    /// Opens the question for `req` unless one is open already, when the move is ignored; then
+    /// asks the daemon's plan and either asks in its words or, when it pauses no job,
+    /// proceeds at once.
+    private func askFirst(
+        _ req: Leyline_V1_PlanRequest, capture captureID: String, before what: String,
+        proceedLabel: String = "Move anyway", proceed: @escaping @MainActor () -> Void,
+        cancel: @escaping @MainActor () -> Void = {}
+    ) {
+        guard retuneGate.open() else {
+            log("record", "\(what) ignored: the question about moving the radio is open")
+            return
+        }
+        let closing: (@escaping @MainActor () -> Void) -> @MainActor () -> Void = { then in
+            {
+                self.retuneGate.close()
+                then()
             }
         }
-        return RetuneAsk.words(asked, jobs: state.jobs, titles: decoders.titles)
+        Task {
+            let asked = await self.planned(req, capture: captureID, before: what)
+            self.ask(
+                asked, request: req, capture: captureID, before: what,
+                proceedLabel: proceedLabel, proceed: closing(proceed), cancel: closing(cancel))
+        }
     }
 
-    /// One frame of a drag that moves `cap` to `centre`: the centre to write now. The first frame
-    /// that would pause a job holds the capture at the edge of what the jobs need and asks; the
-    /// answer holds for the rest of the drag. `resume` performs the move the drag wanted when Move
-    /// anyway comes after the drag has ended.
+    /// The jobs `req` pauses (`RetuneAsk.asked`) by the daemon's plan, or, when the plan cannot
+    /// be had, every job's claim on the capture.
+    private func planned(
+        _ req: Leyline_V1_PlanRequest, capture captureID: String, before what: String
+    ) async -> [Leyline_V1_Claim] {
+        let me = selfID
+        guard let daemon else { return [] }
+        do {
+            return RetuneAsk.asked(try await daemon.control.plan(req), selfID: me)
+        } catch {
+            log("record", "no plan before \(what): \(LeylineError(error)); asking about every job")
+            return state.capture(captureID).map { RetuneAsk.jobClaims(on: $0, selfID: me) } ?? []
+        }
+    }
+
+    /// One frame of a drag that moves `cap` to `centre`: the centre to write now, nil to write
+    /// nothing while another move's question is open. The first frame that would pause a job
+    /// holds the capture at the edge of what the jobs need and asks; the answer holds for the
+    /// rest of the drag. `resume` performs the move the drag wanted when Move anyway comes after
+    /// the drag has ended.
     private func dragStep(
         to centre: Int64, capture cap: Leyline_V1_Capture,
         resume: @escaping @MainActor (Int64) -> Void
-    ) -> Int64 {
-        if !retuneDragOpen || retuneDrag == nil {
-            retuneDrag = RetuneDrag(
-                keep: RetuneAsk.keep(
-                    RetuneAsk.jobClaims(on: cap, selfID: selfID), rate: cap.sampleRate),
-                start: Int64(cap.centerHz))
-            retuneDragOpen = true
-            retuneDragID = UUID()
-        }
-        guard let step = retuneDrag?.step(to: centre) else { return centre }
-        switch step {
-        case .move(let c), .hold(let c):
+    ) -> Int64? {
+        let frame = retuneGate.frame(
+            to: centre,
+            keep: RetuneAsk.keep(
+                RetuneAsk.jobClaims(on: cap, selfID: selfID), rate: cap.sampleRate),
+            start: Int64(cap.centerHz))
+        switch frame {
+        case .ignore:
+            return nil
+        case .write(let c):
             return c
-        case .ask(let wanted, let hold):
-            let id = retuneDragID
+        case .ask(let wanted, let hold, let n):
             var req = Leyline_V1_PlanRequest()
             req.retune = .with {
                 $0.captureID = cap.captureID
                 $0.centerHz = UInt64(max(0, wanted))
                 $0.sampleRateHz = cap.sampleRate
             }
+            let answer: (Bool) -> @MainActor () -> Void = { moveAnyway in
+                {
+                    if let c = self.retuneGate.answerDrag(n, moveAnyway: moveAnyway) { resume(c) }
+                }
+            }
             Task {
                 let what = "drag to \(wanted) Hz"
-                guard let words = await self.pauseWords(req, capture: cap.captureID, before: what)
-                else {
-                    self.answerDrag(id, moveAnyway: true, resume: resume)
-                    return
-                }
-                self.ask(words, before: what) {
-                    self.answerDrag(id, moveAnyway: true, resume: resume)
-                } cancel: {
-                    self.answerDrag(id, moveAnyway: false, resume: resume)
-                }
+                let asked = await self.planned(req, capture: cap.captureID, before: what)
+                self.ask(
+                    asked, request: req, capture: cap.captureID, before: what,
+                    proceed: answer(true), cancel: answer(false))
             }
             return hold
         }
     }
 
-    /// The drag ended: the next frame of a drag starts a new one, which asks again.
-    func endRetuneDrag() { retuneDragOpen = false }
+    /// A drag began or ended: the next frame of a drag starts a new one, which asks again. A
+    /// drag begins with this too, so one whose end never arrived does not keep its answer.
+    func endRetuneDrag() { retuneGate.endDrag() }
 
-    /// The answer to drag `id`'s question: a drag still going carries on with it; one that has
-    /// ended moves to where it was going on Move anyway, and stays on Cancel.
-    private func answerDrag(
-        _ id: UUID, moveAnyway: Bool, resume: @MainActor (Int64) -> Void
-    ) {
-        guard id == retuneDragID, var drag = retuneDrag else { return }
-        drag.answered(moveAnyway: moveAnyway)
-        retuneDrag = drag
-        if !retuneDragOpen, moveAnyway { resume(drag.wanted) }
-    }
-
+    /// Shows the question naming `asked`, or proceeds at once when it is empty.
     private func ask(
-        _ words: String, before what: String, proceedLabel: String = "Move anyway",
-        proceed: @escaping @MainActor () -> Void, cancel: @escaping @MainActor () -> Void = {}
+        _ asked: [Leyline_V1_Claim], request: Leyline_V1_PlanRequest, capture captureID: String,
+        before what: String, proceedLabel: String = "Move anyway",
+        proceed: @escaping @MainActor () -> Void, cancel: @escaping @MainActor () -> Void
     ) {
+        guard let words = RetuneAsk.words(asked, jobs: state.jobs, titles: decoders.titles) else {
+            proceed()
+            return
+        }
         log("record", "asked before \(what): \(words)")
         retuneQuestion = RetuneQuestion(
-            words: words, proceedLabel: proceedLabel, proceed: proceed, cancel: cancel)
+            asked: asked, words: words, request: request, captureID: captureID, what: what,
+            proceedLabel: proceedLabel, proceed: proceed, cancel: cancel)
     }
 
-    /// The alert's buttons: Move anyway performs the move, Cancel leaves the radio where it is.
+    /// The alert's buttons: Cancel leaves the radio where it is. Move anyway reads the plan
+    /// again first: a job that started while the question was open is asked about, with the
+    /// new list, rather than paused unnamed; otherwise the move goes ahead.
     func answerRetune(moveAnyway: Bool) {
         guard let q = retuneQuestion else { return }
         retuneQuestion = nil
-        log("record", moveAnyway ? "moved anyway" : "move cancelled; the radio stays")
-        if moveAnyway { q.proceed() } else { q.cancel() }
+        guard moveAnyway else {
+            log("record", "move cancelled; the radio stays")
+            q.cancel()
+            return
+        }
+        Task {
+            let now = await self.planned(q.request, capture: q.captureID, before: q.what)
+            if RetuneAsk.grew(from: q.asked, to: now) {
+                log("record", "the plan for \(q.what) pauses more than was asked about")
+                self.ask(
+                    now, request: q.request, capture: q.captureID, before: q.what,
+                    proceedLabel: q.proceedLabel, proceed: q.proceed, cancel: q.cancel)
+                return
+            }
+            log("record", "moved anyway")
+            q.proceed()
+        }
     }
 
     // MARK: Settings, AI

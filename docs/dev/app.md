@@ -411,8 +411,13 @@ the question, "This pauses the APRS decoder on 144.390 MHz and the recording on 
 window's own are never asked about, and a plan that pauses no job after all moves without
 asking. A drag asks once, on the first frame that would leave the jobs' span (`RetuneDrag`): the
 radio holds at the span's edge while the question is open and after Cancel, Move anyway lets the
-rest of the drag go, and a drag that has ended by the answer moves where it was going. The
-daemon pauses the job and records the gap if the move goes ahead. The transport
+rest of the drag go, and a drag that has ended by the answer moves where it was going. One
+question is open at a time (`RetuneGate`): from the plan's request to the answer, another click,
+band, width or drag is ignored. A drag's answer lasts for that drag only, which ends on its
+release or when the next drag begins, so a release the alert swallowed does not carry Move
+anyway into the next. Move anyway reads the plan again, and a job that started while the
+question was open is asked about with the new list rather than paused unnamed
+(`RetuneAsk.grew`). The daemon pauses the job and records the gap if the move goes ahead. The transport
 bar's button is the mute (`toggleMute`, the sink detached), and the caption under the volume
 slider says what is heard (`playing GMRS CH3`, `muted · GMRS CH3`, `playing a part · GMRS CH3
 held`) with the output device as its tooltip. File ▸ Show Recordings in Finder opens the store.

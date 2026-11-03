@@ -35,8 +35,8 @@ struct WaterfallView: View {
                         session.pointerHz = p.flatMap { columns?.hz(atX: $0.x) }
                     },
                     onClick: { p in if let c = columns { session.tune(to: c.hz(atX: p.x)) } },
-                    onDrag: { p, ended in
-                        if let c = columns { session.chartDrag(to: c.hz(atX: p.x), ended: ended) }
+                    onDrag: { p, phase in
+                        if let c = columns { session.chartDrag(to: c.hz(atX: p.x), phase: phase) }
                     },
                     onScroll: { dy in session.step(dy > 0 ? 1 : -1, fine: true) },
                     onProblem: { problem = $0 }
@@ -172,7 +172,7 @@ struct WaterfallMetalView: NSViewRepresentable {
     let viewHi: Float
     let onPointer: (CGPoint?) -> Void
     let onClick: (CGPoint) -> Void
-    let onDrag: (CGPoint, Bool) -> Void
+    let onDrag: (CGPoint, ChartMouse.Phase) -> Void
     let onScroll: (CGFloat) -> Void
     /// Called once, off the update pass, if the renderer could not come up.
     let onProblem: (String) -> Void

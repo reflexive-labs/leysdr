@@ -99,6 +99,14 @@ public enum RetuneAsk {
         return r.displaced.filter { $0.priority == .priorityJob && $0.holder.clientID != selfID }
     }
 
+    /// Whether the plan read again on Move anyway pauses a job the question did not name: one
+    /// that started while it was open. The window then asks again with `now` rather than move.
+    /// A job is one holder, however many claims it has, as the question names it.
+    public static func grew(from asked: [Leyline_V1_Claim], to now: [Leyline_V1_Claim]) -> Bool {
+        let named = Set(asked.map(\.holder.clientID))
+        return now.contains { !named.contains($0.holder.clientID) }
+    }
+
     /// The question's words: `This pauses the APRS decoder on 144.390 MHz and the recording on
     /// 146.520 MHz.` A job with two claims is named once. Nil when there is nothing to ask about.
     public static func words(
@@ -163,5 +171,91 @@ public struct RetuneDrag: Sendable, Equatable {
     /// holds it at the edge.
     public mutating func answered(moveAnyway: Bool) {
         answer = moveAnyway ? .moveAnyway : .stay
+    }
+}
+
+/// The window's questions before a move (`RetuneAsk`), one at a time. While one is open, from
+/// the moment its plan is asked for until it is answered, every other move is ignored: a second
+/// click does not open a second question, and a drag does not start. A drag's own question
+/// holds that drag at the edge of what the jobs keep (`RetuneDrag`), and its answer lasts for
+/// that drag only: the drag ends when its last frame says so, or when the next drag begins,
+/// since a drag whose release never arrived must not keep Move anyway for every drag after it.
+public struct RetuneGate: Sendable, Equatable {
+    /// What one frame of a drag does.
+    public enum Frame: Sendable, Equatable {
+        /// Write the capture's centre here (a move, or a hold at the edge).
+        case write(Int64)
+        /// Hold the capture at `hold` and ask about the move to `wanted`; `drag` is the number
+        /// the answer comes back with (`answerDrag`).
+        case ask(wanted: Int64, hold: Int64, drag: Int)
+        /// Another move's question is open: write nothing.
+        case ignore
+    }
+
+    /// Whether a question is open: its plan is being read, or it is on screen.
+    public private(set) var asking = false
+    /// The drag whose question is open, nil when the question is another move's.
+    public private(set) var askingDrag: Int?
+    /// The drag in progress or last ended.
+    public private(set) var drag: RetuneDrag?
+    /// Which drag `drag` is: an answer meant for an earlier one is dropped.
+    public private(set) var dragNumber = 0
+    /// Whether `drag` is still going.
+    public private(set) var dragGoing = false
+
+    public init() {}
+
+    /// A move that is not a drag frame needs the question. True opens it; false means one is
+    /// open already, and the move is ignored.
+    public mutating func open() -> Bool {
+        guard !asking else { return false }
+        asking = true
+        askingDrag = nil
+        return true
+    }
+
+    /// The question closed: answered, or its plan paused nothing after all.
+    public mutating func close() {
+        asking = false
+        askingDrag = nil
+    }
+
+    /// A drag began or ended: the next frame starts a new drag, which asks again.
+    public mutating func endDrag() { dragGoing = false }
+
+    /// One frame of a drag to `centre`. A new drag reads `keep` (what every job's claim leaves
+    /// free) and starts from `start`, the capture's centre.
+    public mutating func frame(
+        to centre: Int64, keep: @autoclosure () -> RetuneAsk.Keep, start: Int64
+    ) -> Frame {
+        if !dragGoing || drag == nil {
+            guard !asking else { return .ignore }
+            drag = RetuneDrag(keep: keep(), start: start)
+            dragGoing = true
+            dragNumber += 1
+        }
+        if asking, askingDrag != dragNumber { return .ignore }
+        guard var d = drag else { return .ignore }
+        let step = d.step(to: centre)
+        drag = d
+        switch step {
+        case .move(let c), .hold(let c):
+            return .write(c)
+        case .ask(let wanted, let hold):
+            asking = true
+            askingDrag = dragNumber
+            return .ask(wanted: wanted, hold: hold, drag: dragNumber)
+        }
+    }
+
+    /// The answer to drag `number`'s question, which closes it. A drag still going carries on
+    /// with the answer. The centre the drag wanted comes back when the drag has ended and the
+    /// answer is Move anyway, for the caller to move there; nil otherwise.
+    public mutating func answerDrag(_ number: Int, moveAnyway: Bool) -> Int64? {
+        if askingDrag == number { close() }
+        guard number == dragNumber, var d = drag else { return nil }
+        d.answered(moveAnyway: moveAnyway)
+        drag = d
+        return !dragGoing && moveAnyway ? d.wanted : nil
     }
 }

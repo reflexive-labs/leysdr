@@ -11,9 +11,12 @@ import SwiftUI
 
 @MainActor
 final class ChartMouse {
+    /// Where a drag is: its first frame, one after, or its release.
+    enum Phase { case began, moved, ended }
+
     var onPointer: ((CGPoint?) -> Void)?
     var onClick: ((CGPoint) -> Void)?
-    var onDrag: ((CGPoint, Bool) -> Void)?
+    var onDrag: ((CGPoint, Phase) -> Void)?
     var onScroll: ((CGFloat) -> Void)?
     private var downAt: CGPoint?
     private var dragged = false
@@ -43,13 +46,14 @@ final class ChartMouse {
     func dragged(_ p: CGPoint) {
         guard let start = downAt else { return }
         if !dragged, abs(p.x - start.x) < 3 { return }
+        let phase: Phase = dragged ? .moved : .began
         dragged = true
         onPointer?(p)
-        onDrag?(p, false)
+        onDrag?(p, phase)
     }
 
     func up(_ p: CGPoint) {
-        if dragged { onDrag?(p, true) } else { onClick?(p) }
+        if dragged { onDrag?(p, .ended) } else { onClick?(p) }
         downAt = nil
         dragged = false
         NSCursor.crosshair.set()
@@ -112,7 +116,7 @@ final class ChartCatcherView: NSView {
 struct ChartCatcher: NSViewRepresentable {
     let onPointer: (CGPoint?) -> Void
     let onClick: (CGPoint) -> Void
-    let onDrag: (CGPoint, Bool) -> Void
+    let onDrag: (CGPoint, ChartMouse.Phase) -> Void
     let onScroll: (CGFloat) -> Void
 
     func makeNSView(context: Context) -> ChartCatcherView {

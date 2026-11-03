@@ -159,4 +159,82 @@ final class RetuneAskTests: XCTestCase {
             stuck.step(to: 147_000_000), .ask(wanted: 147_000_000, hold: 146_000_000),
             "nothing keeps them: held where the drag began")
     }
+
+    func testMoveAnywayAsksAgainWhenTheListGrew() {
+        let aprs = claim("job_aprs", kind: "job", covers: 144_390_000, bw: 12_500)
+        var aprsTwo = claim("job_aprs", kind: "job", .claimIq)
+        aprsTwo.claimID = "clm_second"
+        let rec = claim("job_rec", kind: "job", covers: 146_520_000, bw: 12_500)
+        XCTAssertFalse(RetuneAsk.grew(from: [aprs], to: [aprs]), "the same job: move")
+        XCTAssertFalse(RetuneAsk.grew(from: [aprs, rec], to: [aprs]), "fewer: move")
+        XCTAssertFalse(RetuneAsk.grew(from: [aprs], to: []), "none left: move")
+        XCTAssertFalse(
+            RetuneAsk.grew(from: [aprs], to: [aprs, aprsTwo]),
+            "a named job's second claim is the job already named")
+        XCTAssertTrue(
+            RetuneAsk.grew(from: [aprs], to: [aprs, rec]), "a job started while it was open")
+        XCTAssertTrue(RetuneAsk.grew(from: [aprs], to: [rec]), "another job in its place")
+    }
+
+    func testOneQuestionAtATime() {
+        var gate = RetuneGate()
+        XCTAssertTrue(gate.open(), "the first click asks")
+        XCTAssertFalse(gate.open(), "a second click while it is open is ignored")
+        XCTAssertEqual(
+            gate.frame(to: 150_000_000, keep: .anywhere, start: 146_000_000), .ignore,
+            "and so is a drag")
+        gate.close()
+        XCTAssertTrue(gate.open(), "answered: the next move asks again")
+        gate.close()
+        XCTAssertEqual(
+            gate.frame(to: 150_000_000, keep: .anywhere, start: 146_000_000), .write(150_000_000))
+    }
+
+    func testADragsQuestionHoldsOtherMovesAndItsAnswerEndsWithIt() {
+        let keep = RetuneAsk.Keep.within(143_810_000...146_190_000)
+        var gate = RetuneGate()
+        XCTAssertEqual(
+            gate.frame(to: 146_100_000, keep: keep, start: 146_000_000), .write(146_100_000))
+        guard
+            case .ask(let wanted, let hold, let n) = gate.frame(
+                to: 146_300_000, keep: keep, start: 146_000_000)
+        else { return XCTFail("the first frame outside asks") }
+        XCTAssertEqual([wanted, hold], [146_300_000, 146_190_000])
+        XCTAssertTrue(gate.asking)
+        XCTAssertEqual(
+            gate.frame(to: 146_400_000, keep: keep, start: 146_000_000), .write(146_190_000),
+            "the asking drag holds at the edge")
+        XCTAssertFalse(gate.open(), "a click while the drag's question is open is ignored")
+        XCTAssertNil(gate.answerDrag(n, moveAnyway: true), "the drag is going: it carries on")
+        XCTAssertFalse(gate.asking)
+        XCTAssertEqual(
+            gate.frame(to: 147_000_000, keep: keep, start: 146_000_000), .write(147_000_000),
+            "Move anyway for the rest of the drag")
+
+        // The release never arrived. The next drag begins, and asks again.
+        gate.endDrag()
+        guard
+            case .ask(_, _, let next) = gate.frame(to: 147_000_000, keep: keep, start: 146_000_000)
+        else { return XCTFail("a new drag asks again") }
+        XCTAssertNotEqual(next, n)
+        XCTAssertNil(gate.answerDrag(n, moveAnyway: true), "an old drag's answer is dropped")
+        XCTAssertTrue(gate.asking, "and does not close the new drag's question")
+
+        // The drag ends while it asks: Move anyway moves where it wanted to go.
+        gate.endDrag()
+        XCTAssertEqual(
+            gate.frame(to: 140_000_000, keep: keep, start: 146_000_000), .ignore,
+            "no drag starts while a question is open")
+        XCTAssertEqual(gate.answerDrag(next, moveAnyway: true), 147_000_000)
+        XCTAssertFalse(gate.asking)
+
+        var cancelled = RetuneGate()
+        guard
+            case .ask(_, _, let c) = cancelled.frame(
+                to: 147_000_000, keep: keep, start: 146_000_000)
+        else { return XCTFail("asks") }
+        cancelled.endDrag()
+        XCTAssertNil(cancelled.answerDrag(c, moveAnyway: false), "Cancel after the drag: stay")
+        XCTAssertFalse(cancelled.asking)
+    }
 }
