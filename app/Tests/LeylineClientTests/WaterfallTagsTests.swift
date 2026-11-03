@@ -7,7 +7,8 @@ import XCTest
 @testable import LeylineClient
 
 /// Decoding seen from the radio (DA-9): the sidebar's rows, which records tag the waterfall,
-/// the ten seconds between two tags of one transmitter, and the expiry with the rows.
+/// the ten seconds between two tags of one transmitter, and the expiry with the rows; and the
+/// last minute read back when the tags start, and the count from the records held (DA-21).
 final class WaterfallTagsTests: XCTestCase {
     func manifest(_ name: String, iq: Bool = false, entityName: String = "")
         -> Leyline_V1_DecoderManifest
@@ -277,5 +278,143 @@ final class WaterfallTagsTests: XCTestCase {
             tags.add(
                 record("rec_3", device: "N0CALL-5"), display: nil, frequencyHz: 1,
                 captureID: "cap_1", rows: 901, at: t0 + 1))
+    }
+
+    // MARK: The last minute read back (DA-21)
+
+    func backfill(
+        _ id: String, device: String = "N0CALL-3", job: String = "job_1", seq: UInt64 = 1,
+        row: Int, at: Date
+    ) -> WaterfallTags.Backfill {
+        var r = record(id, job: job, device: device)
+        r.seq = seq
+        return WaterfallTags.Backfill(
+            record: r, display: nil, frequencyHz: 144_390_000, row: row, at: at)
+    }
+
+    func testARecordReadBackIsTaggedOnItsRow() {
+        var tags = WaterfallTags()
+        let t0 = Date(timeIntervalSince1970: 1000)
+        // A live tag landed after the window subscribed.
+        tags.add(
+            record("rec_9", device: "N0CALL-7"), display: nil, frequencyHz: 144_390_000,
+            captureID: "cap_1", rows: 900, at: t0 + 40)
+        let added = tags.backfill(
+            [
+                backfill("rec_2", device: "N0CALL-2", row: 500, at: t0 + 20),
+                backfill("rec_1", device: "N0CALL-1", row: 200, at: t0 + 10),
+            ], captureID: "cap_1")
+        XCTAssertEqual(added, 2)
+        // Newest row first, so the overlay's anchor is still the live tag's.
+        XCTAssertEqual(tags.tags.map(\.id), ["rec_9", "rec_2", "rec_1"])
+        XCTAssertEqual(tags.tags.map(\.row), [900, 500, 200])
+        XCTAssertEqual(tags.tags.last?.name, "N0CALL-1")
+        XCTAssertEqual(tags.tags.last?.captureID, "cap_1")
+        // Read again, nothing is tagged twice.
+        XCTAssertEqual(
+            tags.backfill(
+                [backfill("rec_1", device: "N0CALL-1", row: 200, at: t0 + 10)],
+                captureID: "cap_1"), 0)
+        XCTAssertEqual(tags.tags.count, 3)
+    }
+
+    func testReadBackKeepsTheTenSecondRule() {
+        var tags = WaterfallTags()
+        let t0 = Date(timeIntervalSince1970: 1000)
+        // One transmitter three times, by the records' times: the first, not one 4 s after it,
+        // and one 12 s after it.
+        let added = tags.backfill(
+            [
+                backfill("rec_3", row: 400, at: t0 + 12),
+                backfill("rec_2", row: 150, at: t0 + 4),
+                backfill("rec_1", row: 30, at: t0),
+            ], captureID: "cap_1")
+        XCTAssertEqual(added, 2)
+        XCTAssertEqual(tags.tags.map(\.id), ["rec_3", "rec_1"])
+        // A live record within ten seconds of the newest read back is held back, as after a
+        // live tag.
+        XCTAssertFalse(
+            tags.add(
+                record("rec_4"), display: nil, frequencyHz: 1, captureID: "cap_1", rows: 500,
+                at: t0 + 15))
+        XCTAssertTrue(
+            tags.add(
+                record("rec_5"), display: nil, frequencyHz: 1, captureID: "cap_1", rows: 700,
+                at: t0 + 23))
+    }
+
+    func testReadBackDefersToALiveTagOfTheSameMoment() {
+        var tags = WaterfallTags()
+        let t0 = Date(timeIntervalSince1970: 1000)
+        tags.add(
+            record("rec_live"), display: nil, frequencyHz: 1, captureID: "cap_1", rows: 600,
+            at: t0 + 30)
+        // The same transmitter 5 s before the live tag: held back, whichever came first.
+        XCTAssertEqual(
+            tags.backfill([backfill("rec_old", row: 450, at: t0 + 25)], captureID: "cap_1"), 0)
+        // The same record live and read back: one tag.
+        XCTAssertEqual(
+            tags.backfill([backfill("rec_live", row: 600, at: t0 + 30)], captureID: "cap_1"), 0)
+        XCTAssertEqual(tags.tags.map(\.id), ["rec_live"])
+    }
+
+    func testReadBackIsBounded() {
+        var tags = WaterfallTags()
+        let t0 = Date(timeIntervalSince1970: 1000)
+        let items = (0..<(WaterfallTags.limit + 5)).map { i in
+            backfill("rec_\(i)", device: "N0CALL-\(i)", row: 10 * i, at: t0 + Double(i))
+        }
+        tags.backfill(items, captureID: "cap_1")
+        XCTAssertEqual(tags.tags.count, WaterfallTags.limit)
+        // The oldest rows go.
+        XCTAssertEqual(tags.tags.first?.id, "rec_\(WaterfallTags.limit + 4)")
+        XCTAssertEqual(tags.tags.last?.id, "rec_5")
+    }
+
+    func testTheProtocolsReadBackAreTheRunningDecoders() {
+        let ms = [manifest("aprs"), manifest("ais"), manifest("adsb", iq: true)]
+        let jobs = [
+            job("job_1", decoder: "aprs"),
+            job("job_2", decoder: "ais", state: .completed),
+            job("job_3", decoder: "adsb", hz: 1_090_000_000),
+            job("job_4", decoder: "ais", source: "ley://recordings/r1"),
+        ]
+        XCTAssertEqual(WaterfallTags.backfillProtocols(ms, jobs: jobs), ["aprs", "adsb"])
+        XCTAssertEqual(WaterfallTags.backfillProtocols(ms, jobs: []), [])
+    }
+
+    // MARK: The count from the records held (DA-21)
+
+    func testTheCountIsTheNewestSeqHeld() {
+        var tags = WaterfallTags()
+        var r = record("rec_1", job: "job_2")
+        r.seq = 13
+        tags.hold(r)
+        r.seq = 12
+        tags.hold(r)
+        // A record with no seq is not counted.
+        var bare = record("rec_x", job: "job_9")
+        bare.seq = 0
+        tags.hold(bare)
+        XCTAssertEqual(tags.lastSeq, ["job_2": 13])
+        let ms = [manifest("aprs"), manifest("ais")]
+        let jobs = [
+            job("job_2", decoder: "aprs", detail: "decoding with aprs: 12 records, last 3 s ago"),
+            job("job_3", decoder: "ais", detail: "decoding with ais: 1 record, last 1 s ago"),
+        ]
+        let rows = DecodingRow.rows(ms, jobs: jobs, held: tags.lastSeq)
+        // The window holds APRS's thirteenth record before the detail says so; AIS falls back
+        // to its detail.
+        XCTAssertEqual(rows.map(\.count), ["13 records", "1 record"])
+        r.seq = 1
+        var one = WaterfallTags()
+        one.hold(r)
+        XCTAssertEqual(DecodingRow.rows(ms, jobs: jobs, held: one.lastSeq)[0].count, "1 record")
+        // A record read back counts as a live one; forgetting the tags forgets the counts.
+        tags.backfill(
+            [backfill("rec_b", job: "job_3", seq: 40, row: 1, at: Date())], captureID: "cap_1")
+        XCTAssertEqual(tags.lastSeq["job_3"], 40)
+        tags.removeAll()
+        XCTAssertTrue(tags.isEmpty)
     }
 }

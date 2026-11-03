@@ -135,4 +135,25 @@ final class ClippedRowsTests: XCTestCase {
         XCTAssertEqual(r.keptRuns([part(1, 0, 9000)]), [])
         XCTAssertEqual(r.captureID, ["", "", "", ""])
     }
+
+    // MARK: The row a moment fell in (DA-21)
+
+    func testTheRowAMomentFellIn() {
+        var rows = ClippedRows(capacity: 4)
+        XCTAssertNil(rows.row(atSample: 100, captureID: "cap_1"))
+        // Rows 0 to 5 at samples 0, 100, ... 500; the ring holds rows 2 to 5.
+        for i in 0..<6 { rows.append(sampleIndex: UInt64(i * 100), captureID: "cap_1") }
+        XCTAssertEqual(rows.row(atSample: 350, captureID: "cap_1"), 3)
+        XCTAssertEqual(rows.row(atSample: 300, captureID: "cap_1"), 3)
+        // After the newest row's start: the newest row.
+        XCTAssertEqual(rows.row(atSample: 9999, captureID: "cap_1"), 5)
+        // Older than the ring holds, or another capture's clock.
+        XCTAssertNil(rows.row(atSample: 150, captureID: "cap_1"))
+        XCTAssertNil(rows.row(atSample: 350, captureID: "cap_2"))
+        // After a change of capture, the new capture's rows answer for it alone.
+        rows.append(sampleIndex: 0, captureID: "cap_2")
+        rows.append(sampleIndex: 100, captureID: "cap_2")
+        XCTAssertEqual(rows.row(atSample: 50, captureID: "cap_2"), 6)
+        XCTAssertEqual(rows.row(atSample: 450, captureID: "cap_1"), 4)
+    }
 }

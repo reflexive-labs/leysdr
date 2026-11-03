@@ -3,8 +3,9 @@
 // Decoding, seen from the radio (docs/plans/decoders-app.md, DA-9): the Radio sidebar's row per
 // running decoder, and the waterfall's tags, a transmitter's name drawn at its decoder's
 // frequency on the row its record arrived in. Held here, with no I/O, so the Linux tests reach
-// the rules: which records make a tag, the ten seconds between two tags of one transmitter, and
-// the expiry once a tag's row has scrolled past what the waterfall shows. Nothing is special-cased
+// the rules: which records make a tag, the ten seconds between two tags of one transmitter, the
+// expiry once a tag's row has scrolled past what the waterfall shows, and the last minute read
+// back when the tags start (DA-21), each record on the row its time fell in. Nothing is special-cased
 // by decoder: the manifest's input says whether its records have a frequency of their own (an
 // audio decoder's channel) or not (an IQ decoder reads the whole capture), and its display's
 // `entity_name` names the transmitter.
@@ -40,14 +41,21 @@ public struct DecodingRow: Sendable, Equatable, Identifiable {
     }
 
     /// A row per listed decoder with a running or degraded job on a radio, in the list's order;
-    /// none when nothing runs.
+    /// none when nothing runs. The count is the newest job's: out of `held`, the newest record
+    /// `seq` the window holds of each job (`WaterfallTags.lastSeq`), when it holds one, since a
+    /// job's records are numbered from 1 without a hole; else out of the job's `status_detail`,
+    /// which the daemon refreshes every two seconds at most.
     public static func rows(
-        _ manifests: [Leyline_V1_DecoderManifest], jobs: [Leyline_V1_Job]
+        _ manifests: [Leyline_V1_DecoderManifest], jobs: [Leyline_V1_Job],
+        held: [String: UInt64] = [:]
     ) -> [DecodingRow] {
         DecoderPages.listed(manifests).compactMap { m in
             let running = DecoderPages.running(of: m, in: jobs)
             guard let newest = running.first else { return nil }
-            var count = countWords(DecoderPages.detail(newest))
+            var count =
+                held[newest.jobID].map {
+                    RecordingDecodes.recordsWords(.init(records: Int($0), truncated: false))
+                } ?? countWords(DecoderPages.detail(newest))
             if running.count > 1 { count += " · \(running.count) jobs" }
             return DecodingRow(
                 decoder: m.name, title: DecoderPages.title(m), symbol: DecoderPages.symbol(m),
@@ -117,7 +125,17 @@ public struct WaterfallTags: Sendable, Equatable {
     /// cleared.
     public static let namesLimit = 512
 
+    /// How far back the tags are read when they start (`backfill`): about what the waterfall
+    /// shows.
+    public static let backfillSeconds: TimeInterval = 60
+
     public private(set) var tags: [WaterfallTag] = []
+    /// The newest `seq` of each job's records the window holds, live or read back: how many
+    /// records the job has, for the sidebar's count (`DecodingRow.rows`).
+    public private(set) var lastSeq: [String: UInt64] = [:]
+
+    /// No tag and no count held.
+    public var isEmpty: Bool { tags.isEmpty && lastSeq.isEmpty }
     /// When each transmitter was last tagged, for the rate limit; entries older than
     /// `repeatSeconds` are dropped as tags are added.
     private var lastTagged: [String: Date] = [:]
@@ -169,26 +187,115 @@ public struct WaterfallTags: Sendable, Equatable {
         _ record: Leyline_V1_DecodeRecord, display: Leyline_V1_DecoderDisplay?,
         frequencyHz: UInt64, captureID: String, rows: Int, at: Date
     ) -> Bool {
-        let key = record.protocol + "\u{0}" + record.deviceID
-        let rendered = DisplayTemplate.entityName(display, record: record)
-        let fresh = !rendered.isEmpty && rendered != record.deviceID
-        if fresh {
-            if names.count >= Self.namesLimit, names[key] == nil { names.removeAll() }
-            names[key] = rendered
-        }
-        let name = fresh ? rendered : names[key] ?? record.deviceID
-        guard !name.isEmpty else { return false }
-        let transmitter = record.deviceID.isEmpty ? record.protocol + "\u{0}" + name : key
+        hold(record)
+        guard !tags.contains(where: { $0.id == record.recordID }),
+            let named = naming(record, display: display)
+        else { return false }
+        let transmitter = named.transmitter
         lastTagged = lastTagged.filter { at.timeIntervalSince($0.value) < Self.repeatSeconds }
         if lastTagged[transmitter] != nil { return false }
         lastTagged[transmitter] = at
         tags.insert(
             WaterfallTag(
-                id: record.recordID, transmitter: transmitter, name: name,
+                id: record.recordID, transmitter: transmitter, name: named.name,
                 frequencyHz: frequencyHz, captureID: captureID, row: rows, at: at),
             at: 0)
         if tags.count > Self.limit { tags.removeLast(tags.count - Self.limit) }
         return true
+    }
+
+    /// Notes `record` for its job's count (`lastSeq`), whether or not it tags.
+    public mutating func hold(_ record: Leyline_V1_DecodeRecord) {
+        guard !record.jobID.isEmpty, record.seq > 0 else { return }
+        if record.seq > lastSeq[record.jobID] ?? 0 { lastSeq[record.jobID] = record.seq }
+    }
+
+    /// The protocols read back when the tags start: every decoder with a running or degraded
+    /// job on a radio, as the sidebar lists them. An IQ decoder's records tag nothing, and are
+    /// read for its row's count.
+    public static func backfillProtocols(
+        _ manifests: [Leyline_V1_DecoderManifest], jobs: [Leyline_V1_Job]
+    ) -> [String] {
+        DecodingRow.rows(manifests, jobs: jobs).map(\.decoder)
+    }
+
+    /// A record read back with `QueryRecords` when the tags start, with where it goes: its
+    /// frequency (`frequency(of:)`), the row its time fell in (`ClippedRows.row(atSample:)`, as
+    /// `rows` counts them: the row's index plus one) and its wall time.
+    public struct Backfill: Sendable, Equatable {
+        public var record: Leyline_V1_DecodeRecord
+        public var display: Leyline_V1_DecoderDisplay?
+        public var frequencyHz: UInt64
+        public var row: Int
+        public var at: Date
+
+        public init(
+            record: Leyline_V1_DecodeRecord, display: Leyline_V1_DecoderDisplay?,
+            frequencyHz: UInt64, row: Int, at: Date
+        ) {
+            self.record = record
+            self.display = display
+            self.frequencyHz = frequencyHz
+            self.row = row
+            self.at = at
+        }
+    }
+
+    /// Tags the records of the last minute on `captureID`'s rows, oldest first, and says how many
+    /// it tagged: each on the row its time fell in, under the same rules as a live record (no
+    /// two tags of one transmitter within `repeatSeconds`, by the records' times, whichever came
+    /// first; `limit` at most, the oldest dropped). A record already tagged, live or by an
+    /// earlier read, is not tagged twice. The tags stay newest row first.
+    @discardableResult
+    public mutating func backfill(_ items: [Backfill], captureID: String) -> Int {
+        var added = 0
+        for item in items.sorted(by: { ($0.at, $0.row) < ($1.at, $1.row) }) {
+            let r = item.record
+            hold(r)
+            guard !tags.contains(where: { $0.id == r.recordID }),
+                let named = naming(r, display: item.display, onlyIfUnnamed: true)
+            else { continue }
+            let transmitter = named.transmitter
+            let near = { (d: Date) in abs(d.timeIntervalSince(item.at)) < Self.repeatSeconds }
+            if tags.contains(where: { $0.transmitter == transmitter && near($0.at) })
+                || lastTagged[transmitter].map(near) == true
+            {
+                continue
+            }
+            lastTagged[transmitter] = max(lastTagged[transmitter] ?? item.at, item.at)
+            tags.append(
+                WaterfallTag(
+                    id: r.recordID, transmitter: transmitter, name: named.name,
+                    frequencyHz: item.frequencyHz, captureID: captureID, row: item.row,
+                    at: item.at))
+            added += 1
+        }
+        guard added > 0 else { return 0 }
+        // Newest row first, as live tags are inserted; of one row, the later record first.
+        tags.sort { ($0.row, $0.at) > ($1.row, $1.at) }
+        if tags.count > Self.limit { tags.removeLast(tags.count - Self.limit) }
+        return added
+    }
+
+    /// A record's transmitter, the rate limit's key, and the name its tag shows: the display's
+    /// `entity_name` over the record, else the name it last rendered for the transmitter, else
+    /// the `device_id`; nil when there is none. A fresh rendering is remembered, except a record
+    /// read back (`onlyIfUnnamed`) does not replace a name a newer one gave.
+    private mutating func naming(
+        _ record: Leyline_V1_DecodeRecord, display: Leyline_V1_DecoderDisplay?,
+        onlyIfUnnamed: Bool = false
+    ) -> (transmitter: String, name: String)? {
+        let key = record.protocol + "\u{0}" + record.deviceID
+        let rendered = DisplayTemplate.entityName(display, record: record)
+        let fresh = !rendered.isEmpty && rendered != record.deviceID
+        if fresh, !onlyIfUnnamed || names[key] == nil {
+            if names.count >= Self.namesLimit, names[key] == nil { names.removeAll() }
+            names[key] = rendered
+        }
+        let name = fresh ? rendered : names[key] ?? record.deviceID
+        guard !name.isEmpty else { return nil }
+        let transmitter = record.deviceID.isEmpty ? record.protocol + "\u{0}" + name : key
+        return (transmitter, name)
     }
 
     /// The tags still on the waterfall once it has written `rows` rows of `captureID` and shows
@@ -208,10 +315,11 @@ public struct WaterfallTags: Sendable, Equatable {
         if kept.count != tags.count { tags = kept }
     }
 
-    /// Forgets every tag, and when each transmitter was last tagged: the names are switched off,
-    /// or the waterfall's rows started over.
+    /// Forgets every tag, when each transmitter was last tagged and the jobs' counts: the names
+    /// are switched off, or the waterfall's rows started over.
     public mutating func removeAll() {
         tags = []
         lastTagged = [:]
+        lastSeq = [:]
     }
 }

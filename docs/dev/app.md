@@ -574,9 +574,11 @@ run, so they still show it and a person's daemon does not.
 **Decoding, seen from the radio** (`DecodedNames.swift`; the façade's `WaterfallTags.swift`;
 `../plans/decoders-app.md`, DA-9). The Radio sidebar's top has a row per decoder with a running
 or degraded job on a radio (`DecodingRow.rows`, the Decoders sidebar's rule): its symbol in
-`good` (`caution` while degraded), its title in `label` and the count out of its job's
-`status_detail` in `footnote` (`12 records`, `no records yet`; the age is left out, because the
-daemon refreshes the detail every 2 s at most), the whole detail as its tooltip. A click selects
+`good` (`caution` while degraded), its title in `label` and its newest job's count in
+`footnote`: while the tags below follow the records, the newest `seq` the window holds of that job
+(a job's records are numbered from 1 without a hole; `WaterfallTags.lastSeq`), else out of the
+job's `status_detail` (`12 records`, `no records yet`; the age is left out, because the daemon
+refreshes the detail every 2 s at most), the whole detail as its tooltip. A click selects
 the decoder and shows Decoders. With nothing running there is no row. While the Radio shows,
 View ▸ Show Decoded Names is on (the default, remembered under `showsDecodedNames` as the
 inspector's toggle is) and a decode job runs on a radio, `DecodedNamesFeed` holds one
@@ -587,7 +589,13 @@ rides the window's capture and the job's frequency (else its channel's) lies ins
 it last rendered for that transmitter (an AIS position report has no vessel name), else
 `device_id`, and sits on the waterfall's newest row when the record arrived: at most one per
 transmitter in 10 s, 32 at most, gone once its row is past the waterfall's height in device pixels
-or the capture changes. The tags are SwiftUI over the Metal view, a dot in `ink` on the frequency
+or the capture changes. Each time the subscription opens (the Radio shows, the names come on, a
+job starts, the stream comes back), the last minute of every running decoder's records is read
+with `QueryRecords` (`AppSession.backfillDecodedNames`; a kept job's, since only those are
+stored), and an audio decoder's are tagged on the row their `time` fell in
+(`ClippedRows.row(atSample:captureID:)`) while that row still shows, under the same 10 s and 32
+rules by the records' times (`WaterfallTags.backfill`), so a packet decoded before the window
+subscribed still has its tag. The tags are SwiftUI over the Metal view, a dot in `ink` on the frequency
 and the name in `valueSmall` on `ground`; `WaterfallTagLayer` is laid out once per change of the
 tags and the overlay moves it by one offset per row, so a row costs no layout. They are hidden
 from accessibility, and the waterfall is masked in pictures, so `state`'s `waterfall_tags` is

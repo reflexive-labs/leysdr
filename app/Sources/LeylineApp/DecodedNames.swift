@@ -13,13 +13,16 @@ import SwiftUI
 
 /// The records every decoder sends, while the Radio shows, the names are on and a decode job
 /// runs on a radio, folded into `WaterfallTags`. One `SubscribeRecords` for all of them, live
-/// only, opened again after a failure.
+/// only, opened again after a failure; each time it opens, the last minute is read back
+/// (`onOpen`, `AppSession.backfillDecodedNames`), so what was decoded before it still has a tag.
 @MainActor
 @Observable
 final class DecodedNamesFeed {
     private(set) var tags = WaterfallTags()
     /// Each record as it arrives; the session decides whether it tags and where.
     @ObservationIgnored var onRecord: ((Leyline_V1_DecodeRecord) -> Void)?
+    /// The subscription has just opened; the session reads the last minute back.
+    @ObservationIgnored var onOpen: (() -> Void)?
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var captureID: String?
     @ObservationIgnored private var connection: DaemonConnection?
@@ -32,7 +35,7 @@ final class DecodedNamesFeed {
     func follow(_ wanted: Bool, captureID: String?, connection: DaemonConnection?) {
         if captureID != self.captureID {
             self.captureID = captureID
-            if !tags.tags.isEmpty { tags.removeAll() }
+            if !tags.isEmpty { tags.removeAll() }
         }
         guard wanted, let connection else {
             if task != nil {
@@ -40,7 +43,7 @@ final class DecodedNamesFeed {
                 task = nil
                 log("waterfall", "decoded names: not following")
             }
-            if !tags.tags.isEmpty { tags.removeAll() }
+            if !tags.isEmpty { tags.removeAll() }
             return
         }
         if task != nil, connection === self.connection { return }
@@ -52,6 +55,9 @@ final class DecodedNamesFeed {
         task?.cancel()
         let stream = connection.records(scope: .all)
         log("waterfall", "decoded names: following every decoder's records")
+        // After the stream is asked for, so a record lands live, read back, or both, and the
+        // fold keeps it once.
+        onOpen?()
         task = Task { [weak self] in
             do {
                 for try await r in stream {
@@ -85,6 +91,38 @@ final class DecodedNamesFeed {
             log("waterfall", "tag \(name) at \(frequencyHz) Hz on row \(rows)")
         }
     }
+
+    /// Whether the subscription is open, so the tags and counts are the window's own.
+    var isFollowing: Bool { task != nil }
+
+    /// Notes a record that may tag nothing, for its job's count.
+    func hold(_ record: Leyline_V1_DecodeRecord) {
+        var t = tags
+        t.hold(record)
+        if t != tags { tags = t }
+    }
+
+    /// The records read back, after dropping the tags whose rows have gone: `held` for the
+    /// counts, `items` for the tags. Logs how many of them tagged.
+    func backfill(
+        _ items: [WaterfallTags.Backfill], held: [Leyline_V1_DecodeRecord], captureID: String,
+        rows: Int, horizon: Int
+    ) {
+        var t = tags
+        t.expire(rows: rows, horizon: horizon, captureID: captureID)
+        for r in held { t.hold(r) }
+        let added = t.backfill(items, captureID: captureID)
+        if t != tags { tags = t }
+        log(
+            "waterfall",
+            "decoded names: \(held.count) records from the last minute, \(added) tagged")
+        let read = Set(items.map(\.record.recordID))
+        for tag in tags.tags.reversed() where read.contains(tag.id) {
+            log(
+                "waterfall", "tag \(tag.name) at \(tag.frequencyHz) Hz on row \(tag.row), read back"
+            )
+        }
+    }
 }
 
 extension AppSession {
@@ -99,6 +137,7 @@ extension AppSession {
         let wanted = showsDecodedNames && place == .radio && isLive && capture != nil && decoding
         if decodedNames.onRecord == nil {
             decodedNames.onRecord = { [weak self] r in self?.landDecodedName(r) }
+            decodedNames.onOpen = { [weak self] in self?.backfillDecodedNames() }
         }
         decodedNames.follow(wanted, captureID: capture?.captureID, connection: daemonConnection)
     }
@@ -106,6 +145,7 @@ extension AppSession {
     /// One record from any decoder: a tag when it is an audio decoder's inside the window's
     /// capture (`WaterfallTags.frequency`), on the waterfall's newest row.
     private func landDecodedName(_ r: Leyline_V1_DecodeRecord) {
+        decodedNames.hold(r)
         guard
             let cap = capture,
             let hz = WaterfallTags.frequency(
@@ -117,6 +157,66 @@ extension AppSession {
             r, display: m.flatMap { $0.hasDisplay ? $0.display : nil }, frequencyHz: hz,
             captureID: cap.captureID, rows: spectrum.waterfall.count,
             horizon: waterfallTagHorizon)
+    }
+
+    /// The last minute of every running decoder's records, read with `QueryRecords` when the
+    /// tags start (DA-21): an audio decoder's are tagged on the rows their times fell in, while
+    /// those rows show, under the live rules (`WaterfallTags.backfill`), and every decoder's
+    /// give its sidebar row's count. A failed read leaves the live tags alone.
+    func backfillDecodedNames() {
+        guard let daemon = daemonConnection else { return }
+        let protocols = WaterfallTags.backfillProtocols(
+            decoders.manifests ?? [], jobs: state.jobs)
+        guard !protocols.isEmpty else { return }
+        let since = Int64((Date().timeIntervalSince1970 - WaterfallTags.backfillSeconds) * 1e9)
+        Task { [weak self] in
+            var pages: [Leyline_V1_RecordPage] = []
+            for p in protocols {
+                var q = Leyline_V1_RecordQuery()
+                q.protocol = p
+                q.sinceNs = since
+                q.limit = UInt32(DecoderPages.logLimit)
+                do {
+                    pages.append(try await daemon.decoders.queryRecords(q))
+                } catch {
+                    log(
+                        "waterfall",
+                        "decoded names: \(p)'s last minute not read: \(LeylineError(error))")
+                }
+            }
+            self?.landBackfill(pages)
+        }
+    }
+
+    private func landBackfill(_ pages: [Leyline_V1_RecordPage]) {
+        guard let cap = capture, decodedNames.isFollowing else { return }
+        let rows = spectrum.waterfall.count
+        let horizon = waterfallTagHorizon
+        let held = spectrum.waterfall.clipped
+        let now = Date()
+        var items: [WaterfallTags.Backfill] = []
+        var all: [Leyline_V1_DecodeRecord] = []
+        for page in pages {
+            for r in page.records {
+                all.append(r)
+                guard
+                    let hz = WaterfallTags.frequency(
+                        of: r, jobs: state.jobs, manifests: decoders.manifests ?? [],
+                        channels: state.channels, capture: cap),
+                    r.hasTime, r.time.captureID == cap.captureID,
+                    let row = held.row(atSample: r.time.sampleIndex, captureID: cap.captureID),
+                    rows - (row + 1) < horizon
+                else { continue }
+                let m = decoders.manifest(named: r.protocol)
+                items.append(
+                    WaterfallTags.Backfill(
+                        record: r, display: m.flatMap { $0.hasDisplay ? $0.display : nil },
+                        frequencyHz: hz, row: row + 1,
+                        at: RecordEntry.dated(r, anchors: page.anchors, fallback: now).at))
+            }
+        }
+        decodedNames.backfill(
+            items, held: all, captureID: cap.captureID, rows: rows, horizon: horizon)
     }
 
     /// How many rows the waterfall shows, the tags' horizon: its height in device pixels, a row
@@ -138,7 +238,9 @@ extension AppSession {
 
     /// The Radio sidebar's rows, one per running decoder.
     var decodingRows: [DecodingRow] {
-        DecodingRow.rows(decoders.manifests ?? [], jobs: state.jobs)
+        DecodingRow.rows(
+            decoders.manifests ?? [], jobs: state.jobs,
+            held: decodedNames.isFollowing ? decodedNames.tags.lastSeq : [:])
     }
 
     /// A decoding row's click: the Decoders place with that decoder's page.
@@ -150,7 +252,8 @@ extension AppSession {
 }
 
 /// The Radio sidebar's top: a row per running decoder, its symbol in `good` (`caution` while
-/// degraded), its title and the count from its job's detail, which is the row's tooltip whole. A
+/// degraded), its title and the count: the records the window holds of its job while the tags
+/// follow them, else out of its job's detail, which is the row's tooltip whole. A
 /// click opens its page in Decoders. Nothing while no decoder runs.
 struct DecodingRowsView: View {
     @Environment(AppSession.self) private var session

@@ -1924,10 +1924,13 @@ scenes:
   # each station heard since puts its callsign on the waterfall at 144.390 MHz. The waterfall is
   # masked in pictures, so the tags are read from the state, and each is logged. Which station
   # is heard first depends on where in the loop the job began, so the state checks a tag's
-  # frequency, not its name. View ▸ Show Decoded Names is on, and off it takes the tags away; the
-  # row's click opens APRS's page in Decoders, still running.
+  # frequency, not its name. View ▸ Show Decoded Names is on, and off it takes the tags away; on
+  # again, the last minute is read back (DA-21), so the stations heard while the names were off,
+  # the first packet among them, are tagged on the rows they were heard in. The row's click opens
+  # APRS's page in Decoders, still running.
   - name: radio-decoding
-    covers: [DecodedNames.swift, WaterfallTags.swift, SidebarView.swift, WaterfallView.swift]
+    covers: [DecodedNames.swift, WaterfallTags.swift, ClippedRows.swift, SidebarView.swift,
+      WaterfallView.swift]
     fixtures: [{name: scene_aprs}]
     clock: "19:42"
     stage: {place: radio, settle: 3}
@@ -1942,6 +1945,9 @@ scenes:
       - {cmd: menu, menu: "View>Show Decoded Names"}
       - {cmd: state, expect: {waterfall_tags: null, decoding_rows.0.decoder: aprs}, expect_log: "decoded names hidden"}
       - {cmd: menu, menu: "View>Show Decoded Names", read: true, expect: {checked: false}}
+      - {cmd: menu, menu: "View>Show Decoded Names"}
+      - {cmd: wait, seconds: 2, expect_log: ["decoded names: [0-9]+ records from the last minute, [1-9][0-9]* tagged", "tag N0CALL-[1-7] at 144390000 Hz on row [0-9]+, read back"]}
+      - {cmd: state, expect: {waterfall_tags.0.hz: 144390000, waterfall_tags.1.hz: 144390000, decoding_rows.0.decoder: aprs}}
       - {cmd: press, identifier: sidebar.decoder.aprs}
       - {cmd: state, expect: {place: decoders, decoders.decoder: aprs, decoders.state: Running}}
 

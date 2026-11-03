@@ -87,6 +87,20 @@ public struct ClippedRows: Sendable, Equatable {
         return markClipped(from: start, to: end)
     }
 
+    /// The row a moment on `capture`'s clock fell in: the newest held row of that capture whose
+    /// first sample is at or before `sample`, counted as `count` counts rows (the newest is
+    /// `count - 1`). Nil when no held row of the capture is that old, so the moment is older
+    /// than the waterfall holds, or the capture's rows are gone. A moment after the newest row
+    /// falls in it. Where a record decoded before the window subscribed is tagged.
+    public func row(atSample sample: UInt64, captureID capture: String) -> Int? {
+        let held = min(count, capacity)
+        for age in 0..<held {
+            let slot = (count - 1 - age) % capacity
+            if captureID[slot] == capture, sampleIndex[slot] <= sample { return count - 1 - age }
+        }
+        return nil
+    }
+
     /// The held rows that lie in one of `parts` (the part's capture, its start sample at or
     /// before the row's, the row's at or before its end), as runs of row ages: age 0 is the newest
     /// row, which the shader draws at the top, and age `a` is `a` device pixels down. Newest run
