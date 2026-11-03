@@ -28,11 +28,7 @@ struct DecoderWatchSheet: View {
         let d = session.decoders
         let fields = Watches.fields(manifest)
         let chosen = fields.first { $0.name == field } ?? fields[0]
-        let built = Result {
-            try Watches.predicate(
-                field: chosen.name, test: test, value: value, near: nearOn ? near : "",
-                radius: nearOn ? radius : "")
-        }
+        let built = predicate(chosen)
         let placement = session.decoderPlacement(manifest)
         let hz = session.decoderFrequency(manifest)
         // A watch never sends `take_over`, so a radio somebody is using is a reason not to start.
@@ -48,6 +44,9 @@ struct DecoderWatchSheet: View {
                 Picker("When", selection: $field) {
                     ForEach(fields) { Text($0.label).tag($0.name) }
                 }
+                // Sized to its longest label, so it does not shift by a point or two with the one
+                // shown when the sheet first laid it out.
+                .fixedSize()
                 .accessibilityIdentifier("decoders.watch.field")
                 Picker("Test", selection: $test) {
                     ForEach(Watches.tests(for: chosen.type)) { Text($0.title).tag($0) }
@@ -98,7 +97,14 @@ struct DecoderWatchSheet: View {
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("decoders.watch.cancel")
                 Button("Start Watching") {
-                    guard case .success(let p) = built, let hz else { return }
+                    // Built again here, from the choices as they are now: a default-action button
+                    // drawn by a custom style keeps the action of the render that enabled it, so
+                    // `built` above can be the first letter typed.
+                    let fields = Watches.fields(manifest)
+                    let chosen = fields.first { $0.name == field } ?? fields[0]
+                    guard case .success(let p) = predicate(chosen),
+                        let hz = session.decoderFrequency(manifest)
+                    else { return }
                     starting = true
                     Task {
                         let ok = await d.startWatch(manifest, frequencyHz: hz, predicate: p)
@@ -121,6 +127,15 @@ struct DecoderWatchSheet: View {
         .onChange(of: field) {
             let tests = Watches.tests(for: chosen.type)
             if !tests.contains(test) { test = tests[0] }
+        }
+    }
+
+    /// The predicate the sheet's choices make, on `chosen`, the field picked.
+    private func predicate(_ chosen: Watches.Field) -> Result<Leyline_V1_Predicate, any Error> {
+        Result {
+            try Watches.predicate(
+                field: chosen.name, test: test, value: value, near: nearOn ? near : "",
+                radius: nearOn ? radius : "")
         }
     }
 
