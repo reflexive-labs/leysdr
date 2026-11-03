@@ -25,6 +25,10 @@ where the step says so.
 - [ ] **CL-3 Uniform displacement.** `tuning_generation` on `Capture` and bulk frames; IQ
   recordings start a new part when displaced and resumed; views carry the centre per row; the
   DEGRADED detail names who moved the radio; displaced claims on capture events.
+  From the CL-1 review: a VIEW claim's arrival or release does not publish a capture event on
+  its own (it rides the next one, or one coalesced per second), so a client opening and closing
+  waterfall streams cannot push real events out of the 256-event replay window; and a sink
+  attached by a job never makes a PERSON presence (`notePresence` checks `isInteractive`).
 - [ ] **CL-4 Return and sharing.** Automatic return after a job's or sweep's displacement, rate
   included, replacing `restoreCenterHz` and the sweep restore; a capture lives while any claim
   holds it (DEC-19).
