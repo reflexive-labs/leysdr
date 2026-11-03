@@ -1922,7 +1922,9 @@ scenes:
   # Decoding seen from the radio (docs/plans/decoders-app.md, DA-9) on scene_aprs. With no
   # decoder running the Radio sidebar has no decoder row. A terminal starts APRS as a kept job
   # on the window's capture and waits for two packets: the sidebar's top gets APRS's row, and
-  # each station heard since puts its callsign on the waterfall at 144.390 MHz. The waterfall is
+  # each station heard since puts its callsign on the waterfall at 144.390 MHz, and the
+  # inspector's Claims group (CL-1) lists the job's channel first, before the app's own, opened
+  # for the picture. The waterfall is
   # masked in pictures, so the tags are read from the state, and each is logged. Which station
   # is heard first depends on where in the loop the job began, so the state checks a tag's
   # frequency, not its name. View ▸ Show Decoded Names is on, and off it takes the tags away; on
@@ -1942,6 +1944,9 @@ scenes:
       - {cmd: wait, seconds: 4, expect_log: "tag N0CALL-[1-7] at 144390000 Hz"}
       - {cmd: state, expect: {decoding_rows.0.decoder: aprs, decoding_rows.0.title: APRS, waterfall_tags.0.hz: 144390000}}
       - {cmd: snapshot, name: decoding}
+      - {cmd: state, expect: {claims.0.who: "job: APRS", claims.0.what: "channel on 144.390 MHz", claims.0.displaced: false}}
+      - {cmd: press, identifier: inspector.claims.toggle}
+      - {cmd: snapshot, name: claims}
       - {cmd: menu, menu: "View>Show Decoded Names", read: true, expect: {checked: true}}
       - {cmd: menu, menu: "View>Show Decoded Names"}
       - {cmd: state, expect: {waterfall_tags: null, decoding_rows.0.decoder: aprs}, expect_log: "decoded names hidden"}
