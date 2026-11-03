@@ -109,6 +109,150 @@ public nonisolated enum Leyline_V1_SampleFormat: SwiftProtobuf.Enum, Swift.CaseI
 
 }
 
+public nonisolated enum Leyline_V1_ClaimKind: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+
+  /// A person at the controls: one per capture per interactive client, held
+  /// while it has a live audio sink or a channel on the capture, and for 60 s
+  /// after its last write to it.
+  case claimListen // = 1
+
+  /// a channel, a person's or a job's
+  case claimChannel // = 2
+
+  /// a job reading the whole capture as IQ
+  case claimIq // = 3
+
+  /// a capture's FFT, persistence or IQ stream
+  case claimSpectrum // = 4
+
+  /// a sweep or monitor: exclusive while it holds the capture
+  case claimSweep // = 5
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .claimListen
+    case 2: self = .claimChannel
+    case 3: self = .claimIq
+    case 4: self = .claimSpectrum
+    case 5: self = .claimSweep
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .claimListen: return 1
+    case .claimChannel: return 2
+    case .claimIq: return 3
+    case .claimSpectrum: return 4
+    case .claimSweep: return 5
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Leyline_V1_ClaimKind] = [
+    .unspecified,
+    .claimListen,
+    .claimChannel,
+    .claimIq,
+    .claimSpectrum,
+    .claimSweep,
+  ]
+
+}
+
+public nonisolated enum Leyline_V1_ClaimPriority: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case priorityPerson // = 1
+  case priorityJob // = 2
+  case priorityView // = 3
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .priorityPerson
+    case 2: self = .priorityJob
+    case 3: self = .priorityView
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .priorityPerson: return 1
+    case .priorityJob: return 2
+    case .priorityView: return 3
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Leyline_V1_ClaimPriority] = [
+    .unspecified,
+    .priorityPerson,
+    .priorityJob,
+    .priorityView,
+  ]
+
+}
+
+public nonisolated enum Leyline_V1_ClaimState: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case claimSatisfied // = 1
+
+  /// the capture no longer gives the claim what it needs
+  case claimDisplaced // = 2
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .claimSatisfied
+    case 2: self = .claimDisplaced
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .claimSatisfied: return 1
+    case .claimDisplaced: return 2
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Leyline_V1_ClaimState] = [
+    .unspecified,
+    .claimSatisfied,
+    .claimDisplaced,
+  ]
+
+}
+
 public nonisolated enum Leyline_V1_CaptureState: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case unspecified // = 0
@@ -539,6 +683,13 @@ public nonisolated struct Leyline_V1_Capture: Sendable {
   /// current setting of every GainElement, in descriptor order
   public var gains: [Leyline_V1_GainState] = []
 
+  /// What every consumer of this capture needs from its tuning, oldest first
+  /// (docs/design/claims.md). Clients never make a claim: creating a channel,
+  /// starting a job, opening a capture's FFT, persistence or IQ stream, starting
+  /// a sweep, attaching a live audio sink or writing to the capture makes one,
+  /// and ending that thing releases it. A claim change is a capture event.
+  public var claims: [Leyline_V1_Claim] = []
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -546,6 +697,118 @@ public nonisolated struct Leyline_V1_Capture: Sendable {
   fileprivate var _anchor: Leyline_V1_CaptureAnchor? = nil
   fileprivate var _activity: Leyline_V1_CaptureActivity? = nil
   fileprivate var _createdBy: Leyline_V1_ClientInfo? = nil
+}
+
+/// One consumer's statement of what it needs from a capture's tuning. A claim is
+/// not a lock: a person is never blocked by a job.
+public nonisolated struct Leyline_V1_Claim: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// clm_<ulid>
+  public var claimID: String = String()
+
+  /// the client, or the job (kind "job", client_id job_<ulid>)
+  public var holder: Leyline_V1_ClientInfo {
+    get {_holder ?? Leyline_V1_ClientInfo()}
+    set {_holder = newValue}
+  }
+  /// Returns true if `holder` has been explicitly set.
+  public var hasHolder: Bool {self._holder != nil}
+  /// Clears the value of `holder`. Subsequent reads from it will return its default value.
+  public mutating func clearHolder() {self._holder = nil}
+
+  public var kind: Leyline_V1_ClaimKind = .unspecified
+
+  /// Unset for a claim that needs nothing in particular from the tuning: a
+  /// person's presence and a spectrum view take the capture as it is.
+  public var need: Leyline_V1_Claim.OneOf_Need? = nil
+
+  /// a frequency and bandwidth inside the capture's span
+  public var covers: Leyline_V1_Span {
+    get {
+      if case .covers(let v)? = need {return v}
+      return Leyline_V1_Span()
+    }
+    set {need = .covers(newValue)}
+  }
+
+  /// the capture's centre within tolerance_hz (a dedicated decoder)
+  public var centred: Leyline_V1_Centre {
+    get {
+      if case .centred(let v)? = need {return v}
+      return Leyline_V1_Centre()
+    }
+    set {need = .centred(newValue)}
+  }
+
+  /// 0 = any rate
+  public var sampleRateHz: UInt64 = 0
+
+  /// from what the holder is, never from the holder's say
+  public var priority: Leyline_V1_ClaimPriority = .unspecified
+
+  public var state: Leyline_V1_ClaimState = .unspecified
+
+  /// who moved the capture, while DISPLACED; not yet set
+  public var displacedBy: Leyline_V1_ClientInfo {
+    get {_displacedBy ?? Leyline_V1_ClientInfo()}
+    set {_displacedBy = newValue}
+  }
+  /// Returns true if `displacedBy` has been explicitly set.
+  public var hasDisplacedBy: Bool {self._displacedBy != nil}
+  /// Clears the value of `displacedBy`. Subsequent reads from it will return its default value.
+  public mutating func clearDisplacedBy() {self._displacedBy = nil}
+
+  /// not yet set
+  public var displacedSinceNs: Int64 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  /// Unset for a claim that needs nothing in particular from the tuning: a
+  /// person's presence and a spectrum view take the capture as it is.
+  public nonisolated enum OneOf_Need: Equatable, Sendable {
+    /// a frequency and bandwidth inside the capture's span
+    case covers(Leyline_V1_Span)
+    /// the capture's centre within tolerance_hz (a dedicated decoder)
+    case centred(Leyline_V1_Centre)
+
+  }
+
+  public init() {}
+
+  fileprivate var _holder: Leyline_V1_ClientInfo? = nil
+  fileprivate var _displacedBy: Leyline_V1_ClientInfo? = nil
+}
+
+public nonisolated struct Leyline_V1_Span: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var frequencyHz: UInt64 = 0
+
+  /// 0 = the frequency itself
+  public var bandwidthHz: UInt32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Leyline_V1_Centre: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var frequencyHz: UInt64 = 0
+
+  public var toleranceHz: UInt64 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
 }
 
 public nonisolated struct Leyline_V1_CaptureActivity: Sendable {
@@ -1618,6 +1881,18 @@ nonisolated extension Leyline_V1_SampleFormat: SwiftProtobuf._ProtoNameProviding
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0SAMPLE_FORMAT_UNSPECIFIED\0\u{1}CS8\0\u{1}CS16\0\u{1}CF32\0")
 }
 
+nonisolated extension Leyline_V1_ClaimKind: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CLAIM_KIND_UNSPECIFIED\0\u{1}CLAIM_LISTEN\0\u{1}CLAIM_CHANNEL\0\u{1}CLAIM_IQ\0\u{1}CLAIM_SPECTRUM\0\u{1}CLAIM_SWEEP\0")
+}
+
+nonisolated extension Leyline_V1_ClaimPriority: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CLAIM_PRIORITY_UNSPECIFIED\0\u{1}PRIORITY_PERSON\0\u{1}PRIORITY_JOB\0\u{1}PRIORITY_VIEW\0")
+}
+
+nonisolated extension Leyline_V1_ClaimState: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CLAIM_STATE_UNSPECIFIED\0\u{1}CLAIM_SATISFIED\0\u{1}CLAIM_DISPLACED\0")
+}
+
 nonisolated extension Leyline_V1_CaptureState: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CAPTURE_STATE_UNSPECIFIED\0\u{1}CAPTURE_ACTIVE\0\u{1}CAPTURE_DETACHED\0")
 }
@@ -1869,7 +2144,7 @@ nonisolated extension Leyline_V1_FeatureValue: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension Leyline_V1_Capture: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Capture"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}capture_id\0\u{3}device_id\0\u{3}center_hz\0\u{3}sample_rate\0\u{1}state\0\u{1}anchor\0\u{1}activity\0\u{3}created_by\0\u{1}gains\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}capture_id\0\u{3}device_id\0\u{3}center_hz\0\u{3}sample_rate\0\u{1}state\0\u{1}anchor\0\u{1}activity\0\u{3}created_by\0\u{1}gains\0\u{1}claims\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1886,6 +2161,7 @@ nonisolated extension Leyline_V1_Capture: SwiftProtobuf.Message, SwiftProtobuf._
       case 7: try { try decoder.decodeSingularMessageField(value: &self._activity) }()
       case 8: try { try decoder.decodeSingularMessageField(value: &self._createdBy) }()
       case 9: try { try decoder.decodeRepeatedMessageField(value: &self.gains) }()
+      case 10: try { try decoder.decodeRepeatedMessageField(value: &self.claims) }()
       default: break
       }
     }
@@ -1923,6 +2199,9 @@ nonisolated extension Leyline_V1_Capture: SwiftProtobuf.Message, SwiftProtobuf._
     if !self.gains.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.gains, fieldNumber: 9)
     }
+    if !self.claims.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.claims, fieldNumber: 10)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1936,6 +2215,184 @@ nonisolated extension Leyline_V1_Capture: SwiftProtobuf.Message, SwiftProtobuf._
     if lhs._activity != rhs._activity {return false}
     if lhs._createdBy != rhs._createdBy {return false}
     if lhs.gains != rhs.gains {return false}
+    if lhs.claims != rhs.claims {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_Claim: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".Claim"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}claim_id\0\u{1}holder\0\u{1}kind\0\u{1}covers\0\u{1}centred\0\u{3}sample_rate_hz\0\u{1}priority\0\u{1}state\0\u{3}displaced_by\0\u{3}displaced_since_ns\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.claimID) }()
+      case 2: try { try decoder.decodeSingularMessageField(value: &self._holder) }()
+      case 3: try { try decoder.decodeSingularEnumField(value: &self.kind) }()
+      case 4: try {
+        var v: Leyline_V1_Span?
+        var hadOneofValue = false
+        if let current = self.need {
+          hadOneofValue = true
+          if case .covers(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.need = .covers(v)
+        }
+      }()
+      case 5: try {
+        var v: Leyline_V1_Centre?
+        var hadOneofValue = false
+        if let current = self.need {
+          hadOneofValue = true
+          if case .centred(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.need = .centred(v)
+        }
+      }()
+      case 6: try { try decoder.decodeSingularUInt64Field(value: &self.sampleRateHz) }()
+      case 7: try { try decoder.decodeSingularEnumField(value: &self.priority) }()
+      case 8: try { try decoder.decodeSingularEnumField(value: &self.state) }()
+      case 9: try { try decoder.decodeSingularMessageField(value: &self._displacedBy) }()
+      case 10: try { try decoder.decodeSingularInt64Field(value: &self.displacedSinceNs) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.claimID.isEmpty {
+      try visitor.visitSingularStringField(value: self.claimID, fieldNumber: 1)
+    }
+    try { if let v = self._holder {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    } }()
+    if self.kind != .unspecified {
+      try visitor.visitSingularEnumField(value: self.kind, fieldNumber: 3)
+    }
+    switch self.need {
+    case .covers?: try {
+      guard case .covers(let v)? = self.need else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    }()
+    case .centred?: try {
+      guard case .centred(let v)? = self.need else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+    }()
+    case nil: break
+    }
+    if self.sampleRateHz != 0 {
+      try visitor.visitSingularUInt64Field(value: self.sampleRateHz, fieldNumber: 6)
+    }
+    if self.priority != .unspecified {
+      try visitor.visitSingularEnumField(value: self.priority, fieldNumber: 7)
+    }
+    if self.state != .unspecified {
+      try visitor.visitSingularEnumField(value: self.state, fieldNumber: 8)
+    }
+    try { if let v = self._displacedBy {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
+    } }()
+    if self.displacedSinceNs != 0 {
+      try visitor.visitSingularInt64Field(value: self.displacedSinceNs, fieldNumber: 10)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_Claim, rhs: Leyline_V1_Claim) -> Bool {
+    if lhs.claimID != rhs.claimID {return false}
+    if lhs._holder != rhs._holder {return false}
+    if lhs.kind != rhs.kind {return false}
+    if lhs.need != rhs.need {return false}
+    if lhs.sampleRateHz != rhs.sampleRateHz {return false}
+    if lhs.priority != rhs.priority {return false}
+    if lhs.state != rhs.state {return false}
+    if lhs._displacedBy != rhs._displacedBy {return false}
+    if lhs.displacedSinceNs != rhs.displacedSinceNs {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_Span: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".Span"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}frequency_hz\0\u{3}bandwidth_hz\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt64Field(value: &self.frequencyHz) }()
+      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.bandwidthHz) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.frequencyHz != 0 {
+      try visitor.visitSingularUInt64Field(value: self.frequencyHz, fieldNumber: 1)
+    }
+    if self.bandwidthHz != 0 {
+      try visitor.visitSingularUInt32Field(value: self.bandwidthHz, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_Span, rhs: Leyline_V1_Span) -> Bool {
+    if lhs.frequencyHz != rhs.frequencyHz {return false}
+    if lhs.bandwidthHz != rhs.bandwidthHz {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Leyline_V1_Centre: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".Centre"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}frequency_hz\0\u{3}tolerance_hz\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt64Field(value: &self.frequencyHz) }()
+      case 2: try { try decoder.decodeSingularUInt64Field(value: &self.toleranceHz) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.frequencyHz != 0 {
+      try visitor.visitSingularUInt64Field(value: self.frequencyHz, fieldNumber: 1)
+    }
+    if self.toleranceHz != 0 {
+      try visitor.visitSingularUInt64Field(value: self.toleranceHz, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Leyline_V1_Centre, rhs: Leyline_V1_Centre) -> Bool {
+    if lhs.frequencyHz != rhs.frequencyHz {return false}
+    if lhs.toleranceHz != rhs.toleranceHz {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

@@ -67,6 +67,66 @@ message Capture {
   CaptureActivity activity = 7;  // the don't-disturb signal
   ClientInfo created_by = 8;
   repeated GainState gains = 9;  // current setting of every GainElement, in descriptor order
+  // What every consumer of this capture needs from its tuning, oldest first
+  // (docs/design/claims.md). Clients never make a claim: creating a channel,
+  // starting a job, opening a capture's FFT, persistence or IQ stream, starting
+  // a sweep, attaching a live audio sink or writing to the capture makes one,
+  // and ending that thing releases it. A claim change is a capture event.
+  repeated Claim claims = 10;
+}
+
+// One consumer's statement of what it needs from a capture's tuning. A claim is
+// not a lock: a person is never blocked by a job.
+message Claim {
+  string claim_id = 1;           // clm_<ulid>
+  ClientInfo holder = 2;         // the client, or the job (kind "job", client_id job_<ulid>)
+  ClaimKind kind = 3;
+  // Unset for a claim that needs nothing in particular from the tuning: a
+  // person's presence and a spectrum view take the capture as it is.
+  oneof need {
+    Span covers = 4;             // a frequency and bandwidth inside the capture's span
+    Centre centred = 5;          // the capture's centre within tolerance_hz (a dedicated decoder)
+  }
+  uint64 sample_rate_hz = 6;     // 0 = any rate
+  ClaimPriority priority = 7;    // from what the holder is, never from the holder's say
+  ClaimState state = 8;
+  ClientInfo displaced_by = 9;   // who moved the capture, while DISPLACED; not yet set
+  int64 displaced_since_ns = 10; // not yet set
+}
+
+message Span {
+  uint64 frequency_hz = 1;
+  uint32 bandwidth_hz = 2;       // 0 = the frequency itself
+}
+
+message Centre {
+  uint64 frequency_hz = 1;
+  uint64 tolerance_hz = 2;
+}
+
+enum ClaimKind {
+  CLAIM_KIND_UNSPECIFIED = 0;
+  // A person at the controls: one per capture per interactive client, held
+  // while it has a live audio sink or a channel on the capture, and for 60 s
+  // after its last write to it.
+  CLAIM_LISTEN = 1;
+  CLAIM_CHANNEL = 2;             // a channel, a person's or a job's
+  CLAIM_IQ = 3;                  // a job reading the whole capture as IQ
+  CLAIM_SPECTRUM = 4;            // a capture's FFT, persistence or IQ stream
+  CLAIM_SWEEP = 5;               // a sweep or monitor: exclusive while it holds the capture
+}
+
+enum ClaimPriority {
+  CLAIM_PRIORITY_UNSPECIFIED = 0;
+  PRIORITY_PERSON = 1;
+  PRIORITY_JOB = 2;
+  PRIORITY_VIEW = 3;
+}
+
+enum ClaimState {
+  CLAIM_STATE_UNSPECIFIED = 0;
+  CLAIM_SATISFIED = 1;
+  CLAIM_DISPLACED = 2;           // the capture no longer gives the claim what it needs
 }
 
 

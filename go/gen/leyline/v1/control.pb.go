@@ -130,6 +130,168 @@ func (SampleFormat) EnumDescriptor() ([]byte, []int) {
 	return file_leyline_v1_control_proto_rawDescGZIP(), []int{1}
 }
 
+type ClaimKind int32
+
+const (
+	ClaimKind_CLAIM_KIND_UNSPECIFIED ClaimKind = 0
+	// A person at the controls: one per capture per interactive client, held
+	// while it has a live audio sink or a channel on the capture, and for 60 s
+	// after its last write to it.
+	ClaimKind_CLAIM_LISTEN   ClaimKind = 1
+	ClaimKind_CLAIM_CHANNEL  ClaimKind = 2 // a channel, a person's or a job's
+	ClaimKind_CLAIM_IQ       ClaimKind = 3 // a job reading the whole capture as IQ
+	ClaimKind_CLAIM_SPECTRUM ClaimKind = 4 // a capture's FFT, persistence or IQ stream
+	ClaimKind_CLAIM_SWEEP    ClaimKind = 5 // a sweep or monitor: exclusive while it holds the capture
+)
+
+// Enum value maps for ClaimKind.
+var (
+	ClaimKind_name = map[int32]string{
+		0: "CLAIM_KIND_UNSPECIFIED",
+		1: "CLAIM_LISTEN",
+		2: "CLAIM_CHANNEL",
+		3: "CLAIM_IQ",
+		4: "CLAIM_SPECTRUM",
+		5: "CLAIM_SWEEP",
+	}
+	ClaimKind_value = map[string]int32{
+		"CLAIM_KIND_UNSPECIFIED": 0,
+		"CLAIM_LISTEN":           1,
+		"CLAIM_CHANNEL":          2,
+		"CLAIM_IQ":               3,
+		"CLAIM_SPECTRUM":         4,
+		"CLAIM_SWEEP":            5,
+	}
+)
+
+func (x ClaimKind) Enum() *ClaimKind {
+	p := new(ClaimKind)
+	*p = x
+	return p
+}
+
+func (x ClaimKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ClaimKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_leyline_v1_control_proto_enumTypes[2].Descriptor()
+}
+
+func (ClaimKind) Type() protoreflect.EnumType {
+	return &file_leyline_v1_control_proto_enumTypes[2]
+}
+
+func (x ClaimKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ClaimKind.Descriptor instead.
+func (ClaimKind) EnumDescriptor() ([]byte, []int) {
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{2}
+}
+
+type ClaimPriority int32
+
+const (
+	ClaimPriority_CLAIM_PRIORITY_UNSPECIFIED ClaimPriority = 0
+	ClaimPriority_PRIORITY_PERSON            ClaimPriority = 1
+	ClaimPriority_PRIORITY_JOB               ClaimPriority = 2
+	ClaimPriority_PRIORITY_VIEW              ClaimPriority = 3
+)
+
+// Enum value maps for ClaimPriority.
+var (
+	ClaimPriority_name = map[int32]string{
+		0: "CLAIM_PRIORITY_UNSPECIFIED",
+		1: "PRIORITY_PERSON",
+		2: "PRIORITY_JOB",
+		3: "PRIORITY_VIEW",
+	}
+	ClaimPriority_value = map[string]int32{
+		"CLAIM_PRIORITY_UNSPECIFIED": 0,
+		"PRIORITY_PERSON":            1,
+		"PRIORITY_JOB":               2,
+		"PRIORITY_VIEW":              3,
+	}
+)
+
+func (x ClaimPriority) Enum() *ClaimPriority {
+	p := new(ClaimPriority)
+	*p = x
+	return p
+}
+
+func (x ClaimPriority) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ClaimPriority) Descriptor() protoreflect.EnumDescriptor {
+	return file_leyline_v1_control_proto_enumTypes[3].Descriptor()
+}
+
+func (ClaimPriority) Type() protoreflect.EnumType {
+	return &file_leyline_v1_control_proto_enumTypes[3]
+}
+
+func (x ClaimPriority) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ClaimPriority.Descriptor instead.
+func (ClaimPriority) EnumDescriptor() ([]byte, []int) {
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{3}
+}
+
+type ClaimState int32
+
+const (
+	ClaimState_CLAIM_STATE_UNSPECIFIED ClaimState = 0
+	ClaimState_CLAIM_SATISFIED         ClaimState = 1
+	ClaimState_CLAIM_DISPLACED         ClaimState = 2 // the capture no longer gives the claim what it needs
+)
+
+// Enum value maps for ClaimState.
+var (
+	ClaimState_name = map[int32]string{
+		0: "CLAIM_STATE_UNSPECIFIED",
+		1: "CLAIM_SATISFIED",
+		2: "CLAIM_DISPLACED",
+	}
+	ClaimState_value = map[string]int32{
+		"CLAIM_STATE_UNSPECIFIED": 0,
+		"CLAIM_SATISFIED":         1,
+		"CLAIM_DISPLACED":         2,
+	}
+)
+
+func (x ClaimState) Enum() *ClaimState {
+	p := new(ClaimState)
+	*p = x
+	return p
+}
+
+func (x ClaimState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ClaimState) Descriptor() protoreflect.EnumDescriptor {
+	return file_leyline_v1_control_proto_enumTypes[4].Descriptor()
+}
+
+func (ClaimState) Type() protoreflect.EnumType {
+	return &file_leyline_v1_control_proto_enumTypes[4]
+}
+
+func (x ClaimState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ClaimState.Descriptor instead.
+func (ClaimState) EnumDescriptor() ([]byte, []int) {
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{4}
+}
+
 type CaptureState int32
 
 const (
@@ -163,11 +325,11 @@ func (x CaptureState) String() string {
 }
 
 func (CaptureState) Descriptor() protoreflect.EnumDescriptor {
-	return file_leyline_v1_control_proto_enumTypes[2].Descriptor()
+	return file_leyline_v1_control_proto_enumTypes[5].Descriptor()
 }
 
 func (CaptureState) Type() protoreflect.EnumType {
-	return &file_leyline_v1_control_proto_enumTypes[2]
+	return &file_leyline_v1_control_proto_enumTypes[5]
 }
 
 func (x CaptureState) Number() protoreflect.EnumNumber {
@@ -176,7 +338,7 @@ func (x CaptureState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CaptureState.Descriptor instead.
 func (CaptureState) EnumDescriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{2}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{5}
 }
 
 type GainMode int32
@@ -212,11 +374,11 @@ func (x GainMode) String() string {
 }
 
 func (GainMode) Descriptor() protoreflect.EnumDescriptor {
-	return file_leyline_v1_control_proto_enumTypes[3].Descriptor()
+	return file_leyline_v1_control_proto_enumTypes[6].Descriptor()
 }
 
 func (GainMode) Type() protoreflect.EnumType {
-	return &file_leyline_v1_control_proto_enumTypes[3]
+	return &file_leyline_v1_control_proto_enumTypes[6]
 }
 
 func (x GainMode) Number() protoreflect.EnumNumber {
@@ -225,7 +387,7 @@ func (x GainMode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use GainMode.Descriptor instead.
 func (GainMode) EnumDescriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{3}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{6}
 }
 
 type SquelchSource int32
@@ -261,11 +423,11 @@ func (x SquelchSource) String() string {
 }
 
 func (SquelchSource) Descriptor() protoreflect.EnumDescriptor {
-	return file_leyline_v1_control_proto_enumTypes[4].Descriptor()
+	return file_leyline_v1_control_proto_enumTypes[7].Descriptor()
 }
 
 func (SquelchSource) Type() protoreflect.EnumType {
-	return &file_leyline_v1_control_proto_enumTypes[4]
+	return &file_leyline_v1_control_proto_enumTypes[7]
 }
 
 func (x SquelchSource) Number() protoreflect.EnumNumber {
@@ -274,7 +436,7 @@ func (x SquelchSource) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SquelchSource.Descriptor instead.
 func (SquelchSource) EnumDescriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{4}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{7}
 }
 
 type ChannelState int32
@@ -310,11 +472,11 @@ func (x ChannelState) String() string {
 }
 
 func (ChannelState) Descriptor() protoreflect.EnumDescriptor {
-	return file_leyline_v1_control_proto_enumTypes[5].Descriptor()
+	return file_leyline_v1_control_proto_enumTypes[8].Descriptor()
 }
 
 func (ChannelState) Type() protoreflect.EnumType {
-	return &file_leyline_v1_control_proto_enumTypes[5]
+	return &file_leyline_v1_control_proto_enumTypes[8]
 }
 
 func (x ChannelState) Number() protoreflect.EnumNumber {
@@ -323,7 +485,7 @@ func (x ChannelState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ChannelState.Descriptor instead.
 func (ChannelState) EnumDescriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{5}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{8}
 }
 
 type SinkState int32
@@ -356,11 +518,11 @@ func (x SinkState) String() string {
 }
 
 func (SinkState) Descriptor() protoreflect.EnumDescriptor {
-	return file_leyline_v1_control_proto_enumTypes[6].Descriptor()
+	return file_leyline_v1_control_proto_enumTypes[9].Descriptor()
 }
 
 func (SinkState) Type() protoreflect.EnumType {
-	return &file_leyline_v1_control_proto_enumTypes[6]
+	return &file_leyline_v1_control_proto_enumTypes[9]
 }
 
 func (x SinkState) Number() protoreflect.EnumNumber {
@@ -369,7 +531,7 @@ func (x SinkState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SinkState.Descriptor instead.
 func (SinkState) EnumDescriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{6}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{9}
 }
 
 type FileSinkKind int32
@@ -405,11 +567,11 @@ func (x FileSinkKind) String() string {
 }
 
 func (FileSinkKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_leyline_v1_control_proto_enumTypes[7].Descriptor()
+	return file_leyline_v1_control_proto_enumTypes[10].Descriptor()
 }
 
 func (FileSinkKind) Type() protoreflect.EnumType {
-	return &file_leyline_v1_control_proto_enumTypes[7]
+	return &file_leyline_v1_control_proto_enumTypes[10]
 }
 
 func (x FileSinkKind) Number() protoreflect.EnumNumber {
@@ -418,7 +580,7 @@ func (x FileSinkKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use FileSinkKind.Descriptor instead.
 func (FileSinkKind) EnumDescriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{7}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{10}
 }
 
 type PlaybackState int32
@@ -451,11 +613,11 @@ func (x PlaybackState) String() string {
 }
 
 func (PlaybackState) Descriptor() protoreflect.EnumDescriptor {
-	return file_leyline_v1_control_proto_enumTypes[8].Descriptor()
+	return file_leyline_v1_control_proto_enumTypes[11].Descriptor()
 }
 
 func (PlaybackState) Type() protoreflect.EnumType {
-	return &file_leyline_v1_control_proto_enumTypes[8]
+	return &file_leyline_v1_control_proto_enumTypes[11]
 }
 
 func (x PlaybackState) Number() protoreflect.EnumNumber {
@@ -464,7 +626,7 @@ func (x PlaybackState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use PlaybackState.Descriptor instead.
 func (PlaybackState) EnumDescriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{8}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{11}
 }
 
 type DeviceDescriptor struct {
@@ -815,11 +977,17 @@ type Capture struct {
 	// only signal it is gone -- drop it from your mirror. CAPTURE_DETACHED means
 	// something else: the radio is unplugged and the capture rebinds if it comes
 	// back, so a destroy and a yanked dongle must not look alike on the wire.
-	State         CaptureState     `protobuf:"varint,5,opt,name=state,proto3,enum=leyline.v1.CaptureState" json:"state,omitempty"`
-	Anchor        *CaptureAnchor   `protobuf:"bytes,6,opt,name=anchor,proto3" json:"anchor,omitempty"`
-	Activity      *CaptureActivity `protobuf:"bytes,7,opt,name=activity,proto3" json:"activity,omitempty"` // the don't-disturb signal
-	CreatedBy     *ClientInfo      `protobuf:"bytes,8,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
-	Gains         []*GainState     `protobuf:"bytes,9,rep,name=gains,proto3" json:"gains,omitempty"` // current setting of every GainElement, in descriptor order
+	State     CaptureState     `protobuf:"varint,5,opt,name=state,proto3,enum=leyline.v1.CaptureState" json:"state,omitempty"`
+	Anchor    *CaptureAnchor   `protobuf:"bytes,6,opt,name=anchor,proto3" json:"anchor,omitempty"`
+	Activity  *CaptureActivity `protobuf:"bytes,7,opt,name=activity,proto3" json:"activity,omitempty"` // the don't-disturb signal
+	CreatedBy *ClientInfo      `protobuf:"bytes,8,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
+	Gains     []*GainState     `protobuf:"bytes,9,rep,name=gains,proto3" json:"gains,omitempty"` // current setting of every GainElement, in descriptor order
+	// What every consumer of this capture needs from its tuning, oldest first
+	// (docs/design/claims.md). Clients never make a claim: creating a channel,
+	// starting a job, opening a capture's FFT, persistence or IQ stream, starting
+	// a sweep, attaching a live audio sink or writing to the capture makes one,
+	// and ending that thing releases it. A claim change is a capture event.
+	Claims        []*Claim `protobuf:"bytes,10,rep,name=claims,proto3" json:"claims,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -917,6 +1085,268 @@ func (x *Capture) GetGains() []*GainState {
 	return nil
 }
 
+func (x *Capture) GetClaims() []*Claim {
+	if x != nil {
+		return x.Claims
+	}
+	return nil
+}
+
+// One consumer's statement of what it needs from a capture's tuning. A claim is
+// not a lock: a person is never blocked by a job.
+type Claim struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	ClaimId string                 `protobuf:"bytes,1,opt,name=claim_id,json=claimId,proto3" json:"claim_id,omitempty"` // clm_<ulid>
+	Holder  *ClientInfo            `protobuf:"bytes,2,opt,name=holder,proto3" json:"holder,omitempty"`                  // the client, or the job (kind "job", client_id job_<ulid>)
+	Kind    ClaimKind              `protobuf:"varint,3,opt,name=kind,proto3,enum=leyline.v1.ClaimKind" json:"kind,omitempty"`
+	// Unset for a claim that needs nothing in particular from the tuning: a
+	// person's presence and a spectrum view take the capture as it is.
+	//
+	// Types that are valid to be assigned to Need:
+	//
+	//	*Claim_Covers
+	//	*Claim_Centred
+	Need             isClaim_Need  `protobuf_oneof:"need"`
+	SampleRateHz     uint64        `protobuf:"varint,6,opt,name=sample_rate_hz,json=sampleRateHz,proto3" json:"sample_rate_hz,omitempty"` // 0 = any rate
+	Priority         ClaimPriority `protobuf:"varint,7,opt,name=priority,proto3,enum=leyline.v1.ClaimPriority" json:"priority,omitempty"` // from what the holder is, never from the holder's say
+	State            ClaimState    `protobuf:"varint,8,opt,name=state,proto3,enum=leyline.v1.ClaimState" json:"state,omitempty"`
+	DisplacedBy      *ClientInfo   `protobuf:"bytes,9,opt,name=displaced_by,json=displacedBy,proto3" json:"displaced_by,omitempty"`                    // who moved the capture, while DISPLACED; not yet set
+	DisplacedSinceNs int64         `protobuf:"varint,10,opt,name=displaced_since_ns,json=displacedSinceNs,proto3" json:"displaced_since_ns,omitempty"` // not yet set
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *Claim) Reset() {
+	*x = Claim{}
+	mi := &file_leyline_v1_control_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Claim) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Claim) ProtoMessage() {}
+
+func (x *Claim) ProtoReflect() protoreflect.Message {
+	mi := &file_leyline_v1_control_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Claim.ProtoReflect.Descriptor instead.
+func (*Claim) Descriptor() ([]byte, []int) {
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *Claim) GetClaimId() string {
+	if x != nil {
+		return x.ClaimId
+	}
+	return ""
+}
+
+func (x *Claim) GetHolder() *ClientInfo {
+	if x != nil {
+		return x.Holder
+	}
+	return nil
+}
+
+func (x *Claim) GetKind() ClaimKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ClaimKind_CLAIM_KIND_UNSPECIFIED
+}
+
+func (x *Claim) GetNeed() isClaim_Need {
+	if x != nil {
+		return x.Need
+	}
+	return nil
+}
+
+func (x *Claim) GetCovers() *Span {
+	if x != nil {
+		if x, ok := x.Need.(*Claim_Covers); ok {
+			return x.Covers
+		}
+	}
+	return nil
+}
+
+func (x *Claim) GetCentred() *Centre {
+	if x != nil {
+		if x, ok := x.Need.(*Claim_Centred); ok {
+			return x.Centred
+		}
+	}
+	return nil
+}
+
+func (x *Claim) GetSampleRateHz() uint64 {
+	if x != nil {
+		return x.SampleRateHz
+	}
+	return 0
+}
+
+func (x *Claim) GetPriority() ClaimPriority {
+	if x != nil {
+		return x.Priority
+	}
+	return ClaimPriority_CLAIM_PRIORITY_UNSPECIFIED
+}
+
+func (x *Claim) GetState() ClaimState {
+	if x != nil {
+		return x.State
+	}
+	return ClaimState_CLAIM_STATE_UNSPECIFIED
+}
+
+func (x *Claim) GetDisplacedBy() *ClientInfo {
+	if x != nil {
+		return x.DisplacedBy
+	}
+	return nil
+}
+
+func (x *Claim) GetDisplacedSinceNs() int64 {
+	if x != nil {
+		return x.DisplacedSinceNs
+	}
+	return 0
+}
+
+type isClaim_Need interface {
+	isClaim_Need()
+}
+
+type Claim_Covers struct {
+	Covers *Span `protobuf:"bytes,4,opt,name=covers,proto3,oneof"` // a frequency and bandwidth inside the capture's span
+}
+
+type Claim_Centred struct {
+	Centred *Centre `protobuf:"bytes,5,opt,name=centred,proto3,oneof"` // the capture's centre within tolerance_hz (a dedicated decoder)
+}
+
+func (*Claim_Covers) isClaim_Need() {}
+
+func (*Claim_Centred) isClaim_Need() {}
+
+type Span struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FrequencyHz   uint64                 `protobuf:"varint,1,opt,name=frequency_hz,json=frequencyHz,proto3" json:"frequency_hz,omitempty"`
+	BandwidthHz   uint32                 `protobuf:"varint,2,opt,name=bandwidth_hz,json=bandwidthHz,proto3" json:"bandwidth_hz,omitempty"` // 0 = the frequency itself
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Span) Reset() {
+	*x = Span{}
+	mi := &file_leyline_v1_control_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Span) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Span) ProtoMessage() {}
+
+func (x *Span) ProtoReflect() protoreflect.Message {
+	mi := &file_leyline_v1_control_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Span.ProtoReflect.Descriptor instead.
+func (*Span) Descriptor() ([]byte, []int) {
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *Span) GetFrequencyHz() uint64 {
+	if x != nil {
+		return x.FrequencyHz
+	}
+	return 0
+}
+
+func (x *Span) GetBandwidthHz() uint32 {
+	if x != nil {
+		return x.BandwidthHz
+	}
+	return 0
+}
+
+type Centre struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FrequencyHz   uint64                 `protobuf:"varint,1,opt,name=frequency_hz,json=frequencyHz,proto3" json:"frequency_hz,omitempty"`
+	ToleranceHz   uint64                 `protobuf:"varint,2,opt,name=tolerance_hz,json=toleranceHz,proto3" json:"tolerance_hz,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Centre) Reset() {
+	*x = Centre{}
+	mi := &file_leyline_v1_control_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Centre) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Centre) ProtoMessage() {}
+
+func (x *Centre) ProtoReflect() protoreflect.Message {
+	mi := &file_leyline_v1_control_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Centre.ProtoReflect.Descriptor instead.
+func (*Centre) Descriptor() ([]byte, []int) {
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *Centre) GetFrequencyHz() uint64 {
+	if x != nil {
+		return x.FrequencyHz
+	}
+	return 0
+}
+
+func (x *Centre) GetToleranceHz() uint64 {
+	if x != nil {
+		return x.ToleranceHz
+	}
+	return 0
+}
+
 type CaptureActivity struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	LastInteractiveWriteNs int64                  `protobuf:"varint,1,opt,name=last_interactive_write_ns,json=lastInteractiveWriteNs,proto3" json:"last_interactive_write_ns,omitempty"` // 0 if never
@@ -927,7 +1357,7 @@ type CaptureActivity struct {
 
 func (x *CaptureActivity) Reset() {
 	*x = CaptureActivity{}
-	mi := &file_leyline_v1_control_proto_msgTypes[4]
+	mi := &file_leyline_v1_control_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -939,7 +1369,7 @@ func (x *CaptureActivity) String() string {
 func (*CaptureActivity) ProtoMessage() {}
 
 func (x *CaptureActivity) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[4]
+	mi := &file_leyline_v1_control_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -952,7 +1382,7 @@ func (x *CaptureActivity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CaptureActivity.ProtoReflect.Descriptor instead.
 func (*CaptureActivity) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{4}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CaptureActivity) GetLastInteractiveWriteNs() int64 {
@@ -1003,7 +1433,7 @@ type Channel struct {
 
 func (x *Channel) Reset() {
 	*x = Channel{}
-	mi := &file_leyline_v1_control_proto_msgTypes[5]
+	mi := &file_leyline_v1_control_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1015,7 +1445,7 @@ func (x *Channel) String() string {
 func (*Channel) ProtoMessage() {}
 
 func (x *Channel) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[5]
+	mi := &file_leyline_v1_control_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1028,7 +1458,7 @@ func (x *Channel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Channel.ProtoReflect.Descriptor instead.
 func (*Channel) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{5}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Channel) GetChannelId() string {
@@ -1143,7 +1573,7 @@ type Sink struct {
 
 func (x *Sink) Reset() {
 	*x = Sink{}
-	mi := &file_leyline_v1_control_proto_msgTypes[6]
+	mi := &file_leyline_v1_control_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1155,7 +1585,7 @@ func (x *Sink) String() string {
 func (*Sink) ProtoMessage() {}
 
 func (x *Sink) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[6]
+	mi := &file_leyline_v1_control_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1168,7 +1598,7 @@ func (x *Sink) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Sink.ProtoReflect.Descriptor instead.
 func (*Sink) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{6}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Sink) GetSinkId() string {
@@ -1267,7 +1697,7 @@ type SystemAudioSink struct {
 
 func (x *SystemAudioSink) Reset() {
 	*x = SystemAudioSink{}
-	mi := &file_leyline_v1_control_proto_msgTypes[7]
+	mi := &file_leyline_v1_control_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1279,7 +1709,7 @@ func (x *SystemAudioSink) String() string {
 func (*SystemAudioSink) ProtoMessage() {}
 
 func (x *SystemAudioSink) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[7]
+	mi := &file_leyline_v1_control_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1292,7 +1722,7 @@ func (x *SystemAudioSink) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SystemAudioSink.ProtoReflect.Descriptor instead.
 func (*SystemAudioSink) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{7}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *SystemAudioSink) GetAudioDeviceUid() string {
@@ -1318,7 +1748,7 @@ type StreamSink struct {
 
 func (x *StreamSink) Reset() {
 	*x = StreamSink{}
-	mi := &file_leyline_v1_control_proto_msgTypes[8]
+	mi := &file_leyline_v1_control_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1330,7 +1760,7 @@ func (x *StreamSink) String() string {
 func (*StreamSink) ProtoMessage() {}
 
 func (x *StreamSink) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[8]
+	mi := &file_leyline_v1_control_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1343,7 +1773,7 @@ func (x *StreamSink) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamSink.ProtoReflect.Descriptor instead.
 func (*StreamSink) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{8}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *StreamSink) GetStreamId() string {
@@ -1363,7 +1793,7 @@ type FileSink struct {
 
 func (x *FileSink) Reset() {
 	*x = FileSink{}
-	mi := &file_leyline_v1_control_proto_msgTypes[9]
+	mi := &file_leyline_v1_control_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1375,7 +1805,7 @@ func (x *FileSink) String() string {
 func (*FileSink) ProtoMessage() {}
 
 func (x *FileSink) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[9]
+	mi := &file_leyline_v1_control_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1388,7 +1818,7 @@ func (x *FileSink) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileSink.ProtoReflect.Descriptor instead.
 func (*FileSink) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{9}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *FileSink) GetKind() FileSinkKind {
@@ -1427,7 +1857,7 @@ type ParamWrite struct {
 
 func (x *ParamWrite) Reset() {
 	*x = ParamWrite{}
-	mi := &file_leyline_v1_control_proto_msgTypes[10]
+	mi := &file_leyline_v1_control_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1439,7 +1869,7 @@ func (x *ParamWrite) String() string {
 func (*ParamWrite) ProtoMessage() {}
 
 func (x *ParamWrite) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[10]
+	mi := &file_leyline_v1_control_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1452,7 +1882,7 @@ func (x *ParamWrite) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ParamWrite.ProtoReflect.Descriptor instead.
 func (*ParamWrite) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{10}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ParamWrite) GetTag() uint64 {
@@ -1630,7 +2060,7 @@ type WriteSummary struct {
 
 func (x *WriteSummary) Reset() {
 	*x = WriteSummary{}
-	mi := &file_leyline_v1_control_proto_msgTypes[11]
+	mi := &file_leyline_v1_control_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1642,7 +2072,7 @@ func (x *WriteSummary) String() string {
 func (*WriteSummary) ProtoMessage() {}
 
 func (x *WriteSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[11]
+	mi := &file_leyline_v1_control_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1655,7 +2085,7 @@ func (x *WriteSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteSummary.ProtoReflect.Descriptor instead.
 func (*WriteSummary) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{11}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *WriteSummary) GetWritesReceived() uint64 {
@@ -1696,7 +2126,7 @@ type Event struct {
 
 func (x *Event) Reset() {
 	*x = Event{}
-	mi := &file_leyline_v1_control_proto_msgTypes[12]
+	mi := &file_leyline_v1_control_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1708,7 +2138,7 @@ func (x *Event) String() string {
 func (*Event) ProtoMessage() {}
 
 func (x *Event) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[12]
+	mi := &file_leyline_v1_control_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1721,7 +2151,7 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Event.ProtoReflect.Descriptor instead.
 func (*Event) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{12}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Event) GetSeq() uint64 {
@@ -1937,7 +2367,7 @@ type WriteRejected struct {
 
 func (x *WriteRejected) Reset() {
 	*x = WriteRejected{}
-	mi := &file_leyline_v1_control_proto_msgTypes[13]
+	mi := &file_leyline_v1_control_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1949,7 +2379,7 @@ func (x *WriteRejected) String() string {
 func (*WriteRejected) ProtoMessage() {}
 
 func (x *WriteRejected) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[13]
+	mi := &file_leyline_v1_control_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1962,7 +2392,7 @@ func (x *WriteRejected) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteRejected.ProtoReflect.Descriptor instead.
 func (*WriteRejected) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{13}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *WriteRejected) GetTag() uint64 {
@@ -1999,7 +2429,7 @@ type EventScope struct {
 
 func (x *EventScope) Reset() {
 	*x = EventScope{}
-	mi := &file_leyline_v1_control_proto_msgTypes[14]
+	mi := &file_leyline_v1_control_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2011,7 +2441,7 @@ func (x *EventScope) String() string {
 func (*EventScope) ProtoMessage() {}
 
 func (x *EventScope) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[14]
+	mi := &file_leyline_v1_control_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2024,7 +2454,7 @@ func (x *EventScope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventScope.ProtoReflect.Descriptor instead.
 func (*EventScope) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{14}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *EventScope) GetScope() isEventScope_Scope {
@@ -2084,7 +2514,7 @@ type ListDevicesRequest struct {
 
 func (x *ListDevicesRequest) Reset() {
 	*x = ListDevicesRequest{}
-	mi := &file_leyline_v1_control_proto_msgTypes[15]
+	mi := &file_leyline_v1_control_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2096,7 +2526,7 @@ func (x *ListDevicesRequest) String() string {
 func (*ListDevicesRequest) ProtoMessage() {}
 
 func (x *ListDevicesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[15]
+	mi := &file_leyline_v1_control_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2109,7 +2539,7 @@ func (x *ListDevicesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDevicesRequest.ProtoReflect.Descriptor instead.
 func (*ListDevicesRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{15}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{18}
 }
 
 type ListDevicesResponse struct {
@@ -2121,7 +2551,7 @@ type ListDevicesResponse struct {
 
 func (x *ListDevicesResponse) Reset() {
 	*x = ListDevicesResponse{}
-	mi := &file_leyline_v1_control_proto_msgTypes[16]
+	mi := &file_leyline_v1_control_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2133,7 +2563,7 @@ func (x *ListDevicesResponse) String() string {
 func (*ListDevicesResponse) ProtoMessage() {}
 
 func (x *ListDevicesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[16]
+	mi := &file_leyline_v1_control_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2146,7 +2576,7 @@ func (x *ListDevicesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDevicesResponse.ProtoReflect.Descriptor instead.
 func (*ListDevicesResponse) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{16}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ListDevicesResponse) GetDevices() []*DeviceDescriptor {
@@ -2165,7 +2595,7 @@ type GetStateRequest struct {
 
 func (x *GetStateRequest) Reset() {
 	*x = GetStateRequest{}
-	mi := &file_leyline_v1_control_proto_msgTypes[17]
+	mi := &file_leyline_v1_control_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2177,7 +2607,7 @@ func (x *GetStateRequest) String() string {
 func (*GetStateRequest) ProtoMessage() {}
 
 func (x *GetStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[17]
+	mi := &file_leyline_v1_control_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2190,7 +2620,7 @@ func (x *GetStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStateRequest.ProtoReflect.Descriptor instead.
 func (*GetStateRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{17}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *GetStateRequest) GetScope() *EventScope {
@@ -2219,7 +2649,7 @@ type GetStateResponse struct {
 
 func (x *GetStateResponse) Reset() {
 	*x = GetStateResponse{}
-	mi := &file_leyline_v1_control_proto_msgTypes[18]
+	mi := &file_leyline_v1_control_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2231,7 +2661,7 @@ func (x *GetStateResponse) String() string {
 func (*GetStateResponse) ProtoMessage() {}
 
 func (x *GetStateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[18]
+	mi := &file_leyline_v1_control_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2244,7 +2674,7 @@ func (x *GetStateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStateResponse.ProtoReflect.Descriptor instead.
 func (*GetStateResponse) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{18}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *GetStateResponse) GetDevices() []*DeviceDescriptor {
@@ -2339,7 +2769,7 @@ type DaemonInfo struct {
 
 func (x *DaemonInfo) Reset() {
 	*x = DaemonInfo{}
-	mi := &file_leyline_v1_control_proto_msgTypes[19]
+	mi := &file_leyline_v1_control_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2351,7 +2781,7 @@ func (x *DaemonInfo) String() string {
 func (*DaemonInfo) ProtoMessage() {}
 
 func (x *DaemonInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[19]
+	mi := &file_leyline_v1_control_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2364,7 +2794,7 @@ func (x *DaemonInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DaemonInfo.ProtoReflect.Descriptor instead.
 func (*DaemonInfo) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{19}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *DaemonInfo) GetVersion() string {
@@ -2441,7 +2871,7 @@ type Playback struct {
 
 func (x *Playback) Reset() {
 	*x = Playback{}
-	mi := &file_leyline_v1_control_proto_msgTypes[20]
+	mi := &file_leyline_v1_control_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2453,7 +2883,7 @@ func (x *Playback) String() string {
 func (*Playback) ProtoMessage() {}
 
 func (x *Playback) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[20]
+	mi := &file_leyline_v1_control_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2466,7 +2896,7 @@ func (x *Playback) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Playback.ProtoReflect.Descriptor instead.
 func (*Playback) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{20}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *Playback) GetPlaybackId() string {
@@ -2573,7 +3003,7 @@ type StartPlaybackRequest struct {
 
 func (x *StartPlaybackRequest) Reset() {
 	*x = StartPlaybackRequest{}
-	mi := &file_leyline_v1_control_proto_msgTypes[21]
+	mi := &file_leyline_v1_control_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2585,7 +3015,7 @@ func (x *StartPlaybackRequest) String() string {
 func (*StartPlaybackRequest) ProtoMessage() {}
 
 func (x *StartPlaybackRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[21]
+	mi := &file_leyline_v1_control_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2598,7 +3028,7 @@ func (x *StartPlaybackRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartPlaybackRequest.ProtoReflect.Descriptor instead.
 func (*StartPlaybackRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{21}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *StartPlaybackRequest) GetResourceUri() string {
@@ -2645,7 +3075,7 @@ type StopPlaybackRequest struct {
 
 func (x *StopPlaybackRequest) Reset() {
 	*x = StopPlaybackRequest{}
-	mi := &file_leyline_v1_control_proto_msgTypes[22]
+	mi := &file_leyline_v1_control_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2657,7 +3087,7 @@ func (x *StopPlaybackRequest) String() string {
 func (*StopPlaybackRequest) ProtoMessage() {}
 
 func (x *StopPlaybackRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[22]
+	mi := &file_leyline_v1_control_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2670,7 +3100,7 @@ func (x *StopPlaybackRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopPlaybackRequest.ProtoReflect.Descriptor instead.
 func (*StopPlaybackRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{22}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *StopPlaybackRequest) GetPlaybackId() string {
@@ -2690,7 +3120,7 @@ type SetPlaybackPausedRequest struct {
 
 func (x *SetPlaybackPausedRequest) Reset() {
 	*x = SetPlaybackPausedRequest{}
-	mi := &file_leyline_v1_control_proto_msgTypes[23]
+	mi := &file_leyline_v1_control_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2702,7 +3132,7 @@ func (x *SetPlaybackPausedRequest) String() string {
 func (*SetPlaybackPausedRequest) ProtoMessage() {}
 
 func (x *SetPlaybackPausedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[23]
+	mi := &file_leyline_v1_control_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2715,7 +3145,7 @@ func (x *SetPlaybackPausedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPlaybackPausedRequest.ProtoReflect.Descriptor instead.
 func (*SetPlaybackPausedRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{23}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *SetPlaybackPausedRequest) GetPlaybackId() string {
@@ -2743,7 +3173,7 @@ type CreateCaptureRequest struct {
 
 func (x *CreateCaptureRequest) Reset() {
 	*x = CreateCaptureRequest{}
-	mi := &file_leyline_v1_control_proto_msgTypes[24]
+	mi := &file_leyline_v1_control_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2755,7 +3185,7 @@ func (x *CreateCaptureRequest) String() string {
 func (*CreateCaptureRequest) ProtoMessage() {}
 
 func (x *CreateCaptureRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[24]
+	mi := &file_leyline_v1_control_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2768,7 +3198,7 @@ func (x *CreateCaptureRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateCaptureRequest.ProtoReflect.Descriptor instead.
 func (*CreateCaptureRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{24}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *CreateCaptureRequest) GetDeviceId() string {
@@ -2801,7 +3231,7 @@ type DestroyCaptureRequest struct {
 
 func (x *DestroyCaptureRequest) Reset() {
 	*x = DestroyCaptureRequest{}
-	mi := &file_leyline_v1_control_proto_msgTypes[25]
+	mi := &file_leyline_v1_control_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2813,7 +3243,7 @@ func (x *DestroyCaptureRequest) String() string {
 func (*DestroyCaptureRequest) ProtoMessage() {}
 
 func (x *DestroyCaptureRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[25]
+	mi := &file_leyline_v1_control_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2826,7 +3256,7 @@ func (x *DestroyCaptureRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DestroyCaptureRequest.ProtoReflect.Descriptor instead.
 func (*DestroyCaptureRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{25}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *DestroyCaptureRequest) GetCaptureId() string {
@@ -2850,7 +3280,7 @@ type CreateChannelRequest struct {
 
 func (x *CreateChannelRequest) Reset() {
 	*x = CreateChannelRequest{}
-	mi := &file_leyline_v1_control_proto_msgTypes[26]
+	mi := &file_leyline_v1_control_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2862,7 +3292,7 @@ func (x *CreateChannelRequest) String() string {
 func (*CreateChannelRequest) ProtoMessage() {}
 
 func (x *CreateChannelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[26]
+	mi := &file_leyline_v1_control_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2875,7 +3305,7 @@ func (x *CreateChannelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateChannelRequest.ProtoReflect.Descriptor instead.
 func (*CreateChannelRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{26}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *CreateChannelRequest) GetCaptureId() string {
@@ -2929,7 +3359,7 @@ type DestroyChannelRequest struct {
 
 func (x *DestroyChannelRequest) Reset() {
 	*x = DestroyChannelRequest{}
-	mi := &file_leyline_v1_control_proto_msgTypes[27]
+	mi := &file_leyline_v1_control_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2941,7 +3371,7 @@ func (x *DestroyChannelRequest) String() string {
 func (*DestroyChannelRequest) ProtoMessage() {}
 
 func (x *DestroyChannelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[27]
+	mi := &file_leyline_v1_control_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2954,7 +3384,7 @@ func (x *DestroyChannelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DestroyChannelRequest.ProtoReflect.Descriptor instead.
 func (*DestroyChannelRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{27}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *DestroyChannelRequest) GetChannelId() string {
@@ -2974,7 +3404,7 @@ type AttachSinkRequest struct {
 
 func (x *AttachSinkRequest) Reset() {
 	*x = AttachSinkRequest{}
-	mi := &file_leyline_v1_control_proto_msgTypes[28]
+	mi := &file_leyline_v1_control_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2986,7 +3416,7 @@ func (x *AttachSinkRequest) String() string {
 func (*AttachSinkRequest) ProtoMessage() {}
 
 func (x *AttachSinkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[28]
+	mi := &file_leyline_v1_control_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2999,7 +3429,7 @@ func (x *AttachSinkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachSinkRequest.ProtoReflect.Descriptor instead.
 func (*AttachSinkRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{28}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *AttachSinkRequest) GetChannelId() string {
@@ -3025,7 +3455,7 @@ type DetachSinkRequest struct {
 
 func (x *DetachSinkRequest) Reset() {
 	*x = DetachSinkRequest{}
-	mi := &file_leyline_v1_control_proto_msgTypes[29]
+	mi := &file_leyline_v1_control_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3037,7 +3467,7 @@ func (x *DetachSinkRequest) String() string {
 func (*DetachSinkRequest) ProtoMessage() {}
 
 func (x *DetachSinkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[29]
+	mi := &file_leyline_v1_control_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3050,7 +3480,7 @@ func (x *DetachSinkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DetachSinkRequest.ProtoReflect.Descriptor instead.
 func (*DetachSinkRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{29}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *DetachSinkRequest) GetSinkId() string {
@@ -3073,7 +3503,7 @@ type AttachFileDeviceRequest struct {
 
 func (x *AttachFileDeviceRequest) Reset() {
 	*x = AttachFileDeviceRequest{}
-	mi := &file_leyline_v1_control_proto_msgTypes[30]
+	mi := &file_leyline_v1_control_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3085,7 +3515,7 @@ func (x *AttachFileDeviceRequest) String() string {
 func (*AttachFileDeviceRequest) ProtoMessage() {}
 
 func (x *AttachFileDeviceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[30]
+	mi := &file_leyline_v1_control_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3098,7 +3528,7 @@ func (x *AttachFileDeviceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachFileDeviceRequest.ProtoReflect.Descriptor instead.
 func (*AttachFileDeviceRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{30}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *AttachFileDeviceRequest) GetPath() string {
@@ -3124,7 +3554,7 @@ type DetachFileDeviceRequest struct {
 
 func (x *DetachFileDeviceRequest) Reset() {
 	*x = DetachFileDeviceRequest{}
-	mi := &file_leyline_v1_control_proto_msgTypes[31]
+	mi := &file_leyline_v1_control_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3136,7 +3566,7 @@ func (x *DetachFileDeviceRequest) String() string {
 func (*DetachFileDeviceRequest) ProtoMessage() {}
 
 func (x *DetachFileDeviceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[31]
+	mi := &file_leyline_v1_control_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3149,7 +3579,7 @@ func (x *DetachFileDeviceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DetachFileDeviceRequest.ProtoReflect.Descriptor instead.
 func (*DetachFileDeviceRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{31}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *DetachFileDeviceRequest) GetDeviceId() string {
@@ -3174,7 +3604,7 @@ type DeviceSource struct {
 
 func (x *DeviceSource) Reset() {
 	*x = DeviceSource{}
-	mi := &file_leyline_v1_control_proto_msgTypes[32]
+	mi := &file_leyline_v1_control_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3186,7 +3616,7 @@ func (x *DeviceSource) String() string {
 func (*DeviceSource) ProtoMessage() {}
 
 func (x *DeviceSource) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[32]
+	mi := &file_leyline_v1_control_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3199,7 +3629,7 @@ func (x *DeviceSource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeviceSource.ProtoReflect.Descriptor instead.
 func (*DeviceSource) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{32}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *DeviceSource) GetSource() isDeviceSource_Source {
@@ -3255,7 +3685,7 @@ type FileSource struct {
 
 func (x *FileSource) Reset() {
 	*x = FileSource{}
-	mi := &file_leyline_v1_control_proto_msgTypes[33]
+	mi := &file_leyline_v1_control_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3267,7 +3697,7 @@ func (x *FileSource) String() string {
 func (*FileSource) ProtoMessage() {}
 
 func (x *FileSource) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[33]
+	mi := &file_leyline_v1_control_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3280,7 +3710,7 @@ func (x *FileSource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileSource.ProtoReflect.Descriptor instead.
 func (*FileSource) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{33}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *FileSource) GetPath() string {
@@ -3309,7 +3739,7 @@ type RtlTcpSource struct {
 
 func (x *RtlTcpSource) Reset() {
 	*x = RtlTcpSource{}
-	mi := &file_leyline_v1_control_proto_msgTypes[34]
+	mi := &file_leyline_v1_control_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3321,7 +3751,7 @@ func (x *RtlTcpSource) String() string {
 func (*RtlTcpSource) ProtoMessage() {}
 
 func (x *RtlTcpSource) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[34]
+	mi := &file_leyline_v1_control_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3334,7 +3764,7 @@ func (x *RtlTcpSource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RtlTcpSource.ProtoReflect.Descriptor instead.
 func (*RtlTcpSource) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{34}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *RtlTcpSource) GetHost() string {
@@ -3364,7 +3794,7 @@ type AttachDeviceRequest struct {
 
 func (x *AttachDeviceRequest) Reset() {
 	*x = AttachDeviceRequest{}
-	mi := &file_leyline_v1_control_proto_msgTypes[35]
+	mi := &file_leyline_v1_control_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3376,7 +3806,7 @@ func (x *AttachDeviceRequest) String() string {
 func (*AttachDeviceRequest) ProtoMessage() {}
 
 func (x *AttachDeviceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[35]
+	mi := &file_leyline_v1_control_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3389,7 +3819,7 @@ func (x *AttachDeviceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachDeviceRequest.ProtoReflect.Descriptor instead.
 func (*AttachDeviceRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{35}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *AttachDeviceRequest) GetSource() *DeviceSource {
@@ -3410,7 +3840,7 @@ type DetachDeviceRequest struct {
 
 func (x *DetachDeviceRequest) Reset() {
 	*x = DetachDeviceRequest{}
-	mi := &file_leyline_v1_control_proto_msgTypes[36]
+	mi := &file_leyline_v1_control_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3422,7 +3852,7 @@ func (x *DetachDeviceRequest) String() string {
 func (*DetachDeviceRequest) ProtoMessage() {}
 
 func (x *DetachDeviceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_leyline_v1_control_proto_msgTypes[36]
+	mi := &file_leyline_v1_control_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3435,7 +3865,7 @@ func (x *DetachDeviceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DetachDeviceRequest.ProtoReflect.Descriptor instead.
 func (*DetachDeviceRequest) Descriptor() ([]byte, []int) {
-	return file_leyline_v1_control_proto_rawDescGZIP(), []int{36}
+	return file_leyline_v1_control_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *DetachDeviceRequest) GetDeviceId() string {
@@ -3480,7 +3910,7 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"\ainteger\x18\x02 \x01(\x03H\x00R\ainteger\x12\x18\n" +
 	"\x06number\x18\x03 \x01(\x01H\x00R\x06number\x12\x14\n" +
 	"\x04text\x18\x04 \x01(\tH\x00R\x04textB\a\n" +
-	"\x05value\"\x83\x03\n" +
+	"\x05value\"\xae\x03\n" +
 	"\aCapture\x12\x1d\n" +
 	"\n" +
 	"capture_id\x18\x01 \x01(\tR\tcaptureId\x12\x1b\n" +
@@ -3493,7 +3923,28 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"\bactivity\x18\a \x01(\v2\x1b.leyline.v1.CaptureActivityR\bactivity\x125\n" +
 	"\n" +
 	"created_by\x18\b \x01(\v2\x16.leyline.v1.ClientInfoR\tcreatedBy\x12+\n" +
-	"\x05gains\x18\t \x03(\v2\x15.leyline.v1.GainStateR\x05gains\"v\n" +
+	"\x05gains\x18\t \x03(\v2\x15.leyline.v1.GainStateR\x05gains\x12)\n" +
+	"\x06claims\x18\n" +
+	" \x03(\v2\x11.leyline.v1.ClaimR\x06claims\"\xd5\x03\n" +
+	"\x05Claim\x12\x19\n" +
+	"\bclaim_id\x18\x01 \x01(\tR\aclaimId\x12.\n" +
+	"\x06holder\x18\x02 \x01(\v2\x16.leyline.v1.ClientInfoR\x06holder\x12)\n" +
+	"\x04kind\x18\x03 \x01(\x0e2\x15.leyline.v1.ClaimKindR\x04kind\x12*\n" +
+	"\x06covers\x18\x04 \x01(\v2\x10.leyline.v1.SpanH\x00R\x06covers\x12.\n" +
+	"\acentred\x18\x05 \x01(\v2\x12.leyline.v1.CentreH\x00R\acentred\x12$\n" +
+	"\x0esample_rate_hz\x18\x06 \x01(\x04R\fsampleRateHz\x125\n" +
+	"\bpriority\x18\a \x01(\x0e2\x19.leyline.v1.ClaimPriorityR\bpriority\x12,\n" +
+	"\x05state\x18\b \x01(\x0e2\x16.leyline.v1.ClaimStateR\x05state\x129\n" +
+	"\fdisplaced_by\x18\t \x01(\v2\x16.leyline.v1.ClientInfoR\vdisplacedBy\x12,\n" +
+	"\x12displaced_since_ns\x18\n" +
+	" \x01(\x03R\x10displacedSinceNsB\x06\n" +
+	"\x04need\"L\n" +
+	"\x04Span\x12!\n" +
+	"\ffrequency_hz\x18\x01 \x01(\x04R\vfrequencyHz\x12!\n" +
+	"\fbandwidth_hz\x18\x02 \x01(\rR\vbandwidthHz\"N\n" +
+	"\x06Centre\x12!\n" +
+	"\ffrequency_hz\x18\x01 \x01(\x04R\vfrequencyHz\x12!\n" +
+	"\ftolerance_hz\x18\x02 \x01(\x04R\vtoleranceHz\"v\n" +
 	"\x0fCaptureActivity\x129\n" +
 	"\x19last_interactive_write_ns\x18\x01 \x01(\x03R\x16lastInteractiveWriteNs\x12(\n" +
 	"\x10live_audio_sinks\x18\x02 \x01(\rR\x0eliveAudioSinks\"\x8d\x04\n" +
@@ -3702,7 +4153,24 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"\x19SAMPLE_FORMAT_UNSPECIFIED\x10\x00\x12\a\n" +
 	"\x03CS8\x10\x01\x12\b\n" +
 	"\x04CS16\x10\x02\x12\b\n" +
-	"\x04CF32\x10\x03*W\n" +
+	"\x04CF32\x10\x03*\x7f\n" +
+	"\tClaimKind\x12\x1a\n" +
+	"\x16CLAIM_KIND_UNSPECIFIED\x10\x00\x12\x10\n" +
+	"\fCLAIM_LISTEN\x10\x01\x12\x11\n" +
+	"\rCLAIM_CHANNEL\x10\x02\x12\f\n" +
+	"\bCLAIM_IQ\x10\x03\x12\x12\n" +
+	"\x0eCLAIM_SPECTRUM\x10\x04\x12\x0f\n" +
+	"\vCLAIM_SWEEP\x10\x05*i\n" +
+	"\rClaimPriority\x12\x1e\n" +
+	"\x1aCLAIM_PRIORITY_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fPRIORITY_PERSON\x10\x01\x12\x10\n" +
+	"\fPRIORITY_JOB\x10\x02\x12\x11\n" +
+	"\rPRIORITY_VIEW\x10\x03*S\n" +
+	"\n" +
+	"ClaimState\x12\x1b\n" +
+	"\x17CLAIM_STATE_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fCLAIM_SATISFIED\x10\x01\x12\x13\n" +
+	"\x0fCLAIM_DISPLACED\x10\x02*W\n" +
 	"\fCaptureState\x12\x1d\n" +
 	"\x19CAPTURE_STATE_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eCAPTURE_ACTIVE\x10\x01\x12\x14\n" +
@@ -3763,164 +4231,178 @@ func file_leyline_v1_control_proto_rawDescGZIP() []byte {
 	return file_leyline_v1_control_proto_rawDescData
 }
 
-var file_leyline_v1_control_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
-var file_leyline_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
+var file_leyline_v1_control_proto_enumTypes = make([]protoimpl.EnumInfo, 12)
+var file_leyline_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
 var file_leyline_v1_control_proto_goTypes = []any{
 	(DeviceState)(0),                 // 0: leyline.v1.DeviceState
 	(SampleFormat)(0),                // 1: leyline.v1.SampleFormat
-	(CaptureState)(0),                // 2: leyline.v1.CaptureState
-	(GainMode)(0),                    // 3: leyline.v1.GainMode
-	(SquelchSource)(0),               // 4: leyline.v1.SquelchSource
-	(ChannelState)(0),                // 5: leyline.v1.ChannelState
-	(SinkState)(0),                   // 6: leyline.v1.SinkState
-	(FileSinkKind)(0),                // 7: leyline.v1.FileSinkKind
-	(PlaybackState)(0),               // 8: leyline.v1.PlaybackState
-	(*DeviceDescriptor)(nil),         // 9: leyline.v1.DeviceDescriptor
-	(*GainElement)(nil),              // 10: leyline.v1.GainElement
-	(*FeatureValue)(nil),             // 11: leyline.v1.FeatureValue
-	(*Capture)(nil),                  // 12: leyline.v1.Capture
-	(*CaptureActivity)(nil),          // 13: leyline.v1.CaptureActivity
-	(*Channel)(nil),                  // 14: leyline.v1.Channel
-	(*Sink)(nil),                     // 15: leyline.v1.Sink
-	(*SystemAudioSink)(nil),          // 16: leyline.v1.SystemAudioSink
-	(*StreamSink)(nil),               // 17: leyline.v1.StreamSink
-	(*FileSink)(nil),                 // 18: leyline.v1.FileSink
-	(*ParamWrite)(nil),               // 19: leyline.v1.ParamWrite
-	(*WriteSummary)(nil),             // 20: leyline.v1.WriteSummary
-	(*Event)(nil),                    // 21: leyline.v1.Event
-	(*WriteRejected)(nil),            // 22: leyline.v1.WriteRejected
-	(*EventScope)(nil),               // 23: leyline.v1.EventScope
-	(*ListDevicesRequest)(nil),       // 24: leyline.v1.ListDevicesRequest
-	(*ListDevicesResponse)(nil),      // 25: leyline.v1.ListDevicesResponse
-	(*GetStateRequest)(nil),          // 26: leyline.v1.GetStateRequest
-	(*GetStateResponse)(nil),         // 27: leyline.v1.GetStateResponse
-	(*DaemonInfo)(nil),               // 28: leyline.v1.DaemonInfo
-	(*Playback)(nil),                 // 29: leyline.v1.Playback
-	(*StartPlaybackRequest)(nil),     // 30: leyline.v1.StartPlaybackRequest
-	(*StopPlaybackRequest)(nil),      // 31: leyline.v1.StopPlaybackRequest
-	(*SetPlaybackPausedRequest)(nil), // 32: leyline.v1.SetPlaybackPausedRequest
-	(*CreateCaptureRequest)(nil),     // 33: leyline.v1.CreateCaptureRequest
-	(*DestroyCaptureRequest)(nil),    // 34: leyline.v1.DestroyCaptureRequest
-	(*CreateChannelRequest)(nil),     // 35: leyline.v1.CreateChannelRequest
-	(*DestroyChannelRequest)(nil),    // 36: leyline.v1.DestroyChannelRequest
-	(*AttachSinkRequest)(nil),        // 37: leyline.v1.AttachSinkRequest
-	(*DetachSinkRequest)(nil),        // 38: leyline.v1.DetachSinkRequest
-	(*AttachFileDeviceRequest)(nil),  // 39: leyline.v1.AttachFileDeviceRequest
-	(*DetachFileDeviceRequest)(nil),  // 40: leyline.v1.DetachFileDeviceRequest
-	(*DeviceSource)(nil),             // 41: leyline.v1.DeviceSource
-	(*FileSource)(nil),               // 42: leyline.v1.FileSource
-	(*RtlTcpSource)(nil),             // 43: leyline.v1.RtlTcpSource
-	(*AttachDeviceRequest)(nil),      // 44: leyline.v1.AttachDeviceRequest
-	(*DetachDeviceRequest)(nil),      // 45: leyline.v1.DetachDeviceRequest
-	nil,                              // 46: leyline.v1.DeviceDescriptor.FeaturesEntry
-	(*FrequencyRange)(nil),           // 47: leyline.v1.FrequencyRange
-	(*CaptureAnchor)(nil),            // 48: leyline.v1.CaptureAnchor
-	(*ClientInfo)(nil),               // 49: leyline.v1.ClientInfo
-	(*GainState)(nil),                // 50: leyline.v1.GainState
-	(DemodMode)(0),                   // 51: leyline.v1.DemodMode
-	(*GainWrite)(nil),                // 52: leyline.v1.GainWrite
-	(*Job)(nil),                      // 53: leyline.v1.Job
-	(*AIState)(nil),                  // 54: leyline.v1.AIState
-	(*UsageLine)(nil),                // 55: leyline.v1.UsageLine
-	(*Conversation)(nil),             // 56: leyline.v1.Conversation
-	(*ErrorDetail)(nil),              // 57: leyline.v1.ErrorDetail
-	(*Empty)(nil),                    // 58: leyline.v1.Empty
+	(ClaimKind)(0),                   // 2: leyline.v1.ClaimKind
+	(ClaimPriority)(0),               // 3: leyline.v1.ClaimPriority
+	(ClaimState)(0),                  // 4: leyline.v1.ClaimState
+	(CaptureState)(0),                // 5: leyline.v1.CaptureState
+	(GainMode)(0),                    // 6: leyline.v1.GainMode
+	(SquelchSource)(0),               // 7: leyline.v1.SquelchSource
+	(ChannelState)(0),                // 8: leyline.v1.ChannelState
+	(SinkState)(0),                   // 9: leyline.v1.SinkState
+	(FileSinkKind)(0),                // 10: leyline.v1.FileSinkKind
+	(PlaybackState)(0),               // 11: leyline.v1.PlaybackState
+	(*DeviceDescriptor)(nil),         // 12: leyline.v1.DeviceDescriptor
+	(*GainElement)(nil),              // 13: leyline.v1.GainElement
+	(*FeatureValue)(nil),             // 14: leyline.v1.FeatureValue
+	(*Capture)(nil),                  // 15: leyline.v1.Capture
+	(*Claim)(nil),                    // 16: leyline.v1.Claim
+	(*Span)(nil),                     // 17: leyline.v1.Span
+	(*Centre)(nil),                   // 18: leyline.v1.Centre
+	(*CaptureActivity)(nil),          // 19: leyline.v1.CaptureActivity
+	(*Channel)(nil),                  // 20: leyline.v1.Channel
+	(*Sink)(nil),                     // 21: leyline.v1.Sink
+	(*SystemAudioSink)(nil),          // 22: leyline.v1.SystemAudioSink
+	(*StreamSink)(nil),               // 23: leyline.v1.StreamSink
+	(*FileSink)(nil),                 // 24: leyline.v1.FileSink
+	(*ParamWrite)(nil),               // 25: leyline.v1.ParamWrite
+	(*WriteSummary)(nil),             // 26: leyline.v1.WriteSummary
+	(*Event)(nil),                    // 27: leyline.v1.Event
+	(*WriteRejected)(nil),            // 28: leyline.v1.WriteRejected
+	(*EventScope)(nil),               // 29: leyline.v1.EventScope
+	(*ListDevicesRequest)(nil),       // 30: leyline.v1.ListDevicesRequest
+	(*ListDevicesResponse)(nil),      // 31: leyline.v1.ListDevicesResponse
+	(*GetStateRequest)(nil),          // 32: leyline.v1.GetStateRequest
+	(*GetStateResponse)(nil),         // 33: leyline.v1.GetStateResponse
+	(*DaemonInfo)(nil),               // 34: leyline.v1.DaemonInfo
+	(*Playback)(nil),                 // 35: leyline.v1.Playback
+	(*StartPlaybackRequest)(nil),     // 36: leyline.v1.StartPlaybackRequest
+	(*StopPlaybackRequest)(nil),      // 37: leyline.v1.StopPlaybackRequest
+	(*SetPlaybackPausedRequest)(nil), // 38: leyline.v1.SetPlaybackPausedRequest
+	(*CreateCaptureRequest)(nil),     // 39: leyline.v1.CreateCaptureRequest
+	(*DestroyCaptureRequest)(nil),    // 40: leyline.v1.DestroyCaptureRequest
+	(*CreateChannelRequest)(nil),     // 41: leyline.v1.CreateChannelRequest
+	(*DestroyChannelRequest)(nil),    // 42: leyline.v1.DestroyChannelRequest
+	(*AttachSinkRequest)(nil),        // 43: leyline.v1.AttachSinkRequest
+	(*DetachSinkRequest)(nil),        // 44: leyline.v1.DetachSinkRequest
+	(*AttachFileDeviceRequest)(nil),  // 45: leyline.v1.AttachFileDeviceRequest
+	(*DetachFileDeviceRequest)(nil),  // 46: leyline.v1.DetachFileDeviceRequest
+	(*DeviceSource)(nil),             // 47: leyline.v1.DeviceSource
+	(*FileSource)(nil),               // 48: leyline.v1.FileSource
+	(*RtlTcpSource)(nil),             // 49: leyline.v1.RtlTcpSource
+	(*AttachDeviceRequest)(nil),      // 50: leyline.v1.AttachDeviceRequest
+	(*DetachDeviceRequest)(nil),      // 51: leyline.v1.DetachDeviceRequest
+	nil,                              // 52: leyline.v1.DeviceDescriptor.FeaturesEntry
+	(*FrequencyRange)(nil),           // 53: leyline.v1.FrequencyRange
+	(*CaptureAnchor)(nil),            // 54: leyline.v1.CaptureAnchor
+	(*ClientInfo)(nil),               // 55: leyline.v1.ClientInfo
+	(*GainState)(nil),                // 56: leyline.v1.GainState
+	(DemodMode)(0),                   // 57: leyline.v1.DemodMode
+	(*GainWrite)(nil),                // 58: leyline.v1.GainWrite
+	(*Job)(nil),                      // 59: leyline.v1.Job
+	(*AIState)(nil),                  // 60: leyline.v1.AIState
+	(*UsageLine)(nil),                // 61: leyline.v1.UsageLine
+	(*Conversation)(nil),             // 62: leyline.v1.Conversation
+	(*ErrorDetail)(nil),              // 63: leyline.v1.ErrorDetail
+	(*Empty)(nil),                    // 64: leyline.v1.Empty
 }
 var file_leyline_v1_control_proto_depIdxs = []int32{
 	0,  // 0: leyline.v1.DeviceDescriptor.state:type_name -> leyline.v1.DeviceState
-	47, // 1: leyline.v1.DeviceDescriptor.tuning_ranges:type_name -> leyline.v1.FrequencyRange
+	53, // 1: leyline.v1.DeviceDescriptor.tuning_ranges:type_name -> leyline.v1.FrequencyRange
 	1,  // 2: leyline.v1.DeviceDescriptor.native_format:type_name -> leyline.v1.SampleFormat
-	10, // 3: leyline.v1.DeviceDescriptor.gain_elements:type_name -> leyline.v1.GainElement
-	46, // 4: leyline.v1.DeviceDescriptor.features:type_name -> leyline.v1.DeviceDescriptor.FeaturesEntry
-	2,  // 5: leyline.v1.Capture.state:type_name -> leyline.v1.CaptureState
-	48, // 6: leyline.v1.Capture.anchor:type_name -> leyline.v1.CaptureAnchor
-	13, // 7: leyline.v1.Capture.activity:type_name -> leyline.v1.CaptureActivity
-	49, // 8: leyline.v1.Capture.created_by:type_name -> leyline.v1.ClientInfo
-	50, // 9: leyline.v1.Capture.gains:type_name -> leyline.v1.GainState
-	51, // 10: leyline.v1.Channel.mode:type_name -> leyline.v1.DemodMode
-	3,  // 11: leyline.v1.Channel.agc:type_name -> leyline.v1.GainMode
-	5,  // 12: leyline.v1.Channel.state:type_name -> leyline.v1.ChannelState
-	49, // 13: leyline.v1.Channel.owner:type_name -> leyline.v1.ClientInfo
-	4,  // 14: leyline.v1.Channel.squelch_source:type_name -> leyline.v1.SquelchSource
-	16, // 15: leyline.v1.Sink.system_audio:type_name -> leyline.v1.SystemAudioSink
-	17, // 16: leyline.v1.Sink.stream:type_name -> leyline.v1.StreamSink
-	18, // 17: leyline.v1.Sink.file:type_name -> leyline.v1.FileSink
-	6,  // 18: leyline.v1.Sink.state:type_name -> leyline.v1.SinkState
-	7,  // 19: leyline.v1.FileSink.kind:type_name -> leyline.v1.FileSinkKind
-	51, // 20: leyline.v1.ParamWrite.mode:type_name -> leyline.v1.DemodMode
-	52, // 21: leyline.v1.ParamWrite.gain:type_name -> leyline.v1.GainWrite
-	49, // 22: leyline.v1.Event.caused_by:type_name -> leyline.v1.ClientInfo
-	9,  // 23: leyline.v1.Event.device:type_name -> leyline.v1.DeviceDescriptor
-	12, // 24: leyline.v1.Event.capture:type_name -> leyline.v1.Capture
-	14, // 25: leyline.v1.Event.channel:type_name -> leyline.v1.Channel
-	15, // 26: leyline.v1.Event.sink:type_name -> leyline.v1.Sink
-	22, // 27: leyline.v1.Event.write_rejected:type_name -> leyline.v1.WriteRejected
-	48, // 28: leyline.v1.Event.anchor:type_name -> leyline.v1.CaptureAnchor
-	53, // 29: leyline.v1.Event.job:type_name -> leyline.v1.Job
-	29, // 30: leyline.v1.Event.playback:type_name -> leyline.v1.Playback
-	54, // 31: leyline.v1.Event.ai:type_name -> leyline.v1.AIState
-	55, // 32: leyline.v1.Event.usage:type_name -> leyline.v1.UsageLine
-	56, // 33: leyline.v1.Event.conversation:type_name -> leyline.v1.Conversation
-	57, // 34: leyline.v1.WriteRejected.error:type_name -> leyline.v1.ErrorDetail
-	9,  // 35: leyline.v1.ListDevicesResponse.devices:type_name -> leyline.v1.DeviceDescriptor
-	23, // 36: leyline.v1.GetStateRequest.scope:type_name -> leyline.v1.EventScope
-	9,  // 37: leyline.v1.GetStateResponse.devices:type_name -> leyline.v1.DeviceDescriptor
-	12, // 38: leyline.v1.GetStateResponse.captures:type_name -> leyline.v1.Capture
-	14, // 39: leyline.v1.GetStateResponse.channels:type_name -> leyline.v1.Channel
-	15, // 40: leyline.v1.GetStateResponse.sinks:type_name -> leyline.v1.Sink
-	28, // 41: leyline.v1.GetStateResponse.daemon:type_name -> leyline.v1.DaemonInfo
-	53, // 42: leyline.v1.GetStateResponse.jobs:type_name -> leyline.v1.Job
-	29, // 43: leyline.v1.GetStateResponse.playbacks:type_name -> leyline.v1.Playback
-	54, // 44: leyline.v1.GetStateResponse.ai:type_name -> leyline.v1.AIState
-	55, // 45: leyline.v1.GetStateResponse.usage:type_name -> leyline.v1.UsageLine
-	56, // 46: leyline.v1.GetStateResponse.conversations:type_name -> leyline.v1.Conversation
-	49, // 47: leyline.v1.Playback.created_by:type_name -> leyline.v1.ClientInfo
-	8,  // 48: leyline.v1.Playback.state:type_name -> leyline.v1.PlaybackState
-	51, // 49: leyline.v1.CreateChannelRequest.mode:type_name -> leyline.v1.DemodMode
-	15, // 50: leyline.v1.AttachSinkRequest.sink:type_name -> leyline.v1.Sink
-	42, // 51: leyline.v1.DeviceSource.file:type_name -> leyline.v1.FileSource
-	43, // 52: leyline.v1.DeviceSource.rtl_tcp:type_name -> leyline.v1.RtlTcpSource
-	41, // 53: leyline.v1.AttachDeviceRequest.source:type_name -> leyline.v1.DeviceSource
-	11, // 54: leyline.v1.DeviceDescriptor.FeaturesEntry.value:type_name -> leyline.v1.FeatureValue
-	24, // 55: leyline.v1.Control.ListDevices:input_type -> leyline.v1.ListDevicesRequest
-	23, // 56: leyline.v1.Control.WatchEvents:input_type -> leyline.v1.EventScope
-	26, // 57: leyline.v1.Control.GetState:input_type -> leyline.v1.GetStateRequest
-	33, // 58: leyline.v1.Control.CreateCapture:input_type -> leyline.v1.CreateCaptureRequest
-	34, // 59: leyline.v1.Control.DestroyCapture:input_type -> leyline.v1.DestroyCaptureRequest
-	35, // 60: leyline.v1.Control.CreateChannel:input_type -> leyline.v1.CreateChannelRequest
-	36, // 61: leyline.v1.Control.DestroyChannel:input_type -> leyline.v1.DestroyChannelRequest
-	37, // 62: leyline.v1.Control.AttachSink:input_type -> leyline.v1.AttachSinkRequest
-	38, // 63: leyline.v1.Control.DetachSink:input_type -> leyline.v1.DetachSinkRequest
-	30, // 64: leyline.v1.Control.StartPlayback:input_type -> leyline.v1.StartPlaybackRequest
-	31, // 65: leyline.v1.Control.StopPlayback:input_type -> leyline.v1.StopPlaybackRequest
-	32, // 66: leyline.v1.Control.SetPlaybackPaused:input_type -> leyline.v1.SetPlaybackPausedRequest
-	19, // 67: leyline.v1.Control.WriteParams:input_type -> leyline.v1.ParamWrite
-	44, // 68: leyline.v1.Control.AttachDevice:input_type -> leyline.v1.AttachDeviceRequest
-	45, // 69: leyline.v1.Control.DetachDevice:input_type -> leyline.v1.DetachDeviceRequest
-	39, // 70: leyline.v1.Control.AttachFileDevice:input_type -> leyline.v1.AttachFileDeviceRequest
-	40, // 71: leyline.v1.Control.DetachFileDevice:input_type -> leyline.v1.DetachFileDeviceRequest
-	25, // 72: leyline.v1.Control.ListDevices:output_type -> leyline.v1.ListDevicesResponse
-	21, // 73: leyline.v1.Control.WatchEvents:output_type -> leyline.v1.Event
-	27, // 74: leyline.v1.Control.GetState:output_type -> leyline.v1.GetStateResponse
-	12, // 75: leyline.v1.Control.CreateCapture:output_type -> leyline.v1.Capture
-	58, // 76: leyline.v1.Control.DestroyCapture:output_type -> leyline.v1.Empty
-	14, // 77: leyline.v1.Control.CreateChannel:output_type -> leyline.v1.Channel
-	58, // 78: leyline.v1.Control.DestroyChannel:output_type -> leyline.v1.Empty
-	15, // 79: leyline.v1.Control.AttachSink:output_type -> leyline.v1.Sink
-	58, // 80: leyline.v1.Control.DetachSink:output_type -> leyline.v1.Empty
-	29, // 81: leyline.v1.Control.StartPlayback:output_type -> leyline.v1.Playback
-	58, // 82: leyline.v1.Control.StopPlayback:output_type -> leyline.v1.Empty
-	29, // 83: leyline.v1.Control.SetPlaybackPaused:output_type -> leyline.v1.Playback
-	20, // 84: leyline.v1.Control.WriteParams:output_type -> leyline.v1.WriteSummary
-	9,  // 85: leyline.v1.Control.AttachDevice:output_type -> leyline.v1.DeviceDescriptor
-	58, // 86: leyline.v1.Control.DetachDevice:output_type -> leyline.v1.Empty
-	9,  // 87: leyline.v1.Control.AttachFileDevice:output_type -> leyline.v1.DeviceDescriptor
-	58, // 88: leyline.v1.Control.DetachFileDevice:output_type -> leyline.v1.Empty
-	72, // [72:89] is the sub-list for method output_type
-	55, // [55:72] is the sub-list for method input_type
-	55, // [55:55] is the sub-list for extension type_name
-	55, // [55:55] is the sub-list for extension extendee
-	0,  // [0:55] is the sub-list for field type_name
+	13, // 3: leyline.v1.DeviceDescriptor.gain_elements:type_name -> leyline.v1.GainElement
+	52, // 4: leyline.v1.DeviceDescriptor.features:type_name -> leyline.v1.DeviceDescriptor.FeaturesEntry
+	5,  // 5: leyline.v1.Capture.state:type_name -> leyline.v1.CaptureState
+	54, // 6: leyline.v1.Capture.anchor:type_name -> leyline.v1.CaptureAnchor
+	19, // 7: leyline.v1.Capture.activity:type_name -> leyline.v1.CaptureActivity
+	55, // 8: leyline.v1.Capture.created_by:type_name -> leyline.v1.ClientInfo
+	56, // 9: leyline.v1.Capture.gains:type_name -> leyline.v1.GainState
+	16, // 10: leyline.v1.Capture.claims:type_name -> leyline.v1.Claim
+	55, // 11: leyline.v1.Claim.holder:type_name -> leyline.v1.ClientInfo
+	2,  // 12: leyline.v1.Claim.kind:type_name -> leyline.v1.ClaimKind
+	17, // 13: leyline.v1.Claim.covers:type_name -> leyline.v1.Span
+	18, // 14: leyline.v1.Claim.centred:type_name -> leyline.v1.Centre
+	3,  // 15: leyline.v1.Claim.priority:type_name -> leyline.v1.ClaimPriority
+	4,  // 16: leyline.v1.Claim.state:type_name -> leyline.v1.ClaimState
+	55, // 17: leyline.v1.Claim.displaced_by:type_name -> leyline.v1.ClientInfo
+	57, // 18: leyline.v1.Channel.mode:type_name -> leyline.v1.DemodMode
+	6,  // 19: leyline.v1.Channel.agc:type_name -> leyline.v1.GainMode
+	8,  // 20: leyline.v1.Channel.state:type_name -> leyline.v1.ChannelState
+	55, // 21: leyline.v1.Channel.owner:type_name -> leyline.v1.ClientInfo
+	7,  // 22: leyline.v1.Channel.squelch_source:type_name -> leyline.v1.SquelchSource
+	22, // 23: leyline.v1.Sink.system_audio:type_name -> leyline.v1.SystemAudioSink
+	23, // 24: leyline.v1.Sink.stream:type_name -> leyline.v1.StreamSink
+	24, // 25: leyline.v1.Sink.file:type_name -> leyline.v1.FileSink
+	9,  // 26: leyline.v1.Sink.state:type_name -> leyline.v1.SinkState
+	10, // 27: leyline.v1.FileSink.kind:type_name -> leyline.v1.FileSinkKind
+	57, // 28: leyline.v1.ParamWrite.mode:type_name -> leyline.v1.DemodMode
+	58, // 29: leyline.v1.ParamWrite.gain:type_name -> leyline.v1.GainWrite
+	55, // 30: leyline.v1.Event.caused_by:type_name -> leyline.v1.ClientInfo
+	12, // 31: leyline.v1.Event.device:type_name -> leyline.v1.DeviceDescriptor
+	15, // 32: leyline.v1.Event.capture:type_name -> leyline.v1.Capture
+	20, // 33: leyline.v1.Event.channel:type_name -> leyline.v1.Channel
+	21, // 34: leyline.v1.Event.sink:type_name -> leyline.v1.Sink
+	28, // 35: leyline.v1.Event.write_rejected:type_name -> leyline.v1.WriteRejected
+	54, // 36: leyline.v1.Event.anchor:type_name -> leyline.v1.CaptureAnchor
+	59, // 37: leyline.v1.Event.job:type_name -> leyline.v1.Job
+	35, // 38: leyline.v1.Event.playback:type_name -> leyline.v1.Playback
+	60, // 39: leyline.v1.Event.ai:type_name -> leyline.v1.AIState
+	61, // 40: leyline.v1.Event.usage:type_name -> leyline.v1.UsageLine
+	62, // 41: leyline.v1.Event.conversation:type_name -> leyline.v1.Conversation
+	63, // 42: leyline.v1.WriteRejected.error:type_name -> leyline.v1.ErrorDetail
+	12, // 43: leyline.v1.ListDevicesResponse.devices:type_name -> leyline.v1.DeviceDescriptor
+	29, // 44: leyline.v1.GetStateRequest.scope:type_name -> leyline.v1.EventScope
+	12, // 45: leyline.v1.GetStateResponse.devices:type_name -> leyline.v1.DeviceDescriptor
+	15, // 46: leyline.v1.GetStateResponse.captures:type_name -> leyline.v1.Capture
+	20, // 47: leyline.v1.GetStateResponse.channels:type_name -> leyline.v1.Channel
+	21, // 48: leyline.v1.GetStateResponse.sinks:type_name -> leyline.v1.Sink
+	34, // 49: leyline.v1.GetStateResponse.daemon:type_name -> leyline.v1.DaemonInfo
+	59, // 50: leyline.v1.GetStateResponse.jobs:type_name -> leyline.v1.Job
+	35, // 51: leyline.v1.GetStateResponse.playbacks:type_name -> leyline.v1.Playback
+	60, // 52: leyline.v1.GetStateResponse.ai:type_name -> leyline.v1.AIState
+	61, // 53: leyline.v1.GetStateResponse.usage:type_name -> leyline.v1.UsageLine
+	62, // 54: leyline.v1.GetStateResponse.conversations:type_name -> leyline.v1.Conversation
+	55, // 55: leyline.v1.Playback.created_by:type_name -> leyline.v1.ClientInfo
+	11, // 56: leyline.v1.Playback.state:type_name -> leyline.v1.PlaybackState
+	57, // 57: leyline.v1.CreateChannelRequest.mode:type_name -> leyline.v1.DemodMode
+	21, // 58: leyline.v1.AttachSinkRequest.sink:type_name -> leyline.v1.Sink
+	48, // 59: leyline.v1.DeviceSource.file:type_name -> leyline.v1.FileSource
+	49, // 60: leyline.v1.DeviceSource.rtl_tcp:type_name -> leyline.v1.RtlTcpSource
+	47, // 61: leyline.v1.AttachDeviceRequest.source:type_name -> leyline.v1.DeviceSource
+	14, // 62: leyline.v1.DeviceDescriptor.FeaturesEntry.value:type_name -> leyline.v1.FeatureValue
+	30, // 63: leyline.v1.Control.ListDevices:input_type -> leyline.v1.ListDevicesRequest
+	29, // 64: leyline.v1.Control.WatchEvents:input_type -> leyline.v1.EventScope
+	32, // 65: leyline.v1.Control.GetState:input_type -> leyline.v1.GetStateRequest
+	39, // 66: leyline.v1.Control.CreateCapture:input_type -> leyline.v1.CreateCaptureRequest
+	40, // 67: leyline.v1.Control.DestroyCapture:input_type -> leyline.v1.DestroyCaptureRequest
+	41, // 68: leyline.v1.Control.CreateChannel:input_type -> leyline.v1.CreateChannelRequest
+	42, // 69: leyline.v1.Control.DestroyChannel:input_type -> leyline.v1.DestroyChannelRequest
+	43, // 70: leyline.v1.Control.AttachSink:input_type -> leyline.v1.AttachSinkRequest
+	44, // 71: leyline.v1.Control.DetachSink:input_type -> leyline.v1.DetachSinkRequest
+	36, // 72: leyline.v1.Control.StartPlayback:input_type -> leyline.v1.StartPlaybackRequest
+	37, // 73: leyline.v1.Control.StopPlayback:input_type -> leyline.v1.StopPlaybackRequest
+	38, // 74: leyline.v1.Control.SetPlaybackPaused:input_type -> leyline.v1.SetPlaybackPausedRequest
+	25, // 75: leyline.v1.Control.WriteParams:input_type -> leyline.v1.ParamWrite
+	50, // 76: leyline.v1.Control.AttachDevice:input_type -> leyline.v1.AttachDeviceRequest
+	51, // 77: leyline.v1.Control.DetachDevice:input_type -> leyline.v1.DetachDeviceRequest
+	45, // 78: leyline.v1.Control.AttachFileDevice:input_type -> leyline.v1.AttachFileDeviceRequest
+	46, // 79: leyline.v1.Control.DetachFileDevice:input_type -> leyline.v1.DetachFileDeviceRequest
+	31, // 80: leyline.v1.Control.ListDevices:output_type -> leyline.v1.ListDevicesResponse
+	27, // 81: leyline.v1.Control.WatchEvents:output_type -> leyline.v1.Event
+	33, // 82: leyline.v1.Control.GetState:output_type -> leyline.v1.GetStateResponse
+	15, // 83: leyline.v1.Control.CreateCapture:output_type -> leyline.v1.Capture
+	64, // 84: leyline.v1.Control.DestroyCapture:output_type -> leyline.v1.Empty
+	20, // 85: leyline.v1.Control.CreateChannel:output_type -> leyline.v1.Channel
+	64, // 86: leyline.v1.Control.DestroyChannel:output_type -> leyline.v1.Empty
+	21, // 87: leyline.v1.Control.AttachSink:output_type -> leyline.v1.Sink
+	64, // 88: leyline.v1.Control.DetachSink:output_type -> leyline.v1.Empty
+	35, // 89: leyline.v1.Control.StartPlayback:output_type -> leyline.v1.Playback
+	64, // 90: leyline.v1.Control.StopPlayback:output_type -> leyline.v1.Empty
+	35, // 91: leyline.v1.Control.SetPlaybackPaused:output_type -> leyline.v1.Playback
+	26, // 92: leyline.v1.Control.WriteParams:output_type -> leyline.v1.WriteSummary
+	12, // 93: leyline.v1.Control.AttachDevice:output_type -> leyline.v1.DeviceDescriptor
+	64, // 94: leyline.v1.Control.DetachDevice:output_type -> leyline.v1.Empty
+	12, // 95: leyline.v1.Control.AttachFileDevice:output_type -> leyline.v1.DeviceDescriptor
+	64, // 96: leyline.v1.Control.DetachFileDevice:output_type -> leyline.v1.Empty
+	80, // [80:97] is the sub-list for method output_type
+	63, // [63:80] is the sub-list for method input_type
+	63, // [63:63] is the sub-list for extension type_name
+	63, // [63:63] is the sub-list for extension extendee
+	0,  // [0:63] is the sub-list for field type_name
 }
 
 func init() { file_leyline_v1_control_proto_init() }
@@ -3937,13 +4419,17 @@ func file_leyline_v1_control_proto_init() {
 		(*FeatureValue_Number)(nil),
 		(*FeatureValue_Text)(nil),
 	}
-	file_leyline_v1_control_proto_msgTypes[6].OneofWrappers = []any{
+	file_leyline_v1_control_proto_msgTypes[4].OneofWrappers = []any{
+		(*Claim_Covers)(nil),
+		(*Claim_Centred)(nil),
+	}
+	file_leyline_v1_control_proto_msgTypes[9].OneofWrappers = []any{
 		(*Sink_SystemAudio)(nil),
 		(*Sink_Stream)(nil),
 		(*Sink_File)(nil),
 	}
-	file_leyline_v1_control_proto_msgTypes[7].OneofWrappers = []any{}
-	file_leyline_v1_control_proto_msgTypes[10].OneofWrappers = []any{
+	file_leyline_v1_control_proto_msgTypes[10].OneofWrappers = []any{}
+	file_leyline_v1_control_proto_msgTypes[13].OneofWrappers = []any{
 		(*ParamWrite_CenterHz)(nil),
 		(*ParamWrite_CaptureSampleRate)(nil),
 		(*ParamWrite_OffsetHz)(nil),
@@ -3954,7 +4440,7 @@ func file_leyline_v1_control_proto_init() {
 		(*ParamWrite_SinkVolume)(nil),
 		(*ParamWrite_SquelchAutoDb)(nil),
 	}
-	file_leyline_v1_control_proto_msgTypes[12].OneofWrappers = []any{
+	file_leyline_v1_control_proto_msgTypes[15].OneofWrappers = []any{
 		(*Event_Device)(nil),
 		(*Event_Capture)(nil),
 		(*Event_Channel)(nil),
@@ -3967,12 +4453,12 @@ func file_leyline_v1_control_proto_init() {
 		(*Event_Usage)(nil),
 		(*Event_Conversation)(nil),
 	}
-	file_leyline_v1_control_proto_msgTypes[14].OneofWrappers = []any{
+	file_leyline_v1_control_proto_msgTypes[17].OneofWrappers = []any{
 		(*EventScope_Daemon)(nil),
 		(*EventScope_CaptureId)(nil),
 	}
-	file_leyline_v1_control_proto_msgTypes[21].OneofWrappers = []any{}
-	file_leyline_v1_control_proto_msgTypes[32].OneofWrappers = []any{
+	file_leyline_v1_control_proto_msgTypes[24].OneofWrappers = []any{}
+	file_leyline_v1_control_proto_msgTypes[35].OneofWrappers = []any{
 		(*DeviceSource_File)(nil),
 		(*DeviceSource_RtlTcp)(nil),
 	}
@@ -3981,8 +4467,8 @@ func file_leyline_v1_control_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_leyline_v1_control_proto_rawDesc), len(file_leyline_v1_control_proto_rawDesc)),
-			NumEnums:      9,
-			NumMessages:   38,
+			NumEnums:      12,
+			NumMessages:   41,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
