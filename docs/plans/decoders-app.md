@@ -328,6 +328,11 @@ The calls for this batch, taken 2026-11-02:
   Verified 2026-11-02 by `TestDialResolvesARelativeSocket` and `TestRelativeSocketReachesTheDaemon`
   (Go only).
 
+- [ ] **DA-24 Leftovers from the last verify run.** The decoder inspector's FIELDS values start at
+  another x than the grid above them; the watch sheet's operator pop-up is wider than its words;
+  `pointer-and-menus` once retuned to the view's edge (147.84 MHz, OFFSET_OUT_OF_CAPTURE) right
+  after its click, and did not again in three runs: cause not found.
+
 ## After this
 
 DTMF and selective calling (provable with the owner's HT), an `rtl_433` adapter on DEC-19's
