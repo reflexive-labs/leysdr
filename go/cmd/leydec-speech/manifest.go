@@ -78,10 +78,10 @@ func baseManifest() *leylinev1.DecoderManifest {
 func fieldHints() []*leylinev1.FieldHint {
 	const txt, num = leylinev1.FieldType_TEXT, leylinev1.FieldType_NUMBER
 	return []*leylinev1.FieldHint{
-		{Name: "text", Type: txt, Description: "what the speech engine heard, as it wrote it"},
-		{Name: "language", Type: txt, Description: "the language the engine transcribed, as an ISO 639-1 code"},
-		{Name: "model", Type: txt, Description: "the model that produced the text"},
-		{Name: "confidence", Type: num, Description: "the engine's own confidence in the text, 0 to 1, when it reports one"},
-		{Name: "callsigns", Type: txt, Description: "callsigns in the text, comma-separated: a pattern match over the normalised text (prefix, one digit, 1 to 3 letters; a 4-letter suffix such as N0CALL is not matched), not a decoded identity"},
+		{Name: "text", Label: "Text", Type: txt, Description: "what the speech engine heard, as it wrote it"},
+		{Name: "language", Label: "Language", Type: txt, Description: "the language the engine transcribed, as an ISO 639-1 code"},
+		{Name: "model", Label: "Model", Type: txt, Description: "the model that produced the text"},
+		{Name: "confidence", Label: "Confidence", Type: num, Description: "the engine's own confidence in the text, 0 to 1, when it reports one"},
+		{Name: "callsigns", Label: "Callsigns", Type: txt, Description: "callsigns in the text, comma-separated: a pattern match over the normalised text (prefix, one digit, 1 to 3 letters; a 4-letter suffix such as N0CALL is not matched), not a decoded identity"},
 	}
 }

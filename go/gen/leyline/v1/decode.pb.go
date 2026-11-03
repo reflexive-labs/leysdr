@@ -895,11 +895,15 @@ func (x *DecoderInput) GetHangMs() uint32 {
 }
 
 type FieldHint struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Type          FieldType              `protobuf:"varint,2,opt,name=type,proto3,enum=leyline.v1.FieldType" json:"type,omitempty"`
-	Unit          string                 `protobuf:"bytes,3,opt,name=unit,proto3" json:"unit,omitempty"` // "m", "km/h", "degC", "hPa"; empty for none
-	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Name        string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Type        FieldType              `protobuf:"varint,2,opt,name=type,proto3,enum=leyline.v1.FieldType" json:"type,omitempty"`
+	Unit        string                 `protobuf:"bytes,3,opt,name=unit,proto3" json:"unit,omitempty"` // "m", "km/h", "degC", "hPa"; empty for none
+	Description string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	// A short name a person reads, in sentence case and without the unit: "Callsign", "Ground
+	// speed", "County". A client heads a column or a row with it and writes a filter in words with
+	// it, and uses `name` when it is empty.
+	Label         string `protobuf:"bytes,5,opt,name=label,proto3" json:"label,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -958,6 +962,13 @@ func (x *FieldHint) GetUnit() string {
 func (x *FieldHint) GetDescription() string {
 	if x != nil {
 		return x.Description
+	}
+	return ""
+}
+
+func (x *FieldHint) GetLabel() string {
+	if x != nil {
+		return x.Label
 	}
 	return ""
 }
@@ -2461,12 +2472,13 @@ const file_leyline_v1_decode_proto_rawDesc = "" +
 	"\x03tap\x18\x04 \x01(\x0e2\x14.leyline.v1.AudioTapR\x03tap\x121\n" +
 	"\x06signal\x18\x05 \x01(\x0e2\x19.leyline.v1.DecoderSignalR\x06signal\x12\x1e\n" +
 	"\vpre_roll_ms\x18\x06 \x01(\rR\tpreRollMs\x12\x17\n" +
-	"\ahang_ms\x18\a \x01(\rR\x06hangMs\"\x80\x01\n" +
+	"\ahang_ms\x18\a \x01(\rR\x06hangMs\"\x96\x01\n" +
 	"\tFieldHint\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12)\n" +
 	"\x04type\x18\x02 \x01(\x0e2\x15.leyline.v1.FieldTypeR\x04type\x12\x12\n" +
 	"\x04unit\x18\x03 \x01(\tR\x04unit\x12 \n" +
-	"\vdescription\x18\x04 \x01(\tR\vdescription\"\x85\x05\n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\x12\x14\n" +
+	"\x05label\x18\x05 \x01(\tR\x05label\"\x85\x05\n" +
 	"\fDecodeRecord\x12\x1b\n" +
 	"\trecord_id\x18\x01 \x01(\tR\brecordId\x12\x1a\n" +
 	"\bprotocol\x18\x02 \x01(\tR\bprotocol\x12*\n" +

@@ -942,7 +942,7 @@ Kansas counties.
 ```console
 $ ley watch same --county 20103 --notify=shell:'echo alert | mail -s "wx" me'
 watching same on 162.400 MHz, chan_01M2BR7DBPJBBHYJ6NRJ4E93P8
-  filter: fips names one of 20103
+  filter: County names one of 20103
   notify: shell: echo alert | mail -s "wx" me
 Ctrl-C stops
 21:26:27  KEAX/NWS      alert      ZCZC-WXR-RWT-020103-020209+0030-1051700-KEAX/NWS-

@@ -20,26 +20,31 @@
   "fields": [
     {
       "name": "text",
+      "label": "Text",
       "type": "TEXT",
       "description": "what the speech engine heard, as it wrote it"
     },
     {
       "name": "language",
+      "label": "Language",
       "type": "TEXT",
       "description": "the language the engine transcribed, as an ISO 639-1 code"
     },
     {
       "name": "model",
+      "label": "Model",
       "type": "TEXT",
       "description": "the model that produced the text"
     },
     {
       "name": "confidence",
+      "label": "Confidence",
       "type": "NUMBER",
       "description": "the engine's own confidence in the text, 0 to 1, when it reports one"
     },
     {
       "name": "callsigns",
+      "label": "Callsigns",
       "type": "TEXT",
       "description": "callsigns in the text, comma-separated: a pattern match over the normalised text (prefix, one digit, 1 to 3 letters; a 4-letter suffix such as N0CALL is not matched), not a decoded identity"
     }

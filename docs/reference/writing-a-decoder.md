@@ -51,8 +51,8 @@ The manifest for the bundled APRS decoder, trimmed to the fields that carry mean
   "outputs": ["SHAPE_RECORDS", "SHAPE_ENTITIES"],
   "entitySilenceS": 1800,
   "fields": [
-    {"name": "comment", "type": "TEXT", "description": "the free text the station sent"},
-    {"name": "temp_c", "type": "NUMBER", "unit": "degC", "description": "air temperature"}
+    {"name": "comment", "label": "Comment", "type": "TEXT", "description": "the free text the station sent"},
+    {"name": "temp_c", "label": "Temperature", "type": "NUMBER", "unit": "degC", "description": "air temperature"}
   ],
   "display": {
     "title": "APRS",
@@ -102,7 +102,9 @@ The manifest for the bundled APRS decoder, trimmed to the fields that carry mean
   and `entitySilenceS` is how long a station stays in that table after its last record.
 - **`fields`** are advisory hints — a name, a type, a unit — that let `ley` and an agent display and
   query your open fields sensibly. They are hints only: a field you emit that is not listed still
-  passes through untouched.
+  passes through untouched. A hint's `label` is the short name a person reads, in sentence case
+  and without the unit ("Ground speed", "County"): `ley track` heads a column with it and `ley
+  watch` writes its filter with it, and a field with no label goes by its name.
 - **`display`** says how clients show your decoder and its records: the next section.
 - **`executable`** is the program, resolved against the manifest's own directory first and `PATH`
   second, with `args` passed to it.
@@ -125,10 +127,12 @@ its own line per record and names each transmitter by its `device_id`.
   position reports arrive. `ley track` shows it in a NAME column. Leave it empty when `device_id` is
   the name, as an APRS callsign is.
 - **`columns`** lists fields shown as columns of the transmitter table (`ley track`), in order of
-  importance: a narrow terminal drops the last first. A field with a unit in `fields` is headed with
-  it, and the unit suffix of its name is dropped, so `sog_kn` in `kn` is `SOG (kn)`. An entry may
-  carry a precision as a template name does, `ground_speed_kn:0`, so the table prints whole knots
-  as the summary does; the header drops it. `testdata/decoders/column-cases.json` pins the rule.
+  importance: a narrow terminal drops the last first. A column is headed by its field's label, and a
+  field with a unit in `fields` has the unit after it, so `ground_speed_kn` labelled "Ground
+  speed" in `kn` is `GROUND SPEED (kn)`; a field with no label is headed by its name, the unit
+  suffix dropped, so `sog_kn` is `SOG (kn)`. An entry may carry a precision as a template name
+  does, `ground_speed_kn:0`, so the table prints whole knots as the summary does; the header drops
+  it. `testdata/decoders/column-cases.json` pins the cells and `head-cases.json` the headers.
 
 A template is text with names in braces:
 

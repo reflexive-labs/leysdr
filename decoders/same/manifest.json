@@ -27,41 +27,49 @@
   "fields": [
     {
       "name": "org",
+      "label": "Originator",
       "type": "TEXT",
       "description": "originator: EAS, WXR, CIV or PEP"
     },
     {
       "name": "event",
+      "label": "Event code",
       "type": "TEXT",
       "description": "three-letter SAME event code, e.g. TOR, RWT"
     },
     {
       "name": "event_name",
+      "label": "Event",
       "type": "TEXT",
       "description": "human name for the event code"
     },
     {
       "name": "fips",
+      "label": "County",
       "type": "TEXT",
       "description": "affected counties as five-digit FIPS codes, comma-separated"
     },
     {
       "name": "fips_raw",
+      "label": "Location code",
       "type": "TEXT",
       "description": "location codes as the raw six-digit PSSCCC, comma-separated"
     },
     {
       "name": "callsign",
+      "label": "Callsign",
       "type": "TEXT",
       "description": "the sending station's id, same as device_id"
     },
     {
       "name": "purge",
+      "label": "Valid for",
       "type": "TEXT",
       "description": "how long the alert is valid, HHMM"
     },
     {
       "name": "issued",
+      "label": "Issued",
       "type": "TEXT",
       "description": "issue time as day-of-year and UTC time, JJJHHMM"
     }

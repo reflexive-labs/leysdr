@@ -40,6 +40,22 @@ func TestWatchFiltersByWhere(t *testing.T) {
 	}
 }
 
+// The banner says the filter with the manifest's field labels, so --where temp_c>=21 reads as
+// the temperature, and a field without a hint goes by its name.
+func TestWatchBannerUsesFieldLabels(t *testing.T) {
+	t.Parallel()
+	sock, _ := harness(t, fakedaemon.Options{})
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	_, errOut, err := run(t, ctx, sock, "watch", "aprs", "--where", "temp_c>=21", "--where", "humidity_pct=64", "--count", "1")
+	if err != nil {
+		t.Fatalf("ley watch: %v\n%s", err, errOut)
+	}
+	if !strings.Contains(errOut, "filter: Temperature >= 21; humidity_pct = 64") {
+		t.Errorf("the banner must name the field by its label: %q", errOut)
+	}
+}
+
 // TestWatchCountyMatchesFips: --county is a CONTAINS test on the fips field, so it matches the
 // station whose FIPS list names the code and no other. The six-digit SAME code NOAA's county
 // lists print is taken as its five-digit FIPS code.

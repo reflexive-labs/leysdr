@@ -27,67 +27,79 @@
   "fields": [
     {
       "name": "icao",
+      "label": "ICAO address",
       "type": "TEXT",
       "description": "the aircraft's 24-bit address, six hex digits"
     },
     {
       "name": "callsign",
+      "label": "Callsign",
       "type": "TEXT",
       "description": "the flight's callsign or the aircraft's registration, as it sends it"
     },
     {
       "name": "category",
+      "label": "Category",
       "type": "TEXT",
       "description": "emitter category: set and code, A1 light to A5 heavy, A7 rotorcraft"
     },
     {
       "name": "altitude_ft",
+      "label": "Altitude",
       "type": "NUMBER",
       "unit": "ft",
       "description": "pressure altitude, or GNSS height for type codes 20 to 22"
     },
     {
       "name": "ground_speed_kn",
+      "label": "Ground speed",
       "type": "NUMBER",
       "unit": "kn",
       "description": "ground speed"
     },
     {
       "name": "track_deg",
+      "label": "Track",
       "type": "NUMBER",
       "unit": "deg",
       "description": "track over ground, degrees true"
     },
     {
       "name": "airspeed_kn",
+      "label": "Airspeed",
       "type": "NUMBER",
       "unit": "kn",
       "description": "indicated or true airspeed, sent when ground speed is not"
     },
     {
       "name": "heading_deg",
+      "label": "Heading",
       "type": "NUMBER",
       "unit": "deg",
       "description": "magnetic heading, sent with airspeed"
     },
     {
       "name": "vertical_rate_fpm",
+      "label": "Vertical rate",
       "type": "NUMBER",
       "unit": "ft/min",
       "description": "vertical rate, negative descending"
     },
     {
       "name": "squawk",
+      "label": "Squawk",
       "type": "TEXT",
       "description": "the transponder's identity code, four octal digits"
     },
     {
       "name": "df",
+      "label": "Downlink format",
       "type": "NUMBER",
       "description": "Mode S downlink format: 17 ADS-B, 18 non-transponder ADS-B, 11 all-call reply, 4, 5, 20, 21 surveillance replies"
     },
     {
       "name": "tc",
+      "label": "Type code",
       "type": "NUMBER",
       "description": "ADS-B type code: 1-4 identification, 5-8 surface position, 9-18 and 20-22 airborne position, 19 velocity"
     }

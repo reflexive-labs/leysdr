@@ -42,20 +42,20 @@ func manifest() *leylinev1.DecoderManifest {
 	}
 }
 
-func hint(name string, typ leylinev1.FieldType, unit, desc string) *leylinev1.FieldHint {
-	return &leylinev1.FieldHint{Name: name, Type: typ, Unit: unit, Description: desc}
+func hint(name, label string, typ leylinev1.FieldType, unit, desc string) *leylinev1.FieldHint {
+	return &leylinev1.FieldHint{Name: name, Label: label, Type: typ, Unit: unit, Description: desc}
 }
 
 func fieldHints() []*leylinev1.FieldHint {
 	const txt = leylinev1.FieldType_TEXT
 	return []*leylinev1.FieldHint{
-		hint("org", txt, "", "originator: EAS, WXR, CIV or PEP"),
-		hint("event", txt, "", "three-letter SAME event code, e.g. TOR, RWT"),
-		hint("event_name", txt, "", "human name for the event code"),
-		hint("fips", txt, "", "affected counties as five-digit FIPS codes, comma-separated"),
-		hint("fips_raw", txt, "", "location codes as the raw six-digit PSSCCC, comma-separated"),
-		hint("callsign", txt, "", "the sending station's id, same as device_id"),
-		hint("purge", txt, "", "how long the alert is valid, HHMM"),
-		hint("issued", txt, "", "issue time as day-of-year and UTC time, JJJHHMM"),
+		hint("org", "Originator", txt, "", "originator: EAS, WXR, CIV or PEP"),
+		hint("event", "Event code", txt, "", "three-letter SAME event code, e.g. TOR, RWT"),
+		hint("event_name", "Event", txt, "", "human name for the event code"),
+		hint("fips", "County", txt, "", "affected counties as five-digit FIPS codes, comma-separated"),
+		hint("fips_raw", "Location code", txt, "", "location codes as the raw six-digit PSSCCC, comma-separated"),
+		hint("callsign", "Callsign", txt, "", "the sending station's id, same as device_id"),
+		hint("purge", "Valid for", txt, "", "how long the alert is valid, HHMM"),
+		hint("issued", "Issued", txt, "", "issue time as day-of-year and UTC time, JJJHHMM"),
 	}
 }

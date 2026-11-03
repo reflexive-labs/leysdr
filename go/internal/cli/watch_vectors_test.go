@@ -40,7 +40,7 @@ func TestWatchVectors(t *testing.T) {
 		t.Fatal("no cases")
 	}
 	for _, c := range file.Cases {
-		got, _, err := buildPredicate(c.Where, c.County, c.Near, c.Radius)
+		got, _, err := buildPredicate(c.Where, c.County, c.Near, c.Radius, nil)
 		if c.Error {
 			if err == nil {
 				t.Errorf("%s: built %v, want a refusal", c.Name, got)

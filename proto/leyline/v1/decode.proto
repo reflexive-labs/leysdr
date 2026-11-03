@@ -163,6 +163,10 @@ message FieldHint {
   FieldType type = 2;
   string unit = 3;             // "m", "km/h", "degC", "hPa"; empty for none
   string description = 4;
+  // A short name a person reads, in sentence case and without the unit: "Callsign", "Ground
+  // speed", "County". A client heads a column or a row with it and writes a filter in words with
+  // it, and uses `name` when it is empty.
+  string label = 5;
 }
 
 enum FieldType { FIELD_TYPE_UNSPECIFIED = 0; TEXT = 1; INTEGER = 2; NUMBER = 3; FLAG = 4; DATA = 5; }

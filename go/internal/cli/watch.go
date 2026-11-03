@@ -28,7 +28,15 @@ type watchOptions struct {
 	count     int
 	predicate *leylinev1.Predicate
 	notify    *leylinev1.NotifyTarget
-	predWords string
+	// The filter flags as given, so the banner can say the filter in the decoder's own field
+	// labels once ley has its manifest.
+	filter filterFlags
+}
+
+// filterFlags are ley watch's filter flags as typed, and the MCP watch tool's same arguments.
+type filterFlags struct {
+	where, counties []string
+	near, radius    string
 }
 
 func newWatchCommand(app *App) *cobra.Command {
@@ -153,11 +161,12 @@ func (o *watchOptions) build(decoder, freq string, where, counties []string, nea
 		}
 		o.freqHz = hz
 	}
-	pred, words, err := buildPredicate(where, counties, near, radius)
+	o.filter = filterFlags{where: where, counties: counties, near: near, radius: radius}
+	pred, _, err := buildPredicate(where, counties, near, radius, nil)
 	if err != nil {
 		return err
 	}
-	o.predicate, o.predWords = pred, words
+	o.predicate = pred
 	if notify != nil {
 		if o.notify, err = parseNotify(*notify); err != nil {
 			return err
@@ -303,7 +312,7 @@ func watchWhat(ctx context.Context, s *verbSession, job *leylinev1.Job, o watchO
 	if ch := decodeChannel(ctx, s); ch != nil {
 		line += ", " + st.Muted(ch.GetChannelId())
 	}
-	line += "\n  " + st.Muted("filter: "+o.predWords)
+	line += "\n  " + st.Muted("filter: "+o.filterWords(trackManifest(ctx, s.Client, o.decoder)))
 	if o.notify != nil {
 		line += "\n  " + st.Muted("notify: "+notifierWords(o.notify))
 	}
@@ -313,14 +322,39 @@ func watchWhat(ctx context.Context, s *verbSession, job *leylinev1.Job, o watchO
 	return line
 }
 
+// filterWords is the filter as the banner says it, each field by its label in m's hints (m is nil
+// when ley has no manifest for the decoder, and a field without a label goes by its name).
+func (o watchOptions) filterWords(m *leylinev1.DecoderManifest) string {
+	f := o.filter
+	// The flags parsed once already, in build, so they parse again.
+	_, words, _ := buildPredicate(f.where, f.counties, f.near, f.radius, func(name string) string {
+		return fieldLabel(m, name)
+	})
+	return words
+}
+
+// fieldLabel is the label m's hint gives a field, or the field's name when there is no label.
+func fieldLabel(m *leylinev1.DecoderManifest, name string) string {
+	for _, h := range m.GetFields() {
+		if h.GetName() == name && h.GetLabel() != "" {
+			return h.GetLabel()
+		}
+	}
+	return name
+}
+
 // buildPredicate turns the filter flags into a Predicate whose clauses are ANDed, and a plain
-// sentence describing it for the banner. No clauses is a nil predicate, which the daemon matches
-// against everything -- the same as `ley decode`.
-func buildPredicate(where, counties []string, near, radius string) (*leylinev1.Predicate, string, error) {
+// sentence describing it for the banner, in which label names each field (nil names it by its
+// own name). No clauses is a nil predicate, which the daemon matches against everything -- the
+// same as `ley decode`.
+func buildPredicate(where, counties []string, near, radius string, label func(string) string) (*leylinev1.Predicate, string, error) {
+	if label == nil {
+		label = func(name string) string { return name }
+	}
 	var clauses []*leylinev1.Clause
 	var words []string
 	for _, tok := range where {
-		c, w, err := parseWhere(tok)
+		c, w, err := parseWhere(tok, label)
 		if err != nil {
 			return nil, "", err
 		}
@@ -341,7 +375,7 @@ func buildPredicate(where, counties []string, near, radius string) (*leylinev1.P
 		clauses = append(clauses, &leylinev1.Clause{Test: &leylinev1.Clause_Field{Field: &leylinev1.FieldTest{
 			Field: "fips", Op: leylinev1.PredicateOp_PRED_CONTAINS, Values: vals,
 		}}})
-		words = append(words, "fips names one of "+strings.Join(codes, ", "))
+		words = append(words, label("fips")+" names one of "+strings.Join(codes, ", "))
 	}
 	switch {
 	case near != "" && radius == "":
@@ -386,7 +420,7 @@ var whereOps = []struct {
 // parseWhere reads one --where token: a field name, an operator, and a value. The operator is
 // parsed out of the token (field=value, field!=value, field~value, field>value, ...). A numeric
 // operator carries its value as a number; the rest carry text.
-func parseWhere(tok string) (*leylinev1.Clause, string, error) {
+func parseWhere(tok string, label func(string) string) (*leylinev1.Clause, string, error) {
 	for i := 0; i < len(tok); i++ {
 		for _, o := range whereOps {
 			if !strings.HasPrefix(tok[i:], o.tok) {
@@ -409,7 +443,7 @@ func parseWhere(tok string) (*leylinev1.Clause, string, error) {
 			} else {
 				ft.Values = []*leylinev1.FieldValue{textValue(value)}
 			}
-			return &leylinev1.Clause{Test: &leylinev1.Clause_Field{Field: ft}}, field + " " + o.word + " " + value, nil
+			return &leylinev1.Clause{Test: &leylinev1.Clause_Field{Field: ft}}, label(field) + " " + o.word + " " + value, nil
 		}
 	}
 	return nil, "", usageErrorf("--where %q has no operator; write it field=value (or !=, ~, >, >=, <, <=)", tok)

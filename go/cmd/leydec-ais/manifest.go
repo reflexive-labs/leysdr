@@ -47,8 +47,8 @@ func manifest() *leylinev1.DecoderManifest {
 	}
 }
 
-func hint(name string, typ leylinev1.FieldType, unit, desc string) *leylinev1.FieldHint {
-	return &leylinev1.FieldHint{Name: name, Type: typ, Unit: unit, Description: desc}
+func hint(name, label string, typ leylinev1.FieldType, unit, desc string) *leylinev1.FieldHint {
+	return &leylinev1.FieldHint{Name: name, Label: label, Type: typ, Unit: unit, Description: desc}
 }
 
 func fieldHints() []*leylinev1.FieldHint {
@@ -57,15 +57,15 @@ func fieldHints() []*leylinev1.FieldHint {
 		nbr = leylinev1.FieldType_NUMBER
 	)
 	return []*leylinev1.FieldHint{
-		hint("mmsi", nbr, "", "Maritime Mobile Service Identity, the vessel's numeric id"),
-		hint("msg_type", nbr, "", "AIS message type number"),
-		hint("sog_kn", nbr, "kn", "speed over ground"),
-		hint("cog_deg", nbr, "deg", "course over ground, degrees true"),
-		hint("heading_deg", nbr, "deg", "true heading, degrees"),
-		hint("nav_status", nbr, "", "navigational status code (0 under way, 1 at anchor, 5 moored)"),
-		hint("name", txt, "", "vessel name"),
-		hint("callsign", txt, "", "radio callsign"),
-		hint("ship_type", nbr, "", "ship and cargo type code"),
-		hint("destination", txt, "", "voyage destination"),
+		hint("mmsi", "MMSI", nbr, "", "Maritime Mobile Service Identity, the vessel's numeric id"),
+		hint("msg_type", "Message type", nbr, "", "AIS message type number"),
+		hint("sog_kn", "Speed", nbr, "kn", "speed over ground"),
+		hint("cog_deg", "Course", nbr, "deg", "course over ground, degrees true"),
+		hint("heading_deg", "Heading", nbr, "deg", "true heading, degrees"),
+		hint("nav_status", "Navigation status", nbr, "", "navigational status code (0 under way, 1 at anchor, 5 moored)"),
+		hint("name", "Name", txt, "", "vessel name"),
+		hint("callsign", "Callsign", txt, "", "radio callsign"),
+		hint("ship_type", "Ship type", nbr, "", "ship and cargo type code"),
+		hint("destination", "Destination", txt, "", "voyage destination"),
 	}
 }

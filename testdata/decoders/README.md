@@ -61,6 +61,17 @@ optionally one colon and a precision from 0 to 6); a client's display check reje
 entry, and its cell never resolves. A column is headed by the entry's name with the precision
 dropped.
 
+## `head-cases.json`
+
+`{cases}`, each `{name, column, hint, head, numeric}`: the header `ley track` writes for `column`,
+one entry of a display's `columns`, when the manifest's only field hint is `hint` (`{name, label,
+type, unit}`, `label` and `unit` optional, or `null` for no hint). The header is the hint's
+`label` in upper case, or else the field's name in upper case with underscores as spaces and,
+when the hint has a unit, the name's last `_word` dropped; a hint's unit follows in brackets as
+written. `numeric` is whether the hint's type is NUMBER or INTEGER, which sets the column flush
+right. `go/internal/cli/track_head_vectors_test.go` reads it. The cases use units that the app
+writes as given (`kn`, `mm`, `km/h`), so a client that spells `deg` as `°` can read them too.
+
 ## `fold-*.json`
 
 `{name, decoder, display, entity_silence_s, steps, rows}`. `decoder` names the manifest the display

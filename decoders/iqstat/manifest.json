@@ -19,23 +19,27 @@
   "fields": [
     {
       "name": "power_dbfs",
+      "label": "Power",
       "type": "NUMBER",
       "unit": "dBFS",
       "description": "mean power of the block, 10*log10(mean |x|^2)"
     },
     {
       "name": "sample_rate",
+      "label": "Sample rate",
       "type": "INTEGER",
       "unit": "Hz",
       "description": "the capture's IQ sample rate"
     },
     {
       "name": "samples",
+      "label": "Samples",
       "type": "INTEGER",
       "description": "samples counted since the last record"
     },
     {
       "name": "center_hz",
+      "label": "Centre frequency",
       "type": "INTEGER",
       "unit": "Hz",
       "description": "the capture's center frequency"

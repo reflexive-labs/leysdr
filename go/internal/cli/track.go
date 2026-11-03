@@ -394,7 +394,7 @@ func heardCell(st ui.Style, counts []int) string {
 //
 // A decoder whose manifest has a display block adds to it: NAME, from the display's entity_name,
 // beside the device, and one column per display.columns entry between HEARD and POSITION, each
-// headed by the field's name with its unit (sog_kn in knots is "SOG (kn)") and printed with the
+// headed by the field's label with its unit (ground_speed_kn is "GROUND SPEED (kn)") and printed with the
 // entry's precision (ground_speed_kn:0 prints whole knots). The table's Display
 // writes LAST. m is the decoder's manifest, nil when ley has none.
 func renderTrack(app *App, table *records.Table, m *leylinev1.DecoderManifest, window time.Duration) string {
@@ -447,23 +447,30 @@ func renderTrack(app *App, table *records.Table, m *leylinev1.DecoderManifest, w
 	return b.String()
 }
 
-// fieldColumnHead is a display column's header and whether it holds numbers. A field with a unit
-// in its hint is named with the unit in brackets, and the unit suffix the field's name carries by
-// convention is dropped: sog_kn in "kn" is "SOG (kn)", speed_kmh in "km/h" is "SPEED (km/h)".
+// fieldColumnHead is a display column's header and whether it holds numbers. The header is the
+// hint's label in upper case, or else the field's name; a field with a unit in its hint has the
+// unit in brackets, and a name standing in for a label drops the unit suffix it carries by
+// convention: ground_speed_kn labelled "Ground speed" in "kn" is "GROUND SPEED (kn)", and
+// speed_kmh in "km/h" with no label is "SPEED (km/h)".
 func fieldColumnHead(m *leylinev1.DecoderManifest, name string) (string, bool) {
 	for _, h := range m.GetFields() {
 		if h.GetName() != name {
 			continue
 		}
 		numeric := h.GetType() == leylinev1.FieldType_NUMBER || h.GetType() == leylinev1.FieldType_INTEGER
-		if unit := h.GetUnit(); unit != "" {
+		unit := h.GetUnit()
+		head := strings.ToUpper(h.GetLabel())
+		if head == "" {
 			base := name
-			if i := strings.LastIndexByte(name, '_'); i > 0 {
+			if i := strings.LastIndexByte(name, '_'); i > 0 && unit != "" {
 				base = name[:i]
 			}
-			return columnWord(base) + " (" + unit + ")", numeric
+			head = columnWord(base)
 		}
-		return columnWord(name), numeric
+		if unit != "" {
+			head += " (" + unit + ")"
+		}
+		return head, numeric
 	}
 	return columnWord(name), false
 }

@@ -158,7 +158,7 @@ func TestWatchSpeechForAPhrase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ley watch speech --detach: %v\n%s", err, errOut)
 	}
-	if !strings.Contains(errOut, "text contains net control") || !strings.Contains(errOut, "overs recorded as ley://recordings/job_") ||
+	if !strings.Contains(errOut, "Text contains net control") || !strings.Contains(errOut, "overs recorded as ley://recordings/job_") ||
 		!strings.Contains(errOut, "left running") {
 		t.Errorf("the banner must give the filter, the clips and how to stop it:\n%s", errOut)
 	}

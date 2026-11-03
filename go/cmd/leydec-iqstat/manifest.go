@@ -43,8 +43,8 @@ func manifest() *leylinev1.DecoderManifest {
 	}
 }
 
-func hint(name string, typ leylinev1.FieldType, unit, desc string) *leylinev1.FieldHint {
-	return &leylinev1.FieldHint{Name: name, Type: typ, Unit: unit, Description: desc}
+func hint(name, label string, typ leylinev1.FieldType, unit, desc string) *leylinev1.FieldHint {
+	return &leylinev1.FieldHint{Name: name, Label: label, Type: typ, Unit: unit, Description: desc}
 }
 
 func fieldHints() []*leylinev1.FieldHint {
@@ -53,9 +53,9 @@ func fieldHints() []*leylinev1.FieldHint {
 		itg = leylinev1.FieldType_INTEGER
 	)
 	return []*leylinev1.FieldHint{
-		hint("power_dbfs", nbr, "dBFS", "mean power of the block, 10*log10(mean |x|^2)"),
-		hint("sample_rate", itg, "Hz", "the capture's IQ sample rate"),
-		hint("samples", itg, "", "samples counted since the last record"),
-		hint("center_hz", itg, "Hz", "the capture's center frequency"),
+		hint("power_dbfs", "Power", nbr, "dBFS", "mean power of the block, 10*log10(mean |x|^2)"),
+		hint("sample_rate", "Sample rate", itg, "Hz", "the capture's IQ sample rate"),
+		hint("samples", "Samples", itg, "", "samples counted since the last record"),
+		hint("center_hz", "Centre frequency", itg, "Hz", "the capture's center frequency"),
 	}
 }

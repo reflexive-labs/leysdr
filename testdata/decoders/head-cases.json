@@ -1,0 +1,25 @@
+{
+  "cases": [
+    {"name": "a label and a unit", "column": "ground_speed_kn:0",
+     "hint": {"name": "ground_speed_kn", "label": "Ground speed", "type": "NUMBER", "unit": "kn"},
+     "head": "GROUND SPEED (kn)", "numeric": true},
+    {"name": "a label and no unit", "column": "callsign",
+     "hint": {"name": "callsign", "label": "Callsign", "type": "TEXT"},
+     "head": "CALLSIGN", "numeric": false},
+    {"name": "a label keeps its own words", "column": "rain_mm_1h:1",
+     "hint": {"name": "rain_mm_1h", "label": "Rain, last hour", "type": "NUMBER", "unit": "mm"},
+     "head": "RAIN, LAST HOUR (mm)", "numeric": true},
+    {"name": "no label: the name drops its unit suffix", "column": "sog_kn:1",
+     "hint": {"name": "sog_kn", "type": "NUMBER", "unit": "kn"},
+     "head": "SOG (kn)", "numeric": true},
+    {"name": "no label and no unit: the name keeps every word", "column": "nav_status",
+     "hint": {"name": "nav_status", "type": "INTEGER"},
+     "head": "NAV STATUS", "numeric": true},
+    {"name": "no label, a unit and no suffix to drop", "column": "speed",
+     "hint": {"name": "speed", "type": "NUMBER", "unit": "km/h"},
+     "head": "SPEED (km/h)", "numeric": true},
+    {"name": "no hint: the name", "column": "object_name",
+     "hint": null,
+     "head": "OBJECT NAME", "numeric": false}
+  ]
+}

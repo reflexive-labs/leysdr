@@ -619,6 +619,11 @@ public nonisolated struct Leyline_V1_FieldHint: Sendable {
 
   public var description_p: String = String()
 
+  /// A short name a person reads, in sentence case and without the unit: "Callsign", "Ground
+  /// speed", "County". A client heads a column or a row with it and writes a filter in words with
+  /// it, and uses `name` when it is empty.
+  public var label: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -1698,7 +1703,7 @@ nonisolated extension Leyline_V1_DecoderInput: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension Leyline_V1_FieldHint: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".FieldHint"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}type\0\u{1}unit\0\u{1}description\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}type\0\u{1}unit\0\u{1}description\0\u{1}label\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1710,6 +1715,7 @@ nonisolated extension Leyline_V1_FieldHint: SwiftProtobuf.Message, SwiftProtobuf
       case 2: try { try decoder.decodeSingularEnumField(value: &self.type) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self.unit) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.description_p) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.label) }()
       default: break
       }
     }
@@ -1728,6 +1734,9 @@ nonisolated extension Leyline_V1_FieldHint: SwiftProtobuf.Message, SwiftProtobuf
     if !self.description_p.isEmpty {
       try visitor.visitSingularStringField(value: self.description_p, fieldNumber: 4)
     }
+    if !self.label.isEmpty {
+      try visitor.visitSingularStringField(value: self.label, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1736,6 +1745,7 @@ nonisolated extension Leyline_V1_FieldHint: SwiftProtobuf.Message, SwiftProtobuf
     if lhs.type != rhs.type {return false}
     if lhs.unit != rhs.unit {return false}
     if lhs.description_p != rhs.description_p {return false}
+    if lhs.label != rhs.label {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

@@ -49,8 +49,8 @@ func manifest() *leylinev1.DecoderManifest {
 	}
 }
 
-func hint(name string, typ leylinev1.FieldType, unit, desc string) *leylinev1.FieldHint {
-	return &leylinev1.FieldHint{Name: name, Type: typ, Unit: unit, Description: desc}
+func hint(name, label string, typ leylinev1.FieldType, unit, desc string) *leylinev1.FieldHint {
+	return &leylinev1.FieldHint{Name: name, Label: label, Type: typ, Unit: unit, Description: desc}
 }
 
 func fieldHints() []*leylinev1.FieldHint {
@@ -59,17 +59,17 @@ func fieldHints() []*leylinev1.FieldHint {
 		nbr = leylinev1.FieldType_NUMBER
 	)
 	return []*leylinev1.FieldHint{
-		hint("icao", txt, "", "the aircraft's 24-bit address, six hex digits"),
-		hint("callsign", txt, "", "the flight's callsign or the aircraft's registration, as it sends it"),
-		hint("category", txt, "", "emitter category: set and code, A1 light to A5 heavy, A7 rotorcraft"),
-		hint("altitude_ft", nbr, "ft", "pressure altitude, or GNSS height for type codes 20 to 22"),
-		hint("ground_speed_kn", nbr, "kn", "ground speed"),
-		hint("track_deg", nbr, "deg", "track over ground, degrees true"),
-		hint("airspeed_kn", nbr, "kn", "indicated or true airspeed, sent when ground speed is not"),
-		hint("heading_deg", nbr, "deg", "magnetic heading, sent with airspeed"),
-		hint("vertical_rate_fpm", nbr, "ft/min", "vertical rate, negative descending"),
-		hint("squawk", txt, "", "the transponder's identity code, four octal digits"),
-		hint("df", nbr, "", "Mode S downlink format: 17 ADS-B, 18 non-transponder ADS-B, 11 all-call reply, 4, 5, 20, 21 surveillance replies"),
-		hint("tc", nbr, "", "ADS-B type code: 1-4 identification, 5-8 surface position, 9-18 and 20-22 airborne position, 19 velocity"),
+		hint("icao", "ICAO address", txt, "", "the aircraft's 24-bit address, six hex digits"),
+		hint("callsign", "Callsign", txt, "", "the flight's callsign or the aircraft's registration, as it sends it"),
+		hint("category", "Category", txt, "", "emitter category: set and code, A1 light to A5 heavy, A7 rotorcraft"),
+		hint("altitude_ft", "Altitude", nbr, "ft", "pressure altitude, or GNSS height for type codes 20 to 22"),
+		hint("ground_speed_kn", "Ground speed", nbr, "kn", "ground speed"),
+		hint("track_deg", "Track", nbr, "deg", "track over ground, degrees true"),
+		hint("airspeed_kn", "Airspeed", nbr, "kn", "indicated or true airspeed, sent when ground speed is not"),
+		hint("heading_deg", "Heading", nbr, "deg", "magnetic heading, sent with airspeed"),
+		hint("vertical_rate_fpm", "Vertical rate", nbr, "ft/min", "vertical rate, negative descending"),
+		hint("squawk", "Squawk", txt, "", "the transponder's identity code, four octal digits"),
+		hint("df", "Downlink format", nbr, "", "Mode S downlink format: 17 ADS-B, 18 non-transponder ADS-B, 11 all-call reply, 4, 5, 20, 21 surveillance replies"),
+		hint("tc", "Type code", nbr, "", "ADS-B type code: 1-4 identification, 5-8 surface position, 9-18 and 20-22 airborne position, 19 velocity"),
 	}
 }

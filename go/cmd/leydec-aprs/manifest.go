@@ -47,8 +47,8 @@ func manifest() *leylinev1.DecoderManifest {
 	}
 }
 
-func hint(name string, typ leylinev1.FieldType, unit, desc string) *leylinev1.FieldHint {
-	return &leylinev1.FieldHint{Name: name, Type: typ, Unit: unit, Description: desc}
+func hint(name, label string, typ leylinev1.FieldType, unit, desc string) *leylinev1.FieldHint {
+	return &leylinev1.FieldHint{Name: name, Label: label, Type: typ, Unit: unit, Description: desc}
 }
 
 func fieldHints() []*leylinev1.FieldHint {
@@ -58,30 +58,30 @@ func fieldHints() []*leylinev1.FieldHint {
 		flg = leylinev1.FieldType_FLAG
 	)
 	return []*leylinev1.FieldHint{
-		hint("symbol", txt, "", "APRS symbol as its table identifier and code"),
-		hint("comment", txt, "", "the free text the station sent"),
-		hint("path", txt, "", "digipeater path, used hops marked with a star"),
-		hint("destination", txt, "", "AX.25 destination address, usually the software's identifier"),
-		hint("speed_kmh", nbr, "km/h", "speed over ground"),
-		hint("course_deg", nbr, "deg", "course over ground, degrees true"),
-		hint("temp_c", nbr, "degC", "air temperature"),
-		hint("wind_kmh", nbr, "km/h", "sustained wind speed"),
-		hint("wind_dir_deg", nbr, "deg", "wind direction"),
-		hint("gust_kmh", nbr, "km/h", "peak gust in the last five minutes"),
-		hint("rain_mm_1h", nbr, "mm", "rain in the last hour"),
-		hint("humidity_pct", nbr, "%", "relative humidity"),
-		hint("pressure_hpa", nbr, "hPa", "barometric pressure"),
-		hint("seq", txt, "", "telemetry sequence number"),
-		hint("a1", nbr, "", "telemetry analogue channel 1"),
-		hint("a2", nbr, "", "telemetry analogue channel 2"),
-		hint("a3", nbr, "", "telemetry analogue channel 3"),
-		hint("a4", nbr, "", "telemetry analogue channel 4"),
-		hint("a5", nbr, "", "telemetry analogue channel 5"),
-		hint("digital", txt, "", "telemetry digital bits, most significant first"),
-		hint("addressee", txt, "", "who a message is for"),
-		hint("text", txt, "", "a message's text"),
-		hint("msg_id", txt, "", "message identifier an ack or reject quotes"),
-		hint("object_name", txt, "", "name of an object or item"),
-		hint("alive", flg, "", "whether an object or item is live or killed"),
+		hint("symbol", "Symbol", txt, "", "APRS symbol as its table identifier and code"),
+		hint("comment", "Comment", txt, "", "the free text the station sent"),
+		hint("path", "Path", txt, "", "digipeater path, used hops marked with a star"),
+		hint("destination", "Destination", txt, "", "AX.25 destination address, usually the software's identifier"),
+		hint("speed_kmh", "Speed", nbr, "km/h", "speed over ground"),
+		hint("course_deg", "Course", nbr, "deg", "course over ground, degrees true"),
+		hint("temp_c", "Temperature", nbr, "degC", "air temperature"),
+		hint("wind_kmh", "Wind", nbr, "km/h", "sustained wind speed"),
+		hint("wind_dir_deg", "Wind direction", nbr, "deg", "wind direction"),
+		hint("gust_kmh", "Gust", nbr, "km/h", "peak gust in the last five minutes"),
+		hint("rain_mm_1h", "Rain, last hour", nbr, "mm", "rain in the last hour"),
+		hint("humidity_pct", "Humidity", nbr, "%", "relative humidity"),
+		hint("pressure_hpa", "Pressure", nbr, "hPa", "barometric pressure"),
+		hint("seq", "Sequence", txt, "", "telemetry sequence number"),
+		hint("a1", "Analogue 1", nbr, "", "telemetry analogue channel 1"),
+		hint("a2", "Analogue 2", nbr, "", "telemetry analogue channel 2"),
+		hint("a3", "Analogue 3", nbr, "", "telemetry analogue channel 3"),
+		hint("a4", "Analogue 4", nbr, "", "telemetry analogue channel 4"),
+		hint("a5", "Analogue 5", nbr, "", "telemetry analogue channel 5"),
+		hint("digital", "Digital bits", txt, "", "telemetry digital bits, most significant first"),
+		hint("addressee", "Addressee", txt, "", "who a message is for"),
+		hint("text", "Message", txt, "", "a message's text"),
+		hint("msg_id", "Message id", txt, "", "message identifier an ack or reject quotes"),
+		hint("object_name", "Object name", txt, "", "name of an object or item"),
+		hint("alive", "Alive", flg, "", "whether an object or item is live or killed"),
 	}
 }
