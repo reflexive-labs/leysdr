@@ -67,6 +67,7 @@ func (d *Daemon) startDecode(ctx context.Context, cfg *leylinev1.DecodeConfig) (
 	fj := &fakeJob{
 		proto: job, owner: ci.GetClientId(), protocol: man.GetName(), hz: hz, keep: cfg.GetKeep(),
 		channelID: lease.channelID, captureID: lease.captureID, createdCapture: lease.created,
+		gainNote: gainNote,
 	}
 	d.jobs[job.JobId] = fj
 	d.jobOrder = append(d.jobOrder, job.JobId)
@@ -439,8 +440,8 @@ func (d *Daemon) runDecode(jobID string, man *leylinev1.DecoderManifest) {
 		// The liveness the daemon carries in status_detail: the count and the age of the
 		// last record. The detail moves on every record; the Job event that carries it goes out
 		// for the first record and then every fifth, the daemon's timer at this record rate.
-		j.proto.StatusDetail = fmt.Sprintf("decoding %s on %s: %s, last just now", man.GetName(),
-			units.FormatFrequency(j.hz), pluralRecords(j.seq))
+		j.proto.StatusDetail = fmt.Sprintf("decoding %s on %s: %s, last just now%s", man.GetName(),
+			units.FormatFrequency(j.hz), pluralRecords(j.seq), j.gainNote)
 		if j.seq == 1 || j.seq%5 == 0 {
 			d.emit(byDaemon(), proto.Clone(j.proto).(*leylinev1.Job))
 		}

@@ -223,13 +223,15 @@ var declineEverything = fakedaemon.Options{DeclineDecode: func(*leylinev1.Decode
 
 // A job the daemon declines after StartJob answered ends decode, watch and track with the
 // daemon's reason, the command to run next and exit 1, rather than leaving them waiting for
-// records that will never come.
+// records that will never come. A detached watch waits for the decline rather than reporting a
+// job left running.
 func TestDecodeVerbsEndWhenTheJobIsDeclined(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{
 		{"decode", "aprs"},
 		{"decode", "aprs", "--job"},
 		{"watch", "aprs"},
+		{"watch", "aprs", "--detach"},
 		{"track", "aprs"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
@@ -237,9 +239,12 @@ func TestDecodeVerbsEndWhenTheJobIsDeclined(t *testing.T) {
 			sock, _ := harness(t, declineEverything)
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
-			_, _, err := run(t, ctx, sock, args...)
+			out, errOut, err := run(t, ctx, sock, args...)
 			if ctx.Err() != nil {
 				t.Fatalf("ley %s was still running after 10 s", strings.Join(args, " "))
+			}
+			if strings.Contains(out+errOut, "left running") {
+				t.Errorf("a declined job is reported as left running:\n%s%s", out, errOut)
 			}
 			if exitCode(err) != 1 {
 				t.Fatalf("exit %d (%v), want 1", exitCode(err), err)

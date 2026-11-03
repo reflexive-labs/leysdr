@@ -74,7 +74,8 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # a decode job with a daemon-side predicate and a notifier:
 │                                    # attached it streams only the matching records; --detach leaves
 │                                    # the job running so the notifier (bare=macOS, webhook:URL,
-│                                    # shell:CMD) fires with no client attached
+│                                    # shell:CMD) fires with no client attached, once the daemon
+│                                    # has taken the job (a decline exits 1 with the reason)
 ├── track <protocol> [--attach] [--device SEL] [--take-over] [--since D] [--rate N] [--count N]
 │                                    # starts (or attaches to) a decoder and folds its records into a live per-station table; --attach only folds one already running
 │                                    # the live entity table: ley's own fold over SubscribeRecords,
@@ -451,8 +452,9 @@ the manifest as `coverage_gaps` (AGENTS.md invariant 5). The verb runs in the fo
 made rather than the ones asked for — it waits up to two seconds for the manifest so the rate,
 format, gate and radio in it are the real ones — then a live line, then what it recorded; the
 recording's URI is on stdout when it ends. Ctrl-C cancels the job, which finalises the files, so
-a cancelled recording is complete and readable; and `--detach` exits at once with the job id
-and the URI for a script.
+a cancelled recording is complete and readable; and `--detach` exits after the same wait with
+the job id and the URI for a script, or exits 1 with the reason when the daemon declined the job
+in that time, with `--json` too.
 
 `ley recordings` lists the store through `Resources.ListResources(RECORDING)`, newest first;
 `--kind`, `--freq` and `--since` filter on the resource's own metadata, whose keys are frozen

@@ -4,6 +4,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -411,15 +412,22 @@ func runRecord(ctx context.Context, s *verbSession, o recordOptions) error {
 		if err := s.app.printJSON(job); err != nil {
 			return err
 		}
+		if o.detach {
+			// Nothing follows a detached job once ley exits, so a radio the daemon declined after
+			// StartJob answered is caught here, as the banner's wait catches it below.
+			if _, _, ended := awaitManifest(ctx, s, job.GetJobId()); ended.GetState() == leylinev1.JobState_FAILED {
+				return recordEnded(s, o, ended)
+			}
+		}
 	} else {
 		// The banner states what the daemon decided, not what was asked for, so a recording of
 		// the wrong thing is caught in the first line rather than in the file. That means waiting
 		// for the manifest, which appears as soon as the job has its radio.
 		manifest, dir, ended := awaitManifest(ctx, s, job.GetJobId())
 		if ended.GetState() == leylinev1.JobState_FAILED {
-			// It failed before it wrote anything (a gain the radio refused, a radio gone): a
+			// It failed before it wrote anything (a radio declined, a gain the radio refused): a
 			// banner would describe a recording that does not exist.
-			return &ExitError{Code: 1, Message: recordFailureDetail(ended)}
+			return recordEnded(s, o, ended)
 		}
 		s.say("%s\n", recordBanner(s, o, manifest, dir, playing))
 	}
@@ -857,6 +865,19 @@ func recordFailure(s *verbSession, o recordOptions, err error) error {
 		return &friendlyError{msg: leylineMessage(err, "no radio here can hear that") + ". " + st.Cmd("ley devices") + " lists what is here and what it can tune", cause: err}
 	}
 	return err
+}
+
+// recordEnded is the error for a recording that failed before it wrote anything. A decline the
+// verb has a next step for (no radio can hear it, the radio is busy) says it as a refusal from
+// StartJob does; any other reason is the job's own words and code.
+func recordEnded(s *verbSession, o recordOptions, job *leylinev1.Job) error {
+	e := job.GetError()
+	cause := &leyline.Error{Code: e.GetCode(), Message: job.GetStatusDetail(), Target: e.GetTarget()}
+	var fe *friendlyError
+	if err := recordFailure(s, o, cause); errors.As(err, &fe) {
+		return err
+	}
+	return &ExitError{Code: 1, Message: recordFailureDetail(job)}
 }
 
 // recordFailureDetail is a FAILED job's status detail, with its stable code kept.

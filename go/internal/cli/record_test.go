@@ -205,6 +205,31 @@ func TestRecordWithoutAGateStatesTheOneTheDaemonPicked(t *testing.T) {
 	}
 }
 
+// A detached recording the daemon fails after StartJob answered (here a gain stage the radio
+// does not have) exits 1 with the reason, with --json too, rather than printing a job left running.
+func TestRecordDetachEndsWhenTheJobFails(t *testing.T) {
+	t.Parallel()
+	hackrf := fakedaemon.HackRFPro()
+	sock, _ := harness(t, fakedaemon.Options{RecordingsDir: t.TempDir(), ExtraDevices: []*leylinev1.DeviceDescriptor{hackrf}})
+	for _, json := range []bool{false, true} {
+		args := []string{"record", "462.5625", "--device", hackrf.DeviceId, "--gain", "IF=0", "--detach"}
+		if json {
+			args = append(args, "--json")
+		}
+		out, errOut, err := run(t, t.Context(), sock, args...)
+		var ee *ExitError
+		if !errors.As(err, &ee) || ee.Code != 1 {
+			t.Fatalf("%v: a job that failed should exit 1, got %v\n%s%s", args, err, out, errOut)
+		}
+		if !strings.Contains(ee.Message, "no gain element named IF") || !strings.Contains(ee.Message, "[GAIN_ELEMENT_UNKNOWN]") {
+			t.Errorf("%v: the refusal is %q", args, ee.Message)
+		}
+		if strings.Contains(out+errOut, "Left running") {
+			t.Errorf("%v: a failed job is reported as left running:\n%s%s", args, out, errOut)
+		}
+	}
+}
+
 // --detach hands a script the job id and the URI and leaves the job running.
 func TestRecordDetachLeavesTheJobRunning(t *testing.T) {
 	t.Parallel()

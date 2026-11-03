@@ -43,6 +43,9 @@ type fakeJob struct {
 	keep           bool
 	seq            uint64
 	records        []*leylinev1.DecodeRecord
+	// gainNote is what a decode job's detail ends with for as long as it runs, as the daemon's
+	// liveness keeps it: the gain a shared capture was left at ("; gain left at ...").
+	gainNote string
 	// cancelled is CancelJob's request to stop. The sweep is what ends the job, so the partial
 	// results are stored before the terminal event goes out.
 	cancelled bool

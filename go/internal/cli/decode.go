@@ -318,6 +318,48 @@ func (s *verbSession) endedJob(ctx context.Context, jobID string) *leylinev1.Job
 	return j
 }
 
+// detachSettle bounds how long a detached verb waits for its job to settle. The daemon answers
+// StartJob before it has looked for a radio, and allocating one takes a few hundred milliseconds.
+const detachSettle = 3 * time.Second
+
+// settledJob waits, up to detachSettle, for the job StartJob returned to move on: to end (the
+// daemon declined it, or it failed) or to publish anything after the reply (it has its radio and
+// is under way). It returns the job as last seen, which after the wait may still be the reply.
+// The follow is decode's: Job events, with a GetJob poll behind them.
+func (s *verbSession) settledJob(ctx context.Context, job *leylinev1.Job) *leylinev1.Job {
+	moved := func(j *leylinev1.Job) bool {
+		return !isLiveJob(j) || j.GetState() != job.GetState() || j.GetStatusDetail() != job.GetStatusDetail()
+	}
+	events := s.Events()
+	poll := time.NewTicker(100 * time.Millisecond)
+	defer poll.Stop()
+	deadline := time.NewTimer(detachSettle)
+	defer deadline.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return job
+		case <-deadline.C:
+			return job
+		case ev, ok := <-events:
+			if !ok {
+				events = nil
+				continue
+			}
+			if j := s.jobEvent(ev, job.GetJobId()); j != nil && moved(j) {
+				return j
+			}
+		case <-poll.C:
+			cctx, cancel := session.CleanupContext(ctx, confirmTimeout)
+			j, err := s.Client.Jobs.GetJob(cctx, &leylinev1.JobRef{JobId: job.GetJobId()})
+			cancel()
+			if err == nil && moved(j) {
+				return j
+			}
+		}
+	}
+}
+
 // leylineMessage is the daemon's own sentence, or fallback when the error carries none. The
 // daemon's message gives the reason; ley adds the command to type next.
 func leylineMessage(err error, fallback string) string {

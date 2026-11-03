@@ -197,7 +197,19 @@ func runWatch(ctx context.Context, s *verbSession, o watchOptions) error {
 		return decodeFailure(s, decodeOptions{decoder: o.decoder}, err)
 	}
 	s.say("%s\n", watchBanner(ctx, s, job, o))
+	// A job the daemon declines after StartJob answered, or one that fails, ends the watch with
+	// the reason, as it ends decode.
+	ended := func(j *leylinev1.Job) error {
+		return decodeJobEnded(s.app.ErrStyle, j, func(err error) error {
+			return decodeFailure(s, decodeOptions{decoder: o.decoder}, err)
+		}, "ley watch "+o.decoder)
+	}
 	if o.detach {
+		// Detached, nothing follows the job once ley exits, so a decline has to be caught here
+		// or a script reads exit 0 as a watch that is running.
+		if j := s.settledJob(ctx, job); !isLiveJob(j) {
+			return ended(j)
+		}
 		st := s.app.ErrStyle
 		s.say("left running; %s stops it\n", st.Cmd("ley jobs cancel "+jobRowName(ctx, s, job)))
 		return nil
@@ -208,13 +220,6 @@ func runWatch(ctx context.Context, s *verbSession, o watchOptions) error {
 	recs, errs, err := s.Client.SubscribeRecords(sctx, leyline.RecordScopeJob(job.GetJobId(), &from))
 	if err != nil {
 		return err
-	}
-	// A job the daemon declines after StartJob answered, or one that fails, ends the watch with
-	// the reason, as it ends decode.
-	ended := func(j *leylinev1.Job) error {
-		return decodeJobEnded(s.app.ErrStyle, j, func(err error) error {
-			return decodeFailure(s, decodeOptions{decoder: o.decoder}, err)
-		}, "ley watch "+o.decoder)
 	}
 	events := s.Events()
 	poll := time.NewTicker(time.Second)
