@@ -67,6 +67,9 @@ type verbSession struct {
 	// session was listening to, so the closing line does not also claim to
 	// have removed it.
 	channelGone bool
+	// afterStart, when set, runs as soon as sweep's StartJob answers, before the sweep is
+	// followed: the MCP scan tool checks there that the sweep took nobody's claim but its own.
+	afterStart func(*leylinev1.Job)
 	// squelchNote is the banner's squelch sentence once the channel exists.
 	squelchNote string
 	// failureNote is the problem the capture's first level and the squelch

@@ -135,6 +135,7 @@ func (d *Daemon) startRecord(ctx context.Context, cfg *leylinev1.RecordConfig) (
 		StatusDetail: "starting",
 	}
 	job.ResultUris = []string{leyline.RecordingURI(job.JobId)}
+	d.noteJobMoveLocked(lease, job.JobId, "record")
 	fj := &fakeJob{
 		proto: job, owner: ci.GetClientId(), hz: hz,
 		channelID: lease.channelID, captureID: lease.captureID,

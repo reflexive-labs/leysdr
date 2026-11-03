@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/reflexive-labs/leysdr/go/internal/session"
 	"github.com/reflexive-labs/leysdr/go/internal/ui"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
 )
@@ -136,6 +137,87 @@ func (srv *mcpServer) onlyOurs(ctx context.Context, req *leylinev1.PlanRequest) 
 	for _, c := range d.GetBlocking() {
 		if c.GetHolder().GetClientId() != srv.client.ClientID() {
 			return false
+		}
+	}
+	return true
+}
+
+// sincePlanWatch bounds how long a job that went ahead over only this server's own claims is
+// watched for taking somebody else's (keepOnlyOurs). The daemon places a job a few hundred
+// milliseconds after StartJob answers.
+const sincePlanWatch = 3 * time.Second
+
+// keepOnlyOurs closes the race onlyOurs leaves open. Plan and StartJob are two calls, so a claim
+// somebody else makes between them would be taken over without a refusal. It waits for the job
+// to hold its radio and looks for a claim, not this server's and not a view, that the job left
+// DISPLACED. Finding one, it cancels the job at once and returns the refusal naming that claim;
+// otherwise nil. Only a claim that needs the tuning can be displaced: a person's presence with
+// no channel takes the capture as it is (docs/design/claims.md), so it is not looked for.
+func (srv *mcpServer) keepOnlyOurs(ctx context.Context, jobID string) error {
+	st, c := srv.displacedSincePlan(ctx, jobID)
+	if c == nil {
+		return nil
+	}
+	cctx, cancel := session.CleanupContext(ctx, confirmTimeout)
+	defer cancel()
+	_, _ = srv.client.Jobs.CancelJob(cctx, &leylinev1.JobRef{JobId: jobID})
+	return fmt.Errorf("stopped at once: %s came to the radio after this server checked it, and this job had paused it. take_over: true insists",
+		claimName(st, c))
+}
+
+// displacedSincePlan polls the daemon's state until the job holds a claim of its own and the
+// move that placed it has been published, the job ends, or sincePlanWatch passes, and returns
+// the first claim somebody else holds that the job displaced, with the state it was read from.
+func (srv *mcpServer) displacedSincePlan(ctx context.Context, jobID string) (*leylinev1.GetStateResponse, *leylinev1.Claim) {
+	ours := srv.client.ClientID()
+	deadline := time.Now().Add(sincePlanWatch)
+	// A sweep claims its capture before the first retune; its move is published once the
+	// capture's tuning generation passes the one it was claimed at.
+	sweepGen := map[string]uint64{}
+	for {
+		st, err := srv.client.State(ctx)
+		if err != nil {
+			return nil, nil
+		}
+		placed := false
+		for _, capture := range st.GetCaptures() {
+			for _, c := range capture.GetClaims() {
+				h := c.GetHolder().GetClientId()
+				if h == jobID {
+					switch gen, seen := sweepGen[capture.GetCaptureId()]; {
+					case c.GetKind() != leylinev1.ClaimKind_CLAIM_SWEEP:
+						// A channel or an IQ claim is made after the retune that placed it.
+						placed = true
+					case !seen:
+						sweepGen[capture.GetCaptureId()] = capture.GetTuningGeneration()
+					case capture.GetTuningGeneration() != gen:
+						placed = true
+					}
+					continue
+				}
+				if c.GetState() == leylinev1.ClaimState_CLAIM_DISPLACED && c.GetDisplacedBy().GetClientId() == jobID &&
+					h != ours && c.GetPriority() != leylinev1.ClaimPriority_PRIORITY_VIEW {
+					return st, c
+				}
+			}
+		}
+		if placed || !jobLive(st, jobID) || time.Now().After(deadline) {
+			return st, nil
+		}
+		select {
+		case <-ctx.Done():
+			return st, nil
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+// jobLive reports whether the state lists the job as running. A job the state does not list yet
+// counts as live.
+func jobLive(st *leylinev1.GetStateResponse, jobID string) bool {
+	for _, j := range st.GetJobs() {
+		if j.GetJobId() == jobID {
+			return isLiveJob(j)
 		}
 	}
 	return true

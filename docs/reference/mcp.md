@@ -174,7 +174,10 @@ Notes a table cell cannot hold:
   A radio with no gain stage (a file device) is refused a `gain` in a sentence that names it. When
   the daemon's plan declines the sweep only for this server's own claims (its own channel, or the
   minute of presence after its own tune, listen or snapshot), the sweep goes ahead without
-  `take_over` and the text says so; `start_decode_job`, `watch` and `record` do the same.
+  `take_over` and the text says so; `start_decode_job`, `watch` and `record` do the same. The plan
+  and the start are two calls, so somebody else's channel or job can arrive between them: the tool
+  then looks at the claims once the job has its radio, and if the job displaced one that is not
+  this server's it cancels the job at once and returns the refusal naming that claim.
   `gain` is where the sweep pins the tuner (`auto` is where the radio's AGC settles, then held);
   without it the sweep pins whatever gain the radio was left at, which is what made two sweeps of
   one band differ by 6 dB of floor in the survey, and `Scan.gains` records every stage either way.

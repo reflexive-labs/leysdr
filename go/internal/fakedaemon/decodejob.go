@@ -64,6 +64,7 @@ func (d *Daemon) startDecode(ctx context.Context, cfg *leylinev1.DecodeConfig) (
 	if cfg.GetKeep() {
 		job.ResultUris = []string{"ley://records/" + job.JobId}
 	}
+	d.noteJobMoveLocked(lease, job.JobId, "decode")
 	fj := &fakeJob{
 		proto: job, owner: ci.GetClientId(), protocol: man.GetName(), hz: hz, keep: cfg.GetKeep(),
 		channelID: lease.channelID, captureID: lease.captureID,
@@ -214,6 +215,8 @@ func pluralRecords(n uint64) string {
 type channelLease struct {
 	channelID, captureID, deviceID string
 	created                        bool
+	// retuned is a capture moved for the job: the caller names the job as the mover.
+	retuned bool
 }
 
 // leaseChannelLocked is the allocator's order from docs/design/decoders.md, "Decisions": a
@@ -249,11 +252,18 @@ func (d *Daemon) leaseChannelLocked(ci *leylinev1.ClientInfo, cfg *leylinev1.Dec
 				return lease, errorf(leyline.CodeDeviceBusy, dev.DeviceId, why)
 			}
 		}
-		c, err := d.createJobCaptureLocked(dev, hz)
-		if err != nil {
-			return lease, err
+		if existing := d.deviceCaptureLocked(dev.DeviceId); existing != nil && cfg.GetTakeOver() && d.sweeping != dev.DeviceId {
+			// Taken over: the radio's capture is retuned for the job, as the plan said
+			// (planChannelLocked), and every channel it no longer covers is displaced.
+			d.retuneForJobLocked(existing, dev, hz)
+			lease.captureID, lease.deviceID, lease.retuned = existing.CaptureId, dev.DeviceId, true
+		} else {
+			c, err := d.createJobCaptureLocked(dev, hz)
+			if err != nil {
+				return lease, err
+			}
+			lease.captureID, lease.deviceID, lease.created = c.CaptureId, dev.DeviceId, true
 		}
-		lease.captureID, lease.deviceID, lease.created = c.CaptureId, dev.DeviceId, true
 	}
 	c := d.captures[lease.captureID]
 	owner := &leylinev1.ClientInfo{ClientId: ci.GetClientId(), Kind: "job", Label: "decode"}
@@ -275,6 +285,34 @@ func (d *Daemon) leaseChannelLocked(ci *leylinev1.ClientInfo, cfg *leylinev1.Dec
 	d.emit(owner, ch)
 	lease.channelID = ch.ChannelId
 	return lease, nil
+}
+
+// retuneForJobLocked moves a capture a job took over to the centre createJobCaptureLocked would
+// give it. Its channels keep their frequencies, as the daemon's do, so the ones it no longer
+// covers go OUT_OF_CAPTURE. Caller holds the lock.
+func (d *Daemon) retuneForJobLocked(c *capture, dev *leylinev1.DeviceDescriptor, hz uint64) {
+	centre := hz - c.SampleRate/8
+	if !inRange(dev, centre) {
+		centre = hz
+	}
+	for _, ch := range d.channels {
+		if ch.CaptureId == c.CaptureId {
+			ch.OffsetHz += int64(c.CenterHz) - int64(centre)
+		}
+	}
+	c.CenterHz = centre
+	c.TuningGeneration++
+	by := byDaemon()
+	d.recheckChannelsLocked(by, c)
+	d.emit(by, c.Capture)
+}
+
+// noteJobMoveLocked names the job as the mover of a capture its lease retuned. Caller holds the
+// lock.
+func (d *Daemon) noteJobMoveLocked(lease channelLease, jobID, label string) {
+	if c := d.captures[lease.captureID]; c != nil && lease.retuned {
+		c.movedBy = &leylinev1.ClientInfo{ClientId: jobID, Kind: "job", Label: label}
+	}
 }
 
 // createJobCaptureLocked makes the capture a decode job needs, centred so the channel sits clear

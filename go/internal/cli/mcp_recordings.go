@@ -94,6 +94,11 @@ func (srv *mcpServer) record(ctx context.Context, _ *mcp.CallToolRequest, in rec
 	if err != nil {
 		return nil, nil, toolError(recordToolFailure(err))
 	}
+	if note != "" {
+		if err := srv.keepOnlyOurs(ctx, job.GetJobId()); err != nil {
+			return nil, nil, err
+		}
+	}
 	uri := recordURI(job)
 	// With no gate asked for the daemon chose one; the summary and the nothing-heard line state it.
 	o.gated = job.GetRecord().GetGate() == leylinev1.RecordGate_SQUELCH

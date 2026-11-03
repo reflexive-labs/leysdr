@@ -59,6 +59,10 @@ type Options struct {
 	// error rejects the write (WriteRejected with that code) in place of the
 	// fake's own validation. A test hook for clients' rejection handling.
 	RejectWrites func(w *leylinev1.ParamWrite) *leyline.Error
+	// AfterPlan, when set, runs after every Control.Plan has been answered and before the reply
+	// leaves, outside the fake's lock: a test hook for what changes between a client's plan and
+	// its StartJob.
+	AfterPlan func(req *leylinev1.PlanRequest)
 	// RecordingsDir is where record jobs write their files. A test that wants
 	// to look at what was written names a directory of its own; the default is
 	// a temp directory, which is enough for a client that only reads the
@@ -203,6 +207,9 @@ type capture struct {
 	// heldByClaims marks a capture made for a job: like the daemon's, it lives while any channel
 	// is on it and goes with the last one, whichever job made it (claims.md, CL-4; DEC-19).
 	heldByClaims bool
+	// movedBy is who last retuned the capture for a job that took it over: a claim the move left
+	// unsatisfied is DISPLACED by it (Claim.displaced_by). nil reads as the daemon.
+	movedBy *leylinev1.ClientInfo
 }
 
 // sampleIndex returns the capture's current sample position: wall-clock

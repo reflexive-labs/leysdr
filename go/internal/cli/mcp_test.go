@@ -14,6 +14,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -790,6 +792,55 @@ func TestListenSummaryFold(t *testing.T) {
 	text := sum.text(&verbSession{Session: &session.Session{Channel: &leylinev1.Channel{}, State: &leylinev1.GetStateResponse{}}}, 3*time.Second)
 	if !strings.Contains(text, "1 transmission") || !strings.Contains(text, "already open when listening began") {
 		t.Errorf("text:\n%s", text)
+	}
+}
+
+// Plan and StartJob are two calls. A channel somebody else opens between them would be taken
+// over by a job that planned around only this server's own claims: the job is cancelled at once
+// and the result is the refusal naming that channel, not a running decoder.
+func TestMCPJobStopsWhenAClaimArrivesAfterThePlan(t *testing.T) {
+	t.Parallel()
+	var (
+		h    *mcpHarness
+		once sync.Once
+		arm  atomic.Bool
+	)
+	h = newMCPHarnessWith(t, fakedaemon.Options{AfterPlan: func(req *leylinev1.PlanRequest) {
+		if req.GetDecode() == nil || !arm.Load() {
+			return
+		}
+		once.Do(func() {
+			ctx := context.Background()
+			st, err := h.client.State(ctx)
+			if err != nil || len(st.GetCaptures()) == 0 {
+				t.Errorf("state after the plan: %v", err)
+				return
+			}
+			if _, err := h.client.Control.CreateChannel(ctx, &leylinev1.CreateChannelRequest{
+				CaptureId: st.GetCaptures()[0].GetCaptureId(), Mode: leylinev1.DemodMode_NFM, BandwidthHz: 12_500, Persistent: true,
+			}); err != nil {
+				t.Errorf("another client's channel: %v", err)
+			}
+		})
+	}})
+	h.must(t, "tune", map[string]any{"frequency": "146.52"})
+	arm.Store(true)
+	res := h.call(t, "start_decode_job", map[string]any{"decoder": "aprs"})
+	text := resultText(res)
+	if !res.IsError {
+		t.Fatalf("the job took over a channel that arrived after the plan:\n%s", text)
+	}
+	for _, want := range []string{"stopped at once", "channel", "take_over: true"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("refusal lacks %q:\n%s", want, text)
+		}
+	}
+	jobs, err := h.client.ListJobs(t.Context())
+	if err != nil || len(jobs) != 1 {
+		t.Fatalf("jobs: %v %v", jobs, err)
+	}
+	if jobs[0].GetState() != leylinev1.JobState_CANCELLED {
+		t.Errorf("the job was left %v", jobs[0].GetState())
 	}
 }
 

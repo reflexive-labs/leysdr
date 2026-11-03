@@ -168,7 +168,9 @@ func (d *Daemon) snapshot(scope *leylinev1.EventScope) *leylinev1.GetStateRespon
 	}
 	for _, c := range d.captures {
 		if capFilter == "" || c.CaptureId == capFilter {
-			resp.Captures = append(resp.Captures, proto.Clone(c.Capture).(*leylinev1.Capture))
+			cp := proto.Clone(c.Capture).(*leylinev1.Capture)
+			cp.Claims = d.channelClaimsLocked(c)
+			resp.Captures = append(resp.Captures, cp)
 		}
 	}
 	for _, ch := range d.channels {

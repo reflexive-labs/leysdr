@@ -486,7 +486,14 @@ func (srv *mcpServer) scan(ctx context.Context, _ *mcp.CallToolRequest, in scanA
 		return srv.dryRun(ctx, s.State, &leylinev1.PlanRequest{Request: &leylinev1.PlanRequest_Scan{Scan: o.config()}},
 			true, o.takeOver, note, toolError)
 	}
+	var refused error
+	if note != "" {
+		s.afterStart = func(job *leylinev1.Job) { refused = srv.keepOnlyOurs(ctx, job.GetJobId()) }
+	}
 	scan, _, err := s.sweep(ctx, o)
+	if refused != nil {
+		return nil, nil, refused
+	}
 	if err != nil {
 		return nil, nil, toolError(scanToolFailure(err))
 	}
@@ -1428,6 +1435,11 @@ func (srv *mcpServer) startDecodeJob(ctx context.Context, _ *mcp.CallToolRequest
 	}
 	// The daemon answers StartJob before it has placed the job on a radio, so a job no radio can
 	// take would otherwise read as started. ley watch --detach waits the same way.
+	if note != "" {
+		if err := srv.keepOnlyOurs(ctx, job.GetJobId()); err != nil {
+			return nil, nil, err
+		}
+	}
 	job = s.settledJob(ctx, job)
 	if err := decodeToolEnded(cfg.Decoder, job); err != nil {
 		return nil, nil, toolError(err)

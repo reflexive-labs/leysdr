@@ -110,6 +110,11 @@ func (srv *mcpServer) watch(ctx context.Context, _ *mcp.CallToolRequest, in watc
 	}
 	// A watch the daemon declines after StartJob answered fires nothing, so the agent hears the
 	// reason rather than a banner; ley watch --detach waits the same way.
+	if note != "" {
+		if err := srv.keepOnlyOurs(ctx, job.GetJobId()); err != nil {
+			return nil, nil, err
+		}
+	}
 	job = s.settledJob(ctx, job)
 	if err := decodeToolEnded(o.decoder, job); err != nil {
 		return nil, nil, toolError(err)

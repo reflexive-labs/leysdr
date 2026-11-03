@@ -201,6 +201,9 @@ func (s *verbSession) sweep(ctx context.Context, o scanOptions) (*leylinev1.Scan
 	if err != nil {
 		return nil, nil, err
 	}
+	if s.afterStart != nil {
+		s.afterStart(job)
+	}
 	st := s.app.ErrStyle
 	s.say("sweeping %s to %s\n", units.FormatFrequency(o.minHz), units.FormatFrequency(o.maxHz))
 

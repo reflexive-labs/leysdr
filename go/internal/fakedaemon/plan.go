@@ -3,6 +3,7 @@
 package fakedaemon
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"time"
@@ -16,6 +17,14 @@ import (
 // carrying anything out, so a dry run here predicts what the fake's StartJob does. The daemon's
 // CapturePlanner is the real rule; this keeps the fake's shape of it.
 func (d *Daemon) Plan(ctx context.Context, req *leylinev1.PlanRequest) (*leylinev1.CapturePlan, error) {
+	p, err := d.plan(ctx, req)
+	if d.opts.AfterPlan != nil {
+		d.opts.AfterPlan(req)
+	}
+	return p, err
+}
+
+func (d *Daemon) plan(ctx context.Context, req *leylinev1.PlanRequest) (*leylinev1.CapturePlan, error) {
 	ci := clientFrom(ctx)
 	d.touchUnary(ci)
 	switch r := req.GetRequest().(type) {
@@ -207,7 +216,7 @@ func (d *Daemon) channelClaimsLocked(c *capture) []*leylinev1.Claim {
 				}
 			}
 		}
-		out = append(out, &leylinev1.Claim{
+		cl := &leylinev1.Claim{
 			ClaimId:  "clm_" + ch.GetChannelId(),
 			Holder:   holder,
 			Kind:     leylinev1.ClaimKind_CLAIM_CHANNEL,
@@ -216,7 +225,13 @@ func (d *Daemon) channelClaimsLocked(c *capture) []*leylinev1.Claim {
 			Need: &leylinev1.Claim_Covers{Covers: &leylinev1.Span{
 				FrequencyHz: uint64(int64(c.CenterHz) + ch.GetOffsetHz()), BandwidthHz: ch.GetBandwidthHz(),
 			}},
-		})
+		}
+		// A channel the capture no longer covers is a claim the last move displaced.
+		if ch.GetState() == leylinev1.ChannelState_OUT_OF_CAPTURE {
+			cl.State = leylinev1.ClaimState_CLAIM_DISPLACED
+			cl.DisplacedBy = cmp.Or(c.movedBy, byDaemon())
+		}
+		out = append(out, cl)
 	}
 	return out
 }
