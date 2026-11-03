@@ -275,6 +275,12 @@ The calls for this batch, taken 2026-11-02:
   (that gain is its owner's). `DecodeConfig` gains the `GainWrite` that `ScanConfig` has, so `ley
   decode --gain` overrides the recipe. ADS-B's recipe is 40 dB: at gain 30 the owner's 1090 MHz
   air decoded nothing and at 40 it decoded 19 frames (2026-11-02).
+  Done 2026-11-02, unverified on the owner's radio. Calls the plan left open: `DecodeConfig` has
+  `gains` beside `gain`, as `RecordConfig` and `ScanConfig` do, so `--gain LNA=0,VGA=20` works;
+  a retuned capture's gain comes back when the job ends (an IQ one only when no other IQ job still
+  reads it); a gain the config sent that the radio refuses fails the job, as a recording's does,
+  while a recipe's is skipped on a radio with no gain stage (a file radio, so no check scene's
+  detail moves). `GAIN_AUTO` still sets nothing, and `list_entities` and `ley track` take no gain.
 
 ## After this
 
