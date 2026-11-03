@@ -343,21 +343,24 @@ struct SidebarView: View {
     private func bookmarkRow(_ group: BookmarkGroup) -> some View {
         let b = group.lead
         let tuned = session.tunedHz == b.hz
+        // The entry being renamed, the lead or another: a bookmark added on a frequency that
+        // already has one (＋ on a sweep hit) joins the row, and the row is its editor.
+        let edited = group.entries.first { $0.id == session.editingBookmarkID }
         return BookmarkRow(
-            bookmark: b, count: group.countWords, selected: tuned,
+            bookmark: edited ?? b, count: group.countWords, selected: tuned,
             modified: tuned && session.bookmarkModified,
             recording: group.entries.contains { session.isRecording($0) },
             editing: Binding(
-                get: { session.editingBookmarkID == b.id },
+                get: { edited != nil },
                 set: {
-                    if !$0, session.editingBookmarkID == b.id {
+                    if !$0, let edited, session.editingBookmarkID == edited.id {
                         session.editingBookmarkID = nil
                     }
                 })
         )
         .contentShape(Rectangle())
         .onTapGesture {
-            if session.editingBookmarkID != b.id { session.tune(bookmark: b) }
+            if edited == nil { session.tune(bookmark: b) }
         }
         .contextMenu {
             Button("Tune") { session.tune(bookmark: b) }
@@ -379,7 +382,7 @@ struct SidebarView: View {
             }
         }
         .pressableGroup("sidebar.bookmark.\(ViewIdentifier.slug(b.name))") {
-            if session.editingBookmarkID != b.id { session.tune(bookmark: b) }
+            if edited == nil { session.tune(bookmark: b) }
         }
     }
 
