@@ -213,18 +213,24 @@ struct DecodedRow: View {
 
 /// A label and value table: the label in `label` `inkMuted` in the reading rows' 62 pt column,
 /// the value in `value`, its ink chosen per row (the clipped peak's `accentRec`).
+///
+/// The decoder inspector passes its fields' wider column (`decoderFieldLabelWidth`), so its
+/// grids share one value column, and lets a value wrap: a job's id is wider than what is left.
 struct PartTable: View {
     let rows: [PartTableRow]
     let ink: (PartTableRow) -> Color
+    var labelWidth: CGFloat = Theme.Layout.partTableLabelWidth
+    var wraps = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(rows) { row in
-                HStack(spacing: 0) {
+                HStack(alignment: wraps ? .firstTextBaseline : .center, spacing: 0) {
                     Text(row.label).font(Theme.Font.label).foregroundStyle(Theme.inkMuted)
-                        .frame(width: Theme.Layout.partTableLabelWidth, alignment: .leading)
+                        .frame(width: labelWidth, alignment: .leading)
                     Text(row.value).font(Theme.Font.value).foregroundStyle(ink(row))
-                        .lineLimit(1)
+                        .lineLimit(wraps ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: wraps)
                     Spacer(minLength: 0)
                 }
             }

@@ -532,6 +532,9 @@ extension Theme.Layout {
     /// least gap between a name and its value: a longer name is cut short of it.
     static let decoderFieldLabelWidth: CGFloat = 124
     static let decoderFieldNameGap: CGFloat = 8
+    /// The transmitter's name box's inner padding, taken off its label so the field starts in
+    /// the inspector's value column.
+    static let decoderNameBoxInset: CGFloat = 8
     /// An alert in effect above the log: its padding and corners.
     static let decoderAlertPadding: CGFloat = 10
     static let decoderAlertRadius: CGFloat = 6

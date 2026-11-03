@@ -65,8 +65,12 @@ struct TransmitterSection: View {
             Text("\(deviceID) · \(manifest.name)").font(Theme.Font.value)
                 .foregroundStyle(Theme.inkMuted).lineLimit(1)
             HStack(spacing: 0) {
+                // Its field in the grid's value column below: the box's own padding comes off.
                 Text("Name").font(Theme.Font.label).foregroundStyle(Theme.inkMuted)
-                    .frame(width: Theme.Layout.partTableLabelWidth, alignment: .leading)
+                    .frame(
+                        width: Theme.Layout.decoderFieldLabelWidth
+                            - Theme.Layout.decoderNameBoxInset,
+                        alignment: .leading)
                 // The placeholder in `inkFaint`, as the sidebar filter's is: the field's own
                 // takes the ink and reads as a name already given.
                 TextField("", text: $draft)
@@ -80,12 +84,15 @@ struct TransmitterSection: View {
                         "Your name for \(deviceID), kept in labels.json beside your bookmarks; ley track shows it too. Return saves it, and an empty name removes it."
                     )
             }
-            .padding(.horizontal, 8).padding(.vertical, 4)
+            .padding(.horizontal, Theme.Layout.decoderNameBoxInset).padding(.vertical, 4)
             .background(Theme.ground, in: RoundedRectangle(cornerRadius: 6))
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.border))
             if let e = entity {
-                PartTable(rows: rows(e), ink: { _ in Theme.inkSecondary })
-                    .padding(.top, 4)
+                PartTable(
+                    rows: rows(e), ink: { _ in Theme.inkSecondary },
+                    labelWidth: Theme.Layout.decoderFieldLabelWidth, wraps: true
+                )
+                .padding(.top, 4)
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 14)
@@ -133,8 +140,11 @@ struct RecordSection: View {
                 Text(d.summary(r)).font(Theme.Font.label).foregroundStyle(Theme.ink)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                PartTable(rows: header(r), ink: { _ in Theme.inkSecondary })
-                    .padding(.top, 4)
+                PartTable(
+                    rows: header(r), ink: { _ in Theme.inkSecondary },
+                    labelWidth: Theme.Layout.decoderFieldLabelWidth, wraps: true
+                )
+                .padding(.top, 4)
             }
             .padding(.horizontal, 16).padding(.vertical, 14)
             let fields = DecoderPages.fieldRows(r.fields, manifest: manifest)
