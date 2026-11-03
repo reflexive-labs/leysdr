@@ -147,6 +147,12 @@ extension View {
             return AXWalk.pick(identifier, item: item, ObjectNode(object: window))
         }
 
+        /// The static texts and the buttons' titles of a sheet, in tree order, as its elements
+        /// answer them: a SwiftUI sheet draws its words in its hosting view, not in text fields.
+        static func words(of sheet: NSWindow) -> (texts: [String], buttons: [String]) {
+            AXWalk.words(ObjectNode(object: sheet))
+        }
+
         /// Every element under `window` whose identifier starts with `prefix`, in tree order.
         static func elements(withPrefix prefix: String, in window: NSWindow) -> [AXElementInfo] {
             AXWalk.elements(withPrefix: prefix, TreeTarget(window))
@@ -763,6 +769,25 @@ extension View {
                 return true
             }
             return found
+        }
+
+        static func words(_ root: ObjectNode) -> (texts: [String], buttons: [String]) {
+            var texts: [String] = []
+            var buttons: [String] = []
+            let deadline = Date().addingTimeInterval(walkSeconds)
+            walk(root, depth: 0) { e, _ in
+                if Date() > deadline { return true }
+                switch e.string(kAXRoleAttribute) {
+                case kAXStaticTextRole:
+                    if let v = e.value, !v.isEmpty { texts.append(v) }
+                case kAXButtonRole:
+                    let label = e.string(kAXTitleAttribute) ?? e.string(kAXDescriptionAttribute)
+                    if let label, !label.isEmpty { buttons.append(label) }
+                default: break
+                }
+                return false
+            }
+            return (texts, buttons)
         }
 
         /// The first element of `role` under `root`, depth first.

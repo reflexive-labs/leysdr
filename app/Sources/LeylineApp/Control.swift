@@ -692,6 +692,11 @@ import LeylineClient
                 v.subviews.forEach(visit)
             }
             visit(root)
+            // A SwiftUI sheet (Notify Me…'s) has no text fields of AppKit's to read, and its pop-ups
+            // are buttons titled by their choice, so its words come from its elements instead.
+            if texts.isEmpty {
+                (texts, buttons) = AccessibilityTree.words(of: sheet)
+            }
             return ControlAlert(
                 title: texts.first ?? sheet.title, message: texts.dropFirst().first,
                 buttons: buttons)
