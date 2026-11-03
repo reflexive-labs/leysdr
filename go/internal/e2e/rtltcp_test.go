@@ -5,11 +5,13 @@ package e2e
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -219,5 +221,50 @@ func TestRemoteRadioAgainstRealDaemon(t *testing.T) {
 	}
 	if remembered := e.rememberedEndpoints(); len(remembered) != 0 {
 		t.Fatalf("devices.json after detach: %v", remembered)
+	}
+}
+
+// TestRetuneOverADecoderOnARemoteRadio is the real daemon's plan refusing a terminal's retune that
+// would pause a job (docs/design/claims.md, "In the clients"). A file radio tunes only its own
+// centre, so no fixture reaches it; a radio served over rtl_tcp tunes anywhere.
+func TestRetuneOverADecoderOnARemoteRadio(t *testing.T) {
+	e, _ := setup(t)
+	server := startRTLTCP(t)
+	e.mustRun("devices", "attach", "rtltcp", server.endpoint())
+	// ley follows the job's records until interrupted; with --job the job outlives it.
+	if _, err := e.runFor(2*time.Second, "decode", "aprs", "--job"); err != nil {
+		t.Fatalf("ley decode aprs --job: %v", err)
+	}
+	t.Cleanup(func() {
+		for _, j := range list(e.state(), "jobs") {
+			_, _ = e.run("jobs", "cancel", j.(map[string]any)["jobId"].(string))
+		}
+	})
+	centre := func() float64 {
+		caps := list(e.state(), "captures")
+		if len(caps) != 1 {
+			t.Fatalf("captures: want the decoder's one, got %v", caps)
+		}
+		hz, _ := strconv.ParseFloat(fmt.Sprint(caps[0].(map[string]any)["centerHz"]), 64)
+		return hz
+	}
+	before := centre()
+
+	out, err := e.run("tune", "146.52", "--no-audio", "--persistent")
+	var re *runError
+	if !errors.As(err, &re) {
+		t.Fatalf("a retune over the decoder went ahead: %v\n%s", err, out)
+	}
+	const want = "retuning to 146.520 MHz would pause the aprs decoder on 144.390 MHz; --retune moves it anyway"
+	if !strings.Contains(re.stderr, want) {
+		t.Fatalf("refusal: %q, want %q", re.stderr, want)
+	}
+	if got := centre(); got != before {
+		t.Fatalf("a refusal must not move the radio: %.0f, was %.0f", got, before)
+	}
+
+	e.mustRun("tune", "146.52", "--no-audio", "--persistent", "--retune")
+	if got := centre(); got-1_200_000 > 146_520_000 || got+1_200_000 < 146_520_000 {
+		t.Fatalf("--retune must move the radio over 146.520 MHz: centre %.0f", got)
 	}
 }
