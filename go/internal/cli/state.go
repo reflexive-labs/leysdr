@@ -22,10 +22,11 @@ func newStateCommand(app *App) *cobra.Command {
 		Use:   "state",
 		Short: "Show everything the daemon knows right now",
 		Long: `state prints the daemon's whole picture: the daemon itself, every radio,
-every capture (a radio tuned to a band), every channel (one station picked
-out of a capture: frequency, mode, squelch) and every sink (where the audio
-goes). It is the place to look when something is not doing what you expect,
-and 'ley state --json' is the snapshot scripts and agents should read.`,
+every capture (a radio tuned to a band) with the claims on it (what each
+person, job and view needs from its tuning), every channel (one station
+picked out of a capture: frequency, mode, squelch) and every sink (where the
+audio goes). It is the place to look when something is not doing what you
+expect, and 'ley state --json' is the snapshot scripts and agents should read.`,
 		Example: `  ley state                # the whole picture, as a tree
   ley state --wide         # the same, as flat tables with every column
   ley state --json         # the same as proto3 JSON (GetStateResponse)`,
@@ -161,7 +162,9 @@ func stateHeader(s ui.Style, st *leylinev1.GetStateResponse, now time.Time, used
 type treeNode struct {
 	head   []string
 	detail []string
-	kids   []treeNode
+	// notes are further muted lines under the detail, one each: a capture's claims.
+	notes [][]string
+	kids  []treeNode
 }
 
 // renderStateTree lays the state out by indentation instead of by repeated
@@ -302,7 +305,47 @@ func captureNode(s ui.Style, c *leylinev1.Capture, els []*leylinev1.GainElement)
 	if c.CreatedBy != nil {
 		detail = append(detail, s.Muted("by "+clientLabel(c.CreatedBy)))
 	}
-	return treeNode{head: head, detail: detail}
+	n := treeNode{head: head, detail: detail}
+	for _, cl := range c.GetClaims() {
+		note := []string{s.Muted("claim " + claimWords(cl))}
+		if cl.GetState() == leylinev1.ClaimState_CLAIM_DISPLACED {
+			note = append(note, s.Warn("displaced"))
+		}
+		n.notes = append(n.notes, append(note, s.Muted("by "+clientLabel(cl.GetHolder()))))
+	}
+	return n
+}
+
+// claimWords is one claim as the tree and --wide print it: its priority and
+// kind, then what it needs from the tuning ("job iq centred on 1.090 GHz at
+// 2.4 MSPS", "person channel 146.520 MHz bw 12.5 kHz", "view spectrum").
+func claimWords(cl *leylinev1.Claim) string {
+	words := []string{claimEnumWord(cl.GetPriority().String(), "PRIORITY_"), claimEnumWord(cl.GetKind().String(), "CLAIM_")}
+	switch need := cl.GetNeed().(type) {
+	case *leylinev1.Claim_Covers:
+		hz, bw := need.Covers.GetFrequencyHz(), need.Covers.GetBandwidthHz()
+		switch {
+		case cl.GetKind() == leylinev1.ClaimKind_CLAIM_SWEEP && bw > 0:
+			lo := hz - min(hz, uint64(bw)/2)
+			words = append(words, units.FormatFrequency(lo)+" to "+units.FormatFrequency(lo+uint64(bw)))
+		case bw > 0:
+			words = append(words, units.FormatFrequency(hz), "bw "+formatBandwidth(bw))
+		default:
+			words = append(words, units.FormatFrequency(hz))
+		}
+	case *leylinev1.Claim_Centred:
+		words = append(words, "centred on "+units.FormatFrequency(need.Centred.GetFrequencyHz()))
+	}
+	if r := cl.GetSampleRateHz(); r != 0 {
+		words = append(words, "at "+ratesString([]uint64{r}))
+	}
+	return strings.Join(words, " ")
+}
+
+// claimEnumWord is a claim enum as a lower-case word: PRIORITY_PERSON is
+// "person", CLAIM_IQ is "iq".
+func claimEnumWord(name, prefix string) string {
+	return strings.ToLower(strings.TrimPrefix(name, prefix))
 }
 
 // channelNode is one station picked out of a capture.
@@ -361,6 +404,9 @@ func writeNode(b *strings.Builder, s ui.Style, n treeNode, prefix, branch, cont 
 	writeSegments(b, head, body, n.head, s.Width)
 	if len(n.detail) > 0 {
 		writeSegments(b, body, body, n.detail, s.Width)
+	}
+	for _, note := range n.notes {
+		writeSegments(b, body, body, note, s.Width)
 	}
 	writeNodes(b, s, n.kids, body)
 }
@@ -423,6 +469,28 @@ func captureGains(gs []*leylinev1.GainState, els []*leylinev1.GainElement) strin
 	return stageGainWords(gs, els)
 }
 
+// printClaimsTable is --wide's Claims table: every capture's claims, one row
+// each, left out when no capture has any.
+func printClaimsTable(app *App, st *leylinev1.GetStateResponse) {
+	has := false
+	for _, c := range st.Captures {
+		has = has || len(c.GetClaims()) > 0
+	}
+	if !has {
+		return
+	}
+	fmt.Fprintln(app.Stdout, "\nClaims")
+	w := app.table()
+	fmt.Fprintln(w, "ID\tCAPTURE\tCLAIM\tSTATE\tHOLDER")
+	for _, c := range st.Captures {
+		for _, cl := range c.GetClaims() {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", cl.GetClaimId(), c.CaptureId, claimWords(cl),
+				claimEnumWord(cl.GetState().String(), "CLAIM_"), clientString(cl.GetHolder()))
+		}
+	}
+	w.Flush()
+}
+
 // sinkStrings splits a sink into its kind and the one fact that identifies it.
 func sinkStrings(s *leylinev1.Sink) (kind, detail string) {
 	kind = "?"
@@ -472,6 +540,7 @@ func printStateTables(app *App, st *leylinev1.GetStateResponse) {
 			ratesString([]uint64{c.SampleRate}), enumName(c.State.String()), gains, sinks, clientString(c.CreatedBy))
 	}
 	w.Flush()
+	printClaimsTable(app, st)
 	fmt.Fprintln(app.Stdout, "\nChannels")
 	w = app.table()
 	fmt.Fprintln(w, "ID\tCAPTURE\tFREQ\tOFFSET\tMODE\tBW\tSQUELCH\tSTATE\tPERSISTENT\tOWNER")

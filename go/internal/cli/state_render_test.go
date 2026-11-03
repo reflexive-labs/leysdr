@@ -297,6 +297,63 @@ func TestStateTreeShowsWhatIsPlaying(t *testing.T) {
 	}
 }
 
+// A capture's claims are listed under it, one muted line each, and --wide
+// gives them a table of their own.
+func TestStateListsClaims(t *testing.T) {
+	st := busyState()
+	cli := st.Captures[0].CreatedBy
+	job := &leylinev1.ClientInfo{Kind: "job", Label: "job_01M224S5ZG4DTW0HSZEZ4KJ5AJ", ClientId: "job_01M224S5ZG4DTW0HSZEZ4KJ5AJ"}
+	st.Captures[0].Claims = []*leylinev1.Claim{
+		{
+			ClaimId: "clm_01M224S5ZG4DTW0HSZEZ4KJ5A1", Holder: cli, Kind: leylinev1.ClaimKind_CLAIM_CHANNEL,
+			Priority: leylinev1.ClaimPriority_PRIORITY_PERSON, State: leylinev1.ClaimState_CLAIM_SATISFIED,
+			Need: &leylinev1.Claim_Covers{Covers: &leylinev1.Span{FrequencyHz: 146_520_000, BandwidthHz: 12_500}},
+		},
+		{
+			ClaimId: "clm_01M224S5ZG4DTW0HSZEZ4KJ5A2", Holder: cli, Kind: leylinev1.ClaimKind_CLAIM_LISTEN,
+			Priority: leylinev1.ClaimPriority_PRIORITY_PERSON, State: leylinev1.ClaimState_CLAIM_SATISFIED,
+		},
+		{
+			ClaimId: "clm_01M224S5ZG4DTW0HSZEZ4KJ5A3", Holder: job, Kind: leylinev1.ClaimKind_CLAIM_IQ,
+			Priority: leylinev1.ClaimPriority_PRIORITY_JOB, State: leylinev1.ClaimState_CLAIM_DISPLACED,
+			Need:         &leylinev1.Claim_Centred{Centred: &leylinev1.Centre{FrequencyHz: 1_090_000_000, ToleranceHz: 1000}},
+			SampleRateHz: 2_400_000,
+		},
+		{
+			ClaimId: "clm_01M224S5ZG4DTW0HSZEZ4KJ5A4", Holder: job, Kind: leylinev1.ClaimKind_CLAIM_SWEEP,
+			Priority: leylinev1.ClaimPriority_PRIORITY_JOB, State: leylinev1.ClaimState_CLAIM_SATISFIED,
+			Need: &leylinev1.Claim_Covers{Covers: &leylinev1.Span{FrequencyHz: 146_000_000, BandwidthHz: 4_000_000}},
+		},
+	}
+	out := renderStateTree(ui.Style{Unicode: true, Width: 120}, st)
+	for _, want := range []string{
+		"claim person channel 146.520 MHz bw 12.5 kHz  by cli:ley",
+		"claim person listen  by cli:ley",
+		"claim job iq centred on 1.090 GHz at 2.4 MSPS  displaced  by job:job_01M224S5ZG4DTW0HSZEZ4KJ5AJ",
+		"claim job sweep 144.000 MHz to 148.000 MHz",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("tree missing %q:\n%s", want, out)
+		}
+	}
+	if got := ui.Strip(renderStateTree(ui.Style{Color: true, Unicode: true, Width: 120}, st)); got != out {
+		t.Fatalf("Strip(styled) != plain\n--- styled\n%s\n--- plain\n%s", got, out)
+	}
+	buf := &bytes.Buffer{}
+	printStateTables(&App{Stdout: buf, Style: ui.Style{}}, st)
+	for _, want := range []string{"Claims", "clm_01M224S5ZG4DTW0HSZEZ4KJ5A3", "displaced", "job iq centred on 1.090 GHz"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("--wide missing %q:\n%s", want, buf.String())
+		}
+	}
+	// A state with no claims prints no Claims table.
+	buf.Reset()
+	printStateTables(&App{Stdout: buf, Style: ui.Style{}}, busyState())
+	if strings.Contains(buf.String(), "Claims") {
+		t.Errorf("a Claims table with nothing in it:\n%s", buf.String())
+	}
+}
+
 func TestStoreSize(t *testing.T) {
 	for _, c := range []struct {
 		n    uint64

@@ -1,8 +1,9 @@
 state prints the daemon's whole picture: the daemon itself, every radio,
-every capture (a radio tuned to a band), every channel (one station picked
-out of a capture: frequency, mode, squelch) and every sink (where the audio
-goes). It is the place to look when something is not doing what you expect,
-and 'ley state --json' is the snapshot scripts and agents should read.
+every capture (a radio tuned to a band) with the claims on it (what each
+person, job and view needs from its tuning), every channel (one station
+picked out of a capture: frequency, mode, squelch) and every sink (where the
+audio goes). It is the place to look when something is not doing what you
+expect, and 'ley state --json' is the snapshot scripts and agents should read.
 
 Usage:
   ley state [flags]

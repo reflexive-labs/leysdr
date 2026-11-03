@@ -756,6 +756,14 @@ responds. This screen remains until the terminal dashboard replaces it on a TTY
 (`docs/plans/user-stories.md`); its renderer (`renderOrientation` in `go/internal/cli`) is the one
 function the dashboard reuses for its no-daemon and no-device states, so the words stay the same.
 
+**`ley state` lists each capture's claims** (`Capture.claims`, `docs/design/claims.md`): one
+muted line per claim under the capture, its priority, kind and need, then its holder (`claim
+person channel 146.520 MHz bw 12.5 kHz  by cli:ley`, `claim job iq centred on 1.090 GHz at 2.4
+MSPS  by job:job_…`, `claim view spectrum  by app:Leyline`), with `displaced` before the holder
+when the capture no longer gives the claim what it needs. `--wide` adds a Claims table (id,
+capture, claim, state, holder) when any capture has one, and `--json` carries them as the
+daemon sent them.
+
 **Auto squelch and the daemon-side follow-up.** `tune --squelch auto` (the default for NFM and
 AM, whatever the run prints; `--squelch off` opts out) and `set squelch auto` subscribe one FFT row of the capture, take the median bin
 as the floor, scale it to the channel bandwidth (`+10·log10(bw / bin width)`) and write
