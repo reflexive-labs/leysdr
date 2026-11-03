@@ -133,8 +133,10 @@ When a plan displaces a claim:
   in `Capture` and in each bulk frame. A consumer compares generations, so a retune away and back
   between two polls is still seen.
 - **Returning is automatic when a job did the displacing.** When a claim that displaced others is
-  released (a `take_over` job ends, a sweep finishes), the daemon retunes to satisfy the
-  highest-priority displaced claims, rate included. This replaces `restoreCenterHz` and the
+  released (a `take_over` job ends, a sweep finishes), the daemon puts the capture back to the
+  tuning the job found (rate, centre, then the gains it set), which satisfied every claim it
+  displaced; a return that would displace a claim made since is held and retried at the next
+  release. This replaces `restoreCenterHz` and the
   sweep's restore. When a *person* displaced a job, nothing returns automatically: the person is
   at the controls, and the job waits.
 - **A shared capture lives while any claim holds it.** It is destroyed when its last claim is
