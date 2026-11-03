@@ -566,13 +566,15 @@ Activity: `last_interactive_write_ns` is updated by any capture/channel write wh
 Claims (`SessionStore+Claims.swift`, `../design/claims.md`): each `CaptureEntry` keeps a ledger of
 what every consumer needs from the capture's tuning, oldest first, and `captureProto` puts it on the
 wire as `Capture.claims`, so `GetState` and every capture event carry it and a destroyed capture
-takes its claims with it. Nothing places or retunes by it yet (CL-2 onwards); `inUse` reads it.
+takes its claims with it. `CapturePlanner` (below) places by it; nothing retunes or returns by it
+yet (CL-3 onwards).
 Every consumer makes its claim when it starts and releases it when it ends, cancel and failure
 included, and each change publishes the capture:
 
 | consumer | made by | kind, priority | need |
 |---|---|---|---|
 | a channel | `createChannel`, released in `destroyChannel` | CHANNEL, PERSON for an interactive owner and JOB for `job:<id>` | covers: the channel's absolute frequency and bandwidth, read from the channel on every publish |
+| a recording of somebody's channel (`RecordConfig.channel_id`) | the record job, released when it ends | CHANNEL, JOB (IQ, JOB for a `RAW_IQ` recording) | the borrowed channel's span, read as a channel's is (the capture's centre when it started, for IQ) |
 | an IQ reader (IQ decode, `ley record --iq`) | the allocator's `captureIQ` lease, released by the lease | IQ, JOB | covers the frequency; a dedicated decoder's is `centred` within 1 kHz at its rate |
 | a capture's FFT, persistence or IQ bulk stream | `StreamRegistry.subscribe`, released on close (unsubscribe, reap, teardown) | SPECTRUM, VIEW | none |
 | a sweep or monitor | `claimSweep`, released after the lease has put the capture back | SWEEP, JOB | covers the range |
@@ -587,6 +589,30 @@ a frequency outside the span, an off-centre capture or the wrong rate), SATISFIE
 `displaced_by` and `displaced_since_ns` are not set yet. A channel's audio streams ride on the
 channel's claim, and `isSwept` (which `refuseIfSwept` and `createCapture` read) is "a SWEEP claim
 is on the capture".
+
+`CapturePlanner.plan(request, state)` (`CapturePlanner.swift`, `../design/claims.md`, "One
+decision") answers every placement question from a `GetState` snapshot and the time, and changes
+nothing. A request is a job's channel, a job's IQ reader (dedicated or not), a sweep, or a retune
+of a capture by a person or a job; the answer is SHARE a capture, CREATE one on an idle radio,
+RETUNE a capture (with the claims the new tuning leaves unsatisfied, a view or a presence never
+among them), or DECLINE with the reason, the code and the blocking claims (every claim but a view
+on the capture that stopped it). `walk` is the same decision as an ordered list: every candidate
+the allocator would try and every one it passed over with why. `SessionCaptureAllocator` carries
+out the walk, attempt by attempt, because carrying one out can fail (a radio that will not open, a
+retune the tuner refuses, a dedicated capture that did not land centred); the decline names the
+last reason met, a failed attempt's included, which keeps every reason as it was before the
+planner. `Control.Plan` returns `plan`'s answer.
+
+The order and the don't-disturb test are today's, and differ from the design's single priority
+rule in three places, left for CL-3 and CL-5: a job is declined by any CHANNEL or IQ claim and
+by a person's presence (a live audio sink, a write in the last 60 s), whether or not the retune
+would leave that claim satisfied; a sweep's capture is passed over silently by a channel or IQ
+request, so a radio held only by a sweep declines `NO_DEVICE`; and a radio whose span cannot
+reach the frequency at all says "<model> cannot tune <f>" as `DEVICE_BUSY`, where one that cannot
+be centred for a dedicated decoder says "cannot tune to" as `NO_DEVICE`. A retune by a person is
+declined only by a sweep (`DEVICE_SWEEPING`), a tuning range or a rate the radio lacks, and does
+not count the writer's own claims as displaced; a job's is declined by the don't-disturb test
+unless it takes over.
 
 ### Control service
 

@@ -200,6 +200,38 @@ final class ClaimsLedgerTests: XCTestCase {
         }
     }
 
+    /// A recording of somebody's channel holds a JOB channel claim of its own on that channel's
+    /// span beside the listener's, and releases it when it ends; the listener's stays.
+    func testABorrowedChannelHoldsAJobClaim() async throws {
+        try requireFixture("nfm_tone.cf32")
+        let recordings = try makeTempDir("recordings")
+        defer { try? FileManager.default.removeItem(atPath: recordings) }
+        try await withDaemon(recordingsPath: recordings) { c in
+            let device = try await self.attach(c, "nfm_tone.cf32")
+            let captureID = try await self.capture(c, on: device)
+            var create = Leyline_V1_CreateChannelRequest()
+            create.captureID = captureID
+            create.offsetHz = 100_000
+            create.mode = .nfm
+            let channel = try await c.control.createChannel(create, metadata: testMetadata)
+            var config = Leyline_V1_RecordConfig()
+            config.channelID = channel.channelID
+            let started = try await c.jobs.startJob(.with { $0.record = config }, metadata: testMetadata)
+            let held = try await self.waitForClaims(c, "the recording's claim on the borrowed channel") {
+                $0.contains { $0.holder.clientID == started.jobID }
+            }
+            let claim = try XCTUnwrap(held.first { $0.holder.clientID == started.jobID })
+            XCTAssertEqual(claim.kind, .claimChannel)
+            XCTAssertEqual(claim.priority, .priorityJob)
+            XCTAssertEqual(claim.covers.frequencyHz, 146_620_000, "the borrowed channel's span")
+            XCTAssertEqual(claim.covers.bandwidthHz, channel.bandwidthHz)
+            XCTAssertEqual(held.first?.holder.clientID, testClientID, "the listener's claim is still the first")
+            try await self.cancel(c, started.jobID)
+            let left = try await self.waitForClaims(c, "cancel releases it") { !$0.contains { $0.holder.clientID == started.jobID } }
+            XCTAssertTrue(left.contains { $0.kind == .claimChannel && $0.holder.clientID == testClientID }, "the listener's stays")
+        }
+    }
+
     /// IQ readers: an IQ decode job and an IQ recording each hold a JOB IQ claim, a dedicated
     /// decoder's needing the centre and its rate, and each goes on cancel or failure.
     func testIQReadersAreIQClaims() async throws {

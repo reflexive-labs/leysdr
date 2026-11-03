@@ -62,245 +62,200 @@ actor SessionCaptureAllocator: CaptureAllocator {
         }
     }
 
-    // MARK: One channel (decode jobs, and watch jobs once they are built)
+    /// The plan for `request` as things stand, without carrying it out (`Control.Plan`).
+    func plan(_ request: PlanRequest) async -> Plan {
+        CapturePlanner.plan(request, state: await store.snapshot(scope: .daemon))
+    }
 
-    /// The order and the reasons are the design doc's (docs/design/decoders.md, "Decisions": "A
-    /// decode job is a job"): a capture that already covers the frequency on any device, else a
-    /// device with no capture, else a capture the don't-disturb test calls free, else a decline
-    /// naming who has the radio. `gains` go on a capture of step 2 or 3 and never on step 1's,
-    /// whose gain is its owner's (`setGains`).
+    /// Where a walk stands while the allocator carries it out: the reason and code the decline
+    /// will give if nothing lands.
+    private struct Progress {
+        var reason: String
+        var code = EngineError.Code.deviceBusy
+
+        init(_ walk: PlanWalk) { reason = walk.firstReason }
+
+        mutating func pass(_ step: PlanWalk.Step) {
+            guard case .pass(let why, let c, _) = step else { return }
+            reason = why
+            if let c { code = c }
+        }
+
+        mutating func failed(_ why: String, code c: String? = nil) {
+            reason = why
+            if let c { code = c }
+        }
+
+        func declined(_ walk: PlanWalk) -> AllocationResult {
+            .declined(code: walk.sawDevice ? code : EngineError.Code.noDevice, reason: reason)
+        }
+    }
+
+    // MARK: One channel (decode jobs, audio recordings)
+
+    /// Carries out `CapturePlanner`'s walk for a channel: each attempt in order until one lands.
+    /// `gains` go on a capture the job created or retuned and never on a shared one, whose gain is
+    /// its owner's (`setGains`).
     private func allocateChannel(frequencyHz: UInt64, bandwidthHz: UInt32, mode: DemodMode,
                                  deviceID wanted: DeviceID?, takeOver: Bool, gains: [GainRequest],
                                  job: JobID) async -> AllocationResult
     {
         let state = await store.snapshot(scope: .daemon)
         let bw = bandwidthHz == 0 ? mode.defaultBandwidthHz : bandwidthHz
+        let walk = CapturePlanner.walk(.channel(frequencyHz: frequencyHz, bandwidthHz: bw, mode: mode,
+                                                deviceID: wanted?.string, takeOver: takeOver), state: state)
         let owner = ClientContext.job(job)
-        var sawDevice = false
-        var lastReason = "no radio here can hear \(fmt(frequencyHz))"
-
-        // 1. A capture that already covers the frequency. This disturbs nobody: the channel sits
-        //    inside a span somebody is already listening to.
-        for cap in state.captures {
-            if let want = wanted, cap.deviceID != want.string { continue }
-            guard let id = CaptureID(string: cap.captureID), await !store.isSwept(id) else { continue }
-            sawDevice = true
-            let offset = Int64(frequencyHz) - Int64(cap.centerHz)
-            guard SessionStore.fits(offsetHz: offset, bandwidthHz: bw, sampleRate: cap.sampleRate) else { continue }
-            if let lease = await open(captureID: id, offsetHz: offset, bandwidthHz: bw, mode: mode,
-                                      frequencyHz: frequencyHz, owner: owner, createdCapture: false,
-                                      restoreCenterHz: nil, gainOutcome: await leftAsFound(id, gains)) {
-                return .channel(lease)
-            }
-        }
-
-        // 2. A radio with nothing on it. The capture is centred a quarter-span below the channel,
-        //    so the channel sits clear of the tuner's own DC spike and inside the flat part of the
-        //    passband.
-        for device in state.devices where device.state != .disconnected {
-            if let want = wanted, device.deviceID != want.string { continue }
-            guard state.captures.first(where: { $0.deviceID == device.deviceID }) == nil else { continue }
-            guard let deviceID = DeviceID(string: device.deviceID) else { continue }
-            sawDevice = true
-            let rate = defaultRate(device)
-            guard let centre = channelCentre(frequencyHz: frequencyHz, bandwidthHz: bw, device: device, rate: rate) else {
-                lastReason = "\(device.model) cannot tune \(fmt(frequencyHz))"
+        var progress = Progress(walk)
+        for step in walk.steps {
+            guard case .attempt(let plan) = step else {
+                progress.pass(step)
                 continue
             }
-            do {
-                let id = try await store.createCapture(deviceID: deviceID, centerHz: centre, sampleRate: rate, by: .daemon).id
-                let outcome = await setGains(gains, on: id)
-                if let lease = await open(captureID: id, offsetHz: Int64(frequencyHz) - Int64(centre), bandwidthHz: bw,
-                                          mode: mode, frequencyHz: frequencyHz, owner: owner, createdCapture: true,
-                                          restoreCenterHz: nil, gainOutcome: outcome) {
+            switch plan {
+            case .share(let captureID):
+                // Nothing moves, so this disturbs nobody: the channel sits inside a span somebody
+                // is already listening to.
+                guard let id = CaptureID(string: captureID), await !store.isSwept(id),
+                      let cap = state.captures.first(where: { $0.captureID == captureID }) else { continue }
+                if let lease = await open(captureID: id, offsetHz: Int64(frequencyHz) - Int64(cap.centerHz), bandwidthHz: bw,
+                                          mode: mode, frequencyHz: frequencyHz, owner: owner, createdCapture: false,
+                                          restoreCenterHz: nil, gainOutcome: await leftAsFound(id, gains)) {
                     return .channel(lease)
                 }
-                await store.destroyCapture(id: id, by: .daemon)
-            } catch {
-                lastReason = (error as? EngineError)?.message ?? "\(error)"
-                log.debug("decode job could not open \(device.deviceID): \(lastReason)")
-            }
-        }
-
-        // 3. A capture nobody is using, retuned. This is the first step that disturbs anything, so
-        //    it is the last one tried.
-        for cap in state.captures {
-            if let want = wanted, cap.deviceID != want.string { continue }
-            guard let id = CaptureID(string: cap.captureID), await !store.isSwept(id) else { continue }
-            if !takeOver, let why = inUse(cap, state: state) {
-                lastReason = why
+            case .create(let device, let centre, let rate):
+                guard let deviceID = DeviceID(string: device) else { continue }
+                do {
+                    let id = try await store.createCapture(deviceID: deviceID, centerHz: centre, sampleRate: rate, by: .daemon).id
+                    let outcome = await setGains(gains, on: id)
+                    if let lease = await open(captureID: id, offsetHz: Int64(frequencyHz) - Int64(centre), bandwidthHz: bw,
+                                              mode: mode, frequencyHz: frequencyHz, owner: owner, createdCapture: true,
+                                              restoreCenterHz: nil, gainOutcome: outcome) {
+                        return .channel(lease)
+                    }
+                    await store.destroyCapture(id: id, by: .daemon)
+                } catch {
+                    progress.failed((error as? EngineError)?.message ?? "\(error)")
+                    log.debug("decode job could not open \(device): \(progress.reason)")
+                }
+            case .retune(let captureID, let centre, _, _):
+                guard let id = CaptureID(string: captureID), await !store.isSwept(id),
+                      let cap = state.captures.first(where: { $0.captureID == captureID }),
+                      let engine = await store.captureEngine(id) else { continue }
+                let before = cap.centerHz
+                do {
+                    try await engine.retune(centerHz: centre)
+                } catch {
+                    progress.failed((error as? EngineError)?.message ?? "\(error)")
+                    continue
+                }
+                await store.publishCapture(id)
+                let entryGains = await engine.snapshot.gains
+                let outcome = await setGains(gains, on: id)
+                if let lease = await open(captureID: id, offsetHz: Int64(frequencyHz) - Int64(centre), bandwidthHz: bw,
+                                          mode: mode, frequencyHz: frequencyHz, owner: owner, createdCapture: false,
+                                          restoreCenterHz: before, gainOutcome: outcome,
+                                          restoreGains: gains.isEmpty ? [] : entryGains) {
+                    return .channel(lease)
+                }
+                try? await engine.retune(centerHz: before)
+                if !gains.isEmpty { await restoreGainStates(entryGains, on: engine) }
+                await store.publishCapture(id)
+            case .decline:
                 continue
             }
-            guard let device = state.devices.first(where: { $0.deviceID == cap.deviceID }),
-                  let centre = channelCentre(frequencyHz: frequencyHz, bandwidthHz: bw, device: device, rate: cap.sampleRate),
-                  let engine = await store.captureEngine(id) else { continue }
-            let before = cap.centerHz
-            do {
-                try await engine.retune(centerHz: centre)
-            } catch {
-                lastReason = (error as? EngineError)?.message ?? "\(error)"
-                continue
-            }
-            await store.publishCapture(id)
-            let entryGains = await engine.snapshot.gains
-            let outcome = await setGains(gains, on: id)
-            if let lease = await open(captureID: id, offsetHz: Int64(frequencyHz) - Int64(centre), bandwidthHz: bw,
-                                      mode: mode, frequencyHz: frequencyHz, owner: owner, createdCapture: false,
-                                      restoreCenterHz: before, gainOutcome: outcome,
-                                      restoreGains: gains.isEmpty ? [] : entryGains) {
-                return .channel(lease)
-            }
-            try? await engine.retune(centerHz: before)
-            if !gains.isEmpty { await restoreGainStates(entryGains, on: engine) }
-            await store.publishCapture(id)
         }
-        return .declined(code: sawDevice ? EngineError.Code.deviceBusy : EngineError.Code.noDevice, reason: lastReason)
+        return progress.declined(walk)
     }
 
-    // MARK: One capture read as IQ (an IQ decode job, DecoderSignal SIGNAL_IQ)
+    // MARK: One capture read as IQ (an IQ decode job, an IQ recording)
 
-    /// The same order and reasons as `allocateChannel` (docs/design/decoders.md, "Multiplexing"),
-    /// but an IQ decoder receives the whole capture band, so "covers the frequency" is the capture
-    /// span rather than a channel fit, and a created capture is centred on the frequency. The
-    /// don't-disturb `inUse` check, the `take_over` semantics and the NO_DEVICE / DEVICE_BUSY
-    /// declines are unchanged. IQ captures are shareable in principle, so a reused one gets an IQ claim
-    /// rather than an exclusive one; a sweep's capture (which is) is still left alone.
-    ///
-    /// `dedicated` (the manifest's `needs_dedicated_capture`) narrows step 1 to a capture centred on
-    /// the frequency, within `centredToleranceHz`, at the rate the job would create one at; any
-    /// other capture on the device is retuned (and set to that rate) by step 3 under the same
-    /// don't-disturb and `take_over` rules, or the job is declined with the reason. A decoder that
-    /// reads a wide signal (a 2 MHz Mode S frame) is clipped by an off-centre span. A device that
-    /// cannot be centred there (a file radio, which plays what it recorded, or a tuner whose range
-    /// stops short) is no candidate at all, and a capture that does not land where it was asked is
-    /// put back as it was: steps 2 and 3 read where it ended up before they hand it over, and the
-    /// decline says which radio cannot tune where, as `NO_DEVICE` when that is the last reason.
-    ///
-    /// `gains` are read as `allocateChannel` reads them: set on a capture of step 2 or 3, put back
-    /// on release of step 3's, never set on step 1's.
+    /// Carries out the planner's walk for an IQ reader. A shared capture gets the job's IQ claim;
+    /// a sweep's is never offered. A created or retuned capture is read back before it is handed
+    /// over: a dedicated decoder reads only one that landed centred at its rate, and one that did
+    /// not is destroyed or put back as it was, with "<model> cannot tune to <f>" as the reason and
+    /// `NO_DEVICE` as the code. `gains` are read as `allocateChannel` reads them.
     private func allocateCaptureIQ(frequencyHz: UInt64, sampleRateHz wantedRate: UInt64,
                                    deviceID wanted: DeviceID?, takeOver: Bool, dedicated: Bool,
                                    gains: [GainRequest], job: JobID) async -> AllocationResult
     {
         let state = await store.snapshot(scope: .daemon)
-        var sawDevice = false
-        var lastReason = "no radio here can hear \(fmt(frequencyHz))"
-        // DEVICE_BUSY unless the last reason is that a radio cannot be centred there.
-        var lastCode = EngineError.Code.deviceBusy
-
-        // 1. A capture whose span already covers the frequency (centred on it, for a dedicated
-        //    decoder). This disturbs nobody: the decoder reads a band somebody is already
-        //    listening to.
-        for cap in state.captures {
-            if let want = wanted, cap.deviceID != want.string { continue }
-            guard let id = CaptureID(string: cap.captureID), await !store.isSwept(id) else { continue }
-            sawDevice = true
-            if dedicated {
-                guard let device = state.devices.first(where: { $0.deviceID == cap.deviceID }),
-                      isCentred(centerHz: cap.centerHz, sampleRate: cap.sampleRate, on: frequencyHz,
-                                rate: iqRate(wantedRate, device: device))
-                else { continue }
-            }
-            guard spanCovers(centerHz: cap.centerHz, rate: cap.sampleRate, frequencyHz: frequencyHz),
-                  let engine = await store.captureEngine(id) else { continue }
-            return .captureIQ(await iqLease(id, engine: engine, rate: cap.sampleRate, created: false, job: job,
-                                            need: iqNeed(frequencyHz, dedicated: dedicated), dedicated: dedicated,
-                                            gainOutcome: await leftAsFound(id, gains)))
-        }
-
-        // 2. A radio with nothing on it. The capture is centred on the frequency (clamped to a
-        //    tunable point) so the whole band the decoder wants sits inside the span.
-        for device in state.devices where device.state != .disconnected {
-            if let want = wanted, device.deviceID != want.string { continue }
-            guard state.captures.first(where: { $0.deviceID == device.deviceID }) == nil else { continue }
-            guard let deviceID = DeviceID(string: device.deviceID) else { continue }
-            sawDevice = true
-            let rate = iqRate(wantedRate, device: device)
-            guard let centre = iqCentre(frequencyHz: frequencyHz, device: device, rate: rate) else {
-                lastReason = "\(device.model) cannot tune \(fmt(frequencyHz))"
+        let walk = CapturePlanner.walk(.iq(frequencyHz: frequencyHz, sampleRateHz: wantedRate, deviceID: wanted?.string,
+                                           takeOver: takeOver, dedicated: dedicated), state: state)
+        let need = iqNeed(frequencyHz, dedicated: dedicated)
+        var progress = Progress(walk)
+        for step in walk.steps {
+            guard case .attempt(let plan) = step else {
+                progress.pass(step)
                 continue
             }
-            if dedicated, !isCentred(centerHz: centre, sampleRate: rate, on: frequencyHz, rate: rate) {
-                lastReason = cannotCentre(device, on: frequencyHz)
-                lastCode = EngineError.Code.noDevice
-                continue
-            }
-            do {
-                let id = try await store.createCapture(deviceID: deviceID, centerHz: centre, sampleRate: rate, by: .daemon).id
-                guard let engine = await store.captureEngine(id) else {
-                    await store.destroyCapture(id: id, by: .daemon)
-                    continue
-                }
-                if dedicated {
-                    let made = await engine.snapshot
-                    guard isCentred(centerHz: made.centerHz, sampleRate: made.sampleRate, on: frequencyHz, rate: rate) else {
+            switch plan {
+            case .share(let captureID):
+                guard let id = CaptureID(string: captureID), await !store.isSwept(id),
+                      let cap = state.captures.first(where: { $0.captureID == captureID }),
+                      let engine = await store.captureEngine(id) else { continue }
+                return .captureIQ(await iqLease(id, engine: engine, rate: cap.sampleRate, created: false, job: job,
+                                                need: need, dedicated: dedicated,
+                                                gainOutcome: await leftAsFound(id, gains)))
+            case .create(let device, let centre, let rate):
+                guard let deviceID = DeviceID(string: device),
+                      let descriptor = state.devices.first(where: { $0.deviceID == device }) else { continue }
+                do {
+                    let id = try await store.createCapture(deviceID: deviceID, centerHz: centre, sampleRate: rate, by: .daemon).id
+                    guard let engine = await store.captureEngine(id) else {
                         await store.destroyCapture(id: id, by: .daemon)
-                        lastReason = cannotCentre(device, on: frequencyHz)
-                        lastCode = EngineError.Code.noDevice
                         continue
                     }
+                    if dedicated {
+                        let made = await engine.snapshot
+                        guard CapturePlanner.isCentred(centerHz: made.centerHz, sampleRate: made.sampleRate,
+                                                       on: frequencyHz, rate: rate) else {
+                            await store.destroyCapture(id: id, by: .daemon)
+                            progress.failed(CapturePlanner.cannotCentre(descriptor, on: frequencyHz), code: EngineError.Code.noDevice)
+                            continue
+                        }
+                    }
+                    let outcome = await setGains(gains, on: id)
+                    return .captureIQ(await iqLease(id, engine: engine, rate: rate, created: true, job: job,
+                                                    need: need, dedicated: dedicated, gainOutcome: outcome))
+                } catch {
+                    progress.failed((error as? EngineError)?.message ?? "\(error)", code: EngineError.Code.deviceBusy)
+                    log.debug("iq decode job could not open \(device): \(progress.reason)")
                 }
-                let outcome = await setGains(gains, on: id)
-                return .captureIQ(await iqLease(id, engine: engine, rate: rate, created: true, job: job,
-                                                need: iqNeed(frequencyHz, dedicated: dedicated), dedicated: dedicated,
-                                                gainOutcome: outcome))
-            } catch {
-                lastReason = (error as? EngineError)?.message ?? "\(error)"
-                lastCode = EngineError.Code.deviceBusy
-                log.debug("iq decode job could not open \(device.deviceID): \(lastReason)")
-            }
-        }
-
-        // 3. A capture nobody is using, retuned onto the frequency. The first step that disturbs
-        //    anything, so it is last. It is reused, not created, so the lease leaves it on release.
-        for cap in state.captures {
-            if let want = wanted, cap.deviceID != want.string { continue }
-            guard let id = CaptureID(string: cap.captureID), await !store.isSwept(id) else { continue }
-            guard let device = state.devices.first(where: { $0.deviceID == cap.deviceID }) else { continue }
-            // A dedicated decoder also needs its rate; any other takes the capture's.
-            let rate = dedicated ? iqRate(wantedRate, device: device) : cap.sampleRate
-            let centre = iqCentre(frequencyHz: frequencyHz, device: device, rate: rate)
-            // A radio that cannot be centred there is no candidate, whoever is using it: taking it
-            // over would only move it to where the decoder still cannot read.
-            if dedicated, centre.map({ isCentred(centerHz: $0, sampleRate: rate, on: frequencyHz, rate: rate) }) != true {
-                lastReason = cannotCentre(device, on: frequencyHz)
-                lastCode = EngineError.Code.noDevice
-                continue
-            }
-            if !takeOver, let why = inUse(cap, state: state) {
-                lastReason = why
-                lastCode = EngineError.Code.deviceBusy
-                continue
-            }
-            guard let centre, let engine = await store.captureEngine(id) else { continue }
-            do {
-                if rate != cap.sampleRate { try await engine.setSampleRate(rate) }
-                try await engine.retune(centerHz: centre)
-            } catch {
-                lastReason = (error as? EngineError)?.message ?? "\(error)"
-                lastCode = EngineError.Code.deviceBusy
-                await restore(engine, to: cap, id: id)
-                continue
-            }
-            // The retune returned, but a dedicated decoder reads only a capture that is where it
-            // asked: one that landed anywhere else is put back and declined, not handed over.
-            if dedicated {
-                let now = await engine.snapshot
-                guard isCentred(centerHz: now.centerHz, sampleRate: now.sampleRate, on: frequencyHz, rate: rate) else {
-                    lastReason = cannotCentre(device, on: frequencyHz)
-                    lastCode = EngineError.Code.noDevice
+            case .retune(let captureID, let centre, let rate, _):
+                guard let id = CaptureID(string: captureID), await !store.isSwept(id),
+                      let cap = state.captures.first(where: { $0.captureID == captureID }),
+                      let descriptor = state.devices.first(where: { $0.deviceID == cap.deviceID }),
+                      let engine = await store.captureEngine(id) else { continue }
+                do {
+                    if rate != cap.sampleRate { try await engine.setSampleRate(rate) }
+                    try await engine.retune(centerHz: centre)
+                } catch {
+                    progress.failed((error as? EngineError)?.message ?? "\(error)", code: EngineError.Code.deviceBusy)
                     await restore(engine, to: cap, id: id)
                     continue
                 }
+                // The retune returned, but a dedicated decoder reads only a capture that is where it
+                // asked: one that landed anywhere else is put back and declined, not handed over.
+                if dedicated {
+                    let now = await engine.snapshot
+                    guard CapturePlanner.isCentred(centerHz: now.centerHz, sampleRate: now.sampleRate,
+                                                   on: frequencyHz, rate: rate) else {
+                        progress.failed(CapturePlanner.cannotCentre(descriptor, on: frequencyHz), code: EngineError.Code.noDevice)
+                        await restore(engine, to: cap, id: id)
+                        continue
+                    }
+                }
+                let entryGains = await engine.snapshot.gains
+                let outcome = await setGains(gains, on: id)
+                await store.publishCapture(id)
+                return .captureIQ(await iqLease(id, engine: engine, rate: rate, created: false, job: job,
+                                                need: need, dedicated: dedicated,
+                                                gainOutcome: outcome, restoreGains: gains.isEmpty ? [] : entryGains))
+            case .decline:
+                continue
             }
-            let entryGains = await engine.snapshot.gains
-            let outcome = await setGains(gains, on: id)
-            await store.publishCapture(id)
-            return .captureIQ(await iqLease(id, engine: engine, rate: rate, created: false, job: job,
-                                            need: iqNeed(frequencyHz, dedicated: dedicated), dedicated: dedicated,
-                                            gainOutcome: outcome, restoreGains: gains.isEmpty ? [] : entryGains))
         }
-        return .declined(code: sawDevice ? lastCode : EngineError.Code.noDevice, reason: lastReason)
+        return progress.declined(walk)
     }
 
     /// Puts a capture a declined IQ job retuned back to the rate and centre it had, as a declined
@@ -310,13 +265,6 @@ actor SessionCaptureAllocator: CaptureAllocator {
         if now.sampleRate != cap.sampleRate { try? await engine.setSampleRate(cap.sampleRate) }
         if now.centerHz != cap.centerHz { try? await engine.retune(centerHz: cap.centerHz) }
         await store.publishCapture(id)
-    }
-
-    /// Why `device` is no capture for a dedicated decoder on `frequencyHz`. A file radio says what
-    /// it is, since nothing can move where its recording was made.
-    private func cannotCentre(_ device: Leyline_V1_DeviceDescriptor, on frequencyHz: UInt64) -> String {
-        let why = device.driver == FilePlaybackDevice.driverName ? " (a file radio plays what it recorded)" : ""
-        return "\(device.model) cannot tune to \(fmt(frequencyHz))\(why)"
     }
 
     /// A lease on `id` for `job`, with the job's IQ claim on the capture until it is released:
@@ -372,7 +320,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
         return outcome
     }
 
-    /// The outcome for a capture of step 1, which already covered the frequency: its gain is its
+    /// The outcome for a shared capture, which already covered the frequency: its gain is its
     /// owner's, so nothing is set, and the job is told what it was left at.
     private func leftAsFound(_ id: CaptureID, _ requests: [GainRequest]) async -> LeaseGainOutcome {
         guard !requests.isEmpty else { return .notAsked }
@@ -380,75 +328,8 @@ actor SessionCaptureAllocator: CaptureAllocator {
     }
 
     /// How far a capture's centre may sit from where a dedicated IQ decoder would put it and still
-    /// count as centred: a tuner's own step, not a fraction of the span.
-    static let centredToleranceHz: UInt64 = 1_000
-
-    /// Whether a capture at `centerHz` and `sampleRate` is the one a dedicated IQ decoder needs:
-    /// at exactly `rate`, centred within `centredToleranceHz` of the frequency itself. Not of the
-    /// nearest point the device tunes: a file radio's only point is where its recording was made,
-    /// and a capture there is centred on whatever that was.
-    private func isCentred(centerHz: UInt64, sampleRate: UInt64, on frequencyHz: UInt64, rate: UInt64) -> Bool {
-        guard sampleRate == rate else { return false }
-        let off = centerHz > frequencyHz ? centerHz - frequencyHz : frequencyHz - centerHz
-        return off <= Self.centredToleranceHz
-    }
-
-    /// Whether a capture centred at `centerHz` running at `rate` covers `frequencyHz` at all: the
-    /// frequency inside [centre - rate/2, centre + rate/2]. An IQ decoder takes the whole span, so
-    /// this is the reuse test rather than the channel-fit `SessionStore.fits`.
-    private func spanCovers(centerHz: UInt64, rate: UInt64, frequencyHz: UInt64) -> Bool {
-        let half = Int64(rate / 2)
-        let f = Int64(frequencyHz)
-        return f >= Int64(centerHz) - half && f <= Int64(centerHz) + half
-    }
-
-    /// The rate for a created IQ capture: what the recipe asked for when the device offers it, else
-    /// the device's default (`defaultRate`), matching what a channel job opens at.
-    private func iqRate(_ wanted: UInt64, device: Leyline_V1_DeviceDescriptor) -> UInt64 {
-        if wanted != 0, device.sampleRates.isEmpty || device.sampleRates.contains(wanted) { return wanted }
-        return defaultRate(device)
-    }
-
-    /// Where to point an IQ capture: on the frequency, clamped to the nearest tunable point. A file
-    /// device's range is the single point its recording was made at, and the frequency still falls
-    /// inside the span there. nil when the frequency would fall outside the span even so.
-    private func iqCentre(frequencyHz: UInt64, device: Leyline_V1_DeviceDescriptor, rate: UInt64) -> UInt64? {
-        var best: UInt64?
-        var bestDistance = UInt64.max
-        for r in device.tuningRanges {
-            let clamped = Swift.min(Swift.max(frequencyHz, r.minHz), Swift.max(r.minHz, r.maxHz))
-            let d = clamped > frequencyHz ? clamped - frequencyHz : frequencyHz - clamped
-            if d < bestDistance {
-                bestDistance = d
-                best = clamped
-            }
-        }
-        guard let centre = best, spanCovers(centerHz: centre, rate: rate, frequencyHz: frequencyHz) else { return nil }
-        return centre
-    }
-
-    /// Where to point a capture so the channel lands a quarter-span off centre, clamped to what the
-    /// device can tune -- a file device's range is the single point its recording was made at, and
-    /// the channel still fits inside the span. nil when the channel would fall outside it.
-    private func channelCentre(frequencyHz: UInt64, bandwidthHz: UInt32,
-                               device: Leyline_V1_DeviceDescriptor, rate: UInt64) -> UInt64?
-    {
-        let quarter = rate / 8
-        let desired = frequencyHz > quarter ? frequencyHz - quarter : frequencyHz
-        var best: UInt64?
-        var bestDistance = UInt64.max
-        for r in device.tuningRanges {
-            let clamped = Swift.min(Swift.max(desired, r.minHz), Swift.max(r.minHz, r.maxHz))
-            let d = clamped > desired ? clamped - desired : desired - clamped
-            if d < bestDistance {
-                bestDistance = d
-                best = clamped
-            }
-        }
-        guard let centre = best else { return nil }
-        guard SessionStore.fits(offsetHz: Int64(frequencyHz) - Int64(centre), bandwidthHz: bandwidthHz, sampleRate: rate) else { return nil }
-        return centre
-    }
+    /// count as centred (`CapturePlanner.centredToleranceHz`).
+    static let centredToleranceHz: UInt64 = CapturePlanner.centredToleranceHz
 
     private func open(captureID: CaptureID, offsetHz: Int64, bandwidthHz: UInt32, mode: DemodMode,
                       frequencyHz: UInt64, owner: ClientContext, createdCapture: Bool,
@@ -470,43 +351,26 @@ actor SessionCaptureAllocator: CaptureAllocator {
         }
     }
 
+    // MARK: A whole radio (scans and monitors)
+
+    /// Carries out the planner's walk for a sweep: an idle radio's new capture, else a free one
+    /// borrowed, each claimed for the sweep before it is handed over.
     private func allocateCapture(range: ClosedRange<UInt64>, deviceID wanted: DeviceID?, takeOver: Bool,
                                  gains: [GainRequest], job: JobID) async -> AllocationResult
     {
         let state = await store.snapshot(scope: .daemon)
-        // A device that can hear any of the range. Prefer one with no capture at all: creating and
-        // destroying is cleaner than borrowing and restoring, and it disturbs nobody.
-        var candidates: [(Leyline_V1_DeviceDescriptor, Leyline_V1_Capture?)] = []
-        for d in state.devices where d.state != .disconnected {
-            if let want = wanted, d.deviceID != want.string { continue }
-            // What a capture on this device can cover, not just where it can point: a capture
-            // centred at the edge of the tuning range still covers half a span either side of it,
-            // which is how a file device -- whose range is the single point its recording was made
-            // at -- can serve a sweep at all. The same fractions the plan uses.
-            let edge = SweepPlan.edgeFraction * Double(bestRate(d))
-            let audible = d.tuningRanges.contains { r in
-                Double(r.minHz) - edge <= Double(range.upperBound) && Double(r.maxHz) + edge >= Double(range.lowerBound)
+        let walk = CapturePlanner.walk(.sweep(rangeHz: range, deviceID: wanted?.string, takeOver: takeOver), state: state)
+        var progress = Progress(walk)
+        for step in walk.steps {
+            guard case .attempt(let plan) = step else {
+                progress.pass(step)
+                continue
             }
-            guard audible else { continue }
-            candidates.append((d, state.captures.first { $0.deviceID == d.deviceID }))
-        }
-        guard !candidates.isEmpty else {
-            if let want = wanted {
-                return .declined(code: EngineError.Code.noDevice, reason: "\(want.string) cannot tune \(fmt(range.lowerBound)) to \(fmt(range.upperBound)), or is not here")
-            }
-            return .declined(code: EngineError.Code.noDevice, reason: "no radio here can tune \(fmt(range.lowerBound)) to \(fmt(range.upperBound))")
-        }
-        candidates.sort { ($0.1 == nil ? 0 : 1) < ($1.1 == nil ? 0 : 1) }
-
-        var lastReason = "the radio is in use"
-        for (device, existing) in candidates {
-            guard let deviceID = DeviceID(string: device.deviceID) else { continue }
-            if let cap = existing {
-                guard let id = CaptureID(string: cap.captureID) else { continue }
-                if !takeOver, let why = inUse(cap, state: state) {
-                    lastReason = why
-                    continue
-                }
+            switch plan {
+            case .retune(let captureID, _, _, _):
+                guard let id = CaptureID(string: captureID),
+                      let cap = state.captures.first(where: { $0.captureID == captureID }),
+                      let deviceID = DeviceID(string: cap.deviceID) else { continue }
                 // Claim before `borrow`. It suspends three times, and an actor is re-entrant at a
                 // suspension: checking here and claiming in there let two simultaneous scans both
                 // pass the check and both walk the same tuner. The store checks and claims in one
@@ -515,7 +379,8 @@ actor SessionCaptureAllocator: CaptureAllocator {
                 switch await store.claimSweep(on: id, job: job, range: range) {
                 case .claimed(let c): claim = c
                 case .taken:
-                    lastReason = "another scan already has \(device.model)"
+                    let model = state.devices.first { $0.deviceID == cap.deviceID }?.model ?? cap.deviceID
+                    progress.failed("another scan already has \(model)")
                     continue
                 case .gone: continue
                 }
@@ -524,73 +389,34 @@ actor SessionCaptureAllocator: CaptureAllocator {
                     continue
                 }
                 return .capture(lease)
-            }
-            let rate = bestRate(device)
-            // The device has no capture, so nothing to claim yet -- but two scans racing here would
-            // both call createCapture and the loser gets DEVICE_BUSY from the store, which is the
-            // right answer and is caught below.
-            do {
-                let id = try await store.createCapture(deviceID: deviceID, centerHz: startCentre(range, device: device, rate: rate),
-                                                       sampleRate: rate, by: .daemon).id
-                // Every path out of here from now on either returns the lease or destroys what was
-                // just created: a capture this scan opened and then walked away from would hold the
-                // device open with no job to cancel and nobody to close it.
-                guard case .claimed(let claim) = await store.claimSweep(on: id, job: job, range: range) else {
-                    await store.destroyCapture(id: id, by: .daemon)
-                    continue
+            case .create(let device, let centre, let rate):
+                guard let deviceID = DeviceID(string: device) else { continue }
+                // The device has no capture, so nothing to claim yet -- but two scans racing here
+                // would both call createCapture and the loser gets DEVICE_BUSY from the store,
+                // which is the right answer and is caught below.
+                do {
+                    let id = try await store.createCapture(deviceID: deviceID, centerHz: centre, sampleRate: rate, by: .daemon).id
+                    // Every path out of here from now on either returns the lease or destroys what
+                    // was just created: a capture this scan opened and then walked away from would
+                    // hold the device open with no job to cancel and nobody to close it.
+                    guard case .claimed(let claim) = await store.claimSweep(on: id, job: job, range: range) else {
+                        await store.destroyCapture(id: id, by: .daemon)
+                        continue
+                    }
+                    guard let lease = await borrow(id, deviceID: deviceID, job: job, claim: claim, created: true, gains: gains) else {
+                        await store.destroyCapture(id: id, by: .daemon)
+                        continue
+                    }
+                    return .capture(lease)
+                } catch {
+                    progress.failed((error as? EngineError)?.message ?? "\(error)")
+                    log.debug("scan could not open \(device): \(progress.reason)")
                 }
-                guard let lease = await borrow(id, deviceID: deviceID, job: job, claim: claim, created: true, gains: gains) else {
-                    await store.destroyCapture(id: id, by: .daemon)
-                    continue
-                }
-                return .capture(lease)
-            } catch {
-                lastReason = (error as? EngineError)?.message ?? "\(error)"
-                log.debug("scan could not open \(device.deviceID): \(lastReason)")
+            case .share, .decline:
+                continue
             }
         }
-        return .declined(code: EngineError.Code.deviceBusy, reason: lastReason)
-    }
-
-    /// The don't-disturb test, read from the capture's claims. Returns a reason when the capture is
-    /// somebody's, nil when it is free. A spectrum view is never a reason, and a sweep's capture
-    /// never gets this far.
-    private func inUse(_ cap: Leyline_V1_Capture, state: Leyline_V1_GetStateResponse) -> String? {
-        if let ch = cap.claims.first(where: { $0.kind == .claimChannel }) {
-            return "\(who(ch.holder)) is listening on \(fmt(ch.covers.frequencyHz))"
-        }
-        // A person's presence is held by a live audio sink or by a write in the last minute; the
-        // capture's activity says which, and how long ago.
-        let present = cap.claims.contains { $0.kind == .claimListen }
-        if present, cap.activity.liveAudioSinks > 0 { return "audio is playing from this radio" }
-        if let reader = cap.claims.first(where: { $0.kind == .claimIq }) {
-            // An IQ decode job or an IQ recording has no channel to show it is there, and a
-            // retune moves the whole band it reads.
-            let job = state.jobs.first { $0.jobID == reader.holder.clientID }
-            switch job?.config {
-            case .decode(let d)?: return "another job is reading this radio (decode \(d.decoder))"
-            case .record?: return "another job is reading this radio (record)"
-            default: return "another job is reading this radio"
-            }
-        }
-        let now = UInt64(WallClock.realNowNs())
-        let last = UInt64(max(0, cap.activity.lastInteractiveWriteNs))
-        if present, last > 0, now > last, now - last < dontDisturbNs {
-            return "somebody was tuning this radio \(Int((now - last) / 1_000_000_000)) s ago"
-        }
-        return nil
-    }
-
-    /// Describes a client by its kind rather than the label it chose: "ley is listening" makes no
-    /// sense to a user who typed `ley`.
-    private func who(_ ci: Leyline_V1_ClientInfo) -> String {
-        switch ci.kind {
-        case "cli": return "a terminal"
-        case "app": return "the app"
-        case "mcp": return "an agent"
-        case "job": return "another job"
-        default: return ci.label.isEmpty ? "another client" : ci.label
-        }
+        return progress.declined(walk)
     }
 
     private func borrow(_ id: CaptureID, deviceID: DeviceID, job: JobID, claim: ClaimID, created: Bool = false,
@@ -609,41 +435,6 @@ actor SessionCaptureAllocator: CaptureAllocator {
         await lease.pinGain(device: device, requested: gains)
         return lease
     }
-
-    /// The fastest rate the device offers: fewer steps, and the detector's resolution comes from
-    /// the bin count rather than the span.
-    private func bestRate(_ d: Leyline_V1_DeviceDescriptor) -> UInt64 { d.sampleRates.max() ?? 0 }
-
-    /// The rate a capture for one channel opens at: what `CreateCapture` picks for `sample_rate
-    /// == 0`, the recording's own rate for a file and 2.4 MSPS for a dongle. Not the fastest the
-    /// device offers, which a sweep wants: an RTL-SDR at 3.2 MSPS drops samples over USB, and the
-    /// channel's audio rate follows the capture rate (49.2 kHz at 3.2 MSPS against the 48 kHz a
-    /// decoder written for the default expects).
-    private func defaultRate(_ d: Leyline_V1_DeviceDescriptor) -> UInt64 {
-        if d.driver == "file" { return d.sampleRates.first ?? SessionStore.defaultSampleRate }
-        if d.sampleRates.isEmpty || d.sampleRates.contains(SessionStore.defaultSampleRate) { return SessionStore.defaultSampleRate }
-        return bestRate(d)
-    }
-
-    /// Where to point the radio when the allocator creates the capture. The sweep retunes from
-    /// here immediately, so this only has to be somewhere the device accepts; aiming at the middle
-    /// of the range and clamping to the nearest tunable point keeps the first hop short.
-    private func startCentre(_ range: ClosedRange<UInt64>, device: Leyline_V1_DeviceDescriptor, rate _: UInt64) -> UInt64 {
-        let want = range.lowerBound + (range.upperBound - range.lowerBound) / 2
-        var best: UInt64?
-        var bestDistance = UInt64.max
-        for r in device.tuningRanges {
-            let clamped = Swift.min(Swift.max(want, r.minHz), Swift.max(r.minHz, r.maxHz))
-            let d = clamped > want ? clamped - want : want - clamped
-            if d < bestDistance {
-                bestDistance = d
-                best = clamped
-            }
-        }
-        return best ?? want
-    }
-
-    private func fmt(_ hz: UInt64) -> String { String(format: "%.3f MHz", Double(hz) / 1e6) }
 }
 
 /// One job's hold on one capture.

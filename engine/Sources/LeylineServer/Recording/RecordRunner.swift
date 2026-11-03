@@ -974,18 +974,23 @@ actor RecordRunner: RecordRunning {
 }
 
 /// A record job's hold on a channel it did not make (`RecordConfig.channel_id`): the job borrows
-/// what somebody is listening to and leaves it exactly as it found it. Releasing does nothing:
-/// destroying the listener's channel when a recording ends would cut off their audio.
+/// what somebody is listening to and leaves it exactly as it found it. Releasing never destroys
+/// the channel, which would cut off the listener's audio; it only runs `onRelease`, which takes
+/// the job's own claim on the channel off the ledger.
 final class BorrowedChannelLease: ChannelLease, Sendable {
     let channelID: ChannelID
     let captureID: CaptureID
     let engine: any ChannelEngine
+    private let onRelease: @Sendable () async -> Void
 
-    init(channelID: ChannelID, captureID: CaptureID, engine: any ChannelEngine) {
+    init(channelID: ChannelID, captureID: CaptureID, engine: any ChannelEngine,
+         onRelease: @escaping @Sendable () async -> Void = {})
+    {
         self.channelID = channelID
         self.captureID = captureID
         self.engine = engine
+        self.onRelease = onRelease
     }
 
-    func release() async {}
+    func release() async { await onRelease() }
 }

@@ -130,7 +130,14 @@ extension JobStore {
         let lease: any ChannelLease
         let frequencyHz: UInt64
         if let borrowed {
-            lease = BorrowedChannelLease(channelID: borrowed.id, captureID: borrowed.captureID, engine: borrowed.engine)
+            // The job holds its own claim on the channel it records, so the ledger and a plan
+            // show the recording as well as the listener.
+            let claim = await store.addClaim(on: borrowed.captureID, holder: .job(id), kind: .claimChannel,
+                                             priority: .priorityJob, need: .channel(borrowed.id))
+            lease = BorrowedChannelLease(channelID: borrowed.id, captureID: borrowed.captureID, engine: borrowed.engine) {
+                [store] in
+                if let claim { await store.releaseClaim(claim, on: borrowed.captureID) }
+            }
             let snapshot = await store.captureEngine(borrowed.captureID)?.snapshot
             let offset = await borrowed.engine.config.offsetHz
             frequencyHz = UInt64(Int64(snapshot?.centerHz ?? 0) + offset)
@@ -211,8 +218,15 @@ extension JobStore {
                                    code: EngineError.Code.captureNotFound)
                 return
             }
-            let rate = await capture.snapshot.sampleRate
-            lease = BorrowedCaptureIQLease(captureID: borrowed.captureID, capture: capture, sampleRateHz: rate)
+            let snapshot = await capture.snapshot
+            // The job's own claim: the capture's IQ at the centre it recorded from.
+            let claim = await store.addClaim(on: borrowed.captureID, holder: .job(id), kind: .claimIq,
+                                             priority: .priorityJob,
+                                             need: .covers(frequencyHz: snapshot.centerHz, bandwidthHz: 0))
+            lease = BorrowedCaptureIQLease(captureID: borrowed.captureID, capture: capture,
+                                           sampleRateHz: snapshot.sampleRate) { [store] in
+                if let claim { await store.releaseClaim(claim, on: borrowed.captureID) }
+            }
         } else {
             let deviceID = config.deviceID.isEmpty ? nil : DeviceID(string: config.deviceID)
             let allocation = await allocator.allocate(
@@ -469,19 +483,24 @@ extension JobStore {
 }
 
 /// A record job's hold on a capture it did not make: the IQ sibling of `BorrowedChannelLease`.
-/// Releasing does nothing, because the capture belongs to whoever was listening on it.
+/// Releasing leaves the capture to whoever was listening on it and only runs `onRelease`, which
+/// takes the job's own claim off the ledger.
 final class BorrowedCaptureIQLease: CaptureIQLease, Sendable {
     let captureID: CaptureID
     let sampleRateHz: UInt64
     let capture: any CaptureEngine
+    private let onRelease: @Sendable () async -> Void
 
-    init(captureID: CaptureID, capture: any CaptureEngine, sampleRateHz: UInt64) {
+    init(captureID: CaptureID, capture: any CaptureEngine, sampleRateHz: UInt64,
+         onRelease: @escaping @Sendable () async -> Void = {})
+    {
         self.captureID = captureID
         self.capture = capture
         self.sampleRateHz = sampleRateHz
+        self.onRelease = onRelease
     }
 
     var centerHz: UInt64 { get async { await capture.snapshot.centerHz } }
 
-    func release() async {}
+    func release() async { await onRelease() }
 }
