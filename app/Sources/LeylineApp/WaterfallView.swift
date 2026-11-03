@@ -31,12 +31,12 @@ struct WaterfallView: View {
                     viewLo: fraction(of: session.visibleRange?.lowerBound),
                     viewHi: fraction(of: session.visibleRange?.upperBound),
                     onPointer: { p in
-                        pointer = p
-                        session.pointerHz = p.flatMap { columns?.hz(atX: $0.x) }
+                        pointer = p?.point
+                        session.pointerHz = p.flatMap { session.chartHz(at: $0) }
                     },
-                    onClick: { p in if let c = columns { session.tune(to: c.hz(atX: p.x)) } },
+                    onClick: { p in session.chartHz(at: p).map { session.tune(to: $0) } },
                     onDrag: { p, phase in
-                        if let c = columns { session.chartDrag(to: c.hz(atX: p.x), phase: phase) }
+                        session.chartHz(at: p).map { session.chartDrag(to: $0, phase: phase) }
                     },
                     onScroll: { dy in session.step(dy > 0 ? 1 : -1, fine: true) },
                     onProblem: { problem = $0 }
@@ -170,9 +170,9 @@ struct WaterfallMetalView: NSViewRepresentable {
     let rangeDB: Float
     let viewLo: Float
     let viewHi: Float
-    let onPointer: (CGPoint?) -> Void
-    let onClick: (CGPoint) -> Void
-    let onDrag: (CGPoint, ChartMouse.Phase) -> Void
+    let onPointer: (ChartPoint?) -> Void
+    let onClick: (ChartPoint) -> Void
+    let onDrag: (ChartPoint, ChartMouse.Phase) -> Void
     let onScroll: (CGFloat) -> Void
     /// Called once, off the update pass, if the renderer could not come up.
     let onProblem: (String) -> Void
@@ -236,18 +236,18 @@ final class InteractiveMetalView: MTKView {
 
     override func cursorUpdate(with event: NSEvent) { mouse.cursorUpdate() }
     override func mouseMoved(with event: NSEvent) {
-        mouse.moved(convert(event.locationInWindow, from: nil))
+        mouse.moved(chartPoint(event))
     }
     override func mouseExited(with event: NSEvent) { mouse.exited() }
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        mouse.down(convert(event.locationInWindow, from: nil))
+        mouse.down(chartPoint(event))
     }
     override func mouseDragged(with event: NSEvent) {
-        mouse.dragged(convert(event.locationInWindow, from: nil))
+        mouse.dragged(chartPoint(event))
     }
     override func mouseUp(with event: NSEvent) {
-        mouse.up(convert(event.locationInWindow, from: nil))
+        mouse.up(chartPoint(event))
     }
     override func scrollWheel(with event: NSEvent) { mouse.scroll(event) }
 }

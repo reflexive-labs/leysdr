@@ -9,16 +9,25 @@
 import AppKit
 import SwiftUI
 
+/// A point on a chart (origin top-left, points) and the chart's width when the event arrived.
+/// A frequency is mapped against this width and the view as it is then (`AppSession.chartHz`),
+/// never against geometry captured at the last SwiftUI update: an event between a layout change
+/// and the update that follows it would map the point across the old width.
+struct ChartPoint {
+    let point: CGPoint
+    let width: CGFloat
+}
+
 @MainActor
 final class ChartMouse {
     /// Where a drag is: its first frame, one after, or its release.
     enum Phase { case began, moved, ended }
 
-    var onPointer: ((CGPoint?) -> Void)?
-    var onClick: ((CGPoint) -> Void)?
-    var onDrag: ((CGPoint, Phase) -> Void)?
+    var onPointer: ((ChartPoint?) -> Void)?
+    var onClick: ((ChartPoint) -> Void)?
+    var onDrag: ((ChartPoint, Phase) -> Void)?
     var onScroll: ((CGFloat) -> Void)?
-    private var downAt: CGPoint?
+    private var downAt: ChartPoint?
     private var dragged = false
     private var scrolled: CGFloat = 0
 
@@ -33,26 +42,26 @@ final class ChartMouse {
         (downAt == nil ? NSCursor.crosshair : NSCursor.resizeLeftRight).set()
     }
 
-    func moved(_ p: CGPoint) { onPointer?(p) }
+    func moved(_ p: ChartPoint) { onPointer?(p) }
 
     func exited() { onPointer?(nil) }
 
-    func down(_ p: CGPoint) {
+    func down(_ p: ChartPoint) {
         downAt = p
         dragged = false
         NSCursor.resizeLeftRight.set()
     }
 
-    func dragged(_ p: CGPoint) {
+    func dragged(_ p: ChartPoint) {
         guard let start = downAt else { return }
-        if !dragged, abs(p.x - start.x) < 3 { return }
+        if !dragged, abs(p.point.x - start.point.x) < 3 { return }
         let phase: Phase = dragged ? .moved : .began
         dragged = true
         onPointer?(p)
         onDrag?(p, phase)
     }
 
-    func up(_ p: CGPoint) {
+    func up(_ p: ChartPoint) {
         if dragged { onDrag?(p, .ended) } else { onClick?(p) }
         downAt = nil
         dragged = false
@@ -77,6 +86,13 @@ final class ChartMouse {
     }
 }
 
+extension NSView {
+    /// `event`'s location in this view, with the view's width as it is now.
+    func chartPoint(_ event: NSEvent) -> ChartPoint {
+        ChartPoint(point: convert(event.locationInWindow, from: nil), width: bounds.width)
+    }
+}
+
 /// A transparent view over the spectrum that handles mouse events the way the waterfall's Metal
 /// view does, with the same point convention (origin top-left, points).
 final class ChartCatcherView: NSView {
@@ -97,26 +113,26 @@ final class ChartCatcherView: NSView {
 
     override func cursorUpdate(with event: NSEvent) { mouse.cursorUpdate() }
     override func mouseMoved(with event: NSEvent) {
-        mouse.moved(convert(event.locationInWindow, from: nil))
+        mouse.moved(chartPoint(event))
     }
     override func mouseExited(with event: NSEvent) { mouse.exited() }
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        mouse.down(convert(event.locationInWindow, from: nil))
+        mouse.down(chartPoint(event))
     }
     override func mouseDragged(with event: NSEvent) {
-        mouse.dragged(convert(event.locationInWindow, from: nil))
+        mouse.dragged(chartPoint(event))
     }
     override func mouseUp(with event: NSEvent) {
-        mouse.up(convert(event.locationInWindow, from: nil))
+        mouse.up(chartPoint(event))
     }
     override func scrollWheel(with event: NSEvent) { mouse.scroll(event) }
 }
 
 struct ChartCatcher: NSViewRepresentable {
-    let onPointer: (CGPoint?) -> Void
-    let onClick: (CGPoint) -> Void
-    let onDrag: (CGPoint, ChartMouse.Phase) -> Void
+    let onPointer: (ChartPoint?) -> Void
+    let onClick: (ChartPoint) -> Void
+    let onDrag: (ChartPoint, ChartMouse.Phase) -> Void
     let onScroll: (CGFloat) -> Void
 
     func makeNSView(context: Context) -> ChartCatcherView {

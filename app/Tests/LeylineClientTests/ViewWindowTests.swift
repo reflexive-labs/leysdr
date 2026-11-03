@@ -12,6 +12,43 @@ final class ViewWindowTests: XCTestCase {
     let rtlRate: UInt64 = 2_880_000
     let twoMetres: ClosedRange<UInt64> = 144_000_000...148_000_000
 
+    func testAClickMapsAcrossTheChartsWidthAsItIsNow() {
+        let shown: ClosedRange<UInt64> = 144_960_000...147_840_000
+        // pointer-and-menus: x 567 of the 825 pt waterfall.
+        XCTAssertEqual(ViewWindow.hz(atX: 567, width: 825, in: shown), 146_939_345)
+        // The same x across the width the assistant's column leaves is past the right edge,
+        // held there: the edge tune a stale width gives.
+        XCTAssertEqual(ViewWindow.hz(atX: 567, width: 504, in: shown), 147_840_000)
+        XCTAssertEqual(ViewWindow.hz(atX: -3, width: 825, in: shown), 144_960_000)
+        XCTAssertNil(ViewWindow.hz(atX: 10, width: 0, in: shown))
+        XCTAssertNil(ViewWindow.hz(atX: .nan, width: 825, in: shown))
+    }
+
+    func testAClickPastACaptureThatCannotMoveTunesInsideItsEdge() {
+        let centre = Int64(rtlCentre)
+        let span = Int64(rtlRate)
+        // A file radio: the move would keep the centre, so the click stops a channel inside
+        // the edge rather than writing an offset of half the span.
+        XCTAssertEqual(
+            ViewWindow.heldTarget(
+                147_840_000, centre: centre, newCentre: centre, span: span, margin: 12_500),
+            147_827_500)
+        XCTAssertEqual(
+            ViewWindow.heldTarget(
+                144_000_000, centre: centre, newCentre: centre, span: span, margin: 12_500),
+            144_972_500)
+        // A radio that can move goes there instead.
+        XCTAssertNil(
+            ViewWindow.heldTarget(
+                147_840_000, centre: centre, newCentre: centre + 360_000, span: span,
+                margin: 12_500))
+        // A channel wider than the span sits on the centre.
+        XCTAssertEqual(
+            ViewWindow.heldTarget(
+                147_840_000, centre: centre, newCentre: centre, span: span, margin: 2_000_000),
+            centre)
+    }
+
     func testTheNarrowestSpanHoldsSixtyFourBins() {
         XCTAssertEqual(ViewWindow.narrowest(sampleRate: 2_048_000, bins: 2048), 64_000)
         XCTAssertEqual(ViewWindow.narrowest(sampleRate: wideRate, bins: 2048), 656_250)

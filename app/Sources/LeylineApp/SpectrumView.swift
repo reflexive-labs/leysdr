@@ -43,12 +43,12 @@ struct SpectrumView: View {
                 }
                 ChartCatcher(
                     onPointer: { p in
-                        pointer = p
-                        session.pointerHz = p.flatMap { columns?.hz(atX: $0.x) }
+                        pointer = p?.point
+                        session.pointerHz = p.flatMap { session.chartHz(at: $0) }
                     },
-                    onClick: { p in if let c = columns { session.tune(to: c.hz(atX: p.x)) } },
+                    onClick: { p in session.chartHz(at: p).map { session.tune(to: $0) } },
                     onDrag: { p, phase in
-                        if let c = columns { session.chartDrag(to: c.hz(atX: p.x), phase: phase) }
+                        session.chartHz(at: p).map { session.chartDrag(to: $0, phase: phase) }
                     },
                     onScroll: { dy in session.step(dy > 0 ? 1 : -1, fine: true) }
                 )
@@ -257,9 +257,7 @@ struct Columns {
     }
 
     func hz(atX x: CGFloat) -> UInt64 {
-        guard width > 0 else { return range.lowerBound }
-        let f = Double(x / width).clamped(to: 0...1)
-        return range.lowerBound + UInt64(f * visibleSpan)
+        ViewWindow.hz(atX: Double(x), width: Double(width), in: range) ?? range.lowerBound
     }
 
     /// The bins under column `x`, as a closed range clamped to the row.

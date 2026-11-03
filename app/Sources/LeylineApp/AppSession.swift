@@ -834,6 +834,13 @@ final class AppSession {
     /// The frequencies the spectrum and waterfall show, which the band rail draws as its thumb:
     /// the band fitted inside the capture until a zoom, a drag or a view tool chose otherwise,
     /// always inside the capture (`ViewWindow.shown`).
+    /// The frequency under a point of the spectrum or the waterfall, from the view as it is now
+    /// and the chart's width when the event arrived (`ChartPoint`); nil with no capture.
+    func chartHz(at p: ChartPoint) -> UInt64? {
+        guard let r = visibleRange else { return nil }
+        return ViewWindow.hz(atX: Double(p.point.x), width: Double(p.width), in: r)
+    }
+
     var visibleRange: ClosedRange<UInt64>? {
         guard let cap = capture else { return nil }
         return ViewWindow.shown(
@@ -1707,7 +1714,8 @@ final class AppSession {
     /// the two in one tick land in the daemon's order, and an offset applied against the old
     /// centre tunes a frequency nobody asked for, which then moves again. A click, a step or a
     /// typed frequency puts the target an eighth of the span in from the edge it arrived
-    /// through. A drag held past the edge pans the capture an eighth of the span at a time, no
+    /// through; a capture that cannot move that way (a file radio) keeps it a channel inside its
+    /// edge (`ViewWindow.heldTarget`). A drag held past the edge pans the capture an eighth of the span at a time, no
     /// faster than every 300 ms, so the display pans at a followable rate rather than a span
     /// per event.
     func tune(to hz: UInt64, dragging: Bool = false) {
@@ -1834,15 +1842,23 @@ final class AppSession {
                     target < lo
                         ? target + span * Self.edgeInsetEighths / 8
                         : target - span * Self.edgeInsetEighths / 8, span: span)
-                let asked = target
-                if asksBeforeMoving(
-                    cap, centre: newCentre, rate: cap.sampleRate, before: "tune to \(target) Hz",
-                    proceed: { self.moveCentre(to: newCentre, for: asked) })
+                // A capture that cannot move that way keeps the click inside it, at the edge.
+                if let held = ViewWindow.heldTarget(
+                    target, centre: centre, newCentre: newCentre, span: span, margin: margin)
                 {
+                    target = held
+                } else {
+                    let asked = target
+                    if asksBeforeMoving(
+                        cap, centre: newCentre, rate: cap.sampleRate,
+                        before: "tune to \(target) Hz",
+                        proceed: { self.moveCentre(to: newCentre, for: asked) })
+                    {
+                        return
+                    }
+                    moveCentre(to: newCentre, for: target)
                     return
                 }
-                moveCentre(to: newCentre, for: target)
-                return
             }
         }
         let offset = target - centre

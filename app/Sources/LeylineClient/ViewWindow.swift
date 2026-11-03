@@ -134,6 +134,29 @@ public enum ViewWindow {
         return t
     }
 
+    /// The frequency under `x` points across a chart `width` points wide that shows `shown`,
+    /// a point outside the chart held at its edge; nil for a chart with no width yet.
+    public static func hz(atX x: Double, width: Double, in shown: ClosedRange<UInt64>) -> UInt64? {
+        guard width > 0, x.isFinite else { return nil }
+        let f = min(max(x / width, 0), 1)
+        return shown.lowerBound + UInt64(f * Double(shown.upperBound - shown.lowerBound))
+    }
+
+    /// Where a click on `target` tunes when the capture cannot move toward it: `newCentre`, the
+    /// centre the click would move to, is the centre it has already (a file radio, or a radio
+    /// at the end of its tuning range). It is then the nearest frequency the capture holds with
+    /// `margin`, the channel's width, to spare: an offset beyond the span is one the daemon
+    /// refuses (`OFFSET_OUT_OF_CAPTURE`). Nil when the centre moves, and the move tunes there.
+    public static func heldTarget(
+        _ target: Int64, centre: Int64, newCentre: Int64, span: Int64, margin: Int64
+    ) -> Int64? {
+        guard newCentre == centre else { return nil }
+        let lo = centre - span / 2 + margin
+        let hi = centre + span / 2 - margin
+        guard lo <= hi else { return centre }
+        return min(max(target, lo), hi)
+    }
+
     /// Which side of the view a frequency lies off, for the spectrum's edge marker.
     public enum Edge: Sendable, Equatable {
         case below, above

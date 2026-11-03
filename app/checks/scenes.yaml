@@ -675,7 +675,8 @@ scenes:
   # 146.940 MHz (the capture's 144.960 to 147.840 MHz across its 825 pt from x 237); View ▸
   # Show Assistant read and pressed; the panel's field typed into and its turns read through
   # state; and the app quit and started again on the same daemon, which it finds tuned where it
-  # left it.
+  # left it; and a click on the waterfall's last column, which a file radio cannot follow past,
+  # stops the channel inside the capture's edge.
   - name: pointer-and-menus
     covers: [ChartMouse.swift, WaterfallView.swift, SidebarView.swift, AssistantPanel.swift,
       LeylineApp.swift, AssistantController.swift, AssistantModels.swift, ChannelFollow.swift]
@@ -710,6 +711,11 @@ scenes:
       - {cmd: snapshot, name: answered}
       - {cmd: relaunch, stage: {place: radio, settle: 3}}
       - {cmd: state, expect: {tuned_hz: 146939345, assistant_shown: false}}
+      # A click on the waterfall's last column, past where a file radio can tune: the channel
+      # stops inside the capture's edge rather than asking for an offset the daemon refuses.
+      - {cmd: click, x: 1061.5, y: 400}
+      - {cmd: wait, seconds: 1, expect_log: ['tune: 147827500 Hz \(offset 1427500\), asked', '!OFFSET_OUT_OF_CAPTURE']}
+      - {cmd: state, expect: {tuned_hz: 147827500}}
 
   # Settings, AI (docs/plans/app.md, "Settings, AI"): ⌘, and the app menu open the pane; with no
   # key it holds the explanation and the Add form alone, Add disabled while the key is empty and
