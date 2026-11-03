@@ -116,6 +116,9 @@ extension SessionStore {
                                          squelchAuto: entry.squelchAuto)
         emit(.channel(proto), captureID: entry.captureID, by: by)
         // The claim went with the channel. A capture being destroyed sends its own tombstone.
-        if !engineAlreadyClosed { await emitCapture(entry.captureID, by: by) }
+        if !engineAlreadyClosed {
+            await emitCapture(entry.captureID, by: by)
+            await claimReleased(entry.captureID, without: nil)
+        }
     }
 }

@@ -128,6 +128,50 @@ func TestDecodeJobStampsAndNumbersRecords(t *testing.T) {
 	}
 }
 
+// A capture made for a decode job lives while any job's channel is on it (claims.md, CL-4;
+// DEC-19): cancelling the job that made it leaves it to the job sharing it, and it goes with
+// the last.
+func TestACreatedCaptureOutlivesTheJobThatMadeIt(t *testing.T) {
+	c, _ := harness(t, fakedaemon.Options{})
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	first, err := c.StartDecode(ctx, &leylinev1.DecodeConfig{Decoder: "aprs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := c.StartDecode(ctx, &leylinev1.DecodeConfig{Decoder: "aprs", TakeOver: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := c.State(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Captures) != 1 || len(st.Channels) != 2 {
+		t.Fatalf("the second job shares the first one's capture: %v %v", st.Captures, st.Channels)
+	}
+	if _, err := c.Jobs.CancelJob(ctx, &leylinev1.JobRef{JobId: first.JobId}); err != nil {
+		t.Fatal(err)
+	}
+	st, err = c.State(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Captures) != 1 || len(st.Channels) != 1 {
+		t.Fatalf("the capture stays for the second job: %v %v", st.Captures, st.Channels)
+	}
+	if _, err := c.Jobs.CancelJob(ctx, &leylinev1.JobRef{JobId: second.JobId}); err != nil {
+		t.Fatal(err)
+	}
+	st, err = c.State(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Captures) != 0 || len(st.Channels) != 0 {
+		t.Errorf("the capture goes with the last job: %v %v", st.Captures, st.Channels)
+	}
+}
+
 // since_seq replays the retained window: a client that subscribes after starting the job still
 // sees the records it missed, which is what makes "StartJob then Subscribe" safe.
 func TestSubscribeRecordsReplaysSinceSeq(t *testing.T) {

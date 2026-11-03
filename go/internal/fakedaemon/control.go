@@ -155,6 +155,23 @@ func (d *Daemon) DestroyCapture(ctx context.Context, req *leylinev1.DestroyCaptu
 	return &leylinev1.Empty{}, nil
 }
 
+// releaseJobCaptureLocked is a job letting go of its capture once its channel is gone: a capture
+// made for a job is destroyed when no channel is left on it, whichever job made it, as the
+// daemon keeps one while any claim holds it (claims.md, CL-4; DEC-19). A capture somebody else
+// made stays. Call with d.mu held.
+func (d *Daemon) releaseJobCaptureLocked(id string, ci *leylinev1.ClientInfo) {
+	c := d.captures[id]
+	if c == nil || !c.heldByClaims {
+		return
+	}
+	for _, ch := range d.channels {
+		if ch.CaptureId == id {
+			return
+		}
+	}
+	d.destroyCaptureLocked(id, ci)
+}
+
 // destroyCaptureLocked removes a capture, the channels and streams riding on it, and frees the
 // radio, emitting a terminal event for each. Call with d.mu held.
 func (d *Daemon) destroyCaptureLocked(id string, ci *leylinev1.ClientInfo) {

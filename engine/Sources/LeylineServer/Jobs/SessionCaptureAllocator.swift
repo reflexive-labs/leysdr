@@ -118,18 +118,18 @@ actor SessionCaptureAllocator: CaptureAllocator {
                 guard let id = CaptureID(string: captureID), await !store.isSwept(id),
                       let cap = state.captures.first(where: { $0.captureID == captureID }) else { continue }
                 if let lease = await open(captureID: id, offsetHz: Int64(frequencyHz) - Int64(cap.centerHz), bandwidthHz: bw,
-                                          mode: mode, frequencyHz: frequencyHz, owner: owner, createdCapture: false,
-                                          restoreCenterHz: nil, gainOutcome: await leftAsFound(id, gains)) {
+                                          mode: mode, frequencyHz: frequencyHz, owner: owner,
+                                          gainOutcome: await leftAsFound(id, gains)) {
                     return .channel(lease)
                 }
             case .create(let device, let centre, let rate):
                 guard let deviceID = DeviceID(string: device) else { continue }
                 do {
                     let id = try await store.createCapture(deviceID: deviceID, centerHz: centre, sampleRate: rate, by: .daemon).id
+                    await store.holdByClaims(id)
                     let outcome = await setGains(gains, on: id)
                     if let lease = await open(captureID: id, offsetHz: Int64(frequencyHz) - Int64(centre), bandwidthHz: bw,
-                                              mode: mode, frequencyHz: frequencyHz, owner: owner, createdCapture: true,
-                                              restoreCenterHz: nil, gainOutcome: outcome) {
+                                              mode: mode, frequencyHz: frequencyHz, owner: owner, gainOutcome: outcome) {
                         return .channel(lease)
                     }
                     await store.destroyCapture(id: id, by: .daemon)
@@ -154,9 +154,13 @@ actor SessionCaptureAllocator: CaptureAllocator {
                 let entryGains = await engine.snapshot.gains
                 let outcome = await setGains(gains, on: id)
                 if let lease = await open(captureID: id, offsetHz: Int64(frequencyHz) - Int64(centre), bandwidthHz: bw,
-                                          mode: mode, frequencyHz: frequencyHz, owner: owner, createdCapture: false,
-                                          restoreCenterHz: before, gainOutcome: outcome,
-                                          restoreGains: gains.isEmpty ? [] : entryGains) {
+                                          mode: mode, frequencyHz: frequencyHz, owner: owner, gainOutcome: outcome) {
+                    // Where the job found the capture, for the return when it lets go (CL-4).
+                    if let claim = await store.channelClaim(lease.channelID, on: id) {
+                        await store.noteReturnPoint(.init(claim: claim, mover: owner, centerHz: before, sampleRate: cap.sampleRate,
+                                                          gains: gains.isEmpty ? [] : entryGains,
+                                                          gainsLeft: await engine.snapshot.gains), on: id)
+                    }
                     return .channel(lease)
                 }
                 await store.willMove(id, by: owner)
@@ -198,7 +202,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
                 guard let id = CaptureID(string: captureID), await !store.isSwept(id),
                       let cap = state.captures.first(where: { $0.captureID == captureID }),
                       let engine = await store.captureEngine(id) else { continue }
-                return .captureIQ(await iqLease(id, engine: engine, rate: cap.sampleRate, created: false, job: job,
+                return .captureIQ(await iqLease(id, engine: engine, rate: cap.sampleRate, job: job,
                                                 need: need(centre: cap.centerHz),
                                                 gainOutcome: await leftAsFound(id, gains)))
             case .create(let device, let centre, let rate):
@@ -206,6 +210,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
                       let descriptor = state.devices.first(where: { $0.deviceID == device }) else { continue }
                 do {
                     let id = try await store.createCapture(deviceID: deviceID, centerHz: centre, sampleRate: rate, by: .daemon).id
+                    await store.holdByClaims(id)
                     guard let engine = await store.captureEngine(id) else {
                         await store.destroyCapture(id: id, by: .daemon)
                         continue
@@ -221,7 +226,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
                     }
                     let outcome = await setGains(gains, on: id)
                     let made = await engine.snapshot
-                    return .captureIQ(await iqLease(id, engine: engine, rate: rate, created: true, job: job,
+                    return .captureIQ(await iqLease(id, engine: engine, rate: rate, job: job,
                                                     need: need(centre: made.centerHz), gainOutcome: outcome))
                 } catch {
                     progress.failed((error as? EngineError)?.message ?? "\(error)", code: EngineError.Code.deviceBusy)
@@ -256,9 +261,11 @@ actor SessionCaptureAllocator: CaptureAllocator {
                 let entryGains = landed.gains
                 let outcome = await setGains(gains, on: id)
                 await store.publishCapture(id, by: .job(job))
-                return .captureIQ(await iqLease(id, engine: engine, rate: rate, created: false, job: job,
-                                                need: need(centre: landed.centerHz),
-                                                gainOutcome: outcome, restoreGains: gains.isEmpty ? [] : entryGains))
+                let found = SessionStore.ReturnPoint(claim: ClaimID(), mover: .job(job), centerHz: cap.centerHz,
+                                                     sampleRate: cap.sampleRate, gains: gains.isEmpty ? [] : entryGains,
+                                                     gainsLeft: await engine.snapshot.gains)
+                return .captureIQ(await iqLease(id, engine: engine, rate: rate, job: job,
+                                                need: need(centre: landed.centerHz), gainOutcome: outcome, found: found))
             case .decline:
                 continue
             }
@@ -278,20 +285,24 @@ actor SessionCaptureAllocator: CaptureAllocator {
 
     /// A lease on `id` for `job`, with the job's IQ claim on the capture until it is released:
     /// such a capture is in use, since retuning it moves the band under every job reading it.
-    private func iqLease(_ id: CaptureID, engine: any CaptureEngine, rate: UInt64, created: Bool,
+    /// `found` is where a job that moved the capture found it, which the capture returns to when
+    /// the claim goes (CL-4).
+    private func iqLease(_ id: CaptureID, engine: any CaptureEngine, rate: UInt64,
                          job: JobID, need: SessionStore.ClaimNeed,
                          gainOutcome: LeaseGainOutcome = .notAsked,
-                         restoreGains: [GainState] = []) async -> SessionCaptureIQLease
+                         found: SessionStore.ReturnPoint? = nil) async -> SessionCaptureIQLease
     {
         // Every IQ reader reads at the rate it was handed: a decoder's descriptor and a
         // recording's manifest both name it.
         let claim = await store.addClaim(on: id, holder: .job(job), kind: .claimIq, priority: .priorityJob,
                                          need: need, sampleRateHz: rate)
-        return SessionCaptureIQLease(captureID: id, capture: engine, sampleRateHz: rate, createdCapture: created,
-                                     store: store, gainOutcome: gainOutcome, restoreGains: restoreGains) { [store] in
-            // Says whether any other job still reads the capture.
-            guard let claim else { return false }
-            return await store.releaseClaim(claim, on: id).contains { $0.kind == .claimIq }
+        if let claim, var point = found {
+            point.claim = claim
+            await store.noteReturnPoint(point, on: id)
+        }
+        return SessionCaptureIQLease(captureID: id, capture: engine, sampleRateHz: rate, gainOutcome: gainOutcome) { [store] in
+            guard let claim else { return }
+            await store.releaseClaim(claim, on: id)
         }
     }
 
@@ -346,9 +357,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
     static let centredToleranceHz: UInt64 = CapturePlanner.centredToleranceHz
 
     private func open(captureID: CaptureID, offsetHz: Int64, bandwidthHz: UInt32, mode: DemodMode,
-                      frequencyHz: UInt64, owner: ClientContext, createdCapture: Bool,
-                      restoreCenterHz: UInt64?, gainOutcome: LeaseGainOutcome,
-                      restoreGains: [GainState] = []) async -> SessionChannelLease?
+                      frequencyHz: UInt64, owner: ClientContext, gainOutcome: LeaseGainOutcome) async -> SessionChannelLease?
     {
         do {
             let proto = try await store.createChannel(captureID: captureID, offsetHz: offsetHz, bandwidthHz: bandwidthHz,
@@ -357,8 +366,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
             guard let channelID = ChannelID(string: proto.channelID),
                   let engine = await store.channelEngine(channelID) else { return nil }
             return SessionChannelLease(channelID: channelID, captureID: captureID, engine: engine, store: store,
-                                       createdCapture: createdCapture, restoreCenterHz: restoreCenterHz,
-                                       restoreGains: restoreGains, gainOutcome: gainOutcome, owner: owner)
+                                       gainOutcome: gainOutcome, owner: owner)
         } catch {
             log.debug("decode job could not open a channel on \(captureID.string): \(error)")
             return nil
@@ -410,6 +418,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
                 // which is the right answer and is caught below.
                 do {
                     let id = try await store.createCapture(deviceID: deviceID, centerHz: centre, sampleRate: rate, by: .daemon).id
+                    await store.holdByClaims(id)
                     // Every path out of here from now on either returns the lease or destroys what
                     // was just created: a capture this scan opened and then walked away from would
                     // hold the device open with no job to cancel and nobody to close it.
@@ -417,7 +426,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
                         await store.destroyCapture(id: id, by: .daemon)
                         continue
                     }
-                    guard let lease = await borrow(id, deviceID: deviceID, job: job, claim: claim, created: true, gains: gains) else {
+                    guard let lease = await borrow(id, deviceID: deviceID, job: job, claim: claim, gains: gains) else {
                         await store.destroyCapture(id: id, by: .daemon)
                         continue
                     }
@@ -433,20 +442,23 @@ actor SessionCaptureAllocator: CaptureAllocator {
         return progress.declined(walk)
     }
 
-    private func borrow(_ id: CaptureID, deviceID: DeviceID, job: JobID, claim: ClaimID, created: Bool = false,
+    /// The sweep's lease on a capture it holds by `claim`. The capture returns to where the sweep
+    /// found it, gains included, when the claim goes (CL-4); one the allocator made for the sweep
+    /// is destroyed instead.
+    private func borrow(_ id: CaptureID, deviceID: DeviceID, job: JobID, claim: ClaimID,
                         gains: [GainRequest] = []) async -> SessionCaptureLease?
     {
         guard let engine = await store.captureEngine(id) else { return nil }
         let device = await store.registry.device(id: deviceID)
         let snap = await engine.snapshot
-        let lease = SessionCaptureLease(captureID: id, engine: engine, store: store,
-                                        sampleRateHz: snap.sampleRate, entryCenterHz: snap.centerHz,
+        let lease = SessionCaptureLease(captureID: id, engine: engine, store: store, sampleRateHz: snap.sampleRate,
                                         gainElements: device?.descriptor.gainElements ?? [],
-                                        inFlight: device?.inFlightSamples ?? 0,
-                                        createdByLease: created, job: job) { [store] in
+                                        inFlight: device?.inFlightSamples ?? 0, job: job) { [store] in
             await store.releaseClaim(claim, on: id)
         }
         await lease.pinGain(device: device, requested: gains)
+        await store.noteReturnPoint(.init(claim: claim, mover: .job(job), centerHz: snap.centerHz, sampleRate: snap.sampleRate,
+                                          gains: snap.gains, gainsLeft: await lease.pinnedGains), on: id)
         return lease
     }
 }
@@ -460,11 +472,8 @@ actor SessionCaptureLease: CaptureLease {
     private let engine: DefaultCaptureEngine
     private let store: SessionStore
     private let inFlight: UInt64
-    private let createdByLease: Bool
     private let job: JobID
     private let onRelease: @Sendable () async -> Void
-    private var entryCenterHz: UInt64
-    private var entryGains: [GainState] = []
     private var pinned: [GainState] = []
     /// Why a requested gain could not be applied, for the job to fail with. A sweep that ran at
     /// some other gain than the one asked for would report a measurement nobody requested.
@@ -475,17 +484,15 @@ actor SessionCaptureLease: CaptureLease {
     private let gainElements: [GainElement]
 
     init(captureID: CaptureID, engine: DefaultCaptureEngine, store: SessionStore,
-         sampleRateHz: UInt64, entryCenterHz: UInt64, gainElements: [GainElement], inFlight: UInt64,
-         createdByLease: Bool, job: JobID, onRelease: @escaping @Sendable () async -> Void)
+         sampleRateHz: UInt64, gainElements: [GainElement], inFlight: UInt64,
+         job: JobID, onRelease: @escaping @Sendable () async -> Void)
     {
         self.captureID = captureID
         self.engine = engine
         self.store = store
         self.sampleRateHz = sampleRateHz
-        self.entryCenterHz = entryCenterHz
         self.gainElements = gainElements
         self.inFlight = inFlight
-        self.createdByLease = createdByLease
         self.job = job
         self.onRelease = onRelease
     }
@@ -509,9 +516,8 @@ actor SessionCaptureLease: CaptureLease {
     /// stage at a time in order (`ScanConfig.gains`): a level, or auto for where the driver
     /// settles; empty pins the gain the radio is on. The first refusal stops the list and is kept
     /// in `pinFailure`, so the sweep fails rather than measuring at a gain nobody asked for; the
-    /// stages set before it stay set until the lease restores the entry gain.
+    /// stages set before it stay set until the capture returns to where the sweep found it.
     func pinGain(device: (any RadioDevice)?, requested: [GainRequest] = []) async {
-        entryGains = await engine.snapshot.gains
         var settling = false
         for request in requested {
             let element = resolvedGainElement(request.element, in: gainElements)
@@ -567,27 +573,19 @@ actor SessionCaptureLease: CaptureLease {
         await store.publishCapture(captureID, by: .job(job))
     }
 
-    /// Puts the capture back, then releases the sweep's claim: until then nobody else can tune it,
-    /// so the restore cannot land on top of somebody's write.
+    /// Releases the sweep's claim. The store puts the capture back where the sweep found it, gains
+    /// included, before the claim leaves the ledger, so the return cannot land on top of
+    /// somebody's write; a capture the allocator made for the sweep is destroyed instead (CL-4).
     func release() async {
         guard !released else { return }
         released = true
-        if createdByLease {
-            await store.destroyCapture(id: captureID, by: .daemon)
-        } else {
-            await store.willMove(captureID, by: .job(job))
-            try? await engine.retune(centerHz: entryCenterHz)
-            for g in entryGains {
-                try? await engine.setGain(element: g.element, value: g.value)
-            }
-            await store.publishCapture(captureID, by: .job(job))
-        }
         await onRelease()
     }
 }
 
-/// One job's hold on one channel. Release destroys the channel, and whatever the allocator had to
-/// build under it: a capture it created, or the centre frequency it retuned away from.
+/// One job's hold on one channel. Release destroys the channel, and with it the channel's claim:
+/// the store then destroys a capture the allocator made that nothing else holds, or returns one
+/// the job moved to where the job found it (`SessionStore+Returns.swift`).
 actor SessionChannelLease: ChannelLease {
     nonisolated let channelID: ChannelID
     nonisolated let captureID: CaptureID
@@ -596,24 +594,16 @@ actor SessionChannelLease: ChannelLease {
     nonisolated let gainOutcome: LeaseGainOutcome
 
     private let store: SessionStore
-    private let createdCapture: Bool
-    private let restoreCenterHz: UInt64?
-    /// The gains a retuned capture had before the job set its own, put back with the centre.
-    private let restoreGains: [GainState]
     private let owner: ClientContext
     private var released = false
 
     init(channelID: ChannelID, captureID: CaptureID, engine: any ChannelEngine, store: SessionStore,
-         createdCapture: Bool, restoreCenterHz: UInt64?, restoreGains: [GainState] = [],
          gainOutcome: LeaseGainOutcome = .notAsked, owner: ClientContext)
     {
         self.channelID = channelID
         self.captureID = captureID
         self.engine = engine
         self.store = store
-        self.createdCapture = createdCapture
-        self.restoreCenterHz = restoreCenterHz
-        self.restoreGains = restoreGains
         self.gainOutcome = gainOutcome
         self.owner = owner
     }
@@ -622,26 +612,13 @@ actor SessionChannelLease: ChannelLease {
         guard !released else { return }
         released = true
         try? await store.destroyChannelChecked(id: channelID, by: owner)
-        // Only when nothing else is listening on it. Another job may have put its own channel in
-        // the capture this one opened, and destroying the capture under that channel is worse than
-        // letting the capture briefly outlive the job that created it.
-        guard await store.channelEngines(captureID: captureID).isEmpty else { return }
-        if createdCapture {
-            await store.destroyCapture(id: captureID, by: .daemon)
-        } else if restoreCenterHz != nil || !restoreGains.isEmpty, let capture = await store.captureEngine(captureID) {
-            if let centre = restoreCenterHz {
-                await store.willMove(captureID, by: owner)
-                try? await capture.retune(centerHz: centre)
-            }
-            await restoreGainStates(restoreGains, on: capture)
-            await store.publishCapture(captureID, by: owner)
-        }
     }
 }
 
 /// One IQ decode job's hold on one capture, read as raw IQ with no channel under it
-/// (docs/design/decoders.md, "Multiplexing"; DecoderSignal SIGNAL_IQ). Release destroys the capture
-/// only when the lease created it; a borrowed one is left as it was found.
+/// (docs/design/decoders.md, "Multiplexing"; DecoderSignal SIGNAL_IQ). Release gives up the job's
+/// IQ claim; what becomes of the capture is the claims' business (DEC-19): one the allocator made
+/// lives while any other claim holds it, and one the job moved returns when nothing is in the way.
 actor SessionCaptureIQLease: CaptureIQLease {
     nonisolated let captureID: CaptureID
     nonisolated let sampleRateHz: UInt64
@@ -649,26 +626,17 @@ actor SessionCaptureIQLease: CaptureIQLease {
 
     nonisolated let gainOutcome: LeaseGainOutcome
 
-    private let store: SessionStore
-    private let createdCapture: Bool
-    /// The gains a retuned capture had before the job set its own, put back on release.
-    private let restoreGains: [GainState]
-    /// Takes the job off the allocator's readers of the capture, and says whether another job
-    /// still reads it.
-    private let onRelease: @Sendable () async -> Bool
+    /// Takes the job's claim off the capture.
+    private let onRelease: @Sendable () async -> Void
     private var released = false
 
     init(captureID: CaptureID, capture: any CaptureEngine, sampleRateHz: UInt64,
-         createdCapture: Bool, store: SessionStore, gainOutcome: LeaseGainOutcome = .notAsked,
-         restoreGains: [GainState] = [], onRelease: @escaping @Sendable () async -> Bool = { false })
+         gainOutcome: LeaseGainOutcome = .notAsked, onRelease: @escaping @Sendable () async -> Void = {})
     {
         self.captureID = captureID
         self.capture = capture
         self.sampleRateHz = sampleRateHz
-        self.createdCapture = createdCapture
-        self.store = store
         self.gainOutcome = gainOutcome
-        self.restoreGains = restoreGains
         self.onRelease = onRelease
     }
 
@@ -677,19 +645,6 @@ actor SessionCaptureIQLease: CaptureIQLease {
     func release() async {
         guard !released else { return }
         released = true
-        let othersRead = await onRelease()
-        // A capture this lease retuned gets its gain back, as a sweep's does, unless another IQ
-        // job has joined it since: that job reads the band at the gain it found.
-        if !createdCapture, !restoreGains.isEmpty, !othersRead {
-            await restoreGainStates(restoreGains, on: capture)
-            await store.publishCapture(captureID)
-        }
-        // A capture this lease created is destroyed; one it reused is left for its owner. Running two
-        // IQ decoders that would share one created capture is not yet safe -- it needs capture
-        // refcounting -- and is a follow-up (docs/design/decoders.md, "Multiplexing"); today the
-        // creator destroys on release.
-        if createdCapture {
-            await store.destroyCapture(id: captureID, by: .daemon)
-        }
+        await onRelease()
     }
 }

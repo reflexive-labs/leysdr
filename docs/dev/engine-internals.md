@@ -566,8 +566,8 @@ Activity: `last_interactive_write_ns` is updated by any capture/channel write wh
 Claims (`SessionStore+Claims.swift`, `../design/claims.md`): each `CaptureEntry` keeps a ledger of
 what every consumer needs from the capture's tuning, oldest first, and `captureProto` puts it on the
 wire as `Capture.claims`, so `GetState` and every capture event carry it and a destroyed capture
-takes its claims with it. `CapturePlanner` (below) places by it, and a move marks what it displaces (below); nothing
-returns by it yet (CL-4).
+takes its claims with it. `CapturePlanner` (below) places by it, a move marks what it displaces, and a job's
+move is undone by it when the job lets go (below).
 Every consumer makes its claim when it starts and releases it when it ends, cancel and failure
 included, and each change publishes the capture:
 
@@ -627,8 +627,34 @@ however it arises ("<model> cannot tune <f>", "cannot tune to" for a dedicated d
 "in use" is `DEVICE_BUSY`; a walk's decline gives the last reason it met with that reason's code.
 A retune by a person is declined only by a sweep (`DEVICE_SWEEPING`), a tuning range or a rate
 the radio lacks, and does not count the writer's own claims as displaced; a job's is declined by
-the don't-disturb test unless it takes over. The design's priority rule in full, and the
-clients' confirmations, are CL-4 and CL-5.
+the don't-disturb test unless it takes over. The clients' confirmations are CL-5.
+
+Returning and sharing (`SessionStore+Returns.swift`, CL-4). When the allocator moves a capture
+for a job (a channel's or an IQ reader's retune, `take_over` or not, and a sweep's lease), it
+notes a `ReturnPoint` on the capture: the job's claim, and the centre, rate and gains it found
+(gains only when the job set its own; a sweep's always) with the gains it left. When a claim is
+released (`releaseClaim`, a channel destroyed), `claimReleased` first destroys a capture the
+allocator made (`heldByClaims`) that no CHANNEL, IQ or SWEEP claim holds any more, whoever made
+the claims: a view or a presence does not keep a radio open. Otherwise it walks the points newest
+first; a point whose claim is still held waits, and one whose job has let go returns the capture
+to its tuning, rate first, then centre, then the gains if they are still the ones the job left:
+
+1. If a person has moved the capture since the point was noted, there is no point: a move
+   recorded with a person as the mover (`notePersonMove`) clears every point, so nothing returns
+   over their head.
+2. If the last move was the point's own job's (or a return), it goes back unless that displaces
+   a claim satisfied now: a claim made on the new tuning keeps it.
+3. If anybody else moved it since (another job, the daemon), it goes back only when every claim
+   left is satisfied there.
+
+A point that cannot return yet stays and is tried again at the next release on the capture, so a
+capture another job joined goes back when that job lets go too; one that returns takes every
+newer point with it. Each "stays" is logged with the claims in the way. The return is published
+as a write is, attributed to the job that moved the capture: displaced claims come back SATISFIED
+with `displaced_by` cleared, a channel is back in capture, a job leaves DEGRADED and an IQ
+recording opens a new part. A sweep's claim stays on the ledger until its return is done, so no
+write lands in between. This replaces the channel lease's `restoreCenterHz`, the sweep lease's
+restore and the decode job's gain restore (DA-12).
 
 ### Control service
 
@@ -1061,9 +1087,10 @@ step on the store (`claimSweep`), so two scans racing for one tuner cannot both 
 `refuseIfSwept` rejects interactive `WriteParams`/`CreateChannel` calls on it for as long as the
 claim holds. The other two allocations skip a capture with a SWEEP claim. `SweepPlan.edgeFraction` widens a device's tuning range slightly
 when deciding whether it can cover a request, which is how a `FilePlaybackDevice` — whose "range" is
-the single frequency its fixture was recorded at — can still serve a sweep. Releasing a lease that
-created its capture destroys it; releasing one that borrowed an existing capture retunes and re-gains
-it back to what it found, and only then releases the SWEEP claim.
+the single frequency its fixture was recorded at — can still serve a sweep. Releasing the lease
+releases the SWEEP claim: a capture the allocator made for the sweep is destroyed, and a borrowed
+one goes back to the centre and gains the sweep found before the claim leaves the ledger
+("Returning and sharing" under SessionStore).
 
 ### Decoders
 
@@ -1113,15 +1140,16 @@ one centred `frequency − Fs/8`, so the channel sits clear of the tuner's DC sp
 flat part of the passband), else a capture the don't-disturb test calls free (retuned), else it
 declines with the reason a sweep would give unless `take_over`. The channel is persistent with
 `required_hz` set and is owned by the job, not by the client. Releasing the `ChannelLease` destroys
-the channel, and the capture too when the lease created it and nothing else is listening on it.
+the channel and its claim; a capture the allocator made goes when no claim holds it, and one the
+job retuned goes back (CL-4, "Returning and sharing" under SessionStore).
 
 A decode job's gain (`JobStore.decodeGains`) is `DecodeConfig.gains` (or `gain`) when it sends one,
 else the recipe's `GAIN_FIXED` `gain_db` on the first stage, else none; `GAIN_AUTO` sets nothing
 yet. It rides in the allocation request (`.channel` and `.captureIQ` both take `gains`), and the
 allocator sets it only on a capture of step 2 or 3, the one it created or retuned, never on a
 capture that already covered the frequency: that gain is its owner's. A retuned capture's gains
-are read before they are set and put back on release, with the centre for a channel lease and,
-for an IQ lease, only when no other IQ job still reads the capture. The lease's `gainOutcome` tells
+are read before they are set and put back by the return, with the centre and rate, while they
+are still the ones the job set. The lease's `gainOutcome` tells
 the job what happened: `leftAsFound` puts "gain left at the radio's 27 dB" after the count in the
 running `status_detail` (`DecodeLiveness.note`); a refusal of a gain the config sent fails the job
 with the device's code and "the gain asked for could not be set: …", as a recording's does; a

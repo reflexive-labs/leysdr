@@ -137,7 +137,7 @@ func (d *Daemon) startRecord(ctx context.Context, cfg *leylinev1.RecordConfig) (
 	job.ResultUris = []string{leyline.RecordingURI(job.JobId)}
 	fj := &fakeJob{
 		proto: job, owner: ci.GetClientId(), hz: hz,
-		channelID: lease.channelID, captureID: lease.captureID, createdCapture: lease.created,
+		channelID: lease.channelID, captureID: lease.captureID,
 		// A recording outlives the client that started it, exactly as a kept decode job does.
 		keep: true,
 	}
@@ -492,9 +492,8 @@ func (d *Daemon) failRecord(jobID, code, reason string) {
 		d.destroyChannelLocked(j.channelID, by)
 		j.channelID = ""
 	}
-	if j.createdCapture && j.captureID != "" {
-		d.destroyCaptureLocked(j.captureID, by)
-		j.createdCapture = false
+	if j.captureID != "" {
+		d.releaseJobCaptureLocked(j.captureID, by)
 	}
 	j.proto.State = leylinev1.JobState_FAILED
 	j.proto.StatusDetail = reason
@@ -517,9 +516,8 @@ func (d *Daemon) finishRecord(jobID string, state leylinev1.JobState, endedBy st
 		d.destroyChannelLocked(j.channelID, by)
 		j.channelID = ""
 	}
-	if j.createdCapture && j.captureID != "" {
-		d.destroyCaptureLocked(j.captureID, by)
-		j.createdCapture = false
+	if j.captureID != "" {
+		d.releaseJobCaptureLocked(j.captureID, by)
 	}
 	heardNothing := false
 	if rec := j.record; rec != nil {

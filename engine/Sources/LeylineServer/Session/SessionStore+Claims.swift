@@ -4,8 +4,8 @@
 // tuning, kept beside the capture and carried on its events as `Capture.claims`. Clients never
 // make a claim; the store and the allocator make one when a consumer starts and release it when
 // the consumer ends. The planner places by them (CL-2); a move of the capture marks the claims it
-// leaves unsatisfied DISPLACED with who moved it and since when (CL-3). Nothing returns by them
-// yet (CL-4).
+// leaves unsatisfied DISPLACED with who moved it and since when (CL-3); a job's move is undone by
+// them when it lets go (CL-4, `SessionStore+Returns.swift`).
 
 import EngineCore
 import Foundation
@@ -77,10 +77,14 @@ extension SessionStore {
 
     /// Takes a claim off the capture's ledger and returns what is left on it. `publish: false` is
     /// for a release inside the capture's own teardown, whose tombstone follows. A view's release
-    /// rides the next event, as its arrival did.
+    /// rides the next event, as its arrival did. Any other release first destroys a capture the
+    /// allocator made that nothing else holds, or carries out a return that is due
+    /// (`claimReleased`); the claim stays on the ledger until then, so a sweep's keeps writes off
+    /// the radio until it is back.
     @discardableResult
     func releaseClaim(_ claimID: ClaimID, on id: CaptureID, publish: Bool = true) async -> [ClaimEntry] {
         guard let gone = captures[id]?.claims.first(where: { $0.id == claimID }) else { return captures[id]?.claims ?? [] }
+        if publish, gone.priority != .priorityView, await claimReleased(id, without: claimID) { return [] }
         captures[id]?.claims.removeAll { $0.id == claimID }
         let left = captures[id]?.claims ?? []
         if publish {
@@ -224,8 +228,9 @@ extension SessionStore {
         guard let entry = captures[id], snap.tuningGeneration != entry.published.generation else { return }
         let now = PublishedTuning(centerHz: snap.centerHz, sampleRate: snap.sampleRate, generation: snap.tuningGeneration)
         if snap.centerHz != entry.published.centerHz || snap.sampleRate != entry.published.sampleRate {
-            captures[id]?.lastMove = CaptureMove(by: entry.pendingMover ?? by ?? .daemon, from: entry.published, to: now,
-                                                 atNs: WallClock.realNowNs())
+            let mover = entry.pendingMover ?? by ?? .daemon
+            captures[id]?.lastMove = CaptureMove(by: mover, from: entry.published, to: now, atNs: WallClock.realNowNs())
+            notePersonMove(id, by: mover)
         } else if var move = entry.lastMove, move.to.centerHz == now.centerHz, move.to.sampleRate == now.sampleRate {
             // Back where the last move left it: that move still says how it got here.
             move.to.generation = now.generation

@@ -302,13 +302,20 @@ final class IQDecodeJobTests: XCTestCase {
             XCTAssertEqual(self.integer(takenRec.first, "center_hz"), 100_100_000)
             let retuned = try await self.onlyCapture(c)
             XCTAssertEqual(retuned.centerHz, 100_100_000)
-            try await self.cancel(c, taken.jobID)
 
             // Now centred, it is shared without take_over, though it was tuned within the minute.
             let centred = try await self.startIQ(c, decoder: "fakewide", frequencyHz: 100_100_000)
             let centredRec = try await self.records(c, job: centred.jobID, count: 1)
             XCTAssertEqual(self.integer(centredRec.first, "center_hz"), 100_100_000)
+
+            // CL-4: the capture goes back to where the take_over found it only once the decoder
+            // that joined it there has let go too.
+            try await self.cancel(c, taken.jobID)
+            let stillShared = try await self.onlyCapture(c)
+            XCTAssertEqual(stillShared.centerHz, 100_100_000, "the sharer still reads it here")
             try await self.cancel(c, centred.jobID)
+            let returned = try await self.onlyCapture(c)
+            XCTAssertEqual(returned.centerHz, 100_600_000, "back where the person left it")
         }
     }
 

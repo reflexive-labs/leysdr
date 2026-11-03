@@ -66,7 +66,7 @@ func (d *Daemon) startDecode(ctx context.Context, cfg *leylinev1.DecodeConfig) (
 	}
 	fj := &fakeJob{
 		proto: job, owner: ci.GetClientId(), protocol: man.GetName(), hz: hz, keep: cfg.GetKeep(),
-		channelID: lease.channelID, captureID: lease.captureID, createdCapture: lease.created,
+		channelID: lease.channelID, captureID: lease.captureID,
 		gainNote: gainNote,
 	}
 	d.jobs[job.JobId] = fj
@@ -295,7 +295,7 @@ func (d *Daemon) createJobCaptureLocked(dev *leylinev1.DeviceDescriptor, hz uint
 	}
 	now := time.Now()
 	by := &leylinev1.ClientInfo{ClientId: "daemon", Kind: "job", Label: "decode"}
-	c := &capture{startedAt: now, manualGain: map[string]float64{}, Capture: &leylinev1.Capture{
+	c := &capture{startedAt: now, manualGain: map[string]float64{}, heldByClaims: true, Capture: &leylinev1.Capture{
 		CaptureId:  newID("cap_"),
 		DeviceId:   dev.DeviceId,
 		CenterHz:   centre,
@@ -471,9 +471,8 @@ func (d *Daemon) failDecodeLocked(j *fakeJob, why *leylinev1.ErrorDetail) {
 		d.destroyChannelLocked(j.channelID, by)
 		j.channelID = ""
 	}
-	if j.createdCapture && j.captureID != "" {
-		d.destroyCaptureLocked(j.captureID, by)
-		j.createdCapture = false
+	if j.captureID != "" {
+		d.releaseJobCaptureLocked(j.captureID, by)
 	}
 	d.endClipsLocked(j, "error")
 	j.proto.State = leylinev1.JobState_FAILED
@@ -497,9 +496,8 @@ func (d *Daemon) finishDecode(jobID string) {
 		d.destroyChannelLocked(j.channelID, by)
 		j.channelID = ""
 	}
-	if j.createdCapture && j.captureID != "" {
-		d.destroyCaptureLocked(j.captureID, by)
-		j.createdCapture = false
+	if j.captureID != "" {
+		d.releaseJobCaptureLocked(j.captureID, by)
 	}
 	if j.proto.State != leylinev1.JobState_RUNNING {
 		return

@@ -200,6 +200,9 @@ type capture struct {
 	// `auto: false` puts back: turning automatic gain off asks for the manual level, and the
 	// one the client last confirmed is the one it means.
 	manualGain map[string]float64
+	// heldByClaims marks a capture made for a job: like the daemon's, it lives while any channel
+	// is on it and goes with the last one, whichever job made it (claims.md, CL-4; DEC-19).
+	heldByClaims bool
 }
 
 // sampleIndex returns the capture's current sample position: wall-clock

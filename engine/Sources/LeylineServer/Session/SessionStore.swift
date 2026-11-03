@@ -108,6 +108,18 @@ actor SessionStore {
         /// the one `viewFlush` publishes a second later (`noteViewChange`).
         var viewChanged = false
         var viewFlush: Task<Void, Never>?
+        /// Where jobs found the capture before they moved it, oldest first: what a return goes back
+        /// to once the job that moved it has let go (`SessionStore+Returns.swift`).
+        var returns: [ReturnPoint] = []
+        /// The allocator made this capture for a job: it lives while a channel, IQ or sweep claim
+        /// holds it, whoever made that claim, and goes with the last (DEC-19).
+        var heldByClaims = false
+        /// A return is being worked out or carried out; a release meanwhile asks for another look.
+        var settling = false
+        var settleAgain = false
+        /// The tuning generation a return left the capture at, so the next return can tell the
+        /// last move was a return and not somebody else's.
+        var returnedGeneration: UInt64?
     }
 
     /// Where a capture was tuned on its last event.

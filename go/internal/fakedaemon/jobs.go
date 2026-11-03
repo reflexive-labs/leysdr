@@ -35,14 +35,13 @@ type fakeJob struct {
 	// The decode job's own state: what it is decoding, the channel and capture it holds, the
 	// records it has emitted (the last retainedRecords of them, for since_seq replay) and the
 	// seq it has reached.
-	protocol       string
-	hz             uint64
-	channelID      string
-	captureID      string
-	createdCapture bool
-	keep           bool
-	seq            uint64
-	records        []*leylinev1.DecodeRecord
+	protocol  string
+	hz        uint64
+	channelID string
+	captureID string
+	keep      bool
+	seq       uint64
+	records   []*leylinev1.DecodeRecord
 	// gainNote is what a decode job's detail ends with for as long as it runs, as the daemon's
 	// liveness keeps it: the gain a shared capture was left at ("; gain left at ...").
 	gainNote string
