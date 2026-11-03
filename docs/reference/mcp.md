@@ -113,8 +113,8 @@ are optional in the schema; the defaults are the mirror verb's.
 | `list_decoders` | `ley decoders` | `Decoders.ListDecoders` | none | `ListDecodersResponse` |
 | `query_records` | `ley records` | `Decoders.QueryRecords` | `protocol`, `job_id`, `device_id`, `kind`, `since_s`, `near` + `radius`, `in_effect`, `limit` | `RecordPage` |
 | `list_entities` | `ley track --json` | `Decoders.SubscribeRecords` + the `records.Table` fold | `protocol`; `duration_s` (default 5, at most 300), `since_s`, `device`, `take_over` | `{entities: […]}` |
-| `start_decode_job` | `ley decode`, `ley decode --job` | `Jobs.StartJob(DecodeConfig)` | `decoder`; `frequency`, `device`, `take_over`, `keep` | `Job` |
-| `watch` | `ley watch`, `ley watch --detach` | `Jobs.StartJob(DecodeConfig)` with a predicate and a notifier | `decoder`; `where` (a list), `county` (a list), `near` + `radius`, `notify` (`macos` or `webhook:URL`), `frequency`, `device`, `take_over`, `keep` | `Job` |
+| `start_decode_job` | `ley decode`, `ley decode --job` | `Jobs.StartJob(DecodeConfig)` | `decoder`; `frequency`, `gain`, `device`, `take_over`, `keep` | `Job` |
+| `watch` | `ley watch`, `ley watch --detach` | `Jobs.StartJob(DecodeConfig)` with a predicate and a notifier | `decoder`; `where` (a list), `county` (a list), `near` + `radius`, `notify` (`macos` or `webhook:URL`), `frequency`, `gain`, `device`, `take_over`, `keep` | `Job` |
 | `record` | `ley record` | `Jobs.StartJob(RecordConfig)` | `target` (frequency, preset or `chan_…`), `duration_s` (**required**, 1 to 3600); `iq`, `gate`, `pre_roll_ms`, `hang_ms`, `mode`, `bandwidth`, `squelch`, `gain`, `device`, `take_over` | the finished `Job` |
 | `find_recordings` | `ley recordings` | `Resources.ListResources(RECORDING)` | `kind`, `frequency`, `mode`, `since_s`, `limit` | `ListResourcesResponse` |
 | `get_recording` | `ley recordings show`, `ley recordings path` | `Resources.GetResource` + `ResolveLocalPath` | `id` (job id or `ley://recordings/` uri) | `{manifest, directory, parts: [{part, path, samples}]}` |

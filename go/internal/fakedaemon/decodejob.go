@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strconv"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -50,13 +52,14 @@ func (d *Daemon) startDecode(ctx context.Context, cfg *leylinev1.DecodeConfig) (
 		d.mu.Unlock()
 		return nil, fail(ctx, err)
 	}
+	gainNote, gainErr := d.decodeGainLocked(cfg, man.GetRecipe(), lease)
 	job := &leylinev1.Job{
 		JobId:        newID("job_"),
 		State:        leylinev1.JobState_RUNNING,
 		CreatedAtNs:  time.Now().UnixNano(),
 		CreatedBy:    ci,
 		Config:       &leylinev1.Job_Decode{Decode: proto.Clone(cfg).(*leylinev1.DecodeConfig)},
-		StatusDetail: fmt.Sprintf("decoding %s on %s", man.GetName(), units.FormatFrequency(hz)),
+		StatusDetail: fmt.Sprintf("decoding %s on %s%s", man.GetName(), units.FormatFrequency(hz), gainNote),
 	}
 	if cfg.GetKeep() {
 		job.ResultUris = []string{"ley://records/" + job.JobId}
@@ -86,6 +89,11 @@ func (d *Daemon) startDecode(ctx context.Context, cfg *leylinev1.DecodeConfig) (
 	spawned := d.withSpeechModel(man)
 	d.mu.Unlock()
 
+	if gainErr != nil {
+		// The daemon answers with the running job and fails it once the allocation returns.
+		go d.declineDecode(job.JobId, gainErr)
+		return reply, nil
+	}
 	if d.opts.DeclineDecode != nil {
 		if why := d.opts.DeclineDecode(cfg); why != nil {
 			go d.declineDecode(job.JobId, why)
@@ -115,6 +123,59 @@ func (d *Daemon) declineDecode(jobID string, why *leyline.Error) {
 	if j != nil && j.proto.GetState() == leylinev1.JobState_RUNNING {
 		d.failDecodeLocked(j, &leylinev1.ErrorDetail{Code: why.Code, Message: why.Message, Target: why.Target})
 	}
+}
+
+// decodeGainLocked is the daemon's decode gain (decode.proto, DecodeConfig.gains): the config's
+// gains when it sends any, else the recipe's GAIN_FIXED level on the first stage, set only on a
+// capture the lease created. A capture the job shares keeps its owner's gain, and the job's
+// detail gets "; gain left at the radio's N dB". A refusal of a gain the config sent fails the
+// job; a recipe's is skipped on a radio with no gain stage. Caller holds the lock.
+func (d *Daemon) decodeGainLocked(cfg *leylinev1.DecodeConfig, recipe *leylinev1.DecoderRecipe,
+	lease channelLease,
+) (note string, failure *leyline.Error) {
+	writes := cfg.GetGains()
+	if len(writes) == 0 && cfg.GetGain() != nil {
+		writes = []*leylinev1.GainWrite{cfg.GetGain()}
+	}
+	sent := len(writes) > 0
+	if !sent && recipe.GetGain() == leylinev1.GainPolicy_GAIN_FIXED {
+		writes = []*leylinev1.GainWrite{{Value: &leylinev1.GainWrite_Db{Db: recipe.GetGainDb()}}}
+	}
+	c := d.captures[lease.captureID]
+	if len(writes) == 0 || c == nil {
+		return "", nil
+	}
+	dev := d.devices[c.GetDeviceId()]
+	if !lease.created {
+		if len(c.Gains) == 0 {
+			return "", nil
+		}
+		var levels []string
+		for _, g := range c.Gains {
+			level := "auto"
+			if !g.GetAuto() {
+				level = strconv.FormatFloat(g.GetDb(), 'f', -1, 64) + " dB"
+			}
+			if len(c.Gains) > 1 {
+				level = g.GetElement() + " " + level
+			}
+			levels = append(levels, level)
+		}
+		return "; gain left at the radio's " + strings.Join(levels, ", "), nil
+	}
+	if !sent && len(dev.GetGainElements()) == 0 {
+		return "", nil
+	}
+	defer d.emit(byDaemon(), c.Capture)
+	for _, w := range writes {
+		if err := d.applyGainLocked(c, dev, w, lease.captureID); err != nil {
+			if sent {
+				return "", errorf(err.Code, err.Target, "the gain asked for could not be set: "+err.Message)
+			}
+			return "; the recipe's gain could not be set: " + err.Message, nil
+		}
+	}
+	return "", nil
 }
 
 func quoted(s string) string { return "\"" + s + "\"" }

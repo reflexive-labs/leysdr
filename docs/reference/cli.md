@@ -51,7 +51,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # time-ordered transmission log; Jobs.StartJob(MonitorConfig), detections on telemetry
 ├── decoders                         # the installed decoder plugins: name, recipe, output shapes, version,
 │                                    # and for one that calls a provider the key it needs and the hosts it sends to
-├── decode <decoder> [--freq F] [--device SEL] [--take-over] [--job] [--count N] [--recording R]
+├── decode <decoder> [--freq F] [--gain dB|auto|STAGE=dB,...] [--device SEL] [--take-over] [--job] [--count N] [--recording R]
 │                                    # Jobs.StartJob(DecodeConfig): the daemon finds or makes the capture,
 │                                    # adds the channel the job owns and spawns the plugin; records arrive
 │                                    # on Decoders.SubscribeRecords, one line each; --job keeps them as
@@ -59,7 +59,10 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # of its own (speech) needs --freq; speech also records its overs
 │                                    # as ley://recordings/<job_id>, kept only with --job; --recording
 │                                    # reads a stored recording instead (DecodeConfig.source_uri, kept):
-│                                    # IQ for an IQ decoder, audio for any other; it ends on its own
+│                                    # IQ for an IQ decoder, audio for any other; it ends on its own;
+│                                    # --gain (DecodeConfig.gains) overrides the recipe's GAIN_FIXED and
+│                                    # is set only on a capture the job creates or retunes, put back
+│                                    # after; a shared capture keeps its gain and the job's detail says it
 ├── records [--protocol P] [--job-id ID] [--device-id ID] [--kind K] [--since 1h] [--near LAT,LON --radius 10km] [--in-effect] [--limit N]
 │                                    # Decoders.QueryRecords over what kept jobs wrote, newest first;
 │                                    # an OVER column (<part>/<over>) when a record names a clip
@@ -67,7 +70,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # a kept decode job with DecodeConfig.source_uri: a speech decoder reads
 │                                    # a gated recording one over at a time; states the minutes of
 │                                    # squelch-open audio and where they go, and asks first
-├── watch <decoder> [--where field=value] [--county FIPS] [--near LAT,LON --radius R] [--notify[=TARGET]] [--freq F] [--device SEL] [--take-over] [--detach|--job] [--count N]
+├── watch <decoder> [--where field=value] [--county FIPS] [--near LAT,LON --radius R] [--notify[=TARGET]] [--freq F] [--gain dB|auto|STAGE=dB,...] [--device SEL] [--take-over] [--detach|--job] [--count N]
 │                                    # a decode job with a daemon-side predicate and a notifier:
 │                                    # attached it streams only the matching records; --detach leaves
 │                                    # the job running so the notifier (bare=macOS, webhook:URL,

@@ -11,6 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
+	"github.com/reflexive-labs/leysdr/go/pkg/units"
 )
 
 // The watch tool: `ley watch` seen from an agent. It builds the filter and the notifier with the
@@ -30,6 +31,7 @@ func (srv *mcpServer) registerWatchTool() {
 			"Without keep the job ends when this server exits; with keep it runs on and keeps firing. A kept watch or a webhook notifier is the user's to confirm first: show them the filter and the notifier. " +
 			"Refuses a radio somebody is using unless take_over is true. Returns the Job; the text is ley watch's banner.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(true)},
+		InputSchema: gainSchema[watchArgs]("; " + decodeGainNote),
 	}, srv.watch)
 }
 
@@ -44,6 +46,7 @@ type watchArgs struct {
 	Device    string   `json:"device,omitempty" jsonschema:"which radio: an id, id prefix or row number from list_devices (default: the daemon picks)"`
 	TakeOver  bool     `json:"take_over,omitempty" jsonschema:"watch even when somebody is using the radio; it is theirs again afterwards (default: false)"`
 	Keep      bool     `json:"keep,omitempty" jsonschema:"keep the job running after this server exits, so the notifier fires with nothing connected (default: false). The user's to confirm first"`
+	Gain      string   `json:"gain,omitempty"`
 }
 
 // shellNotifyRefusal is the sentence a shell notifier is refused with.
@@ -53,7 +56,12 @@ func (srv *mcpServer) watch(ctx context.Context, _ *mcp.CallToolRequest, in watc
 	if strings.TrimSpace(in.Decoder) == "" {
 		return nil, nil, errors.New("decoder is required: a name from list_decoders, e.g. aprs")
 	}
-	o := watchOptions{device: in.Device, takeOver: in.TakeOver, detach: in.Keep}
+	if in.Gain != "" {
+		if _, err := units.ParseGains(in.Gain); err != nil {
+			return nil, nil, fmt.Errorf("gain %w", err)
+		}
+	}
+	o := watchOptions{device: in.Device, takeOver: in.TakeOver, detach: in.Keep, gain: in.Gain}
 	var notify *string
 	if n := strings.TrimSpace(in.Notify); n != "" {
 		// Refused by name before parsing, so the sentence is this one and not the parser's.

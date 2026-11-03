@@ -236,8 +236,8 @@ ripple, a carrier in CW is a sine, NFM voice is a voice.
 }
 
 // gainHelp is the one sentence every place that takes a gain describes it with: --gain on every
-// verb, 'ley set gain', and the gain field of the MCP tune, listen_summary, record and scan
-// tools. 'ley help gain' is the one place the syntax is explained.
+// verb, 'ley set gain', and the gain field of the MCP tune, listen_summary, record, scan,
+// start_decode_job and watch tools. 'ley help gain' is the one place the syntax is explained.
 const gainHelp = "receiver gain: auto, dB such as 30 for the first stage, or stages such as LNA=0,VGA=20 (ley help gain)"
 
 func topicGain() string {
@@ -248,8 +248,10 @@ at once: the noise floor rises, stations appear at frequencies where there
 is nothing (images), and a strong station splatters across its neighbours.
 
 Every verb that takes a gain reads it the same way: --gain on tune, play,
-listen, levels, scope, waveform, record and scan, the value of
-'ley set gain', and the gain of the MCP tools.
+listen, levels, scope, waveform, record, scan, decode and watch, the value
+of 'ley set gain', and the gain of the MCP tools. A decode or watch sets it
+only on a radio the job tunes, never on one it shares, and it overrides
+the decoder's recipe.
 
   auto           let the radio choose. For a sweep, where the radio's
                  automatic gain settles, then held.

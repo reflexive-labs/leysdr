@@ -105,6 +105,7 @@ func (srv *mcpServer) registerTools() {
 		Description: "Start a decoder on its recipe's frequency (Jobs.StartJob(DecodeConfig); ley decode). The daemon finds or makes the capture and refuses a radio somebody is using unless take_over is true. " +
 			"Without keep the job ends when this server exits and its records reach list_entities only; with keep it runs on and its records are stored for query_records. Returns a Job.",
 		Annotations: mutates,
+		InputSchema: gainSchema[startDecodeJobArgs]("; " + decodeGainNote),
 	}, srv.startDecodeJob)
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "record",
@@ -167,8 +168,8 @@ var (
 
 // gainSchema is the input schema the SDK would infer for a tool's arguments, with the gain field
 // described by gainHelp and the tool's own default after it. A struct tag cannot name a constant,
-// and the four tools that take a gain (tune, listen_summary, record, scan) describe it in the same
-// sentence as every --gain.
+// and the tools that take a gain (tune, listen_summary, record, scan, start_decode_job, watch)
+// describe it in the same sentence as every --gain.
 func gainSchema[T any](tail string) *jsonschema.Schema {
 	sch, err := jsonschema.For[T](&jsonschema.ForOptions{})
 	if err != nil {
@@ -180,7 +181,7 @@ func gainSchema[T any](tail string) *jsonschema.Schema {
 
 // gainToolNote is what an agent cannot learn from gainHelp alone: which radios take auto, and
 // where to read it. A first sweep sent auto to a HackRF, which has no automatic gain, and failed.
-// It is on four tools' schemas, so it stays one clause.
+// It is on six tools' schemas, so it stays one clause.
 const gainToolNote = "; auto only where get_state lists a gain element with supportsAuto (an RTL-SDR's TUNER); a HackRF takes LNA=24,VGA=24,AMP=0|11"
 
 // registerResources exposes the ley:// resources the daemon can answer: a
@@ -1419,11 +1420,17 @@ type startDecodeJobArgs struct {
 	Device    string `json:"device,omitempty" jsonschema:"which radio: an id, id prefix or row number from list_devices (default: the daemon picks)"`
 	TakeOver  bool   `json:"take_over,omitempty" jsonschema:"decode even when somebody is using the radio; it is theirs again afterwards (default: false)"`
 	Keep      bool   `json:"keep,omitempty" jsonschema:"keep the job and its records after this server exits; kept records are what query_records reads (default: false)"`
+	Gain      string `json:"gain,omitempty"`
 }
 
 func (srv *mcpServer) startDecodeJob(ctx context.Context, _ *mcp.CallToolRequest, in startDecodeJobArgs) (*mcp.CallToolResult, any, error) {
 	c := srv.client
-	cfg := &leylinev1.DecodeConfig{Decoder: in.Decoder, TakeOver: in.TakeOver, Keep: in.Keep}
+	if in.Gain != "" {
+		if _, err := units.ParseGains(in.Gain); err != nil {
+			return nil, nil, fmt.Errorf("gain %w", err)
+		}
+	}
+	cfg := &leylinev1.DecodeConfig{Decoder: in.Decoder, TakeOver: in.TakeOver, Keep: in.Keep, Gains: gainWrites(in.Gain)}
 	if name, _, err := c.ResolveDecoder(ctx, in.Decoder); err == nil {
 		cfg.Decoder = name
 	}

@@ -23,6 +23,7 @@ type watchOptions struct {
 	device    string
 	deviceID  string
 	takeOver  bool
+	gain      string
 	detach    bool
 	count     int
 	predicate *leylinev1.Predicate
@@ -104,6 +105,9 @@ notifier, so it fires whether or not ley is attached.
 			if err := o.build(args[0], freq, where, counties, near, radius, notifyValue); err != nil {
 				return err
 			}
+			if err := checkDecodeGain(o.gain, ""); err != nil {
+				return err
+			}
 			o.detach = asJob
 			s, err := openSession(cmd.Context(), app)
 			if err != nil {
@@ -123,6 +127,7 @@ notifier, so it fires whether or not ley is attached.
 	}
 	cmd.Flags().StringVar(&freq, "freq", "", "watch somewhere other than the recipe's frequency, e.g. 144.8 (a bare number is MHz)")
 	cmd.Flags().StringVar(&o.device, "device", "", "which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)")
+	cmd.Flags().StringVar(&o.gain, "gain", "", gainHelp+"; "+decodeGainNote)
 	cmd.Flags().BoolVar(&o.takeOver, "take-over", false, "watch even when somebody is using the radio; it is theirs again afterwards")
 	cmd.Flags().StringArrayVar(&where, "where", nil, "a field test: field=value, field!=value, field~value, field>value (repeatable)")
 	cmd.Flags().StringArrayVar(&counties, "county", nil, "a county the record must name in its 'fips' field: the five-digit FIPS code (06009) or the six-digit SAME code (006009) (repeatable)")
@@ -169,6 +174,7 @@ func (o watchOptions) config() *leylinev1.DecodeConfig {
 		FrequencyHz: o.freqHz,
 		DeviceId:    o.deviceID,
 		TakeOver:    o.takeOver,
+		Gains:       gainWrites(o.gain),
 		Keep:        o.detach,
 		Predicate:   o.predicate,
 		Notify:      o.notify,

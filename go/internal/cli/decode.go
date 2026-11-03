@@ -27,6 +27,8 @@ type decodeOptions struct {
 	takeOver bool
 	keep     bool
 	count    int
+	// gain is --gain as typed: stages for a radio the decoder has to itself, over the recipe's.
+	gain string
 	// recording is --recording: a stored recording to decode instead of a radio.
 	recording string
 }
@@ -56,7 +58,11 @@ of that recording that hold them. The recording is kept with --job and goes
 when an unkept job ends.
 
 The daemon finds a capture that already covers the frequency, or makes one on
-an idle radio, or says who has the radio instead; --take-over insists. All of
+an idle radio, or says who has the radio instead; --take-over insists. A
+decoder may fix the gain in its recipe (ADS-B's is 40 dB), and --gain sets
+another; either is set only on a radio the job tunes and is put back when it
+ends. On a capture somebody else made, the gain stays theirs and the job's
+status says what it was left at. All of
 the decoding happens in the daemon, so an agent or a script reading --json
 sees exactly what the terminal shows.
 
@@ -74,6 +80,7 @@ are kept, so 'ley records --job-id <job>' reads them again.
   ley decode aprs --count 5               # five packets, then stop
   ley decode aprs --freq 144.8            # the European allocation
   ley decode aprs --job                   # keep decoding after ley exits
+  ley decode adsb --gain 49.6             # more than the recipe's 40 dB
   ley decode speech --freq 146.94 --job   # transcribe a repeater all day
   ley decode iqstat --recording job_01J...  # an IQ decoder over an IQ recording
   ley decode aprs --json | jq -r .deviceId`,
@@ -89,6 +96,9 @@ are kept, so 'ley records --job-id <job>' reads them again.
 			o.decoder = args[0]
 			if o.recording != "" && (freq != "" || o.device != "" || o.takeOver || o.keep) {
 				return usageErrorf("--recording decodes a stored recording, so --freq, --device, --take-over and --job do not apply; its records are kept anyway")
+			}
+			if err := checkDecodeGain(o.gain, o.recording); err != nil {
+				return err
 			}
 			if freq != "" {
 				hz, err := units.ParseFrequency(freq)
@@ -117,6 +127,7 @@ are kept, so 'ley records --job-id <job>' reads them again.
 	cmd.Flags().StringVar(&freq, "freq", "", "decode somewhere other than the recipe's frequency, e.g. 144.8 (a bare number is MHz)")
 	cmd.Flags().StringVar(&o.device, "device", "", "which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)")
 	cmd.Flags().BoolVar(&o.takeOver, "take-over", false, "decode even when somebody is using the radio; it is theirs again afterwards")
+	cmd.Flags().StringVar(&o.gain, "gain", "", gainHelp+"; "+decodeGainNote)
 	cmd.Flags().BoolVar(&o.keep, "job", false, "keep the job and its records after ley exits ('ley jobs cancel' stops it)")
 	cmd.Flags().IntVar(&o.count, "count", 0, "stop after this many records, e.g. 5 (default: until Ctrl-C)")
 	cmd.Flags().StringVar(&o.recording, "recording", "", "decode a stored recording instead of the radio: a job id, id prefix or ley://recordings/ URI")
@@ -144,6 +155,7 @@ func runDecode(ctx context.Context, s *verbSession, o decodeOptions) error {
 		DeviceId:    o.deviceID,
 		TakeOver:    o.takeOver,
 		Keep:        o.keep,
+		Gains:       gainWrites(o.gain),
 	}
 	job, err := s.Client.StartDecode(ctx, cfg)
 	if err != nil {

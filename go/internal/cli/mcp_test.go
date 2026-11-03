@@ -224,8 +224,8 @@ func TestMCPListsTheToolTable(t *testing.T) {
 		if gain, ok := schema.Properties["gain"]; ok && !strings.HasPrefix(gain.Description, gainHelp) {
 			t.Errorf("%s: gain is described as %q, not in the shared sentence", tool.Name, gain.Description)
 		}
-		if _, ok := schema.Properties["gain"]; ok != slices.Contains([]string{"tune", "listen_summary", "record", "scan"}, tool.Name) {
-			t.Errorf("%s: a gain field %v, want one on exactly tune, listen_summary, record and scan", tool.Name, ok)
+		if _, ok := schema.Properties["gain"]; ok != slices.Contains([]string{"tune", "listen_summary", "record", "scan", "start_decode_job", "watch"}, tool.Name) {
+			t.Errorf("%s: a gain field %v, want one on exactly tune, listen_summary, record, scan, start_decode_job and watch", tool.Name, ok)
 		}
 	}
 	// The SDK lists tools by name; the table's order is the help text's.

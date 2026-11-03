@@ -54,6 +54,7 @@ Flags:
       --detach                    leave the job running after ley exits so the notifier fires unattended ('ley jobs cancel' stops it)
       --device string             which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)
       --freq string               watch somewhere other than the recipe's frequency, e.g. 144.8 (a bare number is MHz)
+      --gain string               receiver gain: auto, dB such as 30 for the first stage, or stages such as LNA=0,VGA=20 (ley help gain); set when the job tunes the radio, never on one it shares; default: the decoder's recipe
   -h, --help                      help for watch
       --job                       alias for --detach
       --near string               records from around here: LAT,LON, e.g. 37.76,-122.42 (needs --radius)

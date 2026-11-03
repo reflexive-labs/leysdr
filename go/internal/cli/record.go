@@ -723,6 +723,25 @@ func gainWrites(flag string) []*leylinev1.GainWrite {
 	return writes
 }
 
+// decodeGainNote is what --gain on decode and watch adds to gainHelp: where the daemon sets it
+// (decode.proto, DecodeConfig.gains) and what it overrides.
+const decodeGainNote = "set when the job tunes the radio, never on one it shares; default: the decoder's recipe"
+
+// checkDecodeGain is --gain on decode and watch, read as record's is: a syntax error is a usage
+// error, and a stored recording has no radio to set a gain on.
+func checkDecodeGain(gain, recording string) error {
+	if gain == "" {
+		return nil
+	}
+	if recording != "" {
+		return usageErrorf("--recording decodes a stored recording, so --gain does not apply: it was recorded at the gain it was")
+	}
+	if _, err := units.ParseGains(gain); err != nil {
+		return usageError(fmt.Errorf("--gain %w", err))
+	}
+	return nil
+}
+
 // recordRadio is the banner's radio line: the model and the gain the take started at, from the
 // manifest, so a gain the daemon did not apply shows here rather than in the file. The gain
 // prints as every screen prints it (stageGainWords); els is the radio's gain elements when the
