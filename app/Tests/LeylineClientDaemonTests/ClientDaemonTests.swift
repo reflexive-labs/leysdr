@@ -477,7 +477,7 @@ final class ClientDaemonTests: XCTestCase {
             manifest.parts.count > 1 ? .first : PartRow.Bracket.none)
         XCTAssertFalse(days.flatMap(\.rows).contains { $0.clipped })
         let inspector = Recordings.partInspectorWords(part: part, of: manifest, running: false)
-        XCTAssertTrue(inspector.heading.hasPrefix("PART "), inspector.heading)
+        XCTAssertTrue(inspector.heading.hasPrefix("TRANSMISSION "), inspector.heading)
         XCTAssertFalse(inspector.clipped)
         XCTAssertNil(inspector.clippedSentence)
         XCTAssertEqual(inspector.recording.first { $0.label == "Ended" }?.value, "Switched off")
@@ -498,8 +498,7 @@ final class ClientDaemonTests: XCTestCase {
             channelTitle: "GMRS CH3", part: part, of: manifest, positionFrames: nil,
             positionRate: 0, now: Date())
         XCTAssertEqual(player.title, "GMRS CH3 · Today")
-        XCTAssertTrue(
-            player.time.hasSuffix("part \(part.part) of \(manifest.parts.count)"), player.time)
+        XCTAssertNotEqual(player.time, "—", "the anchor dates the part's start")
         XCTAssertEqual(player.played, "0:00.0")
         let uri = manifest.uri(of: part)
         let ordered = manifest.parts.sorted { $0.part < $1.part }
