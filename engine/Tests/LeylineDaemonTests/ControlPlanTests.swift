@@ -50,16 +50,18 @@ final class ControlPlanTests: XCTestCase {
             XCTAssertEqual(p.share.deviceID, device)
             XCTAssertEqual(p.share.centerHz, 146_520_000)
 
-            // Outside it, on the only radio, a person listening: declined, naming the person.
+            // Outside it, on the only radio: a file radio cannot reach it, whoever is listening, and
+            // that is NO_DEVICE (CL-3: "cannot reach this frequency" is NO_DEVICE however it
+            // arises). Who is listening is CapturePlannerTests' to show.
             p = try await self.plan(c) {
                 $0.record = .with {
                     $0.frequencyHz = 162_400_000
                     $0.mode = .nfm
                 }
             }
-            XCTAssertEqual(p.decline.code, "DEVICE_BUSY", "\(p)")
-            XCTAssertEqual(p.decline.reason, "a terminal is listening on 146.620 MHz")
-            XCTAssertTrue(p.decline.blocking.contains { $0.kind == .claimChannel && $0.holder.clientID == testClientID }, "\(p)")
+            XCTAssertEqual(p.decline.code, "NO_DEVICE", "\(p)")
+            XCTAssertEqual(p.decline.reason, "nfm_tone.cf32 cannot tune 162.400 MHz")
+            XCTAssertTrue(p.decline.blocking.isEmpty, "\(p)")
 
             // A recording of the channel shares its capture.
             p = try await self.plan(c) { $0.record = .with { $0.channelID = channel.channelID } }

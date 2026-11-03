@@ -114,8 +114,8 @@ enum CapturePlanner {
     // MARK: A channel
 
     /// A capture that already covers the frequency on any device, else a device with no capture,
-    /// else a capture the don't-disturb test calls free (retuned), else a decline naming who has
-    /// the radio (docs/design/decoders.md, "Decisions": "A decode job is a job").
+    /// else a capture whose retune displaces nothing the request may not displace, else a decline
+    /// naming who has the radio (docs/design/decoders.md, "Decisions": "A decode job is a job").
     private static func walkChannel(frequencyHz: UInt64, bandwidthHz bw: UInt32, deviceID wanted: String?,
                                     takeOver: Bool, state: Leyline_V1_GetStateResponse, nowNs: Int64) -> PlanWalk
     {
@@ -142,26 +142,33 @@ enum CapturePlanner {
             w.sawDevice = true
             let rate = defaultRate(device)
             guard let centre = channelCentre(frequencyHz: frequencyHz, bandwidthHz: bw, device: device, rate: rate) else {
-                w.steps.append(.pass(reason: "\(device.model) cannot tune \(fmt(frequencyHz))", code: nil, blocking: []))
+                w.steps.append(cannotTune(device, frequencyHz))
                 continue
             }
             w.steps.append(.attempt(.create(deviceID: device.deviceID, centerHz: centre, sampleRateHz: rate)))
         }
 
-        // 3. A capture nobody is using, retuned. This is the first step that disturbs anything, so
-        //    it is the last one tried.
+        // 3. A capture retuned, when the retune displaces nothing the job may not displace. This is
+        //    the first step that disturbs anything, so it is the last one tried.
         for cap in state.captures {
             if let want = wanted, cap.deviceID != want { continue }
-            guard !isSwept(cap) else { continue }
-            if !takeOver, let why = inUse(cap, state: state, nowNs: nowNs) {
-                w.steps.append(.pass(reason: why, code: nil, blocking: blockers(cap)))
+            guard let device = state.devices.first(where: { $0.deviceID == cap.deviceID }) else { continue }
+            w.sawDevice = true
+            if isSwept(cap) {
+                w.steps.append(sweeping(cap, device: device, state: state))
                 continue
             }
-            guard let device = state.devices.first(where: { $0.deviceID == cap.deviceID }),
-                  let centre = channelCentre(frequencyHz: frequencyHz, bandwidthHz: bw, device: device, rate: cap.sampleRate)
-            else { continue }
+            guard let centre = channelCentre(frequencyHz: frequencyHz, bandwidthHz: bw, device: device, rate: cap.sampleRate) else {
+                w.steps.append(cannotTune(device, frequencyHz))
+                continue
+            }
+            let moved = displaced(cap, centerHz: centre, sampleRate: cap.sampleRate)
+            if !takeOver, let refusal = refusal(cap, displacing: moved, state: state, nowNs: nowNs) {
+                w.steps.append(refusal)
+                continue
+            }
             w.steps.append(.attempt(.retune(captureID: cap.captureID, centerHz: centre, sampleRateHz: cap.sampleRate,
-                                            displacing: displaced(cap, centerHz: centre, sampleRate: cap.sampleRate))))
+                                            displacing: moved)))
         }
         return w
     }
@@ -172,7 +179,8 @@ enum CapturePlanner {
     /// whole capture band, so "covers" is the span and a created capture is centred on the
     /// frequency. A dedicated need takes only a capture centred within `centredToleranceHz` at the
     /// rate it would open one at, and a device that cannot be centred there is no candidate,
-    /// `take_over` or not: "<model> cannot tune to <f>", `NO_DEVICE` when that is the last reason.
+    /// `take_over` or not: "<model> cannot tune to <f>", `NO_DEVICE` like every other "cannot
+    /// reach this frequency".
     private static func walkIQ(frequencyHz: UInt64, sampleRateHz wantedRate: UInt64, deviceID wanted: String?,
                                takeOver: Bool, dedicated: Bool, state: Leyline_V1_GetStateResponse,
                                nowNs: Int64) -> PlanWalk
@@ -203,7 +211,7 @@ enum CapturePlanner {
             w.sawDevice = true
             let rate = iqRate(wantedRate, device: device)
             guard let centre = iqCentre(frequencyHz: frequencyHz, device: device, rate: rate) else {
-                w.steps.append(.pass(reason: "\(device.model) cannot tune \(fmt(frequencyHz))", code: nil, blocking: []))
+                w.steps.append(cannotTune(device, frequencyHz))
                 continue
             }
             if dedicated, !isCentred(centerHz: centre, sampleRate: rate, on: frequencyHz, rate: rate) {
@@ -213,27 +221,35 @@ enum CapturePlanner {
             w.steps.append(.attempt(.create(deviceID: device.deviceID, centerHz: centre, sampleRateHz: rate)))
         }
 
-        // 3. A capture nobody is using, retuned onto the frequency (and set to the rate, for a
-        //    dedicated decoder).
+        // 3. A capture retuned onto the frequency (and set to the rate, for a dedicated decoder),
+        //    when the retune displaces nothing the job may not displace.
         for cap in state.captures {
             if let want = wanted, cap.deviceID != want { continue }
-            guard !isSwept(cap) else { continue }
             guard let device = state.devices.first(where: { $0.deviceID == cap.deviceID }) else { continue }
+            w.sawDevice = true
+            if isSwept(cap) {
+                w.steps.append(sweeping(cap, device: device, state: state))
+                continue
+            }
             let rate = dedicated ? iqRate(wantedRate, device: device) : cap.sampleRate
-            let centre = iqCentre(frequencyHz: frequencyHz, device: device, rate: rate)
             // A radio that cannot be centred there is no candidate, whoever is using it: taking it
             // over would only move it to where the decoder still cannot read.
-            if dedicated, centre.map({ isCentred(centerHz: $0, sampleRate: rate, on: frequencyHz, rate: rate) }) != true {
+            guard let centre = iqCentre(frequencyHz: frequencyHz, device: device, rate: rate) else {
+                w.steps.append(dedicated ? .pass(reason: cannotCentre(device, on: frequencyHz), code: EngineError.Code.noDevice, blocking: [])
+                    : cannotTune(device, frequencyHz))
+                continue
+            }
+            if dedicated, !isCentred(centerHz: centre, sampleRate: rate, on: frequencyHz, rate: rate) {
                 w.steps.append(.pass(reason: cannotCentre(device, on: frequencyHz), code: EngineError.Code.noDevice, blocking: []))
                 continue
             }
-            if !takeOver, let why = inUse(cap, state: state, nowNs: nowNs) {
-                w.steps.append(.pass(reason: why, code: EngineError.Code.deviceBusy, blocking: blockers(cap)))
+            let moved = displaced(cap, centerHz: centre, sampleRate: rate)
+            if !takeOver, let refusal = refusal(cap, displacing: moved, state: state, nowNs: nowNs) {
+                w.steps.append(refusal)
                 continue
             }
-            guard let centre else { continue }
             w.steps.append(.attempt(.retune(captureID: cap.captureID, centerHz: centre, sampleRateHz: rate,
-                                            displacing: displaced(cap, centerHz: centre, sampleRate: rate))))
+                                            displacing: moved)))
         }
         return w
     }
@@ -241,7 +257,8 @@ enum CapturePlanner {
     // MARK: A sweep
 
     /// A device that can hear any of the range, one with no capture first (creating and destroying
-    /// disturbs nobody), then one whose capture the don't-disturb test calls free. Never a capture
+    /// disturbs nobody), then one whose capture holds nothing the sweep may not displace: a sweep
+    /// walks the whole range, so it displaces every claim that needs the tuning. Never a capture
     /// another sweep holds, `take_over` or not.
     private static func walkSweep(range: ClosedRange<UInt64>, deviceID wanted: String?, takeOver: Bool,
                                   state: Leyline_V1_GetStateResponse, nowNs: Int64) -> PlanWalk
@@ -277,18 +294,19 @@ enum CapturePlanner {
                 w.steps.append(.attempt(.create(deviceID: device.deviceID, centerHz: start, sampleRateHz: rate)))
                 continue
             }
-            if !takeOver, let why = inUse(cap, state: state, nowNs: nowNs) {
-                w.steps.append(.pass(reason: why, code: nil, blocking: blockers(cap)))
-                continue
-            }
             if isSwept(cap) {
-                w.steps.append(.pass(reason: "another scan already has \(device.model)", code: nil,
+                w.steps.append(.pass(reason: "another scan already has \(device.model)", code: EngineError.Code.deviceBusy,
                                      blocking: cap.claims.filter { $0.kind == .claimSweep }))
                 continue
             }
             // A sweep walks the whole range, so every claim that needs the tuning is displaced.
+            let moved = cap.claims.filter(needsTuning)
+            if !takeOver, let refusal = refusal(cap, displacing: moved, state: state, nowNs: nowNs) {
+                w.steps.append(refusal)
+                continue
+            }
             w.steps.append(.attempt(.retune(captureID: cap.captureID, centerHz: start, sampleRateHz: cap.sampleRate,
-                                            displacing: cap.claims.filter(needsTuning))))
+                                            displacing: moved)))
         }
         return w
     }
@@ -296,8 +314,9 @@ enum CapturePlanner {
     // MARK: A retune
 
     /// A write that moves a capture. A person's is never declined but by a sweep, which refuses
-    /// writes while it runs; a job's is declined by the don't-disturb test unless `take_over`.
-    /// The displaced claims are the ones the new tuning leaves unsatisfied, the writer's own aside.
+    /// writes while it runs; a job's is declined when it would displace a person's or another
+    /// job's claim, or a person is at the controls, unless `take_over`. The displaced claims are
+    /// the ones the new tuning leaves unsatisfied, the writer's own aside.
     private static func planRetune(captureID: String, centerHz: UInt64, sampleRateHz: UInt64,
                                    by: Leyline_V1_ClientInfo, priority: Leyline_V1_ClaimPriority, takeOver: Bool,
                                    state: Leyline_V1_GetStateResponse, nowNs: Int64) -> Plan
@@ -321,10 +340,12 @@ enum CapturePlanner {
                 return .decline(code: e.code, reason: e.message, blocking: [])
             }
         }
-        if priority != .priorityPerson, !takeOver, let why = inUse(cap, state: state, nowNs: nowNs) {
-            return .decline(code: EngineError.Code.deviceBusy, reason: why, blocking: blockers(cap))
-        }
         let moved = displaced(cap, centerHz: centerHz, sampleRate: rate).filter { $0.holder.clientID != by.clientID }
+        if priority != .priorityPerson, !takeOver,
+           case .pass(let why, _, let blocking)? = refusal(cap, displacing: moved, state: state, nowNs: nowNs)
+        {
+            return .decline(code: EngineError.Code.deviceBusy, reason: why, blocking: blocking)
+        }
         return .retune(captureID: captureID, centerHz: centerHz, sampleRateHz: rate, displacing: moved)
     }
 
@@ -333,38 +354,64 @@ enum CapturePlanner {
     /// Whether a sweep holds the capture.
     static func isSwept(_ cap: Leyline_V1_Capture) -> Bool { cap.claims.contains { $0.kind == .claimSweep } }
 
-    /// The don't-disturb test, read from the capture's claims. Returns a reason when the capture is
-    /// somebody's, nil when it is free. A spectrum view is never a reason, and a sweep's capture
-    /// never gets this far.
-    static func inUse(_ cap: Leyline_V1_Capture, state: Leyline_V1_GetStateResponse, nowNs: Int64) -> String? {
-        if let ch = cap.claims.first(where: { $0.kind == .claimChannel }) {
-            return "\(who(ch.holder)) is listening on \(fmt(ch.covers.frequencyHz))"
+    /// The don't-disturb test for a job's retune, read from the claims it would displace: a pass
+    /// naming the first one in its way, `DEVICE_BUSY`, or nil when the retune may go ahead. A
+    /// person's or another job's channel or IQ reader that the retune leaves satisfied is no
+    /// reason, and neither is a view. A person at the controls (a live audio sink, a write in the
+    /// last minute) is one whatever the retune displaces: their claim takes the capture as it is.
+    static func refusal(_ cap: Leyline_V1_Capture, displacing moved: [Leyline_V1_Claim],
+                        state: Leyline_V1_GetStateResponse, nowNs: Int64) -> PlanWalk.Step?
+    {
+        let blocking = moved.filter { $0.priority == .priorityPerson || $0.priority == .priorityJob }
+        let presence = cap.claims.filter { $0.kind == .claimListen }
+        func pass(_ why: String, _ claims: [Leyline_V1_Claim]) -> PlanWalk.Step {
+            .pass(reason: why, code: EngineError.Code.deviceBusy, blocking: claims)
+        }
+        if let ch = blocking.first(where: { $0.kind == .claimChannel }) {
+            return pass("\(who(ch.holder)) is listening on \(fmt(ch.covers.frequencyHz))", blocking)
         }
         // A person's presence is held by a live audio sink or by a write in the last minute; the
         // capture's activity says which, and how long ago.
-        let present = cap.claims.contains { $0.kind == .claimListen }
-        if present, cap.activity.liveAudioSinks > 0 { return "audio is playing from this radio" }
-        if let reader = cap.claims.first(where: { $0.kind == .claimIq }) {
+        if !presence.isEmpty, cap.activity.liveAudioSinks > 0 {
+            return pass("audio is playing from this radio", blocking + presence)
+        }
+        if let reader = blocking.first(where: { $0.kind == .claimIq }) {
             // An IQ decode job or an IQ recording has no channel to show it is there, and a
             // retune moves the whole band it reads.
             let job = state.jobs.first { $0.jobID == reader.holder.clientID }
             switch job?.config {
-            case .decode(let d)?: return "another job is reading this radio (decode \(d.decoder))"
-            case .record?: return "another job is reading this radio (record)"
-            default: return "another job is reading this radio"
+            case .decode(let d)?: return pass("another job is reading this radio (decode \(d.decoder))", blocking)
+            case .record?: return pass("another job is reading this radio (record)", blocking)
+            default: return pass("another job is reading this radio", blocking)
             }
         }
         let now = UInt64(max(0, nowNs))
         let last = UInt64(max(0, cap.activity.lastInteractiveWriteNs))
-        if present, last > 0, now > last, now - last < dontDisturbNs {
-            return "somebody was tuning this radio \(Int((now - last) / 1_000_000_000)) s ago"
+        if !presence.isEmpty, last > 0, now > last, now - last < dontDisturbNs {
+            return pass("somebody was tuning this radio \(Int((now - last) / 1_000_000_000)) s ago", blocking + presence)
+        }
+        // Any other claim of a person's or a job's the retune would leave unsatisfied.
+        if let other = blocking.first {
+            return pass("\(who(other.holder)) is using this radio", blocking)
         }
         return nil
     }
 
-    /// The claims that stop a request that does not take over: everything but a view.
-    private static func blockers(_ cap: Leyline_V1_Capture) -> [Leyline_V1_Claim] {
-        cap.claims.filter { $0.priority != .priorityView }
+    /// A radio a sweep holds: nothing else is placed on it while the sweep runs, `take_over` or not.
+    /// `DEVICE_BUSY`, naming the sweep.
+    private static func sweeping(_ cap: Leyline_V1_Capture, device: Leyline_V1_DeviceDescriptor,
+                                 state: Leyline_V1_GetStateResponse) -> PlanWalk.Step
+    {
+        let sweeps = cap.claims.filter { $0.kind == .claimSweep }
+        let job = state.jobs.first { $0.jobID == sweeps.first?.holder.clientID }
+        let what = if case .monitor? = job?.config { "monitor" } else { "scan" }
+        return .pass(reason: "a \(what) is sweeping \(device.model); it is free again when the \(what) ends",
+                     code: EngineError.Code.deviceBusy, blocking: sweeps)
+    }
+
+    /// A radio that cannot reach the frequency at all: `NO_DEVICE`, however it arises.
+    private static func cannotTune(_ device: Leyline_V1_DeviceDescriptor, _ frequencyHz: UInt64) -> PlanWalk.Step {
+        .pass(reason: "\(device.model) cannot tune \(fmt(frequencyHz))", code: EngineError.Code.noDevice, blocking: [])
     }
 
     /// Whether a claim asks anything of the tuning: a presence and a view take the capture as it is.

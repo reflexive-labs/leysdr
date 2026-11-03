@@ -4,6 +4,8 @@ package fakedaemon
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	leylinev1 "github.com/reflexive-labs/leysdr/go/gen/leyline/v1"
 	"github.com/reflexive-labs/leysdr/go/pkg/leyline"
@@ -105,10 +107,10 @@ func (d *Daemon) planChannelLocked(deviceID string, takeOver bool, hz uint64, bw
 		return declineOf(leyline.CodeNoDevice, "no radio here can tune "+units.FormatFrequency(hz), nil)
 	}
 	existing := d.deviceCaptureLocked(dev.DeviceId)
-	if !takeOver {
-		if why := d.busyReason(dev.DeviceId); why != "" {
-			return declineOf(leyline.CodeDeviceBusy, why, d.channelClaimsLocked(existing))
-		}
+	// A radio a sweep holds takes nothing else, take_over or not, and says which sweep.
+	if existing != nil && d.sweeping == dev.DeviceId {
+		return declineOf(leyline.CodeDeviceBusy,
+			"a scan is sweeping "+dev.GetModel()+"; it is free again when the scan ends", nil)
 	}
 	rate := RTLSDRDefaultRate
 	if dev.Driver == "file" && len(dev.SampleRates) > 0 {
@@ -123,6 +125,16 @@ func (d *Daemon) planChannelLocked(deviceID string, takeOver bool, hz uint64, bw
 		for _, cl := range d.channelClaimsLocked(existing) {
 			if !spanFits(cl, centre, existing.SampleRate) {
 				moved = append(moved, cl)
+			}
+		}
+		// Only what the retune would displace stops it, and a person at the controls: a
+		// channel the new centre still covers is no reason.
+		if !takeOver {
+			if len(moved) > 0 {
+				return declineOf(leyline.CodeDeviceBusy, listeningOn(moved[0]), moved)
+			}
+			if why := presenceReason(existing); why != "" {
+				return declineOf(leyline.CodeDeviceBusy, why, nil)
 			}
 		}
 		return retuneOf(existing, centre, existing.SampleRate, moved)
@@ -199,6 +211,29 @@ func (d *Daemon) channelClaimsLocked(c *capture) []*leylinev1.Claim {
 		})
 	}
 	return out
+}
+
+// listeningOn names a channel claim the way busyReason names a channel.
+func listeningOn(cl *leylinev1.Claim) string {
+	who := cl.GetHolder().GetLabel()
+	if who == "" {
+		who = cl.GetHolder().GetKind()
+	}
+	return fmt.Sprintf("%s is listening on %s", who, units.FormatFrequency(cl.GetCovers().GetFrequencyHz()))
+}
+
+// presenceReason is busyReason's person at the controls: a live audio sink, or a write in the
+// last minute.
+func presenceReason(c *capture) string {
+	if c.GetActivity().GetLiveAudioSinks() > 0 {
+		return "audio is playing from this radio"
+	}
+	if last := c.GetActivity().GetLastInteractiveWriteNs(); last > 0 {
+		if age := time.Since(time.Unix(0, last)); age < dontDisturb {
+			return fmt.Sprintf("somebody was tuning this radio %d s ago", int(age.Seconds()))
+		}
+	}
+	return ""
 }
 
 func spanFits(cl *leylinev1.Claim, centre, rate uint64) bool {

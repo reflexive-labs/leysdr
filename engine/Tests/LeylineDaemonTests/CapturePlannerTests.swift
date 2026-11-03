@@ -111,6 +111,14 @@ final class CapturePlannerTests: XCTestCase {
         }
     }
 
+    private func monitorJob(_ id: String) -> Leyline_V1_Job {
+        .with {
+            $0.jobID = id
+            $0.state = .running
+            $0.monitor = .init()
+        }
+    }
+
     private func decodeJob(_ id: String, decoder: String) -> Leyline_V1_Job {
         .with {
             $0.jobID = id
@@ -167,12 +175,21 @@ final class CapturePlannerTests: XCTestCase {
                  state: state([dongle()], [capture(at: 100_000_000, claims: [view])]), request: channel(144_390_000),
                  want: .retune(captureID: "cap_a", centerHz: 144_090_000, sampleRateHz: 2_400_000, displacing: [])),
 
-            // The don't-disturb test, as today.
-            Case(name: "a person's channel declines a job",
+            // The don't-disturb test: what the retune would displace.
+            Case(name: "a person's channel the retune would displace declines a job",
                  state: state([dongle()], [capture(at: 146_000_000, claims: [personsChannel, presence])]),
                  request: channel(1_090_000_000),
                  want: .decline(code: "DEVICE_BUSY", reason: "the app is listening on 146.520 MHz",
-                                blocking: [personsChannel, presence])),
+                                blocking: [personsChannel])),
+            Case(name: "a retune that leaves a person's channel satisfied does not decline a job (CL-3)",
+                 state: state([dongle()], [capture(at: 146_000_000, claims: [personsChannel, presence])]),
+                 request: channel(147_300_000),
+                 want: .retune(captureID: "cap_a", centerHz: 147_000_000, sampleRateHz: 2_400_000, displacing: [])),
+            Case(name: "a retune that leaves another job's IQ reader satisfied does not decline a job (CL-3)",
+                 state: state([dongle()], [capture(at: 100_000_000, claims: [adsbReader])],
+                              jobs: [decodeJob("job_iq", decoder: "iqstat")]),
+                 request: channel(101_500_000),
+                 want: .retune(captureID: "cap_a", centerHz: 101_200_000, sampleRateHz: 2_400_000, displacing: [])),
             Case(name: "another job's channel declines a job",
                  state: state([dongle()], [capture(at: 146_000_000, claims: [jobsChannel])]), request: channel(1_090_000_000),
                  want: .decline(code: "DEVICE_BUSY", reason: "another job is listening on 146.520 MHz", blocking: [jobsChannel])),
@@ -193,13 +210,25 @@ final class CapturePlannerTests: XCTestCase {
                  state: state([dongle()], [capture(at: 100_000_000, claims: [presence], sinks: 1)]),
                  request: channel(144_390_000),
                  want: .decline(code: "DEVICE_BUSY", reason: "audio is playing from this radio", blocking: [presence])),
-            Case(name: "a sweep's capture is no candidate, take_over or not",
+            Case(name: "a sweep's capture is DEVICE_BUSY naming the sweep, take_over or not (CL-3)",
                  state: state([dongle()], [capture(at: 146_000_000, claims: [sweep])]),
                  request: channel(146_520_000, takeOver: true),
-                 want: .decline(code: "NO_DEVICE", reason: "no radio here can hear 146.520 MHz", blocking: [])),
-            Case(name: "a radio that cannot reach the frequency says so",
+                 want: .decline(code: "DEVICE_BUSY",
+                                reason: "a scan is sweeping NESDR SMArt v5; it is free again when the scan ends",
+                                blocking: [sweep])),
+            Case(name: "a monitor's capture is DEVICE_BUSY naming the monitor (CL-3)",
+                 state: state([dongle()], [capture(at: 146_000_000, claims: [sweep])], jobs: [monitorJob("job_scan")]),
+                 request: iq(146_520_000, takeOver: true),
+                 want: .decline(code: "DEVICE_BUSY",
+                                reason: "a monitor is sweeping NESDR SMArt v5; it is free again when the monitor ends",
+                                blocking: [sweep])),
+            Case(name: "a radio that cannot reach the frequency says so, NO_DEVICE (CL-3)",
                  state: state([dongle()]), request: channel(2_400_000_000),
-                 want: .decline(code: "DEVICE_BUSY", reason: "NESDR SMArt v5 cannot tune 2400.000 MHz", blocking: [])),
+                 want: .decline(code: "NO_DEVICE", reason: "NESDR SMArt v5 cannot tune 2400.000 MHz", blocking: [])),
+            Case(name: "a busy radio that cannot reach the frequency is NO_DEVICE, not who is on it (CL-3)",
+                 state: state([dongle()], [capture(at: 146_000_000, claims: [personsChannel])]),
+                 request: channel(2_400_000_000),
+                 want: .decline(code: "NO_DEVICE", reason: "NESDR SMArt v5 cannot tune 2400.000 MHz", blocking: [])),
             Case(name: "no radio at all",
                  state: state([]), request: channel(146_520_000),
                  want: .decline(code: "NO_DEVICE", reason: "no radio here can hear 146.520 MHz", blocking: [])),
@@ -229,9 +258,9 @@ final class CapturePlannerTests: XCTestCase {
                  state: state([fileRadio()]), request: iq(146_620_000, rate: 2_400_000, takeOver: true, dedicated: true),
                  want: .decline(code: "NO_DEVICE",
                                 reason: "File cannot tune to 146.620 MHz (a file radio plays what it recorded)", blocking: [])),
-            Case(name: "a radio whose span cannot reach the frequency at all is DEVICE_BUSY, as today",
+            Case(name: "a radio whose span cannot reach the frequency at all is NO_DEVICE (CL-3)",
                  state: state([fileRadio()]), request: iq(1_090_000_000, rate: 2_400_000, takeOver: true, dedicated: true),
-                 want: .decline(code: "DEVICE_BUSY", reason: "File cannot tune 1090.000 MHz", blocking: [])),
+                 want: .decline(code: "NO_DEVICE", reason: "File cannot tune 1090.000 MHz", blocking: [])),
             Case(name: "a file radio's capture is passed over with its reason, take_over or not",
                  state: state([fileRadio()], [capture(on: Self.devF, at: 146_520_000)]),
                  request: iq(146_000_000, rate: 2_400_000, takeOver: true, dedicated: true),
@@ -281,6 +310,16 @@ final class CapturePlannerTests: XCTestCase {
                  request: .retune(captureID: "cap_a", centerHz: 162_400_000, sampleRateHz: 0, by: holder("job", "job_x"),
                                   priority: .priorityJob, takeOver: false),
                  want: .decline(code: "DEVICE_BUSY", reason: "the app is listening on 146.520 MHz", blocking: [personsChannel])),
+            Case(name: "a job's retune that leaves a person's channel satisfied is not declined (CL-3)",
+                 state: state([dongle()], [capture(at: 146_000_000, claims: [personsChannel, presence])]),
+                 request: .retune(captureID: "cap_a", centerHz: 146_300_000, sampleRateHz: 0, by: holder("job", "job_x"),
+                                  priority: .priorityJob, takeOver: false),
+                 want: .retune(captureID: "cap_a", centerHz: 146_300_000, sampleRateHz: 2_400_000, displacing: [])),
+            Case(name: "a person at the controls declines a job's retune that displaces nothing",
+                 state: state([dongle()], [capture(at: 146_000_000, claims: [personsChannel, presence], wroteAgoS: 5)]),
+                 request: .retune(captureID: "cap_a", centerHz: 146_300_000, sampleRateHz: 0, by: holder("job", "job_x"),
+                                  priority: .priorityJob, takeOver: false),
+                 want: .decline(code: "DEVICE_BUSY", reason: "somebody was tuning this radio 5 s ago", blocking: [presence])),
             Case(name: "a rate the radio does not offer",
                  state: state([dongle()], [capture(at: 146_000_000)]),
                  request: .retune(captureID: "cap_a", centerHz: 146_000_000, sampleRateHz: 9_000_000, by: me,
