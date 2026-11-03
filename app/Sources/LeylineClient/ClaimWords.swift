@@ -8,18 +8,26 @@ import LeylineProto
 /// capture's claims with `rows`.
 public enum ClaimWords {
     /// One line of the inspector's list: who holds the claim, what it needs in words, and whether
-    /// the capture no longer gives it that. `count` folds identical claims, a client's several
-    /// spectrum streams, into one line.
+    /// the capture no longer gives it that, with who moved it and when (`paused by the app at
+    /// 14:05`). `count` folds identical claims, a client's several spectrum streams, into one
+    /// line.
     public struct Row: Sendable, Equatable {
         public var who: String
         public var what: String
         public var displaced: Bool
+        /// While displaced: `paused by the app at 14:05`, `paused by the scan`, or `paused` when
+        /// the daemon names nobody.
+        public var paused: String?
         public var count: Int
 
-        public init(who: String, what: String, displaced: Bool = false, count: Int = 1) {
+        public init(
+            who: String, what: String, displaced: Bool = false, paused: String? = nil,
+            count: Int = 1
+        ) {
             self.who = who
             self.what = what
             self.displaced = displaced
+            self.paused = paused
             self.count = count
         }
     }
@@ -28,7 +36,8 @@ public enum ClaimWords {
     /// jobs before views, then the app's own, each kind in the order the daemon gave; identical
     /// lines once, counted.
     public static func rows(
-        _ claims: [Leyline_V1_Claim], jobs: [Leyline_V1_Job], titles: [String: String]
+        _ claims: [Leyline_V1_Claim], jobs: [Leyline_V1_Job], titles: [String: String],
+        timeZone: TimeZone = .current
     ) -> [Row] {
         func rank(_ c: Leyline_V1_Claim) -> Int {
             let own = c.holder.kind == "app" ? 10 : 0
@@ -43,11 +52,15 @@ public enum ClaimWords {
         }
         var out: [Row] = []
         for (_, c) in ordered {
+            let displaced = c.state == .claimDisplaced
             let row = Row(
                 who: holder(c.holder, jobs: jobs, titles: titles), what: what(c),
-                displaced: c.state == .claimDisplaced)
+                displaced: displaced,
+                paused: displaced
+                    ? paused(by: c, jobs: jobs, titles: titles, timeZone: timeZone) : nil)
             if let i = out.firstIndex(where: {
                 $0.who == row.who && $0.what == row.what && $0.displaced == row.displaced
+                    && $0.paused == row.paused
             }) {
                 out[i].count += 1
             } else {
@@ -55,6 +68,39 @@ public enum ClaimWords {
             }
         }
         return out
+    }
+
+    /// A displaced claim's mover and since-time, as the daemon's DEGRADED detail names the
+    /// mover: `paused by the app at 14:05`, `paused by the scan at 09:30`, `paused` when the
+    /// daemon names nobody, and no time when it gives none.
+    public static func paused(
+        by c: Leyline_V1_Claim, jobs: [Leyline_V1_Job], titles: [String: String],
+        timeZone: TimeZone
+    ) -> String {
+        var words = "paused"
+        if c.hasDisplacedBy, !c.displacedBy.clientID.isEmpty || !c.displacedBy.kind.isEmpty {
+            words += " by " + mover(c.displacedBy, jobs: jobs, titles: titles)
+        }
+        if c.displacedSinceNs > 0 {
+            let at = Date(timeIntervalSince1970: TimeInterval(c.displacedSinceNs) / 1e9)
+            words += " at " + DecoderPages.clock(at, seconds: false, timeZone: timeZone)
+        }
+        return words
+    }
+
+    /// Who moved a capture, as a sentence names it: `the app`, `a terminal`, `an agent`, `the
+    /// APRS decoder`, `the scan`, `the daemon`.
+    static func mover(
+        _ h: Leyline_V1_ClientInfo, jobs: [Leyline_V1_Job], titles: [String: String]
+    ) -> String {
+        switch h.kind {
+        case "app": return "the app"
+        case "cli": return "a terminal"
+        case "mcp": return "an agent"
+        case "job": return jobName(h.clientID, jobs: jobs, titles: titles)
+        case "daemon": return "the daemon"
+        default: return h.label.isEmpty ? "another client" : h.label
+        }
     }
 
     /// Who holds a claim, short: `the app`, `a terminal`, `an agent`, `job: APRS`, `job:

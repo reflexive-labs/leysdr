@@ -324,24 +324,25 @@ final class ClientDaemonTests: XCTestCase {
             Recordings.activeJob(in: mirror.state.jobs, frequencyHz: hz, mode: .nfm)?.jobID
                 == job.jobID
         }
-        // The job rides the window's capture, so moving the capture off its frequency asks
-        // first, and moving it a little does not.
+        // The job rides the window's capture with a claim of its own, so moving the capture off
+        // its frequency asks first (`RetuneAsk`), and moving it a little does not.
         await assertEventually("the job's channel never reached the mirror") {
             Recordings.jobs(riding: capture.captureID, in: mirror.state).map(\.jobID)
                 == [job.jobID]
         }
-        let far = capture.centerHz + 10 * capture.sampleRate
-        XCTAssertEqual(
-            Recordings.leftOut(
-                capture: capture.captureID,
-                movingTo: (far - capture.sampleRate / 2)...(far + capture.sampleRate / 2),
-                in: mirror.state
-            ).map(\.jobID), [job.jobID])
-        XCTAssertEqual(
-            Recordings.leftOut(
-                capture: capture.captureID,
-                movingTo: (hz - capture.sampleRate / 4)...(hz + capture.sampleRate / 4),
-                in: mirror.state), [])
+        await assertEventually("the job's claim never reached the mirror") {
+            mirror.state.capture(capture.captureID).map {
+                RetuneAsk.jobClaims(on: $0, selfID: app.identity.id).map(\.holder.clientID)
+            } == [job.jobID]
+        }
+        let cap = try XCTUnwrap(mirror.state.capture(capture.captureID))
+        let far = Int64(capture.centerHz + 10 * capture.sampleRate)
+        XCTAssertTrue(
+            RetuneAsk.pauses(cap, centre: far, rate: cap.sampleRate, selfID: app.identity.id))
+        XCTAssertFalse(
+            RetuneAsk.pauses(
+                cap, centre: Int64(hz) + Int64(capture.sampleRate / 4), rate: cap.sampleRate,
+                selfID: app.identity.id))
 
         // Two transmissions heard after the job started: the first the fold sees may have
         // begun before the job did, and its start is then outside every part.

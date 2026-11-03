@@ -1960,6 +1960,30 @@ scenes:
       - {cmd: press, identifier: sidebar.decoder.aprs}
       - {cmd: state, expect: {place: decoders, decoders.decoder: aprs, decoders.state: Running}}
 
+  # One question before a person's move pauses a job (docs/plans/claims.md, CL-5): with a
+  # terminal's `ley decode aprs --job` on the window's radio, Scan band on 2 m asks first and
+  # names the decoder from the daemon's plan, and Cancel leaves the tuning where it was with
+  # nothing swept and the decoder running. A file radio tunes only its own centre, so a click, a
+  # drag or a narrower width cannot move it and Scan band is the move a scene can reach;
+  # RetuneAskTests holds the rules for those (one question a drag, from the plan's list).
+  - name: retune-asks
+    covers: [RetuneAsk.swift, ClaimWords.swift, InspectorGroups.swift]
+    fixtures: [{name: scene_aprs}]
+    clock: "19:42"
+    stage: {place: radio, settle: 3}
+    app:
+      - {cmd: ley, args: [decode, aprs, --job, --count, "1"]}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {tuned_hz: 144390000, decoding_rows.0.decoder: aprs, alert: null}}
+      - {cmd: press, identifier: sidebar.band.2m.scan}
+      - {cmd: wait, seconds: 1, expect_log: "asked before scan .*: This pauses the APRS decoder on 144.390 MHz."}
+      - {cmd: state, expect: {alert.title: "Move the radio?", alert.message: "This pauses the APRS decoder on 144.390 MHz.", alert.buttons.0: Sweep anyway, alert.buttons.1: Cancel}}
+      - {cmd: snapshot, name: asked}
+      - {cmd: press, identifier: alert.cancel}
+      - {cmd: wait, seconds: 1, expect_log: ["move cancelled; the radio stays", "!sweep: job_.* started"]}
+      - {cmd: state, expect: {alert: null, tuned_hz: 144390000, decoding_rows.0.decoder: aprs}}
+      - {cmd: ley, args: [jobs], expect_stdout: "running"}
+
   # Watches from the app (docs/plans/decoders-app.md, DA-10) on scene_aprs, over the seven
   # stations decoders-aprs reads. Notify Me… opens a sheet whose fields are the manifest's TEXT
   # and INTEGER hints after device_id, by their labels (DA-18: device_id is Transmitter), and whose place and radius show because the records carry

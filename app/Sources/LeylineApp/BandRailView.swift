@@ -360,7 +360,11 @@ struct BandRail: View {
     /// nearest tick within a few points (a bookmark before a plan channel before a hit, on a
     /// tie), else the frequency under the pointer on the band's grid.
     private func ended(_ v: DragGesture.Value, width: CGFloat, ticks: Ticks) {
-        defer { drag = nil }
+        // The next drag asks again before it pauses a job, whatever this one was answered.
+        defer {
+            drag = nil
+            session.endRetuneDrag()
+        }
         if drag != nil {
             step(v, width: width, ended: true)
             return

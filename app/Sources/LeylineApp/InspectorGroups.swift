@@ -468,8 +468,9 @@ struct MeasurementsGroup: View {
 }
 
 /// The tuned capture's claims (docs/design/claims.md), read-only: who holds each, on the left,
-/// and what it needs on the right, `displaced` in `caution` when the radio no longer gives it
-/// that; the same claims `ley state` lists under the capture.
+/// and what it needs on the right, and under a claim the radio no longer gives what it needs,
+/// who moved it and when in `caution` (`paused by the app at 14:05`); the same claims `ley state`
+/// lists under the capture.
 struct ClaimsGroup: View {
     let rows: [ClaimWords.Row]
 
@@ -481,16 +482,19 @@ struct ClaimsGroup: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(row.who).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
-                        .lineLimit(1)
-                    Spacer(minLength: 8)
-                    Text(row.count > 1 ? "\(row.what) ×\(row.count)" : row.what)
-                        .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary)
-                        .lineLimit(1).truncationMode(.middle)
-                    if row.displaced {
-                        Text("displaced").font(Theme.Font.valueSmall)
+                VStack(alignment: .trailing, spacing: 1) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(row.who).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        Text(row.count > 1 ? "\(row.what) ×\(row.count)" : row.what)
+                            .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary)
+                            .lineLimit(1).truncationMode(.middle)
+                    }
+                    if let paused = row.paused {
+                        Text(paused).font(Theme.Font.valueSmall)
                             .foregroundStyle(Theme.caution).lineLimit(1)
+                            .truncationMode(.middle)
                     }
                 }
                 .accessibilityElement(children: .combine)

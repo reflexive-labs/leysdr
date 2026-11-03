@@ -754,17 +754,20 @@ public struct ControlDecodingRow: Sendable, Equatable, Codable {
 
 /// `state`'s `claims`: one line of the Radio inspector's Claims group, as `ClaimWords.rows`
 /// words it: who holds the claim (`job: APRS`), what it needs (`channel on 144.390 MHz`), whether
-/// it is displaced, and how many identical claims the line folds.
+/// it is displaced and by whom (`paused by the app at 14:05`), and how many identical claims the
+/// line folds.
 public struct ControlClaim: Sendable, Equatable, Codable {
     public var who: String
     public var what: String
     public var displaced: Bool
+    public var paused: String?
     public var count: Int
 
     public init(_ row: ClaimWords.Row) {
         who = row.who
         what = row.what
         displaced = row.displaced
+        paused = row.paused
         count = row.count
     }
 }

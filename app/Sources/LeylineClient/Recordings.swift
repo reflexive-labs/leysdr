@@ -1006,9 +1006,8 @@ public enum Recordings {
 
     /// The running or degraded record jobs whose channel rides `captureID`: the channel form's
     /// channel on it, or the frequency form's own channel (owned by a job, `required_hz` the
-    /// job's frequency) on it. The same rule as `ley`'s `recordingsOn`
-    /// (`go/internal/cli/session_capture.go`), so the window and the terminal ask about the same
-    /// jobs.
+    /// job's frequency) on it. The window's channel finds the recording it is part of with these
+    /// (`ChannelFollow`); what a retune would pause is the daemon's plan (`RetuneAsk`).
     public static func jobs(riding captureID: String, in state: MirrorState) -> [Leyline_V1_Job] {
         state.jobs.filter { j in
             guard j.isActive, let r = j.recordConfig else { return false }
@@ -1018,45 +1017,5 @@ public enum Recordings {
                     && $0.requiredHz == r.frequencyHz
             }
         }
-    }
-
-    /// The record jobs on `captureID` that moving the capture to `span` would leave outside it:
-    /// each job's frequency with half its width either side is inside the capture's span now and
-    /// is not inside `span`. Moving inside the span, or a job already outside, never asks.
-    public static func leftOut(
-        capture captureID: String, movingTo span: ClosedRange<UInt64>, in state: MirrorState
-    ) -> [Leyline_V1_Job] {
-        guard let cap = state.capture(captureID), cap.sampleRate > 0 else { return [] }
-        let half = cap.sampleRate / 2
-        let now = (cap.centerHz > half ? cap.centerHz - half : 0)...(cap.centerHz + half)
-        return jobs(riding: captureID, in: state).filter { j in
-            guard let r = j.recordConfig, let hz = frequency(of: r, in: state) else { return false }
-            let bw = UInt64(r.bandwidthHz / 2)
-            let lo = hz > bw ? hz - bw : 0
-            let covered = { (s: ClosedRange<UInt64>) in s.contains(lo) && s.contains(hz + bw) }
-            return covered(now) && !covered(span)
-        }
-    }
-
-    /// Where a record job listens: its frequency, or the borrowed channel's.
-    private static func frequency(of r: Leyline_V1_RecordConfig, in state: MirrorState)
-        -> UInt64?
-    {
-        if r.channelID.isEmpty { return r.frequencyHz }
-        return state.channel(r.channelID).flatMap { state.frequencyHz(of: $0) }
-    }
-
-    /// The question before a move that `leftOut` found jobs for, with `ley tune`'s content
-    /// (`refuseRetuneOverRecording`): the jobs named and the gap the move would leave. nil when
-    /// the list is empty, so nothing asks.
-    public static func retuneWords(jobs: [Leyline_V1_Job]) -> String? {
-        guard !jobs.isEmpty else { return nil }
-        let ids = jobs.map(\.jobID)
-        let names =
-            ids.count == 1
-            ? ids[0] : ids.dropLast().joined(separator: ", ") + " and " + ids[ids.count - 1]
-        return ids.count == 1
-            ? "\(names) is recording on this radio; moving the radio would leave a gap in it."
-            : "\(names) are recording on this radio; moving the radio would leave a gap in them."
     }
 }

@@ -520,35 +520,6 @@ final class RecordingsTests: XCTestCase {
         XCTAssertEqual(Recordings.jobs(riding: "cap_b", in: s).map(\.jobID), [])
     }
 
-    func testAMoveThatLeavesARecordingOutAsksFirst() {
-        let s = radio()
-        // Inside: the span slides 1 MHz up and 462.5625 is still 162 kHz inside its low edge.
-        XCTAssertEqual(
-            Recordings.leftOut(capture: "cap_a", movingTo: 462_400_000...464_800_000, in: s), [])
-        // Outside: another band.
-        let left = Recordings.leftOut(capture: "cap_a", movingTo: 144_800_000...147_200_000, in: s)
-        XCTAssertEqual(left.map(\.jobID), ["job_own"])
-        // A narrower span that no longer holds the channel's width: 462.5625 ± 6.25 kHz.
-        XCTAssertEqual(
-            Recordings.leftOut(capture: "cap_a", movingTo: 462_560_000...463_800_000, in: s)
-                .map(\.jobID), ["job_own"])
-        XCTAssertEqual(
-            Recordings.retuneWords(jobs: left),
-            "job_own is recording on this radio; moving the radio would leave a gap in it.")
-        XCTAssertNil(Recordings.retuneWords(jobs: []), "nothing recording, nothing asked")
-        XCTAssertEqual(
-            Recordings.retuneWords(jobs: [
-                job("job_a", .running, hz: 1), job("job_b", .running, hz: 2),
-            ]),
-            "job_a and job_b are recording on this radio; moving the radio would leave a gap in them."
-        )
-        // A job already outside the span (degraded) is not asked about again.
-        var away = s
-        away.captures[0].centerHz = 150_000_000
-        XCTAssertEqual(
-            Recordings.leftOut(capture: "cap_a", movingTo: 144_800_000...147_200_000, in: away), [])
-    }
-
     // MARK: The sidebar's Recordings source and the store footer
 
     private var utc: Calendar {

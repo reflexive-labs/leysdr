@@ -55,11 +55,64 @@ final class ClaimWordsTests: XCTestCase {
                 .init(who: "an agent", what: "listening"),
                 .init(who: "job: APRS", what: "channel on 144.390 MHz"),
                 .init(who: "job: recording", what: "channel on 144.800 MHz"),
-                .init(who: "a job", what: "IQ centred on 1.090 GHz", displaced: true),
+                .init(
+                    who: "a job", what: "IQ centred on 1.090 GHz", displaced: true,
+                    paused: "paused"),
                 .init(who: "the app", what: "listening"),
                 .init(who: "the app", what: "channel on 144.390 MHz"),
                 .init(who: "the app", what: "spectrum view", count: 2),
             ])
+    }
+
+    func testADisplacedClaimSaysWhoPausedItAndWhen() {
+        var aprs = Leyline_V1_Job()
+        aprs.jobID = "job_aprs"
+        aprs.decode.decoder = "aprs"
+        var scan = Leyline_V1_Job()
+        scan.jobID = "job_scan"
+        scan.scan = Leyline_V1_ScanConfig()
+        let utc = TimeZone(identifier: "UTC")!
+        // 2026-11-02 14:05:30 UTC.
+        let at: Int64 = 1_793_628_330 * 1_000_000_000
+        var byApp = claim(
+            "job_aprs", kind: "job", .claimChannel, .priorityJob, covers: 144_390_000,
+            displaced: true)
+        byApp.displacedBy = .with {
+            $0.clientID = "app_1"
+            $0.kind = "app"
+        }
+        byApp.displacedSinceNs = at
+        var byScan = claim(
+            "cli_1", kind: "cli", .claimChannel, .priorityPerson, covers: 146_520_000,
+            displaced: true)
+        byScan.displacedBy = .with {
+            $0.clientID = "job_scan"
+            $0.kind = "job"
+        }
+        let nobody = claim(
+            "job_rec", kind: "job", .claimChannel, .priorityJob, covers: 146_940_000,
+            displaced: true)
+        let rows = ClaimWords.rows(
+            [byApp, byScan, nobody], jobs: [aprs, scan], titles: ["aprs": "APRS"],
+            timeZone: utc)
+        XCTAssertEqual(
+            rows,
+            [
+                .init(
+                    who: "a terminal", what: "channel on 146.520 MHz", displaced: true,
+                    paused: "paused by the scan"),
+                .init(
+                    who: "job: APRS", what: "channel on 144.390 MHz", displaced: true,
+                    paused: "paused by the app at 14:05"),
+                .init(
+                    who: "a job", what: "channel on 146.940 MHz", displaced: true,
+                    paused: "paused"),
+            ])
+        XCTAssertEqual(
+            ClaimWords.paused(
+                by: byApp, jobs: [aprs], titles: [:],
+                timeZone: TimeZone(identifier: "America/Los_Angeles")!),
+            "paused by the app at 06:05")
     }
 
     func testASweepIsItsRange() {

@@ -1222,17 +1222,18 @@ final class AppSession {
     /// audio, and a squelch measured from the floor. Creates what does not exist and writes what
     /// does. With `hz`, the band arrives tuned there rather than at its centre, and the capture
     /// sits where that frequency is inside it: a drag past the rail's end cap lands on the
-    /// neighbour's near edge. A switch that would move the capture off a running recording asks
-    /// first (`retuneQuestion`).
+    /// neighbour's near edge. A switch that would pause a job on the capture asks first
+    /// (`retuneQuestion`).
     func select(band: Band, at hz: UInt64? = nil) async {
         let waited = waitForSweep("select band \(band.name)") {
             Task { await self.select(band: band, at: hz) }
         }
         if waited { return }
-        if let words = bandMoveWords(band, at: hz) {
-            ask(words, before: "band \(band.name)") {
-                Task { await self.moveToBand(band, at: hz) }
-            }
+        if let (cap, centre) = bandMove(band, at: hz),
+            asksBeforeMoving(
+                cap, centre: centre, rate: cap.sampleRate, before: "band \(band.name)",
+                proceed: { Task { await self.moveToBand(band, at: hz) } })
+        {
             return
         }
         await moveToBand(band, at: hz)
@@ -1323,16 +1324,15 @@ final class AppSession {
         filterFocused = true
     }
 
-    /// The question before `select(band:at:)` moves the capture: nil when the band change makes
-    /// a new capture (no radio open, another radio) or leaves every recording inside the span.
-    /// The centre is the one `moveToBand` computes.
-    private func bandMoveWords(_ band: Band, at hz: UInt64?) -> String? {
+    /// The capture `select(band:at:)` moves and the centre it moves it to, the one `moveToBand`
+    /// computes: nil when the band change makes a new capture (no radio open, another radio).
+    private func bandMove(_ band: Band, at hz: UInt64?) -> (Leyline_V1_Capture, Int64)? {
         guard !busy, !sweeping, outOfRangeWords(band) == nil, let dev = try? pickDevice(),
             let cap = movableCapture(on: dev)
         else { return nil }
         let centre =
             hz.map { captureCentre(for: band, at: $0, rate: cap.sampleRate) } ?? band.centerHz
-        return leftOutWords(centre: Int64(centre), rate: cap.sampleRate)
+        return (cap, Int64(centre))
     }
 
     /// The capture a band change moves: the window's on that radio, else, while the window
@@ -1674,6 +1674,7 @@ final class AppSession {
     /// is no centre jump on release.
     func chartDrag(to hz: UInt64, ended: Bool) {
         if sweepFromHz == nil {
+            endRetuneDrag()
             sweepFromHz = hz
             log("tune", "drag from \(hz) Hz")
         }
@@ -1682,6 +1683,7 @@ final class AppSession {
         if ended {
             log("tune", "drag ended at \(hz) Hz")
             sweepFromHz = nil
+            endRetuneDrag()
         }
     }
 
@@ -1724,9 +1726,10 @@ final class AppSession {
     /// them, unlike a click's move (`retune`). While a click's move is in flight the drag is
     /// refused, because two writers of the same centre leave one offset against a centre that
     /// never applied.
-    /// A drag that would take the span off a running recording's frequency moves the pill and
-    /// not the radio, and its release asks first (`retuneQuestion`); Move anyway performs the
-    /// release's move (`askedFirst`), Cancel puts the pill back where the radio is.
+    /// A drag that would pause a job (a decoder, a watch, a recording) holds the radio at the
+    /// edge of what the jobs need and asks once (`dragStep`, `retuneQuestion`); Move anyway lets
+    /// the rest of the drag go, or performs the move the drag wanted when it has ended by then
+    /// (`askedFirst`), and Cancel keeps the radio at that edge for the rest of the drag.
     func pan(centreTo centre: Int64, ended: Bool, askedFirst: Bool = false) {
         guard let cap = capture, let ch = channel, let writes else { return }
         guard panCentre != nil || retunes.centreInFlight == nil else { return }
@@ -1738,17 +1741,12 @@ final class AppSession {
                 ? min(max(newCentre, Int64(b.minHz) + span / 2), Int64(b.maxHz) - span / 2)
                 : Int64(cap.centerHz)
         }
-        if !askedFirst, let words = leftOutWords(centre: newCentre, rate: cap.sampleRate) {
-            panCentre = newCentre
-            guard ended else { return }
-            ask(words, before: "pan to \(newCentre) Hz") {
-                self.pan(centreTo: centre, ended: true, askedFirst: true)
-            } cancel: {
-                self.panCentre = nil
-                self.releaseCentreInFlight()
+        if !askedFirst {
+            newCentre = dragStep(to: newCentre, capture: cap) { wanted in
+                self.pan(centreTo: wanted, ended: true, askedFirst: true)
             }
-            return
         }
+        if ended { endRetuneDrag() }
         let bound = max(0, min(span * 4 / 10, span / 2 - Int64(ch.bandwidthHz)))
         let station = Int64(displayHz ?? cap.centerHz)
         let held = min(max(station, newCentre - bound), newCentre + bound)
@@ -1772,17 +1770,6 @@ final class AppSession {
                     retunes.release()
                 }
             }
-        }
-    }
-
-    /// After a cancelled pan: the centre the drag last wrote, if one, is still in flight, and is
-    /// released once the capture's event carries it, as the release of a drag releases it.
-    private func releaseCentreInFlight() {
-        guard let written = retunes.centreInFlight else { return }
-        let want = UInt64(max(0, written))
-        Task {
-            await confirmed { self.capture?.centerHz == want }
-            if panCentre == nil { retunes.release(ifCentre: written) }
         }
     }
 
@@ -1813,41 +1800,41 @@ final class AppSession {
                     retunes.centreInFlight == nil
                 {
                     lastPan = Date()
-                    let newCentre = clampCentre(
-                        target < lo ? centre - span / 8 : centre + span / 8, span: span)
-                    request(UInt64(max(0, target)))
-                    log("tune", "pan \(centre) -> \(newCentre) Hz under a drag at \(target) Hz")
-                    let move = RetuneQueue.Move(
-                        centre: newCentre, offset: target - newCentre, captureID: cap.captureID,
-                        channelID: ch.channelID)
-                    Task { await retune(move) }
-                    followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
-                    return
+                    // A pan that would pause a job holds at the edge of what the jobs need and
+                    // asks once for the drag (`dragStep`); Move anyway after the drag has ended
+                    // moves there as a click would.
+                    let stay = target
+                    let newCentre = dragStep(
+                        to: clampCentre(
+                            target < lo ? centre - span / 8 : centre + span / 8, span: span),
+                        capture: cap
+                    ) { wanted in
+                        self.moveCentre(to: wanted, for: stay)
+                    }
+                    if newCentre != centre {
+                        request(UInt64(max(0, target)))
+                        log("tune", "pan \(centre) -> \(newCentre) Hz under a drag at \(target) Hz")
+                        let move = RetuneQueue.Move(
+                            centre: newCentre, offset: target - newCentre,
+                            captureID: cap.captureID, channelID: ch.channelID)
+                        Task { await retune(move) }
+                        followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
+                        return
+                    }
                 }
             } else {
                 let newCentre = clampCentre(
                     target < lo
                         ? target + span * Self.edgeInsetEighths / 8
                         : target - span * Self.edgeInsetEighths / 8, span: span)
-                request(UInt64(max(0, target)))
-                // One move at a time: while one is in flight the new one waits and `retune`
-                // performs it next (`RetuneQueue`).
-                let move = RetuneQueue.Move(
-                    centre: newCentre, offset: target - newCentre, captureID: cap.captureID,
-                    channelID: ch.channelID)
-                switch retunes.request(move) {
-                case .queued(let superseded):
-                    if let superseded {
-                        log("tune", "centre \(superseded.centre) Hz superseded before it ran")
-                    }
-                    log(
-                        "tune",
-                        "centre \(newCentre) Hz for \(target) Hz waits on the move in flight")
-                case .start:
-                    log("tune", "centre \(centre) -> \(newCentre) Hz for \(target) Hz")
-                    Task { await retune(move) }
+                let asked = target
+                if asksBeforeMoving(
+                    cap, centre: newCentre, rate: cap.sampleRate, before: "tune to \(target) Hz",
+                    proceed: { self.moveCentre(to: newCentre, for: asked) })
+                {
+                    return
                 }
-                followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
+                moveCentre(to: newCentre, for: target)
                 return
             }
         }
@@ -1859,6 +1846,29 @@ final class AppSession {
                 "tune",
                 "\(target) Hz (offset \(offset))\(hz != UInt64(max(0, target)) ? ", asked \(hz)" : "")"
             )
+        }
+        followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
+    }
+
+    /// A click's move: the centre to `newCentre` and the channel to `target` on it. One move at
+    /// a time: while one is in flight the new one waits and `retune` performs it next
+    /// (`RetuneQueue`).
+    private func moveCentre(to newCentre: Int64, for target: Int64) {
+        guard let cap = capture, let ch = channel else { return }
+        let centre = retunes.centreInFlight ?? Int64(cap.centerHz)
+        request(UInt64(max(0, target)))
+        let move = RetuneQueue.Move(
+            centre: newCentre, offset: target - newCentre, captureID: cap.captureID,
+            channelID: ch.channelID)
+        switch retunes.request(move) {
+        case .queued(let superseded):
+            if let superseded {
+                log("tune", "centre \(superseded.centre) Hz superseded before it ran")
+            }
+            log("tune", "centre \(newCentre) Hz for \(target) Hz waits on the move in flight")
+        case .start:
+            log("tune", "centre \(centre) -> \(newCentre) Hz for \(target) Hz")
+            Task { await retune(move) }
         }
         followBand(from: tunedHz, to: UInt64(max(0, target)), channel: ch)
     }
@@ -2142,9 +2152,9 @@ final class AppSession {
 
     /// The band row's item: `ley scan --band`'s sweep on the window's own radio,
     /// with the window paused for it. On the row being swept it is Stop; on another row it
-    /// stops that sweep and starts this one after its terminal event. A record job riding the
-    /// window's capture would hear every hop, so the move alert asks first, Sweep anyway going
-    /// ahead.
+    /// stops that sweep and starts this one after its terminal event. A sweep pauses every job
+    /// on the window's capture (a decoder, a watch, a recording would hear every hop), so the
+    /// move alert asks first with the daemon's plan for the sweep, Sweep anyway going ahead.
     func scanBand(row: Band) {
         if let s = sweep, sweeping {
             if s.row.id == row.id {
@@ -2156,12 +2166,18 @@ final class AppSession {
             }
             return
         }
-        if let cap = capture,
-            let words = Recordings.retuneWords(
-                jobs: Recordings.jobs(riding: cap.captureID, in: state))
-        {
-            ask(words, before: "scan \(row.name)", proceedLabel: "Sweep anyway") {
-                Task { await self.startSweep(row: row) }
+        if let cap = capture, !RetuneAsk.jobClaims(on: cap, selfID: selfID).isEmpty {
+            var req = Leyline_V1_PlanRequest()
+            req.scan = Sweep.config(for: row, in: Bands.builtIn, deviceID: cap.deviceID)
+            Task {
+                let what = "scan \(row.name)"
+                guard let words = await pauseWords(req, capture: cap.captureID, before: what) else {
+                    await startSweep(row: row)
+                    return
+                }
+                ask(words, before: what, proceedLabel: "Sweep anyway") {
+                    Task { await self.startSweep(row: row) }
+                }
             }
             return
         }
@@ -2472,8 +2488,8 @@ final class AppSession {
     /// change does, and writes centre and rate in one tick: centre first when narrowing and rate
     /// first when widening, so the channel fits at each step the daemon applies. A width the
     /// channel cannot fit at all is refused here with a message.
-    /// A narrower width that would leave a running recording outside the span asks first
-    /// (`retuneQuestion`); Move anyway sets it (`askedFirst`), Cancel leaves the width.
+    /// A width that would pause a job on the capture asks first (`retuneQuestion`); Move anyway
+    /// sets it (`askedFirst`), Cancel leaves the width.
     func setSampleRate(_ rate: UInt64, askedFirst: Bool = false) {
         guard let cap = capture, let writes, rate != cap.sampleRate else { return }
         guard retunes.centreInFlight == nil else {
@@ -2489,8 +2505,11 @@ final class AppSession {
             }
             centre = placedCentre(for: ch, at: hz, rate: rate)
         }
-        if !askedFirst, let words = leftOutWords(centre: centre, rate: rate) {
-            ask(words, before: "\(rate) S/s") { self.setSampleRate(rate, askedFirst: true) }
+        if !askedFirst,
+            asksBeforeMoving(
+                cap, centre: centre, rate: rate, before: "\(rate) S/s",
+                proceed: { self.setSampleRate(rate, askedFirst: true) })
+        {
             return
         }
         let want = UInt64(max(0, centre))
@@ -4409,14 +4428,15 @@ final class AppSession {
         openedDays.insert(day.id)
     }
 
-    // MARK: Moving the radio over a recording
+    // MARK: Moving the radio over a job
 
-    /// A move of the radio that would leave a record job's frequency outside the capture, until
-    /// it is answered. The daemon never refuses the move: it degrades the job and records the gap,
-    /// so the window asks first, as `ley tune` refuses without `--retune`.
+    /// A move of the radio that would pause a job, until it is answered (docs/design/claims.md,
+    /// "In the clients"). The daemon never refuses a person's move: it pauses the job and says
+    /// who moved the radio, so the window asks first, once, as `ley tune` refuses without
+    /// `--retune`. A view and the window's own claims are never asked about.
     struct RetuneQuestion: Identifiable {
         let id = UUID()
-        /// `Recordings.retuneWords`: the job named and the gap the move would leave.
+        /// `RetuneAsk.words`: what the move pauses, from the daemon's plan.
         let words: String
         /// The button that goes ahead: `Move anyway` before a move, `Sweep anyway` before Find
         /// active, which hops the radio across the band.
@@ -4427,14 +4447,124 @@ final class AppSession {
 
     private(set) var retuneQuestion: RetuneQuestion?
 
-    /// The question for moving the capture to `centre` at `rate`, or nil when every recording on
-    /// it stays inside (or none runs): tuning inside the span never asks.
-    private func leftOutWords(centre: Int64, rate: UInt64) -> String? {
-        guard let cap = capture, rate > 0 else { return nil }
-        let half = Int64(rate / 2)
-        let span = UInt64(max(0, centre - half))...UInt64(max(0, centre + half))
-        return Recordings.retuneWords(
-            jobs: Recordings.leftOut(capture: cap.captureID, movingTo: span, in: state))
+    /// The window's client id, whose claims are its own and never asked about.
+    private var selfID: String { daemon?.identity.id ?? "" }
+
+    /// The drag in progress or last ended (`RetuneDrag`): its question is asked once, and its
+    /// answer holds for the rest of the drag. `retuneDragOpen` is whether it is still going, and
+    /// `retuneDragID` tells an answer to this drag from one to a drag before it.
+    private var retuneDrag: RetuneDrag?
+    private var retuneDragOpen = false
+    private var retuneDragID = UUID()
+
+    /// Before moving `cap` to `centre` at `rate`: false when the move pauses no job on it, and
+    /// the caller moves now. Otherwise the daemon's plan names what it pauses, and the question
+    /// asks in those words: `proceed` runs on Move anyway, or at once when the plan pauses no job
+    /// after all; `cancel` on Cancel.
+    private func asksBeforeMoving(
+        _ cap: Leyline_V1_Capture, centre: Int64, rate: UInt64, before what: String,
+        proceedLabel: String = "Move anyway", proceed: @escaping @MainActor () -> Void,
+        cancel: @escaping @MainActor () -> Void = {}
+    ) -> Bool {
+        guard rate > 0, RetuneAsk.pauses(cap, centre: centre, rate: rate, selfID: selfID) else {
+            return false
+        }
+        var req = Leyline_V1_PlanRequest()
+        req.retune = .with {
+            $0.captureID = cap.captureID
+            $0.centerHz = UInt64(max(0, centre))
+            $0.sampleRateHz = rate
+        }
+        Task {
+            if let words = await self.pauseWords(req, capture: cap.captureID, before: what) {
+                self.ask(
+                    words, before: what, proceedLabel: proceedLabel, proceed: proceed,
+                    cancel: cancel)
+            } else {
+                proceed()
+            }
+        }
+        return true
+    }
+
+    /// The question's words for `req` (`RetuneAsk.words`): the jobs the daemon's plan pauses, or,
+    /// when the plan cannot be had, every job's claim on the capture. Nil when it pauses none.
+    private func pauseWords(
+        _ req: Leyline_V1_PlanRequest, capture captureID: String, before what: String
+    ) async -> String? {
+        let me = selfID
+        var asked: [Leyline_V1_Claim] = []
+        if let daemon {
+            do {
+                asked = RetuneAsk.asked(try await daemon.control.plan(req), selfID: me)
+            } catch {
+                log(
+                    "record",
+                    "no plan before \(what): \(LeylineError(error)); asking about every job")
+                asked =
+                    state.capture(captureID).map { RetuneAsk.jobClaims(on: $0, selfID: me) } ?? []
+            }
+        }
+        return RetuneAsk.words(asked, jobs: state.jobs, titles: decoders.titles)
+    }
+
+    /// One frame of a drag that moves `cap` to `centre`: the centre to write now. The first frame
+    /// that would pause a job holds the capture at the edge of what the jobs need and asks; the
+    /// answer holds for the rest of the drag. `resume` performs the move the drag wanted when Move
+    /// anyway comes after the drag has ended.
+    private func dragStep(
+        to centre: Int64, capture cap: Leyline_V1_Capture,
+        resume: @escaping @MainActor (Int64) -> Void
+    ) -> Int64 {
+        if !retuneDragOpen || retuneDrag == nil {
+            retuneDrag = RetuneDrag(
+                keep: RetuneAsk.keep(
+                    RetuneAsk.jobClaims(on: cap, selfID: selfID), rate: cap.sampleRate),
+                start: Int64(cap.centerHz))
+            retuneDragOpen = true
+            retuneDragID = UUID()
+        }
+        guard let step = retuneDrag?.step(to: centre) else { return centre }
+        switch step {
+        case .move(let c), .hold(let c):
+            return c
+        case .ask(let wanted, let hold):
+            let id = retuneDragID
+            var req = Leyline_V1_PlanRequest()
+            req.retune = .with {
+                $0.captureID = cap.captureID
+                $0.centerHz = UInt64(max(0, wanted))
+                $0.sampleRateHz = cap.sampleRate
+            }
+            Task {
+                let what = "drag to \(wanted) Hz"
+                guard let words = await self.pauseWords(req, capture: cap.captureID, before: what)
+                else {
+                    self.answerDrag(id, moveAnyway: true, resume: resume)
+                    return
+                }
+                self.ask(words, before: what) {
+                    self.answerDrag(id, moveAnyway: true, resume: resume)
+                } cancel: {
+                    self.answerDrag(id, moveAnyway: false, resume: resume)
+                }
+            }
+            return hold
+        }
+    }
+
+    /// The drag ended: the next frame of a drag starts a new one, which asks again.
+    func endRetuneDrag() { retuneDragOpen = false }
+
+    /// The answer to drag `id`'s question: a drag still going carries on with it; one that has
+    /// ended moves to where it was going on Move anyway, and stays on Cancel.
+    private func answerDrag(
+        _ id: UUID, moveAnyway: Bool, resume: @MainActor (Int64) -> Void
+    ) {
+        guard id == retuneDragID, var drag = retuneDrag else { return }
+        drag.answered(moveAnyway: moveAnyway)
+        retuneDrag = drag
+        if !retuneDragOpen, moveAnyway { resume(drag.wanted) }
     }
 
     private func ask(
