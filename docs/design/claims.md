@@ -139,8 +139,11 @@ When a plan displaces a claim:
   release. This replaces `restoreCenterHz` and the
   sweep's restore. When a *person* displaced a job, nothing returns automatically: the person is
   at the controls, and the job waits.
-- **A shared capture lives while any claim holds it.** It is destroyed when its last claim is
-  released, so several IQ decoders share a capture without its creator tearing it down (DEC-19).
+- **A shared capture lives while a consumer holds it.** A capture the allocator made for a job is
+  destroyed when its last channel, IQ or sweep claim is released, whoever made it, so several IQ
+  decoders share a capture without its creator tearing it down (DEC-19). A view or a presence
+  does not hold it: each takes the capture as it is, and neither is a reason to keep a radio
+  tuned for a job that has ended.
 
 ## In the clients
 
