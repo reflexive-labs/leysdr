@@ -234,13 +234,16 @@ the stored captures.
 
 The calls for this batch, taken 2026-11-02:
 
-- [ ] **DA-9 Decoding, seen from the radio.** A compact row per running decoder at the top of the
+- [x] **DA-9 Decoding, seen from the radio.** A compact row per running decoder at the top of the
   Radio sidebar (symbol, title, the liveness count) that opens its page in Decoders. On the
   waterfall, a record from an audio decoder whose channel is inside the visible capture draws a
   small tag at the job's frequency on the row it arrived in: the transmitter's name from the
   display's `entity_name`, else `device_id`. Tags scroll away with the rows, at most one per
   transmitter per ten seconds, and View has "Show Decoded Names" (on by default). IQ decoders
   draw no tags: their records have no frequency of their own inside the capture.
+  Verified 2026-11-02 by a full `make app-check JOBS=3` (1102 checked, all ok) with the new
+  `radio-decoding`: the APRS row tops the sidebar, N0CALL tags sit on the signal at 144.390 MHz,
+  and View ▸ Show Decoded Names unticks as it hides them.
 - [x] **DA-10 Watches from the app.** "Notify Me…" on a decoder's page opens a sheet that builds a
   `DecodeConfig.predicate` from the manifest's field hints (a field and a value for TEXT and
   INTEGER fields; a place and a radius when the decoder's records carry positions) and a macOS
@@ -258,6 +261,11 @@ The calls for this batch, taken 2026-11-02:
   says so; the sidebar's words are read back from any watch's predicate, `ley watch`'s too; and
   the Radio sidebar's decoding rows (DA-9) count plain runs only, since `DecoderPages.running`
   now leaves watches out.
+  Verified 2026-11-02 by a full `make app-check JOBS=3` (1102 checked, all ok) with the new
+  `decoders-watch`: `pick` and typing reach the sheet's fields, and `state.alert` now reads a
+  SwiftUI sheet's words (4b01a5f). Notify Me… is off where Start is (2b56846). By hand, a `ley
+  watch aprs --where device_id=N0CALL-3 --notify --detach` on scene_aprs had usernoted deliver an
+  osascript notification on each pass of N0CALL-3, about every 21 s.
 - [x] **DA-11 Decode a recording.** The Library's context menu gains "Decode With" listing the
   installed decoders whose input matches the recording (audio decoders on an audio recording, IQ
   decoders on an IQ one; speech stays under Transcribe). It starts a kept job with `source_uri`,
@@ -270,7 +278,10 @@ The calls for this batch, taken 2026-11-02:
   (1000 at most, `1000+ records` past it). A transcription is now the speech decoder's job over a
   recording only, so another decoder's job there is not read as one. The stage key `decode_with`
   runs an item's code path, since a check cannot open a context menu.
-- [ ] **DA-12 A recipe gain in dB.** `GainPolicy` gains `GAIN_FIXED` and `DecoderRecipe.gain_db`
+  Verified 2026-11-02 by a full `make app-check JOBS=3` (1102 checked, all ok) with the new
+  `library-decode-with`: APRS finds 7 records in the recorded audio, the inspector reads
+  "APRS: 7 records", and its link opens the APRS page.
+- [x] **DA-12 A recipe gain in dB.** `GainPolicy` gains `GAIN_FIXED` and `DecoderRecipe.gain_db`
   (additive), applied when the job creates or retunes the capture, never on a capture it borrows
   (that gain is its owner's). `DecodeConfig` gains the `GainWrite` that `ScanConfig` has, so `ley
   decode --gain` overrides the recipe. ADS-B's recipe is 40 dB: at gain 30 the owner's 1090 MHz
@@ -281,6 +292,8 @@ The calls for this batch, taken 2026-11-02:
   reads it); a gain the config sent that the radio refuses fails the job, as a recording's does,
   while a recipe's is skipped on a radio with no gain stage (a file radio, so no check scene's
   detail moves). `GAIN_AUTO` still sets nothing, and `list_entities` and `ley track` take no gain.
+  Verified 2026-11-02 by a full `make app-check JOBS=3` (1102 checked, all ok), no detail
+  moved; the 40 dB on the owner's 1090 MHz air is still to be seen on the real radio.
 
 ## After this
 
