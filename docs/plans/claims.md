@@ -16,7 +16,8 @@ where the step says so.
   now claims. A claim's `state` is computed (DISPLACED when the capture no longer gives it what
   it needs); `displaced_by` waits for CL-3. A sweep lease now releases its claim after putting
   the capture back, so a write in that moment is refused rather than overwritten. The app's
-  inspector is not done: it is app work, left for the next app batch.
+  inspector's Claims group followed on 2026-11-02 (`ClaimWords`, `ClaimWordsTests`; the
+  radio-decoding scene checks a `ley decode aprs --job` among them).
 - [x] **CL-2 `plan` and `Control.Plan`.** The allocator's three steps become one pure function over
   the ledger, with the priority rule; the allocator carries out its result; `Control.Plan` returns
   it read-only. `--dry-run` on `ley decode`, `ley record` and `ley scan`; MCP tools describe

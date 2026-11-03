@@ -498,6 +498,12 @@ final class AppSession {
     // MARK: Derived
 
     var capture: Leyline_V1_Capture? { heldCapture.current { state.capture($0) } }
+    /// The tuned capture's claims as the inspector's Claims group lists them
+    /// (`ClaimWords.rows`), a decode job named by its decoder's title.
+    var claimRows: [ClaimWords.Row] {
+        guard let claims = capture?.claims, !claims.isEmpty else { return [] }
+        return ClaimWords.rows(claims, jobs: state.jobs, titles: decoders.titles)
+    }
     var channel: Leyline_V1_Channel? { heldChannel.current { state.channel($0) } }
     var device: Leyline_V1_DeviceDescriptor? { capture.flatMap { state.device($0.deviceID) } }
     /// The window's own sink on the held channel; nil when it has none there, even while

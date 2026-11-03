@@ -525,7 +525,8 @@ import LeylineClient
                     ? s.shownWaterfallTags.map {
                         ControlWaterfallTag(name: $0.name, hz: $0.frequencyHz)
                     }
-                    : nil)
+                    : nil,
+                claims: s.claimRows.isEmpty ? nil : s.claimRows.map(ControlClaim.init))
         }
 
         /// The Radio sidebar's decoder rows, nil when it has none.

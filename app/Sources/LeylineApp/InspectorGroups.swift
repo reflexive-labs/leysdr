@@ -350,11 +350,12 @@ struct LogRow: View {
 
 /// The disclosure groups. Nothing in these groups is required for anything above them to work,
 /// and what is in them is kept findable here. Measurements holds the raw
-/// levels the reading rows do not print. Collapsed by default and remembered, per group, in the
-/// defaults.
+/// levels the reading rows do not print; Claims, who is using the tuned radio and for what.
+/// Collapsed by default and remembered, per group, in the defaults.
 struct DisclosureSection: View {
     @Environment(AppSession.self) private var session
     @AppStorage("inspector.measurementsOpen") private var measurementsOpen = false
+    @AppStorage("inspector.claimsOpen") private var claimsOpen = false
 
     // One group, not the design's three: the demodulator's values are the transport bar's and
     // the device and gain are the header's chip, and showing either twice means two places to
@@ -363,6 +364,12 @@ struct DisclosureSection: View {
         VStack(spacing: 0) {
             DisclosureRow(title: "Measurements", hint: "dBFS", open: $measurementsOpen) {
                 MeasurementsGroup()
+            }
+            let claims = session.claimRows
+            DisclosureRow(
+                title: "Claims", hint: claims.isEmpty ? nil : "\(claims.count)", open: $claimsOpen
+            ) {
+                ClaimsGroup(rows: claims)
             }
         }
     }
@@ -455,6 +462,39 @@ struct MeasurementsGroup: View {
                 }
             }
         }
+    }
+}
+
+/// The tuned capture's claims (docs/design/claims.md), read-only: who holds each, on the left,
+/// and what it needs on the right, `displaced` in `caution` when the radio no longer gives it
+/// that; the same claims `ley state` lists under the capture.
+struct ClaimsGroup: View {
+    let rows: [ClaimWords.Row]
+
+    var body: some View {
+        VStack(spacing: 3) {
+            if rows.isEmpty {
+                Text("Nothing is using this radio.").font(Theme.Font.valueSmall)
+                    .foregroundStyle(Theme.inkFaint)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(row.who).font(Theme.Font.valueSmall).foregroundStyle(Theme.inkFaint)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text(row.count > 1 ? "\(row.what) ×\(row.count)" : row.what)
+                        .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkTertiary)
+                        .lineLimit(1).truncationMode(.middle)
+                    if row.displaced {
+                        Text("displaced").font(Theme.Font.valueSmall)
+                            .foregroundStyle(Theme.caution).lineLimit(1)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .identifiedGroup("inspector.claims")
     }
 }
 

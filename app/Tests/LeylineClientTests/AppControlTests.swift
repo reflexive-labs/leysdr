@@ -165,7 +165,8 @@ final class AppControlTests: XCTestCase {
             back.keys.sorted(),
             [
                 "alert", "assistant", "assistant_shown", "band", "bandwidth_hz", "bookmark",
-                "bookmark_rows", "capture", "capture_id", "channel_id", "decode_with", "decoded",
+                "bookmark_rows", "capture", "capture_id", "channel_id", "claims", "decode_with",
+                "decoded",
                 "decoders", "decoding_rows", "entries",
                 "filter_caret", "filter_query", "focused", "heard", "hits", "inspector_shown",
                 "library_rows",
@@ -177,7 +178,7 @@ final class AppControlTests: XCTestCase {
         for key in [
             "alert", "assistant", "capture", "filter_caret", "tooltip", "transport", "view",
             "volume", "window", "tuned_row", "on_air_entry", "log_names", "decoders",
-            "waterfall_tags", "decoding_rows",
+            "waterfall_tags", "decoding_rows", "claims",
         ] {
             XCTAssertTrue(back[key] is NSNull, key)
         }
@@ -194,6 +195,20 @@ final class AppControlTests: XCTestCase {
         let tag = try XCTUnwrap((back["waterfall_tags"] as? [[String: Any]])?.first)
         XCTAssertEqual(tag.keys.sorted(), ["hz", "name"])
         XCTAssertEqual(tag["hz"] as? Int, 144_390_000)
+    }
+
+    func testTheInspectorsClaimsWriteTheirKeys() throws {
+        let state = ControlViewState(
+            place: "radio",
+            claims: [
+                ControlClaim(
+                    ClaimWords.Row(who: "job: APRS", what: "channel on 144.390 MHz"))
+            ])
+        let back = try object(AppControl.encoded(state))
+        let claim = try XCTUnwrap((back["claims"] as? [[String: Any]])?.first)
+        XCTAssertEqual(claim.keys.sorted(), ["count", "displaced", "what", "who"])
+        XCTAssertEqual(claim["who"] as? String, "job: APRS")
+        XCTAssertEqual(claim["displaced"] as? Bool, false)
     }
 
     func testTheDecodersPageWritesEveryKey() throws {

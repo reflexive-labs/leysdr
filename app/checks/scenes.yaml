@@ -1931,7 +1931,7 @@ scenes:
   # APRS's page in Decoders, still running.
   - name: radio-decoding
     covers: [DecodedNames.swift, WaterfallTags.swift, ClippedRows.swift, SidebarView.swift,
-      WaterfallView.swift]
+      WaterfallView.swift, ClaimWords.swift, InspectorGroups.swift]
     fixtures: [{name: scene_aprs}]
     clock: "19:42"
     stage: {place: radio, settle: 3}

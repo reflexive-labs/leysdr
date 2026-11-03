@@ -461,8 +461,9 @@ final class DecoderSession {
         log("decoders", "plan for \(m.name) at \(hz) Hz: \(placement.words)")
     }
 
-    /// Each decoder's title by its manifest name, for naming a decode job a plan would pause.
-    private var titles: [String: String] {
+    /// Each decoder's title by its manifest name, for naming a decode job a plan would pause or
+    /// a claim holds.
+    var titles: [String: String] {
         Dictionary(
             (manifests ?? []).map { ($0.name, DecoderPages.title($0)) },
             uniquingKeysWith: { a, _ in a })

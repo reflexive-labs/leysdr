@@ -752,6 +752,23 @@ public struct ControlDecodingRow: Sendable, Equatable, Codable {
     }
 }
 
+/// `state`'s `claims`: one line of the Radio inspector's Claims group, as `ClaimWords.rows`
+/// words it: who holds the claim (`job: APRS`), what it needs (`channel on 144.390 MHz`), whether
+/// it is displaced, and how many identical claims the line folds.
+public struct ControlClaim: Sendable, Equatable, Codable {
+    public var who: String
+    public var what: String
+    public var displaced: Bool
+    public var count: Int
+
+    public init(_ row: ClaimWords.Row) {
+        who = row.who
+        what = row.what
+        displaced = row.displaced
+        count = row.count
+    }
+}
+
 /// `state`'s `decoded`: one decoder's row in a recording's inspector as drawn, its label
 /// (`Decoded` on the first, else empty), the decoder by manifest name, and its value
 /// (`APRS · 7 records`).
@@ -869,6 +886,9 @@ public struct ControlViewState: Sendable, Equatable, Codable {
     /// The tags the waterfall draws, newest first, while the Radio shows and View ▸ Show Decoded
     /// Names is on; null otherwise.
     public var waterfallTags: [ControlWaterfallTag]?
+    /// The tuned capture's claims as the Radio inspector lists them, in its order; null with no
+    /// capture or none on it.
+    public var claims: [ControlClaim]?
 
     enum CodingKeys: String, CodingKey {
         case place, mode, band, bookmark, focused, notices, popover, heard, hits, transport
@@ -899,6 +919,7 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         case decoders
         case decodingRows = "decoding_rows"
         case waterfallTags = "waterfall_tags"
+        case claims
     }
 
     public init(
@@ -917,8 +938,10 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         logNames: String? = nil, sort: String = "frequency", bookmarkRows: [String] = [],
         libraryRows: [String] = [], decodeWith: [String] = [], decoded: [ControlDecodedRow] = [],
         decoders: ControlDecoders? = nil,
-        decodingRows: [ControlDecodingRow]? = nil, waterfallTags: [ControlWaterfallTag]? = nil
+        decodingRows: [ControlDecodingRow]? = nil, waterfallTags: [ControlWaterfallTag]? = nil,
+        claims: [ControlClaim]? = nil
     ) {
+        self.claims = claims
         self.decodeWith = decodeWith
         self.decoded = decoded
         self.decoders = decoders
@@ -1013,6 +1036,7 @@ public struct ControlViewState: Sendable, Equatable, Codable {
         try c.encode(decoders, forKey: .decoders)
         try c.encode(decodingRows, forKey: .decodingRows)
         try c.encode(waterfallTags, forKey: .waterfallTags)
+        try c.encode(claims, forKey: .claims)
     }
 }
 
