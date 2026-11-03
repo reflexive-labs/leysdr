@@ -300,9 +300,10 @@ struct DecoderPageHeader: View {
                 }
             }
             Spacer(minLength: 12)
+            // Off where Start is: a watch is placed as a run is, so the sheet could start none.
             Button("Notify Me…") { d.watchFor = manifest.name }
                 .buttonStyle(.bordered)
-                .disabled(!session.isLive)
+                .disabled(!session.isLive || !placement.canStart)
                 .help(
                     "Watch for a record that matches and get a notification, with the app closed too"
                 )
