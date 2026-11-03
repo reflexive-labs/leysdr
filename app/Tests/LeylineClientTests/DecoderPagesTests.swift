@@ -25,6 +25,7 @@ final class DecoderPagesTests: XCTestCase {
         cog.unit = "deg"
         var name = Leyline_V1_FieldHint()
         name.name = "name"
+        name.label = "Vessel name"
         name.type = .text
         m.fields = [sog, cog, name]
         return m
@@ -204,6 +205,8 @@ final class DecoderPagesTests: XCTestCase {
         ]
         let rows = DecoderPages.fieldRows(fields, manifest: manifest())
         XCTAssertEqual(rows.map(\.name), ["sog_kn", "cog_deg", "name", "mmsi"])
+        // The hint's label where it has one, else the name.
+        XCTAssertEqual(rows.map(\.label), ["sog_kn", "cog_deg", "Vessel name", "mmsi"])
         XCTAssertEqual(rows.map(\.value), ["12.345679 kn", "254°", "EVER GIVEN", "366999101"])
         XCTAssertEqual(rows[0].description, "speed over ground")
     }
@@ -403,5 +406,48 @@ final class DecoderPagesTests: XCTestCase {
                 LabelStore.defaultPath(environment: ["HOME": "/Users/x"]),
                 "/Users/x/Library/Application Support/Leyline/labels.json")
         #endif
+    }
+
+    /// testdata/decoders/head-cases.json, which `ley track`'s test reads too: a column is headed
+    /// by its hint's label, else its name, with the hint's unit (DA-18).
+    func testColumnHeadsFollowTheSharedVectors() throws {
+        struct Hint: Decodable {
+            var name: String
+            var label: String?
+            var type: String
+            var unit: String?
+        }
+        struct Case: Decodable {
+            var name: String
+            var column: String
+            var hint: Hint?
+            var head: String
+            var numeric: Bool
+        }
+        struct File: Decodable { var cases: [Case] }
+        let url = DecoderVectorsTests.dir.appendingPathComponent("head-cases.json")
+        let file = try JSONDecoder().decode(File.self, from: Data(contentsOf: url))
+        XCTAssertFalse(file.cases.isEmpty)
+        for c in file.cases {
+            var m = Leyline_V1_DecoderManifest()
+            if let h = c.hint {
+                let type = try XCTUnwrap(
+                    Leyline_V1_FieldType(
+                        rawValue: [
+                            "TEXT": 1, "INTEGER": 2, "NUMBER": 3,
+                            "FLAG": 4, "DATA": 5,
+                        ][h.type] ?? -1), "\(c.name): type \(h.type)")
+                m.fields = [
+                    .with {
+                        $0.name = h.name
+                        $0.label = h.label ?? ""
+                        $0.type = type
+                        $0.unit = h.unit ?? ""
+                    }
+                ]
+            }
+            XCTAssertEqual(DecoderPages.columnHead(c.column, manifest: m), c.head, c.name)
+            XCTAssertEqual(DecoderPages.columnIsNumeric(c.column, manifest: m), c.numeric, c.name)
+        }
     }
 }

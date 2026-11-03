@@ -273,18 +273,27 @@ public enum DecoderPages {
         return columns.filter { DisplayTemplate.columnName($0) != names[0] }
     }
 
-    /// A display column's header as `ley track` writes it: a field with a unit is named with the
-    /// unit in brackets and the unit suffix its name carries dropped (`sog_kn` in kn is `SOG
-    /// (kn)`); otherwise the name, upper case, words split at underscores. An entry's precision
+    /// A display column's header as `ley track` writes it (testdata/decoders/head-cases.json):
+    /// the hint's label in upper case, or else the field's name, upper case with words split at
+    /// underscores and, when the hint has a unit, the unit suffix the name carries dropped; a
+    /// hint's unit follows in brackets (`ground_speed_kn` labelled `Ground speed` in kn is
+    /// `GROUND SPEED (kn)`, `sog_kn` with no label `SOG (kn)`). An entry's precision
     /// (`ground_speed_kn:0`) is not part of the head.
     public static func columnHead(_ entry: String, manifest: Leyline_V1_DecoderManifest) -> String {
         let name = DisplayTemplate.columnName(entry)
         let word = { (s: String) in s.replacingOccurrences(of: "_", with: " ").uppercased() }
-        guard let hint = manifest.fields.first(where: { $0.name == name }), !hint.unit.isEmpty
-        else { return word(name) }
-        var base = name
-        if let i = name.lastIndex(of: "_"), i > name.startIndex { base = String(name[..<i]) }
-        return word(base) + " (" + unitWords(hint.unit) + ")"
+        guard let hint = manifest.fields.first(where: { $0.name == name }) else {
+            return word(name)
+        }
+        var head = hint.label.uppercased()
+        if head.isEmpty {
+            var base = name
+            if !hint.unit.isEmpty, let i = name.lastIndex(of: "_"), i > name.startIndex {
+                base = String(name[..<i])
+            }
+            head = word(base)
+        }
+        return hint.unit.isEmpty ? head : head + " (" + unitWords(hint.unit) + ")"
     }
 
     /// Whether a column holds numbers, so it is set flush right.
@@ -305,10 +314,11 @@ public enum DecoderPages {
         }
     }
 
-    /// One field of the inspector: the field's name, its value with the hint's unit, and the
-    /// hint's description.
+    /// One field of the inspector: the field's name, the label its row shows (the hint's, else
+    /// the name), its value with the hint's unit, and the hint's description.
     public struct FieldRow: Sendable, Equatable, Identifiable {
         public var name: String
+        public var label: String
         public var value: String
         public var description: String
         public var id: String { name }
@@ -338,7 +348,10 @@ public enum DecoderPages {
             } else {
                 value = v + " " + unit
             }
-            return FieldRow(name: name, value: value, description: hint?.description_p ?? "")
+            let label = hint?.label ?? ""
+            return FieldRow(
+                name: name, label: label.isEmpty ? name : label, value: value,
+                description: hint?.description_p ?? "")
         }
     }
 

@@ -583,7 +583,9 @@ import LeylineClient
                     Set(d.records.entries.map(\.record.kind))
                 ).widest
             out.alerts = d.alerts.map { d.summary($0.record) }
-            out.watches = Watches.watches(of: m, in: s.state.jobs).map(Watches.words)
+            out.watches = Watches.watches(of: m, in: s.state.jobs).map {
+                Watches.words($0, manifest: m)
+            }
             return out
         }
 

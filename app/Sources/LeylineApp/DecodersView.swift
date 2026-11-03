@@ -114,7 +114,7 @@ struct DecodersSidebar: View {
                         let watches = Watches.watches(of: m, in: session.state.jobs)
                         ForEach(Array(watches.enumerated()), id: \.element.jobID) { i, j in
                             DecoderWatchLine(
-                                job: j,
+                                job: j, manifest: m,
                                 identifier:
                                     "decoders.decoder.\(ViewIdentifier.slug(m.name)).watch.\(i)"
                             ) { Task { await d.stop([j]) } }

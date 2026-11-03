@@ -145,10 +145,11 @@ struct RecordSection: View {
                     ForEach(fields) { f in
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(alignment: .firstTextBaseline, spacing: 0) {
-                                // A name longer than its column is cut in the middle, so
-                                // both ends still read, with a gap before the value and the
-                                // whole name in the tooltip.
-                                Text(f.name).font(Theme.Font.label)
+                                // The field's label (its name when the hint has none); one
+                                // longer than its column is cut in the middle, so both ends
+                                // still read, with a gap before the value. The tooltip is the
+                                // field's name, which `ley watch --where` takes.
+                                Text(f.label).font(Theme.Font.label)
                                     .foregroundStyle(Theme.inkMuted).lineLimit(1)
                                     .truncationMode(.middle)
                                     .padding(.trailing, Theme.Layout.decoderFieldNameGap)

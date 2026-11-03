@@ -182,12 +182,26 @@ public enum Watches {
         }
     }
 
-    /// A field the sheet offers: its name, its type and the hint's description.
+    /// A field the sheet offers: its name, the label its pop-up shows, its type and the hint's
+    /// description.
     public struct Field: Sendable, Equatable, Identifiable {
         public var name: String
+        public var label: String
         public var type: Leyline_V1_FieldType
         public var description: String
         public var id: String { name }
+    }
+
+    /// What the promoted `device_id` reads as, in the sheet and in a condition's words.
+    public static let deviceIDLabel = "Transmitter"
+
+    /// The label a person reads for a field of `m`: `Transmitter` for `device_id`, else the
+    /// hint's `label`, else the field's name. `m` nil is no manifest: names alone, but for
+    /// `device_id`.
+    public static func label(of field: String, in m: Leyline_V1_DecoderManifest?) -> String {
+        if field == "device_id" { return deviceIDLabel }
+        let label = m?.fields.first { $0.name == field }?.label ?? ""
+        return label.isEmpty ? field : label
     }
 
     /// The fields a watch can test: `device_id`, which every decoder that names its
@@ -197,11 +211,14 @@ public enum Watches {
     public static func fields(_ m: Leyline_V1_DecoderManifest) -> [Field] {
         var out = [
             Field(
-                name: "device_id", type: .text,
+                name: "device_id", label: deviceIDLabel, type: .text,
                 description: "the transmitter, as the decoder names it")
         ]
         for h in m.fields where (h.type == .text || h.type == .integer) && h.name != "device_id" {
-            out.append(Field(name: h.name, type: h.type, description: h.description_p))
+            out.append(
+                Field(
+                    name: h.name, label: label(of: h.name, in: m), type: h.type,
+                    description: h.description_p))
         }
         return out
     }
@@ -270,17 +287,22 @@ public enum Watches {
     }
 
     /// A watch's condition in words, from its job's predicate, so a watch `ley watch` started
-    /// reads as one the sheet started: `fips contains 06009`, `device_id is N0CALL-3 and within
-    /// 10 km of 37.7600N 122.4200W`.
-    public static func words(_ j: Leyline_V1_Job) -> String {
+    /// reads as one the sheet started, each field by its label in `m` (`label(of:in:)`):
+    /// `County contains 06009`, `Transmitter is N0CALL-3 and within 10 km of 37.7600N
+    /// 122.4200W`.
+    public static func words(_ j: Leyline_V1_Job, manifest m: Leyline_V1_DecoderManifest?)
+        -> String
+    {
         guard case .decode(let d)? = j.config else { return "" }
-        return words(d.predicate)
+        return words(d.predicate, manifest: m)
     }
 
-    public static func words(_ p: Leyline_V1_Predicate) -> String {
+    public static func words(_ p: Leyline_V1_Predicate, manifest m: Leyline_V1_DecoderManifest?)
+        -> String
+    {
         let parts = p.all.compactMap { c -> String? in
             switch c.test {
-            case .field(let t): return words(t)
+            case .field(let t): return words(t, label: label(of: t.field, in: m))
             case .geo(let g):
                 return "within \(distanceWords(g.radiusM)) of "
                     + DisplayTemplate.formatPosition(g.center)
@@ -290,22 +312,25 @@ public enum Watches {
         return parts.isEmpty ? "every record" : parts.joined(separator: " and ")
     }
 
-    static func words(_ t: Leyline_V1_FieldTest) -> String {
+    /// One field test in words, the field called `label`: `County is 06009`, `Callsign
+    /// contains K6`, `Altitude is over 10000`; several values are `or`ed (`County contains 06009
+    /// or 06013`, what `ley watch --county` twice builds).
+    static func words(_ t: Leyline_V1_FieldTest, label: String) -> String {
         let values = t.values.map(valueWords)
         let one = values.first ?? ""
         let any = values.joined(separator: " or ")
         switch t.op {
-        case .predEq: return "\(t.field) is \(one)"
-        case .predNe: return "\(t.field) is not \(one)"
-        case .predLt: return "\(t.field) is under \(one)"
-        case .predLte: return "\(t.field) is at most \(one)"
-        case .predGt: return "\(t.field) is over \(one)"
-        case .predGte: return "\(t.field) is at least \(one)"
-        case .predIn: return "\(t.field) is \(any)"
-        case .predNotIn: return "\(t.field) is none of \(values.joined(separator: ", "))"
-        case .predContains: return "\(t.field) contains \(any)"
-        case .predExists: return "\(t.field) is set"
-        default: return t.field
+        case .predEq: return "\(label) is \(one)"
+        case .predNe: return "\(label) is not \(one)"
+        case .predLt: return "\(label) is under \(one)"
+        case .predLte: return "\(label) is at most \(one)"
+        case .predGt: return "\(label) is over \(one)"
+        case .predGte: return "\(label) is at least \(one)"
+        case .predIn: return "\(label) is \(any)"
+        case .predNotIn: return "\(label) is none of \(values.joined(separator: ", "))"
+        case .predContains: return "\(label) contains \(any)"
+        case .predExists: return "\(label) is set"
+        default: return label
         }
     }
 

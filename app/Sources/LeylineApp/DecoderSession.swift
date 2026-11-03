@@ -129,7 +129,8 @@ final class DecoderSession {
             if d.hasPredicate {
                 // A watch is not Start's: its end is the page's notice, in its own words.
                 if j.state == .failed {
-                    notice = "The watch for \(Watches.words(j)) stopped: \(DecoderPages.detail(j))"
+                    let words = Watches.words(j, manifest: manifest(named: d.decoder))
+                    notice = "The watch for \(words) stopped: \(DecoderPages.detail(j))"
                 }
                 continue
             }
@@ -448,7 +449,7 @@ final class DecoderSession {
         var req = Leyline_V1_StartJobRequest()
         req.decode = Watches.config(
             decoder: m.name, frequencyHz: frequencyHz, predicate: predicate)
-        let words = Watches.words(predicate)
+        let words = Watches.words(predicate, manifest: m)
         notice = nil
         do {
             let job = try await daemon.jobs.startJob(req)

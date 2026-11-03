@@ -1882,7 +1882,7 @@ scenes:
       - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tab: map, decoders.tabs.1: table, decoders.tabs.2: map, decoders.selected_transmitter: A1F003, decoders.state: Stopped, decoders.transmitters.0: LEY101, decoders.transmitters.1: LEY202, decoders.transmitters.2: LEY303, decoders.transmitters.3: LEY404, decoders.transmitters.4: N0CALL}}
       - {cmd: snapshot, name: map, mask: [counts, inspector]}
       - {cmd: press, identifier: decoders.tab.table}
-      - {cmd: state, expect: {decoders.table_heads.0: TRANSMITTER, decoders.table_heads.2: GROUND SPEED (kn), decoders.table_heads.7: LATEST, decoders.table_rows.2: "LEY303: 36000 · 470 · 135 · 2761", decoders.table_rows.4: "N0CALL: 3500 · 110 · 45 · 1200"}}
+      - {cmd: state, expect: {decoders.table_heads.0: TRANSMITTER, decoders.table_heads.1: ALTITUDE (ft), decoders.table_heads.2: GROUND SPEED (kn), decoders.table_heads.3: TRACK (°), decoders.table_heads.7: LATEST, decoders.table_rows.2: "LEY303: 36000 · 470 · 135 · 2761", decoders.table_rows.4: "N0CALL: 3500 · 110 · 45 · 1200"}}
       - {cmd: snapshot, name: table, mask: [counts, inspector]}
       - {cmd: press, identifier: toolbar.place.radio}
       - {cmd: key, keys: cmd+3}
@@ -1953,7 +1953,7 @@ scenes:
 
   # Watches from the app (docs/plans/decoders-app.md, DA-10) on scene_aprs, over the seven
   # stations decoders-aprs reads. Notify Me… opens a sheet whose fields are the manifest's TEXT
-  # and INTEGER hints after device_id, and whose place and radius show because the records carry
+  # and INTEGER hints after device_id, by their labels (DA-18: device_id is Transmitter), and whose place and radius show because the records carry
   # positions; it builds the predicate `ley watch --where device_id=N0CALL-3` sends and starts it
   # as a kept job with a macOS notification when Return presses Start Watching, the sheet's
   # default (filled) button (DA-19). The watch is listed under APRS in the sidebar with
@@ -1978,15 +1978,15 @@ scenes:
       - {cmd: press, identifier: decoders.page.notify}
       - {cmd: wait, seconds: 1}
       - {cmd: state, expect: {alert.title: Notify me}}
-      - {cmd: pick, identifier: decoders.watch.field, text: device_id}
+      - {cmd: pick, identifier: decoders.watch.field, text: Transmitter}
       - {cmd: pick, identifier: decoders.watch.test, text: is}
       - {cmd: press, identifier: decoders.watch.value}
       - {cmd: type, text: N0CALL-3}
       - {cmd: snapshot, name: sheet}
       - {cmd: ax, name: sheet, window: sheet}
       - {cmd: key, keys: return}
-      - {cmd: wait, seconds: 2, expect_log: "job_\\w+ watching: aprs at 144390000 Hz for device_id is N0CALL-3"}
-      - {cmd: state, expect: {alert: null, decoders.watches.0: "device_id is N0CALL-3", decoders.start_shown: true, decoders.header: null, decoders.notice: null}}
+      - {cmd: wait, seconds: 2, expect_log: "job_\\w+ watching: aprs at 144390000 Hz for Transmitter is N0CALL-3"}
+      - {cmd: state, expect: {alert: null, decoders.watches.0: "Transmitter is N0CALL-3", decoders.start_shown: true, decoders.header: null, decoders.notice: null}}
       - {cmd: snapshot, name: watching}
       - {cmd: ax, name: watching}
       - {cmd: ley, args: [--json, jobs], expect_stdout: ['"predicate":\s*\{"all":\s*\[\{"field":\s*\{"field":\s*"device_id",\s*"op":\s*"PRED_EQ",\s*"values":\s*\[\{"text":\s*"N0CALL-3"\}\]', '"macosNotification":\s*true', '"keep":\s*true']}

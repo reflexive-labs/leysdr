@@ -53,6 +53,7 @@ final class WatchesTests: XCTestCase {
         m.fields = [
             .with {
                 $0.name = "fips"
+                $0.label = "County"
                 $0.type = .text
                 $0.description_p = "affected counties"
             },
@@ -75,6 +76,9 @@ final class WatchesTests: XCTestCase {
     func testTheSheetOffersTextAndIntegerFieldsAfterTheDevice() {
         let fields = Watches.fields(manifest())
         XCTAssertEqual(fields.map(\.name), ["device_id", "fips", "event_count"])
+        // The pop-up reads labels: the promoted device_id is the transmitter, and a field with
+        // no label goes by its name.
+        XCTAssertEqual(fields.map(\.label), ["Transmitter", "County", "event_count"])
         XCTAssertEqual(Watches.tests(for: .text), [.equals, .contains])
         XCTAssertEqual(Watches.tests(for: .integer), [.equals, .above, .below])
     }
@@ -137,17 +141,45 @@ final class WatchesTests: XCTestCase {
     }
 
     func testTheConditionInWords() throws {
-        func words(_ p: Leyline_V1_Predicate?) -> String { Watches.words(p ?? .init()) }
-        XCTAssertEqual(words(try Watches.predicate(where: ["fips=006009"])), "fips is 006009")
+        var m = manifest()
+        m.fields.append(
+            .with {
+                $0.name = "callsign"
+                $0.label = "Callsign"
+                $0.type = .text
+            })
+        m.fields.append(
+            .with {
+                $0.name = "altitude_ft"
+                $0.label = "Altitude"
+                $0.type = .integer
+                $0.unit = "ft"
+            })
+        func words(_ p: Leyline_V1_Predicate?) -> String {
+            Watches.words(p ?? .init(), manifest: m)
+        }
+        XCTAssertEqual(words(try Watches.predicate(where: ["fips=06009"])), "County is 06009")
         XCTAssertEqual(
             words(try Watches.predicate(counties: ["06009", "06001"])),
-            "fips contains 06009 or 06001")
+            "County contains 06009 or 06001")
+        XCTAssertEqual(
+            words(try Watches.predicate(where: ["callsign~K6"])), "Callsign contains K6")
+        XCTAssertEqual(
+            words(try Watches.predicate(where: ["altitude_ft>10000"])),
+            "Altitude is over 10000")
+        XCTAssertEqual(
+            words(try Watches.predicate(where: ["altitude_ft<500"])), "Altitude is under 500")
+        // No label: the name.
         XCTAssertEqual(words(try Watches.predicate(where: ["temp_c>25.5"])), "temp_c is over 25.5")
+        XCTAssertEqual(
+            Watches.words(
+                try XCTUnwrap(try Watches.predicate(where: ["fips=06009"])), manifest: nil),
+            "fips is 06009")
         XCTAssertEqual(
             words(
                 try Watches.predicate(
                     where: ["device_id=N0CALL-3"], near: "37.76,-122.42", radius: "10km")),
-            "device_id is N0CALL-3 and within 10 km of 37.7600N 122.4200W")
+            "Transmitter is N0CALL-3 and within 10 km of 37.7600N 122.4200W")
         XCTAssertEqual(
             words(try Watches.predicate(near: "0,0", radius: "500m")),
             "within 500 m of 0.0000N 0.0000E")

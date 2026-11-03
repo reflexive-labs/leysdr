@@ -46,7 +46,7 @@ struct DecoderWatchSheet: View {
             .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 Picker("When", selection: $field) {
-                    ForEach(fields) { Text($0.name).tag($0.name) }
+                    ForEach(fields) { Text($0.label).tag($0.name) }
                 }
                 .accessibilityIdentifier("decoders.watch.field")
                 Picker("Test", selection: $test) {
@@ -127,7 +127,7 @@ struct DecoderWatchSheet: View {
     /// `Notifies when fips contains 06009.`, or why the choice is not a watch yet.
     private func conditionWords(_ built: Result<Leyline_V1_Predicate, any Error>) -> String {
         switch built {
-        case .success(let p): "Notifies when \(Watches.words(p))."
+        case .success(let p): "Notifies when \(Watches.words(p, manifest: manifest))."
         case .failure(let e): (e as? Watches.Refusal)?.message ?? "\(e)"
         }
     }
@@ -140,19 +140,22 @@ extension Result {
     }
 }
 
-/// A watch under its decoder in the sidebar: a bell, its condition in words (`fips contains
-/// 06009`) and Stop, which ends that job alone.
+/// A watch under its decoder in the sidebar: a bell, its condition in words by the fields' labels
+/// (`County contains 06009`) and Stop, which ends that job alone.
 struct DecoderWatchLine: View {
     let job: Leyline_V1_Job
+    /// Its decoder's manifest, whose hints label the fields.
+    let manifest: Leyline_V1_DecoderManifest
     /// The row's identifier; its Stop is `<identifier>.stop`.
     let identifier: String
     let stop: () -> Void
 
     var body: some View {
+        let words = Watches.words(job, manifest: manifest)
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: "bell").font(Theme.Font.rowGlyph)
                 .foregroundStyle(job.state == .degraded ? Theme.caution : Theme.inkTertiary)
-            Text(Watches.words(job)).font(Theme.Font.footnote)
+            Text(words).font(Theme.Font.footnote)
                 .foregroundStyle(job.state == .degraded ? Theme.caution : Theme.inkSecondary)
                 .lineLimit(2).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
@@ -165,9 +168,9 @@ struct DecoderWatchLine: View {
         }
         .padding(.leading, 14 + Theme.Layout.decoderJobIndent).padding(.trailing, 14)
         .padding(.bottom, 6)
-        .help("\(job.jobID): notifies when \(Watches.words(job))")
+        .help("\(job.jobID): notifies when \(words)")
         .identifiedGroup(identifier)
         // The row's words are not read out of the group beside its button, so it carries them.
-        .accessibilityLabel("Notifies when \(Watches.words(job))")
+        .accessibilityLabel("Notifies when \(words)")
     }
 }
