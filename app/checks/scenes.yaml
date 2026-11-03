@@ -1939,6 +1939,7 @@ scenes:
       - {cmd: menu, menu: "View>Show Decoded Names", read: true, expect: {checked: true}}
       - {cmd: menu, menu: "View>Show Decoded Names"}
       - {cmd: state, expect: {waterfall_tags: null, decoding_rows.0.decoder: aprs}, expect_log: "decoded names hidden"}
+      - {cmd: menu, menu: "View>Show Decoded Names", read: true, expect: {checked: false}}
       - {cmd: press, identifier: sidebar.decoder.aprs}
       - {cmd: state, expect: {place: decoders, decoders.decoder: aprs, decoders.state: Running}}
 

@@ -163,5 +163,7 @@ struct DecoderWatchLine: View {
         .padding(.bottom, 6)
         .help("\(job.jobID): notifies when \(Watches.words(job))")
         .identifiedGroup(identifier)
+        // The row's words are not read out of the group beside its button, so it carries them.
+        .accessibilityLabel("Notifies when \(Watches.words(job))")
     }
 }
