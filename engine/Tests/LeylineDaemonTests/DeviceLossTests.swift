@@ -30,6 +30,12 @@ final class RebindableDevice: VirtualDevice, @unchecked Sendable {
     let blocksDelivered = LockedValue(0)
     /// A centre `tune` refuses, 0 for none: a radio that cannot reach one frequency.
     let refusedTuneHz = LockedValue<UInt64>(0)
+    /// The pause between two 4096-sample blocks. The default 1 ms is faster than any real radio,
+    /// which is what most tests want; a test that needs a lossy consumer never to fall behind
+    /// slows it down.
+    private let blockIntervalNs: Int
+
+    init(blockIntervalNs: Int = 1_000_000) { self.blockIntervalNs = blockIntervalNs }
 
     var descriptor: DeviceDescriptor { lock.lock(); defer { lock.unlock() }; return _descriptor }
     var gains: [GainState] { [] }
@@ -66,7 +72,7 @@ final class RebindableDevice: VirtualDevice, @unchecked Sendable {
                 deliver(storage.view(), SampleTime(captureID: captureID, sampleIndex: index))
                 index &+= 4096
                 blocksDelivered.value += 1
-                var ts = timespec(tv_sec: 0, tv_nsec: 1_000_000)
+                var ts = timespec(tv_sec: 0, tv_nsec: blockIntervalNs)
                 nanosleep(&ts, nil)
             }
             done.signal()

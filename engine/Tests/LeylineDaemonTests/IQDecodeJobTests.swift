@@ -464,12 +464,16 @@ final class IQDecodeJobTests: XCTestCase {
         defer { try? FileManager.default.removeItem(atPath: plugins) }
         try writeFakePlugin(in: plugins, name: "fakeiq", signal: .signalIq)
         try await withDaemon(decoderSearchPath: [plugins]) { c in
-            _ = try await self.attachRetunable(c)
+            // Paced at a block every 20 ms. At the default 1 ms the runner's 8-slot ring holds
+            // 8 ms, and a drain descheduled that long under load drops a frame and rightly marks
+            // a gap inside the quiet window, which is not the gap this test is about.
+            _ = try await self.attachRetunable(c, RebindableDevice(blockIntervalNs: 20_000_000))
             let started = try await self.startIQ(c, decoder: "fakeiq", frequencyHz: 100_100_000)
             _ = try await self.records(c, job: started.jobID, count: 1)
             let capture = try await self.onlyCapture(c)
             let quiet = try await self.nextGap(c, job: started.jobID, timeoutMs: 700)
-            XCTAssertNil(quiet, "an undisturbed capture marks no gap")
+            XCTAssertNil(quiet, "an undisturbed capture marks no gap, but one ran from sample "
+                + "\(self.integer(quiet, "gap_from") ?? -1) to \(self.integer(quiet, "gap_to") ?? -1)")
             let captureID = try XCTUnwrap(CaptureID(string: capture.captureID))
             let maybeEngine = await c.daemon.store.captureEngine(captureID)
             let engine = try XCTUnwrap(maybeEngine)
