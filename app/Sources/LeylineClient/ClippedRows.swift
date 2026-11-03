@@ -101,6 +101,16 @@ public struct ClippedRows: Sendable, Equatable {
         return nil
     }
 
+    /// The first sample of the newest held row of `capture`, nil when none is held.
+    public func newestSample(captureID capture: String) -> UInt64? {
+        let held = min(count, capacity)
+        for age in 0..<held {
+            let slot = (count - 1 - age) % capacity
+            if captureID[slot] == capture { return sampleIndex[slot] }
+        }
+        return nil
+    }
+
     /// The held rows that lie in one of `parts` (the part's capture, its start sample at or
     /// before the row's, the row's at or before its end), as runs of row ages: age 0 is the newest
     /// row, which the shader draws at the top, and age `a` is `a` device pixels down. Newest run

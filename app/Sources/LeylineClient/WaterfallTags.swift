@@ -219,6 +219,27 @@ public struct WaterfallTags: Sendable, Equatable {
         DecodingRow.rows(manifests, jobs: jobs).map(\.decoder)
     }
 
+    /// Where the read-back starts, in nanoseconds since 1970 on the daemon's clock: a minute
+    /// before the newest waterfall row of `capture`, dated through its anchor, so a daemon whose
+    /// clock is not the Mac's (`leylined --wall-clock`) still answers the last minute; `now` less
+    /// a minute when the capture has no anchor or no row yet.
+    public static func backfillSinceNs(
+        capture: Leyline_V1_Capture?, rows: ClippedRows, now: Date
+    ) -> Int64 {
+        var end = now
+        if let cap = capture, cap.hasAnchor,
+            let sample = rows.newestSample(captureID: cap.captureID),
+            let d = SampleClock.wallTime(
+                of: .with {
+                    $0.captureID = cap.captureID
+                    $0.sampleIndex = sample
+                }, anchor: cap.anchor)
+        {
+            end = d
+        }
+        return Int64((end.timeIntervalSince1970 - backfillSeconds) * 1e9)
+    }
+
     /// A record read back with `QueryRecords` when the tags start, with where it goes: its
     /// frequency (`frequency(of:)`), the row its time fell in (`ClippedRows.row(atSample:)`, as
     /// `rows` counts them: the row's index plus one) and its wall time.

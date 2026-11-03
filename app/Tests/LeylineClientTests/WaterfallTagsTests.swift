@@ -383,6 +383,31 @@ final class WaterfallTagsTests: XCTestCase {
         XCTAssertEqual(WaterfallTags.backfillProtocols(ms, jobs: []), [])
     }
 
+    func testTheReadBackMinuteIsOnTheDaemonsClock() {
+        var cap = Leyline_V1_Capture()
+        cap.captureID = "cap_1"
+        cap.anchor.captureID = "cap_1"
+        cap.anchor.sampleRate = 1_000_000
+        cap.anchor.hostTimeNs = 1_000_000_000_000
+        var rows = ClippedRows(capacity: 4)
+        rows.append(sampleIndex: 5_000_000, captureID: "cap_1")
+        rows.append(sampleIndex: 9_000_000, captureID: "cap_0")
+        let now = Date(timeIntervalSince1970: 5_000)
+        // The newest row of the capture is 5 s after its anchor, 1000 s since 1970 on the daemon's
+        // clock, whatever the Mac's says.
+        XCTAssertEqual(
+            WaterfallTags.backfillSinceNs(capture: cap, rows: rows, now: now),
+            (1_005 - 60) * 1_000_000_000)
+        // No row of the capture, or no anchor: the Mac's clock.
+        XCTAssertEqual(
+            WaterfallTags.backfillSinceNs(capture: cap, rows: ClippedRows(capacity: 4), now: now),
+            (5_000 - 60) * 1_000_000_000)
+        cap.clearAnchor()
+        XCTAssertEqual(
+            WaterfallTags.backfillSinceNs(capture: cap, rows: rows, now: now),
+            (5_000 - 60) * 1_000_000_000)
+    }
+
     // MARK: The count from the records held (DA-21)
 
     func testTheCountIsTheNewestSeqHeld() {

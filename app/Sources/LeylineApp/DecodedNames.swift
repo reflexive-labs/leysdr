@@ -168,7 +168,8 @@ extension AppSession {
         let protocols = WaterfallTags.backfillProtocols(
             decoders.manifests ?? [], jobs: state.jobs)
         guard !protocols.isEmpty else { return }
-        let since = Int64((Date().timeIntervalSince1970 - WaterfallTags.backfillSeconds) * 1e9)
+        let since = WaterfallTags.backfillSinceNs(
+            capture: capture, rows: spectrum.waterfall.clipped, now: Date())
         Task { [weak self] in
             var pages: [Leyline_V1_RecordPage] = []
             for p in protocols {
