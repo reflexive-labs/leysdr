@@ -94,6 +94,9 @@ actor StreamRegistry {
     private var pending: [StreamID: (captureID: CaptureID?, channelID: ChannelID?)] = [:]
     /// Pending subscribes whose capture or channel was destroyed under them.
     private var abandoned: Set<StreamID> = []
+    /// The VIEW claim each capture-scoped FFT, persistence or IQ stream holds on its capture
+    /// (docs/design/claims.md), released when the stream closes.
+    private var claims: [StreamID: (capture: CaptureID, claim: ClaimID)] = [:]
 
     init(store: SessionStore) { self.store = store }
 
@@ -305,6 +308,18 @@ actor StreamRegistry {
             if let ch = channelID { throw EngineError.channelNotFound(ch.string) }
             throw EngineError.captureNotFound(captureID.string)
         }
+        // A view of the capture itself claims it; a channel's audio and audio spectrum ride on the
+        // channel's own claim.
+        if channelID == nil, req.kind == .fft || req.kind == .persistence || req.kind == .iq,
+           let claim = await store.addClaim(on: captureID, holder: ClientContext.current, kind: .claimSpectrum,
+                                            priority: .priorityView)
+        {
+            if subs[id] != nil {
+                claims[id] = (captureID, claim)
+            } else {
+                await store.releaseClaim(claim, on: captureID)
+            }
+        }
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: Self.readerGraceNs)
             await self?.reapIfUnread(id)
@@ -427,6 +442,10 @@ actor StreamRegistry {
     private func close(_ sub: BulkSubscription, detach: Bool = true) async {
         guard subs.removeValue(forKey: sub.id) != nil else { return }
         sub.markClosed()
+        if let held = claims.removeValue(forKey: sub.id) {
+            // `detach: false` is a teardown: the capture is going, and its tombstone follows.
+            await store.releaseClaim(held.claim, on: held.capture, publish: detach)
+        }
         switch sub.source {
         case .fft(let ring, let spectrumSub, let ladder, _),
              .persistence(let ring, let spectrumSub, let ladder, _):

@@ -36,10 +36,12 @@ extension SessionStore {
         try await entry.engine.attach(sink)
         proto.sinkID = sink.id.string
         proto.state = .sinkActive
-        sinks[sink.id] = SinkEntry(proto: proto, channelID: channelID, sink: sink, isSystemAudio: isSystemAudio)
+        sinks[sink.id] = SinkEntry(proto: proto, channelID: channelID, sink: sink, isSystemAudio: isSystemAudio, owner: by)
         if isSystemAudio, var cap = captures[entry.captureID] {
             cap.meta.liveAudioSinks += 1
             captures[entry.captureID] = cap
+            // Somebody is listening: that is a person at the controls, whatever they last wrote.
+            notePresence(entry.captureID, client: by, wroteAtNs: nil)
             await emitCapture(entry.captureID, by: by)
         }
         emit(.sink(proto), captureID: entry.captureID, by: by)
@@ -59,6 +61,7 @@ extension SessionStore {
         if entry.isSystemAudio, let capID = captureID, var cap = captures[capID], cap.meta.liveAudioSinks > 0 {
             cap.meta.liveAudioSinks -= 1
             captures[capID] = cap
+            lapsePresenceIfDue(capID, clientID: entry.owner.id)
             await emitCapture(capID, by: by)
         }
         // Terminal event: state unset marks it gone, the same tombstone destroyChannel

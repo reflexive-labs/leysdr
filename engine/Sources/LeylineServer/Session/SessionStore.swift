@@ -91,6 +91,12 @@ actor SessionStore {
         /// Last confirmed manual dB per gain element: `GainWrite{auto:false}` means "manual, keep
         /// the previous level" (contract parity with the Go reference), and drivers forget it in auto.
         var manualGainDB: [String: Double] = [:]
+        /// The claims ledger for this capture, oldest first (`SessionStore+Claims.swift`). It lives
+        /// in the entry so a destroyed capture takes its claims with it.
+        var claims: [ClaimEntry] = []
+        /// The PERSON presence of each interactive client, by client id: which claim it is and
+        /// when the client last wrote to the capture.
+        var presences: [String: PresenceWindow] = [:]
     }
 
     struct ChannelEntry {
@@ -108,6 +114,8 @@ actor SessionStore {
         var channelID: ChannelID
         var sink: any AudioSink
         var isSystemAudio: Bool
+        /// The client that attached it: a live audio sink keeps that client's presence claim.
+        var owner: ClientContext
     }
 
     struct PlaybackEntry {
@@ -187,10 +195,9 @@ actor SessionStore {
     /// The `Conversation.seq` last published for each conversation (`publishConversation`).
     var conversationPublishedSeqs: [String: UInt64] = [:]
     private var clientGoneHook: (@Sendable (String) async -> Void)?
-    /// Captures a sweep currently holds. Invariant 9 puts jobs behind the allocator; this is the
-    /// other half of it -- without it a client can join a capture that is walking a band, and its
-    /// channel is dragged across megahertz with no explanation.
-    var swept: Set<CaptureID> = []
+    /// How long a person's presence claim outlives their last write to a capture while they hold
+    /// no channel or live audio sink on it: the don't-disturb window. Tests shorten it.
+    var presenceWindowNs: UInt64 = dontDisturbNs
 
     init(registry: DefaultDeviceRegistry, info: DaemonInfo, presenceGraceNs: UInt64 = 5_000_000_000,
          remembered: RememberedDevices? = nil) {

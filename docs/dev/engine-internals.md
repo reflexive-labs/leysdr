@@ -43,7 +43,8 @@ engine/                       SwiftPM package (macOS 26+, Swift 6 toolchain, Swi
 │   ├── Lifecycle.swift       default paths, environment lists, signals, serve-then-teardown
 │   ├── ClientContext.swift   per-RPC client identity (interceptor -> task-local)
 │   ├── Session/              SessionStore actor (devices/captures/channels/sinks tables, events,
-│   │                         attribution), one SessionStore+<concern>.swift extension per table
+│   │                         attribution, the claims ledger), one SessionStore+<concern>.swift
+│   │                         extension per table
 │   ├── Jobs/                 JobStore (the job table) with JobStore+Scan, +Monitor and +Decode;
 │   │                         ScanRunner (sweep execution), MonitorRunner (the stationary band-watch),
 │   │                         DecodeRunner and IQDecodeRunner (a decode job's plugin and its records),
@@ -562,6 +563,31 @@ order, before the live subscription — on the actor, so the two cannot interlea
 Activity: `last_interactive_write_ns` is updated by any capture/channel write whose client kind is not
 `job`; `live_audio_sinks` counts attached system-audio sinks. This is the don't-disturb signal.
 
+Claims (`SessionStore+Claims.swift`, `../design/claims.md`): each `CaptureEntry` keeps a ledger of
+what every consumer needs from the capture's tuning, oldest first, and `captureProto` puts it on the
+wire as `Capture.claims`, so `GetState` and every capture event carry it and a destroyed capture
+takes its claims with it. Nothing places or retunes by it yet (CL-2 onwards); `inUse` reads it.
+Every consumer makes its claim when it starts and releases it when it ends, cancel and failure
+included, and each change publishes the capture:
+
+| consumer | made by | kind, priority | need |
+|---|---|---|---|
+| a channel | `createChannel`, released in `destroyChannel` | CHANNEL, PERSON for an interactive owner and JOB for `job:<id>` | covers: the channel's absolute frequency and bandwidth, read from the channel on every publish |
+| an IQ reader (IQ decode, `ley record --iq`) | the allocator's `captureIQ` lease, released by the lease | IQ, JOB | covers the frequency; a dedicated decoder's is `centred` within 1 kHz at its rate |
+| a capture's FFT, persistence or IQ bulk stream | `StreamRegistry.subscribe`, released on close (unsubscribe, reap, teardown) | SPECTRUM, VIEW | none |
+| a sweep or monitor | `claimSweep`, released after the lease has put the capture back | SWEEP, JOB | covers the range |
+| a person's presence | `touchActivity` and a system-audio sink | LISTEN, PERSON | none |
+
+The presence is one claim per capture per interactive client. A write starts its window
+(`presenceWindowNs`, the 60 s don't-disturb window); a lapse task ends the claim when the window
+has run out and the client has no channel and no live audio sink on the capture, and a channel
+destroyed or a sink detached after the window ends it on the spot. A claim's `state` is computed on
+publish: DISPLACED when the capture no longer gives it what it needs (a channel `OUT_OF_CAPTURE`,
+a frequency outside the span, an off-centre capture or the wrong rate), SATISFIED otherwise.
+`displaced_by` and `displaced_since_ns` are not set yet. A channel's audio streams ride on the
+channel's claim, and `isSwept` (which `refuseIfSwept` and `createCapture` read) is "a SWEEP claim
+is on the capture".
+
 ### Control service
 
 - `CreateCapture`: one capture per device (`DEVICE_BUSY` otherwise). Validates centre/rate against the
@@ -956,7 +982,9 @@ for as long as it stayed subscribed. A capture-rate write ends every bulk audio 
 when no audio rate moved: audio frames scale their sample spans by the capture rate, and two capture
 rates can plan to the same audio rate. Re-subscribe for a fresh descriptor. IQ: capture rate only,
 `CF32` only (no resampling in v0). `Stream` writes frames until the client cancels; `Unsubscribe`
-tears the subscription down; a subscription with no `Stream` reader for 10 s is reaped.
+tears the subscription down; a subscription with no `Stream` reader for 10 s is reaped. A
+capture-scoped FFT, persistence or IQ subscription holds a VIEW claim on its capture for the
+subscribing client ("Claims" under SessionStore) until it closes, however it closes.
 
 ### Jobs service and lease lifecycle
 
@@ -967,14 +995,19 @@ tears the subscription down; a subscription with no `Stream` reader for 10 s is 
 `CaptureLease` or a declined result with a reason. Allocation prefers a device with no capture at all
 over borrowing one that has one, because creating and destroying a capture affects no other
 client. Borrowing an existing
-capture is refused by the don't-disturb check (`inUse`: an owning channel, a live audio sink, a
-job reading it as raw IQ, or an interactive write in the last 60 s) unless the caller passed `take_over`; a leased capture is marked
-*swept* in `SessionStore`, and `refuseIfSwept` rejects interactive `WriteParams`/`CreateChannel` calls
-on it for as long as the lease holds. `SweepPlan.edgeFraction` widens a device's tuning range slightly
+capture is refused by the don't-disturb check unless the caller passed `take_over`. `inUse` reads
+the capture's claims, in this order: a CHANNEL claim ("<who> is listening on <frequency>"), a
+person's presence while a live audio sink plays ("audio is playing from this radio"), an IQ claim
+("another job is reading this radio (decode <name>)", or "(record)"), and a person's presence
+with an interactive write in the last 60 s ("somebody was tuning this radio N s ago"); a VIEW
+claim is never a reason. A leased capture carries the sweep's SWEEP claim, made and checked in one
+step on the store (`claimSweep`), so two scans racing for one tuner cannot both take it, and
+`refuseIfSwept` rejects interactive `WriteParams`/`CreateChannel` calls on it for as long as the
+claim holds. The other two allocations skip a capture with a SWEEP claim. `SweepPlan.edgeFraction` widens a device's tuning range slightly
 when deciding whether it can cover a request, which is how a `FilePlaybackDevice` — whose "range" is
 the single frequency its fixture was recorded at — can still serve a sweep. Releasing a lease that
 created its capture destroys it; releasing one that borrowed an existing capture retunes and re-gains
-it back to what it found and clears swept.
+it back to what it found, and only then releases the SWEEP claim.
 
 ### Decoders
 
@@ -1074,10 +1107,11 @@ recording was made, and a tuner whose range stops short of the frequency. After 
 opens and after a retune, the allocator reads where the capture actually is, and one that did not
 land within 1 kHz at that rate is destroyed or put back as it was. Either way the decline is
 "<model> cannot tune to 1090.000 MHz", with "(a file radio plays what it recorded)" for a file
-device, as `NO_DEVICE` when that is the last reason and `DEVICE_BUSY` otherwise. Every `captureIQ` lease (an IQ decode job, an IQ recording) counts its job among the
-capture's IQ readers until it is released, and `inUse` refuses a capture with one ("another job
+device, as `NO_DEVICE` when that is the last reason and `DEVICE_BUSY` otherwise. Every `captureIQ` lease (an IQ decode job, an IQ recording) holds an IQ claim on the
+capture until it is released, and `inUse` refuses a capture with one ("another job
 is reading this radio (decode iqstat)", or "(record)"), so a dedicated decoder retunes a capture
-another job reads only under `take_over`. `IQDecodeRunner` taps the whole capture (`IQFrameTap` into a `FrameRing`), one capture
+another job reads only under `take_over`. A lease that retuned a capture puts the gain back on
+release only when no other IQ claim is left on it. `IQDecodeRunner` taps the whole capture (`IQFrameTap` into a `FrameRing`), one capture
 block of cf32 per frame. The descriptor names the capture's centre and rate as they were when
 the job started, and the wire cannot change them mid-stream, so the runner reads the capture
 every 100 ms and treats any departure from that tuning as the capture moving away: off the

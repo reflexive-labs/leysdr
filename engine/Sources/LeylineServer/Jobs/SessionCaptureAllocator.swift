@@ -45,11 +45,6 @@ func restoreGainStates(_ gains: [GainState], on engine: any CaptureEngine) async
 actor SessionCaptureAllocator: CaptureAllocator {
     private let store: SessionStore
     private let log = Logger(label: "leyline.jobs.allocator")
-    /// Captures currently leased, so two sweeps never share a radio.
-    private var leased: Set<CaptureID> = []
-    /// The jobs reading each capture as raw IQ (an IQ decode job, an IQ recording), in the order
-    /// they took it. Such a capture is in use: retuning it moves the band under every one of them.
-    private var iqReaders: [CaptureID: [JobID]] = [:]
 
     init(store: SessionStore) { self.store = store }
 
@@ -88,7 +83,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
         //    inside a span somebody is already listening to.
         for cap in state.captures {
             if let want = wanted, cap.deviceID != want.string { continue }
-            guard let id = CaptureID(string: cap.captureID), !leased.contains(id) else { continue }
+            guard let id = CaptureID(string: cap.captureID), await !store.isSwept(id) else { continue }
             sawDevice = true
             let offset = Int64(frequencyHz) - Int64(cap.centerHz)
             guard SessionStore.fits(offsetHz: offset, bandwidthHz: bw, sampleRate: cap.sampleRate) else { continue }
@@ -131,7 +126,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
         //    it is the last one tried.
         for cap in state.captures {
             if let want = wanted, cap.deviceID != want.string { continue }
-            guard let id = CaptureID(string: cap.captureID), !leased.contains(id) else { continue }
+            guard let id = CaptureID(string: cap.captureID), await !store.isSwept(id) else { continue }
             if !takeOver, let why = inUse(cap, state: state) {
                 lastReason = why
                 continue
@@ -168,8 +163,8 @@ actor SessionCaptureAllocator: CaptureAllocator {
     /// but an IQ decoder receives the whole capture band, so "covers the frequency" is the capture
     /// span rather than a channel fit, and a created capture is centred on the frequency. The
     /// don't-disturb `inUse` check, the `take_over` semantics and the NO_DEVICE / DEVICE_BUSY
-    /// declines are unchanged. IQ captures are shareable in principle, so a reused one is never
-    /// added to the exclusive `leased` set; a sweep's capture (which is) is still left alone.
+    /// declines are unchanged. IQ captures are shareable in principle, so a reused one gets an IQ claim
+    /// rather than an exclusive one; a sweep's capture (which is) is still left alone.
     ///
     /// `dedicated` (the manifest's `needs_dedicated_capture`) narrows step 1 to a capture centred on
     /// the frequency, within `centredToleranceHz`, at the rate the job would create one at; any
@@ -198,7 +193,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
         //    listening to.
         for cap in state.captures {
             if let want = wanted, cap.deviceID != want.string { continue }
-            guard let id = CaptureID(string: cap.captureID), !leased.contains(id) else { continue }
+            guard let id = CaptureID(string: cap.captureID), await !store.isSwept(id) else { continue }
             sawDevice = true
             if dedicated {
                 guard let device = state.devices.first(where: { $0.deviceID == cap.deviceID }),
@@ -208,8 +203,9 @@ actor SessionCaptureAllocator: CaptureAllocator {
             }
             guard spanCovers(centerHz: cap.centerHz, rate: cap.sampleRate, frequencyHz: frequencyHz),
                   let engine = await store.captureEngine(id) else { continue }
-            return .captureIQ(iqLease(id, engine: engine, rate: cap.sampleRate, created: false, job: job,
-                                      gainOutcome: await leftAsFound(id, gains)))
+            return .captureIQ(await iqLease(id, engine: engine, rate: cap.sampleRate, created: false, job: job,
+                                            need: iqNeed(frequencyHz, dedicated: dedicated), dedicated: dedicated,
+                                            gainOutcome: await leftAsFound(id, gains)))
         }
 
         // 2. A radio with nothing on it. The capture is centred on the frequency (clamped to a
@@ -245,7 +241,9 @@ actor SessionCaptureAllocator: CaptureAllocator {
                     }
                 }
                 let outcome = await setGains(gains, on: id)
-                return .captureIQ(iqLease(id, engine: engine, rate: rate, created: true, job: job, gainOutcome: outcome))
+                return .captureIQ(await iqLease(id, engine: engine, rate: rate, created: true, job: job,
+                                                need: iqNeed(frequencyHz, dedicated: dedicated), dedicated: dedicated,
+                                                gainOutcome: outcome))
             } catch {
                 lastReason = (error as? EngineError)?.message ?? "\(error)"
                 lastCode = EngineError.Code.deviceBusy
@@ -257,7 +255,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
         //    anything, so it is last. It is reused, not created, so the lease leaves it on release.
         for cap in state.captures {
             if let want = wanted, cap.deviceID != want.string { continue }
-            guard let id = CaptureID(string: cap.captureID), !leased.contains(id) else { continue }
+            guard let id = CaptureID(string: cap.captureID), await !store.isSwept(id) else { continue }
             guard let device = state.devices.first(where: { $0.deviceID == cap.deviceID }) else { continue }
             // A dedicated decoder also needs its rate; any other takes the capture's.
             let rate = dedicated ? iqRate(wantedRate, device: device) : cap.sampleRate
@@ -298,8 +296,9 @@ actor SessionCaptureAllocator: CaptureAllocator {
             let entryGains = await engine.snapshot.gains
             let outcome = await setGains(gains, on: id)
             await store.publishCapture(id)
-            return .captureIQ(iqLease(id, engine: engine, rate: rate, created: false, job: job, gainOutcome: outcome,
-                                      restoreGains: gains.isEmpty ? [] : entryGains))
+            return .captureIQ(await iqLease(id, engine: engine, rate: rate, created: false, job: job,
+                                            need: iqNeed(frequencyHz, dedicated: dedicated), dedicated: dedicated,
+                                            gainOutcome: outcome, restoreGains: gains.isEmpty ? [] : entryGains))
         }
         return .declined(code: sawDevice ? lastCode : EngineError.Code.noDevice, reason: lastReason)
     }
@@ -320,23 +319,28 @@ actor SessionCaptureAllocator: CaptureAllocator {
         return "\(device.model) cannot tune to \(fmt(frequencyHz))\(why)"
     }
 
-    /// A lease on `id` for `job`, counted among the capture's IQ readers until it is released.
+    /// A lease on `id` for `job`, with the job's IQ claim on the capture until it is released:
+    /// such a capture is in use, since retuning it moves the band under every job reading it.
     private func iqLease(_ id: CaptureID, engine: any CaptureEngine, rate: UInt64, created: Bool,
-                         job: JobID, gainOutcome: LeaseGainOutcome = .notAsked,
-                         restoreGains: [GainState] = []) -> SessionCaptureIQLease
+                         job: JobID, need: SessionStore.ClaimNeed, dedicated: Bool,
+                         gainOutcome: LeaseGainOutcome = .notAsked,
+                         restoreGains: [GainState] = []) async -> SessionCaptureIQLease
     {
-        iqReaders[id, default: []].append(job)
+        let claim = await store.addClaim(on: id, holder: .job(job), kind: .claimIq, priority: .priorityJob,
+                                         need: need, sampleRateHz: dedicated ? rate : 0)
         return SessionCaptureIQLease(captureID: id, capture: engine, sampleRateHz: rate, createdCapture: created,
-                                     store: store, gainOutcome: gainOutcome, restoreGains: restoreGains) { [weak self] in
-            await self?.releaseIQReader(id, job: job) ?? false
+                                     store: store, gainOutcome: gainOutcome, restoreGains: restoreGains) { [store] in
+            // Says whether any other job still reads the capture.
+            guard let claim else { return false }
+            return await store.releaseClaim(claim, on: id).contains { $0.kind == .claimIq }
         }
     }
 
-    /// Takes `job` off the capture's IQ readers, and says whether any other job still reads it.
-    private func releaseIQReader(_ id: CaptureID, job: JobID) -> Bool {
-        iqReaders[id]?.removeAll { $0 == job }
-        if iqReaders[id]?.isEmpty == true { iqReaders[id] = nil }
-        return iqReaders[id] != nil
+    /// What an IQ job needs: the capture's centre for a dedicated decoder, else its frequency
+    /// anywhere in the span.
+    private func iqNeed(_ frequencyHz: UInt64, dedicated: Bool) -> SessionStore.ClaimNeed {
+        dedicated ? .centred(frequencyHz: frequencyHz, toleranceHz: Self.centredToleranceHz)
+            : .covers(frequencyHz: frequencyHz, bandwidthHz: 0)
     }
 
     // MARK: A decode job's gain
@@ -503,15 +507,20 @@ actor SessionCaptureAllocator: CaptureAllocator {
                     lastReason = why
                     continue
                 }
-                // Claim before any await. `borrow` suspends three times, and an actor is
-                // re-entrant at a suspension: checking here and inserting in there let two
-                // simultaneous scans both pass the check and both walk the same tuner.
-                guard leased.insert(id).inserted else {
+                // Claim before `borrow`. It suspends three times, and an actor is re-entrant at a
+                // suspension: checking here and claiming in there let two simultaneous scans both
+                // pass the check and both walk the same tuner. The store checks and claims in one
+                // step.
+                let claim: ClaimID
+                switch await store.claimSweep(on: id, job: job, range: range) {
+                case .claimed(let c): claim = c
+                case .taken:
                     lastReason = "another scan already has \(device.model)"
                     continue
+                case .gone: continue
                 }
-                guard let lease = await borrow(id, deviceID: deviceID, job: job, gains: gains) else {
-                    leased.remove(id)
+                guard let lease = await borrow(id, deviceID: deviceID, job: job, claim: claim, gains: gains) else {
+                    await store.releaseClaim(claim, on: id)
                     continue
                 }
                 return .capture(lease)
@@ -526,12 +535,11 @@ actor SessionCaptureAllocator: CaptureAllocator {
                 // Every path out of here from now on either returns the lease or destroys what was
                 // just created: a capture this scan opened and then walked away from would hold the
                 // device open with no job to cancel and nobody to close it.
-                guard leased.insert(id).inserted else {
+                guard case .claimed(let claim) = await store.claimSweep(on: id, job: job, range: range) else {
                     await store.destroyCapture(id: id, by: .daemon)
                     continue
                 }
-                guard let lease = await borrow(id, deviceID: deviceID, job: job, created: true, gains: gains) else {
-                    leased.remove(id)
+                guard let lease = await borrow(id, deviceID: deviceID, job: job, claim: claim, created: true, gains: gains) else {
                     await store.destroyCapture(id: id, by: .daemon)
                     continue
                 }
@@ -544,17 +552,21 @@ actor SessionCaptureAllocator: CaptureAllocator {
         return .declined(code: EngineError.Code.deviceBusy, reason: lastReason)
     }
 
-    /// The don't-disturb test. Returns a reason when the capture is somebody's, nil when it is free.
+    /// The don't-disturb test, read from the capture's claims. Returns a reason when the capture is
+    /// somebody's, nil when it is free. A spectrum view is never a reason, and a sweep's capture
+    /// never gets this far.
     private func inUse(_ cap: Leyline_V1_Capture, state: Leyline_V1_GetStateResponse) -> String? {
-        let channels = state.channels.filter { $0.captureID == cap.captureID }
-        if let ch = channels.first {
-            return "\(who(ch.owner)) is listening on \(fmt(absolute(ch, cap)))"
+        if let ch = cap.claims.first(where: { $0.kind == .claimChannel }) {
+            return "\(who(ch.holder)) is listening on \(fmt(ch.covers.frequencyHz))"
         }
-        if cap.activity.liveAudioSinks > 0 { return "audio is playing from this radio" }
-        if let id = CaptureID(string: cap.captureID), let reader = iqReaders[id]?.first {
+        // A person's presence is held by a live audio sink or by a write in the last minute; the
+        // capture's activity says which, and how long ago.
+        let present = cap.claims.contains { $0.kind == .claimListen }
+        if present, cap.activity.liveAudioSinks > 0 { return "audio is playing from this radio" }
+        if let reader = cap.claims.first(where: { $0.kind == .claimIq }) {
             // An IQ decode job or an IQ recording has no channel to show it is there, and a
             // retune moves the whole band it reads.
-            let job = state.jobs.first { $0.jobID == reader.string }
+            let job = state.jobs.first { $0.jobID == reader.holder.clientID }
             switch job?.config {
             case .decode(let d)?: return "another job is reading this radio (decode \(d.decoder))"
             case .record?: return "another job is reading this radio (record)"
@@ -563,7 +575,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
         }
         let now = UInt64(WallClock.realNowNs())
         let last = UInt64(max(0, cap.activity.lastInteractiveWriteNs))
-        if last > 0, now > last, now - last < dontDisturbNs {
+        if present, last > 0, now > last, now - last < dontDisturbNs {
             return "somebody was tuning this radio \(Int((now - last) / 1_000_000_000)) s ago"
         }
         return nil
@@ -581,12 +593,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
         }
     }
 
-    private func absolute(_ ch: Leyline_V1_Channel, _ cap: Leyline_V1_Capture) -> UInt64 {
-        let hz = Int64(cap.centerHz) + ch.offsetHz
-        return hz > 0 ? UInt64(hz) : cap.centerHz
-    }
-
-    private func borrow(_ id: CaptureID, deviceID: DeviceID, job: JobID, created: Bool = false,
+    private func borrow(_ id: CaptureID, deviceID: DeviceID, job: JobID, claim: ClaimID, created: Bool = false,
                         gains: [GainRequest] = []) async -> SessionCaptureLease?
     {
         guard let engine = await store.captureEngine(id) else { return nil }
@@ -596,15 +603,12 @@ actor SessionCaptureAllocator: CaptureAllocator {
                                         sampleRateHz: snap.sampleRate, entryCenterHz: snap.centerHz,
                                         gainElements: device?.descriptor.gainElements ?? [],
                                         inFlight: device?.inFlightSamples ?? 0,
-                                        createdByLease: created, job: job) { [weak self] in
-            await self?.releaseLease(id)
+                                        createdByLease: created, job: job) { [store] in
+            await store.releaseClaim(claim, on: id)
         }
-        await store.setSwept(id, true)
         await lease.pinGain(device: device, requested: gains)
         return lease
     }
-
-    private func releaseLease(_ id: CaptureID) { leased.remove(id) }
 
     /// The fastest rate the device offers: fewer steps, and the detector's resolution comes from
     /// the bin count rather than the span.
@@ -752,10 +756,11 @@ actor SessionCaptureLease: CaptureLease {
         await store.publishCapture(captureID)
     }
 
+    /// Puts the capture back, then releases the sweep's claim: until then nobody else can tune it,
+    /// so the restore cannot land on top of somebody's write.
     func release() async {
         guard !released else { return }
         released = true
-        await store.setSwept(captureID, false)
         if createdByLease {
             await store.destroyCapture(id: captureID, by: .daemon)
         } else {

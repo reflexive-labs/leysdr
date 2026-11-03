@@ -16,7 +16,9 @@ extension SessionStore {
     func captureProto(_ id: CaptureID) async -> Leyline_V1_Capture? {
         guard let entry = captures[id] else { return nil }
         let snap = await entry.engine.snapshot
-        return ProtoMapping.capture(id: id, deviceID: entry.deviceID, snapshot: snap, meta: entry.meta)
+        var proto = ProtoMapping.capture(id: id, deviceID: entry.deviceID, snapshot: snap, meta: entry.meta)
+        proto.claims = await claimProtos(entry.claims, centerHz: snap.centerHz, sampleRate: snap.sampleRate)
+        return proto
     }
 
     func emitCapture(_ id: CaptureID, by: ClientContext) async {
@@ -34,7 +36,7 @@ extension SessionStore {
             throw EngineError.deviceNotFound(deviceID.string)
         }
         if desc.state == .disconnected { throw EngineError.deviceDetached(deviceID.string) }
-        if let existing = captures.first(where: { $0.value.deviceID == deviceID })?.key, swept.contains(existing) {
+        if let existing = captures.first(where: { $0.value.deviceID == deviceID })?.key, isSwept(existing) {
             // Name what holds it: a bare "the radio is busy" sends the user looking for another
             // client.
             throw EngineError.deviceSweeping(deviceID.string)
@@ -112,13 +114,16 @@ extension SessionStore {
         return devices[entry.deviceID]
     }
 
-    /// Marks a capture as held by a sweep. Set and cleared by the capture lease.
-    func setSwept(_ id: CaptureID, _ on: Bool) {
-        if on { swept.insert(id) } else { swept.remove(id) }
+    /// Whether a sweep holds the capture: it carries a SWEEP claim, which the capture lease makes
+    /// and releases. Invariant 9 puts jobs behind the allocator; this is the other half of it --
+    /// without it a client can join a capture that is walking a band, and its channel is dragged
+    /// across megahertz with no explanation.
+    func isSwept(_ id: CaptureID) -> Bool {
+        captures[id]?.claims.contains { $0.kind == .claimSweep } ?? false
     }
 
     func refuseIfSwept(_ id: CaptureID) throws {
-        if swept.contains(id) {
+        if isSwept(id) {
             throw EngineError.deviceSweeping(id.string)
         }
     }
@@ -149,6 +154,7 @@ extension SessionStore {
         await entry.engine.stop()
         entry.anchorTask?.cancel()
         let snap = await entry.engine.snapshot
+        captures[id]?.presences.values.forEach { $0.lapse?.cancel() }
         captures[id] = nil
         var proto = ProtoMapping.capture(id: id, deviceID: entry.deviceID, snapshot: snap, meta: entry.meta)
         // Terminal event: state unset is the tombstone Channel and Sink use, and it is the only
@@ -177,10 +183,13 @@ extension SessionStore {
         await destroyCapture(id: id, by: by)
     }
 
-    /// Records interactive activity on a capture (writes from non-job clients).
+    /// Records interactive activity on a capture (writes from non-job clients), which is also the
+    /// writer's presence claim on it.
     func touchActivity(_ id: CaptureID, by: ClientContext) {
         guard by.isInteractive, var entry = captures[id] else { return }
-        entry.meta.lastInteractiveWriteNs = WallClock.realNowNs()
+        let now = WallClock.realNowNs()
+        entry.meta.lastInteractiveWriteNs = now
         captures[id] = entry
+        notePresence(id, client: by, wroteAtNs: now)
     }
 }

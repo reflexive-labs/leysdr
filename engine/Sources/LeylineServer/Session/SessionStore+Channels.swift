@@ -76,6 +76,10 @@ extension SessionStore {
                                    subAudibleDetect: m == .nfm)
         let engine = try await cap.engine.addChannel(config)
         channels[engine.id] = ChannelEntry(engine: engine, captureID: captureID, owner: by)
+        // The channel's claim goes out on the capture event below, beside the writer's presence.
+        captures[captureID]?.claims.append(ClaimEntry(holder: by, kind: .claimChannel,
+                                                      priority: by.isInteractive ? .priorityPerson : .priorityJob,
+                                                      need: .channel(engine.id)))
         touchActivity(captureID, by: by)
         await emitCapture(captureID, by: by)
         let proto = await channelProto(engine.id)!
@@ -106,8 +110,12 @@ extension SessionStore {
             await cap.engine.removeChannel(id)
         }
         channels[id] = nil
+        captures[entry.captureID]?.claims.removeAll { $0.need == .channel(id) }
+        lapsePresenceIfDue(entry.captureID, clientID: entry.owner.id)
         let proto = ProtoMapping.channel(id: id, captureID: entry.captureID, config: config, state: nil, owner: entry.owner.proto,
                                          squelchAuto: entry.squelchAuto)
         emit(.channel(proto), captureID: entry.captureID, by: by)
+        // The claim went with the channel. A capture being destroyed sends its own tombstone.
+        if !engineAlreadyClosed { await emitCapture(entry.captureID, by: by) }
     }
 }

@@ -205,3 +205,5 @@ package struct StreamID: PrefixedID { package static let prefix = "strm"; packag
 package struct ClientID: PrefixedID { package static let prefix = "cli"; package var ulid: ULID; package init(ulid: ULID) { self.ulid = ulid } }
 /// A recording the daemon is playing through its own audio device (docs/design/recording.md).
 package struct PlaybackID: PrefixedID { package static let prefix = "pb"; package var ulid: ULID; package init(ulid: ULID) { self.ulid = ulid } }
+/// One consumer's claim on a capture's tuning (docs/design/claims.md).
+package struct ClaimID: PrefixedID { package static let prefix = "clm"; package var ulid: ULID; package init(ulid: ULID) { self.ulid = ulid } }
