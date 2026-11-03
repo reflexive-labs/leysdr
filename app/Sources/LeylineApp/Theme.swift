@@ -528,9 +528,10 @@ extension Theme.Layout {
     /// More than the column gap before a flush-left column after a flush-right one (the clock
     /// after `SEEN`'s count), so the two do not run together.
     static let decoderTableTimeGap: CGFloat = 12
-    /// The inspector's field names, in a column wide enough for `vertical_rate_fpm`, and the
-    /// least gap between a name and its value: a longer name is cut short of it.
-    static let decoderFieldLabelWidth: CGFloat = 124
+    /// The inspector's labels, in a column as wide as the widest a shipped manifest gives
+    /// ("Centre frequency", 102 pt in `label`) and the gap after it, and the least gap between
+    /// a label and its value: a longer label is cut in the middle short of it.
+    static let decoderFieldLabelWidth: CGFloat = 110
     static let decoderFieldNameGap: CGFloat = 8
     /// The transmitter's name box's inner padding, taken off its label so the field starts in
     /// the inspector's value column.

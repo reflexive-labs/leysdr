@@ -214,26 +214,42 @@ struct DecodedRow: View {
 /// A label and value table: the label in `label` `inkMuted` in the reading rows' 62 pt column,
 /// the value in `value`, its ink chosen per row (the clipped peak's `accentRec`).
 ///
-/// The decoder inspector passes its fields' wider column (`decoderFieldLabelWidth`), so its
-/// grids share one value column, and lets a value wrap: a job's id is wider than what is left.
+/// The decoder inspector passes its fields' column (`decoderFieldLabelWidth`), so its grids
+/// share one value column, and `fits`: a value wider than what is left breaks after its ` · `
+/// when it has one (the signal's level and SNR), else is cut in the middle on one line with the
+/// whole of it in its tooltip (a job's id).
 struct PartTable: View {
     let rows: [PartTableRow]
     let ink: (PartTableRow) -> Color
     var labelWidth: CGFloat = Theme.Layout.partTableLabelWidth
-    var wraps = false
+    var fits = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(rows) { row in
-                HStack(alignment: wraps ? .firstTextBaseline : .center, spacing: 0) {
+                HStack(alignment: fits ? .firstTextBaseline : .center, spacing: 0) {
                     Text(row.label).font(Theme.Font.label).foregroundStyle(Theme.inkMuted)
                         .frame(width: labelWidth, alignment: .leading)
-                    Text(row.value).font(Theme.Font.value).foregroundStyle(ink(row))
-                        .lineLimit(wraps ? nil : 1)
-                        .fixedSize(horizontal: false, vertical: wraps)
+                    if fits {
+                        ViewThatFits(in: .horizontal) {
+                            value(row, row.value).lineLimit(1).fixedSize()
+                            if row.value.contains(" · ") {
+                                value(row, row.value.replacingOccurrences(of: " · ", with: " ·\n"))
+                                    .fixedSize()
+                            }
+                            value(row, row.value).lineLimit(1).truncationMode(.middle)
+                                .help(row.value)
+                        }
+                    } else {
+                        value(row, row.value).lineLimit(1)
+                    }
                     Spacer(minLength: 0)
                 }
             }
         }
+    }
+
+    private func value(_ row: PartTableRow, _ text: String) -> some View {
+        Text(text).font(Theme.Font.value).foregroundStyle(ink(row))
     }
 }

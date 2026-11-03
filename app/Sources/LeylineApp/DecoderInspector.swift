@@ -90,7 +90,7 @@ struct TransmitterSection: View {
             if let e = entity {
                 PartTable(
                     rows: rows(e), ink: { _ in Theme.inkSecondary },
-                    labelWidth: Theme.Layout.decoderFieldLabelWidth, wraps: true
+                    labelWidth: Theme.Layout.decoderFieldLabelWidth, fits: true
                 )
                 .padding(.top, 4)
             }
@@ -142,7 +142,7 @@ struct RecordSection: View {
                     .textSelection(.enabled)
                 PartTable(
                     rows: header(r), ink: { _ in Theme.inkSecondary },
-                    labelWidth: Theme.Layout.decoderFieldLabelWidth, wraps: true
+                    labelWidth: Theme.Layout.decoderFieldLabelWidth, fits: true
                 )
                 .padding(.top, 4)
             }
