@@ -297,24 +297,36 @@ The calls for this batch, taken 2026-11-02:
 
 ### Batch 3 follow-ups (from the verify run's pictures, 2026-11-02)
 
-- [ ] **DA-18 Fields have labels.** `FieldHint.label` (additive): a short name a person reads
+- [x] **DA-18 Fields have labels.** `FieldHint.label` (additive): a short name a person reads
   ("Transmitter", "Callsign", "County", "Ground speed"). Manifests fill it; the watch sheet's
   field pop-up, the condition in words, the inspector's field rows and `ley track`'s column heads
   use it, falling back to the field name. The promoted `device_id` reads "Transmitter".
-- [ ] **DA-19 The watch sheet's default button.** Start Watching is the default action (Return,
+  Verified 2026-11-02 by a full `make app-check JOBS=3` (1114 checked, all ok); the sheet, the sidebar's
+  watch line and the table heads read Transmitter, and `TestColumnHeadVectors` and
+  `TestWatchBannerUsesFieldLabels` pin `ley track` and `ley watch`.
+- [x] **DA-19 The watch sheet's default button.** Start Watching is the default action (Return,
   the accent style), Cancel is not.
-- [ ] **DA-20 "Decoded" is a labelled row** in the recording's inspector, one line per decoder
+  Verified 2026-11-02 by a full `make app-check JOBS=3` (1114 checked, all ok). The filled button kept the
+  action of the render that enabled it, so Return watched for `N`, not `N0CALL-3` (6bd1def).
+- [x] **DA-20 "Decoded" is a labelled row** in the recording's inspector, one line per decoder
   ("APRS · 7 records", a link), not a coloured footnote between Files and Decode With.
-- [ ] **DA-21 The waterfall fills in what it missed.** When tags start (the Radio shows, a job
+  Verified 2026-11-02 by a full `make app-check JOBS=3` (1114 checked, all ok); `library-decode-with`
+  shows Decoded under Files in the grid.
+- [x] **DA-21 The waterfall fills in what it missed.** When tags start (the Radio shows, a job
   runs), the last minute of records is read with `QueryRecords` and tagged on their rows, so a
   packet decoded before the window subscribed still has its name. The Radio sidebar's count comes
   from the records the window holds when it holds them, not the 2 s job detail.
-- [ ] **DA-22 Declines are reported everywhere.** The MCP `watch` and `start_decode_job` tools
+  Verified 2026-11-02 by a full `make app-check JOBS=3` (1114 checked, all ok) with `radio-decoding`;
+  `WaterfallTagsTests` covers the read-back.
+- [x] **DA-22 Declines are reported everywhere.** The MCP `watch` and `start_decode_job` tools
   wait briefly for the daemon to take the job, as `ley watch --detach` now does, and return the
   reason when it declines.
-- [ ] **DA-23 `ley --socket` takes a relative path.** A relative socket path is resolved against
+  Verified 2026-11-02 by `TestMCPDecodeToolsReportADecline` (Go only).
+- [x] **DA-23 `ley --socket` takes a relative path.** A relative socket path is resolved against
   the working directory before it is dialled; today a live daemon's socket named relatively is
   reported stale.
+  Verified 2026-11-02 by `TestDialResolvesARelativeSocket` and `TestRelativeSocketReachesTheDaemon`
+  (Go only).
 
 ## After this
 
