@@ -106,7 +106,11 @@ struct DecoderWatchSheet: View {
                         if ok { d.watchFor = nil }
                     }
                 }
+                // The default action: Return starts it, and it is the filled button, as the
+                // assistant's Allow is, since a system default button draws grey in a window
+                // that is not key.
                 .keyboardShortcut(.defaultAction)
+                .buttonStyle(ActionButtonStyle(filled: true))
                 .disabled(!session.isLive || !placeable || !built.isSuccess || starting)
                 .accessibilityIdentifier("decoders.watch.start")
             }

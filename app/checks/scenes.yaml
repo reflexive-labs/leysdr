@@ -1947,9 +1947,11 @@ scenes:
   # stations decoders-aprs reads. Notify Me… opens a sheet whose fields are the manifest's TEXT
   # and INTEGER hints after device_id, and whose place and radius show because the records carry
   # positions; it builds the predicate `ley watch --where device_id=N0CALL-3` sends and starts it
-  # as a kept job with a macOS notification. The watch is listed under APRS in the sidebar with
+  # as a kept job with a macOS notification when Return presses Start Watching, the sheet's
+  # default (filled) button (DA-19). The watch is listed under APRS in the sidebar with
   # its condition in words and Stop, apart from the plain run, so Start still shows; a terminal's
-  # `ley --json jobs` shows the predicate and the notifier. Its Stop ends that job alone.
+  # `ley --json jobs` shows the predicate and the notifier. Its Stop ends that job alone, and
+  # Escape closes the sheet opened again.
   - name: decoders-watch
     covers: [DecoderWatchSheet.swift, Watches.swift, DecodersView.swift, DecoderSession.swift,
       DecoderPages.swift]
@@ -1974,7 +1976,7 @@ scenes:
       - {cmd: type, text: N0CALL-3}
       - {cmd: snapshot, name: sheet}
       - {cmd: ax, name: sheet, window: sheet}
-      - {cmd: press, identifier: decoders.watch.start}
+      - {cmd: key, keys: return}
       - {cmd: wait, seconds: 2, expect_log: "job_\\w+ watching: aprs at 144390000 Hz for device_id is N0CALL-3"}
       - {cmd: state, expect: {alert: null, decoders.watches.0: "device_id is N0CALL-3", decoders.start_shown: true, decoders.header: null, decoders.notice: null}}
       - {cmd: snapshot, name: watching}
@@ -1984,6 +1986,12 @@ scenes:
       - {cmd: wait, seconds: 2, expect_log: "job_\\w+ stopped"}
       - {cmd: state, expect: {decoders.start_shown: true, decoders.notice: null}}
       - {cmd: snapshot, name: stopped}
+      - {cmd: press, identifier: decoders.page.notify}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {alert.title: Notify me}}
+      - {cmd: key, keys: escape}
+      - {cmd: wait, seconds: 1}
+      - {cmd: state, expect: {alert: null, decoders.start_shown: true}}
 
   # The transport bar at the window's smaller sizes (docs/plans/app.md, decision 13): the Mode
   # and Width pop-ups keep their labels on one line at 900 × 612 pt (the minimum), 1000 and

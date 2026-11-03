@@ -521,7 +521,8 @@ for an integer, and a value; and, once a record on the page carries a position, 
 radius. The predicate is the one `ley watch` sends for the same input (`--where field=value`,
 `field~value`, `--near`, `--radius`; `Watches.predicate`, pinned with Go by
 `testdata/decoders/watch-cases.json`), so SAME's county is `fips contains 06009`, with no case for
-any decoder. Start Watching starts it as a kept job on the frequency Start would use, with a macOS
+any decoder. Start Watching is the sheet's default action (Return; filled in `inkSecondary` as
+the assistant's Allow is, `ActionButtonStyle`) and Cancel its cancel action (Escape). It starts it as a kept job on the frequency Start would use, with a macOS
 notification as `notify` and never `take_over` (a radio somebody is using disables it, with the
 placement's words). A watch is listed under its decoder in the sidebar, after the running jobs,
 with a bell, its condition in words read back from the job's predicate (`device_id is N0CALL-3`,

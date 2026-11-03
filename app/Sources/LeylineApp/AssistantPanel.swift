@@ -496,7 +496,7 @@ struct PendingCard: View {
         let session = session
         let id = question.callID
         return Button("Decline") { answer { await session.decline(callID: id) } }
-            .buttonStyle(AssistantButtonStyle(filled: false))
+            .buttonStyle(ActionButtonStyle(filled: false))
             .accessibilityIdentifier("assistant.decline")
     }
 
@@ -506,7 +506,7 @@ struct PendingCard: View {
         return Button("Allow in this chat") {
             answer { await session.approve(callID: id, forConversation: true) }
         }
-        .buttonStyle(AssistantButtonStyle(filled: false))
+        .buttonStyle(ActionButtonStyle(filled: false))
         .accessibilityIdentifier("assistant.allow.conversation")
     }
 
@@ -514,14 +514,15 @@ struct PendingCard: View {
         let session = session
         let id = question.callID
         return Button("Allow") { answer { await session.approve(callID: id) } }
-            .buttonStyle(AssistantButtonStyle(filled: true))
+            .buttonStyle(ActionButtonStyle(filled: true))
             .accessibilityIdentifier("assistant.allow")
     }
 }
 
-/// A card's button: Allow filled in `inkSecondary` with the panel's ground for its words, the
-/// others plain text in `inkTertiary`; disabled, both in `inkDisabled`.
-struct AssistantButtonStyle: ButtonStyle {
+/// A card's button, and a sheet's default one: filled in `inkSecondary` with the panel's ground for
+/// its words (the assistant's Allow, Notify Me…'s Start Watching), the others plain text in
+/// `inkTertiary`; disabled, both in `inkDisabled`.
+struct ActionButtonStyle: ButtonStyle {
     let filled: Bool
     @Environment(\.isEnabled) private var isEnabled
 
