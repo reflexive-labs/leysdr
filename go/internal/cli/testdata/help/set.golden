@@ -34,7 +34,7 @@ Flags:
       --capture string   which capture (a radio tuned to a band), for freq and gain: id, prefix, row number or frequency (default: the channel's)
       --channel string   which channel: an id (chan_...), id prefix, row number from 'ley state' or frequency, e.g. --channel 146.62 (default: the active one)
   -h, --help             help for set
-      --retune           move the radio even when a recording is running on it (the recording logs the gap); without it set freq refuses and names the job
+      --retune           move the radio even when that pauses a decoder, a recording or another channel; without it set freq refuses and names them
 
 Global Flags:
       --ascii           draw with ASCII only (no box, bar or tree glyphs)

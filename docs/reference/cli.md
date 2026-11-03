@@ -14,7 +14,7 @@ the [MCP adapter reference](mcp.md).
 ley                                  # bare: orientation screen on a TTY (see below); the verb list when piped
 ├── tune <freq|preset|channel --band B> [--mode M] [--bw N] [--squelch L|auto|off] [--volume V] [--gain dB|auto|STAGE=dB,...] [--rate N] [--device SEL] [--persistent] [--no-audio] [--retune]
 │                                    # capture+channel+system-audio sink in one verb; prints every decision it made;
-│                                    # refuses to retune a capture other active channels ride on unless --retune
+│                                    # refuses a retune that would pause a decoder, a recording or another client's channel unless --retune
 ├── set [param value] [--channel SEL] [--capture SEL]
 │                                    # live adjust: freq (frequency), mode, bw (filter), squelch, gain (dB|auto|STAGE=dB,...), volume (streams WriteParams); no args = show
 ├── stop [channel|all] [--all] [--device SEL]
@@ -577,8 +577,12 @@ repairs the last part's WAV header from the file's length and closes the manifes
 A radio moved out from under a running recording leaves a gap in it. The daemon never refuses a
 user's retune to protect a job: it marks the job `DEGRADED`, closes the open part and records the
 gap.
-The guard is in the client, so `ley tune` and `ley set freq` refuse a retune of a capture a
-recording is riding on, name the job and `ley jobs cancel`, and go ahead with `--retune`.
+The guard is in the client. Every verb that would move an existing capture (`tune`, `set freq`,
+`spectrum`, `waterfall`, `phosphor`, `scope`, `levels`, `waveform`, `listen`) first asks
+`Control.Plan` what the retune would pause and refuses, naming each one: "retuning to 150.000 MHz
+would pause the aprs decoder on 144.390 MHz and the recording on 146.940 MHz; --retune moves it
+anyway". The list is the plan's: a decoder, a recording, a scan or another client's channel, never
+a spectrum view and never this run's own channels. `--retune` goes ahead.
 
 **Keys and usage** (`proto/leyline/v1/ai.proto`). The daemon holds one key per model provider
 (`anthropic`, `openai`, `deepgram`, ...) and never returns it: no RPC, event or `--json` shape

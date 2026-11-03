@@ -55,7 +55,7 @@ Flags:
   -h, --help             help for levels
       --mode string      how to decode: nfm (two-way voice), wfm (broadcast), am (airband), usb, lsb, cw, raw; fm or ssb pick by frequency (default: by band; ley help modes)
       --rate float       with --watch: rows a second (at most 20) (default 20)
-      --retune           move the radio even when other channels are listening on it (they fall silent); without it tune refuses and says who is listening
+      --retune           move the radio even when that pauses a decoder, a recording or another channel; without it the command refuses and names them
       --squelch string   mute the audio when the signal is weaker than this level: auto (default for voice modes), off, or a level like -40 (dBFS; 0 is the loudest possible)
       --tap string       which stage to measure: audio (what the speakers get) or demod (the detector's output, before the audio chain) (default "audio")
   -w, --watch            keep the meter live until Ctrl-C

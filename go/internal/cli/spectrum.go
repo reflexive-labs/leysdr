@@ -57,9 +57,9 @@ of the floor are named, so a quiet band names none.
 Without a frequency it shows the band the device is already tuned to (what
 'ley tune' is listening to). With a frequency it needs the device to be
 free, or already tuned to a band that covers it; a capture is created for
-the run and removed when spectrum exits. When other channels are listening
-on a band that does not cover the frequency, spectrum refuses to move the
-radio unless --retune is given.
+the run and removed when spectrum exits. When the band does not cover the
+frequency and moving the radio would pause a decoder, a recording or another
+channel, spectrum refuses and names them unless --retune is given.
 
 --span is the width of the band shown, which is the capture's sample rate.
 For a fresh capture it is snapped to the nearest rate the radio supports

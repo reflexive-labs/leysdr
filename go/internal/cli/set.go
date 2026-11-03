@@ -138,7 +138,7 @@ and gain. Longer explanations: ley help squelch, modes, gain.`,
 	}
 	cmd.Flags().StringVar(&channelSel, "channel", "", "which channel: an id (chan_...), id prefix, row number from 'ley state' or frequency, e.g. --channel 146.62 (default: the active one)")
 	cmd.Flags().StringVar(&captureSel, "capture", "", "which capture (a radio tuned to a band), for freq and gain: id, prefix, row number or frequency (default: the channel's)")
-	cmd.Flags().BoolVar(&retune, "retune", false, "move the radio even when a recording is running on it (the recording logs the gap); without it set freq refuses and names the job")
+	cmd.Flags().BoolVar(&retune, "retune", false, "move the radio even when that pauses a decoder, a recording or another channel; without it set freq refuses and names them")
 	return cmd
 }
 
@@ -364,10 +364,12 @@ func buildWrites(ctx context.Context, s *verbSession, param, value string, ch *l
 				return nil, nil, 0, err
 			}
 		}
-		// Moving the radio under a running recording leaves a gap in it. The daemon degrades the
-		// job and records the gap rather than refusing a person; `ley` asks first.
-		if rerr := s.refuseRetuneOverRecording(capture.CaptureId, retune); rerr != nil && (ch == nil || !covers(capture, hz, ch.BandwidthHz)) {
-			return nil, nil, 0, rerr
+		// Moving the radio pauses what needs it where it is. The daemon pauses a job rather than
+		// refuse a person; `ley` asks first, as tune does. The channel being set moves with it.
+		if ch == nil || !covers(capture, hz, ch.BandwidthHz) {
+			if err := s.refuseDisplacing(ctx, capture, hz, value, retune, ch); err != nil {
+				return nil, nil, 0, err
+			}
 		}
 		if ch == nil {
 			w := &leylinev1.ParamWrite{Tag: 1, TargetId: capture.CaptureId, Param: &leylinev1.ParamWrite_CenterHz{CenterHz: hz}}

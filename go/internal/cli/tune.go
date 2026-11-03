@@ -55,7 +55,7 @@ func addRadioFlags(cmd *cobra.Command, f *tuneFlags, withRate bool) {
 	if withRate {
 		cmd.Flags().Uint64Var(&f.rate, "rate", 0, "sample rate in Hz when the radio is first tuned, e.g. 2400000; also the width of band it covers (default: the radio's own)")
 	}
-	cmd.Flags().BoolVar(&f.retune, "retune", false, "move the radio even when other channels are listening on it (they fall silent); without it tune refuses and says who is listening")
+	cmd.Flags().BoolVar(&f.retune, "retune", false, "move the radio even when that pauses a decoder, a recording or another channel; without it the command refuses and names them")
 }
 
 // modeDefault is what a caller knows about the mode before the flags are
@@ -172,9 +172,9 @@ wrong guess is easy to correct with 'ley set' from another terminal. With
 --persistent the channel keeps running after tune exits and its ids are
 printed for scripts. Longer explanations: ley help squelch, modes, gain.
 
-When the radio is already tuned for someone else and the new frequency falls
-outside the band it covers, tune refuses rather than silence them; --retune
-moves it anyway.`,
+When the new frequency falls outside the band the radio covers and moving it
+would pause a decoder, a recording or someone else's channel, tune refuses and
+names them; --retune moves it anyway.`,
 		Example: `  ley tune 146.52            2 m calling frequency, NFM, squelch auto
   ley tune noaa              NOAA weather channel 1 (162.550 MHz); try wx2..7
   ley tune 16 --band marine  marine channel 16 by its own number (156.800 MHz)

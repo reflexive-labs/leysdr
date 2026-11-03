@@ -88,7 +88,7 @@ func TestSpectrumRenderAndJSON(t *testing.T) {
 	// A frequency outside the band while a channel listens: refused with the
 	// fix, exit 1, and the capture stays where it was; --retune moves it.
 	_, _, err := run(t, t.Context(), sock, "spectrum", "101.1", "--bins", "256")
-	if exitCode(err) != 1 || !strings.Contains(err.Error(), "the radio is on 146.520 MHz with 1 channel listening") || !strings.Contains(err.Error(), "--retune") {
+	if exitCode(err) != 1 || err.Error() != "retuning to 101.100 MHz would pause a terminal's channel on 146.520 MHz; --retune moves it anyway" {
 		t.Fatalf("shared capture: exit %d %v", exitCode(err), err)
 	}
 	st, _ := c.State(t.Context())

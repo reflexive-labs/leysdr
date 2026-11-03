@@ -38,7 +38,7 @@ Flags:
   -h, --help              help for phosphor
       --levels uint32     level buckets the histogram keeps per bin (default 32)
       --rate float        redraws per second (default 2)
-      --retune            move the radio to the frequency even when other channels are listening on it (they fall silent)
+      --retune            move the radio to the frequency even when that pauses a decoder, a recording or another channel
       --span string       width of the band to show, e.g. 2.4M or 250k (default: the device's own, or the width it is already capturing)
       --width int         chart width in columns (default: the terminal's, or 80 when piped)
 

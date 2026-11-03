@@ -46,7 +46,7 @@ type bandUsage struct {
 func (f *bandFlags) bindCommon(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.bandName, "band", "", "show a whole named band instead of a frequency: 2m, fm, airband, noaa (ley bands lists them); the span follows the band unless --span says otherwise")
 	cmd.Flags().StringVar(&f.device, "device", "", "device: an id, id prefix, list index or frequency (default: the first real radio)")
-	cmd.Flags().BoolVar(&f.retune, "retune", false, "move the radio to the frequency even when other channels are listening on it (they fall silent)")
+	cmd.Flags().BoolVar(&f.retune, "retune", false, "move the radio to the frequency even when that pauses a decoder, a recording or another channel")
 }
 
 // parse reads the positional frequency, --band and --span, and settles the

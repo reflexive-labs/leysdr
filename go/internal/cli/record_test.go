@@ -475,12 +475,15 @@ func TestTuneOverARunningRecordingIsRefusedUntilRetune(t *testing.T) {
 
 	// Far enough away that the capture has to move.
 	_, _, err := run(t, t.Context(), sock, "tune", "155.0", "--no-audio", "--persistent")
-	if err == nil || !strings.Contains(err.Error(), "recording on this radio") {
+	if err == nil || err.Error() != "retuning to 155.000 MHz would pause the recording on 146.520 MHz; --retune moves it anyway" {
 		t.Fatalf("tune over a recording: %v", err)
 	}
-	if !strings.Contains(err.Error(), jobID) || !strings.Contains(err.Error(), "--retune") {
-		t.Errorf("the refusal must name the job and the flag: %v", err)
+	// set freq asks the same question, and --retune goes ahead.
+	_, _, err = run(t, t.Context(), sock, "set", "freq", "155.0")
+	if err == nil || !strings.Contains(err.Error(), "would pause the recording on 146.520 MHz") {
+		t.Fatalf("set freq over a recording: %v", err)
 	}
+	mustRun(t, sock, "tune", "155.0", "--no-audio", "--persistent", "--retune")
 }
 
 // Principle 1 of docs/dev/cli-style.md: styling adds SGR and nothing else. Every screen record

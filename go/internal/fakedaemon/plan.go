@@ -196,12 +196,20 @@ func (d *Daemon) channelClaimsLocked(c *capture) []*leylinev1.Claim {
 			continue
 		}
 		priority := leylinev1.ClaimPriority_PRIORITY_PERSON
+		holder := ch.GetOwner()
 		if ch.GetOwner().GetKind() == "job" {
 			priority = leylinev1.ClaimPriority_PRIORITY_JOB
+			// The daemon's ledger names the job that holds the channel, not the client that
+			// started it.
+			for id, j := range d.jobs {
+				if j.channelID == ch.GetChannelId() {
+					holder = &leylinev1.ClientInfo{ClientId: id, Kind: "job", Label: ch.GetOwner().GetLabel()}
+				}
+			}
 		}
 		out = append(out, &leylinev1.Claim{
 			ClaimId:  "clm_" + ch.GetChannelId(),
-			Holder:   ch.GetOwner(),
+			Holder:   holder,
 			Kind:     leylinev1.ClaimKind_CLAIM_CHANNEL,
 			Priority: priority,
 			State:    leylinev1.ClaimState_CLAIM_SATISFIED,

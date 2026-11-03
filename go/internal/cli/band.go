@@ -144,7 +144,7 @@ func (s *verbSession) openBand(ctx context.Context, app *App, o bandOptions) err
 		}
 	}
 	// ensureCapture reuses a capture that covers the frequency, refuses to
-	// move one other channels ride on (unless --retune), and creates one
+	// move one when that would pause somebody (unless --retune), and creates one
 	// otherwise; the capture created for this run is removed by the caller.
 	freq := o.freq
 	if freq == 0 {

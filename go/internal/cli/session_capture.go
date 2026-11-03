@@ -42,18 +42,8 @@ func (s *verbSession) ensureCapture(ctx context.Context, o *tuneOptions) error {
 		if err := s.checkRange(o.input, o.freq); err != nil {
 			return err
 		}
-		// A recording is named before the channels are counted: "1 channel listening" is true of
-		// a record job's own channel but tells the reader nothing they can act on.
-		if err := s.refuseRetuneOverRecording(capture.CaptureId, o.retune); err != nil {
+		if err := s.refuseDisplacing(ctx, capture, o.freq, o.input, o.retune, nil); err != nil {
 			return err
-		}
-		if n := s.activeChannels(capture.CaptureId); n > 0 && !o.retune {
-			hint := s.takeOverHint
-			if hint == "" {
-				hint = fmt.Sprintf("Add --retune to move it anyway, or free %s with: ley stop --all", words.Pick(n, "it", "them"))
-			}
-			return fmt.Errorf("the radio is on %s with %s listening; retuning to %s would silence %s. %s",
-				units.FormatFrequency(capture.CenterHz), words.Count(n, "channel"), units.FormatFrequency(o.freq), words.Pick(n, "it", "them"), hint)
 		}
 		s.say("retuning capture %s from %s to %s\n", capture.CaptureId, units.FormatFrequency(capture.CenterHz), units.FormatFrequency(o.freq))
 		w := &leylinev1.ParamWrite{Tag: 1, TargetId: capture.CaptureId, Param: &leylinev1.ParamWrite_CenterHz{CenterHz: o.freq}}
@@ -132,79 +122,58 @@ func (s *verbSession) checkRange(input string, hz uint64) error {
 	}, input, hz)
 }
 
-// recordingsOn lists the running record jobs whose recording would be damaged
-// by moving this capture. A record job either owns a channel on the capture
-// (the audio form) or reads the capture itself (--iq); both are found by the
-// job's own frequency against what the mirror holds.
-//
-// The daemon never refuses a user's write on a job's behalf -- it degrades the
-// recording and records the gap. The client that takes the user's action does
-// the check, which for `ley` is here (docs/design/recording.md, "Don't-disturb").
-func (s *verbSession) recordingsOn(captureID string) []*leylinev1.Job {
-	capture := captureByID(s.State, captureID)
-	if capture == nil {
+// refuseDisplacing is the one confirmation a retune asks for (docs/design/claims.md, "In the
+// clients"): Control.Plan says what moving the capture to centre would pause, and the move is
+// refused, naming each of them, unless retune said to go ahead. The daemon never refuses a
+// person's retune on a job's behalf; it pauses the job and says who moved the radio, so the
+// client asks first. Views are never in the plan's list, and neither are this client's own
+// claims. keep is a channel that moves with the radio (set freq's own), which is not paused.
+// A plan the daemon declines (a sweep holds the radio, a centre it cannot tune) is the
+// daemon's error.
+func (s *verbSession) refuseDisplacing(ctx context.Context, capture *leylinev1.Capture, centre uint64, input string, retune bool, keep *leylinev1.Channel) error {
+	if retune {
 		return nil
 	}
-	var out []*leylinev1.Job
-	for _, j := range s.State.GetJobs() {
-		cfg := j.GetRecord()
-		if cfg == nil || !isLiveJob(j) {
-			continue
-		}
-		if cfg.GetChannelId() != "" {
-			if ch := channelByID(s.State, cfg.GetChannelId()); ch != nil && ch.GetCaptureId() == captureID {
-				out = append(out, j)
-			}
-			continue
-		}
-		// A frequency-form job: its own channel on this capture, or, for --iq,
-		// this capture's span around where it was asked to listen.
-		hz := cfg.GetFrequencyHz()
-		onChannel := false
-		for _, ch := range s.State.GetChannels() {
-			if ch.GetCaptureId() == captureID && ch.GetOwner().GetKind() == "job" && ch.GetRequiredHz() == hz {
-				onChannel = true
-			}
-		}
-		if onChannel || (cfg.GetMode() == leylinev1.DemodMode_RAW_IQ && covers(capture, hz, 0)) {
-			out = append(out, j)
-		}
+	p, err := s.Client.Control.Plan(ctx, &leylinev1.PlanRequest{Request: &leylinev1.PlanRequest_Retune{
+		Retune: &leylinev1.RetunePlan{CaptureId: capture.GetCaptureId(), CenterHz: centre},
+	}})
+	if err != nil {
+		return s.friendly(err, input, centre)
 	}
-	return out
+	switch o := p.GetOutcome().(type) {
+	case *leylinev1.CapturePlan_Decline:
+		return s.friendly(&leyline.Error{Code: o.Decline.GetCode(), Message: o.Decline.GetReason(), Target: capture.GetCaptureId()}, input, centre)
+	case *leylinev1.CapturePlan_Retune:
+		var names []string
+		for _, c := range o.Retune.GetDisplaced() {
+			if c.GetPriority() == leylinev1.ClaimPriority_PRIORITY_VIEW || isChannelClaim(c, keep, capture) {
+				continue
+			}
+			names = append(names, claimName(s.State, c))
+		}
+		if len(names) == 0 {
+			return nil
+		}
+		return fmt.Errorf("retuning to %s would pause %s%s", units.FormatFrequency(centre), joinAnd(names), s.retuneRemedy())
+	}
+	return nil
 }
 
-// refuseRetuneOverRecording is the sentence `ley tune` and `ley set freq` print
-// rather than moving a radio out from under a recording. nil when nothing is
-// recording, or when --retune said to go ahead.
-func (s *verbSession) refuseRetuneOverRecording(captureID string, retune bool) error {
-	recs := s.recordingsOn(captureID)
-	if len(recs) == 0 || retune {
-		return nil
+// retuneRemedy ends the refusal: `ley`'s flag, or the MCP adapter's argument (takeOverHint).
+func (s *verbSession) retuneRemedy() string {
+	if s.takeOverHint != "" {
+		return ". " + s.takeOverHint
 	}
-	st := s.app.ErrStyle
-	ids := make([]string, 0, len(recs))
-	for _, j := range recs {
-		ids = append(ids, j.GetJobId())
-	}
-	hint := s.takeOverHint
-	if hint == "" {
-		hint = "Add --retune to move it anyway (the recording logs the gap), or stop it with: " +
-			st.Cmd("ley jobs cancel "+ids[0])
-	}
-	return fmt.Errorf("%s %s recording on this radio (%s); retuning would leave a gap in %s. %s",
-		words.Count(len(recs), "job"), words.Pick(len(recs), "is", "are"), strings.Join(ids, ", "),
-		words.Pick(len(recs), "it", "them"), hint)
+	return "; " + s.app.ErrStyle.Cmd("--retune") + " moves it anyway"
 }
 
-// activeChannels counts the ACTIVE channels riding on a capture in the mirror.
-func (s *verbSession) activeChannels(captureID string) int {
-	n := 0
-	for _, ch := range s.State.GetChannels() {
-		if ch.CaptureId == captureID && ch.State == leylinev1.ChannelState_CHANNEL_ACTIVE {
-			n++
-		}
+// isChannelClaim reports whether c is ch's own claim: a channel claim of its owner's on its
+// frequency. A claim names no channel, so this is the closest match the ledger allows.
+func isChannelClaim(c *leylinev1.Claim, ch *leylinev1.Channel, capture *leylinev1.Capture) bool {
+	if ch == nil || c.GetKind() != leylinev1.ClaimKind_CLAIM_CHANNEL || c.GetHolder().GetClientId() != ch.GetOwner().GetClientId() {
+		return false
 	}
-	return n
+	return c.GetCovers().GetFrequencyHz() == uint64(int64(capture.GetCenterHz())+ch.GetOffsetHz())
 }
 
 // createChannel creates the demod channel at freq relative to the capture and

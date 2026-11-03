@@ -292,3 +292,37 @@ func TestDecodeEndsWhenAnotherClientCancels(t *testing.T) {
 		t.Fatal("ley decode --job was still running after its job was cancelled")
 	}
 }
+
+// A running decoder is what a retune would pause, and every verb that moves the radio asks the
+// daemon's plan and says so, in one sentence with the flag that goes ahead (docs/design/claims.md,
+// "In the clients"). Nothing moves until --retune.
+func TestRetuneOverADecoderIsRefusedByEveryVerb(t *testing.T) {
+	t.Parallel()
+	sock, c := harness(t, fakedaemon.Options{})
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	if _, _, err := run(t, ctx, sock, "decode", "aprs", "--job", "--count", "1"); err != nil {
+		t.Fatalf("ley decode --job: %v", err)
+	}
+	const want = "retuning to 150.000 MHz would pause the aprs decoder on 144.390 MHz; --retune moves it anyway"
+	for _, args := range [][]string{
+		{"tune", "150", "--no-audio", "--persistent"},
+		{"spectrum", "150", "--count", "1"},
+		{"set", "freq", "150"},
+	} {
+		_, _, err := run(t, ctx, sock, args...)
+		if exitCode(err) != 1 || err.Error() != want {
+			t.Errorf("ley %s: exit %d %v, want %q", strings.Join(args, " "), exitCode(err), err, want)
+		}
+	}
+	st, err := c.State(ctx)
+	if err != nil || len(st.Captures) != 1 || st.Captures[0].GetCenterHz() == 150_000_000 {
+		t.Fatalf("a refusal must not move the radio: %v %v", st.GetCaptures(), err)
+	}
+	if _, _, err := run(t, ctx, sock, "tune", "150", "--no-audio", "--persistent", "--retune"); err != nil {
+		t.Fatalf("--retune: %v", err)
+	}
+	if st, _ = c.State(ctx); st.Captures[0].GetCenterHz() != 150_000_000 {
+		t.Errorf("--retune must move the radio: %d", st.Captures[0].GetCenterHz())
+	}
+}

@@ -599,11 +599,11 @@ stopped 1 channel and freed Generic RTL2832U (R820T) (dev_01M1S9TR56S46QTCK0SZS2
 ```
 
 A third `tune` outside the band the capture covers (`ley tune 101.1` while 146.52 plays) is
-refused rather than silencing the channels already on it: `the radio is on 146.520 MHz with
-1 channel listening; retuning to 101.100 MHz would silence it. Add --retune to move it anyway,
-or free it with: ley stop --all`. `--retune` (on `tune` and `spectrum`) moves the radio and the
-others fall silent; a capture with no active channels is retuned without asking, and `tune`
-says so. `--gain 30` (or `auto`) on `tune` and `play` sets the receiver gain once the radio is
+refused rather than pausing what is already on it: `retuning to 101.100 MHz would pause a
+terminal's channel on 146.520 MHz; --retune moves it anyway`. A decoder or a recording on the
+radio is named the same way (`the aprs decoder on 144.390 MHz`, `the recording on 146.940 MHz`).
+`--retune` (on `tune`, `set freq` and `spectrum`) moves the radio and they pause; a capture
+nothing else needs where it is gets retuned without asking, and `tune` says so. `--gain 30` (or `auto`) on `tune` and `play` sets the receiver gain once the radio is
 tuned, and the banner shows the value the radio applied. On a radio with several gain stages a
 bare value sets the first; `--gain LNA=0,VGA=0` sets each stage named, in that order, and the
 banner lists every stage (`Radio HackRF Pro, gain LNA 0 dB, VGA 0 dB, AMP off`; the AMP is a

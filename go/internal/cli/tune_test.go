@@ -65,19 +65,24 @@ func TestTunePersistent(t *testing.T) {
 	if len(st.Captures) != 1 || len(st.Channels) != 2 {
 		t.Fatalf("expected capture reuse: %d captures %d channels", len(st.Captures), len(st.Channels))
 	}
-	// Out of span with two channels listening: refused with the centre, the
-	// count and the fix, exit 1; nothing moved. A bare number is MHz.
+	// Another terminal's channel on the capture: out of span, the tune is refused
+	// with what the plan says would pause and the fix, exit 1; nothing moved. The
+	// two channels above are this process's own (one client id), which the plan
+	// never counts. A bare number is MHz.
+	if _, err := c.Control.CreateChannel(t.Context(), &leylinev1.CreateChannelRequest{
+		CaptureId: st.Captures[0].CaptureId, OffsetHz: 30_000, BandwidthHz: 12_500, Mode: leylinev1.DemodMode_NFM, Persistent: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	_, _, err = run(t, t.Context(), sock, "tune", "150", "--no-audio", "--persistent")
 	if exitCode(err) != 1 {
 		t.Fatalf("shared capture retune: exit %d %v", exitCode(err), err)
 	}
-	for _, want := range []string{"the radio is on 146.520 MHz with 2 channels listening", "retuning to 150.000 MHz would silence them", "Add --retune", "ley stop --all"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("refusal lacks %q: %v", want, err)
-		}
+	if want := "retuning to 150.000 MHz would pause a terminal's channel on 146.550 MHz; --retune moves it anyway"; !strings.Contains(err.Error(), want) {
+		t.Errorf("refusal: %v, want %q", err, want)
 	}
 	st, _ = c.State(t.Context())
-	if st.Captures[0].CenterHz != 146_520_000 || len(st.Channels) != 2 {
+	if st.Captures[0].CenterHz != 146_520_000 || len(st.Channels) != 3 {
 		t.Fatalf("refusal must not touch the capture: %v", st.Captures[0])
 	}
 	// --retune moves it anyway and says so.
