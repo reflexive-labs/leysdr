@@ -32,7 +32,13 @@ time, and stops when it has read every part: an IQ decoder reads an IQ
 recording (ley record --iq) and any other decoder an audio one. Its records
 are kept, so 'ley records --job-id <job>' reads them again.
 
---json prints one DecodeRecord per line (NDJSON) and nothing else on stdout.
+--dry-run asks the daemon where the job would go and prints it in a
+sentence: the capture it would share, the radio it would open, or the radio
+it would retune and whose channels that would pause. It starts nothing, and
+exits 1 with the reason when the job would be declined.
+
+--json prints one DecodeRecord per line (NDJSON) and nothing else on stdout;
+with --dry-run, the CapturePlan.
 
 Usage:
   ley decode <decoder> [flags]
@@ -50,6 +56,7 @@ Examples:
 Flags:
       --count int          stop after this many records, e.g. 5 (default: until Ctrl-C)
       --device string      which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)
+      --dry-run            say which radio the job would use and what it would pause, and start nothing
       --freq string        decode somewhere other than the recipe's frequency, e.g. 144.8 (a bare number is MHz)
       --gain string        receiver gain: auto, dB such as 30 for the first stage, or stages such as LNA=0,VGA=20 (ley help gain); set when the job tunes the radio, never on one it shares; default: the decoder's recipe
   -h, --help               help for decode

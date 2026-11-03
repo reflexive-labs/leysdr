@@ -31,6 +31,8 @@ type decodeOptions struct {
 	gain string
 	// recording is --recording: a stored recording to decode instead of a radio.
 	recording string
+	// dryRun is --dry-run: say where the job would go and start nothing.
+	dryRun bool
 }
 
 func newDecodeCommand(app *App) *cobra.Command {
@@ -75,7 +77,13 @@ time, and stops when it has read every part: an IQ decoder reads an IQ
 recording (ley record --iq) and any other decoder an audio one. Its records
 are kept, so 'ley records --job-id <job>' reads them again.
 
---json prints one DecodeRecord per line (NDJSON) and nothing else on stdout.`,
+--dry-run asks the daemon where the job would go and prints it in a
+sentence: the capture it would share, the radio it would open, or the radio
+it would retune and whose channels that would pause. It starts nothing, and
+exits 1 with the reason when the job would be declined.
+
+--json prints one DecodeRecord per line (NDJSON) and nothing else on stdout;
+with --dry-run, the CapturePlan.`,
 		Example: `  ley decode aprs                         # what is on 144.390 MHz?
   ley decode aprs --count 5               # five packets, then stop
   ley decode aprs --freq 144.8            # the European allocation
@@ -94,6 +102,9 @@ are kept, so 'ley records --job-id <job>' reads them again.
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.decoder = args[0]
+			if o.recording != "" && o.dryRun {
+				return usageErrorf("--dry-run says where on a radio the job would go, and --recording needs no radio")
+			}
 			if o.recording != "" && (freq != "" || o.device != "" || o.takeOver || o.keep) {
 				return usageErrorf("--recording decodes a stored recording, so --freq, --device, --take-over and --job do not apply; its records are kept anyway")
 			}
@@ -131,6 +142,7 @@ are kept, so 'ley records --job-id <job>' reads them again.
 	cmd.Flags().BoolVar(&o.keep, "job", false, "keep the job and its records after ley exits ('ley jobs cancel' stops it)")
 	cmd.Flags().IntVar(&o.count, "count", 0, "stop after this many records, e.g. 5 (default: until Ctrl-C)")
 	cmd.Flags().StringVar(&o.recording, "recording", "", "decode a stored recording instead of the radio: a job id, id prefix or ley://recordings/ URI")
+	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "say which radio the job would use and what it would pause, and start nothing")
 	return cmd
 }
 
@@ -156,6 +168,12 @@ func runDecode(ctx context.Context, s *verbSession, o decodeOptions) error {
 		TakeOver:    o.takeOver,
 		Keep:        o.keep,
 		Gains:       gainWrites(o.gain),
+	}
+	if o.dryRun {
+		if err := s.dryRun(ctx, &leylinev1.PlanRequest{Request: &leylinev1.PlanRequest_Decode{Decode: cfg}}, false, o.takeOver); err != nil {
+			return dryRunFailure(err, func(err error) error { return decodeFailure(s, o, err) })
+		}
+		return nil
 	}
 	job, err := s.Client.StartDecode(ctx, cfg)
 	if err != nil {

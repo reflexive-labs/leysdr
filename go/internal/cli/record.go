@@ -47,6 +47,8 @@ type recordOptions struct {
 	device    string
 	deviceID  string
 	takeOver  bool
+	// dryRun is --dry-run: say where the recording would go and start nothing.
+	dryRun bool
 	// audio backs the hidden `--audio`, which asks for what record already does; it is read
 	// only to refuse the pair with --iq. A field, not a package variable: every Execute builds
 	// its own command tree, and tests run several at once.
@@ -89,7 +91,12 @@ record runs in the foreground and prints what it is doing until --for elapses
 or Ctrl-C, which stops the job and leaves the recording complete. --detach
 starts it and exits with the job id; 'ley jobs cancel' stops one.
 
---json prints the Job as each state change arrives, one object per line.`,
+--dry-run asks the daemon where the recording would go and prints it in a
+sentence, starting nothing; it exits 1 with the reason when the recording
+would be declined.
+
+--json prints the Job as each state change arrives, one object per line;
+with --dry-run, the CapturePlan.`,
 		Example: `  ley record 146.52 --for 5m             # five minutes of audio
   ley record noaa                        # NFM: only while something is on the air
   ley record 146.52 --gate none --for 5m # everything, silence included
@@ -152,6 +159,7 @@ starts it and exits with the job id; 'ley jobs cancel' stops one.
 	cmd.Flags().StringVar(&o.gain, "gain", "", gainHelp+"; default: leave the radio's setting")
 	cmd.Flags().StringVar(&o.device, "device", "", "which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)")
 	cmd.Flags().BoolVar(&o.takeOver, "take-over", false, "record even when somebody is using the radio; it is theirs again afterwards")
+	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "say which radio the recording would use and what it would pause, and start nothing")
 	return cmd
 }
 
@@ -386,6 +394,13 @@ func (o *recordOptions) config() *leylinev1.RecordConfig {
 
 // runRecord starts the job and, unless --detach, follows it until it ends.
 func runRecord(ctx context.Context, s *verbSession, o recordOptions) error {
+	if o.dryRun {
+		req := &leylinev1.PlanRequest{Request: &leylinev1.PlanRequest_Record{Record: o.config()}}
+		if err := s.dryRun(ctx, req, false, o.takeOver); err != nil {
+			return dryRunFailure(err, func(err error) error { return recordFailure(s, o, err) })
+		}
+		return nil
+	}
 	job, err := s.Client.StartRecord(ctx, o.config())
 	if err != nil {
 		return recordFailure(s, o, err)

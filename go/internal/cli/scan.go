@@ -36,6 +36,8 @@ type scanOptions struct {
 	deviceID   string
 	// gain is --gain as typed: auto, or dB. Empty leaves the radio where it is.
 	gain string
+	// dryRun is --dry-run: say which radio the sweep would take and start nothing.
+	dryRun bool
 }
 
 func newScanCommand(app *App) *cobra.Command {
@@ -73,9 +75,14 @@ says so rather than quoting a number.
 The floor is measured per bin and is far below what a channel meter reads
 for the same air, because a channel is thousands of bins wide.
 
+--dry-run asks the daemon which radio the sweep would take and prints it in
+a sentence, sweeping nothing; it exits 1 with the reason when the sweep would
+be declined.
+
 --json prints one Scan object when the sweep finishes and nothing before it:
 the answer is the whole scan, not the steps it took to get there. Progress
-goes to stderr, where a person can see it and a pipe cannot.`,
+goes to stderr, where a person can see it and a pipe cannot. With --dry-run
+it prints the CapturePlan.`,
 		Example: `  ley scan 144M..148M            # the 2 m band
   ley scan --band 2m             # the same, by name
   ley scan 162.4M..162.55M       # the NOAA weather channels
@@ -145,11 +152,27 @@ goes to stderr, where a person can see it and a pipe cannot.`,
 	cmd.Flags().BoolVar(&o.takeOver, "take-over", false, "sweep even when somebody is using the radio; it is theirs again afterwards")
 	cmd.Flags().StringVar(&o.device, "device", "", "which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)")
 	cmd.Flags().StringVar(&o.gain, "gain", "", gainHelp+"; held for the whole sweep; default: the gain the radio is on")
+	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "say which radio the sweep would take and what it would pause, and start nothing")
 	return cmd
+}
+
+// config is the once-scan the options ask for.
+func (o scanOptions) config() *leylinev1.ScanConfig {
+	return &leylinev1.ScanConfig{
+		Range:    &leylinev1.FrequencyRange{MinHz: o.minHz, MaxHz: o.maxHz},
+		DwellMs:  o.dwellMs,
+		Schedule: &leylinev1.ScanConfig_Once{Once: true},
+		TakeOver: o.takeOver,
+		DeviceId: o.deviceID,
+		Gains:    gainWrites(o.gain),
+	}
 }
 
 // runScan starts the sweep, follows it on the event stream, and prints what it found.
 func runScan(ctx context.Context, s *verbSession, o scanOptions) error {
+	if o.dryRun {
+		return s.dryRun(ctx, &leylinev1.PlanRequest{Request: &leylinev1.PlanRequest_Scan{Scan: o.config()}}, true, o.takeOver)
+	}
 	scan, final, err := s.sweep(ctx, o)
 	if err != nil {
 		return err
@@ -173,14 +196,7 @@ func runScan(ctx context.Context, s *verbSession, o scanOptions) error {
 // printed on stderr: an interrupted sweep the daemon could not report on in time, or a job that
 // named no scan. `ley scan` prints what comes back; the MCP adapter's scan tool returns it.
 func (s *verbSession) sweep(ctx context.Context, o scanOptions) (*leylinev1.Scan, *leylinev1.Job, error) {
-	cfg := &leylinev1.ScanConfig{
-		Range:    &leylinev1.FrequencyRange{MinHz: o.minHz, MaxHz: o.maxHz},
-		DwellMs:  o.dwellMs,
-		Schedule: &leylinev1.ScanConfig_Once{Once: true},
-		TakeOver: o.takeOver,
-		DeviceId: o.deviceID,
-		Gains:    gainWrites(o.gain),
-	}
+	cfg := o.config()
 	job, err := s.Client.Jobs.StartJob(ctx, &leylinev1.StartJobRequest{Config: &leylinev1.StartJobRequest_Scan{Scan: cfg}})
 	if err != nil {
 		return nil, nil, err

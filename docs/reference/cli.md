@@ -42,7 +42,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 ├── fft [--freq F] [--bins N] [--rate N] [--count N] [--format json|bin] [--u8] [--device SEL]
 ├── listen <freq|preset|chan_ID> [--format json|bin] [--count N] [--mode M] [--bw N] [--squelch L] [--gain dB|auto|STAGE=dB,...] [--device SEL] [--rate N] [--retune]
 │                                    # the channel's decoded audio on stdout (SubscribeAudio), no system-audio sink; a channel id taps one already running
-├── scan <lo>..<hi | band> [--band NAME] [--dwell MS] [--min-snr DB] [--sort freq|snr] [--gain dB|auto|STAGE=dB,...] [--take-over] [--device SEL]
+├── scan <lo>..<hi | band> [--band NAME] [--dwell MS] [--min-snr DB] [--sort freq|snr] [--gain dB|auto|STAGE=dB,...] [--take-over] [--device SEL] [--dry-run]
 │                                    # a band name works in place of a range: `ley scan gmrs`, `ley scan 2m`
 │                                    # daemon-side sweep: Jobs.StartJob(ScanConfig{once}); detections stream on
 │                                    # telemetry, the aggregate comes from Jobs.GetScan
@@ -51,7 +51,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # time-ordered transmission log; Jobs.StartJob(MonitorConfig), detections on telemetry
 ├── decoders                         # the installed decoder plugins: name, recipe, output shapes, version,
 │                                    # and for one that calls a provider the key it needs and the hosts it sends to
-├── decode <decoder> [--freq F] [--gain dB|auto|STAGE=dB,...] [--device SEL] [--take-over] [--job] [--count N] [--recording R]
+├── decode <decoder> [--freq F] [--gain dB|auto|STAGE=dB,...] [--device SEL] [--take-over] [--job] [--count N] [--recording R] [--dry-run]
 │                                    # Jobs.StartJob(DecodeConfig): the daemon finds or makes the capture,
 │                                    # adds the channel the job owns and spawns the plugin; records arrive
 │                                    # on Decoders.SubscribeRecords, one line each; --job keeps them as
@@ -97,7 +97,7 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # reads a CHIRP CSV export in, tagged with the file's name
 ├── mcp                              # the MCP server for an agent, on stdin and stdout: every tool a verb seen from
 │                                    # an agent, returning the verb's --json shape (docs/reference/mcp.md); refuses --json
-├── record <freq|preset|chan_ID> [--iq] [--for D] [--gate squelch|none] [--pre D] [--hang D] [--stop-after-quiet D] [--part D] [--listen] [--detach] [--mode M] [--bw N] [--squelch L|auto|off] [--gain dB|auto|STAGE=dB,...] [--device SEL] [--take-over]
+├── record <freq|preset|chan_ID> [--iq] [--for D] [--gate squelch|none] [--pre D] [--hang D] [--stop-after-quiet D] [--part D] [--listen] [--detach] [--mode M] [--bw N] [--squelch L|auto|off] [--gain dB|auto|STAGE=dB,...] [--device SEL] [--take-over] [--dry-run]
 │                                    # Jobs.StartJob(RecordConfig): the daemon finds or makes the capture and
 │                                    # writes WAV (or .cf32 with --iq) into its store; the job's id is the
 │                                    # recording's, and ley://recordings/<job_id> is on stdout when it ends
@@ -345,6 +345,16 @@ floor; `--min-hold` (default 0, off) drops one held for less than a set span; an
 either side and those are not separate transmissions. What each filter hid is tallied on stderr, so a
 hidden carrier never reads as a quiet band. Full design: `docs/design/band-watching.md`, the
 occupancy view of which this is the first cut.
+
+**`--dry-run`** on `ley decode`, `ley record` and `ley scan` asks `Control.Plan` where the job would
+go and starts nothing (`../design/claims.md`, "One decision: plan"). It prints one sentence on
+stdout and exits 0: "would share the capture at 144.090 MHz on NESDR SMArt v5; nothing is
+retuned", "would open NESDR SMArt v5 at 144.090 MHz, 2.4 MSPS; nothing else is using it", "would
+retune NESDR SMArt v5 to 1089.700 MHz, pausing: the app's channel on 146.520 MHz", or for a scan
+"would take NESDR SMArt v5 for the sweep and put it back afterwards, pausing: ...". A job that
+would be declined exits 1 with "would not start: <the daemon's reason>", naming `--take-over` when
+somebody's claim is in the way. With `--json` it prints the `CapturePlan` (proto3 JSON) and exits as
+above. `ley decode --recording` needs no radio, so `--dry-run` there is a usage error.
 
 **`ley scan --json`** prints exactly one `Scan` object when the sweep finishes, and nothing before
 it: the result is the whole scan rather than the intermediate steps, and progress belongs on
