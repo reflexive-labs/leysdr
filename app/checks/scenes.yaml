@@ -955,11 +955,15 @@ scenes:
       - {cmd: wait, seconds: 2}
       - {cmd: state, expect: {assistant.input: draft kept}}
       - {cmd: ax, name: refused}
+      # The app's retry after a stop can be 5 s out, and its spectrum view's claim reaches the
+      # mirror a second after it reconnects: wait for both, so the Claims count is the settled
+      # three (the terminal's channel and listen, the app's view; the app's own listen lapsed
+      # with the old daemon, since it has written nothing to the new one).
       - {cmd: daemon, op: start}
-      - {cmd: wait, seconds: 3}
+      - {cmd: wait, seconds: 7, expect_log: "session: live"}
       - {cmd: press, identifier: assistant.new}
       - {cmd: wait, seconds: 1}
-      - {cmd: state, expect: {assistant.state: null, assistant.input: draft kept}}
+      - {cmd: state, expect: {assistant.state: null, assistant.input: draft kept, claims.2.what: spectrum view}}
       - {cmd: ax, name: new}
       - {cmd: file, path: ai/record.jsonl, contains: where am i}
 
