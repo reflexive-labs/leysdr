@@ -93,9 +93,12 @@ package enum AllocationRequest: Sendable {
     /// the device's default; `deviceID` nil lets the allocator pick; `takeOver` retunes a capture
     /// somebody is using. `dedicated` is the manifest's `needs_dedicated_capture`: only a capture
     /// centred on the frequency at that rate is shared, and any other is retuned or passed over.
+    /// `followsRetune` is an IQ recording's: it needs only the frequency in span at the rate it
+    /// started at, and a retune that keeps that starts a new part; an IQ decoder holds the tuning
+    /// its plugin was told. Each is the job's claim on the capture (docs/design/claims.md).
     /// `gains` is read as `.channel`'s is.
     case captureIQ(frequencyHz: UInt64, sampleRateHz: UInt64, deviceID: DeviceID?, takeOver: Bool, dedicated: Bool = false,
-                   gains: [GainRequest] = [])
+                   followsRetune: Bool = false, gains: [GainRequest] = [])
     /// A whole radio, retunable, for the duration of the lease. `takeOver` skips the don't-disturb
     /// checks (a capture with channels, a live audio sink, a recent interactive write) but never
     /// the exclusivity one: two sweeps do not share a radio.

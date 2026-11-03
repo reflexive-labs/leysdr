@@ -826,23 +826,32 @@ actor DecodeRunner {
 
     /// OUT_OF_CAPTURE degrades the job and the channel coming back restores it. The state is read
     /// from the channel engine rather than from the event stream: the engine holds the state, and
-    /// the event only reports it.
+    /// the event only reports it. The detail names who moved the radio once the move is published
+    /// ("paused: the app tuned NESDR SMArt v5 to 146.520 MHz; ..."), so it is read again while the
+    /// channel is out.
     private func followChannel(_ lease: any ChannelLease) async {
         var last: ChannelState?
         while !Task.isCancelled {
             let state = await lease.engine.state
-            if state != last {
-                last = state
-                switch state {
-                case .outOfCapture:
-                    let detail = "the capture moved away from \(fmtMHz(frequencyHz)); waiting for it to come back"
+            switch state {
+            case .outOfCapture:
+                let detail: String
+                if let moved = await store.whoMoved(lease.captureID) {
+                    detail = "paused: \(moved); resumes when \(fmtMHz(frequencyHz)) is back in the capture"
+                } else {
+                    detail = "the capture moved away from \(fmtMHz(frequencyHz)); waiting for it to come back"
+                }
+                if detail != awayDetail {
                     awayDetail = detail
                     await onStatus(.degraded, detail)
-                case .active:
+                }
+            case .active:
+                if state != last {
                     awayDetail = nil
                     await publishRunning(liveness.detail(decoder: installed.manifest.name))
                 }
             }
+            last = state
             try? await Task.sleep(nanoseconds: 200_000_000)
         }
     }

@@ -266,8 +266,11 @@ final class ClaimsLedgerTests: XCTestCase {
             let iq = try XCTUnwrap(held.first { $0.holder.clientID == reader.jobID })
             XCTAssertEqual(iq.kind, .claimIq)
             XCTAssertEqual(iq.priority, .priorityJob)
-            XCTAssertEqual(iq.covers.frequencyHz, 100_100_000)
-            XCTAssertEqual(iq.sampleRateHz, 0, "an ordinary IQ decoder takes any rate")
+            // CL-3: an ordinary IQ decoder holds the capture to the tuning its plugin was told, so
+            // its claim is that centre exactly, at that rate.
+            XCTAssertEqual(iq.centred.frequencyHz, 100_500_000)
+            XCTAssertEqual(iq.centred.toleranceHz, 0)
+            XCTAssertEqual(iq.sampleRateHz, 2_400_000, "the rate the plugin's descriptor names")
             XCTAssertEqual(iq.state, .claimSatisfied)
             try await self.cancel(c, reader.jobID)
             try await self.waitForClaims(c, "cancel releases it") { !$0.contains { $0.holder.clientID == reader.jobID } }
@@ -293,7 +296,10 @@ final class ClaimsLedgerTests: XCTestCase {
             record.mode = .rawIq
             let recording = try await c.jobs.startJob(.with { $0.record = record }, metadata: testMetadata)
             held = try await self.waitForClaims(c, "the IQ recording's claim") { $0.contains { $0.holder.clientID == recording.jobID } }
-            XCTAssertEqual(held.first { $0.holder.clientID == recording.jobID }?.kind, .claimIq)
+            let recorded = try XCTUnwrap(held.first { $0.holder.clientID == recording.jobID })
+            XCTAssertEqual(recorded.kind, .claimIq)
+            XCTAssertEqual(recorded.covers.frequencyHz, 100_100_000, "an IQ recording follows a retune that keeps its frequency")
+            XCTAssertNotEqual(recorded.sampleRateHz, 0, "at the rate its manifest names")
             try await self.cancel(c, recording.jobID)
             try await self.waitForClaims(c, "cancel releases it") { !$0.contains { $0.holder.clientID == recording.jobID } }
 

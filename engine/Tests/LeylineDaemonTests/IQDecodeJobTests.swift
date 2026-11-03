@@ -219,8 +219,10 @@ final class IQDecodeJobTests: XCTestCase {
 
             // Off the frequency altogether.
             try await self.retune(c, capture.captureID, tag: 1, to: 103_000_000)
-            let away = try await self.waitForJob(c, started.jobID) { $0.state == .degraded }
-            XCTAssertEqual(away?.statusDetail, "the capture moved away from 100.100 MHz; waiting for it to come back")
+            // CL-3: the detail names who moved the radio and where, once the move is published.
+            let away = try await self.waitForJob(c, started.jobID) { $0.state == .degraded && $0.statusDetail.hasPrefix("paused:") }
+            XCTAssertEqual(away?.statusDetail,
+                           "paused: a terminal tuned rebindable to 103.000 MHz; resumes when 100.100 MHz is back in the capture")
             // No records arrive while it is away, so the count's republish cannot be the capture
             // coming back: past one interval the job is still DEGRADED.
             try await Task.sleep(for: DecodeLiveness.interval + .milliseconds(500))
@@ -230,10 +232,10 @@ final class IQDecodeJobTests: XCTestCase {
             // Recentred somewhere that still covers it: the plugin was told 100.1 MHz, so this is
             // still away.
             try await self.retune(c, capture.captureID, tag: 2, to: 100_500_000)
-            let recentred = try await self.waitForJob(c, started.jobID) { $0.statusDetail.contains("moved from") }
+            let recentred = try await self.waitForJob(c, started.jobID) { $0.statusDetail.contains("back on") }
             XCTAssertEqual(recentred?.state, .degraded)
             XCTAssertEqual(recentred?.statusDetail,
-                           "the capture moved from 100.100 MHz to 100.500 MHz; waiting for it to come back")
+                           "paused: a terminal tuned rebindable to 100.500 MHz; resumes when the capture is back on 100.100 MHz")
 
             // Back where the plugin was told: RUNNING, and the first frame it gets says what it missed.
             let next = self.nextRecord(c, job: started.jobID)
@@ -311,7 +313,9 @@ final class IQDecodeJobTests: XCTestCase {
     }
 
     /// A non-dedicated IQ job reads an off-centre capture; a dedicated decoder must not retune it
-    /// from under that job, nor from under an IQ recording, unless it is told to take over.
+    /// from under that job unless it is told to take over. An IQ recording needs only its frequency
+    /// in span at its rate (CL-3), so centring the capture on that frequency displaces nothing: the
+    /// decoder gets the capture, and the recording goes on in a new part.
     func testADedicatedDecoderLeavesACaptureAnotherJobReads() async throws {
         let plugins = try makeTempDir("decoders")
         let recordings = try makeTempDir("recordings")
@@ -337,7 +341,7 @@ final class IQDecodeJobTests: XCTestCase {
             XCTAssertEqual(still.state, .running, still.statusDetail)
             try await self.cancel(c, reader.jobID)
 
-            // An IQ recording is a reader too.
+            // An IQ recording is a reader too, but one that follows a retune keeping its frequency.
             var config = Leyline_V1_RecordConfig()
             config.frequencyHz = 100_100_000
             config.mode = .rawIq
@@ -345,11 +349,15 @@ final class IQDecodeJobTests: XCTestCase {
             request.record = config
             let recording = try await c.jobs.startJob(request, metadata: testMetadata)
             XCTAssertEqual(recording.state, .running, recording.statusDetail)
-            let refusedAgain = try await self.startIQ(c, decoder: "fakewide", frequencyHz: 100_100_000)
-            let failedAgain = try await self.waitForJob(c, refusedAgain.jobID) { $0.state == .failed }
-            XCTAssertEqual(failedAgain?.statusDetail, "another job is reading this radio (record)")
-            let stillThere = try await self.onlyCapture(c)
-            XCTAssertEqual(stillThere.centerHz, 100_500_000)
+            let centring = try await self.startIQ(c, decoder: "fakewide", frequencyHz: 100_100_000)
+            let centredRec = try await self.records(c, job: centring.jobID, count: 1)
+            XCTAssertEqual(self.integer(centredRec.first, "center_hz"), 100_100_000)
+            let moved = try await self.onlyCapture(c)
+            XCTAssertEqual(moved.centerHz, 100_100_000, "the recording's frequency is still in span, so nothing was displaced")
+            try await Task.sleep(nanoseconds: 300_000_000)
+            let recordingNow = try await self.job(c, recording.jobID)
+            XCTAssertEqual(recordingNow.state, .running, recordingNow.statusDetail)
+            try await self.cancel(c, centring.jobID)
             try await self.cancel(c, recording.jobID)
         }
     }

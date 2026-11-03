@@ -53,10 +53,10 @@ actor SessionCaptureAllocator: CaptureAllocator {
         case .channel(let frequencyHz, let bandwidthHz, let mode, let deviceID, let takeOver, let gains):
             return await allocateChannel(frequencyHz: frequencyHz, bandwidthHz: bandwidthHz, mode: mode,
                                          deviceID: deviceID, takeOver: takeOver, gains: gains, job: job)
-        case .captureIQ(let frequencyHz, let sampleRateHz, let deviceID, let takeOver, let dedicated, let gains):
+        case .captureIQ(let frequencyHz, let sampleRateHz, let deviceID, let takeOver, let dedicated, let follows, let gains):
             return await allocateCaptureIQ(frequencyHz: frequencyHz, sampleRateHz: sampleRateHz,
                                            deviceID: deviceID, takeOver: takeOver, dedicated: dedicated,
-                                           gains: gains, job: job)
+                                           followsRetune: follows, gains: gains, job: job)
         case .exclusiveCapture(let range, let deviceID, let takeOver, let gains):
             return await allocateCapture(range: range, deviceID: deviceID, takeOver: takeOver, gains: gains, job: job)
         }
@@ -142,13 +142,15 @@ actor SessionCaptureAllocator: CaptureAllocator {
                       let cap = state.captures.first(where: { $0.captureID == captureID }),
                       let engine = await store.captureEngine(id) else { continue }
                 let before = cap.centerHz
+                await store.willMove(id, by: owner)
                 do {
                     try await engine.retune(centerHz: centre)
                 } catch {
+                    await store.moveFailed(id, by: owner)
                     progress.failed((error as? EngineError)?.message ?? "\(error)")
                     continue
                 }
-                await store.publishCapture(id)
+                await store.publishCapture(id, by: owner)
                 let entryGains = await engine.snapshot.gains
                 let outcome = await setGains(gains, on: id)
                 if let lease = await open(captureID: id, offsetHz: Int64(frequencyHz) - Int64(centre), bandwidthHz: bw,
@@ -157,9 +159,10 @@ actor SessionCaptureAllocator: CaptureAllocator {
                                           restoreGains: gains.isEmpty ? [] : entryGains) {
                     return .channel(lease)
                 }
+                await store.willMove(id, by: owner)
                 try? await engine.retune(centerHz: before)
                 if !gains.isEmpty { await restoreGainStates(entryGains, on: engine) }
-                await store.publishCapture(id)
+                await store.publishCapture(id, by: owner)
             case .decline:
                 continue
             }
@@ -175,13 +178,15 @@ actor SessionCaptureAllocator: CaptureAllocator {
     /// not is destroyed or put back as it was, with "<model> cannot tune to <f>" as the reason and
     /// `NO_DEVICE` as the code. `gains` are read as `allocateChannel` reads them.
     private func allocateCaptureIQ(frequencyHz: UInt64, sampleRateHz wantedRate: UInt64,
-                                   deviceID wanted: DeviceID?, takeOver: Bool, dedicated: Bool,
+                                   deviceID wanted: DeviceID?, takeOver: Bool, dedicated: Bool, followsRetune: Bool,
                                    gains: [GainRequest], job: JobID) async -> AllocationResult
     {
         let state = await store.snapshot(scope: .daemon)
         let walk = CapturePlanner.walk(.iq(frequencyHz: frequencyHz, sampleRateHz: wantedRate, deviceID: wanted?.string,
                                            takeOver: takeOver, dedicated: dedicated), state: state)
-        let need = iqNeed(frequencyHz, dedicated: dedicated)
+        func need(centre: UInt64) -> SessionStore.ClaimNeed {
+            iqNeed(frequencyHz, centre: centre, dedicated: dedicated, followsRetune: followsRetune)
+        }
         var progress = Progress(walk)
         for step in walk.steps {
             guard case .attempt(let plan) = step else {
@@ -194,7 +199,7 @@ actor SessionCaptureAllocator: CaptureAllocator {
                       let cap = state.captures.first(where: { $0.captureID == captureID }),
                       let engine = await store.captureEngine(id) else { continue }
                 return .captureIQ(await iqLease(id, engine: engine, rate: cap.sampleRate, created: false, job: job,
-                                                need: need, dedicated: dedicated,
+                                                need: need(centre: cap.centerHz),
                                                 gainOutcome: await leftAsFound(id, gains)))
             case .create(let device, let centre, let rate):
                 guard let deviceID = DeviceID(string: device),
@@ -215,8 +220,9 @@ actor SessionCaptureAllocator: CaptureAllocator {
                         }
                     }
                     let outcome = await setGains(gains, on: id)
+                    let made = await engine.snapshot
                     return .captureIQ(await iqLease(id, engine: engine, rate: rate, created: true, job: job,
-                                                    need: need, dedicated: dedicated, gainOutcome: outcome))
+                                                    need: need(centre: made.centerHz), gainOutcome: outcome))
                 } catch {
                     progress.failed((error as? EngineError)?.message ?? "\(error)", code: EngineError.Code.deviceBusy)
                     log.debug("iq decode job could not open \(device): \(progress.reason)")
@@ -226,12 +232,13 @@ actor SessionCaptureAllocator: CaptureAllocator {
                       let cap = state.captures.first(where: { $0.captureID == captureID }),
                       let descriptor = state.devices.first(where: { $0.deviceID == cap.deviceID }),
                       let engine = await store.captureEngine(id) else { continue }
+                await store.willMove(id, by: .job(job))
                 do {
                     if rate != cap.sampleRate { try await engine.setSampleRate(rate) }
                     try await engine.retune(centerHz: centre)
                 } catch {
                     progress.failed((error as? EngineError)?.message ?? "\(error)", code: EngineError.Code.deviceBusy)
-                    await restore(engine, to: cap, id: id)
+                    await restore(engine, to: cap, id: id, job: job)
                     continue
                 }
                 // The retune returned, but a dedicated decoder reads only a capture that is where it
@@ -241,15 +248,16 @@ actor SessionCaptureAllocator: CaptureAllocator {
                     guard CapturePlanner.isCentred(centerHz: now.centerHz, sampleRate: now.sampleRate,
                                                    on: frequencyHz, rate: rate) else {
                         progress.failed(CapturePlanner.cannotCentre(descriptor, on: frequencyHz), code: EngineError.Code.noDevice)
-                        await restore(engine, to: cap, id: id)
+                        await restore(engine, to: cap, id: id, job: job)
                         continue
                     }
                 }
-                let entryGains = await engine.snapshot.gains
+                let landed = await engine.snapshot
+                let entryGains = landed.gains
                 let outcome = await setGains(gains, on: id)
-                await store.publishCapture(id)
+                await store.publishCapture(id, by: .job(job))
                 return .captureIQ(await iqLease(id, engine: engine, rate: rate, created: false, job: job,
-                                                need: need, dedicated: dedicated,
+                                                need: need(centre: landed.centerHz),
                                                 gainOutcome: outcome, restoreGains: gains.isEmpty ? [] : entryGains))
             case .decline:
                 continue
@@ -260,22 +268,25 @@ actor SessionCaptureAllocator: CaptureAllocator {
 
     /// Puts a capture a declined IQ job retuned back to the rate and centre it had, as a declined
     /// job must leave it: the rate can land and the retune fail, or both land somewhere else.
-    private func restore(_ engine: any CaptureEngine, to cap: Leyline_V1_Capture, id: CaptureID) async {
+    private func restore(_ engine: any CaptureEngine, to cap: Leyline_V1_Capture, id: CaptureID, job: JobID) async {
         let now = await engine.snapshot
+        await store.willMove(id, by: .job(job))
         if now.sampleRate != cap.sampleRate { try? await engine.setSampleRate(cap.sampleRate) }
         if now.centerHz != cap.centerHz { try? await engine.retune(centerHz: cap.centerHz) }
-        await store.publishCapture(id)
+        await store.publishCapture(id, by: .job(job))
     }
 
     /// A lease on `id` for `job`, with the job's IQ claim on the capture until it is released:
     /// such a capture is in use, since retuning it moves the band under every job reading it.
     private func iqLease(_ id: CaptureID, engine: any CaptureEngine, rate: UInt64, created: Bool,
-                         job: JobID, need: SessionStore.ClaimNeed, dedicated: Bool,
+                         job: JobID, need: SessionStore.ClaimNeed,
                          gainOutcome: LeaseGainOutcome = .notAsked,
                          restoreGains: [GainState] = []) async -> SessionCaptureIQLease
     {
+        // Every IQ reader reads at the rate it was handed: a decoder's descriptor and a
+        // recording's manifest both name it.
         let claim = await store.addClaim(on: id, holder: .job(job), kind: .claimIq, priority: .priorityJob,
-                                         need: need, sampleRateHz: dedicated ? rate : 0)
+                                         need: need, sampleRateHz: rate)
         return SessionCaptureIQLease(captureID: id, capture: engine, sampleRateHz: rate, createdCapture: created,
                                      store: store, gainOutcome: gainOutcome, restoreGains: restoreGains) { [store] in
             // Says whether any other job still reads the capture.
@@ -284,11 +295,14 @@ actor SessionCaptureAllocator: CaptureAllocator {
         }
     }
 
-    /// What an IQ job needs: the capture's centre for a dedicated decoder, else its frequency
-    /// anywhere in the span.
-    private func iqNeed(_ frequencyHz: UInt64, dedicated: Bool) -> SessionStore.ClaimNeed {
-        dedicated ? .centred(frequencyHz: frequencyHz, toleranceHz: Self.centredToleranceHz)
-            : .covers(frequencyHz: frequencyHz, bandwidthHz: 0)
+    /// What an IQ job needs: a dedicated decoder, the capture centred on its frequency; an IQ
+    /// recording, its frequency anywhere in the span (a retune that keeps it starts a new part);
+    /// any other IQ decoder, the centre it was handed (`centre`), which its plugin's descriptor
+    /// names and which it holds the capture to (`IQDecodeRunner.followCapture`).
+    private func iqNeed(_ frequencyHz: UInt64, centre: UInt64, dedicated: Bool, followsRetune: Bool) -> SessionStore.ClaimNeed {
+        if dedicated { return .centred(frequencyHz: frequencyHz, toleranceHz: Self.centredToleranceHz) }
+        if followsRetune { return .covers(frequencyHz: frequencyHz, bandwidthHz: 0) }
+        return .centred(frequencyHz: centre, toleranceHz: 0)
     }
 
     // MARK: A decode job's gain
@@ -543,8 +557,14 @@ actor SessionCaptureLease: CaptureLease {
 
     func retune(centerHz: UInt64) async throws {
         guard !released else { throw EngineError.captureNotFound(captureID.string) }
-        try await engine.retune(centerHz: centerHz)
-        await store.publishCapture(captureID)
+        await store.willMove(captureID, by: .job(job))
+        do {
+            try await engine.retune(centerHz: centerHz)
+        } catch {
+            await store.moveFailed(captureID, by: .job(job))
+            throw error
+        }
+        await store.publishCapture(captureID, by: .job(job))
     }
 
     /// Puts the capture back, then releases the sweep's claim: until then nobody else can tune it,
@@ -555,11 +575,12 @@ actor SessionCaptureLease: CaptureLease {
         if createdByLease {
             await store.destroyCapture(id: captureID, by: .daemon)
         } else {
+            await store.willMove(captureID, by: .job(job))
             try? await engine.retune(centerHz: entryCenterHz)
             for g in entryGains {
                 try? await engine.setGain(element: g.element, value: g.value)
             }
-            await store.publishCapture(captureID)
+            await store.publishCapture(captureID, by: .job(job))
         }
         await onRelease()
     }
@@ -608,9 +629,12 @@ actor SessionChannelLease: ChannelLease {
         if createdCapture {
             await store.destroyCapture(id: captureID, by: .daemon)
         } else if restoreCenterHz != nil || !restoreGains.isEmpty, let capture = await store.captureEngine(captureID) {
-            if let centre = restoreCenterHz { try? await capture.retune(centerHz: centre) }
+            if let centre = restoreCenterHz {
+                await store.willMove(captureID, by: owner)
+                try? await capture.retune(centerHz: centre)
+            }
             await restoreGainStates(restoreGains, on: capture)
-            await store.publishCapture(captureID)
+            await store.publishCapture(captureID, by: owner)
         }
     }
 }

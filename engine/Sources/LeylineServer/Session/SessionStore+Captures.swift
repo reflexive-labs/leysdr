@@ -13,16 +13,24 @@ extension SessionStore {
     /// RTL-SDR default rate when `sample_rate == 0` (file devices use the recording's rate).
     static let defaultSampleRate: UInt64 = 2_400_000
 
-    func captureProto(_ id: CaptureID) async -> Leyline_V1_Capture? {
+    /// The capture as it stands. `by` is the writer of the event this is for: the first event that
+    /// sees the capture moved records the move, naming the mover the store was told about
+    /// (`willMove`) or else `by`, and every claim the move leaves unsatisfied goes DISPLACED with it.
+    func captureProto(_ id: CaptureID, by: ClientContext? = nil) async -> Leyline_V1_Capture? {
         guard let entry = captures[id] else { return nil }
         let snap = await entry.engine.snapshot
-        var proto = ProtoMapping.capture(id: id, deviceID: entry.deviceID, snapshot: snap, meta: entry.meta)
-        proto.claims = await claimProtos(entry.claims, centerHz: snap.centerHz, sampleRate: snap.sampleRate)
+        noteTuning(id, snap, by: by)
+        guard let now = captures[id] else { return nil }
+        var proto = ProtoMapping.capture(id: id, deviceID: now.deviceID, snapshot: snap, meta: now.meta)
+        proto.tuningGeneration = snap.tuningGeneration
+        proto.claims = await claimProtos(id, now.claims, centerHz: snap.centerHz, sampleRate: snap.sampleRate)
         return proto
     }
 
     func emitCapture(_ id: CaptureID, by: ClientContext) async {
-        guard let p = await captureProto(id) else { return }
+        guard let p = await captureProto(id, by: by) else { return }
+        // A view's arrival or departure waiting to be published goes out on this event.
+        captures[id]?.viewChanged = false
         emit(.capture(p), captureID: id, by: by)
     }
 
@@ -78,8 +86,11 @@ extension SessionStore {
             throw error
         }
         let id = engine.id
+        let started = await engine.snapshot
         var entry = CaptureEntry(engine: engine, deviceID: deviceID,
-                                 meta: .init(createdBy: by.proto, lastInteractiveWriteNs: 0, liveAudioSinks: 0), anchorTask: nil)
+                                 meta: .init(createdBy: by.proto, lastInteractiveWriteNs: 0, liveAudioSinks: 0), anchorTask: nil,
+                                 published: PublishedTuning(centerHz: started.centerHz, sampleRate: started.sampleRate,
+                                                            generation: started.tuningGeneration))
         let anchors = engine.anchorEvents
         entry.anchorTask = Task { [weak self] in
             for await a in anchors {
@@ -135,9 +146,11 @@ extension SessionStore {
 
     /// Re-emits a capture's full state. The capture allocator's lease uses this after retuning or
     /// restoring, because it deliberately bypasses `applyWrite` -- the write coalescer keeps
-    /// last-value-per-parameter on a 20 ms tick and would silently eat sweep steps.
-    func publishCapture(_ id: CaptureID) async {
-        await emitCapture(id, by: .daemon)
+    /// last-value-per-parameter on a 20 ms tick and would silently eat sweep steps. `by` is who
+    /// moved it, a job for a job's allocation, sweep or restore, and is what a displaced claim
+    /// and the displaced job's detail name.
+    func publishCapture(_ id: CaptureID, by: ClientContext = .daemon) async {
+        await emitCapture(id, by: by)
     }
 
     private func anchorArrived(_ id: CaptureID, _ anchor: CaptureAnchor) {
@@ -155,6 +168,7 @@ extension SessionStore {
         entry.anchorTask?.cancel()
         let snap = await entry.engine.snapshot
         captures[id]?.presences.values.forEach { $0.lapse?.cancel() }
+        captures[id]?.viewFlush?.cancel()
         captures[id] = nil
         var proto = ProtoMapping.capture(id: id, deviceID: entry.deviceID, snapshot: snap, meta: entry.meta)
         // Terminal event: state unset is the tombstone Channel and Sink use, and it is the only

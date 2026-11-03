@@ -24,7 +24,13 @@ extension SessionStore {
                 // A retune can bring a channel back into capture after a rate change: its chain is
                 // re-planned at the current rate only then, so audio rates are reconciled here too.
                 let ratesBefore = audioRates(captureID: id)
-                try await entry.engine.retune(centerHz: hz)
+                willMove(id, by: by)
+                do {
+                    try await entry.engine.retune(centerHz: hz)
+                } catch {
+                    moveFailed(id, by: by)
+                    throw error
+                }
                 touchActivity(id, by: by)
                 await emitCapture(id, by: by)
                 await reconcileAudioRates(captureID: id, before: ratesBefore, by: by)
@@ -35,6 +41,7 @@ extension SessionStore {
                     throw EngineError.rateUnsupported(hz, target: w.targetID)
                 }
                 let ratesBefore = audioRates(captureID: id)
+                willMove(id, by: by)
                 do {
                     try await entry.engine.setSampleRate(hz)
                 } catch {

@@ -367,7 +367,7 @@ actor IQDecodeRunner: DecodeRunning {
     private func followCapture() async {
         while !Task.isCancelled, !stopped {
             let snapshot = await lease.capture.snapshot
-            let why = awayReason(snapshot)
+            let why = await awayReason(snapshot)
             if why == nil, awayDetail == nil, snapshot.tuningGeneration != seenGeneration {
                 // Home at both looks, but retuned in between (away and back, or set again where it
                 // was): treated as moved, for as long as one frame.
@@ -387,21 +387,30 @@ actor IQDecodeRunner: DecodeRunning {
         }
     }
 
-    /// Why the capture is not the band the plugin's descriptor names, or nil when it is.
-    private func awayReason(_ snapshot: CaptureSnapshot) -> String? {
+    /// Why the capture is not the band the plugin's descriptor names, or nil when it is. Once the
+    /// move is published the detail names who made it ("paused: the app tuned NESDR SMArt v5 to
+    /// 146.520 MHz; ..."); until then, and for a move nobody is named for, it says what moved.
+    private func awayReason(_ snapshot: CaptureSnapshot) async -> String? {
         let waiting = "waiting for it to come back"
         if snapshot.detached { return "the radio went away; \(waiting)" }
         let half = snapshot.sampleRate / 2
         let covers = frequencyHz + half >= snapshot.centerHz && frequencyHz <= snapshot.centerHz + half
-        if !covers { return "the capture moved away from \(fmtMHz(frequencyHz)); \(waiting)" }
+        let away = !covers || snapshot.centerHz != tuning.centerHz || snapshot.sampleRate != tuning.rate
+        guard away else { return nil }
+        let moved = await store.whoMoved(lease.captureID)
+        if !covers {
+            if let moved { return "paused: \(moved); resumes when \(fmtMHz(frequencyHz)) is back in the capture" }
+            return "the capture moved away from \(fmtMHz(frequencyHz)); \(waiting)"
+        }
         if snapshot.centerHz != tuning.centerHz {
+            if let moved { return "paused: \(moved); resumes when the capture is back on \(fmtMHz(tuning.centerHz))" }
             return "the capture moved from \(fmtMHz(tuning.centerHz)) to \(fmtMHz(snapshot.centerHz)); \(waiting)"
         }
-        if snapshot.sampleRate != tuning.rate {
-            return String(format: "the capture's rate changed from %.3f to %.3f MSPS; ",
-                          Double(tuning.rate) / 1e6, Double(snapshot.sampleRate) / 1e6) + waiting
+        if let moved {
+            return "paused: \(moved); resumes when the capture is back at " + String(format: "%.3f MSPS", Double(tuning.rate) / 1e6)
         }
-        return nil
+        return String(format: "the capture's rate changed from %.3f to %.3f MSPS; ",
+                      Double(tuning.rate) / 1e6, Double(snapshot.sampleRate) / 1e6) + waiting
     }
 
     /// RUNNING with `detail`, or DEGRADED with the away detail while the capture is away. A plugin

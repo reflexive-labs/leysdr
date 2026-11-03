@@ -97,6 +97,33 @@ actor SessionStore {
         /// The PERSON presence of each interactive client, by client id: which claim it is and
         /// when the client last wrote to the capture.
         var presences: [String: PresenceWindow] = [:]
+        /// The tuning the last capture event carried, so the next one can tell a move from any
+        /// other change, and the last move with who made it (`SessionStore+Claims.swift`).
+        var published: PublishedTuning
+        var lastMove: CaptureMove?
+        /// Who is about to move the capture: set before a retune or rate change is carried out,
+        /// so the event that first sees the move names the mover whoever publishes it.
+        var pendingMover: ClientContext?
+        /// A VIEW claim came or went since the last capture event. It rides the next event, or
+        /// the one `viewFlush` publishes a second later (`noteViewChange`).
+        var viewChanged = false
+        var viewFlush: Task<Void, Never>?
+    }
+
+    /// Where a capture was tuned on its last event.
+    struct PublishedTuning: Sendable {
+        var centerHz: UInt64
+        var sampleRate: UInt64
+        var generation: UInt64
+    }
+
+    /// One move of a capture, and who made it: a person's write, a job's allocation or sweep,
+    /// a lease putting the radio back, or the daemon.
+    struct CaptureMove: Sendable {
+        var by: ClientContext
+        var from: PublishedTuning
+        var to: PublishedTuning
+        var atNs: Int64
     }
 
     struct ChannelEntry {

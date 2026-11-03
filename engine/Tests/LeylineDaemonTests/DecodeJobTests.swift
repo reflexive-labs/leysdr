@@ -412,9 +412,11 @@ final class DecodeJobTests: XCTestCase {
                 _ = try await c.control.writeParams(metadata: testMetadata) { writer in try await writer.write(message) }
             }
             try await retune(tag: 1, to: 103_000_000)
-            let degraded = try await self.waitForJob(c, started.jobID) { $0.state == .degraded }
+            // CL-3: the detail names who moved the radio and where, once the move is published.
+            let degraded = try await self.waitForJob(c, started.jobID) { $0.state == .degraded && $0.statusDetail.hasPrefix("paused:") }
             XCTAssertNotNil(degraded, "a channel out of its capture degrades the job")
-            XCTAssertTrue(degraded?.statusDetail.contains("moved away") == true, degraded?.statusDetail ?? "")
+            XCTAssertEqual(degraded?.statusDetail,
+                           "paused: a terminal tuned rebindable to 103.000 MHz; resumes when 100.100 MHz is back in the capture")
             // Records still arrive after the move, and the record count's republish must not read
             // as the channel coming back: past one republish interval the
             // job is still DEGRADED. Without this hold the wait above passes only when a poll lands

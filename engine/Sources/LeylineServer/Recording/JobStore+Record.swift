@@ -245,7 +245,8 @@ extension JobStore {
             // The job's own claim: the capture's IQ at the centre it recorded from.
             let claim = await store.addClaim(on: borrowed.captureID, holder: .job(id), kind: .claimIq,
                                              priority: .priorityJob,
-                                             need: .covers(frequencyHz: snapshot.centerHz, bandwidthHz: 0))
+                                             need: .covers(frequencyHz: snapshot.centerHz, bandwidthHz: 0),
+                                             sampleRateHz: snapshot.sampleRate)
             lease = BorrowedCaptureIQLease(captureID: borrowed.captureID, capture: capture,
                                            sampleRateHz: snapshot.sampleRate) { [store] in
                 if let claim { await store.releaseClaim(claim, on: borrowed.captureID) }
@@ -254,7 +255,7 @@ extension JobStore {
             let deviceID = config.deviceID.isEmpty ? nil : DeviceID(string: config.deviceID)
             let allocation = await allocator.allocate(
                 .captureIQ(frequencyHz: config.frequencyHz, sampleRateHz: 0, deviceID: deviceID,
-                           takeOver: config.takeOver), for: id)
+                           takeOver: config.takeOver, followsRetune: true), for: id)
             guard case .captureIQ(let made) = allocation else {
                 await declineRecord(id, allocation)
                 return
@@ -298,6 +299,9 @@ extension JobStore {
             jobID: id, source: .iq(lease: lease), writer: writer, store: store, recordings: recordings,
             captureRateHz: snapshot.sampleRate, durationMs: config.durationMs, partMs: partMs,
             gated: false, preRollMs: 0, hangMs: 0, stopAfterQuietMs: 0,
+            // What the recording needs in the span: the frequency it was asked for, or for a
+            // borrowed channel's capture the centre it started at.
+            iqFrequencyHz: borrowed == nil && config.frequencyHz > 0 ? config.frequencyHz : snapshot.centerHz,
             onStatus: { [weak self] state, detail, code in
                 await self?.setRecordStatus(id, state: state, detail: detail, code: code)
             })

@@ -162,15 +162,30 @@ actor RecordRunner: RecordRunning {
     private var seedPending = false
     private var squelchChangedAt: ContinuousClock.Instant = .now
     private var degraded = false
+    /// The DEGRADED detail last published, so the one naming who moved the radio replaces the
+    /// plain one as soon as the move is published (`refreshDegraded`).
+    private var degradedDetail: String?
+    /// The wall clock the recording went out of capture at, for the detail.
+    private var degradedSince = ""
+    /// The frequency an IQ recording needs in the capture's span: what it was asked to record.
+    private let iqFrequencyHz: UInt64
+    /// The tuning an IQ recording's frames were last made at (`Frame` tuning off the capture's
+    /// core). A new generation closes the part: two tunings never share one file.
+    private var iqTuning = FrameTuning()
+    /// The capture has moved off what an IQ recording needs: its frequency in span, at its rate.
+    private var iqDisplaced = false
+    /// The capture's radio is gone (`followCapture`), which pauses an IQ recording too.
+    private var detachedAway = false
     /// Set once the capture's real anchor has replaced the placeholder read at allocation.
     private var anchored = false
 
     init(jobID: JobID, source: Source, writer: PartWriter, store: SessionStore,
          recordings: RecordingStore, captureRateHz: UInt64, durationMs: Int64, partMs: Int64,
-         gated: Bool, preRollMs: UInt32, hangMs: UInt32, stopAfterQuietMs: Int64,
+         gated: Bool, preRollMs: UInt32, hangMs: UInt32, stopAfterQuietMs: Int64, iqFrequencyHz: UInt64 = 0,
          onStatus: @escaping @Sendable (Leyline_V1_JobState, String, String?) async -> Void)
     {
         self.jobID = jobID
+        self.iqFrequencyHz = iqFrequencyHz
         self.source = source
         self.writer = writer
         self.store = store
@@ -467,7 +482,10 @@ actor RecordRunner: RecordRunning {
     private func runIQ(lease: any CaptureIQLease) async {
         let ring = FrameRing(slots: Self.iqSlots, slotBytes: CaptureDSPCore.blockSize * 8)
         let tapID = StreamID()
-        let tap = IQFrameTap(id: tapID, ring: ring)
+        // The capture's core stamps each block with where the capture was tuned, so a retune is
+        // seen on the frame it lands on rather than at the next poll.
+        let core = await store.captureEngine(lease.captureID)?.core
+        let tap = IQFrameTap(id: tapID, ring: ring, core: core)
         await lease.capture.addTap(tap)
         wake = { ring.wake() }
         let liveness = Task { [weak self] in await self?.followLiveness() }
@@ -574,19 +592,59 @@ actor RecordRunner: RecordRunning {
         await endIfDurationReached(at: frameEnd)
     }
 
+    /// One IQ block. A block made at a new tuning generation closes the open part first, so two
+    /// tunings never share one file; the next part opens at the new centre when the capture still
+    /// gives the recording what it needs, and the recording pauses (DEGRADED, the span marked as a
+    /// coverage gap) until it does again when it does not.
     private func handleIQ(_ popped: FrameRing.Popped) async {
         await anchorOnce()
+        let t = popped.tuning
         if !started {
             started = true
             startSample = popped.sampleStart
             now = popped.sampleStart
-            await openPart(at: popped.sampleStart)
+            iqTuning = t
+            if t.spanHz > 0 { await iqRetuned(t, at: popped.sampleStart) }
+        } else if t.spanHz > 0, t.generation != iqTuning.generation {
+            iqTuning = t
+            await iqRetuned(t, at: popped.sampleStart)
         }
         now = popped.sampleStart + popped.sampleCount
+        if degraded {
+            // Nothing is written while the capture is elsewhere, but the clock still runs.
+            await endIfDurationReached(at: now)
+            return
+        }
+        if !(await writer.isPartOpen) { await openPart(at: popped.sampleStart, gapReason: nil) }
         await writer.append(iq: popped.payload)
         await cutPartIfDue(at: now)
         if await failIfWriteFailed() { return }
         await endIfDurationReached(at: now)
+    }
+
+    /// The capture's tuning changed under an IQ recording at `sample`: the open part ends there,
+    /// and the recording follows the capture when it still covers the frequency at the rate, or
+    /// pauses until it does.
+    private func iqRetuned(_ t: FrameTuning, at sample: UInt64) async {
+        if await writer.isPartOpen { await closePart(endSample: sample) }
+        if iqSatisfies(t) {
+            await writer.retarget(captureID: captureID.string, centerHz: t.centerHz)
+            if iqDisplaced {
+                iqDisplaced = false
+                if !detachedAway { await backInCapture(at: sample) }
+            }
+        } else if !iqDisplaced {
+            iqDisplaced = true
+            await outOfCapture(at: sample)
+        }
+    }
+
+    /// Whether a capture at `t` gives an IQ recording what it needs: its frequency inside the span,
+    /// at the rate the recording's manifest names.
+    private func iqSatisfies(_ t: FrameTuning) -> Bool {
+        guard t.spanHz == captureRateHz else { return false }
+        guard iqFrequencyHz > 0 else { return true }
+        return CapturePlanner.spanCovers(centerHz: t.centerHz, rate: t.spanHz, frequencyHz: iqFrequencyHz)
     }
 
     /// The part timer. A part longer than `part_ms` is cut and the next one begins contiguously on
@@ -682,13 +740,15 @@ actor RecordRunner: RecordRunning {
         }
     }
 
-    private func openPart(at sample: UInt64) async {
+    /// `gapReason` names the coverage between the last part's end and this one's start; nil for a
+    /// part whose gap, if any, is already marked (an IQ recording back in capture).
+    private func openPart(at sample: UInt64, gapReason: String? = "squelch closed") async {
         await writer.openPart(at: sample)
         currentPartStart = sample
         // Coverage between the last part's end and this one's start is time the recording does not
         // hold. A continuous recording never lands here; a gated one does on every exchange.
-        if let last = await writer.manifest.parts.last, last.endSample < sample {
-            await writer.noteGap(from: last.endSample, to: sample, reason: "squelch closed")
+        if let gapReason, let last = await writer.manifest.parts.last, last.endSample < sample {
+            await writer.noteGap(from: last.endSample, to: sample, reason: gapReason)
         }
     }
 
@@ -845,25 +905,50 @@ actor RecordRunner: RecordRunning {
                     await backInCapture()
                 }
             }
+            await refreshDegraded()
             try? await Task.sleep(nanoseconds: 200_000_000)
         }
     }
 
     /// The IQ form has no channel: a capture that goes away stops the tap delivering, and the
-    /// detach is what the job reports.
+    /// detach is what the job reports. A retune is seen on the frames (`handleIQ`).
     private func followCapture(lease: any CaptureIQLease) async {
         while !Task.isCancelled, !stopped {
             let snapshot = await lease.capture.snapshot
-            if snapshot.detached, !degraded {
+            if snapshot.detached, !detachedAway {
+                detachedAway = true
                 await outOfCapture()
-            } else if !snapshot.detached, degraded {
-                await backInCapture()
+            } else if !snapshot.detached, detachedAway {
+                detachedAway = false
+                if !iqDisplaced { await backInCapture() }
             }
+            await refreshDegraded()
             try? await Task.sleep(nanoseconds: 200_000_000)
         }
     }
 
-    private func outOfCapture() async {
+    /// The DEGRADED detail: who moved the radio and where, once the move is published ("paused
+    /// since 14:05:10: the app tuned NESDR SMArt v5 to 146.520 MHz; resumes when 145.800 MHz is
+    /// back in the capture"), and what happened until then or when nobody moved it.
+    private func degradedText() async -> String {
+        let f = fmtMHz(iqFrequencyHz > 0 ? iqFrequencyHz : await writer.manifest.frequencyHz)
+        if !detachedAway, let moved = await store.whoMoved(captureID) {
+            return "paused since \(degradedSince): \(moved); resumes when \(f) is back in the capture"
+        }
+        return "out of capture since \(degradedSince), will resume when \(f) is back"
+    }
+
+    /// Publishes the DEGRADED detail again when it has changed: the move it names is published a
+    /// moment after the recording sees the capture leave.
+    private func refreshDegraded() async {
+        guard degraded, !stopped, endedBy == nil else { return }
+        let text = await degradedText()
+        guard text != degradedDetail else { return }
+        degradedDetail = text
+        await onStatus(.degraded, text, nil)
+    }
+
+    private func outOfCapture(at sample: UInt64? = nil) async {
         guard !degraded else { return }
         // The audio from before the channel left goes in first, with what was heard about it.
         if gated {
@@ -881,22 +966,28 @@ actor RecordRunner: RecordRunning {
             squelchKnown = false
             preRoll.removeAll(keepingCapacity: true)
         }
-        if await writer.isPartOpen { await closePart(endSample: now) }
-        outOfCaptureFrom = now
-        let when = Date(timeIntervalSince1970: Double(WallClock.nowNs()) / 1e9).formatted(date: .omitted, time: .standard)
-        await onStatus(.degraded, "out of capture since \(when), will resume when \(fmtMHz(await writer.manifest.frequencyHz)) is back", nil)
+        if await writer.isPartOpen { await closePart(endSample: sample ?? now) }
+        outOfCaptureFrom = sample ?? now
+        degradedSince = Date(timeIntervalSince1970: Double(WallClock.nowNs()) / 1e9).formatted(date: .omitted, time: .standard)
+        degradedDetail = nil
+        await refreshDegraded()
     }
 
     private var outOfCaptureFrom: UInt64 = 0
 
-    private func backInCapture() async {
+    /// The capture gives the recording what it needs again, at `sample` (the drain's position when
+    /// nil). The span it was away is a coverage gap; an audio recording opens its next part here,
+    /// an IQ recording at its next frame.
+    private func backInCapture(at sample: UInt64? = nil) async {
         guard degraded else { return }
         degraded = false
-        if outOfCaptureFrom > 0, now > outOfCaptureFrom {
-            await writer.noteGap(from: outOfCaptureFrom, to: now, reason: "out of capture")
+        degradedDetail = nil
+        let back = sample ?? now
+        if outOfCaptureFrom > 0, back > outOfCaptureFrom {
+            await writer.noteGap(from: outOfCaptureFrom, to: back, reason: "out of capture")
         }
         outOfCaptureFrom = 0
-        if !gated { await openPart(at: now) }
+        if !gated, case .audio = source { await openPart(at: now) }
         await onStatus(.running, await runningDetail(), nil)
     }
 
