@@ -62,7 +62,11 @@ What changed for someone using Leyline, newest first. Each released version has 
   `--socket` reaches the daemon. The decoder inspector's values line up in one column. Renaming a
   bookmark added from a scan hit on a bookmarked frequency edits that bookmark.
 - **Fixed: a decoder started just after another program released the dongle ran at 0 dB.**
-  <!-- pending: tuner probe fix -->
+  A daemon that started while `rtl_tcp` (or SDR++, GQRX) held the dongle never learned its gain
+  table, so a decoder that opened the dongle afterwards asked for 40 dB and got 0 dB, and heard
+  nothing. Opening the dongle now reads its tuner and gains, a fixed gain on a stage with no table
+  is refused rather than set to 0 dB, and the `ley decode` banner names the gain. A decode job
+  whose radio stops delivering samples for 5 s now says so (`no samples from … for 5 s`).
 - **Fixed: a transcription of a recording lost overs.** A recording of more than nine overs came
   back with most of them missing and no warning. The engine now waits for the speech decoder
   instead of dropping an over, and a finished job's detail says how many overs have no record
