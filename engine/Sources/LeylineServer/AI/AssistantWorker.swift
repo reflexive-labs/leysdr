@@ -31,6 +31,8 @@ final class AssistantWorker: @unchecked Sendable {
     /// How long a worker whose stdin has closed gets to exit before it is asked, then made, to go.
     static let exitGraceSeconds: Double = 2
 
+    /// This worker's `writeDeadlineSeconds`; a test passes a longer one (`ConversationStore.Timing`).
+    private let writeDeadline: Duration
     private let child: ChildProcess
     /// The write end of stdin as a raw descriptor, nil once closed: cached for the reason
     /// `PluginProcess.writeFD` gives (NSFileHandle raises on a closed handle).
@@ -50,10 +52,12 @@ final class AssistantWorker: @unchecked Sendable {
     var exits: AsyncStream<Int32> { child.exits }
 
     /// `onWriteFailure` hears, once, that a write did not reach the worker: its stdin closed, or it
-    /// took nothing for `writeDeadlineSeconds`. It is called on the write queue.
+    /// took nothing for `writeDeadline`. It is called on the write queue.
     init(executable: String, args: [String], environment: [String: String],
+         writeDeadline: Duration = .seconds(AssistantWorker.writeDeadlineSeconds),
          onWriteFailure: @escaping @Sendable (EngineError) -> Void)
     {
+        self.writeDeadline = writeDeadline
         self.onWriteFailure = onWriteFailure
         child = ChildProcess(executable: executable, args: args, environment: environment)
         (messages, messagesContinuation) = AsyncStream<Leyline_V1_WorkerMessage>.makeStream(bufferingPolicy: .unbounded)
@@ -118,11 +122,11 @@ final class AssistantWorker: @unchecked Sendable {
         onWriteFailure(error)
     }
 
-    /// Writes `bytes` whole, waiting up to `writeDeadlineSeconds` for room. The lock covers one
+    /// Writes `bytes` whole, waiting up to `writeDeadline` for room. The lock covers one
     /// non-blocking write at a time and never the wait between them, so `stop` is never held up.
     private func write(_ bytes: [UInt8]) throws {
         var offset = 0
-        let deadline = ContinuousClock.now.advanced(by: .seconds(Self.writeDeadlineSeconds))
+        let deadline = ContinuousClock.now.advanced(by: writeDeadline)
         while offset < bytes.count {
             let attempt = writeFD.withLock { fd -> (fd: Int32, written: Int, error: Int32)? in
                 guard let fd, !closing.load(ordering: .acquiring) else { return nil }
@@ -136,7 +140,7 @@ final class AssistantWorker: @unchecked Sendable {
                 throw Self.notReading(String(cString: strerror(attempt.error)))
             }
             guard ContinuousClock.now < deadline else {
-                throw Self.notReading("it took nothing for \(Int(Self.writeDeadlineSeconds)) s")
+                throw Self.notReading("it took nothing for \(writeDeadline.components.seconds) s")
             }
             // The descriptor may be closed under the poll; that only ends the wait early.
             var pfd = pollfd(fd: attempt.fd, events: Int16(POLLOUT), revents: 0)
@@ -176,6 +180,7 @@ extension WorkerProcess {
     /// anything else. Throws `PROVIDER_UNAVAILABLE` when there is no `ley` or it cannot be started;
     /// a worker that does not read what it is sent is reported through `onWriteFailure`.
     func startAssistant(credential: Leyline_V1_SetCredentialRequest, start: Leyline_V1_WorkerStart,
+                        writeDeadline: Duration = .seconds(AssistantWorker.writeDeadlineSeconds),
                         onWriteFailure: @escaping @Sendable (EngineError) -> Void) throws -> AssistantWorker
     {
         let provider = credential.provider
@@ -188,7 +193,8 @@ extension WorkerProcess {
         var environment = PluginProcess.environment(sendingKey: true)
         environment["LEYLINE_SOCKET"] = socketPath
         let worker = AssistantWorker(executable: ley, args: ["worker", "assistant", "--conversation", start.conversationID],
-                                     environment: environment, onWriteFailure: onWriteFailure)
+                                     environment: environment, writeDeadline: writeDeadline,
+                                     onWriteFailure: onWriteFailure)
         do {
             try worker.run(log: Logger(label: "leyline.assistant.\(start.conversationID)"), secret: credential.secret)
         } catch {

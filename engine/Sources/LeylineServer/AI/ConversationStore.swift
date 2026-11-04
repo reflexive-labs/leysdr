@@ -32,11 +32,14 @@ import SwiftProtobuf
 
 actor ConversationStore {
     /// When an idle conversation's worker is stopped, and the clock that says so: a test passes a
-    /// clock of its own and a short sweep (`DecodeRunner` takes its timings the same way).
+    /// clock of its own and a short sweep (`DecodeRunner` takes its timings the same way). And how
+    /// long a write waits for a worker that is not reading, which a test lengthens so that a slow
+    /// machine is not taken for a worker that stopped reading.
     struct Timing: Sendable {
         var idleLimit: Duration = .seconds(30 * 60)
         var sweepEvery: Duration = .seconds(30)
         var now: @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now }
+        var workerWriteDeadline: Duration = .seconds(AssistantWorker.writeDeadlineSeconds)
     }
 
     /// Publishes a conversation on the event plane, caused by a client (`SessionStore.publishConversation`).
@@ -597,7 +600,8 @@ actor ConversationStore {
         start.transcriptPath = dir + "/" + Self.transcriptFile
         start.resume = resume
         start.mode = mode
-        let worker = try spawner.startAssistant(credential: credential, start: start) { [weak self] error in
+        let worker = try spawner.startAssistant(credential: credential, start: start,
+                                                writeDeadline: timing.workerWriteDeadline) { [weak self] error in
             Task { await self?.writeFailed(id, error) }
         }
         follow(worker, of: id)

@@ -607,27 +607,30 @@ final class AssistantServiceTests: XCTestCase {
     }
 
     func testAWorkerThatStopsReadingFailsAloneAndHoldsUpNoOtherConversation() async throws {
-        try await withAssistant(scripts: ["deaf", "text quick\nend"]) { c, _ in
+        // A write deadline far longer than a loaded runner takes to answer the other conversation
+        // (1.9 s on a loaded macOS runner, 0.3 s on an M-series Mac), so the test checks order
+        // and a slow machine never looks like the deaf write giving up.
+        let timing = ConversationStore.Timing(workerWriteDeadline: .seconds(6))
+        try await withAssistant(scripts: ["deaf", "text quick\nend"], timing: timing) { c, dir in
             let deaf = try await self.start(c).conversationID
+            // Workers take their scripts in the order they start, so the deaf one's worker is up
+            // with the first script before the other conversation starts a second.
+            let first = await fakeWorkerDump(dir + "/dump.1", within: 10)
+            XCTAssertEqual(first?["start.conversation"], deaf, "the deaf script went to the deaf conversation")
             let steady = try await self.start(c).conversationID
             // Far more than a pipe holds, so the write to the deaf worker waits for room.
             let flood = String(repeating: "x", count: 1 << 20)
-            let sentAt = ContinuousClock.now
             let flooded = try await self.send(c, deaf, flood)
             XCTAssertEqual(flooded.state, .conversationThinking)
             _ = try await self.send(c, steady, "hello")
-            let fine = try await self.conversation(c, steady) { $0.state == .conversationIdle && $0.turns.count == 2 }
+            let fine = try await self.conversation(c, steady, within: 6) { $0.state == .conversationIdle && $0.turns.count == 2 }
             XCTAssertEqual(fine.turns.last?.text, "quick")
             // A conversation that waited out the deaf write would answer only once that write had
-            // given up and failed its own: so the deaf one is still thinking, and the answer came
-            // inside the write deadline. Order rather than a tighter time, which a slow runner
-            // misses (1.9 s on a loaded macOS runner, 0.3 s on an M-series Mac).
+            // given up and failed its own conversation: so the deaf one is still thinking.
             let meanwhile = try await c.daemon.conversations.get(deaf)
             XCTAssertEqual(meanwhile.state, .conversationThinking,
                            "the other conversation did not wait out the deaf worker's write")
-            XCTAssertLessThan(ContinuousClock.now - sentAt, .seconds(AssistantWorker.writeDeadlineSeconds),
-                              "the other conversation did not wait out the deaf worker's write")
-            let failed = try await self.conversation(c, deaf, within: 10) { $0.state == .conversationFailed }
+            let failed = try await self.conversation(c, deaf, within: 20) { $0.state == .conversationFailed }
             XCTAssertEqual(failed.error.code, EngineError.Code.internalError)
             XCTAssertTrue(failed.error.message.contains("not reading"), failed.error.message)
         }
