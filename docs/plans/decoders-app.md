@@ -360,8 +360,8 @@ manifest, with no app work.
      appcast, so no lookup ever tells a server which aircraft this Mac hears. Make, model and type
      only: the FAA file names owners, and a private aircraft's owner is a person.
   3. Callsign to route needs a live service that learns what is heard; opt-in, or not at all.
-- **Map tiles in the app.** The Decoders map is MapKit, but no check has ever seen its tiles (staged
-  runs draw a plain projection), and the owner wants a real basemap under the markers. Find out
-  what the signed, hardened app shows today, then decide between MapKit as it is, an offline
-  tile set, or another source, minding tile licences and what a tile request reveals about the
-  Mac's location.
+- **Map tiles in the app.** Checked by eye on the owner's Mac on 2026-11-03: the Decoders map
+  shows Apple's MapKit tiles under the markers and reads well. Left to confirm: tiles in the
+  signed, hardened build on a second Mac (`../dev/release-checklist.md`), and whether an offline
+  tile set is worth having for a Mac with no network, since a tile request tells Apple roughly
+  where the map is looking.
