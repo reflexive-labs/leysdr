@@ -501,6 +501,9 @@ extension Theme.Layout {
     /// job's line indented under it.
     static let decoderSymbolWidth: CGFloat = 18
     static let decoderJobIndent: CGFloat = 26
+    /// The page header's icon buttons, the bell and Stop: their symbol's square, a line of the
+    /// header's words high, so each is as tall as Start beside them whatever its symbol.
+    static let decoderHeaderIcon: CGFloat = 16
     /// The log's rows: the time, the transmitter and the kind columns before the summary.
     static let decoderRowHeight: CGFloat = 22
     static let decoderTimeWidth: CGFloat = 64

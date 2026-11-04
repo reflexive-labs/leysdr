@@ -1813,9 +1813,9 @@ scenes:
   # (their times move by a second, hence the threshold). The table has a row per station, its
   # inspector names one into the scene's labels.json, which `ley label` reads back; the log and
   # the staged map follow (its tree without the inspector, whose job id is new each run); then
-  # Start runs a kept job beside the window's channel and Stop ends it. A field's name in the
-  # inspector has its whole name as a tooltip, and the log's kind column is as wide as its
-  # longest kind, `weather` (DA-17).
+  # Start runs a kept job beside the window's channel and Stop ends it; Stop and Notify Me… are
+  # icons, named by their tooltips. A field's name in the inspector has its whole name as a
+  # tooltip, and the log's kind column is as wide as its longest kind, `weather` (DA-17).
   - name: decoders-aprs
     covers: [DecodersView.swift, DecoderInspector.swift, DecoderSession.swift, DecoderMap.swift,
       DisplayTemplate.swift, EntityTable.swift, DecoderPages.swift, DecoderPlacement.swift,
@@ -1856,6 +1856,9 @@ scenes:
       - {cmd: press, identifier: decoders.page.start}
       - {cmd: wait, seconds: 2, expect_log: "started: aprs at 144390000 Hz, kept"}
       - {cmd: state, expect: {decoders.state: Running, decoders.start_shown: false}}
+      - {cmd: snapshot, name: running}
+      - {cmd: hover, identifier: decoders.page.stop, expect: {tooltip: Stop}}
+      - {cmd: hover, identifier: decoders.page.notify, expect: {tooltip: "Notify Me…"}}
       - {cmd: press, identifier: decoders.page.stop}
       - {cmd: wait, seconds: 2}
       - {cmd: state, expect: {decoders.state: Stopped, decoders.start_shown: true}}

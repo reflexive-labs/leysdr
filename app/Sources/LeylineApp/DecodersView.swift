@@ -304,13 +304,20 @@ struct DecoderPageHeader: View {
             }
             Spacer(minLength: 12)
             // Off where Start is: a watch is placed as a run is, so the sheet could start none.
-            Button("Notify Me…") { d.watchFor = manifest.name }
-                .buttonStyle(.bordered)
-                .disabled(!session.isLive || !placement.canStart)
-                .help(
-                    "Watch for a record that matches and get a notification, with the app closed too"
-                )
-                .accessibilityIdentifier("decoders.page.notify")
+            // Notify Me… and Stop are icons beside Start's words; the label and tooltip say them.
+            Button {
+                d.watchFor = manifest.name
+            } label: {
+                Label("Notify Me…", systemImage: "bell").labelStyle(.iconOnly)
+                    .frame(
+                        width: Theme.Layout.decoderHeaderIcon,
+                        height: Theme.Layout.decoderHeaderIcon)
+            }
+            .buttonStyle(.bordered)
+            .disabled(!session.isLive || !placement.canStart)
+            .help("Notify Me…")
+            .accessibilityLabel("Notify Me…")
+            .accessibilityIdentifier("decoders.page.notify")
             if running.isEmpty {
                 let starting = d.starting == manifest.name
                 Button(starting ? "Starting…" : "Start") {
@@ -322,12 +329,18 @@ struct DecoderPageHeader: View {
                 .help(startHelp(placement))
                 .accessibilityIdentifier("decoders.page.start")
             } else {
-                Button("Stop") { Task { await d.stop(running) } }
-                    .buttonStyle(.bordered)
-                    .help(
-                        "Stop \(running.map(\.jobID).joined(separator: ", ")); what it decoded stays"
-                    )
-                    .accessibilityIdentifier("decoders.page.stop")
+                Button {
+                    Task { await d.stop(running) }
+                } label: {
+                    Label("Stop", systemImage: "stop.fill").labelStyle(.iconOnly)
+                        .frame(
+                            width: Theme.Layout.decoderHeaderIcon,
+                            height: Theme.Layout.decoderHeaderIcon)
+                }
+                .buttonStyle(.bordered)
+                .help("Stop")
+                .accessibilityLabel("Stop")
+                .accessibilityIdentifier("decoders.page.stop")
             }
         }
         .padding(.horizontal, Theme.Layout.pageInset).padding(.vertical, 10)

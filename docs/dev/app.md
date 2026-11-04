@@ -518,7 +518,8 @@ sidebar (`DecodersSidebar`, 236 pt) lists each decoder once by name: its SF Symb
 the manifest's `display`, under it `Running` in `good`, `Degraded` in `caution`, or its name and
 first frequency, and under a running decoder one line per job, its frequency and `status_detail`
 (`12 records, last 3 s ago`). The first decoder is selected on arrival. The page's header has the
-symbol and title, and Start or Stop. Start is `Jobs.StartJob` with a kept `DecodeConfig` (`keep:
+symbol and title, Notify Me… (a `bell` icon), and Start (in words) or Stop (a `stop.fill` icon;
+each icon's tooltip and label are its name, and a watch's Stop in the sidebar is one too). Start is `Jobs.StartJob` with a kept `DecodeConfig` (`keep:
 true`, so it runs until Stop, after the window closes and across a daemon restart) on the
 frequency `DecoderPlacement.frequency` picks, explicitly; the line under the title is, before it
 starts, the daemon's plan for that `DecodeConfig` (`Control.Plan`, `../design/claims.md`), asked

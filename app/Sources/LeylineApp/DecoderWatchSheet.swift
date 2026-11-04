@@ -179,11 +179,15 @@ struct DecoderWatchLine: View {
                 .foregroundStyle(job.state == .degraded ? Theme.caution : Theme.inkSecondary)
                 .lineLimit(2).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
+            // An icon, as the sidebar's sort and + are; the label and tooltip say Stop.
             Button(action: stop) {
-                Text("Stop").font(Theme.Font.footnote).foregroundStyle(Theme.accent)
+                Image(systemName: "stop.fill").font(Theme.Font.buttonGlyph)
+                    .frame(minWidth: 24, minHeight: 13).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Stop this watch; what it matched stays")
+            .foregroundStyle(Theme.inkTertiary)
+            .help("Stop")
+            .accessibilityLabel("Stop")
             .accessibilityIdentifier("\(identifier).stop")
         }
         .padding(.leading, 14 + Theme.Layout.decoderJobIndent).padding(.trailing, 14)
