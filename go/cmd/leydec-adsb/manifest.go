@@ -38,9 +38,11 @@ func manifest() *leylinev1.DecoderManifest {
 			leylinev1.OutputShape_SHAPE_RECORDS,
 			leylinev1.OutputShape_SHAPE_ENTITIES,
 		},
-		// An aircraft in range sends several squitters a second; a minute without one means it
-		// has gone out of range or landed.
-		EntitySilenceS:        60,
+		// An aircraft in range sends several squitters a second, but one near the edge of range
+		// is heard in bursts. On live ADS-B on 2026-11-03 a 60 s timeout dropped such aircraft
+		// off the table and brought them back a little later; two minutes without a squitter
+		// means it has gone out of range or landed.
+		EntitySilenceS:        120,
 		NeedsDedicatedCapture: true,
 		Fields:                fieldHints(),
 		Display:               display(),

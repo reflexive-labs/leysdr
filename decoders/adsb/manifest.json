@@ -23,7 +23,7 @@
     "SHAPE_RECORDS",
     "SHAPE_ENTITIES"
   ],
-  "entitySilenceS": 60,
+  "entitySilenceS": 120,
   "fields": [
     {
       "name": "icao",
