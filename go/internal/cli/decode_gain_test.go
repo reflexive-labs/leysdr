@@ -74,6 +74,30 @@ func TestDecodeGainReachesTheRadio(t *testing.T) {
 	}
 }
 
+// The banner says the gain the radio is decoding at, read from the capture the job holds after it
+// started, so a decode at 0 dB is on the screen from the first line. Without --gain it is whatever
+// the job left the capture at.
+func TestDecodeBannerNamesTheGain(t *testing.T) {
+	t.Parallel()
+	sock, _ := harness(t, fakedaemon.Options{})
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	_, errOut, err := run(t, ctx, sock, "decode", "aprs", "--gain", "40", "--count", "1")
+	if err != nil {
+		t.Fatalf("ley decode --gain 40: %v\n%s", err, errOut)
+	}
+	if !strings.Contains(errOut, "decoding aprs on 144.390 MHz, gain 40.2 dB, chan_") || !strings.Contains(errOut, "Ctrl-C stops") {
+		t.Errorf("the banner must name the frequency and the level the R820T table took: %q", errOut)
+	}
+	_, errOut, err = run(t, ctx, sock, "decode", "aprs", "--count", "1")
+	if err != nil {
+		t.Fatalf("ley decode: %v\n%s", err, errOut)
+	}
+	if !strings.Contains(errOut, "decoding aprs on 144.390 MHz, gain auto, chan_") {
+		t.Errorf("with no gain asked for, the banner says the capture's: %q", errOut)
+	}
+}
+
 // On a capture somebody else made the gain stays theirs, and the job says what it was left at.
 func TestDecodeGainOnASharedCaptureIsLeftAlone(t *testing.T) {
 	t.Parallel()

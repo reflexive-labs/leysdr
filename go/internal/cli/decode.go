@@ -388,18 +388,28 @@ func leylineMessage(err error, fallback string) string {
 	return fallback
 }
 
-// decodeBanner prints what the job was given: the decoder, where it is listening, and the channel
-// and capture the daemon allocated, because a decoder tuned to the wrong frequency decodes
-// nothing.
+// decodeBanner prints what the job was given: the decoder, where it is listening, the gain the
+// radio is at, and the channel and capture the daemon allocated, because a decoder tuned to the
+// wrong frequency, or run at 0 dB, decodes nothing.
 func decodeBanner(ctx context.Context, s *verbSession, job *leylinev1.Job, o decodeOptions) string {
 	st := s.app.ErrStyle
+	capture, claim, gain := decodeCapture(ctx, s, job.GetJobId())
 	where := ""
-	if hz := decodeFrequency(ctx, s, job); hz > 0 {
+	hz := decodeFrequency(ctx, s, job)
+	if hz == 0 {
+		hz = claimFrequency(claim)
+	}
+	if hz > 0 {
 		where = " on " + units.FormatFrequency(hz)
 	}
 	line := fmt.Sprintf("decoding %s%s", o.decoder, where)
+	if gain != "" {
+		line += ", " + gain
+	}
 	if ch := decodeChannel(ctx, s); ch != nil {
 		line += ", " + st.Muted(ch.GetChannelId()+" on "+ch.GetCaptureId())
+	} else if capture != nil {
+		line += ", " + st.Muted(capture.GetCaptureId())
 	}
 	line += "."
 	if clips := clipsURI(job); clips != "" {
@@ -424,6 +434,63 @@ func clipsURI(job *leylinev1.Job) string {
 		}
 	}
 	return ""
+}
+
+// decodeCapture is the capture the job reads, found by the claim it holds there (its channel's,
+// or an IQ decoder's on the whole capture), that claim, and the gain words for the capture
+// (stageGainWords, "" for a radio with no gain stage). The daemon answers StartJob before it has
+// found a radio, and sets the job's gain before the claim appears, so this waits up to
+// detachSettle for the claim; nil and "" when none appears or the job has ended.
+func decodeCapture(ctx context.Context, s *verbSession, jobID string) (*leylinev1.Capture, *leylinev1.Claim, string) {
+	poll := time.NewTicker(100 * time.Millisecond)
+	defer poll.Stop()
+	deadline := time.NewTimer(detachSettle)
+	defer deadline.Stop()
+	for {
+		cctx, cancel := session.CleanupContext(ctx, confirmTimeout)
+		st, err := s.Client.State(cctx)
+		cancel()
+		if err == nil {
+			for _, c := range st.GetCaptures() {
+				for _, cl := range c.GetClaims() {
+					if cl.GetHolder().GetClientId() != jobID {
+						continue
+					}
+					gain := ""
+					if len(c.GetGains()) > 0 {
+						var els []*leylinev1.GainElement
+						for _, d := range st.GetDevices() {
+							if d.GetDeviceId() == c.GetDeviceId() {
+								els = d.GetGainElements()
+							}
+						}
+						gain = stageGainWords(c.GetGains(), els)
+					}
+					return c, cl, gain
+				}
+			}
+			for _, j := range st.GetJobs() {
+				if j.GetJobId() == jobID && !isLiveJob(j) {
+					return nil, nil, ""
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return nil, nil, ""
+		case <-deadline.C:
+			return nil, nil, ""
+		case <-poll.C:
+		}
+	}
+}
+
+// claimFrequency is the frequency a claim holds its capture to, 0 for none.
+func claimFrequency(cl *leylinev1.Claim) uint64 {
+	if hz := cl.GetCentred().GetFrequencyHz(); hz > 0 {
+		return hz
+	}
+	return cl.GetCovers().GetFrequencyHz()
 }
 
 // decodeFrequency is where the job is listening: what was asked for, else the channel the daemon
