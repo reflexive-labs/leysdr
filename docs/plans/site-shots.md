@@ -233,6 +233,11 @@ only app scenes set it).
 | `app-follow-terminal.png` | composite, driven | `scene_2m` on Calling, then `ley tune 146.940` typed once the window shows |
 | `ley-ai.png` | terminal | `ley ai` with a made-up OpenAI key |
 | `ley-watch-speech.png` | terminal | `scene_net`, `ley watch speech --freq 147.18 --where 'text~net control'` over the scripted engine |
+| `app-decoders-map.png` | app, driven, 1440 × 820 pt window, `real_map` | `scene_adsb`, 150 records, Aircraft on the map with MapKit's tiles, LEY303 selected |
+| `app-decoders-table.png` | app, driven, 1440 × 820 pt window | `scene_adsb`, 150 records, Aircraft as a table, LEY303 selected |
+| `app-waterfall-names.png` | app, driven, 1440 × 820 pt window | `scene_aprs`, `ley decode aprs --job` once the window shows, the callsigns on the waterfall |
+| `app-move-radio.png` | app, driven, 1440 × 820 pt window | `scene_aprs` with APRS as a job, then Scan band on 2 m: "Move the radio?" |
+| `ley-dry-run.png` | terminal, split | `scene_aprs` with APRS as a job: `ley decode aprs --dry-run` above `ley decode aircraft --dry-run` |
 | `app-icon-1024.png` | `scripts/render-icon.swift --png 1024` | none |
 
 Some scenes need more than the stage and a tuned channel:

@@ -45,13 +45,13 @@ final class ShotStageTests: XCTestCase {
     func testTheDecodersKeysAreRead() throws {
         let stage = try ShotStage.read(
             at: try stageFile(
-                #"{"place":"decoders","decoder":"aircraft","decoder_tab":"map","select_transmitter":"A1F003"}"#
+                #"{"place":"decoders","decoder":"aircraft","decoder_tab":"map","select_transmitter":"A1F003","real_map":true}"#
             ))
         XCTAssertEqual(
             stage,
             ShotStage(
                 place: .decoders, decoder: "aircraft", decoderTab: .map,
-                selectTransmitter: "A1F003"))
+                selectTransmitter: "A1F003", realMap: true))
         XCTAssertThrowsError(try ShotStage.read(at: try stageFile(#"{"decoder_tab":"chart"}"#)))
         XCTAssertEqual(
             try ShotStage.read(
@@ -65,6 +65,8 @@ final class ShotStageTests: XCTestCase {
         XCTAssertEqual(stage.settle, 0)
         XCTAssertFalse(
             stage.hideEngineLabel, "the Library shows each over's model unless a stage hides it")
+        XCTAssertFalse(
+            stage.realMap, "a staged map is the plain canvas unless a stage asks for tiles")
     }
 
     func testUnknownPlaceIsRefused() throws {

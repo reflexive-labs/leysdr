@@ -76,6 +76,9 @@ struct DaemonCommand: AsyncParsableCommand {
     @Option(name: .customLong("wall-clock"), help: "Development: shift the wall clock captures, recordings and records are dated from so the daemon starts at HH:MM local time today, for staged screenshots. Retention still runs on the real clock.")
     var wallClock: String?
 
+    @Flag(name: .customLong("hide-test-decoders"), help: "Development: with --no-hardware, leave the decoders marked test_only out of the decoder list, as a daemon with hardware does, so a staged picture shows what a person sees. A job may still name one.")
+    var hideTestDecoders = false
+
     @Option(name: .customLong("file-scan-dwell"), help: "Development: a scan on a file device that asks for a shorter dwell dwells this many milliseconds, so its single step lasts long enough for a check scene to see the sweep in progress. A scan on any other radio is unchanged.")
     var fileScanDwell: UInt32 = 0
 
@@ -121,6 +124,7 @@ struct DaemonCommand: AsyncParsableCommand {
                                    version: leylinedVersion)
         config.secrets = secrets
         config.fileScanDwellMs = fileScanDwell
+        config.hideTestDecoders = hideTestDecoders
         let daemon = Daemon(config: config)
         // A write to a socket whose peer vanished (rtl_tcp dying mid-command) must be an error
         // return, never a process-killing SIGPIPE.

@@ -259,6 +259,10 @@ func (s *CheckScene) validate(path func(string) string) error {
 		if s.Stage.Window != nil {
 			return errors.New("the stage's window comes from sizes; set sizes instead")
 		}
+		if s.Stage.RealMap {
+			// MapKit's tiles differ from one run to the next, so no golden could hold them.
+			return errors.New("real_map is for site scenes; a check scene's map is the plain canvas")
+		}
 		if err := s.Stage.validate(path); err != nil {
 			return err
 		}

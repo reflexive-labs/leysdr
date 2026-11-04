@@ -27,6 +27,13 @@ import SwiftUI
     /// change.
     let stagedLaunch = AppControl.isStaged()
 
+    /// Whether the Decoders map is the staged run's plain canvas: in every staged run but one
+    /// whose stage asks for MapKit's tiles (`real_map`).
+    @MainActor
+    func stagedPlainMap(_ session: AppSession) -> Bool {
+        stagedLaunch && session.staging?.stage?.realMap != true
+    }
+
     @MainActor
     final class Staging {
         /// The daemon gets this long to be live before the stage is given up and no regions are
@@ -549,6 +556,10 @@ import SwiftUI
 #else
     /// Whether this launch is staged: never, in a build without the harness.
     let stagedLaunch = false
+
+    /// The Decoders map is MapKit's in a build without the harness.
+    @MainActor
+    func stagedPlainMap(_ session: AppSession) -> Bool { false }
 
     extension View {
         /// Without the harness (a notarized build) no region is measured.

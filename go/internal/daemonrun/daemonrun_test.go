@@ -41,6 +41,7 @@ func fakeLeylined() int {
 	secrets := fs.String("secrets", "", "")
 	fs.Bool("no-hardware", false, "")
 	fs.Bool("no-audio", false, "")
+	fs.Bool("hide-test-decoders", false, "")
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		return 2
 	}

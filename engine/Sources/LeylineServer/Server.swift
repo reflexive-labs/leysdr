@@ -62,6 +62,14 @@ package final class Daemon: Sendable {
         /// `--file-scan-dwell`: the shortest dwell a scan on a file device runs at, in ms; 0 leaves
         /// the request's. A check scene sets it to see a sweep in progress; other radios ignore it.
         package var fileScanDwellMs: UInt32 = 0
+        /// `--hide-test-decoders`: ListDecoders leaves the `test_only` manifests out even under
+        /// `--no-hardware`, which lists them otherwise (`listsTestOnly`). A site scene's daemon sets
+        /// it, so its pictures show the decoders a person's app lists.
+        package var hideTestDecoders = false
+
+        /// Whether ListDecoders includes the `test_only` manifests: under `--no-hardware`, unless
+        /// `--hide-test-decoders`.
+        var listsTestOnly: Bool { !enumerateHardware && !hideTestDecoders }
         /// How long a live decode job's capture may deliver nothing before the job goes DEGRADED
         /// (`StreamStall`); a test shortens it.
         var decodeStallAfter: Duration = StreamStall.defaultAfter
@@ -183,7 +191,7 @@ package final class Daemon: Sendable {
                 TelemetryService(store: store, jobs: jobs),
                 BulkService(store: store, registry: streams),
                 JobsService(jobs: jobs, store: store),
-                DecodersService(jobs: jobs, store: store, listsTestOnly: !config.enumerateHardware),
+                DecodersService(jobs: jobs, store: store, listsTestOnly: config.listsTestOnly),
                 ResourcesService(jobs: jobs, store: store),
                 CredentialsService(credentials: credentials, worker: worker, store: store, jobs: jobs),
                 UsageService(recorder: usage, store: store),

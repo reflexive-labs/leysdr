@@ -36,6 +36,9 @@ type Options struct {
 	// FileScanDwellMs, when set, starts the daemon with --file-scan-dwell: a scan on a file device
 	// dwells that long when it asks for less, so a check sees a sweep in progress.
 	FileScanDwellMs int
+	// HideTestDecoders starts the daemon with --hide-test-decoders: its decoder list leaves out
+	// the test_only ones --no-hardware shows, as a person's daemon does.
+	HideTestDecoders bool
 	// Label is the client label the readiness connection uses, as the daemon's log shows it.
 	Label string
 	// Env is added to the daemon's environment, as KEY=value.
@@ -120,6 +123,9 @@ func Start(ctx context.Context, o Options) (*Daemon, error) {
 	}
 	if o.NoAudio {
 		d.args = append(d.args, "--no-audio")
+	}
+	if o.HideTestDecoders {
+		d.args = append(d.args, "--hide-test-decoders")
 	}
 	if o.FileScanDwellMs > 0 {
 		d.args = append(d.args, "--file-scan-dwell", strconv.Itoa(o.FileScanDwellMs))

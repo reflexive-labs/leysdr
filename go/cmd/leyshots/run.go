@@ -170,7 +170,7 @@ func runScene(ctx context.Context, o runOptions, f *File, s *Scene, tm *tmuxRunn
 	}
 
 	run := filepath.Join(o.out, "run", s.Name())
-	in := sceneSetup{fixtures: s.Fixtures, clock: s.Clock, bookmarks: f.Path(s.Bookmarks), steps: s.Steps}
+	in := sceneSetup{fixtures: s.Fixtures, clock: s.Clock, bookmarks: f.Path(s.Bookmarks), steps: s.Steps, site: true}
 	var err error
 	if s.AI != nil {
 		if in.ai, err = s.AI.stub(f.Path); err != nil {
@@ -316,6 +316,9 @@ type sceneSetup struct {
 	sweepDwellMs int
 	// speech, when set, makes the daemon's speech decoder the scripted engine (speech.go).
 	speech *speechStub
+	// site is a site scene's daemon, started with --hide-test-decoders so its list leaves out the
+	// test_only decoders a person's app never shows; a check scene's lists them, as its goldens do.
+	site bool
 }
 
 // sceneRun is a scene's own daemon, set up and running.
@@ -375,6 +378,7 @@ func startScene(ctx context.Context, o runOptions, in sceneSetup, run string) (*
 		// working there; the channel still has its sink, so the app shows what it would.
 		Bin: o.leylined, Dir: run, Decoders: decoders, WallClock: in.clock, Label: "leyshots", Env: daemonEnv,
 		Unset: append(slices.Clone(aiEnvNames), speechScriptEnv), NoAudio: true, FileScanDwellMs: in.sweepDwellMs,
+		HideTestDecoders: in.site,
 	})
 	if err != nil {
 		return nil, err

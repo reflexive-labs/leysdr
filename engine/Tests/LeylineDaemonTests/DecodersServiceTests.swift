@@ -47,6 +47,16 @@ final class DecodersServiceTests: XCTestCase {
         XCTAssertEqual(DecodersService.listed([real, fixture], testOnly: true).map(\.name), ["speech", "speech-scripted"])
     }
 
+    /// `--no-hardware` lists them; `--hide-test-decoders` hides them again, for a site scene's
+    /// daemon; a daemon with hardware never lists them.
+    func testHideTestDecodersOverridesNoHardware() {
+        var config = Daemon.Config(socketPath: "/tmp/x.sock", enumerateHardware: false, version: "test")
+        XCTAssertTrue(config.listsTestOnly)
+        config.hideTestDecoders = true
+        XCTAssertFalse(config.listsTestOnly)
+        XCTAssertFalse(Daemon.Config(socketPath: "/tmp/x.sock", version: "test").listsTestOnly)
+    }
+
     /// The harness's daemon is `--no-hardware`, so it lists a `test_only` decoder beside the rest.
     func testANoHardwareDaemonListsTestOnlyDecoders() async throws {
         let plugins = try makeTempDir("decoders")

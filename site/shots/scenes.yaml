@@ -31,6 +31,12 @@
 # takes the Settings window), cropped. A state expectation that fails fails the shot. Without app,
 # the window is brought forward and taken with screencapture once its stage has settled. A
 # composite's first pane is typed before the app starts unless it says after_app: true.
+#
+# A scene's daemon lists only the decoders a person's app lists (leylined --hide-test-decoders):
+# not the test_only ones (iqstat, speech-scripted) its --no-hardware would show. With speech, the
+# scripted engine stands in under speech's name. stage: {real_map: true} draws the Decoders map with MapKit's
+# tiles, which a check scene never does; the app's own snapshot leaves the tiles out, so a scene
+# that sets it is taken with screencapture (no app commands) after a settle long enough for them.
 
 repo: reflexive-labs/leysdr
 
@@ -489,13 +495,17 @@ scenes:
 
   # The Decoders place on scene_adsb, as the check scene decoders-adsb reaches it: 150 records
   # from the five aircraft, about seven seconds of their traffic, so each has sent the
-  # identification that names it, then the job cancelled so the counts stand still.
+  # identification that names it, then the job cancelled so the counts stand still. real_map
+  # draws MapKit's tiles, as a person sees them, where a check scene's map is a plain canvas.
+  # The app's own picture (a snapshot) leaves out what Metal draws, MapKit's tiles among them, so
+  # the scene has no app commands and the window is taken with screencapture; SwiftUI's Map says
+  # nothing when its tiles have loaded, so settle gives them time.
   - asset: app-decoders-map.png
     kind: app
     alt: >-
-      The Leyline Decoders place on Aircraft: five aircraft by callsign on the map, each turned to
-      its track, and LEY303 selected, its position, altitude and every field it sent in the
-      inspector with their units.
+      The Leyline Decoders place on Aircraft: five aircraft by callsign on a map of the San
+      Francisco Bay Area, each turned to its track, and LEY303 selected, its position, altitude
+      and every field it sent in the inspector with their units.
     fixtures: [{name: scene_adsb}]
     clock: "19:42"
     steps:
@@ -508,10 +518,8 @@ scenes:
       decoder: aircraft
       decoder_tab: map
       select_transmitter: A1F003
-      settle: 2
-    app:
-      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tab: map, decoders.selected_transmitter: A1F003}}
-      - {cmd: snapshot, name: shot}
+      real_map: true
+      settle: 15
     crop: {regions: [window]}
 
   - asset: app-decoders-table.png

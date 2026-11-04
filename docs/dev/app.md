@@ -584,7 +584,8 @@ arrival and when another decoder shows; each is a marker turned to its `track_de
 positions as a line, the selected one in `accent`. It asks for no location and draws no user
 annotation, so macOS asks for no permission. A staged run (`stagedLaunch`) draws the same markers,
 names and trails on a plain equirectangular canvas with a 0.1° graticule, because Apple's tiles
-would make two pictures differ; the real map is checked by hand. A click on a row, a marker or an
+would make two pictures differ, unless its stage sets `real_map` (the site's pictures); the real
+map is checked by hand. A click on a row, a marker or an
 alert selects it. The inspector (`DecoderInspector`) on a transmitter or a record: its name, id and
 protocol, a Name field whose Return writes `labels.json` through `LabelStore` (an empty name
 removes the label), how often and when it was heard, its position, altitude and heading (the
@@ -1093,6 +1094,7 @@ file. It holds JSON that `ShotStage` decodes, and every key is optional:
 | `decoder` | in Decoders, selects this decoder by name or alias as a click on its sidebar row does, once `ListDecoders` has answered, and waits up to 10 s for its last day's records |
 | `decoder_tab` | the decoder page's tab: `log`, `table` or `map`, as its switch picks it; a tab the decoder lacks shows the log |
 | `select_transmitter` | shows this transmitter, by `device_id`, in the Decoders inspector as a click on its row does, once a record of it has landed (10 s at most) |
+| `real_map` | `true` draws the Decoders map with MapKit's tiles, as a launch that is not staged does, instead of the staged run's plain canvas. For the site's pictures only: the tiles differ from run to run, so `leyshots check` refuses it, and the window's own picture (`snapshot`) leaves them out, as it leaves out every Metal layer, so a scene that sets it is taken with `screencapture` |
 | `select_part` | selects this row (a transmission) of the Library's selected channel without playing it, counted from 0 down the page's recent days |
 | `decode_with` | runs this decoder, by name or alias, over the selected transmission's recording through its Decode With item's code path, once the decoders are listed and the item is offered (10 s at most); a context menu is out of the command file's reach |
 | `play_part` | with `select_part`, plays that transmission for 0.4 s and pauses it, as a click and a second click do, because the Library draws only the playing row as current |

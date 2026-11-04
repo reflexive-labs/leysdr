@@ -16,7 +16,8 @@ struct DecodersService: Leyline_V1_Decoders.SimpleServiceProtocol {
     let store: SessionStore
     /// Whether ListDecoders includes the manifests marked `test_only`: true only for a daemon
     /// started with `--no-hardware`, which is how tests, evals and check scenes run it, so a
-    /// fixture decoder (`speech-scripted`, `iqstat`) stays out of a person's list. A job may still
+    /// fixture decoder (`speech-scripted`, `iqstat`) stays out of a person's list; a site scene's
+    /// adds `--hide-test-decoders` to hide them too (`Daemon.Config.listsTestOnly`). A job may still
     /// name one either way; only the listing hides it.
     let listsTestOnly: Bool
 

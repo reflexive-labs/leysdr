@@ -219,6 +219,7 @@ func TestLoadChecksRejects(t *testing.T) {
 		"stray field":        "fixtures: [{name: x}]\n    app: [{cmd: key, keys: return, text: a}]",
 		"unknown field":      "fixtures: [{name: x}]\n    app: [{cmd: state, colour: red}]",
 		"stage window":       "fixtures: [{name: x}]\n    stage: {window: {width: 1, height: 1}}\n    app: [{cmd: state}]",
+		"real map":           "fixtures: [{name: x}]\n    stage: {real_map: true}\n    app: [{cmd: state}]",
 		"command window":     "fixtures: [{name: x}]\n    app: [{cmd: stage, stage: {window: {width: 1, height: 1}}}]",
 		"bad mask":           "fixtures: [{name: x}]\n    app: [{cmd: snapshot, name: a, mask: [dock]}]",
 		"expect a list":      "fixtures: [{name: x}]\n    app: [{cmd: state, expect: {a: [1]}}]",

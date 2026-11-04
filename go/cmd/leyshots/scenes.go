@@ -126,6 +126,9 @@ type Stage struct {
 	// DecodeWith runs this decoder, by name or alias, over the selected Library part's
 	// recording, as its Decode With item does.
 	DecodeWith string `yaml:"decode_with" json:"decode_with,omitempty"`
+	// RealMap draws the Decoders map with MapKit's tiles rather than the staged canvas: for a site
+	// scene only, as the tiles differ between runs.
+	RealMap bool `yaml:"real_map" json:"real_map,omitempty"`
 }
 
 // Crop says which part of the window an app shot keeps: the union of Regions, or a box of Size

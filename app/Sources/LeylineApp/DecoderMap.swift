@@ -7,7 +7,8 @@
 // draws no user annotation, so macOS asks for no permission (docs/plans/decoders-app.md,
 // "Decisions"). Tiles come from Apple, which would make a staged run's pictures differ from one run
 // to the next, so a staged run (`LEYLINE_APP_STAGE`) draws the same markers, trails and names on a
-// plain equirectangular canvas instead; the real map is checked by hand.
+// plain equirectangular canvas instead, unless its stage sets `real_map` (the site's pictures);
+// the real map is checked by hand.
 
 import LeylineClient
 import LeylineProto
@@ -50,7 +51,7 @@ struct DecoderMapTab: View {
                 Text("No transmitter has sent a position yet.").font(Theme.Font.label)
                     .foregroundStyle(Theme.inkTertiary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if stagedLaunch {
+            } else if stagedPlainMap(session) {
                 StagedMap(points: drawn, select: select)
             } else {
                 LiveMap(points: drawn, decoder: d.selectedName ?? "", select: select)

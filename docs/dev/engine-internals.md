@@ -201,6 +201,12 @@ intervals, so it lasts about MS; it gathers more rows at the same false-alarm bu
 scan on any other driver keeps the dwell it asked for. `leyshots` passes it for a check scene's
 `sweep_dwell`.
 
+**The decoder list a person sees.** A `--no-hardware` daemon lists the decoders marked `test_only`
+(`iqstat`, `speech-scripted`) beside the rest, so a test, an eval or a check scene can find them.
+`leylined --hide-test-decoders` leaves them out of `ListDecoders` again, as a daemon with hardware
+does (`Daemon.Config.listsTestOnly`); a job may still name one. `leyshots` passes it for every site
+scene, so a picture of the Decoders sidebar lists what a person's app lists.
+
 **Capture-owned index base.** Devices number samples per stream: `RTLTCPDevice`, the rtl-sdr
 callback and `FilePlaybackDevice` all restart at 0 on every `startStreaming`. The capture, not the
 device, owns the timeline. `CaptureDSPCore` keeps an `indexBase`; `expectNewAnchor()` (called by
