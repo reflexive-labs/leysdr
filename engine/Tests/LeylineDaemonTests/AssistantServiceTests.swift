@@ -93,6 +93,16 @@ final class AssistantServiceTests: XCTestCase {
         return try await c.assistant.startConversation(request, metadata: testMetadata)
     }
 
+    /// Starts a conversation whose worker plays script `n`, for a test with a script per
+    /// conversation. Workers take their scripts in the order they start, so this returns once
+    /// this one's worker is up with its script, and the next conversation's worker takes the next.
+    private func start(_ c: DaemonClients, playing n: Int, in dir: String) async throws -> String {
+        let id = try await start(c).conversationID
+        let dump = await fakeWorkerDump(dir + "/dump.\(n)", within: 10)
+        XCTAssertEqual(dump?["start.conversation"], id, "script \(n) went to its conversation")
+        return id
+    }
+
     private func send(_ c: DaemonClients, _ id: String, _ text: String) async throws -> Leyline_V1_Conversation {
         var request = Leyline_V1_SendMessageRequest()
         request.conversationID = id
@@ -515,9 +525,9 @@ final class AssistantServiceTests: XCTestCase {
     }
 
     func testAWorkerThatExitsMidTurnFailsOnlyItsOwnConversation() async throws {
-        try await withAssistant(scripts: ["text starting\nexit 3", "text still here\nend"]) { c, _ in
-            let crashing = try await self.start(c).conversationID
-            let steady = try await self.start(c).conversationID
+        try await withAssistant(scripts: ["text starting\nexit 3", "text still here\nend"]) { c, dir in
+            let crashing = try await self.start(c, playing: 1, in: dir)
+            let steady = try await self.start(c, playing: 2, in: dir)
             _ = try await self.send(c, crashing, "go")
             let failed = try await self.conversation(c, crashing) { $0.state == .conversationFailed }
             XCTAssertEqual(failed.error.code, EngineError.Code.internalError)
@@ -612,12 +622,8 @@ final class AssistantServiceTests: XCTestCase {
         // and a slow machine never looks like the deaf write giving up.
         let timing = ConversationStore.Timing(workerWriteDeadline: .seconds(6))
         try await withAssistant(scripts: ["deaf", "text quick\nend"], timing: timing) { c, dir in
-            let deaf = try await self.start(c).conversationID
-            // Workers take their scripts in the order they start, so the deaf one's worker is up
-            // with the first script before the other conversation starts a second.
-            let first = await fakeWorkerDump(dir + "/dump.1", within: 10)
-            XCTAssertEqual(first?["start.conversation"], deaf, "the deaf script went to the deaf conversation")
-            let steady = try await self.start(c).conversationID
+            let deaf = try await self.start(c, playing: 1, in: dir)
+            let steady = try await self.start(c, playing: 2, in: dir)
             // Far more than a pipe holds, so the write to the deaf worker waits for room.
             let flood = String(repeating: "x", count: 1 << 20)
             let flooded = try await self.send(c, deaf, flood)
