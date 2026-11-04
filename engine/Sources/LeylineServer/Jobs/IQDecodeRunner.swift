@@ -86,6 +86,12 @@ actor IQDecodeRunner: DecodeRunning {
     /// The DEGRADED detail while the capture is away from `tuning`, nil while it is there. Every
     /// RUNNING the runner would publish goes through `publishRunning`, which reads this.
     private var awayDetail: String?
+    /// The DEGRADED detail while the capture delivers nothing (`StreamStall`), nil while blocks
+    /// arrive. Second to `awayDetail`: a capture that moved away says so first.
+    private var stallDetail: String?
+    private var stall: StreamStall
+    /// What the job says instead of RUNNING, nil when it is decoding.
+    private var degradedDetail: String? { awayDetail ?? stallDetail }
     /// The same fact for the drain, which withholds frames while it is set.
     private let withheld = Mutex(false)
     /// The capture's `tuningGeneration` at the follower's last look. A change while the centre and
@@ -104,6 +110,7 @@ actor IQDecodeRunner: DecodeRunning {
          writer: RecordWriter?, store: SessionStore, frequencyHz: UInt64,
          predicate: Leyline_V1_Predicate, notify: Leyline_V1_NotifyTarget?,
          credentials: CredentialStore? = nil, gainNote: String? = nil,
+         stallAfter: Duration = StreamStall.defaultAfter,
          onStatus: @escaping @Sendable (Leyline_V1_JobState, String) async -> Void,
          onFailure: (@Sendable (EngineError) async -> Void)? = nil,
          seqStart: UInt64 = 0)
@@ -119,6 +126,7 @@ actor IQDecodeRunner: DecodeRunning {
         self.predicate = predicate
         self.notify = notify
         liveness = DecodeLiveness(note: gainNote)
+        stall = StreamStall(after: stallAfter)
         self.onStatus = onStatus
         self.onFailure = onFailure
         seq = seqStart
@@ -336,7 +344,7 @@ actor IQDecodeRunner: DecodeRunning {
         await hub.publish(rec)
         await writer?.settleAnchor(of: lease.captureID, in: store)
         await writer?.append(rec)
-        if liveness.noteRecord(), awayDetail == nil {
+        if liveness.noteRecord(), degradedDetail == nil {
             await publishRunning(liveness.publish(decoder: installed.manifest.name))
         }
         // Off the hot path and fire-and-forget: a slow webhook or shell hook must never stall the
@@ -353,7 +361,7 @@ actor IQDecodeRunner: DecodeRunning {
         while !Task.isCancelled {
             try? await Task.sleep(for: DecodeLiveness.interval)
             if Task.isCancelled || stopped { return }
-            if liveness.moved, awayDetail == nil {
+            if liveness.moved, degradedDetail == nil {
                 await publishRunning(liveness.publish(decoder: installed.manifest.name))
             }
         }
@@ -362,8 +370,9 @@ actor IQDecodeRunner: DecodeRunning {
     // MARK: Following the capture
 
     /// Reads where the capture is every `followInterval` and moves the job between RUNNING and
-    /// DEGRADED as it leaves and regains the tuning the plugin was told. The state is read from the
-    /// capture engine, which holds it, rather than from the event stream, which only reports it.
+    /// DEGRADED as it leaves and regains the tuning the plugin was told, and as its stream stops and
+    /// starts delivering (`StreamStall`). The state is read from the capture engine, which holds
+    /// it, rather than from the event stream, which only reports it.
     private func followCapture() async {
         while !Task.isCancelled, !stopped {
             let snapshot = await lease.capture.snapshot
@@ -374,11 +383,17 @@ actor IQDecodeRunner: DecodeRunning {
                 regap.withLock { $0 = true }
             }
             seenGeneration = snapshot.tuningGeneration
+            let before = degradedDetail
             if why != awayDetail {
                 awayDetail = why
                 withheld.withLock { $0 = why != nil }
-                if let why {
-                    await onStatus(.degraded, why)
+            }
+            if let progress = await store.streamProgress(lease.captureID) {
+                stallDetail = stall.look(progress)
+            }
+            if degradedDetail != before {
+                if let detail = degradedDetail {
+                    await onStatus(.degraded, detail)
                 } else {
                     await publishRunning(liveness.detail(decoder: installed.manifest.name))
                 }
@@ -413,12 +428,12 @@ actor IQDecodeRunner: DecodeRunning {
                       Double(tuning.rate) / 1e6, Double(snapshot.sampleRate) / 1e6) + waiting
     }
 
-    /// RUNNING with `detail`, or DEGRADED with the away detail while the capture is away. A plugin
-    /// restart replaced the away detail with its own, so the restart's RUNNING puts it back rather
-    /// than claiming the job is decoding.
+    /// RUNNING with `detail`, or DEGRADED with the away or stall detail while the capture is away
+    /// or silent. A plugin restart replaced that detail with its own, so the restart's RUNNING puts
+    /// it back rather than claiming the job is decoding.
     private func publishRunning(_ detail: String) async {
-        if let awayDetail {
-            await onStatus(.degraded, awayDetail)
+        if let degradedDetail {
+            await onStatus(.degraded, degradedDetail)
         } else {
             await onStatus(.running, detail)
         }

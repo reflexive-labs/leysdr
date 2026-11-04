@@ -266,7 +266,7 @@ extension JobStore {
             tap: installed.manifest.input.tap == .tapDemod ? .demod : .audio,
             predicate: config.predicate, notify: config.hasNotify ? config.notify : nil,
             usage: usage, credentials: credentials, keep: config.keep, standingDegradation: squelchProblem,
-            clips: clips, gainNote: gainNote,
+            clips: clips, gainNote: gainNote, stallAfter: decodeStallAfter,
             onStatus: { [weak self] state, detail in
                 await self?.setDecodeStatus(id, state: state, detail: detail)
             },
@@ -317,7 +317,7 @@ extension JobStore {
             jobID: id, installed: installed, lease: lease, hub: hub, writer: writer, store: store,
             frequencyHz: frequencyHz,
             predicate: config.predicate, notify: config.hasNotify ? config.notify : nil,
-            credentials: credentials, gainNote: gainNote,
+            credentials: credentials, gainNote: gainNote, stallAfter: decodeStallAfter,
             onStatus: { [weak self] state, detail in
                 await self?.setDecodeStatus(id, state: state, detail: detail)
             },

@@ -57,7 +57,7 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
                 decoderSearchPath: [String]? = nil, storePath: String? = nil,
                 recordingsPath: String? = nil, recordingsCapBytes: UInt64 = 20 << 30,
                 leyPath: String? = nil, conversationTiming: ConversationStore.Timing? = nil,
-                fileScanDwellMs: UInt32 = 0,
+                fileScanDwellMs: UInt32 = 0, decodeStallAfter: Duration? = nil,
                 _ body: @escaping @Sendable (DaemonClients) async throws -> Void) async throws {
     // Every logger the daemon makes goes through the capture's handler, so a test can read the log.
     _ = LogCapture.shared
@@ -94,6 +94,7 @@ func withDaemon(dir: String? = nil, presenceGraceNs: UInt64 = 5_000_000_000, shu
     config.programLocator = ProgramLocator(directories: [], searchPath: [])
     if let conversationTiming { config.conversationTiming = conversationTiming }
     config.fileScanDwellMs = fileScanDwellMs
+    if let decodeStallAfter { config.decodeStallAfter = decodeStallAfter }
     let daemon = Daemon(config: config)
     let serverTask = Task { try await daemon.run() }
     let listening = await daemon.waitUntilListening()

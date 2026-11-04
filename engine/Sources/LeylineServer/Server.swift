@@ -62,6 +62,9 @@ package final class Daemon: Sendable {
         /// `--file-scan-dwell`: the shortest dwell a scan on a file device runs at, in ms; 0 leaves
         /// the request's. A check scene sets it to see a sweep in progress; other radios ignore it.
         package var fileScanDwellMs: UInt32 = 0
+        /// How long a live decode job's capture may deliver nothing before the job goes DEGRADED
+        /// (`StreamStall`); a test shortens it.
+        var decodeStallAfter: Duration = StreamStall.defaultAfter
         /// Reported in `DaemonInfo` and the startup log line: the executable passes its generated
         /// `leylinedVersion`, a test its own string.
         var version: String
@@ -157,7 +160,7 @@ package final class Daemon: Sendable {
         let usage = UsageRecorder(ledger: ledger, credentials: credentials, store: store)
         jobs = JobStore(store: store, allocator: allocator, decoders: decoders, records: recordStore,
                         recordings: recordings, usage: usage, credentials: credentials,
-                        fileScanDwellMs: config.fileScanDwellMs)
+                        fileScanDwellMs: config.fileScanDwellMs, decodeStallAfter: config.decodeStallAfter)
         let worker = WorkerProcess(leyPath: config.leyPath, locator: config.programLocator, socketPath: config.socketPath)
         let session = store
         conversations = ConversationStore(credentials: credentials, spawner: worker,

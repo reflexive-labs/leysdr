@@ -66,6 +66,9 @@ actor JobStore {
     /// `leylined --file-scan-dwell`: the shortest dwell a scan on a file device runs at, in ms
     /// (`scanDwellMs`); 0 leaves every scan's own.
     let fileScanDwellMs: UInt32
+    /// How long a live decode job's capture may deliver nothing before the job says so
+    /// (`StreamStall`).
+    let decodeStallAfter: Duration
     let hub = RecordHub()
     let log = Logger(label: "leyline.jobs")
     var entries: [JobID: Entry] = [:]
@@ -79,8 +82,10 @@ actor JobStore {
 
     init(store: SessionStore, allocator: SessionCaptureAllocator, decoders: DecoderRegistry,
          records: RecordStore, recordings: RecordingStore, usage: UsageRecorder? = nil,
-         credentials: CredentialStore? = nil, fileScanDwellMs: UInt32 = 0)
+         credentials: CredentialStore? = nil, fileScanDwellMs: UInt32 = 0,
+         decodeStallAfter: Duration = StreamStall.defaultAfter)
     {
+        self.decodeStallAfter = decodeStallAfter
         self.store = store
         self.allocator = allocator
         self.decoders = decoders

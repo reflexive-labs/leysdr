@@ -84,6 +84,12 @@ actor DecodeRunner {
     /// move, and the count's two-second republish would otherwise put a degraded job back to
     /// RUNNING while the capture is still away.
     private var awayDetail: String?
+    /// The DEGRADED detail while the channel's capture delivers nothing (`StreamStall`), nil while
+    /// blocks arrive. Second to `awayDetail`: a channel out of its capture says so first.
+    private var stallDetail: String?
+    private var stall: StreamStall
+    /// What the job says instead of RUNNING while something is wrong now, nil otherwise.
+    private var degradedDetail: String? { awayDetail ?? stallDetail }
     /// A fault the job lives with for its whole run, published as DEGRADED wherever RUNNING would
     /// be: a segmented job whose squelch could not be measured or set has no edges to cut at.
     private let standingDegradation: String?
@@ -109,6 +115,7 @@ actor DecodeRunner {
          tap: AudioTap, predicate: Leyline_V1_Predicate, notify: Leyline_V1_NotifyTarget?,
          usage: UsageRecorder? = nil, credentials: CredentialStore? = nil, keep: Bool = false,
          standingDegradation: String? = nil, clips: LiveClips? = nil, gainNote: String? = nil,
+         stallAfter: Duration = StreamStall.defaultAfter,
          onStatus: @escaping @Sendable (Leyline_V1_JobState, String) async -> Void,
          onFailure: (@Sendable (EngineError) async -> Void)? = nil,
          seqStart: UInt64 = 0)
@@ -131,6 +138,7 @@ actor DecodeRunner {
         self.standingDegradation = standingDegradation
         self.clips = clips
         liveness = DecodeLiveness(note: gainNote)
+        stall = StreamStall(after: stallAfter)
         self.onStatus = onStatus
         self.onFailure = onFailure
         seq = seqStart
@@ -795,7 +803,7 @@ actor DecodeRunner {
         await hub.publish(rec)
         if let lease { await writer?.settleAnchor(of: lease.captureID, in: store) }
         await writer?.append(rec)
-        if liveness.noteRecord(), awayDetail == nil {
+        if liveness.noteRecord(), degradedDetail == nil {
             await publishRunning(liveness.publish(decoder: installed.manifest.name))
         }
         // Off the hot path and fire-and-forget: a slow webhook or shell hook must never stall the
@@ -828,40 +836,42 @@ actor DecodeRunner {
     /// from the channel engine rather than from the event stream: the engine holds the state, and
     /// the event only reports it. The detail names who moved the radio once the move is published
     /// ("paused: the app tuned NESDR SMArt v5 to 146.520 MHz; ..."), so it is read again while the
-    /// channel is out.
+    /// channel is out. The capture's stream is watched on the same beat: a capture that delivers
+    /// nothing for `StreamStall.after` degrades the job too, and the first block back restores it.
     private func followChannel(_ lease: any ChannelLease) async {
         var last: ChannelState?
         while !Task.isCancelled {
             let state = await lease.engine.state
+            let before = degradedDetail
             switch state {
             case .outOfCapture:
-                let detail: String
                 if let moved = await store.whoMoved(lease.captureID) {
-                    detail = "paused: \(moved); resumes when \(fmtMHz(frequencyHz)) is back in the capture"
+                    awayDetail = "paused: \(moved); resumes when \(fmtMHz(frequencyHz)) is back in the capture"
                 } else {
-                    detail = "the capture moved away from \(fmtMHz(frequencyHz)); waiting for it to come back"
-                }
-                if detail != awayDetail {
-                    awayDetail = detail
-                    await onStatus(.degraded, detail)
+                    awayDetail = "the capture moved away from \(fmtMHz(frequencyHz)); waiting for it to come back"
                 }
             case .active:
-                if state != last {
-                    awayDetail = nil
-                    await publishRunning(liveness.detail(decoder: installed.manifest.name))
-                }
+                awayDetail = nil
+            }
+            if let progress = await store.streamProgress(lease.captureID) {
+                stallDetail = stall.look(progress)
+            }
+            if let detail = degradedDetail {
+                if detail != before { await onStatus(.degraded, detail) }
+            } else if before != nil || state != last {
+                await publishRunning(liveness.detail(decoder: installed.manifest.name))
             }
             last = state
             try? await Task.sleep(nanoseconds: 200_000_000)
         }
     }
 
-    /// RUNNING with `detail`, or DEGRADED with the away detail while the channel is out of its
-    /// capture. A plugin restart replaced the away detail with its own, so the restart's RUNNING
-    /// puts the away detail back rather than claiming the job is decoding.
+    /// RUNNING with `detail`, or DEGRADED with the away or stall detail while the channel is out
+    /// of its capture or the capture is silent. A plugin restart replaced that detail with its own,
+    /// so the restart's RUNNING puts it back rather than claiming the job is decoding.
     private func publishRunning(_ detail: String) async {
-        if let awayDetail {
-            await onStatus(.degraded, awayDetail)
+        if let degradedDetail {
+            await onStatus(.degraded, degradedDetail)
         } else if let standingDegradation {
             await onStatus(.degraded, standingDegradation)
         } else {
@@ -875,7 +885,7 @@ actor DecodeRunner {
         while !Task.isCancelled {
             try? await Task.sleep(for: DecodeLiveness.interval)
             if Task.isCancelled || stopped { return }
-            if liveness.moved, awayDetail == nil {
+            if liveness.moved, degradedDetail == nil {
                 await publishRunning(liveness.publish(decoder: installed.manifest.name))
             }
         }

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// A synthetic radio with a fault a real dongle has shown (2026-11-03): it is listed before anything
-// could open it, so it has no gain table until it opens, as an RTL-SDR first probed while rtl_tcp
-// held it. It plays the synthetic band underneath (`SyntheticBandDevice`).
+// A synthetic radio with two faults a real dongle can show: it is listed before anything could
+// open it, so it has no gain table until it opens, as an RTL-SDR first probed while rtl_tcp held
+// it (2026-11-03); and its stream can be told to stop delivering while it still says it is
+// streaming. It plays the synthetic band underneath (`SyntheticBandDevice`).
 
 import EngineCore
 import Foundation
@@ -18,6 +19,8 @@ final class ScriptedRadio: VirtualDevice, @unchecked Sendable {
     /// Whether an open has read the gain table; false until the first `open`, when
     /// `tableUntilOpen` is false.
     let tableKnown: LockedValue<Bool>
+    /// While true the stream delivers nothing, and the radio still says it is streaming.
+    let stalled = LockedValue(false)
     private let gain = LockedValue(GainState(element: "TUNER", value: .auto))
 
     private let learnsTableOnOpen: Bool
@@ -75,7 +78,10 @@ final class ScriptedRadio: VirtualDevice, @unchecked Sendable {
     }
 
     func startStreaming(captureID: CaptureID, deliver: @escaping @Sendable (SampleBuffer, SampleTime) -> Void) async throws {
-        try await inner.startStreaming(captureID: captureID, deliver: deliver)
+        let stalled = stalled
+        try await inner.startStreaming(captureID: captureID) { buffer, time in
+            if !stalled.value { deliver(buffer, time) }
+        }
     }
 
     func stopStreaming() async { await inner.stopStreaming() }

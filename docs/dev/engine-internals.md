@@ -1205,6 +1205,17 @@ capture, and only then: records still arrive after the move, so the record count
 plugin restart keep the job `DEGRADED` while the channel is away. `keep` jobs are not cancelled when their client goes; cancel stops the plugin, closes the
 writer and releases the lease.
 
+A live job, audio or IQ, also watches its capture's stream (`StreamStall`): when the count of
+blocks the device has handed the capture (`CaptureStats.blocksReceived`) stays put for 5 s while
+the capture is attached and its tuning has not changed, the job goes `DEGRADED` with "no samples
+from <model> for 5 s", and the first block back returns it to `RUNNING`. Five seconds is fifteen
+of the slowest blocks any radio here delivers (a file at 48 kS/s, 16384 samples every 341 ms; an
+RTL-SDR at its lowest 250 kS/s hands over a transfer every 66 ms), and longer than the bounded stop
+a rate change waits on. A rate change or retune restarts the count, and a detached capture is
+reported as away instead. This is not "no records": a quiet band yields none and the job stays
+`RUNNING` (DEC-16). The away detail outranks the stall's. A recording (`RecordRunner`) does not
+watch for this yet: a stalled stream leaves it `RUNNING` with its elapsed time standing still.
+
 **IQ input.** A manifest with `input.signal = SIGNAL_IQ` asks for `AllocationRequest.captureIQ`
 instead: a capture whose span covers the frequency on any device, else a device with no capture
 (a capture created centred on the frequency, at the recipe's `sample_rate` or the device's
