@@ -344,3 +344,24 @@ DTMF and selective calling (provable with the owner's HT), an `rtl_433` adapter 
 shared captures, digital-voice metadata (DMR, C4FM, D-STAR headers, no vocoder:
 `../design/decoders.md` section 10) and FT8 on DEC-12, in that order. Each is then a decoder and a
 manifest, with no app work.
+
+## Future work (flagged 2026-11-03, not scheduled)
+
+- **Who a transmitter is.** `../design/decoders.md` reserves `lookup_identity` ("external identity
+  adapters"); this is the shape agreed for it. A client-side identity source keyed by protocol and
+  `device_id`, shown beside the address in the inspector, the table's name column, `ley track` and
+  the MCP tools, with a person's own label still first. In three steps:
+  1. Offline, no data: the country of registration from the ICAO 24-bit address block, the US
+     N-number from an address in A00001--ADF7C7 by the published algorithm, and an MMSI's flag
+     state from its first digits.
+  2. A registry file published by leysdr.com: a scheduled build reduces the FAA Releasable Aircraft
+     Database (public domain; other registries only where their licence allows) to `icao ->
+     registration, type, model`, and the app downloads the whole signed file as it does the
+     appcast, so no lookup ever tells a server which aircraft this Mac hears. Make, model and type
+     only: the FAA file names owners, and a private aircraft's owner is a person.
+  3. Callsign to route needs a live service that learns what is heard; opt-in, or not at all.
+- **Map tiles in the app.** The Decoders map is MapKit, but no check has ever seen its tiles (staged
+  runs draw a plain projection), and the owner wants a real basemap under the markers. Find out
+  what the signed, hardened app shows today, then decide between MapKit as it is, an offline
+  tile set, or another source, minding tile licences and what a tile request reveals about the
+  Mac's location.
