@@ -215,6 +215,9 @@ actor RecordRunner: RecordRunning {
     }
 
     func start() {
+        // A cancel can stop the runner before it starts: the job's table hands it over before
+        // `start` runs on this actor.
+        guard !stopped, !tearingDown else { return }
         task = Task { [weak self] in await self?.loop() }
     }
 

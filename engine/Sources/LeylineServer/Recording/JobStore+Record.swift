@@ -186,10 +186,7 @@ extension JobStore {
             await applySquelch(config, to: made, gated: config.gate == .squelch, job: id)
         }
         // Allocating suspends, and a cancel that arrived in that window has already returned.
-        guard jobIsLive(id) else {
-            await lease.release()
-            return
-        }
+        guard await stillWanted(id, releasing: { await lease.release() }) else { return }
         guard let snapshot = await store.captureEngine(lease.captureID)?.snapshot else {
             await lease.release()
             await finishRecord(id, state: .failed, detail: "the capture went away before the recording started",
@@ -225,8 +222,7 @@ extension JobStore {
             onStatus: { [weak self] state, detail, code in
                 await self?.setRecordStatus(id, state: state, detail: detail, code: code)
             })
-        setRecordRunner(id, runner)
-        await runner.start()
+        await start(id, runner)
     }
 
     private func runIQRecord(_ id: JobID, config: Leyline_V1_RecordConfig,
@@ -267,10 +263,7 @@ extension JobStore {
                 return
             }
         }
-        guard jobIsLive(id) else {
-            await lease.release()
-            return
-        }
+        guard await stillWanted(id, releasing: { await lease.release() }) else { return }
         guard let snapshot = await store.captureEngine(lease.captureID)?.snapshot else {
             await lease.release()
             await finishRecord(id, state: .failed, detail: "the capture went away before the recording started",
@@ -305,7 +298,31 @@ extension JobStore {
             onStatus: { [weak self] state, detail, code in
                 await self?.setRecordStatus(id, state: state, detail: detail, code: code)
             })
+        await start(id, runner)
+    }
+
+    /// Whether a record job that has just been handed its radio should go on. A cancel that came
+    /// while it was allocating found no runner to stop: it cancelled this task and is waiting for
+    /// the job to end, and a cancel that has given up waiting has ended it. Either way the lease
+    /// goes back here, and a job still live ends now rather than at the end of that wait.
+    private func stillWanted(_ id: JobID, releasing release: () async -> Void) async -> Bool {
+        if jobIsLive(id), !Task.isCancelled { return true }
+        await release()
+        if jobIsLive(id) { await finishRecord(id, state: .cancelled, detail: "cancelled") }
+        return false
+    }
+
+    /// Puts the runner in the job table and starts it. A cancel that came while the recording was
+    /// opening its files found no runner to stop and only cancelled this task, so the runner is
+    /// stopped here instead, which closes the recording and hands the radio and its claim back.
+    /// Nothing suspends between the table and the check: a cancel either came before it, and this
+    /// task is cancelled, or comes after and finds the runner.
+    private func start(_ id: JobID, _ runner: RecordRunner) async {
         setRecordRunner(id, runner)
+        guard !Task.isCancelled else {
+            await runner.stop(endedBy: "cancelled")
+            return
+        }
         await runner.start()
     }
 

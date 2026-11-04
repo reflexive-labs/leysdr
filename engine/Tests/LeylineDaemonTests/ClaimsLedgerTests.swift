@@ -200,6 +200,38 @@ final class ClaimsLedgerTests: XCTestCase {
         }
     }
 
+    /// A record job cancelled while it is still starting (allocating its radio, opening its files)
+    /// ends and lets go of its claim. CancelJob finds no runner to stop then, so the start has to
+    /// notice: a slow CI runner once left an IQ recording's claim held after its cancel.
+    func testARecordingCancelledWhileItStartsReleasesItsClaim() async throws {
+        try requireFixture("nfm_tone.cf32")
+        let recordings = try makeTempDir("recordings")
+        defer { try? FileManager.default.removeItem(atPath: recordings) }
+        try await withDaemon(recordingsPath: recordings) { c in
+            let device = try await self.attach(c, "nfm_tone.cf32")
+            _ = try await self.capture(c, on: device)
+            for round in 0..<8 {
+                var config = Leyline_V1_RecordConfig()
+                config.frequencyHz = 146_520_000
+                config.mode = round % 2 == 0 ? .rawIq : .nfm
+                let started = try await c.jobs.startJob(.with { $0.record = config }, metadata: testMetadata)
+                // At once, inside the start; or once the claim shows, which is the allocation done
+                // and the files not yet open.
+                if round % 4 >= 2 {
+                    try await self.waitForClaims(c, "the recording's claim") { $0.contains { $0.holder.clientID == started.jobID } }
+                }
+                try await self.cancel(c, started.jobID)
+                try await self.waitForClaims(c, "round \(round) (\(config.mode)): cancel releases it") {
+                    !$0.contains { $0.holder.clientID == started.jobID }
+                }
+                let ended = try await self.waitForJob(c, started.jobID) { $0.state != .running && $0.state != .degraded }
+                XCTAssertTrue([.cancelled, .completed].contains(ended.state), "round \(round): \(ended.state) \(ended.statusDetail)")
+            }
+            let captures = try await self.state(c).captures
+            XCTAssertEqual(captures.count, 1, "the person's capture stays")
+        }
+    }
+
     /// A recording of somebody's channel holds a JOB channel claim of its own on that channel's
     /// span beside the listener's, and releases it when it ends; the listener's stays.
     func testABorrowedChannelHoldsAJobClaim() async throws {
