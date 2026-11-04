@@ -36,7 +36,7 @@ import (
 // scripts/gen-version.sh (`make version`) writes the same number into the
 // engine's constant and into this literal. TestVersionMatchesTheSourceOfTruth
 // holds the three together.
-const defaultVersion = "0.2.0"
+const defaultVersion = "0.3.0"
 
 // Version is the ley build version; overridden at link time with
 // -ldflags "-X github.com/reflexive-labs/leysdr/go/internal/cli.Version=...".

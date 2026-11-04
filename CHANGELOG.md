@@ -5,6 +5,8 @@ What changed for someone using Leyline, newest first. Each released version has 
 
 ## Unreleased
 
+## 0.3.0 (2026-11-03)
+
 - **ADS-B.** A new decoder hears aircraft on 1090 MHz: `ley decode aircraft` prints each
   identification, position and velocity, and `ley track aircraft` keeps a table of aircraft by
   callsign. Its recipe sets the gain to 40 dB: on an R820T dongle over `rtl_tcp` (2026-11-02),
