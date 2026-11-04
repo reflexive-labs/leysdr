@@ -61,12 +61,15 @@ type trackOptions struct {
 	device   string
 	deviceID string
 	takeOver bool
+	// byHeard lists rows newest-heard first (--sort heard) instead of by name.
+	byHeard bool
 }
 
 func newTrackCommand(app *App) *cobra.Command {
 	var (
 		o     trackOptions
 		since string
+		order string
 	)
 	cmd := &cobra.Command{
 		Use:   "track <protocol>",
@@ -90,12 +93,18 @@ same records. A station silent for longer than the decoder's own timeout
 row that never ages says a transmitter is still there when it left hours ago.
 --since seeds the table from the records kept jobs have already written.
 
+Rows are listed by name (the NAME column, else the device), so a row stays
+where it is while its transmitter keeps talking. --sort heard lists the most
+recently heard first instead; with aircraft reporting several times a second,
+that order changes on every redraw.
+
 On a terminal the table is redrawn in place; piped, one table is printed per
 tick. --json prints one {"entities": [...]} object per tick as NDJSON -- a
 client-side shape with no proto message, documented in docs/reference/cli.md.`,
 		Example: `  ley track aprs               # start decoding and show who is out there
   ley track aircraft           # ADS-B: aircraft by callsign, altitude and speed
   ley track aprs --since 1h    # seed from what was kept, then follow
+  ley track aircraft --sort heard   # the most recently heard aircraft at the top
   ley track aprs --attach      # only fold a decoder someone already started
   ley track aprs --json --count 1 | jq '.entities | length'`,
 		GroupID: GroupLooking,
@@ -114,6 +123,13 @@ client-side shape with no proto message, documented in docs/reference/cli.md.`,
 					return usageErrorf("--since %v", err)
 				}
 			}
+			switch order {
+			case "name":
+			case "heard":
+				o.byHeard = true
+			default:
+				return usageErrorf("--sort must be name or heard, not %q", order)
+			}
 			if o.rate <= 0 || o.rate > 20 {
 				return usageErrorf("--rate must be above 0 and at most 20 redraws a second")
 			}
@@ -122,6 +138,7 @@ client-side shape with no proto message, documented in docs/reference/cli.md.`,
 	}
 	cmd.Flags().StringVar(&since, "since", "", "seed the table from kept records this recent, e.g. 1h, 2d")
 	cmd.Flags().Float64Var(&o.rate, "rate", 2, "redraws a second, e.g. 4 (at most 20)")
+	cmd.Flags().StringVar(&order, "sort", "name", "row order: name, or heard for the most recently heard first")
 	cmd.Flags().IntVar(&o.count, "count", 0, "stop after this many redraws, e.g. 1 (default: until Ctrl-C)")
 	cmd.Flags().BoolVar(&o.attach, "attach", false, "do not start a decoder; only fold one that is already running")
 	cmd.Flags().StringVar(&o.device, "device", "", "which radio: an id (dev_...), id prefix or row number from 'ley devices' (default: the first real radio)")
@@ -234,12 +251,12 @@ func runTrack(ctx context.Context, app *App, o trackOptions) error {
 		case <-tick.C:
 			table.Expire(time.Now(), silence)
 			if app.JSON {
-				if err := printEntitySnapshot(app, table, window); err != nil {
+				if err := printEntitySnapshot(app, table, window, o.byHeard); err != nil {
 					return err
 				}
 				w.row()
 			} else {
-				w.frame(renderTrack(app, table, manifest, window), "")
+				w.frame(renderTrack(app, table, manifest, window, o.byHeard), "")
 			}
 			out.Flush()
 			draws++
@@ -396,8 +413,8 @@ func heardCell(st ui.Style, counts []int) string {
 // beside the device, and one column per display.columns entry between HEARD and POSITION, each
 // headed by the field's label with its unit (ground_speed_kn is "GROUND SPEED (kn)") and printed with the
 // entry's precision (ground_speed_kn:0 prints whole knots). The table's Display
-// writes LAST. m is the decoder's manifest, nil when ley has none.
-func renderTrack(app *App, table *records.Table, m *leylinev1.DecoderManifest, window time.Duration) string {
+// writes LAST. m is the decoder's manifest, nil when ley has none. Rows are in trackRows order.
+func renderTrack(app *App, table *records.Table, m *leylinev1.DecoderManifest, window time.Duration, byHeard bool) string {
 	s := tableStyle(app)
 	display := m.GetDisplay()
 	cols := []column{
@@ -420,7 +437,7 @@ func renderTrack(app *App, table *records.Table, m *leylinev1.DecoderManifest, w
 		column{head: "POSITION", min: 10, drop: 2, hideEmpty: true},
 		column{head: "LAST", min: 16, drop: 1})
 	now := tableNow(table)
-	rows := table.Rows()
+	rows := trackRows(table, byHeard)
 	for _, e := range rows {
 		name := ""
 		if display.GetEntityName() != "" {
@@ -510,16 +527,25 @@ func ageWord(d time.Duration) string {
 }
 
 // printEntitySnapshot writes one NDJSON line per redraw: the table as it stands.
-func printEntitySnapshot(app *App, table *records.Table, window time.Duration) error {
-	return app.printArray(entitySnapshot(table, window))
+func printEntitySnapshot(app *App, table *records.Table, window time.Duration, byHeard bool) error {
+	return app.printArray(entitySnapshot(table, window, byHeard))
+}
+
+// trackRows is the table's rows in the order track lists them: by name, so a row holds its place
+// while its transmitter keeps talking, or newest heard first under --sort heard.
+func trackRows(table *records.Table, byHeard bool) []*records.Entity {
+	if byHeard {
+		return table.Rows()
+	}
+	return table.RowsByName()
 }
 
 // entitySnapshot is the table as the `ley track --json` object: one row per
-// entity, ages and HEARD slices measured on the table's clock.
-func entitySnapshot(table *records.Table, window time.Duration) EntitySnapshot {
+// entity in trackRows order, ages and HEARD slices measured on the table's clock.
+func entitySnapshot(table *records.Table, window time.Duration, byHeard bool) EntitySnapshot {
 	now := tableNow(table)
 	snap := EntitySnapshot{Entities: []EntityRow{}}
-	for _, e := range table.Rows() {
+	for _, e := range trackRows(table, byHeard) {
 		row := EntityRow{
 			DeviceID: e.DeviceID, Protocol: e.Protocol, Kind: e.Kind, Summary: e.Summary,
 			Seen: e.Count, AgeS: now.Sub(e.LastHeard).Seconds(),

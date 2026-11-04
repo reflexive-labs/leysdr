@@ -897,14 +897,19 @@ table; the daemon keeps no station list of its own.
 $ ley track aprs
 tracking aprs. a row drops off after 30 m of silence
 DEVICE    LAST HEARD  SEEN  HEARD (30 m)  POSITION            LAST
-LEYTST-2  now         2            ▂      -                   25.0 °C wind 6 km/h @ 220°
 LEYTST-1  now         2            ▂      37.7600N 122.4167W  37.7600N 122.4167W /> test position
+LEYTST-2  now         2            ▂      -                   25.0 °C wind 6 km/h @ 220°
 LEYTST-3  now         1            ▁      -                   test status
 ```
 
 HEARD is SEEN spread over time: eight cells covering the window a row lives for, one ramp step per
 packet in each, so a station that beacons every few minutes fills a row of low cells and one heard
 once shows a single mark at that time. The header shows what a cell covers.
+
+Rows are listed by name, the NAME column when the decoder has one and the device otherwise, so a
+row stays in place while its station keeps transmitting. `--sort heard` puts the most recently
+heard station at the top instead; with ADS-B, where an aircraft reports several times a second,
+that order changes on every redraw.
 
 `ley devices-seen` is the longer memory: one row per transmitter the kept records have ever heard,
 with how many times, and how long ago it was first and last on the air. Where `ley track` is the

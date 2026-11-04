@@ -220,7 +220,7 @@ func TestTrackAgesOutASilentStation(t *testing.T) {
 	// The manifest's entity_silence_s, which is what the verb reads from ley decoders.
 	silence := time.Duration(fakedaemon.AprsManifest().GetEntitySilenceS()) * time.Second
 	table.Expire(now, silence)
-	out := renderTrack(app, table, nil, silence)
+	out := renderTrack(app, table, nil, silence, false)
 	if strings.Contains(out, "LEYTST-1") {
 		t.Errorf("a station silent for over %s must leave the table:\n%s", silence, out)
 	}
@@ -260,13 +260,13 @@ func TestTrackShowsTheDisplaysColumns(t *testing.T) {
 		Fields:   map[string]*leylinev1.FieldValue{"sog_kn": {Value: &leylinev1.FieldValue_Number{Number: 12.6}}},
 	})
 	app := &App{IsTTY: func() bool { return false }}
-	out := renderTrack(app, table, m, trackDefaultWindow)
+	out := renderTrack(app, table, m, trackDefaultWindow, false)
 	for _, want := range []string{"NAME", "CALLSIGN", "SOG (kn)", "EVER GIVEN", "H3RC", " 13 ", "52.2572N 3.9194E 12.6 kn"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the table lacks %q:\n%s", want, out)
 		}
 	}
-	if snap := entitySnapshot(table, trackDefaultWindow); snap.Entities[0].Name != "EVER GIVEN" {
+	if snap := entitySnapshot(table, trackDefaultWindow, false); snap.Entities[0].Name != "EVER GIVEN" {
 		t.Errorf("--json name %q, want EVER GIVEN", snap.Entities[0].Name)
 	}
 }

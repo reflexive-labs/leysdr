@@ -17,6 +17,11 @@ same records. A station silent for longer than the decoder's own timeout
 row that never ages says a transmitter is still there when it left hours ago.
 --since seeds the table from the records kept jobs have already written.
 
+Rows are listed by name (the NAME column, else the device), so a row stays
+where it is while its transmitter keeps talking. --sort heard lists the most
+recently heard first instead; with aircraft reporting several times a second,
+that order changes on every redraw.
+
 On a terminal the table is redrawn in place; piped, one table is printed per
 tick. --json prints one {"entities": [...]} object per tick as NDJSON -- a
 client-side shape with no proto message, documented in docs/reference/cli.md.
@@ -28,6 +33,7 @@ Examples:
   ley track aprs               # start decoding and show who is out there
   ley track aircraft           # ADS-B: aircraft by callsign, altitude and speed
   ley track aprs --since 1h    # seed from what was kept, then follow
+  ley track aircraft --sort heard   # the most recently heard aircraft at the top
   ley track aprs --attach      # only fold a decoder someone already started
   ley track aprs --json --count 1 | jq '.entities | length'
 
@@ -38,6 +44,7 @@ Flags:
   -h, --help            help for track
       --rate float      redraws a second, e.g. 4 (at most 20) (default 2)
       --since string    seed the table from kept records this recent, e.g. 1h, 2d
+      --sort string     row order: name, or heard for the most recently heard first (default "name")
       --take-over       start the decoder even when somebody is using the radio; it is theirs again afterwards
 
 Global Flags:

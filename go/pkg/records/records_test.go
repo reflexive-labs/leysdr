@@ -3,6 +3,7 @@
 package records
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -126,6 +127,40 @@ func TestTableRowOrderAndExpiry(t *testing.T) {
 	}
 	if tb.Rows()[0].DeviceID != "LEYTST-3" {
 		t.Errorf("the station still talking must survive")
+	}
+}
+
+// RowsByName orders by the display name, ignoring case, with the device id behind a name that is
+// missing or shared, and does not move a row because its transmitter was heard again.
+func TestTableRowsByName(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	tb := NewTable()
+	tb.Now = func() time.Time { return now }
+	tb.Display = &leylinev1.DecoderDisplay{EntityName: "{callsign}"}
+	for _, r := range []struct{ id, callsign string }{
+		{"a3", "ual12"}, {"a1", "DAL4"}, {"a9", ""}, {"a2", "UAL12"}, {"a0", "SWA7"},
+	} {
+		fields := map[string]*leylinev1.FieldValue{}
+		if r.callsign != "" {
+			fields["callsign"] = text(r.callsign)
+		}
+		tb.Apply(rec(r.id, "identification", 0, fields))
+		now = now.Add(time.Second)
+	}
+	want := "a9 a1 a0 a2 a3" // a9 has no callsign, so its name is its device id
+	order := func() string {
+		var ids []string
+		for _, e := range tb.RowsByName() {
+			ids = append(ids, e.DeviceID)
+		}
+		return strings.Join(ids, " ")
+	}
+	if got := order(); got != want {
+		t.Fatalf("RowsByName = %s, want %s", got, want)
+	}
+	tb.Apply(rec("a0", "position", 0, nil))
+	if got := order(); got != want {
+		t.Errorf("a row moved when it was heard again: %s, want %s", got, want)
 	}
 }
 

@@ -1371,8 +1371,8 @@ fold:
 		how += fmt.Sprintf(" from the decode job %s already running", job.GetJobId())
 	}
 	fmt.Fprintln(app.Stdout, how)
-	fmt.Fprint(app.Stdout, renderTrack(app, table, manifest, window))
-	raw, err := json.Marshal(entitySnapshot(table, window))
+	fmt.Fprint(app.Stdout, renderTrack(app, table, manifest, window, false))
+	raw, err := json.Marshal(entitySnapshot(table, window, false))
 	if err != nil {
 		return nil, nil, err
 	}

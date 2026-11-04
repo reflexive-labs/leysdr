@@ -76,10 +76,12 @@ ley                                  # bare: orientation screen on a TTY (see be
 │                                    # the job running so the notifier (bare=macOS, webhook:URL,
 │                                    # shell:CMD) fires with no client attached, once the daemon
 │                                    # has taken the job (a decline exits 1 with the reason)
-├── track <protocol> [--attach] [--device SEL] [--take-over] [--since D] [--rate N] [--count N]
+├── track <protocol> [--attach] [--device SEL] [--take-over] [--since D] [--sort name|heard] [--rate N] [--count N]
 │                                    # starts (or attaches to) a decoder and folds its records into a live per-station table; --attach only folds one already running
 │                                    # the live entity table: ley's own fold over SubscribeRecords,
-│                                    # redrawn in place, rows aged out after the decoder's entity_silence_s
+│                                    # redrawn in place, rows aged out after the decoder's entity_silence_s;
+│                                    # rows by name (entity_name, else device_id; case ignored, ties by
+│                                    # device_id), or most recently heard first with --sort heard
 ├── devices-seen [--protocol P] [--since D] [--quiet-since D]
 │                                    # the registry: one row per transmitter the kept records heard,
 │                                    # a client-side fold over QueryRecords joined with the labels
@@ -282,7 +284,8 @@ bulk rows: the entity table is a client-side fold with no proto message, so it p
 when that is empty or is the device id, `position` an object of `{latitude, longitude}` or `null`, `age_s` seconds since that
 row was last heard, `heard_slices` eight integers counting the station's records in each eighth of
 the table's window oldest first -- the window is the decoder's silence timeout, or ten minutes when
-it declares none -- which is the HEARD column as numbers). A decode job that names a decoder nobody installed is refused with `DECODER_NOT_FOUND`; a
+it declares none -- which is the HEARD column as numbers). The entities are in the table's order:
+by name, or most recently heard first under `--sort heard`. A decode job that names a decoder nobody installed is refused with `DECODER_NOT_FOUND`; a
 decoder whose program could not be started is `DECODER_FAILED`.
 
 `ley devices-seen --json` is the fifth documented exception, the registry beside the entity table:

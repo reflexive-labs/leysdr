@@ -4,6 +4,7 @@ package records
 
 import (
 	"sort"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -169,6 +170,26 @@ func (t *Table) Rows() []*Entity {
 	sort.Slice(out, func(i, j int) bool {
 		if !out[i].LastHeard.Equal(out[j].LastHeard) {
 			return out[i].LastHeard.After(out[j].LastHeard)
+		}
+		return out[i].DeviceID < out[j].DeviceID
+	})
+	return out
+}
+
+// RowsByName returns the entities in the order a person reads a live table in: by display name
+// (the Display's entity_name, else the device id), ignoring case, ties broken by device id. A row
+// keeps its place while its transmitter keeps talking, where Rows moves every row that was heard
+// since the last redraw; an aircraft reports several times a second, so a newest-first table of
+// them reorders on every redraw.
+func (t *Table) RowsByName() []*Entity {
+	out := t.Rows()
+	names := make(map[*Entity]string, len(out))
+	for _, e := range out {
+		names[e] = strings.ToLower(EntityName(t.Display, e, ""))
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if names[out[i]] != names[out[j]] {
+			return names[out[i]] < names[out[j]]
 		}
 		return out[i].DeviceID < out[j].DeviceID
 	})

@@ -197,7 +197,7 @@ func TestDecodeScreensSurviveColourOff(t *testing.T) {
 		app.ErrStyle = app.Style
 		printDecoderTable(app, list)
 		printRecordTable(app, page, nil)
-		out.WriteString(renderTrack(app, table, nil, trackDefaultWindow))
+		out.WriteString(renderTrack(app, table, nil, trackDefaultWindow, false))
 		s := &verbSession{Session: &session.Session{}, app: app}
 		for _, rec := range page.Records {
 			if err := printRecord(s, rec); err != nil {
