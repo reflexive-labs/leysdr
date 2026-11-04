@@ -462,20 +462,34 @@ actor RecordRunner: RecordRunning {
         await teardown(endedBy: endedBy ?? (Task.isCancelled ? "cancelled" : "error"))
     }
 
-    /// `duration_ms` as a deadline on the clock as well as on the samples. The sample check inside
-    /// the drain is the accurate one -- it is the recording's own timeline -- but a radio that
-    /// stops delivering (a file device at the end of its file, a dongle unplugged) would leave a
-    /// job that asked for five minutes running for ever. Whichever comes first ends it, and the
-    /// manifest still records how much signal it actually holds.
+    /// `duration_ms` is a count of samples, and the drain ends the recording when it reaches it
+    /// (`handle`, `handleIQ`): the recording's own timeline (invariant 5). The clock is only the
+    /// backstop for a radio that stops delivering (a file device at the end of its file, a dongle
+    /// unplugged), which would otherwise leave a job that asked for five minutes running for ever.
+    /// So once the duration has passed on the clock the job ends only when the drain has stopped
+    /// moving for `deliveryStall`: a drain that has merely fallen behind on a loaded machine still
+    /// writes the whole duration. The manifest records how much signal it actually holds.
     private func startDeadline() -> Task<Void, Never>? {
         guard durationSamples > 0, captureRateHz > 0 else { return nil }
         let seconds = Double(durationSamples) / Double(captureRateHz)
         return Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1e9))
-            guard !Task.isCancelled, let self else { return }
-            await self.durationElapsed()
+            var last: UInt64?
+            while !Task.isCancelled {
+                guard let reached = await self?.now else { return }
+                if reached == last {
+                    await self?.durationElapsed()
+                    return
+                }
+                last = reached
+                try? await Task.sleep(for: Self.deliveryStall)
+            }
         }
     }
+
+    /// How long the drain must stand still, after the duration has passed on the clock, before the
+    /// radio is taken to have stopped delivering.
+    static let deliveryStall: Duration = .milliseconds(500)
 
     private func durationElapsed() {
         guard !stopped, endedBy == nil else { return }
@@ -542,10 +556,10 @@ actor RecordRunner: RecordRunning {
     }
 
     private func handle(frame: AudioFrameSource.Frame) async {
-        let floats = frame.payload.withUnsafeBytes { raw -> [Float] in
+        var floats = frame.payload.withUnsafeBytes { raw -> [Float] in
             Array(raw.bindMemory(to: Float.self))
         }
-        let frameEnd = frame.sampleStart + frame.sampleCount
+        var frameEnd = frame.sampleStart + frame.sampleCount
         await anchorOnce()
         if !started {
             started = true
@@ -562,6 +576,15 @@ actor RecordRunner: RecordRunning {
                 seedPending = false
                 pending.append(contentsOf: gate.seedOpen(at: frame.sampleStart))
             }
+        }
+        // A duration is a count of samples, so the frame that crosses it is cut there: a drain
+        // that has fallen behind pops several blocks as one frame, up to 85 ms of audio, and
+        // writing all of it made a one-second recording 1.1 s long.
+        if let limit = durationEnd, frameEnd > limit {
+            let keep = frame.sampleStart < limit
+                ? Int((Double(limit - frame.sampleStart) / (Double(captureRateHz) / audioRateOrOne)).rounded()) : 0
+            floats.removeLast(floats.count - Swift.min(keep, floats.count))
+            frameEnd = limit
         }
         // The recorder's own ring overflowed: the drain fell behind the channel. The frame is dated
         // from the newest block back, so the samples lost sit just before it.
@@ -613,13 +636,20 @@ actor RecordRunner: RecordRunning {
             await iqRetuned(t, at: popped.sampleStart)
         }
         now = popped.sampleStart + popped.sampleCount
+        // The block that crosses the duration is cut there, as an audio frame is (`handle`).
+        var payload = popped.payload
+        if let limit = durationEnd, now > limit {
+            let keep = popped.sampleStart < limit ? Int(limit - popped.sampleStart) : 0
+            payload = payload.prefix(Swift.min(payload.count, keep * 8))
+            now = limit
+        }
         if degraded {
             // Nothing is written while the capture is elsewhere, but the clock still runs.
             await endIfDurationReached(at: now)
             return
         }
         if !(await writer.isPartOpen) { await openPart(at: popped.sampleStart, gapReason: nil) }
-        await writer.append(iq: popped.payload)
+        await writer.append(iq: payload)
         await cutPartIfDue(at: now)
         if await failIfWriteFailed() { return }
         await endIfDurationReached(at: now)
@@ -684,8 +714,13 @@ actor RecordRunner: RecordRunning {
         return true
     }
 
+    /// The capture sample the recording ends at, when it was given a duration.
+    private var durationEnd: UInt64? {
+        durationSamples > 0 && started ? startSample + durationSamples : nil
+    }
+
     private func endIfDurationReached(at sample: UInt64) async {
-        guard durationSamples > 0, sample >= startSample + durationSamples else { return }
+        guard let end = durationEnd, sample >= end else { return }
         finish(state: .completed, detail: nil, code: nil, endedBy: "duration")
     }
 

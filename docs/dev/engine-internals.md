@@ -1455,10 +1455,12 @@ the channel's own meter and sits 10 dB above the band's floor at the channel's w
 power less its SNR), which is `ley tune`'s auto squelch done where the channel is; the channel's
 own power is the fallback before the capture has a floor.
 
-`duration_ms` is enforced twice, on the samples and on the clock, and whichever comes first ends
-the job: the sample check is the accurate one, but a radio that stops delivering -- a file device
-at the end of its file, a dongle unplugged -- would otherwise leave a job that asked for five
-minutes running for ever.
+`duration_ms` is a count of capture samples: the drain cuts the frame or block that crosses it at
+that sample and ends the job, so the part spans exactly the duration however far behind the drain
+has fallen. The clock is only a backstop for a radio that stops delivering -- a file device at the
+end of its file, a dongle unplugged -- which would otherwise leave a job that asked for five
+minutes running for ever: once the duration has passed on the clock, the job ends when the drain
+has not moved for 500 ms (`RecordRunner.deliveryStall`).
 
 `PartWriter` owns one open file at a time: a WAV opens with placeholder lengths that are patched
 from the file's own size on close, a cf32 is appended raw, and the part's sidecar and the manifest

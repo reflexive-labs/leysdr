@@ -211,14 +211,21 @@ final class RecordingJobTests: XCTestCase {
             XCTAssertGreaterThan(manifest.anchors[0].hostTimeNs, PartWriter.plausibleEpochNs,
                                  "the placeholder anchor was replaced once samples arrived")
             XCTAssertFalse(manifest.parts[0].file.hasPrefix("1970"), manifest.parts[0].file)
-            // One second at the channel's audio rate, within 5 % (a capture block is 6.8 ms at
-            // 2.4 MSPS, 328 audio frames at 48 kHz). A runner too slow for the radio drops samples
-            // ahead of the recording, and the part lists them as gaps rather than the WAV holding
-            // them (MC-9), so the second is the audio and the gaps together.
+            // A duration is a count of samples: the part spans exactly one second of the capture,
+            // however far behind the drain fell, and never the whole frame that crossed the end (a
+            // loaded runner popped one 96 ms frame and wrote a 1.1 s recording). A runner too slow
+            // for the radio drops samples ahead of the recording, and the part lists them as gaps
+            // rather than the WAV holding them (MC-9), so the second is the audio and the gaps
+            // together, to within one capture block (6.8 ms at 2.4 MSPS, 328 audio frames at
+            // 48 kHz) for the rounding of a dropped span to the audio rate.
+            let captureRate = UInt64(manifest.anchors[0].sampleRate)
+            XCTAssertEqual(manifest.parts[0].endSample - manifest.parts[0].startSample, captureRate,
+                           "the part spans exactly the second asked for")
             let want = Double(manifest.sampleRate)
-            let dropped = manifest.parts[0].droppedSeconds(at: Double(manifest.anchors[0].sampleRate)) * want
-            XCTAssertEqual(Double(manifest.parts[0].samples) + dropped, want, accuracy: want * 0.05,
-                           "about a second of audio at \(manifest.sampleRate) Hz, gaps included")
+            let dropped = manifest.parts[0].droppedSeconds(at: Double(captureRate)) * want
+            let block = Double(CaptureDSPCore.blockSize) * want / Double(captureRate)
+            XCTAssertEqual(Double(manifest.parts[0].samples) + dropped, want, accuracy: block,
+                           "a second of audio at \(manifest.sampleRate) Hz, gaps included")
             // The file on disk is the header plus the frames the header declares.
             let file = dir + "/" + started.jobID + "/" + manifest.parts[0].file
             let size = try FileManager.default.attributesOfItem(atPath: file)[.size] as? NSNumber
