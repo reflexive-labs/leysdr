@@ -5,6 +5,8 @@ What changed for someone using Leyline, newest first. Each released version has 
 
 ## Unreleased
 
+## 0.3.1 (2026-11-04)
+
 - **Fixed: the Decoders map jumped around.** It re-fitted itself to every aircraft several times a
   second, so it zoomed as aircraft appeared, moved and aged out. It now frames once, afterwards
   only zooms out when an aircraft would leave the view, and never moves when one disappears. Once
