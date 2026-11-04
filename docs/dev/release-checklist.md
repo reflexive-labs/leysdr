@@ -136,6 +136,35 @@ Run each with the release binaries (`make go swift-release`, `export PATH=$PWD/g
 - [ ] Ctrl-C in a `tune` session hands the radio back (`ley state` shows no channel); a hard kill of
       the terminal does the same within about five seconds. Ctrl-C in a `ley record` session leaves
       the recording complete: `ley recordings show` shows `cancelled` and the last part plays.
+- [ ] ADS-B: `ley decode aircraft` — the banner says `at 40 dB` and aircraft records arrive
+      within a minute (an antenna with a view of the sky); Ctrl-C, then `ley track aircraft` lists
+      them by callsign. In the app, ⌘3 > Aircraft > Start, the Map tab draws real map tiles under
+      the markers; name an aircraft in the inspector, then `ley label` lists that name.
+- [ ] One dongle, many users: in the app, listen on 146.520 MHz, then ⌘3 > Aircraft > Start —
+      "Take the radio?" names your 146.520 MHz channel; Take the radio. Stop — the radio returns
+      to 146.520 MHz and the audio resumes.
+- [ ] With Aircraft running, click the spectrum outside its span — "Move the radio?" names the
+      ADS-B decoder; Cancel leaves the radio on 1090 MHz; Move anyway moves it, and the Radio
+      inspector's Claims group shows the decoder `paused by the app`. Drag the band rail across
+      the edge — one question for the whole drag.
+- [ ] With Aircraft running, `ley tune 146.52` refuses and names the adsb decoder;
+      `ley tune 146.52 --retune` moves the radio. `ley decode aprs --dry-run` says where the job
+      would run and what it would pause, and `ley jobs` shows nothing started.
+- [ ] Watches: on Weather alerts' page, Notify Me… with County set to your FIPS code; quit the
+      app. During NOAA's Required Weekly Test (usually Wednesday 11:00–12:00 local) a macOS
+      notification banner appears. Note any permission prompt and which process asked.
+- [ ] APRS: start APRS from ⌘3 — the Radio sidebar's decoding row counts packets and callsigns
+      appear on the waterfall at 144.390 MHz. In the Library, Decode With > APRS on a 2 m
+      recording — the inspector shows a Decoded row (`APRS · N records`) whose link opens the APRS
+      page.
+- [ ] IQ recording across a retune: `ley record 146.52 --iq --for 2m`; from a second terminal
+      `ley tune 147.0 --retune`, then Ctrl-C it — `ley recordings show <id>` lists a separate
+      part per tuning and the gap between them.
+- [ ] An MCP agent (`ley mcp`) asked to start ADS-B while you listen in the app: it reports what
+      would pause (`dry_run`, or the refusal) before it calls again with `take_over`.
+- [ ] Restart under `rtl_tcp`: `ley daemon stop`, start `rtl_tcp` on the dongle, `ley daemon
+      start`, quit `rtl_tcp`, then `ley decode aircraft` — the banner says `at 40 dB` and records
+      arrive (the 2026-11-03 bug ran it at 0 dB).
 - [ ] `ley daemon uninstall` stops the daemon and removes the LaunchAgent.
 
 ## Acceptance, on a second Mac
@@ -161,6 +190,14 @@ quarantined, onto a Mac that has never built Leyline, or into a fresh user accou
       privacy blocks the daemon without a prompt, the release is not sent until the app declares
       `NSLocalNetworkUsageDescription`.
 - [ ] Audio plays from the daemon running as the app's login item.
+- [ ] `ls /Applications/Leyline.app/Contents/Helpers` lists `leydec-adsb`, and ⌘3 lists
+      Aircraft. `speech-scripted` and `iqstat`
+      are not listed, in ⌘3 or `ley decoders`.
+- [ ] Map tiles load in the signed, hardened build: ⌘3 > Aircraft > Map draws a basemap, not a
+      blank grid.
+- [ ] A watch notifies from the login-item daemon: `ley watch aprs --where device_id=<a station
+      you hear> --notify --detach` with the app quit, and a macOS notification arrives when it
+      is heard.
 - [ ] The update: with the previous release installed from its disk image, Leyline > Check for
       Updates… installs this one, the app restarts the daemon, and `ley daemon status` reports this
       release's version. Before the site is updated, point the app at a local feed with
