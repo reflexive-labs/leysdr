@@ -487,6 +487,134 @@ scenes:
     # The whole 163 s net, whose overs the decoder writes up as each ends.
     settle: 170
 
+  # The Decoders place on scene_adsb, as the check scene decoders-adsb reaches it: 150 records
+  # from the five aircraft, about seven seconds of their traffic, so each has sent the
+  # identification that names it, then the job cancelled so the counts stand still.
+  - asset: app-decoders-map.png
+    kind: app
+    alt: >-
+      The Leyline Decoders place on Aircraft: five aircraft by callsign on the map, each turned to
+      its track, and LEY303 selected, its position, altitude and every field it sent in the
+      inspector with their units.
+    fixtures: [{name: scene_adsb}]
+    clock: "19:42"
+    steps:
+      - ley: [decode, adsb, --job, --count, "150"]
+      - ley: [jobs, cancel, job_]
+    stage:
+      window: {width: 1440, height: 820}
+      place: decoders
+      inspector: true
+      decoder: aircraft
+      decoder_tab: map
+      select_transmitter: A1F003
+      settle: 2
+    app:
+      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tab: map, decoders.selected_transmitter: A1F003}}
+      - {cmd: snapshot, name: shot}
+    crop: {regions: [window]}
+
+  - asset: app-decoders-table.png
+    kind: app
+    alt: >-
+      The Leyline Decoders place on Aircraft as a table: the five aircraft by callsign, with
+      their altitude, ground speed, track and squawk, and when each was last heard.
+    fixtures: [{name: scene_adsb}]
+    clock: "19:42"
+    steps:
+      - ley: [decode, adsb, --job, --count, "150"]
+      - ley: [jobs, cancel, job_]
+    stage:
+      window: {width: 1440, height: 820}
+      place: decoders
+      inspector: true
+      decoder: aircraft
+      decoder_tab: table
+      select_transmitter: A1F003
+      settle: 2
+    app:
+      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tab: table}}
+      - {cmd: snapshot, name: shot}
+    crop: {regions: [window]}
+
+  # APRS from the Radio, as the check scene radio-decoding reaches it: a terminal starts APRS as
+  # a kept job on the window's capture once the window shows, and each station heard since puts
+  # its callsign on the waterfall row it was heard in. The stations send one every 3 s. ley
+  # exits after the first packet; the kept job runs on.
+  - asset: app-waterfall-names.png
+    kind: app
+    alt: >-
+      The Leyline window on 144.390 MHz with the APRS decoder running: the callsigns of the
+      stations it decoded on the waterfall rows they were heard in, and APRS's row at the top of
+      the sidebar.
+    fixtures: [{name: scene_aprs}]
+    clock: "19:42"
+    stage:
+      window: {width: 1440, height: 820}
+      place: radio
+      inspector: true
+      expanded_band: 2m
+      settle: 3
+    app:
+      - {cmd: ley, args: [decode, aprs, --job, --count, "1"]}
+      - {cmd: wait, seconds: 20, expect_log: "tag N0CALL-[1-7] at 144390000 Hz"}
+      - {cmd: state, expect: {decoding_rows.0.decoder: aprs, waterfall_tags.0.hz: 144390000}}
+      - {cmd: snapshot, name: shot}
+    crop: {regions: [window]}
+
+  # The question before a person's move pauses a job, as the check scene retune-asks reaches it:
+  # Scan band on 2 m with a terminal's APRS job on the window's radio. Decoders' "Take the
+  # radio?" is the same question from the other side, but it asks only when Start would retune
+  # the radio, and a file radio tunes only where it was recorded, so no fixture reaches it.
+  - asset: app-move-radio.png
+    kind: app
+    alt: >-
+      The Leyline window asking "Move the radio?" before Scan band on 2 m, because the sweep
+      pauses the APRS decoder on 144.390 MHz, with Sweep anyway and Cancel.
+    fixtures: [{name: scene_aprs}]
+    clock: "19:42"
+    stage:
+      window: {width: 1440, height: 820}
+      place: radio
+      inspector: true
+      expanded_band: 2m
+      settle: 3
+    app:
+      - {cmd: ley, args: [decode, aprs, --job, --count, "1"]}
+      - {cmd: wait, seconds: 8}
+      - {cmd: state, expect: {tuned_hz: 144390000, decoding_rows.0.decoder: aprs, alert: null}}
+      - {cmd: press, identifier: sidebar.band.2m.scan}
+      - {cmd: wait, seconds: 1, expect_log: "asked before scan .*: This pauses the APRS decoder on 144.390 MHz."}
+      - {cmd: state, expect: {alert.title: "Move the radio?", alert.message: "This pauses the APRS decoder on 144.390 MHz."}}
+      - {cmd: snapshot, name: shot}
+    crop: {regions: [window]}
+
+  # --dry-run from the scene's daemon, APRS running as a kept job. A file radio tunes only where
+  # it was recorded, so neither the retune Aircraft would need nor `ley tune 146.52` refused over
+  # the decoder is reachable here: the aircraft dry run declines as "cannot tune", and a tune off
+  # the recording is FREQ_OUT_OF_RANGE before anybody's claim is weighed. The shot is the sharing
+  # answer and the decline.
+  - asset: ley-dry-run.png
+    kind: terminal
+    alt: >-
+      Two terminal panes with the APRS decoder running: ley decode aprs --dry-run saying where the
+      job would go, above ley decode aircraft --dry-run saying it would not start, because the
+      radio cannot tune to 1090 MHz.
+    fixtures: [{name: scene_aprs}]
+    clock: "19:42"
+    steps:
+      - ley: [decode, aprs, --job, --count, "1"]
+    terminal:
+      cols: 116
+      rows: 14
+      split: vertical
+      panes:
+        - command: ley decode aprs --dry-run
+          delay: 1
+        - command: ley decode aircraft --dry-run
+          delay: 2
+    settle: 4
+
   - asset: app-icon-1024.png
     kind: icon
     alt: The Leyline app icon.
