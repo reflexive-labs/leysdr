@@ -3,6 +3,7 @@
 import EngineCore
 import Foundation
 @testable import LeylineServer
+import Synchronization
 import LeylineProto
 import XCTest
 
@@ -47,6 +48,48 @@ final class BulkStreamDrainTests: XCTestCase {
         XCTAssertEqual(frame?.sampleStart, 0, "the frame begins with the first block it holds")
         XCTAssertEqual(frame?.sampleCount, 48000, "and spans all three")
         XCTAssertNil(audio.next(s16: false))
+    }
+
+    /// The channel pushes from its own thread while the reader pops, so the newest block's end and
+    /// the count of samples pushed must be read as one: read apart, a push landing between them
+    /// dates the frame a block late or early. On a loaded runner a frame dated 12 ms late put
+    /// 12 ms of audio more into a part than its span, and one dated early let a one-second
+    /// recording run past its duration. Every frame here must sit exactly where its samples were
+    /// pushed, however the two threads interleave.
+    func testAFrameReadWhileTheChannelPushesIsDatedWhereItsSamplesAre() {
+        // Small blocks pushed back to back make the window between the two reads as likely to be
+        // hit as it can be; the pusher stays well inside the ring, so nothing is dropped.
+        let perBlock = 8
+        let blocks = 400_000
+        let audio = AudioFrameSource(captureRate: 2_400_000, audioRate: 48000)
+        let consumed = Atomic<Int>(0)
+        let pusher = Thread {
+            let capture = CaptureID()
+            let storage = SampleStorage(capacity: perBlock, format: .f32)
+            for block in 0..<blocks {
+                while block * perBlock - consumed.load(ordering: .relaxed) > 8192 { sched_yield() }
+                audio.sink.write(storage.view(count: perBlock),
+                                 at: SampleTime(captureID: capture, sampleIndex: UInt64(block * perBlock * 50)))
+            }
+        }
+        pusher.start()
+        var read: UInt64 = 0
+        var misdated = 0
+        var firstMiss = ""
+        let total = UInt64(blocks * perBlock)
+        while read < total {
+            guard let frame = audio.next(s16: false) else { continue }
+            XCTAssertEqual(frame.droppedSamples, 0, "the pusher stays inside the ring, so nothing is dropped")
+            if frame.sampleStart != read * 50 {
+                if misdated == 0 {
+                    firstMiss = "frame at audio sample \(read) dated \(frame.sampleStart), not \(read * 50)"
+                }
+                misdated += 1
+            }
+            read += UInt64(frame.payload.count / 4)
+            consumed.store(Int(read), ordering: .relaxed)
+        }
+        XCTAssertEqual(misdated, 0, "frames dated away from their samples; the first: \(firstMiss)")
     }
 
     /// The channel's audio callback runs on another thread, so a push can land as the source is

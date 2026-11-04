@@ -65,9 +65,11 @@ final class AudioFrameSource: @unchecked Sendable {
     private let pokeContinuation: AsyncStream<Void>.Continuation
     /// Shared with the sink closure (stdlib atomics are non-copyable, so they live in a box).
     private final class Counters: Sendable {
-        /// The capture sample just past the newest audio pushed into the ring.
-        let lastBlockEnd = Atomic<UInt64>(0)
-        let written = Atomic<Int>(0)
+        /// The audio samples pushed so far (`first`) and the capture sample just past the newest of
+        /// them (`second`), published as one pair. Read apart, a push landing between the two
+        /// reads dated a frame a block early or late: 12 ms on a loaded runner, enough to put
+        /// audio outside a part's span and to carry a recording past its duration.
+        let pushed = Atomic<WordPair>(WordPair(first: 0, second: 0))
     }
     private let counters = Counters()
     private var read = 0
@@ -95,8 +97,10 @@ final class AudioFrameSource: @unchecked Sendable {
         sink = CallbackSink(tap: tap) { audio, time in
             guard audio.format == .f32, audio.count > 0 else { return }
             let n = r.push(UnsafeBufferPointer(audio.floats))
-            k.lastBlockEnd.store(time.sampleIndex &+ UInt64(Double(n) * perAudio), ordering: .relaxed)
-            k.written.wrappingAdd(n, ordering: .releasing)
+            // One writer (the channel's thread), so the pair is read and replaced without a CAS.
+            let written = k.pushed.load(ordering: .relaxed).first &+ UInt(n)
+            let end = time.sampleIndex &+ UInt64(Double(n) * perAudio)
+            k.pushed.store(WordPair(first: written, second: UInt(end)), ordering: .releasing)
             // The one lock on this path: `yield` takes the stream's internal lock for the hand-off.
             c.yield(())
         }
@@ -116,12 +120,20 @@ final class AudioFrameSource: @unchecked Sendable {
     func next(s16: Bool) -> Frame? {
         let n = ring.pop(into: scratch)
         guard n > 0 else { return nil }
-        let w = counters.written.load(ordering: .acquiring)
-        let backlog = max(0, w - read - n)
+        // The frame's first sample is `read`; the pair says where audio sample `written` ends.
+        // A push can reach the ring before its pair is published, so the frame may run past
+        // `written`, and is then dated forward from the pair rather than back.
+        let pair = counters.pushed.load(ordering: .acquiring)
+        let written = Int(bitPattern: pair.first)
+        let blockEnd = UInt64(pair.second)
         let perAudio = captureRate / audioRate
-        let blockEnd = counters.lastBlockEnd.load(ordering: .relaxed)
-        let behind = UInt64(Double(backlog + n) * perAudio)
-        let start = blockEnd > behind ? blockEnd - behind : 0
+        let start: UInt64
+        if written >= read {
+            let behind = UInt64(Double(written - read) * perAudio)
+            start = blockEnd > behind ? blockEnd - behind : 0
+        } else {
+            start = blockEnd + UInt64(Double(read - written) * perAudio)
+        }
         read += n
         let dropped = ring.dropped
         let droppedNow = UInt64(Double(dropped - lastDropped) * perAudio)
