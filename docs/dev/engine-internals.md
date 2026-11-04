@@ -412,7 +412,15 @@ is once per process, so installing or replacing a library requires a daemon rest
   feature `held_externally`, logs it once, and re-probes on a doubling backoff (2 s up to 60 s)
   rather than every poll, because each failed `rtlsdr_open` makes librtlsdr print its
   `usb_claim_interface` complaint to stderr. A successful re-probe (or one of our own captures
-  opening it) flips it back to `AVAILABLE` with the real tuner and gain table. The reverse also
+  opening it) flips it back to `AVAILABLE` with the real tuner and gain table, and logs that the
+  dongle "is available again". The poll cannot tell a dongle has been let go without trying to
+  open it, so a capture often gets there first: `RTLSDRDevice.open` reads the tuner type and gain
+  table from the handle it has just opened (`readTuner`, the table librtlsdr hard-codes when it
+  gives none), and `markInUse` takes the descriptor from the device rather than keeping the
+  listing's, publishes it as `changed` and returns it to the session store, so the capture's
+  first gain write already sees the table. A manual level asked of a gain element with no table
+  and no range (`GainElement.isKnown`) is refused `FAILED_PRECONDITION`, never clamped: the clamp
+  into 0 to 0 dB set 0 dB whatever was asked (2026-11-03, an ADS-B job's 40 dB). The reverse also
   holds: when a capture's own `rtlsdr_open` fails with a libusb ACCESS/BUSY code (another program
   grabbed a dongle that had probed fine), `RTLSDRDevice.open` throws `DEVICE_BUSY` naming the other
   program and the session store calls `markHeldExternally`, so the dongle reads `IN_USE` and the

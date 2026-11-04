@@ -277,24 +277,41 @@ package actor DefaultDeviceRegistry: DeviceRegistry {
         publish(.changed(entry.descriptor))
     }
 
-    /// Marks a device `.inUse` (a capture holds it) or back to `.available`; publishes `changed`.
-    /// A capture that opens a dongle reported as held by another program proves the hold is over,
-    /// so the external-hold flag and its re-probe schedule are cleared here too.
-    package func markInUse(id: DeviceID, _ inUse: Bool) throws {
+    /// Marks a device `.inUse` (a capture holds it) or back to `.available`; publishes `changed`
+    /// and returns the descriptor as it now stands.
+    ///
+    /// A capture marks the device in use once it has opened it, and an open device knows more than
+    /// the listing may: a dongle first seen while another program held it was listed with no tuner
+    /// and no gain table, and `RTLSDRDevice.open` reads both from the handle. So the descriptor is
+    /// taken again from the device here, keeping only what the registry itself decides
+    /// (`serial_collision`), and a client sees the real gain table the moment the capture starts.
+    /// The same open proves another program's hold is over, so the external-hold flag and its
+    /// re-probe schedule are cleared too, and the log says the dongle is available again, as a
+    /// re-probe that finds it free does.
+    @discardableResult
+    package func markInUse(id: DeviceID, _ inUse: Bool) throws -> DeviceDescriptor {
         guard var entry = entries[id] else { throw EngineError.deviceNotFound(id.string) }
         guard entry.descriptor.state != .disconnected else { throw EngineError.deviceDetached(id.string) }
         let state: DeviceState = inUse ? .inUse : .available
         let releasingHold = entry.heldExternally
-        guard entry.descriptor.state != state || releasingHold else { return }
-        entry.descriptor.state = state
+        var d = entry.device.descriptor
+        d.id = id
+        d.state = state
+        d.features["held_externally"] = nil
+        if let collided = entry.descriptor.features["serial_collision"] { d.features["serial_collision"] = collided }
+        guard d != entry.descriptor || releasingHold else { return entry.descriptor }
+        if releasingHold {
+            DefaultDeviceRegistry.logger.info("radio \(d.serial) (\(d.model)) is available again: a capture opened it")
+        }
+        entry.descriptor = d
         entry.heldExternally = false
-        entry.descriptor.features["held_externally"] = nil
         probeBackoff[id] = nil
         entries[id] = entry
         if let v = entry.device as? VirtualDevice { v.setState(state) }
         if let r = entry.device as? RTLSDRDevice { r.setState(state) }
         if let h = entry.device as? HackRFDevice { h.setState(state) }
-        publish(.changed(entry.descriptor))
+        publish(.changed(d))
+        return d
     }
 
     // MARK: Hot-plug polling

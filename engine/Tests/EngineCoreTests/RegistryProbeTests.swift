@@ -86,6 +86,60 @@ final class RegistryProbeTests: XCTestCase {
         XCTAssertNil(released.features["held_externally"])
     }
 
+    /// The 2026-11-03 failure: a dongle first probed while rtl_tcp held it has no tuner and no gain
+    /// table, and a capture that opens it after rtl_tcp lets go must not run on that. The open
+    /// reads both from the handle (`RTLSDRDevice.open`, standing in here as `updateProbe`, which
+    /// needs no hardware), and marking the dongle in use takes the descriptor from the device: the
+    /// `changed` the registry publishes carries the tuner and the table, the hold is over, and the
+    /// poll does not open the dongle again once it is free.
+    func testOwnCaptureOpenPublishesTheTableTheHandleRead() async throws {
+        let reg = DefaultDeviceRegistry(pollIntervalMs: 1000, enumerateHardware: false)
+        var events = reg.events().makeAsyncIterator()
+        _ = await reg.advanceTickAndProbeGate()
+        await reg.applyProbes([probe(tuner: "unknown", gains: [], openError: -6)])
+        guard case .arrived(let first) = try await next(&events) else { return XCTFail("expected arrived") }
+        XCTAssertEqual(first.gainElements.first?.validDB, [])
+        XCTAssertEqual(first.gainElements.first?.maxDB, 0)
+        XCTAssertFalse(try XCTUnwrap(first.gainElements.first).isKnown)
+
+        let device = await reg.device(id: first.id)
+        let rtl = try XCTUnwrap(device as? RTLSDRDevice)
+        let table = RTLSDRDevice.knownGainTableDB(tuner: "R820T")
+        let opened = try XCTUnwrap(RTLSDRDevice.refreshedProbe(rtl.probe, tuner: "R820T",
+                                                               ranges: RTLSDRDevice.tunerInfo(RTLSDR_TUNER_R820T).ranges,
+                                                               gainsDB: table))
+        rtl.updateProbe(opened)
+
+        let returned = try await reg.markInUse(id: first.id, true)
+        guard case .changed(let ours) = try await next(&events) else { return XCTFail("expected changed") }
+        XCTAssertEqual(ours, returned, "the caller gets the descriptor it publishes")
+        XCTAssertEqual(ours.state, .inUse)
+        XCTAssertNil(ours.features["held_externally"])
+        XCTAssertEqual(ours.features["tuner"], .text("R820T"))
+        XCTAssertEqual(ours.features["serial_collision"], .flag(false), "what the registry decides survives")
+        XCTAssertEqual(ours.gainElements.first?.validDB, table)
+        XCTAssertEqual(ours.gainElements.first?.snapped(40), 40.2, "an ADS-B job's 40 dB, on a step of the table")
+
+        try await reg.markInUse(id: first.id, false)
+        guard case .changed(let released) = try await next(&events) else { return XCTFail("expected changed") }
+        XCTAssertEqual(released.gainElements.first?.validDB, table, "the table outlives the capture")
+        let gate = await reg.advanceTickAndProbeGate()
+        XCTAssertFalse(gate(probe(tuner: "unknown", gains: [])), "an opened dongle is probed; the poll leaves it alone")
+    }
+
+    /// What an open handle adds to the probe: nothing when the handle cannot name the tuner, the
+    /// table librtlsdr hard-codes when it gives none, and nothing again when the probe had it all.
+    func testRefreshedProbe() {
+        let busy = probe(tuner: "unknown", gains: [], openError: -3)
+        let r820t = RTLSDRDevice.tunerInfo(RTLSDR_TUNER_R820T).ranges
+        XCTAssertNil(RTLSDRDevice.refreshedProbe(busy, tuner: "unknown", ranges: r820t, gainsDB: []))
+        let filled = RTLSDRDevice.refreshedProbe(busy, tuner: "R820T", ranges: r820t, gainsDB: [])
+        XCTAssertEqual(filled?.gainsDB, RTLSDRDevice.knownGainTableDB(tuner: "R820T"))
+        XCTAssertNil(filled?.openError)
+        let known = probe(tuner: "R820T", gains: [0, 0.9, 49.6])
+        XCTAssertNil(RTLSDRDevice.refreshedProbe(known, tuner: "R820T", ranges: known.tuningRanges, gainsDB: [0, 0.9, 49.6]))
+    }
+
     /// A capture's own failed claim (rtlsdr_open ACCESS/BUSY after the dongle was probed fine, e.g.
     /// rtl_tcp restarted and grabbed it) marks the dongle held exactly like a failed probe.
     func testCaptureClaimFailureMarksHeld() async throws {

@@ -103,12 +103,17 @@ extension SessionStore {
             }
         }
         captures[id] = entry
-        if var d = devices[deviceID], d.state != .inUse {
+        // The registry hands back the descriptor as the open device gives it: a dongle listed
+        // while another program held it gains its tuner and gain table here, so the table is in
+        // `devices` before anything (a decode job's recipe gain) reads it.
+        let opened = try? await registry.markInUse(id: deviceID, true)
+        if var d = opened ?? devices[deviceID], devices[deviceID] != nil {
             d.state = .inUse
-            devices[deviceID] = d
-            emit(.device(ProtoMapping.descriptor(d)), captureID: nil, by: by)
+            if devices[deviceID] != d {
+                devices[deviceID] = d
+                emit(.device(ProtoMapping.descriptor(d)), captureID: nil, by: by)
+            }
         }
-        try? await registry.markInUse(id: deviceID, true)
         let proto = await captureProto(id)!
         emit(.capture(proto), captureID: id, by: by)
         emit(.anchor(proto.anchor), captureID: id, by: by)

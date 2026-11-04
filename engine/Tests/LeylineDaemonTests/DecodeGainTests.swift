@@ -245,6 +245,85 @@ final class DecodeGainTests: XCTestCase {
         }
     }
 
+    /// The 2026-11-03 failure: the daemon listed the dongle while rtl_tcp held it, so it had no gain
+    /// table, and an ADS-B job's 40 dB was clamped into 0 to 0 dB. The capture's open now reads the
+    /// table, the registry publishes the device with it, and the recipe's 40 dB lands on the
+    /// table's nearest step.
+    func testARadioListedWithoutItsGainTableTakesTheRecipeGainOnceOpened() async throws {
+        let plugins = try makeTempDir("decoders")
+        defer { try? FileManager.default.removeItem(atPath: plugins) }
+        try writeFixedGainPlugin(in: plugins, name: "fakeiq", signal: "SIGNAL_IQ")
+        try await withDaemon(decoderSearchPath: [plugins]) { c in
+            let radio = ScriptedRadio(tableUntilOpen: false)
+            let id = try await c.daemon.registry.attachVirtualDevice(radio).descriptor.id
+            try await Task.sleep(nanoseconds: 200_000_000)
+            var state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            let listed = try XCTUnwrap(state.devices.first { $0.deviceID == id.string })
+            XCTAssertEqual(listed.gainElements.first?.validDb, [], "listed before anything opened it")
+            XCTAssertEqual(listed.gainElements.first?.maxDb, 0)
+            let (changes, collecting) = self.collectChanges(c.daemon.registry)
+            defer { collecting.cancel() }
+
+            let started = try await self.start(c, decoder: "fakeiq")
+            let running = try await self.decoding(c, started.jobID)
+            XCTAssertEqual(running.state, .running, running.statusDetail)
+            let db = try await self.tunerDb(c)
+            XCTAssertEqual(db, 40.2, "the recipe's 40 dB on the table's nearest step, not clamped to 0")
+
+            state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            let opened = try XCTUnwrap(state.devices.first { $0.deviceID == id.string })
+            XCTAssertEqual(opened.gainElements.first?.validDb, ScriptedRadio.r820tTableDB, "the table the open read")
+            XCTAssertEqual(opened.state, .inUse)
+            let changed = try await self.firstChange(changes) { $0.id == id && $0.gainElements.first?.validDB.isEmpty == false }
+            XCTAssertEqual(changed?.features["tuner"], .text("R820T"), "the registry published the device as opened")
+            try await self.cancel(c, started.jobID)
+        }
+    }
+
+    /// A radio whose open could not read the table either refuses a level rather than setting
+    /// 0 dB: the recipe's refusal is said in the detail, and the tuner is left on auto.
+    func testALevelAskedOfAnUnknownTableIsRefusedNotClamped() async throws {
+        let plugins = try makeTempDir("decoders")
+        defer { try? FileManager.default.removeItem(atPath: plugins) }
+        try writeFixedGainPlugin(in: plugins, name: "fakeiq", signal: "SIGNAL_IQ")
+        try await withDaemon(decoderSearchPath: [plugins]) { c in
+            let radio = ScriptedRadio(tableUntilOpen: false, learnsTableOnOpen: false)
+            _ = try await c.daemon.registry.attachVirtualDevice(radio)
+            try await Task.sleep(nanoseconds: 200_000_000)
+            let started = try await self.start(c, decoder: "fakeiq")
+            let running = try await self.decoding(c, started.jobID)
+            XCTAssertEqual(running.state, .running, running.statusDetail)
+            XCTAssertTrue(running.statusDetail.contains("Scripted RTL has not reported its gain table, so 40 dB cannot be set"),
+                          running.statusDetail)
+            let db = try await self.tunerDb(c)
+            XCTAssertNil(db, "left on auto, never set to 0 dB")
+            try await self.cancel(c, started.jobID)
+        }
+    }
+
+    /// Every `changed` the registry publishes from now on, in a box the test reads.
+    private func collectChanges(_ registry: DefaultDeviceRegistry) -> (LockedValue<[DeviceDescriptor]>, Task<Void, Never>) {
+        let seen = LockedValue<[DeviceDescriptor]>([])
+        let events = registry.events()
+        let task = Task {
+            for await event in events {
+                if case .changed(let d) = event { seen.value.append(d) }
+            }
+        }
+        return (seen, task)
+    }
+
+    /// The first change in `seen` that `match` accepts, waiting up to 5 s for it.
+    private func firstChange(_ seen: LockedValue<[DeviceDescriptor]>,
+                             _ match: (DeviceDescriptor) -> Bool) async throws -> DeviceDescriptor?
+    {
+        for _ in 0..<100 {
+            if let d = seen.value.first(where: match) { return d }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        return nil
+    }
+
     func testGainWords() {
         let tuner = [GainElement(name: "TUNER", minDB: 0, maxDB: 49.6, stepDB: 0.9, supportsAuto: true)]
         XCTAssertEqual(JobStore.gainWords([GainState(element: "TUNER", value: .db(49.6))], tuner), "49.6 dB")

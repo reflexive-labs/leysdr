@@ -41,6 +41,11 @@ package struct GainElement: Hashable, Sendable {
         self.validDB = validDB
     }
 
+    /// Whether the element says what levels it takes: a table, or a range wider than one point. A
+    /// tuner listed before anything could open it has neither, and clamping a level into its
+    /// 0 to 0 dB sets 0 dB, the deafest setting, whatever was asked for.
+    package var isKnown: Bool { !validDB.isEmpty || maxDB > minDB }
+
     /// Clamp/snap a requested value into this element's domain.
     package func snapped(_ db: Double) -> Double {
         if !validDB.isEmpty {
@@ -248,6 +253,13 @@ package struct EngineError: Error, Hashable, Sendable, CustomStringConvertible {
     package static func providerRefused(_ provider: String, providerMessage: String) -> EngineError { .init(code: Code.providerRefused, message: "\(provider) refused the request: \(providerMessage); check the account at the provider, then try again with ley ai check \(provider)", target: provider) }
     /// A precondition the caller can see and fix, where no more specific code fits.
     package static func failedPrecondition(_ msg: String, target: String = "") -> EngineError { .init(code: Code.failedPrecondition, message: msg, target: target) }
+    /// A manual level asked of a gain stage whose levels are not known (`GainElement.isKnown`).
+    /// Refused rather than clamped: the clamp would land on 0 dB whatever was asked for.
+    package static func gainTableUnknown(_ db: Double, model: String, target: String) -> EngineError {
+        .init(code: Code.failedPrecondition,
+              message: "\(model) has not reported its gain table, so \(String(format: "%g", db)) dB cannot be set; auto gain still works",
+              target: target)
+    }
     /// A fault the caller did not cause and cannot act on; the prose is whatever went wrong.
     package static func internalError(_ msg: String, target: String = "") -> EngineError { .init(code: Code.internalError, message: msg, target: target) }
 }

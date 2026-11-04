@@ -192,15 +192,48 @@ package final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
     /// Registry use: replaces a degraded discovery probe (device was busy when first seen) with a
     /// successful one and rebuilds the descriptor — tuner, gain table, tuning ranges — keeping state.
     package func updateProbe(_ p: RTLSDRProbe) {
-        withLock {
-            probe = p
-            index = p.index
-            features["tuner"] = .text(p.tuner)
-            let state = _descriptor.state
-            _descriptor = RTLSDRDevice.makeDescriptor(probe: p, id: _descriptor.id, features: features)
-            _descriptor.state = state
-            if !_descriptor.canTune(centerHz) { centerHz = p.tuningRanges.first?.minHz ?? centerHz }
+        withLock { applyProbe(p) }
+    }
+
+    /// `updateProbe`'s body, for callers that already hold `lock`.
+    private func applyProbe(_ p: RTLSDRProbe) {
+        probe = p
+        index = p.index
+        features["tuner"] = .text(p.tuner)
+        let state = _descriptor.state
+        _descriptor = RTLSDRDevice.makeDescriptor(probe: p, id: _descriptor.id, features: features)
+        _descriptor.state = state
+        if !_descriptor.canTune(centerHz) { centerHz = p.tuningRanges.first?.minHz ?? centerHz }
+    }
+
+    /// What an open handle says about its tuner: the name, the tuning ranges and the gain table in
+    /// dB. The table is empty when librtlsdr could not read it.
+    static func readTuner(_ d: OpaquePointer) -> (name: String, ranges: [FrequencyRange], gainsDB: [Double]) {
+        let info = tunerInfo(rtlsdr_get_tuner_type(d))
+        var gains: [Double] = []
+        let n = rtlsdr_get_tuner_gains(d, nil)
+        if n > 0 {
+            var table = [Int32](repeating: 0, count: Int(n))
+            let got = rtlsdr_get_tuner_gains(d, &table)
+            if got > 0 { gains = table.prefix(Int(got)).map { Double($0) / 10.0 } }
         }
+        return (info.name, info.ranges, gains)
+    }
+
+    /// The probe this device holds, brought up to date with what an open handle reported. A dongle
+    /// first seen while another program held it has tuner "unknown" and no gain table, and keeps
+    /// them until something opens it; the first capture to open it is that something. A tuner the
+    /// handle does not name leaves the probe as it is, and a table librtlsdr would not give is the
+    /// one it hard-codes for that tuner. nil when nothing changes.
+    static func refreshedProbe(_ p: RTLSDRProbe, tuner: String, ranges: [FrequencyRange],
+                               gainsDB: [Double]) -> RTLSDRProbe? {
+        guard tuner != "unknown" else { return nil }
+        var next = p
+        next.tuner = tuner
+        next.tuningRanges = ranges
+        next.gainsDB = gainsDB.isEmpty ? knownGainTableDB(tuner: tuner) : gainsDB
+        next.openError = nil
+        return next == p ? nil : next
     }
 
     private func withLock<T>(_ body: () throws -> T) rethrows -> T {
@@ -293,15 +326,10 @@ package final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
                 let rc = rtlsdr_open(&dev, i)
                 if rc != 0 || dev == nil { probe.openError = rc == 0 ? -1 : rc }
                 if rc == 0, let d = dev {
-                    let info = tunerInfo(rtlsdr_get_tuner_type(d))
+                    let info = readTuner(d)
                     probe.tuner = info.name
                     probe.tuningRanges = info.ranges
-                    let n = rtlsdr_get_tuner_gains(d, nil)
-                    if n > 0 {
-                        var table = [Int32](repeating: 0, count: Int(n))
-                        let got = rtlsdr_get_tuner_gains(d, &table)
-                        if got > 0 { probe.gainsDB = table.prefix(Int(got)).map { Double($0) / 10.0 } }
-                    }
+                    probe.gainsDB = info.gainsDB
                     rtlsdr_close(d)
                 }
             }
@@ -352,6 +380,17 @@ package final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
                     throw error
                 }
                 dev = opened
+                // The handle knows the tuner and its gain table, which the registry's probe may not:
+                // a dongle first seen while another program held it was listed without them, and a
+                // gain set against an empty table would land on 0 dB. The registry takes the
+                // refreshed descriptor when the capture marks the dongle in use.
+                let info = RTLSDRDevice.readTuner(opened)
+                if let next = RTLSDRDevice.refreshedProbe(probe, tuner: info.name, ranges: info.ranges,
+                                                          gainsDB: info.gainsDB) {
+                    RTLSDRDevice.logger.info(
+                        "\(_descriptor.id.string): the open handle reports \(next.tuner) with \(next.gainsDB.count) gain steps; was \(probe.tuner) with \(probe.gainsDB.count)")
+                    applyProbe(next)
+                }
             }
         }
     }
@@ -430,6 +469,9 @@ package final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
                 try check(rtlsdr_set_tuner_gain_mode(d, 0), "rtlsdr_set_tuner_gain_mode")
                 gain = .auto
             case .db(let requested):
+                guard el.isKnown else {
+                    throw EngineError.gainTableUnknown(requested, model: _descriptor.model, target: _descriptor.id.string)
+                }
                 let db = el.snapped(requested)
                 try check(rtlsdr_set_tuner_gain_mode(d, 1), "rtlsdr_set_tuner_gain_mode")
                 try check(rtlsdr_set_tuner_gain(d, Int32((db * 10).rounded())), "rtlsdr_set_tuner_gain")

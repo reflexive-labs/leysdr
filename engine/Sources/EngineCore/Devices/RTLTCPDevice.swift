@@ -407,6 +407,9 @@ package final class RTLTCPDevice: VirtualDevice, @unchecked Sendable {
                 try sendCommand(.setGainMode, 0)
                 gain = .auto
             case .db(let requested):
+                guard el.isKnown else {
+                    throw EngineError.gainTableUnknown(requested, model: _descriptor.model, target: _descriptor.id.string)
+                }
                 let db = el.snapped(requested)
                 try sendCommand(.setGainMode, 1)
                 try sendCommand(.setGain, UInt32(bitPattern: Int32((db * 10).rounded())))
