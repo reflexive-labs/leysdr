@@ -597,31 +597,26 @@ scenes:
       - {cmd: snapshot, name: shot}
     crop: {regions: [window]}
 
-  # --dry-run from the scene's daemon, APRS running as a kept job. A file radio tunes only where
-  # it was recorded, so neither the retune Aircraft would need nor `ley tune 146.52` refused over
-  # the decoder is reachable here: the aircraft dry run declines as "cannot tune", and a tune off
-  # the recording is FREQ_OUT_OF_RANGE before anybody's claim is weighed. The shot is the sharing
-  # answer and the decline.
+  # --dry-run from the scene's daemon, APRS running as a kept job: a second APRS job would share
+  # its capture. A file radio tunes only where it was recorded, so a dry run that retunes, or one
+  # that declines, would show the harness ("a file radio plays what it recorded") rather than what
+  # a person with a dongle sees.
   - asset: ley-dry-run.png
     kind: terminal
     alt: >-
-      Two terminal panes with the APRS decoder running: ley decode aprs --dry-run saying where the
-      job would go, above ley decode aircraft --dry-run saying it would not start, because the
-      radio cannot tune to 1090 MHz.
+      ley decode aprs --dry-run in a terminal with the APRS decoder already running: it would
+      share the capture at 144.390 MHz and retune nothing.
     fixtures: [{name: scene_aprs}]
     clock: "19:42"
     steps:
       - ley: [decode, aprs, --job, --count, "1"]
     terminal:
-      cols: 116
-      rows: 14
-      split: vertical
+      cols: 90
+      rows: 6
       panes:
         - command: ley decode aprs --dry-run
           delay: 1
-        - command: ley decode aircraft --dry-run
-          delay: 2
-    settle: 4
+    settle: 3
 
   - asset: app-icon-1024.png
     kind: icon

@@ -237,7 +237,7 @@ only app scenes set it).
 | `app-decoders-table.png` | app, driven, 1440 × 820 pt window | `scene_adsb`, 150 records, Aircraft as a table, LEY303 selected |
 | `app-waterfall-names.png` | app, driven, 1440 × 820 pt window | `scene_aprs`, `ley decode aprs --job` once the window shows, the callsigns on the waterfall |
 | `app-move-radio.png` | app, driven, 1440 × 820 pt window | `scene_aprs` with APRS as a job, then Scan band on 2 m: "Move the radio?" |
-| `ley-dry-run.png` | terminal, split | `scene_aprs` with APRS as a job: `ley decode aprs --dry-run` above `ley decode aircraft --dry-run` |
+| `ley-dry-run.png` | terminal, split | `scene_aprs` with APRS as a job: `ley decode aprs --dry-run` |
 | `app-icon-1024.png` | `scripts/render-icon.swift --png 1024` | none |
 
 Some scenes need more than the stage and a tuned channel:

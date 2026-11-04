@@ -75,14 +75,14 @@ can use `aprs-track.png` and `ais-track.png`, which are re-shot with the table o
 | `app-decoders-table.png` | Aircraft as a table: callsign, altitude, speed, track, squawk, last heard | the Decoders feature, beside the map | A table of what was heard, by name. |
 | `app-waterfall-names.png` | the Radio place on 2 m with APRS running: station names on the waterfall rows they came from, the decoding row in the sidebar | the Decoders feature, or the app section | Decoded callsigns, on the waterfall where they were heard. |
 | `app-move-radio.png` | "Move the radio?" before Scan band on 2 m, naming the APRS decoder on 144.390 MHz that the sweep would pause | the sharing feature | Before you move the radio, it says what stops. |
-| `ley-dry-run.png` | with APRS running, `ley decode aprs --dry-run` saying it would share the capture and retune nothing, then `ley decode aircraft --dry-run` saying it would not start because the radio cannot tune to 1090 MHz | Ways, or the sharing feature | Ask first: --dry-run says what would happen. |
+| `ley-dry-run.png` | with APRS running, `ley decode aprs --dry-run` saying it would share the capture and retune nothing | Ways, or the sharing feature | Ask first: --dry-run says what would happen. |
 
 The scenes play recordings, and a file radio tunes only where its recording was made, so two
 assets differ from the first plan. Decoders' "Take the radio?" asks only when Start would retune
 the radio, which no recording can reach, so the sharing picture is the Radio's "Move the radio?"
 (`app-move-radio.png`), the same question from the other side. For the same reason `ley tune`
 off the recording fails as out of range before any claim is weighed, so `ley-dry-run.png` shows a
-dry run that shares beside one that declines, not a refused tune.
+dry run that shares, not a refused tune.
 
 Alt text comes from `shots.json`, ending "Simulated signals." as before: the aircraft are the
 synthetic `scene_adsb` fixture, and a caption must not present them as real traffic.
