@@ -654,6 +654,10 @@ public struct ControlDecoders: Sendable, Equatable, Codable {
     /// by `device_id`.
     public var transmitters: [String]
     public var selectedTransmitter: String?
+    /// How many transmitters the page holds, and whether its map frames them itself (false once
+    /// the person moved it, until Fit All).
+    public var transmitterCount: Int
+    public var mapFollowing: Bool
     /// The alerts in effect as their lines read.
     public var alerts: [String]
     /// The page's notice: the last start or stop the daemon refused.
@@ -680,6 +684,8 @@ public struct ControlDecoders: Sendable, Equatable, Codable {
         case startEnabled = "start_enabled"
         case recordCount = "record_count"
         case selectedTransmitter = "selected_transmitter"
+        case transmitterCount = "transmitter_count"
+        case mapFollowing = "map_following"
     }
 
     public init(
@@ -689,9 +695,11 @@ public struct ControlDecoders: Sendable, Equatable, Codable {
         rows: [String] = [], transmitters: [String] = [], selectedTransmitter: String? = nil,
         alerts: [String] = [], notice: String? = nil, header: String? = nil,
         tableHeads: [String] = [], tableRows: [String] = [], kindColumn: String? = nil,
-        watches: [String] = []
+        watches: [String] = [], transmitterCount: Int = 0, mapFollowing: Bool = true
     ) {
         self.watches = watches
+        self.transmitterCount = transmitterCount
+        self.mapFollowing = mapFollowing
         self.decoder = decoder
         self.listed = listed
         self.tab = tab
@@ -728,6 +736,8 @@ public struct ControlDecoders: Sendable, Equatable, Codable {
         try c.encode(rows, forKey: .rows)
         try c.encode(transmitters, forKey: .transmitters)
         try c.encode(selectedTransmitter, forKey: .selectedTransmitter)
+        try c.encode(transmitterCount, forKey: .transmitterCount)
+        try c.encode(mapFollowing, forKey: .mapFollowing)
         try c.encode(alerts, forKey: .alerts)
         try c.encode(notice, forKey: .notice)
         try c.encode(header, forKey: .header)

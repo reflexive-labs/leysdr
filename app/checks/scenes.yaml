@@ -1874,11 +1874,13 @@ scenes:
   # its track and draws its trail; the inspector shows LEY303's fields with their units and its
   # raw bytes, and its altitude in feet, the decoder's own unit (DA-15). The table prints each
   # column at the manifest's precision, so LEY303's 469.5 kn reads 470 as its summary does, and
-  # heads the newest line LATEST (DA-14); the two aircraft flying level pin their rows. ⌘3 comes
-  # back to the place from the Radio.
+  # heads the newest line LATEST (DA-14); the two aircraft flying level pin their rows. Map, Table
+  # and Map again keep the five aircraft, the selection and the map's own framing (the fold and the
+  # camera live with the session, not the tab), and Fit All in the map's corner has its tooltip.
+  # ⌘3 comes back to the place from the Radio, on the tab it left.
   - name: decoders-adsb
     covers: [DecoderMap.swift, DecoderInspector.swift, DecodersView.swift, EntityTable.swift,
-      DecoderPlacement.swift]
+      DecoderPlacement.swift, DecoderSession.swift, DecoderFold.swift, MapFraming.swift]
     threshold: 1.5
     fixtures: [{name: scene_adsb}]
     clock: "19:42"
@@ -1893,14 +1895,20 @@ scenes:
       select_transmitter: A1F003
       settle: 2
     app:
-      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tab: map, decoders.tabs.1: table, decoders.tabs.2: map, decoders.selected_transmitter: A1F003, decoders.state: Stopped, decoders.transmitters.0: LEY101, decoders.transmitters.1: LEY202, decoders.transmitters.2: LEY303, decoders.transmitters.3: LEY404, decoders.transmitters.4: N0CALL}}
+      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tab: map, decoders.tabs.1: table, decoders.tabs.2: map, decoders.selected_transmitter: A1F003, decoders.transmitter_count: 5, decoders.map_following: true, decoders.state: Stopped, decoders.transmitters.0: LEY101, decoders.transmitters.1: LEY202, decoders.transmitters.2: LEY303, decoders.transmitters.3: LEY404, decoders.transmitters.4: N0CALL}}
       - {cmd: snapshot, name: map, mask: [counts, inspector]}
       - {cmd: press, identifier: decoders.tab.table}
       - {cmd: state, expect: {decoders.table_heads.0: TRANSMITTER, decoders.table_heads.1: ALTITUDE (ft), decoders.table_heads.2: GROUND SPEED (kn), decoders.table_heads.3: TRACK (°), decoders.table_heads.7: LATEST, decoders.table_rows.2: "LEY303: 36000 · 470 · 135 · 2761", decoders.table_rows.4: "N0CALL: 3500 · 110 · 45 · 1200"}}
       - {cmd: snapshot, name: table, mask: [counts, inspector]}
+      - {cmd: press, identifier: decoders.tab.map}
+      - {cmd: state, expect: {decoders.tab: map, decoders.transmitter_count: 5, decoders.selected_transmitter: A1F003, decoders.map_following: true}}
+      - {cmd: hover, identifier: decoders.map-fit, expect: {tooltip: Fit All}}
+      - {cmd: press, identifier: decoders.map-fit}
+      - {cmd: wait, seconds: 1, expect_log: "map fit to all"}
+      - {cmd: state, expect: {decoders.transmitter_count: 5, decoders.selected_transmitter: A1F003, decoders.map_following: true}}
       - {cmd: press, identifier: toolbar.place.radio}
       - {cmd: key, keys: cmd+3}
-      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tab: table}}
+      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tab: map, decoders.transmitter_count: 5}}
 
   # The take-over question's other side (docs/plans/decoders-app.md, DA-8, DA-13) on
   # scene_adsb_off, a capture that hears 1090 MHz 600 kHz off its centre, with the window's

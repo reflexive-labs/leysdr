@@ -572,6 +572,8 @@ import LeylineClient
                 return "\(head): \(d.summary(e.record))"
             }
             out.transmitters = d.listedTransmitters.map { d.name(of: $0.deviceID) }
+            out.transmitterCount = d.table.entities.count
+            out.mapFollowing = d.framing.following
             let columns = DecoderPages.tableColumns(d.table.display)
             out.tableHeads = DecoderPages.tableHeads(columns, manifest: m)
             out.tableRows = d.listedTransmitters.map { e in

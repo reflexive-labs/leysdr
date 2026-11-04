@@ -2,10 +2,12 @@
 
 // The Decoders page's map: every transmitter whose newest position is known, as a marker turned to
 // its heading when it sent one (`DecoderEntity.heading`: `track_deg`, `course_deg`, `cog_deg`),
-// its trail of the last positions as a line, and its name beside it; a click shows it in the
-// inspector. The map frames the transmitters and never the person: it asks for no location and
-// draws no user annotation, so macOS asks for no permission (docs/plans/decoders-app.md,
-// "Decisions"). Tiles come from Apple, which would make a staged run's pictures differ from one run
+// its trail of the last positions as a line, and its name beside it, dimmed once it has been quiet
+// for half of `entity_silence_s`; a click shows it in the inspector. The camera follows the page's
+// `MapFraming`: every transmitter framed once, then only zoomed out to hold one that would leave
+// the map, and left alone once the person pans or zooms, until Fit All. The map frames the
+// transmitters and never the person: it asks for no location and draws no user annotation, so
+// macOS asks for no permission (docs/plans/decoders-app.md, "Decisions"). Tiles come from Apple, which would make a staged run's pictures differ from one run
 // to the next, so a staged run (`LEYLINE_APP_STAGE`) draws the same markers, trails and names on a
 // plain equirectangular canvas instead, unless its stage sets `real_map` (the site's pictures);
 // the real map is checked by hand.
@@ -24,6 +26,8 @@ struct MapPoint: Identifiable, Equatable {
     var heading: Double?
     var trail: [TrailPoint]
     var selected: Bool
+    /// Quiet for half its silence window: drawn dimmed until it ages out.
+    var fading: Bool = false
 
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
@@ -40,7 +44,7 @@ struct DecoderMapTab: View {
             return MapPoint(
                 id: e.deviceID, name: d.name(of: e.deviceID), latitude: p.latitude,
                 longitude: p.longitude, heading: e.heading, trail: e.trail,
-                selected: d.selectedTransmitter == e.deviceID)
+                selected: d.selectedTransmitter == e.deviceID, fading: d.fading(e))
         }
         // In the table's order, which does not change as records arrive, so neither do the
         // markers' order nor VoiceOver's; the selected one last, so it is drawn on top.
@@ -52,10 +56,15 @@ struct DecoderMapTab: View {
                     .foregroundStyle(Theme.inkTertiary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if stagedPlainMap(session) {
-                StagedMap(points: drawn, select: select)
+                StagedMap(points: drawn, region: d.framing.region, select: select)
             } else {
-                LiveMap(points: drawn, decoder: d.selectedName ?? "", select: select)
+                // One map per decoder, so each opens on its own camera.
+                LiveMap(points: drawn, framing: d.framing, select: select)
+                    .id(d.selectedName ?? "")
             }
+        }
+        .overlay(alignment: .topTrailing) {
+            if !points.isEmpty { FitAllButton { d.fitAllOnMap() } }
         }
         .stageRegion(.map)
         .identifiedGroup("decoders.map")
@@ -63,12 +72,21 @@ struct DecoderMapTab: View {
 }
 
 /// MapKit's map, north up (it pans and zooms but does not rotate, so a marker's heading reads
-/// true), framing every marker when it opens and whenever another decoder is shown.
+/// true). It opens on the decoder's region, the rule's or the person's, moves to the rule's next
+/// one while the rule follows, and hands a pan or zoom of the person's back as theirs.
 struct LiveMap: View {
     let points: [MapPoint]
-    let decoder: String
+    let framing: MapFraming
     let select: (String) -> Void
-    @State private var camera: MapCameraPosition = .automatic
+    @Environment(AppSession.self) private var session
+    @State private var camera: MapCameraPosition
+
+    init(points: [MapPoint], framing: MapFraming, select: @escaping (String) -> Void) {
+        self.points = points
+        self.framing = framing
+        self.select = select
+        _camera = State(initialValue: framing.region.map { .region($0.mapKit) } ?? .automatic)
+    }
 
     var body: some View {
         Map(position: $camera, interactionModes: [.pan, .zoom]) {
@@ -78,7 +96,9 @@ struct LiveMap: View {
                         CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
                     }
                 )
-                .stroke(Theme.mapTrail, lineWidth: Theme.Layout.mapTrailWidth)
+                .stroke(
+                    p.fading ? Theme.mapTrailFaded : Theme.mapTrail,
+                    lineWidth: Theme.Layout.mapTrailWidth)
             }
             ForEach(points) { p in
                 Annotation(p.name, coordinate: p.coordinate, anchor: .center) {
@@ -89,20 +109,72 @@ struct LiveMap: View {
             }
         }
         .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
-        .onChange(of: decoder) { camera = .automatic }
+        .onMapCameraChange(frequency: .onEnd) { context in
+            // The rule's own moves are not the person's; a pan or zoom is.
+            guard camera.positionedByUser else { return }
+            session.decoders.personMovedMap(to: MapRegion(context.region))
+        }
+        .onChange(of: framing) { _, f in
+            guard f.following, let r = f.region else { return }
+            withAnimation(Theme.mapCameraMove) { camera = .region(r.mapKit) }
+        }
     }
 }
 
-/// The staged run's map: an equirectangular projection framing every position, with a graticule
-/// every `mapGraticuleDegrees`, the trails, and the markers and names as views, so the
-/// accessibility tree and a click reach them as on the real map.
+/// Fit All, in the map's corner as Apple Maps draws its controls: frames every transmitter once
+/// and has the map follow them again.
+struct FitAllButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "arrow.up.left.and.arrow.down.right").font(Theme.Font.mapControl)
+                .foregroundStyle(Theme.inkSecondary)
+                .frame(width: Theme.Layout.mapControlSize, height: Theme.Layout.mapControlSize)
+                .background(
+                    Theme.panel,
+                    in: RoundedRectangle(cornerRadius: Theme.Layout.mapControlRadius)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Layout.mapControlRadius)
+                        .strokeBorder(Theme.border, lineWidth: 1)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Fit All")
+        .accessibilityLabel("Fit All")
+        .accessibilityIdentifier("decoders.map-fit")
+        .padding(Theme.Layout.mapControlInset)
+    }
+}
+
+extension MapRegion {
+    init(_ r: MKCoordinateRegion) {
+        self.init(
+            latitude: r.center.latitude, longitude: r.center.longitude,
+            latitudeSpan: r.span.latitudeDelta, longitudeSpan: r.span.longitudeDelta)
+    }
+
+    var mapKit: MKCoordinateRegion {
+        MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
+            span: MKCoordinateSpan(latitudeDelta: latitudeSpan, longitudeDelta: longitudeSpan))
+    }
+}
+
+/// The staged run's map: an equirectangular projection of the page's `MapFraming` region, the
+/// same rule as the real map's camera, with a graticule every `mapGraticuleDegrees`, the trails,
+/// and the markers and names as views, so the accessibility tree and a click reach them as on the
+/// real map.
 struct StagedMap: View {
     let points: [MapPoint]
+    let region: MapRegion?
     let select: (String) -> Void
 
     var body: some View {
         GeometryReader { geo in
-            let proj = Projection(points: points, size: geo.size)
+            let proj = Projection(region: region, points: points, size: geo.size)
             ZStack(alignment: .topLeading) {
                 Canvas { ctx, size in
                     draw(ctx, size: size, proj: proj)
@@ -116,6 +188,7 @@ struct StagedMap: View {
                                 .foregroundStyle(
                                     p.selected ? Theme.mapSelected : Theme.inkSecondary
                                 )
+                                .opacity(p.fading ? Theme.mapFadedOpacity : 1)
                                 .lineLimit(1).fixedSize()
                                 .offset(x: Theme.Layout.mapSelectedRing + Theme.Layout.mapLabelGap)
                         }
@@ -158,14 +231,14 @@ struct StagedMap: View {
                 let at = proj.point(t.latitude, t.longitude)
                 if i == 0 { path.move(to: at) } else { path.addLine(to: at) }
             }
-            ctx.stroke(
-                path, with: .color(p.selected ? Theme.mapSelected : Theme.mapTrail),
-                lineWidth: Theme.Layout.mapTrailWidth)
+            let ink =
+                p.selected ? Theme.mapSelected : p.fading ? Theme.mapTrailFaded : Theme.mapTrail
+            ctx.stroke(path, with: .color(ink), lineWidth: Theme.Layout.mapTrailWidth)
         }
     }
 
     /// Degrees to points: longitude scaled by the cosine of the middle latitude, so a degree
-    /// reads the same distance both ways, and the whole fitted inside the inset with its aspect.
+    /// reads the same distance both ways, and the region fitted inside the inset with its aspect.
     struct Projection {
         let midLat: Double
         let midLon: Double
@@ -173,32 +246,26 @@ struct StagedMap: View {
         let scale: Double
         let centre: CGPoint
 
-        init(points: [MapPoint], size: CGSize) {
-            var lats: [Double] = []
-            var lons: [Double] = []
-            for p in points {
-                lats.append(p.latitude)
-                lons.append(p.longitude)
-                for t in p.trail {
-                    lats.append(t.latitude)
-                    lons.append(t.longitude)
-                }
-            }
-            let least = 0.02
-            let lat0 = lats.min() ?? 0
-            let lat1 = lats.max() ?? 0
-            let lon0 = lons.min() ?? 0
-            let lon1 = lons.max() ?? 0
-            midLat = (lat0 + lat1) / 2
-            midLon = (lon0 + lon1) / 2
+        /// The region the rule chose, else every point fitted as the rule fits them.
+        init(region: MapRegion?, points: [MapPoint], size: CGSize) {
+            let r =
+                region
+                ?? MapRegion.fitting(
+                    points.map { MapCoordinate(latitude: $0.latitude, longitude: $0.longitude) },
+                    padding: MapFraming.padding, least: MapFraming.leastSpan)
+                ?? MapRegion(
+                    latitude: 0, longitude: 0, latitudeSpan: MapFraming.leastSpan,
+                    longitudeSpan: MapFraming.leastSpan)
+            midLat = r.latitude
+            midLon = r.longitude
             kx = max(0.01, cos(midLat * .pi / 180))
             let inset = Theme.Layout.mapCanvasInset
             // The names are drawn to the right of their markers, so the right keeps room for one.
             let room = Theme.Layout.mapLabelRoom
             let w = max(1, Double(size.width - 2 * inset - room))
             let h = max(1, Double(size.height - 2 * inset))
-            let spanLon = max(least, lon1 - lon0) * kx
-            let spanLat = max(least, lat1 - lat0)
+            let spanLon = max(1e-6, r.longitudeSpan) * kx
+            let spanLat = max(1e-6, r.latitudeSpan)
             scale = min(w / spanLon, h / spanLat)
             centre = CGPoint(x: (size.width - room) / 2, y: size.height / 2)
         }
@@ -243,6 +310,7 @@ struct MapMarkerView: View {
             }
         }
         .frame(width: Theme.Layout.mapSelectedRing, height: Theme.Layout.mapSelectedRing)
+        .opacity(point.fading && !point.selected ? Theme.mapFadedOpacity : 1)
     }
 }
 
@@ -253,7 +321,10 @@ extension View {
     {
         accessibilityElement(children: .ignore)
             .accessibilityLabel(p.name)
-            .accessibilityValue(p.heading.map { "heading \(Int($0.rounded()))°" } ?? "")
+            .accessibilityValue(
+                [p.heading.map { "heading \(Int($0.rounded()))°" }, p.fading ? "quiet" : nil]
+                    .compactMap { $0 }.joined(separator: ", ")
+            )
             .accessibilityIdentifier("decoders.map.\(ViewIdentifier.slug(p.id))")
             .pressable { select(p.id) }
     }

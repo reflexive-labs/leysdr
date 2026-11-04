@@ -556,6 +556,11 @@ extension Theme.Layout {
     static let mapLabelRoom: CGFloat = 72
     /// The staged map's graticule: a line every this many degrees.
     static let mapGraticuleDegrees: Double = 0.1
+    /// Fit All in the map's corner, as Apple Maps sizes its controls: its side, corners, and its
+    /// inset from the map's edges.
+    static let mapControlSize: CGFloat = 28
+    static let mapControlRadius: CGFloat = 6
+    static let mapControlInset: CGFloat = 10
 }
 
 extension Theme {
@@ -565,6 +570,12 @@ extension Theme {
     static let mapSelected = accent
     static let mapTrail = inkFaint.opacity(0.7)
     static let mapGraticule = hairline
+    /// A transmitter quiet for half its silence window: its marker and name at this opacity, its
+    /// trail in `mapTrailFaded`.
+    static let mapFadedOpacity: Double = 0.4
+    static let mapTrailFaded = inkFaint.opacity(0.3)
+    /// The camera's move when the map zooms out to hold a transmitter, or on Fit All.
+    static let mapCameraMove = Animation.easeInOut(duration: 0.6)
     static let alertGround = caution.opacity(0.12)
 }
 
@@ -572,6 +583,8 @@ extension Theme.Font {
     /// The map's transmitter names, and its marker glyph.
     static let mapLabel = SwiftUI.Font.system(size: 10.5, weight: .medium)
     static let mapGlyph = SwiftUI.Font.system(size: 12, weight: .semibold)
+    /// Fit All's glyph in the map's corner.
+    static let mapControl = SwiftUI.Font.system(size: 12, weight: .medium)
     /// A decoder's symbol in the sidebar, and in the page's header.
     static let decoderGlyph = SwiftUI.Font.system(size: 13)
     static let decoderTitleGlyph = SwiftUI.Font.system(size: 18)

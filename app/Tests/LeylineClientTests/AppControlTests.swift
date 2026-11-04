@@ -223,10 +223,10 @@ final class AppControlTests: XCTestCase {
         XCTAssertEqual(
             d.keys.sorted(),
             [
-                "alerts", "decoder", "detail", "header", "kind_column", "listed", "notice",
-                "placement", "record_count", "rows", "selected_transmitter", "start_enabled",
-                "start_shown", "state", "tab", "table_heads", "table_rows", "tabs",
-                "transmitters", "watches",
+                "alerts", "decoder", "detail", "header", "kind_column", "listed", "map_following",
+                "notice", "placement", "record_count", "rows", "selected_transmitter",
+                "start_enabled", "start_shown", "state", "tab", "table_heads", "table_rows", "tabs",
+                "transmitter_count", "transmitters", "watches",
             ])
         XCTAssertEqual(d["record_count"] as? Int, 7)
         XCTAssertTrue(d["placement"] is NSNull)

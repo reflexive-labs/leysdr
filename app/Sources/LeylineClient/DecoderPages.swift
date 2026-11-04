@@ -442,6 +442,9 @@ public struct RecordLog: Sendable, Equatable {
     }
 
     public var anyPosition: Bool { entries.contains { $0.record.hasPosition } }
+
+    /// Whether the log holds the record now.
+    public func holds(_ recordID: String) -> Bool { ids.contains(recordID) }
 }
 
 extension RecordEntry {

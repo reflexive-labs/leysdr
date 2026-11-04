@@ -39,12 +39,9 @@ final class DecoderSession {
     /// The record the inspector shows, by `record_id`: a click on a log row. It wins over the
     /// transmitter until another transmitter is chosen.
     var selectedRecord: String?
-    /// The page's records, newest first, and the transmitters folded from them.
-    private(set) var records = RecordLog()
-    private(set) var table = EntityTable()
-    /// Whether the history has landed, and whether the daemon cut it at its limit.
-    private(set) var historyLoaded = false
-    private(set) var historyTruncated = false
+    /// Each decoder's records and transmitters, by manifest name, kept for the session once its
+    /// page has shown (`DecoderFold`): nothing but `entity_silence_s` takes a transmitter away.
+    private(set) var folds: [String: DecoderFold] = [:]
     /// The labels file (`LabelStore`), read at start and again whenever it changes on disk.
     private(set) var labels = LabelStore(path: LabelStore.defaultPath())
     /// Start's question while it is asked: the decoder needs a radio somebody is using.
@@ -66,7 +63,9 @@ final class DecoderSession {
 
     @ObservationIgnored private var daemon: DaemonConnection?
     @ObservationIgnored private var listing = false
-    @ObservationIgnored private var feed: Task<Void, Never>?
+    /// Each decoder's record stream, by manifest name, open from its page's first showing until
+    /// the session ends; reopened, and merged, after an error.
+    @ObservationIgnored private var feeds: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var ticker: Task<Void, Never>?
     @ObservationIgnored private var startExpiry: Task<Void, Never>?
     @ObservationIgnored private var labelWatch: DispatchSourceFileSystemObject?
@@ -128,7 +127,8 @@ final class DecoderSession {
     func becameLive() {
         listing = false
         readManifests()
-        if shown { openFeed() }
+        // A restarted daemon's streams start over; what they and the history bring merges.
+        for name in feeds.keys { openFeed(name) }
         replan()
     }
 
@@ -178,15 +178,14 @@ final class DecoderSession {
         guard on != shown else { return }
         shown = on
         if on {
+            now = Date()
             readManifests()
             if selectedName == nil, let first = listed.first { select(first.name) }
-            // `select` opened it when it chose a decoder.
-            if feed == nil { openFeed() }
+            if let name = selectedName, feeds[name] == nil { openFeed(name) }
             startTicker()
             replan()
         } else {
-            feed?.cancel()
-            feed = nil
+            // The streams stay open, so coming back shows what arrived meanwhile.
             ticker?.cancel()
             ticker = nil
         }
@@ -225,16 +224,19 @@ final class DecoderSession {
         if manifests != list { manifests = list }
         replan()
         log("decoders", "\(list.count) decoders: \(list.map(\.name).joined(separator: ", "))")
-        if let name = selectedName, let m = manifest(named: name) {
-            table.display = m.hasDisplay ? m.display : nil
-        } else if shown, let first = listed.first {
+        for (name, _) in folds {
+            guard let m = manifest(named: name) else { continue }
+            folds[name]?.setDisplay(m.hasDisplay ? m.display : nil)
+        }
+        if selectedName == nil, shown, let first = listed.first {
             select(first.name)
         }
     }
 
     // MARK: Selection
 
-    /// Shows a decoder's page: its records are read afresh and the inspector is cleared.
+    /// Shows a decoder's page and clears the inspector. Its records and transmitters are the ones
+    /// the session already holds for it, or read now on its first showing.
     func select(_ name: String) {
         let canonical = manifest(named: name)?.name ?? name
         guard canonical != selectedName else { return }
@@ -243,14 +245,47 @@ final class DecoderSession {
         selectedRecord = nil
         notice = nil
         let m = manifest(named: canonical)
-        records = RecordLog()
-        table = EntityTable(display: m.flatMap { $0.hasDisplay ? $0.display : nil })
-        historyLoaded = false
-        historyTruncated = false
+        if folds[canonical] == nil {
+            folds[canonical] = DecoderFold(display: m.flatMap { $0.hasDisplay ? $0.display : nil })
+        }
         listening = m.map { !DecoderPages.running(of: $0, in: jobsSeen).isEmpty } ?? false
         log("decoders", "selected \(canonical)")
-        if shown { openFeed() }
+        if shown, feeds[canonical] == nil { openFeed(canonical) }
+        expire()
         replan()
+    }
+
+    /// The selected decoder's fold, empty before one is selected.
+    var fold: DecoderFold { selectedName.flatMap { folds[$0] } ?? DecoderFold() }
+    /// The page's records, newest first, and the transmitters folded from them.
+    var records: RecordLog { fold.records }
+    var table: EntityTable { fold.table }
+    /// Whether the history has landed, and whether the daemon cut it at its limit.
+    var historyLoaded: Bool { fold.historyLoaded }
+    var historyTruncated: Bool { fold.historyTruncated }
+    /// The selected decoder's map camera rule.
+    var framing: MapFraming { fold.framing }
+
+    /// The person moved the selected decoder's map: it stops framing itself until Fit All.
+    func personMovedMap(to visible: MapRegion) {
+        guard let name = selectedName, let f = folds[name] else { return }
+        guard f.framing.following || f.framing.region != visible else { return }
+        if f.framing.following { log("decoders", "map moved by the person") }
+        folds[name]?.personMoved(to: visible)
+    }
+
+    /// Fit All: the map frames every transmitter once and follows the rule again.
+    func fitAllOnMap() {
+        guard let name = selectedName else { return }
+        folds[name]?.fitAll()
+        log("decoders", "map fit to all")
+    }
+
+    /// Whether a transmitter draws dimmed: silent for half of `entity_silence_s` while a job of
+    /// the decoder listens.
+    func fading(_ e: DecoderEntity) -> Bool {
+        guard listening, let m = selected else { return false }
+        return EntityTable.fading(e, now: now, silence: TimeInterval(m.entitySilenceS))
     }
 
     /// The tabs the page shows for the selected decoder.
@@ -303,30 +338,30 @@ final class DecoderSession {
 
     // MARK: The records
 
-    /// Opens the selected decoder's record stream, then reads its last day. The stream opens
-    /// first so a record written while the history is read is not missed; `RecordLog` keeps each
-    /// once whichever arrives first.
-    private func openFeed() {
-        feed?.cancel()
-        feed = nil
-        guard let daemon, let name = selectedName else { return }
+    /// Opens a decoder's record stream, then reads its last day. The stream opens first so a
+    /// record written while the history is read is not missed; `RecordLog` keeps each once
+    /// whichever arrives first, and the fold merges what it did not hold.
+    private func openFeed(_ name: String) {
+        feeds[name]?.cancel()
+        feeds[name] = nil
+        guard let daemon else { return }
         let stream = daemon.records(scope: .protocol(name))
-        feed = Task { [weak self] in
+        feeds[name] = Task { [weak self] in
             self?.readHistory(name)
             do {
                 for try await r in stream {
                     if Task.isCancelled { return }
-                    self?.land(r)
+                    self?.land(r, for: name)
                 }
             } catch {
                 if Task.isCancelled { return }
                 log("decoders", "records of \(name) ended: \(LeylineError(error))")
             }
             if Task.isCancelled { return }
-            // The daemon restarted or the stream failed: open it again while the page shows.
+            // The daemon restarted or the stream failed: open it again, merging what it brings.
             try? await Task.sleep(for: .seconds(Self.retrySeconds))
-            guard let self, !Task.isCancelled, self.shown, self.selectedName == name else { return }
-            self.openFeed()
+            guard let self, !Task.isCancelled else { return }
+            self.openFeed(name)
         }
     }
 
@@ -349,45 +384,36 @@ final class DecoderSession {
     }
 
     private func landHistory(_ page: Leyline_V1_RecordPage, for name: String) {
-        guard name == selectedName else { return }
+        guard folds[name] != nil else { return }
         let arrived = Date()
-        records.insert(
-            page.records.map { RecordEntry.dated($0, anchors: page.anchors, fallback: arrived) })
-        refold()
-        historyLoaded = true
-        historyTruncated = page.truncated
+        let added = folds[name]!.landHistory(
+            page.records.map { RecordEntry.dated($0, anchors: page.anchors, fallback: arrived) },
+            truncated: page.truncated)
+        if name == selectedName { expire() }
         log(
             "decoders",
-            "\(page.records.count) records of \(name) from the last day"
+            "\(page.records.count) records of \(name) from the last day, \(added) new"
                 + (page.truncated ? ", cut at the query's limit" : ""))
     }
 
     /// One live record: dated through its capture's anchor, kept once, and folded in.
-    private func land(_ r: Leyline_V1_DecodeRecord) {
-        guard r.protocol == selectedName || selectedName == nil else { return }
+    private func land(_ r: Leyline_V1_DecodeRecord, for name: String) {
         let cap = captures.first { $0.captureID == r.time.captureID }
-        let added = records.insert([RecordEntry.live(r, capture: cap, arrived: Date())])
-        for e in added { table.apply(e.record, at: e.at) }
-    }
-
-    /// The transmitters folded again from the records held, oldest first, then aged.
-    private func refold() {
-        var t = EntityTable(display: table.display)
-        for e in records.entries.reversed() { t.apply(e.record, at: e.at) }
-        table = t
-        expire()
+        folds[name]?.landLive(RecordEntry.live(r, capture: cap, arrived: Date()))
     }
 
     /// Ages transmitters out by the manifest's `entity_silence_s`, but only while a job of the
     /// decoder runs: silence is only news while something listens, so a stopped decoder's page
     /// keeps what it last heard.
     private func expire() {
-        guard listening, let m = selected, m.entitySilenceS > 0 else { return }
-        var t = table
-        if t.expire(now: now, silence: TimeInterval(m.entitySilenceS)) > 0 {
-            table = t
-            if let id = selectedTransmitter, table.entities[id] == nil { selectedTransmitter = nil }
-        }
+        guard listening, let name = selectedName, let m = selected, m.entitySilenceS > 0,
+            var f = folds[name]
+        else { return }
+        let gone = f.expire(now: now, silence: TimeInterval(m.entitySilenceS))
+        guard gone > 0 else { return }
+        folds[name] = f
+        log("decoders", "\(gone) transmitters of \(name) aged out")
+        if let id = selectedTransmitter, f.table.entities[id] == nil { selectedTransmitter = nil }
     }
 
     private func startTicker() {

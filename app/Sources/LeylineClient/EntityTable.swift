@@ -124,6 +124,44 @@ public struct EntityTable: Sendable, Equatable {
         return e
     }
 
+    /// Folds in a record that may be older than its row's newest, as a history read again after
+    /// the live feed lands one: in order it is `apply`; older, it counts, adds the fields and the
+    /// position the row lacks and its trail point in time order, and leaves the newest values,
+    /// kind and summary as they are.
+    public mutating func merge(_ rec: Leyline_V1_DecodeRecord, at: Date) {
+        guard let old = entities[rec.deviceID], at < old.lastHeard else {
+            apply(rec, at: at)
+            return
+        }
+        var e = old
+        for (name, v) in rec.fields where e.fields[name] == nil { e.fields[name] = v }
+        if rec.hasPosition {
+            let p = rec.position
+            if e.position == nil { e.position = p }
+            if p.latitude.isFinite, p.longitude.isFinite {
+                let i = e.trail.firstIndex { $0.at > at } ?? e.trail.endIndex
+                let before = i > 0 ? e.trail[i - 1] : nil
+                if before.map({ $0.latitude != p.latitude || $0.longitude != p.longitude }) ?? true
+                {
+                    e.trail.insert(
+                        TrailPoint(latitude: p.latitude, longitude: p.longitude, at: at), at: i)
+                    if e.trail.count > Self.trailLength {
+                        e.trail.removeFirst(e.trail.count - Self.trailLength)
+                    }
+                }
+            }
+        }
+        e.firstHeard = min(e.firstHeard, at)
+        e.count += 1
+        entities[rec.deviceID] = e
+    }
+
+    /// Whether a transmitter has been silent for more than half of `silence` at `now`, so the map
+    /// draws it dimmed until it ages out at `silence`. Zero means never.
+    public static func fading(_ e: DecoderEntity, now: Date, silence: TimeInterval) -> Bool {
+        silence > 0 && now.timeIntervalSince(e.lastHeard) > silence / 2
+    }
+
     /// Drops every entity silent for longer than `silence` seconds at `now`, and returns how many
     /// went. Zero means never, which is what a manifest's `entity_silence_s` of 0 declares.
     @discardableResult
