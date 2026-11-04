@@ -11,7 +11,7 @@ fixtures:
     as: radio-e
 setup:
   - job: {decoder: aprs, frequency: "144.39", keep: true, records: 2}
-  - ley: ["record", "144.39", "--detach"]
+  - ley: ["record", "144.39", "--gate", "none", "--detach"]
 task: |
   An APRS decoder has been running on the radio for a while. List the APRS stations it has heard
   and the comment each one sent.

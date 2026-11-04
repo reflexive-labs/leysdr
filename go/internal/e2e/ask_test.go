@@ -317,8 +317,8 @@ func TestAskAgainstRealDaemon(t *testing.T) {
 	r := newAskRig(t, true)
 	r.mustLey("", "ai", "use", "assistant", "anthropic", "claude-sonnet-5-5")
 	r.makeRadio()
-	// A recording to not delete.
-	r.mustLey("", "record", "146.52", "--for", "1s")
+	// A recording to not delete; continuous, since a gated one that hears nothing is discarded.
+	r.mustLey("", "record", "146.52", "--gate", "none", "--for", "1s")
 	r.mustLey("", "stop", "all")
 	recordings := r.recordingURIs()
 	if len(recordings) != 1 {

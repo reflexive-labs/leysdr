@@ -18,7 +18,7 @@ speech_script:
   - seven three everyone, net is closed
 setup:
   - job: {decoder: speech-scripted, frequency: "146.62", keep: true, records: 3}
-  - ley: ["record", "146.62", "--detach"]
+  - ley: ["record", "146.62", "--gate", "none", "--detach"]
 task: |
   A speech decoder has been transcribing a repeater on the radio for a while. What was said on
   the repeater, and which callsigns checked in?
