@@ -2030,6 +2030,17 @@ say).
   Folding them into `Scale` would add a clamp and is a behaviour change rather than a mechanical
   rename.
 
+- **A radio that stops answering is left alone until it is replugged.** On 2026-11-09 the
+  owner's RTL-SDR, in a front port of the Mac (an ASMedia 3142 controller with a built-in hub that
+  the keyboard shares), began failing its descriptor reads, dropped off the bus (libusb -5), came
+  back as "Generic RTL2832U OEM" with no serial, and timed out its register writes (-7); the
+  daemon kept re-opening it every 2 to 60 s, and each failed open can make librtlsdr reset the
+  device. The keyboard on the same internal hub stopped until the dongle was unplugged. After a
+  few consecutive timeouts or descriptor failures the daemon should stop opening that device,
+  mark it NOT_ANSWERING with "unplug it and plug it back in, ideally into a port on the back of
+  the Mac", and try again only when it re-enumerates. `ley devices` and the app's radio menu say
+  so.
+
 ## Resolved owner inputs
 
 - `[x]` **The handoff itself.** The terminal handoff was reconciled item by item against
