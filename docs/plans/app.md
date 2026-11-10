@@ -2040,6 +2040,11 @@ say).
   mark it NOT_ANSWERING with "unplug it and plug it back in, ideally into a port on the back of
   the Mac", and try again only when it re-enumerates. `ley devices` and the app's radio menu say
   so.
+  Seen again the same day at 16:15: after `PLL not locked` and libusb -4 (no device) on its
+  register writes, the dongle stayed listed in the USB tree at the same address, but its capture
+  delivered nothing for hours while `ley state` still said `active` and `ley fft` printed no row.
+  A capture whose stream stops must say so (the decode jobs' 5 s stall check, at the capture),
+  and a device that comes back must be rebound rather than left on a dead handle.
 
 ## Resolved owner inputs
 
