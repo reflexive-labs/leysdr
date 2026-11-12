@@ -338,12 +338,16 @@ The calls for this batch, taken 2026-11-02:
   capture reproduces it, so such a click now stops inside the edge and charts map a click
   against their width at the event (cause of the stray edge mapping unconfirmed).
 
-- [ ] **DA-25 The Map tab is there before the first position.** Today the tab appears only once a
+- [x] **DA-25 The Map tab is there before the first position.** Today the tab appears only once a
   record carries a position, so a page the person opens before then has no Map and gains one a
   moment later (the owner, on Aircraft, 2026-11-09). A decoder says it reports positions with
   `DecoderDisplay.positions` (additive; true for adsb, aprs and ais), and its page always shows
   Map: disabled, with the tooltip "No positions yet", until a record has one. A decoder that does
   not say so keeps today's rule. Both clients carry the flag; `ley decoders --json` shows it.
+  Done 2026-11-11: `DecoderTab.available` and `DecoderTab.enabled`, pinned by
+  `DecoderPagesTests`; `TestDecodersTableAndJSON` checks the flag in `ley decoders --json`.
+  decoders-take-over sees the disabled tab and its tooltip; decoders-adsb decodes before the app
+  starts, so it never has a page without a position.
 
 ## After this
 

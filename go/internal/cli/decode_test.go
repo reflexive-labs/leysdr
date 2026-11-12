@@ -50,6 +50,10 @@ func TestDecodersTableAndJSON(t *testing.T) {
 	if resp.Decoders[0]["name"] != "aprs" || len(resp.SearchPath) == 0 || resp.StorePath == "" {
 		t.Errorf("json shape: %s", out)
 	}
+	// A decoder whose records carry positions says so, so a client can show its map from the start.
+	if display, _ := resp.Decoders[0]["display"].(map[string]any); display["positions"] != true {
+		t.Errorf("aprs's display must carry positions: %s", out)
+	}
 }
 
 // decode prints one line per record on stdout and its banner on stderr, and --json turns the

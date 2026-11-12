@@ -122,6 +122,7 @@
       "ground_speed_kn:0",
       "track_deg:0",
       "squawk"
-    ]
+    ],
+    "positions": true
   }
 }

@@ -13,8 +13,9 @@ fails when they drift.
 
 ## Shared shapes
 
-- **display**: `{title, symbol, summaries, entity_name, columns}`. `summaries` is an object from
-  record kind to template; `columns` is an array of field names. All optional. The vectors spell
+- **display**: `{title, symbol, summaries, entity_name, columns, positions}`. `summaries` is an
+  object from record kind to template; `columns` is an array of field names; `positions` is a
+  boolean. All optional. The vectors spell
   the key `entity_name` in snake_case; a `manifest.json` spells it `entityName`, the proto3 JSON
   name. A template's backslashes are doubled in the JSON, as in any JSON string.
 - **record**: `{protocol, kind, device_id, position, rssi_dbfs, snr_db, fields, raw}`, all optional.

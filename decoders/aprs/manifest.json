@@ -65,7 +65,8 @@
     "columns": [
       "symbol",
       "path"
-    ]
+    ],
+    "positions": true
   },
   "executable": "leydec-aprs",
   "args": []

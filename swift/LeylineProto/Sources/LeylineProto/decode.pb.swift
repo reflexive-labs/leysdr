@@ -532,6 +532,11 @@ public nonisolated struct Leyline_V1_DecoderDisplay: Sendable {
   /// name without the precision; an entry with a precision outside 0 to 6 never resolves.
   public var columns: [String] = []
 
+  /// The decoder's records carry positions, so its page shows a map from the start, disabled until
+  /// a record has one, rather than gaining it a moment after the page opens. Without it a client
+  /// shows a map once a record carries a position.
+  public var positions: Bool = false
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -1538,7 +1543,7 @@ nonisolated extension Leyline_V1_DecoderManifest: SwiftProtobuf.Message, SwiftPr
 
 nonisolated extension Leyline_V1_DecoderDisplay: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DecoderDisplay"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}title\0\u{1}symbol\0\u{1}summaries\0\u{3}entity_name\0\u{1}columns\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}title\0\u{1}symbol\0\u{1}summaries\0\u{3}entity_name\0\u{1}columns\0\u{1}positions\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1551,6 +1556,7 @@ nonisolated extension Leyline_V1_DecoderDisplay: SwiftProtobuf.Message, SwiftPro
       case 3: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &self.summaries) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.entityName) }()
       case 5: try { try decoder.decodeRepeatedStringField(value: &self.columns) }()
+      case 6: try { try decoder.decodeSingularBoolField(value: &self.positions) }()
       default: break
       }
     }
@@ -1572,6 +1578,9 @@ nonisolated extension Leyline_V1_DecoderDisplay: SwiftProtobuf.Message, SwiftPro
     if !self.columns.isEmpty {
       try visitor.visitRepeatedStringField(value: self.columns, fieldNumber: 5)
     }
+    if self.positions != false {
+      try visitor.visitSingularBoolField(value: self.positions, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1581,6 +1590,7 @@ nonisolated extension Leyline_V1_DecoderDisplay: SwiftProtobuf.Message, SwiftPro
     if lhs.summaries != rhs.summaries {return false}
     if lhs.entityName != rhs.entityName {return false}
     if lhs.columns != rhs.columns {return false}
+    if lhs.positions != rhs.positions {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

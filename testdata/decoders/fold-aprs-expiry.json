@@ -16,7 +16,8 @@
       "telemetry": "T#{seq}[ {a1:3}][ {a2:3}][ {a3:3}][ {a4:3}][ {a5:3}][ {digital}]",
       "other": "{comment}"
     },
-    "columns": ["symbol", "path"]
+    "columns": ["symbol", "path"],
+    "positions": true
   },
   "entity_silence_s": 1800,
   "steps": [

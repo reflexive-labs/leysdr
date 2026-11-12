@@ -21,9 +21,10 @@ final class DecoderVectorsTests: XCTestCase {
         var summaries: [String: String]?
         var entityName: String?
         var columns: [String]?
+        var positions: Bool?
 
         enum CodingKeys: String, CodingKey {
-            case title, symbol, summaries, columns
+            case title, symbol, summaries, columns, positions
             case entityName = "entity_name"
         }
 
@@ -34,6 +35,7 @@ final class DecoderVectorsTests: XCTestCase {
             d.summaries = summaries ?? [:]
             d.entityName = entityName ?? ""
             d.columns = columns ?? []
+            d.positions = positions ?? false
             return d
         }
     }

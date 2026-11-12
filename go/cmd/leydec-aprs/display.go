@@ -24,6 +24,7 @@ func display() *leylinev1.DecoderDisplay {
 			"telemetry": "T#{seq}[ {a1:3}][ {a2:3}][ {a3:3}][ {a4:3}][ {a5:3}][ {digital}]",
 			"other":     "{comment}",
 		},
-		Columns: []string{"symbol", "path"},
+		Columns:   []string{"symbol", "path"},
+		Positions: true,
 	}
 }

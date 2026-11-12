@@ -66,6 +66,18 @@ final class DecoderPagesTests: XCTestCase {
         XCTAssertEqual(DecoderTab.available(manifest(entities: false), anyPosition: false), [.log])
     }
 
+    func testADecoderThatReportsPositionsShowsItsMapDisabledUntilTheFirstOne() {
+        var m = manifest()
+        m.display.positions = true
+        XCTAssertEqual(DecoderTab.available(m, anyPosition: false), [.log, .table, .map])
+        XCTAssertEqual(DecoderTab.available(m, anyPosition: true), [.log, .table, .map])
+        XCTAssertFalse(DecoderTab.map.enabled(anyPosition: false))
+        XCTAssertTrue(DecoderTab.map.enabled(anyPosition: true))
+        XCTAssertTrue(DecoderTab.log.enabled(anyPosition: false))
+        XCTAssertTrue(DecoderTab.table.enabled(anyPosition: false))
+        XCTAssertEqual(DecoderTab.noPositions, "No positions yet")
+    }
+
     func testAJobIsUnderItsDecoderByNameOrAliasAndATranscriptionIsNot() {
         let jobs = [
             job("job_1", decoder: "ais", state: .running),

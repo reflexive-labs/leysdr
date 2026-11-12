@@ -24,15 +24,26 @@ public enum DecoderTab: String, Sendable, CaseIterable, Identifiable, Codable {
     }
 
     /// The tabs a page shows: the log always, the table for a decoder that declares
-    /// `SHAPE_ENTITIES`, the map once any record it holds carries a position.
+    /// `SHAPE_ENTITIES`, and the map for a decoder whose display says it reports positions, or
+    /// else once any record it holds carries one.
     public static func available(
         _ manifest: Leyline_V1_DecoderManifest, anyPosition: Bool
     ) -> [DecoderTab] {
         var tabs: [DecoderTab] = [.log]
         if manifest.outputs.contains(.shapeEntities) { tabs.append(.table) }
-        if anyPosition { tabs.append(.map) }
+        if manifest.display.positions || anyPosition { tabs.append(.map) }
         return tabs
     }
+
+    /// Whether a tab the page shows can be chosen: the map only once a record carries a position,
+    /// so a decoder that reports positions shows it disabled until then
+    /// (docs/plans/decoders-app.md, DA-25).
+    public func enabled(anyPosition: Bool) -> Bool {
+        self != .map || anyPosition
+    }
+
+    /// The tooltip of a disabled tab.
+    public static let noPositions = "No positions yet"
 }
 
 public enum DecoderPages {

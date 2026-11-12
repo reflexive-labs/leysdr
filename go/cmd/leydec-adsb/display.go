@@ -20,5 +20,6 @@ func display() *leylinev1.DecoderDisplay {
 		},
 		EntityName: "[{callsign}]",
 		Columns:    []string{"callsign", "altitude_ft:0", "ground_speed_kn:0", "track_deg:0", "squawk"},
+		Positions:  true,
 	}
 }

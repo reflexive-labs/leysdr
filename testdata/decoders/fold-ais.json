@@ -10,7 +10,8 @@
       "other": "message type {msg_type}"
     },
     "entity_name": "{name}",
-    "columns": ["callsign", "sog_kn:1", "cog_deg:0", "destination"]
+    "columns": ["callsign", "sog_kn:1", "cog_deg:0", "destination"],
+    "positions": true
   },
   "entity_silence_s": 600,
   "steps": [

@@ -15,7 +15,8 @@
         "telemetry": "T#{seq}[ {a1:3}][ {a2:3}][ {a3:3}][ {a4:3}][ {a5:3}][ {digital}]",
         "other": "{comment}"
       },
-      "columns": ["symbol", "path"]
+      "columns": ["symbol", "path"],
+      "positions": true
     },
     "ais": {
       "title": "Vessels",
@@ -26,7 +27,8 @@
         "other": "message type {msg_type}"
       },
       "entity_name": "{name}",
-      "columns": ["callsign", "sog_kn:1", "cog_deg:0", "destination"]
+      "columns": ["callsign", "sog_kn:1", "cog_deg:0", "destination"],
+      "positions": true
     },
     "adsb": {
       "title": "Aircraft",
@@ -38,7 +40,8 @@
         "surveillance": "DF{df}[ {altitude_ft:0} ft][ squawk {squawk}]"
       },
       "entity_name": "[{callsign}]",
-      "columns": ["callsign", "altitude_ft:0", "ground_speed_kn:0", "track_deg:0", "squawk"]
+      "columns": ["callsign", "altitude_ft:0", "ground_speed_kn:0", "track_deg:0", "squawk"],
+      "positions": true
     },
     "same": {
       "title": "Weather alerts",

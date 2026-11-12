@@ -8,7 +8,8 @@
 // the daemon's plan in `DecoderPlacement`'s words before it starts and the job's own state and
 // detail once it runs; under it the tabs the decoder's output shapes call for: the log always, with the alerts in
 // effect above it, the transmitter table for a decoder that declares entities, and the map once a
-// record carries a position (`DecoderMap.swift`). The radio keeps running underneath, as it does
+// record carries a position, or from the start, disabled until then, for a decoder whose display
+// says it reports positions (`DecoderMap.swift`). The radio keeps running underneath, as it does
 // in the Library. Every word on a record is the manifest's display template, as `ley decode`
 // prints it.
 
@@ -363,7 +364,8 @@ struct DecoderPageHeader: View {
 }
 
 /// `Log | Table | Map`, the place switch's look: the tab showing raised on `border` in `ink`, the
-/// others on none in `inkTertiary`.
+/// others on none in `inkTertiary`, and a tab that cannot be chosen yet (the map before the first
+/// position) in `inkFaint` with its reason as the tooltip.
 struct DecoderTabSwitch: View {
     @Environment(AppSession.self) private var session
 
@@ -374,11 +376,14 @@ struct DecoderTabSwitch: View {
         HStack(spacing: 0) {
             ForEach(d.tabs) { t in
                 let shown = d.shownTab == t
+                let enabled = d.tabEnabled(t)
                 Button {
                     d.tab = t
                 } label: {
                     Text(t.title).font(Theme.Font.label)
-                        .foregroundStyle(shown ? Theme.ink : Theme.inkTertiary)
+                        .foregroundStyle(
+                            shown ? Theme.ink : enabled ? Theme.inkTertiary : Theme.inkFaint
+                        )
                         .padding(.horizontal, 12).padding(.vertical, 3)
                         .background(
                             shown ? Theme.border : Color.clear,
@@ -387,6 +392,8 @@ struct DecoderTabSwitch: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .disabled(!enabled)
+                .help(enabled ? "" : DecoderTab.noPositions)
                 .accessibilityAddTraits(shown ? .isSelected : [])
                 .accessibilityIdentifier("decoders.tab.\(t.rawValue)")
             }

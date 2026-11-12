@@ -91,6 +91,10 @@ message DecoderDisplay {
   // `ground_speed_kn:0` prints 190 where `ground_speed_kn` prints 189.7. A column is headed by its
   // name without the precision; an entry with a precision outside 0 to 6 never resolves.
   repeated string columns = 5;
+  // The decoder's records carry positions, so its page shows a map from the start, disabled until
+  // a record has one, rather than gaining it a moment after the page opens. Without it a client
+  // shows a map once a record carries a position.
+  bool positions = 6;
 }
 
 message DecoderRecipe {

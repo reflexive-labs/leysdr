@@ -17,5 +17,6 @@ func display() *leylinev1.DecoderDisplay {
 		},
 		EntityName: "{name}",
 		Columns:    []string{"callsign", "sog_kn:1", "cog_deg:0", "destination"},
+		Positions:  true,
 	}
 }

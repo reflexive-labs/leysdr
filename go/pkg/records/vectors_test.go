@@ -31,11 +31,13 @@ type vecDisplay struct {
 	Summaries  map[string]string `json:"summaries"`
 	EntityName string            `json:"entity_name"`
 	Columns    []string          `json:"columns"`
+	Positions  bool              `json:"positions"`
 }
 
 func (d vecDisplay) proto() *leylinev1.DecoderDisplay {
 	return &leylinev1.DecoderDisplay{
 		Title: d.Title, Symbol: d.Symbol, Summaries: d.Summaries, EntityName: d.EntityName, Columns: d.Columns,
+		Positions: d.Positions,
 	}
 }
 

@@ -294,8 +294,11 @@ final class DecoderSession {
         return DecoderTab.available(m, anyPosition: records.anyPosition)
     }
 
-    /// The tab drawn: the chosen one when the decoder has it, else the log.
-    var shownTab: DecoderTab { tabs.contains(tab) ? tab : .log }
+    /// Whether a tab of the page can be chosen: the map waits for the first position.
+    func tabEnabled(_ t: DecoderTab) -> Bool { t.enabled(anyPosition: records.anyPosition) }
+
+    /// The tab drawn: the chosen one when the decoder has it and it can be chosen, else the log.
+    var shownTab: DecoderTab { tabs.contains(tab) && tabEnabled(tab) ? tab : .log }
 
     /// The transmitter the inspector shows: the selected one, else the selected record's.
     var inspectedEntity: DecoderEntity? {

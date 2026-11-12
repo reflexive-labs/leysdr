@@ -61,7 +61,8 @@ The manifest for the bundled APRS decoder, trimmed to the fields that carry mean
       "status": "{comment}",
       "weather": "[{temp_c:1} °C][ wind {wind_kmh:0} km/h][ @ {wind_dir_deg:0}°]"
     },
-    "columns": ["symbol", "path"]
+    "columns": ["symbol", "path"],
+    "positions": true
   },
   "executable": "leydec-aprs"
 }
@@ -133,6 +134,9 @@ its own line per record and names each transmitter by its `device_id`.
   suffix dropped, so `sog_kn` is `SOG (kn)`. An entry may carry a precision as a template name
   does, `ground_speed_kn:0`, so the table prints whole knots as the summary does; the header drops
   it. `testdata/decoders/column-cases.json` pins the cells and `head-cases.json` the headers.
+- **`positions`** says your records carry positions, so the app's page has a Map tab from the
+  start, disabled with "No positions yet" until a record has one, instead of gaining the tab a
+  moment after it opens. Leave it out and the tab appears with the first position.
 
 A template is text with names in braces:
 

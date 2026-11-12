@@ -560,7 +560,9 @@ is the page's notice.
 After a failed job the header says `Failed:` and the daemon's reason; a refused start is the
 page's own notice. The click on Start is held as `Starting…` until the job's event, or 5 s. Under
 the header, the tabs the output shapes call for (`DecoderTab.available`): Log always, Table for a
-decoder that declares `SHAPE_ENTITIES`, Map once a record on the page carries a position; a tab
+decoder that declares `SHAPE_ENTITIES`, Map once a record on the page carries a position, or
+from the start for a decoder whose display sets `positions`, disabled in `inkFaint` with the
+tooltip `No positions yet` until a record has one (`DecoderTab.enabled`); a tab
 the decoder lacks shows the log. The page's records are `QueryRecords` for the protocol over the
 last day (1000 at most, `(older not loaded)` when the daemon cut them), dated through the page's
 anchors, and then `SubscribeRecords` for the protocol, opened first so nothing falls between, each

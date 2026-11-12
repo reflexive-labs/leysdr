@@ -628,7 +628,11 @@ type DecoderDisplay struct {
 	// writes it, `name` or `name:N` with N from 0 to 6, and prints as `{name}` or `{name:N}` would:
 	// `ground_speed_kn:0` prints 190 where `ground_speed_kn` prints 189.7. A column is headed by its
 	// name without the precision; an entry with a precision outside 0 to 6 never resolves.
-	Columns       []string `protobuf:"bytes,5,rep,name=columns,proto3" json:"columns,omitempty"`
+	Columns []string `protobuf:"bytes,5,rep,name=columns,proto3" json:"columns,omitempty"`
+	// The decoder's records carry positions, so its page shows a map from the start, disabled until
+	// a record has one, rather than gaining it a moment after the page opens. Without it a client
+	// shows a map once a record carries a position.
+	Positions     bool `protobuf:"varint,6,opt,name=positions,proto3" json:"positions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -696,6 +700,13 @@ func (x *DecoderDisplay) GetColumns() []string {
 		return x.Columns
 	}
 	return nil
+}
+
+func (x *DecoderDisplay) GetPositions() bool {
+	if x != nil {
+		return x.Positions
+	}
+	return false
 }
 
 type DecoderRecipe struct {
@@ -2446,14 +2457,15 @@ const file_leyline_v1_decode_proto_rawDesc = "" +
 	"\x13credential_provider\x18\x11 \x01(\tR\x12credentialProvider\x12%\n" +
 	"\x0econtacts_hosts\x18\x12 \x03(\tR\rcontactsHosts\x124\n" +
 	"\adisplay\x18\x13 \x01(\v2\x1a.leyline.v1.DecoderDisplayR\adisplay\x12\x1b\n" +
-	"\ttest_only\x18\x14 \x01(\bR\btestOnly\"\x80\x02\n" +
+	"\ttest_only\x18\x14 \x01(\bR\btestOnly\"\x9e\x02\n" +
 	"\x0eDecoderDisplay\x12\x14\n" +
 	"\x05title\x18\x01 \x01(\tR\x05title\x12\x16\n" +
 	"\x06symbol\x18\x02 \x01(\tR\x06symbol\x12G\n" +
 	"\tsummaries\x18\x03 \x03(\v2).leyline.v1.DecoderDisplay.SummariesEntryR\tsummaries\x12\x1f\n" +
 	"\ventity_name\x18\x04 \x01(\tR\n" +
 	"entityName\x12\x18\n" +
-	"\acolumns\x18\x05 \x03(\tR\acolumns\x1a<\n" +
+	"\acolumns\x18\x05 \x03(\tR\acolumns\x12\x1c\n" +
+	"\tpositions\x18\x06 \x01(\bR\tpositions\x1a<\n" +
 	"\x0eSummariesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xea\x01\n" +

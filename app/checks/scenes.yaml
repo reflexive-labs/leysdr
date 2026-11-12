@@ -1920,7 +1920,10 @@ scenes:
   # --take-over` insists, and the daemon declines it with the same reason (DA-13): ley prints it
   # with the next command and exits 1, and the page shows the job as Failed while the radio stays
   # where it was, with no red line under the plan's, which already gives the reason. The
-  # sentence writes the frequency in MHz (DA-15).
+  # sentence writes the frequency in MHz (DA-15). With no record yet, ADS-B's page already has
+  # its Map tab, because the manifest says the decoder reports positions, disabled with "No
+  # positions yet" as its tooltip (DA-25); decoders-adsb decodes before the app starts, so it
+  # never sees the page without a position.
   - name: decoders-take-over
     covers: [DecodersView.swift, DecoderSession.swift, DecoderPlacement.swift, DecoderPages.swift]
     fixtures: [{name: scene_adsb_off}]
@@ -1931,7 +1934,8 @@ scenes:
       decoder: adsb
       settle: 2
     app:
-      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tabs.0: log, decoders.record_count: 0, decoders.start_enabled: false, decoders.placement: "Would not start: NESDR SMArt v5 cannot tune to 1090.000 MHz (a file radio plays what it recorded)."}}
+      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tab: log, decoders.tabs.0: log, decoders.tabs.1: table, decoders.tabs.2: map, decoders.record_count: 0, decoders.start_enabled: false, decoders.placement: "Would not start: NESDR SMArt v5 cannot tune to 1090.000 MHz (a file radio plays what it recorded)."}}
+      - {cmd: hover, identifier: decoders.tab.map, expect: {tooltip: No positions yet}}
       - {cmd: snapshot, name: placement}
       - {cmd: ax, name: placement}
       - {cmd: ley, args: [decode, adsb, --job, --take-over], expect_exit: 1, expect_stdout: '^$'}
