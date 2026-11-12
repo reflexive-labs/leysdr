@@ -22,9 +22,15 @@ What changed for someone using Leyline, newest first. Each released version has 
   ten minutes. A continuous recording, which has no squelch openings, can be transcribed now: `ley
   transcribe` and the Library's Transcribe count every minute of it. Each piece after the first
   is marked `continues`.
-- **The cost of that is stated first.** Such a channel sends all of its audio, 60 minutes an hour.
-  `ley decode speech` and `ley watch speech` on FM or AM broadcast or NOAA weather say so before
-  they start and ask; `--yes` skips the question.
+- **Fixed: speech on FM broadcast heard distorted audio.** A live speech job always made its own
+  NFM channel. Start in the Decoders place now transcribes the channel you are listening to, in
+  its mode and through its squelch, and `ley decode speech --channel this` does the same. With
+  only `--freq`, the job's channel takes the band's mode, as `ley tune` does: WFM on broadcast FM,
+  AM on airband.
+- **The cost of that is stated first.** A channel whose squelch never closes sends all of its
+  audio, 60 minutes an hour. `ley decode speech` and `ley watch speech` on a channel with its
+  squelch off, in WFM, or on FM or AM broadcast or NOAA weather say so before they start and ask;
+  `--yes` skips the question.
 
 ## 0.3.1 (2026-11-04)
 

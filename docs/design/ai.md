@@ -136,9 +136,20 @@ squares, the latest of equally quiet windows; a word is then rarely split, and s
 nothing to cut at. 0 means no limit, and the SDK's ten minutes stay as the backstop for a decoder
 that sets none.
 
-Such a channel counts as open all the time. A live job in a mode with no squelch gate is one
-transmission from its first audio, cut at the limit alone, and gets no auto squelch; a channel
-whose squelch is off says open on every meter, which comes to the same. A stored part with no
+**A live job hears the channel it is given.** A segmented decoder's recipe names no
+frequency, and a job that made its own NFM channel on a broadcast station would hand the speech
+engine audio through the wrong demodulator at the wrong bandwidth, distorted however it was cut.
+So `DecodeConfig.channel_id` borrows a channel already open, as a recording of a channel does: a
+JOB claim of kind CHANNEL beside the owner's, the channel's mode, bandwidth and squelch exactly as
+its owner set them, no auto squelch added, and the job ends COMPLETED, "channel ended", when the
+owner destroys it. The app's Start and Notify Me for speech pass the window's channel, and `ley
+decode` and `ley watch` take `--channel` (`this` is the active one). A job that makes its own
+channel asks for it in `DecodeConfig.mode`, which `ley` sets from the band plan as `ley tune`
+picks a mode: WFM on broadcast FM, AM on airband. Its own channel gets an auto squelch in NFM and
+AM and none in any other mode.
+
+Such a channel counts as open all the time: a squelch that is off says open on every meter, so
+the segment is one transmission cut at the limit alone. A stored part with no
 `squelch_opens`, which is every part of a continuous recording, or any part of a recording in a
 mode with no gate, is cut into pieces across its whole length, the quiet point read from the part's
 WAV; a gated part's over longer than the limit is cut the same way. The pieces of one over keep its
@@ -148,10 +159,11 @@ can join them back into the transmission; a continuous recording's next part, st
 last, continues it too.
 
 **The cost is stated before it is spent.** Such a channel sends its provider all of its audio, 60
-minutes an hour. `ley decode speech` and `ley watch speech` on a band whose stations never stop
-transmitting (FM and AM broadcast, NOAA weather) say so in one line before anything starts and ask,
-as `ley transcribe` asks, with `--yes` to skip it; a live job's channel gets an auto squelch, so the
-band is what decides it. `ley transcribe` and the Library's Transcribe count the whole length of
+minutes an hour. `ley decode speech` and `ley watch speech` say so in one line before anything
+starts and ask, as `ley transcribe` asks, with `--yes` to skip it. The channel decides it: a
+borrowed channel whose squelch is off, or a channel of the job's own in a mode with no squelch
+(WFM, SSB). The band plan is the fallback for a squelch that will not close on a carrier that never
+stops (FM and AM broadcast, NOAA weather). `ley transcribe` and the Library's Transcribe count the whole length of
 the parts nothing gated, not their openings, which they have none of.
 
 **A recording as a source.** `DecodeConfig.source_uri` names a recording
@@ -346,6 +358,8 @@ Additions to existing files:
 | `decode.proto` `InputMode` | `SEGMENTED` | 3 |
 | `decode.proto` `DecoderInput` | `uint32 pre_roll_ms`, `uint32 hang_ms` (SEGMENTED only; 0 = 500 and 500) | 6, 7 |
 | `decode.proto` `DecoderInput` | `uint32 max_segment_ms` (SEGMENTED only; 0 = no limit) | 8 |
+| `decode.proto` `DecodeConfig` | `string channel_id` (borrow an open channel; audio decoders only) | 11 |
+| `decode.proto` `DecodeConfig` | `DemodMode mode` (the mode of the channel the job makes; UNSPECIFIED = the recipe's) | 12 |
 | `decode.proto` `DecoderManifest` | `string credential_provider` (empty = none needed) | 17 |
 | `decode.proto` `DecoderManifest` | `repeated string contacts_hosts` | 18 |
 | `decode.proto` `DecodeConfig` | `string source_uri` (`ley://recordings/<id>`: read the stored parts instead of a radio) | 8 |
