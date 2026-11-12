@@ -71,6 +71,14 @@ package actor DefaultDeviceRegistry: DeviceRegistry {
         /// The dongle is claimed by another program (its probe `rtlsdr_open` failed): reported
         /// `.inUse` with feature `held_externally`, re-probed with backoff until it opens.
         var heldExternally = false
+        /// Failures to answer since the last successful open (`noteFailure`); the entry goes
+        /// `.notAnswering` at `notAnsweringAfter`. A re-enumeration is a new entry, so it starts
+        /// from zero.
+        var failures = 0
+        /// A dongle whose capture lost it while it stayed listed (its stream died, or a rebind
+        /// failed): the poll mints a fresh device for it after the backoff and announces it as
+        /// arrived, so the capture rebinds onto a new handle. Never set for a NOT_ANSWERING one.
+        var awaitingRevive = false
 
         var isPhysical: Bool { rtlIndex != nil || hackrfSerial != nil }
         var isVirtual: Bool { !isPhysical }
@@ -110,6 +118,9 @@ package actor DefaultDeviceRegistry: DeviceRegistry {
     private var probeBackoff: [DeviceID: (retryAtTick: Int, delayMs: Int)] = [:]
     package static let probeBackoffMinMs = 2_000
     package static let probeBackoffMaxMs = 60_000
+    /// Consecutive failures to answer after which a device is left alone until it re-enumerates
+    /// (docs/dev/engine-internals.md, "A radio that stops answering").
+    package static let notAnsweringAfter = 3
 
     /// - Parameters:
     ///   - persistPath: JSON file that keeps the identity → id map across daemon restarts. nil = memory only.
@@ -270,11 +281,20 @@ package actor DefaultDeviceRegistry: DeviceRegistry {
 
     /// Records a state flip reported by a device (e.g. file playback reaching EOF → `.disconnected`).
     /// The entry stays so `device(id:)` keeps returning the same instance until it is detached.
-    private func deviceStateChanged(id: DeviceID, state: DeviceState) {
-        guard var entry = entries[id], entry.descriptor.state != state else { return }
+    ///
+    /// A dongle's stream that dies while it stays listed (`rtlsdr_read_async` returning on its own,
+    /// libusb -4 or -5) is a failure to answer: it counts, and the poll revives the dongle after
+    /// the backoff so its capture rebinds, until the count says to leave it alone. An unplugged
+    /// dongle's stream dies the same way and the next poll removes it, which ends the count.
+    func deviceStateChanged(id: DeviceID, state: DeviceState) {
+        guard var entry = entries[id], entry.descriptor.state != state,
+              entry.descriptor.state != .notAnswering else { return }
         entry.descriptor.state = state
         entries[id] = entry
         publish(.changed(entry.descriptor))
+        if state == .disconnected, entry.isPhysical {
+            noteFailure(id: id, reason: "its stream stopped", revive: true)
+        }
     }
 
     /// Marks a device `.inUse` (a capture holds it) or back to `.available`; publishes `changed`
@@ -292,8 +312,16 @@ package actor DefaultDeviceRegistry: DeviceRegistry {
     package func markInUse(id: DeviceID, _ inUse: Bool) throws -> DeviceDescriptor {
         guard var entry = entries[id] else { throw EngineError.deviceNotFound(id.string) }
         guard entry.descriptor.state != .disconnected else { throw EngineError.deviceDetached(id.string) }
+        // Letting go of a radio that has stopped answering leaves it NOT_ANSWERING: only a
+        // re-enumeration or a successful open says otherwise.
+        if !inUse, entry.descriptor.state == .notAnswering { return entry.descriptor }
         let state: DeviceState = inUse ? .inUse : .available
         let releasingHold = entry.heldExternally
+        // An open is the success that ends a run of failures to answer.
+        if inUse {
+            entry.failures = 0
+            entry.awaitingRevive = false
+        }
         var d = entry.device.descriptor
         d.id = id
         d.state = state
@@ -307,11 +335,98 @@ package actor DefaultDeviceRegistry: DeviceRegistry {
         entry.heldExternally = false
         probeBackoff[id] = nil
         entries[id] = entry
-        if let v = entry.device as? VirtualDevice { v.setState(state) }
-        if let r = entry.device as? RTLSDRDevice { r.setState(state) }
-        if let h = entry.device as? HackRFDevice { h.setState(state) }
+        Self.setState(state, on: entry.device)
         publish(.changed(d))
         return d
+    }
+
+    /// Records the registry's decision on the device object itself, for the kinds that keep one.
+    private static func setState(_ state: DeviceState, on device: any RadioDevice) {
+        if let v = device as? VirtualDevice { v.setState(state) }
+        if let r = device as? RTLSDRDevice { r.setState(state) }
+        if let h = device as? HackRFDevice { h.setState(state) }
+    }
+
+    // MARK: Radios that stop answering
+
+    /// The sentence a NOT_ANSWERING device carries in `stateDetail`: what happened and what to do.
+    package static func notAnsweringDetail(_ d: DeviceDescriptor) -> String {
+        let name = d.model.isEmpty ? "The radio" : d.model
+        if d.driver == RTLTCPDevice.driverName {
+            return "\(name) is not answering: check the rtl_tcp server, then detach it and attach it again"
+        }
+        return "\(name) is not answering: unplug it and plug it back in, ideally into a port on the back of the Mac"
+    }
+
+    /// Counts one failure of a device to answer: an open that failed for any reason but another
+    /// program's claim, USB descriptors that could not be read, a stream that died under a capture,
+    /// a rebind that did not take. The `notAnsweringAfter`th in a row since the last successful
+    /// open makes it NOT_ANSWERING. `revive` asks the poll to give a listed dongle's capture
+    /// another rebind after the backoff; each one that fails counts here, so the retries are
+    /// bounded. Returns whether the device is now NOT_ANSWERING.
+    @discardableResult
+    package func noteFailure(id: DeviceID, reason: String, revive: Bool = false) -> Bool {
+        guard var entry = entries[id] else { return false }
+        if entry.descriptor.state == .notAnswering { return true }
+        entry.failures += 1
+        if revive, entry.rtlIndex != nil { entry.awaitingRevive = true }
+        entries[id] = entry
+        if revive, entry.rtlIndex != nil { _ = scheduleReprobe(id: id) }
+        if entry.failures >= Self.notAnsweringAfter {
+            markNotAnswering(id: id, reason: reason)
+            return true
+        }
+        let d = entry.descriptor
+        DefaultDeviceRegistry.logger.info(
+            "radio \(d.serial) (\(d.model)) did not answer: \(reason) (\(entry.failures) of \(Self.notAnsweringAfter) before the daemon leaves it alone)")
+        return false
+    }
+
+    /// Leaves a device alone until it re-enumerates: state NOT_ANSWERING with the sentence that
+    /// says so, no probe opens, no rebinds. Logged once, here. The capture stall check calls it
+    /// directly when the one reopen it allows does not bring the stream back.
+    package func markNotAnswering(id: DeviceID, reason: String) {
+        guard var entry = entries[id], entry.descriptor.state != .notAnswering else { return }
+        var d = entry.descriptor
+        d.state = .notAnswering
+        d.features["held_externally"] = nil
+        d.stateDetail = Self.notAnsweringDetail(d)
+        entry.descriptor = d
+        entry.heldExternally = false
+        entry.awaitingRevive = false
+        entry.failures = max(entry.failures, Self.notAnsweringAfter)
+        entries[id] = entry
+        probeBackoff[id] = nil
+        Self.setState(.notAnswering, on: entry.device)
+        DefaultDeviceRegistry.logger.warning(
+            "radio \(d.serial) (\(d.model)) is not answering (\(reason)); the daemon will not open it again until it is unplugged and plugged back in")
+        publish(.changed(d))
+    }
+
+    /// A listed dongle whose capture lost it gets a fresh device object, announced as arrived, so
+    /// the session rebinds the capture onto a new handle and the dead one is closed (the capture
+    /// engine closes a device it is rebound away from). The cached probe is kept: nothing is
+    /// opened here.
+    private func revive(id: DeviceID, entry: inout Entry, index: UInt32, collided: Bool) {
+        guard let old = entry.device as? RTLSDRDevice else { return }
+        var probe = old.probe
+        probe.index = index
+        let fresh = RTLSDRDevice(probe: probe, id: id)
+        fresh.setOnStateChange { [weak self] state in
+            guard let self else { return }
+            Task { await self.deviceStateChanged(id: id, state: state) }
+        }
+        var d = fresh.descriptor
+        d.features["serial_collision"] = .flag(collided)
+        entry.device = fresh
+        entry.rtlIndex = index
+        entry.descriptor = d
+        entry.heldExternally = false
+        entry.awaitingRevive = false
+        entries[id] = entry
+        DefaultDeviceRegistry.logger.info(
+            "radio \(d.serial) (\(d.model)) is still listed after its capture lost it; rebinding the capture to a new handle (\(entry.failures) of \(Self.notAnsweringAfter) failures)")
+        publish(.arrived(d))
     }
 
     // MARK: Hot-plug polling
@@ -417,10 +532,15 @@ package actor DefaultDeviceRegistry: DeviceRegistry {
             let base = DefaultDeviceRegistry.identityBase(of: e.key)
             let rtl = e.device as? RTLSDRDevice
             let closed: Bool
-            if e.descriptor.state == .inUse && !e.heldExternally {
+            if e.descriptor.state == .notAnswering || e.awaitingRevive {
+                // Left alone until it re-enumerates, or waiting for its capture's rebind, which is
+                // the open that counts.
                 closed = true
-            } else if e.heldExternally {
-                closed = probeBackoff[id].map { pollTick < $0.retryAtTick } ?? false
+            } else if e.descriptor.state == .inUse && !e.heldExternally {
+                closed = true
+            } else if let backoff = probeBackoff[id] {
+                // Held by another program, or its last open failed: on the backoff schedule.
+                closed = pollTick < backoff.retryAtTick
             } else {
                 closed = rtl.map { DefaultDeviceRegistry.isProbed($0.probe) } ?? false
             }
@@ -428,6 +548,9 @@ package actor DefaultDeviceRegistry: DeviceRegistry {
         }
         let frozenSkip = skip
         return { p in
+            // A dongle whose USB strings cannot be read is never opened: librtlsdr resets one that
+            // does not answer its first register write, and that is what this one is doing.
+            if p.descriptorsUnreadable { return false }
             let base = DefaultDeviceRegistry.identityKey(serial: p.serial, manufacturer: p.manufacturer, product: p.product)
             return !frozenSkip.contains(DefaultDeviceRegistry.probeSlot(base: base, index: p.index))
         }
@@ -441,7 +564,9 @@ package actor DefaultDeviceRegistry: DeviceRegistry {
             guard let serial = entry.hackrfSerial else { continue }
             let hackrf = entry.device as? HackRFDevice
             let closed: Bool
-            if entry.descriptor.state == .inUse && !entry.heldExternally {
+            if entry.descriptor.state == .notAnswering {
+                closed = true
+            } else if entry.descriptor.state == .inUse && !entry.heldExternally {
                 closed = true
             } else if entry.heldExternally {
                 closed = probeBackoff[id].map { pollTick < $0.retryAtTick } ?? false
@@ -464,7 +589,7 @@ package actor DefaultDeviceRegistry: DeviceRegistry {
     /// No-op for virtual devices and for dongles one of our captures already holds.
     package func markHeldExternally(id: DeviceID) {
         guard var entry = entries[id], entry.isPhysical,
-              entry.descriptor.state != .disconnected,
+              entry.descriptor.state != .disconnected, entry.descriptor.state != .notAnswering,
               !(entry.descriptor.state == .inUse && !entry.heldExternally) else { return }
         let first = !entry.heldExternally
         entry.heldExternally = true
@@ -537,25 +662,86 @@ package actor DefaultDeviceRegistry: DeviceRegistry {
     func applyProbes(_ probes: [RTLSDRProbe]) {
         var seen: [String: Int] = [:]
         var present: [DeviceID: (RTLSDRProbe, String, Bool)] = [:]
-        for p in probes {
+        func key(_ p: RTLSDRProbe) -> (DeviceID, String, Bool) {
             let base = DefaultDeviceRegistry.identityKey(serial: p.serial, manufacturer: p.manufacturer, product: p.product)
             let n = seen[base, default: 0]
             seen[base] = n + 1
             let key = n == 0 ? base : "\(base)#\(n)"
-            present[stableID(for: key)] = (p, key, n > 0)
+            return (stableID(for: key), key, n > 0)
+        }
+        var unreadable: [RTLSDRProbe] = []
+        for p in probes {
+            if p.descriptorsUnreadable {
+                unreadable.append(p)
+                continue
+            }
+            let (id, k, collided) = key(p)
+            present[id] = (p, k, collided)
+        }
+        // A dongle whose USB strings could not be read this pass has no identity of its own: it is
+        // the known dongle the readable ones leave out, at the same index or the only one missing.
+        // It stays listed rather than being announced as removed and as a new radio with no name.
+        // One that matches nobody is listed under what it gave, and never opened (the gate).
+        var unreadableKnown: [DeviceID: RTLSDRProbe] = [:]
+        for p in unreadable {
+            let missing = entries.filter { $0.value.rtlIndex != nil && present[$0.key] == nil && unreadableKnown[$0.key] == nil }
+            if let id = missing.first(where: { $0.value.rtlIndex == p.index })?.key
+                ?? (missing.count == 1 ? missing.first?.key : nil)
+            {
+                unreadableKnown[id] = p
+            } else {
+                let (id, k, collided) = key(p)
+                present[id] = (p, k, collided)
+            }
         }
         // Removed: known dongles not enumerated this pass.
-        for (id, entry) in entries where entry.rtlIndex != nil && present[id] == nil {
+        for (id, entry) in entries where entry.rtlIndex != nil && present[id] == nil && unreadableKnown[id] == nil {
             entries[id] = nil
             probeBackoff[id] = nil
             (entry.device as? RTLSDRDevice)?.setState(.disconnected)
             publish(.removed(id))
         }
+        for (id, probe) in unreadableKnown {
+            followIndex(id: id, probe.index)
+            guard let entry = entries[id] else { continue }
+            // A capture streaming from it is judged by its stream (the capture's stall check), not
+            // by a descriptor read that the stream does not need.
+            let ours = entry.descriptor.state == .inUse && !entry.heldExternally
+            if !ours { noteFailure(id: id, reason: "its USB descriptors could not be read") }
+        }
         // Arrived / changed.
         for (id, (probe, key, collided)) in present {
             if var entry = entries[id] {
                 guard let rtl = entry.device as? RTLSDRDevice else { continue }
+                if entry.descriptor.state == .notAnswering {
+                    // Left alone until it re-enumerates: a pass without it removes the entry, and
+                    // the next one with it is a new arrival with a clean count.
+                    followIndex(id: id, probe.index)
+                    continue
+                }
                 let ours = entry.descriptor.state == .inUse && !entry.heldExternally
+                if probe.descriptorsUnreadable {
+                    followIndex(id: id, probe.index)
+                    if !ours { noteFailure(id: id, reason: "its USB descriptors could not be read") }
+                    continue
+                }
+                if entry.awaitingRevive {
+                    if probeBackoff[id].map({ pollTick >= $0.retryAtTick }) ?? true {
+                        revive(id: id, entry: &entry, index: probe.index, collided: collided)
+                    } else {
+                        followIndex(id: id, probe.index)
+                    }
+                    continue
+                }
+                if !ours, let rc = probe.openError, !RTLSDRDevice.isClaimFailure(rc) {
+                    // The open got past the claim and failed anyway: not another program, a dongle
+                    // that is not answering. Counted, and retried on the backoff until the count
+                    // says to stop.
+                    followIndex(id: id, probe.index)
+                    _ = scheduleReprobe(id: id)
+                    noteFailure(id: id, reason: "rtlsdr_open rc \(rc)")
+                    continue
+                }
                 if !ours, let rc = probe.openError {
                     // Still (or newly) claimed by another program.
                     let first = !entry.heldExternally
@@ -573,6 +759,12 @@ package actor DefaultDeviceRegistry: DeviceRegistry {
                     if changed { publish(.changed(d)) }
                     logProbeFailure(d, call: "rtlsdr_open", rc: rc, first: first, nextMs: delay)
                     continue
+                }
+                if !ours, DefaultDeviceRegistry.isProbed(probe) {
+                    // An open that worked ends any run of failures, and its backoff.
+                    entry.failures = 0
+                    if !entry.heldExternally { probeBackoff[id] = nil }
+                    entries[id] = entry
                 }
                 if entry.heldExternally, DefaultDeviceRegistry.isProbed(probe) {
                     // The other program let go: back to available with the real tuner/gain table.
@@ -596,11 +788,7 @@ package actor DefaultDeviceRegistry: DeviceRegistry {
                     // The descriptor is the capture's, so nothing is published, but the index still
                     // has to follow a re-enumeration: `poll` gates the probe open on it, and a stale
                     // one aims that open at the dongle we are streaming from.
-                    if probe.index != entry.rtlIndex {
-                        rtl.setIndex(probe.index)
-                        entry.rtlIndex = probe.index
-                        entries[id] = entry
-                    }
+                    followIndex(id: id, probe.index)
                     continue
                 }
                 if probe.index != entry.rtlIndex || d != entry.descriptor {
@@ -620,7 +808,8 @@ package actor DefaultDeviceRegistry: DeviceRegistry {
                 var d = device.descriptor
                 d.features["serial_collision"] = .flag(collided)
                 var entry = Entry(descriptor: d, device: device, rtlIndex: probe.index, key: key)
-                if let rc = probe.openError {
+                let claimed = probe.openError.map(RTLSDRDevice.isClaimFailure) ?? false
+                if claimed, let rc = probe.openError {
                     entry.heldExternally = true
                     let delay = scheduleReprobe(id: id)
                     device.setState(.inUse)
@@ -631,8 +820,22 @@ package actor DefaultDeviceRegistry: DeviceRegistry {
                 }
                 entries[id] = entry
                 publish(.arrived(d))
+                if probe.descriptorsUnreadable {
+                    noteFailure(id: id, reason: "its USB descriptors could not be read")
+                } else if !claimed, let rc = probe.openError {
+                    _ = scheduleReprobe(id: id)
+                    noteFailure(id: id, reason: "rtlsdr_open rc \(rc)")
+                }
             }
         }
+    }
+
+    /// Points a listed dongle's entry and device at the index this pass found it at.
+    private func followIndex(id: DeviceID, _ index: UInt32) {
+        guard var entry = entries[id], entry.rtlIndex != index else { return }
+        (entry.device as? RTLSDRDevice)?.setIndex(index)
+        entry.rtlIndex = index
+        entries[id] = entry
     }
 
     /// Diffs HackRF discovery against the physical HackRF entries. A successful first probe names
@@ -658,6 +861,8 @@ package actor DefaultDeviceRegistry: DeviceRegistry {
         for (id, (probe, key, collided)) in present {
             if var entry = entries[id] {
                 guard let hackrf = entry.device as? HackRFDevice else { continue }
+                // Left alone until it re-enumerates (`noteFailure`).
+                if entry.descriptor.state == .notAnswering { continue }
                 let ours = entry.descriptor.state == .inUse && !entry.heldExternally
                 if !ours, let rc = probe.openError {
                     let first = !entry.heldExternally

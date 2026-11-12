@@ -8,6 +8,10 @@ package enum DeviceState: Hashable, Sendable {
     case available
     case inUse
     case disconnected
+    /// Still listed, but it failed to answer `DefaultDeviceRegistry.notAnsweringAfter` times
+    /// running; nothing opens it again until it re-enumerates (docs/dev/engine-internals.md,
+    /// "A radio that stops answering").
+    case notAnswering
 }
 
 package struct FrequencyRange: Hashable, Sendable {
@@ -104,6 +108,9 @@ package struct DeviceDescriptor: Hashable, Sendable {
     package var gainElements: [GainElement]
     package var providesTimestamps: Bool
     package var features: [String: FeatureValue]
+    /// Why the device is in its state and what to do about it, for a person: set for
+    /// `.notAnswering`, empty otherwise.
+    package var stateDetail: String = ""
 
     package init(id: DeviceID, driver: String, model: String, serial: String, usbLocation: String = "",
                 state: DeviceState = .available, tuningRanges: [FrequencyRange], sampleRates: [UInt64],

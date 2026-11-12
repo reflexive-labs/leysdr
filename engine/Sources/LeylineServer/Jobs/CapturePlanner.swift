@@ -140,6 +140,10 @@ enum CapturePlanner {
             guard state.captures.first(where: { $0.deviceID == device.deviceID }) == nil else { continue }
             guard DeviceID(string: device.deviceID) != nil else { continue }
             w.sawDevice = true
+            if let step = notAnswering(device) {
+                w.steps.append(step)
+                continue
+            }
             let rate = defaultRate(device)
             guard let centre = channelCentre(frequencyHz: frequencyHz, bandwidthHz: bw, device: device, rate: rate) else {
                 w.steps.append(cannotTune(device, frequencyHz))
@@ -209,6 +213,10 @@ enum CapturePlanner {
             guard state.captures.first(where: { $0.deviceID == device.deviceID }) == nil else { continue }
             guard DeviceID(string: device.deviceID) != nil else { continue }
             w.sawDevice = true
+            if let step = notAnswering(device) {
+                w.steps.append(step)
+                continue
+            }
             let rate = iqRate(wantedRate, device: device)
             guard let centre = iqCentre(frequencyHz: frequencyHz, device: device, rate: rate) else {
                 w.steps.append(cannotTune(device, frequencyHz))
@@ -291,7 +299,8 @@ enum CapturePlanner {
             let rate = bestRate(device)
             let start = startCentre(range, device: device)
             guard let cap = existing else {
-                w.steps.append(.attempt(.create(deviceID: device.deviceID, centerHz: start, sampleRateHz: rate)))
+                w.steps.append(notAnswering(device)
+                    ?? .attempt(.create(deviceID: device.deviceID, centerHz: start, sampleRateHz: rate)))
                 continue
             }
             if isSwept(cap) {
@@ -407,6 +416,14 @@ enum CapturePlanner {
         let what = if case .monitor? = job?.config { "monitor" } else { "scan" }
         return .pass(reason: "a \(what) is sweeping \(device.model); it is free again when the \(what) ends",
                      code: EngineError.Code.deviceBusy, blocking: sweeps)
+    }
+
+    /// A radio the daemon has stopped opening because it stopped answering: passed over with its
+    /// own sentence, which says to replug it. nil for any other radio.
+    private static func notAnswering(_ device: Leyline_V1_DeviceDescriptor) -> PlanWalk.Step? {
+        guard device.state == .notAnswering else { return nil }
+        let reason = device.stateDetail.isEmpty ? "\(device.model) is not answering" : device.stateDetail
+        return .pass(reason: reason, code: EngineError.Code.deviceIO, blocking: [])
     }
 
     /// A radio that cannot reach the frequency at all: `NO_DEVICE`, however it arises.

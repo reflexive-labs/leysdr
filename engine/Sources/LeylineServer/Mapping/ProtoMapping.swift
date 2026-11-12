@@ -19,6 +19,7 @@ enum ProtoMapping {
         case .available: return .available
         case .inUse: return .inUse
         case .disconnected: return .disconnected
+        case .notAnswering: return .notAnswering
         }
     }
 
@@ -115,6 +116,7 @@ enum ProtoMapping {
         out.gainElements = d.gainElements.map(gainElement)
         out.providesTimestamps = d.providesTimestamps
         for (k, v) in d.features { out.features[k] = featureValue(v) }
+        out.stateDetail = d.stateDetail
         return out
     }
 

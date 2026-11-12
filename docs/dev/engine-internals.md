@@ -431,8 +431,8 @@ is once per process, so installing or replacing a library requires a daemon rest
   grabbed a dongle that had probed fine), `RTLSDRDevice.open` throws `DEVICE_BUSY` naming the other
   program and the session store calls `markHeldExternally`, so the dongle reads `IN_USE` and the
   backoff re-probe starts from there.
-  `RTLSDRDevice.open` retries `rtlsdr_open` once after 50 ms so a transient claim does not fail the
-  capture.
+  `RTLSDRDevice.open` retries `rtlsdr_open` once after 50 ms when it failed on the claim, so a
+  transient claim does not fail the capture; any other failure is not retried there (below).
 - Descriptor: driver `"rtlsdr"`, model from USB product string, serial from USB serial (Nooelec
   dongles often ship `"00000001"` — stable IDs key on `(serial, usbLocation)` where
   `usbLocation` is the enumeration index-independent USB strings tuple; identical duplicates fall
@@ -460,6 +460,40 @@ is once per process, so installing or replacing a library requires a daemon rest
   publishes `arrived`/`removed`. IOKit arrival notifications are a later refinement.
   `leylined --no-hardware` never starts the poll: the daemon hosts only what is attached to it
   (file devices, rtl_tcp), for a run that must see nothing but its test radios, such as an eval's.
+- **A radio that stops answering** is left alone until it is replugged (2026-11-09: a dongle in a
+  front port failed its descriptor reads, dropped off the bus, came back as "Generic RTL2832U OEM"
+  with no serial and timed out its register writes, while the daemon re-opened it every 2 to 60 s
+  and a keyboard on the same internal hub stopped). The reset is librtlsdr's: `rtlsdr_open`
+  claims the interface, makes a dummy register write, and calls `libusb_reset_device` ("Resetting
+  device...") when that write fails. Every `rtlsdr_open` reaches it: the registry's probe in
+  `RTLSDRDevice.enumerate`, and a capture's open, which used to try twice. So the daemon's own
+  opens are what is bounded. `DefaultDeviceRegistry.noteFailure` counts, per device, failures to
+  answer since the last successful open: a probe open that fails with anything but a claim code
+  (-3 and -6 stay the `IN_USE` re-check above), USB strings that read empty
+  (`RTLSDRProbe.descriptorsUnreadable`: no product or no serial), a capture's open or rebind that
+  fails `DEVICE_IO` (a -7 timeout in the open's register writes lands here), and a stream that dies
+  under its capture while the dongle stays listed (`rtlsdr_read_async` returning on its own, -4 or
+  -5). A failed probe open goes on the 2 to 60 s backoff. The third makes the device
+  `NOT_ANSWERING` (`markNotAnswering`, logged once at warning) with `state_detail` "<model> is
+  not answering: unplug it and plug it back in, ideally into a port on the back of the Mac" ("…:
+  check the rtl_tcp server, then detach it and attach it again" for rtl_tcp). From then the
+  probe gate never opens it, `createCapture` refuses it `DEVICE_IO` with that sentence before
+  opening anything, the planner passes over it with the same words, its captures are detached as
+  for an unplug, and letting go of a capture leaves the state alone. Only a re-enumeration ends
+  it: a poll that does not list it removes the entry, and the next one that does is a new arrival
+  with a clean count. A successful open (probe or capture, `markInUse`) resets the count.
+  Strings that read empty never key a new identity while a known dongle is missing from the pass:
+  the probe is matched to the known entry at its index (or the only one missing), which stays
+  listed and is counted against, so a failing dongle no longer leaves and comes back as a
+  nameless radio. A probe that matches nobody is listed under what it gave and never opened. While
+  one of our captures streams from the dongle the descriptor reads do not count; its stream does
+  (below). A stream that dies with the dongle still listed marks the entry `awaitingRevive`: after
+  the backoff the poll gives it a fresh `RTLSDRDevice` and publishes `arrived`, the session
+  rebinds the capture onto it (a failed rebind counts and asks for another revive), and the engine
+  closes the device object it is rebound away from, so a dead handle is never kept. A device that
+  never leaves the USB tree and stops delivering (2026-11-09, 16:15: `PLL not locked`, libusb -4
+  on register writes, the dongle still at its address) sends no hot-plug event at all; the
+  capture's stall check below is what notices it.
 
 ### HackRFDevice (libhackrf, libusb-backed)
 
@@ -688,6 +722,22 @@ A destroyed capture is marked `closing` for the awaits of its teardown: it takes
 on its device, `createCapture` waits for it to go, and an IQ lease is handed over only with its
 claim made, so no lease keeps a stopped engine. An allocation whose walk met a capture that began
 closing after its snapshot walks once more.
+
+### A capture whose stream stops
+
+The decode jobs' stall rule (`StreamStall`, below) applied at the capture
+(`SessionStore+Stalls.swift`). A task looks at every capture once a second: a capture that is
+attached, not closing, whose tuning has not changed and whose `CaptureStats.blocksReceived` has not
+moved for 5 s is published `CAPTURE_STALLED` with `state_detail` "no samples from <model> for 5 s"
+(the seconds fixed when it was first reported, so the event goes out once). The first block back
+publishes `CAPTURE_ACTIVE` again. Its claims ride the same capture event, so every holder sees it,
+and a decode job on it goes `DEGRADED` with the same words from its own rule. After 30 s stalled
+the device is closed and opened again once (`DefaultCaptureEngine.reopenDevice`, which keeps the
+capture ID and the sample index, as a rebind does). A reopen that throws leaves the capture
+detached and the device `NOT_ANSWERING`; a reopen that opens but still delivers nothing for
+another 30 s makes it `NOT_ANSWERING` too, which detaches the capture. A block arriving gives the
+stall its reopen back. `Daemon.Config.captureStallAfter` and `captureReopenAfter` shorten both
+for tests.
 
 ### Control service
 
@@ -1219,7 +1269,8 @@ of the slowest blocks any radio here delivers (a file at 48 kS/s, 16384 samples 
 RTL-SDR at its lowest 250 kS/s hands over a transfer every 66 ms), and longer than the bounded stop
 a rate change waits on. A rate change or retune restarts the count, and a detached capture is
 reported as away instead. This is not "no records": a quiet band yields none and the job stays
-`RUNNING` (DEC-16). The away detail outranks the stall's. A recording (`RecordRunner`) does not
+`RUNNING` (DEC-16). The away detail outranks the stall's. The capture says the same
+(`CAPTURE_STALLED`, "A capture whose stream stops" above), on the same 5 s. A recording (`RecordRunner`) does not
 watch for this yet: a stalled stream leaves it `RUNNING` with its elapsed time standing still.
 
 **IQ input.** A manifest with `input.signal = SIGNAL_IQ` asks for `AllocationRequest.captureIQ`

@@ -23,6 +23,11 @@ extension SessionStore {
         guard let now = captures[id] else { return nil }
         var proto = ProtoMapping.capture(id: id, deviceID: now.deviceID, snapshot: snap, meta: now.meta)
         proto.tuningGeneration = snap.tuningGeneration
+        if !snap.detached, let stalled = now.stall?.detail {
+            // Attached and silent: the stall watch's words (`SessionStore+Stalls.swift`).
+            proto.state = .captureStalled
+            proto.stateDetail = stalled
+        }
         proto.claims = await claimProtos(id, now.claims, centerHz: snap.centerHz, sampleRate: snap.sampleRate)
         return proto
     }
@@ -48,6 +53,11 @@ extension SessionStore {
             throw EngineError.deviceNotFound(deviceID.string)
         }
         if desc.state == .disconnected { throw EngineError.deviceDetached(deviceID.string) }
+        // Opening a radio that has stopped answering is what the daemon has given up doing: each
+        // open can make librtlsdr reset it. Only a replug brings it back.
+        if desc.state == .notAnswering {
+            throw EngineError.deviceIO(DefaultDeviceRegistry.notAnsweringDetail(desc), target: deviceID.string)
+        }
         if let existing = captures.first(where: { $0.value.deviceID == deviceID })?.key, isSwept(existing) {
             // Name what holds it: a bare "the radio is busy" sends the user looking for another
             // client.
@@ -85,6 +95,12 @@ extension SessionStore {
                     // The registry already knows another program has this dongle; report that
                     // instead of surfacing librtlsdr's claim failure.
                     throw EngineError.deviceHeldByOtherProgram(deviceID.string)
+                } else if e.code == EngineError.Code.deviceIO {
+                    // It got past the claim and failed anyway: a radio not answering. Counted, so a
+                    // client or a job asking again and again does not open it for ever.
+                    if await registry.noteFailure(id: deviceID, reason: e.message) {
+                        throw EngineError.deviceIO(DefaultDeviceRegistry.notAnsweringDetail(desc), target: deviceID.string)
+                    }
                 }
             }
             throw error

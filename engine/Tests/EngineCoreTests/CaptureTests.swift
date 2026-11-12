@@ -345,7 +345,7 @@ final class CaptureDeviceLossTests: XCTestCase {
         XCTAssertFalse(capture.core.isRunning)
         XCTAssertEqual(second.streamStops.value, 1)
         XCTAssertEqual(second.closes.value, 1, "stop() closes the rebound device")
-        XCTAssertEqual(first.closes.value, 0)
+        XCTAssertEqual(first.closes.value, 1, "the rebind closed the lost device: no dead handle is kept")
     }
 
     /// A rebind that fails to stream leaves the capture detached; a later rebind can still succeed.

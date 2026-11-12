@@ -128,6 +128,8 @@ actor SessionStore {
         var closing = false
         /// Callers parked until a return or a close on this capture is over (`awaitCapture`).
         var waiters: [CheckedContinuation<Void, Never>] = []
+        /// The stall watch on its stream (`SessionStore+Stalls.swift`); nil until its first look.
+        var stall: CaptureStall?
     }
 
     /// Where a capture was tuned on its last event.
@@ -225,6 +227,10 @@ actor SessionStore {
     }
     var presence: [String: Presence] = [:]
     var deviceTask: Task<Void, Never>?
+    /// The capture stall watch (`startStallWatch`), and its two times.
+    var stallTask: Task<Void, Never>?
+    var captureStallAfter: Duration = StreamStall.defaultAfter
+    var captureReopenAfter: Duration = CaptureStall.defaultReopenAfter
     /// Installed by the bulk plane so streams on destroyed objects end.
     var teardownHook: (@Sendable (TeardownScope) async -> Void)?
     /// Installed by the job store; nil until jobs exist.

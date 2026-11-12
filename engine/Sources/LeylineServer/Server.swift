@@ -73,6 +73,10 @@ package final class Daemon: Sendable {
         /// How long a live decode job's capture may deliver nothing before the job goes DEGRADED
         /// (`StreamStall`); a test shortens it.
         var decodeStallAfter: Duration = StreamStall.defaultAfter
+        /// How long a capture may deliver nothing before it goes CAPTURE_STALLED, and how long a
+        /// stalled one waits for its one reopen (`SessionStore+Stalls.swift`); a test shortens both.
+        var captureStallAfter: Duration = StreamStall.defaultAfter
+        var captureReopenAfter: Duration = CaptureStall.defaultReopenAfter
         /// Reported in `DaemonInfo` and the startup log line: the executable passes its generated
         /// `leylinedVersion`, a test its own string.
         var version: String
@@ -259,6 +263,7 @@ package final class Daemon: Sendable {
         await jobs.repairRecordings()
         await attachRemoteDongles()
         await store.startDeviceMirror()
+        await store.startStallWatch(after: config.captureStallAfter, reopenAfter: config.captureReopenAfter)
         await streams.install()
         // Kept decode jobs the last daemon was running come back once a radio is here.
         await jobs.resumeKept()

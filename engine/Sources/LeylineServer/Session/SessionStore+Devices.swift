@@ -42,6 +42,11 @@ extension SessionStore {
                         log.warning("rebind of \(capID) to \(d.id) failed: \(error)")
                         if let e = error as? EngineError, e.code == EngineError.Code.deviceBusy {
                             await registry.markHeldExternally(id: d.id)
+                        } else {
+                            // A dongle that is listed and will not open: the registry tries the
+                            // rebind again after its backoff, and gives up on the radio after a
+                            // few (`noteFailure`).
+                            await registry.noteFailure(id: d.id, reason: "the rebind failed (\(error))", revive: true)
                         }
                     }
                 }
@@ -50,10 +55,13 @@ extension SessionStore {
             let before = devices[d.id]
             devices[d.id] = d
             if before != d { emit(.device(ProtoMapping.descriptor(d)), captureID: nil, by: .daemon) }
-            if d.state == .disconnected { await captureDeviceLost(d.id) }
+            // A radio that is not answering is left alone, so its capture waits detached as for
+            // an unplugged one, and rebinds when the radio comes back.
+            if d.state == .disconnected || d.state == .notAnswering { await captureDeviceLost(d.id) }
         case .removed(let id):
             guard var d = devices[id] else { return }
             d.state = .disconnected
+            d.stateDetail = ""
             if captures.values.contains(where: { $0.deviceID == id }) {
                 devices[id] = d
             } else {

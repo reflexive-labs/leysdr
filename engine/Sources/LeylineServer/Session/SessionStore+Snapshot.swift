@@ -60,6 +60,7 @@ extension SessionStore {
     /// Graceful shutdown: every capture stopped (devices closed), subscribers finished.
     func shutdown() async {
         deviceTask?.cancel()
+        stallTask?.cancel()
         for id in Array(captures.keys) { await destroyCapture(id: id, by: .daemon) }
         for p in presence.values { p.grace?.cancel() }
         presence.removeAll()

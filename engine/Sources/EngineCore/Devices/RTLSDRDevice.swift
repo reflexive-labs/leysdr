@@ -37,6 +37,13 @@ package struct RTLSDRProbe: Hashable, Sendable {
         self.tuningRanges = tuningRanges
         self.openError = openError
     }
+
+    /// The USB strings could not be read: `rtlsdr_get_device_usb_strings` failed or gave no product
+    /// or no serial. A dongle that has started failing its control transfers looks like this (on
+    /// 2026-11-09 one came back as "Generic RTL2832U OEM" with no serial), so the registry never
+    /// opens one -- each `rtlsdr_open` of a dongle in that state can make librtlsdr reset it --
+    /// and counts it as a failure to answer.
+    package var descriptorsUnreadable: Bool { serial.isEmpty || product.isEmpty }
 }
 
 /// One RTL2832U dongle. Control methods run on the control plane; `deliver` runs on the USB thread.
@@ -353,9 +360,13 @@ package final class RTLSDRDevice: RadioDevice, @unchecked Sendable {
                 guard dev == nil else { return }
                 var d: OpaquePointer?
                 var rc = rtlsdr_open(&d, index)
-                if rc != 0 {
+                if RTLSDRDevice.isClaimFailure(rc) {
                     // A transient claim (registry probe of a never-probed dongle, or another process
                     // releasing it) usually clears within tens of ms; retry once before failing.
+                    // Only a claim: any other failure got past the claim, where librtlsdr's first
+                    // register write resets a dongle that does not answer it ("Resetting
+                    // device..."), and a second open would reset it again. The registry bounds the
+                    // retries of a dongle that keeps failing (`noteFailure`).
                     Thread.sleep(forTimeInterval: 0.05)
                     d = nil
                     rc = rtlsdr_open(&d, index)

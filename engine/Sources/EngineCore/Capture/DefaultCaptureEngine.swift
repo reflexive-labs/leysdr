@@ -257,7 +257,18 @@ package actor DefaultCaptureEngine: CaptureEngine {
 
     /// A matching device came back: adopt it, restore centre/rate, restart the stream with a new
     /// anchor. The `CaptureID` and sample index continue.
+    ///
+    /// A new device object (a re-enumerated dongle, a revived one) replaces the old, and the old one
+    /// is closed first: its handle went with the radio, and a dead handle is never kept. The same
+    /// object coming back (an rtl_tcp link the registry reopened) is used as it is.
     package func deviceRebound(_ newDevice: any RadioDevice) async throws {
+        if !(newDevice === device) {
+            if streaming {
+                await device.stopStreaming()
+                streaming = false
+            }
+            await device.close()
+        }
         device = newDevice
         deviceIDBox.value = newDevice.descriptor.id
         try await newDevice.open()
@@ -273,6 +284,41 @@ package actor DefaultCaptureEngine: CaptureEngine {
         try await beginStreaming()
         detached = false
         bumpGeneration()
+    }
+
+    /// Closes the device and opens it again on the capture's tuning: the one attempt the daemon
+    /// makes at a radio that is listed and attached but has stopped delivering samples
+    /// (docs/dev/engine-internals.md, "A capture whose stream stops"). The capture ID and the
+    /// sample index continue, as after a rebind. A failure leaves the device closed and the capture
+    /// detached, and throws.
+    package func reopenDevice() async throws {
+        guard started, !detached else { return }
+        if streaming {
+            await device.stopStreaming()
+            streaming = false
+        }
+        await device.close()
+        bumpGeneration()
+        do {
+            try await device.open()
+            do {
+                try await device.setSampleRate(sampleRate)
+                try await device.tune(centerHz: centerHz)
+                if !core.isRunning { core.startThread() }
+                try await beginStreaming()
+            } catch {
+                if streaming {
+                    await device.stopStreaming()
+                    streaming = false
+                }
+                await device.close()
+                throw error
+            }
+        } catch {
+            detached = true
+            bumpGeneration()
+            throw error
+        }
     }
 
     /// One more change to the band the capture delivers, on the snapshot and on the core, where

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// A synthetic radio with two faults a real dongle can show: it is listed before anything could
+// A synthetic radio with the faults a real dongle can show: it is listed before anything could
 // open it, so it has no gain table until it opens, as an RTL-SDR first probed while rtl_tcp held
-// it (2026-11-03); and its stream can be told to stop delivering while it still says it is
-// streaming. It plays the synthetic band underneath (`SyntheticBandDevice`).
+// it (2026-11-03); its stream can be told to stop delivering while it still says it is
+// streaming; and its opens can be told to fail, as a dongle's do once it stops answering
+// (2026-11-09). It plays the synthetic band underneath (`SyntheticBandDevice`).
 
 import EngineCore
 import Foundation
@@ -21,6 +22,11 @@ final class ScriptedRadio: VirtualDevice, @unchecked Sendable {
     let tableKnown: LockedValue<Bool>
     /// While true the stream delivers nothing, and the radio still says it is streaming.
     let stalled = LockedValue(false)
+    /// While true every `open` fails with DEVICE_IO, as `rtlsdr_open` does for a dongle that got
+    /// past the claim and did not answer (librtlsdr's register writes time out, -7).
+    let failsOpen = LockedValue(false)
+    /// `open` calls so far, failed ones included.
+    let opens = LockedValue(0)
     private let gain = LockedValue(GainState(element: "TUNER", value: .auto))
 
     private let learnsTableOnOpen: Bool
@@ -52,6 +58,8 @@ final class ScriptedRadio: VirtualDevice, @unchecked Sendable {
 
     /// Reads the gain table from the "handle", as `RTLSDRDevice.open` does.
     func open() async throws {
+        opens.value += 1
+        if failsOpen.value { throw EngineError.deviceIO("rtlsdr_open failed: -7", target: descriptor.id.string) }
         try await inner.open()
         if learnsTableOnOpen { tableKnown.value = true }
     }
