@@ -182,8 +182,10 @@ struct SpeechActions: View {
         if session.canTranscribe, session.isTranscribable(recordingID: recordingID), !running {
             if hasWords {
                 Button("Transcribe again…") { session.transcribeAgainFor = recordingID }
+                    .accessibilityIdentifier("library.transcribe_again")
             } else {
                 Button("Transcribe") { session.askTranscribe(recordingID: recordingID) }
+                    .accessibilityIdentifier("library.transcribe")
             }
         }
         if hasWords {

@@ -1772,6 +1772,34 @@ scenes:
       - {cmd: press, identifier: library.inspector.decoded.aprs}
       - {cmd: state, expect: {place: decoders, decoders.decoder: aprs}}
 
+  # Transcribe on a continuous recording (docs/design/ai.md): scene_net recorded with no gate is
+  # one part no squelch cut, and the speech decoder cuts it at its max_segment_ms, so the
+  # inspector offers Transcribe and the question counts every minute of the part, not its
+  # squelch openings, and says why. Cancel sends nothing.
+  - name: library-transcribe-continuous
+    covers: [SpeechViews.swift, SpeechRecords.swift, PartInspector.swift]
+    threshold: 1.5
+    fixtures: [{name: scene_net}]
+    clock: "19:42"
+    bookmarks: ../../site/shots/home.csv
+    speech: {script: ../../site/shots/net-speech.txt}
+    steps:
+      - ley: [record, "147.18", --gate, none, --for, 20s, --detach]
+      - wait: 23
+    stage:
+      place: library
+      inspector: true
+      select_part: 0
+      settle: 3
+    app:
+      - {cmd: state, expect: {place: library}}
+      - {cmd: snapshot, name: offered}
+      - {cmd: press, identifier: library.transcribe}
+      - {cmd: state, expect: {alert.title: "Transcribe 1 part, 0.3 min of audio from 147.180 MHz NFM, every minute of it since no squelch gated the recording, with speech (on this Mac; no audio leaves it)?", alert.buttons.0: Cancel, alert.buttons.1: Transcribe}}
+      - {cmd: snapshot, name: asked}
+      - {cmd: press, identifier: alert.cancel}
+      - {cmd: state, expect: {alert: null}}
+
   # The menus and the CHIRP import's words (docs/plans/app.md, U7 and the assistant panel's
   # K1): File ▸ Import CHIRP… after Show Recordings in Finder, View ▸ Show Assistant disabled
   # with no AI provider, the app menu's Settings… and Tune ▸ Stop Listening enabled. The import
