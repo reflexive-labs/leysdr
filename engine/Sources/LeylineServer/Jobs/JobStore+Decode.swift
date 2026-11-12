@@ -389,13 +389,15 @@ extension JobStore {
     }
 
     /// SEGMENTED input cuts at the squelch's edges, and a channel with the squelch off has none:
-    /// every meter says open, and the plugin would get one segment that never ends. The job's own
-    /// channel gets the gated recorder's auto squelch, the band's floor plus 10 dB, measured where
-    /// the channel is (`autoSquelch`). A channel whose meter never arrives keeps its squelch off.
-    /// Returns what went wrong, for the job to stay DEGRADED with, or nil.
+    /// every meter says open, and every minute of audio would go to the plugin, cut only at the
+    /// manifest's `max_segment_ms`. The job's own channel gets the gated recorder's auto squelch,
+    /// the band's floor plus 10 dB, measured where the channel is (`autoSquelch`). A channel whose
+    /// meter never arrives keeps its squelch off, and a mode with no squelch gate (WFM, SSB) gets
+    /// none: its segments are cut at the limit alone. Returns what went wrong, for the job to stay
+    /// DEGRADED with, or nil.
     private func squelchForSegments(_ id: JobID, lease: any ChannelLease) async -> String? {
         var channelConfig = await lease.engine.config
-        guard channelConfig.squelchDB.isNaN else { return nil }
+        guard channelConfig.squelchDB.isNaN, RecordingSource.gatedModes.contains(channelConfig.mode) else { return nil }
         await setDetail(id, "measuring the noise floor")
         guard let measured = await autoSquelch(lease) else {
             return "no level measured; squelch left as it was"

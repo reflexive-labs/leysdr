@@ -199,9 +199,14 @@ actor DecodeRunner {
         var squelch: Task<Void, Never>?
         if installed.manifest.input.mode == .segmented {
             let (preRollMs, hangMs) = Segmenter.timings(installed.manifest.input)
+            // A mode with no squelch gate is one transmission from the first audio, cut only at
+            // `max_segment_ms`. A squelch that is off needs no such rule: its meter says open.
+            let mode = await engine.config.mode
+            let alwaysOpen = !RecordingSource.gatedModes.contains(mode)
             segmenter.withLock {
                 $0 = Segmenter(preRollMs: preRollMs, hangMs: hangMs, captureRateHz: captureRateHz,
-                               audioRateHz: engine.audioRate)
+                               audioRateHz: engine.audioRate, maxSegmentMs: installed.manifest.input.maxSegmentMs,
+                               alwaysOpen: alwaysOpen)
             }
             squelch = Task { [weak self] in await self?.followSquelch(audio: audio, lease: lease) }
         }
@@ -780,6 +785,7 @@ actor DecodeRunner {
             rec.channelID = ""
             rec.clipUri = located.map { "\(source.uri)/\($0.part)" } ?? ""
             rec.over = located?.over ?? 0
+            if located?.continues == true { rec.fields[Segmenter.continuesField] = .with { $0.flag = true } }
             rec.rssiDbfs = .nan
             rec.snrDb = .nan
         } else {
@@ -790,7 +796,11 @@ actor DecodeRunner {
             // transcribing the clips later gives the same overs.
             rec.over = 0
             rec.clipUri = ""
-            let segment = segmenter.withLock { s in s?.segment(at: rec.time.sampleIndex).map { ($0.start, s!.preRollSamples) } }
+            let found = segmenter.withLock { s in s?.segment(at: rec.time.sampleIndex).map { ($0, s!.preRollSamples) } }
+            // A piece cut at `max_segment_ms` out of a longer transmission says so, so a client
+            // can join it to the one before.
+            if found?.0.continues == true { rec.fields[Segmenter.continuesField] = .with { $0.flag = true } }
+            let segment = found.map { ($0.0.start, $0.1) }
             if let clips, let (start, preRoll) = segment,
                let found = await clips.locate(segmentStart: start, preRoll: preRoll)
             {

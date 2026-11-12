@@ -26,14 +26,14 @@ final class SegmentedDecodeTests: XCTestCase {
 
     /// A fake whose manifest asks for SEGMENTED audio, on nfm_keyed's carrier.
     func writeSegmentedPlugin(in dir: String, name: String = "fake", executable: String? = nil,
-                              credentialProvider: String = "", args: [String] = []) throws {
+                              credentialProvider: String = "", args: [String] = [], maxSegmentMs: UInt32 = 0) throws {
         try writeFakePlugin(in: dir, name: name, json: """
         {
           "name": "\(name)",
           "version": "0.1.0",
           "description": "counts segments, for tests",
           "recipe": {"frequenciesHz": ["\(recordFrequencyHz)"], "bandwidthHz": 12500, "mode": "NFM", "gain": "GAIN_LEAVE"},
-          "input": {"mode": "SEGMENTED", "tap": "TAP_AUDIO", "signal": "SIGNAL_AUDIO"},
+          "input": {"mode": "SEGMENTED", "tap": "TAP_AUDIO", "signal": "SIGNAL_AUDIO", "maxSegmentMs": \(maxSegmentMs)},
           "outputs": ["SHAPE_RECORDS"],
           "credentialProvider": "\(credentialProvider)",
           "executable": "\(executable ?? fakeDecoderPath())",
@@ -155,7 +155,7 @@ final class SegmentedDecodeTests: XCTestCase {
     /// daemon writes one, with squelch intervals at `opens` (seconds, per part). Returns its id.
     func writeRecording(in dir: String, kind: String = "audio",
                         opens: [[(Double, Double)]] = SegmentedDecodeTests.syntheticOpens,
-                        finished: Bool = true) async throws -> String
+                        quiet: [Double] = [], finished: Bool = true) async throws -> String
     {
         let id = JobID().string
         let manifest = RecordingManifest(
@@ -172,7 +172,13 @@ final class SegmentedDecodeTests: XCTestCase {
         for (i, partOpens) in opens.enumerated() {
             let start = capture(Double(i) * 30)
             await writer.openPart(at: start)
-            let audio = (0..<Int(30 * Self.audioRate)).map { Float(sin(Double($0) * 0.13)) * 0.5 }
+            // A sine throughout, with 200 ms of silence at each of `quiet` (seconds) in this part.
+            let partStart = Double(i) * 30
+            let silent = quiet.filter { $0 >= partStart && $0 < partStart + 30 }
+                .map { Int(($0 - partStart) * Double(Self.audioRate))..<Int(($0 - partStart + 0.2) * Double(Self.audioRate)) }
+            let audio = (0..<Int(30 * Self.audioRate)).map { n in
+                silent.contains { $0.contains(n) } ? 0 : Float(sin(Double(n) * 0.13)) * 0.5
+            }
             if kind == "iq" {
                 await writer.append(iq: Data(count: 8 * 1000))
             } else {
@@ -674,6 +680,137 @@ final class SegmentedDecodeTests: XCTestCase {
             XCTAssertEqual(done.state, .completed, "nothing to send is not an error: \(done.statusDetail)")
             XCTAssertFalse(done.hasError)
             XCTAssertTrue(done.statusDetail.contains("0 records"), done.statusDetail)
+        }
+    }
+
+    // MARK: A squelch that never closes
+
+    /// Checks that `got`, records of the fake decoder, follow each other with no gap and no
+    /// overlap and are each at most `maxSeconds` long, by their START times and sample counts.
+    func assertContiguous(_ got: [Leyline_V1_DecodeRecord], captureRate: Double, maxSeconds: Double,
+                          slackSamples: UInt64 = 0, file: StaticString = #filePath, line: UInt = #line)
+    {
+        for rec in got {
+            let seconds = Double(integer(rec, "samples")) / Double(integer(rec, "rate"))
+            XCTAssertLessThanOrEqual(seconds, maxSeconds + 0.001, "no piece is longer than the limit", file: file, line: line)
+            XCTAssertEqual(integer(rec, "outside"), 0, file: file, line: line)
+        }
+        for (a, b) in zip(got, got.dropFirst()) {
+            let perAudio = captureRate / Double(integer(a, "rate"))
+            let end = a.time.sampleIndex + UInt64((Double(integer(a, "samples")) * perAudio).rounded())
+            let off = end > b.time.sampleIndex ? end - b.time.sampleIndex : b.time.sampleIndex - end
+            XCTAssertLessThanOrEqual(off, slackSamples, "a piece starts where the one before it ended (\(end) and \(b.time.sampleIndex))",
+                                     file: file, line: line)
+        }
+    }
+
+    /// A kept job's records from the store, in order.
+    func kept(_ c: DaemonClients, job: String) async throws -> [Leyline_V1_DecodeRecord] {
+        var query = Leyline_V1_RecordQuery()
+        query.jobID = job
+        return try await c.decoders.queryRecords(query, metadata: testMetadata).records.sorted { $0.seq < $1.seq }
+    }
+
+    func testAContinuousRecordingIsCutIntoPiecesAcrossItsWholeLength() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        defer {
+            for d in [plugins, recordings] { try? FileManager.default.removeItem(atPath: d) }
+        }
+        try writeSegmentedPlugin(in: plugins, maxSegmentMs: 8000)
+        // No openings: a continuous recording. 200 ms of silence at 5 s, inside the 5 s before the
+        // first limit at 8 s.
+        let id = try await writeRecording(in: recordings, opens: [[], []], quiet: [5.0])
+        try await withDaemon(decoderSearchPath: [plugins], recordingsPath: recordings) { c in
+            let started = try await self.startDecode(c, self.sourceConfig(id, keep: true))
+            let done = try await self.waitForEnd(c, started.jobID)
+            XCTAssertEqual(done.state, .completed, done.statusDetail)
+            let got = try await self.kept(c, job: started.jobID)
+            XCTAssertGreaterThanOrEqual(got.count, 8, "60 s in pieces of at most 8 s")
+            self.assertContiguous(got, captureRate: Double(Self.captureRate), maxSeconds: 8)
+            XCTAssertEqual(got.first?.time.sampleIndex, 0, "from the recording's first sample")
+            XCTAssertEqual(got.dropFirst().first?.time.sampleIndex, self.capture(5.1), "the first cut is the middle of the silence")
+            let total = got.reduce(Int64(0)) { $0 + self.integer($1, "samples") }
+            XCTAssertEqual(total, Int64(60 * Self.audioRate), "every minute of the recording is sent, once")
+            XCTAssertNil(got.first?.fields["continues"], "the first piece starts the transmission")
+            XCTAssertTrue(got.dropFirst().allSatisfy { $0.fields["continues"]?.flag == true },
+                          "every later piece continues it, the first of the second part included")
+            for part in 1...2 {
+                let inPart = got.filter { $0.clipUri == "ley://recordings/\(id)/\(part)" }
+                XCTAssertEqual(inPart.map(\.over), (0..<inPart.count).map { UInt32($0 + 1) }, "a part with no openings numbers its pieces")
+            }
+            XCTAssertEqual(done.statusDetail, "read ley://recordings/\(id): \(got.count) records")
+        }
+    }
+
+    func testAnOverLongerThanTheLimitIsCutIntoPiecesThatKeepItsIndex() async throws {
+        let plugins = try makeTempDir("decoders")
+        let recordings = try makeTempDir("recordings")
+        defer {
+            for d in [plugins, recordings] { try? FileManager.default.removeItem(atPath: d) }
+        }
+        try writeSegmentedPlugin(in: plugins, maxSegmentMs: 8000)
+        let id = try await writeRecording(in: recordings, opens: [[(2.0, 25.0), (27.0, 28.0)], [(31.0, 33.0)]])
+        try await withDaemon(decoderSearchPath: [plugins], recordingsPath: recordings) { c in
+            let started = try await self.startDecode(c, self.sourceConfig(id, keep: true))
+            let done = try await self.waitForEnd(c, started.jobID)
+            XCTAssertEqual(done.state, .completed, done.statusDetail)
+            let got = try await self.kept(c, job: started.jobID)
+            let first = "ley://recordings/\(id)/1"
+            let long = got.filter { $0.clipUri == first && $0.over == 1 }
+            XCTAssertEqual(long.count, 4, "1.5 s to 25.5 s is 24 s: four pieces of at most 8 s")
+            self.assertContiguous(long, captureRate: Double(Self.captureRate), maxSeconds: 8)
+            XCTAssertEqual(long.first?.time.sampleIndex, self.capture(1.5))
+            XCTAssertNil(long.first?.fields["continues"])
+            XCTAssertTrue(long.dropFirst().allSatisfy { $0.fields["continues"]?.flag == true })
+            let short = got.filter { $0.over != 1 || $0.clipUri != first }
+            XCTAssertEqual(short.map(\.over), [2, 1], "the overs under the limit are as before")
+            XCTAssertTrue(short.allSatisfy { $0.fields["continues"] == nil })
+        }
+    }
+
+    func testALiveJobWithTheSquelchOffIsCutAtTheLimitWithNoGaps() async throws {
+        let plugins = try makeTempDir("decoders")
+        defer { try? FileManager.default.removeItem(atPath: plugins) }
+        try writeSegmentedPlugin(in: plugins, maxSegmentMs: 2000)
+        try await withDaemon(decoderSearchPath: [plugins]) { c in
+            try await self.attach(c, fixture: "nfm_keyed.cf32", loop: true)
+            var config = Leyline_V1_DecodeConfig()
+            config.decoder = "fake"
+            let started = try await self.startDecode(c, config)
+            // The job sets an auto squelch on its channel; turning it off leaves a squelch that
+            // never closes.
+            var channelID = ""
+            for _ in 0..<250 {
+                let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+                if let ch = state.channels.first, !ch.squelchDb.isNaN {
+                    channelID = ch.channelID
+                    break
+                }
+                try await Task.sleep(nanoseconds: 20_000_000)
+            }
+            XCTAssertFalse(channelID.isEmpty, "the job's channel got its auto squelch")
+            var w = Leyline_V1_ParamWrite()
+            w.tag = 1
+            w.targetID = channelID
+            w.squelchDb = .nan
+            let write = w
+            _ = try await c.control.writeParams(metadata: testMetadata) { writer in try await writer.write(write) }
+            let got = try await self.records(c, job: started.jobID, count: 7, timeoutMs: 30000)
+            try await self.cancel(c, started.jobID)
+            let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            let rate = Double(state.captures.first?.sampleRate ?? 2_400_000)
+            // The pieces of the transmission the open squelch made: the last record that starts
+            // one, and every record after it, which continue it.
+            guard let start = got.lastIndex(where: { $0.fields["continues"] == nil }) else {
+                return XCTFail("no piece starts a transmission")
+            }
+            let run = Array(got[start...])
+            XCTAssertGreaterThanOrEqual(run.count, 3, "a squelch that never closes is cut every 2 s: \(got.map(\.fields))")
+            // The audio is placed on the timeline to within an audio sample or so.
+            self.assertContiguous(run, captureRate: rate, maxSeconds: 2, slackSamples: UInt64(rate / 8000))
+            XCTAssertTrue(run.allSatisfy { $0.clipUri == run[0].clipUri && $0.over == run[0].over },
+                          "the pieces share the over of the clip that holds them")
         }
     }
 

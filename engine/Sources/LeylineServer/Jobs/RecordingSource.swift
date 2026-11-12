@@ -8,8 +8,10 @@
 //
 // Under SEGMENTED input each part is cut by `Segmenter.cut` from its sidecar's `squelch_opens`,
 // with the pre-roll and hang the live job uses, so a recording decoded later yields the segments a
-// live job would have sent. Under any other input every part is sent whole, and the time between
-// two parts is a gap. Times stay on the capture's timeline: a part's `start_sample` is a capture
+// live job would have sent. With `max_segment_ms` set, a segment longer than that is cut into
+// pieces at the quietest point the part's audio has near each limit (`Segmenter.limit`), and a part
+// with no openings, or of a mode with no squelch gate, is one transmission across its whole length.
+// Under any other input every part is sent whole, and the time between two parts is a gap. Times stay on the capture's timeline: a part's `start_sample` is a capture
 // sample, and its WAV holds audio at the recording's rate, so a capture sample is placed in the file
 // by the two rates the sidecar gives. An IQ part holds the capture's own samples, one for one, and
 // a part at another centre or rate than the recording's is skipped.
@@ -21,6 +23,11 @@ import LeylineProto
 struct RecordingSource: Sendable {
     /// Audio samples per frame written to the plugin: 4096, the drain's own frame size.
     static let frameSamples = AudioFrameSource.maxFrame
+
+    /// The modes a squelch gates. Any other (WFM, SSB, CW) has no closed squelch to cut at, so a
+    /// segmented job hears it as one transmission, cut only at `max_segment_ms`; the gated
+    /// recorder's default gate follows the same line (`JobStore.defaultGate`).
+    static let gatedModes: Set<DemodMode> = [.nfm, .am]
 
     /// One part, as the source reads it.
     struct Part: Sendable {
@@ -98,9 +105,13 @@ struct RecordingSource: Sendable {
         let directory = store.directory + "/" + id
         let segmented = input.mode == .segmented
         let (preRollMs, hangMs) = Segmenter.timings(input)
+        let gated = DemodMode(rawValue: manifest.mode.lowercased()).map(Self.gatedModes.contains) ?? true
         var parts: [Part] = []
         var items: [Item] = []
         var skipped = 0
+        // Where the last part read whole ended, so the first piece of the next one, straight after
+        // it on the same capture, is marked as continuing it.
+        var wholeEnd: (captureID: String, sample: UInt64)?
         for entry in manifest.parts {
             let sidecar = Self.sidecar(of: entry, in: directory)
             let anchor = manifest.anchors.last { ($0.captureID ?? "") == sidecar?.anchor.captureID } ?? manifest.anchors.last
@@ -125,9 +136,32 @@ struct RecordingSource: Sendable {
             }
             if segmented {
                 let perMs = captureRate / 1000
-                let spans = Segmenter.cut(sidecar?.recording.squelchOpens ?? [], partStart: entry.startSample,
-                                          partEnd: entry.endSample, preRoll: UInt64(Double(preRollMs) * perMs),
-                                          hang: UInt64(Double(hangMs) * perMs))
+                let opens = sidecar?.recording.squelchOpens ?? []
+                let maxSamples = UInt64(Double(input.maxSegmentMs) * perMs)
+                let whole = maxSamples > 0 && (opens.isEmpty || !gated)
+                var spans: [Segmenter.Span]
+                if whole {
+                    // Nothing closed the squelch here: the whole part is one transmission, and it
+                    // continues the part before when that one was read whole and ends where this
+                    // starts.
+                    let continues = wholeEnd.map { $0.captureID == part.captureID && $0.sample == entry.startSample } ?? false
+                    spans = entry.endSample > entry.startSample
+                        ? [Segmenter.Span(start: entry.startSample, end: entry.endSample, over: 0, continues: continues)] : []
+                    wholeEnd = (part.captureID, entry.endSample)
+                } else {
+                    spans = Segmenter.cut(opens, partStart: entry.startSample, partEnd: entry.endSample,
+                                          preRoll: UInt64(Double(preRollMs) * perMs), hang: UInt64(Double(hangMs) * perMs))
+                    wholeEnd = nil
+                }
+                if maxSamples > 0 {
+                    let quiet = QuietFinder(part: part, audioRate: Double(manifest.sampleRate))
+                    defer { quiet.close() }
+                    spans = Segmenter.limit(spans, maxSamples: maxSamples,
+                                            lookback: UInt64(Double(Segmenter.quietLookbackMs) * perMs),
+                                            quietest: quiet.find)
+                }
+                // A part with no openings has no over to index: its pieces are numbered in order.
+                if whole { spans = spans.enumerated().map { i, s in var n = s; n.over = UInt32(i + 1); return n } }
                 items += spans.map { Item(part: parts.count - 1, span: $0) }
             } else if entry.endSample > entry.startSample {
                 items.append(Item(part: parts.count - 1,
@@ -136,6 +170,41 @@ struct RecordingSource: Sendable {
         }
         return RecordingSource(recordingID: id, manifest: manifest, parts: parts, items: items, segmented: segmented, iq: iq,
                                skippedParts: skipped)
+    }
+
+    /// The quiet point a stored cut is made at: the middle of the quietest `Segmenter.quietWindowMs`
+    /// of the part's audio in a stretch of capture samples, read from its WAV as it is asked for.
+    /// Nil when the file cannot be read or holds too little of the stretch.
+    final class QuietFinder {
+        private let part: Part
+        private let audioRate: Double
+        private var reader: WAVReader?
+        private var opened = false
+
+        init(part: Part, audioRate: Double) {
+            self.part = part
+            self.audioRate = audioRate
+        }
+
+        func find(_ range: Range<UInt64>) -> UInt64? {
+            guard part.captureRate > 0, audioRate > 0, range.lowerBound >= part.startSample else { return nil }
+            if !opened {
+                opened = true
+                reader = try? WAVReader(path: part.path)
+            }
+            guard let reader else { return nil }
+            let perAudio = part.captureRate / audioRate
+            let first = UInt64((Double(range.lowerBound - part.startSample) / perAudio).rounded())
+            let last = Swift.min(reader.frames, UInt64((Double(range.upperBound - part.startSample) / perAudio).rounded()))
+            guard last > first else { return nil }
+            reader.seek(toFrame: first)
+            let audio = reader.read(frames: Int(last - first))
+            let window = Int(Double(Segmenter.quietWindowMs) / 1000 * audioRate)
+            guard let middle = Segmenter.quietest(audio[...], window: window) else { return nil }
+            return part.startSample + UInt64((Double(first + UInt64(middle)) * perAudio).rounded())
+        }
+
+        func close() { reader?.close() }
     }
 
     private static func sidecar(of part: RecordingPart, in directory: String) -> PartSidecar? {
@@ -190,7 +259,8 @@ struct RecordingSource: Sendable {
         }
         return hit.map { i in
             let item = items[i]
-            return Location(item: i, part: parts[item.part].number, over: item.span.over, captureID: parts[item.part].captureID)
+            return Location(item: i, part: parts[item.part].number, over: item.span.over, captureID: parts[item.part].captureID,
+                            continues: item.span.continues)
         }
     }
 
@@ -201,6 +271,8 @@ struct RecordingSource: Sendable {
         var part: Int
         var over: UInt32
         var captureID: String
+        /// The item is a piece after the first of one transmission cut at `max_segment_ms`.
+        var continues = false
     }
 
     /// The frames one item sends, in order, read from its part's WAV as they are asked for. Under

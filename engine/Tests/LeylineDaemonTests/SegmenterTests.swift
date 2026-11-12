@@ -204,6 +204,131 @@ final class SegmenterTests: XCTestCase {
         XCTAssertEqual(preRoll.dropFirst().filter { $0.mark != .unspecified }.count, 0, "only the first is marked")
     }
 
+    // MARK: A squelch that never closes
+
+    /// Frames of 1000 capture samples from `from` to `to`, each audio sample `value(i)` for its
+    /// audio index `i`.
+    private func push(_ s: inout Segmenter, from: UInt64, to: UInt64, value: (UInt64) -> Float) {
+        var at = from
+        while at < to {
+            let floats = (0..<UInt64(100)).map { value(at / 10 + $0) }
+            s.push(Segmenter.Frame(start: at, count: 1000, floats: floats, dropped: 0))
+            at += 1000
+        }
+    }
+
+    /// 30 s of audio at full scale with 200 ms of silence at 6.5 s: audio sample `i` is `i + 1`
+    /// except in the silence, so the samples show their order and none is zero by accident.
+    private func loudWithOneDip(_ i: UInt64) -> Float {
+        (6500..<6700).contains(i) ? 0 : Float(i + 1)
+    }
+
+    /// Checks that `spans` follow each other with no gap and no overlap, that each is at most
+    /// `max` capture samples, and that their audio is exactly `expected` in order.
+    private func assertContiguous(_ spans: [(start: UInt64, end: UInt64, samples: [Float])], max: UInt64,
+                                  expected: [Float], file: StaticString = #filePath, line: UInt = #line)
+    {
+        for (a, b) in zip(spans, spans.dropFirst()) {
+            XCTAssertEqual(a.end, b.start, "the next segment starts on the sample the last one ended", file: file, line: line)
+        }
+        for s in spans {
+            XCTAssertLessThanOrEqual(s.end - s.start, max, "no segment is longer than the limit", file: file, line: line)
+            XCTAssertEqual(UInt64(s.samples.count) * 10, s.end - s.start, "a segment holds exactly its span", file: file, line: line)
+        }
+        XCTAssertEqual(spans.flatMap(\.samples), expected, "every sample once, in order", file: file, line: line)
+    }
+
+    /// The defect `max_segment_ms` fixes: without a limit, a squelch that never closes is one
+    /// segment that never ends, which the plugin SDK drops after ten minutes.
+    func testWithoutALimitASquelchThatNeverClosesIsOneSegmentThatNeverEnds() {
+        var s = segmenter()
+        s.hear(.meter(open: true, at: 0))
+        s.hear(.meter(open: true, at: 300_000))
+        push(&s, from: 0, to: 300_000)
+        let pieces = s.release()
+        XCTAssertEqual(pieces.filter { $0.mark == .segmentStart }.count, 1)
+        XCTAssertEqual(pieces.filter { $0.mark == .segmentEnd }.count, 0, "nothing ever ends it")
+    }
+
+    func testASquelchThatNeverClosesIsCutAtTheLimitAtAQuietPointWithNothingLost() {
+        // 8 s limit, so the quiet point is looked for in the 5 s before each limit.
+        var s = Segmenter(preRollMs: 100, hangMs: 100, captureRateHz: 10_000, audioRateHz: 1_000, maxSegmentMs: 8000,
+                          heardSlack: 0)
+        s.hear(.meter(open: true, at: 0))
+        s.hear(.meter(open: true, at: 300_000))
+        push(&s, from: 0, to: 300_000, value: loudWithOneDip)
+        let got = segments(s.release())
+        XCTAssertEqual(got.outside, 0)
+        // The last segment is still open when the audio stops.
+        let expected = (0..<UInt64(got.spans.last?.end ?? 0) / 10).map(loudWithOneDip)
+        assertContiguous(got.spans, max: 80_000, expected: expected)
+        XCTAssertEqual(got.spans.first?.start, 0)
+        XCTAssertEqual(got.spans.first?.end, 66_000, "the first cut is the middle of the silence, 6.6 s")
+        // From 6.6 s the audio only gets louder, so the quietest 200 ms in the 5 s before the
+        // limit at 14.6 s is the first of them, 9.6 to 9.8 s.
+        XCTAssertEqual(got.spans.dropFirst().first?.end, 97_000)
+        XCTAssertGreaterThanOrEqual(got.spans.count, 4)
+        XCTAssertEqual(s.segment(at: 0)?.continues, false, "the first piece starts the transmission")
+        XCTAssertEqual(s.segment(at: 66_000)?.continues, true, "every piece after it continues it")
+        XCTAssertEqual(s.segment(at: 97_000)?.continues, true)
+    }
+
+    func testAModeWithNoSquelchGateIsOneTransmissionCutAtTheLimit() {
+        var s = Segmenter(preRollMs: 100, hangMs: 100, captureRateHz: 10_000, audioRateHz: 1_000, maxSegmentMs: 8000,
+                          alwaysOpen: true, heardSlack: 0)
+        // A squelch record is ignored, and nothing waits for one.
+        s.hear(.squelch(open: false, at: 20_000))
+        push(&s, from: 0, to: 200_000, value: loudWithOneDip)
+        let got = segments(s.release())
+        XCTAssertEqual(got.outside, 0)
+        let expected = (0..<UInt64(got.spans.last?.end ?? 0) / 10).map(loudWithOneDip)
+        assertContiguous(got.spans, max: 80_000, expected: expected)
+        XCTAssertEqual(got.spans.prefix(2).map(\.start), [0, 66_000], "from the first audio, cut at the silence")
+    }
+
+    func testAnOverThatClosesBeforeTheLimitIsSentAsBefore() {
+        var s = Segmenter(preRollMs: 100, hangMs: 100, captureRateHz: 10_000, audioRateHz: 1_000, maxSegmentMs: 8000,
+                          heardSlack: 0)
+        s.hear(.meter(open: false, at: 0))
+        s.hear(.squelch(open: true, at: 5000))
+        s.hear(.squelch(open: false, at: 70_000))
+        s.hear(.meter(open: false, at: 100_000))
+        push(&s, from: 0, to: 100_000)
+        let got = segments(s.release())
+        XCTAssertEqual(got.spans.map(\.start), [4000])
+        XCTAssertEqual(got.spans.map(\.end), [71_000], "7 s is under the limit: one segment, held back and sent whole")
+        XCTAssertEqual(got.spans.first?.samples, (400..<7100).map(Float.init))
+    }
+
+    func testTheStoredCutSplitsALongSpanAtItsQuietPoints() {
+        let spans = [Segmenter.Span(start: 0, end: 200_000, over: 2), Segmenter.Span(start: 210_000, end: 220_000, over: 3)]
+        var asked: [Range<UInt64>] = []
+        let cut = Segmenter.limit(spans, maxSamples: 80_000, lookback: 50_000) { range in
+            asked.append(range)
+            return range.lowerBound + 10_000
+        }
+        XCTAssertEqual(asked.first, 30_000..<80_000, "the 5 s before the first limit")
+        XCTAssertEqual(cut, [
+            .init(start: 0, end: 40_000, over: 2),
+            .init(start: 40_000, end: 80_000, over: 2, continues: true),
+            .init(start: 80_000, end: 120_000, over: 2, continues: true),
+            // Exactly the limit is not over it.
+            .init(start: 120_000, end: 200_000, over: 2, continues: true),
+            .init(start: 210_000, end: 220_000, over: 3),
+        ])
+        let noQuiet = Segmenter.limit([spans[0]], maxSamples: 80_000, lookback: 50_000) { _ in nil }
+        XCTAssertEqual(noQuiet.map(\.end), [80_000, 160_000, 200_000], "with no quiet point, the cut is at the limit")
+        XCTAssertEqual(Segmenter.limit(spans, maxSamples: 0, lookback: 0) { _ in nil }, spans, "0 is no limit")
+    }
+
+    func testTheQuietestWindowIsItsMiddleAndTheLatestOfATie() {
+        let audio: [Float] = [5, 5, 0, 0, 5, 5, 0, 0, 5]
+        XCTAssertEqual(Segmenter.quietest(audio[...], window: 2), 7, "the later of two silences, at its middle")
+        XCTAssertEqual(Segmenter.quietest([Float](repeating: 1, count: 10)[...], window: 4), 8,
+                       "all alike: as late as it can be")
+        XCTAssertNil(Segmenter.quietest([1, 2][...], window: 3), "shorter than the window")
+    }
+
     func testTheDefaultsApplyWhenTheManifestLeavesThemZero() {
         var input = Leyline_V1_DecoderInput()
         XCTAssertEqual(Segmenter.timings(input).preRollMs, 500)

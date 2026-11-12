@@ -820,8 +820,17 @@ type DecoderInput struct {
 	Signal DecoderSignal `protobuf:"varint,5,opt,name=signal,proto3,enum=leyline.v1.DecoderSignal" json:"signal,omitempty"`
 	// SEGMENTED only: how much audio a segment keeps before the squelch opened and after it closed.
 	// A squelch that reopens inside the hang continues the same segment. 0 = 500 ms for each.
-	PreRollMs     uint32 `protobuf:"varint,6,opt,name=pre_roll_ms,json=preRollMs,proto3" json:"pre_roll_ms,omitempty"`
-	HangMs        uint32 `protobuf:"varint,7,opt,name=hang_ms,json=hangMs,proto3" json:"hang_ms,omitempty"`
+	PreRollMs uint32 `protobuf:"varint,6,opt,name=pre_roll_ms,json=preRollMs,proto3" json:"pre_roll_ms,omitempty"`
+	HangMs    uint32 `protobuf:"varint,7,opt,name=hang_ms,json=hangMs,proto3" json:"hang_ms,omitempty"`
+	// SEGMENTED only: the longest segment the plugin is sent. A segment that reaches it is ended
+	// there and the next one starts at once, on the same sample, so no audio is lost between them;
+	// the cut is made at the quietest 200 ms in the last 5 s before the limit, so a word is rarely
+	// split. A channel whose squelch never closes (squelch off, a broadcast carrier, a mode with no
+	// squelch gate) is cut by this alone, and a stored part with no squelch openings is cut across
+	// its whole length. Every piece after the first of one transmission carries the FLAG field
+	// `continues` (DecodeRecord.fields), set by the daemon. 0 = no limit, and a part with no
+	// openings is not sent.
+	MaxSegmentMs  uint32 `protobuf:"varint,8,opt,name=max_segment_ms,json=maxSegmentMs,proto3" json:"max_segment_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -901,6 +910,13 @@ func (x *DecoderInput) GetPreRollMs() uint32 {
 func (x *DecoderInput) GetHangMs() uint32 {
 	if x != nil {
 		return x.HangMs
+	}
+	return 0
+}
+
+func (x *DecoderInput) GetMaxSegmentMs() uint32 {
+	if x != nil {
+		return x.MaxSegmentMs
 	}
 	return 0
 }
@@ -1024,7 +1040,9 @@ type DecodeRecord struct {
 	// no recording holds it.
 	ClipUri string `protobuf:"bytes,16,opt,name=clip_uri,json=clipUri,proto3" json:"clip_uri,omitempty"`
 	// Set by the daemon under SEGMENTED input: which over within the part the record came from,
-	// 1-based. 0 when the input was not segmented.
+	// 1-based: the index in the part's squelch_opens of the segment's first opening. The pieces of
+	// one over cut at DecoderInput.max_segment_ms share its index, and in a part with no openings
+	// the pieces are numbered 1, 2, 3 in order. 0 when the input was not segmented.
 	Over          uint32 `protobuf:"varint,17,opt,name=over,proto3" json:"over,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2476,7 +2494,7 @@ const file_leyline_v1_decode_proto_rawDesc = "" +
 	"\fbandwidth_hz\x18\x03 \x01(\rR\vbandwidthHz\x12)\n" +
 	"\x04mode\x18\x04 \x01(\x0e2\x15.leyline.v1.DemodModeR\x04mode\x12*\n" +
 	"\x04gain\x18\x05 \x01(\x0e2\x16.leyline.v1.GainPolicyR\x04gain\x12\x17\n" +
-	"\again_db\x18\x06 \x01(\x01R\x06gainDb\"\x8e\x02\n" +
+	"\again_db\x18\x06 \x01(\x01R\x06gainDb\"\xb4\x02\n" +
 	"\fDecoderInput\x12)\n" +
 	"\x04mode\x18\x01 \x01(\x0e2\x15.leyline.v1.InputModeR\x04mode\x12\x17\n" +
 	"\aslot_ms\x18\x02 \x01(\rR\x06slotMs\x12&\n" +
@@ -2484,7 +2502,8 @@ const file_leyline_v1_decode_proto_rawDesc = "" +
 	"\x03tap\x18\x04 \x01(\x0e2\x14.leyline.v1.AudioTapR\x03tap\x121\n" +
 	"\x06signal\x18\x05 \x01(\x0e2\x19.leyline.v1.DecoderSignalR\x06signal\x12\x1e\n" +
 	"\vpre_roll_ms\x18\x06 \x01(\rR\tpreRollMs\x12\x17\n" +
-	"\ahang_ms\x18\a \x01(\rR\x06hangMs\"\x96\x01\n" +
+	"\ahang_ms\x18\a \x01(\rR\x06hangMs\x12$\n" +
+	"\x0emax_segment_ms\x18\b \x01(\rR\fmaxSegmentMs\"\x96\x01\n" +
 	"\tFieldHint\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12)\n" +
 	"\x04type\x18\x02 \x01(\x0e2\x15.leyline.v1.FieldTypeR\x04type\x12\x12\n" +

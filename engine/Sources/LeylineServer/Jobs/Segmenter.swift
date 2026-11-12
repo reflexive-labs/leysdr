@@ -11,6 +11,12 @@
 // shut. The stored path is `Segmenter.cut`, which reads the same edges back from a part sidecar's
 // `squelch_opens`, so a recording transcribed later yields the segments the live job would have.
 //
+// A segment that reaches the manifest's `max_segment_ms` is cut there and the next one starts on
+// the same sample, so a squelch that never closes (squelch off, a broadcast carrier, a mode with no
+// gate) still yields segments a speech engine takes, and no audio falls between them. The cut is the
+// middle of the quietest `quietWindowMs` in the last `quietLookbackMs` before the limit, so a word
+// is rarely split; both paths find it with `quietest(_:window:)`.
+//
 // Everything is on the capture's timeline and in capture samples; the audio is placed on it by
 // each frame's own span. Nothing here runs on the DSP thread (invariant 4): the decode runner's
 // drain task owns the live segmenter, and the squelch follower only hands it records.
@@ -35,14 +41,79 @@ struct Segmenter: Sendable {
          input.hangMs == 0 ? defaultHangMs : input.hangMs)
     }
 
+    /// How long the window is that a cut at `max_segment_ms` looks for the quietest of, and how far
+    /// back from the limit it looks.
+    static let quietWindowMs: UInt32 = 200
+    static let quietLookbackMs: UInt32 = 5000
+
+    /// The FLAG field the daemon sets on a record from a segment that continues the one before it,
+    /// cut at `max_segment_ms` out of one transmission.
+    static let continuesField = "continues"
+
+    /// Where to cut `audio`: the middle of its quietest stretch of `window` samples, by the sum of
+    /// squares, the latest of equally quiet ones so a piece is as long as it can be. Nil when the
+    /// audio is shorter than the window, or the window is empty.
+    static func quietest(_ audio: ArraySlice<Float>, window: Int) -> Int? {
+        guard window > 0, audio.count >= window else { return nil }
+        let base = audio.startIndex
+        var sum: Double = 0
+        for i in 0..<window {
+            let v = Double(audio[base + i])
+            sum += v * v
+        }
+        var best = sum
+        var bestStart = 0
+        var start = 1
+        while start + window <= audio.count {
+            let leaving = Double(audio[base + start - 1])
+            let entering = Double(audio[base + start + window - 1])
+            sum = Swift.max(0, sum + entering * entering - leaving * leaving)
+            // The running sum drifts by rounding; a relative slack keeps a run of silence from
+            // losing to an earlier window of it.
+            if sum <= best + 1e-9 * Swift.max(best, 1e-12) {
+                best = Swift.min(best, sum)
+                bestStart = start
+            }
+            start += 1
+        }
+        return bestStart + window / 2
+    }
+
+    /// Cuts every span longer than `maxSamples` into pieces of at most that, each cut where
+    /// `quietest` says in the `lookback` before the limit, or at the limit when it says nothing.
+    /// Every piece keeps its span's `over`; the ones after the first are marked `continues`.
+    static func limit(_ spans: [Span], maxSamples: UInt64, lookback: UInt64,
+                      quietest: (Range<UInt64>) -> UInt64?) -> [Span]
+    {
+        guard maxSamples > 0 else { return spans }
+        var out: [Span] = []
+        for span in spans {
+            var start = span.start
+            var continues = span.continues
+            while span.end - start > maxSamples {
+                let limit = start + maxSamples
+                var cut = quietest((limit - Swift.min(lookback, maxSamples))..<limit) ?? limit
+                if cut <= start || cut > limit { cut = limit }
+                out.append(Span(start: start, end: cut, over: span.over, continues: continues))
+                start = cut
+                continues = true
+            }
+            out.append(Span(start: start, end: span.end, over: span.over, continues: continues))
+        }
+        return out
+    }
+
     // MARK: The stored rule
 
     /// One segment of a stored part: capture samples `start..<end`, and `over`, the 1-based index
-    /// in the part's `squelch_opens` of the first opening it holds.
+    /// in the part's `squelch_opens` of the first opening it holds (in a part with none, the
+    /// piece's own number). `continues` is a piece after the first of one transmission cut at
+    /// `max_segment_ms`.
     struct Span: Equatable, Sendable {
         var start: UInt64
         var end: UInt64
         var over: UInt32
+        var continues = false
     }
 
     /// The segments of one part, from its squelch intervals. The live rule, applied to edges that
@@ -129,6 +200,15 @@ struct Segmenter: Sendable {
     let maxHoldSamples: UInt64
     /// `overTolerance` in capture samples.
     let toleranceSamples: UInt64
+    /// `max_segment_ms` in capture samples, 0 for no limit, and how far back from the limit the
+    /// quiet point is looked for, also in capture samples.
+    let maxSegmentSamples: UInt64
+    let lookbackSamples: UInt64
+    /// `quietWindowMs` in audio samples.
+    let quietWindow: Int
+    /// A channel with no squelch gate: one segment from the first audio, cut only at the limit, and
+    /// the squelch's records ignored.
+    let alwaysOpen: Bool
 
     private var state = State.closed
     private var waiting: [Frame] = []
@@ -146,17 +226,33 @@ struct Segmenter: Sendable {
     private var startOwed = false
     /// Audio inside the open segment that a drop took, for the next piece.
     private var owedGap: Range<UInt64>?
+    /// The open segment's newest pieces, from `holdFrom` on, kept back so the cut at the limit can
+    /// be made at a quiet point inside them. Every piece passes through here, in order.
+    private var held: [Piece] = []
     private var lastEnd: UInt64 = 0
     /// Segment starts and their 1-based index since the job began, newest last, so a record can be
     /// matched to its segment by the time the plugin stamped it.
-    private var starts: [(start: UInt64, index: UInt32)] = []
+    private var starts: [SegmentStart] = []
     private(set) var segments: UInt32 = 0
     private static let keptStarts = 256
 
+    /// Where a segment starts, its count since the job began, and whether it continues the one
+    /// before it, cut at the limit out of one transmission.
+    struct SegmentStart: Equatable, Sendable {
+        var start: UInt64
+        var index: UInt32
+        var continues: Bool
+    }
+
     init(preRollMs: UInt32, hangMs: UInt32, captureRateHz: UInt64, audioRateHz: UInt32,
+         maxSegmentMs: UInt32 = 0, alwaysOpen: Bool = false,
          heardSlack: UInt64 = UInt64(CaptureDSPCore.blockSize / 2))
     {
         let perMs = Double(captureRateHz) / 1000
+        maxSegmentSamples = UInt64(Double(maxSegmentMs) * perMs)
+        lookbackSamples = Swift.min(UInt64(Double(Self.quietLookbackMs) * perMs), maxSegmentSamples)
+        quietWindow = Int(Double(Self.quietWindowMs) / 1000 * Double(audioRateHz))
+        self.alwaysOpen = alwaysOpen
         preRollSamples = UInt64(Double(preRollMs) * perMs)
         hangSamples = UInt64(Double(hangMs) * perMs)
         perAudio = Double(captureRateHz) / Double(Swift.max(audioRateHz, 1))
@@ -184,8 +280,8 @@ struct Segmenter: Sendable {
     }
 
     /// The first sample of the segment a record stamped at `time` belongs to, by the same rule as
-    /// `over(at:)`, with its count since the job began.
-    func segment(at time: UInt64) -> (start: UInt64, index: UInt32)? {
+    /// `over(at:)`, with its count since the job began and whether it continues the one before.
+    func segment(at time: UInt64) -> SegmentStart? {
         starts.last { $0.start <= time + toleranceSamples }
     }
 
@@ -201,6 +297,8 @@ struct Segmenter: Sendable {
     }
 
     private func isHeard(_ frame: Frame) -> Bool {
+        // Nothing the squelch says changes an always-open segment, so nothing is waited for.
+        if alwaysOpen { return true }
         guard let heardThrough else { return false }
         return heardThrough + heardSlack >= frame.end
     }
@@ -215,6 +313,7 @@ struct Segmenter: Sendable {
             startSample = frame.start
             ringEnd = frame.start
             lastEnd = frame.start
+            if alwaysOpen { openSegment(wanted: frame.start, cursor: frame.start, into: &out) }
         }
         if frame.dropped > 0 {
             let hole = lastEnd..<Swift.max(lastEnd, frame.start)
@@ -264,7 +363,8 @@ struct Segmenter: Sendable {
         return Swift.min(frame.floats.count, Swift.max(taken, i))
     }
 
-    /// Audio covering `from..<to`: into the open segment, or into the pre-roll ring.
+    /// Audio covering `from..<to`: into the open segment, or into the pre-roll ring. A segment the
+    /// audio carries past its limit is cut, and the rest of the audio goes into the next one.
     private mutating func take(_ chunk: ArraySlice<Float>, from: UInt64, to: UInt64, into out: inout [Piece]) {
         guard inSegment else {
             ring.append(contentsOf: chunk)
@@ -273,16 +373,117 @@ struct Segmenter: Sendable {
             return
         }
         guard !chunk.isEmpty else { return }
+        var rest = chunk
+        var at = from
+        while maxSegmentSamples > 0, to > limit, !rest.isEmpty {
+            let limit = self.limit
+            let k = limit > at
+                ? Swift.min(rest.count, Int((Double(limit - at) / Double(to - at) * Double(rest.count)).rounded()))
+                : 0
+            if k > 0 { put(rest.prefix(k), from: at) }
+            cut(at: limit, into: &out)
+            rest = rest.dropFirst(k)
+            at = Swift.max(at, limit)
+        }
+        if !rest.isEmpty { put(rest, from: at) }
+        flushUnheld(into: &out)
+    }
+
+    /// The open segment's limit, and where its pieces start being held for the cut there.
+    private var limit: UInt64 { segmentStart + maxSegmentSamples }
+    private var holdFrom: UInt64 { limit - lookbackSamples }
+
+    /// Audio into the open segment: the START when one is owed, else a piece carrying any gap.
+    /// It goes into `held`; `flushUnheld` lets go of what lies before `holdFrom`.
+    private mutating func put(_ chunk: ArraySlice<Float>, from: UInt64) {
         if startOwed {
             startOwed = false
-            out.append(Piece(time: segmentStart, floats: Array(chunk), mark: .segmentStart, gap: nil))
+            held.append(Piece(time: segmentStart, floats: Array(chunk), mark: .segmentStart, gap: nil))
             return
         }
-        out.append(Piece(time: from, floats: Array(chunk), mark: .unspecified, gap: owedGap))
+        held.append(Piece(time: from, floats: Array(chunk), mark: .unspecified, gap: owedGap))
         owedGap = nil
     }
 
+    /// The capture sample after a piece's last.
+    private func end(of piece: Piece) -> UInt64 {
+        piece.time + UInt64((Double(piece.floats.count) * perAudio).rounded())
+    }
+
+    /// Sends the held pieces that end before the stretch the cut looks in; with no limit, all.
+    private mutating func flushUnheld(into out: inout [Piece]) {
+        var n = 0
+        while n < held.count, maxSegmentSamples == 0 || end(of: held[n]) <= holdFrom { n += 1 }
+        guard n > 0 else { return }
+        out.append(contentsOf: held.prefix(n))
+        held.removeFirst(n)
+    }
+
+    /// Ends the open segment at the quiet point in the held audio, or at `limit` when it holds too
+    /// little to look in, and starts the next one on the same sample with the audio after it, so
+    /// nothing is lost or sent twice.
+    private mutating func cut(at limit: UInt64, into out: inout [Piece]) {
+        flushUnheld(into: &out)
+        if startOwed {
+            // The segment never got audio (a drop took it), so it was never started on the wire:
+            // it starts again from here.
+            segmentStart = limit
+            if !starts.isEmpty { starts[starts.count - 1].start = limit }
+            return
+        }
+        // The held audio from the lookback on, end to end, and the quietest window's middle in it.
+        let audio = held.flatMap(\.floats)
+        let skip = Swift.max(0, audio.count - Int((Double(lookbackSamples) / perAudio).rounded()))
+        var boundary = limit
+        var piece = held.count
+        var offset = 0
+        if var index = Self.quietest(audio[skip...], window: quietWindow).map({ skip + $0 }) {
+            for (i, p) in held.enumerated() {
+                if index < p.floats.count {
+                    piece = i
+                    offset = index
+                    break
+                }
+                index -= p.floats.count
+            }
+            if piece < held.count {
+                boundary = held[piece].time + UInt64((Double(offset) * perAudio).rounded())
+            }
+        }
+        var after: [Piece] = []
+        if piece < held.count {
+            let split = held[piece]
+            out.append(contentsOf: held[..<piece])
+            if offset > 0 {
+                out.append(Piece(time: split.time, floats: Array(split.floats[..<offset]), mark: split.mark, gap: split.gap))
+            }
+            after.append(Piece(time: boundary, floats: Array(split.floats[offset...]), mark: .unspecified, gap: nil))
+            after.append(contentsOf: held[(piece + 1)...])
+        } else {
+            out.append(contentsOf: held)
+        }
+        held = []
+        out.append(Piece(time: boundary, floats: [], mark: .segmentEnd, gap: nil))
+        segments += 1
+        starts.append(SegmentStart(start: boundary, index: segments, continues: true))
+        if starts.count > Self.keptStarts { starts.removeFirst(starts.count - Self.keptStarts) }
+        segmentStart = boundary
+        startOwed = true
+        owedGap = nil
+        for var p in after where !p.floats.isEmpty {
+            if startOwed {
+                startOwed = false
+                p.mark = .segmentStart
+                p.time = boundary
+                p.gap = nil
+            }
+            held.append(p)
+        }
+        flushUnheld(into: &out)
+    }
+
     private mutating func apply(_ record: Heard, at cursor: UInt64, into out: inout [Piece]) {
+        if alwaysOpen { return }
         switch record {
         case .squelch(let open, let at):
             squelchKnown = true
@@ -316,18 +517,19 @@ struct Segmenter: Sendable {
     /// Opens a segment reaching back to `wanted`, or to the oldest audio the ring holds if that is
     /// later, and sends the ring from there as the START.
     private mutating func openSegment(wanted: UInt64, cursor: UInt64, into out: inout [Piece]) {
-        let held = UInt64((Double(ring.count) * perAudio).rounded())
-        let ringStart = ringEnd > held ? ringEnd - held : 0
+        let inRing = UInt64((Double(ring.count) * perAudio).rounded())
+        let ringStart = ringEnd > inRing ? ringEnd - inRing : 0
         let start = Swift.max(wanted, ringStart, startSample)
         let skip = Swift.min(ring.count, Int((Double(start - ringStart) / perAudio).rounded()))
         let preRoll = Array(ring[skip...])
         ring.removeAll(keepingCapacity: true)
         segments += 1
-        starts.append((start, segments))
+        starts.append(SegmentStart(start: start, index: segments, continues: false))
         if starts.count > Self.keptStarts { starts.removeFirst(starts.count - Self.keptStarts) }
         state = .open
         segmentStart = preRoll.isEmpty ? cursor : start
         owedGap = nil
+        held = []
         if preRoll.isEmpty {
             starts[starts.count - 1].start = cursor
             startOwed = true
@@ -339,13 +541,16 @@ struct Segmenter: Sendable {
         while offset < preRoll.count {
             let end = Swift.min(preRoll.count, offset + AudioFrameSource.maxFrame)
             let at = start + UInt64((Double(offset) * perAudio).rounded())
-            out.append(Piece(time: at, floats: Array(preRoll[offset..<end]),
-                             mark: offset == 0 ? .segmentStart : .unspecified, gap: nil))
+            held.append(Piece(time: at, floats: Array(preRoll[offset..<end]),
+                              mark: offset == 0 ? .segmentStart : .unspecified, gap: nil))
             offset = end
         }
+        flushUnheld(into: &out)
     }
 
     private mutating func endSegment(at sample: UInt64, into out: inout [Piece]) {
+        out.append(contentsOf: held)
+        held = []
         // A segment that never got audio was never started on the wire, so it is not ended there.
         if !startOwed { out.append(Piece(time: sample, floats: [], mark: .segmentEnd, gap: nil)) }
         startOwed = false

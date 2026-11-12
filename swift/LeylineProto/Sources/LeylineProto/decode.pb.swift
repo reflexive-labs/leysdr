@@ -605,6 +605,16 @@ public nonisolated struct Leyline_V1_DecoderInput: Sendable {
 
   public var hangMs: UInt32 = 0
 
+  /// SEGMENTED only: the longest segment the plugin is sent. A segment that reaches it is ended
+  /// there and the next one starts at once, on the same sample, so no audio is lost between them;
+  /// the cut is made at the quietest 200 ms in the last 5 s before the limit, so a word is rarely
+  /// split. A channel whose squelch never closes (squelch off, a broadcast carrier, a mode with no
+  /// squelch gate) is cut by this alone, and a stored part with no squelch openings is cut across
+  /// its whole length. Every piece after the first of one transmission carries the FLAG field
+  /// `continues` (DecodeRecord.fields), set by the daemon. 0 = no limit, and a part with no
+  /// openings is not sent.
+  public var maxSegmentMs: UInt32 = 0
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -759,7 +769,9 @@ public nonisolated struct Leyline_V1_DecodeRecord: @unchecked Sendable {
   }
 
   /// Set by the daemon under SEGMENTED input: which over within the part the record came from,
-  /// 1-based. 0 when the input was not segmented.
+  /// 1-based: the index in the part's squelch_opens of the segment's first opening. The pieces of
+  /// one over cut at DecoderInput.max_segment_ms share its index, and in a part with no openings
+  /// the pieces are numbered 1, 2, 3 in order. 0 when the input was not segmented.
   public var over: UInt32 {
     get {_storage._over}
     set {_uniqueStorage()._over = newValue}
@@ -1653,7 +1665,7 @@ nonisolated extension Leyline_V1_DecoderRecipe: SwiftProtobuf.Message, SwiftProt
 
 nonisolated extension Leyline_V1_DecoderInput: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DecoderInput"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}mode\0\u{3}slot_ms\0\u{3}epoch_offset_ms\0\u{1}tap\0\u{1}signal\0\u{3}pre_roll_ms\0\u{3}hang_ms\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}mode\0\u{3}slot_ms\0\u{3}epoch_offset_ms\0\u{1}tap\0\u{1}signal\0\u{3}pre_roll_ms\0\u{3}hang_ms\0\u{3}max_segment_ms\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1668,6 +1680,7 @@ nonisolated extension Leyline_V1_DecoderInput: SwiftProtobuf.Message, SwiftProto
       case 5: try { try decoder.decodeSingularEnumField(value: &self.signal) }()
       case 6: try { try decoder.decodeSingularUInt32Field(value: &self.preRollMs) }()
       case 7: try { try decoder.decodeSingularUInt32Field(value: &self.hangMs) }()
+      case 8: try { try decoder.decodeSingularUInt32Field(value: &self.maxSegmentMs) }()
       default: break
       }
     }
@@ -1695,6 +1708,9 @@ nonisolated extension Leyline_V1_DecoderInput: SwiftProtobuf.Message, SwiftProto
     if self.hangMs != 0 {
       try visitor.visitSingularUInt32Field(value: self.hangMs, fieldNumber: 7)
     }
+    if self.maxSegmentMs != 0 {
+      try visitor.visitSingularUInt32Field(value: self.maxSegmentMs, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1706,6 +1722,7 @@ nonisolated extension Leyline_V1_DecoderInput: SwiftProtobuf.Message, SwiftProto
     if lhs.signal != rhs.signal {return false}
     if lhs.preRollMs != rhs.preRollMs {return false}
     if lhs.hangMs != rhs.hangMs {return false}
+    if lhs.maxSegmentMs != rhs.maxSegmentMs {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
