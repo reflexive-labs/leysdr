@@ -31,6 +31,12 @@ public nonisolated enum Leyline_V1_DeviceState: SwiftProtobuf.Enum, Swift.CaseIt
   case available // = 1
   case inUse // = 2
   case disconnected // = 3
+
+  /// Still plugged in, but it failed to answer several times running (opens,
+  /// descriptor reads, a stream that stopped and would not reopen). The daemon
+  /// stops opening it until it is unplugged and plugged back in; state_detail
+  /// says so.
+  case notAnswering // = 4
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -43,6 +49,7 @@ public nonisolated enum Leyline_V1_DeviceState: SwiftProtobuf.Enum, Swift.CaseIt
     case 1: self = .available
     case 2: self = .inUse
     case 3: self = .disconnected
+    case 4: self = .notAnswering
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -53,6 +60,7 @@ public nonisolated enum Leyline_V1_DeviceState: SwiftProtobuf.Enum, Swift.CaseIt
     case .available: return 1
     case .inUse: return 2
     case .disconnected: return 3
+    case .notAnswering: return 4
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -63,6 +71,7 @@ public nonisolated enum Leyline_V1_DeviceState: SwiftProtobuf.Enum, Swift.CaseIt
     .available,
     .inUse,
     .disconnected,
+    .notAnswering,
   ]
 
 }
@@ -258,6 +267,13 @@ public nonisolated enum Leyline_V1_CaptureState: SwiftProtobuf.Enum, Swift.CaseI
   case unspecified // = 0
   case captureActive // = 1
   case captureDetached // = 2
+
+  /// Attached and meant to be streaming, but no samples have come from the radio
+  /// for 5 s; state_detail says for how long. It goes back to CAPTURE_ACTIVE when
+  /// samples come back. After 30 s the daemon closes and reopens the radio once,
+  /// and a radio that still does not answer goes NOT_ANSWERING and the capture
+  /// CAPTURE_DETACHED.
+  case captureStalled // = 3
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -269,6 +285,7 @@ public nonisolated enum Leyline_V1_CaptureState: SwiftProtobuf.Enum, Swift.CaseI
     case 0: self = .unspecified
     case 1: self = .captureActive
     case 2: self = .captureDetached
+    case 3: self = .captureStalled
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -278,6 +295,7 @@ public nonisolated enum Leyline_V1_CaptureState: SwiftProtobuf.Enum, Swift.CaseI
     case .unspecified: return 0
     case .captureActive: return 1
     case .captureDetached: return 2
+    case .captureStalled: return 3
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -287,6 +305,7 @@ public nonisolated enum Leyline_V1_CaptureState: SwiftProtobuf.Enum, Swift.CaseI
     .unspecified,
     .captureActive,
     .captureDetached,
+    .captureStalled,
   ]
 
 }
@@ -549,6 +568,12 @@ public nonisolated struct Leyline_V1_DeviceDescriptor: Sendable {
   /// IN_USE until it is released).
   public var features: Dictionary<String,Leyline_V1_FeatureValue> = [:]
 
+  /// Why the device is in its state and what to do about it, in a sentence for a
+  /// person; set for NOT_ANSWERING ("NESDR SMArt v5 is not answering: unplug it
+  /// and plug it back in, ideally into a port on the back of the Mac"), empty
+  /// otherwise.
+  public var stateDetail: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -718,6 +743,13 @@ public nonisolated struct Leyline_V1_Capture: @unchecked Sendable {
   public var tuningGeneration: UInt64 {
     get {_storage._tuningGeneration}
     set {_uniqueStorage()._tuningGeneration = newValue}
+  }
+
+  /// Why the capture is in its state, for a person; set for CAPTURE_STALLED
+  /// ("no samples from NESDR SMArt v5 for 5 s"), empty otherwise.
+  public var stateDetail: String {
+    get {_storage._stateDetail}
+    set {_uniqueStorage()._stateDetail = newValue}
   }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -2117,7 +2149,7 @@ public nonisolated struct Leyline_V1_DetachDeviceRequest: Sendable {
 fileprivate nonisolated let _protobuf_package = "leyline.v1"
 
 nonisolated extension Leyline_V1_DeviceState: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DEVICE_STATE_UNSPECIFIED\0\u{1}AVAILABLE\0\u{1}IN_USE\0\u{1}DISCONNECTED\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DEVICE_STATE_UNSPECIFIED\0\u{1}AVAILABLE\0\u{1}IN_USE\0\u{1}DISCONNECTED\0\u{1}NOT_ANSWERING\0")
 }
 
 nonisolated extension Leyline_V1_SampleFormat: SwiftProtobuf._ProtoNameProviding {
@@ -2137,7 +2169,7 @@ nonisolated extension Leyline_V1_ClaimState: SwiftProtobuf._ProtoNameProviding {
 }
 
 nonisolated extension Leyline_V1_CaptureState: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CAPTURE_STATE_UNSPECIFIED\0\u{1}CAPTURE_ACTIVE\0\u{1}CAPTURE_DETACHED\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CAPTURE_STATE_UNSPECIFIED\0\u{1}CAPTURE_ACTIVE\0\u{1}CAPTURE_DETACHED\0\u{1}CAPTURE_STALLED\0")
 }
 
 nonisolated extension Leyline_V1_GainMode: SwiftProtobuf._ProtoNameProviding {
@@ -2166,7 +2198,7 @@ nonisolated extension Leyline_V1_PlaybackState: SwiftProtobuf._ProtoNameProvidin
 
 nonisolated extension Leyline_V1_DeviceDescriptor: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DeviceDescriptor"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}device_id\0\u{1}driver\0\u{1}model\0\u{1}serial\0\u{3}usb_location\0\u{1}state\0\u{3}tuning_ranges\0\u{3}sample_rates\0\u{3}native_format\0\u{3}gain_elements\0\u{3}provides_timestamps\0\u{1}features\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}device_id\0\u{1}driver\0\u{1}model\0\u{1}serial\0\u{3}usb_location\0\u{1}state\0\u{3}tuning_ranges\0\u{3}sample_rates\0\u{3}native_format\0\u{3}gain_elements\0\u{3}provides_timestamps\0\u{1}features\0\u{3}state_detail\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2186,6 +2218,7 @@ nonisolated extension Leyline_V1_DeviceDescriptor: SwiftProtobuf.Message, SwiftP
       case 10: try { try decoder.decodeRepeatedMessageField(value: &self.gainElements) }()
       case 11: try { try decoder.decodeSingularBoolField(value: &self.providesTimestamps) }()
       case 12: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMessageMap<SwiftProtobuf.ProtobufString,Leyline_V1_FeatureValue>.self, value: &self.features) }()
+      case 13: try { try decoder.decodeSingularStringField(value: &self.stateDetail) }()
       default: break
       }
     }
@@ -2228,6 +2261,9 @@ nonisolated extension Leyline_V1_DeviceDescriptor: SwiftProtobuf.Message, SwiftP
     if !self.features.isEmpty {
       try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMessageMap<SwiftProtobuf.ProtobufString,Leyline_V1_FeatureValue>.self, value: self.features, fieldNumber: 12)
     }
+    if !self.stateDetail.isEmpty {
+      try visitor.visitSingularStringField(value: self.stateDetail, fieldNumber: 13)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2244,6 +2280,7 @@ nonisolated extension Leyline_V1_DeviceDescriptor: SwiftProtobuf.Message, SwiftP
     if lhs.gainElements != rhs.gainElements {return false}
     if lhs.providesTimestamps != rhs.providesTimestamps {return false}
     if lhs.features != rhs.features {return false}
+    if lhs.stateDetail != rhs.stateDetail {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2387,7 +2424,7 @@ nonisolated extension Leyline_V1_FeatureValue: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension Leyline_V1_Capture: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Capture"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}capture_id\0\u{3}device_id\0\u{3}center_hz\0\u{3}sample_rate\0\u{1}state\0\u{1}anchor\0\u{1}activity\0\u{3}created_by\0\u{1}gains\0\u{1}claims\0\u{3}tuning_generation\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}capture_id\0\u{3}device_id\0\u{3}center_hz\0\u{3}sample_rate\0\u{1}state\0\u{1}anchor\0\u{1}activity\0\u{3}created_by\0\u{1}gains\0\u{1}claims\0\u{3}tuning_generation\0\u{3}state_detail\0")
 
   fileprivate class _StorageClass {
     var _captureID: String = String()
@@ -2401,6 +2438,7 @@ nonisolated extension Leyline_V1_Capture: SwiftProtobuf.Message, SwiftProtobuf._
     var _gains: [Leyline_V1_GainState] = []
     var _claims: [Leyline_V1_Claim] = []
     var _tuningGeneration: UInt64 = 0
+    var _stateDetail: String = String()
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -2422,6 +2460,7 @@ nonisolated extension Leyline_V1_Capture: SwiftProtobuf.Message, SwiftProtobuf._
       _gains = source._gains
       _claims = source._claims
       _tuningGeneration = source._tuningGeneration
+      _stateDetail = source._stateDetail
     }
   }
 
@@ -2451,6 +2490,7 @@ nonisolated extension Leyline_V1_Capture: SwiftProtobuf.Message, SwiftProtobuf._
         case 9: try { try decoder.decodeRepeatedMessageField(value: &_storage._gains) }()
         case 10: try { try decoder.decodeRepeatedMessageField(value: &_storage._claims) }()
         case 11: try { try decoder.decodeSingularUInt64Field(value: &_storage._tuningGeneration) }()
+        case 12: try { try decoder.decodeSingularStringField(value: &_storage._stateDetail) }()
         default: break
         }
       }
@@ -2496,6 +2536,9 @@ nonisolated extension Leyline_V1_Capture: SwiftProtobuf.Message, SwiftProtobuf._
       if _storage._tuningGeneration != 0 {
         try visitor.visitSingularUInt64Field(value: _storage._tuningGeneration, fieldNumber: 11)
       }
+      if !_storage._stateDetail.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._stateDetail, fieldNumber: 12)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -2516,6 +2559,7 @@ nonisolated extension Leyline_V1_Capture: SwiftProtobuf.Message, SwiftProtobuf._
         if _storage._gains != rhs_storage._gains {return false}
         if _storage._claims != rhs_storage._claims {return false}
         if _storage._tuningGeneration != rhs_storage._tuningGeneration {return false}
+        if _storage._stateDetail != rhs_storage._stateDetail {return false}
         return true
       }
       if !storagesAreEqual {return false}

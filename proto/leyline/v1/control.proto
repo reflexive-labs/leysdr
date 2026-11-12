@@ -31,9 +31,24 @@ message DeviceDescriptor {
   // (two dongles share a serial) and "held_externally" (another program has the device; state is
   // IN_USE until it is released).
   map<string, FeatureValue> features = 12;
+  // Why the device is in its state and what to do about it, in a sentence for a
+  // person; set for NOT_ANSWERING ("NESDR SMArt v5 is not answering: unplug it
+  // and plug it back in, ideally into a port on the back of the Mac"), empty
+  // otherwise.
+  string state_detail = 13;
 }
 
-enum DeviceState { DEVICE_STATE_UNSPECIFIED = 0; AVAILABLE = 1; IN_USE = 2; DISCONNECTED = 3; }
+enum DeviceState {
+  DEVICE_STATE_UNSPECIFIED = 0;
+  AVAILABLE = 1;
+  IN_USE = 2;
+  DISCONNECTED = 3;
+  // Still plugged in, but it failed to answer several times running (opens,
+  // descriptor reads, a stream that stopped and would not reopen). The daemon
+  // stops opening it until it is unplugged and plugged back in; state_detail
+  // says so.
+  NOT_ANSWERING = 4;
+}
 enum SampleFormat { SAMPLE_FORMAT_UNSPECIFIED = 0; CS8 = 1; CS16 = 2; CF32 = 3; }
 
 message GainElement {
@@ -79,6 +94,9 @@ message Capture {
   // rate between two looks misses a retune away and back in between; this
   // number has still moved. Bulk frames of a capture carry it too.
   uint64 tuning_generation = 11;
+  // Why the capture is in its state, for a person; set for CAPTURE_STALLED
+  // ("no samples from NESDR SMArt v5 for 5 s"), empty otherwise.
+  string state_detail = 12;
 }
 
 // One consumer's statement of what it needs from a capture's tuning. A claim is
@@ -139,7 +157,17 @@ enum ClaimState {
 }
 
 
-enum CaptureState { CAPTURE_STATE_UNSPECIFIED = 0; CAPTURE_ACTIVE = 1; CAPTURE_DETACHED = 2; }
+enum CaptureState {
+  CAPTURE_STATE_UNSPECIFIED = 0;
+  CAPTURE_ACTIVE = 1;
+  CAPTURE_DETACHED = 2;
+  // Attached and meant to be streaming, but no samples have come from the radio
+  // for 5 s; state_detail says for how long. It goes back to CAPTURE_ACTIVE when
+  // samples come back. After 30 s the daemon closes and reopens the radio once,
+  // and a radio that still does not answer goes NOT_ANSWERING and the capture
+  // CAPTURE_DETACHED.
+  CAPTURE_STALLED = 3;
+}
 
 message CaptureActivity {
   int64 last_interactive_write_ns = 1; // 0 if never

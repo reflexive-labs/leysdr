@@ -33,6 +33,11 @@ const (
 	DeviceState_AVAILABLE                DeviceState = 1
 	DeviceState_IN_USE                   DeviceState = 2
 	DeviceState_DISCONNECTED             DeviceState = 3
+	// Still plugged in, but it failed to answer several times running (opens,
+	// descriptor reads, a stream that stopped and would not reopen). The daemon
+	// stops opening it until it is unplugged and plugged back in; state_detail
+	// says so.
+	DeviceState_NOT_ANSWERING DeviceState = 4
 )
 
 // Enum value maps for DeviceState.
@@ -42,12 +47,14 @@ var (
 		1: "AVAILABLE",
 		2: "IN_USE",
 		3: "DISCONNECTED",
+		4: "NOT_ANSWERING",
 	}
 	DeviceState_value = map[string]int32{
 		"DEVICE_STATE_UNSPECIFIED": 0,
 		"AVAILABLE":                1,
 		"IN_USE":                   2,
 		"DISCONNECTED":             3,
+		"NOT_ANSWERING":            4,
 	}
 )
 
@@ -298,6 +305,12 @@ const (
 	CaptureState_CAPTURE_STATE_UNSPECIFIED CaptureState = 0
 	CaptureState_CAPTURE_ACTIVE            CaptureState = 1
 	CaptureState_CAPTURE_DETACHED          CaptureState = 2
+	// Attached and meant to be streaming, but no samples have come from the radio
+	// for 5 s; state_detail says for how long. It goes back to CAPTURE_ACTIVE when
+	// samples come back. After 30 s the daemon closes and reopens the radio once,
+	// and a radio that still does not answer goes NOT_ANSWERING and the capture
+	// CAPTURE_DETACHED.
+	CaptureState_CAPTURE_STALLED CaptureState = 3
 )
 
 // Enum value maps for CaptureState.
@@ -306,11 +319,13 @@ var (
 		0: "CAPTURE_STATE_UNSPECIFIED",
 		1: "CAPTURE_ACTIVE",
 		2: "CAPTURE_DETACHED",
+		3: "CAPTURE_STALLED",
 	}
 	CaptureState_value = map[string]int32{
 		"CAPTURE_STATE_UNSPECIFIED": 0,
 		"CAPTURE_ACTIVE":            1,
 		"CAPTURE_DETACHED":          2,
+		"CAPTURE_STALLED":           3,
 	}
 )
 
@@ -647,7 +662,12 @@ type DeviceDescriptor struct {
 	// (half-duplex TX devices like HackRF suspend capture to emit), "tuner", "serial_collision"
 	// (two dongles share a serial) and "held_externally" (another program has the device; state is
 	// IN_USE until it is released).
-	Features      map[string]*FeatureValue `protobuf:"bytes,12,rep,name=features,proto3" json:"features,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Features map[string]*FeatureValue `protobuf:"bytes,12,rep,name=features,proto3" json:"features,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Why the device is in its state and what to do about it, in a sentence for a
+	// person; set for NOT_ANSWERING ("NESDR SMArt v5 is not answering: unplug it
+	// and plug it back in, ideally into a port on the back of the Mac"), empty
+	// otherwise.
+	StateDetail   string `protobuf:"bytes,13,opt,name=state_detail,json=stateDetail,proto3" json:"state_detail,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -764,6 +784,13 @@ func (x *DeviceDescriptor) GetFeatures() map[string]*FeatureValue {
 		return x.Features
 	}
 	return nil
+}
+
+func (x *DeviceDescriptor) GetStateDetail() string {
+	if x != nil {
+		return x.StateDetail
+	}
+	return ""
 }
 
 type GainElement struct {
@@ -993,8 +1020,11 @@ type Capture struct {
 	// rate between two looks misses a retune away and back in between; this
 	// number has still moved. Bulk frames of a capture carry it too.
 	TuningGeneration uint64 `protobuf:"varint,11,opt,name=tuning_generation,json=tuningGeneration,proto3" json:"tuning_generation,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Why the capture is in its state, for a person; set for CAPTURE_STALLED
+	// ("no samples from NESDR SMArt v5 for 5 s"), empty otherwise.
+	StateDetail   string `protobuf:"bytes,12,opt,name=state_detail,json=stateDetail,proto3" json:"state_detail,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Capture) Reset() {
@@ -1102,6 +1132,13 @@ func (x *Capture) GetTuningGeneration() uint64 {
 		return x.TuningGeneration
 	}
 	return 0
+}
+
+func (x *Capture) GetStateDetail() string {
+	if x != nil {
+		return x.StateDetail
+	}
+	return ""
 }
 
 // One consumer's statement of what it needs from a capture's tuning. A claim is
@@ -4477,7 +4514,7 @@ var File_leyline_v1_control_proto protoreflect.FileDescriptor
 const file_leyline_v1_control_proto_rawDesc = "" +
 	"\n" +
 	"\x18leyline/v1/control.proto\x12\n" +
-	"leyline.v1\x1a\x17leyline/v1/common.proto\x1a\x15leyline/v1/jobs.proto\x1a\x17leyline/v1/decode.proto\x1a\x13leyline/v1/ai.proto\"\xf8\x04\n" +
+	"leyline.v1\x1a\x17leyline/v1/common.proto\x1a\x15leyline/v1/jobs.proto\x1a\x17leyline/v1/decode.proto\x1a\x13leyline/v1/ai.proto\"\x9b\x05\n" +
 	"\x10DeviceDescriptor\x12\x1b\n" +
 	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12\x16\n" +
 	"\x06driver\x18\x02 \x01(\tR\x06driver\x12\x14\n" +
@@ -4491,7 +4528,8 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"\rgain_elements\x18\n" +
 	" \x03(\v2\x17.leyline.v1.GainElementR\fgainElements\x12/\n" +
 	"\x13provides_timestamps\x18\v \x01(\bR\x12providesTimestamps\x12F\n" +
-	"\bfeatures\x18\f \x03(\v2*.leyline.v1.DeviceDescriptor.FeaturesEntryR\bfeatures\x1aU\n" +
+	"\bfeatures\x18\f \x03(\v2*.leyline.v1.DeviceDescriptor.FeaturesEntryR\bfeatures\x12!\n" +
+	"\fstate_detail\x18\r \x01(\tR\vstateDetail\x1aU\n" +
 	"\rFeaturesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12.\n" +
 	"\x05value\x18\x02 \x01(\v2\x18.leyline.v1.FeatureValueR\x05value:\x028\x01\"\xa8\x01\n" +
@@ -4507,7 +4545,7 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"\ainteger\x18\x02 \x01(\x03H\x00R\ainteger\x12\x18\n" +
 	"\x06number\x18\x03 \x01(\x01H\x00R\x06number\x12\x14\n" +
 	"\x04text\x18\x04 \x01(\tH\x00R\x04textB\a\n" +
-	"\x05value\"\xdb\x03\n" +
+	"\x05value\"\xfe\x03\n" +
 	"\aCapture\x12\x1d\n" +
 	"\n" +
 	"capture_id\x18\x01 \x01(\tR\tcaptureId\x12\x1b\n" +
@@ -4523,7 +4561,8 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"\x05gains\x18\t \x03(\v2\x15.leyline.v1.GainStateR\x05gains\x12)\n" +
 	"\x06claims\x18\n" +
 	" \x03(\v2\x11.leyline.v1.ClaimR\x06claims\x12+\n" +
-	"\x11tuning_generation\x18\v \x01(\x04R\x10tuningGeneration\"\xd5\x03\n" +
+	"\x11tuning_generation\x18\v \x01(\x04R\x10tuningGeneration\x12!\n" +
+	"\fstate_detail\x18\f \x01(\tR\vstateDetail\"\xd5\x03\n" +
 	"\x05Claim\x12\x19\n" +
 	"\bclaim_id\x18\x01 \x01(\tR\aclaimId\x12.\n" +
 	"\x06holder\x18\x02 \x01(\v2\x16.leyline.v1.ClientInfoR\x06holder\x12)\n" +
@@ -4782,13 +4821,14 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"\x13AttachDeviceRequest\x120\n" +
 	"\x06source\x18\x01 \x01(\v2\x18.leyline.v1.DeviceSourceR\x06source\"2\n" +
 	"\x13DetachDeviceRequest\x12\x1b\n" +
-	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId*X\n" +
+	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId*k\n" +
 	"\vDeviceState\x12\x1c\n" +
 	"\x18DEVICE_STATE_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tAVAILABLE\x10\x01\x12\n" +
 	"\n" +
 	"\x06IN_USE\x10\x02\x12\x10\n" +
-	"\fDISCONNECTED\x10\x03*J\n" +
+	"\fDISCONNECTED\x10\x03\x12\x11\n" +
+	"\rNOT_ANSWERING\x10\x04*J\n" +
 	"\fSampleFormat\x12\x1d\n" +
 	"\x19SAMPLE_FORMAT_UNSPECIFIED\x10\x00\x12\a\n" +
 	"\x03CS8\x10\x01\x12\b\n" +
@@ -4810,11 +4850,12 @@ const file_leyline_v1_control_proto_rawDesc = "" +
 	"ClaimState\x12\x1b\n" +
 	"\x17CLAIM_STATE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fCLAIM_SATISFIED\x10\x01\x12\x13\n" +
-	"\x0fCLAIM_DISPLACED\x10\x02*W\n" +
+	"\x0fCLAIM_DISPLACED\x10\x02*l\n" +
 	"\fCaptureState\x12\x1d\n" +
 	"\x19CAPTURE_STATE_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eCAPTURE_ACTIVE\x10\x01\x12\x14\n" +
-	"\x10CAPTURE_DETACHED\x10\x02*;\n" +
+	"\x10CAPTURE_DETACHED\x10\x02\x12\x13\n" +
+	"\x0fCAPTURE_STALLED\x10\x03*;\n" +
 	"\bGainMode\x12\x19\n" +
 	"\x15GAIN_MODE_UNSPECIFIED\x10\x00\x12\n" +
 	"\n" +
