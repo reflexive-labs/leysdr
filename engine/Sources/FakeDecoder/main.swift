@@ -206,10 +206,12 @@ func writeLastAndSleep(frame: Leyline_V1_Frame, seq: UInt64) -> Never {
 /// `FAKE_DECODER_SEGMENTS=1` reads SEGMENTED input (decode.proto, InputMode) the way a speech
 /// decoder does: one record per segment, written at its END, dated by its START frame, with
 /// `frames` (the audio frames, START included and END not), `samples` (the audio samples they
-/// carried), `text` ("segment N"), `rate` (the descriptor's audio rate), `outside` (frames that
-/// arrived with no segment open, which the daemon must never send), `crossings` (how often the
-/// audio crossed zero, which puts a tone's pitch at crossings / 2 / seconds) and `deviation` (the
-/// descriptor's full-scale deviation, which names the channel's mode).
+/// carried), `gap` (the capture samples the frames after the START said were dropped inside the
+/// segment), `lead` (those the START said were dropped before it), `text` ("segment N"), `rate`
+/// (the descriptor's audio rate), `outside` (frames that arrived with no segment open, which the
+/// daemon must never send), `crossings` (how often the audio crossed zero, which puts a tone's
+/// pitch at crossings / 2 / seconds) and `deviation` (the descriptor's full-scale deviation, which
+/// names the channel's mode).
 let segmented = ProcessInfo.processInfo.environment["FAKE_DECODER_SEGMENTS"] == "1"
 
 struct OpenSegment {
@@ -218,10 +220,16 @@ struct OpenSegment {
     var samples: Int64 = 0
     var crossings: Int64 = 0
     var last: Float = 0
+    var gap: Int64 = 0
+    var lead: Int64 = 0
 
-    mutating func take(_ payload: Data) {
-        samples += Int64(payload.count / 4)
-        payload.withUnsafeBytes { raw in
+    mutating func take(_ frame: Leyline_V1_Frame) {
+        if frame.hasGap, frame.gap.toSample > frame.gap.fromSample {
+            let n = Int64(frame.gap.toSample - frame.gap.fromSample)
+            if frame.segment == .segmentStart { lead += n } else { gap += n }
+        }
+        samples += Int64(frame.payload.count / 4)
+        frame.payload.withUnsafeBytes { raw in
             for v in raw.bindMemory(to: Float.self) {
                 if (v >= 0) != (last >= 0) { crossings += 1 }
                 last = v
@@ -239,7 +247,7 @@ func runSegmented() -> Never {
         switch frame.segment {
         case .segmentStart:
             open = OpenSegment(time: frame.time, frames: 1)
-            open!.take(frame.payload)
+            open!.take(frame)
         case .segmentEnd:
             guard let done = open else {
                 outside += 1
@@ -262,6 +270,8 @@ func runSegmented() -> Never {
             rec.fields["frames"] = field(done.frames)
             rec.fields["samples"] = field(done.samples)
             rec.fields["outside"] = field(outside)
+            rec.fields["gap"] = field(done.gap)
+            rec.fields["lead"] = field(done.lead)
             rec.fields["rate"] = field(Int64(descriptor.audio.sampleRate))
             rec.fields["stored"] = field(descriptor.stored ? 1 : 0)
             rec.fields["crossings"] = field(done.crossings)
@@ -279,7 +289,7 @@ func runSegmented() -> Never {
                 continue
             }
             open!.frames += 1
-            open!.take(frame.payload)
+            open!.take(frame)
         }
     }
     exitAtEOF()

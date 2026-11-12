@@ -17,6 +17,11 @@
 // middle of the quietest `quietWindowMs` in the last `quietLookbackMs` before the limit, so a word
 // is rarely split; both paths find it with `quietest(_:window:)`.
 //
+// Audio that never reached the segmenter (a drop) is a Gap on the next piece the plugin gets, cut
+// or no cut: inside a segment the plugin fills it with silence, and on a START it lies before the
+// segment, which then starts where its audio does. Either way a piece's audio and the gaps it was
+// told of cover the timeline from one piece to the next.
+//
 // Everything is on the capture's timeline and in capture samples; the audio is placed on it by
 // each frame's own span. Nothing here runs on the DSP thread (invariant 4): the decode runner's
 // drain task owns the live segmenter, and the squelch follower only hands it records.
@@ -206,6 +211,11 @@ struct Segmenter: Sendable {
     let lookbackSamples: UInt64
     /// `quietWindowMs` in audio samples.
     let quietWindow: Int
+    /// How far a frame may start past the end of the one before it and still follow it: frames are
+    /// dated from their capture blocks to within an audio sample, so two audio samples. Further is
+    /// a hole, drop flag or not, since a drop is counted on the frame read after it and the time it
+    /// took can show on a later one.
+    let holeSlack: UInt64
 
     private var state = State.closed
     private var waiting: [Frame] = []
@@ -256,6 +266,7 @@ struct Segmenter: Sendable {
         self.heardSlack = heardSlack
         maxHoldSamples = UInt64(2 * Double(captureRateHz))
         toleranceSamples = UInt64(Self.overTolerance * Double(captureRateHz))
+        holeSlack = UInt64((2 * perAudio).rounded(.up))
         ring.reserveCapacity(ringCapacity + AudioFrameSource.maxFrame)
     }
 
@@ -308,8 +319,8 @@ struct Segmenter: Sendable {
             ringEnd = frame.start
             lastEnd = frame.start
         }
-        if frame.dropped > 0 {
-            let hole = lastEnd..<Swift.max(lastEnd, frame.start)
+        let hole = lastEnd..<Swift.max(lastEnd, frame.start)
+        if frame.dropped > 0 || UInt64(hole.count) > holeSlack {
             if inSegment {
                 if !hole.isEmpty { owedGap = (owedGap?.lowerBound ?? hole.lowerBound)..<hole.upperBound }
             } else {
@@ -368,7 +379,11 @@ struct Segmenter: Sendable {
         guard !chunk.isEmpty else { return }
         var rest = chunk
         var at = from
-        while maxSegmentSamples > 0, to > limit, !rest.isEmpty {
+        while true {
+            // A segment whose START is still owed starts where its first audio does: after a hole,
+            // that is later than it was to start, and the START carries the hole.
+            if startOwed, at > segmentStart + holeSlack { moveOwedStart(to: at) }
+            guard maxSegmentSamples > 0, to > limit, !rest.isEmpty else { break }
             let limit = self.limit
             let k = limit > at
                 ? Swift.min(rest.count, Int((Double(limit - at) / Double(to - at) * Double(rest.count)).rounded()))
@@ -386,16 +401,19 @@ struct Segmenter: Sendable {
     private var limit: UInt64 { segmentStart + maxSegmentSamples }
     private var holdFrom: UInt64 { limit - lookbackSamples }
 
-    /// Audio into the open segment: the START when one is owed, else a piece carrying any gap.
-    /// It goes into `held`; `flushUnheld` lets go of what lies before `holdFrom`.
+    /// Audio into the open segment: the START when one is owed, else a piece; either carries any
+    /// gap before it. It goes into `held`; `flushUnheld` lets go of what lies before `holdFrom`.
     private mutating func put(_ chunk: ArraySlice<Float>, from: UInt64) {
-        if startOwed {
-            startOwed = false
-            held.append(Piece(time: segmentStart, floats: Array(chunk), mark: .segmentStart, gap: nil))
-            return
-        }
-        held.append(Piece(time: from, floats: Array(chunk), mark: .unspecified, gap: owedGap))
+        let mark: Leyline_V1_SegmentMark = startOwed ? .segmentStart : .unspecified
+        held.append(Piece(time: startOwed ? segmentStart : from, floats: Array(chunk), mark: mark, gap: owedGap))
+        startOwed = false
         owedGap = nil
+    }
+
+    /// The open segment, whose START has not gone out, starts at `sample` instead.
+    private mutating func moveOwedStart(to sample: UInt64) {
+        segmentStart = sample
+        if !starts.isEmpty { starts[starts.count - 1].start = sample }
     }
 
     /// The capture sample after a piece's last.
@@ -420,8 +438,7 @@ struct Segmenter: Sendable {
         if startOwed {
             // The segment never got audio (a drop took it), so it was never started on the wire:
             // it starts again from here.
-            segmentStart = limit
-            if !starts.isEmpty { starts[starts.count - 1].start = limit }
+            moveOwedStart(to: limit)
             return
         }
         // The held audio from the lookback on, end to end, and the quietest window's middle in it.
@@ -450,7 +467,9 @@ struct Segmenter: Sendable {
             if offset > 0 {
                 out.append(Piece(time: split.time, floats: Array(split.floats[..<offset]), mark: split.mark, gap: split.gap))
             }
-            after.append(Piece(time: boundary, floats: Array(split.floats[offset...]), mark: .unspecified, gap: nil))
+            // Cut on a piece's first sample, the gap before that piece is before the next segment.
+            after.append(Piece(time: boundary, floats: Array(split.floats[offset...]), mark: .unspecified,
+                               gap: offset == 0 ? split.gap : nil))
             after.append(contentsOf: held[(piece + 1)...])
         } else {
             out.append(contentsOf: held)
@@ -462,13 +481,13 @@ struct Segmenter: Sendable {
         if starts.count > Self.keptStarts { starts.removeFirst(starts.count - Self.keptStarts) }
         segmentStart = boundary
         startOwed = true
-        owedGap = nil
+        // A gap still owed is audio after the cut that has not been put yet (a drop that ran past
+        // the limit): the next segment's first piece carries it.
         for var p in after where !p.floats.isEmpty {
             if startOwed {
                 startOwed = false
                 p.mark = .segmentStart
                 p.time = boundary
-                p.gap = nil
             }
             held.append(p)
         }

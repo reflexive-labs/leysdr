@@ -686,7 +686,10 @@ final class SegmentedDecodeTests: XCTestCase {
     // MARK: A squelch that never closes
 
     /// Checks that `got`, records of the fake decoder, follow each other with no gap and no
-    /// overlap and are each at most `maxSeconds` long, by their START times and sample counts.
+    /// overlap and are each at most `maxSeconds` long, by their START times, sample counts and the
+    /// gaps the plugin was told of. A drop on a loaded machine is a gap the daemon reports (the
+    /// next piece's `gap`, or its `lead` when nothing of the segment followed it), and it counts
+    /// as covered; audio that goes missing without one does not.
     func assertContiguous(_ got: [Leyline_V1_DecodeRecord], captureRate: Double, maxSeconds: Double,
                           slackSamples: UInt64 = 0, file: StaticString = #filePath, line: UInt = #line)
     {
@@ -697,9 +700,11 @@ final class SegmentedDecodeTests: XCTestCase {
         }
         for (a, b) in zip(got, got.dropFirst()) {
             let perAudio = captureRate / Double(integer(a, "rate"))
-            let end = a.time.sampleIndex + UInt64((Double(integer(a, "samples")) * perAudio).rounded())
+            let told = UInt64(integer(a, "gap") + integer(b, "lead"))
+            let end = a.time.sampleIndex + UInt64((Double(integer(a, "samples")) * perAudio).rounded()) + told
             let off = end > b.time.sampleIndex ? end - b.time.sampleIndex : b.time.sampleIndex - end
-            XCTAssertLessThanOrEqual(off, slackSamples, "a piece starts where the one before it ended (\(end) and \(b.time.sampleIndex))",
+            XCTAssertLessThanOrEqual(off, slackSamples,
+                                     "a piece starts where the one before it ended (\(end) and \(b.time.sampleIndex), \(told) reported dropped)",
                                      file: file, line: line)
         }
     }

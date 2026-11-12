@@ -273,6 +273,89 @@ final class SegmenterTests: XCTestCase {
         XCTAssertEqual(s.segment(at: 97_000)?.continues, true)
     }
 
+    /// `value` in frames of 1000 capture samples, with `hole` missing: the frame after it
+    /// says it follows a drop when `flagged`, and arrives without saying so otherwise (the ring
+    /// counts a drop on the frame read after it, and the time it took can show on a later one).
+    /// Returns what the segmenter released, a frame at a time, as the drain hands it frames.
+    private func cutAcross(hole: Range<UInt64>, flagged: Bool = true,
+                           value: (UInt64) -> Float = { (6500..<6700).contains($0) ? 0 : Float($0 + 1) }) -> [Segmenter.Piece]
+    {
+        var s = Segmenter(preRollMs: 100, hangMs: 100, captureRateHz: 10_000, audioRateHz: 1_000, maxSegmentMs: 8000,
+                          heardSlack: 0)
+        s.hear(.meter(open: true, at: 0))
+        s.hear(.meter(open: true, at: 300_000))
+        var pieces: [Segmenter.Piece] = []
+        var at: UInt64 = 0
+        while at < 300_000 {
+            if hole.contains(at) {
+                at += 1000
+                continue
+            }
+            let floats = (0..<UInt64(100)).map { value(at / 10 + $0) }
+            let dropped = flagged && at == hole.upperBound ? UInt64(hole.count) : 0
+            s.push(Segmenter.Frame(start: at, count: 1000, floats: floats, dropped: dropped))
+            pieces += s.release()
+            at += 1000
+        }
+        return pieces
+    }
+
+    /// Checks that every piece's audio is where its time says (each sample is its audio index
+    /// plus one, or 0 in the dip), and that from one piece to the next the timeline is covered by
+    /// audio or by a gap the later piece reports: nothing goes missing that the plugin is not
+    /// told of, at a cut or anywhere else. Returns the capture samples reported dropped.
+    @discardableResult
+    private func assertTiled(_ pieces: [Segmenter.Piece], file: StaticString = #filePath, line: UInt = #line) -> UInt64 {
+        var end: UInt64?
+        var reported: UInt64 = 0
+        for p in pieces where !p.floats.isEmpty {
+            let gap = UInt64(p.gap?.count ?? 0)
+            reported += gap
+            if let end {
+                XCTAssertEqual(p.time, end + gap, "a piece follows the audio before it, or the gap it reports (\(p.mark))",
+                               file: file, line: line)
+            }
+            if let i = p.floats.indices.first(where: { p.floats[$0] != 0 }) {
+                XCTAssertEqual(p.floats[i], Float(p.time / 10 + UInt64(i) + 1), "a piece's audio is placed by its time",
+                               file: file, line: line)
+            }
+            end = p.time + UInt64(p.floats.count) * 10
+        }
+        return reported
+    }
+
+    /// The CI failure of 2026-11-12: a drop whose next frame ran past the open segment's limit. The
+    /// cut came before that frame's audio went in, and it forgot the gap, so the plugin was never
+    /// told and the audio after the hole sat where the hole should have been.
+    func testADropThatRunsPastTheLimitIsReportedAfterTheCut() {
+        let pieces = cutAcross(hole: 77_000..<83_000)
+        XCTAssertEqual(segments(pieces).spans.first?.end, 66_000, "the cut is still the middle of the silence")
+        XCTAssertEqual(assertTiled(pieces), 6000, "the whole hole is reported, once")
+    }
+
+    func testADropJustBeforeTheCutIsReportedOnTheNextSegmentsStart() {
+        // 400 ms of silence from 6.4 s with 100 ms of it dropped: the latest quiet 200 ms that is
+        // left runs from 6.5 s across the hole, so the cut, its middle, is the first sample after it.
+        let pieces = cutAcross(hole: 66_000..<67_000) { (6400..<6800).contains($0) ? 0 : Float($0 + 1) }
+        let start = pieces.first { $0.mark == .segmentStart && $0.time > 0 }
+        XCTAssertEqual(start?.time, 67_000)
+        XCTAssertEqual(start?.gap, 66_000..<67_000, "the START says what was lost before it")
+        XCTAssertEqual(assertTiled(pieces), 1000)
+    }
+
+    func testADropLongerThanTheLimitStartsTheNextSegmentWhereItsAudioDoes() {
+        let pieces = cutAcross(hole: 75_000..<180_000)
+        XCTAssertEqual(assertTiled(pieces), 105_000)
+        XCTAssertTrue(pieces.contains { $0.mark == .segmentStart && $0.time == 180_000 && $0.gap != nil },
+                      "the segment after the hole starts on its first audio, and says what came before was lost")
+        XCTAssertEqual(segments(pieces).outside, 0)
+    }
+
+    func testAHoleTheRingDidNotFlagIsReportedToo() {
+        let pieces = cutAcross(hole: 30_000..<33_000, flagged: false)
+        XCTAssertEqual(assertTiled(pieces), 3000)
+    }
+
     func testAnOverThatClosesBeforeTheLimitIsSentAsBefore() {
         var s = Segmenter(preRollMs: 100, hangMs: 100, captureRateHz: 10_000, audioRateHz: 1_000, maxSegmentMs: 8000,
                           heardSlack: 0)

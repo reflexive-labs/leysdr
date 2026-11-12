@@ -1324,9 +1324,13 @@ in frames of at most 4096 samples, the first marked START, so the 2 s stall limi
 to each frame, is never one slow read of a large frame. The first meter opens a
 segment at once when the squelch was already open, and a meter that disagrees with the state is
 the edge the follower missed. A frame left waiting 2 s behind the newest audio goes on without
-its telemetry. On the wire a segment exists only between a START the plugin took and its END: a
-START the pipe cannot take skips the segment, an END it cannot take is owed before anything else,
-and a restarted plugin gets nothing of a segment opened on the one before. A segmented job's own
+its telemetry. A frame the pipe cannot take waits up to 0.5 s for room
+(`DecodeRunner.segmentedWritePatience`), because the cut at `max_segment_ms` lets what it held go
+at once, more than a pipe holds; one that still cannot go is dropped and reported on the next frame
+that does, and the frames after it are not waited for until one goes through. On the wire a
+segment exists only between a START the plugin took and its END: a START the pipe cannot take
+skips the segment, an END it cannot take is owed before anything else, and a restarted plugin gets
+nothing of a segment opened on the one before. A segmented job's own
 channel gets the recorder's auto squelch when it has none, because a squelch that is off has no
 edges; when no level can be measured, or the channel refuses it, the job runs `DEGRADED` with
 "no level measured; squelch left as it was" (or the refusal) for its whole run. A channel the job
@@ -1341,10 +1345,17 @@ that end before the last 5 s before the limit go out as they come; the last 5 s 
 audio reaches the limit, `cut` finds the quietest 200 ms of what is held (`Segmenter.quietest`),
 sends what lies before its middle and an END there, and opens the next segment on that sample with
 the rest as its START, `continues` in `starts` so `emit` can set the record's FLAG field
-`continues`. A squelch close or a hang that ends sends what is held first. The stored path cuts the
-same way with `Segmenter.limit`, reading the 5 s from the part's WAV (`RecordingSource.QuietFinder`);
-a part with no openings, or a recording in a mode with no gate, is one span across the part,
-continuing the part before when that one was read whole and ended where this one starts.
+`continues`. A squelch close or a hang that ends sends what is held first. Audio that never reached
+the segmenter is a `Gap` on the next piece the plugin gets, whether a cut falls between them or
+not. A hole is a frame flagged as following a drop, or one that starts more than two audio samples
+after the last one ended: the ring counts a drop on the frame read after it, and the time the drop
+took can show on a later frame. Inside a segment the plugin fills the gap with silence; on a START
+it lies before the segment, and a segment whose first audio comes after a hole starts on that
+audio, not on the cut. So from one piece to the next, the audio and the gaps the plugin was told of
+cover the timeline. The stored path cuts the same way with `Segmenter.limit`, reading the 5 s from
+the part's WAV (`RecordingSource.QuietFinder`); a part with no openings, or a recording in a mode
+with no gate, is one span across the part, continuing the part before when that one was read whole
+and ended where this one starts.
 
 **The clips.** A live segmented job also records its channel as a gated audio recording under its
 own id (`Jobs/LiveClips.swift`), so `ley://recordings/<job_id>` holds the audio of the overs whose

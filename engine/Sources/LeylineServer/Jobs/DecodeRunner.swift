@@ -28,6 +28,14 @@ actor DecodeRunner {
     /// line on stderr. Nothing a restart changes, so the job ends `FAILED_PRECONDITION` with that
     /// line as its detail, kept or not (`plugin.RefuseInput` in the Go SDK).
     static let inputRefusedExitStatus: Int32 = 3
+    /// How long a SEGMENTED frame waits for room in a full pipe before it is dropped, in seconds.
+    /// The segmenter holds the last `Segmenter.quietLookbackMs` of an open segment back for the cut
+    /// at `max_segment_ms` and lets it go at once, more than a pipe holds, so a plugin that is
+    /// reading but was not scheduled for a moment would lose audio the daemon has in hand. Less
+    /// than the 0.68 s the channel's audio ring holds, so one wait never also overflows it; once a
+    /// frame has waited this long and been dropped, the next ones are not waited for until one
+    /// goes through, so a plugin that has stopped reading costs the drain one wait, not one a frame.
+    static let segmentedWritePatience: Duration = .milliseconds(500)
 
     /// The failure for a plugin that exited `inputRefusedExitStatus`, from its last stderr line.
     static func inputRefused(_ decoder: String, said: String?) -> EngineError {
@@ -608,6 +616,9 @@ actor DecodeRunner {
         var owedEnd: Segmenter.Piece?
         /// Audio of a segment the plugin did not get, reported on the next frame that reaches it.
         var lost: Range<UInt64>?
+        /// Whether a full pipe is waited on (`segmentedWritePatience`): not after a frame that
+        /// waited and was dropped anyway, until one goes through.
+        var patient = true
 
         mutating func lose(_ piece: Segmenter.Piece) {
             if piece.mark == .segmentStart { skipping = true }
@@ -706,7 +717,15 @@ actor DecodeRunner {
             frame.gap.toSample = to
         }
         do {
-            let result = try process.write(frame)
+            var result = try process.write(frame)
+            if result == .droppedFull, wire.patient {
+                let deadline = ContinuousClock.now.advanced(by: Self.segmentedWritePatience)
+                while result == .droppedFull, ContinuousClock.now < deadline, !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(2))
+                    result = try process.write(frame)
+                }
+            }
+            wire.patient = result == .written
             if result == .written {
                 wire.seq += 1
                 if piece.mark != .segmentEnd { wire.lost = nil }
