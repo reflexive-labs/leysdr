@@ -210,7 +210,7 @@ scenes:
     smoke: true
     covers: [BandRailView.swift, SidebarView.swift, PlanPickerView.swift, DeviceMenuView.swift,
       LibraryView.swift, SettingsView.swift, AISettingsView.swift, Scale.swift,
-      GainPreferences.swift, AISettings.swift]
+      GainPreferences.swift, AISettings.swift, RadioHealth.swift]
     fixtures: [{name: scene_2m}]
     clock: "19:42"
     bookmarks: ../../site/shots/home.csv

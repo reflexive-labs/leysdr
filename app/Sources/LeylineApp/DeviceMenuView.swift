@@ -42,13 +42,13 @@ struct DeviceChip: View {
 
     private var tooltip: String {
         if let f = session.failure { return f.headline + ": " + f.detail }
-        guard let d = session.device ?? session.state.devices.first else { return name }
-        return d.state == .disconnected ? name + ", unplugged" : name
+        return RadioHealth.tooltip(
+            name: name, device: session.device ?? session.state.devices.first)
     }
 
     private var name: String {
         if let d = session.device { return d.model.isEmpty ? d.driver : d.model }
-        if let d = session.state.devices.first(where: { $0.state != .disconnected }) {
+        if let d = session.state.devices.first(where: RadioHealth.isUsable) {
             return d.model.isEmpty ? d.driver : d.model
         }
         return session.isLive ? "No radio" : "No daemon"
@@ -62,7 +62,8 @@ struct DeviceChip: View {
     private var dotColour: Color {
         guard session.isLive else { return Theme.recording }
         guard let d = session.device ?? session.state.devices.first else { return Theme.inkFaint }
-        if d.state == .disconnected { return Theme.recording }
+        if !RadioHealth.isUsable(d) { return Theme.recording }
+        if let c = session.capture, c.state == .captureStalled { return Theme.caution }
         return clipping ? Theme.caution : Theme.good
     }
 }
@@ -103,22 +104,22 @@ struct DeviceMenuView: View {
     private func header(_ d: Leyline_V1_DeviceDescriptor) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 7) {
-                Circle().fill(d.state == .disconnected ? Theme.recording : Theme.good).frame(
+                Circle().fill(RadioHealth.isUsable(d) ? Theme.good : Theme.recording).frame(
                     width: 7, height: 7)
                 Text(d.model.isEmpty ? d.driver : d.model).font(Theme.Font.menuTitle)
                     .foregroundStyle(Theme.ink)
             }
-            Text("\(stateWord(d.state))\(d.serial.isEmpty ? "" : " · serial \(d.serial)")")
-                .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkMuted)
-        }
-    }
-
-    private func stateWord(_ s: Leyline_V1_DeviceState) -> String {
-        switch s {
-        case .available: "connected"
-        case .inUse: "connected, in use"
-        case .disconnected: "unplugged"
-        default: "unknown"
+            Text(
+                "\(RadioHealth.stateWords(d))\(d.serial.isEmpty ? "" : " · serial \(d.serial)")"
+            )
+            .font(Theme.Font.valueSmall).foregroundStyle(Theme.inkMuted)
+            // A radio the daemon has stopped opening: what to do, in the daemon's sentence.
+            if let advice = RadioHealth.advice(d) {
+                Text(advice)
+                    .font(Theme.Font.footnote).foregroundStyle(Theme.inkTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("devicemenu.advice")
+            }
         }
     }
 
@@ -146,7 +147,7 @@ struct DeviceMenuView: View {
     @ViewBuilder
     private var others: some View {
         let others = session.state.devices.filter {
-            $0.deviceID != session.device?.deviceID && $0.state != .disconnected
+            $0.deviceID != session.device?.deviceID && RadioHealth.isUsable($0)
         }
         if !others.isEmpty {
             Divider().overlay(Theme.border)

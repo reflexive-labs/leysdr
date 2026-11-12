@@ -664,7 +664,7 @@ final class AppSession {
     /// and a band elsewhere in the capture is heard all the same: without the span, the tuned
     /// band of a wide recording was folded away as one the radio cannot tune.
     private var radioRanges: [Leyline_V1_FrequencyRange] {
-        guard let radio = device ?? state.devices.first(where: { $0.state != .disconnected })
+        guard let radio = device ?? state.devices.first(where: RadioHealth.isUsable)
         else { return [] }
         var ranges = radio.tuningRanges
         // No range means every band is offered; a span would narrow that. Every capture on
@@ -900,6 +900,12 @@ final class AppSession {
             return (e.message, "Retrying in \(retry).")
         case .live: break
         }
+        if state.devices.allSatisfy({ !RadioHealth.isUsable($0) }),
+            let stuck = state.devices.first(where: { $0.state == .notAnswering }),
+            let words = RadioHealth.emptyWords(capture: capture, device: stuck)
+        {
+            return words
+        }
         if state.devices.allSatisfy({ $0.state == .disconnected }) {
             return (
                 "No radio is plugged in",
@@ -912,11 +918,7 @@ final class AppSession {
                 "The sidebar's bands set the radio, the mode and the squelch at once."
             )
         }
-        if capture?.state == .captureDetached {
-            return (
-                "The radio was unplugged", "Plug it back in and the capture rebinds on its own."
-            )
-        }
+        if let words = RadioHealth.emptyWords(capture: capture, device: device) { return words }
         return nil
     }
 
@@ -1173,7 +1175,7 @@ final class AppSession {
         guard !busy, !creatingChannel else { return }
         adopted = true
         if captureID == nil,
-            let cap = state.captures.first(where: { $0.state == .captureActive })
+            let cap = state.captures.first(where: RadioHealth.isAttached)
                 ?? state.captures.first
         {
             heldCapture.adopted(id: cap.captureID, at: Date())
@@ -1221,7 +1223,7 @@ final class AppSession {
         }
     }
 
-    private var hasRadio: Bool { state.devices.contains { $0.state != .disconnected } }
+    private var hasRadio: Bool { state.devices.contains(where: RadioHealth.isUsable) }
 
     // MARK: Bands
 
@@ -1348,7 +1350,7 @@ final class AppSession {
     private func movableCapture(on dev: Leyline_V1_DeviceDescriptor) -> Leyline_V1_Capture? {
         if let cap = capture { return cap.deviceID == dev.deviceID ? cap : nil }
         return state.captures.first {
-            $0.deviceID == dev.deviceID && $0.state == .captureActive
+            $0.deviceID == dev.deviceID && RadioHealth.isAttached($0)
         }
     }
 
@@ -1422,11 +1424,16 @@ final class AppSession {
     }
 
     private func pickDevice() throws -> Leyline_V1_DeviceDescriptor {
-        if let d = device, d.state != .disconnected { return d }
+        if let d = device, RadioHealth.isUsable(d) { return d }
         if let d = state.devices.first(where: { $0.state == .available })
             ?? state.devices.first(where: { $0.state == .inUse })
         {
             return d
+        }
+        if let stuck = state.devices.first(where: { $0.state == .notAnswering }),
+            let advice = RadioHealth.advice(stuck)
+        {
+            throw LeylineError(code: "DEVICE_IO", message: advice)
         }
         throw LeylineError(code: "DEVICE_NOT_FOUND", message: "No radio is plugged in")
     }
