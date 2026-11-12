@@ -77,30 +77,44 @@ final class LogFollowingTests: XCTestCase {
     func testWhoMovedTheLog() {
         var f = LogFollowing()
         f.settled(atBottom: true)
-        XCTAssertFalse(f.moved(from: g(600, 1000), to: g(600, 1022), handOn: true))
+        XCTAssertFalse(f.moved(from: g(600, 1000), to: g(600, 1022), hand: .touching))
         XCTAssertTrue(f.following, "a record landing below a hand is not the hand")
-        XCTAssertTrue(f.moved(from: g(600, 1022), to: g(500, 1022), handOn: true))
+        XCTAssertTrue(f.moved(from: g(600, 1022), to: g(500, 1022), hand: .touching))
         XCTAssertFalse(f.following)
-        XCTAssertTrue(f.moved(from: g(500, 1022), to: g(622, 1022), handOn: true))
+        XCTAssertTrue(f.moved(from: g(500, 1022), to: g(622, 1022), hand: .touching))
         XCTAssertTrue(f.following, "back at the bottom by hand")
         // Records land under the hand on its way down: short of the bottom, still following.
-        XCTAssertFalse(f.moved(from: g(622, 1022), to: g(622, 1100), handOn: true))
-        XCTAssertFalse(f.moved(from: g(622, 1100), to: g(640, 1100), handOn: true))
+        XCTAssertFalse(f.moved(from: g(622, 1022), to: g(622, 1100), hand: .touching))
+        XCTAssertFalse(f.moved(from: g(622, 1100), to: g(640, 1100), hand: .touching))
         XCTAssertTrue(f.following, "a move toward the bottom never stops following")
         f.personScrolled(atBottom: false)
-        XCTAssertFalse(f.moved(from: g(300, 1100), to: g(400, 1100), handOn: true))
+        XCTAssertFalse(f.moved(from: g(300, 1100), to: g(400, 1100), hand: .touching))
         XCTAssertFalse(f.following, "down but short of the bottom does not resume")
 
-        // A wheel's step with no phase: the offset moved and nothing else did.
+        // A wheel's step with no phase: the offset moved up and nothing else did. A row's shift
+        // as the scroll view settles under a landing record is not one.
         var w = LogFollowing()
         w.settled(atBottom: true)
-        XCTAssertTrue(w.moved(from: g(600, 1000), to: g(560, 1000), handOn: false))
+        XCTAssertFalse(w.moved(from: g(600, 1000), to: g(578, 1000), hand: .none))
+        XCTAssertTrue(w.following)
+        XCTAssertTrue(w.moved(from: g(578, 1000), to: g(500, 1000), hand: .none))
         XCTAssertFalse(w.following)
         // While following, a scroll of the log's own to a new record is not the person.
         var o = LogFollowing()
         _ = o.arrived(1)
-        XCTAssertFalse(o.moved(from: g(578, 1000), to: g(560, 1000), handOn: false))
+        XCTAssertFalse(o.moved(from: g(578, 1000), to: g(560, 1000), hand: .none))
         XCTAssertTrue(o.following)
+    }
+
+    /// The bounce back from past the bottom, with records landing, is not the person.
+    func testCoastingNeverStopsFollowing() {
+        var f = LogFollowing()
+        f.settled(atBottom: true)
+        XCTAssertFalse(f.moved(from: g(7277.5, 7954), to: g(7275.5, 7954), hand: .coasting))
+        XCTAssertTrue(f.following)
+        f.personScrolled(atBottom: false)
+        XCTAssertTrue(f.moved(from: g(500, 1000), to: g(600, 1000), hand: .coasting))
+        XCTAssertTrue(f.following, "momentum that reaches the bottom resumes")
     }
 
     func testAtBottomHasATolerance() {

@@ -21,6 +21,9 @@ public struct LogFollowing: Sendable, Equatable {
 
     /// How far from the bottom, in points, still counts as at the bottom: a row is 22.
     public static let tolerance: Double = 8
+    /// How far up a move with no scroll phase must go to be a person's wheel: more than a row
+    /// or two, which is what a record landing as the scroll view settles can shift it by.
+    public static let wheelStep: Double = 44
 
     public init() {}
 
@@ -50,23 +53,40 @@ public struct LogFollowing: Sendable, Equatable {
         }
     }
 
-    /// The scroll view moved from `old` to `new`; `handOn` while a gesture or the scroller has it
-    /// (SwiftUI's scroll phase). A move of the offset is the person's while a hand is on it, or
-    /// with the content and viewport as they were and no scroll of the log's own on the way,
-    /// since a mouse wheel's step need not report a phase. Only a move toward the top stops
-    /// following; a move toward the bottom resumes it once it reaches the bottom and otherwise
-    /// changes nothing, since records landing under a hand on its way down (or its bounce at the
-    /// end) leave it short of a bottom that keeps moving. Content growing under a still offset is
-    /// never the person, even mid-gesture. Returns whether `following` changed.
+    /// What is moving the scroll view, from SwiftUI's scroll phase.
+    public enum Hand: Sendable, Equatable {
+        /// No gesture: the log's own scroll, content changing, the scroll view settling, or a
+        /// mouse wheel's step, which need not report a phase.
+        case none
+        /// A finger on the trackpad, or the scroller held (`interacting`, `tracking`).
+        case touching
+        /// The scroll view coasting after the hand lifted (`decelerating`): momentum, or the
+        /// bounce back from past the bottom.
+        case coasting
+    }
+
+    /// The scroll view moved from `old` to `new`. Only a move toward the top stops following:
+    /// one while a hand touches it, or with no phase one of more than `wheelStep` with the
+    /// content and viewport as they were and no record landed on the way (a wheel). Coasting never stops it, since the bounce
+    /// back from past the bottom lags a bottom that records keep moving; a flick's momentum
+    /// follows a touch that already did. Any move that reaches the bottom resumes following;
+    /// content growing under a still offset changes nothing. Returns whether `following`
+    /// changed.
     @discardableResult
-    public mutating func moved(from old: Geometry, to new: Geometry, handOn: Bool) -> Bool {
+    public mutating func moved(from old: Geometry, to new: Geometry, hand: Hand) -> Bool {
         let was = following
-        let offsetMoved = abs(new.offset - old.offset) >= 0.5
+        let up = new.offset < old.offset - 0.5
         let sameSize =
             abs(new.contentHeight - old.contentHeight) < 0.5
             && abs(new.viewportHeight - old.viewportHeight) < 0.5
-        if offsetMoved && (handOn || (sameSize && !pending)) {
-            if new.offset < old.offset || new.atBottom { personScrolled(atBottom: new.atBottom) }
+        let byPerson: Bool
+        switch hand {
+        case .touching: byPerson = true
+        case .coasting: byPerson = false
+        case .none: byPerson = sameSize && !pending && old.offset - new.offset > Self.wheelStep
+        }
+        if up && byPerson {
+            personScrolled(atBottom: new.atBottom)
         } else {
             settled(atBottom: new.atBottom)
         }

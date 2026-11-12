@@ -2025,7 +2025,7 @@ scenes:
       - {cmd: snapshot, name: resumed, mask: [counts, records, inspector]}
       - {cmd: scroll, identifier: decoders.page, dy: -400}
       - {cmd: state, expect: {decoders.log_following: false}}
-      - {cmd: scroll, identifier: decoders.page, dy: 100000}
+      - {cmd: scroll, identifier: decoders.page, dy: 3000}
       - {cmd: state, expect: {decoders.log_following: true, decoders.log_jump: null}, expect_log: "log following"}
       - {cmd: press, identifier: decoders.page.stop}
 

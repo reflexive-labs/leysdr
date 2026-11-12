@@ -467,8 +467,8 @@ struct DecoderLogRows: View {
     let kindWidth: CGFloat
     @Environment(AppSession.self) private var session
     @State private var position = ScrollPosition(idType: String.self)
-    /// Whether a hand is on the scroll view: a wheel, a trackpad or the scroller.
-    @State private var personScrolling = false
+    /// What is moving the scroll view, from its phase.
+    @State private var hand = LogFollowing.Hand.none
 
     var body: some View {
         let d = session.decoders
@@ -497,15 +497,21 @@ struct DecoderLogRows: View {
         .defaultScrollAnchor(d.logFollowing.following ? .bottom : .top, for: .sizeChanges)
         .stageRegion(.records)
         .onScrollPhaseChange { _, phase in
-            personScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+            switch phase {
+            case .tracking, .interacting: hand = .touching
+            case .decelerating: hand = .coasting
+            default: hand = .none
+            }
+            if hand == .none { releaseToBottom(d) }
         }
         .onScrollGeometryChange(for: LogFollowing.Geometry.self) { g in
             LogFollowing.Geometry(
                 offset: g.contentOffset.y, contentHeight: g.contentSize.height,
                 viewportHeight: g.containerSize.height)
         } action: { old, new in
-            if d.logFollowing.moved(from: old, to: new, handOn: personScrolling) {
+            if d.logFollowing.moved(from: old, to: new, hand: hand) {
                 log("decoders", d.logFollowing.following ? "log following" : "log scrolled up")
+                if hand == .none { releaseToBottom(d) }
             }
         }
         .onChange(of: entries.first?.id) { old, _ in
@@ -523,6 +529,14 @@ struct DecoderLogRows: View {
             }
         }
         .onAppear { d.logFollowing = LogFollowing() }
+    }
+
+    /// Back to following once no hand is on the log: the scroll position, which held the row the
+    /// person scrolled to by its id, takes the bottom edge again, or it would pull the log back to
+    /// that row as records land.
+    private func releaseToBottom(_ d: DecoderSession) {
+        guard d.logFollowing.following, position.edge != .bottom else { return }
+        position.scrollTo(edge: .bottom)
     }
 }
 

@@ -593,12 +593,13 @@ newest record (`LogFollowing`, the rule `MapFraming` keeps for the map): it open
 on each decoder and each return to the tab, and keeps each record that arrives in view, the
 scroll view's own size-change anchor at the bottom (`defaultScrollAnchor(_:for: .sizeChanges)`),
 so no scroll of the log's own can cut short a gesture that starts as a record lands. A scroll up
-by hand (a scroll phase of `interacting`, or the offset moving with the content as it was and no
-scroll of the log's own on the way, for a wheel that reports none) stops it: what arrives waits
+by hand (a scroll phase of `interacting`, or, for a wheel that reports none, a move of more than
+two rows with the content as it was; never the coast or bounce of `decelerating`) stops it: what arrives waits
 below, counted on a chip in the log's corner (`↓ 12 new`, `↓ Latest` with nothing new), and the
 rows read stay put, the scroll view holding its top row by id (`scrollPosition` over a
 `scrollTargetLayout`) when the oldest drop off at the 1000-record limit. The chip, or a scroll
-back to the bottom, follows again; selecting a record changes nothing. The page's `RecordLog`
+back to the bottom, follows again, the scroll position given the bottom edge back once the hand
+lifts so it stops holding the row by id; selecting a record changes nothing. The page's `RecordLog`
 stays newest first, so the alerts, the inspector's "newest of the transmitter" and the counts
 read it as before; only the log draws it the other way up. The
 table has `ley track`'s columns, its rows by name and not newest first, so a decoder heard many
