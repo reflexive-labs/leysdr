@@ -5,6 +5,8 @@ What changed for someone using Leyline, newest first. Each released version has 
 
 ## Unreleased
 
+## 0.3.2 (2026-11-12)
+
 - **Fixed: a failing radio was opened again and again.** A dongle that stopped answering (empty
   USB descriptors, register writes timing out) was re-opened every 2 to 60 s, and each open could
   make the driver reset it, which can stall other devices on the same USB hub. After three
