@@ -83,7 +83,10 @@ The manifest for the bundled APRS decoder, trimmed to the fields that carry mean
   decoder usually wants because de-emphasis tilts the tones a modem keys on. `input.mode` is
   `CONTINUOUS` for a stream, or `SEGMENTED` for one over at a time, cut at the squelch (below), which
   is what a speech decoder wants; `preRollMs` and `hangMs` set how much audio a segment keeps before
-  the squelch opened and after it closed, 500 ms each when left 0. `SLOT_ALIGNED` (for slot-timed
+  the squelch opened and after it closed, 500 ms each when left 0, and `maxSegmentMs` is the
+  longest segment you are sent, 0 for no limit. Set it if a channel whose squelch never closes is
+  any use to you: the daemon then cuts that channel into pieces of at most that length, near a
+  quiet point, and flags every piece after the first with the field `continues`. `SLOT_ALIGNED` (for slot-timed
   protocols like FT8) is declared here but not yet delivered by the daemon.
 - **`credentialProvider`** names the provider whose key your decoder calls with (`deepgram`,
   `openai`), and **`contactsHosts`** lists the hosts it sends data to. With a provider named, the
@@ -341,7 +344,8 @@ reading stdin until the decoder takes a segment, and the pipe holds the daemon b
 input it waits for every queued segment and writes its records before it returns. `MainSegmented` reads the key first when `LEYLINE_KEY_ON_STDIN` is `1` or its own manifest
 names a provider (`plugin.ReadCredential` does the read for a decoder that wires stdin itself)
 and passes it to the factory; `key` is nil when no key was sent. `Main` and `MainIQ` read it the
-same way and drop it. A segment longer than `plugin.MaxSegment` (ten minutes), a segment cut
+same way and drop it. A segment longer than `plugin.MaxSegment` (ten minutes; a manifest with
+`maxSegmentMs` set never sends one), a segment cut
 off by the end of input, and audio outside a segment are logged on stderr and dropped. The
 bundled `leydec-aprs` (`go/cmd/leydec-aprs`, with the AFSK, AX.25 and APRS stages in
 `go/pkg/decoders`) is the worked example; the fake decoder in the engine tests

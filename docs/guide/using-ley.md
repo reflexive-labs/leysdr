@@ -793,8 +793,9 @@ directory in Finder does the same as `delete`, and the daemon does not need to b
 `ley records --protocol speech` reads back later. The daemon reads the stored parts faster than
 real time and sends a speech decoder only the audio around each over, so before it starts,
 `transcribe` states how many minutes of squelch-open audio that is and where it goes, and asks.
-`--yes` skips the question. A recording made without a squelch gate (`--gate none`, or WFM) lists no overs and has
-nothing to transcribe. This was recorded against the fake daemon, with its words seeded:
+`--yes` skips the question. A recording made without a squelch gate (`--gate none`, or WFM) lists
+no overs, so all of it is sent, cut into pieces of 30 s, and `transcribe` says that it is every
+minute. This was recorded against the fake daemon, with its words seeded:
 
 ```console
 $ ley transcribe job_01SEED

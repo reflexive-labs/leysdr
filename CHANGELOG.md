@@ -16,6 +16,15 @@ What changed for someone using Leyline, newest first. Each released version has 
   samples a capture now reads `STALLED`, "no samples from <radio> for 5 s", and goes back to
   active when samples return. After 30 s Leyline closes and reopens the radio once; a radio that
   still sends nothing is marked not answering.
+- **Speech on a channel that never goes quiet.** A transmission longer than 30 s is cut into
+  pieces at the quietest moment near each 30 s, with nothing lost between them, so FM broadcast, a
+  NOAA weather station or a channel with the squelch off is transcribed rather than dropped after
+  ten minutes. A continuous recording, which has no squelch openings, can be transcribed now: `ley
+  transcribe` and the Library's Transcribe count every minute of it. Each piece after the first
+  is marked `continues`.
+- **The cost of that is stated first.** Such a channel sends all of its audio, 60 minutes an hour.
+  `ley decode speech` and `ley watch speech` on FM or AM broadcast or NOAA weather say so before
+  they start and ask; `--yes` skips the question.
 
 ## 0.3.1 (2026-11-04)
 

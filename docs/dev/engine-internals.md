@@ -1329,7 +1329,20 @@ START the pipe cannot take skips the segment, an END it cannot take is owed befo
 and a restarted plugin gets nothing of a segment opened on the one before. A segmented job's own
 channel gets the recorder's auto squelch when it has none, because a squelch that is off has no
 edges; when no level can be measured, or the channel refuses it, the job runs `DEGRADED` with
-"no level measured; squelch left as it was" (or the refusal) for its whole run.
+"no level measured; squelch left as it was" (or the refusal) for its whole run. A channel in a
+mode with no squelch gate (anything but NFM and AM, `RecordingSource.gatedModes`) gets no auto
+squelch: its `Segmenter` is `alwaysOpen`, one segment from the first frame that waits for no
+telemetry and ignores it.
+
+With `max_segment_ms` set, every piece of an open segment passes through `held`, and the ones
+that end before the last 5 s before the limit go out as they come; the last 5 s wait. When the
+audio reaches the limit, `cut` finds the quietest 200 ms of what is held (`Segmenter.quietest`),
+sends what lies before its middle and an END there, and opens the next segment on that sample with
+the rest as its START, `continues` in `starts` so `emit` can set the record's FLAG field
+`continues`. A squelch close or a hang that ends sends what is held first. The stored path cuts the
+same way with `Segmenter.limit`, reading the 5 s from the part's WAV (`RecordingSource.QuietFinder`);
+a part with no openings, or a recording in a mode with no gate, is one span across the part,
+continuing the part before when that one was read whole and ended where this one starts.
 
 **The clips.** A live segmented job also records its channel as a gated audio recording under its
 own id (`Jobs/LiveClips.swift`), so `ley://recordings/<job_id>` holds the audio of the overs whose

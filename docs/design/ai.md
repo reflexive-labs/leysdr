@@ -125,6 +125,35 @@ The segmenter's default hang is shorter than the gated recorder's 5 s. A recordi
 exchange and lists every over in it (`recording.md`, "What a recording is"); a segment is one over,
 or several overs that follow each other inside the 500 ms hang.
 
+**A segment has a maximum length.** A squelch that never closes would make one segment that never
+ends: a broadcast carrier, a channel with the squelch off, a mode with no squelch gate (WFM, SSB).
+The plugin SDK drops a segment after ten minutes (`plugin.MaxSegment`), so nothing would be
+transcribed, and no speech API takes an hour in one request. `DecoderInput.max_segment_ms` bounds
+a segment, and the speech manifest sets it to 30 000. When an open segment reaches it, the daemon
+ends the segment and starts the next one on the same sample, so no audio is lost or sent twice.
+The cut is the middle of the quietest 200 ms in the last 5 s before the limit, by the sum of
+squares, the latest of equally quiet windows; a word is then rarely split, and silence costs
+nothing to cut at. 0 means no limit, and the SDK's ten minutes stay as the backstop for a decoder
+that sets none.
+
+Such a channel counts as open all the time. A live job in a mode with no squelch gate is one
+transmission from its first audio, cut at the limit alone, and gets no auto squelch; a channel
+whose squelch is off says open on every meter, which comes to the same. A stored part with no
+`squelch_opens`, which is every part of a continuous recording, or any part of a recording in a
+mode with no gate, is cut into pieces across its whole length, the quiet point read from the part's
+WAV; a gated part's over longer than the limit is cut the same way. The pieces of one over keep its
+index in `squelch_opens`, so they share its clip, and a part with no openings numbers its pieces 1,
+2, 3. Every piece after the first carries the FLAG field `continues`, set by the daemon, so a client
+can join them back into the transmission; a continuous recording's next part, straight after the
+last, continues it too.
+
+**The cost is stated before it is spent.** Such a channel sends its provider all of its audio, 60
+minutes an hour. `ley decode speech` and `ley watch speech` on a band whose stations never stop
+transmitting (FM and AM broadcast, NOAA weather) say so in one line before anything starts and ask,
+as `ley transcribe` asks, with `--yes` to skip it; a live job's channel gets an auto squelch, so the
+band is what decides it. `ley transcribe` and the Library's Transcribe count the whole length of
+the parts nothing gated, not their openings, which they have none of.
+
 **A recording as a source.** `DecodeConfig.source_uri` names a recording
 (`ley://recordings/<id>`), and the job reads its stored audio parts as fast as the plugin accepts
 them, with no capture, channel or lease. Segments come from each part sidecar's `squelch_opens`,
@@ -316,12 +345,13 @@ Additions to existing files:
 | `control.proto` `GetStateResponse` | `repeated UsageLine usage` | 10 |
 | `decode.proto` `InputMode` | `SEGMENTED` | 3 |
 | `decode.proto` `DecoderInput` | `uint32 pre_roll_ms`, `uint32 hang_ms` (SEGMENTED only; 0 = 500 and 500) | 6, 7 |
+| `decode.proto` `DecoderInput` | `uint32 max_segment_ms` (SEGMENTED only; 0 = no limit) | 8 |
 | `decode.proto` `DecoderManifest` | `string credential_provider` (empty = none needed) | 17 |
 | `decode.proto` `DecoderManifest` | `repeated string contacts_hosts` | 18 |
 | `decode.proto` `DecodeConfig` | `string source_uri` (`ley://recordings/<id>`: read the stored parts instead of a radio) | 8 |
 | `decode.proto` `DecodeRecord` | `UsageReport usage` (set by the plugin; the daemon fills `feature` and `job_id` and adds it to the ledger) | 15 |
 | `decode.proto` `DecodeRecord` | `string clip_uri` (the part that holds this record's audio, `ley://recordings/<id>/<part>`) | 16 |
-| `decode.proto` `DecodeRecord` | `uint32 over` (1-based within the part; 0 = not segmented) | 17 |
+| `decode.proto` `DecodeRecord` | `uint32 over` (1-based within the part; the pieces of one over share it; 0 = not segmented) | 17 |
 | `bulk.proto` `Frame` | `SegmentMark segment`: `SEGMENT_MARK_UNSPECIFIED`, `SEGMENT_START`, `SEGMENT_END`; the END frame carries an empty payload | 6 |
 
 Usage from a decoder travels on its records, so the plugin framing does not change for the
