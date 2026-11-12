@@ -37,6 +37,8 @@ type decodeOptions struct {
 	// yes is --yes: start without asking, where a decoder would send every minute of a channel
 	// that never goes quiet to its provider.
 	yes bool
+	// channel is --channel as typed: a channel to borrow, or "this" for the active one.
+	channel string
 }
 
 func newDecodeCommand(app *App) *cobra.Command {
@@ -86,11 +88,19 @@ sentence: the capture it would share, the radio it would open, or the radio
 it would retune and whose channels that would pause. It starts nothing, and
 exits 1 with the reason when the job would be declined.
 
-A speech decoder sends its provider the audio while the squelch is open. On
+--channel decodes what a channel already open hears, in its mode and
+bandwidth and through its squelch, rather than making one: 'ley decode
+speech --channel this' transcribes the station you are listening to, WFM
+and all. Without it, a decoder with no frequency of its own makes its
+channel in the band plan's mode for --freq, as 'ley tune' picks one: WFM on
+broadcast FM, AM on airband.
+
+A speech decoder sends its provider the audio while the squelch is open. A
+channel whose squelch is off, one in a mode with no squelch (WFM, SSB), and
 a band whose stations never stop transmitting (FM and AM broadcast, NOAA
-weather radio) the squelch never closes, so every minute of the audio goes,
-cut into pieces of 30 s: decode says so and asks before it starts. --yes
-skips the question, and is required when stdin is not a terminal.
+weather radio) never close it, so every minute of the audio goes, cut into
+pieces of 30 s: decode says so and asks before it starts. --yes skips the
+question, and is required when stdin is not a terminal.
 
 --json prints one DecodeRecord per line (NDJSON) and nothing else on stdout;
 with --dry-run, the CapturePlan.`,
@@ -119,6 +129,12 @@ with --dry-run, the CapturePlan.`,
 				return usageErrorf("--recording decodes a stored recording, so --freq, --device, --take-over and --job do not apply; its records are kept anyway")
 			}
 			if err := checkDecodeGain(o.gain, o.recording); err != nil {
+				return err
+			}
+			if o.recording != "" && o.channel != "" {
+				return usageErrorf("--recording decodes a stored recording and --channel a channel; give one")
+			}
+			if err := checkDecodeChannel(o.channel, freq, o.device, o.takeOver, o.gain); err != nil {
 				return err
 			}
 			if freq != "" {
@@ -154,6 +170,7 @@ with --dry-run, the CapturePlan.`,
 	cmd.Flags().StringVar(&o.recording, "recording", "", "decode a stored recording instead of the radio: a job id, id prefix or ley://recordings/ URI")
 	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "say which radio the job would use and what it would pause, and start nothing")
 	cmd.Flags().BoolVarP(&o.yes, "yes", "y", false, "start without asking when every minute of the audio would leave this Mac")
+	cmd.Flags().StringVar(&o.channel, "channel", "", "decode what a channel hears, in its mode and through its squelch: an id, row number from 'ley state' or frequency, or this for the active one")
 	return cmd
 }
 
@@ -168,8 +185,10 @@ func runDecode(ctx context.Context, s *verbSession, o decodeOptions) error {
 	if o.recording != "" {
 		return runDecodeRecording(ctx, s, o)
 	}
-	if err := requireFrequency(ctx, s, o.decoder, o.freqHz); err != nil {
-		return err
+	if o.channel == "" {
+		if err := requireFrequency(ctx, s, o.decoder, o.freqHz); err != nil {
+			return err
+		}
 	}
 	s.displays = decoderDisplays(ctx, s.Client)
 	cfg := &leylinev1.DecodeConfig{
@@ -180,13 +199,18 @@ func runDecode(ctx context.Context, s *verbSession, o decodeOptions) error {
 		Keep:        o.keep,
 		Gains:       gainWrites(o.gain),
 	}
+	m := findDecoder(ctx, s, o.decoder)
+	listen, err := decodeChannelTarget(s, m, o.channel, o.freqHz, cfg)
+	if err != nil {
+		return err
+	}
 	if o.dryRun {
 		if err := s.dryRun(ctx, &leylinev1.PlanRequest{Request: &leylinev1.PlanRequest_Decode{Decode: cfg}}, false, o.takeOver); err != nil {
 			return dryRunFailure(err, func(err error) error { return decodeFailure(s, o, err) })
 		}
 		return nil
 	}
-	if ok, err := confirmOpenSquelch(ctx, s, o.decoder, o.freqHz, o.yes, rerunCommand("decode", o.decoder, o.freqHz)); !ok || err != nil {
+	if ok, err := confirmOpenSquelch(s, m, listen, o.yes, rerunCommand("decode", o.decoder, o.freqHz, o.channel)); !ok || err != nil {
 		return err
 	}
 	job, err := s.Client.StartDecode(ctx, cfg)
@@ -255,9 +279,25 @@ func runDecode(ctx context.Context, s *verbSession, o decodeOptions) error {
 	}
 }
 
-// rerunCommand is `ley <verb> <decoder> --freq <MHz>`, the start of the command a refusal names.
-func rerunCommand(verb, decoder string, hz uint64) string {
+// rerunCommand is `ley <verb> <decoder> --freq <MHz>`, or `--channel <sel>` for a borrowed
+// channel, the start of the command a refusal names.
+func rerunCommand(verb, decoder string, hz uint64, channel string) string {
+	if channel != "" {
+		return fmt.Sprintf("ley %s %s --channel %s", verb, decoder, channel)
+	}
 	return fmt.Sprintf("ley %s %s --freq %s", verb, decoder, strconv.FormatFloat(float64(hz)/1e6, 'f', -1, 64))
+}
+
+// checkDecodeChannel refuses the flags that describe a channel to make beside --channel, which
+// borrows one as it is.
+func checkDecodeChannel(channel, freq, device string, takeOver bool, gain string) error {
+	if channel == "" {
+		return nil
+	}
+	if freq != "" || device != "" || takeOver || gain != "" {
+		return usageErrorf("--channel decodes what that channel hears, in its mode and through its squelch, so --freq, --device, --take-over and --gain do not apply")
+	}
+	return nil
 }
 
 // requireFrequency refuses, before anything starts, a decoder whose manifest names no frequency

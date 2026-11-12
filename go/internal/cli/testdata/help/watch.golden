@@ -35,11 +35,16 @@ a command with the record's JSON on stdin (an explicit target takes the '='
 form, so a bare --notify can still mean the macOS one). The daemon runs the
 notifier, so it fires whether or not ley is attached.
 
+--channel watches what a channel already open hears, in its mode and
+through its squelch, as 'ley decode --channel' does; without it a decoder
+with no frequency of its own makes its channel in the band plan's mode.
+
 A speech decoder sends its provider every minute of a channel whose squelch
-never closes, which is any band whose stations never stop transmitting (FM
-and AM broadcast, NOAA weather radio), however few records the filter lets
-through: watch says so and asks before it starts. --yes skips the question,
-and is required when stdin is not a terminal.
+never closes (its squelch off, a mode with no squelch such as WFM, or a band
+whose stations never stop transmitting: FM and AM broadcast, NOAA weather
+radio), however few records the filter lets through: watch says so and asks
+before it starts. --yes skips the question, and is required when stdin is
+not a terminal.
 
 --json prints one DecodeRecord per line (NDJSON): the matches and nothing else.
 
@@ -55,6 +60,7 @@ Examples:
   ley watch speech --freq 146.52 --where 'text~net control' --notify --detach
 
 Flags:
+      --channel string            watch what a channel hears, in its mode and through its squelch: an id, row number from 'ley state' or frequency, or this for the active one
       --count int                 stop after this many matches, e.g. 5 (default: until Ctrl-C)
       --county stringArray        a county the record must name in its 'fips' field: the five-digit FIPS code (06009) or the six-digit SAME code (006009) (repeatable)
       --detach                    leave the job running after ley exits so the notifier fires unattended ('ley jobs cancel' stops it)

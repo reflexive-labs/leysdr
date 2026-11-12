@@ -38,21 +38,50 @@ func (d *Daemon) startDecode(ctx context.Context, cfg *leylinev1.DecodeConfig) (
 	if hz == 0 && len(man.GetRecipe().GetFrequenciesHz()) > 0 {
 		hz = man.GetRecipe().GetFrequenciesHz()[0]
 	}
+	// A borrowed channel (DecodeConfig.channel_id) is heard where it is, as the daemon borrows it.
+	var borrowed *leylinev1.Channel
+	if id := cfg.GetChannelId(); id != "" {
+		d.mu.Lock()
+		borrowed = d.channels[id]
+		if borrowed != nil {
+			if c := d.captures[borrowed.CaptureId]; c != nil {
+				hz = uint64(int64(c.CenterHz) + borrowed.OffsetHz)
+			}
+		}
+		d.mu.Unlock()
+		if borrowed == nil {
+			return nil, fail(ctx, errorf(leyline.CodeChannelNotFound, id, "no channel called "+quoted(id)))
+		}
+	}
 	if hz == 0 {
 		return nil, fail(ctx, errorf(leyline.CodeInvalidArgument, cfg.GetDecoder(),
 			cfg.GetDecoder()+" names no frequency of its own; say which with --freq"))
 	}
 	bw := man.GetRecipe().GetBandwidthHz()
+	mode := man.GetRecipe().GetMode()
+	if m := cfg.GetMode(); m != leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED && m != mode {
+		// The mode the request asks for, at its default bandwidth.
+		mode, bw = m, 0
+	}
 	ci := clientFrom(ctx)
 	d.touchUnary(ci)
 
 	d.mu.Lock()
-	lease, err := d.leaseChannelLocked(ci, cfg, hz, bw, man.GetRecipe().GetMode())
-	if err != nil {
-		d.mu.Unlock()
-		return nil, fail(ctx, err)
+	var lease channelLease
+	var gainNote string
+	var gainErr *leyline.Error
+	if borrowed != nil {
+		lease = channelLease{channelID: borrowed.ChannelId, captureID: borrowed.CaptureId}
+		mode = borrowed.Mode
+	} else {
+		var err *leyline.Error
+		lease, err = d.leaseChannelLocked(ci, cfg, hz, bw, mode)
+		if err != nil {
+			d.mu.Unlock()
+			return nil, fail(ctx, err)
+		}
+		gainNote, gainErr = d.decodeGainLocked(cfg, man.GetRecipe(), lease)
 	}
-	gainNote, gainErr := d.decodeGainLocked(cfg, man.GetRecipe(), lease)
 	job := &leylinev1.Job{
 		JobId:        newID("job_"),
 		State:        leylinev1.JobState_RUNNING,
@@ -68,7 +97,7 @@ func (d *Daemon) startDecode(ctx context.Context, cfg *leylinev1.DecodeConfig) (
 	fj := &fakeJob{
 		proto: job, owner: ci.GetClientId(), protocol: man.GetName(), hz: hz, keep: cfg.GetKeep(),
 		channelID: lease.channelID, captureID: lease.captureID,
-		gainNote: gainNote,
+		gainNote: gainNote, borrowed: borrowed != nil,
 	}
 	d.jobs[job.JobId] = fj
 	d.jobOrder = append(d.jobOrder, job.JobId)
@@ -79,7 +108,7 @@ func (d *Daemon) startDecode(ctx context.Context, cfg *leylinev1.DecodeConfig) (
 	if man.GetInput().GetMode() == leylinev1.InputMode_SEGMENTED {
 		// A speech job on a radio records its overs as a gated recording under its own id, as the
 		// daemon's LiveClips does, so its records name a clip `ley recordings` lists.
-		if err := d.openClipsLocked(fj, hz, man.GetRecipe().GetMode()); err != nil {
+		if err := d.openClipsLocked(fj, hz, mode); err != nil {
 			delete(d.jobs, job.JobId)
 			d.jobOrder = d.jobOrder[:len(d.jobOrder)-1]
 			d.mu.Unlock()
@@ -505,6 +534,9 @@ const (
 // finishDecode hands it back, and the terminal event goes out last. Caller holds the lock.
 func (d *Daemon) failDecodeLocked(j *fakeJob, why *leylinev1.ErrorDetail) {
 	by := &leylinev1.ClientInfo{ClientId: "daemon", Kind: "job", Label: "decode"}
+	if j.borrowed {
+		j.channelID, j.captureID = "", ""
+	}
 	if j.channelID != "" {
 		d.destroyChannelLocked(j.channelID, by)
 		j.channelID = ""
@@ -530,6 +562,9 @@ func (d *Daemon) finishDecode(jobID string) {
 		return
 	}
 	by := &leylinev1.ClientInfo{ClientId: "daemon", Kind: "job", Label: "decode"}
+	if j.borrowed {
+		j.channelID, j.captureID = "", ""
+	}
 	if j.channelID != "" {
 		d.destroyChannelLocked(j.channelID, by)
 		j.channelID = ""

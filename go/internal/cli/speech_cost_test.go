@@ -11,29 +11,101 @@ import (
 	"github.com/reflexive-labs/leysdr/go/internal/fakedaemon"
 )
 
-// The line names the band and the host, and says it is every minute, only for a SEGMENTED
-// decoder that sends its audio somewhere and only on a band that never goes quiet.
+// The line says why the squelch never closes, the channel first and the band plan after, names
+// the host and says it is every minute, only for a SEGMENTED decoder that sends its audio
+// somewhere.
 func TestOpenSquelchCost(t *testing.T) {
 	t.Parallel()
 	speech := fakedaemon.SpeechManifest()
+	const tail = ": this channel's squelch never closes, so every minute of its audio goes to api.openai.com (60 min an hour)"
+	nfm, wfm := leylinev1.DemodMode_NFM, leylinev1.DemodMode_WFM
 	for _, tc := range []struct {
 		m    *leylinev1.DecoderManifest
-		hz   uint64
+		l    decodeListen
 		want string
 	}{
-		{speech, 98_500_000, "98.500 MHz is FM broadcast, which never goes quiet: this channel's squelch never closes, so every minute of its audio goes to api.openai.com (60 min an hour)"},
-		{speech, 162_550_000, "162.550 MHz is NOAA weather, which never goes quiet: this channel's squelch never closes, so every minute of its audio goes to api.openai.com (60 min an hour)"},
-		{speech, 146_520_000, ""},
-		{fakedaemon.ScriptedSpeechManifest(), 98_500_000, ""},
-		{fakedaemon.AprsManifest(), 98_500_000, ""},
+		{speech, decodeListen{hz: 98_500_000, mode: wfm}, "98.500 MHz WFM has no squelch" + tail},
+		{speech, decodeListen{hz: 98_500_000, mode: nfm}, "98.500 MHz is FM broadcast, which never goes quiet" + tail},
+		{speech, decodeListen{hz: 162_550_000, mode: nfm}, "162.550 MHz is NOAA weather, which never goes quiet" + tail},
+		{speech, decodeListen{hz: 146_520_000, mode: nfm}, ""},
+		{speech, decodeListen{hz: 146_520_000, mode: nfm, borrowed: true, squelchOff: true}, "146.520 MHz NFM has its squelch off" + tail},
+		{speech, decodeListen{hz: 98_500_000, mode: wfm, borrowed: true, squelchOff: true}, "98.500 MHz WFM has its squelch off" + tail},
+		{speech, decodeListen{hz: 146_520_000, mode: wfm, borrowed: true}, ""},
+		{fakedaemon.ScriptedSpeechManifest(), decodeListen{hz: 98_500_000, mode: wfm}, ""},
+		{fakedaemon.AprsManifest(), decodeListen{hz: 98_500_000, mode: wfm}, ""},
 	} {
-		if got := openSquelchCost(tc.m, tc.hz); got != tc.want {
-			t.Errorf("%s on %d:\n got %q\nwant %q", tc.m.GetName(), tc.hz, got, tc.want)
+		if got := openSquelchCost(tc.m, tc.l); got != tc.want {
+			t.Errorf("%s on %+v:\n got %q\nwant %q", tc.m.GetName(), tc.l, got, tc.want)
 		}
 	}
 }
 
-const fmCostLine = "98.500 MHz is FM broadcast, which never goes quiet: this channel's squelch never closes, so every minute of its audio goes to api.openai.com (60 min an hour)"
+// --freq 98.5 makes a WFM channel, the band plan's mode there, which has no squelch.
+const fmCostLine = "98.500 MHz WFM has no squelch: this channel's squelch never closes, so every minute of its audio goes to api.openai.com (60 min an hour)"
+
+// A speech decoder, whose recipe names no frequency, makes its channel in the band plan's mode for
+// --freq, as ley tune picks one; a decoder with a recipe of its own keeps the recipe's.
+func TestDecodeTakesTheBandPlansMode(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		decoder, freq string
+		want          leylinev1.DemodMode
+	}{
+		{"speech", "98.5", leylinev1.DemodMode_WFM},
+		{"speech", "121.5", leylinev1.DemodMode_AM},
+		{"speech", "146.52", leylinev1.DemodMode_NFM},
+		{"aprs", "144.8", leylinev1.DemodMode_DEMOD_MODE_UNSPECIFIED},
+	} {
+		sock, c := transcribeHarness(t, speechLiveOpts(t))
+		if _, errOut, err := runLey(t, sock, 80, false, "", "watch", tc.decoder, "--freq", tc.freq, "--detach", "--yes"); err != nil {
+			t.Fatalf("%s at %s: %v\n%s", tc.decoder, tc.freq, err, errOut)
+		}
+		jobs, err := c.ListJobs(t.Context())
+		if err != nil || len(jobs) != 1 {
+			t.Fatalf("%s at %s: %d jobs, %v", tc.decoder, tc.freq, len(jobs), err)
+		}
+		if got := jobs[0].GetDecode().GetMode(); got != tc.want {
+			t.Errorf("%s at %s: mode %v, want %v", tc.decoder, tc.freq, got, tc.want)
+		}
+	}
+}
+
+// --channel borrows a channel already open: the job names it and makes none of its own, and the
+// cost line is the channel's.
+func TestDecodeBorrowsAChannel(t *testing.T) {
+	t.Parallel()
+	sock, c := transcribeHarness(t, speechLiveOpts(t))
+	mustRun(t, sock, "tune", "98.5", "--mode", "wfm", "--no-audio", "--persistent")
+	st, err := c.State(t.Context())
+	if err != nil || len(st.GetChannels()) != 1 {
+		t.Fatalf("tune: %v, %d channels", err, len(st.GetChannels()))
+	}
+	channel := st.GetChannels()[0]
+	_, errOut, err := runLey(t, sock, 80, false, "", "watch", "speech", "--channel", "this", "--detach")
+	if exitCode(err) != ExitUsage || !strings.Contains(err.Error(), "ley watch speech --channel this --yes") ||
+		!strings.Contains(errOut, "98.500 MHz WFM") || !strings.Contains(errOut, "never closes") {
+		t.Errorf("a WFM channel without --yes: exit %d %v\n%s", exitCode(err), err, errOut)
+	}
+	if _, errOut, err := runLey(t, sock, 80, false, "", "watch", "speech", "--channel", "this", "--detach", "--yes"); err != nil {
+		t.Fatalf("--yes: %v\n%s", err, errOut)
+	}
+	jobs, _ := c.ListJobs(t.Context())
+	if len(jobs) != 1 || jobs[0].GetDecode().GetChannelId() != channel.GetChannelId() {
+		t.Fatalf("jobs %v, want one on %s", jobs, channel.GetChannelId())
+	}
+	if st, _ := c.State(t.Context()); len(st.GetChannels()) != 1 {
+		t.Errorf("the job made a channel of its own: %v", st.GetChannels())
+	}
+	for _, args := range [][]string{
+		{"decode", "speech", "--channel", "this", "--freq", "98.5"},
+		{"watch", "speech", "--channel", "this", "--take-over"},
+		{"decode", "speech", "--channel", "this", "--recording", "job_01X"},
+	} {
+		if _, _, err := runLey(t, sock, 80, false, "", args...); exitCode(err) != ExitUsage {
+			t.Errorf("ley %v: exit %d %v, want a usage error", args, exitCode(err), err)
+		}
+	}
+}
 
 // decode and watch state the cost before a speech job on FM broadcast and ask, as transcribe
 // asks: no terminal and no --yes is a usage error that starts nothing, no at the prompt starts

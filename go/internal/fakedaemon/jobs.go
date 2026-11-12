@@ -39,9 +39,12 @@ type fakeJob struct {
 	hz        uint64
 	channelID string
 	captureID string
-	keep      bool
-	seq       uint64
-	records   []*leylinev1.DecodeRecord
+	// borrowed is a decode job on somebody's channel (DecodeConfig.channel_id): it ends without
+	// destroying the channel or letting go of the capture, which are the owner's.
+	borrowed bool
+	keep     bool
+	seq      uint64
+	records  []*leylinev1.DecodeRecord
 	// gainNote is what a decode job's detail ends with for as long as it runs, as the daemon's
 	// liveness keeps it: the gain a shared capture was left at ("; gain left at ...").
 	gainNote string

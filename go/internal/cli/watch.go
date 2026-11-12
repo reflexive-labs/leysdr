@@ -34,6 +34,8 @@ type watchOptions struct {
 	// yes is --yes: start without asking, where a decoder would send every minute of a channel
 	// that never goes quiet to its provider.
 	yes bool
+	// channel is --channel as typed: a channel to borrow, or "this" for the active one.
+	channel string
 }
 
 // filterFlags are ley watch's filter flags as typed, and the MCP watch tool's same arguments.
@@ -93,11 +95,16 @@ a command with the record's JSON on stdin (an explicit target takes the '='
 form, so a bare --notify can still mean the macOS one). The daemon runs the
 notifier, so it fires whether or not ley is attached.
 
+--channel watches what a channel already open hears, in its mode and
+through its squelch, as 'ley decode --channel' does; without it a decoder
+with no frequency of its own makes its channel in the band plan's mode.
+
 A speech decoder sends its provider every minute of a channel whose squelch
-never closes, which is any band whose stations never stop transmitting (FM
-and AM broadcast, NOAA weather radio), however few records the filter lets
-through: watch says so and asks before it starts. --yes skips the question,
-and is required when stdin is not a terminal.
+never closes (its squelch off, a mode with no squelch such as WFM, or a band
+whose stations never stop transmitting: FM and AM broadcast, NOAA weather
+radio), however few records the filter lets through: watch says so and asks
+before it starts. --yes skips the question, and is required when stdin is
+not a terminal.
 
 --json prints one DecodeRecord per line (NDJSON): the matches and nothing else.`,
 		Example: `  ley watch same --county 06009 --notify        # a weather alert for your county
@@ -123,6 +130,9 @@ and is required when stdin is not a terminal.
 				return err
 			}
 			if err := checkDecodeGain(o.gain, ""); err != nil {
+				return err
+			}
+			if err := checkDecodeChannel(o.channel, freq, o.device, o.takeOver, o.gain); err != nil {
 				return err
 			}
 			o.detach = asJob
@@ -155,6 +165,7 @@ and is required when stdin is not a terminal.
 	cmd.Flags().BoolVar(&asJob, "detach", false, "leave the job running after ley exits so the notifier fires unattended ('ley jobs cancel' stops it)")
 	cmd.Flags().BoolVar(&asJob, "job", false, "alias for --detach")
 	cmd.Flags().BoolVarP(&o.yes, "yes", "y", false, "start without asking when every minute of the audio would leave this Mac")
+	cmd.Flags().StringVar(&o.channel, "channel", "", "watch what a channel hears, in its mode and through its squelch: an id, row number from 'ley state' or frequency, or this for the active one")
 	cmd.Flags().IntVar(&o.count, "count", 0, "stop after this many matches, e.g. 5 (default: until Ctrl-C)")
 	return cmd
 }
@@ -207,14 +218,22 @@ func runWatch(ctx context.Context, s *verbSession, o watchOptions) error {
 	if name, _, err := s.Client.ResolveDecoder(ctx, o.decoder); err == nil {
 		o.decoder = name
 	}
-	if err := requireFrequency(ctx, s, o.decoder, o.freqHz); err != nil {
+	if o.channel == "" {
+		if err := requireFrequency(ctx, s, o.decoder, o.freqHz); err != nil {
+			return err
+		}
+	}
+	cfg := o.config()
+	m := findDecoder(ctx, s, o.decoder)
+	listen, err := decodeChannelTarget(s, m, o.channel, o.freqHz, cfg)
+	if err != nil {
 		return err
 	}
-	if ok, err := confirmOpenSquelch(ctx, s, o.decoder, o.freqHz, o.yes, rerunCommand("watch", o.decoder, o.freqHz)); !ok || err != nil {
+	if ok, err := confirmOpenSquelch(s, m, listen, o.yes, rerunCommand("watch", o.decoder, o.freqHz, o.channel)); !ok || err != nil {
 		return err
 	}
 	s.displays = decoderDisplays(ctx, s.Client)
-	job, err := s.Client.StartDecode(ctx, o.config())
+	job, err := s.Client.StartDecode(ctx, cfg)
 	if err != nil {
 		return decodeFailure(s, decodeOptions{decoder: o.decoder}, err)
 	}
