@@ -58,6 +58,9 @@ final class AppControlTests: XCTestCase {
             parse(#"{"id":26,"cmd":"drag","x":500,"y":60,"dx":10,"dy":2}"#),
             .command(.init(id: 26, action: .drag(.point(x: 500, y: 60), dx: 10, dy: 2))))
         XCTAssertEqual(
+            parse(#"{"id":27,"cmd":"scroll","identifier":"decoders.page","dy":-400}"#),
+            .command(.init(id: 27, action: .scroll(.identifier("decoders.page"), dy: -400))))
+        XCTAssertEqual(
             parse(#"{"id":23,"cmd":"menu","menu":"View>Show Assistant","read":true}"#),
             .command(.init(id: 23, action: .menu(path: "View>Show Assistant", read: true))))
         XCTAssertEqual(
@@ -113,6 +116,10 @@ final class AppControlTests: XCTestCase {
             #"{"id":21,"cmd":"drag","dx":5}"#,
             #"{"id":21,"cmd":"drag","identifier":"a","dx":5,"button":"right"}"#,
             #"{"id":21,"cmd":"click","identifier":"a","dx":5}"#,
+            #"{"id":22,"cmd":"scroll","identifier":"a"}"#,
+            #"{"id":22,"cmd":"scroll","identifier":"a","dy":0}"#,
+            #"{"id":22,"cmd":"scroll","identifier":"a","dx":5,"dy":5}"#,
+            #"{"id":22,"cmd":"scroll","dy":5}"#,
         ] {
             guard case .refused(let id, let reason) = parse(line) else {
                 return XCTFail("\(line) was not refused")
@@ -223,8 +230,9 @@ final class AppControlTests: XCTestCase {
         XCTAssertEqual(
             d.keys.sorted(),
             [
-                "alerts", "decoder", "detail", "header", "kind_column", "listed", "map_following",
-                "notice", "placement", "record_count", "rows", "selected_transmitter",
+                "alerts", "decoder", "detail", "header", "kind_column", "listed", "log_following",
+                "log_jump", "map_following", "notice", "placement", "record_count", "rows",
+                "selected_transmitter",
                 "start_enabled", "start_shown", "state", "tab", "table_heads", "table_rows", "tabs",
                 "transmitter_count", "transmitters", "watches",
             ])

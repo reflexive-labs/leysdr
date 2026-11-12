@@ -356,13 +356,19 @@ func (c *AppCommand) validate(path func(string) string) error {
 		need, may = []string{"seconds"}, []string{"expect_log"}
 	case "menu":
 		need, may = []string{"menu"}, []string{"read", "expect"}
-	case "hover", "click", "drag":
+	case "hover", "click", "drag", "scroll":
 		may = []string{"identifier", "x", "y"}
 		if c.Cmd == "hover" {
 			may = append(may, "expect")
 		}
 		if c.Cmd == "click" {
 			may = append(may, "button")
+		}
+		if c.Cmd == "scroll" {
+			may = append(may, "dy")
+			if c.Dy == nil || *c.Dy == 0 {
+				return errors.New("scroll needs dy, a distance in points")
+			}
 		}
 		if c.Cmd == "drag" {
 			may = append(may, "dx", "dy")

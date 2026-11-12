@@ -175,7 +175,9 @@ launch), `sizes`, and `app`, the commands in order.
 - `hover` (an identifier, or `x` and `y` in points from the window's top-left corner) rests the
   pointer and answers the tooltip, which `state.tooltip` repeats; `click` does a mouse click
   there (`button: right`) for a chart point or anything `press` cannot reach; `drag` presses
-  there, moves `dx` and `dy` points and lets go (the band rail's thumb); `increment` and
+  there, moves `dx` and `dy` points and lets go (the band rail's thumb); `scroll` is a
+  trackpad's scroll of `dy` points over the scroll view there (negative toward the top, the
+  Decoders log scrolled up); `increment` and
   `decrement` are VoiceOver's actions on an adjustable element (`rail.thumb`); `menu` presses a
   menu bar item by its titles (`View>Show Assistant`), or with `read: true` describes it, and
   takes `expect` on its `enabled`, `checked` and `items`; `relaunch` quits the app and starts

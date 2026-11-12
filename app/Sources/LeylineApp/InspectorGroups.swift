@@ -394,6 +394,8 @@ struct DisclosureRow<Content: View>: View {
     let title: String
     let hint: String?
     @Binding var open: Bool
+    /// The toggle's accessibility identifier; nil gives `inspector.<title>.toggle`.
+    var identifier: String? = nil
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -404,7 +406,8 @@ struct DisclosureRow<Content: View>: View {
                 DisclosureLabel(title: title, hint: hint, open: open)
             }
             .buttonStyle(.plain)
-            .accessibilityIdentifier("inspector.\(ViewIdentifier.slug(title)).toggle")
+            .accessibilityIdentifier(
+                identifier ?? "inspector.\(ViewIdentifier.slug(title)).toggle")
             if open {
                 content.padding(.horizontal, 16).padding(.bottom, 10)
             }

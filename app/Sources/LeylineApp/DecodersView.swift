@@ -406,9 +406,10 @@ struct DecoderTabSwitch: View {
 
 // MARK: The log
 
-/// The alerts in effect, then every record newest first: its time, its transmitter, its kind and
-/// its line. The kind column is as wide as the longest kind in the log
-/// (`Theme.Layout.decoderKindColumn`). A click shows the record in the inspector.
+/// The alerts in effect, then every record oldest at the top and newest at the bottom, as `ley
+/// decode` prints them: its time, its transmitter, its kind and its line. The kind column is as
+/// wide as the longest kind in the log (`Theme.Layout.decoderKindColumn`). A click shows the
+/// record in the inspector.
 struct DecoderLog: View {
     @Environment(AppSession.self) private var session
 
@@ -446,23 +447,105 @@ struct DecoderLog: View {
                 .font(Theme.Font.label).foregroundStyle(Theme.inkTertiary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(entries.enumerated()), id: \.element.id) { i, e in
-                            DecoderLogRow(
-                                entry: e, name: d.name(of: e.record.deviceID),
-                                summary: d.summary(e.record), kindWidth: kindWidth,
-                                selected: d.selectedRecord == e.id
-                            )
-                            .contentShape(Rectangle())
-                            .onTapGesture { d.selectedRecord = e.id }
-                            .pressableGroup("decoders.record.\(i)") { d.selectedRecord = e.id }
-                        }
-                    }
-                    .padding(.vertical, 6)
-                }
+                // Its own view per decoder, so another decoder's log opens at the bottom too.
+                DecoderLogRows(entries: entries, kindWidth: kindWidth)
+                    .id(d.selectedName)
             }
         }
+    }
+}
+
+/// The log's rows in a scroll view that follows the newest (`LogFollowing`): it opens at the
+/// bottom and scrolls to each record that arrives until the person scrolls up; then what arrives
+/// waits below, counted on the jump button, and the rows they read stay put, held by the top row's
+/// id (`scrollPosition`) when the oldest drop off at the page's limit. Back at the bottom, by hand
+/// or by the button, it follows again. `decoders.record.<n>` counts up from the newest, the
+/// bottom row, which is the one always drawn while the log follows.
+struct DecoderLogRows: View {
+    /// Newest first, as `RecordLog` holds them; drawn the other way up.
+    let entries: [RecordEntry]
+    let kindWidth: CGFloat
+    @Environment(AppSession.self) private var session
+    @State private var position = ScrollPosition(idType: String.self)
+    /// Whether a hand is on the scroll view: a wheel, a trackpad or the scroller.
+    @State private var personScrolling = false
+
+    var body: some View {
+        let d = session.decoders
+        let n = entries.count
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(Array(entries.reversed().enumerated()), id: \.element.id) { j, e in
+                    DecoderLogRow(
+                        entry: e, name: d.name(of: e.record.deviceID),
+                        summary: d.summary(e.record), kindWidth: kindWidth,
+                        selected: d.selectedRecord == e.id
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture { d.selectedRecord = e.id }
+                    .pressableGroup("decoders.record.\(n - 1 - j)") { d.selectedRecord = e.id }
+                }
+            }
+            .scrollTargetLayout()
+            .padding(.vertical, 6)
+        }
+        .scrollPosition($position)
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        .stageRegion(.records)
+        .onScrollPhaseChange { _, phase in
+            personScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+        }
+        .onScrollGeometryChange(for: LogFollowing.Geometry.self) { g in
+            LogFollowing.Geometry(
+                offset: g.contentOffset.y, contentHeight: g.contentSize.height,
+                viewportHeight: g.containerSize.height)
+        } action: { old, new in
+            if d.logFollowing.moved(from: old, to: new, handOn: personScrolling) {
+                log("decoders", d.logFollowing.following ? "log following" : "log scrolled up")
+            }
+        }
+        .onChange(of: entries.first?.id) { old, _ in
+            let k = LogFollowing.arrivals(entries.map(\.id), since: old)
+            _ = d.logFollowing.arrived(k)
+            // Never under a hand: the gesture decides once it moves.
+            if d.logFollowing.following, !personScrolling { position.scrollTo(edge: .bottom) }
+        }
+        .onChange(of: n) {
+            // The history landed above: still at the bottom while following.
+            if d.logFollowing.following, !personScrolling { position.scrollTo(edge: .bottom) }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if d.logFollowing.showsJump {
+                LogJumpButton(words: d.logFollowing.jumpWords) {
+                    d.logFollowing.jump()
+                    position.scrollTo(edge: .bottom)
+                    log("decoders", "log jumped to the newest")
+                }
+                .padding(.trailing, Theme.Layout.pageInset).padding(.bottom, 10)
+            }
+        }
+        .onAppear { d.logFollowing = LogFollowing() }
+    }
+}
+
+/// `↓ 3 new` in the log's corner while it does not follow, `↓ Latest` with nothing new below: a
+/// quiet chip on `raised`, which scrolls to the bottom and follows again.
+struct LogJumpButton: View {
+    let words: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(words, systemImage: "arrow.down")
+                .font(Theme.Font.footnote).foregroundStyle(Theme.inkSecondary)
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(Theme.raised, in: Capsule())
+                .overlay(Capsule().strokeBorder(Theme.border, lineWidth: 1))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("Scroll to the newest record and follow again")
+        .accessibilityIdentifier("decoders.log.jump")
     }
 }
 

@@ -213,6 +213,8 @@ func TestLoadChecksRejects(t *testing.T) {
 		"drag no distance":   "fixtures: [{name: x}]\n    app: [{cmd: drag, identifier: a, dx: 0}]",
 		"drag button":        "fixtures: [{name: x}]\n    app: [{cmd: drag, identifier: a, dx: 4, button: right}]",
 		"dx on click":        "fixtures: [{name: x}]\n    app: [{cmd: click, identifier: a, dx: 4}]",
+		"scroll no distance": "fixtures: [{name: x}]\n    app: [{cmd: scroll, identifier: a}]",
+		"dx on scroll":       "fixtures: [{name: x}]\n    app: [{cmd: scroll, identifier: a, dx: 4, dy: 4}]",
 		"zoom a factor":      "fixtures: [{name: x}]\n    stage: {zoom: 4}\n    app: [{cmd: state}]",
 		"quit":               "fixtures: [{name: x}]\n    app: [{cmd: quit}]",
 		"snapshot sans name": "fixtures: [{name: x}]\n    app: [{cmd: snapshot}]",

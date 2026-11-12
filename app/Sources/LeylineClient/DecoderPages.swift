@@ -220,6 +220,17 @@ public enum DecoderPages {
         return age == "now" ? "just now" : age + " ago"
     }
 
+    /// How many of `hexLines` the inspector's open Raw group shows before "Show all": 64 bytes.
+    public static let rawLinesShown = 8
+
+    /// The hex lines the open Raw group shows: all of them, or with `all` false the first
+    /// `rawLinesShown`, and whether some were left for "Show all".
+    public static func rawShown(_ d: Data, all: Bool) -> (lines: [String], cut: Bool) {
+        let lines = hexLines(d)
+        guard !all, lines.count > rawLinesShown else { return (lines, false) }
+        return (Array(lines.prefix(rawLinesShown)), true)
+    }
+
     /// A raw payload as hex, eight bytes a line in pairs: `8d 48 40 d6 20 2c 5e 76`. Sixteen do
     /// not fit the inspector's width in its type, and a line that wraps splits a byte's row.
     public static func hexLines(_ d: Data) -> [String] {
@@ -338,9 +349,11 @@ public enum DecoderPages {
     /// A record's fields for the inspector: those the manifest hints in its order first, then the
     /// rest by name; a field that does not print (an empty text, a false flag) is left out. A
     /// number keeps up to `DisplayTemplate.maxDecimals` decimals, because the inspector is where
-    /// the whole value is read.
+    /// the whole value is read. A field whose value as printed is the record's whole `summary`,
+    /// the line above the fields (speech's `{text}`), is left out, so it is not read twice.
     public static func fieldRows(
-        _ fields: [String: Leyline_V1_FieldValue], manifest: Leyline_V1_DecoderManifest
+        _ fields: [String: Leyline_V1_FieldValue], manifest: Leyline_V1_DecoderManifest,
+        summary: String = ""
     ) -> [FieldRow] {
         let hinted = manifest.fields.map(\.name)
         let rest = fields.keys.filter { !hinted.contains($0) }.sorted()
@@ -359,6 +372,7 @@ public enum DecoderPages {
             } else {
                 value = v + " " + unit
             }
+            if !summary.isEmpty, value == summary { return nil }
             let label = hint?.label ?? ""
             return FieldRow(
                 name: name, label: label.isEmpty ? name : label, value: value,

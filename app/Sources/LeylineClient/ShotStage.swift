@@ -244,6 +244,9 @@ public enum ShotRegion: String, Sendable, CaseIterable, Codable {
     /// The Decoders page's counts beside its tabs (`40 records · 5 transmitters`), which vary by
     /// the records that land before a terminal's `ley jobs cancel` does. A check may mask it.
     case counts
+    /// The Decoders log's rows, which differ from one run to the next where a terminal's `ley
+    /// jobs cancel` lands. A check may mask it: the jump button in its corner stays outside.
+    case records
     /// The Decoders page's map, whose markers move with the aircraft between one run and the
     /// next. A check may mask it: the tree keeps each marker's id and name.
     case map

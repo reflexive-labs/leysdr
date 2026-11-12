@@ -308,6 +308,18 @@ import LeylineClient
                     post([.leftMouseUp], at: CGPoint(x: p.x + dx, y: p.y + dy), in: window)
                     try? await Task.sleep(for: .milliseconds(Self.keySettleMilliseconds))
                     return ControlAnswer(id: c.id, ok: true)
+                case .scroll(let target, let dy):
+                    guard let window = staging.window else { return noWindow }
+                    await AccessibilityTree.ready(window)
+                    guard let p = Self.point(target, in: window) else {
+                        return ControlAnswer(id: c.id, ok: false, error: Self.noTarget(target))
+                    }
+                    hoverHelp = nil
+                    guard let why = await scroll(dy: dy, at: p, in: window) else {
+                        try? await Task.sleep(for: .milliseconds(Self.keySettleMilliseconds))
+                        return ControlAnswer(id: c.id, ok: true)
+                    }
+                    return ControlAnswer(id: c.id, ok: false, error: why)
                 case .menu(let path, let read):
                     switch AppMenus.item(path: path) {
                     case .failure(let why):
@@ -403,6 +415,54 @@ import LeylineClient
                 else { continue }
                 NSApp.postEvent(event, atStart: false)
             }
+        }
+
+        /// A trackpad's scroll of `dy` points toward the content's bottom, handed to the scroll view
+        /// under `p` (from the window's top-left corner) as its own wheel events: began, the
+        /// distance in `dragSteps` changes, ended, so SwiftUI sees a hand on it
+        /// (`onScrollPhaseChange`). The events are made, never posted to the system, so nothing
+        /// reaches another app. Returns why it could not, or nil.
+        private func scroll(dy: Double, at p: CGPoint, in window: NSWindow) async -> String? {
+            guard let content = window.contentView else { return "the window has no content" }
+            let local = NSPoint(x: p.x, y: window.frame.height - p.y)
+            // SwiftUI's rows are not views of their own, so a hit test finds the hosting view:
+            // the innermost scroll view whose frame holds the point is the one a wheel there
+            // reaches.
+            guard let scrollView = Self.innermostScrollView(in: content, at: local) else {
+                return "no scroll view is under the point"
+            }
+            // A wheel's pixel delta is positive toward the content's top.
+            let step = -dy / Double(Self.dragSteps)
+            let phases: [(CGScrollPhase, Double)] =
+                [(.began, 0)] + Array(repeating: (.changed, step), count: Self.dragSteps)
+                + [(.ended, 0)]
+            for (phase, delta) in phases {
+                guard
+                    let cg = CGEvent(
+                        scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
+                        wheel1: Int32(delta.rounded()), wheel2: 0, wheel3: 0)
+                else { return "no scroll event could be made" }
+                cg.setIntegerValueField(.scrollWheelEventScrollPhase, value: Int64(phase.rawValue))
+                cg.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: delta)
+                cg.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: delta)
+                cg.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+                guard let event = NSEvent(cgEvent: cg) else {
+                    return "no scroll event could be made"
+                }
+                scrollView.scrollWheel(with: event)
+                try? await Task.sleep(for: .milliseconds(Self.dragStepMilliseconds))
+            }
+            return nil
+        }
+
+        /// The innermost visible scroll view under `p`, in the window's coordinates.
+        private static func innermostScrollView(in view: NSView, at p: NSPoint) -> NSScrollView? {
+            for sub in view.subviews.reversed() where !sub.isHidden {
+                guard sub.convert(sub.bounds, to: nil).contains(p) else { continue }
+                if let inner = innermostScrollView(in: sub, at: p) { return inner }
+                if let s = sub as? NSScrollView { return s }
+            }
+            return nil
         }
 
         /// The window a key goes to: the sheet over the main window, else its open popover (whose
@@ -574,6 +634,8 @@ import LeylineClient
             out.transmitters = d.listedTransmitters.map { d.name(of: $0.deviceID) }
             out.transmitterCount = d.table.entities.count
             out.mapFollowing = d.framing.following
+            out.logFollowing = d.logFollowing.following
+            out.logJump = d.logFollowing.showsJump ? d.logFollowing.jumpWords : nil
             let columns = DecoderPages.tableColumns(d.table.display)
             out.tableHeads = DecoderPages.tableHeads(columns, manifest: m)
             out.tableRows = d.listedTransmitters.map { e in

@@ -31,6 +31,14 @@ What changed for someone using Leyline, newest first. Each released version has 
   audio, 60 minutes an hour. `ley decode speech` and `ley watch speech` on a channel with its
   squelch off, in WFM, or on FM or AM broadcast or NOAA weather say so before they start and ask;
   `--yes` skips the question.
+- **The Decoders log reads top to bottom.** The newest record is at the bottom, as `ley decode`
+  prints it, and the log follows it. Scroll up and it stops: new records wait below without
+  moving what you are reading, counted on a **↓ N new** button in the corner that takes you back
+  down. Scrolling back to the bottom follows again.
+- **The Decoders inspector says each thing once.** A field the record's line already shows whole,
+  such as speech's text, is no longer listed again under Fields, and the description under each
+  field has moved into its label's tooltip. The raw bytes are folded away under **Raw · N
+  bytes**, which stays open once you open it; a long payload shows eight lines and **Show all**.
 
 ## 0.3.1 (2026-11-04)
 

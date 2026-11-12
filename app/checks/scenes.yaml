@@ -42,6 +42,9 @@
 #   {cmd: drag, identifier: I, dx: DX}    the left button pressed there (or at x and y), moved dx
 #                                         and dy points in steps, and released: the band rail's
 #                                         thumb, or anything a press that moves reaches
+#   {cmd: scroll, identifier: I, dy: DY}  a trackpad's scroll over the scroll view there (or at x
+#                                         and y), dy points toward the bottom of its content,
+#                                         negative toward the top, in steps with its phases
 #   {cmd: menu, menu: "View>Show Assistant"}
 #                                         presses the menu bar item; read: true only describes it;
 #                                         expect checks the answer's title, enabled, checked and
@@ -1867,7 +1870,13 @@ scenes:
       - {cmd: press, identifier: decoders.transmitter.n0call-3}
       - {cmd: state, expect: {decoders.selected_transmitter: N0CALL-3}}
       - {cmd: snapshot, name: transmitter}
-      - {cmd: hover, identifier: decoders.inspector.field.destination.name, expect: {tooltip: destination}}
+      - {cmd: hover, identifier: decoders.inspector.field.destination.name, expect: {tooltip: "destination: AX.25 destination address, usually the software's identifier"}}
+      - {cmd: press, identifier: decoders.inspector.raw.toggle}
+      - {cmd: snapshot, name: raw}
+      - {cmd: press, identifier: decoders.transmitter.n0call-1}
+      - {cmd: snapshot, name: raw-kept}
+      - {cmd: press, identifier: decoders.inspector.raw.toggle}
+      - {cmd: press, identifier: decoders.transmitter.n0call-3}
       - {cmd: press, identifier: decoders.inspector.name}
       - {cmd: type, text: Fill-in digi}
       - {cmd: key, keys: return}
@@ -1972,6 +1981,82 @@ scenes:
       - {cmd: state, expect: {alert: null, decoders.state: Failed, decoders.detail: "NESDR SMArt v5 cannot tune to 1090.000 MHz (a file radio plays what it recorded)", decoders.header: null, decoders.start_shown: true, decoders.start_enabled: false, decoders.record_count: 0, tuned_hz: 1090600000}}
       - {cmd: snapshot, name: declined}
       - {cmd: ax, name: declined}
+
+  # The log follows its newest record (LogFollowing) on scene_adsb, whose 150 records or so fill
+  # more than the page: it opens at the bottom, following. A trackpad's scroll up stops it and
+  # brings "Latest" in the log's corner; a click on a row there changes nothing; Start then
+  # decodes live and what arrives waits below, counted on the button, without moving the rows
+  # read (by eye: `scrolled` and `waiting` show the same rows). The button goes back to the
+  # bottom and follows again, as records keep landing; a scroll back down by hand resumes too.
+  # The rows differ with where `ley jobs cancel` lands, so the pictures mask them, the counts
+  # and the inspector; the jump button sits outside the rows' region and is compared.
+  - name: decoders-log-follow
+    covers: [DecodersView.swift, LogFollowing.swift, DecoderSession.swift, Control.swift,
+      AppControl.swift]
+    threshold: 1.5
+    fixtures: [{name: scene_adsb}]
+    clock: "19:42"
+    steps:
+      - ley: [decode, adsb, --job, --count, "150"]
+      - ley: [jobs, cancel, job_]
+    stage:
+      place: decoders
+      inspector: true
+      decoder: adsb
+      decoder_tab: log
+      settle: 2
+    app:
+      - {cmd: state, expect: {place: decoders, decoders.decoder: adsb, decoders.tab: log, decoders.log_following: true, decoders.log_jump: null}}
+      - {cmd: snapshot, name: following, mask: [counts, records, inspector]}
+      - {cmd: scroll, identifier: decoders.page, dy: -600}
+      - {cmd: state, expect: {decoders.log_following: false, decoders.log_jump: Latest}, expect_log: "log scrolled up"}
+      - {cmd: snapshot, name: scrolled, mask: [counts, records, inspector]}
+      - {cmd: hover, identifier: decoders.log.jump, expect: {tooltip: Scroll to the newest record and follow again}}
+      - {cmd: press, identifier: decoders.record.40}
+      - {cmd: state, expect: {decoders.log_following: false, decoders.log_jump: Latest}}
+      - {cmd: press, identifier: decoders.page.start}
+      - {cmd: wait, seconds: 4, expect_log: "started: adsb at 1090000000 Hz, kept"}
+      - {cmd: state, expect: {decoders.state: Running, decoders.log_following: false}}
+      - {cmd: snapshot, name: waiting, mask: [counts, records, inspector, decoders]}
+      - {cmd: press, identifier: decoders.log.jump}
+      - {cmd: state, expect: {decoders.log_following: true, decoders.log_jump: null}, expect_log: "log jumped to the newest"}
+      - {cmd: wait, seconds: 2}
+      - {cmd: state, expect: {decoders.log_following: true, decoders.log_jump: null}}
+      - {cmd: snapshot, name: resumed, mask: [counts, records, inspector]}
+      - {cmd: scroll, identifier: decoders.page, dy: -400}
+      - {cmd: state, expect: {decoders.log_following: false}}
+      - {cmd: scroll, identifier: decoders.page, dy: 100000}
+      - {cmd: state, expect: {decoders.log_following: true, decoders.log_jump: null}, expect_log: "log following"}
+      - {cmd: press, identifier: decoders.page.stop}
+
+  # A speech record in the Decoders inspector on scene_net, transcribed by the scripted engine
+  # (speech): `ley decode speech` keeps a job until two overs are heard. The log reads oldest
+  # first, so the newest over is the bottom row (decoders.record.0); its inspector has the over's
+  # words as its line and does not list the text field again under Fields, a field's label has
+  # its name and description as its tooltip with no footnote under it, and the raw bytes are a
+  # closed disclosure that opens to them. No tree is kept: the inspector's job id is new each run.
+  - name: decoders-speech
+    covers: [DecoderInspector.swift, DecodersView.swift, DecoderPages.swift]
+    threshold: 1.5
+    fixtures: [{name: scene_net}]
+    clock: "19:42"
+    speech: {script: ../../site/shots/net-speech.txt}
+    steps:
+      - ley: [decode, speech, --freq, "147.18", --job, --count, "2"]
+      - ley: [jobs, cancel, job_]
+    stage:
+      place: decoders
+      inspector: true
+      decoder: speech
+      decoder_tab: log
+      settle: 2
+    app:
+      - {cmd: state, expect: {place: decoders, decoders.decoder: speech, decoders.record_count: 2, decoders.log_following: true, decoders.log_jump: null}}
+      - {cmd: press, identifier: decoders.record.0}
+      - {cmd: hover, identifier: decoders.inspector.field.model.name, expect: {tooltip: "model: the model that produced the text"}}
+      - {cmd: snapshot, name: record}
+      - {cmd: press, identifier: decoders.inspector.raw.toggle}
+      - {cmd: snapshot, name: raw}
 
   # Decoding seen from the radio (docs/plans/decoders-app.md, DA-9) on scene_aprs. With no
   # decoder running the Radio sidebar has no decoder row. A terminal starts APRS as a kept job

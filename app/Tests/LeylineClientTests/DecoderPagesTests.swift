@@ -223,6 +223,38 @@ final class DecoderPagesTests: XCTestCase {
         XCTAssertEqual(rows[0].description, "speed over ground")
     }
 
+    /// The open Raw group shows eight lines, 64 bytes, and leaves the rest for "Show all".
+    func testRawShowsEightLinesUntilShowAll() {
+        let short = Data(repeating: 0xab, count: 64)
+        XCTAssertEqual(DecoderPages.rawShown(short, all: false).lines.count, 8)
+        XCTAssertFalse(DecoderPages.rawShown(short, all: false).cut)
+        let long = Data(repeating: 0xab, count: 65)
+        XCTAssertEqual(DecoderPages.rawShown(long, all: false).lines.count, 8)
+        XCTAssertTrue(DecoderPages.rawShown(long, all: false).cut)
+        XCTAssertEqual(DecoderPages.rawShown(long, all: true).lines.count, 9)
+        XCTAssertFalse(DecoderPages.rawShown(long, all: true).cut)
+    }
+
+    /// Speech's summary is `{text}`: the text is the line above the fields, so it is not listed
+    /// again. A field that is only part of the summary stays.
+    func testAFieldTheSummaryAlreadyShowsIsLeftOut() {
+        let fields: [String: Leyline_V1_FieldValue] = [
+            "text": .with { $0.text = "N0CALL, checking in" },
+            "name": .with { $0.text = "EVER GIVEN" },
+        ]
+        let rows = DecoderPages.fieldRows(
+            fields, manifest: manifest(), summary: "N0CALL, checking in")
+        XCTAssertEqual(rows.map(\.name), ["name"])
+        XCTAssertEqual(
+            DecoderPages.fieldRows(
+                fields, manifest: manifest(), summary: "EVER GIVEN · N0CALL, checking in"
+            ).map(\.name), ["name", "text"])
+        XCTAssertEqual(
+            DecoderPages.fieldRows(
+                ["text": .with { $0.text = "hello" }], manifest: manifest(), summary: "hello"),
+            [], "nothing left, no Fields group")
+    }
+
     func testColumnHeadsAreLeyTracks() {
         XCTAssertEqual(DecoderPages.columnHead("sog_kn", manifest: manifest()), "SOG (kn)")
         XCTAssertEqual(DecoderPages.columnHead("cog_deg", manifest: manifest()), "COG (°)")

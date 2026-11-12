@@ -171,7 +171,7 @@ type Table struct {
 var regionNames = map[string]bool{
 	"window": true, "toolbar": true, "sidebar": true, "inspector": true, "waterfall": true, "library": true, "notice": true, "parts": true,
 	"spectrum": true, "readings": true, "transmissions": true, "heard": true, "log_day": true,
-	"squelch": true, "decoders": true, "counts": true, "map": true,
+	"squelch": true, "decoders": true, "counts": true, "map": true, "records": true,
 }
 
 // Load reads and validates a scenes file.

@@ -4,8 +4,8 @@
 // shows it, its id and a field that names it in `labels.json` (`LabelStore`, the file `ley track`
 // and `ley records` read too), how often and when it was heard and where it was last; then the
 // record: its time, the signal the daemon measured, its line, every field with the manifest's
-// unit and description, and the raw payload as hex. With nothing selected, the decoder itself:
-// what it is, where it listens and what it sends. Nothing here decodes (AGENTS.md, invariant 2):
+// unit but one the line already shows whole, and the raw payload as hex behind a disclosure.
+// With nothing selected, the decoder itself: what it is, where it listens and what it sends. Nothing here decodes (AGENTS.md, invariant 2):
 // every value is the record's, printed by the template rules.
 
 import LeylineClient
@@ -147,60 +147,46 @@ struct RecordSection: View {
                 .padding(.top, 4)
             }
             .padding(.horizontal, 16).padding(.vertical, 14)
-            let fields = DecoderPages.fieldRows(r.fields, manifest: manifest)
+            // A field the line above already shows whole (speech's text) is not listed again.
+            let fields = DecoderPages.fieldRows(r.fields, manifest: manifest, summary: d.summary(r))
             if !fields.isEmpty {
                 Rectangle().fill(Theme.hairline).frame(height: 1)
                 VStack(alignment: .leading, spacing: 8) {
                     ColumnHeadText(text: "Fields")
                     ForEach(fields) { f in
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                                // The field's label (its name when the hint has none); one
-                                // longer than its column is cut in the middle, so both ends
-                                // still read, with a gap before the value. The tooltip is the
-                                // field's name, which `ley watch --where` takes.
-                                Text(f.label).font(Theme.Font.label)
-                                    .foregroundStyle(Theme.inkMuted).lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .padding(.trailing, Theme.Layout.decoderFieldNameGap)
-                                    .frame(
-                                        width: Theme.Layout.decoderFieldLabelWidth,
-                                        alignment: .leading
-                                    )
-                                    .help(f.name)
-                                    .accessibilityIdentifier(
-                                        "decoders.inspector.field.\(ViewIdentifier.slug(f.name)).name"
-                                    )
-                                Text(f.value).font(Theme.Font.value)
-                                    .foregroundStyle(Theme.inkSecondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .textSelection(.enabled)
-                                Spacer(minLength: 0)
-                            }
-                            if !f.description.isEmpty {
-                                Text(f.description).font(Theme.Font.footnote)
-                                    .foregroundStyle(Theme.inkFaint)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .padding(.leading, Theme.Layout.decoderFieldLabelWidth)
-                            }
+                        HStack(alignment: .firstTextBaseline, spacing: 0) {
+                            // The field's label (its name when the hint has none); one longer
+                            // than its column is cut in the middle, so both ends still read,
+                            // with a gap before the value. The tooltip is the field's name,
+                            // which `ley watch --where` takes, and the manifest's description.
+                            Text(f.label).font(Theme.Font.label)
+                                .foregroundStyle(Theme.inkMuted).lineLimit(1)
+                                .truncationMode(.middle)
+                                .padding(.trailing, Theme.Layout.decoderFieldNameGap)
+                                .frame(
+                                    width: Theme.Layout.decoderFieldLabelWidth,
+                                    alignment: .leading
+                                )
+                                .help(
+                                    f.description.isEmpty ? f.name : "\(f.name): \(f.description)"
+                                )
+                                .accessibilityIdentifier(
+                                    "decoders.inspector.field.\(ViewIdentifier.slug(f.name)).name"
+                                )
+                            Text(f.value).font(Theme.Font.value)
+                                .foregroundStyle(Theme.inkSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                            Spacer(minLength: 0)
                         }
                         .identifiedGroup("decoders.inspector.field.\(ViewIdentifier.slug(f.name))")
                     }
                 }
                 .padding(.horizontal, 16).padding(.vertical, 14)
             }
-            let hex = DecoderPages.hexLines(r.raw)
-            if !hex.isEmpty {
+            if !r.raw.isEmpty {
                 Rectangle().fill(Theme.hairline).frame(height: 1)
-                VStack(alignment: .leading, spacing: 8) {
-                    ColumnHeadText(text: "Raw · \(r.raw.count) bytes")
-                    Text(hex.joined(separator: "\n")).font(Theme.Font.valueSmall)
-                        .foregroundStyle(Theme.inkTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                        .accessibilityIdentifier("decoders.inspector.raw")
-                }
-                .padding(.horizontal, 16).padding(.vertical, 14)
+                RawBytes(raw: r.raw, recordID: entry.id)
             }
         }
     }
@@ -220,6 +206,42 @@ struct RecordSection: View {
         }
         if !r.jobID.isEmpty { out.append(PartTableRow(label: "Job", value: r.jobID)) }
         return out
+    }
+}
+
+/// `▸ Raw · 14 bytes`, the record's payload as hex: a disclosure like the Radio inspector's,
+/// closed until the person opens it and then open for every record they show (`rawOpen`). Open,
+/// it shows `DecoderPages.rawLinesShown` lines and "Show all N bytes" for the rest, which holds
+/// for this record only.
+struct RawBytes: View {
+    let raw: Data
+    let recordID: String
+    @Environment(AppSession.self) private var session
+    @State private var all = false
+
+    var body: some View {
+        @Bindable var d = session.decoders
+        let (hex, cut) = DecoderPages.rawShown(raw, all: all)
+        DisclosureRow(
+            title: "Raw · \(raw.count) bytes", hint: nil, open: $d.rawOpen,
+            identifier: "decoders.inspector.raw.toggle"
+        ) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(hex.joined(separator: "\n"))
+                    .font(Theme.Font.valueSmall)
+                    .foregroundStyle(Theme.inkTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .accessibilityIdentifier("decoders.inspector.raw")
+                if cut {
+                    Button("Show all \(raw.count) bytes") { all = true }
+                        .buttonStyle(.plain)
+                        .font(Theme.Font.footnote).foregroundStyle(Theme.inkMuted)
+                        .accessibilityIdentifier("decoders.inspector.raw.all")
+                }
+            }
+        }
+        .onChange(of: recordID) { all = false }
     }
 }
 

@@ -149,6 +149,9 @@ public struct ControlCommand: Sendable, Equatable {
         /// The left button pressed there, moved `dx` and `dy` points in steps, and released: a
         /// drag, for the band rail's thumb and anything else a press that moves reaches.
         case drag(PointTarget, dx: Double, dy: Double)
+        /// A trackpad's two-finger scroll over the scroll view there, `dy` points toward the
+        /// bottom of its content (negative toward the top), in steps with the gesture's phases.
+        case scroll(PointTarget, dy: Double)
         /// A menu bar item by its titles (`View>Show Assistant`): pressed, or with `read` only
         /// described.
         case menu(path: String, read: Bool)
@@ -156,7 +159,7 @@ public struct ControlCommand: Sendable, Equatable {
         case quit
     }
 
-    /// Where a `hover`, a `click` or a `drag` goes: the centre of the element with an identifier, or a
+    /// Where a `hover`, a `click`, a `drag` or a `scroll` goes: the centre of the element with an identifier, or a
     /// point in points from the window's top-left corner, toolbar included, as the regions and
     /// the `ax` frames are measured.
     public enum PointTarget: Sendable, Equatable {
@@ -289,7 +292,7 @@ public struct ControlCommand: Sendable, Equatable {
                 return .failure(Refusal(reason: "pick needs an identifier and the item's text"))
             }
             return .success(.pick(identifier: identifier, item: item))
-        case "hover", "click", "drag":
+        case "hover", "click", "drag", "scroll":
             let target: PointTarget
             switch (line.identifier, line.x, line.y) {
             case (let id?, nil, nil) where !id.isEmpty: target = .identifier(id)
@@ -305,6 +308,15 @@ public struct ControlCommand: Sendable, Equatable {
                         Refusal(reason: "drag needs dx or dy, a distance in points, and no button"))
                 }
                 return .success(.drag(target, dx: dx, dy: dy))
+            }
+            if cmd == "scroll" {
+                guard let dy = line.dy, dy.isFinite, dy != 0, line.dx == nil, line.button == nil
+                else {
+                    return .failure(
+                        Refusal(
+                            reason: "scroll needs dy, a distance in points, and no dx or button"))
+                }
+                return .success(.scroll(target, dy: dy))
             }
             guard line.dx == nil, line.dy == nil else {
                 return .failure(Refusal(reason: "\(cmd) takes no dx or dy"))
@@ -646,10 +658,15 @@ public struct ControlDecoders: Sendable, Equatable, Codable {
     /// Whether Start shows (no job runs) and whether it is enabled.
     public var startShown: Bool
     public var startEnabled: Bool
-    /// How many records the page holds, and the log's first rows as `N0CALL-3 position:
-    /// <summary>`, newest first, at most twenty.
+    /// How many records the page holds, and the log's newest rows as `N0CALL-3 position:
+    /// <summary>`, newest first, at most twenty: the bottom row first, as `decoders.record.<n>`
+    /// counts them.
     public var recordCount: Int
     public var rows: [String]
+    /// Whether the log follows its newest record (false once the person scrolled up, until they
+    /// are back at the bottom), and the jump button's words while it shows: `3 new`, `Latest`.
+    public var logFollowing: Bool
+    public var logJump: String?
     /// The transmitters as the table orders them, by the name each shows, and the selected one
     /// by `device_id`.
     public var transmitters: [String]
@@ -686,6 +703,8 @@ public struct ControlDecoders: Sendable, Equatable, Codable {
         case selectedTransmitter = "selected_transmitter"
         case transmitterCount = "transmitter_count"
         case mapFollowing = "map_following"
+        case logFollowing = "log_following"
+        case logJump = "log_jump"
     }
 
     public init(
@@ -695,8 +714,11 @@ public struct ControlDecoders: Sendable, Equatable, Codable {
         rows: [String] = [], transmitters: [String] = [], selectedTransmitter: String? = nil,
         alerts: [String] = [], notice: String? = nil, header: String? = nil,
         tableHeads: [String] = [], tableRows: [String] = [], kindColumn: String? = nil,
-        watches: [String] = [], transmitterCount: Int = 0, mapFollowing: Bool = true
+        watches: [String] = [], transmitterCount: Int = 0, mapFollowing: Bool = true,
+        logFollowing: Bool = true, logJump: String? = nil
     ) {
+        self.logFollowing = logFollowing
+        self.logJump = logJump
         self.watches = watches
         self.transmitterCount = transmitterCount
         self.mapFollowing = mapFollowing
@@ -738,6 +760,8 @@ public struct ControlDecoders: Sendable, Equatable, Codable {
         try c.encode(selectedTransmitter, forKey: .selectedTransmitter)
         try c.encode(transmitterCount, forKey: .transmitterCount)
         try c.encode(mapFollowing, forKey: .mapFollowing)
+        try c.encode(logFollowing, forKey: .logFollowing)
+        try c.encode(logJump, forKey: .logJump)
         try c.encode(alerts, forKey: .alerts)
         try c.encode(notice, forKey: .notice)
         try c.encode(header, forKey: .header)

@@ -39,6 +39,12 @@ final class DecoderSession {
     /// The record the inspector shows, by `record_id`: a click on a log row. It wins over the
     /// transmitter until another transmitter is chosen.
     var selectedRecord: String?
+    /// Whether the inspector's Raw group is open: closed at launch, then as the person left it,
+    /// whichever record is shown. Presentation only.
+    var rawOpen = false
+    /// Whether the log follows its newest record (`LogFollowing`): the log starts it again each
+    /// time it is drawn for a decoder, so opening a page or switching decoders follows.
+    var logFollowing = LogFollowing()
     /// Each decoder's records and transmitters, by manifest name, kept for the session once its
     /// page has shown (`DecoderFold`): nothing but `entity_silence_s` takes a transmitter away.
     private(set) var folds: [String: DecoderFold] = [:]
