@@ -2030,7 +2030,7 @@ say).
   Folding them into `Scale` would add a clamp and is a behaviour change rather than a mechanical
   rename.
 
-- **A radio that stops answering is left alone until it is replugged.** On 2026-11-09 the
+- `[x]` **A radio that stops answering is left alone until it is replugged.** On 2026-11-09 the
   owner's RTL-SDR, in a front port of the Mac (an ASMedia 3142 controller with a built-in hub that
   the keyboard shares), began failing its descriptor reads, dropped off the bus (libusb -5), came
   back as "Generic RTL2832U OEM" with no serial, and timed out its register writes (-7); the
@@ -2045,6 +2045,19 @@ say).
   delivered nothing for hours while `ley state` still said `active` and `ley fft` printed no row.
   A capture whose stream stops must say so (the decode jobs' 5 s stall check, at the capture),
   and a device that comes back must be rebound rather than left on a dead handle.
+  Done 2026-11-11: three failures to answer in a row (an open that is not another program's claim,
+  USB strings that read empty, a stream that dies with the dongle listed, a rebind that fails)
+  make the device `NOT_ANSWERING` with "<model> is not answering: unplug it and plug it back in,
+  ideally into a port on the back of the Mac"; nothing opens it again until it re-enumerates.
+  The resets were librtlsdr's own, inside every `rtlsdr_open` (a failed dummy write), and a
+  capture's open tried twice; it now retries only a claim. A capture with no samples for 5 s is
+  `CAPTURE_STALLED` ("no samples from <model> for 5 s"), gets one close-and-reopen at 30 s, and its
+  radio goes `NOT_ANSWERING` if that fails or stays silent. The 16:15 case did not rebind because
+  the dongle never left the USB tree, so no hot-plug event fired; the stall check covers it. A
+  rebind closes the device object it replaces. `ley devices`, `ley state` and the device menu say
+  so (docs/dev/engine-internals.md, "A radio that stops answering", "A capture whose stream
+  stops"). Not checked on the Mac: no check scene shows the device menu with a radio not
+  answering or a stalled capture, because a scene's daemon has no radio that can be told to fail.
 
 ## Resolved owner inputs
 

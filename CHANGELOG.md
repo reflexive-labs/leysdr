@@ -5,6 +5,18 @@ What changed for someone using Leyline, newest first. Each released version has 
 
 ## Unreleased
 
+- **Fixed: a failing radio was opened again and again.** A dongle that stopped answering (empty
+  USB descriptors, register writes timing out) was re-opened every 2 to 60 s, and each open could
+  make the driver reset it, which can stall other devices on the same USB hub. After three
+  failures in a row the radio now reads `NOT_ANSWERING` in `ley devices`, `ley state` and the
+  app's device menu, with what to do: "unplug it and plug it back in, ideally into a port on the
+  back of the Mac". Leyline leaves it alone until it is replugged. A radio another program holds
+  still reads `IN_USE` and is checked again as before.
+- **Fixed: a capture whose radio stopped sending samples still read `active`.** After 5 s with no
+  samples a capture now reads `STALLED`, "no samples from <radio> for 5 s", and goes back to
+  active when samples return. After 30 s Leyline closes and reopens the radio once; a radio that
+  still sends nothing is marked not answering.
+
 ## 0.3.1 (2026-11-04)
 
 - **Fixed: the Decoders map jumped around.** It re-fitted itself to every aircraft several times a

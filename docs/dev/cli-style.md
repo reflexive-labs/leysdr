@@ -75,8 +75,8 @@ Six roles. Use the role, never a colour name, at the call site.
 | `Label` | bold | table headers, field labels, the left column of a label block, verb names in help |
 | `Muted` | dim | ids the user is not being asked to read, units, hints, scaffolding, values below the noise floor, `ley scan`'s progress line |
 | `Ok` | green | `ACTIVE`, `AVAILABLE`, audio flowing, squelch open, a successful action |
-| `Warn` | yellow | `OUT_OF_CAPTURE`, `IN_USE` by another program, muted audio, a degraded but working state |
-| `Err` | red | `DISCONNECTED`, `CAPTURE_DETACHED`, the `ley:` error prefix, a rejected write |
+| `Warn` | yellow | `OUT_OF_CAPTURE`, `IN_USE` by another program, `STALLED`, muted audio, a degraded but working state |
+| `Err` | red | `DISCONNECTED`, `NOT_ANSWERING` and its sentence, `CAPTURE_DETACHED`, the `ley:` error prefix, a rejected write |
 | `Cmd` | cyan | commands the reader is meant to copy and run |
 
 Plain (no role) is the default and carries the primary result: the frequency, the mode,

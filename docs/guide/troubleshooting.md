@@ -48,6 +48,15 @@ button opens that page.
   (SDR++, GQRX, `rtl_tcp`) holds it. Quit that program; the daemon re-checks with a backoff of up to
   60 s (the `usb_claim_interface error` lines in the daemon log are librtlsdr reporting each check),
   or tune: a capture that opens the dongle clears the flag at once.
+- `NOT_ANSWERING` means the radio is still plugged in but failed to answer three times running:
+  its USB descriptors read empty, its opens failed, or its stream stopped and would not restart.
+  The daemon stops opening it, because each open can make the driver reset it, and a dongle being
+  reset over and over can stall other devices on the same hub. Unplug it and plug it back in,
+  ideally into a port on the back of the Mac rather than a front port or a hub; the daemon tries
+  it again when it reappears.
+- A capture that reads `STALLED` ("no samples from <radio> for 5 s") is open but receiving
+  nothing. It goes back to `ACTIVE` when samples return; after 30 s the daemon closes and reopens
+  the radio once, and a radio that still sends nothing goes `NOT_ANSWERING`.
 - `ley daemon logs` for other driver errors.
 
 Nooelec dongles often ship with serial `00000001`. Two identical serials get distinct ids by
