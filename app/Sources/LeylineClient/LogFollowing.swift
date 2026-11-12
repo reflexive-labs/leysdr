@@ -53,8 +53,11 @@ public struct LogFollowing: Sendable, Equatable {
     /// The scroll view moved from `old` to `new`; `handOn` while a gesture or the scroller has it
     /// (SwiftUI's scroll phase). A move of the offset is the person's while a hand is on it, or
     /// with the content and viewport as they were and no scroll of the log's own on the way,
-    /// since a mouse wheel's step need not report a phase. Content growing under a still offset
-    /// is never the person, even mid-gesture. Returns whether `following` changed.
+    /// since a mouse wheel's step need not report a phase. Only a move toward the top stops
+    /// following; a move toward the bottom resumes it once it reaches the bottom and otherwise
+    /// changes nothing, since records landing under a hand on its way down (or its bounce at the
+    /// end) leave it short of a bottom that keeps moving. Content growing under a still offset is
+    /// never the person, even mid-gesture. Returns whether `following` changed.
     @discardableResult
     public mutating func moved(from old: Geometry, to new: Geometry, handOn: Bool) -> Bool {
         let was = following
@@ -63,7 +66,7 @@ public struct LogFollowing: Sendable, Equatable {
             abs(new.contentHeight - old.contentHeight) < 0.5
             && abs(new.viewportHeight - old.viewportHeight) < 0.5
         if offsetMoved && (handOn || (sameSize && !pending)) {
-            personScrolled(atBottom: new.atBottom)
+            if new.offset < old.offset || new.atBottom { personScrolled(atBottom: new.atBottom) }
         } else {
             settled(atBottom: new.atBottom)
         }

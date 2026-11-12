@@ -456,7 +456,7 @@ struct DecoderLog: View {
 }
 
 /// The log's rows in a scroll view that follows the newest (`LogFollowing`): it opens at the
-/// bottom and scrolls to each record that arrives until the person scrolls up; then what arrives
+/// bottom and keeps each record that arrives in view until the person scrolls up; then what arrives
 /// waits below, counted on the jump button, and the rows they read stay put, held by the top row's
 /// id (`scrollPosition`) when the oldest drop off at the page's limit. Back at the bottom, by hand
 /// or by the button, it follows again. `decoders.record.<n>` counts up from the newest, the
@@ -491,6 +491,10 @@ struct DecoderLogRows: View {
         }
         .scrollPosition($position)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
+        // Following, the scroll view itself keeps the bottom in view as records land: no scroll
+        // of the log's own runs, so none can cut short a gesture that starts as one lands. Not
+        // following, it keeps what is shown.
+        .defaultScrollAnchor(d.logFollowing.following ? .bottom : .top, for: .sizeChanges)
         .stageRegion(.records)
         .onScrollPhaseChange { _, phase in
             personScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
@@ -507,12 +511,6 @@ struct DecoderLogRows: View {
         .onChange(of: entries.first?.id) { old, _ in
             let k = LogFollowing.arrivals(entries.map(\.id), since: old)
             _ = d.logFollowing.arrived(k)
-            // Never under a hand: the gesture decides once it moves.
-            if d.logFollowing.following, !personScrolling { position.scrollTo(edge: .bottom) }
-        }
-        .onChange(of: n) {
-            // The history landed above: still at the bottom while following.
-            if d.logFollowing.following, !personScrolling { position.scrollTo(edge: .bottom) }
         }
         .overlay(alignment: .bottomTrailing) {
             if d.logFollowing.showsJump {

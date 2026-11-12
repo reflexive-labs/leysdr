@@ -83,6 +83,13 @@ final class LogFollowingTests: XCTestCase {
         XCTAssertFalse(f.following)
         XCTAssertTrue(f.moved(from: g(500, 1022), to: g(622, 1022), handOn: true))
         XCTAssertTrue(f.following, "back at the bottom by hand")
+        // Records land under the hand on its way down: short of the bottom, still following.
+        XCTAssertFalse(f.moved(from: g(622, 1022), to: g(622, 1100), handOn: true))
+        XCTAssertFalse(f.moved(from: g(622, 1100), to: g(640, 1100), handOn: true))
+        XCTAssertTrue(f.following, "a move toward the bottom never stops following")
+        f.personScrolled(atBottom: false)
+        XCTAssertFalse(f.moved(from: g(300, 1100), to: g(400, 1100), handOn: true))
+        XCTAssertFalse(f.following, "down but short of the bottom does not resume")
 
         // A wheel's step with no phase: the offset moved and nothing else did.
         var w = LogFollowing()

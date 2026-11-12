@@ -590,7 +590,9 @@ at the top and newest at the bottom, as `ley decode` prints them: its time, its 
 person's label, else the display's `entity_name`, else `device_id`), its kind, in a column as wide
 as the longest kind on the page, and its line through the display's template. The log follows its
 newest record (`LogFollowing`, the rule `MapFraming` keeps for the map): it opens at the bottom,
-on each decoder and each return to the tab, and scrolls to each record that arrives. A scroll up
+on each decoder and each return to the tab, and keeps each record that arrives in view, the
+scroll view's own size-change anchor at the bottom (`defaultScrollAnchor(_:for: .sizeChanges)`),
+so no scroll of the log's own can cut short a gesture that starts as a record lands. A scroll up
 by hand (a scroll phase of `interacting`, or the offset moving with the content as it was and no
 scroll of the log's own on the way, for a wheel that reports none) stops it: what arrives waits
 below, counted on a chip in the log's corner (`↓ 12 new`, `↓ Latest` with nothing new), and the
