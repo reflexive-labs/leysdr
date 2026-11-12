@@ -206,14 +206,28 @@ func writeLastAndSleep(frame: Leyline_V1_Frame, seq: UInt64) -> Never {
 /// `FAKE_DECODER_SEGMENTS=1` reads SEGMENTED input (decode.proto, InputMode) the way a speech
 /// decoder does: one record per segment, written at its END, dated by its START frame, with
 /// `frames` (the audio frames, START included and END not), `samples` (the audio samples they
-/// carried), `text` ("segment N"), `rate` (the descriptor's audio rate) and `outside` (frames that
-/// arrived with no segment open, which the daemon must never send).
+/// carried), `text` ("segment N"), `rate` (the descriptor's audio rate), `outside` (frames that
+/// arrived with no segment open, which the daemon must never send), `crossings` (how often the
+/// audio crossed zero, which puts a tone's pitch at crossings / 2 / seconds) and `deviation` (the
+/// descriptor's full-scale deviation, which names the channel's mode).
 let segmented = ProcessInfo.processInfo.environment["FAKE_DECODER_SEGMENTS"] == "1"
 
 struct OpenSegment {
     var time: Leyline_V1_SampleTime
     var frames: Int64 = 0
     var samples: Int64 = 0
+    var crossings: Int64 = 0
+    var last: Float = 0
+
+    mutating func take(_ payload: Data) {
+        samples += Int64(payload.count / 4)
+        payload.withUnsafeBytes { raw in
+            for v in raw.bindMemory(to: Float.self) {
+                if (v >= 0) != (last >= 0) { crossings += 1 }
+                last = v
+            }
+        }
+    }
 }
 
 func runSegmented() -> Never {
@@ -224,7 +238,8 @@ func runSegmented() -> Never {
         guard let frame = try? Leyline_V1_Frame(serializedBytes: bytes) else { exit(2) }
         switch frame.segment {
         case .segmentStart:
-            open = OpenSegment(time: frame.time, frames: 1, samples: Int64(frame.payload.count / 4))
+            open = OpenSegment(time: frame.time, frames: 1)
+            open!.take(frame.payload)
         case .segmentEnd:
             guard let done = open else {
                 outside += 1
@@ -249,6 +264,8 @@ func runSegmented() -> Never {
             rec.fields["outside"] = field(outside)
             rec.fields["rate"] = field(Int64(descriptor.audio.sampleRate))
             rec.fields["stored"] = field(descriptor.stored ? 1 : 0)
+            rec.fields["crossings"] = field(done.crossings)
+            rec.fields["deviation"] = field(Int64(descriptor.audio.fullScaleDeviationHz))
             var text = Leyline_V1_FieldValue()
             text.text = "segment \(count)"
             rec.fields["text"] = text
@@ -262,7 +279,7 @@ func runSegmented() -> Never {
                 continue
             }
             open!.frames += 1
-            open!.samples += Int64(frame.payload.count / 4)
+            open!.take(frame.payload)
         }
     }
     exitAtEOF()

@@ -1329,10 +1329,12 @@ START the pipe cannot take skips the segment, an END it cannot take is owed befo
 and a restarted plugin gets nothing of a segment opened on the one before. A segmented job's own
 channel gets the recorder's auto squelch when it has none, because a squelch that is off has no
 edges; when no level can be measured, or the channel refuses it, the job runs `DEGRADED` with
-"no level measured; squelch left as it was" (or the refusal) for its whole run. A channel in a
-mode with no squelch gate (anything but NFM and AM, `RecordingSource.gatedModes`) gets no auto
-squelch: its `Segmenter` is `alwaysOpen`, one segment from the first frame that waits for no
-telemetry and ignores it.
+"no level measured; squelch left as it was" (or the refusal) for its whole run. A channel the job
+makes in a mode with no squelch gate (anything but NFM and AM, `RecordingSource.gatedModes`) gets
+no auto squelch, so its meter says open throughout. A job on a borrowed channel
+(`DecodeConfig.channel_id`) follows that channel's squelch as its owner set it, in any mode, adds
+none, holds a JOB claim of kind CHANNEL beside the owner's, and ends COMPLETED, "channel ended",
+when `followChannel` finds the channel gone.
 
 With `max_segment_ms` set, every piece of an open segment passes through `held`, and the ones
 that end before the last 5 s before the limit go out as they come; the last 5 s wait. When the

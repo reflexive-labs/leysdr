@@ -206,9 +206,6 @@ struct Segmenter: Sendable {
     let lookbackSamples: UInt64
     /// `quietWindowMs` in audio samples.
     let quietWindow: Int
-    /// A channel with no squelch gate: one segment from the first audio, cut only at the limit, and
-    /// the squelch's records ignored.
-    let alwaysOpen: Bool
 
     private var state = State.closed
     private var waiting: [Frame] = []
@@ -245,14 +242,13 @@ struct Segmenter: Sendable {
     }
 
     init(preRollMs: UInt32, hangMs: UInt32, captureRateHz: UInt64, audioRateHz: UInt32,
-         maxSegmentMs: UInt32 = 0, alwaysOpen: Bool = false,
+         maxSegmentMs: UInt32 = 0,
          heardSlack: UInt64 = UInt64(CaptureDSPCore.blockSize / 2))
     {
         let perMs = Double(captureRateHz) / 1000
         maxSegmentSamples = UInt64(Double(maxSegmentMs) * perMs)
         lookbackSamples = Swift.min(UInt64(Double(Self.quietLookbackMs) * perMs), maxSegmentSamples)
         quietWindow = Int(Double(Self.quietWindowMs) / 1000 * Double(audioRateHz))
-        self.alwaysOpen = alwaysOpen
         preRollSamples = UInt64(Double(preRollMs) * perMs)
         hangSamples = UInt64(Double(hangMs) * perMs)
         perAudio = Double(captureRateHz) / Double(Swift.max(audioRateHz, 1))
@@ -297,8 +293,6 @@ struct Segmenter: Sendable {
     }
 
     private func isHeard(_ frame: Frame) -> Bool {
-        // Nothing the squelch says changes an always-open segment, so nothing is waited for.
-        if alwaysOpen { return true }
         guard let heardThrough else { return false }
         return heardThrough + heardSlack >= frame.end
     }
@@ -313,7 +307,6 @@ struct Segmenter: Sendable {
             startSample = frame.start
             ringEnd = frame.start
             lastEnd = frame.start
-            if alwaysOpen { openSegment(wanted: frame.start, cursor: frame.start, into: &out) }
         }
         if frame.dropped > 0 {
             let hole = lastEnd..<Swift.max(lastEnd, frame.start)
@@ -483,7 +476,6 @@ struct Segmenter: Sendable {
     }
 
     private mutating func apply(_ record: Heard, at cursor: UInt64, into out: inout [Piece]) {
-        if alwaysOpen { return }
         switch record {
         case .squelch(let open, let at):
             squelchKnown = true

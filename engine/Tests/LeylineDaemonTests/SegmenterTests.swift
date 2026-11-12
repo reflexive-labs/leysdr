@@ -273,19 +273,6 @@ final class SegmenterTests: XCTestCase {
         XCTAssertEqual(s.segment(at: 97_000)?.continues, true)
     }
 
-    func testAModeWithNoSquelchGateIsOneTransmissionCutAtTheLimit() {
-        var s = Segmenter(preRollMs: 100, hangMs: 100, captureRateHz: 10_000, audioRateHz: 1_000, maxSegmentMs: 8000,
-                          alwaysOpen: true, heardSlack: 0)
-        // A squelch record is ignored, and nothing waits for one.
-        s.hear(.squelch(open: false, at: 20_000))
-        push(&s, from: 0, to: 200_000, value: loudWithOneDip)
-        let got = segments(s.release())
-        XCTAssertEqual(got.outside, 0)
-        let expected = (0..<UInt64(got.spans.last?.end ?? 0) / 10).map(loudWithOneDip)
-        assertContiguous(got.spans, max: 80_000, expected: expected)
-        XCTAssertEqual(got.spans.prefix(2).map(\.start), [0, 66_000], "from the first audio, cut at the silence")
-    }
-
     func testAnOverThatClosesBeforeTheLimitIsSentAsBefore() {
         var s = Segmenter(preRollMs: 100, hangMs: 100, captureRateHz: 10_000, audioRateHz: 1_000, maxSegmentMs: 8000,
                           heardSlack: 0)

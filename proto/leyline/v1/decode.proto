@@ -288,6 +288,17 @@ message DecodeConfig {
   // Gains to set, one stage at a time in order, each read as `gain` is. When `gains` is non-empty
   // `gain` is ignored, as in RecordConfig and ScanConfig.
   repeated GainWrite gains = 10;
+  // Decode what an existing channel hears, in its mode and bandwidth and through its squelch, as
+  // RecordConfig.channel_id records it: the job borrows the channel with a JOB claim of kind
+  // CHANNEL and leaves it as its owner set it, and ends COMPLETED, "channel ended", when its owner
+  // destroys it. Audio decoders only. frequency_hz, device_id, take_over, gain, gains and mode do
+  // not apply. A SEGMENTED decoder on a channel whose squelch is off hears one transmission, cut
+  // only at its max_segment_ms. Empty = the job makes its own channel.
+  string channel_id = 11;
+  // The mode of the channel the job makes, at that mode's default bandwidth, in place of the
+  // recipe's: `ley decode speech --freq 98.5` asks for WFM, the band plan's mode there, because
+  // the speech recipe names no frequency and so no band. UNSPECIFIED = the recipe's mode.
+  DemodMode mode = 12;
 }
 
 // A stateless record filter. `all` clauses must match (AND); an empty predicate matches every

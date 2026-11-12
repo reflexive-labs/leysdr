@@ -13,7 +13,13 @@ extension JobStore {
         let question: PlanRequest
         switch request.request {
         case .decode(let config)?:
-            question = try await decodePlanRequest(config)
+            let (asked, borrowed) = try await decodePlanRequest(config)
+            if let borrowed {
+                // A decode of a channel shares that channel's capture, wherever it is.
+                return Plan.share(captureID: borrowed.string).proto(in: await store.snapshot(scope: .daemon))
+            }
+            guard let asked else { throw EngineError.internalError("a decode request with nothing to plan") }
+            question = asked
         case .record(let config)?:
             let (asked, borrowed) = try await recordPlanRequest(config)
             if let borrowed {

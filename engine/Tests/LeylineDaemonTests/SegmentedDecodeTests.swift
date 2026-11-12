@@ -814,6 +814,119 @@ final class SegmentedDecodeTests: XCTestCase {
         }
     }
 
+    // MARK: A borrowed channel
+
+    /// A person's channel on `fixture`: a looped file radio, a capture at `centerHz` and a channel
+    /// `offsetHz` from it in `mode`, its squelch left off.
+    func personsChannel(_ c: DaemonClients, fixture: String, centerHz: UInt64, offsetHz: Int64,
+                        mode: Leyline_V1_DemodMode) async throws -> Leyline_V1_Channel
+    {
+        let path = fixturePath(fixture)
+        guard FileManager.default.fileExists(atPath: path) else { throw XCTSkip("fixture missing: \(path)") }
+        var attach = Leyline_V1_AttachFileDeviceRequest()
+        attach.path = path
+        attach.loop = true
+        let device = try await c.control.attachFileDevice(attach, metadata: testMetadata)
+        var cc = Leyline_V1_CreateCaptureRequest()
+        cc.deviceID = device.deviceID
+        cc.centerHz = centerHz
+        let capture = try await c.control.createCapture(cc, metadata: testMetadata)
+        var cch = Leyline_V1_CreateChannelRequest()
+        cch.captureID = capture.captureID
+        cch.offsetHz = offsetHz
+        cch.mode = mode
+        return try await c.control.createChannel(cch, metadata: testMetadata)
+    }
+
+    func testASpeechJobOnABorrowedWFMChannelHearsWFM() async throws {
+        let plugins = try makeTempDir("decoders")
+        defer { try? FileManager.default.removeItem(atPath: plugins) }
+        try writeSegmentedPlugin(in: plugins, maxSegmentMs: 2000)
+        try await withDaemon(decoderSearchPath: [plugins]) { c in
+            // wfm_tone: a 1 kHz tone at 75 kHz deviation, 400 kHz above 100 MHz.
+            let channel = try await self.personsChannel(c, fixture: "wfm_tone.cf32", centerHz: 100_000_000,
+                                                        offsetHz: 400_000, mode: .wfm)
+            var config = Leyline_V1_DecodeConfig()
+            config.decoder = "fake"
+            config.channelID = channel.channelID
+            let started = try await self.startDecode(c, config)
+            let got = try await self.records(c, job: started.jobID, count: 3, timeoutMs: 20000)
+            XCTAssertEqual(got.count, 3)
+            let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            XCTAssertEqual(state.channels.map(\.channelID), [channel.channelID], "the job made no channel of its own")
+            XCTAssertTrue(state.channels.first?.squelchDb.isNaN ?? false, "the owner's squelch is left off")
+            let claim = state.captures.first?.claims.first { $0.holder.clientID == started.jobID }
+            XCTAssertEqual(claim?.kind, .claimChannel, "the job holds a channel claim beside the owner's")
+            for rec in got {
+                XCTAssertEqual(self.integer(rec, "deviation"), 75000, "the plugin is told the channel's WFM deviation")
+                let seconds = Double(self.integer(rec, "samples")) / Double(self.integer(rec, "rate"))
+                let pitch = Double(self.integer(rec, "crossings")) / 2 / seconds
+                XCTAssertEqual(pitch, 1000, accuracy: 100, "WFM demodulated: the 1 kHz tone, not noise")
+                XCTAssertLessThanOrEqual(seconds, 2.001, "a squelch that is off is cut at the limit")
+            }
+            XCTAssertTrue(got.dropFirst().allSatisfy { $0.fields["continues"]?.flag == true })
+            // The owner destroying the channel ends the job.
+            var destroy = Leyline_V1_DestroyChannelRequest()
+            destroy.channelID = channel.channelID
+            _ = try await c.control.destroyChannel(destroy, metadata: testMetadata)
+            let done = try await self.waitForEnd(c, started.jobID)
+            XCTAssertEqual(done.state, .completed, done.statusDetail)
+            XCTAssertEqual(done.statusDetail, "channel ended")
+        }
+    }
+
+    func testADecodeAskingForWFMMakesItsChannelInWFM() async throws {
+        let plugins = try makeTempDir("decoders")
+        defer { try? FileManager.default.removeItem(atPath: plugins) }
+        try writeSegmentedPlugin(in: plugins, maxSegmentMs: 2000)
+        try await withDaemon(decoderSearchPath: [plugins]) { c in
+            try await self.attach(c, fixture: "wfm_tone.cf32", loop: true)
+            var config = Leyline_V1_DecodeConfig()
+            config.decoder = "fake"
+            config.frequencyHz = 100_400_000
+            config.mode = .wfm
+            let started = try await self.startDecode(c, config)
+            let got = try await self.records(c, job: started.jobID, count: 2, timeoutMs: 20000)
+            try await self.cancel(c, started.jobID)
+            XCTAssertEqual(got.first.map { self.integer($0, "deviation") }, 75000, "a WFM channel, not the recipe's NFM")
+            if let rec = got.first {
+                let seconds = Double(self.integer(rec, "samples")) / Double(self.integer(rec, "rate"))
+                XCTAssertEqual(Double(self.integer(rec, "crossings")) / 2 / seconds, 1000, accuracy: 100)
+            }
+        }
+    }
+
+    func testABorrowedChannelsSquelchIsHonoured() async throws {
+        let plugins = try makeTempDir("decoders")
+        defer { try? FileManager.default.removeItem(atPath: plugins) }
+        try writeSegmentedPlugin(in: plugins, maxSegmentMs: 30000)
+        try await withDaemon(decoderSearchPath: [plugins]) { c in
+            let channel = try await self.personsChannel(c, fixture: "nfm_keyed.cf32", centerHz: 146_520_000,
+                                                        offsetHz: 100_000, mode: .nfm)
+            var w = Leyline_V1_ParamWrite()
+            w.tag = 1
+            w.targetID = channel.channelID
+            w.squelchDb = -40
+            let write = w
+            _ = try await c.control.writeParams(metadata: testMetadata) { writer in try await writer.write(write) }
+            var config = Leyline_V1_DecodeConfig()
+            config.decoder = "fake"
+            config.channelID = channel.channelID
+            let started = try await self.startDecode(c, config)
+            let got = try await self.records(c, job: started.jobID, count: 3, timeoutMs: 30000)
+            try await self.cancel(c, started.jobID)
+            XCTAssertEqual(got.count, 3)
+            // nfm_keyed keys for 1.0, 0.5 and 2.0 s; with the pre-roll and the hang a segment is
+            // a second longer. The order they arrive in depends on where the loop was.
+            let seconds = got.map { Double(self.integer($0, "samples")) / Double(self.integer($0, "rate")) }
+            XCTAssertEqual(seconds.sorted()[0], 1.5, accuracy: 0.3, "one segment per over, cut at the owner's squelch")
+            XCTAssertEqual(seconds.sorted()[2], 3.0, accuracy: 0.3)
+            XCTAssertTrue(got.allSatisfy { $0.fields["continues"] == nil })
+            let state = try await c.control.getState(Leyline_V1_GetStateRequest(), metadata: testMetadata)
+            XCTAssertEqual(state.channels.first?.squelchDb, -40, "no auto squelch replaces the owner's")
+        }
+    }
+
     func testSegmentedIQInputIsNotImplemented() async throws {
         let plugins = try makeTempDir("decoders")
         defer { try? FileManager.default.removeItem(atPath: plugins) }

@@ -106,6 +106,9 @@ actor DecodeRunner {
     /// A live segmented job's gated recording, which its records' `clip_uri` and `over` name; nil
     /// for every other job.
     private let clips: LiveClips?
+    /// The job borrows a channel somebody else owns (`DecodeConfig.channel_id`): their destroying
+    /// it ends the job COMPLETED, "channel ended".
+    private let borrowedChannel: Bool
     private var stopped = false
 
     /// Exactly one of `lease` and `source` is set: a channel to decode or a recording to read.
@@ -115,7 +118,7 @@ actor DecodeRunner {
          tap: AudioTap, predicate: Leyline_V1_Predicate, notify: Leyline_V1_NotifyTarget?,
          usage: UsageRecorder? = nil, credentials: CredentialStore? = nil, keep: Bool = false,
          standingDegradation: String? = nil, clips: LiveClips? = nil, gainNote: String? = nil,
-         stallAfter: Duration = StreamStall.defaultAfter,
+         stallAfter: Duration = StreamStall.defaultAfter, borrowedChannel: Bool = false,
          onStatus: @escaping @Sendable (Leyline_V1_JobState, String) async -> Void,
          onFailure: (@Sendable (EngineError) async -> Void)? = nil,
          seqStart: UInt64 = 0)
@@ -137,6 +140,7 @@ actor DecodeRunner {
         self.keep = keep
         self.standingDegradation = standingDegradation
         self.clips = clips
+        self.borrowedChannel = borrowedChannel
         liveness = DecodeLiveness(note: gainNote)
         stall = StreamStall(after: stallAfter)
         self.onStatus = onStatus
@@ -199,14 +203,12 @@ actor DecodeRunner {
         var squelch: Task<Void, Never>?
         if installed.manifest.input.mode == .segmented {
             let (preRollMs, hangMs) = Segmenter.timings(installed.manifest.input)
-            // A mode with no squelch gate is one transmission from the first audio, cut only at
-            // `max_segment_ms`. A squelch that is off needs no such rule: its meter says open.
-            let mode = await engine.config.mode
-            let alwaysOpen = !RecordingSource.gatedModes.contains(mode)
+            // The segments follow the channel's own squelch in any mode, a borrowed channel's as
+            // its owner set it. A squelch that is off says open on every meter, so the channel is
+            // one transmission cut only at `max_segment_ms`.
             segmenter.withLock {
                 $0 = Segmenter(preRollMs: preRollMs, hangMs: hangMs, captureRateHz: captureRateHz,
-                               audioRateHz: engine.audioRate, maxSegmentMs: installed.manifest.input.maxSegmentMs,
-                               alwaysOpen: alwaysOpen)
+                               audioRateHz: engine.audioRate, maxSegmentMs: installed.manifest.input.maxSegmentMs)
             }
             squelch = Task { [weak self] in await self?.followSquelch(audio: audio, lease: lease) }
         }
@@ -851,6 +853,13 @@ actor DecodeRunner {
     private func followChannel(_ lease: any ChannelLease) async {
         var last: ChannelState?
         while !Task.isCancelled {
+            if borrowedChannel, await store.channelEngine(lease.channelID) == nil {
+                // The owner destroyed the channel the job borrowed: there is nothing left to hear.
+                await onStatus(.completed, "channel ended")
+                task?.cancel()
+                await teardown(endedBy: "channel ended")
+                return
+            }
             let state = await lease.engine.state
             let before = degradedDetail
             switch state {

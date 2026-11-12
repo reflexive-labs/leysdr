@@ -23,6 +23,11 @@ extension JobStore {
         if !config.sourceUri.isEmpty {
             return try await startSourceDecode(config: config, installed: installed, by: client, resuming: resuming)
         }
+        if let borrowed = try await borrowedDecodeChannel(config, installed) {
+            return await addDecodeJob(config: config, installed: installed, by: client, resuming: resuming) { [weak self] id in
+                await self?.runBorrowedDecode(id, config: config, installed: installed, borrowed: borrowed)
+            }
+        }
         let (frequencyHz, deviceID) = try Self.decodeTarget(config, installed)
         return await addDecodeJob(config: config, installed: installed, by: client, resuming: resuming) { [weak self] id in
             await self?.runDecode(id, config: config, installed: installed, frequencyHz: frequencyHz, deviceID: deviceID)
@@ -30,22 +35,79 @@ extension JobStore {
     }
 
     /// What a decode would ask the allocator for (`Control.Plan`), checked as `startDecode`
-    /// checks it. A decode of a stored recording needs no radio, so it has no plan.
-    func decodePlanRequest(_ config: Leyline_V1_DecodeConfig) async throws -> PlanRequest {
+    /// checks it, or the capture of the channel it borrows, which it shares wherever that is. A
+    /// decode of a stored recording needs no radio, so it has no plan.
+    func decodePlanRequest(_ config: Leyline_V1_DecodeConfig) async throws -> (request: PlanRequest?, borrowed: CaptureID?) {
         let installed = try await checkedDecoder(config)
         if !config.sourceUri.isEmpty {
             throw EngineError.invalidArgument("a decode of a stored recording needs no radio, so it has no plan",
                                               target: config.sourceUri)
         }
+        if let borrowed = try await borrowedDecodeChannel(config, installed) { return (nil, borrowed.captureID) }
         let (frequencyHz, deviceID) = try Self.decodeTarget(config, installed)
         let manifest = installed.manifest
         if manifest.input.signal == .signalIq {
-            return .iq(frequencyHz: frequencyHz, sampleRateHz: manifest.recipe.sampleRate, deviceID: deviceID?.string,
-                       takeOver: config.takeOver, dedicated: manifest.needsDedicatedCapture)
+            return (.iq(frequencyHz: frequencyHz, sampleRateHz: manifest.recipe.sampleRate, deviceID: deviceID?.string,
+                        takeOver: config.takeOver, dedicated: manifest.needsDedicatedCapture), nil)
         }
-        let mode = ProtoMapping.demodMode(manifest.recipe.mode == .unspecified ? .nfm : manifest.recipe.mode) ?? .nfm
-        return .channel(frequencyHz: frequencyHz, bandwidthHz: manifest.recipe.bandwidthHz, mode: mode,
-                        deviceID: deviceID?.string, takeOver: config.takeOver)
+        let (mode, bandwidthHz) = Self.decodeChannelShape(config, manifest.recipe)
+        return (.channel(frequencyHz: frequencyHz, bandwidthHz: bandwidthHz, mode: mode,
+                         deviceID: deviceID?.string, takeOver: config.takeOver), nil)
+    }
+
+    /// The mode and bandwidth of the channel a decode makes: `DecodeConfig.mode` at that mode's
+    /// default bandwidth when the request names one, else the recipe's, NFM when it names none.
+    static func decodeChannelShape(_ config: Leyline_V1_DecodeConfig,
+                                   _ recipe: Leyline_V1_DecoderRecipe) -> (mode: DemodMode, bandwidthHz: UInt32)
+    {
+        if config.mode != .unspecified, config.mode != .rawIq, let mode = ProtoMapping.demodMode(config.mode),
+           config.mode != recipe.mode
+        {
+            return (mode, 0)
+        }
+        let mode = ProtoMapping.demodMode(recipe.mode == .unspecified ? .nfm : recipe.mode) ?? .nfm
+        return (mode, recipe.bandwidthHz)
+    }
+
+    /// The channel a decode borrows (`DecodeConfig.channel_id`), nil when it names none. Refused:
+    /// a channel with a stored recording as well, an IQ decoder, which reads a capture and not a
+    /// channel's audio, and a channel that does not exist.
+    private func borrowedDecodeChannel(_ config: Leyline_V1_DecodeConfig, _ installed: DecoderRegistry.Installed) async throws
+        -> (id: ChannelID, engine: any ChannelEngine, captureID: CaptureID)?
+    {
+        guard !config.channelID.isEmpty else { return nil }
+        if !config.sourceUri.isEmpty {
+            throw EngineError.invalidArgument("a decode reads a channel or a stored recording, not both", target: config.channelID)
+        }
+        if installed.manifest.input.signal == .signalIq {
+            throw EngineError.invalidArgument(
+                "\(installed.manifest.name) reads a capture's raw IQ, and a channel carries demodulated audio; give it a frequency instead",
+                target: config.channelID)
+        }
+        guard let id = ChannelID(string: config.channelID), let engine = await store.channelEngine(id),
+              let captureID = await store.channelCapture(id)
+        else { throw EngineError.channelNotFound(config.channelID) }
+        return (id, engine, captureID)
+    }
+
+    /// A decode on a borrowed channel: no allocation, the channel exactly as its owner set it (its
+    /// squelch honoured, none added), and a JOB claim of kind CHANNEL beside the owner's, as a
+    /// recording of a channel holds one. The job ends when the owner destroys the channel.
+    private func runBorrowedDecode(_ id: JobID, config: Leyline_V1_DecodeConfig, installed: DecoderRegistry.Installed,
+                                   borrowed: (id: ChannelID, engine: any ChannelEngine, captureID: CaptureID)) async
+    {
+        guard entries[id]?.proto.state == .running else { return }
+        let claim = await store.addClaim(on: borrowed.captureID, holder: .job(id), kind: .claimChannel,
+                                         priority: .priorityJob, need: .channel(borrowed.id))
+        let lease = BorrowedChannelLease(channelID: borrowed.id, captureID: borrowed.captureID, engine: borrowed.engine) {
+            [store] in
+            if let claim { await store.releaseClaim(claim, on: borrowed.captureID) }
+        }
+        let snapshot = await store.captureEngine(borrowed.captureID)?.snapshot
+        let offset = await borrowed.engine.config.offsetHz
+        let frequencyHz = UInt64(Swift.max(0, Int64(snapshot?.centerHz ?? 0) + offset))
+        await startAudioRunner(id, config: config, installed: installed, lease: lease, frequencyHz: frequencyHz,
+                               snapshot: snapshot, squelchProblem: nil, gainNote: nil, borrowed: true)
     }
 
     /// The frequency and radio a live decode asks for: the request's, else the recipe's first.
@@ -210,10 +272,10 @@ extension JobStore {
     private func runAudioDecode(_ id: JobID, config: Leyline_V1_DecodeConfig, installed: DecoderRegistry.Installed,
                                 frequencyHz: UInt64, deviceID: DeviceID?) async
     {
-        let mode = ProtoMapping.demodMode(installed.manifest.recipe.mode == .unspecified ? .nfm : installed.manifest.recipe.mode) ?? .nfm
+        let (mode, bandwidthHz) = Self.decodeChannelShape(config, installed.manifest.recipe)
         let gain = Self.decodeGains(config, installed.manifest.recipe)
         let allocation = await allocator.allocate(
-            .channel(frequencyHz: frequencyHz, bandwidthHz: installed.manifest.recipe.bandwidthHz,
+            .channel(frequencyHz: frequencyHz, bandwidthHz: bandwidthHz,
                      mode: mode, deviceID: deviceID, takeOver: config.takeOver, gains: gain.requests), for: id)
         guard case .channel(let lease) = allocation else {
             await declineDecode(id, allocation)
@@ -238,6 +300,16 @@ extension JobStore {
             squelchProblem = await squelchForSegments(id, lease: lease)
         }
         let snapshot = await store.captureEngine(lease.captureID)?.snapshot
+        await startAudioRunner(id, config: config, installed: installed, lease: lease, frequencyHz: frequencyHz,
+                               snapshot: snapshot, squelchProblem: squelchProblem, gainNote: gainNote, borrowed: false)
+    }
+
+    /// The runner for an audio decode on `lease`, a channel the job made or one it borrows: the
+    /// kept store, the clips of a segmented job, and the plugin.
+    private func startAudioRunner(_ id: JobID, config: Leyline_V1_DecodeConfig, installed: DecoderRegistry.Installed,
+                                  lease: any ChannelLease, frequencyHz: UInt64, snapshot: CaptureSnapshot?,
+                                  squelchProblem: String?, gainNote: String?, borrowed: Bool) async
+    {
         let writer: RecordWriter?
         do {
             writer = try await openWriterIfKept(id, config: config, installed: installed,
@@ -266,7 +338,7 @@ extension JobStore {
             tap: installed.manifest.input.tap == .tapDemod ? .demod : .audio,
             predicate: config.predicate, notify: config.hasNotify ? config.notify : nil,
             usage: usage, credentials: credentials, keep: config.keep, standingDegradation: squelchProblem,
-            clips: clips, gainNote: gainNote, stallAfter: decodeStallAfter,
+            clips: clips, gainNote: gainNote, stallAfter: decodeStallAfter, borrowedChannel: borrowed,
             onStatus: { [weak self] state, detail in
                 await self?.setDecodeStatus(id, state: state, detail: detail)
             },

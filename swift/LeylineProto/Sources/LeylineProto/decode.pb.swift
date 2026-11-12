@@ -960,6 +960,19 @@ public nonisolated struct Leyline_V1_DecodeConfig: Sendable {
   /// `gain` is ignored, as in RecordConfig and ScanConfig.
   public var gains: [Leyline_V1_GainWrite] = []
 
+  /// Decode what an existing channel hears, in its mode and bandwidth and through its squelch, as
+  /// RecordConfig.channel_id records it: the job borrows the channel with a JOB claim of kind
+  /// CHANNEL and leaves it as its owner set it, and ends COMPLETED, "channel ended", when its owner
+  /// destroys it. Audio decoders only. frequency_hz, device_id, take_over, gain, gains and mode do
+  /// not apply. A SEGMENTED decoder on a channel whose squelch is off hears one transmission, cut
+  /// only at its max_segment_ms. Empty = the job makes its own channel.
+  public var channelID: String = String()
+
+  /// The mode of the channel the job makes, at that mode's default bandwidth, in place of the
+  /// recipe's: `ley decode speech --freq 98.5` asks for WFM, the band plan's mode there, because
+  /// the speech recipe names no frequency and so no band. UNSPECIFIED = the recipe's mode.
+  public var mode: Leyline_V1_DemodMode = .unspecified
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -2134,7 +2147,7 @@ nonisolated extension Leyline_V1_FieldValue: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension Leyline_V1_DecodeConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DecodeConfig"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}decoder\0\u{3}frequency_hz\0\u{3}device_id\0\u{3}take_over\0\u{1}keep\0\u{1}predicate\0\u{1}notify\0\u{3}source_uri\0\u{1}gain\0\u{1}gains\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}decoder\0\u{3}frequency_hz\0\u{3}device_id\0\u{3}take_over\0\u{1}keep\0\u{1}predicate\0\u{1}notify\0\u{3}source_uri\0\u{1}gain\0\u{1}gains\0\u{3}channel_id\0\u{1}mode\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2152,6 +2165,8 @@ nonisolated extension Leyline_V1_DecodeConfig: SwiftProtobuf.Message, SwiftProto
       case 8: try { try decoder.decodeSingularStringField(value: &self.sourceUri) }()
       case 9: try { try decoder.decodeSingularMessageField(value: &self._gain) }()
       case 10: try { try decoder.decodeRepeatedMessageField(value: &self.gains) }()
+      case 11: try { try decoder.decodeSingularStringField(value: &self.channelID) }()
+      case 12: try { try decoder.decodeSingularEnumField(value: &self.mode) }()
       default: break
       }
     }
@@ -2192,6 +2207,12 @@ nonisolated extension Leyline_V1_DecodeConfig: SwiftProtobuf.Message, SwiftProto
     if !self.gains.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.gains, fieldNumber: 10)
     }
+    if !self.channelID.isEmpty {
+      try visitor.visitSingularStringField(value: self.channelID, fieldNumber: 11)
+    }
+    if self.mode != .unspecified {
+      try visitor.visitSingularEnumField(value: self.mode, fieldNumber: 12)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2206,6 +2227,8 @@ nonisolated extension Leyline_V1_DecodeConfig: SwiftProtobuf.Message, SwiftProto
     if lhs.sourceUri != rhs.sourceUri {return false}
     if lhs._gain != rhs._gain {return false}
     if lhs.gains != rhs.gains {return false}
+    if lhs.channelID != rhs.channelID {return false}
+    if lhs.mode != rhs.mode {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
