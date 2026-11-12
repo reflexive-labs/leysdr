@@ -647,6 +647,15 @@ import LeylineClient
                 Theme.Layout.decoderKindColumn(
                     Set(d.records.entries.map(\.record.kind))
                 ).widest
+            out.nameColumn = DecoderPages.logColumns(d.records.entries).name
+            if let e = d.inspectedRecord {
+                let summary = d.summary(e.record)
+                let fields = DecoderPages.fieldRows(
+                    e.record.fields, manifest: m, summary: summary)
+                if DecoderPages.showsRaw(e.record.raw, shown: [summary] + fields.map(\.value)) {
+                    out.rawBytes = e.record.raw.count
+                }
+            }
             out.alerts = d.alerts.map { d.summary($0.record) }
             out.watches = Watches.watches(of: m, in: s.state.jobs).map {
                 Watches.words($0, manifest: m)

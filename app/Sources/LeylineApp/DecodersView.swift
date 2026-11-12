@@ -408,14 +408,16 @@ struct DecoderTabSwitch: View {
 
 /// The alerts in effect, then every record oldest at the top and newest at the bottom, as `ley
 /// decode` prints them: its time, its transmitter, its kind and its line. The kind column is as
-/// wide as the longest kind in the log (`Theme.Layout.decoderKindColumn`). A click shows the
-/// record in the inspector.
+/// wide as the longest kind in the log (`Theme.Layout.decoderKindColumn`); it and the
+/// transmitter's are left out while no record in the log has one (`DecoderPages.logColumns`), so
+/// speech's lines start beside their time. A click shows the record in the inspector.
 struct DecoderLog: View {
     @Environment(AppSession.self) private var session
 
     var body: some View {
         let d = session.decoders
         let entries = d.records.entries
+        let columns = DecoderPages.logColumns(entries)
         let kindWidth = Theme.Layout.decoderKindColumn(Set(entries.map(\.record.kind))).width
         VStack(spacing: 0) {
             let alerts = d.alerts
@@ -448,8 +450,11 @@ struct DecoderLog: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 // Its own view per decoder, so another decoder's log opens at the bottom too.
-                DecoderLogRows(entries: entries, kindWidth: kindWidth)
-                    .id(d.selectedName)
+                DecoderLogRows(
+                    entries: entries, nameShown: columns.name,
+                    kindWidth: columns.kind ? kindWidth : nil
+                )
+                .id(d.selectedName)
             }
         }
     }
@@ -464,7 +469,9 @@ struct DecoderLog: View {
 struct DecoderLogRows: View {
     /// Newest first, as `RecordLog` holds them; drawn the other way up.
     let entries: [RecordEntry]
-    let kindWidth: CGFloat
+    /// Whether the transmitter column shows, and the kind column's width, nil without one.
+    let nameShown: Bool
+    let kindWidth: CGFloat?
     @Environment(AppSession.self) private var session
     @State private var position = ScrollPosition(idType: String.self)
     /// What is moving the scroll view, from its phase.
@@ -478,7 +485,8 @@ struct DecoderLogRows: View {
                 ForEach(Array(entries.reversed().enumerated()), id: \.element.id) { j, e in
                     DecoderLogRow(
                         entry: e, name: d.name(of: e.record.deviceID),
-                        summary: d.summary(e.record), kindWidth: kindWidth,
+                        summary: d.summary(e.record), nameShown: nameShown,
+                        kindWidth: kindWidth,
                         selected: d.selectedRecord == e.id
                     )
                     .contentShape(Rectangle())
@@ -567,8 +575,10 @@ struct DecoderLogRow: View {
     let entry: RecordEntry
     let name: String
     let summary: String
-    /// The kind column's width, the longest kind's in the log.
-    let kindWidth: CGFloat
+    /// Whether the transmitter column shows (`DecoderPages.logColumns`).
+    let nameShown: Bool
+    /// The kind column's width, the longest kind's in the log; nil while no record has a kind.
+    let kindWidth: CGFloat?
     let selected: Bool
 
     var body: some View {
@@ -576,12 +586,16 @@ struct DecoderLogRow: View {
             Text(DecoderPages.clock(entry.at)).font(Theme.Font.value)
                 .foregroundStyle(entry.dated ? Theme.inkMuted : Theme.inkFaint)
                 .frame(width: Theme.Layout.decoderTimeWidth, alignment: .leading)
-            Text(name.isEmpty ? "—" : name).font(Theme.Font.label)
-                .foregroundStyle(Theme.inkSecondary).lineLimit(1)
-                .frame(width: Theme.Layout.decoderNameWidth, alignment: .leading)
-            Text(entry.record.kind).font(Theme.Font.footnote).foregroundStyle(Theme.inkFaint)
-                .lineLimit(1)
-                .frame(width: kindWidth, alignment: .leading)
+            if nameShown {
+                Text(name.isEmpty ? "—" : name).font(Theme.Font.label)
+                    .foregroundStyle(Theme.inkSecondary).lineLimit(1)
+                    .frame(width: Theme.Layout.decoderNameWidth, alignment: .leading)
+            }
+            if let kindWidth {
+                Text(entry.record.kind).font(Theme.Font.footnote).foregroundStyle(Theme.inkFaint)
+                    .lineLimit(1)
+                    .frame(width: kindWidth, alignment: .leading)
+            }
             Text(summary).font(Theme.Font.label).foregroundStyle(Theme.ink).lineLimit(1)
             Spacer(minLength: 0)
         }

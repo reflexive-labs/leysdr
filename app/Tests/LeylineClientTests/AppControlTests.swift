@@ -231,7 +231,8 @@ final class AppControlTests: XCTestCase {
             d.keys.sorted(),
             [
                 "alerts", "decoder", "detail", "header", "kind_column", "listed", "log_following",
-                "log_jump", "map_following", "notice", "placement", "record_count", "rows",
+                "log_jump", "map_following", "name_column", "notice", "placement", "raw_bytes",
+                "record_count", "rows",
                 "selected_transmitter",
                 "start_enabled", "start_shown", "state", "tab", "table_heads", "table_rows", "tabs",
                 "transmitter_count", "transmitters", "watches",

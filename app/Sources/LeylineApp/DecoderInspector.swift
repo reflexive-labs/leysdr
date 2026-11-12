@@ -4,7 +4,8 @@
 // shows it, its id and a field that names it in `labels.json` (`LabelStore`, the file `ley track`
 // and `ley records` read too), how often and when it was heard and where it was last; then the
 // record: its time, the signal the daemon measured, its line, every field with the manifest's
-// unit but one the line already shows whole, and the raw payload as hex behind a disclosure.
+// unit but one the line already shows whole, and the raw payload as hex behind a disclosure,
+// unless it is only the UTF-8 of a line shown above.
 // With nothing selected, the decoder itself: what it is, where it listens and what it sends. Nothing here decodes (AGENTS.md, invariant 2):
 // every value is the record's, printed by the template rules.
 
@@ -184,7 +185,8 @@ struct RecordSection: View {
                 }
                 .padding(.horizontal, 16).padding(.vertical, 14)
             }
-            if !r.raw.isEmpty {
+            // Not when the bytes are a line shown above as UTF-8 (speech's transcript).
+            if DecoderPages.showsRaw(r.raw, shown: [d.summary(r)] + fields.map(\.value)) {
                 Rectangle().fill(Theme.hairline).frame(height: 1)
                 RawBytes(raw: r.raw, recordID: entry.id)
             }

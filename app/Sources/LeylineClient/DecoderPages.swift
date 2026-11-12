@@ -220,6 +220,34 @@ public enum DecoderPages {
         return age == "now" ? "just now" : age + " ago"
     }
 
+    /// Which of the log's optional columns take a place: the transmitter's while any record in
+    /// the log has a `device_id`, the kind's while any has a kind. Speech's records have
+    /// neither, so its lines start beside their time; a record with one brings its column back.
+    public struct LogColumns: Sendable, Equatable {
+        public var name: Bool
+        public var kind: Bool
+        public init(name: Bool, kind: Bool) {
+            self.name = name
+            self.kind = kind
+        }
+    }
+
+    public static func logColumns(_ entries: [RecordEntry]) -> LogColumns {
+        LogColumns(
+            name: entries.contains { !$0.record.deviceID.isEmpty },
+            kind: entries.contains { !$0.record.kind.isEmpty })
+    }
+
+    /// Whether the inspector offers a record's Raw group: not with no bytes, and not when the
+    /// bytes are UTF-8 for exactly a line it already shows, the summary or a field's value as
+    /// printed (speech's raw is its transcript, which the summary is). Binary payloads (APRS,
+    /// ADS-B) never decode to such a line, so theirs stays.
+    public static func showsRaw(_ raw: Data, shown: [String]) -> Bool {
+        guard !raw.isEmpty else { return false }
+        guard let text = String(data: raw, encoding: .utf8) else { return true }
+        return !shown.contains(text)
+    }
+
     /// How many of `hexLines` the inspector's open Raw group shows before "Show all": 64 bytes.
     public static let rawLinesShown = 8
 

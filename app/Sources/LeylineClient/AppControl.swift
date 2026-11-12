@@ -685,8 +685,14 @@ public struct ControlDecoders: Sendable, Equatable, Codable {
     /// name and its display columns as printed: `LEY303: 36000 · 470 · 135 · 2761`.
     public var tableHeads: [String]
     public var tableRows: [String]
-    /// The kind the log's kind column is sized to, its widest; null with no records.
+    /// The kind the log's kind column is sized to, its widest; null while no record has a kind,
+    /// when the log has no kind column.
     public var kindColumn: String?
+    /// Whether the log has a transmitter column: while some record in it has a `device_id`.
+    public var nameColumn: Bool
+    /// The size of the inspected record's Raw group, null with no record inspected or when Raw
+    /// is left out (`DecoderPages.showsRaw`).
+    public var rawBytes: Int?
     /// The selected decoder's live watches as the sidebar words them, newest first: `fips
     /// contains 06009`.
     public var watches: [String]
@@ -697,6 +703,8 @@ public struct ControlDecoders: Sendable, Equatable, Codable {
         case tableHeads = "table_heads"
         case tableRows = "table_rows"
         case kindColumn = "kind_column"
+        case nameColumn = "name_column"
+        case rawBytes = "raw_bytes"
         case startShown = "start_shown"
         case startEnabled = "start_enabled"
         case recordCount = "record_count"
@@ -715,8 +723,11 @@ public struct ControlDecoders: Sendable, Equatable, Codable {
         alerts: [String] = [], notice: String? = nil, header: String? = nil,
         tableHeads: [String] = [], tableRows: [String] = [], kindColumn: String? = nil,
         watches: [String] = [], transmitterCount: Int = 0, mapFollowing: Bool = true,
-        logFollowing: Bool = true, logJump: String? = nil
+        logFollowing: Bool = true, logJump: String? = nil, nameColumn: Bool = false,
+        rawBytes: Int? = nil
     ) {
+        self.nameColumn = nameColumn
+        self.rawBytes = rawBytes
         self.logFollowing = logFollowing
         self.logJump = logJump
         self.watches = watches
@@ -768,6 +779,8 @@ public struct ControlDecoders: Sendable, Equatable, Codable {
         try c.encode(tableHeads, forKey: .tableHeads)
         try c.encode(tableRows, forKey: .tableRows)
         try c.encode(kindColumn, forKey: .kindColumn)
+        try c.encode(nameColumn, forKey: .nameColumn)
+        try c.encode(rawBytes, forKey: .rawBytes)
         try c.encode(watches, forKey: .watches)
     }
 }

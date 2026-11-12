@@ -513,9 +513,10 @@ extension Theme.Layout {
 
     /// The kind among `kinds` that is widest in `Font.footnote`, and the kind column's width:
     /// that kind's, so the summary starts where the longest kind ends, up to `decoderKindWidth`.
+    /// An empty kind is not measured: with no other, there is no column (nil and 0).
     static func decoderKindColumn(_ kinds: Set<String>) -> (widest: String?, width: CGFloat) {
         let font = NSFont.systemFont(ofSize: Theme.Font.footnoteSize)
-        let measured = kinds.map { k in
+        let measured = kinds.filter { !$0.isEmpty }.map { k in
             (k, (k as NSString).size(withAttributes: [.font: font]).width)
         }
         guard let widest = measured.max(by: { $0.1 != $1.1 ? $0.1 < $1.1 : $0.0 > $1.0 }) else {

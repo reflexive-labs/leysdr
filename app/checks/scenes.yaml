@@ -1868,7 +1868,7 @@ scenes:
       - {cmd: snapshot, name: table}
       - {cmd: ax, name: table}
       - {cmd: press, identifier: decoders.transmitter.n0call-3}
-      - {cmd: state, expect: {decoders.selected_transmitter: N0CALL-3}}
+      - {cmd: state, expect: {decoders.selected_transmitter: N0CALL-3, decoders.name_column: true}}
       - {cmd: snapshot, name: transmitter}
       - {cmd: hover, identifier: decoders.inspector.field.destination.name, expect: {tooltip: "destination: AX.25 destination address, usually the software's identifier"}}
       - {cmd: press, identifier: decoders.inspector.raw.toggle}
@@ -2033,8 +2033,10 @@ scenes:
   # (speech): `ley decode speech` keeps a job until two overs are heard. The log reads oldest
   # first, so the newest over is the bottom row (decoders.record.0); its inspector has the over's
   # words as its line and does not list the text field again under Fields, a field's label has
-  # its name and description as its tooltip with no footnote under it, and the raw bytes are a
-  # closed disclosure that opens to them. No tree is kept: the inspector's job id is new each run.
+  # its name and description as its tooltip with no footnote under it, and there is no Raw group,
+  # since the raw bytes are only the transcript's UTF-8. No record has a transmitter or a kind,
+  # so the log has neither column and each line starts beside its time. No tree is kept: the
+  # inspector's job id is new each run.
   - name: decoders-speech
     covers: [DecoderInspector.swift, DecodersView.swift, DecoderPages.swift]
     threshold: 1.5
@@ -2054,9 +2056,8 @@ scenes:
       - {cmd: state, expect: {place: decoders, decoders.decoder: speech, decoders.record_count: 2, decoders.log_following: true, decoders.log_jump: null}}
       - {cmd: press, identifier: decoders.record.0}
       - {cmd: hover, identifier: decoders.inspector.field.model.name, expect: {tooltip: "model: the model that produced the text"}}
+      - {cmd: state, expect: {decoders.name_column: false, decoders.kind_column: null, decoders.raw_bytes: null}}
       - {cmd: snapshot, name: record}
-      - {cmd: press, identifier: decoders.inspector.raw.toggle}
-      - {cmd: snapshot, name: raw}
 
   # Decoding seen from the radio (docs/plans/decoders-app.md, DA-9) on scene_aprs. With no
   # decoder running the Radio sidebar has no decoder row. A terminal starts APRS as a kept job

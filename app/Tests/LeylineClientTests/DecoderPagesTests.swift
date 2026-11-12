@@ -235,6 +235,44 @@ final class DecoderPagesTests: XCTestCase {
         XCTAssertFalse(DecoderPages.rawShown(long, all: true).cut)
     }
 
+    /// The transmitter and kind columns take a place only while some record in the log has one.
+    func testLogColumnsAppearWithARecordThatHasOne() {
+        func entry(_ id: String, device: String = "", kind: String = "") -> RecordEntry {
+            var r = Leyline_V1_DecodeRecord()
+            r.recordID = id
+            r.deviceID = device
+            r.kind = kind
+            return RecordEntry(record: r, at: Date(timeIntervalSince1970: 0), dated: true)
+        }
+        XCTAssertEqual(
+            DecoderPages.logColumns([]), DecoderPages.LogColumns(name: false, kind: false))
+        let speech = [entry("a"), entry("b")]
+        XCTAssertEqual(
+            DecoderPages.logColumns(speech), DecoderPages.LogColumns(name: false, kind: false))
+        XCTAssertEqual(
+            DecoderPages.logColumns(speech + [entry("c", device: "N0CALL-3")]),
+            DecoderPages.LogColumns(name: true, kind: false))
+        XCTAssertEqual(
+            DecoderPages.logColumns(speech + [entry("d", kind: "position")]),
+            DecoderPages.LogColumns(name: false, kind: true))
+    }
+
+    /// Raw is left out when its bytes are the UTF-8 of a line already shown; binary stays.
+    func testRawThatRepeatsAShownLineIsLeftOut() {
+        let text = "N0CALL-2, checking in from the north side, no traffic."
+        XCTAssertFalse(DecoderPages.showsRaw(Data(text.utf8), shown: [text, "en"]))
+        XCTAssertFalse(DecoderPages.showsRaw(Data("en".utf8), shown: [text, "en"]))
+        XCTAssertTrue(DecoderPages.showsRaw(Data(text.utf8), shown: ["N0CALL-2"]))
+        XCTAssertTrue(DecoderPages.showsRaw(Data(text.utf8), shown: [text + " "]))
+        // An ADS-B frame is not UTF-8; an APRS frame that is says more than the summary.
+        XCTAssertTrue(
+            DecoderPages.showsRaw(Data([0x8d, 0x48, 0x40, 0xd6, 0x20, 0x2c]), shown: [text]))
+        XCTAssertTrue(
+            DecoderPages.showsRaw(
+                Data("N0CALL-3>APRS,WIDE2-1:!4903.50N/07201.75W-".utf8), shown: ["N0CALL-3"]))
+        XCTAssertFalse(DecoderPages.showsRaw(Data(), shown: [""]))
+    }
+
     /// Speech's summary is `{text}`: the text is the line above the fields, so it is not listed
     /// again. A field that is only part of the summary stays.
     func testAFieldTheSummaryAlreadyShowsIsLeftOut() {

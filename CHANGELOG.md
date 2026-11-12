@@ -34,11 +34,14 @@ What changed for someone using Leyline, newest first. Each released version has 
 - **The Decoders log reads top to bottom.** The newest record is at the bottom, as `ley decode`
   prints it, and the log follows it. Scroll up and it stops: new records wait below without
   moving what you are reading, counted on a **↓ N new** button in the corner that takes you back
-  down. Scrolling back to the bottom follows again.
+  down. Scrolling back to the bottom follows again. A log whose records name no transmitter or
+  kind, such as speech's, no longer keeps an empty column for each: the words start beside the
+  time, and a column appears once a record has something to put in it.
 - **The Decoders inspector says each thing once.** A field the record's line already shows whole,
   such as speech's text, is no longer listed again under Fields, and the description under each
   field has moved into its label's tooltip. The raw bytes are folded away under **Raw · N
   bytes**, which stays open once you open it; a long payload shows eight lines and **Show all**.
+  A record whose raw bytes are only its text again, a speech transcript, has no Raw at all.
 
 ## 0.3.1 (2026-11-04)
 
