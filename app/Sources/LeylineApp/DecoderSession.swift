@@ -459,17 +459,15 @@ final class DecoderSession {
 
     private func askPlan(_ m: Leyline_V1_DecoderManifest) async {
         guard let daemon, let inputs = planInputs?(m), let hz = inputs.hz else { return }
-        var cfg = Leyline_V1_DecodeConfig()
-        cfg.decoder = m.name
-        cfg.frequencyHz = hz
-        cfg.keep = true
+        var cfg = DecoderPlacement.startConfig(
+            m, frequencyHz: hz, windowChannel: inputs.windowChannel, takeOver: false)
         var req = Leyline_V1_PlanRequest()
         req.decode = cfg
         let placement: DecoderPlacement
         do {
             let p = try await daemon.control.plan(req)
             var insisting: Leyline_V1_CapturePlan?
-            if case .decline? = p.outcome {
+            if case .decline? = p.outcome, cfg.channelID.isEmpty {
                 cfg.takeOver = true
                 req.decode = cfg
                 insisting = try await daemon.control.plan(req)
@@ -524,12 +522,11 @@ final class DecoderSession {
     }
 
     private func startJob(_ name: String, frequencyHz: UInt64, takeOver: Bool) async {
-        guard let daemon else { return }
-        var cfg = Leyline_V1_DecodeConfig()
-        cfg.decoder = name
-        cfg.frequencyHz = frequencyHz
-        cfg.keep = true
-        cfg.takeOver = takeOver
+        guard let daemon, let m = manifests?.first(where: { $0.name == name }) else { return }
+        // Speech borrows the window's channel, so it hears that channel's mode and squelch.
+        let cfg = DecoderPlacement.startConfig(
+            m, frequencyHz: frequencyHz, windowChannel: planInputs?(m).windowChannel,
+            takeOver: takeOver)
         var req = Leyline_V1_StartJobRequest()
         req.decode = cfg
         holdStart(name)
@@ -538,7 +535,9 @@ final class DecoderSession {
             let job = try await daemon.jobs.startJob(req)
             log(
                 "decoders",
-                "\(job.jobID) started: \(name) at \(frequencyHz) Hz, kept"
+                "\(job.jobID) started: \(name) "
+                    + (cfg.channelID.isEmpty ? "at \(frequencyHz) Hz" : "on \(cfg.channelID)")
+                    + ", kept"
                     + (takeOver ? ", taking the radio" : ""))
         } catch {
             let e = LeylineError(error)
@@ -577,6 +576,14 @@ final class DecoderSession {
         var req = Leyline_V1_StartJobRequest()
         req.decode = Watches.config(
             decoder: m.name, frequencyHz: frequencyHz, predicate: predicate)
+        // A speech watch borrows the window's channel as Start does.
+        let start = DecoderPlacement.startConfig(
+            m, frequencyHz: frequencyHz, windowChannel: planInputs?(m).windowChannel,
+            takeOver: false)
+        if !start.channelID.isEmpty {
+            req.decode.channelID = start.channelID
+            req.decode.frequencyHz = 0
+        }
         let words = Watches.words(predicate, manifest: m)
         notice = nil
         do {

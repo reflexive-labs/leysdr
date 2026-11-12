@@ -228,6 +228,33 @@ final class DecoderPlacementTests: XCTestCase {
         XCTAssertEqual(DecoderPlacement.frequency(for: m, capture: nil, tunedHz: nil), 144_390_000)
     }
 
+    /// Speech has no frequency of its own: Start borrows the window's channel, so a WFM station
+    /// is transcribed through the WFM channel the person hears. A decoder with a recipe makes its
+    /// own channel on the frequency, and so does speech with no window channel.
+    func testStartPassesTheWindowsChannelForSpeech() {
+        var speech = Leyline_V1_DecoderManifest()
+        speech.name = "speech"
+        speech.input.mode = .segmented
+        let borrowed = DecoderPlacement.startConfig(
+            speech, frequencyHz: 98_500_000, windowChannel: "chan_window", takeOver: true)
+        XCTAssertEqual(borrowed.channelID, "chan_window")
+        XCTAssertEqual(borrowed.frequencyHz, 0, "the channel says where")
+        XCTAssertFalse(borrowed.takeOver, "a borrowed channel takes no radio")
+        XCTAssertTrue(borrowed.keep)
+        let none = DecoderPlacement.startConfig(
+            speech, frequencyHz: 98_500_000, windowChannel: nil, takeOver: false)
+        XCTAssertEqual(none.channelID, "")
+        XCTAssertEqual(none.frequencyHz, 98_500_000)
+        var aprs = Leyline_V1_DecoderManifest()
+        aprs.name = "aprs"
+        aprs.recipe.frequenciesHz = [144_390_000]
+        let own = DecoderPlacement.startConfig(
+            aprs, frequencyHz: 144_390_000, windowChannel: "chan_window", takeOver: true)
+        XCTAssertEqual(own.channelID, "", "a decoder with a recipe makes its own channel")
+        XCTAssertEqual(own.frequencyHz, 144_390_000)
+        XCTAssertTrue(own.takeOver)
+    }
+
     func testADecoderWithNoFrequencyTakesTheTunedOne() {
         let m = Leyline_V1_DecoderManifest()
         XCTAssertEqual(

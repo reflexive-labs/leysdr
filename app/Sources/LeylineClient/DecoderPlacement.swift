@@ -184,6 +184,29 @@ public enum DecoderPlacement: Sendable, Equatable {
         return first
     }
 
+    /// The kept decode job Start makes, and the plan asks about. A decoder with no frequency of its
+    /// own that reads audio (speech) borrows the window's channel (`DecodeConfig.channel_id`), so
+    /// it hears what the person hears, in that channel's mode and through its squelch: a WFM
+    /// station at 98.5 is transcribed as WFM. Any other decoder makes its own channel on
+    /// `frequencyHz`, taking the radio when `takeOver` says so.
+    public static func startConfig(
+        _ m: Leyline_V1_DecoderManifest, frequencyHz: UInt64, windowChannel: String?,
+        takeOver: Bool
+    ) -> Leyline_V1_DecodeConfig {
+        var cfg = Leyline_V1_DecodeConfig()
+        cfg.decoder = m.name
+        cfg.keep = true
+        if m.recipe.frequenciesHz.isEmpty, m.input.signal != .signalIq,
+            let channel = windowChannel, !channel.isEmpty
+        {
+            cfg.channelID = channel
+            return cfg
+        }
+        cfg.frequencyHz = frequencyHz
+        cfg.takeOver = takeOver
+        return cfg
+    }
+
     /// In MHz, as every sentence of the Decoders place writes a frequency.
     static func mhz(_ hz: UInt64) -> String { DecoderPages.frequencyWords(hz) }
 
