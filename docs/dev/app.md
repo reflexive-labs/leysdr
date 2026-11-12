@@ -373,7 +373,8 @@ one too; off is `CancelJob`; the job owns its channel and outlives the window. A
 off goes as NaN, and the daemon then measures an automatic squelch, the noise floor plus 10 dB, on
 the job's own channel and cuts parts there while the window's channel stays open; so before the
 switch is on, the line under it says `With the squelch off, a transmission is cut at an automatic
-level: the noise floor plus 10 dB.` (`Recordings.autoSquelchWords`), and while it runs the status
+level: the noise floor plus 10 dB.` (`Recordings.autoSquelchWords`), and the empty log under it
+says `Nothing is logged while the squelch is off.`, one line, since that squelch never closes; and while it runs the status
 line names the level measured, the job's channel's `SQUELCH_AUTO` squelch from the mirror
 (`Recordings.autoSquelchDBFS`), in place of its tune-away sentence. The
 switch shows `Recordings.activeJob`, the running or degraded record job on the tuned channel's

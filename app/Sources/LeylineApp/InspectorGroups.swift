@@ -116,11 +116,15 @@ struct RecentLog: View {
                         }
                     }
                 }
+                // With the squelch off it never closes, so nothing is logged: the line says that
+                // in one line, under the switch's two about where a recording would cut.
                 if open == nil, closed.isEmpty {
                     Text(
                         log == nil
                             ? "No channel."
-                            : "Nothing yet. A transmission is logged when the squelch closes behind it."
+                            : session.recordSquelchOff
+                                ? "Nothing is logged while the squelch is off."
+                                : "Nothing yet. A transmission is logged when the squelch closes behind it."
                     )
                     .font(Theme.Font.footnote).foregroundStyle(Theme.inkFaintest)
                     .padding(.horizontal, 6).padding(.top, 4)
