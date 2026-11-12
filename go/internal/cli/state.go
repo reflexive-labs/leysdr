@@ -292,6 +292,10 @@ func deviceNode(s ui.Style, d *leylinev1.DeviceDescriptor) treeNode {
 		n.detail = append(n.detail, s.Muted("serial "+d.Serial))
 	}
 	n.detail = append(n.detail, s.Muted("tunes "+absentIfEmpty(s, rangesPhrase(d.TuningRanges))))
+	if d.StateDetail != "" {
+		// NOT_ANSWERING: what happened and what to do, in the daemon's words.
+		n.notes = append(n.notes, []string{s.Err(d.StateDetail)})
+	}
 	return n
 }
 
@@ -306,6 +310,11 @@ func captureNode(s ui.Style, c *leylinev1.Capture, els []*leylinev1.GainElement)
 		detail = append(detail, s.Muted("by "+clientLabel(c.CreatedBy)))
 	}
 	n := treeNode{head: head, detail: detail}
+	if c.StateDetail != "" {
+		// STALLED: "no samples from <radio> for N s", which its claims' holders are
+		// waiting on too.
+		n.notes = append(n.notes, []string{s.Warn(c.StateDetail)})
+	}
 	for _, cl := range c.GetClaims() {
 		note := []string{s.Muted("claim " + claimWords(cl))}
 		if cl.GetState() == leylinev1.ClaimState_CLAIM_DISPLACED {

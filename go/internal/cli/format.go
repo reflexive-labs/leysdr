@@ -25,9 +25,9 @@ func inkState(st ui.Style, word string) string {
 	switch word {
 	case "active", "available", "running":
 		return st.Ok(word)
-	case "in use", "out of capture", "degraded":
+	case "in use", "out of capture", "degraded", "stalled":
 		return st.Warn(word)
-	case "detached", "disconnected", "capture detached", "failed":
+	case "detached", "disconnected", "capture detached", "failed", "not answering":
 		return st.Err(word)
 	default:
 		return word
@@ -167,6 +167,15 @@ func humanEvent(ev *leylinev1.Event) bool {
 	return !anchor
 }
 
+// detailClause is a state's sentence after a colon, or nothing: the daemon sets
+// state_detail on a radio that is not answering and a capture that is stalled.
+func detailClause(detail string) string {
+	if detail == "" {
+		return ""
+	}
+	return ": " + detail
+}
+
 // eventLine renders an event as one human-readable line.
 func eventLine(ev *leylinev1.Event, state *leylinev1.GetStateResponse) string {
 	who := ""
@@ -176,10 +185,10 @@ func eventLine(ev *leylinev1.Event, state *leylinev1.GetStateResponse) string {
 	switch p := ev.Body.(type) {
 	case *leylinev1.Event_Device:
 		d := p.Device
-		return fmt.Sprintf("device %s %s %s%s", d.DeviceId, d.Model, enumName(d.State.String()), who)
+		return fmt.Sprintf("device %s %s %s%s%s", d.DeviceId, d.Model, enumName(d.State.String()), who, detailClause(d.StateDetail))
 	case *leylinev1.Event_Capture:
 		c := p.Capture
-		return fmt.Sprintf("capture %s %s %s @ %s%s%s", c.CaptureId, enumName(c.State.String()), units.FormatFrequency(c.CenterHz), ratesString([]uint64{c.SampleRate}), gainStatesString(c.Gains, deviceGainElements(state, c.DeviceId)), who)
+		return fmt.Sprintf("capture %s %s %s @ %s%s%s%s", c.CaptureId, enumName(c.State.String()), units.FormatFrequency(c.CenterHz), ratesString([]uint64{c.SampleRate}), gainStatesString(c.Gains, deviceGainElements(state, c.DeviceId)), who, detailClause(c.StateDetail))
 	case *leylinev1.Event_Channel:
 		c := p.Channel
 		freq := ""

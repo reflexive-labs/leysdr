@@ -214,6 +214,13 @@ func printDeviceTable(app *App, devices []*leylinev1.DeviceDescriptor, wide bool
 		fmt.Fprintln(app.Stdout, s.Muted("(no radios found)"))
 		return
 	}
+	// A state with a sentence (a radio NOT_ANSWERING) gets it under the table:
+	// what happened and what to do, which a STATE cell has no room for.
+	for _, d := range devices {
+		if d.StateDetail != "" {
+			fmt.Fprintln(app.Stdout, s.Err(d.StateDetail))
+		}
+	}
 	if !wide && app.IsTTY() {
 		hidden := slices.Concat(dropped, []string{"DRIVER", "SERIAL", "ID"})
 		fmt.Fprintf(app.Stdout, "%s  %s\n",
@@ -235,7 +242,7 @@ func deviceStateCell(s ui.Style, d *leylinev1.DeviceDescriptor) string {
 		return s.Warn(text)
 	case d.State == leylinev1.DeviceState_AVAILABLE:
 		return s.Ok(text)
-	case d.State == leylinev1.DeviceState_DISCONNECTED:
+	case d.State == leylinev1.DeviceState_DISCONNECTED, d.State == leylinev1.DeviceState_NOT_ANSWERING:
 		return s.Err(text)
 	}
 	return s.Muted(text)

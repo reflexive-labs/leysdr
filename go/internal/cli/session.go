@@ -110,7 +110,8 @@ const noDeviceChecklist = `no radio found. Check, in order:
 // pickDevice chooses --device (a full id, id prefix, row number or frequency),
 // else the first non-file device that is connected and not held by another
 // program (rtl_tcp, SDR++: the daemon flags those held_externally), else the
-// first non-file connected device, else the first.
+// first non-file connected device, else the first. A radio NOT_ANSWERING is
+// passed over like an unplugged one: the daemon will not open it.
 func pickDevice(state *leylinev1.GetStateResponse, sel string) (*leylinev1.DeviceDescriptor, error) {
 	if len(state.Devices) == 0 {
 		return nil, errors.New(noDeviceChecklist)
@@ -120,7 +121,7 @@ func pickDevice(state *leylinev1.GetStateResponse, sel string) (*leylinev1.Devic
 	}
 	var fallback *leylinev1.DeviceDescriptor
 	for _, d := range state.Devices {
-		if d.Driver == "file" || d.State == leylinev1.DeviceState_DISCONNECTED {
+		if d.Driver == "file" || d.State == leylinev1.DeviceState_DISCONNECTED || d.State == leylinev1.DeviceState_NOT_ANSWERING {
 			continue
 		}
 		if !heldExternally(d) {

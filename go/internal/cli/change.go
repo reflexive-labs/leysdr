@@ -313,6 +313,8 @@ func deviceChanges(was, now, ours *leylinev1.DeviceDescriptor, st ui.Style) []ch
 		return []change{{"unplugged", "the radio (" + st.Cmd("ley devices") + " lists what is left)"}}
 	case leylinev1.DeviceState_AVAILABLE, leylinev1.DeviceState_IN_USE:
 		return []change{{"plugged", "the radio back in"}}
+	case leylinev1.DeviceState_NOT_ANSWERING:
+		return []change{{"left", "the radio alone: " + st.Err(now.StateDetail)}}
 	}
 	return nil
 }
