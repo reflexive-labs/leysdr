@@ -44,7 +44,7 @@ struct PartSpeechLines: View {
                         Text(coverage).font(Theme.Font.footnote)
                             .foregroundStyle(Theme.inkMuted).lineLimit(1)
                         // The whole recording again: the newest line of each over is shown.
-                        if session.canTranscribe, session.isGated(recordingID: row.jobID) {
+                        if session.canTranscribe, session.isTranscribable(recordingID: row.jobID) {
                             Button {
                                 session.transcribeAgainFor = row.jobID
                             } label: {
@@ -179,7 +179,7 @@ struct SpeechActions: View {
             session.transcriptionStatus(for: recordingID).map {
                 $0.job.state == .running || $0.job.state == .degraded
             } ?? false
-        if session.canTranscribe, session.isGated(recordingID: recordingID), !running {
+        if session.canTranscribe, session.isTranscribable(recordingID: recordingID), !running {
             if hasWords {
                 Button("Transcribe again…") { session.transcribeAgainFor = recordingID }
             } else {

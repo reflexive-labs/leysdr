@@ -4310,10 +4310,13 @@ final class AppSession {
         }
     }
 
-    /// Whether a recording's manifest lists squelch openings: speech is cut at the squelch, so only
-    /// a gated recording can be transcribed. False until the manifest has been read.
-    func isGated(recordingID: String) -> Bool {
-        manifests[recordingID]?.parts.contains { $0.squelchOpens > 0 } ?? false
+    /// Whether the speech decoder has anything to hear in a recording: one whose manifest lists
+    /// squelch openings, or, since the decoder cuts at `max_segment_ms`, any audio recording, a
+    /// continuous one sent whole (`SpeechRecords.transcribable`). False until the manifest has
+    /// been read.
+    func isTranscribable(recordingID: String) -> Bool {
+        manifests[recordingID].map { SpeechRecords.transcribable($0, decoder: speechDecoder) }
+            ?? false
     }
 
     /// Whether the Library offers Transcribe: a speech decoder is installed, and it needs no key

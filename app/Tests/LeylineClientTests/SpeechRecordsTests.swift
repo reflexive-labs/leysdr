@@ -291,6 +291,68 @@ final class SpeechRecordsTests: XCTestCase {
         XCTAssertFalse(SpeechRecords.canTranscribe(decoder: nil, ai: .init()))
     }
 
+    /// A continuous recording has no openings: a decoder that cuts at `max_segment_ms` is sent all
+    /// of it, so the question counts every minute and says so, and Transcribe is offered for it.
+    func testTheQuestionCountsEveryMinuteOfAContinuousRecording() {
+        let json = """
+            {"job_id": "job_fm", "kind": "audio", "frequency_hz": 98500000, "mode": "WFM",
+             "sample_rate": 48000, "gate": {"kind": "none", "pre_roll_ms": 0, "hang_ms": 0},
+             "anchors": [{"capture_id": "cap_a", "host_time_ns": \(hostNs), "sample_rate": 2400000,
+                          "drift_ppm": 0, "from_sample": 0}],
+             "parts": [
+               {"part": 1, "file": "p1.wav", "start_sample": 0, "end_sample": 144000000,
+                "samples": 2880000, "bytes": 5760044, "squelch_opens": 0},
+               {"part": 2, "file": "p2.wav", "start_sample": 144000000, "end_sample": 216000000,
+                "samples": 1440000, "bytes": 2880044, "squelch_opens": 0}]}
+            """
+        let m = try! RecordingManifest.decode(Data(json.utf8))
+        var d = Leyline_V1_DecoderManifest()
+        d.name = "speech"
+        d.input.mode = .segmented
+        d.contactsHosts = ["api.openai.com"]
+        XCTAssertFalse(
+            SpeechRecords.transcribable(m, decoder: d), "with no limit, nothing would be sent")
+        d.input.maxSegmentMs = 30_000
+        XCTAssertTrue(SpeechRecords.transcribable(m, decoder: d))
+        XCTAssertEqual(SpeechRecords.audioMs(m, decoder: d).ungated, 90_000, "60 s and 30 s, whole")
+        XCTAssertEqual(
+            SpeechRecords.question(manifest: m, decoder: d),
+            "Transcribe 2 parts, 1.5 min of audio from 98.500 MHz WFM, every minute of it since no squelch gated the recording, with speech (sends the audio to api.openai.com)?"
+        )
+        XCTAssertEqual(
+            SpeechRecords.question(manifest: manifest(), decoder: d),
+            "Transcribe 2 parts, 0.1 min of squelch-open audio from 146.520 MHz NFM, with speech (sends the audio to api.openai.com)?",
+            "a gated recording is asked about as before")
+    }
+
+    /// The pieces of one long over share its index and each is a line of its own; transcribing
+    /// again replaces each piece's line with the newer one.
+    func testThePiecesOfALongOverAreLinesOfTheirOwn() {
+        func piece(_ job: String, _ id: String, at: UInt64, continues: Bool, seq: UInt64)
+            -> Leyline_V1_DecodeRecord
+        {
+            var r = record(job: job, id: id, part: 1, over: 1, at: ms(at), text: id, seq: seq)
+            if continues { r.fields["continues"] = .with { $0.flag = true } }
+            return r
+        }
+        let first = [
+            piece("job_01", "rec_1", at: 100, continues: false, seq: 1),
+            piece("job_01", "rec_2", at: 30_100, continues: true, seq: 2),
+            piece("job_01", "rec_3", at: 59_900, continues: true, seq: 3),
+        ]
+        let s = speech(first)
+        XCTAssertEqual(s.shown().map(\.recordID), ["rec_1", "rec_2", "rec_3"])
+        XCTAssertEqual(s.shown().map(\.piece), [1, 2, 3])
+        let again = [
+            piece("job_02", "rec_7", at: 100, continues: false, seq: 1),
+            piece("job_02", "rec_8", at: 29_900, continues: true, seq: 2),
+        ]
+        let both = speech(first + again)
+        XCTAssertEqual(both.shown().map(\.recordID), ["rec_7", "rec_8", "rec_3"])
+        XCTAssertEqual(
+            both.versions(part: 1, over: 1, piece: 2).map(\.recordID), ["rec_8", "rec_2"])
+    }
+
     func testTheTranscriptionJobAndItsLine() {
         let cfg = SpeechRecords.transcribeConfig(recordingURI: "ley://recordings/job_rec")
         XCTAssertEqual(cfg.decoder, "speech")

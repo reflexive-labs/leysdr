@@ -37,13 +37,20 @@ public struct SpeechLine: Sendable, Equatable, Identifiable {
     public var wallTime: Date?
     /// The record's place in its job's stream, which breaks a tie between two records of one over.
     public var seq: UInt64
+    /// A piece after the first of one long transmission, cut at the decoder's `max_segment_ms`:
+    /// the record's `continues` flag. The pieces of one over share its index.
+    public var continues: Bool
+    /// Which piece of its over the line is, from 1, in the order its transcription cut them:
+    /// `RecordingSpeech` numbers them, so the pieces of one over are separate lines.
+    public var piece: Int = 1
 
     public var id: String { recordID }
 
     public init(
         jobID: String, recordID: String, recordingID: String, part: Int, over: Int, text: String,
         model: String = "", confidence: Double? = nil, callsigns: [String] = [],
-        time: Leyline_V1_SampleTime = .init(), wallTime: Date? = nil, seq: UInt64 = 0
+        time: Leyline_V1_SampleTime = .init(), wallTime: Date? = nil, seq: UInt64 = 0,
+        continues: Bool = false
     ) {
         self.jobID = jobID
         self.recordID = recordID
@@ -58,6 +65,7 @@ public struct SpeechLine: Sendable, Equatable, Identifiable {
         self.time = time
         self.wallTime = wallTime
         self.seq = seq
+        self.continues = continues
     }
 
     /// The record as a line, or nil when it is not speech or names no recording part.
@@ -70,7 +78,7 @@ public struct SpeechLine: Sendable, Equatable, Identifiable {
             model: SpeechRecords.text(r.fields["model"]),
             confidence: SpeechRecords.number(r.fields["confidence"]),
             callsigns: SpeechRecords.callsigns(SpeechRecords.text(r.fields["callsigns"])),
-            time: r.time, seq: r.seq)
+            time: r.time, seq: r.seq, continues: r.fields["continues"]?.flag == true)
     }
 
     /// `whisper-1 · 92%`: the model and the confidence, as the line's muted words; the model
@@ -95,10 +103,22 @@ public struct RecordingSpeech: Sendable, Equatable {
     public private(set) var newest: [SpeechLine]
 
     public init(lines: [SpeechLine], manifest: RecordingManifest?) {
+        // The continuing pieces of each over, by transcription: their start times in order, so
+        // each is numbered after the first piece, the same in every transcription that cut it.
+        var continuing: [String: [UInt64]] = [:]
+        for l in lines where l.continues {
+            continuing["\(l.jobID)/\(l.part)/\(l.over)", default: []].append(l.time.sampleIndex)
+        }
+        let pieces = continuing.mapValues { Array(Set($0)).sorted() }
         all = lines.map { line in
             var l = line
             if let m = manifest, l.wallTime == nil {
                 l.wallTime = SpeechRecords.wallTime(of: l, in: m)
+            }
+            if l.continues, let starts = pieces["\(l.jobID)/\(l.part)/\(l.over)"],
+                let i = starts.firstIndex(of: l.time.sampleIndex)
+            {
+                l.piece = i + 2
             }
             return l
         }
@@ -107,10 +127,11 @@ public struct RecordingSpeech: Sendable, Equatable {
         newest = pick(job: nil)
     }
 
-    /// The lines shown: for each over, the newest transcription's line, so transcribing again
-    /// replaces what is shown and keeps what was there; with `job`, that transcription's lines
-    /// only. In part order, then over order. Two records of one over from one job (a segment the
-    /// daemon sent again after a restart) show the later one.
+    /// The lines shown: for each over, or each piece of an over cut at the decoder's limit, the
+    /// newest transcription's line, so transcribing again replaces what is shown and keeps what
+    /// was there; with `job`, that transcription's lines only. In part order, then over order. Two
+    /// records of one over from one job (a segment the daemon sent again after a restart) show the
+    /// later one.
     public func shown(job: String? = nil) -> [SpeechLine] {
         job == nil ? newest : pick(job: job)
     }
@@ -118,7 +139,7 @@ public struct RecordingSpeech: Sendable, Equatable {
     private func pick(job: String?) -> [SpeechLine] {
         var best: [String: SpeechLine] = [:]
         for l in all where job == nil || l.jobID == job {
-            let key = "\(l.part)/\(l.over)"
+            let key = "\(l.part)/\(l.over)/\(l.piece)"
             if let held = best[key], (held.jobID, held.seq) >= (l.jobID, l.seq) { continue }
             best[key] = l
         }
@@ -130,9 +151,10 @@ public struct RecordingSpeech: Sendable, Equatable {
         shown(job: job).filter { $0.part == part }
     }
 
-    /// Every transcription of one over, newest first: what "earlier transcriptions" lists.
-    public func versions(part: Int, over: Int) -> [SpeechLine] {
-        all.filter { $0.part == part && $0.over == over }
+    /// Every transcription of one over, or of one piece of it, newest first: what "earlier
+    /// transcriptions" lists.
+    public func versions(part: Int, over: Int, piece: Int = 1) -> [SpeechLine] {
+        all.filter { $0.part == part && $0.over == over && $0.piece == piece }
             .sorted { ($0.jobID, $0.seq) > ($1.jobID, $1.seq) }
     }
 }
@@ -204,7 +226,9 @@ public enum SpeechRecords {
     public static let queryLimit: UInt32 = 20_000
 
     static func inOrder(_ a: SpeechLine, _ b: SpeechLine) -> Bool {
-        (a.part, a.over, a.time.sampleIndex) < (b.part, b.over, b.time.sampleIndex)
+        (a.part, a.over, a.piece, a.time.sampleIndex) < (
+            b.part, b.over, b.piece, b.time.sampleIndex
+        )
     }
 
     /// The wall clock of a line's first sample through the manifest's anchors: its own capture,
@@ -462,8 +486,9 @@ public enum SpeechRecords {
 
     /// The question asked before transcribing, as `ley transcribe` states it: `Transcribe 2
     /// parts, 0.1 min of squelch-open audio from 146.520 MHz NFM, with speech (sends the audio to
-    /// api.example.com)?`. The minutes are the parts' `squelch_open_ms`, else their openings
-    /// summed at the capture rate; `model`, when one is chosen, is named and said to stay.
+    /// api.example.com)?`. The minutes are what `audioMs` counts from the pieces the decoder is
+    /// sent: the squelch-open audio of the gated parts, and every minute of the parts nothing
+    /// gated, which the question says; `model`, when one is chosen, is named and said to stay.
     public static func question(
         manifest m: RecordingManifest, decoder: Leyline_V1_DecoderManifest, model: String = ""
     ) -> String {
@@ -474,15 +499,74 @@ public enum SpeechRecords {
             hosts.isEmpty
             ? "on this Mac; no audio leaves it"
             : "sends the audio to " + hosts.joined(separator: ", ")
-        let minutes = Double(squelchOpenMs(m)) / 60_000
+        let audio = audioMs(m, decoder: decoder)
+        let from = "from \(frequencyWords(m.frequencyHz)) \(m.mode)"
+        let sent: String
+        if audio.ungated == 0 {
+            sent = minutesWords(audio.gated) + " min of squelch-open audio " + from
+        } else if audio.gated == 0 {
+            sent =
+                minutesWords(audio.ungated) + " min of audio " + from
+                + ", every minute of it since no squelch gated the recording"
+        } else {
+            sent =
+                minutesWords(audio.gated + audio.ungated) + " min of audio " + from + ", "
+                + minutesWords(audio.ungated) + " min of it from parts no squelch gated"
+        }
         var words =
-            "Transcribe \(RecordingSummary.partsWords(m.parts.count)), "
-            + String(format: "%.1f", minutes)
-            + " min of squelch-open audio from \(frequencyWords(m.frequencyHz)) \(m.mode), with \(with) (\(destination))"
+            "Transcribe \(RecordingSummary.partsWords(m.parts.count)), \(sent), with \(with) (\(destination))"
         if !model.isEmpty {
             words += "; the speech model is set to \(model) for this and later jobs"
         }
         return words + "?"
+    }
+
+    /// `12.3`: minutes to one decimal, from ms.
+    static func minutesWords(_ ms: Int64) -> String {
+        String(format: "%.1f", Double(ms) / 60_000)
+    }
+
+    /// Whether a squelch gates a channel in `mode` (a manifest's `NFM`): NFM and AM. Any other
+    /// mode has no closed squelch to cut at (the daemon's `RecordingSource.gatedModes`).
+    static func squelchGated(mode: String) -> Bool {
+        ["NFM", "AM"].contains(mode.uppercased())
+    }
+
+    /// The parts of `m` nothing gated: those with no squelch openings, which is every part of a
+    /// continuous recording, and every part of a recording in a mode with no squelch gate.
+    static func ungatedParts(_ m: RecordingManifest) -> [RecordingPart] {
+        let gated = squelchGated(mode: m.mode)
+        return m.parts.filter { !gated || $0.squelchOpens == 0 }
+    }
+
+    /// What the speech decoder is sent of `m`, in ms, by how the daemon cuts it
+    /// (`RecordingSource`): the squelch-open audio of the gated parts, and the whole length of the
+    /// parts nothing gated when the decoder cuts at `max_segment_ms`, since it is sent every minute
+    /// of them in pieces; a decoder with no limit is sent none of those.
+    public static func audioMs(_ m: RecordingManifest, decoder: Leyline_V1_DecoderManifest)
+        -> (gated: Int64, ungated: Int64)
+    {
+        let ungatedParts = ungatedParts(m)
+        var gatedManifest = m
+        gatedManifest.parts = m.parts.filter { p in !ungatedParts.contains { $0.part == p.part } }
+        let gated = squelchOpenMs(gatedManifest)
+        guard decoder.input.maxSegmentMs > 0 else { return (gated, 0) }
+        let ungated = ungatedParts.reduce(Int64(0)) { sum, p in
+            let rate = captureRate(of: p, in: m)
+            guard rate > 0, p.endSample > p.startSample else { return sum }
+            return sum + Int64((Double(p.endSample - p.startSample) / rate * 1000).rounded())
+        }
+        return (gated, ungated)
+    }
+
+    /// Whether `m` gives the speech decoder anything: an audio recording with squelch openings,
+    /// or, for a decoder that cuts at `max_segment_ms`, any audio recording with parts.
+    public static func transcribable(_ m: RecordingManifest, decoder: Leyline_V1_DecoderManifest?)
+        -> Bool
+    {
+        guard m.kind != "iq", let decoder else { return false }
+        if m.parts.contains(where: { $0.squelchOpens > 0 }) { return true }
+        return decoder.input.maxSegmentMs > 0 && !m.parts.isEmpty
     }
 
     /// How long the squelch was open across the recording, in ms: each part's
