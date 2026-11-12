@@ -369,14 +369,21 @@ Record transmissions switch. On starts `Jobs.StartJob` in the frequency form of 
 gated by squelch, with the tuned channel's frequency, mode, width and squelch copied
 (`Recordings.config`) and a hang and pre-roll of 500 ms each (`windowHangMs`, `windowPreRollMs`),
 so each transmission is its own part, as `ley record`'s default hang now makes each
-one too; off is `CancelJob`; the job owns its channel and outlives the window. The
+one too; off is `CancelJob`; the job owns its channel and outlives the window. A squelch that is
+off goes as NaN, and the daemon then measures an automatic squelch, the noise floor plus 10 dB, on
+the job's own channel and cuts parts there while the window's channel stays open; so before the
+switch is on, the line under it says `With the squelch off, a transmission is cut at an automatic
+level: the noise floor plus 10 dB.` (`Recordings.autoSquelchWords`), and while it runs the status
+line names the level measured, the job's channel's `SQUELCH_AUTO` squelch from the mirror
+(`Recordings.autoSquelchDBFS`), in place of its tune-away sentence. The
 switch shows `Recordings.activeJob`, the running or degraded record job on the tuned channel's
 frequency and mode in the mirror's `jobs`, whoever started it, and keeps only a click until that
 job's event arrives (`recordSwitchOn`); File ▸ Record Transmissions (⌘R) is the same switch.
 Its track is tinted `accentRec` only while it is on; off it has no tint, the system's own dark
 track.
 While it is on, the line under it is `Recordings.statusLine` (`Since 09:12 · 3 parts · 1.1 MB.
-Keeps going if you tune away.`, from the job's `created_at_ns` and the manifest), or the job's
+Keeps going if you tune away.`, or `… 1.1 MB. Cut at −62 dBFS, an automatic squelch.`, from the
+job's `created_at_ns` and the manifest), or the job's
 `status_detail` in `caution` while it is degraded. The store is read, not mirrored: a manifest
 is `recording.json` read through `ResolveLocalPath`, because the window is local as `ley
 recordings show` is, into one cache by job id (`AppSession.manifests`) that the channel page

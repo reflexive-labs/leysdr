@@ -169,8 +169,10 @@ struct RecentLog: View {
 }
 
 /// The head of the log: `Record transmissions` and a switch, then one line. Off, the line says what
-/// switching on does, and it is the region's only explanatory copy. On, it is the recording's
-/// status: since when, its parts and bytes from the manifest, and that it outlives a retune; while
+/// switching on does, and it is the region's only explanatory copy; with the channel's squelch off
+/// it says the recording will cut at an automatic level. On, it is the recording's
+/// status: since when, its parts and bytes from the manifest, and that it outlives a retune, or the
+/// automatic squelch it measured (`Recordings.autoSquelchDBFS`) in that sentence's place; while
 /// the job is degraded, the daemon's `status_detail` in `caution`. The switch shows the record job
 /// on the tuned channel's frequency and mode, whoever started it (`AppSession.recordingJob`), and
 /// remembers nothing of its own clicks; between a click and the job's event it shows the click
@@ -207,8 +209,14 @@ struct RecordSwitch: View {
             }
             Group {
                 if let job {
-                    Text(Recordings.statusLine(job: job, manifest: session.recording))
-                        .foregroundStyle(job.state == .degraded ? Theme.caution : Theme.inkTertiary)
+                    Text(
+                        Recordings.statusLine(
+                            job: job, manifest: session.recording,
+                            autoSquelchDBFS: session.recordingAutoSquelch)
+                    )
+                    .foregroundStyle(job.state == .degraded ? Theme.caution : Theme.inkTertiary)
+                } else if session.recordSquelchOff {
+                    Text(Recordings.autoSquelchWords).foregroundStyle(Theme.inkTertiary)
                 } else {
                     Text(Self.help).foregroundStyle(Theme.inkTertiary)
                 }

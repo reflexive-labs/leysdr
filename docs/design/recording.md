@@ -312,7 +312,12 @@ Rules the daemon enforces, each with its code:
   picked `NONE`. Both are accepted when the daemon picks `SQUELCH`.
 - `channel_id` naming a channel that is not there is `CHANNEL_NOT_FOUND`; a channel whose
   squelch is off (NaN) with `gate = SQUELCH` is `FAILED_PRECONDITION`, "squelch is off on
-  chan_…; set one with ley set squelch".
+  chan_…; set one with ley set squelch". That applies to the channel form only. The frequency
+  form with `gate = SQUELCH` and NaN (or 0) in `squelch_dbfs` is not refused and does not record
+  continuously: the daemon measures an automatic squelch on the job's own channel, the noise floor
+  plus 10 dB, and gates there. The channel is published with that level and `SQUELCH_AUTO`, and
+  the manifest's `squelch_dbfs` holds it. The app's Record transmissions switch sends this when the
+  tuned channel's squelch is off, and its line says so.
 - `start_at_ns != 0` is `UNIMPLEMENTED` (a scheduled recording needs the durable job store).
 - Allocation failures are the allocator's: `NO_DEVICE`, `BLIND_SPOT`, and a declined
   don't-disturb with the reason, exactly as a decode job.

@@ -783,7 +783,9 @@ public enum Recordings {
     /// `ley record` without `--gate`. Pre-roll and hang are the window's (`windowPreRollMs`,
     /// `windowHangMs`), so each transmission is its own part; part length is the daemon's default,
     /// with no duration and no stop after quiet. A squelch that is off (NaN) is sent as NaN, which
-    /// the daemon reads as the channel default.
+    /// for a gated recording the daemon reads as the channel default: it measures an automatic
+    /// squelch, the noise floor plus 10 dB, on the job's own channel and cuts parts there, while
+    /// the window's channel stays open (`autoSquelchWords`, `autoSquelchDBFS`).
     public static func config(
         frequencyHz: UInt64, mode: Leyline_V1_DemodMode, bandwidthHz: UInt32, squelchDBFS: Double
     ) -> Leyline_V1_RecordConfig {
@@ -796,6 +798,31 @@ public enum Recordings {
             $0.preRollMs = windowPreRollMs
             $0.hangMs = windowHangMs
         }
+    }
+
+    /// The log's Record transmissions switch's line before recording while the tuned channel's
+    /// squelch is off: what the daemon will cut at, since the window's own squelch cuts nothing.
+    public static let autoSquelchWords =
+        "With the squelch off, a transmission is cut at an automatic level: the noise floor plus 10 dB."
+
+    /// The automatic squelch a running recording measured: the squelch of the channel the daemon
+    /// made for the job (owned by the job's id) when the daemon set it itself (`SQUELCH_AUTO`).
+    /// nil for a recording at a level somebody chose, one that borrows a person's channel, and
+    /// before the measurement lands.
+    public static func autoSquelchDBFS(job: Leyline_V1_Job, channels: [Leyline_V1_Channel])
+        -> Double?
+    {
+        channels.first {
+            $0.owner.kind == "job" && $0.owner.clientID == job.jobID
+                && $0.squelchSource == .squelchAuto && $0.squelchDb.isFinite
+        }?.squelchDb
+    }
+
+    /// `Cut at −62 dBFS, an automatic squelch.`: the level a running recording measured, for the
+    /// switch's status line.
+    public static func autoSquelchWords(_ dbfs: Double) -> String {
+        let level = String(format: "%.0f", dbfs.rounded()).replacingOccurrences(of: "-", with: "−")
+        return "Cut at \(level == "−0" ? "0" : level) dBFS, an automatic squelch."
     }
 
     /// The job ids of every recording on `frequencyHz` and `mode`, newest first: the running
@@ -853,9 +880,12 @@ public enum Recordings {
     /// parts and bytes are the manifest's (closed parts only, since a part joins the manifest
     /// when it closes), and without a manifest yet the line is the time alone. While the job is
     /// degraded the line is the daemon's `status_detail` instead (`out of capture since …`),
-    /// which the window prints in `caution`.
+    /// which the window prints in `caution`. A recording cut at an automatic squelch says the level
+    /// in place of the tune-away sentence, so the line stays two lines: `Since 09:12 · 3 parts ·
+    /// 1.1 MB. Cut at −62 dBFS, an automatic squelch.`
     public static func statusLine(
-        job: Leyline_V1_Job, manifest: RecordingManifest?, timeZone: TimeZone = .current
+        job: Leyline_V1_Job, manifest: RecordingManifest?, autoSquelchDBFS: Double? = nil,
+        timeZone: TimeZone = .current
     ) -> String {
         if job.state == .degraded, !job.statusDetail.isEmpty { return job.statusDetail }
         var words = [sinceWords(createdAtNs: job.createdAtNs, timeZone: timeZone)]
@@ -863,7 +893,8 @@ public enum Recordings {
             words.append(RecordingSummary.partsWords(m.parts.count))
             words.append(sizeWords(m.bytes))
         }
-        return words.joined(separator: " · ") + ". Keeps going if you tune away."
+        let tail = autoSquelchDBFS.map(autoSquelchWords) ?? "Keeps going if you tune away."
+        return words.joined(separator: " · ") + ". " + tail
     }
 
     /// `Since 09:12`, the job's start as wall clock; `Since now` before the daemon has dated it.

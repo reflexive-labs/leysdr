@@ -3101,6 +3101,16 @@ final class AppSession {
         switchOn(frequencyHz: tunedHz, mode: channel?.mode ?? .unspecified, job: recordingJob)
     }
 
+    /// The automatic squelch the running recording on the tuned channel measured, from its own
+    /// channel in the mirror (`Recordings.autoSquelchDBFS`); nil when it gates at a chosen level.
+    var recordingAutoSquelch: Double? {
+        recordingJob.flatMap { Recordings.autoSquelchDBFS(job: $0, channels: state.channels) }
+    }
+
+    /// The tuned channel's squelch is off, so a recording the switch starts gates at an automatic
+    /// level: the switch's line says so before it is on.
+    var recordSquelchOff: Bool { tunedHz != nil && channel?.squelchDb.isNaN == true }
+
     /// The channel page's switch: the record job on that channel's frequency and mode, whoever
     /// started it, or the click in flight. The log's switch shows the same when it is tuned
     /// there, because both read the job: one state, two places.

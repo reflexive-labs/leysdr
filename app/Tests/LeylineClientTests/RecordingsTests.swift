@@ -347,7 +347,42 @@ final class RecordingsTests: XCTestCase {
         XCTAssertTrue(gated.channelID.isEmpty, "the frequency form: the job owns its channel")
         let off = Recordings.config(frequencyHz: 1, mode: .am, bandwidthHz: 0, squelchDBFS: .nan)
         XCTAssertEqual(off.gate, .squelch)
-        XCTAssertTrue(off.squelchDbfs.isNaN, "an off squelch is the channel default")
+        XCTAssertTrue(
+            off.squelchDbfs.isNaN, "NaN asks the daemon for its auto squelch (the channel page)")
+    }
+
+    func testTheSwitchSaysWhereASquelchThatIsOffCuts() {
+        XCTAssertEqual(
+            Recordings.autoSquelchWords,
+            "With the squelch off, a transmission is cut at an automatic level: the noise floor plus 10 dB."
+        )
+        XCTAssertEqual(
+            Recordings.autoSquelchWords(-61.6), "Cut at −62 dBFS, an automatic squelch.")
+        var job = Leyline_V1_Job()
+        job.jobID = "job_a"
+        func channel(_ owner: String, _ db: Double, _ source: Leyline_V1_SquelchSource)
+            -> Leyline_V1_Channel
+        {
+            .with {
+                $0.owner.kind = "job"
+                $0.owner.clientID = owner
+                $0.squelchDb = db
+                $0.squelchSource = source
+            }
+        }
+        XCTAssertEqual(
+            Recordings.autoSquelchDBFS(
+                job: job,
+                channels: [
+                    channel("job_b", -50, .squelchAuto), channel("job_a", -62, .squelchAuto),
+                ]),
+            -62)
+        XCTAssertNil(
+            Recordings.autoSquelchDBFS(job: job, channels: [channel("job_a", -45, .squelchManual)]),
+            "a level somebody chose is not called automatic")
+        XCTAssertNil(
+            Recordings.autoSquelchDBFS(job: job, channels: [channel("job_a", .nan, .squelchAuto)]),
+            "not measured yet")
     }
 
     private func job(
@@ -458,6 +493,11 @@ final class RecordingsTests: XCTestCase {
         XCTAssertEqual(
             Recordings.statusLine(job: running, manifest: nil, timeZone: utc),
             "Since 09:12. Keeps going if you tune away.", "before the manifest is read")
+        XCTAssertEqual(
+            Recordings.statusLine(
+                job: running, manifest: m, autoSquelchDBFS: -62, timeZone: utc),
+            "Since 09:12 · 2 parts · 1.1 MB. Cut at −62 dBFS, an automatic squelch.",
+            "the level the daemon measured, in the tune-away sentence's place")
         m.jobID = "job_other"
         XCTAssertEqual(
             Recordings.statusLine(job: running, manifest: m, timeZone: utc),

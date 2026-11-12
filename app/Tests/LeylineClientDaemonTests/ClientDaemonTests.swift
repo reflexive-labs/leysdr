@@ -14,6 +14,8 @@
 //     transmissions heard live, and a finished recording deletes;
 //   - a recording switched on and off over a continuous carrier cuts the log there, and the
 //     piece between the cuts lies in the recording's part;
+//   - the window's recording asked for with the squelch off gates at an auto squelch the daemon
+//     measures on the job's own channel;
 //   - The band scan borrows the window's capture, hands it back at its centre, and its
 //     Scan holds the fixture's carriers; the same sweep without take-over is declined;
 //   - the daemon's error code survives the trip.
@@ -679,6 +681,63 @@ final class ClientDaemonTests: XCTestCase {
             RecordingParts.match(transmission: piece, in: manifest.parts),
             "the piece \(piece.start.sampleIndex)–\(piece.end.sampleIndex) lies in no part of \(manifest.parts.map { ($0.startSample, $0.endSample) })"
         )
+    }
+
+    /// The window's recording with the channel's squelch off: its config with NaN, in the
+    /// frequency form with gate SQUELCH, is neither refused (that is the channel form's
+    /// FAILED_PRECONDITION) nor continuous. The daemon measures an auto squelch on the job's own
+    /// channel and gates at it, while the window's channel stays open, and publishes the level on
+    /// that channel, where `Recordings.autoSquelchDBFS` finds it for the switch's status line.
+    @MainActor
+    func testTheWindowsRecordingWithTheSquelchOffGatesAtAnAutoSquelchOfItsOwn() async throws {
+        let app = try DaemonConnection(
+            socketPath: daemon.socketPath, identity: .fresh(kind: "app", label: "test-app"))
+        defer { app.close() }
+        let mirror = DaemonMirror(connection: app)
+        let running = Task { await mirror.run() }
+        defer { running.cancel() }
+        await assertEventually("mirror never went live") { mirror.connection == .live }
+        let (capture, channel) = try await Self.tuneFixture(app, on: daemon)
+        await assertEventually("the window's channel never reached the mirror") {
+            mirror.state.channel(channel.channelID) != nil
+        }
+        XCTAssertTrue(
+            try XCTUnwrap(mirror.state.channel(channel.channelID)).squelchDb.isNaN,
+            "a new channel's squelch is off")
+        let hz = UInt64(Int64(capture.centerHz) + channel.offsetHz)
+
+        var start = Leyline_V1_StartJobRequest()
+        start.record = Recordings.config(
+            frequencyHz: hz, mode: .nfm, bandwidthHz: channel.bandwidthHz, squelchDBFS: .nan)
+        let job = try await app.jobs.startJob(start)
+        XCTAssertEqual(job.record.gate, .squelch, "the gate asked for is kept, not turned off")
+        await assertEventually("the record job never ran") {
+            mirror.state.jobs.first { $0.jobID == job.jobID }?.state == .running
+        }
+        await assertEventually("the job's channel never measured a squelch") {
+            Recordings.autoSquelchDBFS(job: job, channels: mirror.state.channels) != nil
+        }
+        let measured = try XCTUnwrap(
+            Recordings.autoSquelchDBFS(job: job, channels: mirror.state.channels))
+        XCTAssertTrue(
+            try XCTUnwrap(mirror.state.channel(channel.channelID)).squelchDb.isNaN,
+            "the window's own channel is left open")
+
+        try await Task.sleep(for: .seconds(2))
+        var ref = Leyline_V1_JobRef()
+        ref.jobID = job.jobID
+        _ = try await app.jobs.cancelJob(ref)
+        await assertEventually("the job never ended") {
+            mirror.state.jobs.first { $0.jobID == job.jobID }?.state == .cancelled
+        }
+        var resource = Leyline_V1_ResourceRef()
+        resource.uri = "ley://recordings/\(job.jobID)"
+        let local = try await app.resources.resolveLocalPath(resource)
+        let manifest = try RecordingManifest.read(at: URL(fileURLWithPath: local.path))
+        XCTAssertEqual(manifest.gate?.kind, "squelch")
+        XCTAssertEqual(manifest.squelchDBFS, measured, "the level the switch's line names")
+        XCTAssertLessThan(manifest.squelchDBFS, -30, "over the floor, under the -20 dBFS carrier")
+        XCTAssertEqual(manifest.parts.count, 1, "the carrier holds the measured squelch open")
     }
 
     @MainActor
