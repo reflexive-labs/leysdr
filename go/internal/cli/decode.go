@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +34,9 @@ type decodeOptions struct {
 	recording string
 	// dryRun is --dry-run: say where the job would go and start nothing.
 	dryRun bool
+	// yes is --yes: start without asking, where a decoder would send every minute of a channel
+	// that never goes quiet to its provider.
+	yes bool
 }
 
 func newDecodeCommand(app *App) *cobra.Command {
@@ -81,6 +85,12 @@ are kept, so 'ley records --job-id <job>' reads them again.
 sentence: the capture it would share, the radio it would open, or the radio
 it would retune and whose channels that would pause. It starts nothing, and
 exits 1 with the reason when the job would be declined.
+
+A speech decoder sends its provider the audio while the squelch is open. On
+a band whose stations never stop transmitting (FM and AM broadcast, NOAA
+weather radio) the squelch never closes, so every minute of the audio goes,
+cut into pieces of 30 s: decode says so and asks before it starts. --yes
+skips the question, and is required when stdin is not a terminal.
 
 --json prints one DecodeRecord per line (NDJSON) and nothing else on stdout;
 with --dry-run, the CapturePlan.`,
@@ -143,6 +153,7 @@ with --dry-run, the CapturePlan.`,
 	cmd.Flags().IntVar(&o.count, "count", 0, "stop after this many records, e.g. 5 (default: until Ctrl-C)")
 	cmd.Flags().StringVar(&o.recording, "recording", "", "decode a stored recording instead of the radio: a job id, id prefix or ley://recordings/ URI")
 	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "say which radio the job would use and what it would pause, and start nothing")
+	cmd.Flags().BoolVarP(&o.yes, "yes", "y", false, "start without asking when every minute of the audio would leave this Mac")
 	return cmd
 }
 
@@ -174,6 +185,9 @@ func runDecode(ctx context.Context, s *verbSession, o decodeOptions) error {
 			return dryRunFailure(err, func(err error) error { return decodeFailure(s, o, err) })
 		}
 		return nil
+	}
+	if ok, err := confirmOpenSquelch(ctx, s, o.decoder, o.freqHz, o.yes, rerunCommand("decode", o.decoder, o.freqHz)); !ok || err != nil {
+		return err
 	}
 	job, err := s.Client.StartDecode(ctx, cfg)
 	if err != nil {
@@ -239,6 +253,11 @@ func runDecode(ctx context.Context, s *verbSession, o decodeOptions) error {
 			}
 		}
 	}
+}
+
+// rerunCommand is `ley <verb> <decoder> --freq <MHz>`, the start of the command a refusal names.
+func rerunCommand(verb, decoder string, hz uint64) string {
+	return fmt.Sprintf("ley %s %s --freq %s", verb, decoder, strconv.FormatFloat(float64(hz)/1e6, 'f', -1, 64))
 }
 
 // requireFrequency refuses, before anything starts, a decoder whose manifest names no frequency

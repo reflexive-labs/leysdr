@@ -34,6 +34,10 @@ type SeedRecording struct {
 	// daemon that fell behind the radio lists it: the part's span keeps its length and its file
 	// holds that much less.
 	DroppedMs int64
+	// ContinuousMs, when set, makes a continuous recording instead (gate none, no squelch
+	// openings) of parts this many milliseconds long, each starting where the last ended; Parts
+	// is then not read.
+	ContinuousMs []int64
 }
 
 // SeedOver is one opening of the squelch inside a part.
@@ -78,7 +82,20 @@ func (d *Daemon) SeedRecording(spec SeedRecording) (string, error) {
 	m.SquelchDBFS = &squelch
 	r := &recordJob{dir: dir, manifest: m}
 	var startMs int64
+	if len(spec.ContinuousMs) > 0 {
+		m.Gate = &leyline.RecordingGate{Kind: "none"}
+		m.SquelchDBFS = nil
+		for i, lengthMs := range spec.ContinuousMs {
+			if err := r.writeSeedPart(i+1, startMs, lengthMs, nil, !spec.NoSquelchOpenMs, 0); err != nil {
+				return "", err
+			}
+			startMs += lengthMs
+		}
+	}
 	for i, overs := range spec.Parts {
+		if len(spec.ContinuousMs) > 0 {
+			break
+		}
 		if len(overs) == 0 {
 			return "", fmt.Errorf("part %d has no overs; a gated part holds at least one", i+1)
 		}
@@ -103,7 +120,7 @@ func (d *Daemon) SeedRecording(spec SeedRecording) (string, error) {
 		JobId: spec.JobID, State: leylinev1.JobState_COMPLETED, CreatedAtNs: m.StartedAtNS,
 		CreatedBy: &leylinev1.ClientInfo{ClientId: "cli_seed", Kind: "cli", Label: "ley record"},
 		Config: &leylinev1.Job_Record{Record: &leylinev1.RecordConfig{
-			FrequencyHz: spec.FrequencyHz, Gate: leylinev1.RecordGate_SQUELCH,
+			FrequencyHz: spec.FrequencyHz, Gate: gateOf(spec),
 		}},
 		ResultUris:   []string{m.URI},
 		StatusDetail: fmt.Sprintf("recorded %s in %s", forSeconds(recordedMs(r)), partsPhrase(r)),
@@ -111,6 +128,14 @@ func (d *Daemon) SeedRecording(spec SeedRecording) (string, error) {
 	d.jobs[spec.JobID] = &fakeJob{proto: job, owner: "cli_seed", hz: spec.FrequencyHz, keep: true, record: r}
 	d.jobOrder = append(d.jobOrder, spec.JobID)
 	return spec.JobID, nil
+}
+
+// gateOf is the gate a seeded recording was made with.
+func gateOf(spec SeedRecording) leylinev1.RecordGate {
+	if len(spec.ContinuousMs) > 0 {
+		return leylinev1.RecordGate_NONE
+	}
+	return leylinev1.RecordGate_SQUELCH
 }
 
 // recordingsRoot is where recordings are written: RecordingsDir, or a temp directory.
@@ -156,7 +181,7 @@ func (r *recordJob) writeSeedPart(part int, startMs, lengthMs int64, overs []See
 	if withOpenMs {
 		entry.SquelchOpenMs = &openMs
 	}
-	if last := len(m.Parts) - 1; last >= 0 {
+	if last := len(m.Parts) - 1; last >= 0 && m.Parts[last].EndSample < entry.StartSample {
 		m.Gaps = append(m.Gaps, leyline.RecordingGap{FromSample: m.Parts[last].EndSample, ToSample: entry.StartSample, Reason: "squelch closed"})
 	}
 	m.Parts = append(m.Parts, entry)

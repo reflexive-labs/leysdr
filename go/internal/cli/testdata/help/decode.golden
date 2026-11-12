@@ -37,6 +37,12 @@ sentence: the capture it would share, the radio it would open, or the radio
 it would retune and whose channels that would pause. It starts nothing, and
 exits 1 with the reason when the job would be declined.
 
+A speech decoder sends its provider the audio while the squelch is open. On
+a band whose stations never stop transmitting (FM and AM broadcast, NOAA
+weather radio) the squelch never closes, so every minute of the audio goes,
+cut into pieces of 30 s: decode says so and asks before it starts. --yes
+skips the question, and is required when stdin is not a terminal.
+
 --json prints one DecodeRecord per line (NDJSON) and nothing else on stdout;
 with --dry-run, the CapturePlan.
 
@@ -63,6 +69,7 @@ Flags:
       --job                keep the job and its records after ley exits ('ley jobs cancel' stops it)
       --recording string   decode a stored recording instead of the radio: a job id, id prefix or ley://recordings/ URI
       --take-over          decode even when somebody is using the radio; it is theirs again afterwards
+  -y, --yes                start without asking when every minute of the audio would leave this Mac
 
 Global Flags:
       --ascii           draw with ASCII only (no box, bar or tree glyphs)

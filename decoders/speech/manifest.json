@@ -12,7 +12,8 @@
   },
   "input": {
     "mode": "SEGMENTED",
-    "tap": "TAP_AUDIO"
+    "tap": "TAP_AUDIO",
+    "maxSegmentMs": 30000
   },
   "outputs": [
     "SHAPE_RECORDS"
@@ -47,6 +48,12 @@
       "label": "Callsigns",
       "type": "TEXT",
       "description": "callsigns in the text, comma-separated: a pattern match over the normalised text (prefix, one digit, 1 to 3 letters; a 4-letter suffix such as N0CALL is not matched), not a decoded identity"
+    },
+    {
+      "name": "continues",
+      "label": "Continues",
+      "type": "FLAG",
+      "description": "set on a record whose audio follows straight on from the record before: one long transmission, such as a channel whose squelch never closes, cut into pieces of at most 30 s"
     }
   ],
   "display": {

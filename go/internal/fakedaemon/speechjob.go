@@ -20,7 +20,10 @@ import (
 
 // A decode job whose source is a recording (DecodeConfig.source_uri) reads the recording's
 // manifest and part sidecars, cuts segments from each part's squelch_opens with the manifest's
-// pre-roll and hang as the daemon's RecordingSource does, and emits one record per segment. No
+// pre-roll and hang as the daemon's RecordingSource does, and emits one record per segment. With
+// max_segment_ms set, a longer segment is cut into pieces of that length and a part nothing gated
+// is cut across its whole length, as the daemon cuts them, except that the fake reads no audio and
+// cuts at the limit rather than at a quiet point near it. No
 // plugin runs: the record is the one leydec-speech's scripted engine writes, with the fields the
 // daemon stamps (clip_uri, over, the usage's feature and job) filled in, and the job ends
 // COMPLETED when the last part is read. It takes no capture, channel or lease.
@@ -37,6 +40,8 @@ type speechSegment struct {
 	captureID string
 	from, to  uint64
 	audioSecs float64
+	// continues is a piece after the first of one transmission cut at max_segment_ms.
+	continues bool
 }
 
 // startSourceDecode is StartJob(decode) with a source_uri. The refusals are answered at once,
@@ -183,7 +188,7 @@ func (d *Daemon) speechRecord(man *leylinev1.DecoderManifest, recID string, seg 
 	if i := slices.Index(man.GetArgs(), "--model"); i >= 0 && i+1 < len(man.GetArgs()) {
 		model = man.GetArgs()[i+1]
 	}
-	return &leylinev1.DecodeRecord{
+	rec := &leylinev1.DecodeRecord{
 		RecordId: newID("rec_"),
 		Protocol: man.GetName(),
 		Time:     &leylinev1.SampleTime{CaptureId: seg.captureID, SampleIndex: seg.from},
@@ -205,6 +210,11 @@ func (d *Daemon) speechRecord(man *leylinev1.DecoderManifest, recID string, seg 
 			Requests: 1, AudioSeconds: seg.audioSecs, AtNs: time.Now().UnixNano(),
 		},
 	}
+	// The daemon's flag on a piece that continues the one before it.
+	if seg.continues {
+		rec.Fields["continues"] = &leylinev1.FieldValue{Value: &leylinev1.FieldValue_Flag{Flag: true}}
+	}
+	return rec
 }
 
 // speechSegments cuts every part's squelch_opens into segments: an opening that starts within the
@@ -219,6 +229,10 @@ func speechSegments(dir string, m *leyline.RecordingManifest, in *leylinev1.Deco
 		hangMs = 500
 	}
 	var out []speechSegment
+	maxMs := uint64(in.GetMaxSegmentMs())
+	gate := leyline.SquelchGatedMode(m.Mode)
+	// Where the last part cut whole ended, so the next one straight after it continues it.
+	var wholeEnd *speechSegment
 	for _, p := range m.Parts {
 		sc, err := leyline.ReadPartSidecar(dir, p)
 		if err != nil {
@@ -228,6 +242,18 @@ func speechSegments(dir string, m *leyline.RecordingManifest, in *leylinev1.Deco
 		if rate == 0 {
 			return nil, fmt.Errorf("part %d's sidecar gives no capture rate", p.Part)
 		}
+		if maxMs > 0 && (!gate || len(sc.Recording.SquelchOpens) == 0) {
+			// Nothing gated the part: one transmission across it, its pieces numbered in order.
+			whole := speechSegment{part: p.Part, captureID: sc.Anchor.CaptureID, from: p.StartSample, to: p.EndSample}
+			whole.continues = wholeEnd != nil && wholeEnd.captureID == whole.captureID && wholeEnd.to == whole.from
+			wholeEnd = &whole
+			for i, piece := range limitSegment(whole, maxMs*rate/1000, rate) {
+				piece.over = uint32(i + 1)
+				out = append(out, piece)
+			}
+			continue
+		}
+		wholeEnd = nil
 		pre, hang := preMs*rate/1000, hangMs*rate/1000
 		var cur *speechSegment
 		var lastClose uint64
@@ -236,8 +262,7 @@ func speechSegments(dir string, m *leyline.RecordingManifest, in *leylinev1.Deco
 				return
 			}
 			cur.to = min(lastClose+hang, p.EndSample)
-			cur.audioSecs = float64(cur.to-cur.from) / float64(rate)
-			out = append(out, *cur)
+			out = append(out, limitSegment(*cur, maxMs*rate/1000, rate)...)
 			cur = nil
 		}
 		for i, o := range sc.Recording.SquelchOpens {
@@ -256,6 +281,24 @@ func speechSegments(dir string, m *leyline.RecordingManifest, in *leylinev1.Deco
 		closeSeg()
 	}
 	return out, nil
+}
+
+// limitSegment cuts seg into pieces of at most maxSamples capture samples (0 is no limit), the
+// pieces after the first marked continues, each with its own audio length.
+func limitSegment(seg speechSegment, maxSamples, rate uint64) []speechSegment {
+	var out []speechSegment
+	for {
+		piece := seg
+		if maxSamples > 0 && seg.to-seg.from > maxSamples {
+			piece.to = seg.from + maxSamples
+		}
+		piece.audioSecs = float64(piece.to-piece.from) / float64(rate)
+		out = append(out, piece)
+		if piece.to >= seg.to {
+			return out
+		}
+		seg.from, seg.continues = piece.to, true
+	}
 }
 
 // openClipsLocked starts the gated recording a live speech job writes under its own id: the

@@ -319,7 +319,8 @@ func TestTranscribeRefusals(t *testing.T) {
 			t.Errorf("ley %v: exit %d %v, want exit %d saying %q", tc.args, exitCode(err), err, tc.code, tc.says)
 		}
 	}
-	// A recording with no gate lists no squelch openings and has nothing to transcribe.
+	// A recording with no gate lists no squelch openings, so a speech decoder is sent all of it,
+	// and transcribe says so.
 	ungated := mustRun(t, sock, "--json", "record", "146.52", "--for", "300ms", "--gate", "none")
 	var job struct {
 		JobID string `json:"jobId"`
@@ -327,9 +328,9 @@ func TestTranscribeRefusals(t *testing.T) {
 	if err := json.Unmarshal([]byte(strings.Split(ungated, "\n")[0]), &job); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := runLey(t, sock, 80, false, "", "transcribe", job.JobID, "--yes")
-	if exitCode(err) != 1 || !strings.Contains(err.Error(), "lists no squelch openings") || !strings.Contains(err.Error(), "ley record 146.52 --gate squelch") {
-		t.Errorf("an ungated recording: exit %d %v", exitCode(err), err)
+	_, errOut, err := runLey(t, sock, 80, false, "", "transcribe", job.JobID, "--yes")
+	if err != nil || !strings.Contains(errOut, "of audio from 146.520 MHz NFM, every minute of it since no squelch gated the recording") {
+		t.Errorf("an ungated recording: %v\n%s", err, errOut)
 	}
 }
 

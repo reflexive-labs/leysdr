@@ -67,6 +67,9 @@ func baseManifest() *leylinev1.DecoderManifest {
 			// What a listener hears, de-emphasised and limited, which is the audio a speech
 			// engine is trained on.
 			Tap: leylinev1.AudioTap_TAP_AUDIO,
+			// A transmission longer than 30 s, a channel whose squelch never closes among them,
+			// is cut into pieces near a quiet point, so no request is too long for the engine.
+			MaxSegmentMs: 30000,
 		},
 		Outputs:    []leylinev1.OutputShape{leylinev1.OutputShape_SHAPE_RECORDS},
 		Fields:     fieldHints(),
@@ -76,12 +79,13 @@ func baseManifest() *leylinev1.DecoderManifest {
 }
 
 func fieldHints() []*leylinev1.FieldHint {
-	const txt, num = leylinev1.FieldType_TEXT, leylinev1.FieldType_NUMBER
+	const txt, num, flag = leylinev1.FieldType_TEXT, leylinev1.FieldType_NUMBER, leylinev1.FieldType_FLAG
 	return []*leylinev1.FieldHint{
 		{Name: "text", Label: "Text", Type: txt, Description: "what the speech engine heard, as it wrote it"},
 		{Name: "language", Label: "Language", Type: txt, Description: "the language the engine transcribed, as an ISO 639-1 code"},
 		{Name: "model", Label: "Model", Type: txt, Description: "the model that produced the text"},
 		{Name: "confidence", Label: "Confidence", Type: num, Description: "the engine's own confidence in the text, 0 to 1, when it reports one"},
 		{Name: "callsigns", Label: "Callsigns", Type: txt, Description: "callsigns in the text, comma-separated: a pattern match over the normalised text (prefix, one digit, 1 to 3 letters; a 4-letter suffix such as N0CALL is not matched), not a decoded identity"},
+		{Name: "continues", Label: "Continues", Type: flag, Description: "set on a record whose audio follows straight on from the record before: one long transmission, such as a channel whose squelch never closes, cut into pieces of at most 30 s"},
 	}
 }

@@ -93,6 +93,47 @@ func (m *RecordingManifest) SquelchOpenTime(dir string) (time.Duration, error) {
 	return total, nil
 }
 
+// SpeechAudio splits the recording in dir by what a SEGMENTED decoder is sent of it
+// (decode.proto, DecoderInput.max_segment_ms; the daemon's RecordingSource). gated is
+// the squelch-open time of the parts a squelch gated, as SquelchOpenTime counts it.
+// ungated is the whole length of the parts nothing gated: parts with no squelch
+// openings, which is every part of a continuous recording, and every part of a
+// recording in a mode with no squelch gate (WFM, SSB, CW). A decoder with
+// max_segment_ms set is sent every minute of those, cut into pieces; one without is
+// sent none of them.
+func (m *RecordingManifest) SpeechAudio(dir string) (gated, ungated time.Duration, err error) {
+	gate := SquelchGatedMode(m.Mode)
+	for _, p := range m.Parts {
+		if !gate || p.SquelchOpens == 0 {
+			sc, _ := ReadPartSidecar(dir, p)
+			rate := m.PartCaptureRate(sc, p)
+			if rate == 0 {
+				return 0, 0, fmt.Errorf("nothing gives part %d's capture rate, so its length cannot be counted", p.Part)
+			}
+			ungated += time.Duration(float64(p.EndSample-min(p.StartSample, p.EndSample)) / rate * float64(time.Second))
+			continue
+		}
+		one := RecordingManifest{Parts: []RecordingPart{p}, Anchors: m.Anchors}
+		open, err := one.SquelchOpenTime(dir)
+		if err != nil {
+			return 0, 0, err
+		}
+		gated += open
+	}
+	return gated, ungated, nil
+}
+
+// SquelchGatedMode says whether a squelch gates a channel in mode (a recording
+// manifest's "NFM", "AM"): NFM and AM, where a closed squelch is silence between
+// transmissions. Any other mode has no closed squelch to cut at.
+func SquelchGatedMode(mode string) bool {
+	switch strings.ToUpper(mode) {
+	case "NFM", "AM":
+		return true
+	}
+	return false
+}
+
 // anchorRateFor is the capture rate of the manifest anchor a part's samples are
 // counted on, or 0 when the manifest has none.
 func anchorRateFor(m *RecordingManifest, p RecordingPart) uint64 {

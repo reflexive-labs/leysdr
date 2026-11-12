@@ -126,7 +126,7 @@ func speechBase() *leylinev1.DecoderManifest {
 		Version: "0.2.0",
 		License: "Apache-2.0",
 		Recipe:  &leylinev1.DecoderRecipe{Mode: leylinev1.DemodMode_NFM, Gain: leylinev1.GainPolicy_GAIN_LEAVE},
-		Input:   &leylinev1.DecoderInput{Mode: leylinev1.InputMode_SEGMENTED, Tap: leylinev1.AudioTap_TAP_AUDIO},
+		Input:   &leylinev1.DecoderInput{Mode: leylinev1.InputMode_SEGMENTED, Tap: leylinev1.AudioTap_TAP_AUDIO, MaxSegmentMs: 30000},
 		Outputs: []leylinev1.OutputShape{leylinev1.OutputShape_SHAPE_RECORDS},
 		Fields: []*leylinev1.FieldHint{
 			{Name: "text", Label: "Text", Type: leylinev1.FieldType_TEXT, Description: "what the speech engine heard, as it wrote it"},
@@ -134,6 +134,7 @@ func speechBase() *leylinev1.DecoderManifest {
 			{Name: "model", Label: "Model", Type: leylinev1.FieldType_TEXT, Description: "the model that produced the text"},
 			{Name: "confidence", Label: "Confidence", Type: leylinev1.FieldType_NUMBER, Description: "the engine's own confidence in the text, 0 to 1, when it reports one"},
 			{Name: "callsigns", Label: "Callsigns", Type: leylinev1.FieldType_TEXT, Description: "callsigns in the text, comma-separated: a pattern match over the normalised text (prefix, one digit, 1 to 3 letters; a 4-letter suffix such as N0CALL is not matched), not a decoded identity"},
+			{Name: "continues", Label: "Continues", Type: leylinev1.FieldType_FLAG, Description: "set on a record whose audio follows straight on from the record before: one long transmission, such as a channel whose squelch never closes, cut into pieces of at most 30 s"},
 		},
 		Display: &leylinev1.DecoderDisplay{
 			Title:     "Speech",

@@ -5,10 +5,12 @@ in it.
 
 The daemon reads the stored parts, faster than real time, and hands the
 decoder one over at a time, cut at the squelch with half a second either
-side; the audio between overs is never sent. Before it starts, transcribe
-states how many minutes the squelch was open and where the audio goes (the
-hosts the decoder's manifest lists, or this Mac), and asks. --yes skips the
-question, and is required when stdin is not a terminal.
+side; the audio between overs is never sent. A recording nothing gated (a
+continuous one, or WFM) has no overs: all of it is sent, cut into pieces of
+30 s. Before it starts, transcribe states how many minutes that is and where
+the audio goes (the hosts the decoder's manifest lists, or this Mac), and
+asks. --yes skips the question, and is required when stdin is not a
+terminal.
 
 The records are kept, so 'ley records --protocol speech' reads them later,
 and transcribing again with another model adds records beside these.

@@ -41,10 +41,12 @@ in it.
 
 The daemon reads the stored parts, faster than real time, and hands the
 decoder one over at a time, cut at the squelch with half a second either
-side; the audio between overs is never sent. Before it starts, transcribe
-states how many minutes the squelch was open and where the audio goes (the
-hosts the decoder's manifest lists, or this Mac), and asks. --yes skips the
-question, and is required when stdin is not a terminal.
+side; the audio between overs is never sent. A recording nothing gated (a
+continuous one, or WFM) has no overs: all of it is sent, cut into pieces of
+30 s. Before it starts, transcribe states how many minutes that is and where
+the audio goes (the hosts the decoder's manifest lists, or this Mac), and
+asks. --yes skips the question, and is required when stdin is not a
+terminal.
 
 The records are kept, so 'ley records --protocol speech' reads them later,
 and transcribing again with another model adds records beside these.
@@ -84,21 +86,25 @@ The recording is a job id, an id prefix, or a ley://recordings/ URI.
 	return cmd
 }
 
-// transcribeRun is what one transcription is about: the recording, where it is, and the decoder.
+// transcribeRun is what one transcription is about: the recording, where it is, the decoder,
+// and how much audio it is sent: the squelch-open time of the gated parts and the whole length of
+// the parts nothing gated (leyline.RecordingManifest.SpeechAudio).
 type transcribeRun struct {
 	jobID    string
 	manifest *leyline.RecordingManifest
 	decoder  *leylinev1.DecoderManifest
 	anchors  []*leylinev1.RecordAnchor
 	printed  map[uint64]bool
+	gated    time.Duration
+	ungated  time.Duration
 }
 
 func runTranscribe(ctx context.Context, s *verbSession, o transcribeOptions) error {
-	run, open, err := prepareTranscribe(ctx, s, o)
+	run, err := prepareTranscribe(ctx, s, o)
 	if err != nil {
 		return err
 	}
-	if ok, err := confirmTranscribe(s, run, open, o); !ok || err != nil {
+	if ok, err := confirmTranscribe(s, run, o); !ok || err != nil {
 		return err
 	}
 	// The daemon hands the speech model to the decoder when it starts it, so --model is set
@@ -150,12 +156,12 @@ func setSpeechModel(ctx context.Context, s *verbSession, run *transcribeRun, mod
 
 // confirmTranscribe states what will be sent and where, and asks unless --yes. Without a terminal
 // to answer and without --yes it refuses with a usage error, because nobody agreed to send audio.
-func confirmTranscribe(s *verbSession, run *transcribeRun, open time.Duration, o transcribeOptions) (bool, error) {
+func confirmTranscribe(s *verbSession, run *transcribeRun, o transcribeOptions) (bool, error) {
 	if o.yes {
-		fmt.Fprintf(s.app.Stderr, "%s.\n", transcribeStatement("Transcribing", run, open, o.model))
+		fmt.Fprintf(s.app.Stderr, "%s.\n", transcribeStatement("Transcribing", run, o.model))
 		return true, nil
 	}
-	statement := transcribeStatement("Transcribe", run, open, o.model)
+	statement := transcribeStatement("Transcribe", run, o.model)
 	if !s.app.IsInTTY() {
 		fmt.Fprintf(s.app.Stderr, "%s.\n", statement)
 		return false, usageErrorf("stdin is not a terminal, so nobody can confirm sending the audio. Run: ley transcribe %s --yes", o.ref)
@@ -169,47 +175,54 @@ func confirmTranscribe(s *verbSession, run *transcribeRun, open time.Duration, o
 	return true, nil
 }
 
-// prepareTranscribe finds the recording, reads its manifest and the squelch-open time, and picks
-// the decoder, refusing before anything is asked when there is nothing to transcribe or the
-// decoder does not read overs.
-func prepareTranscribe(ctx context.Context, s *verbSession, o transcribeOptions) (*transcribeRun, time.Duration, error) {
+// prepareTranscribe finds the recording, reads its manifest, picks the decoder and counts the
+// audio it will be sent, refusing before anything is asked when there is nothing to transcribe
+// or the decoder does not read overs. A decoder with max_segment_ms set is sent every minute of
+// the parts nothing gated; one without is sent only the squelch-open audio.
+func prepareTranscribe(ctx context.Context, s *verbSession, o transcribeOptions) (*transcribeRun, error) {
 	app := s.app
 	jobID, err := resolveRecordingID(ctx, s.Client, o.ref)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	dir, err := s.Client.ResolveLocalPath(ctx, leyline.RecordingURI(jobID))
 	if err != nil {
-		return nil, 0, recordingNotFound(app, o.ref, err)
+		return nil, recordingNotFound(app, o.ref, err)
 	}
 	m, err := leyline.ReadRecordingManifest(dir)
 	if err != nil {
-		return nil, 0, fmt.Errorf("the recording's manifest could not be read (%s): %w", dir, err)
+		return nil, fmt.Errorf("the recording's manifest could not be read (%s): %w", dir, err)
 	}
 	if m.Kind == "iq" {
-		return nil, 0, &friendlyError{msg: fmt.Sprintf("%s is an IQ recording, and speech is decoded from audio. %s makes an audio one",
-			jobID, app.ErrStyle.Cmd(gatedRecordCommand(m)))}
-	}
-	open, err := m.SquelchOpenTime(dir)
-	if err != nil {
-		return nil, 0, fmt.Errorf("how long %s's squelch was open could not be read: %w", jobID, err)
-	}
-	if open == 0 {
-		return nil, 0, &friendlyError{msg: fmt.Sprintf("%s lists no squelch openings, so there is nothing to transcribe: speech is cut at the squelch, and only a gated recording records where it opened. %s makes one",
+		return nil, &friendlyError{msg: fmt.Sprintf("%s is an IQ recording, and speech is decoded from audio. %s makes an audio one",
 			jobID, app.ErrStyle.Cmd(gatedRecordCommand(m)))}
 	}
 	dec, err := speechDecoder(ctx, s, o)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	run := &transcribeRun{jobID: jobID, manifest: m, decoder: dec, printed: map[uint64]bool{}}
+	gated, ungated, err := m.SpeechAudio(dir)
+	if err != nil {
+		return nil, fmt.Errorf("how much of %s would be sent could not be read: %w", jobID, err)
+	}
+	if dec.GetInput().GetMaxSegmentMs() == 0 {
+		ungated = 0
+	}
+	if gated+ungated == 0 {
+		if dec.GetInput().GetMaxSegmentMs() == 0 {
+			return nil, &friendlyError{msg: fmt.Sprintf("%s lists no squelch openings, so there is nothing to transcribe: %s is cut at the squelch, and only a gated recording records where it opened. %s makes one",
+				jobID, dec.GetName(), app.ErrStyle.Cmd(gatedRecordCommand(m)))}
+		}
+		return nil, &friendlyError{msg: fmt.Sprintf("%s holds no audio to transcribe", jobID)}
+	}
+	run := &transcribeRun{jobID: jobID, manifest: m, decoder: dec, printed: map[uint64]bool{}, gated: gated, ungated: ungated}
 	for _, a := range m.Anchors {
 		run.anchors = append(run.anchors, &leylinev1.RecordAnchor{
 			Anchor:     &leylinev1.CaptureAnchor{CaptureId: a.CaptureID, HostTimeNs: a.HostTimeNS, SampleRate: a.SampleRate, DriftPpm: a.DriftPPM},
 			FromSample: a.FromSample,
 		})
 	}
-	return run, open, nil
+	return run, nil
 }
 
 // gatedRecordCommand is the command that records the same frequency gated, which is what a speech
@@ -248,9 +261,11 @@ func speechDecoder(ctx context.Context, s *verbSession, o transcribeOptions) (*l
 	return dec, nil
 }
 
-// transcribeStatement is what the job will send and where: the parts, the minutes of
-// squelch-open audio, the recording's frequency and mode, the decoder and the hosts it contacts.
-func transcribeStatement(lead string, run *transcribeRun, open time.Duration, model string) string {
+// transcribeStatement is what the job will send and where: the parts, the minutes of audio, the
+// recording's frequency and mode, the decoder and the hosts it contacts. The minutes are the
+// squelch-open audio of a gated recording, and every minute of one nothing gated, which the
+// statement says, since that is all of it.
+func transcribeStatement(lead string, run *transcribeRun, model string) string {
 	m := run.manifest
 	with := run.decoder.GetName()
 	if model != "" {
@@ -260,8 +275,18 @@ func transcribeStatement(lead string, run *transcribeRun, open time.Duration, mo
 	if hosts := run.decoder.GetContactsHosts(); len(hosts) > 0 {
 		where = "sends the audio to " + strings.Join(hosts, ", ")
 	}
-	statement := fmt.Sprintf("%s %s, %.1f min of squelch-open audio from %s %s, with %s (%s)", lead,
-		words.Count(len(m.Parts), "part"), open.Minutes(), units.FormatFrequency(m.FrequencyHz), m.Mode, with, where)
+	var audio string
+	switch {
+	case run.ungated == 0:
+		audio = fmt.Sprintf("%.1f min of squelch-open audio from %s %s", run.gated.Minutes(), units.FormatFrequency(m.FrequencyHz), m.Mode)
+	case run.gated == 0:
+		audio = fmt.Sprintf("%.1f min of audio from %s %s, every minute of it since no squelch gated the recording",
+			run.ungated.Minutes(), units.FormatFrequency(m.FrequencyHz), m.Mode)
+	default:
+		audio = fmt.Sprintf("%.1f min of audio from %s %s, %.1f min of it from parts no squelch gated",
+			(run.gated + run.ungated).Minutes(), units.FormatFrequency(m.FrequencyHz), m.Mode, run.ungated.Minutes())
+	}
+	statement := fmt.Sprintf("%s %s, %s, with %s (%s)", lead, words.Count(len(m.Parts), "part"), audio, with, where)
 	if model != "" {
 		statement += "; the speech model is set to " + model + " for this and later jobs"
 	}

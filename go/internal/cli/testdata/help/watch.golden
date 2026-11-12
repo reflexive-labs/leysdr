@@ -35,6 +35,12 @@ a command with the record's JSON on stdin (an explicit target takes the '='
 form, so a bare --notify can still mean the macOS one). The daemon runs the
 notifier, so it fires whether or not ley is attached.
 
+A speech decoder sends its provider every minute of a channel whose squelch
+never closes, which is any band whose stations never stop transmitting (FM
+and AM broadcast, NOAA weather radio), however few records the filter lets
+through: watch says so and asks before it starts. --yes skips the question,
+and is required when stdin is not a terminal.
+
 --json prints one DecodeRecord per line (NDJSON): the matches and nothing else.
 
 Usage:
@@ -62,6 +68,7 @@ Flags:
       --radius string             how far around --near to look: 10km, 500m, 5nm, 3mi
       --take-over                 watch even when somebody is using the radio; it is theirs again afterwards
       --where stringArray         a field test: field=value, field!=value, field~value, field>value (repeatable)
+  -y, --yes                       start without asking when every minute of the audio would leave this Mac
 
 Global Flags:
       --ascii           draw with ASCII only (no box, bar or tree glyphs)

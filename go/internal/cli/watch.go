@@ -31,6 +31,9 @@ type watchOptions struct {
 	// The filter flags as given, so the banner can say the filter in the decoder's own field
 	// labels once ley has its manifest.
 	filter filterFlags
+	// yes is --yes: start without asking, where a decoder would send every minute of a channel
+	// that never goes quiet to its provider.
+	yes bool
 }
 
 // filterFlags are ley watch's filter flags as typed, and the MCP watch tool's same arguments.
@@ -90,6 +93,12 @@ a command with the record's JSON on stdin (an explicit target takes the '='
 form, so a bare --notify can still mean the macOS one). The daemon runs the
 notifier, so it fires whether or not ley is attached.
 
+A speech decoder sends its provider every minute of a channel whose squelch
+never closes, which is any band whose stations never stop transmitting (FM
+and AM broadcast, NOAA weather radio), however few records the filter lets
+through: watch says so and asks before it starts. --yes skips the question,
+and is required when stdin is not a terminal.
+
 --json prints one DecodeRecord per line (NDJSON): the matches and nothing else.`,
 		Example: `  ley watch same --county 06009 --notify        # a weather alert for your county
   ley watch aprs --where device_id=LEYTST-1     # one station
@@ -145,6 +154,7 @@ notifier, so it fires whether or not ley is attached.
 	cmd.Flags().Lookup("notify").NoOptDefVal = "macos"
 	cmd.Flags().BoolVar(&asJob, "detach", false, "leave the job running after ley exits so the notifier fires unattended ('ley jobs cancel' stops it)")
 	cmd.Flags().BoolVar(&asJob, "job", false, "alias for --detach")
+	cmd.Flags().BoolVarP(&o.yes, "yes", "y", false, "start without asking when every minute of the audio would leave this Mac")
 	cmd.Flags().IntVar(&o.count, "count", 0, "stop after this many matches, e.g. 5 (default: until Ctrl-C)")
 	return cmd
 }
@@ -198,6 +208,9 @@ func runWatch(ctx context.Context, s *verbSession, o watchOptions) error {
 		o.decoder = name
 	}
 	if err := requireFrequency(ctx, s, o.decoder, o.freqHz); err != nil {
+		return err
+	}
+	if ok, err := confirmOpenSquelch(ctx, s, o.decoder, o.freqHz, o.yes, rerunCommand("watch", o.decoder, o.freqHz)); !ok || err != nil {
 		return err
 	}
 	s.displays = decoderDisplays(ctx, s.Client)

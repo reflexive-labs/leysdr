@@ -40,6 +40,32 @@ func TestSquelchOpenTime(t *testing.T) {
 	}
 }
 
+// SpeechAudio counts a gated part by its squelch-open time and a part nothing gated by its whole
+// length, and a recording in a mode with no squelch gate whole whatever its parts list.
+func TestSpeechAudio(t *testing.T) {
+	ms := int64(1500)
+	anchors := []RecordingAnchor{{CaptureID: "cap_1", SampleRate: 2_400_000}}
+	m := &RecordingManifest{Mode: "NFM", Anchors: anchors, Parts: []RecordingPart{
+		{Part: 1, File: "p1.wav", StartSample: 0, EndSample: 24_000_000, SquelchOpens: 2, SquelchOpenMs: &ms},
+		{Part: 2, File: "p2.wav", StartSample: 24_000_000, EndSample: 96_000_000},
+	}}
+	gated, ungated, err := m.SpeechAudio(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gated != 1500*time.Millisecond || ungated != 30*time.Second {
+		t.Errorf("NFM: gated %v, ungated %v; want 1.5s and 30s", gated, ungated)
+	}
+	m.Mode = "WFM"
+	gated, ungated, err = m.SpeechAudio(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gated != 0 || ungated != 40*time.Second {
+		t.Errorf("WFM: gated %v, ungated %v; want 0 and 40s", gated, ungated)
+	}
+}
+
 // Segments is the daemon's Segmenter.cut: a re-opening inside the hang continues the segment
 // and keeps its first over's number, a pre-roll never reaches before the part or the previous
 // segment, and the last segment stops at the part's end.
